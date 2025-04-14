@@ -57,3 +57,8 @@ exclude = [
 [tool.uv.sources]
 configurations = { path = "configurations" }
 
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+]
+

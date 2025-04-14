@@ -7,5 +7,6 @@ all = [
         job=vichub_downloaded_files_metadata_job,
         # run every hour
         cron_schedule="0 * * * *",
+        default_status=dg.DefaultScheduleStatus.RUNNING,
     )
 ]

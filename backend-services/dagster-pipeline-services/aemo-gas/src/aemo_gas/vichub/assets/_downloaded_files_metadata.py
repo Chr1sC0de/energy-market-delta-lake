@@ -2,7 +2,6 @@ import datetime as dt
 from collections.abc import Generator
 from dataclasses import dataclass
 from io import BytesIO
-from logging import Logger
 
 import dagster as dg
 import polars as pl
@@ -39,7 +38,8 @@ delta_table_path = f"{BRONZE_AEMO_GAS_DIRECTORY}/vichub/downloaded_files_metadat
 # op to get all VicGas links
 
 
-def get_links(logger: Logger | None = None) -> list[Link]:
+@dg.op()
+def get_links_op(context: dg.OpExecutionContext) -> list[Link]:
     # set root url and create the soup
     root_url = "https://www.nemweb.com.au"
 
@@ -67,16 +67,18 @@ def get_links(logger: Logger | None = None) -> list[Link]:
                 datetime_string, "%A, %B %d, %Y %I:%M %p"
             )
 
-            links.append(
-                Link(
-                    target_filename=target_filename,
-                    href=href,
-                    upload_datetime=upload_datetime,
+            if "CURRENTDAY" not in href:
+                links.append(
+                    Link(
+                        target_filename=target_filename,
+                        href=href,
+                        upload_datetime=upload_datetime,
+                    )
                 )
-            )
+            else:
+                context.log.info("Ignoring Current Day File")
 
-            if logger is not None:
-                logger.info(f"found link {href}")
+            context.log.info(f"found link {href}")
 
             assert target_filename is not None
 
@@ -85,30 +87,21 @@ def get_links(logger: Logger | None = None) -> list[Link]:
     for link in links:
         name, suffix = link.target_filename.split(".")
         link.target_filename = (
-            f"{name}~{link.upload_datetime.strftime('%y%m%d%H%M%S')}.{suffix}"
+            f"{name}~{link.upload_datetime.strftime('%Y%m%d%H%M%S')}.{suffix}"
         )
     return links
-
-
-@dg.op()
-def get_links_op(context: dg.OpExecutionContext) -> list[Link]:
-    return get_links(context.log)
 
 
 # get the current metadata df
 
 
-def get_current_download_file_metadata_df() -> pl.DataFrame | None:
+@dg.op()
+def get_current_download_file_metadata_df_op() -> pl.DataFrame | None:
     try:
-        df = pl.read_delta(delta_table_path)
+        df = pl.read_delta(delta_table_path, use_pyarrow=True)
     except TableNotFoundError:
         df = None
     return df
-
-
-@dg.op()
-def get_current_download_file_metadata_df_op() -> pl.DataFrame | None:
-    return get_current_download_file_metadata_df()
 
 
 # create the dynamic download groups
@@ -132,6 +125,8 @@ def create_dynamic_download_group_op(
             if len(sub_df) == 0:
                 context.log.info(f"kept link {link.href}")
                 filtered_links.append(link)
+            else:
+                context.log.info(f"dropped link {link.href}")
         else:
             context.log.info(f"kept link {link.href}")
             filtered_links.append(link)

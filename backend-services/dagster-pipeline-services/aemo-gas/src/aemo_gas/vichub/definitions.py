@@ -12,6 +12,7 @@ all = Definitions(
     jobs=[*vichub.jobs.all],
     schedules=[*vichub.schedules.all],
     asset_checks=[*vichub.assets.checks],
+    sensors=[*vichub.sensors.all],
     resources={
         "bronze_aemo_gas_upsert_io_manager": bronze_aemo_gas_upsert_io_manager,
         "s3_resource": S3Resource(region_name="ap-southeast-2"),
