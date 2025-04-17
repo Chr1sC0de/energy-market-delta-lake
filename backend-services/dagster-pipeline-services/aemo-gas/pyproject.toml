@@ -47,6 +47,7 @@ reportTypedDictNotRequiredAccess = false
 reportReturnType=false
 reportArgumentType=false
 reportImportCycles=false
+reportExplicitAny=false
 exclude = [
     "**/node_modules",
     "**/__pycache__",

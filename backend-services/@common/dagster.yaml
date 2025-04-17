@@ -13,7 +13,7 @@ run_launcher:
   config:
     run_resources:
       cpu: "512"
-      memory: "2048"
+      memory: "4096"
 
 run_storage:
   module: dagster_postgres.run_storage

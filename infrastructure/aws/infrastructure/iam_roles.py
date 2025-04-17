@@ -6,7 +6,6 @@ from constructs import Construct
 
 from configurations.parameters import DEVELOPMENT_ENVIRONMENT, NAME_PREFIX
 from infrastructure.utils import StackKwargs
-from infrastructure.vpc import SHARED_PREFIX
 
 
 class Stack(_Stack):

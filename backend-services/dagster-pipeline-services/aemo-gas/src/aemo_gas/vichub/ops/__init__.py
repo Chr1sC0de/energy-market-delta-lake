@@ -1,3 +1,3 @@
-from ._process_zip_files import process_zip_files_op
+from . import process_zip_files
 
-__all__ = ["process_zip_files_op"]
+__all__ = ["process_zip_files"]

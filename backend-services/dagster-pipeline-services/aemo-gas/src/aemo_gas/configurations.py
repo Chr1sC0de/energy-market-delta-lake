@@ -36,7 +36,7 @@ if DEVELOPMENT_LOCATION == "local":
         os.environ["AWS_REGION"] = "ap-southeast-2"
 
     # ── to not use locking ──────────────────────────────────────────────────────────
-    os.environ["AWS_S3_ALLOW_UNSAFE_RENAME"] = "true"
+    # os.environ["AWS_S3_ALLOW_UNSAFE_RENAME"] = "true"
 
     # ── use the bellow code when using dynamo db ────────────────────────────────────
-    # os.environ["AWS_S3_LOCKING_PROVIDER"] = "dynamodb"
+    os.environ["AWS_S3_LOCKING_PROVIDER"] = "dynamodb"

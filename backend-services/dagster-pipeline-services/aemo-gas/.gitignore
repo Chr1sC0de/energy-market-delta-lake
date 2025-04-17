@@ -7,3 +7,4 @@ dagster.yaml
 .python-version
 dist
 configurations
+scratch

@@ -95,9 +95,12 @@ def process_zip_op(
     context.log.info(f"finished processing csv file {LANDING_BUCKET}/{key}")
 
 
+# main op
+
+
 @dg.graph
-def process_zip_files_op():
-    def _process_zip_op(key: str) -> None:
+def op():
+    def _process_zip_op_wrapper(key: str) -> None:
         process_zip_op(key)
 
-    create_dynamic_process_zip_op().map(_process_zip_op)
+    create_dynamic_process_zip_op().map(_process_zip_op_wrapper)

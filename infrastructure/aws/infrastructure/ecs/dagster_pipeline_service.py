@@ -1,14 +1,15 @@
 from typing import Unpack
 
 import aws_cdk as cdk
-from aws_cdk import aws_ecr, aws_ecs
+from aws_cdk import Fn, aws_ecr, aws_ecs
 from aws_cdk import Stack as _Stack
 from aws_cdk import aws_ec2 as ec2
+from aws_cdk import aws_iam as iam
 from aws_cdk import aws_ssm as ssm
 from configurations.parameters import DEVELOPMENT_ENVIRONMENT
 from constructs import Construct
 
-from infrastructure import ecr, ecs, postgres, service_discovery, vpc, security_groups
+from infrastructure import ecr, ecs, postgres, security_groups, service_discovery, vpc
 from infrastructure.utils import StackKwargs
 
 
@@ -44,12 +45,19 @@ class Stack(_Stack):
             self, PostgresStack.postgres_ssm_instance_private_dns, None
         )
 
+        dagster_daemon_task_role = iam.Role.from_role_arn(
+            self,
+            "ECSDagsterDaemonTaskRoleARN",
+            Fn.import_value("ECSDagsterDaemonTaskRoleARN"),
+        )
+
         task_definition = aws_ecs.FargateTaskDefinition(
             self,
             "FargateTaskDefinition",
             family="dagster-pipeline",
             cpu=256,
             memory_limit_mib=512,
+            task_role=dagster_daemon_task_role,
         )
 
         _ = task_definition.add_container(

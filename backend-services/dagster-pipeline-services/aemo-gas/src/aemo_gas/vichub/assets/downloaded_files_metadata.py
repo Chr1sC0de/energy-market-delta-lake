@@ -104,6 +104,9 @@ def get_current_download_file_metadata_df_op() -> pl.DataFrame | None:
     return df
 
 
+dg.sensor
+
+
 # create the dynamic download groups
 
 
@@ -196,7 +199,7 @@ def process_link_op(
     return processed_link
 
 
-def _process_link(link: Link) -> ProcessedLink | None:
+def _process_link_wrapper(link: Link) -> ProcessedLink | None:
     processed: ProcessedLink | None = process_link_op(link)
     return processed
 
@@ -271,15 +274,16 @@ def combine_to_dataframe_op(
     return output
 
 
-# generate the required asset
+# generate the required asset from the graph of ops
 
 
 @dg.graph_asset(
-    key_prefix=["vichub"],
-    group_name="BRONZE__AEMO__VICHUB",
-    kinds={"deltalake"},
+    key_prefix=[ "bronze","aemo", "gas", "vichub"],
+    name="downloaded_files_metadata",
+    group_name="BRONZE__AEMO__GAS__VICHUB",
+    kinds={"deltalake", "source"},
 )
-def downloaded_files_metadata() -> pl.LazyFrame:
+def asset() -> pl.LazyFrame:
     links: list[Link] = get_links_op()
 
     current_download_file_metadata_df: pl.DataFrame | None = (
@@ -288,7 +292,7 @@ def downloaded_files_metadata() -> pl.LazyFrame:
 
     processed_links = create_dynamic_download_group_op(
         links, current_download_file_metadata_df
-    ).map(_process_link)
+    ).map(_process_link_wrapper)
 
     filtered_processed_links = filter_none_op(processed_links.collect())
 
@@ -297,7 +301,10 @@ def downloaded_files_metadata() -> pl.LazyFrame:
     return output_df
 
 
-@dg.asset_check(asset=downloaded_files_metadata)
+# add the asset checks
+
+
+@dg.asset_check(asset=asset)
 def has_no_duplicate_source_and_target_entries(
     downloaded_files_metadata: pl.LazyFrame,
 ):
@@ -315,5 +322,5 @@ def has_no_duplicate_source_and_target_entries(
     )
 
 
-assets = [downloaded_files_metadata]
+assets = [asset]
 checks = [has_no_duplicate_source_and_target_entries]
