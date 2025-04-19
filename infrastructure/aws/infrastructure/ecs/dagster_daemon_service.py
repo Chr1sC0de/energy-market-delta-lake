@@ -126,7 +126,7 @@ class Stack(_Stack):
 
         # generate the fargate service
 
-        _ = aws_ecs.FargateService(
+        fargate_service = aws_ecs.FargateService(
             self,
             "DagsterDaemonFargateService",
             task_definition=task_definition,
@@ -144,3 +144,6 @@ class Stack(_Stack):
                 )
             ],
         )
+
+        cdk.Tags.of(fargate_service).add("Environment", DEVELOPMENT_ENVIRONMENT)
+        cdk.Tags.of(fargate_service).add("Service", "DagsterDaemon")

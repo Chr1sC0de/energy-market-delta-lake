@@ -119,7 +119,7 @@ class Stack(_Stack):
 
         # generate the fargate service
 
-        _ = aws_ecs.FargateService(
+        fargate_service = aws_ecs.FargateService(
             self,
             "DagsterUserCodeFargateService",
             task_definition=task_definition,
@@ -134,3 +134,6 @@ class Stack(_Stack):
             security_groups=[SecurityGroupStack.dagster_pipeline_security_group],
             min_healthy_percent=50,
         )
+
+        cdk.Tags.of(fargate_service).add("Environment", DEVELOPMENT_ENVIRONMENT)
+        cdk.Tags.of(fargate_service).add("Service", "DagsterPipeline")

@@ -156,7 +156,7 @@ class Stack(_Stack):
                 description="Allow inbound HTTPS traffic on port 443",
             )
 
-        _ = aws_ecs.FargateService(
+        fargate_service = aws_ecs.FargateService(
             self,
             "DagsterWebserverFargateService",
             task_definition=task_definition,
@@ -167,6 +167,9 @@ class Stack(_Stack):
             assign_public_ip=True,
             security_groups=[SecurityGroupStack.dagster_webserver_security_group],
         )
+
+        cdk.Tags.of(fargate_service).add("Environment", DEVELOPMENT_ENVIRONMENT)
+        cdk.Tags.of(fargate_service).add("Service", "DagsterPublicWebserver")
 
     # generate the load balanced fargate service this can get expensive
 
