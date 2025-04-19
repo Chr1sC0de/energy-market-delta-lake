@@ -1,3 +1,3 @@
-from . import process_zip_files
+from . import get_table_op
 
-__all__ = ["process_zip_files"]
+__all__ = ["get_table_op"]

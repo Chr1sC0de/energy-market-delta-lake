@@ -12,8 +12,8 @@ run_launcher:
   class: "EcsRunLauncher"
   config:
     run_resources:
-      cpu: "512"
-      memory: "4096"
+      cpu: "256"
+      memory: "512"
 
 run_storage:
   module: dagster_postgres.run_storage

@@ -8,24 +8,20 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "boto3>=1.37.26",
+    "boto3>=1.37.37",
     "bs4>=0.0.2",
-    "requests>=2.32.3",
-    "types-boto3[s3]>=1.37.26",
-    "pandas>=2.2.3",
-    "dagster>=1.10.7",
-    "dagster-aws>=0.26.7",
-    "dagster-docker>=0.26.7",
-    "dagster-postgres>=0.26.7",
-    "dagster-graphql>=1.10.7",
-    "dagster-webserver>=1.10.7",
-    "dagster-deltalake>=0.26.7",
-    "dagster-deltalake-polars>=0.26.7",
-    "dagster-polars>=0.26.7",
-    "dagster-delta>=0.1.5",
-    "dagster-delta-polars>=0.2.2",
     "configurations",
-    "polars>=1.26.0",
+    "dagster>=1.10.11",
+    "dagster-aws>=0.26.11",
+    "dagster-delta>=0.4.1",
+    "dagster-docker>=0.26.11",
+    "dagster-graphql>=1.10.11",
+    "dagster-postgres>=0.26.11",
+    "dagster-webserver>=1.10.11",
+    "pandas>=2.2.3",
+    "polars>=1.27.1",
+    "requests>=2.32.3",
+    "types-boto3[s3]>=1.37.37",
 ]
 
 [project.scripts]

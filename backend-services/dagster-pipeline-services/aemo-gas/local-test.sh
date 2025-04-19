@@ -1,11 +1,17 @@
-if [[ -d .dagster_home ]]; then
-    rm .dagster_home -rf
-fi
+(
+    ./get-common.sh
 
-mkdir .dagster_home
+    uv sync
 
-DAGSTER_HOME="$(pwd)/.dagster_home"
+    if [[ -d .dagster_home ]]; then
+        rm .dagster_home -rf
+    fi
 
-export DAGSTER_HOME
+    mkdir .dagster_home
 
-dagster dev -m aemo_gas --verbose
+    DAGSTER_HOME="$(pwd)/.dagster_home"
+
+    export DAGSTER_HOME
+
+    uv run dagster dev -m aemo_gas --verbose
+)

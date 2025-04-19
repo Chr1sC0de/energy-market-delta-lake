@@ -1,5 +1,5 @@
-import datetime as dt
 from typing import Any
+from collections.abc import Callable
 
 import dagster as dg
 import polars as pl
@@ -10,9 +10,7 @@ from types_boto3_s3 import S3Client
 
 from aemo_gas import utils
 from aemo_gas.configurations import BRONZE_AEMO_GAS_DIRECTORY, LANDING_BUCKET
-from aemo_gas.vichub.assets import downloaded_files_metadata
-
-metadata_table = f"{BRONZE_AEMO_GAS_DIRECTORY}/vichub/downloaded_files_metadata/"
+from aemo_gas.vichub import assets
 
 
 def delta_table(
@@ -25,97 +23,78 @@ def delta_table(
     bucket: str = LANDING_BUCKET,
     description: str | None = None,
     metadata: dict[str, Any] | None = None,
+    post_process_hook: Callable[[pl.LazyFrame], pl.LazyFrame] | None = None,
 ) -> dg.AssetsDefinition:
-    @dg.asset(
+    @dg.op(
+        name=f"{name}__get_s3_object_keys_from_prefix", ins={"start": dg.In(dg.Nothing)}
+    )
+    def get_s3_object_keys_from_prefix(
+        context: dg.OpExecutionContext,
+        s3_resource: S3Resource,
+        # downloaded_public_files: pl.LazyFrame,
+    ) -> list[str]:
+        context.log.info(f"getting object keys s3://{bucket}/{search_prefix}*")
+        s3_object_keys = utils.get_s3_object_keys_from_prefix(
+            s3_resource, bucket, prefix=search_prefix
+        )
+        context.log.info(f"finished getting object keys s3://{bucket}/{search_prefix}*")
+        return s3_object_keys
+
+    @dg.op(
+        name=f"{name}__get_dataframe",
+        out={
+            name: dg.Out(
+                pl.LazyFrame,
+                io_manager_key=io_manager_key,
+                metadata=metadata,
+            )
+        },
+    )
+    def get_dataframe(
+        context: dg.OpExecutionContext,
+        s3_resource: S3Resource,
+        s3_object_keys: list[str],
+    ):
+        context.log.info("combining asset keys into dataframe")
+        df = utils.get_parquet_from_keys_and_combine_to_dataframe(
+            context, s3_resource, s3_object_keys, schema, bucket
+        )
+        context.log.info("finished combining asset keys into dataframe")
+        if post_process_hook is not None:
+            context.log.info("applying post process hook to output df")
+            df = post_process_hook(df)
+            context.log.info("finished applying post process hook to output df")
+        context.log.info("finished combining asset keys into dataframe")
+        yield dg.Output(df, output_name=name)
+        context.log.info("performing cleanup")
+        s3_client = s3_resource.get_client()
+        for key in s3_object_keys:
+            context.log.info(f"removing s3://{bucket}/{key}")
+            response = s3_client.delete_object(Bucket=LANDING_BUCKET, Key=key)
+            context.log.info(
+                f"ran delete_object for s3://{bucket}/{key} with response \n {response}"
+            )
+
+        context.log.info("finished prforming cleanup")
+
+    @dg.graph_asset(
         group_name=group_name,
         key_prefix=key_prefix,
         name=name,
-        io_manager_key=io_manager_key,
         description=description,
-        metadata=metadata,
         kinds={"deltalake"},
-        deps=[downloaded_files_metadata.asset],
-    )
-    def _table(
-        context: dg.AssetExecutionContext, s3_resource: S3Resource
-    ) -> pl.LazyFrame:
-        s3_object_keys = utils.get_s3_object_keys_op_from_prefix(
-            s3_resource, bucket, search_prefix
-        )
-        return utils.get_parquet_from_keys_and_combine_to_dataframe_op(
-            context, s3_resource, s3_object_keys, schema, bucket
-        )
-
-    return _table
-
-
-def update_metadata(
-    table_definition: dg.AssetsDefinition,
-    group_name: str,
-    key_prefix: list[str],
-    name: str,
-    search_prefix: str,
-    bucket: str = LANDING_BUCKET,
-) -> dg.AssetsDefinition:
-    @dg.asset(
-        group_name=group_name,
-        key_prefix=key_prefix,
-        name="update_metadata_table",
-        automation_condition=dg.AutomationCondition.eager(),
-        description=f"update the processed datetime in the {metadata_table} for {name}",
-        deps=[table_definition],
-        kinds={"task"},
-    )
-    def _update_metadata(s3_resource: S3Resource):
-        s3_object_keys = utils.get_s3_object_keys_op_from_prefix(
-            s3_resource, bucket, search_prefix
-        )
-
-        delta_table = DeltaTable(metadata_table)
-
-        for target_file in [f"s3://{bucket}/{key}" for key in s3_object_keys]:
-            _ = delta_table.update(
-                predicate=f"target_file = '{target_file}'",
-                updates={
-                    "processed_datetime": dt.datetime.now().strftime(
-                        "TO_TIMESTAMP('%Y-%m-%d %H:%M:%S')"
-                    )
-                },
+        ins={
+            "downloaded_public_files": dg.AssetIn(
+                assets.bronze.mibb.downloaded_public_files.asset.key
             )
-
-    return _update_metadata
-
-
-def cleanup_files(
-    update_metadata_definition: dg.AssetsDefinition,
-    group_name: str,
-    key_prefix: list[str],
-    name: str,
-    search_prefix: str,
-    bucket: str = LANDING_BUCKET,
-) -> dg.AssetsDefinition:
-    @dg.asset(
-        group_name=group_name,
-        key_prefix=key_prefix,
-        name="cleanup_files",
-        automation_condition=dg.AutomationCondition.eager(),
-        description=f"cleanup residual files for {name}",
-        deps=[update_metadata_definition],
-        kinds={"task"},
+        },
     )
-    def _cleanup(context: dg.AssetExecutionContext, s3_resource: S3Resource):
-        s3_client: S3Client = s3_resource.get_client()
-        s3_object_keys = utils.get_s3_object_keys_op_from_prefix(
-            s3_resource, bucket, search_prefix
-        )
+    def asset(downloaded_public_files: pl.LazyFrame) -> pl.LazyFrame:
+        s3_ojbect_keys = get_s3_object_keys_from_prefix(start=downloaded_public_files)
+        df = get_dataframe(s3_ojbect_keys)
+        return df
 
-        for key in s3_object_keys:
-            _ = s3_client.delete_object(Bucket=LANDING_BUCKET, Key=key)
-        context.add_asset_metadata(
-            {"removed_files": [f"{LANDING_BUCKET}/{k}" for k in s3_object_keys]}
-        )
-
-    return _cleanup
+    return asset
 
 
 def compact_and_vacuum(
@@ -128,7 +107,7 @@ def compact_and_vacuum(
     @dg.asset(
         group_name=group_name,
         key_prefix=key_prefix,
-        name="compact_and_vacuum",
+        name=f"{table_name}_compact_and_vacuum",
         description=f"compact and vacuum for {table_name}",
         deps=[table_definition],
         kinds={"task"},

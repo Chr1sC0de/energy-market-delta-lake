@@ -1,6 +1,9 @@
 from . import config
 from . import mibb
 
-all = [*mibb.all]
+definitions = [
+    mibb.downloaded_public_files.definition,
+    *[mibb.factory(**c) for c in config.all],
+]
 
 __all__ = ["config", "mibb"]

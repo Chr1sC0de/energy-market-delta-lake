@@ -1,20 +1,37 @@
+import polars as pl
 from aemo_gas import utils
+
+
+def post_process_hook(df: pl.LazyFrame) -> pl.LazyFrame:
+    return (
+        df.filter(
+            (
+                pl.col("current_date").str.strptime(pl.Datetime, "%d %b %Y %H:%M:%S")
+                == pl.col("current_date")
+                .str.strptime(pl.Datetime, "%d %b %Y %H:%M:%S")
+                .max()
+            ).over("system_wide_notice_id")
+        )
+        .collect()
+        .lazy()
+    )
+
 
 config = dict(
     group_name="BRONZE__AEMO__GAS__VICHUB",
     key_prefix=["bronze", "aemo", "gas", "vichub"],
     name="int029a_system_wide_notices",
     schema=dict(
-        system_wide_notice_id=int,
-        critical_notice_flag=str,
-        system_message=str,
-        system_email_message=str,
-        notice_start_date=str,
-        notice_end_date=str,
-        url_path=str,
-        current_date=str,
+        system_wide_notice_id=pl.Int64,
+        critical_notice_flag=pl.String,
+        system_message=pl.String,
+        system_email_message=pl.String,
+        notice_start_date=pl.String,
+        notice_end_date=pl.String,
+        url_path=pl.String,
+        current_date=pl.String,
     ),
-    search_prefix="int029a",
+    search_prefix="int029a_",
     io_manager_key="bronze_aemo_gas_upsert_io_manager",
     description=utils.join_by_newlines(
         "This report is a comma separated values (csv) file that contains details of public system-wide notices published by AEMO to",
@@ -29,10 +46,7 @@ config = dict(
         ),
     },
     # schedules are in utc
-    cron_schedule="00 23 * * *",
+    compact_and_vacuum_cron_schedule="00 23 * * *",
     execution_timezone="Australia/Melbourne",
-    job_tags={
-        "ecs/cpu": "1024",
-        "ecs/memory": "8192",
-    },
+    post_process_hook=post_process_hook,
 )

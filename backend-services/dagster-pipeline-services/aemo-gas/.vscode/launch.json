@@ -1,0 +1,16 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: Dagster AEMO Gas",
+      "type": "python",
+      "request": "launch",
+      "module": "dagster",
+      "justMyCode": false,
+      "args": ["dev", "-m", "aemo_gas"],
+      "env": {
+        "DAGSTER_HOME": "${workspaceFolder}/.dagster_home"
+      }
+    }
+  ]
+}

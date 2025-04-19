@@ -40,3 +40,11 @@ if DEVELOPMENT_LOCATION == "local":
 
     # ── use the bellow code when using dynamo db ────────────────────────────────────
     os.environ["AWS_S3_LOCKING_PROVIDER"] = "dynamodb"
+
+    """ create a test locking table with the bellow code
+    aws dynamodb create-table \
+    --table-name delta_log \
+    --attribute-definitions AttributeName=tablePath,AttributeType=S AttributeName=fileName,AttributeType=S \
+    --key-schema AttributeName=tablePath,KeyType=HASH AttributeName=fileName,KeyType=RANGE \
+    --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5
+    """
