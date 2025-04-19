@@ -107,7 +107,7 @@ def compact_and_vacuum(
     @dg.asset(
         group_name=group_name,
         key_prefix=key_prefix,
-        name=f"{table_name}_compact_and_vacuum",
+        name="compact_and_vacuum",
         description=f"compact and vacuum for {table_name}",
         deps=[table_definition],
         kinds={"task"},
