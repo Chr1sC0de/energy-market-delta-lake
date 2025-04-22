@@ -334,19 +334,19 @@ def aemo_gas_vichub_final_passthrough(
     output_df: pl.LazyFrame,
 ) -> pl.LazyFrame:
     context.log.info(
-        f"adding preview: {BRONZE_AEMO_GAS_DIRECTORY}/vichub/bronze_aemo_gas_deltalake_upsert_io_manager"
+        f"adding preview: {BRONZE_AEMO_GAS_DIRECTORY}/vichub/downloaded_public_files"
     )
 
     metadata = {}
 
     df_preview = utils.get_table(
-        f"{BRONZE_AEMO_GAS_DIRECTORY}/vichub/bronze_aemo_gas_deltalake_upsert_io_manager"
+        f"{BRONZE_AEMO_GAS_DIRECTORY}/vichub/downloaded_public_files"
     )
 
     if df_preview is None:
         df_preview = output_df
         context.log.info(
-            f"{BRONZE_AEMO_GAS_DIRECTORY}/vichub/bronze_aemo_gas_deltalake_upsert_io_manager not found, previewing using upserted rows"
+            f"{BRONZE_AEMO_GAS_DIRECTORY}/vichub/downloaded_public_files not found, previewing using upserted rows"
         )
 
     metadata["preview"] = dg.MetadataValue.md(
