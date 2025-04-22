@@ -1,6 +1,7 @@
 import dagster as dg
 import polars as pl
 from dagster_aws.s3 import S3Resource
+from deltalake.exceptions import TableNotFoundError
 from types_boto3_s3.client import S3Client
 
 
@@ -8,15 +9,24 @@ def join_by_newlines(*args: str) -> str:
     return "\n".join(args)
 
 
+def get_table(table_path: str) -> pl.LazyFrame | None:
+    try:
+        df = pl.read_delta(table_path, use_pyarrow=True).lazy()
+    except TableNotFoundError:
+        df = None
+    return df
+
+
 def get_s3_object_keys_from_prefix(
     s3_resource: S3Resource,
     bucket: str,
+    schema: str,
     prefix: str,
 ) -> list[str]:
     s3_client: S3Client = s3_resource.get_client()
     paginator = s3_client.get_paginator("list_objects_v2")
     s3_objects = []
-    for page in paginator.paginate(Bucket=bucket, Prefix="aemo/gas/vichub/"):
+    for page in paginator.paginate(Bucket=bucket, Prefix=f"aemo/gas/{schema}/"):
         if "Contents" in page:
             s3_objects.extend(
                 [

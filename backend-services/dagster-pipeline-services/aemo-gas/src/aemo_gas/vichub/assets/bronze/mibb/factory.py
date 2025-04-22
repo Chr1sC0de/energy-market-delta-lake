@@ -1,6 +1,5 @@
-from typing import Any
-from typing import Iterable
 from collections.abc import Callable
+from typing import Any
 
 import dagster as dg
 import polars as pl
@@ -33,11 +32,18 @@ def delta_table(
         s3_resource: S3Resource,
         # downloaded_public_files: pl.LazyFrame,
     ) -> list[str]:
-        context.log.info(f"getting object keys s3://{bucket}/{search_prefix}*")
-        s3_object_keys = utils.get_s3_object_keys_from_prefix(
-            s3_resource, bucket, prefix=search_prefix
+        context.log.info(
+            f"getting object keys s3://{bucket}/aemo/gas/{key_prefix[-1]}/{search_prefix}*"
         )
-        context.log.info(f"finished getting object keys s3://{bucket}/{search_prefix}*")
+        s3_object_keys = utils.get_s3_object_keys_from_prefix(
+            s3_resource=s3_resource,
+            bucket=bucket,
+            schema=key_prefix[-1],
+            prefix=search_prefix,
+        )
+        context.log.info(
+            f"finished getting object keys s3://{bucket}/aemo/gas/{key_prefix[-1]}/{search_prefix}*"
+        )
         return s3_object_keys
 
     @dg.op(
@@ -64,8 +70,33 @@ def delta_table(
             context.log.info("applying post process hook to output df")
             df = post_process_hook(df)
             context.log.info("finished applying post process hook to output df")
+
         context.log.info("finished combining asset keys into dataframe")
-        yield dg.Output(df, output_name=name)
+
+        metadata: dict[str, dg.MetadataValue] = {}
+
+        context.log.info(
+            f"adding preview: {BRONZE_AEMO_GAS_DIRECTORY}/{key_prefix[-1]}/{name}"
+        )
+
+        df_preview = utils.get_table(
+            f"{BRONZE_AEMO_GAS_DIRECTORY}/{key_prefix[-1]}/{name}"
+        )
+
+        if df_preview is None:
+            df_preview = df
+            context.log.info(
+                f"{BRONZE_AEMO_GAS_DIRECTORY}/{key_prefix[-1]}/{name} not found, using upserted rows"
+            )
+
+        metadata["preview"] = dg.MetadataValue.md(
+            df_preview.head().collect().to_pandas().to_markdown()
+        )
+
+        # context.add_output_metadata(metadata)
+
+        yield dg.Output(df, output_name=name, metadata=metadata)
+
         context.log.info("performing cleanup")
         s3_client = s3_resource.get_client()
         for key in s3_object_keys:

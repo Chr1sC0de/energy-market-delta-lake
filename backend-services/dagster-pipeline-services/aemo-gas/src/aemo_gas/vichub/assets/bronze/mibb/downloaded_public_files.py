@@ -14,7 +14,7 @@ from dagster_aws.s3 import S3Resource
 from types_boto3_s3.client import S3Client
 
 from aemo_gas.configurations import BRONZE_AEMO_GAS_DIRECTORY, LANDING_BUCKET
-from aemo_gas.utils import join_by_newlines
+from aemo_gas import utils
 from aemo_gas.vichub import ops
 
 schema = dict(
@@ -233,13 +233,6 @@ def aemo_gas_vichub_combine_to_dataframe_op(
         schema=schema,
     )
 
-    metadata: dict[str, dg.MetadataValue] = {}
-
-    markdown_table = output.collect().to_pandas().to_markdown()
-
-    if markdown_table is not None:
-        metadata["upserted rows"] = dg.MetadataValue.md(markdown_table)
-
     context.log.info("finished combining links into dataframe")
 
     return output
@@ -328,7 +321,7 @@ def aemo_gas_vichub_process_unzip_op(
     out=dg.Out(
         io_manager_key="bronze_aemo_gas_deltalake_upsert_io_manager",
         metadata={
-            "merge_predicate": join_by_newlines(
+            "merge_predicate": utils.join_by_newlines(
                 "s.source_file = t.source_file",
                 "and s.target_file = t.target_file",
             ),
@@ -337,8 +330,30 @@ def aemo_gas_vichub_process_unzip_op(
     ),
 )
 def aemo_gas_vichub_final_passthrough(
+    context: dg.AssetExecutionContext,
     output_df: pl.LazyFrame,
 ) -> pl.LazyFrame:
+    context.log.info(
+        f"adding preview: {BRONZE_AEMO_GAS_DIRECTORY}/vichub/bronze_aemo_gas_deltalake_upsert_io_manager"
+    )
+
+    metadata = {}
+
+    df_preview = utils.get_table(
+        f"{BRONZE_AEMO_GAS_DIRECTORY}/vichub/bronze_aemo_gas_deltalake_upsert_io_manager"
+    )
+
+    if df_preview is None:
+        df_preview = output_df
+        context.log.info(
+            f"{BRONZE_AEMO_GAS_DIRECTORY}/vichub/bronze_aemo_gas_deltalake_upsert_io_manager not found, previewing using upserted rows"
+        )
+
+    metadata["preview"] = dg.MetadataValue.md(
+        df_preview.head().collect().to_pandas().to_markdown()
+    )
+
+    context.add_output_metadata(metadata)
     return output_df
 
 
@@ -384,4 +399,6 @@ def asset() -> pl.LazyFrame:
     # combine the links into a dataframe
     df = aemo_gas_vichub_combine_to_dataframe_op(processed_links)
 
-    return aemo_gas_vichub_final_passthrough(df, start=unzipped_files)
+    output_df = aemo_gas_vichub_final_passthrough(df, start=unzipped_files)
+
+    return output_df

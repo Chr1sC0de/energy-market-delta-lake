@@ -8,7 +8,7 @@ from configurations.parameters import (
 LANDING_BUCKET = f"{DEVELOPMENT_ENVIRONMENT}-landing-{NAME_PREFIX}"
 BRONZE_BUCKET = f"{DEVELOPMENT_ENVIRONMENT}-bronze-{NAME_PREFIX}"
 
-BRONZE_AEMO_GAS_DIRECTORY = f"S3://{BRONZE_BUCKET}/aemo/gas"
+BRONZE_AEMO_GAS_DIRECTORY = f"s3://{BRONZE_BUCKET}/aemo/gas"
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │        the bottom code is only executed locally (which is when we should be in         │
