@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import Any, TypedDict
+from typing import Any, TypedDict, NotRequired
 
 import dagster as dg
 import polars as pl
@@ -9,15 +9,17 @@ class MibbFactoryKwargs(TypedDict):
     group_name: str
     key_prefix: list[str]
     name: str
-    schema: dict[str, type]
+    schema: dict[str, Any]
     search_prefix: str
     io_manager_key: str
-    bucket: str
-    description: str | None
-    metadata: dict[str, Any] | None
-    retention_hours: int
-    compact_and_vacuum_cron_schedule: str | None
-    execution_timezone: str
-    check_factories: list[Callable[[dg.AssetsDefinition], dg.AssetChecksDefinition]]
-    job_tags: dict[str, Any] | None
-    post_process_hook: Callable[[pl.LazyFrame], pl.LazyFrame] | None
+    bucket: NotRequired[str]
+    description: NotRequired[str]
+    metadata: NotRequired[dict[str, Any]]
+    retention_hours: NotRequired[int]
+    compact_and_vacuum_cron_schedule: NotRequired[str]
+    execution_timezone: NotRequired[str]
+    check_factories: NotRequired[
+        list[Callable[[dg.AssetsDefinition], dg.AssetChecksDefinition]]
+    ]
+    job_tags: NotRequired[dict[str, Any]]
+    post_process_hook: NotRequired[Callable[[pl.LazyFrame], pl.LazyFrame]]

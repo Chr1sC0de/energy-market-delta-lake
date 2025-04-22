@@ -1,4 +1,5 @@
 from typing import Any
+from typing import Iterable
 from collections.abc import Callable
 
 import dagster as dg
@@ -6,7 +7,6 @@ import polars as pl
 from dagster_aws.s3 import S3Resource
 from deltalake import DeltaTable
 from deltalake.exceptions import TableNotFoundError
-from types_boto3_s3 import S3Client
 
 from aemo_gas import utils
 from aemo_gas.configurations import BRONZE_AEMO_GAS_DIRECTORY, LANDING_BUCKET
@@ -103,6 +103,7 @@ def compact_and_vacuum(
     key_prefix: list[str],
     table_name: str,
     retention_hours: int = 0,
+    automation_condition: dg.AutomationCondition[Any] | None = None,
 ):
     @dg.asset(
         group_name=group_name,
@@ -111,6 +112,7 @@ def compact_and_vacuum(
         description=f"compact and vacuum for {table_name}",
         deps=[table_definition],
         kinds={"task"},
+        automation_condition=automation_condition,
     )
     def _compact_and_vacuum(context: dg.AssetExecutionContext):
         delta_table_path = f"{BRONZE_AEMO_GAS_DIRECTORY}/{'/'.join(key_prefix[-2:])}"
@@ -122,6 +124,7 @@ def compact_and_vacuum(
         except TableNotFoundError:
             context.log.info(f"table not found {delta_table_path}")
             raise
+
         metadata = {}
 
         compacted_response = delta_table.optimize.compact()

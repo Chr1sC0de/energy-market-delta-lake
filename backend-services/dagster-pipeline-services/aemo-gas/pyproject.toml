@@ -20,7 +20,9 @@ dependencies = [
     "dagster-webserver>=1.10.11",
     "pandas>=2.2.3",
     "polars>=1.27.1",
+    "pymupdf>=1.25.5",
     "requests>=2.32.3",
+    "s3fs>=0.4.2",
     "types-boto3[s3]>=1.37.37",
 ]
 

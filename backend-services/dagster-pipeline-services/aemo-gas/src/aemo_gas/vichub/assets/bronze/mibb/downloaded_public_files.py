@@ -326,7 +326,7 @@ def aemo_gas_vichub_process_unzip_op(
         "start": dg.In(dg.Nothing),
     },
     out=dg.Out(
-        io_manager_key="bronze_aemo_gas_upsert_io_manager",
+        io_manager_key="bronze_aemo_gas_deltalake_upsert_io_manager",
         metadata={
             "merge_predicate": join_by_newlines(
                 "s.source_file = t.source_file",

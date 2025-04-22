@@ -30,6 +30,9 @@ def factory(
     job_tags: dict[str, Any] | None = None,
     post_process_hook: Callable[[pl.LazyFrame], pl.LazyFrame] | None = None,
 ) -> dg.Definitions:
+    #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+    #     │                                 create the delta table                                 │
+    #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
     delta_table = assets.bronze.mibb.factory.delta_table(
         group_name=group_name,
         key_prefix=key_prefix,
@@ -42,6 +45,9 @@ def factory(
         metadata=metadata,
         post_process_hook=post_process_hook,
     )
+    #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+    #     │                     create the compact and vacuum optimization job                     │
+    #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
     compact_and_vacuum = assets.bronze.mibb.factory.compact_and_vacuum(
         table_definition=delta_table,
         group_name=f"{group_name}__OPTIMIZATION",
@@ -49,20 +55,22 @@ def factory(
         table_name=name,
         retention_hours=retention_hours,
     )
-
+    #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+    #     │                 create asset jobs for bot the etl and the optimization                 │
+    #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
     asset_job = dg.define_asset_job(
         name=f"aemo_gas_vichub_bronze_{name}_etl_job",
         selection=f"key:{'/'.join(key_prefix)}/{name}",
         tags=job_tags,
     )
-
     compact_and_vacuum_job = dg.define_asset_job(
         name=f"aemo_gas_vichub_bronze_{name}_compact_and_vacuum",
         selection=f"key:{'/'.join(key_prefix)}/{name}/compact_and_vacuum",
     )
-
+    #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+    #     │                  create the schedules for the compact and vacuum job                   │
+    #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
     schedules = []
-
     if compact_and_vacuum_cron_schedule is not None:
         compact_and_vacuum_schedule = dg.ScheduleDefinition(
             job=compact_and_vacuum_job,
@@ -76,6 +84,9 @@ def factory(
         )
         schedules.append(compact_and_vacuum_schedule)
 
+    #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+    #     │    create an s3 sensor which triggers the job whenever a relevant file is uploaded     │
+    #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
     @dg.sensor(
         name=f"aemo_gas_vichub_bronze_{name}_s3_sensor",
         job=asset_job,
@@ -117,12 +128,16 @@ def factory(
         else:
             yield dg.SkipReason("Run already in process")
 
+    #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+    #     │                              compile all the asset checks                              │
+    #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
     asset_checks = []
-
     if check_factories is not None:
         for factory in check_factories:
             asset_checks.append(factory(delta_table))
-
+    #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+    #     │                               output the job definition                                │
+    #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
     return dg.Definitions(
         assets=[delta_table, compact_and_vacuum],
         jobs=[asset_job, compact_and_vacuum_job],

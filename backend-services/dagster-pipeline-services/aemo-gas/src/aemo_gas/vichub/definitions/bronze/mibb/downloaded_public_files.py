@@ -16,7 +16,7 @@ compact_and_vacuum_asset = assets.bronze.mibb.factory.compact_and_vacuum(
     group_name="BRONZE__AEMO__GAS__VICHUB__OPTIMIZATION",
     key_prefix=["bronze", "aemo", "gas", "vichub", "downloaded_public_files"],
     table_name="downloaded_public_files",
-    retention_hours=0,
+    retention_hours=7 * 24,
 )
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
