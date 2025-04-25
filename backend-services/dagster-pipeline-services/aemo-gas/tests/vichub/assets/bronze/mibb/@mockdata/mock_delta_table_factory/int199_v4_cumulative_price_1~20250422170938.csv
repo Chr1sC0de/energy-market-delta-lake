@@ -1,0 +1,6 @@
+transmission_id,gas_date,schedule_interval,cumulative_price,cpt_exceeded_flag,schedule_type_id,transmission_doc_id,approval_datetime,current_date
+269344,22 Apr 2025,4,393.2462,N,OS,334284,22 Apr 2025 17:08:08,22 Apr 2025 17:09:38
+269340,22 Apr 2025,3,394.4942,N,OS,334280,22 Apr 2025 13:04:47,22 Apr 2025 17:09:38
+269336,22 Apr 2025,2,395.6128,N,OS,334276,22 Apr 2025 09:04:38,22 Apr 2025 17:09:38
+269332,22 Apr 2025,1,396.6461,N,OS,334272,22 Apr 2025 05:04:33,22 Apr 2025 17:09:38
+269328,21 Apr 2025,5,396.9512,N,OS,334268,21 Apr 2025 21:04:01,22 Apr 2025 17:09:38

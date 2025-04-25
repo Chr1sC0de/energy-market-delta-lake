@@ -31,7 +31,7 @@ def process_extracted_table(table_contents: list[list[str]]) -> pl.LazyFrame:
     key_prefix=["bronze", "aemo", "gas", "vichub"],
     name="mibb_report_list",
     description="Grab the mibb report list from the following User Guide to MIBB Reports Document found here: https://aemo.com.au/energy-systems/gas/declared-wholesale-gas-market-dwgm/procedures-policies-and-guides",
-    kinds={"deltalake"},
+    kinds={"parquet", "table"},
     io_manager_key="bronze_aemo_gas_simple_polars_parquet_io_manager",
     automation_condition=dg.AutomationCondition.missing()
     & ~dg.AutomationCondition.in_progress(),

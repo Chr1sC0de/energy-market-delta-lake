@@ -1,7 +1,8 @@
 import polars as pl
 from aemo_gas import utils
-
-from aemo_gas.vichub.definitions.bronze.config.schema import MibbFactoryKwargs
+from aemo_gas.vichub.definitions.bronze.config.schemas import (
+    MibbDeltaTableDefinitionFactoryConfig,
+)
 
 
 def post_process_hook(df: pl.LazyFrame) -> pl.LazyFrame:
@@ -19,11 +20,14 @@ def post_process_hook(df: pl.LazyFrame) -> pl.LazyFrame:
     )
 
 
-config: MibbFactoryKwargs = {
-    "group_name": "BRONZE__AEMO__GAS__VICHUB",
-    "key_prefix": ["bronze", "aemo", "gas", "vichub"],
-    "name": "int029a_system_wide_notices",
-    "schema": {
+config = MibbDeltaTableDefinitionFactoryConfig(
+    group_name="BRONZE__AEMO__GAS__VICHUB",
+    key_prefix=["bronze", "aemo", "gas", "vichub"],
+    source_s3_prefix="aemo/gas/vichub",
+    source_s3_glob="int029a_*",
+    target_s3_prefix="aemo/gas/vichub",
+    target_s3_name="int029a_system_wide_notices",
+    df_schema={
         "system_wide_notice_id": pl.Int64,
         "critical_notice_flag": pl.String,
         "system_message": pl.String,
@@ -33,23 +37,22 @@ config: MibbFactoryKwargs = {
         "url_path": pl.String,
         "current_date": pl.String,
     },
-    "search_prefix": "int029a_",
-    "io_manager_key": "bronze_aemo_gas_deltalake_upsert_io_manager",
-    "description": utils.join_by_newlines(
+    io_manager_key="bronze_aemo_gas_deltalake_upsert_io_manager",
+    description=utils.join_by_newlines(
         "This report is a comma separated values (csv) file that contains details of public system-wide notices published by AEMO to",
         "the MIBB. This report allows AEMO to provide consistent information (in content and timing) to the public about the market",
         "operation. The same content is published in INT029a as a downloadable csv file, while report INT105 is an HTML file that can",
         "be viewed in a web browser",
         "Similar reports titled INT029b and INT106 are published directly to specific Registered Participants on the MIBB.",
     ),
-    "metadata": {
+    metadata={
         "merge_predicate": utils.join_by_newlines(
             "s.system_wide_notice_id = t.system_wide_notice_id",
         ),
     },
-    "retention_hours": 7 * 24,
+    retention_hours=7 * 24,
     # schedules are in utc
-    "compact_and_vacuum_cron_schedule": "00 23 * * *",
-    "execution_timezone": "Australia/Melbourne",
-    "post_process_hook": post_process_hook,
-}
+    compact_and_vacuum_cron_schedule="00 23 * * *",
+    execution_timezone="Australia/Melbourne",
+    post_process_hook=post_process_hook,
+)

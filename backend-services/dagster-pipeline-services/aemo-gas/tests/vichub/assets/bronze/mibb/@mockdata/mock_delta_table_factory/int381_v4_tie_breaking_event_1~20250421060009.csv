@@ -1,0 +1,6 @@
+gas_date,schedule_interval,transmission_id,mirn,tie_breaking_event,cc_bids,non_cc_bids,part_cc_bids,gas_not_scheduled,current_date
+20 Apr 2025,1,269295,30000001PC,0,0,0,0,0.0,21 Apr 2025 06:00:09
+20 Apr 2025,1,269295,30000101PC,0,0,0,0,0.0,21 Apr 2025 06:00:09
+20 Apr 2025,1,269295,20000001PC,0,0,0,0,0.0,21 Apr 2025 06:00:09
+20 Apr 2025,1,269295,20000002PC,0,0,0,0,0.0,21 Apr 2025 06:00:09
+20 Apr 2025,1,269295,30000154PC,0,0,0,0,0.0,21 Apr 2025 06:00:09

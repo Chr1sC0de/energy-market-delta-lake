@@ -1,0 +1,6 @@
+dfs_version,gas_date,last_update_datetime,previous_day_min,max,overnight_min,average_wind_speed,sunshine,effective_temperature,dfs_edd,total_demand_forecast,current_date
+100132,15 Apr 2025,14 Apr 2025 14:42:37,,,,,,20.5,0.0,282139,21 Apr 2025 13:03:53
+100133,14 Apr 2025,14 Apr 2025 17:00:39,,,,,,18.8,0.0,292511,21 Apr 2025 13:03:53
+100135,14 Apr 2025,14 Apr 2025 20:15:02,,,,,,18.8,0.0,287848,21 Apr 2025 13:03:53
+100136,15 Apr 2025,14 Apr 2025 21:35:17,,,,,,21.5,0.0,280560,21 Apr 2025 13:03:53
+100137,15 Apr 2025,15 Apr 2025 04:38:39,,,,,,20.8,0.0,280110,21 Apr 2025 13:03:53

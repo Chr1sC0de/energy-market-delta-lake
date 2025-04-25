@@ -1,0 +1,6 @@
+mirn,gas_date,ti,quality_type,unit,quantity,meter_no,site_company,current_date
+20000001PC,22 Apr 2025,10,Carbon Dioxide,MOLE%,2.617,M126,Culcairn Injection,22 Apr 2025 18:00:03
+20000001PC,22 Apr 2025,11,Carbon Dioxide,MOLE%,2.557,M126,Culcairn Injection,22 Apr 2025 18:00:03
+20000001PC,22 Apr 2025,11,Ethane,MOLE%,5.734,M126,Culcairn Injection,22 Apr 2025 18:00:03
+20000001PC,22 Apr 2025,10,Ethane,MOLE%,5.819,M126,Culcairn Injection,22 Apr 2025 18:00:03
+20000001PC,22 Apr 2025,11,Heating Value,MJ/m3,38.663,M126,Culcairn Injection,22 Apr 2025 18:00:03

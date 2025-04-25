@@ -2,93 +2,72 @@ from collections.abc import Callable
 from typing import Any
 
 import dagster as dg
-import polars as pl
 from dagster_aws.s3 import S3Resource
 
 from aemo_gas import utils
-from aemo_gas.configurations import LANDING_BUCKET
 from aemo_gas.vichub import assets
+from aemo_gas.vichub.definitions.bronze.config.schemas import (
+    MibbDeltaTableDefinitionFactoryConfig,
+)
 from configurations.parameters import DEVELOPMENT_LOCATION
 
 
-def factory(
-    *,
-    group_name: str,
-    key_prefix: list[str],
-    name: str,
-    schema: dict[str, type],
-    search_prefix: str,
-    io_manager_key: str,
-    bucket: str = LANDING_BUCKET,
-    description: str | None = None,
-    metadata: dict[str, Any] | None = None,
-    retention_hours: int = 0,
-    compact_and_vacuum_cron_schedule: str | None = None,
-    execution_timezone: str = "Australia/Melbourne",
-    check_factories: list[Callable[[dg.AssetsDefinition], dg.AssetChecksDefinition]]
-    | None = None,
-    job_tags: dict[str, Any] | None = None,
-    post_process_hook: Callable[[pl.LazyFrame], pl.LazyFrame] | None = None,
-) -> dg.Definitions:
+def factory(config: MibbDeltaTableDefinitionFactoryConfig) -> dg.Definitions:
     #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
     #     │                                 create the delta table                                 │
     #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
-    delta_table = assets.bronze.mibb.factory.delta_table(
-        group_name=group_name,
-        key_prefix=key_prefix,
-        name=name,
-        schema=schema,
-        search_prefix=search_prefix,
-        io_manager_key=io_manager_key,
-        bucket=bucket,
-        description=description,
-        metadata=metadata,
-        post_process_hook=post_process_hook,
-    )
+
+    delta_table_asset = assets.bronze.mibb.factory.delta_table(config)
+
     #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
     #     │                     create the compact and vacuum optimization job                     │
     #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
-    compact_and_vacuum = assets.bronze.mibb.factory.compact_and_vacuum(
-        table_definition=delta_table,
-        group_name=f"{group_name}__OPTIMIZATION",
-        key_prefix=key_prefix + [name],
-        table_name=name,
-        retention_hours=retention_hours,
+
+    compact_and_vacuum_asset = assets.bronze.mibb.factory.compact_and_vacuum(
+        table_definition=delta_table_asset,
+        group_name=f"{config.group_name}__OPTIMIZATION",
+        key_prefix=config.key_prefix + [config.target_s3_name],
+        table_name=config.target_s3_name,
+        retention_hours=config.retention_hours,
     )
+
     #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
     #     │                 create asset jobs for bot the etl and the optimization                 │
     #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
+
     asset_job = dg.define_asset_job(
-        name=f"aemo_gas_vichub_bronze_{name}_etl_job",
-        selection=f"key:{'/'.join(key_prefix)}/{name}",
-        tags=job_tags,
+        name=f"aemo_gas_vichub_bronze_{config.target_s3_name}_etl_job",
+        selection=[delta_table_asset],
+        tags=config.job_tags,
     )
     compact_and_vacuum_job = dg.define_asset_job(
-        name=f"aemo_gas_vichub_bronze_{name}_compact_and_vacuum",
-        selection=f"key:{'/'.join(key_prefix)}/{name}/compact_and_vacuum",
+        name=f"aemo_gas_vichub_bronze_{config.target_s3_name}_compact_and_vacuum",
+        selection=[compact_and_vacuum_asset],
     )
+
     #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
     #     │                  create the schedules for the compact and vacuum job                   │
     #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
     schedules = []
-    if compact_and_vacuum_cron_schedule is not None:
+    if config.compact_and_vacuum_cron_schedule is not None:
         compact_and_vacuum_schedule = dg.ScheduleDefinition(
             job=compact_and_vacuum_job,
-            cron_schedule=compact_and_vacuum_cron_schedule,
+            cron_schedule=config.compact_and_vacuum_cron_schedule,
             default_status=(
                 dg.DefaultScheduleStatus.STOPPED
                 if DEVELOPMENT_LOCATION == "local"
                 else dg.DefaultScheduleStatus.RUNNING
             ),
-            execution_timezone=execution_timezone,
+            execution_timezone=config.execution_timezone,
         )
         schedules.append(compact_and_vacuum_schedule)
 
     #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
     #     │    create an s3 sensor which triggers the job whenever a relevant file is uploaded     │
     #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
+
     @dg.sensor(
-        name=f"aemo_gas_vichub_bronze_{name}_s3_sensor",
+        name=f"aemo_gas_vichub_bronze_{config.target_s3_name}_s3_sensor",
         job=asset_job,
         minimum_interval_seconds=30,
         default_status=(
@@ -101,7 +80,7 @@ def factory(
         # Find runs of the same job that are currently running
         run_records = context.instance.get_run_records(
             dg.RunsFilter(
-                job_name=f"aemo_gas_vichub_bronze_{name}_etl_job",
+                job_name=f"aemo_gas_vichub_bronze_{config.target_s3_name}_etl_job",
                 statuses=[
                     dg.DagsterRunStatus.QUEUED,
                     dg.DagsterRunStatus.NOT_STARTED,
@@ -118,8 +97,11 @@ def factory(
             )
             is not None
         ):
-            s3_object_keys = utils.get_s3_object_keys_from_prefix(
-                s3_resource, bucket, search_prefix
+            s3_object_keys = utils.get_s3_object_keys_from_prefix_and_name_glob(
+                s3_resource,
+                config.source_bucket,
+                config.source_s3_prefix,
+                config.source_s3_glob,
             )
             if len(s3_object_keys) > 0:
                 yield dg.RunRequest()
@@ -131,15 +113,18 @@ def factory(
     #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
     #     │                              compile all the asset checks                              │
     #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
+
     asset_checks = []
-    if check_factories is not None:
-        for factory in check_factories:
-            asset_checks.append(factory(delta_table))
+    if config.check_factories is not None:
+        for factory in config.check_factories:
+            asset_checks.append(factory(delta_table_asset))
+
     #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
     #     │                               output the job definition                                │
     #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
+
     return dg.Definitions(
-        assets=[delta_table, compact_and_vacuum],
+        assets=[delta_table_asset, compact_and_vacuum_asset],
         jobs=[asset_job, compact_and_vacuum_job],
         sensors=[sensor],
         asset_checks=asset_checks,

@@ -6,8 +6,12 @@
       "type": "python",
       "request": "launch",
       "module": "dagster",
-      "justMyCode": false,
-      "args": ["dev", "-m", "aemo_gas"],
+      "justMyCode": true,
+      "args": [
+        "dev",
+        "-m",
+        "aemo_gas"
+      ],
       "env": {
         "DAGSTER_HOME": "${workspaceFolder}/.dagster_home"
       }

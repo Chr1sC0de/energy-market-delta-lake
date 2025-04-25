@@ -13,7 +13,7 @@ from bs4.element import PageElement
 from dagster_aws.s3 import S3Resource
 from types_boto3_s3.client import S3Client
 
-from aemo_gas.configurations import BRONZE_AEMO_GAS_DIRECTORY, LANDING_BUCKET
+from aemo_gas.configurations import BRONZE_BUCKET, LANDING_BUCKET
 from aemo_gas import utils
 from aemo_gas.vichub import ops
 
@@ -40,15 +40,13 @@ class ProcessedLink:
     ingested_datetime: dt.datetime
 
 
-delta_table_path = f"{BRONZE_AEMO_GAS_DIRECTORY}/vichub/downloaded_public_files/"
-
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                               op to get all VicGas links                               │
 #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
 
 @dg.op(
-    name="aemo_gas_vichub_get_links",
+    name="get_links",
     description="extract all the links from https://www.nemweb.com.au/REPORTS/CURRENT/VicGas/",
 )
 def get_links_op(context: dg.OpExecutionContext) -> list[Link]:
@@ -107,6 +105,7 @@ def get_links_op(context: dg.OpExecutionContext) -> list[Link]:
         )
 
     context.log.info(f"finished getting links from the {vic_gas_folder}")
+
     return links
 
 
@@ -116,7 +115,7 @@ def get_links_op(context: dg.OpExecutionContext) -> list[Link]:
 
 
 @dg.op(out=dg.DynamicOut())
-def aemo_gas_vichub_create_dynamic_download_group_op(
+def create_dynamic_download_group_op(
     context: dg.OpExecutionContext,
     links: list[Link],
     current_downloaded_files_df: pl.LazyFrame | None,
@@ -161,8 +160,10 @@ def aemo_gas_vichub_create_dynamic_download_group_op(
         jitter=dg.Jitter.PLUS_MINUS,
     )
 )
-def aemo_gas_vichub_process_link_op(
-    context: dg.OpExecutionContext, link: Link, s3_resource: S3Resource
+def process_link_op(
+    context: dg.OpExecutionContext,
+    s3_resource: S3Resource,
+    link: Link,
 ) -> ProcessedLink | None:
     s3_client: S3Client = s3_resource.get_client()
 
@@ -174,12 +175,7 @@ def aemo_gas_vichub_process_link_op(
 
     context.log.info(f"finished downloading {link.href}")
 
-    if link.href.lower().endswith(".csv"):
-        buffer = BytesIO()
-        pl.read_csv(response.content, infer_schema_length=None).write_parquet(buffer)
-        link.target_filename = link.target_filename.lower().replace(".csv", ".parquet")
-    else:
-        buffer = BytesIO(response.content)
+    buffer = BytesIO(response.content)
 
     context.log.info(
         f"uploading {link.href} to s3://{LANDING_BUCKET}/aemo/gas/vichub/{link.target_filename}"
@@ -205,7 +201,7 @@ def aemo_gas_vichub_process_link_op(
 
 
 def _process_link_wrapper(link: Link) -> ProcessedLink | None:
-    processed: ProcessedLink | None = aemo_gas_vichub_process_link_op(link)
+    processed: ProcessedLink | None = process_link_op(link)
     return processed
 
 
@@ -215,7 +211,7 @@ def _process_link_wrapper(link: Link) -> ProcessedLink | None:
 
 
 @dg.op()
-def aemo_gas_vichub_combine_to_dataframe_op(
+def combine_to_dataframe_op(
     context: dg.OpExecutionContext, processed_links: list[ProcessedLink | None]
 ) -> pl.LazyFrame:
     context.log.info("combining links into dataframe")
@@ -247,7 +243,7 @@ def aemo_gas_vichub_combine_to_dataframe_op(
     out=dg.DynamicOut(),
     ins={"processed_links": dg.In(dg.Nothing)},
 )
-def aemo_gas_vichub_create_dynamic_process_uzip_op(
+def create_dynamic_process_uzip_op(
     context: dg.OpExecutionContext,
     s3_resource: S3Resource,
 ) -> Generator[dg.DynamicOutput[str]]:
@@ -283,30 +279,29 @@ def aemo_gas_vichub_create_dynamic_process_uzip_op(
         jitter=dg.Jitter.PLUS_MINUS,
     )
 )
-def aemo_gas_vichub_process_unzip_op(
+def process_unzip_op(
     context: dg.OpExecutionContext, s3_resource: S3Resource, key: str
-) -> str:
+) -> list[dict[str, str]]:
     context.log.info(f"processing zip file s3://{LANDING_BUCKET}/{key}")
     s3_client: S3Client = s3_resource.get_client()
     response = s3_client.get_object(Bucket=LANDING_BUCKET, Key=key)
     zip_io = io.BytesIO(response["Body"].read())
+    unzipped_files: list[dict[str, str]] = []
     context.log.info("extracting files and uploading to s3")
     with zipfile.ZipFile(zip_io) as f:
         for name in f.namelist():
-            data = f.read(name)
-            dataframe_buffer = io.BytesIO()
-            dataframe = pl.read_csv(data, infer_schema_length=None)
-            dataframe.write_parquet(dataframe_buffer)
-            write_key = f"aemo/gas/vichub/{name.split('.')[0]}.parquet"
-            _ = dataframe_buffer.seek(0)
-            s3_client.upload_fileobj(dataframe_buffer, LANDING_BUCKET, write_key)
+            write_key = f"aemo/gas/vichub/{name}"
+            s3_client.upload_fileobj(
+                io.BytesIO(f.read(name)), LANDING_BUCKET, write_key
+            )
+            unzipped_files.append({"Bucket": LANDING_BUCKET, "Key": write_key})
     context.log.info("finished extracting files and uploading to s3")
     context.log.info(f"deleting s3://{LANDING_BUCKET}/{key}")
     response = s3_client.delete_object(Bucket=LANDING_BUCKET, Key=key)
     context.log.info(
         f"finished deleting object s3://{LANDING_BUCKET}/{key} with response {response}"
     )
-    return key
+    return unzipped_files
 
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
@@ -329,24 +324,24 @@ def aemo_gas_vichub_process_unzip_op(
         },
     ),
 )
-def aemo_gas_vichub_final_passthrough(
+def final_passthrough(
     context: dg.AssetExecutionContext,
     output_df: pl.LazyFrame,
 ) -> pl.LazyFrame:
     context.log.info(
-        f"adding preview: {BRONZE_AEMO_GAS_DIRECTORY}/vichub/downloaded_public_files"
+        f"adding preview: s3://{BRONZE_BUCKET}/aemo/gas/vichub/downloaded_public_files"
     )
 
     metadata = {}
 
     df_preview = utils.get_table(
-        f"{BRONZE_AEMO_GAS_DIRECTORY}/vichub/downloaded_public_files"
+        f"s3://{BRONZE_BUCKET}/aemo/gas/vichub/downloaded_public_files"
     )
 
     if df_preview is None:
         df_preview = output_df
         context.log.info(
-            f"{BRONZE_AEMO_GAS_DIRECTORY}/vichub/downloaded_public_files not found, previewing using upserted rows"
+            f"s3://{BRONZE_BUCKET}/aemo/gas/vichub/downloaded_public_files not found, previewing using upserted rows"
         )
 
     metadata["preview"] = dg.MetadataValue.md(
@@ -367,38 +362,34 @@ def aemo_gas_vichub_final_passthrough(
     key_prefix=["bronze", "aemo", "gas", "vichub"],
     name="downloaded_public_files",
     description="Table listing public files downloaded from https://www.nemweb.com.au/REPORTS/CURRENT/VicGas/ and converted to parquet",
-    kinds={"deltalake", "source"},
+    kinds={"deltalake", "table", "source"},
 )
 def asset() -> pl.LazyFrame:
-    def unzip_wrapper(key: str) -> str:
-        return aemo_gas_vichub_process_unzip_op(key)
+    def unzip_wrapper(key: str) -> list[dict[str, str]]:
+        return process_unzip_op(key)
 
     links: list[Link] = get_links_op()
 
     # get the downloaded_public_files df
-    current_downloaded_public_files = ops.get_table_op.factory(
-        "aemo_vichub_gas_downloaded_public_files", delta_table_path
-    )()
+    current_downloaded_public_files = ops.tables.get_downloaded_public_files()
 
     # filter out the links using the current downloaded files and download them all in parallel
     processed_links = (
-        aemo_gas_vichub_create_dynamic_download_group_op(
-            links, current_downloaded_public_files
-        )
+        create_dynamic_download_group_op(links, current_downloaded_public_files)
         .map(_process_link_wrapper)
         .collect()
     )
 
     # unzip all the files which have been downloaded
     unzipped_files = (
-        aemo_gas_vichub_create_dynamic_process_uzip_op(processed_links=processed_links)
+        create_dynamic_process_uzip_op(processed_links=processed_links)
         .map(unzip_wrapper)
         .collect()
     )
 
     # combine the links into a dataframe
-    df = aemo_gas_vichub_combine_to_dataframe_op(processed_links)
+    df = combine_to_dataframe_op(processed_links)
 
-    output_df = aemo_gas_vichub_final_passthrough(df, start=unzipped_files)
+    output_df = final_passthrough(df, start=unzipped_files)
 
     return output_df

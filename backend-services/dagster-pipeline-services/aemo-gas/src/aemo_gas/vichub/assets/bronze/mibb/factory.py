@@ -1,128 +1,106 @@
-from collections.abc import Callable
-from typing import Any
+from typing import Any, Callable, override
 
 import dagster as dg
 import polars as pl
-from dagster_aws.s3 import S3Resource
 from deltalake import DeltaTable
 from deltalake.exceptions import TableNotFoundError
+from pydantic import BaseModel, ConfigDict
 
-from aemo_gas import utils
-from aemo_gas.configurations import BRONZE_AEMO_GAS_DIRECTORY, LANDING_BUCKET
+from aemo_gas import factory, utils
+from aemo_gas.configurations import BRONZE_BUCKET, LANDING_BUCKET
 from aemo_gas.vichub import assets
 
 
-def delta_table(
-    group_name: str,
-    key_prefix: list[str],
-    name: str,
-    schema: dict[str, type],
-    search_prefix: str,
-    io_manager_key: str,
-    bucket: str = LANDING_BUCKET,
-    description: str | None = None,
-    metadata: dict[str, Any] | None = None,
-    post_process_hook: Callable[[pl.LazyFrame], pl.LazyFrame] | None = None,
-) -> dg.AssetsDefinition:
-    @dg.op(
-        name=f"{name}__get_s3_object_keys_from_prefix", ins={"start": dg.In(dg.Nothing)}
-    )
-    def get_s3_object_keys_from_prefix(
+class PreviewBuilder(factory.ops.GetDataFrameFromSourceFilesMetaDataBuilderBase):
+    @override
+    def __call__(
+        self,
         context: dg.OpExecutionContext,
-        s3_resource: S3Resource,
-        # downloaded_public_files: pl.LazyFrame,
-    ) -> list[str]:
-        context.log.info(
-            f"getting object keys s3://{bucket}/aemo/gas/{key_prefix[-1]}/{search_prefix}*"
-        )
-        s3_object_keys = utils.get_s3_object_keys_from_prefix(
-            s3_resource=s3_resource,
-            bucket=bucket,
-            schema=key_prefix[-1],
-            prefix=search_prefix,
-        )
-        context.log.info(
-            f"finished getting object keys s3://{bucket}/aemo/gas/{key_prefix[-1]}/{search_prefix}*"
-        )
-        return s3_object_keys
-
-    @dg.op(
-        name=f"{name}__get_dataframe",
-        out={
-            name: dg.Out(
-                pl.LazyFrame,
-                io_manager_key=io_manager_key,
-                metadata=metadata,
-            )
-        },
-    )
-    def get_dataframe(
-        context: dg.OpExecutionContext,
-        s3_resource: S3Resource,
-        s3_object_keys: list[str],
-    ):
-        context.log.info("combining asset keys into dataframe")
-        df = utils.get_parquet_from_keys_and_combine_to_dataframe(
-            context, s3_resource, s3_object_keys, schema, bucket
-        )
-        context.log.info("finished combining asset keys into dataframe")
-        if post_process_hook is not None:
-            context.log.info("applying post process hook to output df")
-            df = post_process_hook(df)
-            context.log.info("finished applying post process hook to output df")
-
-        context.log.info("finished combining asset keys into dataframe")
-
+        current_df: pl.LazyFrame,
+        source_bucket: str,
+        target_bucket: str,
+        target_s3_prefix: str,
+        target_name: str,
+        df_schema: dict[str, pl.DataType],
+        op_metadata: dict[str, Any],
+    ) -> dict[str, dg.MetadataValue]:
         metadata: dict[str, dg.MetadataValue] = {}
-
-        context.log.info(
-            f"adding preview: {BRONZE_AEMO_GAS_DIRECTORY}/{key_prefix[-1]}/{name}"
+        # get a preview of the dataframe from the existing delta table
+        preview_delta_table_path = (
+            f"s3://{target_bucket}/{target_s3_prefix}/{target_name}"
         )
-
-        df_preview = utils.get_table(
-            f"{BRONZE_AEMO_GAS_DIRECTORY}/{key_prefix[-1]}/{name}"
-        )
+        context.log.info(f"adding preview: {preview_delta_table_path}")
+        df_preview = utils.get_table(preview_delta_table_path)
 
         if df_preview is None:
-            df_preview = df
+            df_preview = current_df
             context.log.info(
-                f"{BRONZE_AEMO_GAS_DIRECTORY}/{key_prefix[-1]}/{name} not found, using upserted rows"
+                f"{preview_delta_table_path} not found, previewing using upserted rows"
             )
 
         metadata["preview"] = dg.MetadataValue.md(
-            df_preview.head().collect().to_pandas().to_markdown()
+            df_preview.head()
+            .collect()
+            .to_pandas()
+            .to_markdown()  # use the pandas markdown, it's better than the polars markdown
         )
+        return metadata
 
-        # context.add_output_metadata(metadata)
 
-        yield dg.Output(df, output_name=name, metadata=metadata)
+class MibbDeltaTableAssetFactoryConfig(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)  # pyright: ignore[reportUnannotatedClassAttribute]
 
-        context.log.info("performing cleanup")
-        s3_client = s3_resource.get_client()
-        for key in s3_object_keys:
-            context.log.info(f"removing s3://{bucket}/{key}")
-            response = s3_client.delete_object(Bucket=LANDING_BUCKET, Key=key)
-            context.log.info(
-                f"ran delete_object for s3://{bucket}/{key} with response \n {response}"
-            )
+    io_manager_key: str
+    group_name: str
+    key_prefix: list[str]
 
-        context.log.info("finished prforming cleanup")
+    source_bucket: str = LANDING_BUCKET
+    source_s3_prefix: str
+    source_s3_glob: str
 
+    target_bucket: str = BRONZE_BUCKET
+    target_s3_prefix: str
+    target_s3_name: str
+
+    df_schema: dict[str, type[pl.DataType]]
+
+    description: str | None = None
+    metadata: dict[str, Any] | None = None
+
+    post_process_hook: Callable[[pl.LazyFrame], pl.LazyFrame] | None = None
+
+    metadata_builders: (
+        list[factory.ops.GetDataFrameFromSourceFilesMetaDataBuilderBase] | None
+    ) = [PreviewBuilder()]
+
+
+def delta_table(
+    config: MibbDeltaTableAssetFactoryConfig,
+) -> dg.AssetsDefinition:
     @dg.graph_asset(
-        group_name=group_name,
-        key_prefix=key_prefix,
-        name=name,
-        description=description,
-        kinds={"deltalake"},
-        ins={
-            "downloaded_public_files": dg.AssetIn(
-                assets.bronze.mibb.downloaded_public_files.asset.key
-            )
-        },
+        group_name=config.group_name,
+        key_prefix=config.key_prefix,
+        name=config.target_s3_name,
+        description=config.description,
+        kinds={"deltalake", "table"},
     )
-    def asset(downloaded_public_files: pl.LazyFrame) -> pl.LazyFrame:
-        s3_ojbect_keys = get_s3_object_keys_from_prefix(start=downloaded_public_files)
-        df = get_dataframe(s3_ojbect_keys)
+    def asset() -> pl.LazyFrame:
+        s3_object_keys = factory.ops.get_s3_object_keys_from_prefix_factory(
+            bucket=config.source_bucket,
+            search_prefix=config.source_s3_prefix,
+            file_glob=config.source_s3_glob,
+        )()
+        df = factory.ops.get_dataframe_from_source_files(
+            source_bucket=config.source_bucket,
+            target_bucket=config.target_bucket,
+            target_s3_prefix=config.target_s3_prefix,
+            target_name=config.target_s3_name,
+            io_manager_key=config.io_manager_key,
+            df_schema=config.df_schema,
+            metadata=config.metadata,
+            post_process_hook=config.post_process_hook,
+            metadata_builders=config.metadata_builders,
+        )(s3_object_keys)
         return df
 
     return asset
@@ -146,7 +124,7 @@ def compact_and_vacuum(
         automation_condition=automation_condition,
     )
     def _compact_and_vacuum(context: dg.AssetExecutionContext):
-        delta_table_path = f"{BRONZE_AEMO_GAS_DIRECTORY}/{'/'.join(key_prefix[-2:])}"
+        delta_table_path = f"s3://{BRONZE_BUCKET}/{'/'.join(key_prefix[-2:])}"
 
         context.log.info(f"running compact and vacuum for {delta_table_path}")
 

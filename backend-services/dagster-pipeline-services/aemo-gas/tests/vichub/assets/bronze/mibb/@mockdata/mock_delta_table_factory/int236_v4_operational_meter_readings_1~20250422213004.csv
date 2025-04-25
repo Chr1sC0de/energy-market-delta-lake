@@ -1,0 +1,6 @@
+gas_date,direction_code_name,direction,commencement_datetime,termination_datetime,quantity,time_sort_order,mod_datetime,current_date
+22 Apr 2025,20000001PC,Injections,22 Apr 2025 20:00:00,22 Apr 2025 21:00:00,0.0,15,22 Apr 2025 21:25:12,22 Apr 2025 21:30:05
+22 Apr 2025,30000001PC,Injections,22 Apr 2025 20:00:00,22 Apr 2025 21:00:00,10661.83,15,22 Apr 2025 21:25:12,22 Apr 2025 21:30:05
+22 Apr 2025,30000101PC,Injections,22 Apr 2025 20:00:00,22 Apr 2025 21:00:00,5.222,15,22 Apr 2025 21:25:12,22 Apr 2025 21:30:05
+22 Apr 2025,30000154PC,Injections,22 Apr 2025 20:00:00,22 Apr 2025 21:00:00,0.0,15,22 Apr 2025 21:25:12,22 Apr 2025 21:30:05
+22 Apr 2025,30000167PC,Injections,22 Apr 2025 20:00:00,22 Apr 2025 21:00:00,3437.733,15,22 Apr 2025 21:25:12,22 Apr 2025 21:30:05

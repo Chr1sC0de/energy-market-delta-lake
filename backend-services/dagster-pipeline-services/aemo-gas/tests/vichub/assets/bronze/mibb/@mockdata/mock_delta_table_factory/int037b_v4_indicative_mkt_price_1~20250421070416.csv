@@ -1,0 +1,6 @@
+demand_type_name,price_value_gst_ex,transmission_group_id,schedule_type_id,transmission_id,gas_date,approval_datetime,current_date
+Normal,10.505,114269,MS,269313,21 Apr 2025,21 Apr 2025 05:03:34,21 Apr 2025 07:04:16
+90% forecast,10.004,114269,MS,269313,21 Apr 2025,21 Apr 2025 05:03:34,21 Apr 2025 07:04:16
+110% forecast,11.5588,114269,MS,269313,21 Apr 2025,21 Apr 2025 05:03:34,21 Apr 2025 07:04:16
+Normal,12.25,114270,MS,269315,22 Apr 2025,21 Apr 2025 07:03:48,21 Apr 2025 07:04:16
+90% forecast,12.0,114270,MS,269315,22 Apr 2025,21 Apr 2025 07:03:48,21 Apr 2025 07:04:16

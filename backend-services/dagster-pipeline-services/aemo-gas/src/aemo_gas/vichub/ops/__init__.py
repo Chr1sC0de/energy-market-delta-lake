@@ -1,3 +1,3 @@
-from . import get_table_op
+from . import tables
 
-__all__ = ["get_table_op"]
+__all__ = ["tables"]

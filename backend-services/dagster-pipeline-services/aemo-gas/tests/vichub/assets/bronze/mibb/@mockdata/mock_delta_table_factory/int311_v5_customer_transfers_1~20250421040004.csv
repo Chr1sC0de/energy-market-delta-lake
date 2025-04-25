@@ -1,0 +1,6 @@
+gas_date,market_code,transfers_lodged,transfers_completed,transfers_cancelled,int_transfers_lodged,int_transfers_completed,int_transfers_cancelled,greenfields_received
+21 Apr 2025,QLDGAS,,,,,,,
+21 Apr 2025,VICGAS,4,0,0,0,0,0,0
+20 Apr 2025,QLDGAS,6,0,0,0,0,0,0
+20 Apr 2025,VICGAS,53,0,0,0,0,0,0
+19 Apr 2025,QLDGAS,9,0,2,0,0,0,0
