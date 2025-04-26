@@ -43,7 +43,7 @@ class ProcessedLink:
     ingested_datetime: dt.datetime
 
 
-table_name = "downloaded_public_files"
+table_name = "bronze_downloaded_public_files"
 table_s3_location = f"s3://{BRONZE_BUCKET}/aemo/gas/vichub/{table_name}"
 table_locations_register[table_name] = {
     "s3_path": table_s3_location,
@@ -380,8 +380,8 @@ def final_passthrough(
 
 
 @dg.graph_asset(
-    group_name="BRONZE__AEMO__GAS__VICHUB",
-    key_prefix=["bronze", "aemo", "gas", "vichub"],
+    group_name="AEMO__GAS__VICHUB",
+    key_prefix=["aemo", "gas", "vichub"],
     name=table_name,
     description="Table listing public files downloaded from https://www.nemweb.com.au/REPORTS/CURRENT/VicGas/ and converted to parquet",
     kinds={"source", "bronze", "deltalake"},

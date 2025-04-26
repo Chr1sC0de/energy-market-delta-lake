@@ -108,3 +108,7 @@ def get_metadata_schema(
             for col, pl_type in schema.items()
         ]
     )
+
+
+def get_lazyframe_num_rows(df: pl.LazyFrame) -> int:
+    return df.select(pl.len()).collect().item()

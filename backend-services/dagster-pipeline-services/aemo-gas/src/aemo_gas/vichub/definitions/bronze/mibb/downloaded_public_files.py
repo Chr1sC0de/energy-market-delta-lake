@@ -13,9 +13,9 @@ from aemo_gas.vichub import assets
 
 compact_and_vacuum_asset = assets.bronze.mibb.factory.compact_and_vacuum(
     table_definition=assets.bronze.mibb.downloaded_public_files.asset,
-    group_name="BRONZE__AEMO__GAS__VICHUB__OPTIMIZATION",
-    key_prefix=["bronze", "aemo", "gas", "vichub", "downloaded_public_files"],
-    table_name="downloaded_public_files",
+    group_name="AEMO__GAS__VICHUB__OPTIMIZATION",
+    key_prefix=["aemo", "gas", "vichub", "downloaded_public_files"],
+    table_name="bronze_downloaded_public_files",
     retention_hours=7 * 24,
 )
 

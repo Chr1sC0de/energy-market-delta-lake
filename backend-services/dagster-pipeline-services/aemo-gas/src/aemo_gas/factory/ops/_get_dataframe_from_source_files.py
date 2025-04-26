@@ -28,7 +28,8 @@ def get_dataframe_from_source_files(
     target_bucket: str,
     target_s3_prefix: str,
     target_name: str,
-    io_manager_key: str,  # this should be a io_manager which handles polars dataframes and outputs them to a delta table
+    # this should be a io_manager which handles polars dataframes and outputs them to a delta table
+    io_manager_key: str,
     df_schema: dict[str, type[pl.DataType]],
     metadata: dict[str, Any] | None = None,
     post_process_hook: Callable[[pl.LazyFrame], pl.LazyFrame] | None = None,

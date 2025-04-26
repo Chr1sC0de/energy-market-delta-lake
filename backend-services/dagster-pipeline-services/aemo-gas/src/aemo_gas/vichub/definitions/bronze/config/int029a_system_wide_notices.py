@@ -1,3 +1,4 @@
+from dagster import AssetCheckResult, AssetIn, AssetsDefinition, asset_check
 import polars as pl
 from aemo_gas import utils
 from aemo_gas.vichub.definitions.bronze.config.schemas import (
@@ -20,13 +21,31 @@ def post_process_hook(df: pl.LazyFrame) -> pl.LazyFrame:
     )
 
 
+def asset_check_factory(asset_definition: AssetsDefinition):
+    @asset_check(
+        asset=asset_definition,
+        name="check_unique_system_wide_notice_ids",
+    )
+    def asset(input_df: pl.LazyFrame):
+        return AssetCheckResult(
+            passed=bool(
+                utils.get_lazyframe_num_rows(input_df)
+                == utils.get_lazyframe_num_rows(
+                    input_df.select("system_wide_notice_id").unique()
+                )
+            )
+        )
+
+    return asset
+
+
 config = MibbDeltaTableDefinitionFactoryConfig(
-    group_name="BRONZE__AEMO__GAS__VICHUB",
-    key_prefix=["bronze", "aemo", "gas", "vichub"],
+    group_name="AEMO__GAS__VICHUB",
+    key_prefix=["aemo", "gas", "vichub"],
     source_s3_prefix="aemo/gas/vichub",
     source_s3_glob="int029a_*",
     target_s3_prefix="aemo/gas/vichub",
-    target_s3_name="int029a_system_wide_notices",
+    target_s3_name="bronze_int029a_system_wide_notices",
     df_schema={
         "system_wide_notice_id": pl.Int64,
         "critical_notice_flag": pl.String,
@@ -55,4 +74,5 @@ config = MibbDeltaTableDefinitionFactoryConfig(
     compact_and_vacuum_cron_schedule="00 23 * * *",
     execution_timezone="Australia/Melbourne",
     post_process_hook=post_process_hook,
+    check_factories=[asset_check_factory],
 )
