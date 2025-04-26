@@ -13,18 +13,18 @@ from bs4.element import PageElement
 from dagster_aws.s3 import S3Resource
 from types_boto3_s3.client import S3Client
 
+from aemo_gas import utils
+from aemo_gas.configurations import BRONZE_BUCKET, LANDING_BUCKET
+from aemo_gas.vichub import ops
 from aemo_gas.vichub.assets.bronze.table_locations import (
     register as table_locations_register,
 )
-from aemo_gas.configurations import BRONZE_BUCKET, LANDING_BUCKET
-from aemo_gas import utils
-from aemo_gas.vichub import ops
 
 schema = dict(
     source_file=pl.String,
     target_file=pl.String,
-    upload_datetime=pl.Datetime,
-    ingested_datetime=pl.Datetime,
+    upload_datetime=pl.Datetime("ms", time_zone="Australia/Melbourne"),
+    ingested_datetime=pl.Datetime("ms", time_zone="Australia/Melbourne"),
 )
 
 
@@ -45,9 +45,10 @@ class ProcessedLink:
 
 table_name = "downloaded_public_files"
 table_s3_location = f"s3://{BRONZE_BUCKET}/aemo/gas/vichub/{table_name}"
-
-
-table_locations_register[table_name] = table_s3_location
+table_locations_register[table_name] = {
+    "s3_path": table_s3_location,
+    "storage_type": "deltalake",
+}
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                               op to get all VicGas links                               │
@@ -82,6 +83,7 @@ def get_links_op(context: dg.OpExecutionContext) -> list[Link]:
             context.log.info(f"found link {href}")
 
             previous_element = tag.previous_element
+
             if isinstance(previous_element, str):
                 datetime_string = " ".join(previous_element.split()[:-1])
             else:
@@ -382,7 +384,7 @@ def final_passthrough(
     key_prefix=["bronze", "aemo", "gas", "vichub"],
     name=table_name,
     description="Table listing public files downloaded from https://www.nemweb.com.au/REPORTS/CURRENT/VicGas/ and converted to parquet",
-    kinds={"deltalake", "table", "source"},
+    kinds={"source", "bronze", "deltalake"},
 )
 def asset() -> pl.LazyFrame:
     def unzip_wrapper(key: str) -> list[dict[str, str]]:

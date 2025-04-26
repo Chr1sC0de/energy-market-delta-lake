@@ -1,7 +1,6 @@
 import datetime as dt
 import pathlib as pt
 import pickle
-from types_boto3_s3 import S3Client
 from unittest.mock import patch
 
 import dagster as dg
@@ -9,6 +8,8 @@ import polars as pl
 import polars.testing
 import pytest
 from dagster_aws.s3 import S3Resource
+from dateutil.tz import tzlocal
+from types_boto3_s3 import S3Client
 
 from aemo_gas import vichub
 from aemo_gas.configurations import BRONZE_BUCKET, LANDING_BUCKET
@@ -166,8 +167,8 @@ def test__combine_to_dataframe_op():
     schema = dict(
         source_file=pl.String,
         target_file=pl.String,
-        upload_datetime=pl.Datetime,
-        ingested_datetime=pl.Datetime,
+        upload_datetime=pl.Datetime("ms", time_zone="Australia/Melbourne"),
+        ingested_datetime=pl.Datetime("ms", time_zone="Australia/Melbourne"),
     )
 
     polars.testing.assert_frame_equal(

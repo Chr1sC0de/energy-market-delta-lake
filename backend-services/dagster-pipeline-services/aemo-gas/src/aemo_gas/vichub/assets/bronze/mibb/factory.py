@@ -8,7 +8,9 @@ from pydantic import BaseModel, ConfigDict
 
 from aemo_gas import factory, utils
 from aemo_gas.configurations import BRONZE_BUCKET, LANDING_BUCKET
-from aemo_gas.vichub import assets
+from aemo_gas.vichub.assets.bronze.table_locations import (
+    register as table_locations_register,
+)
 
 
 class PreviewBuilder(factory.ops.GetDataFrameFromSourceFilesMetaDataBuilderBase):
@@ -82,7 +84,7 @@ def delta_table(
         key_prefix=config.key_prefix,
         name=config.target_s3_name,
         description=config.description,
-        kinds={"deltalake", "table"},
+        kinds={"s3", "bronze", "deltalake"},
     )
     def asset() -> pl.LazyFrame:
         s3_object_keys = factory.ops.get_s3_object_keys_from_prefix_factory(
@@ -103,6 +105,12 @@ def delta_table(
         )(s3_object_keys)
         return df
 
+    table_name = config.target_s3_name
+    table_s3_location = f"s3://{BRONZE_BUCKET}/aemo/gas/vichub/{table_name}"
+    table_locations_register[table_name] = {
+        "s3_path": table_s3_location,
+        "storage_type": "deltalake",
+    }
     return asset
 
 

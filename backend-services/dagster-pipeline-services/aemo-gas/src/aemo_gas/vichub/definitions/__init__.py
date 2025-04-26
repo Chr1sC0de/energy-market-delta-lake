@@ -11,7 +11,10 @@ from aemo_gas.vichub import assets
 
 all = dg.Definitions.merge(
     dg.Definitions(
-        assets=[assets.bronze.mibb.report_list.asset],
+        assets=[
+            assets.bronze.mibb.report_list.asset,
+            assets.bronze.mibb.s3_table_locations.asset,
+        ],
         resources={
             "bronze_aemo_gas_deltalake_upsert_io_manager": resources.bronze_aemo_gas_deltalake_upsert_io_manager,
             "bronze_aemo_gas_simple_polars_parquet_io_manager": resources.bronze_aemo_gas_simple_polars_parquet_io_manager,

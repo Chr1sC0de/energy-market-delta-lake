@@ -15,7 +15,10 @@ guide_to_mibb_reports_link = "https://aemo.com.au/-/media/files/stakeholder_cons
 
 table_name = "mibb_report_list"
 table_s3_location = f"s3://{BRONZE_BUCKET}/aemo/gas/vichub/{table_name}"
-table_locations_register[table_name] = table_s3_location
+table_locations_register[table_name] = {
+    "s3_path": table_s3_location,
+    "storage_type": "parquet",
+}
 
 
 schema = {
@@ -41,7 +44,7 @@ def process_extracted_table(table_contents: list[list[str]]) -> pl.LazyFrame:
     key_prefix=["bronze", "aemo", "gas", "vichub"],
     name=table_name,
     description="Grab the mibb report list from the following User Guide to MIBB Reports Document found here: https://aemo.com.au/energy-systems/gas/declared-wholesale-gas-market-dwgm/procedures-policies-and-guides",
-    kinds={"parquet", "table"},
+    kinds={"source", "bronze", "parquet"},
     io_manager_key="bronze_aemo_gas_simple_polars_parquet_io_manager",
     automation_condition=dg.AutomationCondition.missing()
     & ~dg.AutomationCondition.in_progress(),
