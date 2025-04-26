@@ -27,7 +27,7 @@ def aws_credentials() -> None:
 @pytest.fixture(scope="session")
 def moto_server(aws_credentials: None) -> Generator[str]:  # pyright: ignore[reportUnusedParameter]
     """Fixture to run a mocked AWS server for testing."""
-    server = ThreadedMotoServer(port=0, ip_address="127.0.0.1")
+    server = ThreadedMotoServer(port=5000, ip_address="127.0.0.1")
     server.start()
     host, port = server.get_host_and_port()
     uri = f"http://{host}:{port}"

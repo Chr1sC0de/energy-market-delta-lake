@@ -3,6 +3,7 @@
 !.gitignore
 !.dockerignore
 
+reports
 workspace.yaml
 dagster.yaml
 .dagster_home

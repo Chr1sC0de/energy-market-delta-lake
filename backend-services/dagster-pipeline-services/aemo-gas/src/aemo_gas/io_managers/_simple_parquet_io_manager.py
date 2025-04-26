@@ -25,10 +25,24 @@ class SimplePolarsParquetIOManager(IOManager):
     @override
     def handle_output(self, context: dg.OutputContext, obj: pl.LazyFrame):
         fs = s3fs.S3FileSystem()
-        with fs.open(
-            f"{self._get_destination(context)}/result.parquet", mode="wb"
-        ) as f:
+        s3_path = self._get_destination(context)
+        with fs.open(f"{s3_path}/result.parquet", mode="wb") as f:
             obj.collect().write_parquet(f)
+
+        context.add_output_metadata(context.metadata)
+
+        context.add_output_metadata(
+            {
+                "path": s3_path,
+                "preview": dg.MetadataValue.md(
+                    obj.head().collect().to_pandas().to_markdown()
+                ),
+                "row_count": dg.MetadataValue.int(
+                    obj.select(pl.len()).collect().item()
+                ),
+                "column_count": dg.MetadataValue.int(len(obj.collect_schema())),
+            }
+        )
 
     @override
     def load_input(self, context: dg.InputContext) -> pl.LazyFrame:

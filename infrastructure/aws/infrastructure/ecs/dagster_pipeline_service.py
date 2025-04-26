@@ -108,7 +108,7 @@ class Stack(_Stack):
             health_check=aws_ecs.HealthCheck(
                 command=[
                     "CMD-SHELL",
-                    """echo "import socket; s = socket.socket(socket.AF_INET, socket.SOCK_STREAM); s.connect(('localhost', 4000)) if True else None; exit(0)"| uv run - || exit 1""",
+                    """python -c "import socket; s = socket.socket(socket.AF_INET, socket.SOCK_STREAM); s.connect(('localhost', 4000)) if True else None; exit(0)" || exit 1""",
                 ],
                 interval=cdk.Duration.seconds(15),
                 timeout=cdk.Duration.seconds(5),

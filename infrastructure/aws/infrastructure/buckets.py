@@ -1,5 +1,7 @@
-import typing
-
+from collections.abc import Sequence
+from typing import Any, NotRequired, Unpack, TypedDict
+from aws_cdk.aws_iam import IRole
+from aws_cdk.aws_kms import IKey
 import boto3
 import botocore.exceptions
 from aws_cdk import RemovalPolicy
@@ -12,7 +14,48 @@ from configurations.parameters import (
     DEVELOPMENT_ENVIRONMENT,
     NAME_PREFIX,
 )
+from jsii import Number
 from infrastructure.utils import StackKwargs
+
+
+class BucketKwargs(TypedDict):
+    access_control: NotRequired[s3.BucketAccessControl]
+    auto_delete_objects: NotRequired[bool]
+    block_public_access: NotRequired[s3.BlockPublicAccess]
+    bucket_key_enabled: NotRequired[bool]
+    bucket_name: NotRequired[str]
+    cors: NotRequired[Sequence[s3.CorsRule | dict[str, Any]]]  # pyright: ignore[reportExplicitAny]
+    encryption: NotRequired[s3.BucketEncryption]
+    encryption_key: NotRequired[IKey]
+    enforce_ssl: NotRequired[bool]
+    event_bridge_enabled: NotRequired[bool]
+    intelligent_tiering_configurations: NotRequired[
+        Sequence[s3.IntelligentTieringConfiguration | dict[str, Any]]  # pyright: ignore[reportExplicitAny]
+    ]
+    inventories: NotRequired[Sequence[s3.Inventory | dict[str, Any]]]  # pyright: ignore[reportExplicitAny]
+    lifecycle_rules: NotRequired[Sequence[s3.LifecycleRule | dict[str, Any]]]  # pyright: ignore[reportExplicitAny]
+    metrics: NotRequired[Sequence[s3.BucketMetrics | dict[str, Any]]]  # pyright: ignore[reportExplicitAny]
+    minimum_tls_version: NotRequired[Number]
+    notifications_handler_role: NotRequired[IRole]
+    notifications_skip_destination_validation: NotRequired[bool]
+    object_lock_default_retention: NotRequired[s3.ObjectLockRetention]
+    object_lock_enabled: NotRequired[bool]
+    object_ownership: NotRequired[s3.ObjectOwnership]
+    public_read_access: NotRequired[bool]
+    removal_policy: NotRequired[RemovalPolicy]
+    replication_rules: NotRequired[Sequence[s3.ReplicationRule | dict[str, Any]]]  # pyright: ignore[reportExplicitAny]
+    server_access_logs_bucket: NotRequired[s3.IBucket]
+    server_access_logs_prefix: NotRequired[str]
+    target_object_key_format: NotRequired[s3.TargetObjectKeyFormat]
+    transfer_acceleration: NotRequired[bool]
+    transition_default_minimum_object_size: NotRequired[
+        s3.TransitionDefaultMinimumObjectSize
+    ]
+    versioned: NotRequired[bool]
+    website_error_document: NotRequired[str]
+    website_index_document: NotRequired[str]
+    website_redirect: NotRequired[s3.RedirectTarget | dict[str, Any]]  # pyright: ignore[reportExplicitAny]
+    website_routing_rules: NotRequired[Sequence[s3.RoutingRule | dict[str, Any]]]  # pyright: ignore[reportExplicitAny]
 
 
 class Stack(_Stack):
@@ -22,7 +65,7 @@ class Stack(_Stack):
         self,
         scope: Construct | None,
         id: str | None,
-        **kwargs: typing.Unpack[StackKwargs],
+        **kwargs: Unpack[StackKwargs],
     ) -> None:
         super().__init__(scope, id, **kwargs)
 
@@ -34,54 +77,66 @@ class Stack(_Stack):
 
         _ = self.create_bucket(
             f"{STACK_PREFIX}LandingBucket",
-            f"{DEVELOPMENT_ENVIRONMENT}-landing-{NAME_PREFIX}",
+            bucket_name=f"{DEVELOPMENT_ENVIRONMENT}-{NAME_PREFIX}-landing",
+            removal_policy=RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE,
+            encryption=s3.BucketEncryption.S3_MANAGED,
+            versioned=False,
+            block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
+        )
+
+        bucket_table_policies = dict(
+            removal_policy=RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE,
+            encryption=s3.BucketEncryption.S3_MANAGED,
+            versioned=False,
+            block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
         )
 
         _ = self.create_bucket(
             f"{STACK_PREFIX}BronzeBucket",
-            f"{DEVELOPMENT_ENVIRONMENT}-bronze-{NAME_PREFIX}",
+            bucket_name=f"{DEVELOPMENT_ENVIRONMENT}-{NAME_PREFIX}-bronze",
+            **bucket_table_policies,
         )
 
         _ = self.create_bucket(
             f"{STACK_PREFIX}SilverBucket",
-            f"{DEVELOPMENT_ENVIRONMENT}-silver-{NAME_PREFIX}",
+            bucket_name=f"{DEVELOPMENT_ENVIRONMENT}-{NAME_PREFIX}-silver",
+            **bucket_table_policies,
         )
 
         _ = self.create_bucket(
             f"{STACK_PREFIX}GoldBucket",
-            f"{DEVELOPMENT_ENVIRONMENT}-gold-{NAME_PREFIX}",
+            bucket_name=f"{DEVELOPMENT_ENVIRONMENT}-{NAME_PREFIX}-gold",
+            **bucket_table_policies,
         )
 
-    def create_bucket(self, bucket_construct_name: str, bucket_name: str) -> s3.Bucket:
+    def create_bucket(
+        self, bucket_construct_name: str, **kwargs: Unpack[BucketKwargs]
+    ) -> s3.Bucket:
         """repeated method for creating a bucket"""
         client_s3 = boto3.client("s3")
         bucket_exists = True
 
         # check if the bucket exists
         try:
-            _ = client_s3.head_bucket(Bucket=bucket_name)
+            _ = client_s3.head_bucket(Bucket=kwargs["bucket_name"])
         except botocore.exceptions.ClientError:
             bucket_exists = False
 
         if bucket_exists:
             # when the bucket already exists load the bucket
             s3_bucket = s3.Bucket.from_bucket_name(
-                self, f"Existing{bucket_construct_name}", bucket_name
+                self, f"Existing{bucket_construct_name}", kwargs["bucket_name"]
             )
         else:
             # when not create the bucket
             s3_bucket = s3.Bucket(
                 self,
                 bucket_construct_name,
-                bucket_name=bucket_name,
-                removal_policy=RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE,
-                encryption=s3.BucketEncryption.S3_MANAGED,
-                versioned=True,
-                block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
+                **kwargs,
             )
 
         client_s3.close()
 
-        self.bucket_register.append((bucket_construct_name, bucket_name))
+        self.bucket_register.append((bucket_construct_name, kwargs["bucket_name"]))
 
         return s3_bucket

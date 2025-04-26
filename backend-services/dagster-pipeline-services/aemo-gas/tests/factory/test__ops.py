@@ -57,6 +57,9 @@ def test__get_s3_object_keys_from_prefix_factory(
 
     assert set(s3_object_keys) == set(
         [
+            "aemo/gas/vichub/int128-v4-actual-linepack-1-20250401153636.parquet",
+            "aemo/gas/vichub/int128-v4-actual-linepack-1-20250401163600.parquet",
+            "aemo/gas/vichub/int128-v4-actual-linepack-1-20250401173608.PARQUET",
             "aemo/gas/vichub/int128_v4_actual_linepack_1~20250401123603.csv",
             "aemo/gas/vichub/int128_v4_actual_linepack_1~20250401123630.csv",
             "aemo/gas/vichub/int128_v4_actual_linepack_1~20250401133609.csv",
@@ -97,4 +100,4 @@ def test__get_dataframe_from_source_files(
         iter(op_function(dg.build_op_context(), s3_resource, s3_object_keys))
     ).value
 
-    assert output.collect().shape == (554, 4)
+    assert output.collect().shape == (725, 4)

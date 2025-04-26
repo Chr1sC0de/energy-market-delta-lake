@@ -116,9 +116,10 @@ def test__process_link_op(upload_mock_downloaded_public_files: None):
             )
         )
 
-    uploaded_df = pl.read_csv(
-        f"s3://{LANDING_BUCKET}/aemo/gas/vichub/{link.target_filename}",
-        infer_schema_length=None,
+    new_filename = link.target_filename.lower().replace("csv", "parquet")
+
+    uploaded_df = pl.read_parquet(
+        f"s3://{LANDING_BUCKET}/aemo/gas/vichub/{new_filename}",
     )
 
     assert processed_link.source_file == link.href, (
@@ -186,20 +187,20 @@ def test__combine_to_dataframe_op():
 def test__process_unzip_op(upload_mock_zip_files: list[str]):
     expected_keys = [
         {
-            "Bucket": "dev-landing-energy-market",
-            "Key": "aemo/gas/vichub/INT029A_V4_SYSTEM_NOTICES_1.CSV",
+            "Bucket": "dev-energy-market-landing",
+            "Key": "aemo/gas/vichub/int029a_v4_system_notices_1.parquet",
         },
         {
-            "Bucket": "dev-landing-energy-market",
-            "Key": "aemo/gas/vichub/INT029A_V4_SYSTEM_NOTICES_1.CSV",
+            "Bucket": "dev-energy-market-landing",
+            "Key": "aemo/gas/vichub/int029a_v4_system_notices_1.parquet",
         },
         {
-            "Bucket": "dev-landing-energy-market",
-            "Key": "aemo/gas/vichub/INT039B_V4_INDICATIVE_LOCATIONAL_PRICE_1.CSV",
+            "Bucket": "dev-energy-market-landing",
+            "Key": "aemo/gas/vichub/int039b_v4_indicative_locational_price_1.parquet",
         },
         {
-            "Bucket": "dev-landing-energy-market",
-            "Key": "aemo/gas/vichub/INT050_V4_SCHED_WITHDRAWALS_1.CSV",
+            "Bucket": "dev-energy-market-landing",
+            "Key": "aemo/gas/vichub/int050_v4_sched_withdrawals_1.parquet",
         },
     ]
 

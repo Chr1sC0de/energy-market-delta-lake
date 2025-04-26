@@ -132,7 +132,7 @@ class Stack(_Stack):
                     "s3:GetBucketLocation",
                 ],
                 resources=[
-                    f"arn:aws:s3:::{DEVELOPMENT_ENVIRONMENT}-*-{NAME_PREFIX}*",
+                    f"arn:aws:s3:::{DEVELOPMENT_ENVIRONMENT}-{NAME_PREFIX}*",
                 ],
             )
         )

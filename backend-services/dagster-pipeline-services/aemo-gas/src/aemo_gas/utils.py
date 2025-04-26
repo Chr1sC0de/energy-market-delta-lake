@@ -1,3 +1,7 @@
+from enum import StrEnum
+import io
+from logging import Logger
+from typing import Literal
 import dagster as dg
 import polars as pl
 import fnmatch
@@ -80,3 +84,27 @@ def get_df_from_s3_keys(
         return pl.LazyFrame(schema=schema)
 
     return pl.concat(all_dfs, how="diagonal_relaxed")
+
+
+def get_metadata_schema(
+    schema: dict[str, type[pl.DataType]],
+    descriptions: dict[str, str] | None = None,
+) -> dg.TableSchema:
+    """Takes the schema from a dataframe or lazyframe and converts it a Dagster TableSchema.
+
+    Args:
+        df (Union[pl.DataFrame, pl.LazyFrame]): dataframe
+        descriptions (Optional[Dict[str, str]], optional): column descriptions. Defaults to None.
+
+    Returns:
+        TableSchema: dagster TableSchema
+    """
+    descriptions = descriptions or {}
+    return dg.TableSchema(
+        columns=[
+            dg.TableColumn(
+                name=col, type=str(pl_type), description=descriptions.get(col)
+            )
+            for col, pl_type in schema.items()
+        ]
+    )

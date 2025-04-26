@@ -5,7 +5,17 @@ import polars as pl
 import pymupdf
 import requests
 
+from aemo_gas.configurations import BRONZE_BUCKET
+from aemo_gas.utils import get_metadata_schema
+from aemo_gas.vichub.assets.bronze.table_locations import (
+    register as table_locations_register,
+)
+
 guide_to_mibb_reports_link = "https://aemo.com.au/-/media/files/stakeholder_consultation/consultations/gas_consultations/2024/april-2024-amendment-to-user-guide-to-mibb-reports/user-guide-to-mibb-reports.pdf?la=en"
+
+table_name = "mibb_report_list"
+table_s3_location = f"s3://{BRONZE_BUCKET}/aemo/gas/vichub/{table_name}"
+table_locations_register[table_name] = table_s3_location
 
 
 schema = {
@@ -29,12 +39,13 @@ def process_extracted_table(table_contents: list[list[str]]) -> pl.LazyFrame:
 @dg.asset(
     group_name="BRONZE__AEMO__GAS__VICHUB",
     key_prefix=["bronze", "aemo", "gas", "vichub"],
-    name="mibb_report_list",
+    name=table_name,
     description="Grab the mibb report list from the following User Guide to MIBB Reports Document found here: https://aemo.com.au/energy-systems/gas/declared-wholesale-gas-market-dwgm/procedures-policies-and-guides",
     kinds={"parquet", "table"},
     io_manager_key="bronze_aemo_gas_simple_polars_parquet_io_manager",
     automation_condition=dg.AutomationCondition.missing()
     & ~dg.AutomationCondition.in_progress(),
+    metadata={"dagster/column_schema": get_metadata_schema(schema)},
 )
 def asset() -> pl.LazyFrame:
     response = requests.get(

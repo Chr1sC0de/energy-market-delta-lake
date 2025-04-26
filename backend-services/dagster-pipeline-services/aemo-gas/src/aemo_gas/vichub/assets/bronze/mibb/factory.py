@@ -124,7 +124,7 @@ def compact_and_vacuum(
         automation_condition=automation_condition,
     )
     def _compact_and_vacuum(context: dg.AssetExecutionContext):
-        delta_table_path = f"s3://{BRONZE_BUCKET}/{'/'.join(key_prefix[-2:])}"
+        delta_table_path = f"s3://{BRONZE_BUCKET}/aemo/gas/{'/'.join(key_prefix[-2:])}"
 
         context.log.info(f"running compact and vacuum for {delta_table_path}")
 

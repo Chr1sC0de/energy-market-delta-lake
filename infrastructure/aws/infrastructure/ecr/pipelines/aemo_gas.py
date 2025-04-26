@@ -25,7 +25,7 @@ class Stack(repository.Stack):
         )
 
         _ = subprocess.run(
-            f"cd {directory}; ./get-common.sh",
+            f"cd {directory}; ./scripts/get-common.sh",
             shell=True,
         )
         super().__init__(

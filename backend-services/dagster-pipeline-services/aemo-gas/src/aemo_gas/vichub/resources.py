@@ -7,11 +7,12 @@ from dagster_delta import (
     WriteMode,
 )
 from dagster_delta.io_manager import SchemaMode
+
 from aemo_gas.configurations import BRONZE_BUCKET, LANDING_BUCKET
 from aemo_gas.io_managers import SimplePolarsParquetIOManager
 
-
 bronze_aemo_gas_root_uri = f"s3://{BRONZE_BUCKET}/aemo/gas"
+
 
 bronze_aemo_gas_deltalake_upsert_io_manager = DeltaLakePolarsIOManager(
     root_uri=bronze_aemo_gas_root_uri,

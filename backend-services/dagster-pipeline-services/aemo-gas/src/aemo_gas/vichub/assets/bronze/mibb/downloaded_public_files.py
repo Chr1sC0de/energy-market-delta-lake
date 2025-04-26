@@ -13,6 +13,9 @@ from bs4.element import PageElement
 from dagster_aws.s3 import S3Resource
 from types_boto3_s3.client import S3Client
 
+from aemo_gas.vichub.assets.bronze.table_locations import (
+    register as table_locations_register,
+)
 from aemo_gas.configurations import BRONZE_BUCKET, LANDING_BUCKET
 from aemo_gas import utils
 from aemo_gas.vichub import ops
@@ -39,6 +42,12 @@ class ProcessedLink:
     upload_datetime: dt.datetime
     ingested_datetime: dt.datetime
 
+
+table_name = "downloaded_public_files"
+table_s3_location = f"s3://{BRONZE_BUCKET}/aemo/gas/vichub/{table_name}"
+
+
+table_locations_register[table_name] = table_s3_location
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                               op to get all VicGas links                               │
@@ -168,35 +177,41 @@ def process_link_op(
     s3_client: S3Client = s3_resource.get_client()
 
     context.log.info(f"processing {link.href}")
-    context.log.info(f"downloading {link.href}")
     response = requests.get(link.href)
 
     assert response.status_code == 200, f"request failed: {response.text}"
 
-    context.log.info(f"finished downloading {link.href}")
-
     buffer = BytesIO(response.content)
 
-    context.log.info(
-        f"uploading {link.href} to s3://{LANDING_BUCKET}/aemo/gas/vichub/{link.target_filename}"
-    )
+    # ── convert the file to a parquet when possible ─────────────────────────────────
+
+    extension = link.target_filename.lower().split(".")[-1]
+    if extension == "csv":
+        upload_filename = link.target_filename.lower().replace(".csv", ".parquet")
+        csv_df = pl.read_csv(buffer, infer_schema_length=None)
+        buffer = BytesIO()
+        csv_df.write_parquet(buffer)
+    else:
+        upload_filename = link.target_filename
 
     _ = buffer.seek(0)
 
     s3_client.upload_fileobj(
         buffer,
         LANDING_BUCKET,
-        f"aemo/gas/vichub/{link.target_filename}",
+        f"aemo/gas/vichub/{upload_filename}",
     )
 
     processed_link = ProcessedLink(
         source_file=link.href,
-        target_file=f"s3://{LANDING_BUCKET}/aemo/gas/vichub/{link.target_filename}",
+        target_file=f"s3://{LANDING_BUCKET}/aemo/gas/vichub/{upload_filename}",
         upload_datetime=link.upload_datetime,
         ingested_datetime=dt.datetime.now(),
     )
 
-    context.log.info(f"finished processing {link.href}")
+    context.log.info(
+        f"finished processing and uploading {link.href} to s3://{LANDING_BUCKET}/aemo/gas/vichub/{upload_filename}"
+    )
     return processed_link
 
 
@@ -255,6 +270,7 @@ def create_dynamic_process_uzip_op(
             s3_objects.extend(
                 [f for f in page["Contents"] if f["Key"].lower().endswith(".zip")]
             )
+
     if len(s3_objects) > 0:
         context.log.info("ZIP files Found, Processing...")
 
@@ -287,19 +303,27 @@ def process_unzip_op(
     response = s3_client.get_object(Bucket=LANDING_BUCKET, Key=key)
     zip_io = io.BytesIO(response["Body"].read())
     unzipped_files: list[dict[str, str]] = []
-    context.log.info("extracting files and uploading to s3")
     with zipfile.ZipFile(zip_io) as f:
         for name in f.namelist():
+            buffer = io.BytesIO(f.read(name))
+
+            # ── convert the file to a parquet when possible ─────────────────────────────────
+            extension = name.lower().split(".")[-1]
+            if extension == "csv":
+                name = name.lower().replace(".csv", ".parquet")
+                csv_df = pl.read_csv(buffer, infer_schema_length=None)
+                buffer = BytesIO()
+                csv_df.write_parquet(buffer)
+
             write_key = f"aemo/gas/vichub/{name}"
-            s3_client.upload_fileobj(
-                io.BytesIO(f.read(name)), LANDING_BUCKET, write_key
-            )
+
+            _ = buffer.seek(0)
+
+            s3_client.upload_fileobj(buffer, LANDING_BUCKET, write_key)
             unzipped_files.append({"Bucket": LANDING_BUCKET, "Key": write_key})
-    context.log.info("finished extracting files and uploading to s3")
-    context.log.info(f"deleting s3://{LANDING_BUCKET}/{key}")
     response = s3_client.delete_object(Bucket=LANDING_BUCKET, Key=key)
     context.log.info(
-        f"finished deleting object s3://{LANDING_BUCKET}/{key} with response {response}"
+        f"processed and finished cleanup for zip file s3://{LANDING_BUCKET}/{key} with response {response}"
     )
     return unzipped_files
 
@@ -328,20 +352,16 @@ def final_passthrough(
     context: dg.AssetExecutionContext,
     output_df: pl.LazyFrame,
 ) -> pl.LazyFrame:
-    context.log.info(
-        f"adding preview: s3://{BRONZE_BUCKET}/aemo/gas/vichub/downloaded_public_files"
-    )
+    context.log.info(f"adding preview: {table_s3_location}")
 
     metadata = {}
 
-    df_preview = utils.get_table(
-        f"s3://{BRONZE_BUCKET}/aemo/gas/vichub/downloaded_public_files"
-    )
+    df_preview = utils.get_table(table_s3_location)
 
     if df_preview is None:
         df_preview = output_df
         context.log.info(
-            f"s3://{BRONZE_BUCKET}/aemo/gas/vichub/downloaded_public_files not found, previewing using upserted rows"
+            f"{table_s3_location} not found, previewing using upserted rows"
         )
 
     metadata["preview"] = dg.MetadataValue.md(
@@ -360,7 +380,7 @@ def final_passthrough(
 @dg.graph_asset(
     group_name="BRONZE__AEMO__GAS__VICHUB",
     key_prefix=["bronze", "aemo", "gas", "vichub"],
-    name="downloaded_public_files",
+    name=table_name,
     description="Table listing public files downloaded from https://www.nemweb.com.au/REPORTS/CURRENT/VicGas/ and converted to parquet",
     kinds={"deltalake", "table", "source"},
 )
