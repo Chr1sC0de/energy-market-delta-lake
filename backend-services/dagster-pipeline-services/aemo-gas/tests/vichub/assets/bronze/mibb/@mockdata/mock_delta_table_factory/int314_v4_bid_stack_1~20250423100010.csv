@@ -1,6 +1,0 @@
-bid_id,gas_date,market_participant_id,company_name,mirn,bid_step,bid_price,bid_qty_gj,step_qty_gj,inject_withdraw,current_date
-1246799,23 Apr 2024,3,Origin Energy (VIC) Pty Limited,20000001PC,0,0.0,0.0,0.0,I,23 Apr 2025 10:00:10
-1246799,23 Apr 2024,3,Origin Energy (VIC) Pty Limited,20000001PC,1,10.745,2776.0,2776.0,I,23 Apr 2025 10:00:10
-1246799,23 Apr 2024,3,Origin Energy (VIC) Pty Limited,20000001PC,2,11.0701,5552.0,2776.0,I,23 Apr 2025 10:00:10
-1246799,23 Apr 2024,3,Origin Energy (VIC) Pty Limited,20000001PC,3,13.9887,8552.0,3000.0,I,23 Apr 2025 10:00:10
-1246799,23 Apr 2024,3,Origin Energy (VIC) Pty Limited,20000001PC,4,14.398,11552.0,3000.0,I,23 Apr 2025 10:00:10

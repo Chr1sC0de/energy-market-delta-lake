@@ -1,0 +1,7 @@
+demand_type_name,price_value_gst_ex,transmission_group_id,schedule_type_id,transmission_id,gas_date,approval_datetime,current_date
+Normal,11.0555,114061,OS,268861,01 Apr 2025,01 Apr 2025 05:04:47,01 Apr 2025 17:06:29
+Normal,11.0050,114063,OS,268867,01 Apr 2025,01 Apr 2025 09:08:16,01 Apr 2025 17:06:29
+Normal,11.1990,114065,OS,268871,01 Apr 2025,01 Apr 2025 13:04:51,01 Apr 2025 17:06:29
+Normal,11.3160,114067,OS,268875,01 Apr 2025,01 Apr 2025 17:04:51,01 Apr 2025 17:06:29
+Normal,10.7200,114066,OS,268873,02 Apr 2025,01 Apr 2025 15:04:23,01 Apr 2025 17:06:29
+Normal,10.8901,114064,OS,268869,03 Apr 2025,01 Apr 2025 11:03:53,01 Apr 2025 17:06:29

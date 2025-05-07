@@ -1,6 +1,0 @@
-gas_date,gas_hour,site_company,phy_mirn,inject_withdraw,energy_flow_gj
-15 Apr 2025,06:00:00,Bass Gas,30000170PC,I,6703.502
-15 Apr 2025,06:00:00,Culcairn Injection,20000001PC,I,0.999999996
-15 Apr 2025,06:00:00,Culcairn Withdrawal,20000002PC,W,142823.311999996
-15 Apr 2025,06:00:00,Iona Injection,30000154PC,I,1837.0
-15 Apr 2025,06:00:00,Iona Withdrawal,30000156PC,W,81749.018554682

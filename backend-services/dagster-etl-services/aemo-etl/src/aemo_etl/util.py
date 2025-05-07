@@ -1,0 +1,117 @@
+import fnmatch
+from collections.abc import Generator, Mapping
+from logging import Logger
+from math import ceil
+
+import polars as pl
+from dagster import TableColumn, TableSchema
+from polars._typing import PolarsDataType
+from types_boto3_s3 import S3Client
+
+# pyright: reportTypedDictNotRequiredAccess=false
+
+
+def newline_join(*args: str) -> str:
+    return "\n".join(args)
+
+
+def get_s3_object_keys_from_prefix_and_name_glob(
+    s3_client: S3Client,
+    s3_bucket: str,
+    s3_prefix: str,
+    s3_file_glob: str,
+    case_insensitive: bool = True,
+) -> list[str]:
+    """given a key prefix and a globbing pattern get all the s3 object keys"""
+    paginator = s3_client.get_paginator("list_objects_v2")
+    s3_objects: list[str] = []
+    for page in paginator.paginate(Bucket=s3_bucket, Prefix=s3_prefix):
+        if "Contents" in page:
+            original_keys = [c["Key"] for c in page["Contents"]]
+            if case_insensitive:
+                case_insensitive_keys = [k.lower() for k in original_keys]
+                mapping = {
+                    ik: ok for ik, ok in zip(case_insensitive_keys, original_keys)
+                }
+                filtered_insensitive_keys = fnmatch.filter(
+                    case_insensitive_keys, f"{s3_prefix}/{s3_file_glob}"
+                )
+                s3_objects.extend([mapping[k] for k in filtered_insensitive_keys])
+            else:
+                s3_objects.extend(
+                    fnmatch.filter(original_keys, f"{s3_prefix}/{s3_file_glob}")
+                )
+    return s3_objects
+
+
+def get_df_from_s3_keys(
+    s3_client: S3Client,
+    s3_bucket: str,
+    s3_object_keys: list[str],
+    df_schema: Mapping[str, PolarsDataType] | None = None,
+    logger: Logger | None = None,
+) -> pl.LazyFrame:
+    all_dfs: list[pl.LazyFrame] = []
+
+    for key in s3_object_keys:
+        if logger is not None:
+            logger.info(f"processing s3://{s3_bucket}/{key}")
+        try:
+            object_bytes = s3_client.get_object(Bucket=s3_bucket, Key=key)[
+                "Body"
+            ].read()
+
+            if len(object_bytes) > 0:
+                if key.lower().endswith(".parquet"):
+                    df = pl.read_parquet(object_bytes, schema=df_schema).lazy()
+                elif key.lower().endswith(".csv"):
+                    df = pl.read_csv(
+                        object_bytes, infer_schema_length=None, schema=df_schema
+                    ).lazy()
+                else:
+                    raise ValueError(f"filetype of {key} is unsupported")
+
+                df = df.with_columns(
+                    pl.lit(f"s3://{s3_bucket}/{key}").alias("source_file")
+                )
+                all_dfs.append(df)
+            else:
+                if logger is not None:
+                    logger.info(f"{key} contains 0 bytes")
+        except Exception:
+            if logger is not None:
+                logger.info(f"failed to get {key} from s3")
+
+    if len(all_dfs) == 0:
+        if logger is not None:
+            logger.info("no valid dataframes found returning empty dataframe")
+        return pl.LazyFrame(schema=df_schema)
+
+    return pl.concat(all_dfs, how="diagonal_relaxed")
+
+
+def get_metadata_schema(
+    df_schema: Mapping[str, type[pl.DataType]],
+    descriptions: dict[str, str] | None = None,
+) -> TableSchema:
+    descriptions = descriptions or {}
+    return TableSchema(
+        columns=[
+            TableColumn(name=col, type=str(pl_type), description=descriptions.get(col))
+            for col, pl_type in df_schema.items()
+        ]
+    )
+
+
+def get_lazyframe_num_rows(df: pl.LazyFrame) -> int:
+    return df.select(pl.len()).collect().item()
+
+
+def split_list[T](list_: list[T], num_chunks: int) -> Generator[list[T]]:
+    len_list = len(list_)
+    split_size = max(1, ceil(len_list / num_chunks))
+    if len_list == 0:
+        return
+    else:
+        for i in range(0, len_list, split_size):
+            yield list_[i : i + split_size]

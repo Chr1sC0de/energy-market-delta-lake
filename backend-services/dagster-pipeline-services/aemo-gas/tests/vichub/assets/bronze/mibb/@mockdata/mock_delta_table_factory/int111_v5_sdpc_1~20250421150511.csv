@@ -1,6 +1,0 @@
-gas_date,ti,mirn,ps_hourly_max_qty,ps_hourly_min_qty,os_hourly_max_qty,os_hourly_min_qty,ramp_up_constraint,ramp_down_constraint,schedule_response_time,ps_daily_min_qty,ps_daily_max_qty,os_daily_min_qty,os_daily_max_qty,expiration_time,sdpc_id,current_date
-21 Apr 2025,19,30000001PC,,,,,,,00:00:00,,,,,20:00:00,40892,21 Apr 2025 15:05:11
-21 Apr 2025,20,30000001PC,,,,,,,00:00:00,,,,,20:00:00,40892,21 Apr 2025 15:05:11
-21 Apr 2025,21,30000001PC,,,,,,,00:00:00,,,,,20:00:00,40892,21 Apr 2025 15:05:11
-21 Apr 2025,22,30000001PC,,,,,,,00:00:00,,,,,20:00:00,40892,21 Apr 2025 15:05:11
-21 Apr 2025,23,30000001PC,,,,,,,00:00:00,,,,,20:00:00,40892,21 Apr 2025 15:05:11

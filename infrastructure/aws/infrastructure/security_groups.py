@@ -11,7 +11,7 @@ from infrastructure import vpc
 
 
 class Stack(_Stack):
-    dagster_pipeline_security_group: ec2.SecurityGroup
+    dagster_user_code_security_group: ec2.SecurityGroup
     dagster_daemon_security_group: ec2.SecurityGroup
     dagster_webserver_security_group: ec2.SecurityGroup
     postgres_instance_security_group: ec2.SecurityGroup
@@ -89,14 +89,14 @@ class Stack(_Stack):
 
         # create the security groups for the dagster user code
 
-        self.dagster_pipeline_security_group = ec2.SecurityGroup(
+        self.dagster_user_code_security_group = ec2.SecurityGroup(
             self,
             "DagsterPipelineSecurityGroup",
             vpc=VpcStack.vpc,
             allow_all_outbound=True,
         )
 
-        self.dagster_pipeline_security_group.add_ingress_rule(
+        self.dagster_user_code_security_group.add_ingress_rule(
             peer=self.dagster_webserver_security_group,
             connection=ec2.Port.tcp(4000),  # Dagster user code
             description="Dagster User Code access across the VPC",
@@ -111,7 +111,7 @@ class Stack(_Stack):
             allow_all_outbound=True,
         )
 
-        self.dagster_pipeline_security_group.add_ingress_rule(
+        self.dagster_user_code_security_group.add_ingress_rule(
             peer=self.dagster_daemon_security_group,
             connection=ec2.Port.tcp(4000),
             description="Allow daemon to access user code",
@@ -129,7 +129,7 @@ class Stack(_Stack):
 
         for security_group in (
             self.dagster_webserver_security_group,
-            self.dagster_pipeline_security_group,
+            self.dagster_user_code_security_group,
             self.dagster_daemon_security_group,
         ):
             self.postgres_instance_security_group.add_ingress_rule(
@@ -155,7 +155,7 @@ class Stack(_Stack):
             ),
             (
                 "DagsterPipelineSecurityGroupId",
-                self.dagster_pipeline_security_group,
+                self.dagster_user_code_security_group,
             ),
             (
                 "DagsterPostgresSecurityGroupId",

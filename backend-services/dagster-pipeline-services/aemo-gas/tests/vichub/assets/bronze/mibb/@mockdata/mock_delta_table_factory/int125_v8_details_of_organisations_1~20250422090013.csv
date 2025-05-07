@@ -1,6 +1,0 @@
-company_id,company_name,registered_name,acn,abn,organization_class_name,organization_type_name,organization_status_name,line_1,line_2,line_3,province_id,city,postal_code,phone,fax,market_code,company_code,current_date
-1,Allocation Algorithm,,83050168,,Non-Participant,Allocation Agent,New Status,"Level 17, 1 Castlereagh St",,,NSW,Sydney,2000,02  8223 2000,02 8223 2001,VICGAS,,22 Apr 2025 09:00:13
-1,Allocation Algorithm,,83050168,,Non-Participant,Allocation Agent,New Status,"Level 17, 1 Castlereagh St",,,NSW,Sydney,2000,02  8223 2000,02 8223 2001,VICGASW,,22 Apr 2025 09:00:13
-3,Origin Energy (VIC) Pty Limited,Origin Energy (VIC) Pty Limited,86013283,11 086 013 283,Participant,Shipper,New Status,"Level 45, Australia Square",264-278 George St,PO Box 5376,NSW,Sydney,2000,02 8345 5000,02 9252 8622,NATGASBB,ORIGIN,22 Apr 2025 09:00:13
-3,Origin Energy (VIC) Pty Limited,Origin Energy (VIC) Pty Limited,86013283,11 086 013 283,Participant,Shipper,New Status,"Level 45, Australia Square",264-278 George St,PO Box 5376,NSW,Sydney,2000,02 8345 5000,02 9252 8622,STTM,,22 Apr 2025 09:00:13
-3,Origin Energy (VIC) Pty Limited,Origin Energy (VIC) Pty Limited,86013283,11 086 013 283,Market Participant,Retailer,New Status,"Level 45, Australia Square",264-278 George St,PO Box 5376,NSW,Sydney,2000,02 8345 5000,02 9252 8622,VICGAS,ORIGIN,22 Apr 2025 09:00:13

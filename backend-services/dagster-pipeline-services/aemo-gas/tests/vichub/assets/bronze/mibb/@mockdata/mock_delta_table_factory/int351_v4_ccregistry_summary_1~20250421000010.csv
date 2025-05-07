@@ -1,6 +1,0 @@
-zone_id,zone_name,zone_type,start_date,end_date,total_holding_gj,source,current_date
-1,South West Entry,Entry,01 Apr 2025,30 Apr 2025,507200.0,AUCTION,21 Apr 2025 00:00:10
-1,South West Entry,Entry,01 May 2025,31 May 2025,521071.0,AUCTION,21 Apr 2025 00:00:10
-1,South West Entry,Entry,01 Jun 2025,30 Jun 2025,528494.0,AUCTION,21 Apr 2025 00:00:10
-1,South West Entry,Entry,01 Jul 2025,31 Jul 2025,423486.0,AUCTION,21 Apr 2025 00:00:10
-1,South West Entry,Entry,01 Aug 2025,31 Aug 2025,423012.0,AUCTION,21 Apr 2025 00:00:10

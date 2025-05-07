@@ -38,7 +38,7 @@ BucketStack = buckets.Stack(
 
 # create the stacks for the ecr repositories, webserver and daemon
 
-EcrAemoGasPipeline = ecr.pipelines.aemo_gas.Stack(
+EcrAemoETLUserCode = ecr.user_code.aemo_etl.Stack(
     app, f"{ENV}{STACK_PREFIX}EcrAemoGasPipeline", env=aws_environment
 )
 
@@ -97,18 +97,19 @@ DagsterPostgresStack = postgres.Stack(
 
 # here we start creating the required services
 
-DagsterAemoGasPipelineService = ecs.dagster_pipeline_service.Stack(
+DagsterAemoETLUserCodeService = ecs.dagster_user_code_service.Stack(
     app,
-    f"{ENV}{STACK_PREFIX}DagsterAemoGasPipelineService",
+    f"{ENV}{STACK_PREFIX}DagsterAemoETLUserCodeService",
     env=aws_environment,
+    target_module="aemo_etl.definitions",
     VpcStack=VpcStack,
     EcsDagsterClusterStack=DagsterEcsClusterStack,
     PrivateDsnNamespaceStack=PrivateDsnNamespaceStack,
-    PipelineRepositoryStack=EcrAemoGasPipeline,
+    PipelineRepositoryStack=EcrAemoETLUserCode,
     PostgresStack=DagsterPostgresStack,
     SecurityGroupStack=SecurityGroupStack,
-    service_discovery_name="aemo-gas",
-    stream_prefix="dagster-aemo-gas-pipeline-service",
+    service_discovery_name="aemo-etl",
+    stream_prefix="dagster-aemo-etl-user-code-service",
 )
 
 DagsterWebserverService = ecs.dagster_webserver_service.Stack(
@@ -122,8 +123,8 @@ DagsterWebserverService = ecs.dagster_webserver_service.Stack(
     stream_prefix="dagster-webserver-service",
     EcrDagsterWebserver=EcrDagsterWebserver,
     IamRolesStack=IamRolesStack,
-    pipeline_dependencies=[
-        DagsterAemoGasPipelineService,
+    user_code_dependencies=[
+        DagsterAemoETLUserCodeService,
     ],
 )
 
@@ -138,8 +139,8 @@ DagsterDaemonService = ecs.dagster_daemon_service.Stack(
     stream_prefix="dagster-daemon-service",
     EcrDagsterDaemon=EcrDagsterDaemon,
     IamRolesStack=IamRolesStack,
-    pipeline_dependencies=[
-        DagsterAemoGasPipelineService,
+    user_code_dependencies=[
+        DagsterAemoETLUserCodeService,
     ],
 )
 

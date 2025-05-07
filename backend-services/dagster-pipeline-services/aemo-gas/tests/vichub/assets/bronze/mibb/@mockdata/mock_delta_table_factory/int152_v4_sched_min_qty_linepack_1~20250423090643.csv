@@ -1,6 +1,0 @@
-gas_date,type,linepack_id,linepack_zone_id,commencement_datetime,ti,termination_datetime,unit_id,linepack_zone_name,transmission_document_id,quantity,current_date,approval_date
-16 Apr 2025,LPMIN,2354,9,24 Jan 2007 07:09:44,,,GJ,Ballarat,,1000,23 Apr 2025 09:06:52,
-16 Apr 2025,LPMIN,2639,8,30 Jul 2024 10:00:00,,,GJ,Geelong,,130000,23 Apr 2025 09:06:52,
-16 Apr 2025,LPMIN,2640,10,02 Oct 2024 22:00:00,,,GJ,Northern,,150000,23 Apr 2025 09:06:52,
-16 Apr 2025,LPMIN,2648,11,22 Feb 2025 06:00:00,,,GJ,SYSTEM,,820000,23 Apr 2025 09:06:52,
-17 Apr 2025,LPMIN,2354,9,24 Jan 2007 07:09:44,,,GJ,Ballarat,,1000,23 Apr 2025 09:06:52,

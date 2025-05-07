@@ -44,5 +44,5 @@ exclude = [
 ]
 
 [tool.uv.sources]
-configurations = { path = "../../@common/configurations" }
+configurations = { path = "configurations" }
 

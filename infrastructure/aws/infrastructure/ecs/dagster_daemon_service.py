@@ -33,7 +33,7 @@ class Stack(_Stack):
         SecurityGroupStack: security_groups.Stack,
         IamRolesStack: iam_roles.Stack,
         stream_prefix: str = "dagster-webserver-service",
-        pipeline_dependencies: list[ecs.dagster_pipeline_service.Stack] | None = None,
+        user_code_dependencies: list[ecs.dagster_user_code_service.Stack] | None = None,
         **kwargs: Unpack[StackKwargs],
     ):
         super().__init__(scope, id, **kwargs)
@@ -45,8 +45,8 @@ class Stack(_Stack):
         self.add_dependency(PostgresStack)
         self.add_dependency(SecurityGroupStack)
         self.add_dependency(IamRolesStack)
-        if pipeline_dependencies is not None:
-            for service in pipeline_dependencies:
+        if user_code_dependencies is not None:
+            for service in user_code_dependencies:
                 self.add_dependency(service)
 
         postgres_host_param = ssm.StringParameter.value_for_string_parameter(

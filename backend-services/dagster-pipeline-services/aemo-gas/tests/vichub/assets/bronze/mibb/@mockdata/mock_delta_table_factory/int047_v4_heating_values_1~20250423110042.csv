@@ -1,6 +1,0 @@
-version_id,gas_date,event_datetime,event_interval,heating_value_zone,heating_value_zone_desc,initial_heating_value,current_heating_value,current_date
-10019,22 Apr 2025,23 Apr 2025 05:00:00,24,9,South Hume,38.66,38.66,23 Apr 2025 11:00:42
-10019,22 Apr 2025,23 Apr 2025 05:00:00,24,13,Otway,38.66,38.66,23 Apr 2025 11:00:42
-10019,22 Apr 2025,23 Apr 2025 05:00:00,24,21,On Site HV,38.66,38.66,23 Apr 2025 11:00:42
-10019,22 Apr 2025,23 Apr 2025 05:00:00,24,33,Undefined,38.66,38.66,23 Apr 2025 11:00:42
-10019,22 Apr 2025,23 Apr 2025 05:00:00,24,50,Bairnsdale Non PTS,39.07,39.07,23 Apr 2025 11:00:42
