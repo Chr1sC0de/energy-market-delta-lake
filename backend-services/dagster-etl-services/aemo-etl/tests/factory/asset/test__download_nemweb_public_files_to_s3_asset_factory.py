@@ -3,22 +3,12 @@ import pathlib as pt
 from io import BytesIO
 
 import dagster as dg
-import polars as pl
 import pytest
 from dagster_aws.s3 import S3Resource
-from dagster_delta import (
-    DeltaLakePolarsIOManager,
-    MergeConfig,
-    MergeType,
-    S3Config,
-    SchemaMode,
-    WriteMode,
-)
 from types_boto3_s3 import S3Client
 
 import aemo_etl
-from aemo_etl.configuration import BRONZE_BUCKET, LANDING_BUCKET, Link
-from aemo_etl.util import newline_join
+from aemo_etl.configuration import LANDING_BUCKET, Link
 
 # pyright: reportUnusedParameter=false, reportUnknownMemberType=false, reportMissingTypeStubs=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
 
@@ -74,13 +64,6 @@ def test__download_nemweb_public_files_to_s3_asset_factory(s3: S3Client):
         override_get_links_fn=mocked_get_links_fn,
         get_buffer_from_link_hook=mocked_get_buffer_from_link_fn,
         link_filter=mocked_link_filters,
-        out_metadata={
-            "merge_predicate": newline_join(
-                "s.source_absolute_href = t.source_absolute_href",
-                "and s.source_upload_datetime = t.source_upload_datetime",
-            ),
-            "schema": "aemo_vicgas",
-        },
     )
 
     result = dg.materialize(

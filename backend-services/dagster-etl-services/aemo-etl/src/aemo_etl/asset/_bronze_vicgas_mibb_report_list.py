@@ -6,7 +6,29 @@ import pymupdf
 import requests
 
 from aemo_etl.configuration import BRONZE_BUCKET
+from aemo_etl.parameter_specification import (
+    PolarsLazyFrameScanParquetParamSpec,
+    PolarsLazyFrameSinkParquetParamSpec,
+)
+from aemo_etl.register import table_locations
 from aemo_etl.util import get_lazyframe_num_rows, get_metadata_schema
+
+#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+#     │                      define table and register to table locations                      │
+#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
+
+table_name = "bronze_vicgas_mibb_report_list"
+s3_table_location = f"s3://{BRONZE_BUCKET}/aemo/vicgas/{table_name}"
+table_locations[table_name] = {
+    "table_name": table_name,
+    "table_type": "parquet",
+    "glue_schema": "aemo",
+    "s3_table_location": s3_table_location,
+}
+
+#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+#     │                                create helper functions                                 │
+#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
 
 def process_extracted_table(table_contents: list[list[str]]) -> pl.LazyFrame:
@@ -18,26 +40,45 @@ def process_extracted_table(table_contents: list[list[str]]) -> pl.LazyFrame:
     return pl.LazyFrame(df_dict)
 
 
+#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+#     │                                create asset definition                                 │
+#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
+
+
 @dg.asset(
     group_name="aemo",
     key_prefix=["bronze", "aemo", "vicgas"],
-    name="bronze_mibb_report_list",
+    name=table_name,
     description="Grab the mibb report list from the following User Guide to MIBB Reports Document found here: https://aemo.com.au/energy-systems/gas/declared-wholesale-gas-market-dwgm/procedures-policies-and-guides",
     kinds={"source", "table", "parquet"},
-    io_manager_key="bronze_aemo_gas_simple_polars_parquet_io_manager",
+    io_manager_key="s3_polars_parquet_io_manager",
     automation_condition=dg.AutomationCondition.missing()
     & ~dg.AutomationCondition.in_progress(),
     metadata={
         "dagster/column_schema": get_metadata_schema(
             {
-                "Report Name": pl.String,
-                "Trigger (Event and/or Time (AEST))": pl.String,
-                "Participant": pl.String,
-                "Market": pl.String,
-                "Consultative Forum": pl.String,
-            }
+                "report_name": pl.String,
+                "trigger_event_and_or_time_aest": pl.String,
+                "participant": pl.String,
+                "market": pl.String,
+                "consultative_forum": pl.String,
+            },
+            {
+                "report_name": "Name of the report",
+                "trigger_event_and_or_time_aest": "Trigger (event or time (shown as HH:MM AEST in table below))",
+                "participant": "Participant receiving report (Public, private, Market participant, etc)",
+                "market": "Market (DWGM – VIC, Retail – VIC, Retail – QLD etc)",
+                "consultative_forum": "Consultative forum owner (GWCF or GRCF)",
+            },
         ),
-        "schema": "aemo_vicgas",
+        "s3_polars_parquet_io_manager_options": {
+            "sink_parquet_options": PolarsLazyFrameSinkParquetParamSpec(
+                path=f"{s3_table_location}/result.parquet"
+            ),
+            "scan_parquet_options": PolarsLazyFrameScanParquetParamSpec(
+                source=f"{s3_table_location}/"
+            ),
+        },
     },
 )
 def bronze_vicgas_mibb_report_list_asset() -> pl.LazyFrame:
@@ -59,13 +100,24 @@ def bronze_vicgas_mibb_report_list_asset() -> pl.LazyFrame:
             all_dfs.append(process_extracted_table(doc[i].find_tables()[-1].extract()))  # pyright: ignore[reportAttributeAccessIssue]
         except:
             raise
-    output = pl.concat(all_dfs)
+    output = pl.concat(all_dfs).rename(
+        {
+            "Report Name": "report_name",
+            "Trigger (Event and/or Time (AEST))": "trigger_event_and_or_time_aest",
+            "Participant": "participant",
+            "Market": "market",
+            "Consultative Forum": "consultative_forum",
+        }
+    )
     return output
 
 
-@dg.asset_check(
-    asset=bronze_vicgas_mibb_report_list_asset, name="has_not_duplicate_reports"
-)
+#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+#     │                                  create asset checks                                   │
+#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+@dg.asset_check(asset=bronze_vicgas_mibb_report_list_asset, name="no_duplicate_reports")
 def bronze_vicgas_mibb_report_list_asset_check(
     bronze_mibb_report_list: pl.LazyFrame,
 ):
@@ -73,7 +125,7 @@ def bronze_vicgas_mibb_report_list_asset_check(
         passed=bool(
             get_lazyframe_num_rows(bronze_mibb_report_list)
             == get_lazyframe_num_rows(
-                bronze_mibb_report_list.select(pl.col("Report Name")).unique()
+                bronze_mibb_report_list.select(pl.col("report_name")).unique()
             )
         ),
     )

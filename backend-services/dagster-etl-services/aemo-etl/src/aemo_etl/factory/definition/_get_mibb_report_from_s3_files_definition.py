@@ -17,17 +17,14 @@ from dagster import (
     sensor,
 )
 from dagster_aws.s3 import S3Resource
-from polars import LazyFrame
+from polars import LazyFrame, Schema
 from polars._typing import PolarsDataType
 
 from aemo_etl.factory.asset import (
-    MetadataBuilder,
     compact_and_vacuum_dataframe_asset_factory,
     get_mibb_report_from_s3_files_asset_factory,
 )
 from aemo_etl.util import get_s3_object_keys_from_prefix_and_name_glob
-
-# from aemo_etl.util import get_s3_object_keys_from_prefix_and_name_glob
 from configurations.parameters import DEVELOPMENT_LOCATION
 
 
@@ -47,12 +44,11 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
         s3_source_prefix: str,
         s3_file_glob: str,
         s3_target_bucket: str,
-        s3_target_schema: str,
-        df_schema: Mapping[str, PolarsDataType],
+        s3_target_prefix: str,
+        table_schema: Mapping[str, PolarsDataType] | Schema,
         table_post_process_hook: (
             Callable[[AssetExecutionContext, LazyFrame], LazyFrame] | None
         ) = None,
-        table_context_metadata_builder: MetadataBuilder | None = None,
         retention_hours: int = 0,
         check_factories: (
             list[Callable[[AssetsDefinition], AssetChecksDefinition]] | None
@@ -78,9 +74,8 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
             s3_source_bucket=s3_source_bucket,
             s3_source_prefix=s3_source_prefix,
             s3_source_file_glob=s3_file_glob,
-            table_schema=df_schema,
+            table_schema=table_schema,
             post_process_hook=table_post_process_hook,
-            context_metadata_builder=table_context_metadata_builder,
         )
 
         #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
@@ -89,9 +84,9 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
 
         self.compact_and_vacuum_asset = compact_and_vacuum_dataframe_asset_factory(
             group_name=f"{group_name}__optimize",
-            table_bucket=s3_target_bucket,
-            s3_schema=s3_target_schema,
-            table_name=name,
+            s3_target_bucket=s3_target_bucket,
+            s3_target_prefix=s3_target_prefix,
+            s3_target_table_name=name,
             key_prefix=key_prefix + ["optimize"],
             dependant_definitions=[self.table_asset],
             retention_hours=retention_hours,

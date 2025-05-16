@@ -10,28 +10,29 @@ from deltalake.exceptions import TableNotFoundError
 
 def compact_and_vacuum_dataframe_asset_factory(
     group_name: str,
-    table_bucket: str,
-    s3_schema: str,
-    table_name: str,
     key_prefix: list[str],
+    s3_target_bucket: str,
+    s3_target_prefix: str,
+    s3_target_table_name: str,
     retention_hours: int = 0,
     dependant_definitions: list[dg.AssetsDefinition] | None = None,
     storage_options: dict[str, str] | None = None,
-    # used for purposes
+    # useful for testing purposes
     table_path_override: pt.Path | None = None,
-    # use for testing purposes
     captured_response: dict[str, Any] | None = None,
 ):
     @dg.asset(
         group_name=group_name,
         key_prefix=key_prefix,
-        name=f"{table_name}_compact_and_vacuum",
-        description=f"compact and vacuum for {table_name}",
+        name=f"{s3_target_table_name}_compact_and_vacuum",
+        description=f"compact and vacuum for {s3_target_table_name}",
         deps=dependant_definitions,
         kinds={"task"},
     )
     def compact_and_vacuum(context: dg.AssetExecutionContext):
-        delta_table_path = f"s3://{table_bucket}/{s3_schema}/{table_name}"
+        delta_table_path = (
+            f"s3://{s3_target_bucket}/{s3_target_prefix}/{s3_target_table_name}"
+        )
 
         if table_path_override is not None:
             delta_table_path = table_path_override

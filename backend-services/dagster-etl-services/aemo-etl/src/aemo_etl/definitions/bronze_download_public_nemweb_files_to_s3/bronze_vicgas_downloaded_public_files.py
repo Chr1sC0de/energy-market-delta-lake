@@ -1,14 +1,26 @@
 from aemo_etl.configuration import BRONZE_BUCKET, LANDING_BUCKET
-from aemo_etl.register import definitions_list, table_locations
 from aemo_etl.factory.definition import (
     download_nemweb_public_files_to_s3_definition_factory,
 )
+from aemo_etl.register import definitions_list, table_locations
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-#     │                                    define variables                                    │
+#     │                      define table and register to table locations                      │
 #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
-schema = "aemo_vicgas"
+table_name = "bronze_vicgas_downloaded_public_files"
+
+s3_prefix = "aemo/vicgas"
+
+s3_table_location = f"s3://{BRONZE_BUCKET}/{s3_prefix}/{table_name}"
+
+
+table_locations[table_name] = {
+    "table_name": table_name,
+    "table_type": "delta",
+    "glue_schema": "aemo",
+    "s3_table_location": s3_table_location,
+}
 
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
@@ -19,14 +31,13 @@ definitions_list.append(
     download_nemweb_public_files_to_s3_definition_factory(
         group_name="aemo",
         key_prefix=["bronze", "aemo", "vicgas"],
-        name="bronze_downloaded_public_vicgas_files",
+        name=table_name,
         root_relative_href="REPORTS/CURRENT/VicGas",
         s3_landing_bucket=LANDING_BUCKET,
-        s3_landing_prefix=schema,
-        s3_schema=schema,
+        s3_landing_prefix=s3_prefix,
+        s3_target_prefix=s3_prefix,
         link_filter=None,
         get_buffer_from_link_hook=None,
-        post_process_hook=None,
         override_get_links_fn=None,
         vacuum_retention_hours=0,
         job_tags={

@@ -23,7 +23,7 @@ class Test__duplicate_row_check_factory:
 
         asset_check = duplicate_row_check_factory(assets_definition=mock_asset)
 
-        assert ~asset_check(mock_asset()).passed
+        assert not asset_check(mock_asset()).passed
 
     def test__with_no_duplicate_primary_key(self):
         @asset
@@ -47,4 +47,4 @@ class Test__duplicate_row_check_factory:
             assets_definition=mock_asset, primary_key="col_1"
         )
 
-        assert ~asset_check(mock_asset()).passed
+        assert not asset_check(mock_asset()).passed

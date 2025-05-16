@@ -6,10 +6,12 @@ from dagster_delta import (
     SchemaMode,
     WriteMode,
 )
-from aemo_etl.configuration import BRONZE_BUCKET
-from aemo_etl.resource._polars_parquet_io_manager import PolarsParquetIOManager
 
-__all__ = ["PolarsParquetIOManager"]
+from aemo_etl.configuration import BRONZE_BUCKET
+from aemo_etl.resource._s3_polars_parquet_io_manager import S3PolarsParquetIOManager
+from aemo_etl.resource._s3_polars_deltalake_io_manager import S3PolarsDeltaLakeIOManager
+
+__all__ = ["S3PolarsParquetIOManager", "S3PolarsDeltaLakeIOManager"]
 
 bronze_delta_polars_io_manager = DeltaLakePolarsIOManager(
     root_uri=f"s3://{BRONZE_BUCKET}",

@@ -1,6 +1,7 @@
 from io import BytesIO
 from pathlib import Path
-from dagster import AssetExecutionContext, materialize
+from typing import Generator, cast
+from dagster import AssetExecutionContext, Output, build_asset_context, materialize
 from dagster_aws.s3 import S3Resource
 from dagster_delta import (
     DeltaLakePolarsIOManager,
@@ -37,20 +38,6 @@ def upload_mock_files(create_buckets: None, create_delta_log: None, s3: S3Client
 
 
 def test__get_mibb_report_from_s3_files_asset_factory(s3: S3Client):
-    root_uri = f"s3://{BRONZE_BUCKET}"
-
-    bronze_aemo_gas_deltalake_upsert_io_manager = DeltaLakePolarsIOManager(
-        root_uri=root_uri,
-        storage_options=S3Config(),
-        mode=WriteMode.merge,
-        schema_mode=SchemaMode.overwrite,
-        merge_config=MergeConfig(
-            merge_type=MergeType.upsert,
-            source_alias="s",
-            target_alias="t",
-        ),
-    )
-
     def post_process_hook(context: AssetExecutionContext, df: LazyFrame):
         df_out = df.filter(
             (col("current_date") == col("current_date").max()).over(
@@ -64,34 +51,21 @@ def test__get_mibb_report_from_s3_files_asset_factory(s3: S3Client):
 
     table_name = "bronze_int029_indicative_market_price"
 
-    schema_name = "aemo_vicgas"
-
     asset = get_mibb_report_from_s3_files_asset_factory(
         s3_source_bucket=LANDING_BUCKET,
         s3_source_prefix="aemo_vicgas",
         s3_source_file_glob="int037b*",
-        key_prefix=["aemo", "gas"],
+        key_prefix=["bronze", "aemo", "gas"],
         name=table_name,
         table_schema=None,
-        metadata={
-            "merge_predicate": newline_join(
-                "s.transmission_group_id=t.transmission_group_id",
-                "and s.schedule_type_id=t.schedule_type_id",
-                "and s.transmission_id=t.transmission_id",
-                "and s.demand_type_name=t.demand_type_name",
-            ),
-            "schema": schema_name,
-        },
         post_process_hook=post_process_hook,
         io_manager_key="bronze_aemo_gas_deltalake_upsert_io_manager",
     )
 
-    _ = materialize(
-        assets=[asset],
-        resources={
-            "s3_resource": S3Resource(),
-            "bronze_aemo_gas_deltalake_upsert_io_manager": bronze_aemo_gas_deltalake_upsert_io_manager,
-        },
+    results = cast(
+        Generator[Output[LazyFrame]], asset(build_asset_context(), S3Resource())
     )
 
-    assert read_delta(f"{root_uri}/{schema_name}/{table_name}").shape == (45, 9)
+    df = next(iter(results)).value
+
+    assert df.collect().shape == (45, 9)

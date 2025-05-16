@@ -48,7 +48,7 @@ def get_df_from_s3_keys(
     s3_client: S3Client,
     s3_bucket: str,
     s3_object_keys: list[str],
-    df_schema: Mapping[str, PolarsDataType] | None = None,
+    table_shema: Mapping[str, PolarsDataType] | None = None,
     logger: Logger | None = None,
 ) -> pl.LazyFrame:
     all_dfs: list[pl.LazyFrame] = []
@@ -63,10 +63,10 @@ def get_df_from_s3_keys(
 
             if len(object_bytes) > 0:
                 if key.lower().endswith(".parquet"):
-                    df = pl.read_parquet(object_bytes, schema=df_schema).lazy()
+                    df = pl.read_parquet(object_bytes, schema=table_shema).lazy()
                 elif key.lower().endswith(".csv"):
                     df = pl.read_csv(
-                        object_bytes, infer_schema_length=None, schema=df_schema
+                        object_bytes, infer_schema_length=None, schema=table_shema
                     ).lazy()
                 else:
                     raise ValueError(f"filetype of {key} is unsupported")
@@ -85,13 +85,13 @@ def get_df_from_s3_keys(
     if len(all_dfs) == 0:
         if logger is not None:
             logger.info("no valid dataframes found returning empty dataframe")
-        return pl.LazyFrame(schema=df_schema)
+        return pl.LazyFrame(schema=table_shema)
 
     return pl.concat(all_dfs, how="diagonal_relaxed")
 
 
 def get_metadata_schema(
-    df_schema: Mapping[str, type[pl.DataType]],
+    df_schema: Mapping[str, type[pl.DataType]] | pl.Schema,
     descriptions: dict[str, str] | None = None,
 ) -> TableSchema:
     descriptions = descriptions or {}

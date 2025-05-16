@@ -1,18 +1,16 @@
-# pyright: reportUnknownMemberType=false, reportMissingTypeStubs=false
 from io import BytesIO
 from typing import Callable
-from configurations.parameters import DEVELOPMENT_LOCATION
+
 from dagster import (
     DefaultScheduleStatus,
     Definitions,
-    MetadataValue,
     OpExecutionContext,
     ScheduleDefinition,
     define_asset_job,
 )
-
 from deltalake.exceptions import TableNotFoundError
-from polars import LazyFrame, col, lit, read_delta
+from polars import col, lit, read_delta
+
 from aemo_etl.configuration import BRONZE_BUCKET, Link
 from aemo_etl.factory.asset import (
     compact_and_vacuum_dataframe_asset_factory,
@@ -20,9 +18,16 @@ from aemo_etl.factory.asset import (
 from aemo_etl.factory.asset._download_nemweb_public_files_to_s3_asset_factory import (
     download_nemweb_public_files_to_s3_asset_factory,
 )
-
 from aemo_etl.factory.check import duplicate_row_check_factory
+from aemo_etl.parameter_specification import (
+    PolarsDataFrameReadScanDeltaParamSpec,
+    PolarsDataFrameWriteDeltaParamSpec,
+    PolarsDeltaLakeMergeParamSpec,
+)
 from aemo_etl.util import newline_join
+from configurations.parameters import DEVELOPMENT_LOCATION
+
+# pyright: reportUnknownMemberType=false, reportMissingTypeStubs=false
 
 
 def download_nemweb_public_files_to_s3_definition_factory(
@@ -32,12 +37,9 @@ def download_nemweb_public_files_to_s3_definition_factory(
     root_relative_href: str,
     s3_landing_bucket: str,
     s3_landing_prefix: str,
-    s3_schema: str,
+    s3_target_prefix: str,
     link_filter: Callable[[OpExecutionContext, Link], bool] | None = None,
     get_buffer_from_link_hook: Callable[[Link], BytesIO] | None = None,
-    post_process_hook: Callable[[OpExecutionContext, LazyFrame], LazyFrame] | None = (
-        None
-    ),
     override_get_links_fn: Callable[[OpExecutionContext], list[Link]] | None = None,
     vacuum_retention_hours: int = 0,
     job_tags: dict[str, str] = {
@@ -47,9 +49,11 @@ def download_nemweb_public_files_to_s3_definition_factory(
     job_schedule_cron: str = "5 * * * *",  # run every day 5 minutes past the hour,
     compact_and_vacuum_schdule_cron: str = "00 23 * * *",  # run at every 11 pm
 ) -> Definitions:
+    table_path = f"s3://{BRONZE_BUCKET}/{s3_target_prefix}/{name}"
+
     def default_link_filter(_: OpExecutionContext, link: Link) -> bool:
         try:
-            df = read_delta(f"s3://{BRONZE_BUCKET}/{s3_schema}/{name}")
+            df = read_delta(table_path)
             search_df = df.filter(
                 col("source_absolute_href") == lit(link.source_absolute_href),
                 col("source_upload_datetime")
@@ -63,30 +67,6 @@ def download_nemweb_public_files_to_s3_definition_factory(
         except TableNotFoundError:
             return True
 
-    def default_post_process_hook(
-        context: OpExecutionContext, output_df: LazyFrame
-    ) -> LazyFrame:
-        context.log.info(f"adding preview: s3://{BRONZE_BUCKET}/{s3_schema}/{name}")
-
-        metadata = {}
-
-        try:
-            df_preview = read_delta(f"s3://{BRONZE_BUCKET}/{s3_schema}/{name}").lazy()
-        except TableNotFoundError:
-            df_preview = output_df
-            context.log.info(
-                f"s3://{BRONZE_BUCKET}/{s3_schema}/{name} not found, previewing using upserted rows"
-            )
-
-        df_markdown = df_preview.head().collect().to_pandas().to_markdown()
-
-        assert df_markdown is not None
-
-        metadata["preview"] = MetadataValue.md(df_markdown)
-
-        context.add_output_metadata(metadata)
-        return output_df
-
     #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
     #     │                                   define the assets                                    │
     #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
@@ -96,36 +76,43 @@ def download_nemweb_public_files_to_s3_definition_factory(
     else:
         link_filter = link_filter
 
-    download_nemweb_public_files_to_s3_asset = (
-        download_nemweb_public_files_to_s3_asset_factory(
-            group_name=group_name,
-            key_prefix=key_prefix,
-            name=name,
-            io_manager_key="bronze_delta_polars_io_manager",
-            nemweb_relative_href=root_relative_href,
-            s3_source_bucket=s3_landing_bucket,
-            s3_source_prefix=s3_landing_prefix,
-            link_filter=link_filter,
-            get_buffer_from_link_hook=get_buffer_from_link_hook,
-            post_process_hook=default_post_process_hook
-            if post_process_hook is None
-            else post_process_hook,
-            override_get_links_fn=override_get_links_fn,
-            out_metadata={
-                "merge_predicate": newline_join(
-                    "s.source_absolute_href = t.source_absolute_href",
-                    "and s.source_upload_datetime = t.source_upload_datetime",
+    download_nemweb_public_files_to_s3_asset = download_nemweb_public_files_to_s3_asset_factory(
+        group_name=group_name,
+        key_prefix=key_prefix,
+        name=name,
+        io_manager_key="s3_polars_deltalake_io_manager",
+        nemweb_relative_href=root_relative_href,
+        s3_source_bucket=s3_landing_bucket,
+        s3_source_prefix=s3_landing_prefix,
+        link_filter=link_filter,
+        get_buffer_from_link_hook=get_buffer_from_link_hook,
+        override_get_links_fn=override_get_links_fn,
+        out_metadata={
+            "s3_polars_deltalake_io_manager_options": {
+                "write_delta_options": PolarsDataFrameWriteDeltaParamSpec(
+                    target=table_path,
+                    mode="merge",
+                    delta_merge_options=PolarsDeltaLakeMergeParamSpec(
+                        predicate=newline_join(
+                            "s.source_absolute_href = t.source_absolute_href",
+                            "and s.source_upload_datetime = t.source_upload_datetime",
+                        ),
+                        source_alias="s",
+                        target_alias="t",
+                    ),
                 ),
-                "schema": s3_schema,
-            },
-        )
+                "scan_delta_options": PolarsDataFrameReadScanDeltaParamSpec(
+                    source=table_path
+                ),
+            }
+        },
     )
 
     compact_and_vacuum_asset = compact_and_vacuum_dataframe_asset_factory(
         group_name=f"{group_name}__optimize",
-        table_bucket=BRONZE_BUCKET,
-        s3_schema=s3_schema,
-        table_name=name,
+        s3_target_bucket=BRONZE_BUCKET,
+        s3_target_prefix=s3_target_prefix,
+        s3_target_table_name=name,
         key_prefix=key_prefix + ["optimize"],
         retention_hours=vacuum_retention_hours,
         dependant_definitions=[download_nemweb_public_files_to_s3_asset],

@@ -1,5 +1,5 @@
 from io import BytesIO
-from typing import Callable, Unpack
+from typing import Any, Callable, Unpack
 
 from dagster import (
     In,
@@ -10,37 +10,34 @@ from dagster import (
     graph_asset,
     op,
 )
-from polars import LazyFrame
+from polars import Datetime, LazyFrame, String
 
 from aemo_etl.configuration import LANDING_BUCKET, Link
-from aemo_etl.factory.asset.schema import MandatedGraphAssetKwargs
+from aemo_etl.factory.asset.param_spec import GraphAssetParamSpec
 from aemo_etl.factory.op import (
     combine_processed_links_to_dataframe_op_factory,
     download_link_and_upload_to_s3_op_factory,
     get_dynamic_nemweb_links_op_factory,
+    get_nemweb_links_op_factory,
+    unzip_s3_file_from_key_op_factory,
 )
 from aemo_etl.factory.op._get_dynamic_zip_links_op_factory import (
     get_dyanmic_zip_links_op_factory,
 )
-from aemo_etl.factory.op import get_nemweb_links_op_factory
-from aemo_etl.factory.op import (
-    unzip_s3_file_from_key_op_factory,
-)
+from aemo_etl.util import get_metadata_schema
 
 
 def download_nemweb_public_files_to_s3_asset_factory(
     *,
-    io_manager_key: str | None = None,
+    nemweb_relative_href: str,
     s3_source_prefix: str,
     s3_source_bucket: str = LANDING_BUCKET,
-    nemweb_relative_href: str,
-    out_metadata: dict[str, str] | None = None,
+    out_metadata: dict[Any, Any] | None = None,
+    io_manager_key: str | None = None,
     link_filter: Callable[[OpExecutionContext, Link], bool] | None = None,
     get_buffer_from_link_hook: Callable[[Link], BytesIO] | None = None,
-    post_process_hook: Callable[[OpExecutionContext, LazyFrame], LazyFrame]
-    | None = None,
     override_get_links_fn: Callable[[OpExecutionContext], list[Link]] | None = None,
-    **graph_asset_kwargs: Unpack[MandatedGraphAssetKwargs],
+    **graph_asset_kwargs: Unpack[GraphAssetParamSpec],
 ):
     graph_asset_kwargs.setdefault("group_name", "AEMO")
     graph_asset_kwargs.setdefault(
@@ -48,6 +45,32 @@ def download_nemweb_public_files_to_s3_asset_factory(
         f"Table listing public files downloaded from https://www.nemweb.com.au/{nemweb_relative_href} and converted to parquet where possible",
     )
     graph_asset_kwargs.setdefault("kinds", {"source", "table", "deltalake"})
+
+    schema = {
+        "source_absolute_href": String,
+        "source_upload_datetime": Datetime("ms", time_zone="Australia/Melbourne"),
+        "target_s3_href": String,
+        "target_s3_bucket": String,
+        "target_s3_prefix": String,
+        "target_s3_name": String,
+        "target_ingested_datetime": Datetime("ms", time_zone="Australia/Melbourne"),
+    }
+
+    descriptions = {
+        "source_absolute_href": "Full link to the source file",
+        "source_upload_datetime": "Time the data was uploaded onto the website in Australia/Melbourne time zone",
+        "target_s3_href": "The s3 bucket the file is stored in, if the file can be converted to a parquet it will be converted to a parquet",
+        "target_s3_bucket": "The name of the bucket the file will be saved in",
+        "target_s3_prefix": "The s3 prefix",
+        "target_s3_name": "The name of the file saved",
+        "target_ingested_datetime": "The datetime the file was ingested in Australia/Melbourne time zone",
+    }
+
+    if out_metadata is not None:
+        if "dagster/column_schema" not in out_metadata:
+            out_metadata["dagster/column_schema"] = get_metadata_schema(
+                schema, descriptions
+            )
 
     def final_passthrough_op_factory() -> OpDefinition:
         @op(
@@ -60,12 +83,8 @@ def download_nemweb_public_files_to_s3_asset_factory(
             ),
         )
         def final_passthrough_op(
-            context: OpExecutionContext,
             output_df: LazyFrame,
         ) -> LazyFrame:
-            if post_process_hook is not None:
-                post_process_hook(context, output_df)
-
             return output_df
 
         return final_passthrough_op
@@ -112,6 +131,7 @@ def download_nemweb_public_files_to_s3_asset_factory(
         )
 
         df = combine_processed_links_to_dataframe_op_factory(
+            schema=schema,
             description="for each processed link, combine the downloaded files into a single data frame",
         )(processed_links)
 

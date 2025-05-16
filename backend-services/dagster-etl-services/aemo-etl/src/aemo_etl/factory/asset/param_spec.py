@@ -22,7 +22,7 @@ from dagster._core.definitions.metadata import (
 )
 
 
-class GraphAssetKwargs(TypedDict):
+class GraphAssetParamSpec(TypedDict):
     name: NotRequired[str]
     key_prefix: NotRequired[CoercibleToAssetKeyPrefix]
     description: NotRequired[str]
@@ -42,34 +42,9 @@ class GraphAssetKwargs(TypedDict):
     kinds: NotRequired[AbstractSet[str]]
 
 
-class MandatedGraphAssetKwargs(TypedDict):
-    name: str
-    key_prefix: CoercibleToAssetKeyPrefix
-    description: NotRequired[str]
-    ins: NotRequired[Mapping[str, AssetIn]]
-    config: NotRequired[ConfigMapping | Mapping[str, Any]]
-    group_name: NotRequired[str]
-    partitions_def: NotRequired[PartitionsDefinition]
-    metadata: NotRequired[RawMetadataMapping]
-    tags: NotRequired[Mapping[str, str]]
-    owners: NotRequired[Sequence[str]]
-    automation_condition: NotRequired[AutomationCondition]
-    backfill_policy: NotRequired[BackfillPolicy]
-    resource_defs: NotRequired[Mapping[str, ResourceDefinition]]
-    check_specs: NotRequired[Sequence[AssetCheckSpec]]
-    code_version: NotRequired[str]
-    key: NotRequired[CoercibleToAssetKey]
-    kinds: NotRequired[AbstractSet[str]]
-
-
-class DeltaIOManagedUpsert(TypedDict):
-    merge_predicate: str
-    schema: str
-
-
-class DeltaIOManagedAssetKwargs(TypedDict):
-    name: str
-    key_prefix: CoercibleToAssetKeyPrefix
+class AssetDefinitonParamSpec(TypedDict):
+    name: NotRequired[str]
+    key_prefix: NotRequired[CoercibleToAssetKeyPrefix]
     metadata: NotRequired[dict[str, Any]]
     io_manager_key: NotRequired[str]
     key: NotRequired[CoercibleToAssetKey]

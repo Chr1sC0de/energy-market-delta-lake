@@ -1,27 +1,16 @@
-from typing import Callable, Unpack
+from typing import Callable, Mapping, Unpack
 
 from dagster import OpDefinition, OpExecutionContext, op
-from polars import Datetime, LazyFrame, String
+from polars import DataType, LazyFrame, Schema
 
 from aemo_etl.configuration import ProcessedLink
 from aemo_etl.factory.op.schema import OpKwargs
 
-
 ProcessDataFrameHooks = Callable[[OpExecutionContext, LazyFrame], LazyFrame] | None
 
 
-schema = {
-    "source_absolute_href": String,
-    "source_upload_datetime": Datetime("ms", time_zone="Australia/Melbourne"),
-    "target_s3_href": String,
-    "target_s3_bucket": String,
-    "target_s3_prefix": String,
-    "target_s3_name": String,
-    "target_ingested_datetime": Datetime("ms", time_zone="Australia/Melbourne"),
-}
-
-
 def combine_processed_links_to_dataframe_op_factory(
+    schema: Mapping[str, DataType] | Schema | None = None,
     post_process_dataframe_hook: ProcessDataFrameHooks = None,
     **op_kwargs: Unpack[OpKwargs],
 ) -> OpDefinition:

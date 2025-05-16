@@ -39,9 +39,9 @@ def test__compact_and_vacuum():
     compact_and_vacuum_dataframe_asset = (
         factory.asset.compact_and_vacuum_dataframe_asset_factory(
             group_name="AEMO",
-            table_bucket=bucket,
-            s3_schema=s3_schema,
-            table_name=table_name,
+            s3_target_bucket=bucket,
+            s3_target_prefix=s3_schema,
+            s3_target_table_name=table_name,
             table_path_override=pt.Path(__file__).parent / "@mockdata/.mock_table",
             key_prefix=["aemo_vicgas", "optimize"],
             captured_response=captured_response,

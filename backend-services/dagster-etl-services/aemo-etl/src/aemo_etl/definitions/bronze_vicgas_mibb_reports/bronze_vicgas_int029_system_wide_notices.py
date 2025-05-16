@@ -7,14 +7,46 @@ from dagster import (
 from polars import Datetime, Int64, LazyFrame, String, col
 
 from aemo_etl.configuration import BRONZE_BUCKET, LANDING_BUCKET
-from aemo_etl.factory.asset import (
-    MetadataBuilder,
-)
 from aemo_etl.factory.definition import (
     GetMibbReportFromS3FilesDefinitionBuilder,
 )
-from aemo_etl.register import definitions_list
-from aemo_etl.util import get_lazyframe_num_rows, newline_join
+from aemo_etl.parameter_specification import (
+    PolarsDataFrameReadScanDeltaParamSpec,
+    PolarsDataFrameWriteDeltaParamSpec,
+    PolarsDeltaLakeMergeParamSpec,
+)
+from aemo_etl.register import definitions_list, table_locations
+from aemo_etl.util import get_lazyframe_num_rows, get_metadata_schema
+
+
+#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+#     │                      define table and register to table locations                      │
+#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
+
+table_name = "bronze_vicgas_int029a_system_wide_notices"
+
+s3_prefix = "aemo/vicgas"
+
+s3_table_location = f"s3://{BRONZE_BUCKET}/{s3_prefix}/{table_name}"
+
+table_schema = {
+    "system_wide_notice_id": Int64,
+    "critical_notice_flag": String,
+    "system_message": String,
+    "system_email_message": String,
+    "notice_start_date": String,
+    "notice_end_date": String,
+    "url_path": String,
+    "current_date": String,
+}
+
+table_locations[table_name] = {
+    "table_name": table_name,
+    "table_type": "delta",
+    "glue_schema": "aemo",
+    "s3_table_location": s3_table_location,
+}
+
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                                 define the user hooks                                  │
@@ -61,37 +93,37 @@ def asset_check_factory(asset_definition: AssetsDefinition):
 #     │                                register the definition                                 │
 #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
+
 definition_builder = GetMibbReportFromS3FilesDefinitionBuilder(
     key_prefix=["bronze", "aemo", "vicgas"],
-    io_manager_key="bronze_delta_polars_io_manager",
+    io_manager_key="s3_polars_deltalake_io_manager",
     asset_metadata={
-        "merge_predicate": newline_join(
-            "s.system_wide_notice_id = t.system_wide_notice_id",
-        ),
-        "schema": "aemo_vicgas",
+        "dagster/column_schema": get_metadata_schema(table_schema),
+        "s3_polars_deltalake_io_manager_options": {
+            "write_delta_options": PolarsDataFrameWriteDeltaParamSpec(
+                target=s3_table_location,
+                mode="merge",
+                delta_merge_options=PolarsDeltaLakeMergeParamSpec(
+                    predicate="s.system_wide_notice_id = t.system_wide_notice_id",
+                    source_alias="s",
+                    target_alias="t",
+                ),
+            ),
+            "scan_delta_options": PolarsDataFrameReadScanDeltaParamSpec(
+                source=s3_table_location
+            ),
+        },
     },
     group_name="aemo",
-    name="bronze_int029a_system_wide_notices",
+    name=table_name,
     s3_source_bucket=LANDING_BUCKET,
-    s3_source_prefix="aemo_vicgas",
+    s3_source_prefix=s3_prefix,
     s3_file_glob="int029a*",
     s3_target_bucket=BRONZE_BUCKET,
-    s3_target_schema="aemo_vicgas",
-    df_schema={
-        "system_wide_notice_id": Int64,
-        "critical_notice_flag": String,
-        "system_message": String,
-        "system_email_message": String,
-        "notice_start_date": String,
-        "notice_end_date": String,
-        "url_path": String,
-        "current_date": String,
-    },
+    s3_target_prefix=s3_prefix,
+    table_schema=table_schema,
     check_factories=[asset_check_factory],
     table_post_process_hook=post_process_hook,
-    table_context_metadata_builder=MetadataBuilder(
-        table_uri=f"s3://{BRONZE_BUCKET}/{'aemo_vicgas'}/{'bronze_delta_polars_io_manager'}"
-    ),
 )
 
 definitions_list.append(definition_builder.build())

@@ -1,47 +1,20 @@
-from dataclasses import dataclass
 from typing import Callable, Generator, Mapping, Unpack
 
 from dagster import (
     AssetExecutionContext,
     AssetsDefinition,
-    MetadataValue,
     Output,
     asset,
 )
 from dagster_aws.s3 import S3Resource
-from deltalake.exceptions import TableNotFoundError
-from polars import LazyFrame, read_delta
+from polars import LazyFrame
 from polars._typing import PolarsDataType
 
-from aemo_etl.factory.asset.schema import DeltaIOManagedAssetKwargs
+from aemo_etl.factory.asset.param_spec import AssetDefinitonParamSpec
 from aemo_etl.util import (
     get_df_from_s3_keys,
     get_s3_object_keys_from_prefix_and_name_glob,
 )
-
-
-@dataclass
-class MetadataBuilder:
-    table_uri: str
-
-    def __call__(
-        self,
-        context: AssetExecutionContext,
-        current_df: LazyFrame,
-    ) -> dict[str, MetadataValue]:
-        metadata = {}
-
-        try:
-            df_preview = read_delta(self.table_uri).lazy()
-        except TableNotFoundError:
-            df_preview = current_df
-
-        df_markdown = df_preview.head().collect().to_pandas().to_markdown()
-
-        assert df_markdown is not None
-
-        metadata["preview"] = MetadataValue.md(df_markdown)
-        return metadata
 
 
 def get_mibb_report_from_s3_files_asset_factory(
@@ -51,8 +24,7 @@ def get_mibb_report_from_s3_files_asset_factory(
     table_schema: Mapping[str, PolarsDataType] | None = None,
     post_process_hook: Callable[[AssetExecutionContext, LazyFrame], LazyFrame]
     | None = None,
-    context_metadata_builder: MetadataBuilder | None = None,
-    **asset_kwargs: Unpack[DeltaIOManagedAssetKwargs],
+    **asset_kwargs: Unpack[AssetDefinitonParamSpec],
 ) -> AssetsDefinition:
     asset_kwargs.setdefault("kinds", {"s3", "table", "deltalake"})
 
@@ -73,21 +45,13 @@ def get_mibb_report_from_s3_files_asset_factory(
             s3_client=s3_client,
             s3_bucket=s3_source_bucket,
             s3_object_keys=s3_object_keys,
-            df_schema=table_schema,
+            table_shema=table_schema,
             logger=context.log,
         )
         if post_process_hook is not None:
             df = post_process_hook(context, df)
 
-        metadata: dict[str, MetadataValue] = {}
-
-        if context_metadata_builder is not None:
-            metadata = metadata | context_metadata_builder(
-                context,
-                df,
-            )
-
-        yield Output(df, metadata=metadata)
+        yield Output(df)
         # cleanup the data from the source bucket
         context.log.info("performing cleanup")
         s3_client = s3_resource.get_client()

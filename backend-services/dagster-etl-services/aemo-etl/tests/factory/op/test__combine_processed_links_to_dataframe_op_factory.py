@@ -40,7 +40,7 @@ def processed_links() -> list[ProcessedLink]:
 
 class Test__combine_processed_links_to_dataframe_op_factory:
     def test__no_hook(self, processed_links: list[ProcessedLink]):
-        df = combine_processed_links_to_dataframe_op_factory()(
+        df = combine_processed_links_to_dataframe_op_factory(schema=schema)(
             build_op_context(),
             processed_links,
         )
@@ -66,7 +66,7 @@ class Test__combine_processed_links_to_dataframe_op_factory:
             return df
 
         df = combine_processed_links_to_dataframe_op_factory(
-            post_process_dataframe_hook=mock_hook
+            schema=schema, post_process_dataframe_hook=mock_hook
         )(
             build_op_context(),
             processed_links,
