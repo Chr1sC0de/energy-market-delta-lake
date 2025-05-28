@@ -1,19 +1,9 @@
-from functools import partial
-
 from polars import Datetime, Float64, Int64, String
 
-from aemo_etl.configuration import BRONZE_BUCKET, LANDING_BUCKET
-from aemo_etl.definitions.utils import asset_check_factory, post_process_hook
-from aemo_etl.factory.definition import (
-    GetMibbReportFromS3FilesDefinitionBuilder,
-)
-from aemo_etl.parameter_specification import (
-    PolarsDataFrameReadScanDeltaParamSpec,
-    PolarsDataFrameWriteDeltaParamSpec,
-    PolarsDeltaLakeMergeParamSpec,
-)
+from aemo_etl.configuration import BRONZE_BUCKET
+from aemo_etl.definitions.utils import definition_builder_factory
 from aemo_etl.register import definitions_list, table_locations
-from aemo_etl.util import get_metadata_schema, newline_join
+from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                      define table and register to table locations                      │
@@ -31,7 +21,7 @@ s3_table_location = f"s3://{BRONZE_BUCKET}/{s3_prefix}/{table_name}"
 primary_keys = ["transmission_document_id"]
 
 upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and"
+    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
 )
 
 table_schema = {
@@ -111,39 +101,16 @@ table_locations[table_name] = {
 #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
 
-definition_builder = GetMibbReportFromS3FilesDefinitionBuilder(
-    key_prefix=["bronze", "aemo", "vicgas"],
-    io_manager_key="s3_polars_deltalake_io_manager",
-    asset_metadata={
-        "description": report_purpose,
-        "dagster/column_schema": get_metadata_schema(table_schema, schema_descriptions),
-        "s3_polars_deltalake_io_manager_options": {
-            "write_delta_options": PolarsDataFrameWriteDeltaParamSpec(
-                target=s3_table_location,
-                mode="merge",
-                delta_merge_options=PolarsDeltaLakeMergeParamSpec(
-                    predicate=upsert_predicate,
-                    source_alias="s",
-                    target_alias="t",
-                ),
-            ),
-            "scan_delta_options": PolarsDataFrameReadScanDeltaParamSpec(
-                source=s3_table_location
-            ),
-        },
-    },
-    group_name="aemo",
-    name=table_name,
-    s3_source_bucket=LANDING_BUCKET,
-    s3_source_prefix=s3_prefix,
-    s3_file_glob=s3_file_glob,
-    s3_target_bucket=BRONZE_BUCKET,
-    s3_target_prefix=s3_prefix,
-    table_schema=table_schema,
-    check_factories=[partial(asset_check_factory, primary_keys=primary_keys)],
-    table_post_process_hook=partial(
-        post_process_hook, primary_keys=primary_keys, table_schema=table_schema
-    ),
+definition_builder = definition_builder_factory(
+    report_purpose,
+    table_schema,
+    schema_descriptions,
+    primary_keys,
+    upsert_predicate,
+    s3_table_location,
+    s3_prefix,
+    s3_file_glob,
+    table_name,
 )
 
 definitions_list.append(definition_builder.build())

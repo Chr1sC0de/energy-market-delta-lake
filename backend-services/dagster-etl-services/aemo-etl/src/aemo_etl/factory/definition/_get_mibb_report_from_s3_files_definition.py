@@ -75,7 +75,6 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
             s3_source_bucket=s3_source_bucket,
             s3_source_prefix=s3_source_prefix,
             s3_source_file_glob=s3_file_glob,
-            table_schema=table_schema,
             post_process_hook=table_post_process_hook,
         )
 

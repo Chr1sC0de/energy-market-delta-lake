@@ -55,11 +55,15 @@ def download_link_and_upload_to_s3_op_factory(
 
         link_buffer = get_buffer_from_link_hook(link)
 
-        upload_filename = link.source_absolute_href.split("/")[-1].lower()
+        upload_filename = link.source_absolute_href.rsplit("/", 1)[-1].lower()
 
-        upload_filename_extension = upload_filename.split(".")[-1]
+        name, extension = upload_filename.rsplit(".", 1)
 
-        if upload_filename_extension == "csv":
+        upload_filename = (
+            f"{name}~{datetime.now().strftime('%y%m%d%H%M%S')}.{extension}"
+        )
+
+        if extension == "csv":
             upload_filename = upload_filename.replace(".csv", ".parquet")
             csv_df = read_csv(link_buffer, infer_schema_length=None)
             link_buffer = BytesIO()

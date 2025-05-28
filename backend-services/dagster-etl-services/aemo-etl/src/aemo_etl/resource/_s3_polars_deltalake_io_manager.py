@@ -4,7 +4,7 @@ from typing import cast, override
 from dagster import InputContext, IOManager, MetadataValue, OutputContext
 from deltalake.exceptions import TableNotFoundError
 from deltalake.table import TableMerger
-from polars import LazyFrame, len, scan_delta
+from polars import LazyFrame, len as len_, scan_delta
 
 from aemo_etl.parameter_specification import (
     PolarsDataFrameReadScanDeltaParamSpec,
@@ -60,14 +60,15 @@ class S3PolarsDeltaLakeIOManager(IOManager):
         kwargs = write_delta_options.model_dump(by_alias=True)
 
         try:
-            return_obj = collected_obj.write_delta(**kwargs)
-            if kwargs.get("mode", "error") == "merge":
-                (
-                    cast(TableMerger, return_obj)
-                    .when_matched_update_all()
-                    .when_not_matched_insert_all()
-                    .execute()
-                )
+            if len(collected_obj.columns) > 0:
+                return_obj = collected_obj.write_delta(**kwargs)
+                if kwargs.get("mode", "error") == "merge":
+                    (
+                        cast(TableMerger, return_obj)
+                        .when_matched_update_all()
+                        .when_not_matched_insert_all()
+                        .execute()
+                    )
 
         except TableNotFoundError:
             kwargs["mode"] = "error"
@@ -112,7 +113,7 @@ class S3PolarsDeltaLakeIOManager(IOManager):
             output_metadata["preview"] = MetadataValue.md(markdown_preview)
 
         output_metadata["dagster/row_count"] = MetadataValue.int(
-            results_df.select(len()).collect().item()
+            results_df.select(len_()).collect().item()
         )
 
         if "dagster/column_schema" not in context.definition_metadata:

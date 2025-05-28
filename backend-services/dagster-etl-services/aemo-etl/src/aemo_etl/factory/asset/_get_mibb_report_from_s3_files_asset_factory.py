@@ -21,7 +21,6 @@ def get_mibb_report_from_s3_files_asset_factory(
     s3_source_bucket: str,
     s3_source_prefix: str,
     s3_source_file_glob: str,
-    table_schema: Mapping[str, PolarsDataType] | None = None,
     post_process_hook: Callable[[AssetExecutionContext, LazyFrame], LazyFrame]
     | None = None,
     **asset_kwargs: Unpack[AssetDefinitonParamSpec],
@@ -45,7 +44,6 @@ def get_mibb_report_from_s3_files_asset_factory(
             s3_client=s3_client,
             s3_bucket=s3_source_bucket,
             s3_object_keys=s3_object_keys,
-            table_schema=None,
             logger=context.log,
         )
         if post_process_hook is not None:

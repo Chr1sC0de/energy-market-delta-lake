@@ -1,23 +1,15 @@
 from io import BytesIO
 from pathlib import Path
 from typing import Generator, cast
-from dagster import AssetExecutionContext, Output, build_asset_context, materialize
+from dagster import AssetExecutionContext, Output, build_asset_context
 from dagster_aws.s3 import S3Resource
-from dagster_delta import (
-    DeltaLakePolarsIOManager,
-    MergeConfig,
-    MergeType,
-    S3Config,
-    SchemaMode,
-    WriteMode,
-)
-from polars import LazyFrame, col, read_delta
+
+from polars import LazyFrame, col
 from pytest import fixture
 from types_boto3_s3 import S3Client
 
-from aemo_etl.configuration import BRONZE_BUCKET, LANDING_BUCKET
+from aemo_etl.configuration import LANDING_BUCKET
 from aemo_etl.factory.asset import get_mibb_report_from_s3_files_asset_factory
-from aemo_etl.util import newline_join
 
 
 cwd = Path(__file__).parent
@@ -57,7 +49,6 @@ def test__get_mibb_report_from_s3_files_asset_factory(s3: S3Client):
         s3_source_file_glob="int037b*",
         key_prefix=["bronze", "aemo", "gas"],
         name=table_name,
-        table_schema=None,
         post_process_hook=post_process_hook,
         io_manager_key="bronze_aemo_gas_deltalake_upsert_io_manager",
     )

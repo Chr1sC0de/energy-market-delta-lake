@@ -15,7 +15,7 @@ from botocore.exceptions import ClientError
 def newline_join(*args: str, extra=None) -> str:
     if extra is None:
         extra = ""
-    return f"\n{extra} ".join(args)
+    return f"\n{extra}".join(args)
 
 
 def get_s3_object_keys_from_prefix_and_name_glob(
@@ -100,7 +100,7 @@ def get_df_from_s3_keys(
 
 def get_metadata_schema(
     df_schema: Mapping[str, type[pl.DataType]] | pl.Schema,
-    descriptions: dict[str, str] | None = None,
+    descriptions: Mapping[str, str] | None = None,
 ) -> TableSchema:
     descriptions = descriptions or {}
     return TableSchema(
