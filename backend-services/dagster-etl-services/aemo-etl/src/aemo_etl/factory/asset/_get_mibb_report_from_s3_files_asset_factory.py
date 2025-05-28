@@ -45,7 +45,7 @@ def get_mibb_report_from_s3_files_asset_factory(
             s3_client=s3_client,
             s3_bucket=s3_source_bucket,
             s3_object_keys=s3_object_keys,
-            table_shema=table_schema,
+            table_schema=None,
             logger=context.log,
         )
         if post_process_hook is not None:

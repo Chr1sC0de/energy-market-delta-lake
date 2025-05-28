@@ -76,8 +76,8 @@ class S3PolarsParquetIOManager(IOManager):
             obj.select(len()).collect().item()
         )
 
-        if "dagater/columns_schema" not in context.definition_metadata:
-            output_metadata["dagater/columns_schema"] = get_metadata_schema(
+        if "dagster/column_schema" not in context.definition_metadata:
+            output_metadata["dagster/column_schema"] = get_metadata_schema(
                 obj.collect_schema()
             )
 

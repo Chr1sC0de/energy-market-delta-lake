@@ -7,12 +7,15 @@ import polars as pl
 from dagster import TableColumn, TableSchema
 from polars._typing import PolarsDataType
 from types_boto3_s3 import S3Client
+from botocore.exceptions import ClientError
 
 # pyright: reportTypedDictNotRequiredAccess=false
 
 
-def newline_join(*args: str) -> str:
-    return "\n".join(args)
+def newline_join(*args: str, extra=None) -> str:
+    if extra is None:
+        extra = ""
+    return f"\n{extra} ".join(args)
 
 
 def get_s3_object_keys_from_prefix_and_name_glob(
@@ -48,7 +51,7 @@ def get_df_from_s3_keys(
     s3_client: S3Client,
     s3_bucket: str,
     s3_object_keys: list[str],
-    table_shema: Mapping[str, PolarsDataType] | None = None,
+    table_schema: Mapping[str, PolarsDataType] | None = None,
     logger: Logger | None = None,
 ) -> pl.LazyFrame:
     all_dfs: list[pl.LazyFrame] = []
@@ -62,30 +65,35 @@ def get_df_from_s3_keys(
             ].read()
 
             if len(object_bytes) > 0:
+                df = None
+
                 if key.lower().endswith(".parquet"):
-                    df = pl.read_parquet(object_bytes, schema=table_shema).lazy()
+                    df = pl.read_parquet(object_bytes, schema=table_schema).lazy()
                 elif key.lower().endswith(".csv"):
                     df = pl.read_csv(
-                        object_bytes, infer_schema_length=None, schema=table_shema
+                        object_bytes, infer_schema_length=None, schema=table_schema
                     ).lazy()
                 else:
-                    raise ValueError(f"filetype of {key} is unsupported")
+                    if logger is not None:
+                        logger.info(f"filetype of {key} is unsupported")
 
-                df = df.with_columns(
-                    pl.lit(f"s3://{s3_bucket}/{key}").alias("source_file")
-                )
-                all_dfs.append(df)
+                if df is not None:
+                    df = df.with_columns(
+                        pl.lit(f"s3://{s3_bucket}/{key}").alias("source_file")
+                    )
+                    all_dfs.append(df)
             else:
                 if logger is not None:
                     logger.info(f"{key} contains 0 bytes")
-        except Exception:
+        except ClientError as e:
             if logger is not None:
-                logger.info(f"failed to get {key} from s3")
+                if e.response["Error"]["Code"] == "NoSuchKey":
+                    logger.info(f"key {key} does not exist")
 
     if len(all_dfs) == 0:
         if logger is not None:
             logger.info("no valid dataframes found returning empty dataframe")
-        return pl.LazyFrame(schema=table_shema)
+        return pl.LazyFrame(schema=table_schema)
 
     return pl.concat(all_dfs, how="diagonal_relaxed")
 

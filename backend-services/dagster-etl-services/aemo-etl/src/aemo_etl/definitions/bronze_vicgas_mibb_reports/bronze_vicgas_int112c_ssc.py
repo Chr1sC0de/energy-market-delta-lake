@@ -3,7 +3,7 @@ from functools import partial
 from polars import Date, Datetime, Int64, String
 
 from aemo_etl.configuration import BRONZE_BUCKET, LANDING_BUCKET
-from aemo_etl.definitions.utils import post_process_hook, asset_check_factory
+from aemo_etl.definitions.utils import asset_check_factory, post_process_hook
 from aemo_etl.factory.definition import (
     GetMibbReportFromS3FilesDefinitionBuilder,
 )
@@ -19,60 +19,72 @@ from aemo_etl.util import get_metadata_schema, newline_join
 #     │                      define table and register to table locations                      │
 #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
-table_name = "bronze_vicgas_int029a_system_wide_notices"
+
+table_name = "bronze_vicgas_int112c_ssc"
 
 s3_prefix = "aemo/vicgas"
 
-s3_file_glob = "int029a*"
+s3_file_glob = "int112c*"
 
 s3_table_location = f"s3://{BRONZE_BUCKET}/{s3_prefix}/{table_name}"
 
-primary_keys = [
-    "system_wide_notice_id",
-]
+primary_keys = (
+    "supply_source",
+    "gas_date",
+    "ti",
+)
 
 upsert_predicate = newline_join(
     *[f"s.{col} = t.{col}" for col in primary_keys], extra="and"
 )
 
 table_schema = {
-    "system_wide_notice_id": Int64,
-    "critical_notice_flag": String,
-    "system_message": String,
-    "system_email_message": String,
-    "notice_start_date": Date,
-    "notice_end_date": Date,
-    "url_path": String,
+    "supply_source": String,
+    "gas_date": Date,
+    "ssc_id": Int64,
+    "ti": Int64,
+    "hourly_constraint": Int64,
+    "mod_datetime": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
     "current_date": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
 }
 
 schema_descriptions = {
-    "system_wide_notice_id": "Id of the Notice",
-    "critical_notice_flag": "",
-    "system_message": "SWN SMS message",
-    "system_email_message": "SWN email message",
-    "notice_start_date": " e.g. 14 Feb 2007 11:48:55. Sorted descending.",
-    "notice_end_date": "e.g. 23 Jul 2007 16:30:35",
-    "url_path": "Path to any attachment included in the notice e.g. Public/Master_MIBB_report_list.zip",
-    "current_date": "Date and time the report was produced e.g. Jul 23 2007 16:30:35",
+    "supply_source": "Name of the constrained supply source",
+    "gas_date": "Dates that mark the boundary of the application of the constraint (e.g. 27 Jun 2011)",
+    "ssc_id": "Id of the Constraint",
+    "ti": "Time interval 1-24 (hour of the gas day)",
+    "hourly_constraint": "1 value for each hour of the gas day, Set to 1 if hourly constraint is applied. 0 if hourly constraint has not been applied",
+    "mod_datetime": "Creation/modification time stamp (e.g. 07 Jun 2011 08:01:23)",
+    "current_date": "Date and time the report was produced (e.g. 30 Jun 2011 1:23:56)",
 }
 
 report_purpose = """
-This report is a CSV file (INT029a) published by AEMO containing public system-wide notices shared on the MIBB.
-It provides consistent and timely market operation updates and mirrors the content of the HTML version (INT105).
-These reports are for public viewing, unlike similar reports (INT029b and INT106) sent to specific participants.
+This report contains information regarding any supply and demand point constraints (SDPCs) that are current in the
+scheduling processes used in the DTS. These constraints are part of the configuration of the network that can be manually set
+by the AEMO Schedulers and form one of the inputs to the schedule generation process. This report contains supply point
+constraints, which selectively constrain injection bids at system injection points where the facility operator has registered
+multiple supply sources.
 
-Key points:
+Traders can use this information to understand the network-based restrictions that will constrain their ability to offer or
+withdraw gas in the market on a given day. Note these constraints can be applied intraday and reflect conditions from a point in
+time.
 
-Purpose: Public communication of market notices.
+A report is produced each time an operational schedule (OS) is approved by AEMO. Therefore it is expected that each day
+there will be at least 9 of these reports issued, with any additional ad hoc schedules also triggering this report:
+- 5 being for the standard current gas day schedules
+- 3 being for the standard 1-day ahead schedules
+- 1 being for the standard 2 days ahead schedule
 
-Format: CSV (INT029a) and HTML (INT105), both containing the same information.
+Each report contains details of the SSCs that have applied to schedules previously run:
+- on the previous gas day
+- for the current gas day
+- for the next 2 gas days
 
-Timing: Issued simultaneously when AEMO publishes a system-wide notice.
+Each SSC has a unique identifier and applies to a single injection MIRN.
+Each row in the report contains details of one SSC for one hour of the gas day, with hourly intervals commencing from the start
+of the gas day. That is, the first row for an SSC relates to 06:00 AM.
 
-Content: Includes the issue date/time, urgency level, effective period, and source for further details.
-
-Notices are listed from most recent to oldest.
+This report will contain 24 rows for each SSC for each gas day reported.
 """
 
 table_locations[table_name] = {
@@ -92,7 +104,7 @@ definition_builder = GetMibbReportFromS3FilesDefinitionBuilder(
     key_prefix=["bronze", "aemo", "vicgas"],
     io_manager_key="s3_polars_deltalake_io_manager",
     asset_metadata={
-        "destription": report_purpose,
+        "description": report_purpose,
         "dagster/column_schema": get_metadata_schema(table_schema, schema_descriptions),
         "s3_polars_deltalake_io_manager_options": {
             "write_delta_options": PolarsDataFrameWriteDeltaParamSpec(

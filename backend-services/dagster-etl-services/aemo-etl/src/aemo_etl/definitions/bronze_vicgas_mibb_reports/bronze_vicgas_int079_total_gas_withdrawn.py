@@ -1,9 +1,9 @@
 from functools import partial
 
-from polars import Date, Datetime, Int64, String
+from polars import Date, Datetime, Float64, String
 
 from aemo_etl.configuration import BRONZE_BUCKET, LANDING_BUCKET
-from aemo_etl.definitions.utils import post_process_hook, asset_check_factory
+from aemo_etl.definitions.utils import asset_check_factory, post_process_hook
 from aemo_etl.factory.definition import (
     GetMibbReportFromS3FilesDefinitionBuilder,
 )
@@ -19,60 +19,58 @@ from aemo_etl.util import get_metadata_schema, newline_join
 #     │                      define table and register to table locations                      │
 #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
-table_name = "bronze_vicgas_int029a_system_wide_notices"
+
+table_name = "bronze_vicgas_int079_total_gas_withdrawn"
 
 s3_prefix = "aemo/vicgas"
 
-s3_file_glob = "int029a*"
+s3_file_glob = "int079*"
 
 s3_table_location = f"s3://{BRONZE_BUCKET}/{s3_prefix}/{table_name}"
 
-primary_keys = [
-    "system_wide_notice_id",
-]
+primary_keys = ["gas_date"]
 
 upsert_predicate = newline_join(
     *[f"s.{col} = t.{col}" for col in primary_keys], extra="and"
 )
 
 table_schema = {
-    "system_wide_notice_id": Int64,
-    "critical_notice_flag": String,
-    "system_message": String,
-    "system_email_message": String,
-    "notice_start_date": Date,
-    "notice_end_date": Date,
-    "url_path": String,
+    "gas_date": Date,
+    "unit_id": String,
+    "qty": Float64,
+    "qty_reinj": Float64,
     "current_date": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
 }
 
 schema_descriptions = {
-    "system_wide_notice_id": "Id of the Notice",
-    "critical_notice_flag": "",
-    "system_message": "SWN SMS message",
-    "system_email_message": "SWN email message",
-    "notice_start_date": " e.g. 14 Feb 2007 11:48:55. Sorted descending.",
-    "notice_end_date": "e.g. 23 Jul 2007 16:30:35",
-    "url_path": "Path to any attachment included in the notice e.g. Public/Master_MIBB_report_list.zip",
-    "current_date": "Date and time the report was produced e.g. Jul 23 2007 16:30:35",
+    "gas_date": "Gas day being reported e.g. 30 Jun 2007",
+    "unit_id": "Unit of measurement (GJ)",
+    "qty": "Total Gas withdrawn Daily",
+    "qty_reinj": "Total Net Gas withdrawn Daily (Withdrawals less re-injections)",
+    "current_date": "Date and time report produced e.g. 30 Jun 2007 01:23:45",
 }
 
 report_purpose = """
-This report is a CSV file (INT029a) published by AEMO containing public system-wide notices shared on the MIBB.
-It provides consistent and timely market operation updates and mirrors the content of the HTML version (INT105).
-These reports are for public viewing, unlike similar reports (INT029b and INT106) sent to specific participants.
+This report provides a view of the total quantity of gas that is flowing in the DTS on a given day. Retailers may use this
+information as an input to their demand forecasts or to estimate their market share. Participants must be aware that the data is
+of operational quality and not settlement quality, and is therefore subject to revision. The data revisions can be significant and
+is dependent on a number of factors, including, but not limited to, the availability of telemetered data and system availability.
 
-Key points:
+The report contains metering data for the prior gas day. The data is of operational quality and is subject to substitution and
+replacement.
 
-Purpose: Public communication of market notices.
+In the context of this report, re-injections represent the flow to the transmission pipeline system (TPS) from the distribution
+pipeline system (DPS) at times of low pressure and low demand. The first quantity reported, "qty", includes re-injections.
 
-Format: CSV (INT029a) and HTML (INT105), both containing the same information.
+It should be noted that for a single day, multiple entries can exist. Initial uploads of data for a given date can be incomplete
+when it is first reported and updates arriving later into AEMO's system will cause multiple entries to exist, Participants should
+combine the reports to provide a daily total.
 
-Timing: Issued simultaneously when AEMO publishes a system-wide notice.
+Each report contains details of the withdrawals that occurred on the previous seven gas days. That is, the INT079 report for
+the gas date of 11-August will contain withdrawal quantities for the dates 4 to 10 August inclusive.
 
-Content: Includes the issue date/time, urgency level, effective period, and source for further details.
-
-Notices are listed from most recent to oldest.
+The data in this report can have a significant number of substituted values and it is possible for the data to change from day to
+day as they are updated through the 7-day reporting window.
 """
 
 table_locations[table_name] = {
@@ -92,7 +90,7 @@ definition_builder = GetMibbReportFromS3FilesDefinitionBuilder(
     key_prefix=["bronze", "aemo", "vicgas"],
     io_manager_key="s3_polars_deltalake_io_manager",
     asset_metadata={
-        "destription": report_purpose,
+        "description": report_purpose,
         "dagster/column_schema": get_metadata_schema(table_schema, schema_descriptions),
         "s3_polars_deltalake_io_manager_options": {
             "write_delta_options": PolarsDataFrameWriteDeltaParamSpec(

@@ -4,6 +4,7 @@ from dagster import (
     AssetChecksDefinition,
     AssetExecutionContext,
     AssetsDefinition,
+    DagsterInstance,
     DagsterRunStatus,
     DefaultScheduleStatus,
     DefaultSensorStatus,
@@ -54,7 +55,7 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
             list[Callable[[AssetsDefinition], AssetChecksDefinition]] | None
         ) = None,
         job_tags: dict[str, Any] | None = None,
-        compact_and_vacuum_cron_schedule="00 23 * * *",
+        compact_and_vacuum_cron_schedule="45 23 * * *",
         execution_timezone="Australia/Melbourne",
     ):
         self.s3_source_bucket = s3_source_bucket
@@ -138,6 +139,12 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
         #     │                                create the asset sensor                                 │
         #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
+        def has_job_failed(instance: DagsterInstance, job_name: str) -> bool:
+            runs = instance.get_runs(limit=1, filters=RunsFilter(job_name=job_name))
+            if runs:
+                return runs[0].status.value == "FAILURE"
+            return False
+
         @sensor(
             name=f"{name}_s3_sensor",
             job=self.table_asset_job,
@@ -161,6 +168,11 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
                     ],
                 )
             )
+
+            # kill the sensor if the job has failed
+            if has_job_failed(context.instance, self.table_asset_job.name):
+                return SkipReason("Job previously failed. Sensor paused logic.")
+
             if len(run_records) == 0:
                 # only run the etl job if the public files have been downloaded
                 s3_object_keys = get_s3_object_keys_from_prefix_and_name_glob(

@@ -1,9 +1,9 @@
 from functools import partial
 
-from polars import Date, Datetime, Int64, String
+from polars import Date, Datetime, Float64, Int64, String
 
 from aemo_etl.configuration import BRONZE_BUCKET, LANDING_BUCKET
-from aemo_etl.definitions.utils import post_process_hook, asset_check_factory
+from aemo_etl.definitions.utils import asset_check_factory, post_process_hook
 from aemo_etl.factory.definition import (
     GetMibbReportFromS3FilesDefinitionBuilder,
 )
@@ -19,16 +19,19 @@ from aemo_etl.util import get_metadata_schema, newline_join
 #     │                      define table and register to table locations                      │
 #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
-table_name = "bronze_vicgas_int029a_system_wide_notices"
+
+table_name = "bronze_vicgas_int047_heating_values"
 
 s3_prefix = "aemo/vicgas"
 
-s3_file_glob = "int029a*"
+s3_file_glob = "int047*"
 
 s3_table_location = f"s3://{BRONZE_BUCKET}/{s3_prefix}/{table_name}"
 
 primary_keys = [
-    "system_wide_notice_id",
+    "version_id",
+    "event_datetime",
+    "heating_value_zone",
 ]
 
 upsert_predicate = newline_join(
@@ -36,43 +39,57 @@ upsert_predicate = newline_join(
 )
 
 table_schema = {
-    "system_wide_notice_id": Int64,
-    "critical_notice_flag": String,
-    "system_message": String,
-    "system_email_message": String,
-    "notice_start_date": Date,
-    "notice_end_date": Date,
-    "url_path": String,
+    "version_id": Int64,
+    "gas_date": Date,
+    "event_datetime": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
+    "event_interval": Int64,
+    "heating_value_zone": Int64,
+    "heating_value_zone_desc": String,
+    "initial_heating_value": Float64,
+    "current_heating_value": Float64,
     "current_date": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
 }
 
 schema_descriptions = {
-    "system_wide_notice_id": "Id of the Notice",
-    "critical_notice_flag": "",
-    "system_message": "SWN SMS message",
-    "system_email_message": "SWN email message",
-    "notice_start_date": " e.g. 14 Feb 2007 11:48:55. Sorted descending.",
-    "notice_end_date": "e.g. 23 Jul 2007 16:30:35",
-    "url_path": "Path to any attachment included in the notice e.g. Public/Master_MIBB_report_list.zip",
-    "current_date": "Date and time the report was produced e.g. Jul 23 2007 16:30:35",
+    "version_id": "Version of Heating Values.",
+    "gas_date": "Starting hour of gas day being reported as 30 Jun 2007",
+    "event_datetime": "Start of hour for which values applies (e.g. 29 Jun 2007 06:00:00)",
+    "event_interval": """hour interval of the day
+6:00 AM = 1
+7:00 AM = 2
+5:00 AM = 24""",
+    "heating_value_zone": "Heating value zone id number",
+    "heating_value_zone_desc": "Heating value zone name",
+    "initial_heating_value": "Heating value (GJ/1000 m(3)) rounded to 2 decimal places.",
+    "current_heating_value": "Heating valiue (GJ/1000m(3)) rounded r=to 2 decimal places",
+    "current_date": "Date and Time Report Produced. 30 Jun 2007 06:00:00.",
 }
 
 report_purpose = """
-This report is a CSV file (INT029a) published by AEMO containing public system-wide notices shared on the MIBB.
-It provides consistent and timely market operation updates and mirrors the content of the HTML version (INT105).
-These reports are for public viewing, unlike similar reports (INT029b and INT106) sent to specific participants.
+This report provides the hourly calorific value of gas delivered for each heating value zone in Victoria.
 
-Key points:
+This information allows AEMO and other Market participant to convert the volumetric measurements taken at interval meters
+into units of energy for various purposes including:
+- operation of the gas system
+- settlement of the wholesale market
+- billing of interval metered retail customers.
 
-Purpose: Public communication of market notices.
+The initial_heating_value is the first obtained, and may be superseded in the course of the gas day date and during the 7 day
+reporting window for INT047. Therefore, the current_heating_value is in most cases the more accurate data value to use. The
+current_heating_value shown for yesterday is more likely to undergo revision than the current_heating_value shown for 7 days
+ago.
 
-Format: CSV (INT029a) and HTML (INT105), both containing the same information.
+It should be noted that even after 7 days, the HV may still be revised for settlement purposes. In these circumstances a
+Heating Value Data Correction notice for the (preceding) month will be published on the AEMO website and corrections for
+individual meters sent to the energy values provider, DMS.
 
-Timing: Issued simultaneously when AEMO publishes a system-wide notice.
+This report is generated daily. Each report displays the hourly HV for each heating value zone in Victoria over the
+previous 7 gas days (not including the current gas day).
 
-Content: Includes the issue date/time, urgency level, effective period, and source for further details.
-
-Notices are listed from most recent to oldest.
+Each row in the report provides the 'initial' and 'current' HVs:
+- for a particular hour interval
+- for a particular heating value zone
+- for a specific gas day date
 """
 
 table_locations[table_name] = {
@@ -92,7 +109,7 @@ definition_builder = GetMibbReportFromS3FilesDefinitionBuilder(
     key_prefix=["bronze", "aemo", "vicgas"],
     io_manager_key="s3_polars_deltalake_io_manager",
     asset_metadata={
-        "destription": report_purpose,
+        "description": report_purpose,
         "dagster/column_schema": get_metadata_schema(table_schema, schema_descriptions),
         "s3_polars_deltalake_io_manager_options": {
             "write_delta_options": PolarsDataFrameWriteDeltaParamSpec(

@@ -1,9 +1,9 @@
 from functools import partial
 
-from polars import Date, Datetime, Int64, String
+from polars import Datetime, Float64, String
 
 from aemo_etl.configuration import BRONZE_BUCKET, LANDING_BUCKET
-from aemo_etl.definitions.utils import post_process_hook, asset_check_factory
+from aemo_etl.definitions.utils import asset_check_factory, post_process_hook
 from aemo_etl.factory.definition import (
     GetMibbReportFromS3FilesDefinitionBuilder,
 )
@@ -19,60 +19,59 @@ from aemo_etl.util import get_metadata_schema, newline_join
 #     │                      define table and register to table locations                      │
 #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
-table_name = "bronze_vicgas_int029a_system_wide_notices"
+
+table_name = "bronze_vicgas_int042_weighted_average_daily_prices"
 
 s3_prefix = "aemo/vicgas"
 
-s3_file_glob = "int029a*"
+s3_file_glob = "int042*"
 
 s3_table_location = f"s3://{BRONZE_BUCKET}/{s3_prefix}/{table_name}"
 
-primary_keys = [
-    "system_wide_notice_id",
-]
+primary_keys = ["gas_date"]
 
 upsert_predicate = newline_join(
     *[f"s.{col} = t.{col}" for col in primary_keys], extra="and"
 )
 
 table_schema = {
-    "system_wide_notice_id": Int64,
-    "critical_notice_flag": String,
-    "system_message": String,
-    "system_email_message": String,
-    "notice_start_date": Date,
-    "notice_end_date": Date,
-    "url_path": String,
+    "gas_date": String,
+    "imb_dev_wa_dly_price_gst_ex": Float64,
     "current_date": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
 }
 
 schema_descriptions = {
-    "system_wide_notice_id": "Id of the Notice",
-    "critical_notice_flag": "",
-    "system_message": "SWN SMS message",
-    "system_email_message": "SWN email message",
-    "notice_start_date": " e.g. 14 Feb 2007 11:48:55. Sorted descending.",
-    "notice_end_date": "e.g. 23 Jul 2007 16:30:35",
-    "url_path": "Path to any attachment included in the notice e.g. Public/Master_MIBB_report_list.zip",
-    "current_date": "Date and time the report was produced e.g. Jul 23 2007 16:30:35",
+    "gas_date": "Gas day for the reference prices e.g. 30 Jun 2007",
+    "imb_dev_wa_dly_price_gst_ex": """Imbalance and deviation weighted average daily price:
+( ∑S,MP |$imb S,MP |+ ∑SI,MP |$dev SI,MP |) / ( ∑S,MP |imb S,MP |+ ∑SI,MP | dev SI,MP |)
+Where:
+$imb S,MP = $ of imbalance payments for Market participant MP in Schedule S
+$dev SI,MP = $ of deviation payments for Market participant MP in Schedule Interval SI
+imb S,MP = GJ of imbalance amount for Market participant MP in Schedule S
+dev SI,MP = GJ of deviation amount for Market participant MP in Schedule Interval SI""",
+    "current_date": "Date and Time Report Produced e.g. 29 Jun 2007 01:23:45",
 }
 
 report_purpose = """
-This report is a CSV file (INT029a) published by AEMO containing public system-wide notices shared on the MIBB.
-It provides consistent and timely market operation updates and mirrors the content of the HTML version (INT105).
-These reports are for public viewing, unlike similar reports (INT029b and INT106) sent to specific participants.
+This report is available to Participants for use in settlement for off-market hedge contracts. Potentially it is also useable as
+benchmark price of gas in contract negotiations. Traders may wish to user the report to get a daily perspective of the value of
+gas in a day.
 
-Key points:
+This report can be read in conjunction with INT041 which relates to the actual market ex ante prices and the calculated
+"reference prices".
 
-Purpose: Public communication of market notices.
+This report provides a weighted average daily price based on the total imbalance and deviation payments.
 
-Format: CSV (INT029a) and HTML (INT105), both containing the same information.
+The report provides another perspective of the market pricing of gas. Again these average prices are only for information and
+analysis purposes and are not used in the actual settlement of the gas day.
 
-Timing: Issued simultaneously when AEMO publishes a system-wide notice.
+Each report contains the:
+- gas date
+- weighted average daily price for imbalance and deviation (GST exclusive)
+- date and time when the report was produced
 
-Content: Includes the issue date/time, urgency level, effective period, and source for further details.
-
-Notices are listed from most recent to oldest.
+The report should contain one row representing each gas day in a month. Therefore in a month consisting of 30 days, the user
+can expect to see 30 rows of data.
 """
 
 table_locations[table_name] = {
@@ -92,7 +91,7 @@ definition_builder = GetMibbReportFromS3FilesDefinitionBuilder(
     key_prefix=["bronze", "aemo", "vicgas"],
     io_manager_key="s3_polars_deltalake_io_manager",
     asset_metadata={
-        "destription": report_purpose,
+        "description": report_purpose,
         "dagster/column_schema": get_metadata_schema(table_schema, schema_descriptions),
         "s3_polars_deltalake_io_manager_options": {
             "write_delta_options": PolarsDataFrameWriteDeltaParamSpec(

@@ -1,9 +1,9 @@
 from functools import partial
 
-from polars import Date, Datetime, Int64, String
+from polars import Date, Datetime, Float64, Int64, String
 
 from aemo_etl.configuration import BRONZE_BUCKET, LANDING_BUCKET
-from aemo_etl.definitions.utils import post_process_hook, asset_check_factory
+from aemo_etl.definitions.utils import asset_check_factory, post_process_hook
 from aemo_etl.factory.definition import (
     GetMibbReportFromS3FilesDefinitionBuilder,
 )
@@ -19,60 +19,57 @@ from aemo_etl.util import get_metadata_schema, newline_join
 #     │                      define table and register to table locations                      │
 #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
-table_name = "bronze_vicgas_int029a_system_wide_notices"
+
+table_name = "bronze_vicgas_int037c_indicative_price"
 
 s3_prefix = "aemo/vicgas"
 
-s3_file_glob = "int029a*"
+s3_file_glob = "int037c*"
 
 s3_table_location = f"s3://{BRONZE_BUCKET}/{s3_prefix}/{table_name}"
 
-primary_keys = [
-    "system_wide_notice_id",
-]
+primary_keys = ["demand_type_name", "transmission_id"]
 
 upsert_predicate = newline_join(
     *[f"s.{col} = t.{col}" for col in primary_keys], extra="and"
 )
 
 table_schema = {
-    "system_wide_notice_id": Int64,
-    "critical_notice_flag": String,
-    "system_message": String,
-    "system_email_message": String,
-    "notice_start_date": Date,
-    "notice_end_date": Date,
-    "url_path": String,
+    "demand_type_name": String,
+    "price_value_gst_ex": Float64,
+    "transmission_group_id": Int64,
+    "schedule_type_id": String,
+    "transmission_id": Int64,
+    "gas_date": Date,
+    "approval_datetime": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
     "current_date": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
 }
 
 schema_descriptions = {
-    "system_wide_notice_id": "Id of the Notice",
-    "critical_notice_flag": "",
-    "system_message": "SWN SMS message",
-    "system_email_message": "SWN email message",
-    "notice_start_date": " e.g. 14 Feb 2007 11:48:55. Sorted descending.",
-    "notice_end_date": "e.g. 23 Jul 2007 16:30:35",
-    "url_path": "Path to any attachment included in the notice e.g. Public/Master_MIBB_report_list.zip",
-    "current_date": "Date and time the report was produced e.g. Jul 23 2007 16:30:35",
+    "demand_type_name": "Normal Uses Demand forecast used by operational schedule",
+    "price_value_gst_ex": "Forecast market price ($) for BoD Scheduling horizon of the gas day in question",
+    "transmission_group_id": "Link to the related day(s) ahead operational schedule",
+    "schedule_type_id": "OS (Operating Schedule Id)",
+    "transmission_id": "Schedule number these prices are related to",
+    "gas_date": "e.g. 30 Jun 2007",
+    "approval_datetime": "Date and time the schedule was approved 29 Jun 2007 01:23:45",
+    "current_date": "Date and time the report is produced e.g. 29 Jun 2007 01:23:45",
 }
 
 report_purpose = """
-This report is a CSV file (INT029a) published by AEMO containing public system-wide notices shared on the MIBB.
-It provides consistent and timely market operation updates and mirrors the content of the HTML version (INT105).
-These reports are for public viewing, unlike similar reports (INT029b and INT106) sent to specific participants.
+This report is to indicate what the prices are for the day and what they are predicted to be for the next two days.
 
-Key points:
+Market participants may wish to use this information to estimate pricing for the following two days.
 
-Purpose: Public communication of market notices.
+This report is produced after the approval of each schedule. The report has the actual price information of each operating
+schedule, as well as forecast process for the day ahead schedules published. This means that on any given gas day the report
+is published:
+- 5 times for Day+0 after each of the 5 market schedules which reflects actual price that applies for each scheduling horizon.
+- 3 times for Day+1 which includes the estimated BoD price.
+- Once for Day+2 which includes the estimated BoD price.
 
-Format: CSV (INT029a) and HTML (INT105), both containing the same information.
-
-Timing: Issued simultaneously when AEMO publishes a system-wide notice.
-
-Content: Includes the issue date/time, urgency level, effective period, and source for further details.
-
-Notices are listed from most recent to oldest.
+Participants can use this report to review the outcomes of the current day and to reflect on the options to adjust their positions
+for the coming days.
 """
 
 table_locations[table_name] = {
@@ -92,7 +89,7 @@ definition_builder = GetMibbReportFromS3FilesDefinitionBuilder(
     key_prefix=["bronze", "aemo", "vicgas"],
     io_manager_key="s3_polars_deltalake_io_manager",
     asset_metadata={
-        "destription": report_purpose,
+        "description": report_purpose,
         "dagster/column_schema": get_metadata_schema(table_schema, schema_descriptions),
         "s3_polars_deltalake_io_manager_options": {
             "write_delta_options": PolarsDataFrameWriteDeltaParamSpec(

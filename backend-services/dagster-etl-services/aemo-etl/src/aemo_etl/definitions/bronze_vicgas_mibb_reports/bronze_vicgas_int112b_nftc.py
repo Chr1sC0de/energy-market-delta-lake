@@ -3,7 +3,7 @@ from functools import partial
 from polars import Date, Datetime, Int64, String
 
 from aemo_etl.configuration import BRONZE_BUCKET, LANDING_BUCKET
-from aemo_etl.definitions.utils import post_process_hook, asset_check_factory
+from aemo_etl.definitions.utils import asset_check_factory, post_process_hook
 from aemo_etl.factory.definition import (
     GetMibbReportFromS3FilesDefinitionBuilder,
 )
@@ -19,60 +19,86 @@ from aemo_etl.util import get_metadata_schema, newline_join
 #     │                      define table and register to table locations                      │
 #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
-table_name = "bronze_vicgas_int029a_system_wide_notices"
+
+table_name = "bronze_vicgas_int112b_nftc"
 
 s3_prefix = "aemo/vicgas"
 
-s3_file_glob = "int029a*"
+s3_file_glob = "int112b*"
 
 s3_table_location = f"s3://{BRONZE_BUCKET}/{s3_prefix}/{table_name}"
 
-primary_keys = [
-    "system_wide_notice_id",
-]
+primary_keys = (
+    "nftc_name",
+    "commencement_date",
+    "ti",
+)
 
 upsert_predicate = newline_join(
     *[f"s.{col} = t.{col}" for col in primary_keys], extra="and"
 )
 
 table_schema = {
-    "system_wide_notice_id": Int64,
-    "critical_notice_flag": String,
-    "system_message": String,
-    "system_email_message": String,
-    "notice_start_date": Date,
-    "notice_end_date": Date,
-    "url_path": String,
+    "nftc_name": String,
+    "commencement_date": Date,
+    "termination_date": Date,
+    "daily_max_net_inj_qty_gj": Int64,
+    "daily_min_net_inj_qty_gj": Int64,
+    "daily_max_net_wdl_qty_gj": Int64,
+    "daily_min_net_wdl_qty_gj": Int64,
+    "ti": Int64,
+    "hourly_max_net_inj_qty_gj": Int64,
+    "hourly_min_net_inj_qty_gj": Int64,
+    "hourly_max_net_wdl_qty_gj": Int64,
+    "hourly_min_net_wdl_qty_gj": Int64,
+    "mod_datetime": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
     "current_date": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
 }
 
 schema_descriptions = {
-    "system_wide_notice_id": "Id of the Notice",
-    "critical_notice_flag": "",
-    "system_message": "SWN SMS message",
-    "system_email_message": "SWN email message",
-    "notice_start_date": " e.g. 14 Feb 2007 11:48:55. Sorted descending.",
-    "notice_end_date": "e.g. 23 Jul 2007 16:30:35",
-    "url_path": "Path to any attachment included in the notice e.g. Public/Master_MIBB_report_list.zip",
-    "current_date": "Date and time the report was produced e.g. Jul 23 2007 16:30:35",
+    "nftc_name": "Name of the Net Flow Transportation Constraint",
+    "commencement_date": "Dates that mark the boundary of the application of the constraint (e.g. 27 Jun 2011)",
+    "termination_date": "Dates that mark the boundary of the application of the constraint (e.g. 27 Jun 2011)",
+    "daily_max_net_inj_qty_gj": "The aggregate maximum daily injection limit in gigajoules applied by this constraint",
+    "daily_min_net_inj_qty_gj": "The aggregate minimum daily injection limit in gigajoules applied by this constraint",
+    "daily_max_net_wdl_qty_gj": "The aggregate maximum daily withdrawal limit in gigajoules applied by this constraint",
+    "daily_min_net_wdl_qty_gj": "The aggregate minimum daily withdrawal limit in gigajoules applied by this constraint",
+    "ti": "Time interval 1-24 (hour of the gas day)",
+    "hourly_max_net_inj_qty_gj": "1 value for each hour of the gas day",
+    "hourly_min_net_inj_qty_gj": "1 value for each hour of the gas day",
+    "hourly_max_net_wdl_qty_gj": "1 value for each hour of the gas day",
+    "hourly_min_net_wdl_qty_gj": "1 value for each hour of the gas day",
+    "mod_datetime": "NFTC creation/modification time stamp (e.g. 07 Jun 2011 08:01:23)",
+    "current_date": "Date and time the report was produced (e.g. 30 Jun 2011 1:23:56)",
 }
 
 report_purpose = """
-This report is a CSV file (INT029a) published by AEMO containing public system-wide notices shared on the MIBB.
-It provides consistent and timely market operation updates and mirrors the content of the HTML version (INT105).
-These reports are for public viewing, unlike similar reports (INT029b and INT106) sent to specific participants.
+This report contains information on group directional flow point constraints (DFPCs) pertaining to the DTS. Grouped
+directional flow points are those points in the DTS where multiple injections and withdrawals can occur.
 
-Key points:
+This report contains flow constraints for a group of meters typically at the same location.
+NFTCs are part of the configuration of the network that can be manually changed by the AEMO Schedulers, and form one of
+the inputs to the schedule generation process.
 
-Purpose: Public communication of market notices.
+Traders can use this information to understand the network-based restrictions that will constrain their ability to offer gas to the
+market on a given day in the reporting window.
 
-Format: CSV (INT029a) and HTML (INT105), both containing the same information.
+A report is produced each time an operational schedule (OS) is approved by AEMO. Therefore, it is expected that each day
+there will be at least 9 of these reports issued:
+- 5 being for the standard current gas day schedules
+- 3 being for the standard 1 ahead schedules
+- 1 being for the standard 2 days ahead schedule.
 
-Timing: Issued simultaneously when AEMO publishes a system-wide notice.
+Each report contains details of the NFTCs that have applied and will apply to schedules run:
+- on the previous gas day
+- for the current gas day
+- for the next 2 gas days.
 
-Content: Includes the issue date/time, urgency level, effective period, and source for further details.
+Each NFTC has a unique identifier and applies to a single group of MIRNs (an injection MIRN and a withdrawal MIRN).
+Each row in the report contains details of one NFTC for one hour of the gas day, with hourly intervals commencing from the
+start of the gas day. That is, the first row for a NFTC relates to 06:00 AM.
 
-Notices are listed from most recent to oldest.
+This report will contain 24 rows for each NFTC for each gas day reported.
 """
 
 table_locations[table_name] = {
@@ -92,7 +118,7 @@ definition_builder = GetMibbReportFromS3FilesDefinitionBuilder(
     key_prefix=["bronze", "aemo", "vicgas"],
     io_manager_key="s3_polars_deltalake_io_manager",
     asset_metadata={
-        "destription": report_purpose,
+        "description": report_purpose,
         "dagster/column_schema": get_metadata_schema(table_schema, schema_descriptions),
         "s3_polars_deltalake_io_manager_options": {
             "write_delta_options": PolarsDataFrameWriteDeltaParamSpec(

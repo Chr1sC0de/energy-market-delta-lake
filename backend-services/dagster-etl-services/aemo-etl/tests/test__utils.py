@@ -168,11 +168,11 @@ class Test__get_df_from_s3_keys:
 
         assert stream_content == newline_join(
             "INFO-processing s3://dev-energy-market-bronze/prefix/failed_mock_1.csv",
-            "INFO-failed to get prefix/failed_mock_1.csv from s3",
+            "INFO-key prefix/failed_mock_1.csv does not exist",
             "INFO-processing s3://dev-energy-market-bronze/prefix/failed_mock_3.parquet",
-            "INFO-failed to get prefix/failed_mock_3.parquet from s3",
+            "INFO-key prefix/failed_mock_3.parquet does not exist",
             "INFO-processing s3://dev-energy-market-bronze/prefix/failed_mock_3.unsupported",
-            "INFO-failed to get prefix/failed_mock_3.unsupported from s3",
+            "INFO-key prefix/failed_mock_3.unsupported does not exist",
             "INFO-no valid dataframes found returning empty dataframe",
         )
 

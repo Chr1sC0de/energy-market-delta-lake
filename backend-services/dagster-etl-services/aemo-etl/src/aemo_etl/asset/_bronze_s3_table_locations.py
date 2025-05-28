@@ -24,7 +24,7 @@ from aemo_etl.util import get_lazyframe_num_rows, get_metadata_schema
 #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
 
-table_name = "bronze_vicgas_s3_table_locations"
+table_name = "bronze_s3_table_locations"
 
 s3_table_location = f"s3://{BRONZE_BUCKET}/aemo/vicgas/{table_name}"
 
@@ -57,7 +57,7 @@ table_locations[table_name] = {
 
 @asset(
     group_name="aemo",
-    key_prefix=["bronze", "aemo", "vicgas"],
+    key_prefix=["bronze", "aemo"],
     name=table_name,
     description="this table maps tables back to their locations on s3",
     kinds={"table", "parquet"},
