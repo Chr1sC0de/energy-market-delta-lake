@@ -33,7 +33,7 @@ table_schema = {
     "notice_start_date": Date,
     "notice_end_date": Date,
     "url_path": String,
-    "current_date": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
+    "current_date": Datetime(time_unit="ms", time_zone="UTC"),
 }
 
 schema_descriptions = {

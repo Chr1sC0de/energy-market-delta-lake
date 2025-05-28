@@ -33,7 +33,7 @@ table_schema = {
     "withdrawal_zone_name": String,
     "scheduled_qty": Float64,
     "transmission_id": Int64,
-    "current_date": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
+    "current_date": Datetime(time_unit="ms", time_zone="UTC"),
 }
 
 schema_descriptions = {

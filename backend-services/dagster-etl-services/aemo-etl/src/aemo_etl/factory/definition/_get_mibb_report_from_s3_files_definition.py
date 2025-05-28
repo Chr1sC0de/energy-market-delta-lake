@@ -156,9 +156,21 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
         )
         def asset_sensor(context: SensorEvaluationContext, s3_resource: S3Resource):
             # Find runs of the same job that are currently running
-            run_records = context.instance.get_run_records(
+            core_job_run_records = context.instance.get_run_records(
                 RunsFilter(
                     job_name=f"{name}_job",
+                    statuses=[
+                        DagsterRunStatus.QUEUED,
+                        DagsterRunStatus.NOT_STARTED,
+                        DagsterRunStatus.STARTING,
+                        DagsterRunStatus.STARTED,
+                    ],
+                )
+            )
+
+            compact_and_vacuum_records = context.instance.get_run_records(
+                RunsFilter(
+                    job_name=f"{name}_compact_and_vacuum_job",
                     statuses=[
                         DagsterRunStatus.QUEUED,
                         DagsterRunStatus.NOT_STARTED,
@@ -172,7 +184,7 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
             if has_job_failed(context.instance, self.table_asset_job.name):
                 return SkipReason("Job previously failed. Sensor paused logic.")
 
-            if len(run_records) == 0:
+            if len(core_job_run_records) == 0 and len(compact_and_vacuum_records) == 0:
                 # only run the etl job if the public files have been downloaded
                 s3_object_keys = get_s3_object_keys_from_prefix_and_name_glob(
                     s3_client=s3_resource.get_client(),

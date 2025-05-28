@@ -29,7 +29,7 @@ table_schema = {
     "unit_id": String,
     "qty": Float64,
     "qty_reinj": Float64,
-    "current_date": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
+    "current_date": Datetime(time_unit="ms", time_zone="UTC"),
 }
 
 schema_descriptions = {

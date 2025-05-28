@@ -59,13 +59,18 @@ def post_process_hook(
 
         for name, type_ in table_schema.items():
             if type_ == Date:
-                df = df.with_columns(col(name).str.to_date("%d %b %Y").cast(type_))
-            if type_ == Datetime:
+                df = df.with_columns(col(name).str.to_date("%d %b %Y"))
+            elif type_ == Datetime:
                 df = df.with_columns(
-                    col(name).str.to_datetime("%d %b %Y %H:%M:%S").cast(type_)
+                    col(name)
+                    .str.to_datetime(
+                        "%d %b %Y %H:%M:%S", time_zone="Australia/Melbourne"
+                    )
+                    .dt.convert_time_zone("UTC")
                 )
             else:
                 df = df.with_columns(col(name).cast(type_))
+
     return df
 
 

@@ -1,7 +1,7 @@
 from pytest import fixture
 from datetime import datetime
 from dagster import OpExecutionContext, build_op_context
-from polars import Datetime, LazyFrame, String
+from polars import Datetime, LazyFrame, String, col
 import polars.testing
 from aemo_etl.configuration import ProcessedLink
 from aemo_etl.factory.op._combine_processed_links_to_dataframe_op_factory import (
@@ -58,6 +58,9 @@ class Test__combine_processed_links_to_dataframe_op_factory:
                     target_ingested_datetime=[now] * 20,
                 ),
                 schema=schema,
+            ).with_columns(
+                col("source_upload_datetime").dt.convert_time_zone("UTC"),
+                col("target_ingested_datetime").dt.convert_time_zone("UTC"),
             ),
         )
 
@@ -85,5 +88,8 @@ class Test__combine_processed_links_to_dataframe_op_factory:
                     target_ingested_datetime=[now] * 20,
                 ),
                 schema=schema,
+            ).with_columns(
+                col("source_upload_datetime").dt.convert_time_zone("UTC"),
+                col("target_ingested_datetime").dt.convert_time_zone("UTC"),
             ),
         )

@@ -32,7 +32,7 @@ table_schema = {
     "gas_date": Date,
     "schedule_no": Int64,
     "est_ancillary_amt_gst_ex": Float64,
-    "current_date": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
+    "current_date": Datetime(time_unit="ms", time_zone="UTC"),
 }
 
 schema_descriptions = {

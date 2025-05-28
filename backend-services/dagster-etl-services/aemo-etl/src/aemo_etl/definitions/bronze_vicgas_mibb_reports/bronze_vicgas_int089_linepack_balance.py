@@ -30,7 +30,7 @@ table_schema = {
     "total_dev_pmt": Float64,
     "linepack_acct_pmt_gst_ex": Float64,
     "linepack_acct_bal_gst_ex": Float64,
-    "current_date": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
+    "current_date": Datetime(time_unit="ms", time_zone="UTC"),
 }
 
 schema_descriptions = {

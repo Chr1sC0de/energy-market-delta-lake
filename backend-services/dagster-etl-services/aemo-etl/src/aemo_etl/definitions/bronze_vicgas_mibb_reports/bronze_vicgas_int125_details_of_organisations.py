@@ -49,7 +49,7 @@ table_schema = {
     "fax": String,
     "market_code": String,
     "company_code": String,
-    "current_date": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
+    "current_date": Datetime(time_unit="ms", time_zone="UTC"),
 }
 
 schema_descriptions = {

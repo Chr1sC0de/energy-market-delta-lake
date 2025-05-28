@@ -34,7 +34,7 @@ table_schema = {
     "imb_wtd_ave_price_gst_ex": Float64,
     "imb_inj_wtd_ave_price_gst_ex": Float64,
     "imb_wdr_wtd_ave_price_gst_ex": Float64,
-    "current_date": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
+    "current_date": Datetime(time_unit="ms", time_zone="UTC"),
 }
 
 schema_descriptions = {

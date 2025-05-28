@@ -30,7 +30,7 @@ upsert_predicate = newline_join(
 table_schema = {
     "dfs_version": Int64,
     "gas_date": Date,
-    "last_update_datetime": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
+    "last_update_datetime": Datetime(time_unit="ms", time_zone="UTC"),
     "previous_day_min": Float64,
     "max": Float64,
     "overnight_min": Float64,
@@ -39,7 +39,7 @@ table_schema = {
     "effective_temperature": Float64,
     "dfs_edd": Float64,
     "total_demand_forecast": Int64,
-    "current_date": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
+    "current_date": Datetime(time_unit="ms", time_zone="UTC"),
 }
 
 schema_descriptions = {

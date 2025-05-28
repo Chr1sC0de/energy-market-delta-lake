@@ -31,8 +31,8 @@ table_schema = {
     "schedule_type_id": String,
     "transmission_id": Int64,
     "gas_date": Date,
-    "approval_datetime": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
-    "current_date": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
+    "approval_datetime": Datetime(time_unit="ms", time_zone="UTC"),
+    "current_date": Datetime(time_unit="ms", time_zone="UTC"),
 }
 
 schema_descriptions = {

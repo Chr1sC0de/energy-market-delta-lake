@@ -28,18 +28,18 @@ table_schema = {
     "transmission_id": Int64,
     "transmission_document_id": Int64,
     "transmission_group_id": Int64,
-    "gas_start_datetime": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
-    "bid_cutoff_datetime": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
+    "gas_start_datetime": Datetime(time_unit="ms", time_zone="UTC"),
+    "bid_cutoff_datetime": Datetime(time_unit="ms", time_zone="UTC"),
     "schedule_type_id": String,
-    "creation_datetime": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
+    "creation_datetime": Datetime(time_unit="ms", time_zone="UTC"),
     "forecast_demand_version": String,
     "dfs_interface_audit_id": Int64,
     "last_os_for_gas_day_tdoc_id": Int64,
     "os_prior_gas_day_tdoc_id": Int64,
-    "approval_datetime": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
+    "approval_datetime": Datetime(time_unit="ms", time_zone="UTC"),
     "demand_type_id": Int64,
     "objective_function_value": Float64,
-    "current_date": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
+    "current_date": Datetime(time_unit="ms", time_zone="UTC"),
 }
 
 schema_descriptions = {

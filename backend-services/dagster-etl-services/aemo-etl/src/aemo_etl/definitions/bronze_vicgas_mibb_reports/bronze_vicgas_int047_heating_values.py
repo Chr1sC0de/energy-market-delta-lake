@@ -32,13 +32,13 @@ upsert_predicate = newline_join(
 table_schema = {
     "version_id": Int64,
     "gas_date": Date,
-    "event_datetime": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
+    "event_datetime": Datetime(time_unit="ms", time_zone="UTC"),
     "event_interval": Int64,
     "heating_value_zone": Int64,
     "heating_value_zone_desc": String,
     "initial_heating_value": Float64,
     "current_heating_value": Float64,
-    "current_date": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
+    "current_date": Datetime(time_unit="ms", time_zone="UTC"),
 }
 
 schema_descriptions = {

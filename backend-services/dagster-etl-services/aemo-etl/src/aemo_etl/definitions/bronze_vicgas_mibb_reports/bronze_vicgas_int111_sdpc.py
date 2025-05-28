@@ -49,7 +49,7 @@ table_schema = {
     "os_daily_max_qty": Int64,
     "expiration_time": String,
     "sdpc_id": Int64,
-    "current_date": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
+    "current_date": Datetime(time_unit="ms", time_zone="UTC"),
 }
 
 schema_descriptions = {

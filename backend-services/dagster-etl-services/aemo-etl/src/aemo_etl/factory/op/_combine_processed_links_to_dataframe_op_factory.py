@@ -1,7 +1,7 @@
 from typing import Callable, Mapping, Unpack
 
 from dagster import OpDefinition, OpExecutionContext, op
-from polars import DataType, LazyFrame, Schema
+from polars import DataType, LazyFrame, Schema, col
 
 from aemo_etl.configuration import ProcessedLink
 from aemo_etl.factory.op.schema import OpKwargs
@@ -52,6 +52,9 @@ def combine_processed_links_to_dataframe_op_factory(
                 }
             ),
             schema=schema,
+        ).with_columns(
+            col("source_upload_datetime").dt.convert_time_zone("UTC"),
+            col("target_ingested_datetime").dt.convert_time_zone("UTC"),
         )
 
         if post_process_dataframe_hook is not None:

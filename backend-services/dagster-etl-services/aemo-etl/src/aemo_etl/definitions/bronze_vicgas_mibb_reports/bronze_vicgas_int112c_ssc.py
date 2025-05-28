@@ -35,8 +35,8 @@ table_schema = {
     "ssc_id": Int64,
     "ti": Int64,
     "hourly_constraint": Int64,
-    "mod_datetime": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
-    "current_date": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
+    "mod_datetime": Datetime(time_unit="ms", time_zone="UTC"),
+    "current_date": Datetime(time_unit="ms", time_zone="UTC"),
 }
 
 schema_descriptions = {

@@ -25,11 +25,11 @@ upsert_predicate = newline_join(
 )
 
 table_schema = {
-    "edd_update": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
+    "edd_update": Datetime(time_unit="ms", time_zone="UTC"),
     "edd_date": Date,
     "edd_value": Float64,
     "edd_type": Int64,
-    "current_date": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
+    "current_date": Datetime(time_unit="ms", time_zone="UTC"),
 }
 
 schema_descriptions = {

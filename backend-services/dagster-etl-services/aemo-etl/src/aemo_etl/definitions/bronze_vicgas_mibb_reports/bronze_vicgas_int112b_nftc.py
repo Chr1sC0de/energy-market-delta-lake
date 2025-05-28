@@ -41,8 +41,8 @@ table_schema = {
     "hourly_min_net_inj_qty_gj": Int64,
     "hourly_max_net_wdl_qty_gj": Int64,
     "hourly_min_net_wdl_qty_gj": Int64,
-    "mod_datetime": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
-    "current_date": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
+    "mod_datetime": Datetime(time_unit="ms", time_zone="UTC"),
+    "current_date": Datetime(time_unit="ms", time_zone="UTC"),
 }
 
 schema_descriptions = {

@@ -27,7 +27,7 @@ upsert_predicate = newline_join(
 table_schema = {
     "gas_date": String,
     "imb_dev_wa_dly_price_gst_ex": Float64,
-    "current_date": Datetime(time_unit="ms", time_zone="Australia/Melbourne"),
+    "current_date": Datetime(time_unit="ms", time_zone="UTC"),
 }
 
 schema_descriptions = {
