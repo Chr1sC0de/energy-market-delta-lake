@@ -43,19 +43,21 @@ FROM python:3.13-slim AS dagster-grpc
 RUN apt-get update && apt-get upgrade -yqq && \                                                                                                                                                                                                                                     
     apt-get install -y --no-install-recommends \
     curl \
+    vim \
     netcat-openbsd \
     && \                                                                                                                                                                                                         
     apt-get clean && \                                                                                                                                                                                                                                                              
     rm -rf /var/lib/apt/lists/*                                                                                                                                                                                                                                                     
 
 # Copy installed packages and created binaries to the current folder
-COPY --from=builder /install/bin /usr/local/bin
-COPY --from=builder /install/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
+COPY --from=builder /install/bin/ /usr/local/bin/
+COPY --from=builder /install/lib/python3.13/site-packages/ /usr/local/lib/python3.13/site-packages/
 
 ENV DAGSTER_HOME=/opt/dagster/dagster_home/
 RUN mkdir -p $DAGSTER_HOME
 WORKDIR $DAGSTER_HOME
 
+COPY scripts/ $DAGSTER_HOME
 COPY dagster.yaml $DAGSTER_HOME
 COPY workspace.yaml $DAGSTER_HOME
 

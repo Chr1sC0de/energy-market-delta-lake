@@ -23,7 +23,7 @@ class Stack(_Stack):
         VpcStack: vpc.Stack,
         EcsDagsterClusterStack: ecs.cluster.Stack,
         PrivateDsnNamespaceStack: service_discovery.Stack,
-        PipelineRepositoryStack: ecr.repository.Stack,
+        UserCodeRepositoryStack: ecr.repository.Stack,
         PostgresStack: postgres.Stack,
         SecurityGroupStack: security_groups.Stack,
         service_discovery_name: str,
@@ -36,7 +36,7 @@ class Stack(_Stack):
         self.add_dependency(VpcStack)
         self.add_dependency(EcsDagsterClusterStack)
         self.add_dependency(PrivateDsnNamespaceStack)
-        self.add_dependency(PipelineRepositoryStack)
+        self.add_dependency(UserCodeRepositoryStack)
         self.add_dependency(PostgresStack)
         self.add_dependency(SecurityGroupStack)
 
@@ -56,8 +56,8 @@ class Stack(_Stack):
             self,
             "FargateTaskDefinition",
             family="dagster-pipeline",
-            cpu=256,
-            memory_limit_mib=512,
+            cpu=512,
+            memory_limit_mib=1024,
             task_role=dagster_daemon_task_role,
         )
 
@@ -66,7 +66,7 @@ class Stack(_Stack):
             container_name="dagster-grpc",
             image=aws_ecs.ContainerImage.from_ecr_repository(
                 aws_ecr.Repository.from_repository_name(
-                    self, "PipelineCode", PipelineRepositoryStack.repository_name
+                    self, "PipelineCode", UserCodeRepositoryStack.repository_name
                 )
             ),
             essential=True,
@@ -87,7 +87,7 @@ class Stack(_Stack):
                 "DAGSTER_POSTGRES_USER": "dagster_user",
                 "AWS_S3_LOCKING_PROVIDER": "dynamodb",
                 "DAGSTER_GRPC_TIMEOUT_SECONDS": "300",
-                "DAGSTER_CURRENT_IMAGE": f"{self.account}.dkr.ecr.{self.region}.amazonaws.com/{PipelineRepositoryStack.repository_name}:latest",
+                "DAGSTER_CURRENT_IMAGE": f"{self.account}.dkr.ecr.{self.region}.amazonaws.com/{UserCodeRepositoryStack.repository_name}:latest",
                 "DEVELOPMENT_ENVIRONMENT": DEVELOPMENT_ENVIRONMENT,
                 "DEVELOPMENT_LOCATION": "aws",
             },

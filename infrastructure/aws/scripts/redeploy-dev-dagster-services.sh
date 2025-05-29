@@ -4,7 +4,7 @@
     uv sync
     . ".venv/bin/activate"
     cdk destroy --method direct --force \
-        DevEnergyMarketDagsterAemoGasPipelineService \
+        DevEnergyMarketDagsterAemoETLUserCodeService \
         DevEnergyMarketDagsterWebserverService \
         DevEnergyMarketDagsterDaemonService
     cdk deploy --all --method direct --require-approval never --concurrency 8

@@ -1,21 +1,21 @@
 from typing import Unpack
 
 import aws_cdk as cdk
-from aws_cdk import aws_ecr, aws_ecs, Fn
+from aws_cdk import Fn, aws_ecr, aws_ecs
 from aws_cdk import Stack as _Stack
 from aws_cdk import aws_ec2 as ec2
-from aws_cdk import aws_ssm as ssm
 from aws_cdk import aws_iam as iam
-from configurations.parameters import DEVELOPMENT_ENVIRONMENT, ADMINISTRATOR_IPS
+from aws_cdk import aws_ssm as ssm
 from constructs import Construct
 
+from configurations.parameters import ADMINISTRATOR_IPS, DEVELOPMENT_ENVIRONMENT
 from infrastructure import (
     ecr,
     ecs,
-    postgres,
-    vpc,
-    security_groups,
     iam_roles,
+    postgres,
+    security_groups,
+    vpc,
 )
 from infrastructure.utils import StackKwargs
 
@@ -67,19 +67,20 @@ class Stack(_Stack):
             Fn.import_value("ECSDagsteWebserverTaskRoleARN"),
         )
 
-        task_definition = aws_ecs.FargateTaskDefinition(
+        task_definition = aws_ecs.Ec2TaskDefinition(
             self,
             "DagsterWebserverTaskDefinition",
             family="dagster-webserver",
-            cpu=256,
-            memory_limit_mib=512,
             execution_role=dagster_webserver_task_execution_role,
             task_role=dagster_webserver_task_role,
+            # network_mode=aws_ecs.NetworkMode.AWS_VPC,
+            network_mode=aws_ecs.NetworkMode.HOST,  # using host mode for development
         )
 
         _ = task_definition.add_container(
             "DagsterWebserverContainer",
             container_name="webserver",
+            memory_limit_mib=400,
             image=aws_ecs.ContainerImage.from_ecr_repository(
                 aws_ecr.Repository.from_repository_name(
                     self,
@@ -131,9 +132,6 @@ class Stack(_Stack):
             ),
         )
 
-        # create the fargat service with public ip address, cheaper than using a load balanced
-        # service as we only have a single az
-
         # add my developer ip address
         for ip_address in ADMINISTRATOR_IPS:
             developer_ip = ec2.Peer.ipv4(f"{ip_address}/32")
@@ -156,20 +154,25 @@ class Stack(_Stack):
                 description="Allow inbound HTTPS traffic on port 443",
             )
 
-        fargate_service = aws_ecs.FargateService(
+        # Create the EC2 service
+        ec2_service = aws_ecs.Ec2Service(
             self,
-            "DagsterWebserverFargateService",
+            "DagsterWebserverEc2Service",
             task_definition=task_definition,
-            # platform_version,
-            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
             cluster=EcsDagsterClusterStack.cluster,
             min_healthy_percent=50,
-            assign_public_ip=True,
-            security_groups=[SecurityGroupStack.dagster_webserver_security_group],
+            # only do this during development
+            # security_groups=[SecurityGroupStack.dagster_webserver_security_group],
+            capacity_provider_strategies=[
+                aws_ecs.CapacityProviderStrategy(
+                    capacity_provider=EcsDagsterClusterStack.capacity_provider.capacity_provider_name,
+                    weight=1,
+                )
+            ],
         )
 
-        cdk.Tags.of(fargate_service).add("Environment", DEVELOPMENT_ENVIRONMENT)
-        cdk.Tags.of(fargate_service).add("Service", "DagsterPublicWebserver")
+        cdk.Tags.of(ec2_service).add("Environment", DEVELOPMENT_ENVIRONMENT)
+        cdk.Tags.of(ec2_service).add("Service", "DagsterPublicWebserver")
 
     # generate the load balanced fargate service this can get expensive
 

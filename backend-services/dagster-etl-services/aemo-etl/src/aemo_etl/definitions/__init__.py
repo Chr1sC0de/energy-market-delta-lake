@@ -3,8 +3,6 @@ from dagster import (
     AutomationConditionSensorDefinition,
     DefaultSensorStatus,
     Definitions,
-    load_asset_checks_from_modules,
-    load_assets_from_modules,
 )
 from dagster_aws.s3 import S3Resource
 
@@ -22,8 +20,8 @@ from configurations.parameters import DEVELOPMENT_LOCATION
 
 definitions = Definitions.merge(
     Definitions(
-        assets=load_assets_from_modules([aemo_etl.asset]),
-        asset_checks=load_asset_checks_from_modules([aemo_etl.asset]),
+        assets=aemo_etl.asset.asset_list,
+        asset_checks=aemo_etl.asset.asset_check_list,
         resources={
             "s3_resource": S3Resource(),
             "s3_polars_parquet_io_manager": S3PolarsParquetIOManager(),

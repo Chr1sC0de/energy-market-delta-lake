@@ -39,7 +39,7 @@ BucketStack = buckets.Stack(
 # create the stacks for the ecr repositories, webserver and daemon
 
 EcrAemoETLUserCode = ecr.user_code.aemo_etl.Stack(
-    app, f"{ENV}{STACK_PREFIX}EcrAemoGasPipeline", env=aws_environment
+    app, f"{ENV}{STACK_PREFIX}EcrAemoETLUserCode", env=aws_environment
 )
 
 EcrDagsterWebserver = ecr.dagster_webserver.Stack(
@@ -77,6 +77,7 @@ DagsterEcsClusterStack = ecs.cluster.Stack(
     f"{ENV}{STACK_PREFIX}DagsterEcsCluster",
     env=aws_environment,
     VpcStack=VpcStack,
+    SecurityGroupStack=SecurityGroupStack,
     log_group_name="/ecs/dagster-ecs-cluster",
 )
 
@@ -105,7 +106,7 @@ DagsterAemoETLUserCodeService = ecs.dagster_user_code_service.Stack(
     VpcStack=VpcStack,
     EcsDagsterClusterStack=DagsterEcsClusterStack,
     PrivateDsnNamespaceStack=PrivateDsnNamespaceStack,
-    PipelineRepositoryStack=EcrAemoETLUserCode,
+    UserCodeRepositoryStack=EcrAemoETLUserCode,
     PostgresStack=DagsterPostgresStack,
     SecurityGroupStack=SecurityGroupStack,
     service_discovery_name="aemo-etl",

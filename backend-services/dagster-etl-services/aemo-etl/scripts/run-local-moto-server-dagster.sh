@@ -35,7 +35,7 @@
     export AWS_S3_LOCKING_PROVIDER
     export AWS_ENDPOINT_URL
 
-    uv run moto_server -H "127.0.0.1" -p "5000" &
+    moto_server -H "127.0.0.1" -p "5000" &
 
     aws dynamodb create-table \
         --table-name delta_log \
@@ -53,5 +53,5 @@
         --region $AWS_DEFAULT_REGION \
         --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
 
-    uv run dagster dev -m aemo_etl.definitions --verbose
+    dagster dev -m aemo_etl.definitions --verbose
 )

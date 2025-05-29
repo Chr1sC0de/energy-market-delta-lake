@@ -91,7 +91,7 @@ class Stack(_Stack):
 
         self.dagster_user_code_security_group = ec2.SecurityGroup(
             self,
-            "DagsterPipelineSecurityGroup",
+            "DagsterUserCodeSecurityGroup",
             vpc=VpcStack.vpc,
             allow_all_outbound=True,
         )
@@ -154,7 +154,7 @@ class Stack(_Stack):
                 self.dagster_daemon_security_group,
             ),
             (
-                "DagsterPipelineSecurityGroupId",
+                "DagsterUserCodeSecurityGroupId",
                 self.dagster_user_code_security_group,
             ),
             (

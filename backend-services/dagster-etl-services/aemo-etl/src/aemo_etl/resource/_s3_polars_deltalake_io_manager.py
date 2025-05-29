@@ -72,6 +72,7 @@ class S3PolarsDeltaLakeIOManager(IOManager):
 
         except TableNotFoundError:
             kwargs["mode"] = "error"
+            context.log.info(kwargs)
             collected_obj.write_delta(**kwargs)
 
         context.add_output_metadata(

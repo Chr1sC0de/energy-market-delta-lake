@@ -1,29 +1,35 @@
 from datetime import datetime
 from pathlib import Path
-from typing import IO, Any, Literal, Mapping
+from typing import IO, Any, Literal, Mapping, Sequence
 
+from deltalake import (
+    CommitProperties,
+    DeltaTable,
+    PostCommitHookProperties,
+    WriterProperties,
+)
+from deltalake import (
+    Schema as DeltaSchema,
+)
+import deltalake
+from polars import LazyFrame, QueryOptFlags, ScanCastOptions
 from polars._typing import (
     EngineType,
     FileSource,
     ParallelStrategy,
+    ParquetMetadata,
     PartitioningScheme,
     SchemaDict,
     SyncOnCloseMethod,
 )
 from polars.datatypes import DataType, DataTypeClass
 from polars.io.cloud import CredentialProvider, CredentialProviderFunction
+from polars.io.parquet import ParquetFieldOverwrites
 from polars.lazyframe import GPUEngine
+from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS
 from pyarrow import Schema
 from pyarrow.dataset import ParquetFileWriteOptions
 from pydantic import BaseModel, Field
-from deltalake import (
-    CommitProperties,
-    DeltaTable,
-    PostCommitHookProperties,
-    Schema as DeltaSchema,
-    WriterProperties,
-)
-
 
 # the following is the set of rebuilt types
 _ = {DataTypeClass, DataType, CredentialProvider, GPUEngine}
@@ -41,21 +47,21 @@ class PolarsLazyFrameSinkParquetParamSpec(BaseModel, arbitrary_types_allowed=Tru
     row_group_size: int | None = None
     data_page_size: int | None = None
     maintain_order: bool = True
-    type_coercion: bool = True
-    _type_check: bool = True
-    predicate_pushdown: bool = True
-    projection_pushdown: bool = True
-    simplify_expression: bool = True
-    slice_pushdown: bool = True
-    collapse_joins: bool = True
-    no_optimization: bool = False
     storage_options: dict[str, Any] | None = None
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto"
     retries: int = 2
     sync_on_close: SyncOnCloseMethod | None = None
+    metadata: ParquetMetadata | None = None
     mkdir: bool = False
     lazy: bool = False
+    field_overwrites: (
+        ParquetFieldOverwrites
+        | Sequence[ParquetFieldOverwrites]
+        | Mapping[str, ParquetFieldOverwrites]
+        | None
+    ) = None
     engine: EngineType = "auto"
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS
 
 
 class PolarsLazyFrameScanParquetParamSpec(BaseModel, arbitrary_types_allowed=True):
@@ -68,7 +74,7 @@ class PolarsLazyFrameScanParquetParamSpec(BaseModel, arbitrary_types_allowed=Tru
     hive_partitioning: bool | None = None
     glob: bool = True
     schema_: SchemaDict | None = Field(default=None, alias="schema")
-    hive_schema: "SchemaDict | None" = None
+    hive_schema: SchemaDict | None = None
     try_parse_hive_dates: bool = True
     rechunk: bool = False
     low_memory: bool = False
@@ -78,6 +84,7 @@ class PolarsLazyFrameScanParquetParamSpec(BaseModel, arbitrary_types_allowed=Tru
     retries: int = 2
     include_file_paths: str | None = None
     allow_missing_columns: bool = False
+    cast_options: ScanCastOptions | None = None
 
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
@@ -86,7 +93,6 @@ class PolarsLazyFrameScanParquetParamSpec(BaseModel, arbitrary_types_allowed=Tru
 
 
 class PolarsDeltaLakeWriteParamSpec(BaseModel, arbitrary_types_allowed=True):
-    schema_: Schema | DeltaSchema | None = Field(default=None, alias="schema")
     partition_by: list[str] | str | None = None
     mode: Literal["error", "append", "overwrite", "ignore"] = "error"
     file_options: ParquetFileWriteOptions | None = None
