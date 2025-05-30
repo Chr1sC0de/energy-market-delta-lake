@@ -38,7 +38,7 @@ def test__compact_and_vacuum():
     captured_response = {}
     compact_and_vacuum_dataframe_asset = (
         factory.asset.compact_and_vacuum_dataframe_asset_factory(
-            group_name="AEMO",
+            group_name="aemo",
             s3_target_bucket=bucket,
             s3_target_prefix=s3_schema,
             s3_target_table_name=table_name,

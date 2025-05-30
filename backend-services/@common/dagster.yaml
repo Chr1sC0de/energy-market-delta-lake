@@ -6,6 +6,8 @@ scheduler:
 run_coordinator:
   module: dagster.core.run_coordinator
   class: QueuedRunCoordinator
+  config:
+    max_concurrent_runs: 1000 # or a high number to effectively remove the cap
 
 run_launcher:
   module: "dagster_aws.ecs"

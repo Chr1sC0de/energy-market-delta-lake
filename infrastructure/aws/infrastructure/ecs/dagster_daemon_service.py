@@ -1,21 +1,22 @@
+from datetime import datetime
 from typing import Unpack
 
 import aws_cdk as cdk
-from aws_cdk import aws_ecr, aws_ecs, Fn
+from aws_cdk import Fn, aws_ecr, aws_ecs
 from aws_cdk import Stack as _Stack
 from aws_cdk import aws_ec2 as ec2
-from aws_cdk import aws_ssm as ssm
 from aws_cdk import aws_iam as iam
-from configurations.parameters import DEVELOPMENT_ENVIRONMENT
+from aws_cdk import aws_ssm as ssm
 from constructs import Construct
 
+from configurations.parameters import DEVELOPMENT_ENVIRONMENT
 from infrastructure import (
     ecr,
     ecs,
-    postgres,
-    vpc,
-    security_groups,
     iam_roles,
+    postgres,
+    security_groups,
+    vpc,
 )
 from infrastructure.utils import StackKwargs
 
@@ -97,6 +98,7 @@ class Stack(_Stack):
                 "DAGSTER_GRPC_TIMEOUT_SECONDS": "300",
                 "DEVELOPMENT_ENVIRONMENT": DEVELOPMENT_ENVIRONMENT,
                 "DEVELOPMENT_LOCATION": "aws",
+                "DEPLOYMENT_DATETIME": str(datetime.now()),
             },
             secrets={
                 "DAGSTER_POSTGRES_PASSWORD": aws_ecs.Secret.from_ssm_parameter(

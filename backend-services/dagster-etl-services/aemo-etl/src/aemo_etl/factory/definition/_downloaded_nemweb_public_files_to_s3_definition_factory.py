@@ -109,7 +109,7 @@ def download_nemweb_public_files_to_s3_definition_factory(
     )
 
     compact_and_vacuum_asset = compact_and_vacuum_dataframe_asset_factory(
-        group_name=f"{group_name}__optimize",
+        group_name="aemo__optimize",
         s3_target_bucket=BRONZE_BUCKET,
         s3_target_prefix=s3_target_prefix,
         s3_target_table_name=name,

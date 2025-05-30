@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Unpack
 
 import aws_cdk as cdk
@@ -6,9 +7,9 @@ from aws_cdk import Stack as _Stack
 from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_ssm as ssm
-from configurations.parameters import DEVELOPMENT_ENVIRONMENT
 from constructs import Construct
 
+from configurations.parameters import DEVELOPMENT_ENVIRONMENT
 from infrastructure import ecr, ecs, postgres, security_groups, service_discovery, vpc
 from infrastructure.utils import StackKwargs
 
@@ -90,6 +91,7 @@ class Stack(_Stack):
                 "DAGSTER_CURRENT_IMAGE": f"{self.account}.dkr.ecr.{self.region}.amazonaws.com/{UserCodeRepositoryStack.repository_name}:latest",
                 "DEVELOPMENT_ENVIRONMENT": DEVELOPMENT_ENVIRONMENT,
                 "DEVELOPMENT_LOCATION": "aws",
+                "DEPLOYMENT_DATETIME": str(datetime.now()),
             },
             secrets={
                 "DAGSTER_POSTGRES_PASSWORD": aws_ecs.Secret.from_ssm_parameter(

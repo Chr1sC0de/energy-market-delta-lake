@@ -29,7 +29,7 @@ table_locations[table_name] = {
 
 definitions_list.append(
     download_nemweb_public_files_to_s3_definition_factory(
-        group_name="aemo",
+        group_name="aemo__metadata",
         key_prefix=["bronze", "aemo", "vicgas"],
         name=table_name,
         root_relative_href="REPORTS/CURRENT/VicGas",

@@ -57,6 +57,7 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
         job_tags: dict[str, Any] | None = None,
         compact_and_vacuum_cron_schedule="45 23 * * *",
         execution_timezone="Australia/Melbourne",
+        asset_description: str | None = None,
     ):
         self.s3_source_bucket = s3_source_bucket
         self.s3_source_prefix = s3_source_prefix
@@ -76,6 +77,7 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
             s3_source_prefix=s3_source_prefix,
             s3_source_file_glob=s3_file_glob,
             post_process_hook=table_post_process_hook,
+            description="" if asset_description is None else asset_description,
         )
 
         #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
@@ -83,7 +85,7 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
         #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
         self.compact_and_vacuum_asset = compact_and_vacuum_dataframe_asset_factory(
-            group_name=f"{group_name}__optimize",
+            group_name="aemo__optimize",
             s3_target_bucket=s3_target_bucket,
             s3_target_prefix=s3_target_prefix,
             s3_target_table_name=name,

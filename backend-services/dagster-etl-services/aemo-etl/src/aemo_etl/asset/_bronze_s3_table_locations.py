@@ -56,10 +56,10 @@ table_locations[table_name] = {
 
 
 @asset(
-    group_name="aemo",
+    group_name="aemo__metadata",
     key_prefix=["bronze", "aemo"],
     name=table_name,
-    description="this table maps tables back to their locations on s3",
+    description="This table maps tables back to their locations on s3",
     kinds={"table", "parquet"},
     io_manager_key="s3_polars_parquet_io_manager",
     automation_condition=AutomationCondition.missing()
@@ -77,7 +77,7 @@ table_locations[table_name] = {
         },
     },
 )
-def bronze_vicgas_s3_table_locations_asset() -> LazyFrame:
+def bronze_s3_table_locations_asset() -> LazyFrame:
     df_dict = defaultdict[str, list[object]](list)
     for dict_ in table_locations.values():
         for key, value in dict_.items():
@@ -99,23 +99,23 @@ def bronze_vicgas_s3_table_locations_asset() -> LazyFrame:
     specs=[
         AssetCheckSpec(
             name="unique_table_names",
-            asset=bronze_vicgas_s3_table_locations_asset,
+            asset=bronze_s3_table_locations_asset,
             description="check that the table names are all unique",
         ),
         AssetCheckSpec(
             name="s3_table_location_correctly_formatted",
-            asset=bronze_vicgas_s3_table_locations_asset,
+            asset=bronze_s3_table_locations_asset,
             description="ensure that the table paths start with 's3://'",
         ),
         AssetCheckSpec(
             name="storage_type_are_correct",
-            asset=bronze_vicgas_s3_table_locations_asset,
+            asset=bronze_s3_table_locations_asset,
             description="ensure that the storage type is within ('parquet','deltalake')",
         ),
     ],
-    ins={"table": AssetIn(bronze_vicgas_s3_table_locations_asset.key)},
+    ins={"table": AssetIn(bronze_s3_table_locations_asset.key)},
 )
-def bronze_vicgas_s3_table_locations_asset_check(
+def bronze_s3_table_locations_asset_check(
     table: LazyFrame,
 ) -> Iterable[AssetCheckResult]:
     table_length = get_lazyframe_num_rows(table)
@@ -124,7 +124,7 @@ def bronze_vicgas_s3_table_locations_asset_check(
         passed=bool(
             table_length == get_lazyframe_num_rows(table.select("table_name").unique())
         ),
-        asset_key=bronze_vicgas_s3_table_locations_asset.key,
+        asset_key=bronze_s3_table_locations_asset.key,
     )
 
     yield AssetCheckResult(
@@ -137,7 +137,7 @@ def bronze_vicgas_s3_table_locations_asset_check(
                 )
             )
         ),
-        asset_key=bronze_vicgas_s3_table_locations_asset.key,
+        asset_key=bronze_s3_table_locations_asset.key,
     )
 
     yield AssetCheckResult(
@@ -148,5 +148,5 @@ def bronze_vicgas_s3_table_locations_asset_check(
                 table.filter(col("table_type").is_in(["delta", "parquet"]))
             )
         ),
-        asset_key=bronze_vicgas_s3_table_locations_asset.key,
+        asset_key=bronze_s3_table_locations_asset.key,
     )

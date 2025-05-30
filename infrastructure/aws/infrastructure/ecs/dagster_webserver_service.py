@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Unpack
 
 import aws_cdk as cdk
@@ -104,6 +105,7 @@ class Stack(_Stack):
                 "DAGSTER_POSTGRES_USER": "dagster_user",
                 "DEVELOPMENT_ENVIRONMENT": DEVELOPMENT_ENVIRONMENT,
                 "DEVELOPMENT_LOCATION": "aws",
+                "DEPLOYMENT_DATETIME": str(datetime.now()),
             },
             secrets={
                 "DAGSTER_POSTGRES_PASSWORD": aws_ecs.Secret.from_ssm_parameter(
