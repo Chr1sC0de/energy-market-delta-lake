@@ -162,9 +162,12 @@ class Stack(_Stack):
             "DagsterWebserverEc2Service",
             task_definition=task_definition,
             cluster=EcsDagsterClusterStack.cluster,
-            min_healthy_percent=50,
-            # only do this during development
-            # security_groups=[SecurityGroupStack.dagster_webserver_security_group],
+            min_healthy_percent=0,
+            max_healthy_percent=100,
+            deployment_controller=aws_ecs.DeploymentController(
+                type=aws_ecs.DeploymentControllerType.ECS
+            ),
+            circuit_breaker=aws_ecs.DeploymentCircuitBreaker(rollback=True),
             capacity_provider_strategies=[
                 aws_ecs.CapacityProviderStrategy(
                     capacity_provider=EcsDagsterClusterStack.capacity_provider.capacity_provider_name,

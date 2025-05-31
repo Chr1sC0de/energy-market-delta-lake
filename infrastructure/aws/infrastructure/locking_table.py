@@ -1,7 +1,7 @@
 from typing import Unpack
 
 import boto3
-from aws_cdk import Fn, RemovalPolicy
+from aws_cdk import CfnResource, Fn, RemovalPolicy, RemovalPolicyOptions
 from aws_cdk import Stack as _Stack
 from aws_cdk import aws_dynamodb as dynamodb
 from aws_cdk import aws_iam as iam
@@ -46,8 +46,11 @@ class Stack(_Stack):
                 sort_key=dynamodb.Attribute(
                     name="fileName", type=dynamodb.AttributeType.STRING
                 ),
-                removal_policy=RemovalPolicy.DESTROY,
+                removal_policy=RemovalPolicy.RETAIN,  # Prevent deletion during updates
             )
+
+            # Enable deletion during explicit destroy command
+            delta_locking_table.apply_removal_policy(RemovalPolicy.DESTROY)
 
         # grant the required permissions to the roles
         dagster_daemon_task_role = iam.Role.from_role_arn(

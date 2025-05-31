@@ -135,7 +135,12 @@ class Stack(_Stack):
                 name=service_discovery_name,
             ),
             security_groups=[SecurityGroupStack.dagster_user_code_security_group],
-            min_healthy_percent=50,
+            min_healthy_percent=0,
+            max_healthy_percent=100,
+            deployment_controller=aws_ecs.DeploymentController(
+                type=aws_ecs.DeploymentControllerType.ECS
+            ),
+            circuit_breaker=aws_ecs.DeploymentCircuitBreaker(rollback=True),
         )
 
         cdk.Tags.of(fargate_service).add("Environment", DEVELOPMENT_ENVIRONMENT)

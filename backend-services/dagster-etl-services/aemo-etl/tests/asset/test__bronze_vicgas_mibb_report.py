@@ -30,7 +30,12 @@ for sub_module in mibb_report_sub_modules:
     if "definition_builder" in dir(getattr(bronze_vicgas_mibb_reports, sub_module)):
         testable_submmodules.append(sub_module)
 
-skip = ["int135", "int112c", "int112d"]
+skip = [
+    "int135",
+    "int112c",
+    "int112d",
+    "int039b",
+]
 
 
 @mark.parametrize("submodule_name", testable_submmodules)

@@ -137,7 +137,12 @@ class Stack(_Stack):
                 subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
             ),
             cluster=EcsDagsterClusterStack.cluster,
-            min_healthy_percent=50,
+            min_healthy_percent=0,
+            max_healthy_percent=100,
+            deployment_controller=aws_ecs.DeploymentController(
+                type=aws_ecs.DeploymentControllerType.ECS
+            ),
+            circuit_breaker=aws_ecs.DeploymentCircuitBreaker(rollback=True),
             security_groups=[
                 ec2.SecurityGroup.from_security_group_id(
                     self,
