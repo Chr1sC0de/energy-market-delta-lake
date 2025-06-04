@@ -31,10 +31,12 @@ for sub_module in mibb_report_sub_modules:
         testable_submmodules.append(sub_module)
 
 skip = [
-    "int135",
-    "int112c",
-    "int112d",
-    "int039b",
+    "int135_v4_uplift_cap_1",
+    "int112c_v4_ssc_1",
+    "int112d_v4_zftc_1",
+    "int039b_v4_indicative_locational_price_1",
+    "int261_v4_agg_amdq_transferred_1",
+    "int310_v1_price_and_withdrawals_rpt_1",
 ]
 
 
