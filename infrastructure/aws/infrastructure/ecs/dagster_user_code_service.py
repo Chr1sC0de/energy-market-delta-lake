@@ -57,7 +57,7 @@ class Stack(_Stack):
             self,
             "FargateTaskDefinition",
             family="dagster-pipeline",
-            cpu=512,
+            cpu=256,
             memory_limit_mib=1024,
             task_role=dagster_daemon_task_role,
         )
