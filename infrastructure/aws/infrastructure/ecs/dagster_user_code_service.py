@@ -120,28 +120,32 @@ class Stack(_Stack):
             ),
         )
 
-        # generate the fargate service
-
-        fargate_service = aws_ecs.FargateService(
+        service = aws_ecs.FargateService(
             self,
             "DagsterUserCodeFargateService",
             task_definition=task_definition,
+            cluster=EcsDagsterClusterStack.cluster,
+            security_groups=[SecurityGroupStack.dagster_user_code_security_group],
+            min_healthy_percent=0,
+            max_healthy_percent=100,
+            circuit_breaker=aws_ecs.DeploymentCircuitBreaker(rollback=True),
             vpc_subnets=ec2.SubnetSelection(
                 subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
             ),
-            cluster=EcsDagsterClusterStack.cluster,
+            deployment_controller=aws_ecs.DeploymentController(
+                type=aws_ecs.DeploymentControllerType.ECS
+            ),
             cloud_map_options=aws_ecs.CloudMapOptions(
                 cloud_map_namespace=PrivateDsnNamespaceStack.private_dns_namespace,
                 name=service_discovery_name,
             ),
-            security_groups=[SecurityGroupStack.dagster_user_code_security_group],
-            min_healthy_percent=0,
-            max_healthy_percent=100,
-            deployment_controller=aws_ecs.DeploymentController(
-                type=aws_ecs.DeploymentControllerType.ECS
-            ),
-            circuit_breaker=aws_ecs.DeploymentCircuitBreaker(rollback=True),
+            capacity_provider_strategies=[
+                aws_ecs.CapacityProviderStrategy(
+                    capacity_provider="FARGATE_SPOT",
+                    weight=1,
+                )
+            ],
+            propagate_tags=aws_ecs.PropagatedTagSource.SERVICE,
         )
 
-        cdk.Tags.of(fargate_service).add("Environment", DEVELOPMENT_ENVIRONMENT)
-        cdk.Tags.of(fargate_service).add("Service", "DagsterUserCode")
+        cdk.Tags.of(service).add("dagster/service", f"Code Location: {target_module}")

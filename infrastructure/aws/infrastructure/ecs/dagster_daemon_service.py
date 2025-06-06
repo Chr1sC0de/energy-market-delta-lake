@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Unpack
 
 import aws_cdk as cdk
-from aws_cdk import Fn, aws_ecr, aws_ecs
+from aws_cdk import Fn, Tags, aws_ecr, aws_ecs
 from aws_cdk import Stack as _Stack
 from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_iam as iam
@@ -54,8 +54,6 @@ class Stack(_Stack):
             self, PostgresStack.postgres_ssm_instance_private_dns, 1
         )
 
-        # grab the execution and task task roles
-
         dagster_daemon_task_execution_role = iam.Role.from_role_arn(
             self,
             "ECSDagsterDaemonTaskExecutionRole",
@@ -68,14 +66,12 @@ class Stack(_Stack):
             Fn.import_value("ECSDagsterDaemonTaskRoleARN"),
         )
 
-        # generate the task definition
-
         task_definition = aws_ecs.FargateTaskDefinition(
             self,
             "DagsterDaemonDefinition",
             family="dagster-daemon",
             cpu=256,
-            memory_limit_mib=512,
+            memory_limit_mib=1024,
             execution_role=dagster_daemon_task_execution_role,
             task_role=dagster_daemon_task_role,
         )
@@ -126,31 +122,28 @@ class Stack(_Stack):
             ),
         )
 
-        # generate the fargate service
-
-        fargate_service = aws_ecs.FargateService(
+        service = aws_ecs.FargateService(
             self,
             "DagsterDaemonFargateService",
             task_definition=task_definition,
-            # platform_version,
+            cluster=EcsDagsterClusterStack.cluster,
+            security_groups=[SecurityGroupStack.dagster_daemon_security_group],
+            min_healthy_percent=0,
+            max_healthy_percent=100,
+            circuit_breaker=aws_ecs.DeploymentCircuitBreaker(rollback=True),
             vpc_subnets=ec2.SubnetSelection(
                 subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
             ),
-            cluster=EcsDagsterClusterStack.cluster,
-            min_healthy_percent=0,
-            max_healthy_percent=100,
             deployment_controller=aws_ecs.DeploymentController(
                 type=aws_ecs.DeploymentControllerType.ECS
             ),
-            circuit_breaker=aws_ecs.DeploymentCircuitBreaker(rollback=True),
-            security_groups=[
-                ec2.SecurityGroup.from_security_group_id(
-                    self,
-                    "DagsterDaemonSecurityGroup",
-                    Fn.import_value("DagsterDaemonSecurityGroupId"),
+            capacity_provider_strategies=[
+                aws_ecs.CapacityProviderStrategy(
+                    capacity_provider="FARGATE_SPOT",
+                    weight=1,
                 )
             ],
+            propagate_tags=aws_ecs.PropagatedTagSource.SERVICE,
         )
 
-        cdk.Tags.of(fargate_service).add("Environment", DEVELOPMENT_ENVIRONMENT)
-        cdk.Tags.of(fargate_service).add("Service", "DagsterDaemon")
+        Tags.of(service).add("dagster/service", "Daemon")

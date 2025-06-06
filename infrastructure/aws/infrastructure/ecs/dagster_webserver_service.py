@@ -1,22 +1,21 @@
-from datetime import datetime
 from typing import Unpack
 
 import aws_cdk as cdk
-from aws_cdk import Fn, aws_ecr, aws_ecs
+from aws_cdk import Tags, aws_ecr, aws_ecs, Fn
 from aws_cdk import Stack as _Stack
 from aws_cdk import aws_ec2 as ec2
-from aws_cdk import aws_iam as iam
 from aws_cdk import aws_ssm as ssm
+from aws_cdk import aws_iam as iam
+from configurations.parameters import DEVELOPMENT_ENVIRONMENT, ADMINISTRATOR_IPS
 from constructs import Construct
 
-from configurations.parameters import ADMINISTRATOR_IPS, DEVELOPMENT_ENVIRONMENT
 from infrastructure import (
     ecr,
     ecs,
-    iam_roles,
     postgres,
-    security_groups,
     vpc,
+    security_groups,
+    iam_roles,
 )
 from infrastructure.utils import StackKwargs
 
@@ -68,20 +67,19 @@ class Stack(_Stack):
             Fn.import_value("ECSDagsteWebserverTaskRoleARN"),
         )
 
-        task_definition = aws_ecs.Ec2TaskDefinition(
+        task_definition = aws_ecs.FargateTaskDefinition(
             self,
             "DagsterWebserverTaskDefinition",
             family="dagster-webserver",
+            cpu=256,
+            memory_limit_mib=1024,
             execution_role=dagster_webserver_task_execution_role,
             task_role=dagster_webserver_task_role,
-            # network_mode=aws_ecs.NetworkMode.AWS_VPC,
-            network_mode=aws_ecs.NetworkMode.HOST,  # using host mode for development
         )
 
         _ = task_definition.add_container(
             "DagsterWebserverContainer",
             container_name="webserver",
-            memory_limit_mib=400,
             image=aws_ecs.ContainerImage.from_ecr_repository(
                 aws_ecr.Repository.from_repository_name(
                     self,
@@ -105,7 +103,6 @@ class Stack(_Stack):
                 "DAGSTER_POSTGRES_USER": "dagster_user",
                 "DEVELOPMENT_ENVIRONMENT": DEVELOPMENT_ENVIRONMENT,
                 "DEVELOPMENT_LOCATION": "aws",
-                "DEPLOYMENT_DATETIME": str(datetime.now()),
             },
             secrets={
                 "DAGSTER_POSTGRES_PASSWORD": aws_ecs.Secret.from_ssm_parameter(
@@ -134,6 +131,9 @@ class Stack(_Stack):
             ),
         )
 
+        # create the fargat service with public ip address, cheaper than using a load balanced
+        # service as we only have a single az
+
         # add my developer ip address
         for ip_address in ADMINISTRATOR_IPS:
             developer_ip = ec2.Peer.ipv4(f"{ip_address}/32")
@@ -156,28 +156,25 @@ class Stack(_Stack):
                 description="Allow inbound HTTPS traffic on port 443",
             )
 
-        # Create the EC2 service
-        ec2_service = aws_ecs.Ec2Service(
+        service = aws_ecs.FargateService(
             self,
-            "DagsterWebserverEc2Service",
+            "DagsterWebserverFargateService",
             task_definition=task_definition,
+            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
             cluster=EcsDagsterClusterStack.cluster,
-            min_healthy_percent=0,
-            max_healthy_percent=100,
-            deployment_controller=aws_ecs.DeploymentController(
-                type=aws_ecs.DeploymentControllerType.ECS
-            ),
-            circuit_breaker=aws_ecs.DeploymentCircuitBreaker(rollback=True),
+            min_healthy_percent=50,
+            assign_public_ip=True,
+            security_groups=[SecurityGroupStack.dagster_webserver_security_group],
             capacity_provider_strategies=[
                 aws_ecs.CapacityProviderStrategy(
-                    capacity_provider=EcsDagsterClusterStack.capacity_provider.capacity_provider_name,
+                    capacity_provider="FARGATE_SPOT",
                     weight=1,
                 )
             ],
+            propagate_tags=aws_ecs.PropagatedTagSource.SERVICE,
         )
 
-        cdk.Tags.of(ec2_service).add("Environment", DEVELOPMENT_ENVIRONMENT)
-        cdk.Tags.of(ec2_service).add("Service", "DagsterPublicWebserver")
+        Tags.of(service).add("dagster/service", "Webserver")
 
     # generate the load balanced fargate service this can get expensive
 

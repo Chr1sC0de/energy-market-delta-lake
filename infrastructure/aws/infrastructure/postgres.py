@@ -1,14 +1,14 @@
 from typing import Unpack
 
-from aws_cdk import Fn
 from aws_cdk import Stack as _Stack
+from aws_cdk import Tags
 from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_ssm as ssm
 from constructs import Construct
 
 from configurations.parameters import DEVELOPMENT_ENVIRONMENT, NAME_PREFIX
-from infrastructure import vpc, security_groups
+from infrastructure import security_groups, vpc
 from infrastructure.utils import (
     StackKwargs,
     generate_secure_password,
@@ -90,6 +90,8 @@ class Stack(_Stack):
             string_value=instance.instance_private_dns_name,
         )
         instance_private_dns_name.node.add_dependency(instance)
+
+        Tags.of(instance).add("dagster/service", "postgres")
 
     def create_postgres_role(self) -> iam.Role:
         return iam.Role(
