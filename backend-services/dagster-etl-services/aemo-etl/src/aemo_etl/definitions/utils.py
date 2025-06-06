@@ -10,7 +10,6 @@ from dagster import (
 )
 from polars import (
     DataType,
-    Date,
     Datetime,
     LazyFrame,
     Schema,
@@ -60,8 +59,6 @@ def post_process_hook(
     df: LazyFrame,
     *,
     primary_keys: list[str],
-    table_schema: Mapping[str, type[DataType]] | Schema,
-    time_zone: str = "Australia/Melbourne",
 ) -> LazyFrame:
     schema = df.collect_schema()
     if len(schema) > 0:
@@ -95,18 +92,6 @@ def post_process_hook(
 
         df = df.filter(col("row_num") == 0).drop("row_num")
 
-        for name, type_ in table_schema.items():
-            if type_ == Date:
-                df = df.with_columns(col(name).str.to_date("%d %b %Y"))
-            elif type_ == Datetime:
-                df = df.with_columns(
-                    col(name)
-                    .str.to_datetime("%d %b %Y %H:%M:%S", time_zone=time_zone)
-                    .dt.convert_time_zone("UTC")
-                )
-            else:
-                df = df.with_columns(col(name).cast(type_))
-
     return df
 
 
@@ -138,7 +123,6 @@ def definition_builder_factory(
     s3_prefix: str,
     s3_file_glob: str,
     table_name: str,
-    time_zone: str = "Australia/Melbourne",
     group_name: str = "aemo",
     cpu: str = "512",
     memory: str = "2048",
@@ -183,7 +167,5 @@ def definition_builder_factory(
         table_post_process_hook=partial(
             post_process_hook,
             primary_keys=primary_keys,
-            table_schema=table_schema,
-            time_zone=time_zone,
         ),
     )

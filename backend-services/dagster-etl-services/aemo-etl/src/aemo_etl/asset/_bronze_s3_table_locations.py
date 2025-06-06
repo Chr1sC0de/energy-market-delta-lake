@@ -26,7 +26,7 @@ from aemo_etl.util import get_lazyframe_num_rows, get_metadata_schema
 
 table_name = "bronze_s3_table_locations"
 
-s3_table_location = f"s3://{BRONZE_BUCKET}/aemo/vicgas/{table_name}"
+s3_table_location = f"s3://{BRONZE_BUCKET}/aemo/{table_name}"
 
 schema = {
     "table_name": String,

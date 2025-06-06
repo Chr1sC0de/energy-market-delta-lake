@@ -18,7 +18,7 @@ from aemo_etl.util import get_lazyframe_num_rows, get_metadata_schema
 #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
 table_name = "bronze_mibb_report_list"
-s3_table_location = f"s3://{BRONZE_BUCKET}/aemo/vicgas/{table_name}"
+s3_table_location = f"s3://{BRONZE_BUCKET}/aemo/{table_name}"
 table_locations[table_name] = {
     "table_name": table_name,
     "table_type": "parquet",
