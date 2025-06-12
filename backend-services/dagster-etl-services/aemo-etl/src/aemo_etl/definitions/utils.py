@@ -102,7 +102,7 @@ def asset_check_factory(
         asset=asset_definition,
         name="check_primary_keys_are_unique",
     )
-    def check_unique_system_wide_notice_ids(input_df: LazyFrame):
+    def check_primary_keys_are_unique(input_df: LazyFrame):
         return AssetCheckResult(
             passed=bool(
                 get_lazyframe_num_rows(input_df)
@@ -110,7 +110,7 @@ def asset_check_factory(
             )
         )
 
-    return check_unique_system_wide_notice_ids
+    return check_primary_keys_are_unique
 
 
 def definition_builder_factory(

@@ -17,7 +17,7 @@ from aemo_etl.util import get_lazyframe_num_rows
 # pyright: reportUnusedParameter=false
 
 CWD = Path(__file__).parent
-MOCK_DATA_FOLDER = CWD / "@mockdata"
+MOCK_DATA_FOLDER = CWD / "@mockdata/bronze-vicgas"
 
 
 mibb_report_sub_modules = [
@@ -41,7 +41,7 @@ skip = [
 
 
 @mark.parametrize("submodule_name", testable_submmodules)
-def test__mibb_report_module(
+def test__asset(
     create_delta_log: None, create_buckets: None, s3: S3Client, submodule_name: str
 ):
     module = getattr(bronze_vicgas_mibb_reports, submodule_name)

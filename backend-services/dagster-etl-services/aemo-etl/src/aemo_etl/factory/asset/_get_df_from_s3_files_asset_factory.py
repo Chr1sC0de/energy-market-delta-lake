@@ -1,4 +1,4 @@
-from typing import Callable, Generator, Mapping, Unpack
+from typing import Callable, Generator, Unpack
 
 from dagster import (
     AssetExecutionContext,
@@ -8,7 +8,6 @@ from dagster import (
 )
 from dagster_aws.s3 import S3Resource
 from polars import LazyFrame
-from polars._typing import PolarsDataType
 
 from aemo_etl.factory.asset.param_spec import AssetDefinitonParamSpec
 from aemo_etl.util import (
@@ -17,7 +16,7 @@ from aemo_etl.util import (
 )
 
 
-def get_mibb_report_from_s3_files_asset_factory(
+def get_df_from_s3_files_asset_factory(
     s3_source_bucket: str,
     s3_source_prefix: str,
     s3_source_file_glob: str,
@@ -28,7 +27,7 @@ def get_mibb_report_from_s3_files_asset_factory(
     asset_kwargs.setdefault("kinds", {"s3", "table", "deltalake"})
 
     @asset(**asset_kwargs)
-    def get_mibb_report_from_s3_files_asset(
+    def get_df_from_s3_files_asset(
         context: AssetExecutionContext,
         s3_resource: S3Resource,
     ) -> Generator[Output[LazyFrame]]:
@@ -62,4 +61,4 @@ def get_mibb_report_from_s3_files_asset_factory(
                 f"ran delete_object for {source_path} with response \n {response}"
             )
 
-    return get_mibb_report_from_s3_files_asset
+    return get_df_from_s3_files_asset

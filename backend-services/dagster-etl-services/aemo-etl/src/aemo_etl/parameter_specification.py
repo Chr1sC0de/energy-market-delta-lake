@@ -8,11 +8,7 @@ from deltalake import (
     PostCommitHookProperties,
     WriterProperties,
 )
-from deltalake import (
-    Schema as DeltaSchema,
-)
-import deltalake
-from polars import LazyFrame, QueryOptFlags, ScanCastOptions
+from polars import QueryOptFlags, ScanCastOptions
 from polars._typing import (
     EngineType,
     FileSource,
@@ -27,7 +23,6 @@ from polars.io.cloud import CredentialProvider, CredentialProviderFunction
 from polars.io.parquet import ParquetFieldOverwrites
 from polars.lazyframe import GPUEngine
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS
-from pyarrow import Schema
 from pyarrow.dataset import ParquetFileWriteOptions
 from pydantic import BaseModel, Field
 

@@ -23,7 +23,7 @@ from polars._typing import PolarsDataType
 
 from aemo_etl.factory.asset import (
     compact_and_vacuum_dataframe_asset_factory,
-    get_mibb_report_from_s3_files_asset_factory,
+    get_df_from_s3_files_asset_factory,
 )
 from aemo_etl.util import get_s3_object_keys_from_prefix_and_name_glob
 from configurations.parameters import DEVELOPMENT_LOCATION
@@ -67,7 +67,7 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
         #     │                                   create the assets                                    │
         #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
-        self.table_asset = get_mibb_report_from_s3_files_asset_factory(
+        self.table_asset = get_df_from_s3_files_asset_factory(
             group_name=group_name,
             name=name,
             key_prefix=key_prefix,

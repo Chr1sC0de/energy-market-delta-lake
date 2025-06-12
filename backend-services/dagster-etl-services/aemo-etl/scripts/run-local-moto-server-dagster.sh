@@ -49,6 +49,16 @@
         --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
 
     aws s3api create-bucket \
+        --bucket dev-energy-market-silver \
+        --region $AWS_DEFAULT_REGION \
+        --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
+
+    aws s3api create-bucket \
+        --bucket dev-energy-market-gold \
+        --region $AWS_DEFAULT_REGION \
+        --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
+
+    aws s3api create-bucket \
         --bucket dev-energy-market-landing \
         --region $AWS_DEFAULT_REGION \
         --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION

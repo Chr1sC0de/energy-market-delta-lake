@@ -1,7 +1,7 @@
 import pathlib as pt
 from typing import Any
 
-import dagster as dg
+from dagster import AssetExecutionContext, AssetsDefinition, AutomationCondition, asset
 from deltalake import DeltaTable
 from deltalake.exceptions import TableNotFoundError
 
@@ -15,21 +15,23 @@ def compact_and_vacuum_dataframe_asset_factory(
     s3_target_prefix: str,
     s3_target_table_name: str,
     retention_hours: int = 0,
-    dependant_definitions: list[dg.AssetsDefinition] | None = None,
+    dependant_definitions: list[AssetsDefinition] | None = None,
     storage_options: dict[str, str] | None = None,
+    automation_condition: AutomationCondition | None = None,
     # useful for testing purposes
     table_path_override: pt.Path | None = None,
     captured_response: dict[str, Any] | None = None,
 ):
-    @dg.asset(
+    @asset(
         group_name=group_name,
         key_prefix=key_prefix,
         name=f"{s3_target_table_name}_compact_and_vacuum",
         description=f"compact and vacuum for {s3_target_table_name}",
         deps=dependant_definitions,
         kinds={"task"},
+        automation_condition=automation_condition,
     )
-    def compact_and_vacuum(context: dg.AssetExecutionContext):
+    def compact_and_vacuum(context: AssetExecutionContext):
         delta_table_path = (
             f"s3://{s3_target_bucket}/{s3_target_prefix}/{s3_target_table_name}"
         )

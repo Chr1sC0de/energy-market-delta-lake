@@ -9,7 +9,7 @@ from pytest import fixture
 from types_boto3_s3 import S3Client
 
 from aemo_etl.configuration import LANDING_BUCKET
-from aemo_etl.factory.asset import get_mibb_report_from_s3_files_asset_factory
+from aemo_etl.factory.asset import get_df_from_s3_files_asset_factory
 
 
 cwd = Path(__file__).parent
@@ -43,7 +43,7 @@ def test__get_mibb_report_from_s3_files_asset_factory(s3: S3Client):
 
     table_name = "bronze_int029_indicative_market_price"
 
-    asset = get_mibb_report_from_s3_files_asset_factory(
+    asset = get_df_from_s3_files_asset_factory(
         s3_source_bucket=LANDING_BUCKET,
         s3_source_prefix="aemo_vicgas",
         s3_source_file_glob="int037b*",

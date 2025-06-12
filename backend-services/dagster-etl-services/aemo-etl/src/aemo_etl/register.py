@@ -1,6 +1,6 @@
 from typing import Literal, TypedDict
 
-from dagster import Definitions
+from dagster import AssetChecksDefinition, AssetsDefinition, Definitions
 
 
 class TableLocation(TypedDict):
