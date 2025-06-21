@@ -15,6 +15,7 @@ class Stack(_Stack):
     dagster_daemon_security_group: ec2.SecurityGroup
     dagster_webserver_security_group: ec2.SecurityGroup
     postgres_instance_security_group: ec2.SecurityGroup
+    ngnx_instance_security_group: ec2.SecurityGroup
 
     def __init__(
         self,
@@ -27,33 +28,41 @@ class Stack(_Stack):
         super().__init__(scope, id, **kwargs)
         self.add_dependency(VpcStack)
 
-        # create the security groups for the dagster web server (only if we're using it)
+        #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+        #     │                                     nginx instance                                     │
+        #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
-        # dagster_load_balancer_security_group = ec2.SecurityGroup(
-        #     self,
-        #     "DagsterLoadBalancerSecurityGroup",
-        #     vpc=VpcStack.vpc,
-        #     allow_all_outbound=True,
-        # )
-        #
-        # # add my developer ip address
-        # for ip_address in ADMINISTRATOR_IPS:
-        #     developer_ip = ec2.Peer.ipv4(f"{ip_address}/32")
-        #
-        #     # Allow inbound HTTP traffic on port 80 to ALB
-        #     dagster_load_balancer_security_group.add_ingress_rule(
-        #         peer=developer_ip,
-        #         connection=ec2.Port.tcp(80),
-        #         description="Allow inbound HTTP traffic on port 80",
-        #     )
-        #     # Allow inbound HTTPS traffic on port443 to ALB (if SSL is used)
-        #     dagster_load_balancer_security_group.add_ingress_rule(
-        #         peer=developer_ip,
-        #         connection=ec2.Port.tcp(443),
-        #         description="Allow inbound HTTPS traffic on port 443",
-        #     )
+        self.ngnx_instance_security_group = ec2.SecurityGroup(
+            self,
+            "NginxSecurityGroup",
+            vpc=VpcStack.vpc,
+            allow_all_outbound=True,
+        )
 
-        # create the security groups for the dagster webserver
+        for ip_address in ADMINISTRATOR_IPS:
+            developer_ip = ec2.Peer.ipv4(f"{ip_address}/32")
+
+            self.ngnx_instance_security_group.add_ingress_rule(
+                developer_ip,
+                ec2.Port.tcp(22),
+                "Allow SSH access",
+            )
+
+            self.ngnx_instance_security_group.add_ingress_rule(
+                peer=developer_ip,
+                connection=ec2.Port.tcp(80),
+                description="Allow inbound HTTP traffic on port 80",
+            )
+
+            self.ngnx_instance_security_group.add_ingress_rule(
+                peer=developer_ip,
+                connection=ec2.Port.tcp(3000),
+                description="Allow traffic to Dagster Webserver on port 3000",
+            )
+
+        #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+        #     │                                   dagster webserver                                    │
+        #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
         self.dagster_webserver_security_group = ec2.SecurityGroup(
             self,
@@ -62,7 +71,13 @@ class Stack(_Stack):
             allow_all_outbound=True,
         )
 
-        # add the appropriate security groups
+        self.dagster_webserver_security_group.add_ingress_rule(
+            peer=self.ngnx_instance_security_group,
+            connection=ec2.Port.tcp(3000),  # Dagster user code
+            description="Dagster User Code access across the VPC",
+        )
+
+        # ── add the appropriate security groups ─────────────────────────────────────────
 
         for ip_address in ADMINISTRATOR_IPS:
             developer_ip = ec2.Peer.ipv4(f"{ip_address}/32")
@@ -79,15 +94,9 @@ class Stack(_Stack):
                 description="Allow traffic to Dagster Dagster Webserver on port 3000",
             )
 
-        # only uncomment if we're using the load balanced service
-
-        # dagster_webserver_security_group.add_ingress_rule(
-        #     peer=dagster_load_balancer_security_group,
-        #     connection=ec2.Port.tcp(3000),  # Dagster Webserver Port
-        #     description="Allow traffic to Dagster Dagster Webserver on port 3000",
-        # )
-
-        # create the security groups for the dagster user code
+        #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+        #     │                                   dagster user code                                    │
+        #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
         self.dagster_user_code_security_group = ec2.SecurityGroup(
             self,
@@ -102,7 +111,9 @@ class Stack(_Stack):
             description="Dagster User Code access across the VPC",
         )
 
-        # create the security code for the dagster daemon
+        #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+        #     │                                     dagster daemon                                     │
+        #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
         self.dagster_daemon_security_group = ec2.SecurityGroup(
             self,
@@ -117,7 +128,9 @@ class Stack(_Stack):
             description="Allow daemon to access user code",
         )
 
-        # allow the dagster dagster user code stack to access the postgres stack
+        #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+        #     │                                   postgres instance                                    │
+        #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
         self.postgres_instance_security_group = ec2.SecurityGroup(
             self,
@@ -138,13 +151,11 @@ class Stack(_Stack):
                 description="Allow PostgreSQL access from within VPC",
             )
 
-        # create the cfn outputs to avoid circular dependencies
+        #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+        #     │                 create the cfn outputs to avoid circular dependencies                  │
+        #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
         for export_name, security_group in [
-            # (
-            #     "DagsterLoadBalancerSecurityGroupId",
-            #     dagster_load_balancer_security_group,
-            # ),
             (
                 "DagsterWebServiceSecurityGroupId",
                 self.dagster_webserver_security_group,
@@ -160,6 +171,10 @@ class Stack(_Stack):
             (
                 "DagsterPostgresSecurityGroupId",
                 self.postgres_instance_security_group,
+            ),
+            (
+                "NginxSecurityGroupId",
+                self.ngnx_instance_security_group,
             ),
         ]:
             _ = CfnOutput(

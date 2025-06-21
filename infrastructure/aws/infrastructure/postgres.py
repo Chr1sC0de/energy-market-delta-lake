@@ -81,14 +81,13 @@ class Stack(_Stack):
             ),
         )
 
-        # Store the private key in SSM Parameter Store
-
         instance_private_dns_name = ssm.StringParameter(
             self,
             "PostgresInstancePrivateDNSName",
             parameter_name=self.postgres_ssm_instance_private_dns,
             string_value=instance.instance_private_dns_name,
         )
+
         instance_private_dns_name.node.add_dependency(instance)
 
         Tags.of(instance).add("dagster/service", "postgres")

@@ -14,6 +14,7 @@ from infrastructure import (
     vpc,
     ecr,
     ecs,
+    nginx,
 )
 
 aws_environment = cdk.Environment(
@@ -24,11 +25,19 @@ app = cdk.App()
 
 ENV = DEVELOPMENT_ENVIRONMENT.capitalize()
 
+#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+#     │                                       vpc stack                                        │
+#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
+
 VpcStack = vpc.Stack(
     app,
     f"{ENV}{STACK_PREFIX}VPC",
     env=aws_environment,
 )
+
+#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+#     │                                      bucket stack                                      │
+#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
 BucketStack = buckets.Stack(
     app,
@@ -36,7 +45,9 @@ BucketStack = buckets.Stack(
     env=aws_environment,
 )
 
-# create the stacks for the ecr repositories, webserver and daemon
+#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+#     │            create the stacks for the ecr repositories, webserver and daemon            │
+#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
 EcrAemoETLUserCode = ecr.user_code.aemo_etl.Stack(
     app, f"{ENV}{STACK_PREFIX}EcrAemoETLUserCode", env=aws_environment
@@ -50,7 +61,9 @@ EcrDagsterDaemon = ecr.dagster_daemon.Stack(
     app, f"{ENV}{STACK_PREFIX}EcrDagsterDaemon", env=aws_environment
 )
 
-# roles and security groups
+#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+#     │                               roles and security groups                                │
+#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
 IamRolesStack = iam_roles.Stack(
     app,
@@ -65,12 +78,20 @@ SecurityGroupStack = security_groups.Stack(
     env=aws_environment,
 )
 
-PrivateDsnNamespaceStack = service_discovery.Stack(
+#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+#     │                                 private dns namespace                                  │
+#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
+
+PrivateDnsNamespaceStack = service_discovery.Stack(
     app,
     f"{ENV}{STACK_PREFIX}PrivateDnsNamespace",
     env=aws_environment,
     VpcStack=VpcStack,
 )
+
+#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+#     │                                 dagster cluster stack                                  │
+#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
 DagsterEcsClusterStack = ecs.cluster.Stack(
     app,
@@ -81,12 +102,20 @@ DagsterEcsClusterStack = ecs.cluster.Stack(
     log_group_name="/ecs/dagster-ecs-cluster",
 )
 
+#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+#     │                                  delta locking table                                   │
+#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
+
 DeltaLockingTableStack = locking_table.Stack(
     app,
     f"{ENV}{STACK_PREFIX}DeltaLockingTable",
     env=aws_environment,
     IamRolesStack=IamRolesStack,
 )
+
+#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+#     │                                     postgres stack                                     │
+#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
 DagsterPostgresStack = postgres.Stack(
     app,
@@ -96,7 +125,21 @@ DagsterPostgresStack = postgres.Stack(
     SecurityGroupStack=SecurityGroupStack,
 )
 
-# here we start creating the required services
+#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+#     │                                  nginx instance stack                                  │
+#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
+
+DagsterNginxStack = nginx.Stack(
+    app,
+    f"{ENV}{STACK_PREFIX}DagsterNginx",
+    env=aws_environment,
+    VpcStack=VpcStack,
+    SecurityGroupStack=SecurityGroupStack,
+)
+
+#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+#     │                      here we start creating the required services                      │
+#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
 DagsterAemoETLUserCodeService = ecs.dagster_user_code_service.Stack(
     app,
@@ -105,7 +148,7 @@ DagsterAemoETLUserCodeService = ecs.dagster_user_code_service.Stack(
     target_module="aemo_etl.definitions",
     VpcStack=VpcStack,
     EcsDagsterClusterStack=DagsterEcsClusterStack,
-    PrivateDsnNamespaceStack=PrivateDsnNamespaceStack,
+    PrivateDnsNamespaceStack=PrivateDnsNamespaceStack,
     UserCodeRepositoryStack=EcrAemoETLUserCode,
     PostgresStack=DagsterPostgresStack,
     SecurityGroupStack=SecurityGroupStack,
@@ -120,6 +163,7 @@ DagsterWebserverService = ecs.dagster_webserver_service.Stack(
     VpcStack=VpcStack,
     EcsDagsterClusterStack=DagsterEcsClusterStack,
     PostgresStack=DagsterPostgresStack,
+    PrivateDnsNamespaceStack=PrivateDnsNamespaceStack,
     SecurityGroupStack=SecurityGroupStack,
     stream_prefix="dagster-webserver-service",
     EcrDagsterWebserver=EcrDagsterWebserver,

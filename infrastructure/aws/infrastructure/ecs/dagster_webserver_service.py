@@ -16,6 +16,7 @@ from infrastructure import (
     iam_roles,
     postgres,
     security_groups,
+    service_discovery,
     vpc,
 )
 from infrastructure.utils import StackKwargs
@@ -32,7 +33,9 @@ class Stack(_Stack):
         EcrDagsterWebserver: ecr.dagster_webserver.Stack,
         PostgresStack: postgres.Stack,
         SecurityGroupStack: security_groups.Stack,
+        PrivateDnsNamespaceStack: service_discovery.Stack,
         IamRolesStack: iam_roles.Stack,
+        service_discovery_name: str = "webserver",
         stream_prefix: str = "dagster-webserver-service",
         user_code_dependencies: list[ecs.dagster_user_code_service.Stack] | None = None,
         **kwargs: Unpack[StackKwargs],
@@ -97,6 +100,8 @@ class Stack(_Stack):
                 "3000",
                 "-w",
                 "workspace.yaml",
+                "--path-prefix",
+                "/dagster-webserver",
             ],
             environment={
                 "DAGSTER_POSTGRES_DB": "dagster",
@@ -133,40 +138,47 @@ class Stack(_Stack):
             ),
         )
 
-        # create the fargat service with public ip address, cheaper than using a load balanced
-        # service as we only have a single az
-
-        # add my developer ip address
-        for ip_address in ADMINISTRATOR_IPS:
-            developer_ip = ec2.Peer.ipv4(f"{ip_address}/32")
-
-            SecurityGroupStack.dagster_webserver_security_group.add_ingress_rule(
-                peer=developer_ip,
-                connection=ec2.Port.tcp(3000),
-                description="Allow inbound traffic on port 3000",
-            )
-            # Allow inbound HTTP traffic
-            SecurityGroupStack.dagster_webserver_security_group.add_ingress_rule(
-                peer=developer_ip,
-                connection=ec2.Port.tcp(80),
-                description="Allow inbound HTTP traffic on port 80",
-            )
-            # Allow inbound HTTPS traffic
-            SecurityGroupStack.dagster_webserver_security_group.add_ingress_rule(
-                peer=developer_ip,
-                connection=ec2.Port.tcp(443),
-                description="Allow inbound HTTPS traffic on port 443",
-            )
+        # # add my developer ip address
+        # for ip_address in ADMINISTRATOR_IPS:
+        #     developer_ip = ec2.Peer.ipv4(f"{ip_address}/32")
+        #
+        #     SecurityGroupStack.dagster_webserver_security_group.add_ingress_rule(
+        #         peer=developer_ip,
+        #         connection=ec2.Port.tcp(3000),
+        #         description="Allow inbound traffic on port 3000",
+        #     )
+        #     # Allow inbound HTTP traffic
+        #     SecurityGroupStack.dagster_webserver_security_group.add_ingress_rule(
+        #         peer=developer_ip,
+        #         connection=ec2.Port.tcp(80),
+        #         description="Allow inbound HTTP traffic on port 80",
+        #     )
+        #     # Allow inbound HTTPS traffic
+        #     SecurityGroupStack.dagster_webserver_security_group.add_ingress_rule(
+        #         peer=developer_ip,
+        #         connection=ec2.Port.tcp(443),
+        #         description="Allow inbound HTTPS traffic on port 443",
+        #     )
 
         service = aws_ecs.FargateService(
             self,
             "DagsterWebserverFargateService",
             task_definition=task_definition,
-            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
             cluster=EcsDagsterClusterStack.cluster,
-            min_healthy_percent=50,
-            assign_public_ip=True,
             security_groups=[SecurityGroupStack.dagster_webserver_security_group],
+            min_healthy_percent=0,
+            max_healthy_percent=100,
+            circuit_breaker=aws_ecs.DeploymentCircuitBreaker(rollback=True),
+            vpc_subnets=ec2.SubnetSelection(
+                subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
+            ),
+            deployment_controller=aws_ecs.DeploymentController(
+                type=aws_ecs.DeploymentControllerType.ECS
+            ),
+            cloud_map_options=aws_ecs.CloudMapOptions(
+                cloud_map_namespace=PrivateDnsNamespaceStack.private_dns_namespace,
+                name=service_discovery_name,
+            ),
             capacity_provider_strategies=[
                 aws_ecs.CapacityProviderStrategy(
                     capacity_provider="FARGATE_SPOT",
@@ -177,46 +189,3 @@ class Stack(_Stack):
         )
 
         Tags.of(service).add("dagster/service", "Webserver")
-
-    # generate the load balanced fargate service this can get expensive
-
-    # alb_fargate_service = ecs_patterns.ApplicationLoadBalancedFargateService(
-    #     self,
-    #     "DagsterWebserverApplicationLoadBalancedFargateService",
-    #     certificate=acm.Certificate.from_certificate_arn(
-    #         self,
-    #         "LoadBalancerCertificate",
-    #         "<certificate arn here>",
-    #     ),
-    #     cluster=ecs_cluster,
-    #     task_definition=task_definition,
-    #     security_groups=[
-    #         ec2.SecurityGroup.from_security_group_id(
-    #             self,
-    #             "DagsterWebServiceSecurityGroupId",
-    #             Fn.import_value("DagsterWebServiceSecurityGroupId"),
-    #         )
-    #     ],
-    #     min_healthy_percent=50,
-    #     # let's make the load balancer public to save on costs
-    #     public_load_balancer=True,
-    #     # allow us to access the webserver frontend
-    #     assign_public_ip=True,
-    # )
-    #
-    # alb_fargate_service.load_balancer.add_security_group(
-    #     ec2.SecurityGroup.from_security_group_id(
-    #         self,
-    #         "DagsterLoadBalancerSecurityGroupId",
-    #         Fn.import_value("DagsterLoadBalancerSecurityGroupId"),
-    #     )
-    # )
-    #
-    # alb_fargate_service.target_group.configure_health_check(
-    #     path="/dagit_info",
-    #     port="3000",
-    #     interval=cdk.Duration.seconds(30),
-    #     timeout=cdk.Duration.seconds(10),
-    #     healthy_threshold_count=2,
-    #     unhealthy_threshold_count=5,
-    # )

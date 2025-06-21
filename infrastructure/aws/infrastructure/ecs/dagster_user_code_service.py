@@ -23,7 +23,7 @@ class Stack(_Stack):
         target_module: str,
         VpcStack: vpc.Stack,
         EcsDagsterClusterStack: ecs.cluster.Stack,
-        PrivateDsnNamespaceStack: service_discovery.Stack,
+        PrivateDnsNamespaceStack: service_discovery.Stack,
         UserCodeRepositoryStack: ecr.repository.Stack,
         PostgresStack: postgres.Stack,
         SecurityGroupStack: security_groups.Stack,
@@ -36,7 +36,7 @@ class Stack(_Stack):
         # add the dependencies
         self.add_dependency(VpcStack)
         self.add_dependency(EcsDagsterClusterStack)
-        self.add_dependency(PrivateDsnNamespaceStack)
+        self.add_dependency(PrivateDnsNamespaceStack)
         self.add_dependency(UserCodeRepositoryStack)
         self.add_dependency(PostgresStack)
         self.add_dependency(SecurityGroupStack)
@@ -136,7 +136,7 @@ class Stack(_Stack):
                 type=aws_ecs.DeploymentControllerType.ECS
             ),
             cloud_map_options=aws_ecs.CloudMapOptions(
-                cloud_map_namespace=PrivateDsnNamespaceStack.private_dns_namespace,
+                cloud_map_namespace=PrivateDnsNamespaceStack.private_dns_namespace,
                 name=service_discovery_name,
             ),
             capacity_provider_strategies=[
