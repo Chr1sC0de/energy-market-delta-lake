@@ -4,8 +4,10 @@ from aws_cdk import Stack as _Stack
 from aws_cdk import Tags
 from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_iam as iam
+from aws_cdk import aws_ssm as ssm
 from constructs import Construct
 
+from configurations.parameters import SHARED_PREFIX
 from infrastructure import security_groups, vpc
 from infrastructure.utils import StackKwargs
 
@@ -65,6 +67,20 @@ class Stack(_Stack):
             user_data_causes_replacement=True,
             vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
             key_pair=key_pair,
+        )
+
+        _ = ssm.StringParameter(
+            self,
+            "InstancePublicDNSName",
+            string_value=instance.instance_id,
+            parameter_name=f"/{SHARED_PREFIX}/dagster/jump-server/instance-id",
+        )
+
+        _ = ssm.StringParameter(
+            self,
+            "KeyPairId",
+            string_value=key_pair.key_pair_id,
+            parameter_name=f"/{SHARED_PREFIX}/dagster/jump-server/key-pair-id",
         )
 
         Tags.of(instance).add("dagster/service", "jump-server")

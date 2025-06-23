@@ -91,7 +91,6 @@ class Stack(_Stack):
                 "DAGSTER_CURRENT_IMAGE": f"{self.account}.dkr.ecr.{self.region}.amazonaws.com/{UserCodeRepositoryStack.repository_name}:latest",
                 "DEVELOPMENT_ENVIRONMENT": DEVELOPMENT_ENVIRONMENT,
                 "DEVELOPMENT_LOCATION": "aws",
-                "DEPLOYMENT_DATETIME": str(datetime.now()),
             },
             secrets={
                 "DAGSTER_POSTGRES_PASSWORD": aws_ecs.Secret.from_ssm_parameter(

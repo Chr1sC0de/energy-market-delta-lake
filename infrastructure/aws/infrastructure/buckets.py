@@ -1,21 +1,24 @@
 from collections.abc import Sequence
-from typing import Any, NotRequired, Unpack, TypedDict
-from aws_cdk.aws_iam import IRole
-from aws_cdk.aws_kms import IKey
+from typing import Any, NotRequired, TypedDict, Unpack
+
 import boto3
 import botocore.exceptions
 from aws_cdk import RemovalPolicy
 from aws_cdk import Stack as _Stack
 from aws_cdk import aws_s3 as s3
+from aws_cdk.aws_iam import IRole
+from aws_cdk.aws_kms import IKey
 from constructs import Construct
+from jsii import Number
 
 from configurations.parameters import (
-    STACK_PREFIX,
     DEVELOPMENT_ENVIRONMENT,
     NAME_PREFIX,
+    STACK_PREFIX,
 )
-from jsii import Number
 from infrastructure.utils import StackKwargs
+
+# pyright: reportExplicitAny=false
 
 
 class BucketKwargs(TypedDict):
@@ -24,17 +27,17 @@ class BucketKwargs(TypedDict):
     block_public_access: NotRequired[s3.BlockPublicAccess]
     bucket_key_enabled: NotRequired[bool]
     bucket_name: NotRequired[str]
-    cors: NotRequired[Sequence[s3.CorsRule | dict[str, Any]]]  # pyright: ignore[reportExplicitAny]
+    cors: NotRequired[Sequence[s3.CorsRule | dict[str, Any]]]
     encryption: NotRequired[s3.BucketEncryption]
     encryption_key: NotRequired[IKey]
     enforce_ssl: NotRequired[bool]
     event_bridge_enabled: NotRequired[bool]
     intelligent_tiering_configurations: NotRequired[
-        Sequence[s3.IntelligentTieringConfiguration | dict[str, Any]]  # pyright: ignore[reportExplicitAny]
+        Sequence[s3.IntelligentTieringConfiguration | dict[str, Any]]
     ]
-    inventories: NotRequired[Sequence[s3.Inventory | dict[str, Any]]]  # pyright: ignore[reportExplicitAny]
-    lifecycle_rules: NotRequired[Sequence[s3.LifecycleRule | dict[str, Any]]]  # pyright: ignore[reportExplicitAny]
-    metrics: NotRequired[Sequence[s3.BucketMetrics | dict[str, Any]]]  # pyright: ignore[reportExplicitAny]
+    inventories: NotRequired[Sequence[s3.Inventory | dict[str, Any]]]
+    lifecycle_rules: NotRequired[Sequence[s3.LifecycleRule | dict[str, Any]]]
+    metrics: NotRequired[Sequence[s3.BucketMetrics | dict[str, Any]]]
     minimum_tls_version: NotRequired[Number]
     notifications_handler_role: NotRequired[IRole]
     notifications_skip_destination_validation: NotRequired[bool]
@@ -43,7 +46,7 @@ class BucketKwargs(TypedDict):
     object_ownership: NotRequired[s3.ObjectOwnership]
     public_read_access: NotRequired[bool]
     removal_policy: NotRequired[RemovalPolicy]
-    replication_rules: NotRequired[Sequence[s3.ReplicationRule | dict[str, Any]]]  # pyright: ignore[reportExplicitAny]
+    replication_rules: NotRequired[Sequence[s3.ReplicationRule | dict[str, Any]]]
     server_access_logs_bucket: NotRequired[s3.IBucket]
     server_access_logs_prefix: NotRequired[str]
     target_object_key_format: NotRequired[s3.TargetObjectKeyFormat]
@@ -54,8 +57,8 @@ class BucketKwargs(TypedDict):
     versioned: NotRequired[bool]
     website_error_document: NotRequired[str]
     website_index_document: NotRequired[str]
-    website_redirect: NotRequired[s3.RedirectTarget | dict[str, Any]]  # pyright: ignore[reportExplicitAny]
-    website_routing_rules: NotRequired[Sequence[s3.RoutingRule | dict[str, Any]]]  # pyright: ignore[reportExplicitAny]
+    website_redirect: NotRequired[s3.RedirectTarget | dict[str, Any]]
+    website_routing_rules: NotRequired[Sequence[s3.RoutingRule | dict[str, Any]]]
 
 
 class Stack(_Stack):

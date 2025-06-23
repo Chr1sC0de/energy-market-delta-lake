@@ -9,7 +9,7 @@ from aws_cdk import aws_iam as iam
 from aws_cdk import aws_ssm as ssm
 from constructs import Construct
 
-from configurations.parameters import ADMINISTRATOR_IPS, DEVELOPMENT_ENVIRONMENT
+from configurations.parameters import DEVELOPMENT_ENVIRONMENT
 from infrastructure import (
     ecr,
     ecs,
@@ -109,7 +109,6 @@ class Stack(_Stack):
                 "DAGSTER_POSTGRES_USER": "dagster_user",
                 "DEVELOPMENT_ENVIRONMENT": DEVELOPMENT_ENVIRONMENT,
                 "DEVELOPMENT_LOCATION": "aws",
-                "DEPLOYMENT_DATETIME": str(datetime.now()),
             },
             secrets={
                 "DAGSTER_POSTGRES_PASSWORD": aws_ecs.Secret.from_ssm_parameter(
