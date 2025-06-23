@@ -15,7 +15,7 @@ class Stack(_Stack):
     dagster_daemon_security_group: ec2.SecurityGroup
     dagster_webserver_security_group: ec2.SecurityGroup
     postgres_instance_security_group: ec2.SecurityGroup
-    ngnx_instance_security_group: ec2.SecurityGroup
+    jump_server_instance_security_group: ec2.SecurityGroup
 
     def __init__(
         self,
@@ -29,12 +29,12 @@ class Stack(_Stack):
         self.add_dependency(VpcStack)
 
         #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-        #     │                                     nginx instance                                     │
+        #     │                               jump server security group                               │
         #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
-        self.ngnx_instance_security_group = ec2.SecurityGroup(
+        self.jump_server_instance_security_group = ec2.SecurityGroup(
             self,
-            "NginxSecurityGroup",
+            "JumpServerSecurityGroup",
             vpc=VpcStack.vpc,
             allow_all_outbound=True,
         )
@@ -42,19 +42,19 @@ class Stack(_Stack):
         for ip_address in ADMINISTRATOR_IPS:
             developer_ip = ec2.Peer.ipv4(f"{ip_address}/32")
 
-            self.ngnx_instance_security_group.add_ingress_rule(
+            self.jump_server_instance_security_group.add_ingress_rule(
                 developer_ip,
                 ec2.Port.tcp(22),
                 "Allow SSH access",
             )
 
-            self.ngnx_instance_security_group.add_ingress_rule(
+            self.jump_server_instance_security_group.add_ingress_rule(
                 peer=developer_ip,
                 connection=ec2.Port.tcp(80),
                 description="Allow inbound HTTP traffic on port 80",
             )
 
-            self.ngnx_instance_security_group.add_ingress_rule(
+            self.jump_server_instance_security_group.add_ingress_rule(
                 peer=developer_ip,
                 connection=ec2.Port.tcp(3000),
                 description="Allow traffic to Dagster Webserver on port 3000",
@@ -72,7 +72,7 @@ class Stack(_Stack):
         )
 
         self.dagster_webserver_security_group.add_ingress_rule(
-            peer=self.ngnx_instance_security_group,
+            peer=self.jump_server_instance_security_group,
             connection=ec2.Port.tcp(3000),  # Dagster user code
             description="Dagster User Code access across the VPC",
         )
@@ -173,8 +173,8 @@ class Stack(_Stack):
                 self.postgres_instance_security_group,
             ),
             (
-                "NginxSecurityGroupId",
-                self.ngnx_instance_security_group,
+                "JumpServerSecurityGroupId",
+                self.jump_server_instance_security_group,
             ),
         ]:
             _ = CfnOutput(

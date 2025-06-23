@@ -14,7 +14,7 @@ from infrastructure import (
     vpc,
     ecr,
     ecs,
-    nginx,
+    jump_server,
 )
 
 aws_environment = cdk.Environment(
@@ -126,12 +126,12 @@ DagsterPostgresStack = postgres.Stack(
 )
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-#     │                                  nginx instance stack                                  │
+#     │                               jump server instance stack                               │
 #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
-DagsterNginxStack = nginx.Stack(
+DagsterJumpServerStack = jump_server.Stack(
     app,
-    f"{ENV}{STACK_PREFIX}DagsterNginx",
+    f"{ENV}{STACK_PREFIX}DagsterJumpServer",
     env=aws_environment,
     VpcStack=VpcStack,
     SecurityGroupStack=SecurityGroupStack,
