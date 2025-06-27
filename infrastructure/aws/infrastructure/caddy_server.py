@@ -60,7 +60,7 @@ class Stack(_Stack):
             size=Size.gibibytes(1),  # 8 GB should be plenty for certificates
             volume_type=ec2.EbsDeviceVolumeType.GP3,
             encrypted=True,
-            removal_policy=RemovalPolicy.RETAIN,
+            removal_policy=RemovalPolicy.SNAPSHOT,
             volume_name="caddy-certificates-persistent-volume",
         )
 
@@ -179,7 +179,7 @@ class Stack(_Stack):
             "    -p 443:443/udp \\",
             "    -e ROOT_DNS=ausenergymarketdata.com \\",
             f"    -e DAGSTER_AUTHSERVER={self.authentication_stack.instance.instance_private_ip}:8000 \\",
-            f"    -e DEVELOPER_EMAIL={os.environ['DEVELOPER_EMAIL']}",
+            f"    -e DEVELOPER_EMAIL={os.environ['DEVELOPER_EMAIL']} \\",
             "    -e DAGSTER_WEBSERVER=webserver.dagster:3000 \\",
             f"     {self.ecr_repository.repository.repository_uri}:latest",
         )
