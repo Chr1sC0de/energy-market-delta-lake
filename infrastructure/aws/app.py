@@ -2,19 +2,21 @@
 import os
 
 import aws_cdk as cdk
-from configurations.parameters import DEVELOPMENT_ENVIRONMENT, STACK_PREFIX
 
+from configurations.parameters import DEVELOPMENT_ENVIRONMENT, STACK_PREFIX
 from infrastructure import (
+    fastapi_authentication_server,
+    bastion_host,
     buckets,
+    caddy_server,
+    ecr,
+    ecs,
     iam_roles,
     locking_table,
     postgres,
     security_groups,
     service_discovery,
     vpc,
-    ecr,
-    ecs,
-    jump_server,
 )
 
 aws_environment = cdk.Environment(
@@ -59,6 +61,12 @@ EcrDagsterWebserver = ecr.dagster_webserver.Stack(
 
 EcrDagsterDaemon = ecr.dagster_daemon.Stack(
     app, f"{ENV}{STACK_PREFIX}EcrDagsterDaemon", env=aws_environment
+)
+
+EcrCaddy = ecr.caddy.Stack(app, f"{ENV}{STACK_PREFIX}Caddy", env=aws_environment)
+
+EcrFastApiAuthentication = ecr.authentication.Stack(
+    app, f"{ENV}{STACK_PREFIX}FastAPIAuthentication", env=aws_environment
 )
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
@@ -126,14 +134,41 @@ DagsterPostgresStack = postgres.Stack(
 )
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-#     │                               jump server instance stack                               │
+#     │                                   bastion host stack                                   │
 #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
-DagsterJumpServerStack = jump_server.Stack(
+BastionHostStack = bastion_host.Stack(
     app,
-    f"{ENV}{STACK_PREFIX}DagsterJumpServer",
+    f"{ENV}{STACK_PREFIX}BastionHost",
     env=aws_environment,
     VpcStack=VpcStack,
+    SecurityGroupStack=SecurityGroupStack,
+)
+
+#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+#     │                              authentication server stack                               │
+#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
+
+FastApiAuthenticationServerStack = fastapi_authentication_server.Stack(
+    app,
+    f"{ENV}{STACK_PREFIX}FastApiAuthenticationServer",
+    env=aws_environment,
+    VpcStack=VpcStack,
+    EcrStack=EcrFastApiAuthentication,
+    SecurityGroupStack=SecurityGroupStack,
+)
+
+#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
+#     │                              caddy server instance stack                               │
+#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
+
+CaddyServerStack = caddy_server.Stack(
+    app,
+    f"{ENV}{STACK_PREFIX}CaddyServer",
+    env=aws_environment,
+    VpcStack=VpcStack,
+    EcrStack=EcrCaddy,
+    AuthenticationStack=FastApiAuthenticationServerStack,
     SecurityGroupStack=SecurityGroupStack,
 )
 

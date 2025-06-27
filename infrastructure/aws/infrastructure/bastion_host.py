@@ -29,22 +29,22 @@ class Stack(_Stack):
 
         eip = ec2.CfnEIP(
             self,
-            "JumpServerEIP",
+            "BastionHostEIP",
             domain="vpc",
-            tags=[{"key": "Name", "value": "DagsterJumpServerEIP"}],
+            tags=[{"key": "Name", "value": "DagsterBastionHostEIP"}],
         )
 
         key_pair = ec2.KeyPair(
             self,
-            "JumpServerKeyPair",
-            key_pair_name="dagster-jump-server-instance-key-pair",
+            "BastionHostKeyPair",
+            key_pair_name="dagster-bastion-host-instance-key-pair",
             type=ec2.KeyPairType.ED25519,
             format=ec2.KeyPairFormat.PEM,
         )
 
         instance = ec2.Instance(
             self,
-            "DagsterJumpServerEC2",
+            "DagsterBastionHostEC2",
             instance_type=ec2.InstanceType.of(
                 ec2.InstanceClass.T3, ec2.InstanceSize.NANO
             ),
@@ -52,14 +52,17 @@ class Stack(_Stack):
                 generation=ec2.AmazonLinuxGeneration.AMAZON_LINUX_2023,
             ),
             vpc=VpcStack.vpc,
-            security_group=SecurityGroupStack.jump_server_instance_security_group,
+            security_group=SecurityGroupStack.register["BastionHostSecurityGroup"],
             role=iam.Role(
                 self,
-                "DagsterJumpServerRole",
+                "DagsterBastionHostRole",
                 assumed_by=iam.ServicePrincipal("ec2.amazonaws.com"),
                 managed_policies=[
                     iam.ManagedPolicy.from_aws_managed_policy_name(
-                        "AmazonConnect_FullAccess"
+                        "AmazonSSMManagedInstanceCore"
+                    ),
+                    iam.ManagedPolicy.from_aws_managed_policy_name(
+                        "AmazonSSMReadOnlyAccess"
                     ),
                 ],
             ),
@@ -73,22 +76,22 @@ class Stack(_Stack):
             self,
             "InstancePublicDNSName",
             string_value=instance.instance_id,
-            parameter_name=f"/{SHARED_PREFIX}/dagster/jump-server/instance-id",
+            parameter_name=f"/{SHARED_PREFIX}/dagster/bastion-host/instance-id",
         )
 
         _ = ssm.StringParameter(
             self,
             "KeyPairId",
             string_value=key_pair.key_pair_id,
-            parameter_name=f"/{SHARED_PREFIX}/dagster/jump-server/key-pair-id",
+            parameter_name=f"/{SHARED_PREFIX}/dagster/bastion-host/key-pair-id",
         )
 
-        Tags.of(instance).add("dagster/service", "jump-server")
+        Tags.of(instance).add("dagster/service", "bastion-host")
 
         # Associate the EIP with the EC2 instance
         _ = ec2.CfnEIPAssociation(
             self,
-            "JumpServerEIPAssociation",
+            "BastionHostEIPAssociation",
             eip=eip.ref,
             instance_id=instance.instance_id,
         )

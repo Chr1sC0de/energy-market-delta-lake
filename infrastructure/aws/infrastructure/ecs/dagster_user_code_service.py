@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Unpack
 
 import aws_cdk as cdk
@@ -124,7 +123,9 @@ class Stack(_Stack):
             "DagsterUserCodeFargateService",
             task_definition=task_definition,
             cluster=EcsDagsterClusterStack.cluster,
-            security_groups=[SecurityGroupStack.dagster_user_code_security_group],
+            security_groups=[
+                SecurityGroupStack.register["DagsterUserCodeSecurityGroup"]
+            ],
             min_healthy_percent=0,
             max_healthy_percent=100,
             circuit_breaker=aws_ecs.DeploymentCircuitBreaker(rollback=True),

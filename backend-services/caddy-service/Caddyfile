@@ -1,0 +1,27 @@
+{
+        email chrisam1993@live.com
+        storage file_system {
+                root /data/caddy
+        }
+}
+
+{$ROOT_DNS} {
+
+        @not_dagster {
+                not path /dagster-webserver* /oauth2*
+        }
+
+        root @not_dagster /var/www/html
+        file_server @not_dagster
+
+        @protected {
+                path /dagster-webserver*
+        }
+
+        forward_auth @protected {$DAGSTER_AUTHSERVER} {
+                uri /oauth2/dagster-webserver/authorize
+        }
+
+        reverse_proxy /oauth2/dagster-webserver/callback {$DAGSTER_AUTHSERVER}
+        reverse_proxy /dagster-webserver* {$DAGSTER_WEBSERVER}
+}

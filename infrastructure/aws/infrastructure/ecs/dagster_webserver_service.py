@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Unpack
 
 import aws_cdk as cdk
@@ -75,7 +74,7 @@ class Stack(_Stack):
             self,
             "DagsterWebserverTaskDefinition",
             family="dagster-webserver",
-            cpu=256,
+            cpu=512,
             memory_limit_mib=1024,
             execution_role=dagster_webserver_task_execution_role,
             task_role=dagster_webserver_task_role,
@@ -137,34 +136,14 @@ class Stack(_Stack):
             ),
         )
 
-        # # add my developer ip address
-        # for ip_address in ADMINISTRATOR_IPS:
-        #     developer_ip = ec2.Peer.ipv4(f"{ip_address}/32")
-        #
-        #     SecurityGroupStack.dagster_webserver_security_group.add_ingress_rule(
-        #         peer=developer_ip,
-        #         connection=ec2.Port.tcp(3000),
-        #         description="Allow inbound traffic on port 3000",
-        #     )
-        #     # Allow inbound HTTP traffic
-        #     SecurityGroupStack.dagster_webserver_security_group.add_ingress_rule(
-        #         peer=developer_ip,
-        #         connection=ec2.Port.tcp(80),
-        #         description="Allow inbound HTTP traffic on port 80",
-        #     )
-        #     # Allow inbound HTTPS traffic
-        #     SecurityGroupStack.dagster_webserver_security_group.add_ingress_rule(
-        #         peer=developer_ip,
-        #         connection=ec2.Port.tcp(443),
-        #         description="Allow inbound HTTPS traffic on port 443",
-        #     )
-
         service = aws_ecs.FargateService(
             self,
             "DagsterWebserverFargateService",
             task_definition=task_definition,
             cluster=EcsDagsterClusterStack.cluster,
-            security_groups=[SecurityGroupStack.dagster_webserver_security_group],
+            security_groups=[
+                SecurityGroupStack.register["DagsterWebServiceSecurityGroup"]
+            ],
             min_healthy_percent=0,
             max_healthy_percent=100,
             circuit_breaker=aws_ecs.DeploymentCircuitBreaker(rollback=True),

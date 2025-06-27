@@ -58,6 +58,14 @@ class Stack(_Stack):
             self.postgres_password,
         )
 
+        key_pair = ec2.KeyPair(
+            self,
+            "PostgresServerKeyPair",
+            key_pair_name="dagster-postgres-instance-key-pair",
+            type=ec2.KeyPairType.ED25519,
+            format=ec2.KeyPairFormat.PEM,
+        )
+
         # create the ec2 instance
 
         instance = ec2.Instance(
@@ -72,13 +80,14 @@ class Stack(_Stack):
                 cpu_type=ec2.AmazonLinuxCpuType.ARM_64,
             ),
             vpc=VpcStack.vpc,
-            security_group=SecurityGroupStack.postgres_instance_security_group,
+            security_group=SecurityGroupStack.register["DagsterPostgresSecurityGroup"],
             role=self.create_postgres_role(),
             user_data=self.create_postgres_user_data(),
             user_data_causes_replacement=True,
             vpc_subnets=ec2.SubnetSelection(
                 subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
             ),
+            key_pair=key_pair,
         )
 
         instance_private_dns_name = ssm.StringParameter(

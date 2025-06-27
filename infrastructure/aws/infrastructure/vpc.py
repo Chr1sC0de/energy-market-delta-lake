@@ -27,7 +27,7 @@ class Stack(_Stack):
         fk_nat_key_pair = ec2.KeyPair(
             self,
             "FrontEndCfnKeyPair",
-            key_pair_name="dagster-postgres-instance-key-pair",
+            key_pair_name="fk-nat-instance-key-pair",
             type=ec2.KeyPairType.ED25519,
             format=ec2.KeyPairFormat.PEM,
         )

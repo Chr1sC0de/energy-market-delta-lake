@@ -13,7 +13,7 @@ from infrastructure.utils import StackKwargs
 
 class Stack(_Stack):
     repository_name: str
-    respository: ecr.Repository
+    repository: ecr.Repository
     image_asset: ecr_assets.DockerImageAsset
 
     def __init__(
@@ -33,7 +33,7 @@ class Stack(_Stack):
             f"{SHARED_PREFIX}/{repository_prefix}/{repository_suffix}"
         )
 
-        self.respository = ecr.Repository(
+        self.repository = ecr.Repository(
             self,
             "ECRRepository",
             repository_name=self.repository_name,
@@ -59,5 +59,5 @@ class Stack(_Stack):
             self,
             "ECRDeployment",
             src=DockerImageName(self.image_asset.image_uri),
-            dest=DockerImageName(f"{self.respository.repository_uri}:latest"),
+            dest=DockerImageName(f"{self.repository.repository_uri}:latest"),
         )
