@@ -1,5 +1,5 @@
 {
-        email chrisam1993@live.com
+        email {$DEVELOPER_EMAIL}
         storage file_system {
                 root /data/caddy
         }

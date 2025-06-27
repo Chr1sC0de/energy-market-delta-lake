@@ -144,4 +144,4 @@ class Stack(_Stack):
             propagate_tags=aws_ecs.PropagatedTagSource.SERVICE,
         )
 
-        Tags.of(service).add("dagster/service", "Daemon")
+        Tags.of(service).add("dagster/job_name", "Daemon")

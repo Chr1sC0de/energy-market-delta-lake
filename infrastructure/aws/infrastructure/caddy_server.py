@@ -1,6 +1,7 @@
+import os
 from typing import Unpack
 
-from aws_cdk import Duration, RemovalPolicy, Tags, Size
+from aws_cdk import Duration, RemovalPolicy, Size, Tags
 from aws_cdk import Stack as _Stack
 from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_iam as iam
@@ -178,6 +179,7 @@ class Stack(_Stack):
             "    -p 443:443/udp \\",
             "    -e ROOT_DNS=ausenergymarketdata.com \\",
             f"    -e DAGSTER_AUTHSERVER={self.authentication_stack.instance.instance_private_ip}:8000 \\",
+            f"    -e DEVELOPER_EMAIL={os.environ['DEVELOPER_EMAIL']}",
             "    -e DAGSTER_WEBSERVER=webserver.dagster:3000 \\",
             f"     {self.ecr_repository.repository.repository_uri}:latest",
         )

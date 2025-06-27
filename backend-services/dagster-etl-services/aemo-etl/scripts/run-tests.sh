@@ -13,5 +13,7 @@
         -n 4 \
         --cov=aemo_etl \
         --cov-report=html:.reports/coverage \
+        --html=.reports/test-report.html \
+        --self-contained-html \
         tests/
 )

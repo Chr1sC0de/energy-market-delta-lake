@@ -124,8 +124,8 @@ def definition_builder_factory(
     s3_file_glob: str,
     table_name: str,
     group_name: str = "aemo",
-    cpu: str = "512",
-    memory: str = "2048",
+    cpu: str = "256",
+    memory: str = "1024",
 ) -> GetMibbReportFromS3FilesDefinitionBuilder:
     return GetMibbReportFromS3FilesDefinitionBuilder(
         job_tags={

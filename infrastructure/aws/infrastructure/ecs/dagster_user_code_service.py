@@ -148,4 +148,4 @@ class Stack(_Stack):
             propagate_tags=aws_ecs.PropagatedTagSource.SERVICE,
         )
 
-        cdk.Tags.of(service).add("dagster/service", f"Code Location: {target_module}")
+        cdk.Tags.of(service).add("dagster/job_name", f"Code Location: {target_module}")
