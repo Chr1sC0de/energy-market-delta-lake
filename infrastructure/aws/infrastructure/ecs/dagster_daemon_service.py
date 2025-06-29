@@ -145,3 +145,4 @@ class Stack(_Stack):
         )
 
         Tags.of(service).add("dagster/job_name", "Daemon")
+        Tags.of(service).add("dagster/service", "Daemon")

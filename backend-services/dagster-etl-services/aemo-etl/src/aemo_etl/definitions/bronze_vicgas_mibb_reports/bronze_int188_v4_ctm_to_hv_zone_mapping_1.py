@@ -1,71 +1,19 @@
-from polars import Int64, String
-
-from aemo_etl.configuration import BRONZE_BUCKET
-from aemo_etl.definitions.utils import (
-    VICTORIAN_WHOLESALE_SETTLEMENTS_AND_METERING_REPORTS,
+from aemo_etl.configuration.mibb.bronze_int188_v4_ctm_to_hv_zone_mapping_1 import (
+    group_name,
+    primary_keys,
+    report_purpose,
+    s3_file_glob,
+    s3_prefix,
+    s3_table_location,
+    schema_descriptions,
+    table_name,
+    table_schema,
+    upsert_predicate,
+)
+from aemo_etl.definitions.bronze_vicgas_mibb_reports.utils import (
     definition_builder_factory,
 )
-from aemo_etl.register import definitions_list, table_locations
-from aemo_etl.util import newline_join
-
-#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-#     │                      define table and register to table locations                      │
-#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
-
-
-table_name = "bronze_int188_v4_ctm_to_hv_zone_mapping_1"
-
-s3_prefix = "aemo/vicgas"
-
-s3_file_glob = "int188_v4_ctm_to_hv_zone_mapping_1*"
-
-s3_table_location = f"s3://{BRONZE_BUCKET}/{s3_prefix}/{table_name}"
-
-primary_keys = [
-    "mirn",
-]
-
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
-
-table_schema = {
-    "mirn": String,
-    "site_company": String,
-    "hv_zone": Int64,
-    "hv_zone_desc": String,
-    "effective_from": String,
-    "current_date": String,
-}
-
-schema_descriptions = {
-    "mirn": "Meter Installation Registration Number",
-    "site_company": "Company name",
-    "hv_zone": "Heating value zone number as assigned by the AEMO. Values for Victoria can be in the range of 400-699",
-    "hv_zone_desc": "Heating value zone name",
-    "effective_from": "Date when the HV zone became effective for the mirn, Example: 01 Aug 2023",
-    "current_date": "Date and time report produced, Example: 30 Jun 2007 06:00:00)",
-}
-
-report_purpose = """
-A report containing the DWGM's Custody Transfer Meter (CTM) to Heating Value Zone mapping.
-
-The report provides the mapping of active DTS CTMs to the Heating Value Zones. The mapping of non-DTS CTM to heating
-value zone mapping for South Gippsland, Bairnsdale and Gippsland regions are also provided.
-"""
-
-table_locations[table_name] = {
-    "table_name": table_name,
-    "table_type": "delta",
-    "glue_schema": "aemo",
-    "s3_table_location": s3_table_location,
-}
-
-
-#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-#     │                                register the definition                                 │
-#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
-
+from aemo_etl.register import definitions_list
 
 definition_builder = definition_builder_factory(
     report_purpose,
@@ -77,7 +25,7 @@ definition_builder = definition_builder_factory(
     s3_prefix,
     s3_file_glob,
     table_name,
-    group_name=f"aemo__mibb__{VICTORIAN_WHOLESALE_SETTLEMENTS_AND_METERING_REPORTS}",
+    group_name=group_name,
 )
 
 definitions_list.append(definition_builder.build())

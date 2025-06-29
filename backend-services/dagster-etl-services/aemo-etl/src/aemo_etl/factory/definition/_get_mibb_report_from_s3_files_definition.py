@@ -89,7 +89,7 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
             s3_target_bucket=s3_target_bucket,
             s3_target_prefix=s3_target_prefix,
             s3_target_table_name=name,
-            key_prefix=key_prefix + ["optimize"],
+            key_prefix=["optimize"] + key_prefix,
             dependant_definitions=[self.table_asset],
             retention_hours=retention_hours,
         )

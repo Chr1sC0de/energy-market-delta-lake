@@ -1,7 +1,7 @@
 from typing import Unpack
 
 import aws_cdk as cdk
-from aws_cdk import Fn, aws_ecr, aws_ecs
+from aws_cdk import Fn, Tags, aws_ecr, aws_ecs
 from aws_cdk import Stack as _Stack
 from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_iam as iam
@@ -19,6 +19,7 @@ class Stack(_Stack):
         scope: Construct,
         id: str,
         *,
+        family_name: str,
         target_module: str,
         VpcStack: vpc.Stack,
         EcsDagsterClusterStack: ecs.cluster.Stack,
@@ -55,7 +56,8 @@ class Stack(_Stack):
         task_definition = aws_ecs.FargateTaskDefinition(
             self,
             "FargateTaskDefinition",
-            family="dagster-pipeline",
+            # family="dagster-pipeline",
+            family=family_name,
             cpu=256,
             memory_limit_mib=1024,
             task_role=dagster_daemon_task_role,
@@ -148,4 +150,5 @@ class Stack(_Stack):
             propagate_tags=aws_ecs.PropagatedTagSource.SERVICE,
         )
 
-        cdk.Tags.of(service).add("dagster/job_name", f"Code Location: {target_module}")
+        Tags.of(service).add("dagster/job_name", f"Code Location: {target_module}")
+        Tags.of(service).add("dagster/service", f"Code Location: {target_module}")

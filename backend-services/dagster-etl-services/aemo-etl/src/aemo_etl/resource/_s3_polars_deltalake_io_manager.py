@@ -118,9 +118,15 @@ class S3PolarsDeltaLakeIOManager(IOManager):
         )
 
         if "dagster/column_schema" not in context.definition_metadata:
-            output_metadata["dagster/column_schema"] = get_metadata_schema(
-                results_df.collect_schema()
-            )
+            if "dagster/column_description" in context.definition_metadata:
+                output_metadata["dagster/column_schema"] = get_metadata_schema(
+                    results_df.collect_schema(),
+                    context.definition_metadata["dagster/column_description"],
+                )
+            else:
+                output_metadata["dagster/column_schema"] = get_metadata_schema(
+                    results_df.collect_schema()
+                )
 
         context.add_output_metadata(output_metadata)
 

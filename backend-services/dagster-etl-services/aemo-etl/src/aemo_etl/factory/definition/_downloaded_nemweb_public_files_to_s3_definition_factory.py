@@ -113,7 +113,7 @@ def download_nemweb_public_files_to_s3_definition_factory(
         s3_target_bucket=BRONZE_BUCKET,
         s3_target_prefix=s3_target_prefix,
         s3_target_table_name=name,
-        key_prefix=key_prefix + ["optimize"],
+        key_prefix=["optimize"] + key_prefix,
         retention_hours=vacuum_retention_hours,
         dependant_definitions=[download_nemweb_public_files_to_s3_asset],
     )

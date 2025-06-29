@@ -180,6 +180,7 @@ DagsterAemoETLUserCodeService = ecs.dagster_user_code_service.Stack(
     app,
     f"{ENV}{STACK_PREFIX}DagsterAemoETLUserCodeService",
     env=aws_environment,
+    family_name="dagster-user-code-aemo-etl",
     target_module="aemo_etl.definitions",
     VpcStack=VpcStack,
     EcsDagsterClusterStack=DagsterEcsClusterStack,
