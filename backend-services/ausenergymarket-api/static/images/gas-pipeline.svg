@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
+  <!-- Background gradient -->
+  <defs>
+    <linearGradient id="bg-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#001219" stop-opacity="0.1"/>
+      <stop offset="100%" stop-color="#005f73" stop-opacity="0.1"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="600" fill="url(#bg-gradient)"/>
+  
+  <!-- Main pipeline -->
+  <path d="M50,300 C150,250 250,350 350,300 S550,250 650,300 S750,350 750,300" 
+        stroke="#ee9b00" stroke-width="30" fill="none" stroke-linecap="round"/>
+  
+  <!-- Pipeline highlights -->
+  <path d="M50,300 C150,250 250,350 350,300 S550,250 650,300 S750,350 750,300" 
+        stroke="#ffb703" stroke-width="20" fill="none" stroke-linecap="round"/>
+  
+  <!-- Connector points -->
+  <circle cx="150" cy="270" r="15" fill="#005f73"/>
+  <circle cx="350" cy="300" r="15" fill="#005f73"/>
+  <circle cx="550" cy="280" r="15" fill="#005f73"/>
+  <circle cx="650" cy="300" r="15" fill="#005f73"/>
+  
+  <!-- Vertical pipes -->
+  <line x1="150" y1="270" x2="150" y2="150" stroke="#ee9b00" stroke-width="15"/>
+  <line x1="350" y1="300" x2="350" y2="180" stroke="#ee9b00" stroke-width="15"/>
+  <line x1="550" y1="280" x2="550" y2="400" stroke="#ee9b00" stroke-width="15"/>
+  <line x1="650" y1="300" x2="650" y2="450" stroke="#ee9b00" stroke-width="15"/>
+  
+  <!-- Gas facilities -->
+  <rect x="120" y="100" width="60" height="50" rx="10" fill="#005f73"/>
+  <rect x="320" y="130" width="60" height="50" rx="10" fill="#005f73"/>
+  <rect x="520" y="400" width="60" height="50" rx="10" fill="#005f73"/>
+  <rect x="620" y="450" width="60" height="50" rx="10" fill="#005f73"/>
+  
+  <!-- Gas flames -->
+  <path d="M150,85 Q140,70 150,55 Q160,70 150,85" fill="#ee9b00"/>
+  <path d="M350,115 Q340,100 350,85 Q360,100 350,115" fill="#ee9b00"/>
+  <path d="M550,385 Q540,370 550,355 Q560,370 550,385" fill="#ee9b00"/>
+  <path d="M650,435 Q640,420 650,405 Q660,420 650,435" fill="#ee9b00"/>
+  
+  <!-- Small bubbles along pipeline -->
+  <circle cx="100" cy="290" r="5" fill="#ffb703"/>
+  <circle cx="200" cy="310" r="5" fill="#ffb703"/>
+  <circle cx="300" cy="290" r="5" fill="#ffb703"/>
+  <circle cx="400" cy="310" r="5" fill="#ffb703"/>
+  <circle cx="500" cy="290" r="5" fill="#ffb703"/>
+  <circle cx="600" cy="310" r="5" fill="#ffb703"/>
+  <circle cx="700" cy="290" r="5" fill="#ffb703"/>
+  
+  <!-- Flow indicators -->
+  <path d="M250,300 L240,295 L240,305 Z" fill="#ffffff"/>
+  <path d="M450,300 L440,295 L440,305 Z" fill="#ffffff"/>
+  <path d="M650,300 L640,295 L640,305 Z" fill="#ffffff"/>
+</svg>

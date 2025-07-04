@@ -1,0 +1,122 @@
+{% extends "shared/layout.html" %}
+{% block main_content %}
+<div class="content-header">
+  <h1>Generation Mix</h1>
+  <h2>Current energy generation by fuel type across Australia</h2>
+</div>
+
+<div class="data-card">
+  <h3>Current Generation Mix</h3>
+  <p>Last updated: July 3, 2025 at 14:30 AEST</p>
+  
+  <div class="chart-container">
+    <div style="height: 250px; display: flex; align-items: center; justify-content: center; background-color: #f5f5f5; border-radius: 4px;">
+      <p style="color: #666;">Pie chart visualization will appear here</p>
+    </div>
+  </div>
+  
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-label">Coal</div>
+      <div class="stat-value">42%</div>
+      <div class="stat-label">8,640 MW</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Gas</div>
+      <div class="stat-value">15%</div>
+      <div class="stat-label">3,082 MW</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Solar</div>
+      <div class="stat-value">22%</div>
+      <div class="stat-label">4,520 MW</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Wind</div>
+      <div class="stat-value">16%</div>
+      <div class="stat-label">3,288 MW</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Hydro</div>
+      <div class="stat-value">5%</div>
+      <div class="stat-label">1,028 MW</div>
+    </div>
+  </div>
+</div>
+
+<div class="chart-container">
+  <h3>Generation Trends (Last 24 Hours)</h3>
+  <div style="height: 250px; display: flex; align-items: center; justify-content: center; background-color: #f5f5f5; border-radius: 4px;">
+    <p style="color: #666;">Stacked area chart visualization will appear here</p>
+  </div>
+</div>
+
+<div class="data-card">
+  <h3>Generation by Region</h3>
+  
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Region</th>
+        <th>Coal</th>
+        <th>Gas</th>
+        <th>Solar</th>
+        <th>Wind</th>
+        <th>Hydro</th>
+        <th>Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>NSW</td>
+        <td>3,240 MW</td>
+        <td>820 MW</td>
+        <td>1,450 MW</td>
+        <td>920 MW</td>
+        <td>320 MW</td>
+        <td>6,750 MW</td>
+      </tr>
+      <tr>
+        <td>VIC</td>
+        <td>2,850 MW</td>
+        <td>720 MW</td>
+        <td>980 MW</td>
+        <td>1,120 MW</td>
+        <td>180 MW</td>
+        <td>5,850 MW</td>
+      </tr>
+      <tr>
+        <td>QLD</td>
+        <td>2,550 MW</td>
+        <td>940 MW</td>
+        <td>1,680 MW</td>
+        <td>520 MW</td>
+        <td>120 MW</td>
+        <td>5,810 MW</td>
+      </tr>
+      <tr>
+        <td>SA</td>
+        <td>0 MW</td>
+        <td>602 MW</td>
+        <td>410 MW</td>
+        <td>728 MW</td>
+        <td>0 MW</td>
+        <td>1,740 MW</td>
+      </tr>
+      <tr>
+        <td>TAS</td>
+        <td>0 MW</td>
+        <td>0 MW</td>
+        <td>0 MW</td>
+        <td>0 MW</td>
+        <td>408 MW</td>
+        <td>408 MW</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<footer>
+  <p>© 2025 Australian Energy Market Data | Data sourced from AEMO</p>
+</footer>
+{% endblock %}
