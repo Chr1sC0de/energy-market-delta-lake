@@ -90,6 +90,7 @@ class Stack(_Stack):
             "    -p 8000:8000 \\",
             f"    -e COGNITO_DAGSTER_AUTH_CLIENT_ID={os.environ['COGNITO_DAGSTER_AUTH_CLIENT_ID']} \\",
             f"    -e COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL={os.environ['COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL']} \\",
+            f"    -e COGNITO_TOKEN_SIGNING_KEY_URL={os.environ['COGNITO_TOKEN_SIGNING_KEY_URL']} \\",
             f"    -e COGNITO_DAGSTER_AUTH_CLIENT_SECRET={os.environ['COGNITO_DAGSTER_AUTH_CLIENT_SECRET']} \\",
             f"    -e WEBSITE_ROOT_URL={os.environ['WEBSITE_ROOT_URL']} \\",
             f"    {self.ecr_repository.repository.repository_uri}:latest \\",

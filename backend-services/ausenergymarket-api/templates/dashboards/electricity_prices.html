@@ -1,0 +1,109 @@
+{% extends "shared/layout.html" %}
+{% block main_content %}
+    <div class="content-header">
+        <h1>Electricity Prices</h1>
+        <h2>Current and historical electricity spot prices across the National Electricity Market</h2>
+    </div>
+    <div class="data-card">
+        <h3>Current Spot Prices</h3>
+        <p>Last updated: July 3, 2025 at 14:30 AEST</p>
+        <div class="stat-grid">
+            <div class="stat-card">
+                <div class="stat-label">NSW</div>
+                <div class="stat-value">$65.42</div>
+                <div class="stat-label">per MWh</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">VIC</div>
+                <div class="stat-value">$58.17</div>
+                <div class="stat-label">per MWh</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">QLD</div>
+                <div class="stat-value">$72.89</div>
+                <div class="stat-label">per MWh</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">SA</div>
+                <div class="stat-value">$61.35</div>
+                <div class="stat-label">per MWh</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">TAS</div>
+                <div class="stat-value">$54.21</div>
+                <div class="stat-label">per MWh</div>
+            </div>
+        </div>
+    </div>
+    <div class="chart-container">
+        <h3>Price Trends (Last 24 Hours)</h3>
+        <div style="height: 250px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    background-color: #f5f5f5;
+                    border-radius: 4px">
+            <p style="color: #666;">Chart visualization will appear here</p>
+        </div>
+    </div>
+    <div class="data-card">
+        <h3>Historical Price Data</h3>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>NSW</th>
+                    <th>VIC</th>
+                    <th>QLD</th>
+                    <th>SA</th>
+                    <th>TAS</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Jul 3, 2025</td>
+                    <td>$65.42</td>
+                    <td>$58.17</td>
+                    <td>$72.89</td>
+                    <td>$61.35</td>
+                    <td>$54.21</td>
+                </tr>
+                <tr>
+                    <td>Jul 2, 2025</td>
+                    <td>$67.18</td>
+                    <td>$59.32</td>
+                    <td>$70.45</td>
+                    <td>$63.21</td>
+                    <td>$55.78</td>
+                </tr>
+                <tr>
+                    <td>Jul 1, 2025</td>
+                    <td>$64.93</td>
+                    <td>$57.84</td>
+                    <td>$71.26</td>
+                    <td>$60.89</td>
+                    <td>$53.42</td>
+                </tr>
+                <tr>
+                    <td>Jun 30, 2025</td>
+                    <td>$66.57</td>
+                    <td>$60.12</td>
+                    <td>$73.41</td>
+                    <td>$62.75</td>
+                    <td>$56.19</td>
+                </tr>
+                <tr>
+                    <td>Jun 29, 2025</td>
+                    <td>$63.84</td>
+                    <td>$56.93</td>
+                    <td>$69.78</td>
+                    <td>$59.46</td>
+                    <td>$52.87</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <footer>
+        <p>© 2025 Australian Energy Market Data | Data sourced from AEMO</p>
+    </footer>
+{% endblock %}

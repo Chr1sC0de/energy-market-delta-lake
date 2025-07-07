@@ -1,27 +1,46 @@
 {
-        email {$DEVELOPER_EMAIL}
-        storage file_system {
-                root /data/caddy
-        }
+    # Use Let's Encrypt staging server, comment out when using the proper ssl certificate
+    acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+
+    email {$DEVELOPER_EMAIL}
+    storage file_system {
+        root /data/caddy
+    }
 }
 
 {$ROOT_DNS} {
+    # Static files for non-Dagster paths
+    @not_dagster {
+        not path /dagster-webserver* /oauth2*
+    }
+    root @not_dagster /var/www/html
+    file_server @not_dagster
+    
+    # Auth server routes (login and OAuth callback)
+    reverse_proxy /dagster-webserver/login* {$DAGSTER_AUTHSERVER}
+    reverse_proxy /oauth2/dagster-webserver* {$DAGSTER_AUTHSERVER}
+    
+    # Protected Dagster routes
+    @protected {
+        path /dagster-webserver*
+        not path /dagster-webserver/login*
+    }
+    
+    handle @protected {
+        forward_auth {$DAGSTER_AUTHSERVER} {
+                uri /oauth2/dagster-webserver/validate
+                header_up Host {upstream_hostport}
+                header_up X-Real-IP {remote_host}
+                header_up X-Forwarded-For {remote_host}
+                header_up X-Forwarded-Proto {scheme}
+                header_up X-Forwarded-Host {host}
 
-        @not_dagster {
-                not path /dagster-webserver* /oauth2*
+                @error status 401
+                handle_response @error {
+                    redir * /dagster-webserver/login
+                }
         }
 
-        root @not_dagster /var/www/html
-        file_server @not_dagster
-
-        @protected {
-                path /dagster-webserver*
-        }
-
-        forward_auth @protected {$DAGSTER_AUTHSERVER} {
-                uri /oauth2/dagster-webserver/authorize
-        }
-
-        reverse_proxy /oauth2/dagster-webserver/callback {$DAGSTER_AUTHSERVER}
-        reverse_proxy /dagster-webserver* {$DAGSTER_WEBSERVER}
+        reverse_proxy @protected {$DAGSTER_WEBSERVER}
+    }
 }
