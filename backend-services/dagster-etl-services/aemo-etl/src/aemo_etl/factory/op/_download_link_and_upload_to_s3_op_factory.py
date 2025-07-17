@@ -46,10 +46,10 @@ def download_link_and_upload_to_s3_op_factory(
     @op(**op_kwargs)
     def download_link_and_upload_to_s3_op(
         context: OpExecutionContext,
-        s3_resource: S3Resource,
+        s3: S3Resource,
         link: Link,
     ) -> ProcessedLink:
-        s3_client: S3Client = s3_resource.get_client()
+        s3_client: S3Client = s3.get_client()
 
         context.log.info(f"processing {link.source_absolute_href}")
 

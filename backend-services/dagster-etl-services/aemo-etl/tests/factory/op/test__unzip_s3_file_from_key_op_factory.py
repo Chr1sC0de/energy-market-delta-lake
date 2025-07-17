@@ -67,7 +67,7 @@ class Test__unzip_s3_file_from_key_op_factory:
             s3_target_prefix="mockdata/prefix",
         )(
             context=build_op_context(),
-            s3_resource=S3Resource(),
+            s3=S3Resource(),
             s3_source_key=f"mockdata/prefix/{zip_file.name}",
         )
         assert len(unzipped_files) > 2
@@ -81,7 +81,7 @@ class Test__unzip_s3_file_from_key_op_factory:
             s3_target_prefix="mockdata/prefix",
         )(
             context=build_op_context(),
-            s3_resource=S3Resource(),
+            s3=S3Resource(),
             s3_source_key=f"mockdata/prefix/{zip_file.name}",
         )
         assert len(unzipped_files) > 2
@@ -95,7 +95,7 @@ class Test__unzip_s3_file_from_key_op_factory:
             s3_target_prefix="mockdatat/prefix_2",
         )(
             context=build_op_context(),
-            s3_resource=S3Resource(),
+            s3=S3Resource(),
             s3_source_key=f"mockdata/prefix/{zip_file.name}",
         )
         assert len(unzipped_files) > 2
@@ -109,7 +109,7 @@ class Test__unzip_s3_file_from_key_op_factory:
             s3_target_prefix="mockdatat/prefix_2",
         )(
             context=build_op_context(),
-            s3_resource=S3Resource(),
+            s3=S3Resource(),
             s3_source_key=f"mockdata/prefix/{zip_file.name}",
         )
         assert len(unzipped_files) > 2

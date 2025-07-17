@@ -69,7 +69,7 @@ def test__download_nemweb_public_files_to_s3_asset_factory(s3: S3Client):
     result = dg.materialize(
         assets=[asset],
         resources={
-            "s3_resource": S3Resource(),
+            "s3": S3Resource(),
             "in_memory_io_manager": dg.InMemoryIOManager(),
         },
     )

@@ -1,5 +1,6 @@
 import os
 from aemo_etl.configuration._configuration import (
+    IO_MANAGER_BUCKET,
     LANDING_BUCKET,
     BRONZE_BUCKET,
     SILVER_BUCKET,
@@ -16,6 +17,7 @@ from aemo_etl.configuration._configuration import (
 
 
 __all__ = [
+    "IO_MANAGER_BUCKET",
     "LANDING_BUCKET",
     "BRONZE_BUCKET",
     "SILVER_BUCKET",

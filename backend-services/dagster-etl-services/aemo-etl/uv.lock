@@ -44,7 +44,7 @@ requires-dist = [
     { name = "boto3", specifier = ">=1.38.3" },
     { name = "bs4", specifier = ">=0.0.2" },
     { name = "configurations", directory = "configurations" },
-    { name = "dagster", specifier = ">=1.10.12" },
+    { name = "dagster", specifier = "==1.10.15" },
     { name = "dagster-aws", specifier = ">=0.26.12" },
     { name = "dagster-docker", specifier = ">=0.26.12" },
     { name = "dagster-graphql", specifier = ">=1.10.12" },

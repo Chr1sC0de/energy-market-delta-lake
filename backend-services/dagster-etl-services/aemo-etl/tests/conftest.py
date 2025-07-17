@@ -1,13 +1,11 @@
 import os
+import socket
 from collections.abc import Generator
 
-from polars import Config
 import pytest
-
+from polars import Config
 from types_boto3_dynamodb import DynamoDBClient
 from types_boto3_s3 import S3Client
-
-import socket
 
 # pyright: reportUnusedParameter=false, reportTypedDictNotRequiredAccess=false, reportArgumentType=false, reportMissingTypeStubs=false
 
@@ -93,7 +91,12 @@ def dynamodb(moto_server: None) -> Generator[DynamoDBClient]:
     scope="function",
 )
 def create_buckets(s3: S3Client):
-    from aemo_etl.configuration import BRONZE_BUCKET, LANDING_BUCKET
+    from aemo_etl.configuration import BRONZE_BUCKET, IO_MANAGER_BUCKET, LANDING_BUCKET
+
+    _ = s3.create_bucket(
+        Bucket=IO_MANAGER_BUCKET,
+        CreateBucketConfiguration={"LocationConstraint": "ap-southeast-2"},
+    )
 
     _ = s3.create_bucket(
         Bucket=BRONZE_BUCKET,
@@ -107,7 +110,7 @@ def create_buckets(s3: S3Client):
 
     yield
 
-    for bucket_name in (LANDING_BUCKET, BRONZE_BUCKET):
+    for bucket_name in (LANDING_BUCKET, BRONZE_BUCKET, IO_MANAGER_BUCKET):
         # List and delete all objects
         response = s3.list_objects_v2(Bucket=bucket_name)
         if "Contents" in response:

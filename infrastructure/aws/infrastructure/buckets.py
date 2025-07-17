@@ -79,6 +79,15 @@ class Stack(_Stack):
         # create a different landing bucket i.e. landing, bronze, silver and gold for our data
 
         _ = self.create_bucket(
+            f"{STACK_PREFIX}IOManagerBucket",
+            bucket_name=f"{DEVELOPMENT_ENVIRONMENT}-{NAME_PREFIX}-io-manager",
+            removal_policy=RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE,
+            encryption=s3.BucketEncryption.S3_MANAGED,
+            versioned=False,
+            block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
+        )
+
+        _ = self.create_bucket(
             f"{STACK_PREFIX}LandingBucket",
             bucket_name=f"{DEVELOPMENT_ENVIRONMENT}-{NAME_PREFIX}-landing",
             removal_policy=RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE,

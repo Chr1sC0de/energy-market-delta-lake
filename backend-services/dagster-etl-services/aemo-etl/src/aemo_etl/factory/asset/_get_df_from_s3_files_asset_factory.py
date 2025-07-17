@@ -29,9 +29,9 @@ def get_df_from_s3_files_asset_factory(
     @asset(**asset_kwargs)
     def get_df_from_s3_files_asset(
         context: AssetExecutionContext,
-        s3_resource: S3Resource,
+        s3: S3Resource,
     ) -> Generator[Output[LazyFrame]]:
-        s3_client = s3_resource.get_client()
+        s3_client = s3.get_client()
         s3_object_keys = get_s3_object_keys_from_prefix_and_name_glob(
             s3_client=s3_client,
             s3_bucket=s3_source_bucket,
@@ -51,7 +51,7 @@ def get_df_from_s3_files_asset_factory(
         yield Output(df)
         # cleanup the data from the source bucket
         context.log.info("performing cleanup")
-        s3_client = s3_resource.get_client()
+        s3_client = s3.get_client()
 
         for key in s3_object_keys:
             source_path = f"s3://{s3_source_bucket}/{key}"

@@ -55,7 +55,7 @@ class Stack(_Stack):
 
         dagster_daemon_task_execution_role = iam.Role.from_role_arn(
             self,
-            "ECSDagsterDaemonTaskExecutionRole",
+            "ECSDagsterDaemonTaskExecutionRoleARN",
             Fn.import_value("ECSDagsterDaemonTaskExecutionRoleARN"),
         )
 

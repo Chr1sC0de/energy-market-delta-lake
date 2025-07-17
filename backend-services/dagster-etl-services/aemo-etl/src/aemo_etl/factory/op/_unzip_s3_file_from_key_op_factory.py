@@ -32,13 +32,13 @@ def unzip_s3_file_from_key_op_factory(
 
     @op(**op_factory_kwargs)
     def unzip_s3_file_op(
-        context: OpExecutionContext, s3_resource: S3Resource, s3_source_key: str
+        context: OpExecutionContext, s3: S3Resource, s3_source_key: str
     ) -> list[dict[str, str]]:
         unzipped_files: list[dict[str, str]] = []
 
         context.log.info(f"processing zip file s3://{s3_source_bucket}/{s3_source_key}")
 
-        s3_client: S3Client = s3_resource.get_client()
+        s3_client: S3Client = s3.get_client()
 
         get_object_response = s3_client.get_object(
             Bucket=s3_source_bucket, Key=s3_source_key

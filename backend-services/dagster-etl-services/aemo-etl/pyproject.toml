@@ -11,7 +11,7 @@ dependencies = [
     "boto3>=1.38.3",
     "bs4>=0.0.2",
     "configurations",
-    "dagster>=1.10.12",
+    "dagster==1.10.15",
     "dagster-aws>=0.26.12",
     "dagster-docker>=0.26.12",
     "dagster-graphql>=1.10.12",

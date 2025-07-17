@@ -18,17 +18,31 @@ def newline_join(*args: str, extra=None) -> str:
     return f"\n{extra}".join(args)
 
 
+def get_s3_pagination(
+    s3_client: S3Client,
+    s3_bucket: str,
+    s3_prefix: str,
+):
+    paginator = s3_client.get_paginator("list_objects_v2")
+    pages = []
+    for page in paginator.paginate(Bucket=s3_bucket, Prefix=s3_prefix):
+        pages.append(page)
+    return pages
+
+
 def get_s3_object_keys_from_prefix_and_name_glob(
     s3_client: S3Client,
     s3_bucket: str,
     s3_prefix: str,
     s3_file_glob: str,
     case_insensitive: bool = True,
+    pages=None,
 ) -> list[str]:
     """given a key prefix and a globbing pattern get all the s3 object keys"""
-    paginator = s3_client.get_paginator("list_objects_v2")
     s3_objects: list[str] = []
-    for page in paginator.paginate(Bucket=s3_bucket, Prefix=s3_prefix):
+    if pages is None:
+        pages = get_s3_pagination(s3_client, s3_bucket, s3_prefix)
+    for page in pages:
         if "Contents" in page:
             original_keys = [c["Key"] for c in page["Contents"]]
             if case_insensitive:

@@ -144,14 +144,17 @@ def download_nemweb_public_files_to_s3_definition_factory(
     #     │                                      create jobs                                       │
     #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
+    asset_job_name = f"asset_{name}_job"
+    compact_and_vacuum_job_name = f"compact_and_vacuum_{name}_job"
+
     download_nemweb_public_files_to_s3_job = define_asset_job(
-        f"{name}_job",
+        asset_job_name,
         selection=[download_nemweb_public_files_to_s3_asset],
         tags=job_tags,
     )
 
     download_nemweb_public_files_to_s3_compact_and_vacuum_job = define_asset_job(
-        name=f"{name}_compact_and_vacuum_job",
+        name=compact_and_vacuum_job_name,
         selection=[compact_and_vacuum_asset],
     )
 
@@ -160,7 +163,7 @@ def download_nemweb_public_files_to_s3_definition_factory(
     #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
     download_nemweb_public_files_to_s3_schedule = ScheduleDefinition(
-        name=f"{name}_schedule",
+        name=f"job_schedule_{name}",
         job=download_nemweb_public_files_to_s3_job,
         cron_schedule=job_schedule_cron,  # run every 5 minutes past the hour
         default_status=(
@@ -171,7 +174,7 @@ def download_nemweb_public_files_to_s3_definition_factory(
     )
 
     download_nemweb_public_files_to_s3_compact_and_vacuum_schedule = ScheduleDefinition(
-        name=f"{name}_compact_and_vacuum_schedule",
+        name=f"job_schedule_compact_and_vacuum_{name}",
         job=download_nemweb_public_files_to_s3_compact_and_vacuum_job,
         cron_schedule=compact_and_vacuum_schdule_cron,
         execution_timezone="Australia/Melbourne",

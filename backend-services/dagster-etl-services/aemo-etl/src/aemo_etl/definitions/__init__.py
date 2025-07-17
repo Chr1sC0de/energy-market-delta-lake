@@ -4,9 +4,10 @@ from dagster import (
     DefaultSensorStatus,
     Definitions,
 )
-from dagster_aws.s3 import S3Resource
+from dagster_aws.s3 import S3Resource, s3_pickle_io_manager
 
 import aemo_etl
+from aemo_etl.configuration import IO_MANAGER_BUCKET
 from aemo_etl.definitions import (
     bronze_download_public_nemweb_files_to_s3,
     bronze_vicgas_mibb_reports,
@@ -17,19 +18,27 @@ from aemo_etl.resource import (
     S3PolarsParquetIOManager,
 )
 from configurations.parameters import DEVELOPMENT_LOCATION
+from aemo_etl.definitions.sensors import sensor_aemo_vicgas_jobs
 
 definitions = Definitions.merge(
     Definitions(
         assets=aemo_etl.asset.asset_list,
         asset_checks=aemo_etl.asset.asset_check_list,
         resources={
-            "s3_resource": S3Resource(),
+            "s3": S3Resource(),
             "s3_polars_parquet_io_manager": S3PolarsParquetIOManager(),
             "s3_polars_deltalake_io_manager": S3PolarsDeltaLakeIOManager(),
+            "io_manager": s3_pickle_io_manager.configured(
+                {
+                    "s3_bucket": IO_MANAGER_BUCKET,
+                    "s3_prefix": "dagster/storage",
+                }
+            ),
         },
         sensors=[
+            sensor_aemo_vicgas_jobs,
             AutomationConditionSensorDefinition(
-                name="automation_condition_sensor",
+                name="sensor_automation_condition",
                 target=AssetSelection.all(),
                 default_status=DefaultSensorStatus.STOPPED
                 if DEVELOPMENT_LOCATION == "local"

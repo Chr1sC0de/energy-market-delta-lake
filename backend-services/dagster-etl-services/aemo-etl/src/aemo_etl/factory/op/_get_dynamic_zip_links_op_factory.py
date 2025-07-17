@@ -25,9 +25,9 @@ def get_dyanmic_zip_links_op_factory(
     @op(**op_kwargs)
     def get_dynamic_links_zip_op(
         context: OpExecutionContext,
-        s3_resource: S3Resource,
+        s3: S3Resource,
     ) -> Generator[DynamicOutput[str]]:
-        s3_client: S3Client = s3_resource.get_client()
+        s3_client: S3Client = s3.get_client()
         paginator = s3_client.get_paginator("list_objects_v2")
         s3_objects = []
         for page in paginator.paginate(
