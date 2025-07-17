@@ -17,18 +17,18 @@
     file_server @not_dagster
     
     # Auth server routes (login and OAuth callback)
-    reverse_proxy /dagster-webserver/login* {$DAGSTER_AUTHSERVER}
-    reverse_proxy /oauth2/dagster-webserver* {$DAGSTER_AUTHSERVER}
+    reverse_proxy /dagster-webserver/admin/login* {$DAGSTER_AUTHSERVER}
+    reverse_proxy /oauth2/dagster-webserver/admin* {$DAGSTER_AUTHSERVER}
     
     # Protected Dagster routes
     @protected {
-        path /dagster-webserver*
-        not path /dagster-webserver/login*
+        path /dagster-webserver/admin*
+        not path /dagster-webserver/admin/login*
     }
     
     handle @protected {
         forward_auth {$DAGSTER_AUTHSERVER} {
-                uri /oauth2/dagster-webserver/validate
+                uri /oauth2/dagster-webserver/admin/validate
                 header_up Host {upstream_hostport}
                 header_up X-Real-IP {remote_host}
                 header_up X-Forwarded-For {remote_host}
@@ -37,10 +37,10 @@
 
                 @error status 401
                 handle_response @error {
-                    redir * /dagster-webserver/login
+                    redir * /dagster-webserver/admin/login
                 }
         }
 
-        reverse_proxy @protected {$DAGSTER_WEBSERVER}
+        reverse_proxy @protected {$DAGSTER_WEBSERVER_ADMIN}
     }
 }

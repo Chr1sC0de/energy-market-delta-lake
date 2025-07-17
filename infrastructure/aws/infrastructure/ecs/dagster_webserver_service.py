@@ -36,7 +36,9 @@ class Stack(_Stack):
         IamRolesStack: iam_roles.Stack,
         service_discovery_name: str = "webserver",
         stream_prefix: str = "dagster-webserver-service",
+        path_prefix: str = "/dagster-webserver",
         user_code_dependencies: list[ecs.dagster_user_code_service.Stack] | None = None,
+        readonly: bool = False,
         **kwargs: Unpack[StackKwargs],
     ):
         super().__init__(scope, id, **kwargs)
@@ -80,6 +82,21 @@ class Stack(_Stack):
             task_role=dagster_webserver_task_role,
         )
 
+        entrypoint_values = [
+            "dagster-webserver",
+            "-h",
+            "0.0.0.0",
+            "-p",
+            "3000",
+            "-w",
+            "workspace.yaml",
+            "--path-prefix",
+            path_prefix,
+        ]
+
+        if readonly:
+            entrypoint_values.append("--read-only")
+
         _ = task_definition.add_container(
             "DagsterWebserverContainer",
             container_name="webserver",
@@ -91,17 +108,7 @@ class Stack(_Stack):
                 )
             ),
             essential=True,
-            entry_point=[
-                "dagster-webserver",
-                "-h",
-                "0.0.0.0",
-                "-p",
-                "3000",
-                "-w",
-                "workspace.yaml",
-                "--path-prefix",
-                "/dagster-webserver",
-            ],
+            entry_point=entrypoint_values,
             environment={
                 "DAGSTER_POSTGRES_DB": "dagster",
                 "DAGSTER_POSTGRES_HOSTNAME": postgres_host_param,

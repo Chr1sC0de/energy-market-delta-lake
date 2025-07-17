@@ -94,7 +94,7 @@ def clear_session(session: dict[str, Any]) -> None:
     session.pop("expires_at", None)
 
 
-@router.get("/oauth2/dagster-webserver/validate")
+@router.get("/oauth2/dagster-webserver/admin/validate")
 async def oauth2_dagster_webserver_validate(request: Request):
     request.session
 
@@ -137,7 +137,7 @@ async def oauth2_dagster_webserver_validate(request: Request):
         )
 
 
-@router.get("/dagster-webserver/login")
+@router.get("/dagster-webserver/admin/login")
 async def oauth2_dagster_webserver_login(request: Request):
     redirect_uri = str(request.url_for("oauth2_dagster_webserver_authorize"))
     if "localhost" not in redirect_uri:
@@ -145,7 +145,7 @@ async def oauth2_dagster_webserver_login(request: Request):
     return await authorize_redirect(request, redirect_uri)
 
 
-@router.get("/oauth2/dagster-webserver/authorize")
+@router.get("/oauth2/dagster-webserver/admin/authorize")
 async def oauth2_dagster_webserver_authorize(request: Request):
     try:
         token = await oidc.authorize_access_token(request)
@@ -153,7 +153,9 @@ async def oauth2_dagster_webserver_authorize(request: Request):
         request.session["token_type"] = token["token_type"]
         request.session["access_token"] = token["access_token"]
         request.session["expires_at"] = token["expires_at"]
-        return RedirectResponse(f"{os.environ['WEBSITE_ROOT_URL']}/dagster-webserver")
+        return RedirectResponse(
+            f"{os.environ['WEBSITE_ROOT_URL']}/dagster-webserver/admin"
+        )
     except Exception as e:
         clear_session(request.session)
         return JSONResponse(

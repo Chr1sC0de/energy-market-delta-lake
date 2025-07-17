@@ -192,16 +192,18 @@ DagsterAemoETLUserCodeService = ecs.dagster_user_code_service.Stack(
     stream_prefix="dagster-aemo-etl-user-code-service",
 )
 
-DagsterWebserverService = ecs.dagster_webserver_service.Stack(
+DagsterWebserverServiceAdmin = ecs.dagster_webserver_service.Stack(
     app,
-    f"{ENV}{STACK_PREFIX}DagsterWebserverService",
+    f"{ENV}{STACK_PREFIX}DagsterWebserverServiceAdmin",
     env=aws_environment,
     VpcStack=VpcStack,
     EcsDagsterClusterStack=DagsterEcsClusterStack,
     PostgresStack=DagsterPostgresStack,
     PrivateDnsNamespaceStack=PrivateDnsNamespaceStack,
     SecurityGroupStack=SecurityGroupStack,
-    stream_prefix="dagster-webserver-service",
+    stream_prefix="dagster-webserver-service-admin",
+    service_discovery_name="webserver-admin",
+    path_prefix="/dagster-webserver/admin",
     EcrDagsterWebserver=EcrDagsterWebserver,
     IamRolesStack=IamRolesStack,
     user_code_dependencies=[
