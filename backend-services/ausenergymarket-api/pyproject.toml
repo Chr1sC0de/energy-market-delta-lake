@@ -20,6 +20,7 @@ dependencies = [
     "polars>=1.31.0",
     "python-jose[cryptography]>=3.5.0",
     "requests>=2.32.4",
+    "uvicorn[standard]>=0.35.0",
 ]
 
 [project.scripts]
@@ -41,4 +42,5 @@ dev = [
     "ipykernel>=6.29.5",
     "itables>=2.4.3",
     "jupyter>=1.1.1",
+    "watchfiles>=1.1.0",
 ]

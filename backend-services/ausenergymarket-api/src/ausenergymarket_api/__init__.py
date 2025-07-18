@@ -2,7 +2,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from aiomcache import Client
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -52,6 +51,13 @@ if DEVELOPMENT_LOCATION == "local":
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
+
+
+@app.get("/dashboard/generation_mix", response_class=HTMLResponse)
+async def dashboard_generation_mix(request: Request):
+    return templates.TemplateResponse(request=request, name="dashboards/electricity_prices.html")
+
+
 
 
 app.include_router(plots_gas.router, prefix="/plots/gas")

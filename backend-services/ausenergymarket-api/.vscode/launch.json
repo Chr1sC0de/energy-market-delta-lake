@@ -15,7 +15,7 @@
         "8000",
         "--reload",
         "--reload-include",
-        "*.py,*.html,*.css"
+        "'*.py,*.html,*.css'"
       ],
       "jinja": true
     }

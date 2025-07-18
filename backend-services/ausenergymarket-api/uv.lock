@@ -152,6 +152,7 @@ dependencies = [
     { name = "polars" },
     { name = "python-jose", extra = ["cryptography"] },
     { name = "requests" },
+    { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.dev-dependencies]
@@ -159,6 +160,7 @@ dev = [
     { name = "ipykernel" },
     { name = "itables" },
     { name = "jupyter" },
+    { name = "watchfiles" },
 ]
 
 [package.metadata]
@@ -175,6 +177,7 @@ requires-dist = [
     { name = "polars", specifier = ">=1.31.0" },
     { name = "python-jose", extras = ["cryptography"], specifier = ">=3.5.0" },
     { name = "requests", specifier = ">=2.32.4" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.35.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -182,6 +185,7 @@ dev = [
     { name = "ipykernel", specifier = ">=6.29.5" },
     { name = "itables", specifier = ">=2.4.3" },
     { name = "jupyter", specifier = ">=1.1.1" },
+    { name = "watchfiles", specifier = ">=1.1.0" },
 ]
 
 [[package]]
