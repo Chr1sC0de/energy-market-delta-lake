@@ -28,6 +28,7 @@
     --radius-xl: 0.75rem;
     --default-font-family: var(--font-sans);
     --default-mono-font-family: var(--font-mono);
+    --color-mint-500: oklch(0.72 0.11 178);
   }
 }
 @layer base {
@@ -253,6 +254,9 @@
   }
   .border-slate-950 {
     border-color: var(--color-slate-950);
+  }
+  .bg-mint-500 {
+    background-color: var(--color-mint-500);
   }
   .bg-white {
     background-color: var(--color-white);

@@ -181,6 +181,7 @@ class Stack(_Stack):
             f"    -e DAGSTER_AUTHSERVER={self.authentication_stack.instance.instance_private_ip}:8000 \\",
             f"    -e DEVELOPER_EMAIL={os.environ['DEVELOPER_EMAIL']} \\",
             "    -e DAGSTER_WEBSERVER_ADMIN=webserver-admin.dagster:3000 \\",
+            "    -e DAGSTER_WEBSERVER_GUEST=webserver-guest.dagster:3000 \\",
             f"     {self.ecr_repository.repository.repository_uri}:latest",
         )
 

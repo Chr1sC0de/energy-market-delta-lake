@@ -5,12 +5,12 @@ import aws_cdk as cdk
 
 from configurations.parameters import DEVELOPMENT_ENVIRONMENT, STACK_PREFIX
 from infrastructure import (
-    fastapi_authentication_server,
     bastion_host,
     buckets,
     caddy_server,
     ecr,
     ecs,
+    fastapi_authentication_server,
     iam_roles,
     locking_table,
     postgres,
@@ -204,6 +204,26 @@ DagsterWebserverServiceAdmin = ecs.dagster_webserver_service.Stack(
     stream_prefix="dagster-webserver-service-admin",
     service_discovery_name="webserver-admin",
     path_prefix="/dagster-webserver/admin",
+    EcrDagsterWebserver=EcrDagsterWebserver,
+    IamRolesStack=IamRolesStack,
+    user_code_dependencies=[
+        DagsterAemoETLUserCodeService,
+    ],
+)
+
+DagsterWebserverServiceGuest = ecs.dagster_webserver_service.Stack(
+    app,
+    f"{ENV}{STACK_PREFIX}DagsterWebserverServiceGuest",
+    env=aws_environment,
+    VpcStack=VpcStack,
+    EcsDagsterClusterStack=DagsterEcsClusterStack,
+    PostgresStack=DagsterPostgresStack,
+    PrivateDnsNamespaceStack=PrivateDnsNamespaceStack,
+    SecurityGroupStack=SecurityGroupStack,
+    stream_prefix="dagster-webserver-service-guest",
+    service_discovery_name="webserver-guest",
+    path_prefix="/dagster-webserver/guest",
+    readonly=True,
     EcrDagsterWebserver=EcrDagsterWebserver,
     IamRolesStack=IamRolesStack,
     user_code_dependencies=[

@@ -6,8 +6,13 @@
     . ".venv/bin/activate"
     cdk destroy --method direct --force \
         DevEnergyMarketCaddyServer \
-        DevEnergyMarketFastApiAuthenticationServer
+        DevEnergyMarketFastApiAuthenticationServer \
+        DevEnergyMarketDagsterWebserverServiceAdmin \
+        DevEnergyMarketDagsterWebserverServiceGuest
+
     cdk deploy --method direct --require-approval never --concurrency 8 \
         DevEnergyMarketCaddyServer \
-        DevEnergyMarketFastApiAuthenticationServer
+        DevEnergyMarketFastApiAuthenticationServer \
+        DevEnergyMarketDagsterWebserverServiceAdmin \
+        DevEnergyMarketDagsterWebserverServiceGuest
 )

@@ -15,6 +15,9 @@
     }
     root @not_dagster /var/www/html
     file_server @not_dagster
+
+    # guest server route
+    reverse_proxy /dagster-webserver/guest* {$DAGSTER_WEBSERVER_GUEST}
     
     # Auth server routes (login and OAuth callback)
     reverse_proxy /dagster-webserver/admin/login* {$DAGSTER_AUTHSERVER}

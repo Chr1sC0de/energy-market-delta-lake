@@ -14,7 +14,7 @@
         "--port",
         "8000",
         "--reload",
-        "--reload-exclude",
+        "--reload-include",
         "*.py,*.html,*.css"
       ],
       "jinja": true

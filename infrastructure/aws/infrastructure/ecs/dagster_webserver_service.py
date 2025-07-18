@@ -82,20 +82,23 @@ class Stack(_Stack):
             task_role=dagster_webserver_task_role,
         )
 
-        entrypoint_values = [
-            "dagster-webserver",
-            "-h",
-            "0.0.0.0",
-            "-p",
-            "3000",
-            "-w",
-            "workspace.yaml",
-            "--path-prefix",
-            path_prefix,
-        ]
+        entrypoint_values = ["dagster-webserver"]
 
         if readonly:
             entrypoint_values.append("--read-only")
+
+        entrypoint_values.extend(
+            [
+                "-h",
+                "0.0.0.0",
+                "-p",
+                "3000",
+                "-w",
+                "workspace.yaml",
+                "--path-prefix",
+                path_prefix,
+            ]
+        )
 
         _ = task_definition.add_container(
             "DagsterWebserverContainer",
