@@ -39,6 +39,7 @@ def download_nemweb_public_files_to_s3_asset_factory(
     override_get_links_fn: Callable[[OpExecutionContext], list[Link]] | None = None,
     **graph_asset_kwargs: Unpack[GraphAssetParamSpec],
 ):
+    name = graph_asset_kwargs.get("name")
     graph_asset_kwargs.setdefault("group_name", "AEMO")
     graph_asset_kwargs.setdefault(
         "description",
@@ -74,6 +75,7 @@ def download_nemweb_public_files_to_s3_asset_factory(
 
     def final_passthrough_op_factory() -> OpDefinition:
         @op(
+            name=f"{name}_final_passthrough_op",
             ins={
                 "start": In(Nothing),
             },
@@ -92,6 +94,7 @@ def download_nemweb_public_files_to_s3_asset_factory(
     @graph_asset(**graph_asset_kwargs)
     def download_nemweb_public_files_to_s3_asset() -> LazyFrame:
         links = get_nemweb_links_op_factory(
+            name=f"{name}_get_nemweb_links_op",
             relative_root_href=nemweb_relative_href,
             override_get_links_fn=override_get_links_fn,
             description=f"extract the list of links from {nemweb_relative_href}",
@@ -99,11 +102,13 @@ def download_nemweb_public_files_to_s3_asset_factory(
 
         processed_links = (
             get_dynamic_nemweb_links_op_factory(
+                name=f"{name}_get_dynamic_nemweb_links_op",
                 link_filter=link_filter,
                 description="create a dynamic set of links and process them",
             )(links)
             .map(
                 lambda link: download_link_and_upload_to_s3_op_factory(
+                    name=f"{name}_download_link_and_upload_to_s3_op",
                     description=f"download file from a link and upload into s3://{s3_source_bucket}/{s3_source_prefix}",
                     s3_landing_bucket=s3_source_bucket,
                     s3_landing_prefix=s3_source_prefix,
@@ -115,12 +120,14 @@ def download_nemweb_public_files_to_s3_asset_factory(
 
         unzipped_s3_files_log = (
             get_dyanmic_zip_links_op_factory(
+                name=f"{name}_get_dyanmic_zip_links_op",
                 description="create a dynamic list of keys for a bucket",
                 s3_source_bucket=s3_source_bucket,
                 s3_source_prefix=s3_source_prefix,
             )(start=processed_links)
             .map(
                 lambda keys: unzip_s3_file_from_key_op_factory(
+                    name=f"{name}_unzip_s3_file_from_key_op",
                     description=f"unzip files and load the content into s3://{s3_source_bucket}/{s3_source_prefix}",
                     s3_source_bucket=s3_source_bucket,
                     s3_target_bucket=s3_source_bucket,
@@ -131,6 +138,7 @@ def download_nemweb_public_files_to_s3_asset_factory(
         )
 
         df = combine_processed_links_to_dataframe_op_factory(
+            name=f"{name}_combine_processed_links_to_dataframe_op",
             schema=schema,
             description="for each processed link, combine the downloaded files into a single data frame",
         )(processed_links)

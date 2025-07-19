@@ -53,12 +53,22 @@ def unzip_s3_file_from_key_op_factory(
 
                     extension = file_name.lower().split(".")[-1]
 
-                    # if the extension of the file is csv convert it into a parquet file
-                    if extension == "csv":
-                        file_name = file_name.lower().replace(".csv", ".parquet")
-                        csv_df = read_csv(buffer, infer_schema_length=None)
-                        buffer = io.BytesIO()
-                        csv_df.write_parquet(buffer)
+                    original_buffer = buffer
+                    original_filename = file_name
+
+                    try:
+                        # if the extension of the file is csv convert it into a parquet file
+                        if extension == "csv":
+                            file_name = file_name.lower().replace(".csv", ".parquet")
+                            csv_df = read_csv(buffer, infer_schema_length=None)
+                            buffer = io.BytesIO()
+                            csv_df.write_parquet(buffer)
+                    except Exception as e:
+                        context.log.info(
+                            f"failed to convert from csv to parquet format, using original format with error message {e}"
+                        )
+                        buffer = original_buffer
+                        file_name = original_filename
 
                     write_key = f"{s3_target_prefix}/{file_name}"
 

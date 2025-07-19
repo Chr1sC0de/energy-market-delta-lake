@@ -1,5 +1,4 @@
 import re
-from collections.abc import Generator
 from typing import Callable, Unpack
 
 import dagster as dg
@@ -30,26 +29,25 @@ def get_dynamic_nemweb_links_op_factory(
     def get_dynamic_nemweb_links_op(
         context: dg.OpExecutionContext,
         links: list[Link],
-    ) -> Generator[dg.DynamicOutput[Link]]:
+    ) -> list[dg.DynamicOutput[Link]]:
         context.log.info("creating dynamic download group")
 
-        filtered_links: list[Link] = []
+        output = []
 
         for link in links:
             if link_filter(context, link):
-                filtered_links.append(link)
-
-        for link in filtered_links:
-            context.log.info(f"kept link {link.source_absolute_href}")
-
-        for link in filtered_links:
-            yield dg.DynamicOutput[Link](
-                link,
-                mapping_key=re.sub(
-                    "[^0-9a-zA-Z]+", "_", link.source_absolute_href.split("/")[-1]
-                ),
-            )
+                output.append(
+                    dg.DynamicOutput[Link](
+                        link,
+                        mapping_key=re.sub(
+                            "[^0-9a-zA-Z]+",
+                            "_",
+                            link.source_absolute_href.split("/")[-1],
+                        ),
+                    )
+                )
 
         context.log.info("finished creating dynamic download group")
+        return output
 
     return get_dynamic_nemweb_links_op

@@ -63,11 +63,21 @@ def download_link_and_upload_to_s3_op_factory(
             f"{name}~{datetime.now().strftime('%y%m%d%H%M%S')}.{extension}"
         )
 
-        if extension == "csv":
-            upload_filename = upload_filename.replace(".csv", ".parquet")
-            csv_df = read_csv(link_buffer, infer_schema_length=None)
-            link_buffer = BytesIO()
-            csv_df.write_parquet(link_buffer)
+        original_buffer = link_buffer
+        original_upload_filename = upload_filename
+
+        try:
+            if extension == "csv":
+                upload_filename = upload_filename.replace(".csv", ".parquet")
+                csv_df = read_csv(link_buffer, infer_schema_length=None)
+                link_buffer = BytesIO()
+                csv_df.write_parquet(link_buffer)
+        except Exception as e:
+            context.log.info(
+                f"failed to convert from csv to parquet format, using original format with error message {e}"
+            )
+            link_buffer = original_buffer
+            upload_filename = original_upload_filename
 
         _ = link_buffer.seek(0)
 
