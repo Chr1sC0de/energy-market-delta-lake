@@ -11,6 +11,7 @@ from aemo_etl.configuration import IO_MANAGER_BUCKET
 from aemo_etl.definitions import (
     bronze_download_public_nemweb_files_to_s3,
     bronze_vicgas_mibb_reports,
+    bronze_gasbb_reports,
 )
 from aemo_etl.register import definitions_list
 from aemo_etl.resource import (
@@ -18,7 +19,7 @@ from aemo_etl.resource import (
     S3PolarsParquetIOManager,
 )
 from configurations.parameters import DEVELOPMENT_LOCATION
-from aemo_etl.definitions.sensors import sensor_aemo_vicgas_jobs
+from aemo_etl.definitions.sensors import sensor_aemo_vicgas_jobs, sensor_aemo_gasbb_jobs
 
 definitions = Definitions.merge(
     Definitions(
@@ -37,6 +38,7 @@ definitions = Definitions.merge(
         },
         sensors=[
             sensor_aemo_vicgas_jobs,
+            sensor_aemo_gasbb_jobs,
             AutomationConditionSensorDefinition(
                 name="sensor_automation_condition",
                 target=AssetSelection.all(),
@@ -49,4 +51,8 @@ definitions = Definitions.merge(
     *definitions_list,
 )
 
-__all__ = ["bronze_vicgas_mibb_reports", "bronze_download_public_nemweb_files_to_s3"]
+__all__ = [
+    "bronze_vicgas_mibb_reports",
+    "bronze_gasbb_reports",
+    "bronze_download_public_nemweb_files_to_s3",
+]

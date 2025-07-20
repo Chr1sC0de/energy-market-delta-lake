@@ -4,9 +4,8 @@ from dagster import (
     AssetChecksDefinition,
     AssetExecutionContext,
     AssetsDefinition,
-    DefaultScheduleStatus,
+    AutomationCondition,
     Definitions,
-    ScheduleDefinition,
     define_asset_job,
 )
 from polars import LazyFrame, Schema
@@ -16,7 +15,6 @@ from aemo_etl.factory.asset import (
     compact_and_vacuum_dataframe_asset_factory,
     get_df_from_s3_files_asset_factory,
 )
-from configurations.parameters import DEVELOPMENT_LOCATION
 
 
 class GetMibbReportFromS3FilesDefinitionBuilder:
@@ -45,7 +43,6 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
             list[Callable[[AssetsDefinition], AssetChecksDefinition]] | None
         ) = None,
         job_tags: dict[str, Any] | None = None,
-        compact_and_vacuum_cron_schedule="45 23 * * *",
         execution_timezone="Australia/Melbourne",
         asset_description: str | None = None,
     ):
@@ -82,6 +79,7 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
             key_prefix=["optimize"] + key_prefix,
             dependant_definitions=[self.table_asset],
             retention_hours=retention_hours,
+            automation_condition=AutomationCondition.on_cron("@daily"),
         )
 
         #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
@@ -103,35 +101,14 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
             tags=job_tags,
         )
 
-        self.table_asset_compact_and_vacuum_job = define_asset_job(
-            name=f"compact_and_vacuum_{name}_job",
-            selection=[self.compact_and_vacuum_asset],
-        )
-
         #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
         #     │                  create the schedules for the compact and vacuum job                   │
         #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
-        self.schedules = []
-        if compact_and_vacuum_cron_schedule is not None:
-            self.compact_and_vacuum_schedule = ScheduleDefinition(
-                name=f"job_schedule_compact_and_vacuum_{name}",
-                job=self.table_asset_compact_and_vacuum_job,
-                cron_schedule=compact_and_vacuum_cron_schedule,
-                default_status=(
-                    DefaultScheduleStatus.STOPPED
-                    if DEVELOPMENT_LOCATION == "local"
-                    else DefaultScheduleStatus.RUNNING
-                ),
-                execution_timezone=execution_timezone,
-            )
-            self.schedules.append(self.compact_and_vacuum_schedule)
-
     def build(self) -> Definitions:
         return Definitions(
             assets=[self.table_asset, self.compact_and_vacuum_asset],
-            jobs=[self.table_asset_job, self.table_asset_compact_and_vacuum_job],
+            jobs=[self.table_asset_job],
             # sensors=[self.asset_sensor],
             asset_checks=self.asset_checks,
-            schedules=self.schedules,
         )

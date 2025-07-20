@@ -75,7 +75,7 @@ def test__download_nemweb_public_files_to_s3_asset_factory(s3: S3Client):
     )
 
     value_for_node = result.output_for_node(
-        "bronze__aemo__vicgas__bronze_vicgas_downloaded_public_files.final_passthrough_op"
+        f"bronze__aemo__vicgas__bronze_vicgas_downloaded_public_files.{table_name}_final_passthrough_op"
     )
 
     assert value_for_node.collect().shape == (

@@ -38,6 +38,7 @@ def get_df_from_s3_files_asset_factory(
             s3_prefix=s3_source_prefix,
             s3_file_glob=s3_source_file_glob,
             case_insensitive=True,
+            logger=context.log,
         )
         df = get_df_from_s3_keys(
             s3_client=s3_client,

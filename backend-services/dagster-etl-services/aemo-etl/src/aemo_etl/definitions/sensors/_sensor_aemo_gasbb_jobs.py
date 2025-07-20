@@ -14,21 +14,23 @@ from dagster import (
 )
 from dagster_aws.s3 import S3Resource
 
-from aemo_etl.configuration import LANDING_BUCKET, mibb
-from aemo_etl.definitions import bronze_vicgas_mibb_reports
+from aemo_etl.configuration import LANDING_BUCKET, gasbb
+from aemo_etl.definitions import bronze_gasbb_reports
 from aemo_etl.util import (
     get_s3_object_keys_from_prefix_and_name_glob,
     get_s3_pagination,
 )
 from configurations.parameters import DEVELOPMENT_LOCATION
 
-configurations = [getattr(mibb, name) for name in dir(mibb) if not name.startswith("_")]
+configurations = [
+    getattr(gasbb, name) for name in dir(gasbb) if not name.startswith("_")
+]
 
 
 jobs = [
-    getattr(bronze_vicgas_mibb_reports, name).definition_builder.table_asset_job
-    for name in dir(bronze_vicgas_mibb_reports)
-    if name.startswith("bronze_int")
+    getattr(bronze_gasbb_reports, name).definition_builder.table_asset_job
+    for name in dir(bronze_gasbb_reports)
+    if name.startswith("bronze_gasbb")
 ]
 
 
@@ -40,7 +42,7 @@ def has_job_failed(instance: DagsterInstance, job_name: str) -> bool:
 
 
 @sensor(
-    name="sensor_aemo_vicgas_jobs",
+    name="sensor_aemo_gasbb_jobs",
     minimum_interval_seconds=30,
     jobs=jobs,
     default_status=(
@@ -49,10 +51,10 @@ def has_job_failed(instance: DagsterInstance, job_name: str) -> bool:
         else DefaultSensorStatus.RUNNING
     ),  # Sensor is turned on by default
 )
-def sensor_aemo_vicgas_jobs(context: SensorEvaluationContext, s3: S3Resource):
+def sensor_aemo_gasbb_jobs(context: SensorEvaluationContext, s3: S3Resource):
     s3_client = s3.get_client()
     s3_source_bucket = LANDING_BUCKET
-    s3_source_prefix = "aemo/vicgas"
+    s3_source_prefix = "aemo/gasbb"
     pages = get_s3_pagination(s3_client, s3_source_bucket, s3_source_prefix)
     for configuration in configurations:
         name = configuration.table_name

@@ -4,10 +4,10 @@ from logging import Logger
 from math import ceil
 
 import polars as pl
+from botocore.exceptions import ClientError
 from dagster import TableColumn, TableSchema
 from polars._typing import PolarsDataType
 from types_boto3_s3 import S3Client
-from botocore.exceptions import ClientError
 
 # pyright: reportTypedDictNotRequiredAccess=false
 
@@ -22,11 +22,18 @@ def get_s3_pagination(
     s3_client: S3Client,
     s3_bucket: str,
     s3_prefix: str,
+    logger: Logger | None = None,
 ):
     paginator = s3_client.get_paginator("list_objects_v2")
     pages = []
+    if logger is not None:
+        logger.info(f"getting pages for 's3://{s3_bucket}/{s3_prefix}'")
     for page in paginator.paginate(Bucket=s3_bucket, Prefix=s3_prefix):
         pages.append(page)
+
+    if logger is not None:
+        logger.info(f"total pages found {len(pages)}")
+
     return pages
 
 
@@ -37,12 +44,21 @@ def get_s3_object_keys_from_prefix_and_name_glob(
     s3_file_glob: str,
     case_insensitive: bool = True,
     pages=None,
+    logger: Logger | None = None,
 ) -> list[str]:
     """given a key prefix and a globbing pattern get all the s3 object keys"""
     s3_objects: list[str] = []
     if pages is None:
-        pages = get_s3_pagination(s3_client, s3_bucket, s3_prefix)
-    for page in pages:
+        pages = get_s3_pagination(s3_client, s3_bucket, s3_prefix, logger=logger)
+
+    if logger is not None:
+        logger.info(f"grabbing files from s3://{s3_bucket}/{s3_prefix}/{s3_file_glob}")
+
+    number_of_pages = len(pages)
+
+    for i, page in enumerate(pages):
+        if logger is not None:
+            logger.info(f"processing page {i + 1} of {number_of_pages}")
         if "Contents" in page:
             original_keys = [c["Key"] for c in page["Contents"]]
             if case_insensitive:
@@ -58,6 +74,8 @@ def get_s3_object_keys_from_prefix_and_name_glob(
                 s3_objects.extend(
                     fnmatch.filter(original_keys, f"{s3_prefix}/{s3_file_glob}")
                 )
+    if logger is not None:
+        logger.info(f"found {s3_objects}")
     return s3_objects
 
 

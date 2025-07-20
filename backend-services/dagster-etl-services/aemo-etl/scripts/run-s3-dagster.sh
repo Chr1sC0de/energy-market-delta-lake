@@ -13,11 +13,11 @@
     mkdir .dagster_home
 
     DAGSTER_HOME="$(pwd)/.dagster_home"
-    DEVELOPMENT_LOCATION="local-s3"
+    DEVELOPMENT_LOCATION="local"
     AWS_DEFAULT_REGION=ap-southeast-2
-    AWS_S3_LOCKING_PROVIDER=dynamodb
+    AWS_S3_ALLOW_UNSAFE_RENAME="true"
 
-    export DAGSTER_HOME AWS_DEFAULT_REGION AWS_S3_LOCKING_PROVIDER DEVELOPMENT_LOCATION
+    export DAGSTER_HOME AWS_DEFAULT_REGION DEVELOPMENT_LOCATION AWS_S3_ALLOW_UNSAFE_RENAME
 
     uv run dagster dev -m aemo_etl.definitions --verbose
 )

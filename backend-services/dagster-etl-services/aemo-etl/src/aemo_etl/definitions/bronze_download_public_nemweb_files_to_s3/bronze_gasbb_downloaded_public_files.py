@@ -17,7 +17,7 @@ key_prefix = ["bronze", "aemo", "gasbb"]
 
 table_name = "bronze_gasbb_downloaded_public_files"
 
-s3_prefix = "aemo/gbb"
+s3_prefix = "aemo/gasbb"
 
 s3_table_location = f"s3://{BRONZE_BUCKET}/{s3_prefix}/{table_name}"
 
