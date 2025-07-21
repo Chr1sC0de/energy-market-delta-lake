@@ -5,11 +5,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
 
-from ausenergymarket_api.plots import gas as plots_gas
+from ausenergymarket_api import plots, dashboards
+from ausenergymarket_api.configurations import templates
 from configurations.parameters import (
     DEVELOPMENT_LOCATION,
 )
@@ -24,8 +24,6 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(lifespan=lifespan)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
-
-templates = Jinja2Templates(directory="templates")
 
 
 if DEVELOPMENT_LOCATION == "local":
@@ -53,11 +51,5 @@ async def index(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
 
 
-@app.get("/dashboard/generation_mix", response_class=HTMLResponse)
-async def dashboard_generation_mix(request: Request):
-    return templates.TemplateResponse(request=request, name="dashboards/electricity_prices.html")
-
-
-
-
-app.include_router(plots_gas.router, prefix="/plots/gas")
+app.include_router(plots.gas.router, prefix="/plots/gas")
+app.include_router(dashboards.gas.router, prefix="/dashboards/gas")

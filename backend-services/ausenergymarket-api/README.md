@@ -1,5 +1,13 @@
 ## get the tailwind service running so we can do our thang
 
+install tailwind if you haven't alreaedy
+
+```bash
+npm install tailwindcss @tailwindcss/cli
+```
+
+start the compilation server
+
 ```bash
 npx \
     @tailwindcss/cli \
@@ -19,6 +27,5 @@ uvicorn \
     --reload \
     --reload-include=*.html \
     --reload-include=*.css \
-    --reload-include=*.py 
-
+    --reload-include=*.py
 ```

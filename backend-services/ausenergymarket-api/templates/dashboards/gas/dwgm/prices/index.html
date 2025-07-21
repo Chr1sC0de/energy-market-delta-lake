@@ -1,0 +1,70 @@
+{% extends "shared/layout.html" %}
+{% block main_content %}
+<div>
+    <h3 class="text-lg font-semibold text-gray-700 mb-5">Historical Prices</h3>
+    <div class="rounded-lg shadow-md hover:shadow-lg p-2 bg-white h-[800px] w-[800px] ">
+        <!-- Responsive container -->
+        <div id="aemo-gas-dwgm-historical-prices" class="h-full w-full m-auto"></div>
+    </div>
+    <script>
+        const chartId = 'aemo-gas-dwgm-historical-prices';
+        const storageKey = 'plotly_state_dwgm';
+
+        function saveChartState(eventData) {
+            const keysToSave = [
+                'xaxis.range[0]', 'xaxis.range[1]',
+                'yaxis.range[0]', 'yaxis.range[1]'
+            ];
+            const filtered = {};
+            keysToSave.forEach(k => {
+                if (eventData[k] !== undefined) {
+                    filtered[k] = eventData[k];
+                }
+            });
+            localStorage.setItem(storageKey, JSON.stringify(filtered));
+        }
+
+        fetch("/plots/gas/dwgm/historical_prices")
+            .then((r) => r.json())
+            .then((data) => {
+                const fig = JSON.parse(data.plot);
+                fig.layout = fig.layout || {};
+                fig.layout.autosize = true;
+
+                // Initial render
+                Plotly.newPlot(chartId, fig.data, fig.layout, {
+                    responsive: true,
+                    useResizeHandler: true
+                }).then(() => {
+                    const chart = document.getElementById(chartId);
+
+                    // Restore state after chart is loaded
+                    const savedLayout = localStorage.getItem(storageKey);
+                    if (savedLayout) {
+                        const parsed = JSON.parse(savedLayout);
+                        const updates = {};
+
+                        if (parsed['xaxis.range[0]'] && parsed['xaxis.range[1]']) {
+                            updates['xaxis.range'] = [
+                                parsed['xaxis.range[0]'],
+                                parsed['xaxis.range[1]']
+                            ];
+                        }
+
+                        if (parsed['yaxis.range[0]'] && parsed['yaxis.range[1]']) {
+                            updates['yaxis.range'] = [
+                                parsed['yaxis.range[0]'],
+                                parsed['yaxis.range[1]']
+                            ];
+                        }
+
+                        Plotly.relayout(chart, updates);
+                    }
+
+                    // Track zoom/pan changes
+                    chart.on('plotly_relayout', saveChartState);
+                });
+            });
+    </script>
+</div>
+{% endblock %}
