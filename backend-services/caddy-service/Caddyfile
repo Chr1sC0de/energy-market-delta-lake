@@ -1,10 +1,10 @@
 {
     # Use Let's Encrypt staging server, comment out when using the proper ssl certificate
-    acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+    acme_ca https://acme.zerossl.com/v2/DV90
 
     email {$DEVELOPER_EMAIL}
     storage file_system {
-        root /data/caddy
+        root /data
     }
 }
 
