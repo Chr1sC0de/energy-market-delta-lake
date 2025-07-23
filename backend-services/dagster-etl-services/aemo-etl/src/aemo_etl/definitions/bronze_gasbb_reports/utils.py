@@ -1,5 +1,6 @@
 from functools import partial
 from typing import Iterable, Mapping
+from typing import Protocol
 
 from dagster import (
     AssetCheckResult,
@@ -32,12 +33,25 @@ from aemo_etl.parameter_specification import (
 from aemo_etl.util import get_lazyframe_num_rows, get_metadata_schema
 
 
-def post_process_hook(
-    _: AssetExecutionContext,
+class PostProcessHook(Protocol):
+    def __call__(
+        self,
+        context: AssetExecutionContext,
+        df: LazyFrame,
+        *,
+        primary_keys: list[str],
+        datetime_pattern: str | None = None,
+    ) -> LazyFrame: ...
+
+
+def default_post_process_hook(
+    context: AssetExecutionContext,
     df: LazyFrame,
     *,
     primary_keys: list[str],
+    datetime_pattern: str | None = None,
 ) -> LazyFrame:
+    context.log.info("post processing dataframe processing")
     schema = df.collect_schema()
     if len(schema) > 0:
         datetime_column_name = None
@@ -45,6 +59,11 @@ def post_process_hook(
             datetime_column_name = "current_date"
         elif "current_datetime" in schema:
             datetime_column_name = "current_datetime"
+        elif "LastUpdated" in schema:
+            datetime_column_name = "LastUpdated"
+
+        if datetime_pattern is None:
+            datetime_pattern = "%d %b %Y %H:%M:%S"
 
         if datetime_column_name is not None:
             df = df.with_columns(
@@ -52,7 +71,7 @@ def post_process_hook(
                 .over(
                     *primary_keys,
                     order_by=col(datetime_column_name).str.strptime(
-                        Datetime, "%d %b %Y %H:%M:%S"
+                        Datetime, datetime_pattern
                     ),
                     descending=True,
                 )
@@ -70,6 +89,7 @@ def post_process_hook(
 
         df = df.filter(col("row_num") == 0).drop("row_num")
 
+    context.log.info("finished processing dataframe processing")
     return df
 
 
@@ -104,7 +124,11 @@ def definition_builder_factory(
     group_name: str = "aemo",
     cpu: str = "256",
     memory: str = "1024",
+    post_process_hook: PostProcessHook | None = None,
+    datetime_pattern: str | None = None,
 ) -> GetMibbReportFromS3FilesDefinitionBuilder:
+    if post_process_hook is None:
+        post_process_hook = default_post_process_hook
     return GetMibbReportFromS3FilesDefinitionBuilder(
         job_tags={
             "ecs/cpu": cpu,
@@ -145,5 +169,6 @@ def definition_builder_factory(
         table_post_process_hook=partial(
             post_process_hook,
             primary_keys=primary_keys,
+            datetime_pattern=datetime_pattern,
         ),
     )

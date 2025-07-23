@@ -209,6 +209,7 @@ DagsterWebserverServiceAdmin = ecs.dagster_webserver_service.Stack(
     user_code_dependencies=[
         DagsterAemoETLUserCodeService,
     ],
+    readonly=False,
 )
 
 DagsterWebserverServiceGuest = ecs.dagster_webserver_service.Stack(

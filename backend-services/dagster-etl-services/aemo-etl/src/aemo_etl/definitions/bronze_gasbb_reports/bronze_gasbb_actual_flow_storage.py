@@ -1,9 +1,4 @@
-import pathlib as pt
-
-cwd = pt.Path(__file__).parent
-
-template = """
-from aemo_etl.configuration.gasbb.{file_stem} import (
+from aemo_etl.configuration.gasbb.bronze_gasbb_actual_flow_storage import (
     group_name,
     primary_keys,
     report_purpose,
@@ -31,25 +26,8 @@ definition_builder = definition_builder_factory(
     s3_file_glob,
     table_name,
     group_name=group_name,
+    datetime_pattern="%Y/%m/%d %H:%M:%S",
 )
 
 definitions_list.append(definition_builder.build())
-""".strip("\n")
 
-
-def main():
-    configuration_folder = cwd / "../../configuration/gasbb"
-
-    ignore = set(["bronze_gasbb_medium_term_capacity_outlook"])
-
-    for file in configuration_folder.glob("bronze*.py"):
-        file_stem = file.stem
-        if file_stem not in ignore:
-            new_file = cwd / f"{file_stem}.py"
-            new_file.write_text(template.format(file_stem=file_stem))
-
-    return
-
-
-if __name__ == "__main__":
-    main()

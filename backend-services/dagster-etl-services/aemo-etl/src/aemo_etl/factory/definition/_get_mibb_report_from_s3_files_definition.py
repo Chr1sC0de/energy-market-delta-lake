@@ -21,6 +21,8 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
     s3_source_bucket: str
     s3_source_prefix: str
     s3_file_glob: str
+    s3_target_bucket: str
+    s3_target_prefix: str
 
     def __init__(
         self,
@@ -49,6 +51,8 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
         self.s3_source_bucket = s3_source_bucket
         self.s3_source_prefix = s3_source_prefix
         self.s3_file_glob = s3_file_glob
+        self.s3_target_bucket = s3_target_bucket
+        self.s3_target_prefix = s3_target_prefix
 
         #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
         #     │                                   create the assets                                    │
