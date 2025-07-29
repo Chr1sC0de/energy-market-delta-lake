@@ -26,6 +26,7 @@ primary_keys = [
     "FlowDirection",
     "ReceiptLocation",
     "DeliveryLocation",
+    "LastUpdated",
 ]
 
 upsert_predicate = newline_join(

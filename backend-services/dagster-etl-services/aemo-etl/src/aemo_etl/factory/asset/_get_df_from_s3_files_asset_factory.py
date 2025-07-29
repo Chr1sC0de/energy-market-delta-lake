@@ -1,4 +1,5 @@
-from typing import Callable, Generator, Unpack
+from logging import Logger
+from typing import Callable, Generator, Mapping, Unpack
 
 from dagster import (
     AssetExecutionContext,
@@ -8,6 +9,7 @@ from dagster import (
 )
 from dagster_aws.s3 import S3Resource
 from polars import LazyFrame
+from polars._typing import PolarsDataType
 
 from aemo_etl.factory.asset.param_spec import AssetDefinitonParamSpec
 from aemo_etl.util import (
@@ -22,6 +24,8 @@ def get_df_from_s3_files_asset_factory(
     s3_source_file_glob: str,
     post_process_hook: Callable[[AssetExecutionContext, LazyFrame], LazyFrame]
     | None = None,
+    preprocess_hook: Callable[[Logger | None, LazyFrame], LazyFrame] | None = None,
+    table_schema: Mapping[str, PolarsDataType] | None = None,
     **asset_kwargs: Unpack[AssetDefinitonParamSpec],
 ) -> AssetsDefinition:
     asset_kwargs.setdefault("kinds", {"s3", "table", "deltalake"})
@@ -40,12 +44,22 @@ def get_df_from_s3_files_asset_factory(
             case_insensitive=True,
             logger=context.log,
         )
+        # just hardcode the removal of any compressed zip files
+        s3_object_keys = [
+            key
+            for key in s3_object_keys
+            if not any([key.lower().endswith(ignore) for ignore in [".zip"]])
+        ]
+
         df = get_df_from_s3_keys(
             s3_client=s3_client,
             s3_bucket=s3_source_bucket,
             s3_object_keys=s3_object_keys,
             logger=context.log,
+            df_hook=preprocess_hook,
+            table_schema=table_schema
         )
+
         if post_process_hook is not None:
             df = post_process_hook(context, df)
 

@@ -44,10 +44,12 @@ def test__asset(
         GetMibbReportFromS3FilesDefinitionBuilder, module.definition_builder
     )
 
+    mock_s3_data_files = list(
+        MOCK_DATA_FOLDER.glob(definition_builder.s3_file_glob, case_sensitive=False)
+    )
+
     # upload files to our mocked s3
-    for file in MOCK_DATA_FOLDER.glob(
-        definition_builder.s3_file_glob, case_sensitive=False
-    ):
+    for file in mock_s3_data_files:
         s3.upload_fileobj(
             Fileobj=BytesIO(file.read_bytes()),
             Bucket=definition_builder.s3_source_bucket,

@@ -5,7 +5,7 @@ from typing import Callable, Generator, cast
 
 from dagster import AssetExecutionContext, Output, build_asset_context
 from dagster_aws.s3 import S3Resource
-from polars import LazyFrame, read_delta, scan_delta
+from polars import LazyFrame, scan_delta
 from types_boto3_s3 import S3Client
 
 from aemo_etl.definitions import bronze_gasbb_reports

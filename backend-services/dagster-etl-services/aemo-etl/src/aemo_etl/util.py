@@ -2,6 +2,7 @@ import fnmatch
 from collections.abc import Generator, Mapping
 from logging import Logger
 from math import ceil
+from typing import Callable
 
 import polars as pl
 from botocore.exceptions import ClientError
@@ -47,6 +48,7 @@ def get_s3_object_keys_from_prefix_and_name_glob(
     logger: Logger | None = None,
 ) -> list[str]:
     """given a key prefix and a globbing pattern get all the s3 object keys"""
+
     s3_objects: list[str] = []
     if pages is None:
         pages = get_s3_pagination(s3_client, s3_bucket, s3_prefix, logger=logger)
@@ -84,6 +86,7 @@ def get_df_from_s3_keys(
     s3_bucket: str,
     s3_object_keys: list[str],
     table_schema: Mapping[str, PolarsDataType] | None = None,
+    df_hook: Callable[[Logger | None, pl.LazyFrame], pl.LazyFrame] | None = None,
     logger: Logger | None = None,
 ) -> pl.LazyFrame:
     all_dfs: list[pl.LazyFrame] = []
@@ -100,11 +103,11 @@ def get_df_from_s3_keys(
                 df = None
 
                 if key.lower().endswith(".parquet"):
-                    df = pl.read_parquet(object_bytes, schema=table_schema).lazy()
-                elif key.lower().endswith(".csv"):
-                    df = pl.read_csv(
-                        object_bytes, infer_schema_length=None, schema=table_schema
+                    df = pl.read_parquet(
+                        object_bytes, allow_missing_columns=True
                     ).lazy()
+                elif key.lower().endswith(".csv"):
+                    df = pl.read_csv(object_bytes, infer_schema_length=None).lazy()
                 else:
                     if logger is not None:
                         logger.info(f"filetype of {key} is unsupported")
@@ -113,6 +116,14 @@ def get_df_from_s3_keys(
                     df = df.with_columns(
                         pl.lit(f"s3://{s3_bucket}/{key}").alias("source_file")
                     )
+                    if df_hook is not None:
+                        df = df_hook(logger, df)
+                    if table_schema is not None:
+                        df = df.with_columns(
+                            pl.col(c).cast(d)
+                            for c, d in table_schema.items()
+                            if c in df.collect_schema()
+                        )
                     all_dfs.append(df)
             else:
                 if logger is not None:
@@ -126,6 +137,12 @@ def get_df_from_s3_keys(
         if logger is not None:
             logger.info("no valid dataframes found returning empty dataframe")
         return pl.LazyFrame(schema=table_schema)
+
+    if table_schema is not None:
+        # this will help to fill out any missing columns
+        return pl.concat(
+            [pl.LazyFrame(schema=table_schema), *all_dfs], how="diagonal_relaxed"
+        )
 
     return pl.concat(all_dfs, how="diagonal_relaxed")
 

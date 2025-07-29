@@ -9,7 +9,8 @@ from dagster import (
     define_asset_job,
 )
 from deltalake.exceptions import TableNotFoundError
-from polars import col, lit, read_delta
+from polars import col, lit, scan_delta
+from polars import len as len_
 
 from aemo_etl.configuration import BRONZE_BUCKET, Link
 from aemo_etl.factory.asset import (
@@ -53,15 +54,15 @@ def download_nemweb_public_files_to_s3_definition_factory(
 
     def default_link_filter(_: OpExecutionContext, link: Link) -> bool:
         try:
-            df = read_delta(table_path)
+            df = scan_delta(table_path)
             search_df = df.filter(
                 col("source_absolute_href") == lit(link.source_absolute_href),
                 col("source_upload_datetime")
                 == lit(link.source_upload_datetime).cast(
-                    df["source_upload_datetime"].dtype
+                    df.collect_schema()["source_upload_datetime"]
                 ),
             )
-            if len(search_df) > 0:
+            if search_df.select(len_()).collect().item() > 0:
                 return False
             return True
         except TableNotFoundError:

@@ -26,7 +26,6 @@ definition_builder = definition_builder_factory(
     s3_file_glob,
     table_name,
     group_name=group_name,
-    datetime_pattern="%d %b %Y %H:%M:%S",
 )
 
 definitions_list.append(definition_builder.build())

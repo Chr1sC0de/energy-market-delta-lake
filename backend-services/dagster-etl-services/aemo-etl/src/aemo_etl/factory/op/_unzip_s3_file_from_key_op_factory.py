@@ -39,55 +39,63 @@ def unzip_s3_file_from_key_op_factory(
         context.log.info(f"processing zip file s3://{s3_source_bucket}/{s3_source_key}")
 
         s3_client: S3Client = s3.get_client()
+        try:
+            get_object_response = s3_client.get_object(
+                Bucket=s3_source_bucket, Key=s3_source_key
+            )
 
-        get_object_response = s3_client.get_object(
-            Bucket=s3_source_bucket, Key=s3_source_key
-        )
+            s3_object_bytes_io = io.BytesIO(get_object_response["Body"].read())
 
-        s3_object_bytes_io = io.BytesIO(get_object_response["Body"].read())
+            with zipfile.ZipFile(s3_object_bytes_io) as f:
+                for file_name in f.namelist():
+                    if not file_name.endswith("/"):
+                        buffer = io.BytesIO(f.read(file_name))
 
-        with zipfile.ZipFile(s3_object_bytes_io) as f:
-            for file_name in f.namelist():
-                if not file_name.endswith("/"):
-                    buffer = io.BytesIO(f.read(file_name))
+                        extension = file_name.lower().split(".")[-1]
 
-                    extension = file_name.lower().split(".")[-1]
+                        original_buffer = buffer
+                        original_filename = file_name
 
-                    original_buffer = buffer
-                    original_filename = file_name
+                        try:
+                            # if the extension of the file is csv convert it into a parquet file
+                            if extension == "csv":
+                                file_name = file_name.lower().replace(
+                                    ".csv", ".parquet"
+                                )
+                                csv_df = read_csv(buffer, infer_schema_length=None)
+                                buffer = io.BytesIO()
+                                csv_df.write_parquet(buffer)
+                        except Exception as e:
+                            context.log.info(
+                                f"failed to convert from csv to parquet format, using original format with error message {e}"
+                            )
+                            buffer = original_buffer
+                            file_name = original_filename
 
-                    try:
-                        # if the extension of the file is csv convert it into a parquet file
-                        if extension == "csv":
-                            file_name = file_name.lower().replace(".csv", ".parquet")
-                            csv_df = read_csv(buffer, infer_schema_length=None)
-                            buffer = io.BytesIO()
-                            csv_df.write_parquet(buffer)
-                    except Exception as e:
-                        context.log.info(
-                            f"failed to convert from csv to parquet format, using original format with error message {e}"
+                        write_key = f"{s3_target_prefix}/{file_name}"
+
+                        _ = buffer.seek(0)
+
+                        s3_client.upload_fileobj(buffer, s3_target_bucket, write_key)
+                        unzipped_files.append(
+                            {"Bucket": s3_target_bucket, "Key": write_key}
                         )
-                        buffer = original_buffer
-                        file_name = original_filename
 
-                    write_key = f"{s3_target_prefix}/{file_name}"
+            get_object_response = s3_client.delete_object(
+                Bucket=s3_target_bucket, Key=s3_source_key
+            )
 
-                    _ = buffer.seek(0)
+            context.log.info(
+                f"processed s3://{s3_source_bucket}/{s3_source_key}, sending files to s3://{s3_target_bucket}/{s3_target_prefix}."
+            )
+            context.log.info(
+                f"finished cleaning file with delete_object response: {get_object_response}"
+            )
+        except s3_client.exceptions.NoSuchKey:
+            context.log.info(
+                f"no suck key found s3://{s3_source_bucket}/{s3_source_key}"
+            )
 
-                    s3_client.upload_fileobj(buffer, s3_target_bucket, write_key)
-                    unzipped_files.append(
-                        {"Bucket": s3_target_bucket, "Key": write_key}
-                    )
-
-        get_object_response = s3_client.delete_object(
-            Bucket=s3_target_bucket, Key=s3_source_key
-        )
-        context.log.info(
-            f"processed s3://{s3_source_bucket}/{s3_source_key}, sending files to s3://{s3_target_bucket}/{s3_target_prefix}."
-        )
-        context.log.info(
-            f"finished cleaning file with delete_object response: {get_object_response}"
-        )
         return unzipped_files
 
     return unzip_s3_file_op

@@ -23,14 +23,16 @@ from aemo_etl.util import (
 from configurations.parameters import DEVELOPMENT_LOCATION
 
 configurations = [
-    getattr(gasbb, name) for name in dir(gasbb) if not name.startswith("_")
+    getattr(gasbb, name)
+    for name in dir(gasbb)
+    if not name.startswith("_") and name in gasbb.__all__
 ]
 
 
 jobs = [
     getattr(bronze_gasbb_reports, name).definition_builder.table_asset_job
     for name in dir(bronze_gasbb_reports)
-    if name.startswith("bronze_gasbb")
+    if name.startswith("bronze_gasbb") and name in bronze_gasbb_reports.__all__
 ]
 
 
@@ -87,5 +89,12 @@ def sensor_aemo_gasbb_jobs(context: SensorEvaluationContext, s3: S3Resource):
                 case_insensitive=True,
                 pages=pages,
             )
+
+            s3_object_keys = [
+                key
+                for key in s3_object_keys
+                if not any([key.lower().endswith(ignore) for ignore in [".zip"]])
+            ]
+
             if len(s3_object_keys) > 0:
                 yield RunRequest(job_name=asset_job_name)

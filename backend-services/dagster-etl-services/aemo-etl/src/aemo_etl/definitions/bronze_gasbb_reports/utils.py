@@ -1,6 +1,6 @@
 from functools import partial
-from typing import Iterable, Mapping
-from typing import Protocol
+from logging import Logger
+from typing import Callable, Iterable, Mapping, Protocol
 
 from dagster import (
     AssetCheckResult,
@@ -41,6 +41,7 @@ class PostProcessHook(Protocol):
         *,
         primary_keys: list[str],
         datetime_pattern: str | None = None,
+        datetime_column_name: str | None = None,
     ) -> LazyFrame: ...
 
 
@@ -50,17 +51,17 @@ def default_post_process_hook(
     *,
     primary_keys: list[str],
     datetime_pattern: str | None = None,
+    datetime_column_name: str | None = None,
 ) -> LazyFrame:
     context.log.info("post processing dataframe processing")
     schema = df.collect_schema()
     if len(schema) > 0:
-        datetime_column_name = None
-        if "current_date" in schema:
-            datetime_column_name = "current_date"
-        elif "current_datetime" in schema:
-            datetime_column_name = "current_datetime"
-        elif "LastUpdated" in schema:
-            datetime_column_name = "LastUpdated"
+        # I know this is terrible but I'm probably going to not reuse this pattern in future ingestion, don't break what's working
+        if datetime_column_name is None:
+            if "current_date" in schema:
+                datetime_column_name = "current_date"
+            elif "current_datetime" in schema:
+                datetime_column_name = "current_datetime"
 
         if datetime_pattern is None:
             datetime_pattern = "%d %b %Y %H:%M:%S"
@@ -90,7 +91,7 @@ def default_post_process_hook(
         df = df.filter(col("row_num") == 0).drop("row_num")
 
     context.log.info("finished processing dataframe processing")
-    return df
+    return df.unique()
 
 
 def asset_check_factory(
@@ -125,7 +126,9 @@ def definition_builder_factory(
     cpu: str = "256",
     memory: str = "1024",
     post_process_hook: PostProcessHook | None = None,
+    preprocess_hook: Callable[[Logger | None, LazyFrame], LazyFrame] | None = None,
     datetime_pattern: str | None = None,
+    datetime_column_name: str | None = None,
 ) -> GetMibbReportFromS3FilesDefinitionBuilder:
     if post_process_hook is None:
         post_process_hook = default_post_process_hook
@@ -146,6 +149,7 @@ def definition_builder_factory(
                     target=s3_table_location,
                     mode="merge",
                     delta_merge_options=PolarsDeltaLakeMergeParamSpec(
+                        merge_schema=True,
                         predicate=upsert_predicate,
                         source_alias="s",
                         target_alias="t",
@@ -166,9 +170,11 @@ def definition_builder_factory(
         s3_target_prefix=s3_prefix,
         table_schema=table_schema,
         check_factories=[partial(asset_check_factory, primary_keys=primary_keys)],
+        preprocess_hook=preprocess_hook,
         table_post_process_hook=partial(
             post_process_hook,
             primary_keys=primary_keys,
             datetime_pattern=datetime_pattern,
+            datetime_column_name=datetime_column_name,
         ),
     )

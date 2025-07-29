@@ -1,5 +1,6 @@
 from dagster import AssetExecutionContext
-from polars import LazyFrame, scan_delta
+from polars import LazyFrame, col, scan_delta
+from polars import len as len_
 
 from aemo_etl.configuration.gasbb.bronze_gasbb_medium_term_capacity_outlook import (
     group_name,
@@ -29,26 +30,43 @@ def medium_term_capacity_post_process_hook(
     df: LazyFrame,
     *,
     primary_keys: list[str],
-    datetime_pattern: str | None = "%Y/%m/%d %H:%M:%S",
+    datetime_pattern: str | None = None,
+    datetime_column_name: str | None = None,
 ) -> LazyFrame:
     context.log.info("ensuring rows are not duplicates")
     df = default_post_process_hook(
-        context, df, primary_keys=primary_keys, datetime_pattern=datetime_pattern
+        context,
+        df,
+        primary_keys=primary_keys,
+        datetime_pattern=datetime_pattern,
+        datetime_column_name=datetime_column_name,
     )
     try:
-        output = (
-            df.join(
-                scan_delta(s3_table_location),
-                how="anti",
-                on=primary_keys,
-                nulls_equal=True,
-            )
-            .collect()
-            .lazy()
-        )
+        context.log.info("ensuring rows don't already exist based off primary keys")
+        target_df = scan_delta(s3_table_location)
 
+        context.log.info(
+            f"initial rows for processed data = {df.select(len_()).collect().item()}"
+        )
+        type_matched_df = df.with_columns(
+            col(col_).cast(type_)
+            for col_, type_ in target_df.collect_schema().items()
+            if col_ in df.collect_schema()
+        )
+        output = type_matched_df.join(
+            scan_delta(s3_table_location),
+            how="anti",
+            on=primary_keys,
+            nulls_equal=True,
+        ).lazy()
+        context.log.info(
+            f"final rows for processed data = {output.select(len_()).collect().item()}"
+        )
         return output
-    except Exception:
+    except Exception as e:
+        context.log.info(
+            f"unable to complete post-process for rows with error message {e}"
+        )
         return df
 
 
@@ -64,7 +82,6 @@ definition_builder = definition_builder_factory(
     table_name,
     group_name=group_name,
     post_process_hook=medium_term_capacity_post_process_hook,
-    datetime_pattern="%Y/%m/%d %H:%M:%S",
 )
 
 definitions_list.append(definition_builder.build())

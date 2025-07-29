@@ -22,6 +22,7 @@ primary_keys = [
     "GasDate",
     "FacilityId",
     "LocationId",
+    "LastUpdated"
 ]
 
 upsert_predicate = newline_join(
@@ -38,7 +39,7 @@ table_schema = {
     "Supply": Float64,
     "TransferIn": Float64,
     "TransferOut": Float64,
-    "HeldinStorage": Float64,
+    "HeldInStorage": Float64,
     "FacilityId": Int64,
     "FacilityType": String,
     "CushionGasStorage": Float64,

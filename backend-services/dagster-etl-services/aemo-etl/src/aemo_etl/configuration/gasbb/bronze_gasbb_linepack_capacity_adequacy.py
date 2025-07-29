@@ -21,6 +21,7 @@ s3_table_location = f"s3://{BRONZE_BUCKET}/{s3_prefix}/{table_name}"
 primary_keys = [
     "GasDate",
     "FacilityId",
+    "LastUpdated"
 ]
 
 upsert_predicate = newline_join(

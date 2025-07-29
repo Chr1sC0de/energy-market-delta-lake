@@ -1,3 +1,4 @@
+from logging import Logger
 from typing import Any, Callable, Mapping
 
 from dagster import (
@@ -37,6 +38,7 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
         s3_target_bucket: str,
         s3_target_prefix: str,
         table_schema: Mapping[str, PolarsDataType] | Schema,
+        preprocess_hook: Callable[[Logger | None, LazyFrame], LazyFrame] | None = None,
         table_post_process_hook: (
             Callable[[AssetExecutionContext, LazyFrame], LazyFrame] | None
         ) = None,
@@ -68,6 +70,8 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
             s3_source_prefix=s3_source_prefix,
             s3_source_file_glob=s3_file_glob,
             post_process_hook=table_post_process_hook,
+            preprocess_hook=preprocess_hook,
+            table_schema=table_schema,
             description="" if asset_description is None else asset_description,
         )
 
@@ -113,6 +117,5 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
         return Definitions(
             assets=[self.table_asset, self.compact_and_vacuum_asset],
             jobs=[self.table_asset_job],
-            # sensors=[self.asset_sensor],
             asset_checks=self.asset_checks,
         )

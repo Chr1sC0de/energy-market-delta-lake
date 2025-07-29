@@ -1,6 +1,6 @@
 from dagster import OpExecutionContext
 from deltalake.exceptions import TableNotFoundError
-from polars import col, lit, read_delta
+from polars import col, lit, read_delta, scan_delta, len as len_
 
 from aemo_etl.configuration import BRONZE_BUCKET, LANDING_BUCKET
 from aemo_etl.configuration._configuration import Link
@@ -37,15 +37,15 @@ def ignore_duplicate_folder_filter(_: OpExecutionContext, link: Link) -> bool:
     try:
         if "DUPLICATE" in link.source_absolute_href:
             return False
-        df = read_delta(s3_table_location)
+        df = scan_delta(s3_table_location)
         search_df = df.filter(
             col("source_absolute_href") == lit(link.source_absolute_href),
             col("source_upload_datetime")
             == lit(link.source_upload_datetime).cast(
-                df["source_upload_datetime"].dtype
+                df.collect_schema()["source_upload_datetime"]
             ),
         )
-        if len(search_df) > 0:
+        if search_df.select(len_()).collect().item() > 0:
             return False
         return True
     except TableNotFoundError:

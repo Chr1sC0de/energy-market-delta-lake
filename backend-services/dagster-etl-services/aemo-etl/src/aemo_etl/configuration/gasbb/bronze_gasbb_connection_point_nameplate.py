@@ -22,6 +22,7 @@ primary_keys = [
     "ConnectionPointId",
     "FacilityId",
     "EffectiveDate",
+    "LastUpdated",
 ]
 
 upsert_predicate = newline_join(

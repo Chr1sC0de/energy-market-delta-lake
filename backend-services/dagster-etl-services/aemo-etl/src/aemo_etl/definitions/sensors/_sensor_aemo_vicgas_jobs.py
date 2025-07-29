@@ -85,5 +85,12 @@ def sensor_aemo_vicgas_jobs(context: SensorEvaluationContext, s3: S3Resource):
                 case_insensitive=True,
                 pages=pages,
             )
+
+            s3_object_keys = [
+                key
+                for key in s3_object_keys
+                if not any([key.lower().endswith(ignore) for ignore in [".zip"]])
+            ]
+
             if len(s3_object_keys) > 0:
                 yield RunRequest(job_name=asset_job_name)

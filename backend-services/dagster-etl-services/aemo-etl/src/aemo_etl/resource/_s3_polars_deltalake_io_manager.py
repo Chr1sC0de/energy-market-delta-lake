@@ -63,12 +63,14 @@ class S3PolarsDeltaLakeIOManager(IOManager):
             if len(collected_obj.columns) > 0:
                 return_obj = collected_obj.write_delta(**kwargs)
                 if kwargs.get("mode", "error") == "merge":
-                    (
+                    context.log.info(f"merging data with settings {kwargs}")
+                    merge_results = (
                         cast(TableMerger, return_obj)
                         .when_matched_update_all()
                         .when_not_matched_insert_all()
                         .execute()
                     )
+                    context.log.info(f"merged data with results {merge_results}")
 
         except TableNotFoundError:
             kwargs["mode"] = "error"
