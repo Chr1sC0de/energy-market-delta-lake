@@ -1,5 +1,6 @@
 from dagster import AssetExecutionContext
-from polars import LazyFrame, lit
+from deltalake.exceptions import TableNotFoundError
+from polars import LazyFrame, lit, scan_delta
 
 from aemo_etl.configuration.gasbb.bronze_gasbb_nodes_connection_points import (
     group_name,
@@ -14,9 +15,46 @@ from aemo_etl.configuration.gasbb.bronze_gasbb_nodes_connection_points import (
     upsert_predicate,
 )
 from aemo_etl.definitions.bronze_gasbb_reports.utils import (
+    default_post_process_hook,
     definition_builder_factory,
 )
 from aemo_etl.register import definitions_list
+
+
+def custom_postprocess_hook(
+    context: AssetExecutionContext,
+    df: LazyFrame,
+    *,
+    primary_keys: list[str],
+    datetime_pattern: str | None = None,
+    datetime_column_name: str | None = None,
+) -> LazyFrame:
+    context.log.info("ensuring rows are not duplicates")
+    schema = df.collect_schema()
+
+    for key in primary_keys:
+        if key not in schema:
+            df = df.with_columns(lit(None).alias(key))
+
+    # filter out already existing columns
+
+    df = default_post_process_hook(
+        context,
+        df,
+        primary_keys=primary_keys,
+        datetime_pattern=datetime_pattern,
+        datetime_column_name=datetime_column_name,
+    )
+
+    try:
+        df = df.join(
+            scan_delta(s3_table_location), how="anti", on=primary_keys, nulls_equal=True
+        )
+    except TableNotFoundError:
+        ...
+
+    return df
+
 
 definition_builder = definition_builder_factory(
     report_purpose,

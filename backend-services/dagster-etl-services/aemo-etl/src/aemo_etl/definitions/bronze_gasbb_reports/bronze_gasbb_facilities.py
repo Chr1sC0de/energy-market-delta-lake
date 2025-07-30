@@ -1,5 +1,6 @@
 from dagster import AssetExecutionContext
-from polars import LazyFrame, lit
+from deltalake.exceptions import TableNotFoundError
+from polars import LazyFrame, lit, scan_delta
 
 from aemo_etl.configuration.gasbb.bronze_gasbb_facilities import (
     group_name,
@@ -20,7 +21,7 @@ from aemo_etl.definitions.bronze_gasbb_reports.utils import (
 from aemo_etl.register import definitions_list
 
 
-def null_columns_hook(
+def custom_postprocess_hook(
     context: AssetExecutionContext,
     df: LazyFrame,
     *,
@@ -35,6 +36,8 @@ def null_columns_hook(
         if key not in schema:
             df = df.with_columns(lit(None).alias(key))
 
+    # filter out already existing columns
+
     df = default_post_process_hook(
         context,
         df,
@@ -42,6 +45,14 @@ def null_columns_hook(
         datetime_pattern=datetime_pattern,
         datetime_column_name=datetime_column_name,
     )
+
+    try:
+        df = df.join(
+            scan_delta(s3_table_location), how="anti", on=primary_keys, nulls_equal=True
+        )
+    except TableNotFoundError:
+        ...
+
     return df
 
 
@@ -56,7 +67,7 @@ definition_builder = definition_builder_factory(
     s3_file_glob,
     table_name,
     group_name=group_name,
-    post_process_hook=null_columns_hook,
+    post_process_hook=custom_postprocess_hook,
 )
 
 definitions_list.append(definition_builder.build())
