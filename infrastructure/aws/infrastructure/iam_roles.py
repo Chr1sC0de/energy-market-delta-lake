@@ -4,7 +4,7 @@ from aws_cdk import Stack as _Stack, CfnOutput
 from aws_cdk import aws_iam as iam
 from constructs import Construct
 
-from configurations.parameters import DEVELOPMENT_ENVIRONMENT, NAME_PREFIX
+from infrastructure.configurations import DEVELOPMENT_ENVIRONMENT, NAME_PREFIX
 from infrastructure.utils import StackKwargs
 
 

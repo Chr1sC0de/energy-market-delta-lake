@@ -8,10 +8,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
 
-from ausenergymarket_api import plots, dashboards
-from ausenergymarket_api.configurations import templates
-from configurations.parameters import (
+from ausenergymarket_api import dashboards, plots
+from ausenergymarket_api.configurations import (
     DEVELOPMENT_LOCATION,
+    templates,
 )
 
 

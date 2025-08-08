@@ -10,7 +10,6 @@ requires-python = ">=3.13"
 dependencies = [
     "boto3>=1.38.3",
     "bs4>=0.0.2",
-    "configurations",
     "dagster==1.10.15",
     "dagster-aws>=0.26.12",
     "dagster-docker>=0.26.12",
@@ -48,9 +47,6 @@ dev = [
     "pytest-xdist>=3.6.1",
     "types-boto3[dynamodb]>=1.38.3",
 ]
-
-[tool.uv.sources]
-configurations = { path = "configurations" }
 
 [tool.basedpyright]
 include = ["src"]

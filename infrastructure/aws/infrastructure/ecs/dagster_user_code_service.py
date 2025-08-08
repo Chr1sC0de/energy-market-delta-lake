@@ -8,7 +8,7 @@ from aws_cdk import aws_iam as iam
 from aws_cdk import aws_ssm as ssm
 from constructs import Construct
 
-from configurations.parameters import DEVELOPMENT_ENVIRONMENT
+from infrastructure.configurations import DEVELOPMENT_ENVIRONMENT
 from infrastructure import ecr, ecs, postgres, security_groups, service_discovery, vpc
 from infrastructure.utils import StackKwargs
 

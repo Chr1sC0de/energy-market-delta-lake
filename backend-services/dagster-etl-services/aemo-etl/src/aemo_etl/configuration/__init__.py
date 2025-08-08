@@ -1,5 +1,11 @@
 import os
 from aemo_etl.configuration._configuration import (
+    NAME_PREFIX,
+    STACK_PREFIX,
+    DEVELOPMENT_ENVIRONMENT,
+    DEVELOPMENT_LOCATION,
+    ADMINISTRATOR_IPS,
+    SHARED_PREFIX,
     IO_MANAGER_BUCKET,
     LANDING_BUCKET,
     BRONZE_BUCKET,
@@ -17,6 +23,12 @@ from aemo_etl.configuration._configuration import (
 
 
 __all__ = [
+    "NAME_PREFIX",
+    "STACK_PREFIX",
+    "DEVELOPMENT_ENVIRONMENT",
+    "DEVELOPMENT_LOCATION",
+    "ADMINISTRATOR_IPS",
+    "SHARED_PREFIX",
     "IO_MANAGER_BUCKET",
     "LANDING_BUCKET",
     "BRONZE_BUCKET",

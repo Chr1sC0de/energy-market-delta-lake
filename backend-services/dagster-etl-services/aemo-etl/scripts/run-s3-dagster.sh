@@ -2,8 +2,6 @@
 (
     cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit
 
-    ./scripts/get-common.sh
-
     uv sync
 
     if [[ -d .dagster_home ]]; then
@@ -11,6 +9,8 @@
     fi
 
     mkdir .dagster_home
+
+    . .venv/bin/activate
 
     DAGSTER_HOME="$(pwd)/.dagster_home"
     DEVELOPMENT_LOCATION="local"

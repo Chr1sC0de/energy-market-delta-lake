@@ -5,7 +5,7 @@ from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_ssm as ssm
 from infrastructure.utils import StackKwargs
 from cdk_fck_nat import FckNatInstanceProvider
-from configurations.parameters import ADMINISTRATOR_IPS, SHARED_PREFIX
+from infrastructure.configurations import ADMINISTRATOR_IPS, SHARED_PREFIX
 from constructs import Construct
 
 

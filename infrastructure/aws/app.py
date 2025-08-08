@@ -3,7 +3,7 @@ import os
 
 import aws_cdk as cdk
 
-from configurations.parameters import DEVELOPMENT_ENVIRONMENT, STACK_PREFIX
+from infrastructure.configurations import DEVELOPMENT_ENVIRONMENT, STACK_PREFIX
 from infrastructure import (
     bastion_host,
     buckets,

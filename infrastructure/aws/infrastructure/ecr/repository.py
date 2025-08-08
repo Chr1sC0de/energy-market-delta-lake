@@ -7,7 +7,7 @@ from aws_cdk import aws_ecr_assets as ecr_assets
 from cdk_ecr_deployment import DockerImageName, ECRDeployment
 from constructs import Construct
 
-from configurations.parameters import SHARED_PREFIX
+from infrastructure.configurations import SHARED_PREFIX
 from infrastructure.utils import StackKwargs
 
 

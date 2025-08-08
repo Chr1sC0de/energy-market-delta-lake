@@ -2,8 +2,6 @@
 (
     cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit
 
-    ./scripts/get-common.sh
-
     uv sync
 
     if [[ -d .dagster_home ]]; then
@@ -11,6 +9,8 @@
     fi
 
     mkdir .dagster_home
+
+    . .venv/bin/activate
 
     DAGSTER_HOME="$(pwd)/.dagster_home"
     export DAGSTER_HOME
@@ -37,19 +37,4 @@
 
     uv run moto_server -H "127.0.0.1" -p "5000" &
 
-    aws dynamodb create-table \
-        --table-name delta_log \
-        --attribute-definitions AttributeName=tablePath,AttributeType=S AttributeName=fileName,AttributeType=S \
-        --key-schema AttributeName=tablePath,KeyType=HASH AttributeName=fileName,KeyType=RANGE \
-        --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5
-
-    aws s3api create-bucket \
-        --bucket dev-energy-market-bronze \
-        --region $AWS_DEFAULT_REGION \
-        --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
-
-    aws s3api create-bucket \
-        --bucket dev-energy-market-landing \
-        --region $AWS_DEFAULT_REGION \
-        --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
 )

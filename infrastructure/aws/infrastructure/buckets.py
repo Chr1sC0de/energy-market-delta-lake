@@ -11,7 +11,7 @@ from aws_cdk.aws_kms import IKey
 from constructs import Construct
 from jsii import Number
 
-from configurations.parameters import (
+from infrastructure.configurations import (
     DEVELOPMENT_ENVIRONMENT,
     NAME_PREFIX,
     STACK_PREFIX,

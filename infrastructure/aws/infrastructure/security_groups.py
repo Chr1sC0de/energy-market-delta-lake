@@ -5,7 +5,7 @@ from aws_cdk import Stack as _Stack
 from aws_cdk import aws_ec2 as ec2
 from constructs import Construct
 
-from configurations.parameters import ADMINISTRATOR_IPS
+from infrastructure.configurations import ADMINISTRATOR_IPS
 from infrastructure import vpc
 from infrastructure.utils import StackKwargs
 

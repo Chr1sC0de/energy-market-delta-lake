@@ -10,11 +10,11 @@ from polars import Date as PolarsDate
 from polars import Datetime as PolarsDatetime
 from polars import col, lit, scan_delta, when
 
-from ausenergymarket_api.plots.gas import router
-from configurations.parameters import (
+from ausenergymarket_api.configurations import (
     DEVELOPMENT_ENVIRONMENT,
     NAME_PREFIX,
 )
+from ausenergymarket_api.plots.gas import router
 
 
 @router.get("/dwgm/historical_prices")

@@ -9,7 +9,7 @@ from aws_cdk import aws_route53 as route53
 from aws_cdk import aws_ssm as ssm
 from constructs import Construct
 
-from configurations.parameters import SHARED_PREFIX
+from infrastructure.configurations import SHARED_PREFIX
 from infrastructure import ecr, fastapi_authentication_server, security_groups, vpc
 from infrastructure.utils import StackKwargs
 

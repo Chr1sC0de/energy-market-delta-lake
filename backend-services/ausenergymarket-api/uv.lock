@@ -141,7 +141,6 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "boto3" },
-    { name = "configurations" },
     { name = "deltalake" },
     { name = "fastapi", extra = ["standard"] },
     { name = "fastapi-cache2", extra = ["memcache"] },
@@ -166,7 +165,6 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "boto3", specifier = ">=1.39.0" },
-    { name = "configurations", directory = "configurations" },
     { name = "deltalake", specifier = ">=1.0.2" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.115.14" },
     { name = "fastapi-cache2", extras = ["memcache"], specifier = ">=0.2.2" },
@@ -340,20 +338,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/e9/a8/fb783cb0abe2b5fde
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e6/75/49e5bfe642f71f272236b5b2d2691cf915a7283cc0ceda56357b61daa538/comm-0.2.2-py3-none-any.whl", hash = "sha256:e6fb86cb70ff661ee8c9c14e7d36d6de3b4066f1441be4063df9c5009f0a64d3", size = 7180, upload-time = "2024-03-12T16:53:39.226Z" },
 ]
-
-[[package]]
-name = "configurations"
-version = "0.1.0"
-source = { directory = "configurations" }
-dependencies = [
-    { name = "requests" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "requests", specifier = ">=2.32.3" }]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.3.5" }]
 
 [[package]]
 name = "cryptography"

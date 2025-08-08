@@ -3,6 +3,7 @@ import secrets
 import string
 import typing
 
+import requests
 from aws_cdk import (
     Environment,
     IStackSynthesizer,
@@ -11,6 +12,10 @@ from aws_cdk import (
     custom_resources,
 )
 from boto3 import client
+
+
+def get_administrator_ip_address() -> str:
+    return requests.get("https://api.ipify.org").text
 
 
 class StackKwargs(typing.TypedDict, total=False):

@@ -18,7 +18,7 @@ from aemo_etl.resource import (
     S3PolarsDeltaLakeIOManager,
     S3PolarsParquetIOManager,
 )
-from configurations.parameters import DEVELOPMENT_LOCATION
+from aemo_etl.configuration import DEVELOPMENT_LOCATION
 from aemo_etl.definitions.sensors import sensor_aemo_vicgas_jobs, sensor_aemo_gasbb_jobs
 
 definitions = Definitions.merge(

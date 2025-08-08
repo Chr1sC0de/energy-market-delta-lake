@@ -20,7 +20,7 @@ from aemo_etl.util import (
     get_s3_object_keys_from_prefix_and_name_glob,
     get_s3_pagination,
 )
-from configurations.parameters import DEVELOPMENT_LOCATION
+from aemo_etl.configuration import DEVELOPMENT_LOCATION
 
 configurations = [
     getattr(gasbb, name)

@@ -1,5 +1,5 @@
 import os
-from configurations.utils import get_administrator_ip_address
+from infrastructure.utils import get_administrator_ip_address
 
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮

@@ -27,7 +27,7 @@ from aemo_etl.parameter_specification import (
     PolarsDeltaLakeMergeParamSpec,
 )
 from aemo_etl.util import newline_join
-from configurations.parameters import DEVELOPMENT_LOCATION
+from aemo_etl.configuration import DEVELOPMENT_LOCATION
 
 # pyright: reportUnknownMemberType=false, reportMissingTypeStubs=false
 

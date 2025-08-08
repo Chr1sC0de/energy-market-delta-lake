@@ -7,7 +7,7 @@ from aws_cdk import aws_iam as iam
 from aws_cdk import aws_ssm as ssm
 from constructs import Construct
 
-from configurations.parameters import SHARED_PREFIX
+from infrastructure.configurations import SHARED_PREFIX
 from infrastructure import security_groups, vpc
 from infrastructure.utils import StackKwargs
 
