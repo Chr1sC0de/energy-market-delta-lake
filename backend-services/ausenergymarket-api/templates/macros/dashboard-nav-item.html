@@ -1,0 +1,9 @@
+{% macro nav_item(url, icon, label, request) %}
+<li class="nav-item">
+    <a href="{{ url }}" class="nav-link {{ 'active' if request.url.path == url else '' }}">
+        <span class="nav-icon"><i class="fas fa-{{ icon }}"></i></span>
+        {{ label }}
+    </a>
+</li>
+{% endmacro %}
+

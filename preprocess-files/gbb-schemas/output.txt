@@ -1,0 +1,1790 @@
+4. Format of BB report s 
+4.1. Actual Flow And Storage  
+4.1.1.  Description  
+ 
+Transaction report 
+name  GASBB_ACTUAL_FLOW_STORAGE / GASBB_ACTUAL_FLOW  _STORAGE_LAST_31  
+Purpose  The report shows Daily Production, Flow and Storage data aggregated by Facility Id for an outlook 
+period.    
+Update interval  Daily  
+Production 
+Frequency   GASBB_ ACTUAL_FLOW  _STORAGE is updated daily / GASBB_ ACTUAL_FLOW  
+_STORAGE_LAST_31 is updated within 30 minutes of receiving new data.  
+Report Period  GASBB_ ACTUAL_FLOW  _STORAGE report shows historic records back to Sep 2018. 
+GASBB_ ACTUAL_FLOW  _STORAGE_LAST_31 shows records from the last 31 days.  
+4.1.2.  Data report format  
+ 
+The following fields are available in the report.  
+Field name  Description  Data type  Example   
+GasDate  Date of gas day. Timestamps are  ignored.  
+The gas day as defined in  the pipeline contra ct or 
+market rules.  datetime  2018 -09-23 00:00:00  
+FacilityName  Name of the facility . varchar (100)  Berwyndale to Wallumbilla 
+Pipeline  
+State  Name of the state.  char(3)  NSW  
+LocationId  Unique location identifier  int 520345  
+LocationName  Name of the location.  varchar (100)  Sydney  (SYD)  
+Demand  Usage type expressed in TJ. Three decimal 
+places is not shown if the value has trailing zeros 
+after the decimal place.  number (15,3) 32.232  
+25.2 (if Actual Delivery 
+Quantity is 25.200)  
+Supply  Usage type expressed in TJ. Three decimal 
+places is not shown if the value has trailing zeros 
+after the decimal place.  number (15,3) 32.232  
+25.2 (if Actual Delivery 
+Quantity is 25.200)  
+TransferIn  Usage type. Only applicable to BB pipelines . 
+Three decimal places is not shown if the value has 
+trailing zeros after the decimal place.  number (15,3) 32.232  
+25.2 (if Actual Delivery 
+Quantity is 25.200)  
+TransferOut  Usage type. Only applicable to BB pipelines . 
+Three decimal places is not shown if the value has 
+trailing zeros after the decimal place.  number (15,3) 32.232  
+25.2 (if Actual Delivery 
+Quantity is 25.200)  
+HeldinStorage  Three decimal places is not shown if the value has 
+trailing zeros after the decimal place.  number (15,3) 32.232  
+25.2 (if Actual  Quantity is 
+25.200)  
+FacilityId  A unique AEMO defined Facility id entifier.  int 520345  
+FacilityType  The type of facility  Varchar(40)  BBGPG, COMPRESSOR, 
+PIPE, PROD, STOR, 
+LNGEXPORT,  
+LNGIMPORT, BBLARGE  
+CushionGasStorage  The quantity of gas that must be retained in the 
+Storage or LNG Import facility in order to maintain 
+the required pressure and deliverability rates  number (15,3) 32.232  
+25.2 (if Actual Quantity is 
+25.200)  
+LastUpdated  The date data was last submitted by a participant 
+based on the report query.  varchar(20)  2018 -09-04T00:00:00+10:00  Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 12 of 45 
+ 
+4.1.3.  Report filters  
+ 
+Actual Flow and Storage reports in JSON format can be filtered by:  
+• State  
+• Facility Type  
+• Facilities  
+4.1.4.  Example report  
+Vist the AEMO developer portal  for exampl e for HTTPS GET request examples.  
+4.2. Connection Point Nameplate Rating  
+4.2.1.  Description  
+ 
+Transaction report 
+name  GASBB_CONNECTION_POINT_NAMEPLATE  _FUTURE  
+Purpose  This report displays the nameplate rating for each connection point id connected to a BB pipeline or 
+BB compression facility.  
+This report will be a combination of all submissions for Gate Station Nameplate Rating and Connection 
+Point Nameplate Rating  
+Production 
+frequency  Daily  
+Report period  Future records.  
+4.2.2.  Data report format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example  
+ConnectionPointName  Connection Point name where the connection point 
+is associated to a BB Pipeline  or BB compression 
+facility  varchar(200)  Albion Park  
+ConnectionPointId  A unique AEMO defined connection point  identifier.  int  1201001  
+FacilityName  The facility reported.  varchar(50)  Eastern Gas 
+Pipeline  
+FacilityId  Unique facility identifier.  int  520047  
+FacilityType  The type of facility  varchar( 40) COMPRESSOR, 
+PIPE  
+OwnerName  The reporting facility owner.  varchar( 50) Jemena Eastern 
+Gas Pipeline (1) 
+Pty Ltd  
+OwnerId  The reporting facility owner ID  bigint  138 
+OperatorName  Name of the operator for the facility.  varchar( 50) Jemena Eastern 
+Gas Pipeline (1) 
+Pty Ltd  
+OperatorId  The facility operator’s ID  bigint  138 
+CapacityQuantity  Standing capacity quantity  in TJ to three decimal places. 
+Three decimal places is not required if the value has 
+trailing zeros after the decimal place.  number (18,3 ) 32.232  
+25.2 (if the value is 
+25.200)  
+EffectiveDate  Gas day date that corresponding record takes effect. Any 
+time component supplied will be ignored.  datetime  2018 -03-23 
+Description  Reasons or comments directly related to the capacity 
+quantity or the change in quantity provided in relation to a 
+BB facility and the times, dates, or duration for which Varchar (255)   Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 13 of 45 
+ 
+Field name  Description  Data type  Example  
+those quantities or changes in quantities are expected to 
+apply  
+LastUpdated  The date data was last submitted by a participant based 
+on the report query.  varchar(20)  2018 -09-
+04T00:00:00+10:00  
+4.2.3.  Report filters  
+Connection Point Nameplate Rating reports in JSON format can be filtered by:  
+• Effective Date  
+• FacilityIds  
+• ConnectionPointIds  
+4.2.4.  Example report  
+Vist the  AEMO developer portal  for example for HTTPS GET request examples.  
+4.3. Linepack Capacity Adeq uacy  
+4.3.1.  Description  
+ 
+Transaction report 
+name  GASBB_LINEPACK_CAPACITY_ADEQUACY_FULL_LIST / 
+GASBB_LINEPACK_CAPACITY_ADEQUACY_FUTURE  
+Purpose  Provides a report for the Linepack Capacity Adequacy for each Pipeline for the current and next 2 gas 
+days (D to D+2).  
+Production 
+frequency  Daily GASBB_ LINEPACK_CAPACITY_ADEQUACY_FULL_LIST is updated daily / 
+GASBB_ LINEPACK_CAPACITY_ADEQUACY_FUTURE is updated within 30 minutes of a submission  
+Report period  GASBB_ LINEPACK_CAPACITY_ADEQUACY_FULL_LIST includes historical and future data / 
+GASBB_ LINEPACK_CAPACITY_ADEQUACY_FUTURE includes current and the next 2 Gas Days (D 
+to D+2)  
+4.3.2.  Data report format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example   
+GasDate  Date of gas day. Timestamps are  ignored.  
+The gas day as defined in  the pipeline contra ct or market 
+rules.  datetime  2018 -09-23 
+FacilityId  A unique AEMO defined Facility id entifier.  int 520345  
+FacilityName  The name of the BB facility.  varchar(255)  Berwyndale to 
+Wallumbilla Pipeline  
+FacilityType  The type of facility  Varchar(40)  COMPRESSOR, PIPE  
+Flag The flags are traffic light colours (Green, Amber, Red) 
+indicating the LCA status for each pipeline . For more 
+information, see the table below.  char(5)  RED;AMBER;GREEN  
+Description  Free text facility use is restricted to a description for 
+reasons or comments directly related to the change in the 
+LCA flag and the times, dates, or duration for which those 
+changes are expected to apply .  varchar(800)  Compressor outage. 2 
+week outage.  
+LastUpdated  The date when the record was last updated.  datetime  2018 -02-19 Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 14 of 45 
+ 
+LCA flags for BB pipeline s 
+LCA 
+Flag BB Pipelines  Declared Transmission System  Compression Facility  
+GREEN  Pipeline is able to 
+accommodate increased gas 
+flows  and the conditions for 
+Amber or Red are not met.  Pipeline is able to accommodate increased 
+gas flows  and the conditions for Amber or 
+Red are not met.  Compressor is able to 
+accommodate increased gas flows 
+and the conditions for Amber or 
+Red are not met.  
+AMBER  Pipeline is flowing at full 
+capacity, but no involuntary 
+curtailment of ‘firm’ load is 
+likely or happening.  A notice of a threat to system security has 
+been issued indicating that out -of-merit -
+order gas may be scheduled , but no 
+involuntary curtailment of load is likely or 
+happening.  Compressor is flowing at full 
+capacity, but no involuntary 
+curtailment of  
+‘firm’ shippers is likely or 
+happening.  
+RED  One of the following 
+conditions are met:  
+• Involuntary curtailment of 
+‘firm’ load is likely or 
+happening.  
+• Linepack has, or is 
+forecast to, drop below 
+minimum operating levels  ‘Non-firm’ LNG is scheduled or i nvoluntary 
+curtailment of load is likely or happening.  Involuntary curtailment of ‘firm’ 
+shippers is likely or happening.  
+4.3.3.  Report filters  
+ 
+Linepack Capacity Adequacy reports can be filtered by:  
+• GasDate  
+• FacilityId, multiple  Facility Ids, or all Facility Ids.  
+4.3.4.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  
+4.4. Locations  
+4.4.1.  Description  
+ 
+Transaction report 
+name  GASBB_LOCATIONS_LIST  
+Purpose  This report lists all production and demand location s within the Bulletin Board system.  
+Production 
+frequency  Daily  
+Report period  Current records.  
+4.4.2.  Data report  format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example   
+Location Name  Name of the Location.  varchar( 1040) Sydney (SYD)  
+Location Id  Unique Location  identifier . int 520345  
+State  Location  char(3)  NSW  
+LocationType  Type of location  Varchar(40)  Head office  
+Description  Free text description of the Location  including 
+boundaries and the basis of measurement.  varchar( 800) Sydney Basin  
+Last Updated  Date the list of locations was last updated.  Date  2018 -9-20 16:15:18  Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 15 of 45 
+ 
+4.4.3.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  
+4.5. Medium Term Capacity Ou tlook  
+4.5.1.  Description  
+ 
+Transaction report 
+name  GASBB_MEDIUM_TERM  _OUTLOOK_FULL_LIST / GASBB_MEDIUM_TERM  
+_OUTLOOK_FUTURE  
+Purpose  Provides a report o f the Capacity Outlook for the medium term  to identify possible impact to future 
+supply.  
+Production 
+frequency  GASBB_MEDIUM_TERM _OUTLOOK_FULL_LIST is updated daily /  
+GASBB_MEDIUM_TERM _OUTLOOK_FUTURE  is updated within 30 minutes of receiving new data.   
+Report period  GASBB_MEDIUM_TERM _OUTLOOK_FULL_LIST contains historic and future outlooks / 
+GASBB_MEDIUM_TERM _OUTLOOK_FUTURE  contains the current and future outlooks.  
+4.5.2.  Data report  format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example   
+FacilityId  Unique plant identifier . Int 520345  
+FacilityName  Name of the plant . varchar( 255) Berwyndale to 
+Wallumbilla Pipeline  
+FromGasDate  Date of gas day. Any time component supplied is 
+ignored. The gas day is  applicable under the 
+pipeline contract or  market rules.  datetime  2018 -09-23 
+ToGasDate  Date of gas day. Any time component supplied is 
+ignored. The gas day is that applicable under the 
+pipeline contract or market rules . datetime  2018 -09-23 
+CapacityType  Capacity type values can be:  
+STORAGE —  Holding capacity in storage; or  
+MDQ — Daily maximum firm capacity under the 
+expected operating conditions.  varchar(20)  STORAGE; MDQ  
+OutlookQuantity  Capacity outlook quantity in TJ to three decimal 
+places. Three decimal places is not required if the 
+value has trailing zeros after the decimal place.  number (18,3) 200.531 
+190.2 (if the value is 
+190.200)  
+ 
+FlowDirection  Gas flow direction. Values can be either:  
+Receipt: The flow of gas into the BB storage  facility  
+or LNG import  
+Delivery: The  flow of gas out of the BB storage 
+facility  or LNG export  
+Processed: The flow direction type only used for 
+capacities. For LNG export, it represents the 
+amount of gas that can be processed to a liquefied 
+state on a gas day. For LNG import, it represents 
+the amount of gas that can be received and 
+processed into storage on a gas day.  
+Delivery LNG Storage: The flow direction type only 
+used for capacities. For LNG import, it represents 
+the amount of gas withdrawn for storage for 
+processing to a gaseous state on a gas day.  char(20)  RECEIPT ; DELIVERY; 
+PROCESSED; 
+DELIVERYLNGSTOR  
+CapacityDescription  Free text to describe the meaning of the capacity 
+number provided, including a description of 
+material factors that impact  the capacity number 
+and any other relevant information. Will only be 
+shown for Pipelines, Compression facilities and 
+may be shown for LNGImport facilities.  varchar( 1000 ) 2018 -09-23 Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 16 of 45 
+ 
+Field name  Description  Data type  Example   
+ReceiptLocation  The Connection Point Id that best represents the 
+receipt location . The Receipt Location in 
+conjunction with the Delivery L ocation indicate s the 
+capacity directi on and location.  
+Note : Applicable to BB pipelines  only. For other BB 
+facilities , this field is populated with -1. Int 1200001  
+ 
+-1 (for BB facilities  
+other than BB pipelines ) 
+ReciptLocationName  The name of the receipt location  varhar(200)  Berwyndale Entry 
+Delivery Stream  
+DeliveryLocation  The Connection Point Id that best represents the 
+delivery  location. This location in conjunction with 
+the Receipt  Location indicates the capacity 
+direction and location.  
+Note : Applicable to BB pipelines  only. For other BB 
+facilities , this field is populated with -1. Int 1300056  
+ 
+-1 (for BB facilities  
+other than BB pipelines ) 
+DeliveryLocationName  The name of the delivery location  varhar(200)  Silver Springs Delivery 
+Stream  
+Description  Comments about  the quantity or change in Outlook 
+Quantity relating to the Facility  Id, and the times, 
+dates, o r duration which those quantities or 
+changes in quantities . varchar( 1000 ) EGP from Longford to 
+Horsley Park, 
+compressor outage. 2 
+week outage.  
+LastUpdated  Date and time record was last modified . Datetime  2022 -08-11 
+4.5.3.  Report filters  
+ 
+Reports in JSON format can be filtered by:  
+• Facility Id, multiple values, or all facilities  
+• From Gas Date  
+• To Gas Date  
+• Capacity Type  
+4.5.4.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  
+4.6. Nameplate Rating  
+4.6.1.   Description  
+ 
+Transaction report 
+name  GASBB_NAMEPLATE_RATING_FULL_LIST / GASBB_NAMEPLATE_RATING_CURRENT  
+Purpose  This report displays the standing nameplate capacity of all BB facilities  and BB compression facility . 
+Nameplate rating relates to maximum daily quantities in TJ under normal operating conditions.  
+Production 
+frequency  GASBB_NAMEPLATE_RATING_FULL_LIST is updated annually / 
+GASBB_NAMEPLATE_RATING_CURRENT  is updated within 30 minutes of receiving new data.  
+Report period  GASBB_NAMEPLATE_RATING_FULL_LIST contains historical records / 
+GASBB_NAMEPLATE_RATING_CURRENT  contains the current nameplate.  
+4.6.2.  Data report format  
+ 
+The following fields are provided in the report.  
+Data element  Description  Data type  Example  / Allowed 
+values  
+FacilityName  Facility name associated with the Facility Id.  varchar(100)  APLNG Pipeline  Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 17 of 45 
+ 
+Data element  Description  Data type  Example  / Allowed 
+values  
+FacilityId  A unique AEMO defined Facility  identifier.  Int 520345  
+FacilityType  Facility type associated with the Facility Id.  varchar(40)  PIPE; PROD; STOR  
+CapacityType  Capacity type can be either:  
+• Storage: Holding capacity in storage , or 
+• MDQ: Daily maximum firm capacity (name plate) 
+under the expected operating conditions adjusted 
+for any facility  that is ‘mothballed’, 
+decommissioned or down -rated and / or cannot 
+be recalled within 1 week, planned maintenance 
+excepted. Reflec ts any long terms changes 
+(greater than 12 months) . varchar(20)  STORAGE; MDQ  
+CapacityQuantity  Standing capacity quantity  in TJ to three decimal 
+places. Three decimal places is not required if the 
+value has trailing zeros after the decimal place.  number (18,3)  32.232  
+25.5 (if the value is 
+25.500)  
+FlowDirection  Gas flow direction. Values can be either:  
+Receipt: The flow of gas into the BB storage  facility  
+or LNG export  
+Delivery: The  flow of gas out of the BB storage 
+facility  or LNG import  
+Processed: The flow direction type only used for 
+capacities. For LNG export, it represents the 
+amount of gas that can be processed to a liquefied 
+state on a gas day. For LNG import, it represents 
+the amount of gas that can be received and 
+processed into st orage on a gas day.  
+Delivery LNG Storage: The flow direction type only 
+used for capacities. For LNG import, it represents 
+the amount of gas withdrawn from storage for 
+processing to a gaseous state on a gas day.  
+NONE – will be displayed for all other BB facilities  
+and BB compression facilities.  varchar(20)  RECEIPT ; DELIVERY;  
+PROCESSED; 
+DELIVERYLNGSTOR; 
+NONE;  
+CapacityDescription  
+ Free text to describe the meaning of the capacity 
+number provided, including relevant assumptions 
+made in the calculation of the capacity number and 
+any other relevant information. Only provided for 
+BB pipelines  or BB compression facilities . varchar( 1000 ) This transmission 
+capacity is the amount 
+of gas that the Culcairn 
+delivery point is able to 
+withdraw from this 
+pipeline facility  
+ReceiptLocation  The Connection Point Id that best represents the 
+receipt location . The Receipt Location in 
+conjunction with the Delivery L ocation indicate s the 
+capacity directi on and location.  
+Note : Applicable to BB pipelines  only. For other BB 
+facilities , this field is populated with -1. Int 1200001  
+ 
+-1 (for BB facilities  
+other than BB pipelines ) 
+ReceiptLocationName  The name of the receipt location  varhar(200)  DDP to APLNG Pipeline  
+DeliveryLocation  The Connection Point Id that best represents the 
+delivery  location. This location in conjunction with 
+the Receipt  Location indicates the capacity 
+direction and location.  
+Note : Applicable to BB pipelines  only. For other BB 
+facilities , this field is populated with -1. Int 1300056  
+ 
+-1 (for BB facilities  
+other than BB pipelines ) 
+DeliveryLocationName  The name of the delivery location  varhar(200)  Curtis Island  
+EffectiveDate  Gas day date that corresponding record takes 
+effect. Any time component supplied will be 
+ignored.  Datetime  2018 -03-23 
+Description  Free text facility  use is restricted to a description for 
+reasons or comments directly related to the quantity 
+or the change in  quantity provided in relation to  a 
+BB facility  (such as daily production data, 
+nameplate rating, LCA flag , etc.) , and the  times, 
+dates, or duration  for which those quantities or 
+changes in quantities are expected to apply.  varchar( 1000 ) increase in nameplate 
+pipeline capacity due to 
+completion of VNIE 
+Phase B  
+LastUpdated  Date and time record was last updated.  Datetime  2016 -10-23 19:58:58  Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 18 of 45 
+ 
+4.6.3.  Report filters  
+ 
+Nameplate Rating reports in JSON format can be filtered by:  
+• Effective Date  
+• Capacity Types  
+• Facility Id  
+• Facility Types  
+• Flow Directions  
+4.6.4.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  
+4.7. Nominations And Forecasts  
+4.7.1.  Description  
+ 
+Transaction report 
+name  GASBB_NOMINATION_AND_FORECAST / GASBB_NOMINATION_AND_FORECAST_NEXT_7  
+Purpose  The report shall return Nomination and Forecast data submitted to the market .  
+Nomination and Forecasts  data shall be aggregated by BB facility . 
+Production 
+frequency  GASBB_NOMINATION_AND_FORECAST is updated daily. 
+GASBB_NOMINATION_AND_FORECAST_NEXT_7  is typically updated within 30 minutes of 
+receiving new data  
+Report period  GASBB_NOMINATION_AND_FORECAST report contain historical data as well as nominations for 
+D+0, D+1, D+2, D+3, D+4, D+5, and D+6. GASBB_NOMINATION_AND_FORECAST_NEXT_7 report 
+covers the outlook period of  D+0, D+1, D+2, D+3, D+4, D+5, and D+6. 
+4.7.2.  Data report format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Examples  
+GasDate  Date of gas day .  Datetime  2018 -09-23 
+FacilityName  The name of the BB facility.  varchar ( 100) Berwyndale to 
+Wallumbilla Pipeline  
+FacilityType  Facility type associated with the Facility Id.  varchar(40)  PIPE; PROD; STOR; 
+COMPRESSOR; 
+LNGIMPORT  
+State  Name of the state.  char(3)  NSW  
+LocationName  Name of the location.  varchar ( 100) Sydney  (SYD)  
+Demand  Usage type expressed in TJ. Three decimal places 
+is not shown if the value has trailing zeros after the 
+decimal place.  number (18,3)  32.232  
+25.2 (if Actual 
+Delivery Quantity is 
+25.200)  
+Supply  Usage type expressed in TJ. Three decimal places 
+is not shown if the value has trailing zeros after the 
+decimal place.  number (18,3)  32.232  
+25.2 (if Actual 
+Delivery Quantity is 
+25.200)  
+TransferIn  Usage type expressed in TJ. Only applicable to BB 
+pipelines . Three decimal places is not shown if the 
+value has trailing zeros after the decimal place.  number (18,3) 32.232  
+25.2 (if Actual 
+Delivery Quantity is 
+25.200)  Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 19 of 45 
+ 
+Field name  Description  Data type  Examples  
+TransferOut  Usage type expressed in TJ. Only applicable to BB 
+pipelines . Three decimal places is not shown if the 
+value has trailing zeros after the decimal place.  number (18,3) 32.232  
+25.2 (if Actual 
+Delivery Quantity is 
+25.200)  
+FacilityId  A unique AEMO defined Facility id entifier.  Int 520345  
+LocationId  Unique location identifier  Int 520345  
+LastUpdated  Date file was last updated.  Datetime  2018 -09-
+04T00:00:00+10:00  
+4.7.3.  Report filters  
+ 
+Nomination and F orecasts report in JSON format can be filtered by:  
+• Gas Date  
+• FacilityId . 
+• LocationId  
+The report  output contains  the latest submission  for that gas day. For requested  past dates, this 
+is the day ahead or on -the-day nominations and forecast submi ssion. For future  dates, the 
+output is the latest nominations and forecast submission.  
+4.7.4.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  
+ 
+4.8. Pipeline Connection Flow  
+4.8.1.  Description  
+ 
+Transaction report 
+name  GASBB_PIPELINE_CONNECTION_FLOW / GASBB_PIPELINE_CONNECTION_FLOW_LAST_31  
+Purpose  Provides a report for the Daily production and usage at each Connection Point.  
+Production 
+Frequency  GASBB_PIPELINE_CONNECTION_FLOW is updated daily. 
+GASBB_ PIPELINE_CONNECTION_FLOW _LAST_31 is typically updated within 30 minutes of 
+receiving new data  
+Report Period  GASBB_PIPELINE_CONNECTION_FLOW contains historical data from Sep 2018 
+GASBB_ PIPELINE_CONNECTION_FLOW _LAST_31 contains data from the last 31 days.  
+4.8.2.  Data report format  
+ 
+The following fields are available in each row of the report.  
+Field name  Description  Data type  Example   
+GasDate  Date of gas day. Timestamps are  ignored.  
+The gas day as defined in  the pipeline contra ct or 
+market rules.  datetime  2018 -09-23 
+00:00:00  
+FacilityId  A unique AEMO defined Facility id entifier.  Int 520345  
+FacilityName  Name of the facility.  varchar (100 ) Berwyndale to 
+Wallumbilla 
+Pipeline  
+ConnectionPointId  A unique AEMO defined connection point  
+identifier.  Int 1200001  
+ConnectionPointName  Names of the connection point.  varchar (100 ) Longford  Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 20 of 45 
+ 
+Field name  Description  Data type  Example   
+FlowDirection  A conditional value of either:  
+RECEIPT —  A flow of gas into the BB pipeline , or 
+DELIVERY —  A flow of gas out of the BB 
+pipeline . varchar(100)  RECEIPT ; 
+DELIVERY  
+ActualQuantity  The actual flow quantity reported in TJ to the 
+nearest terajoule with three decimal places.  number (18,3)  32.232  
+25.2 (if Actual 
+Quantity is 
+25.200)  
+State  Location.  varchar(5)  NSW  
+LocationName  Name of the Location.  varchar( 100) Sydney (SYD)  
+LocationId  Unique Location  identifier . int 520345  
+Quality  Indicates whether meter data for the submission 
+date is available. Values can be either:  
+OK — Connection point Actual Quantity data for 
+gas flow into or out of a BB facility based on meter 
+data, or  
+NIL — Connection Point Actual Quantity data for 
+gas flow into or out of a BB facility cannot be 
+determined due to an operational issue.  
+OOR  — Connection Point Actual Quantity data is 
+OOR (Out of R ange ) where the submitted value 
+exceeds the High Range set for a Connection 
+Point’s Capacity . 
+Not Available  — Connection Point Actual Quantity 
+data fo r the gas flow into or out of the BB facility  
+has not been submitted by the BB reporting e ntity 
+for the gas date.  
+ varchar( 100) OK; NIL; OOR, 
+Not Available  
+LastUpdated  The date data was last submitted by the 
+participant  Datetime  2018 -09-04 
+00:00:00  
+4.8.3.  Report filters  
+ 
+Pipeline Connection Flow reports in JSON format can be filtered by:  
+• Gas Date  
+• Facility Id  
+4.8.4.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  
+4.9. Contact Details  
+4.9.1.  Description  
+ 
+Transaction report 
+name  GASBB_CONTACTS_LIST  
+Purpose  Provides a report of registered contact details for each participant.  
+Update interval  Daily  
+Report period  Current  records.  
+4.9.2.  Data report  format  
+ 
+The following fields are provided in the report.  Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 21 of 45 
+ 
+Field name  Description  Data type  Example   
+PersonId  Person unique identifier  Int 123456  
+PersonName  Name of the person  varchar( 255) John Smith  
+CompanyName  Company name  associated with  the person.  varchar( 050) Bolder Mining Company  
+CompanyId  Company ID associated with the person  Int 13 
+Position  Job title of person . varchar( 40) Energy Procurement Manager  
+Email  Email address of person . varchar( 255) john.smith@boldermining.com.au  
+Last Updated  Date and time the record was last modified . datetime  2018 -08-14 
+4.9.3.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  
+4.10.  Participants  
+4.10.1.  Description  
+ 
+Transaction report 
+name  GASBB_PARTICIPANTS_LIST  
+Purpose  Provides a report of registered participants  
+Update interval  Daily  
+Report period  Current  records  
+4.10.2.  Data report  format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example   
+Company  Name  Company name  
+associated with  the 
+person.  varchar (50 ) AGL 
+Company  Id Company ID associated 
+with the person  Int 261 
+OrganisationTypeName  The type of organisation  Varchar(40)  BB Reporting Entity  
+ABN Australian Business 
+Number for the participant  varchar(30)  99006005989  
+Company Phone  Company phone details  varchar (30) 03 9609 8000  
+Locale  Location for the 
+participant  varchar (40 ) Hawthorn  
+Last Updated  Last changed details  Datetime  2018 -12-20 
+Address Type  Type of address  varchar(40 ) Head office  
+Address  Mailing address for the 
+company  varchar(120 ) 530 Collins St Melbourne  
+State  State where the company 
+is located  Char( 5) VIC,NSW,QLD,SA,TAS  
+Postcode  Postcode details  varchar(4)  3001  
+Company Fax  Company fax details  varchar(30)  03 9234 8766  
+4.10.3.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 22 of 45 
+ 
+4.11.  Shippers List  
+4.11.1.  Description  
+ 
+Transaction report 
+name  GASBB_SHIPPERS_LIST / GASBB_SHIPPERS_FULL_LIST  
+Purpose  A list shippers who have contracted primary Storage, Compression or Pipeline capacity.  
+Update interval  Daily  
+Report period  GASBB_SHIPPERS_LIST contains current records / GASBB_SHIPPERS_FULL_LIST includes 
+historic records  
+4.11.2.  Data report format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example s 
+EffectiveDate  Gas date that corresponding record takes 
+effect.  datetime  2018 -02-23 
+FacilityId  A unique AEMO defined Facility Id entifier.  int 520345  
+FacilityName  The name of the BB facility.  varchar(255)  Berwyndale to Wallumbilla 
+Pipeline  
+FacilityType  The type of facility  Varchar(40)  COMPRESSOR, PIPE, 
+STOR  
+CompanyId  Unique identifier for the company who 
+operates the facility  Int 94 
+OperatorName  The name of the company who operates the 
+facility  Varchar(50)  APA Group  
+ShipperName  The name of the shipper who holds the 
+capacity  Varchar(20)  AGL Wholesale Gas 
+Limited  
+LastUpdated  The date data was last submitted  Datetime  2018 -09-04 00:00:00  
+4.12.  Short Term Capacity Outlo ok 
+4.12.1.  Description  
+ 
+Transaction report 
+name  GASBB_ SHORT_TERM_CAPACITY_OUTLOOK / 
+GASBB_ SHORT_TERM_CAPACITY_OUTLOOK_FUTURE  
+Purpose  This report displays the expected daily capacity of a BB facility for the next seven days  
+Update Interval   GASBB_SHORT_TERM_CAPACITY_OUTLOOK is updated daily. 
+GASBB_SHORT_TERM_CAPACITY_OUTLOOK_FUTURE is typically updated within 30 minutes of 
+receiving new data.  
+Report period  GASBB_SHORT_TERM_CAPACITY_OUTLOOK contains historic outlooks. 
+GASBB_SHORT_TERM_CAPACITY_OUTLOOK_FUTURE contains data in the seven day outlook 
+window.  
+4.12.2.  Data report format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example s 
+GasDate  Date of gas day. Timestamps are  ignored.  
+The gas day as defined in  the pipeline 
+contra ct or market rules.  Datetime  2018 -02-23 
+FacilityId  A unique AEMO defined Facility Id entifier.  Int 520345  
+FacilityName  The name of the BB facility.  varchar(100)  Berwyndale to 
+Wallumbilla Pipeline  Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 23 of 45 
+ 
+Field name  Description  Data type  Example s 
+CapacityType  Capacity type values can be:  
+STORAGE —  Holding capacity in 
+storage; or  
+MDQ — Daily maximum firm capacity 
+under the expected operating conditions.  varchar(20)  STORAGE; MDQ  
+CapacityTypeDescription  Description of the Capacity Type  Varchar(800)  Daily maximum firm 
+capacity under the 
+expected operating 
+conditions  
+OutlookQuantity  Capacity outlook quantity to three decimal 
+places. Three decimal places is not 
+required if the value has trailing zeros 
+after the decimal place.  number (18,3) 1234.5 00 
+25.2 (if the value is 
+25.200)  
+ 
+FlowDirection  Gas flow direction. Only valid for BB 
+storage, LNG export, or LNG import 
+facilit ies. Flow Direction can be:  
+Receipt: The flow of gas into the BB 
+storage or LNG export facility  
+Delivery: The flow of gas out of the BB 
+storage or LNG import facility . 
+Processed: Flow direction type used by 
+LNG Export and LNG Import facilities.  
+For LNG export, it represents the amount 
+of gas that can be processed to a liquefied 
+state on a gas day.  
+For LNG import, it represents the amount 
+of gas that can be received and processed 
+into storage on a gas day.  
+DeliveryLngStor: Flow direction type used 
+by LNG import facility. It represents the 
+amount of gas that can be withdrawn from 
+storage for processing to a gaseous state 
+on a gas day.  varchar(20)  RECEIPT ; DELIVERY;  
+PROCESSED; 
+DELIVERYLNGSTOR  
+CapacityDescription  Free text to describe the meaning of the 
+capacity number provided, including a 
+description of material factors that impact 
+the capacity number and any other 
+relevant information.  Only valid for BB 
+pipeline  and BB compression facilitie s. varchar(1000)  Longford to Horsley 
+Park via EGP  
+ReceiptLocation  The Connection Point Id that best 
+represents the receipt location . The 
+Receipt Location in conjunction with the 
+Delivery L ocation indicate s the capacity 
+directi on and location.  
+Note : Applicable to BB pipelines  only. For 
+other BB facilities , this field is populated 
+with -1. Int 1200001  
+ 
+-1 (for BB facilities  
+other than BB 
+pipelines ) 
+DeliveryLocation  The Connection Point Id that best 
+represents the delivery  location. This 
+location in conjunction with the Receipt  
+Location indicates the capacity direction 
+and location.  
+Note : Applicable to BB pipelines  only. For 
+other BB facilities , this field is populated 
+with -1. Int 1300056  
+ 
+-1 (for BB facilities  
+other than BB 
+pipelines ) 
+ReceiptLocation Name  A description of the Receipt Location. 
+Only valid for BB pipelines . varchar(200)  Silver Springs Delivery 
+Stream  
+DeliveryLocation Name  A description of the Delivery Location. 
+Only valid for BB pipelines . varchar(200)  BWP from SWQP 
+(Wallumbilla) Delivery 
+Stream  
+Description  Comments about  the quantity or change in 
+Flow Direction relating to the Facility  Id, 
+and the times, dates, o r duration which 
+those quantities or changes in quantities . varchar(1000)  EGP from Longford to 
+Horsley Park , 
+compressor outage. 2 
+week outage.  Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 24 of 45 
+ 
+Field name  Description  Data type  Example s 
+LastUpdated  Date the record  was last modified . datetime  2018-02-23 
+4.12.3.  Report filters  
+ 
+Short Term Capacity Outlook reports in JSON format can be filtered by:  
+• Gas Date  
+• Facility ID  
+• Capacity Type  
+• Flow Direction  
+4.12.4.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  
+4.13.  Uncontracted Capacity Outlook Report  
+4.13.1.  Description  
+ 
+Transaction report 
+name  GASBB_ UNCONTRACTED_CAPACITY_FULL_LIST / 
+GASBB_ UNCONTRACTED_CAPACITY_FUTURE  
+Purpose  Provides a report of the Uncontracted primary firm capacity outlook on BB pipelines, BB storage, BB 
+compression, BB Production and LNG import facilities for the next 36 months  
+Update interval  GASBB_ UNCONTRACTED_CAPACITY _FULL_LIST is updated monthly/ 
+GASBB_ UNCONTRACTED_CAPACITY _FUTURE is generally updated within 30 minutes of receiving 
+new data  
+Report period  GASBB_ UNCONTRACTED_CAPACITY _FULL_LIST contains historical records / 
+GASBB_ UNCONTRACTED_CAPACITY _FUTURE contains only future looking outlooks  
+4.13.2.  Data report format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example   
+FacilityId  Unique plant identifier . Int 520345  
+Facility Name  Name of the plant . varchar( 100) Berwyndale to 
+Wallumbilla Pipeline  
+FacilityType  Facility type associated with the Facility Id.  varchar(40)  PIPE; PROD; STOR; 
+COMPRESSOR; 
+LNGIMPORT  
+OutlookMonth  The month that the uncontracted capacity is 
+available.  Int 04 
+OutlookYear  The year that the uncontracted capacity is 
+available.  Int 2018  
+CapacityType  Capacity type can be either:  
+• Storage: Holding capacity in storage , or 
+• MDQ: Uncontracted primary firm capacity on 
+the BB facility that the BB provider/operator 
+has available for sale or that it will have 
+available for sale : 
+– For a BB storage facility, this is primary firm 
+capacity for storage in the BB storage 
+facility; primary firm capacity for injection of 
+gas into the BB storage facility; and primary varchar(20)  STORAGE; MDQ  Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 25 of 45 
+ 
+Field name  Description  Data type  Example   
+firm capacity for withdrawal of gas from the 
+BB storage facility.  
+– For an LNG import facility, the primary firm 
+capacity for storage in the LNG import 
+facility; and the primary firm capacity for 
+regasification by the LNG import facility,  
+– For any other BB facility this is the primary 
+firm capacity of the facility.: Daily maximum 
+firm capacity (name  
+OutlookQuantity  Outlook Quantity as the daily average quantity 
+across the month in TJ to three decimal places. 
+Three decimal places is not required if the value 
+has trailing zeros after the decimal place.  number (18,3) 200.531 
+190.2 (if the value is 
+190.200)  
+ 
+FlowDirection  Gas flow direction. Values can be either:  
+RECEIPT —  A flow of gas into the BB facility , or 
+DELIVERY —  A flow of gas out of the BB facility . 
+ varchar(20)  RECEIPT ; DELIVERY  
+CapacityDescription  Free text to describe the meaning of the capacity 
+number provided, including a description of 
+material factors that impact  the capacity number 
+and any other relevant information.  varchar( 1000 ) 2018 -09-23 
+ReceiptLocation  The Connection Point Id that best represents the 
+receipt location . The Receipt Location in 
+conjunction with the Delivery L ocation indicate s 
+the capacity directi on and location.  
+Note : Applicable to BB pipelines  only. For other 
+BB facilities , this field is populated with -1. Int 1200001  
+ 
+-1 (for BB facilities  
+other than BB 
+pipelines ) 
+ReceiptLocationName  The name of the receipt location  Varchar(200)  Berwyndale Entry 
+Delivery Stream  
+DeliveryLocation  The Connection Point Id that best represents the 
+delivery  location. This location in conjunction with 
+the Receipt  Location indicates the capacity 
+direction and location.  
+Note : Applicable to BB pipelines  only. For other 
+BB facilities , this field is populated with -1. Int 1300056  
+ 
+-1 (for BB facilities  
+other than BB 
+pipelines ) 
+DeliveryLocationName  The name of the delivery location  Varchar(200)  Silver Springs 
+Delivery Stream  
+Description  Comments about  the quantity or change in 
+Outlook Quantity relating to the Facility  Id, and 
+the times, dates, o r duration which those 
+quantities or changes in quantities . varchar( 1000 ) Tipton Uncontracted 
+capacity description  
+LastUpdated  Date and time record was last modified . Datetime  2018 -04-20 
+4.13.3.  Report filters  
+ 
+Reports in JSON format can be filtered by:  
+• Facility Id, multiple Facility Id values, or all facilities  
+• Outlook Month  
+• Outlook Year  
+• Capacity Type  
+4.13.4.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 26 of 45 
+ 
+4.14.  LNG Shipments  
+4.14.1.  Description  
+ 
+Transaction report 
+name  GASBB_LNG_EXPO_IMPO_SHIPMENTS  
+Purpose  This report displays a list of all LNG shipments  
+Update Interval  Monthly  
+Report period  Contains all LNG Shipments  
+4.14.2.  Data report format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example s 
+TransactionId  Unique  shipment identifier  Varchar(40)  123456  
+FacilityId  Unique facility  identifier . Int 123456  
+FacilityName  Name of the facility  Varchar(100)  ABC LNG  
+VolumePJ  Volume of the shipment in PJ  Numeric(10,3)  2.345  
+ShipmentDate  For LNG export facility, the departure 
+date. For LNG import facility , the date 
+unloading commences at the LNG import 
+facility  Datetime  2022-04-20 
+VersionDateTime  Time a successful submission is accepted 
+by AEMO systems  Datetime  2022-04-20 
+4.14.3.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  
+4.15.  Facility Developments  
+4.15.1.  Description  
+ 
+Transaction report 
+name  GASBB_ FACILITYDEVELOPMENTS  
+Purpose  This report displays a list of all Facility Developments  
+Production 
+frequency  Generally updated within 30 minutes of receiving new data  
+Report period  Contains all current Facility Developments  
+4.15.2.  Data report format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example s 
+DevFacilityId  A unique AEMO defined Development 
+Facility Id entifier  Int 123456  
+ProposedName  The name of the Facility development  Varchar(100)  Austral LNG  
+EffectiveDate  The effective date of the submission  Datetime  2022-04-20 
+FacilityType  The facility development type  Varchar(40)  LNGExport  
+MinNameplate  The lower estimate of nameplate rating 
+capacity  Numeric(18,3)  111.321  
+MaxNameplate  The upper estimate of nameplate rating 
+capacity  Numeric(18,3)  143.321  Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 27 of 45 
+ 
+Field name  Description  Data type  Example s 
+Location  The location of the development facility  Varchar(200)  Sydney  
+PlannedCommissionFrom  The planned start date of commissioning  Varchar(7)  2022-05-20 
+PlannedCommissionTo  The planned end date of commissioning  Varchar(7)  2022-09-20 
+DevelopmentStage  The current stage of the development 
+facility being, PROPOSED, COMMITTED, 
+CANCELLED, ENDED  Varchar(200)  PROPOSED; 
+COMMITTED; 
+CANCELLED; ENDED  
+RelatedFacilityId  Any facility ID’s related to the 
+development facility  Int 123456  
+RelatedFacilityName  The name of any facility ID’s related to the 
+development facility  Varchar(100)  LNG Storage 
+Dandenong  
+Comments  Any additional comments included in the 
+submission  Varchar(400)  Backhaul capacity will 
+be 24TJ/day  
+ReportingEntity  The entity who is reporting for the facility 
+development  Varchar(30)   
+4.15.3.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  
+4.16.  Field Interest Information  
+4.16.1.  Description  
+ 
+Transaction report 
+name  GASBB_FIELD_INTEREST_INFORMATION  
+Purpose  This report displays information about Field Interests  
+Production 
+frequency  Daily  
+Report period  Contains all current BB field interest details  
+4.16.2.  Data report format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example s 
+FieldInterestId  A unique AEMO defined Field Interest 
+Identifier  Int 123456  
+FieldName  The name of the Field in which the 
+Field Interest is located  Varchar(100)   
+CompanyID  The company ID of the responsible 
+participant  Int 13 
+CompanyName  The company name of the responsible 
+participant  Varchar(50)  Bolder Mining Company  
+Description  Additional information relating to the 
+field Varchar(400)   
+EffectiveDate  The date on which the record takes 
+effect  Datetime  2022 -06-23 
+PetroleumTenements  The petroleum tenements which are 
+the subject of the BB field interest  Varchar(300)  Petroleum Tenement 3A  
+TenementShare  The field interest share of the 
+petroleum tenements  Numeric(10,3)  50.544  
+ProcessingFacilities  The processing facility used to 
+process gas from the field  Varchar(300)  Existing Facilities  
+ResourceClassification  Classification of the resources in the 
+field as conventional or 
+unconventional  Varchar(100)  Conventional / 
+Unconventional  Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 28 of 45 
+ 
+Field name  Description  Data type  Example s 
+ResourceSubClassification  Any further sub -classification  of the 
+resources  Varchar(100)  Eg: Coalbed methane, basin -
+centred gas, tight gas, tight 
+oil, gas hydrates, natural 
+bitumen, oil shale  
+NatureOfGas  The nature of the gas in the field using 
+classifications in the BB Procedures  Varchar(100)  Eg: Dry gas, gas condensate 
+or gas found in conjunction 
+with oil  
+AnnualReportingDate  Annual date when information must be 
+updated  Date  2022 -08-11 
+BasinId  The Id of the geological basin in which 
+the field is located  Bigint  594321  
+BasinName  The name of the geological basin in 
+which the field is located  Varchar  Gippsland  
+State  The state the field interest is in  Varchar(5)  VIC,NSW,QLD,SA,NT,TAS  
+OperatingState  The operating state (Active or 
+Inactive) of the field  Varchar  ACTIVE,INACTIVE  
+VersionDateTime  Time a successful submission is 
+accepted by AEMO systems  Datetime  2022 -08-11 
+4.16.3.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  
+} 
+4.17.  Field Interests  
+4.17.1.  Description  
+ 
+Transaction report 
+name  GASBB_FIELD_INTEREST  
+Purpose  This report displays information about Field Interests  
+Production 
+frequency  Daily  
+Report period  Contains all current BB field interests  
+4.17.2.  Data report format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example s 
+FieldName  The name of the Field in which the Field 
+Interest is located  Varchar(100)   
+FieldInterestId  A unique AEMO defined Field Interest 
+Identifier  Int 123456  
+CompanyId  The company ID of the responsible 
+participant  Int 13 
+CompanyName  The company name of the responsible 
+participant  Varchar(50)  Bolder Mining Company  
+GroupMembers  The name of the group member  Varchar(50)   
+PercentageShare  The BB field interest (as a percentage) of 
+each member of the field owner group  Varchar  32% 
+EffectiveDate  The date on which the record takes effect  Datetime  2021 -06-08 
+4.17.3.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 29 of 45 
+ 
+4.18.  Reserves And Resources  
+4.18.1.  Description  
+ 
+Transaction report 
+name  GASBB_2P_SENSETIVITIES_ALL / GASBB_2P_SENSITIVITIES_LAST_QUARTER  
+Purpose  This report displays information about Field Reserves and Resources  
+Production 
+frequency  Both GASBB_2P_SENSETIVITIES_ALL and GASBB_2P_SENSETIVITIES_LAST_QUARTER are 
+updated monthly  
+Report period  Contains all current reserve and resource information for a BB field interest  
+4.18.2.  Data report format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example s 
+FieldId  A unique AEMO defined Field Id entifier  Int 123456  
+FieldName  The name of the field  Varchar(100)   
+FieldInterestId  A unique AEMO defined Field Interest Id entifier  Int 123456  
+DevelopedReserve1P  An estimate of the BB field interest’s 1P 
+developed reserves  Numeric(18,3)  123.456  
+DevelopedReserve2P  An estimate of the BB field interest’s 2P 
+developed reserves  Numeric(18,3)  123.456  
+DevelopedReserve3P  An estimate of the BB field interest’s 3P 
+developed reserves  Numeric(18,3)  123.456  
+UndevelopedReserve1P  An estimate of the BB field interest’s 1P 
+undeveloped reserves  Numeric(18,3)  123.456  
+UndevelopedReserve2P  An estimate of the BB field interest’s 2P 
+undeveloped reserves  Numeric(18,3)  123.456  
+UndevelopedReserve3P  An estimate of the BB field interest’s 3P 
+undeveloped reserves  Numeric(18,3)  123.456  
+Resources2C  An estimate of the BB field interest’s 2C 
+resources  Numeric(18,3)  123.456  
+ProductionChangeReserve2P  An estimate of the total movement in the BB 
+field interest’s 2P reserves since the end of 
+prior reporting year  due to the production of 
+gas Numeric(18,3)  -123.456  
+ProvedAreaExtensionReserve2P  An estimate of the total movement in the BB 
+field interest’s 2P reserves since the end of 
+prior reporting year  due to the extension of a 
+field’s proved area  Numeric(18,3)  123.456  
+PercentageChangeReserve2P  An estimate of the total movement in the BB 
+field interest’s 2P reserves since the end of 
+prior reporting year  due to a percentage 
+change in the BB field interest  Numeric(18,3)  123.456  
+UpwardRevisionFrom3PReserveTo2P  An estimate of the total movement in the BB 
+field interest’s 2P reserves since the end of 
+prior reporting year  due to an upward revision 
+of 2P reserves arising from the reclassification 
+of 3P reserves or resources to 2P reserves  Numeric(18,3)  123.456  
+DownwardRevisionFrom2PReserveTo3P  An estimate of the total movement in the BB 
+field interest’s 2P reserves since the end of 
+prior reporting year  due to a downward revision 
+of 2P reserves arising from the reclassification 
+of 2P reserves to 3P reserves or resources  Numeric(18,3)  -123.456  
+OtherRevisionsReserve2P  An estimate of the total movement in the BB 
+field interest’s 2P reserves since the end of 
+prior reporting year  due to other revisions  Numeric(18,3)  123.456  
+MaturitySubClass2P  The project maturity sub -class for the 2P 
+reserves  Varchar(100)  Eg: On 
+production, Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 30 of 45 
+ 
+Field name  Description  Data type  Example s 
+Approved for 
+development, 
+Justified for 
+development  
+MaturitySubClass2C  The project maturity sub -class for the 2C 
+resources  Varchar(100)  Eg: 
+Development 
+pending, 
+Development 
+on hold, 
+Development 
+unclarified, 
+Development 
+not viable  
+MinDate2P  The earliest estimated date for the production 
+of the 2P reserves  Datetime  2022 -10-01 
+MaxDate2P  The latest estimated date for the production of 
+the 2P reserves  Datetime  2022 -12-01 
+MinDate2C  The earliest estimated date for the production 
+of the 2 C resources  Datetime  2022 -10-01 
+MaxDate2C  The latest estimated date for the production of 
+the 2 C resources  Datetime  2022 -12-01 
+ExpectedBarriers2C  A list of any barriers to the commercial 
+recovery of the 2C resources  Varchar(400)  Price 
+Forecast  
+ResourcesEstimateMethod  The resources assessment method used to 
+prepare the reserves and resources estimates  Varchar(200)  Eg: 
+Deterministic, 
+Geostatistical, 
+and 
+probabilistic  
+ConversionFactorQtyTCFtoPJ  The conversion factor used to convert 
+quantities measured in trillions of cubic feet to 
+PJ Numeric(18,3)  909.000  
+EconomicAssumption  The key economic assumptions in the forecast 
+case used to prepare the reserves and 
+resources estimates and the source of the 
+assumptions  Varchar(400)  Gas price of 
+$10 
+UpdateReason  The reason for the update  Varchar(400)  Annual 
+Update  
+PreparedBy  The name of the person who prepared the 
+estimates  Varchar(100)  Joe Brown  
+PreparationIndependenceStatement  Whether the qualified gas industry professional 
+who prepared, or supervised the preparation 
+of, the reserves and resources estimates is 
+independent of the BB reporting entity  Bit YES;NO  
+EffectiveDate  The date on which the record takes effect  DateTime  2021 -06-08 
+VersionDateTime  Time a successful submission is accepted by 
+AEMO systems  Datetime  2022 -08-11 
+4.18.3.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  
+4.19.  Basins  
+4.19.1.  Description  
+ 
+Transaction report 
+name  GASBB_ BASINS  
+Purpose  This report displays a list of all basins  
+Production 
+frequency  Daily  Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 31 of 45 
+ 
+Transaction report 
+name  GASBB_ BASINS  
+Report period  Contains all current basins  
+4.19.2.  Data report format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example s 
+BasinId  A unique AEMO defined Facility Id entifier  Bigint  594321  
+BasinName  The name of the basin. If short name exists 
+then short name included in report  Varchar  Gippsland  
+4.19.3.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  
+4.20.  LNG Transactions  
+4.20.1.  Description  
+ 
+Transaction report 
+name  GASBB_LNG_TRANSACTIONS  
+Purpose  This report displays an LNG transaction aggregated data  
+Production 
+frequency  Monthly  
+Report period  Contains all short term LNG Export transactions  
+4.20.2.  Data report format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example s 
+Transaction StartDate  Transaction start date  Date  2022 -08-01 
+TransactionEndDate  Transaction end date  Date  2022 -08-31 
+VolWeightPrice  The volume weighted price for the reporting 
+period  Number(18,8)  10.45  
+Volume  The total volume of the transactions for the 
+reporting period  Number(10,3)  2.333  
+SupplyStartDate  The earliest start date of all transactions 
+captured in the reporting period  Datetime  2022 -05-01 
+SupplyEndDate  The latest end date of all transactions 
+captured in the reporting period  Datetime  2022 -05-31 
+4.20.3.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  
+4.21.  Short Term Transa ctions  
+4.21.1.  Description  
+ 
+Transaction report 
+names  GASBB_SHORT_TERM_GAS_TRADES_NSW / GASBB_SHORT_TERM_GAS_TRADES_NT / 
+GASBB_SHORT_TERM_GAS_TRADES_QLD / GASBB_SHORT_TERM_GAS_TRADES_SA / 
+GASBB_SHORT_TERM_GAS_TRADES_TAS / GASBB_SHORT_TERM_GAS_TRADES_VIC  
+Purpose  These reports display information regarding short term gas transactions  Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 32 of 45 
+ 
+Transaction report 
+names  GASBB_SHORT_TERM_GAS_TRADES_NSW / GASBB_SHORT_TERM_GAS_TRADES_NT / 
+GASBB_SHORT_TERM_GAS_TRADES_QLD / GASBB_SHORT_TERM_GAS_TRADES_SA / 
+GASBB_SHORT_TERM_GAS_TRADES_TAS / GASBB_SHORT_TERM_GAS_TRADES_VIC  
+Production 
+frequency  Monthly  
+Report period  Contains all short term gas transactions, excluding those concluded through the gas trading exchange  
+4.21.2.  Data report format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example s 
+Period StartDate  The time period start date  Date  2022 -08-01 
+PeriodEndDate  The time period end date  Date  2022 -08-31 
+State  The state where the transaction occurred  Varchar(5)  VIC,NSW,QLD,SA,NT,TAS  
+Quantity(TJ)  Total volume of the transactions where trade 
+date is in the reporting period for the given state  Decimal(18,3)  10000.555  
+VolumeWeightedPrice 
+($) Volume weighted price of transactions where 
+trade date is in the reporting period for the given 
+State  Decimal(18,2)  10.45  
+TransactionType  Transaction Type is Supply for these short term 
+transactions reports  Varchar(255)  Supply  
+SupplyPeriodStart  The earliest start date of all transactions in the 
+reporting period for the given state  Date  2022 -07-01 
+SupplyPeriodEnd  The latest end date of all transactions in the 
+reporting period for the given state  Date  2022 -12-31 
+4.21.3.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  
+4.22.  Short Term Swap Transactions  
+4.22.1.  Description  
+ 
+Transaction report 
+names  GASBB_SHORT_TERM_GAS_TRADES_SWAP_NSW / 
+GASBB_SHORT_TERM_GAS_TRADES_SWAP_NT / 
+GASBB_SHORT_TERM_GAS_TRADES_SWAP_QLD / 
+GASBB_SHORT_TERM_GAS_TRADES_SWAP_SA / 
+GASBB_SHORT_TERM_GAS_TRADES_SWAP_TAS / 
+GASBB_SHORT_TERM_GAS_TRADES_SWAP_VIC  
+Purpose  These reports display information regarding short term gas swap transactions  
+Production frequency  Monthly  
+Report period  Contains all short term gas swap transactions, excluding those concluded through the gas 
+trading exchange  
+4.22.2.  Data report format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example s 
+Period StartDate  The time period start date  Date  2022 -08-01 
+PeriodEndDate  The time period end date  Date  2022 -08-31 
+State  The state where the transaction occured  Varchar(5)  VIC,NSW,QLD,SA,NT,TAS  
+Quantity(TJ)  Total volume of the transactions where 
+trade date is in the reporting period for 
+the given state  Decimal(18,3)  10000.555  Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 33 of 45 
+ 
+Field name  Description  Data type  Example s 
+VolumeWeightedPrice 
+($) Volume weighted price of transactions 
+where trade date is in the reporting 
+period for the given State  Decimal(18,2)  10.45  
+TransactionType  Whether the swap is a location swap, 
+time swap or both location and time 
+swap  Varchar(255)  Swap Location, Swap Time, 
+Swap Both  
+SupplyPeriodStart  The earliest start date of all transactions 
+in the reporting period for the given state  Date  2022 -07-01 
+SupplyPeriodEnd  The latest end date of all transactions in 
+the reporting period for the given state  Date  2022 -12-31 
+4.22.3.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  
+ 
+4.23.  Secondary Capacity Storage Trades  
+4.23.1.  Description  
+ 
+Transaction report 
+names  GASBB_SHORT_TERM_STORAGE  
+Purpose  This report displays a list of secondary capacity storage trades  
+Production 
+frequency  Generally updated within 30 minutes of receiving new data  
+Report period  Contains all BB capacity transactions, excluding those concluded through the gas trading exchange  
+4.23.2.  Data report format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example s 
+TradeId  A unique AEMO defined Transaction 
+Identifier  Int 123456  
+VersionDateTime  Time a successful submission is accepted 
+by AEMO systems  Datetime  2022 -08-11 
+TradeDate  The date the transaction was entered into  Date  2018 -03-01 
+FromGasDate  The start date of the transaction  Date  2018 -03-10 
+ToGasDate  The end date of the transaction  Date  2018 -03-20 
+FacilityId  The gas storage facility ID for the facility 
+by means of which the service is provided  Int 520001  
+Priority  The priority given to the service to which 
+the transaction relates  Varchar(255)  Secondary firm  
+MaximumStorageQuantit y The storage capacity the subject of the 
+transaction  (in GJ)  Int 10 
+InjectionCapacity  The injection capacity  (in GJ/day)  Number(18,3)  5.234  
+WithdrawalCapacity  The withdrawal capacity (in GJ/day)  Number(18,3)  8.156  
+Price  The transaction price (in $/GJ/day or 
+where relevant, in $/GJ)  Number(18,3)  4.20 
+PriceStructure  The price structure applicable to the 
+transaction   Varchar(255)  Variable  
+PriceEscalationMechanism  Any price escalation mechanism 
+applicable to the transaction  Varchar(255)  10% per annum  
+Cancelled  Whether the record has been cancelled  Number(1,0)  1,0 
+LastChanged  The date the record was last updated  Date  2022 -08-11 Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 34 of 45 
+ 
+4.23.3.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  
+4.24.  Missing Actual Fl ow And Storage  
+4.24.1.  Description  
+ 
+Transaction report 
+names  GASBB_MISSING_ACTUAL_FLOW_AND_STORAGE  
+Purpose  Returns any missing actual flow data  
+Production 
+frequency  Daily  
+Report period  The last 31 days  
+4.24.2.  Data report format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example s 
+GasDate  Date of gas day. Timestamps are ignored. 
+The gas day as defined in the pipeline 
+contract or market rules.  Datetime  2018 -09-23 00:00:00  
+FacilityName  Name of the facility.  Varchar(100)  Berwyndale to 
+Wallumbilla Pipeline  
+FacilityId  A unique AEMO defined Facility identifier.  Int 520345  
+ConnectionPointId  A unique AEMO defined connection point 
+identifier  Int 1201001  
+4.24.3.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  
+4.25.  Missing Nomination And Forecast  
+4.25.1.   Description  
+ 
+Transaction report 
+names  GASBB_MISSING_NOMINATION_AND_FORECAST  
+Purpose  Returns any missing nomination/forecast flow data  
+Production 
+frequency  Daily  
+Report period  The last 31 days  
+4.25.2.  Data report format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example s 
+GasDate  Date of gas day. Timestamps are ignored. 
+The gas day as defined in the pipeline 
+contract or market rules.  Datetime  2018 -09-23 00:00:00  
+FacilityName  Name of the facility.  Varchar(100)  Berwyndale to 
+Wallumbilla Pipeline  
+FacilityId  A unique AEMO defined Facility identifier.  Int 520345  Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 35 of 45 
+ 
+Field name  Description  Data type  Example s 
+ConnectionPointId  A unique AEMO defined connection point 
+identifier  Int 1201001  
+4.25.3.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  
+4.26.  Late Actual Flow And Storage  
+4.26.1.  Description  
+ 
+Transaction report 
+names  GASBB_LATE_ACTUAL_FLOW_AND_STORAGE  
+Purpose  A record of late submissions  
+Production 
+frequency  Daily  
+Report period  The last 31 days  
+4.26.2.  Data report format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example s 
+GasDate  Date of gas day. Timestamps are ignored. 
+The gas day as defined in the pipeline 
+contract or market rules.  Datetime  2022-05-13 00:00:00  
+FacilityName  Name of the facility.  Varchar(100)  Berwyndale to 
+Wallumbilla Pipeline  
+FacilityId  A unique AEMO defined Facility identifier.  Int 520345  
+ConnectionPointId  A unique AEMO defined connection point 
+identifier  Int 1201001  
+EarliestSubmissionDate  Date and time of the earliest submission 
+for that gas date.  Datetime  2022 -05-15 12:20:00  
+LateTimeSpan  Hours and minutes of the time span 
+between the submission cut -off time and 
+the earliest submission date  Number(15,2)  23.33  
+4.26.3.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  
+4.27.  Late Nomination And Forecast  
+4.27.1.  Description  
+ 
+Transaction report 
+names  GASBB_LATE_NOMINATION_AND_FORECAST  
+Purpose  A record of late submissions  for BB reporting entities for each BB facility type ().  
+Production 
+frequency  Daily  
+Report period  The last 31 days  
+4.27.2.  Data report format  
+ 
+The following fields are provided in the report.  Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 36 of 45 
+ 
+Field name  Description  Data type  Example s 
+GasDate  Date of gas day. Timestamps are ignored. 
+The gas day as defined in the pipeline 
+contract or market rules.  Datetime  2022-05-13 00:00:00  
+FacilityName  Name of the facility.  Varchar(100)  Berwyndale to 
+Wallumbilla Pipeline  
+FacilityId  A unique AEMO defined Facility identifier.  Int 520345  
+ConnectionPointId  A unique AEMO defined connection point 
+identifier  Int 1201001  
+EarliestSubmissionDate  Date and time of the earliest submission 
+for that gas date.  Datetime  2022 -05-15 12:20:00  
+LateTimeSpan  Hours and minutes of the time span 
+between the submission cut -off time and 
+the earliest submission date  Number(15,2)  23.33  
+4.27.3.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  
+4.28.  Pipeline Nil Quality Submission  
+4.28.1.  Description  
+ 
+Transaction report names  GASBB_PIPELINE_NIL_QUALITY_SUBMISSION  
+Purpose  A record of all submissions that contain Nil quality against the flow. This indicates that data 
+wasn’t available and needs to be updated.  
+Production frequency  Daily  
+Report period  Contains all current records of gas flow submissions with Nil quality  
+4.28.2.  Data report format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example s 
+GasDate  Date of gas day. Timestamps are ignored. 
+The gas day as defined in the pipeline 
+contract or market rules.  Datetime  2022-05-13 00:00:00  
+FacilityName  Name of the facility.  Varchar(100)  Berwyndale to 
+Wallumbilla Pipeline  
+FacilityId  A unique AEMO defined Facility identifier.  Int 520345  
+ConnectionPointId  A unique AEMO defined connection point 
+identifier  Int 1201001  
+4.28.3.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  
+4.29.  Nodes And Connection Points  
+4.29.1.  Description  
+ 
+Transaction report 
+names  GASBB_NODES_AND_CONNECTIONPOINTS_LIST / 
+GASBB_NODES_CONNECTIONPOINTS_FULL_LIST  
+Purpose  Displays detailed information on all facilities and their associated nodes and Connection Points.  
+Production 
+frequency  Both GASBB_NODES_AND_CONNECTIONPOINTS_LIST and 
+GASBB_NODES_CONNECTIONPOINTS_FULL_LIST are updated daily  Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 37 of 45 
+ 
+Transaction report 
+names  GASBB_NODES_AND_CONNECTIONPOINTS_LIST / 
+GASBB_NODES_CONNECTIONPOINTS_FULL_LIST  
+Report period  Contains all current facilities and their nodes and connection points  
+4.29.2.  Data report format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example s 
+FacilityName  Name of the facility  Varchar(100)  AGP  
+FacilityId  A unique AEMO defined facility 
+identifier  Int 580010  
+FacilityType  Facility type associated with the 
+Facility Id.  Varchar(40)  PIPE,PROD,STOR,COMPRESSOR  
+ConnectionPointId  A unique AEMO defined connection 
+point identifier  Int 1808000  
+ConnectionPointName  Name of connection point  Varchar(100)  Ban Ban Springs Receipt Stream  
+FlowDirection  Gas flow direction. Values can be 
+either:  
+Receipt: The flow of gas into the BB 
+storage  facility  or LNG import  
+Delivery: The  flow of gas out of the 
+BB storage facility  or LNG export  
+Processed: The flow direction type 
+only used for capacities. For LNG 
+export, it represents the amount of 
+gas that can be processed to a 
+liquefied state on a gas day. For 
+LNG import, it represents the 
+amount of gas that can be received 
+and processed into storage on a 
+gas day.  
+Delivery LNG Storage: The flow 
+direction type only used for 
+capacities. For LNG import, it 
+represents the amount of gas 
+withdrawn for storage for 
+processing to a gaseous state on a 
+gas day.  Char(10)  RECEIPT,DELIVERY,  
+PROCESSED,DELIVERYLNGSTOR  
+Exempt  Flag indicating whether the 
+connection point has a data 
+exemption  Bit TRUE,FALSE  
+ExemptionDescription  Description of exemption  Varchar(800)   
+NodeId  A unique AEMO defined node 
+identifier  Int 98001  
+StateId  A unique AEMO defined state 
+identifier  Int 8 
+StateName  Name of the state  Varchar(100)  New South Wales and ACT,Northern 
+Territory,Queensland,South 
+Australia,Tasmania,Victoria  
+LocationName  Name of location.  Varchar(50)  Regional - NT 
+LocationId  A unique AEMO defined location 
+identifier  Int 590017  
+LastUpdated  Date the record was last modified  Datetime  2019 -05-09 14:49  
+4.29.3.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 38 of 45 
+ 
+4.30.  Facilities  
+4.30.1.  Description  
+ 
+Transaction report 
+name  GASBB_FACILITIES_LIST / GASBB_FACILITIES_FULL_LIST  
+Purpose  Displays a list of all currently registered BB facilities and identifies the organisation responsible for the 
+operation of the respective facility.  
+Production 
+frequency  Both GASBB_FACILITIES_LIST and GASBB_FACILITIES_FULL_LIST are updated daily  
+Report period  Current records.  
+4.30.2.  Data report  format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example   
+FacilityName  Name of the facility.  varchar( 100) Amadeus Gas Pipeline  
+FacilityShortName  Abbreviated version of the facility 
+name.  Varchar(40)  AGP  
+FacilityId  A unique AEMO defined facility 
+identifier  Int 580010  
+FacilityType  Facility type associated with the 
+facility id  Varchar(40)  PIPE,PROD,STOR,COMPRESSOR  
+FacilityTypeDescription  Free text description of the facility 
+type.  varchar( 800) BB pipeline  
+OperatingState  The operating state (Active or 
+Inactive) of the facility  Varchar  ACTIVE,INACTIVE  
+OperatingStateDate  Date the current operating state was 
+set Date  2019 -04-02 
+OperatorName  Name of the operator for the facility.  Varchar(50)  APA Group  
+OperatorId  The facility operator’s ID  Bigint  94 
+OperatorChangeDate  Date the current operator for the 
+facility was set  Date  2022 -07-15 
+4.30.3.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  
+4.31.  Forecast Utilisation  
+4.31.1.  Description  
+ 
+Transaction report 
+name  GASBB_FORECAST_UTILISATION_NEXT7  
+Purpose  The purpose of the forecast utilisation report is to provide a summary of forecast information provided 
+by Gas Bulletin Board (BB) facility operators. The report is a 7 -day outlook of the supply -demand gas 
+balance in the East Coast. The report brings toget her data from various existing reports, including:  
+• Nameplate Rating  
+• Short Term Capacity Outlook  
+• Nomination and Forecast Flow  
+• Actual Flow and Storage  
+Production 
+frequency  Daily. The report is not updated once produced  
+Report period  Data in the report contains information for D+1 through to D+7  Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 39 of 45 
+ 
+4.31.2.  Data report  format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example   
+State  Name of the state.  Char(3)  NSW,VIC,QLD,SA,TAS,NT  
+FacilityId  A unique AEMO defined facility 
+identifier  Int 520345  
+FacilityName  The name of the BB facility  Varchar(100)  Longford Gas Plant  
+FacilityType  Facility type associated with the 
+facility id  Varchar(40)  PIPE,PROD,STOR,COMPRESSOR  
+ReceiptLocationId  The Connection Point Id that best 
+represents the receipt location 
+associated with a pipeline’s 
+nameplate capacity flow direction. 
+The ReceiptLocationId in conjunction 
+with the DeliveryLocationId indicates 
+the capacity direction and location  int 1202071  
+ReceiptLocationName  The Connection Point name 
+associated with the 
+ReceiptLocationId  Varchar(200)  Marsden Delivery Stream  
+DeliveryLocationId  The Connection Point Id that best 
+represents the delivery location 
+associated with a pipeline’s 
+nameplate capacity flow direction. 
+The ReceiptLocationId in conjunction 
+with the DeliveryLocationId indicates 
+the capacity direction and location  int 1202062  
+DeliveryLocationName  The Connection Point name 
+associated with the 
+DeliveryLocationId  Varchar(200)  Dubbo Delivery Stream  
+Description  Describes the calculation that is 
+being performed in each row of the 
+report  Varchar(100)  Capacity Available  
+ForecastMethod  Describes the calculation that is 
+being performed for each BB pipeline 
+where the Description is Forecast 
+Flow  Varchar(100)  Sum of Delivery Points  
+Units  The unit of measure for the 
+calculated values  Varchar(50)  TJ/day  
+Nameplate  Standing nameplate capacity quantity 
+in TJ. Nameplate rating relates to 
+maximum daily quantities under 
+normal operating conditions  Number(18,3)  13.3 
+“D+1” e.g. Thursday 11 
+Aug 2022  Forecast values and calculations 
+relating to each Description for the 
+first day of the forecast period  Number(18,3)  8.45 
+“D+2” e.g. Friday 12 Aug 
+2022  Forecast values and calculations 
+relating to each Description for the 
+second day of the forecast period  Number(18,3)  128.39  
+“D+3” e.g. Saturday 13 
+Aug 2022  Forecast values and calculations 
+relating to each Description for the 
+third day of the forecast period  Number(18,3)  120 
+“D+4” e.g. Sunday 14 
+Aug 2022  Forecast values and calculations 
+relating to each Description for the 
+fourth day of the forecast period  Number(18,3)  0.6 
+“D+5” e.g. Monday 15 
+Aug 2022  Forecast values and calculations 
+relating to each Description for the 
+fifth day of the forecast period  Number(18,3)  100 
+“D+6” e.g. Tuesday 16 
+Aug 2022  Forecast values and calculations 
+relating to each Description for the 
+sixth day of the forecast period  Number(18,3)  7 Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 40 of 45 
+ 
+Field name  Description  Data type  Example   
+“D+7” e.g. Wednesday 
+17 Aug 2022  Forecast values and calculations 
+relating to each Description for the 
+seventh day of the forecast period  Number(18,3)  31.069  
+4.31.3.  Example report  
+Vist the AEMO developer portal  for example for HTTPS GET request examples.  
+4.32.  Gas blend and gas blend curtailment  
+4.32.1.  Description  
+ 
+Transaction report 
+name  GASBB_ BLEND _AND_BLEND_CURTA IL 
+Purpose  The purpose of the gas blend and gas blend curtailment information report is to provide a summary of 
+gas blend and gas blend curtailment event information to the Gas Bulletin Board ( GBB) for a BB 
+blended gas distribution system or BB pipeline that transports a gas blend.  
+Production 
+frequency  Monthly. 5th day of the calendar month. The report is not updated once produced  
+Report period  Data in the report contains information for the previous calendar month  
+4.32.2.  Data report  format  
+ 
+The following fields are provided in the report.  
+Field name  Description  Data type  Example   
+Year  Year that the information applies to.  Int 2023  
+Month  Month that the information applies 
+to. Int 1 
+State  Name of the state.  Char(3)  NSW,VIC,QLD,SA,TAS,NT  
+FacilityId  A unique AEMO defined facility 
+identifier  Int 520345  
+FacilityName  The name of the BB facility  Varchar(100)  Longford Gas Plant  
+FacilityType  Facility type associated with the 
+facility id  Varchar(40)  PIPE,  PROD,  STOR,  
+COMPRESSOR , BDIST  
+ConnectionPointId  A unique AEMO defined connection 
+point identifier  Int 1808000  
+ConnectionPointName  Name of connection point  Varchar(100)  Ban Ban Springs Receipt Stream  
+FlowDirection  Gas flow direction. Values can be 
+either:  
+Receipt: The flow of gas into the BB 
+facility  
+Delivery: The  flow of gas out of the 
+BB facility  
+ Char(10)  RECEIPT,DELIVERY  
+LocationName  Name of location.  Varchar(50)  Regional - NT 
+LocationId  A unique AEMO defined location 
+identifier  Int 590017  
+GasType Primary gas added to the gas blend . Varchar( 200) A gas type being blended with 
+covered gases  (e.g. hydrogen)  
+GasBlendCurtail Event the number of times gas blend 
+curtailment has occurred during the 
+month  in relation to the BB facility, or 
+part of a BB facility (as applicable) .  int 5 
+GasBlendCurtail Qty the aggregate curtailed quantity 
+resulting from a gas blend 
+curtailment  event.  number (18,3)  25.232 
+25.2 (if Actual Delivery Quantity is 
+25.200)  Guide to Gas Bulletin Board Reports   
+ 
+AEMO  | 3 March 2025  Page 41 of 45 
+ 
+Field name  Description  Data type  Example   
+GasBlendLimit blend level  limit, as a percentage 
+(%vol),  applied for the gas day.  number (18,3)  14.999  
+15 (if actual percentage  is 15.000) 
+100 means there is no blending 
+limit.  
+GasBlendHigh highest blend level , as a percentage  
+(%vol) , achieved on any gas day  in 
+the month . number (18,3)  9.997  
+10 (if actual percentage  is 10.000) 
+MaxGasDate  The gas date in the month where the 
+highest blend level was achieved  Datetime  2024 -04-11 
+GasBlendLow lowest blend level , as a percentage  
+(%vol) , achieved on any  gas day  in 
+the month  number (18,3)  5.997  
+6 (if actual percentage  is 6.000) 
+MinGasDate  The gas date in the month where the 
+lowest blend level was achieved  Datetime  2024 -04-10 
+GasBlendAvg average blend level , as a 
+percentage  (%vol) , across all  gas 
+days in the month . number (18,3)  7.997  
+8 (if actual percentage  is 6.000) 
+LastUpdated  Date the record was last modified  Datetime  2019 -05-09 14:49  
+4.33.  Voluntary information from LNG producers in Queensland  
+4.33.1.  Description  
+ 
+Transaction report 
+name  N/A 
+Purpose  A list of p ublish ed documents provide d by LNG that detail scheduled m aintenance events . 
+Update interval  As required.  
+Production 
+frequency  On request.  
+Report period  All reports.  
+4.34.  Allocation agent information  
+4.34.1.  Description  
+ 
+Transaction report 
+name  N/A 
+Purpose  Summary of how allocations are performed at service points  
+Update interval  As required.  
+Production 
+frequency  On request.  
+Report period  All reports  
+

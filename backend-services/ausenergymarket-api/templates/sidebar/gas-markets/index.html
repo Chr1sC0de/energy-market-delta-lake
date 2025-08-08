@@ -1,0 +1,26 @@
+<div class="mt-4">
+    <h2 class="px-6 py-2 text-xs uppercase tracking-wider text-gray-400 font-semibold">Gas Markets</h2>
+    {% include 'sidebar/gas-markets/declared-wholesale-gas-market/index.html' %}
+    <!-- STTM -->
+    <div>
+        <button
+            class="w-full flex items-center justify-between px-6 py-3 text-gray-300 hover:bg-slate-700 hover:text-white transition-colors"
+            onclick="toggleMenu('sttm-menu')">
+            <div class="flex items-center">
+                <i class="fas fa-exchange-alt mr-3 text-green-300"></i>
+                <span class="text-left">TBD: Short Term Trading Market (STTM)</span>
+            </div>
+        </button>
+    </div>
+    <!-- GSH -->
+    <div>
+        <button
+            class="w-full flex items-center justify-between px-6 py-3 text-gray-300 hover:bg-slate-700 hover:text-white transition-colors"
+            onclick="toggleMenu('gsh-menu')">
+            <div class="flex items-center">
+                <i class="fas fa-industry mr-3 text-purple-300"></i>
+                <span class="text-left">TBD: Gas Supply Hub (GSH)</span>
+            </div>
+        </button>
+    </div>
+</div>

@@ -1,0 +1,37 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: Dagster AEMO Gas",
+      "type": "python",
+      "request": "launch",
+      "module": "dagster",
+      "justMyCode": true,
+      "args": ["dev", "-m", "aemo_etl.definitions"],
+      "env": {
+        "DAGSTER_HOME": "${workspaceFolder}/.dagster_home",
+        "DEVELOPMENT_ENVIRONMENT": "dev",
+        "AWS_ACCESS_KEY_ID": "testing",
+        "AWS_SECRET_ACCESS_KEY": "testing",
+        "AWS_SECURITY_TOKEN": "testing",
+        "AWS_SESSION_TOKEN": "testing",
+        "AWS_DEFAULT_REGION": "ap-southeast-2",
+        "AWS_ALLOW_HTTP": "true",
+        "AWS_S3_LOCKING_PROVIDER": "dynamodb",
+        "AWS_ENDPOINT_URL": "http://127.0.0.1:5000/"
+      }
+    },
+    {
+      "name": "Python: Dagster AEMO Gas S3",
+      "type": "python",
+      "request": "launch",
+      "module": "dagster",
+      "justMyCode": true,
+      "args": ["dev", "-m", "aemo_etl.definitions"],
+      "env": {
+        "DAGSTER_HOME": "${workspaceFolder}/.dagster_home",
+        "DEVELOPMENT_ENVIRONMENT": "dev"
+      }
+    }
+  ]
+}

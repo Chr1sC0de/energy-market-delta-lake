@@ -1,0 +1,49 @@
+{
+    # Use Let's Encrypt staging server, comment out when using the proper ssl certificate
+    acme_ca https://acme.zerossl.com/v2/DV90
+
+    email {$DEVELOPER_EMAIL}
+    storage file_system {
+        root /data
+    }
+}
+
+{$ROOT_DNS} {
+    # Static files for non-Dagster paths
+    @not_dagster {
+        not path /dagster-webserver* /oauth2*
+    }
+    root @not_dagster /var/www/html
+    file_server @not_dagster
+
+    # guest server route
+    reverse_proxy /dagster-webserver/guest* {$DAGSTER_WEBSERVER_GUEST}
+    
+    # Auth server routes (login and OAuth callback)
+    reverse_proxy /dagster-webserver/admin/login* {$DAGSTER_AUTHSERVER}
+    reverse_proxy /oauth2/dagster-webserver/admin* {$DAGSTER_AUTHSERVER}
+    
+    # Protected Dagster routes
+    @protected {
+        path /dagster-webserver/admin*
+        not path /dagster-webserver/admin/login*
+    }
+    
+    handle @protected {
+        forward_auth {$DAGSTER_AUTHSERVER} {
+                uri /oauth2/dagster-webserver/admin/validate
+                header_up Host {upstream_hostport}
+                header_up X-Real-IP {remote_host}
+                header_up X-Forwarded-For {remote_host}
+                header_up X-Forwarded-Proto {scheme}
+                header_up X-Forwarded-Host {host}
+
+                @error status 401
+                handle_response @error {
+                    redir * /dagster-webserver/admin/login
+                }
+        }
+
+        reverse_proxy @protected {$DAGSTER_WEBSERVER_ADMIN}
+    }
+}

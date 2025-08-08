@@ -1,0 +1,7 @@
+!.gitignore
+!.ignore
+cdk.out
+cdk.context.json
+diagram*
+configurations
+.scratch

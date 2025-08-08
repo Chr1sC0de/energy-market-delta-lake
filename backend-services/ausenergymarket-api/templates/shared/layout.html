@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aus Energy Market Data</title>
+    <link href="/static/css/site.css" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <script src="/static/js/sidebar.js"></script>
+    <script src="https://cdn.plot.ly/plotly-3.0.1.min.js" charset="utf-8"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.6/dist/htmx.min.js"
+        integrity="sha384-Akqfrbj/HpNVo8k11SXBb6TlBWmXXlYQrCSqEWmyKJe+hDm3Z/B2WVG4smwBkRVm"
+        crossorigin="anonymous"></script>
+</head>
+
+<body class="bg-slate-200 grid grid-cols-9">
+    <!-- Sidebar Navigation -->
+    <div class="col-span-2 bg-slate-800 text-white min-h-screen shadow-xl">
+        <div class="p-5 border-b border-slate-600">
+            <h1 class="text-xl font-bold">Australian Energy Market Data</h1>
+        </div>
+        <div class="py-4">
+            <a href="/"
+                class="flex items-center px-6 py-3 text-gray-300 hover:bg-slate-600 hover:text-white transition-colors">
+                <i class="fas fa-home mr-3"></i>
+                <span>Home</span>
+            </a>
+            {% include 'sidebar/electricity-markets/index.html' %}
+            {% include 'sidebar/gas-markets/index.html' %}
+            <!-- Contact Information -->
+            <div class="mt-8 px-4 py-4 bg-slate-600 mx-3 rounded">
+                <h2 class="text-sm font-semibold mb-2">Contact</h2>
+                <div class="text-sm text-gray-300 text-wrap">
+                    <div class="flex items-center mb-2">
+                        <i class="fas fa-envelope mr-2 text-gray-400"></i>
+                        <a href="mailto:chrisam1993@live.com" class="hover:text-white">chrisam1993@live.com</a>
+                    </div>
+                    <div class="flex items-center mb-2">
+                        <i class="fas fa-phone mr-2 text-gray-400"></i>
+                        <a href="tel:+61413016929" class="hover:text-white">+61 413016929</a>
+                    </div>
+                    <div class="flex items-center">
+                        <i class="fas fa-map-marker-alt mr-2 text-gray-400"></i>
+                        <span>Melbourne, Australia</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Main Content Area -->
+    <div class="col-span-5 min-h-screen">
+        <div class="p-6">
+            {% block main_content %}{% endblock %}
+        </div>
+    </div>
+</body>
+
+</html>

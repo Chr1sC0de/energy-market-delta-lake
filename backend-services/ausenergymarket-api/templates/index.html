@@ -1,0 +1,116 @@
+{% extends "shared/layout.html" %}
+{% block main_content %}
+<div class="flex flex-col p-6">
+    <div class="mb-8">
+        <p class="text-lg text-gray-700 max-w-5xl">
+            Explore comprehensive data from Australia's energy markets operated by the Australian Energy Market Operator
+            (AEMO).
+            This platform currently provides access to historical data from Australian gas market resources, with more to come
+            in future.
+        </p>
+    </div>
+    <div class="flex flex-wrap gap-8">
+        <div class="flex-1 min-w-[350px] rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow bg-white">
+            <div class="flex items-center mb-4">
+                <div class="bg-orange-50 p-3 rounded-full mr-4">
+                    <i class="fas fa-fire text-orange-400 text-xl"></i>
+                </div>
+                <h2 class="text-2xl font-semibold">Victorian Gas Market (DWGM)</h2>
+            </div>
+            <p class="mb-4">
+                The Victorian Declared Wholesale Gas Market facilitates gas trading in
+                Victoria, balancing supply and demand while managing the Victorian gas
+                transmission system.
+            </p>
+            <div class="grid grid-cols-2 gap-4 mb-6">
+                <div class="bg-gray-50 p-3 rounded">
+                    <span class="text-sm text-gray-500">Annual Volume</span>
+                    <p class="font-semibold">200+ PJ</p>
+                </div>
+                <div class="bg-gray-50 p-3 rounded">
+                    <span class="text-sm text-gray-500">Pricing</span>
+                    <p class="font-semibold">5 scheduling intervals</p>
+                </div>
+                <div class="bg-gray-50 p-3 rounded">
+                    <span class="text-sm text-gray-500">Pipeline Length</span>
+                    <p class="font-semibold">2,000+ km</p>
+                </div>
+                <div class="bg-gray-50 p-3 rounded">
+                    <span class="text-sm text-gray-500">Market Start</span>
+                    <p class="font-semibold">1999</p>
+                </div>
+            </div>
+            <div class="flex justify-between items-center">
+                <span class="text-sm text-gray-600">Intraday scheduling</span>
+            </div>
+        </div>
+        <div class="flex-1 min-w-[350px] rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow bg-white">
+            <div class="flex items-center mb-4">
+                <div class="bg-green-50 p-3 rounded-full mr-4">
+                    <i class="fas fa-exchange-alt text-green-400 text-xl"></i>
+                </div>
+                <h2 class="text-2xl font-semibold">Short Term Trading Market (STTM)</h2>
+            </div>
+            <p class="mb-4">
+                Day-ahead wholesale gas markets operating at the Sydney, Adelaide and
+                Brisbane hubs, facilitating short-term gas trading with market-based
+                balancing mechanisms.
+            </p>
+            <div class="grid grid-cols-2 gap-4 mb-6">
+                <div class="bg-gray-50 p-3 rounded">
+                    <span class="text-sm text-gray-500">Trading Hubs</span>
+                    <p class="font-semibold">Sydney, Adelaide, Brisbane</p>
+                </div>
+                <div class="bg-gray-50 p-3 rounded">
+                    <span class="text-sm text-gray-500">Market Type</span>
+                    <p class="font-semibold">Day-ahead market</p>
+                </div>
+                <div class="bg-gray-50 p-3 rounded">
+                    <span class="text-sm text-gray-500">Annual Volume</span>
+                    <p class="font-semibold">150+ PJ</p>
+                </div>
+                <div class="bg-gray-50 p-3 rounded">
+                    <span class="text-sm text-gray-500">Market Start</span>
+                    <p class="font-semibold">2010</p>
+                </div>
+            </div>
+            <div class="flex justify-between items-center">
+                <span class="text-sm text-gray-600">Ex-ante and ex-post pricing</span>
+            </div>
+        </div>
+        <div class="flex-1 min-w-[350px] rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow bg-white">
+            <div class="flex items-center mb-4">
+                <div class="bg-purple-50 p-3 rounded-full mr-4">
+                    <i class="fas fa-industry text-purple-400 text-xl"></i>
+                </div>
+                <h2 class="text-2xl font-semibold">Gas Supply Hub (GSH)</h2>
+            </div>
+            <p class="mb-4">
+                A voluntary exchange for trading natural gas at Wallumbilla and Moomba, providing a transparent and
+                efficient wholesale gas market with standardized products.
+            </p>
+            <div class="grid grid-cols-2 gap-4 mb-6">
+                <div class="bg-gray-50 p-3 rounded">
+                    <span class="text-sm text-gray-500">Trading Locations</span>
+                    <p class="font-semibold">Wallumbilla, Moomba</p>
+                </div>
+                <div class="bg-gray-50 p-3 rounded">
+                    <span class="text-sm text-gray-500">Products</span>
+                    <p class="font-semibold">Daily, weekly, monthly</p>
+                </div>
+                <div class="bg-gray-50 p-3 rounded">
+                    <span class="text-sm text-gray-500">Market Type</span>
+                    <p class="font-semibold">Exchange-based</p>
+                </div>
+                <div class="bg-gray-50 p-3 rounded">
+                    <span class="text-sm text-gray-500">Market Start</span>
+                    <p class="font-semibold">2014</p>
+                </div>
+            </div>
+            <div class="flex justify-between items-center">
+                <span class="text-sm text-gray-600">Voluntary trading</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

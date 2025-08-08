@@ -1,0 +1,46 @@
+[project]
+name = "ausenergymarket-api"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Chris Mamon", email = "chrisam1993@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "boto3>=1.39.0",
+    "configurations",
+    "deltalake>=1.0.2",
+    "fastapi-cache2[memcache]>=0.2.2",
+    "fastapi[standard]>=0.115.14",
+    "itsdangerous>=2.2.0",
+    "jinja2>=3.1.6",
+    "mangum>=0.19.0",
+    "plotly>=6.2.0",
+    "polars>=1.31.0",
+    "python-jose[cryptography]>=3.5.0",
+    "requests>=2.32.4",
+    "uvicorn[standard]>=0.35.0",
+]
+
+[project.scripts]
+ausenergymarket-api = "ausenergymarket_api:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv.sources]
+configurations = { path = "configurations" }
+
+[tool.jinja-lsp]
+templates = "./templates"
+backend = ["./src/ausenergymarket_api/"]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.29.5",
+    "itables>=2.4.3",
+    "jupyter>=1.1.1",
+    "watchfiles>=1.1.0",
+]

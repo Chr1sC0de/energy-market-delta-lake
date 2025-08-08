@@ -1,0 +1,48 @@
+[project]
+name = "aws"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "aws-cdk-lib==2.186.0",
+    "boto3>=1.37.26",
+    "cdk-ecr-deployment>=4.0.1",
+    "cdk-fck-nat>=1.5.17",
+    "configurations",
+    "constructs>=10.0.0,<11.0.0",
+    "types-boto3[ssm]>=1.37.26",
+]
+
+[dependency-groups]
+dev = [
+    "coverage>=7.8.0",
+    "debugpy>=1.8.13",
+    "pytest==6.2.5",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.basedpyright]
+include = ["src"]
+enableTypeIgnoreComments = true
+reportUnknownMemberType = false
+reportAny = false
+reportMissingTypeStubs = false
+reportUnknownArgumentType=false
+reportUnknownVariableType=false
+reportTypedDictNotRequiredAccess=false
+reportReturnType=false
+reportArgumentType=false
+reportImportCycles=false
+exclude = [
+    "**/node_modules",
+    "**/__pycache__",
+    "src/experimental",
+    "src/typestubs"
+]
+
+[tool.uv.sources]
+configurations = { path = "configurations" }
+

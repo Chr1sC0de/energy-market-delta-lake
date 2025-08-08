@@ -1,0 +1,14 @@
+[project]
+name = "gbb-schemas"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "pypdf2>=3.0.1",
+]
+
+[tool.uv.workspace]
+members = [
+    "PyPDF2",
+]
