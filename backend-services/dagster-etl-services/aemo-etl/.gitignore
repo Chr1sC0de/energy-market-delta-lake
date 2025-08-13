@@ -5,10 +5,3 @@
 !.gitignore
 !.dockerignore
 !.ignore
-
-workspace.yaml
-dagster.yaml
-
-configurations
-
-
