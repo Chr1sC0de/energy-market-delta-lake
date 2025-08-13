@@ -3,7 +3,7 @@ from typing import Any, NotRequired, TypedDict, Unpack
 
 import boto3
 import botocore.exceptions
-from aws_cdk import RemovalPolicy
+from aws_cdk import RemovalPolicy, Duration
 from aws_cdk import Stack as _Stack
 from aws_cdk import aws_s3 as s3
 from aws_cdk.aws_iam import IRole
@@ -84,6 +84,36 @@ class Stack(_Stack):
             removal_policy=RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE,
             encryption=s3.BucketEncryption.S3_MANAGED,
             versioned=False,
+            block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
+        )
+
+        _ = self.create_bucket(
+            f"{STACK_PREFIX}ArchiveBucket",
+            bucket_name=f"{DEVELOPMENT_ENVIRONMENT}-{NAME_PREFIX}-archive",
+            removal_policy=RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE,
+            encryption=s3.BucketEncryption.S3_MANAGED,
+            versioned=False,
+            lifecycle_rules=[
+                s3.LifecycleRule(
+                    id="TransitionToGlacier",
+                    enabled=True,
+                    transitions=[
+                        s3.Transition(
+                            storage_class=s3.StorageClass.GLACIER,
+                            transition_after=Duration.days(
+                                30
+                            ),  # move to Glacier after 30 days
+                        ),
+                        s3.Transition(
+                            storage_class=s3.StorageClass.DEEP_ARCHIVE,
+                            transition_after=Duration.days(
+                                180
+                            ),  # move to Deep Archive after 6 months
+                        ),
+                    ],
+                    expiration=Duration.days(3650),  # optional: expire after 10 years
+                )
+            ],
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
         )
 

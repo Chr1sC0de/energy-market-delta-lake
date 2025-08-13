@@ -96,7 +96,7 @@ class Stack(_Stack):
 
     def _bastion_host_security_group(self) -> None:
         security_group = self.register["BastionHostSecurityGroup"]
-        allow_all_outbound_traffic(security_group)
+        # allow_all_outbound_traffic(security_group)
         for ip_address in ADMINISTRATOR_IPS:
             developer_ip = ec2.Peer.ipv4(f"{ip_address}/32")
             security_group.add_ingress_rule(
@@ -107,7 +107,7 @@ class Stack(_Stack):
 
     def _update_dagster_webserver_security_group(self) -> None:
         security_group = self.register["DagsterWebServiceSecurityGroup"]
-        allow_all_outbound_traffic(security_group)
+        # allow_all_outbound_traffic(security_group)
         for security_group_name in [
             "BastionHostSecurityGroup",
             "CaddyInstanceSecurityGroup",
@@ -119,17 +119,18 @@ class Stack(_Stack):
             )
 
     def _update_dagster_daemon_security_group(self) -> None:
-        security_group = self.register["DagsterDaemonSecurityGroup"]
-        allow_all_outbound_traffic(security_group)
-        security_group.add_egress_rule(
-            peer=ec2.Peer.any_ipv4(),
-            connection=ec2.Port.all_traffic(),
-            description="Allow all outbound traffic",
-        )
+        ...
+        # security_group = self.register["DagsterDaemonSecurityGroup"]
+        # allow_all_outbound_traffic(security_group)
+        # security_group.add_egress_rule(
+        #     peer=ec2.Peer.any_ipv4(),
+        #     connection=ec2.Port.all_traffic(),
+        #     description="Allow all outbound traffic",
+        # )
 
     def _update_dagster_user_code_security_group(self) -> None:
         security_group = self.register["DagsterUserCodeSecurityGroup"]
-        allow_all_outbound_traffic(security_group)
+        # allow_all_outbound_traffic(security_group)
         security_group.add_ingress_rule(
             peer=self.register["DagsterDaemonSecurityGroup"],
             connection=ec2.Port.tcp(4000),  # Dagster user code
@@ -143,7 +144,7 @@ class Stack(_Stack):
 
     def _update_postgres_instance_security_group(self) -> None:
         security_group = self.register["DagsterPostgresSecurityGroup"]
-        allow_all_outbound_traffic(security_group)
+        # allow_all_outbound_traffic(security_group)
         for service_security_group in (
             self.register["DagsterUserCodeSecurityGroup"],
             self.register["DagsterWebServiceSecurityGroup"],
@@ -157,7 +158,7 @@ class Stack(_Stack):
 
     def _update_caddy_server_security_group(self) -> None:
         security_group = self.register["CaddyInstanceSecurityGroup"]
-        allow_all_outbound_traffic(security_group)
+        # allow_all_outbound_traffic(security_group)
 
         for ip_address in ADMINISTRATOR_IPS:
             developer_ip = ec2.Peer.ipv4(f"{ip_address}/32")
@@ -188,11 +189,11 @@ class Stack(_Stack):
             description="Allow Reverse Proxy Ingress",
         )
 
-        security_group.add_egress_rule(
-            peer=self.register["CaddyInstanceSecurityGroup"],
-            connection=ec2.Port.tcp(8000),
-            description="Allow Reverse Proxy Egress",
-        )
+        # security_group.add_egress_rule(
+        #     peer=self.register["CaddyInstanceSecurityGroup"],
+        #     connection=ec2.Port.tcp(8000),
+        #     description="Allow Reverse Proxy Egress",
+        # )
 
         security_group.add_ingress_rule(
             self.register["BastionHostSecurityGroup"],
@@ -201,6 +202,6 @@ class Stack(_Stack):
         )
 
         # Egress: Allow access to Cognito
-        security_group.add_egress_rule(
-            ec2.Peer.any_ipv4(), ec2.Port.tcp(443), "Allow HTTPS out"
-        )
+        # security_group.add_egress_rule(
+        #     ec2.Peer.any_ipv4(), ec2.Port.tcp(443), "Allow HTTPS out"
+        # )
