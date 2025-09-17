@@ -106,9 +106,7 @@ def get_df_from_s3_keys(
                 if process_object_hook is not None:
                     df = process_object_hook(logger, object_bytes)
                 elif key.lower().endswith(".parquet"):
-                    df = pl.read_parquet(
-                        object_bytes, allow_missing_columns=True
-                    ).lazy()
+                    df = pl.read_parquet(object_bytes, missing_columns="insert").lazy()
                 elif key.lower().endswith(".csv"):
                     df = pl.read_csv(object_bytes, infer_schema_length=None).lazy()
                 else:

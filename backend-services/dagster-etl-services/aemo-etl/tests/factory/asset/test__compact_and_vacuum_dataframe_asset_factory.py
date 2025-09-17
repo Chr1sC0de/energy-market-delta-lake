@@ -54,5 +54,5 @@ def test__compact_and_vacuum():
 
     assert (
         captured_response["filesAdded"]
-        == '{"avg":980.0,"max":980,"min":980,"totalFiles":1,"totalSize":980}'
+        == '{"avg":1011.0,"max":1011,"min":1011,"totalFiles":1,"totalSize":1011}'
     )

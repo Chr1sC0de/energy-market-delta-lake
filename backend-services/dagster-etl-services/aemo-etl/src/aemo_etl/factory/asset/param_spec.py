@@ -12,7 +12,7 @@ from dagster import (
     RetryPolicy,
 )
 from dagster._config import UserConfigSchema
-from dagster._core.definitions.asset_dep import CoercibleToAssetDep
+from dagster._core.definitions.assets.definition.asset_dep import CoercibleToAssetDep
 from dagster._core.definitions.events import (
     CoercibleToAssetKey,
     CoercibleToAssetKeyPrefix,

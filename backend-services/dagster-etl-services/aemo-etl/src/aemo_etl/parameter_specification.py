@@ -23,7 +23,6 @@ from polars.io.cloud import CredentialProvider, CredentialProviderFunction
 from polars.io.parquet import ParquetFieldOverwrites
 from polars.lazyframe import GPUEngine
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS
-from pyarrow.dataset import ParquetFileWriteOptions
 from pydantic import BaseModel, Field
 
 # the following is the set of rebuilt types
@@ -78,7 +77,7 @@ class PolarsLazyFrameScanParquetParamSpec(BaseModel, arbitrary_types_allowed=Tru
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto"
     retries: int = 2
     include_file_paths: str | None = None
-    allow_missing_columns: bool = False
+    missing_columns: Literal["insert", "raise"] = "insert"
     cast_options: ScanCastOptions | None = None
 
 
@@ -90,24 +89,14 @@ class PolarsLazyFrameScanParquetParamSpec(BaseModel, arbitrary_types_allowed=Tru
 class PolarsDeltaLakeWriteParamSpec(BaseModel, arbitrary_types_allowed=True):
     partition_by: list[str] | str | None = None
     mode: Literal["error", "append", "overwrite", "ignore"] = "error"
-    file_options: ParquetFileWriteOptions | None = None
-    max_partitions: int | None = None
-    max_open_files: int = 1024
-    max_rows_per_file: int = 10 * 1024 * 1024
-    min_rows_per_group: int = 64 * 1024
-    max_rows_per_group: int = 128 * 1024
     name: str | None = None
     description: str | None = None
     configuration: Mapping[str, str | None] | None = None
     schema_mode: Literal["merge", "overwrite"] | None = None
     storage_options: dict[str, str] | None = None
-    partition_filters: list[tuple[str, str, Any]] | None = None
     predicate: str | None = None
     target_file_size: int | None = None
-    large_dtypes: bool = False
-    engine: Literal["pyarrow", "rust"] = "rust"
     writer_properties: WriterProperties | None = None
-    custom_metadata: dict[str, str] | None = None
     post_commithook_properties: PostCommitHookProperties | None = None
     commit_properties: CommitProperties | None = None
 
@@ -119,9 +108,7 @@ class PolarsDeltaLakeMergeParamSpec(BaseModel):
     merge_schema: bool = False
     error_on_type_mismatch: bool = True
     writer_properties: WriterProperties | None = None
-    large_dtypes: bool | None = None
     streamed_exec: bool = True
-    custom_metadata: dict[str, str] | None = None
     post_commithook_properties: PostCommitHookProperties | None = None
     commit_properties: CommitProperties | None = None
 

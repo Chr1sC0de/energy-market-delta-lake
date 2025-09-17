@@ -3,7 +3,6 @@ import os
 
 import aws_cdk as cdk
 
-from infrastructure.configurations import DEVELOPMENT_ENVIRONMENT, STACK_PREFIX
 from infrastructure import (
     bastion_host,
     buckets,
@@ -18,6 +17,7 @@ from infrastructure import (
     service_discovery,
     vpc,
 )
+from infrastructure.configurations import DEVELOPMENT_ENVIRONMENT, STACK_PREFIX
 
 aws_environment = cdk.Environment(
     account=os.getenv("CDK_DEFAULT_ACCOUNT"), region=os.getenv("CDK_DEFAULT_REGION")
