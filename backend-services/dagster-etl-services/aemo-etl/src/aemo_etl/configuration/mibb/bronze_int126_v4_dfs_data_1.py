@@ -5,7 +5,6 @@ from aemo_etl.configuration import (
     VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS,
 )
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                      define table and register to table locations                      │
@@ -25,9 +24,7 @@ primary_keys = [
     "gas_date",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "dfs_version": Int64,
@@ -42,6 +39,7 @@ table_schema = {
     "dfs_edd": Float64,
     "total_demand_forecast": Int64,
     "current_date": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -57,6 +55,7 @@ schema_descriptions = {
     "dfs_edd": "Effective Degree Day (EDD) calculated by AEMO's Demand Forecasting System (DFS)",
     "total_demand_forecast": "AEMO's total daily demand forecast for the gas day calculated by AEMO's Demand Forecasting System (DFS)",
     "current_date": "Date and time report produced (e.g. 30 June 2005 1:23:56)",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

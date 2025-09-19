@@ -1,6 +1,7 @@
 from functools import partial
 from typing import Iterable, Mapping
 
+import polars_hash as plh
 from dagster import (
     AssetCheckResult,
     AssetExecutionContext,
@@ -8,17 +9,8 @@ from dagster import (
     MetadataValue,
     asset_check,
 )
-from polars import (
-    DataType,
-    Datetime,
-    LazyFrame,
-    Schema,
-    col,
-    int_range,
-)
-from polars import (
-    len as len_,
-)
+from polars import DataType, Datetime, LazyFrame, Schema, col, int_range
+from polars import len as len_
 
 from aemo_etl.configuration import BRONZE_BUCKET, LANDING_BUCKET
 from aemo_etl.factory.definition import (
@@ -69,6 +61,12 @@ def post_process_hook(
             )
 
         df = df.filter(col("row_num") == 0).drop("row_num")
+
+    df = df.with_columns(
+        surrogate_key=plh.concat_str(
+            *[col(key).fill_null("") for key in primary_keys]
+        ).chash.sha256()
+    )
 
     return df
 

@@ -2,7 +2,6 @@ from polars import Int64, String
 
 from aemo_etl.configuration import BRONZE_BUCKET
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                define table and register for Field Interests report                    │
@@ -20,9 +19,7 @@ s3_table_location = f"s3://{BRONZE_BUCKET}/{s3_prefix}/{table_name}"
 
 primary_keys = ["FieldInterestId", "CompanyId", "EffectiveDate"]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "FieldName": String,
@@ -32,6 +29,7 @@ table_schema = {
     "GroupMembers": String,
     "PercentageShare": String,
     "EffectiveDate": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -42,6 +40,7 @@ schema_descriptions = {
     "GroupMembers": "The name of the group member.",
     "PercentageShare": "The BB field interest (as a percentage) of each member of the field owner group.",
     "EffectiveDate": "The date on which the record takes effect.",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

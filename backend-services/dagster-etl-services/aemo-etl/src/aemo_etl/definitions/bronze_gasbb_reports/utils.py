@@ -2,6 +2,7 @@ from functools import partial
 from logging import Logger
 from typing import Callable, Iterable, Mapping, Protocol
 
+import polars_hash as plh
 from dagster import (
     AssetCheckResult,
     AssetExecutionContext,
@@ -89,6 +90,12 @@ def default_post_process_hook(
             )
 
         df = df.filter(col("row_num") == 0).drop("row_num")
+
+    df = df.with_columns(
+        surrogate_key=plh.concat_str(
+            *[col(key).fill_null("") for key in primary_keys]
+        ).chash.sha256()
+    )
 
     context.log.info("finished processing dataframe processing")
     return df.unique()

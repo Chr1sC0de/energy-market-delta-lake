@@ -5,7 +5,6 @@ from aemo_etl.configuration import (
     VICTORIAN_WHOLESALE_SETTLEMENTS_AND_METERING_REPORTS,
 )
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                      define table and register to table locations                      │
@@ -26,9 +25,7 @@ primary_keys = [
     "heating_value_zone",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "version_id": Int64,
@@ -40,6 +37,7 @@ table_schema = {
     "initial_heating_value": Float64,
     "current_heating_value": Float64,
     "current_date": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -55,6 +53,7 @@ schema_descriptions = {
     "initial_heating_value": "Heating value (GJ/1000 m(3)) rounded to 2 decimal places.",
     "current_heating_value": "Heating valiue (GJ/1000m(3)) rounded r=to 2 decimal places",
     "current_date": "Date and Time Report Produced. 30 Jun 2007 06:00:00.",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

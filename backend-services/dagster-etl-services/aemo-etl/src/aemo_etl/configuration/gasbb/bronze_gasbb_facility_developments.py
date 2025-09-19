@@ -2,7 +2,6 @@ from polars import String, Int64, Float64
 
 from aemo_etl.configuration import BRONZE_BUCKET
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                define table and register for Facility Developments report              │
@@ -23,9 +22,7 @@ primary_keys = [
     "EffectiveDate",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "DevFacilityId": Int64,
@@ -42,6 +39,7 @@ table_schema = {
     "RelatedFacilityName": String,
     "Comments": String,
     "ReportingEntity": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -59,6 +57,7 @@ schema_descriptions = {
     "RelatedFacilityName": "The name of any facility ID's related to the development facility.",
     "Comments": "Any additional comments included in the submission.",
     "ReportingEntity": "The entity who is reporting for the facility development.",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

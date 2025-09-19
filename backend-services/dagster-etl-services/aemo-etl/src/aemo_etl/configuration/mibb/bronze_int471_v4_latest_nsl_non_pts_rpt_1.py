@@ -5,7 +5,6 @@ from aemo_etl.configuration import (
     VICTORIAN_GAS_RETAIL_REPORTS_DETAILS,
 )
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                      define table and register to table locations                      │
@@ -27,9 +26,7 @@ primary_keys = [
     "distributor_name",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "nsl_update": String,
@@ -38,6 +35,7 @@ table_schema = {
     "distributor_name": String,
     "nsl_gj": Float64,
     "current_date": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -47,6 +45,7 @@ schema_descriptions = {
     "distributor_name": "Primary Key for MIBB report",
     "nsl_gj": "Daily nsl energy for a DB",
     "current_date": "Date and Time report created",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

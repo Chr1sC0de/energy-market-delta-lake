@@ -2,7 +2,6 @@ from polars import Float64, Int64, String
 
 from aemo_etl.configuration import BRONZE_BUCKET
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │           define table and register for Connection Point Nameplate Rating reports      │
@@ -25,9 +24,7 @@ primary_keys = [
     "LastUpdated",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "ConnectionPointName": String,
@@ -43,6 +40,7 @@ table_schema = {
     "EffectiveDate": String,
     "Description": String,
     "LastUpdated": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -59,6 +57,7 @@ schema_descriptions = {
     "EffectiveDate": "Gas day date that corresponding record takes effect. Any time component supplied will be ignored.",
     "Description": "Reasons or comments directly related to the capacity quantity or the change in quantity provided in relation to a BB facility and the times, dates, or duration for which those quantities or changes in quantities are expected to apply.",
     "LastUpdated": "The date data was last submitted by a participant based on the report query.",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

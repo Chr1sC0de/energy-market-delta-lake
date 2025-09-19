@@ -2,7 +2,6 @@ from polars import Float64, Int64, String
 
 from aemo_etl.configuration import BRONZE_BUCKET
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                define table and register for Pipeline Connection Flow report           │
@@ -26,9 +25,7 @@ primary_keys = [
     "LastUpdated",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 
 table_schema = {
@@ -44,6 +41,7 @@ table_schema = {
     "LocationId": Int64,
     "Quality": String,
     "LastUpdated": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -59,6 +57,7 @@ schema_descriptions = {
     "LocationId": "Unique Location identifier.",
     "Quality": "Indicates whether meter data for the submission date is available. Values can be either: OK, NIL, OOR, Not Available.",
     "LastUpdated": "Date and time the record was last modified.",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

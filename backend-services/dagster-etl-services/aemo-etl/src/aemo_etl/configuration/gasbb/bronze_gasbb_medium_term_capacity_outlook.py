@@ -2,7 +2,6 @@ from polars import Float64, Int64, String
 
 from aemo_etl.configuration import BRONZE_BUCKET
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │           define table and register for Medium Term Capacity Outlook reports           │
@@ -29,9 +28,7 @@ primary_keys = [
     "LastUpdated",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "FacilityId": Int64,
@@ -48,6 +45,7 @@ table_schema = {
     "DeliveryLocationName": String,
     "Description": String,
     "LastUpdated": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -65,6 +63,7 @@ schema_descriptions = {
     "DeliveryLocationName": "The name of the delivery location.",
     "Description": "Comments about the quantity or change in Outlook Quantity relating to the Facility Id, and the times, dates, or duration which those quantities or changes in quantities.",
     "LastUpdated": "Date and time record was last modified.",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

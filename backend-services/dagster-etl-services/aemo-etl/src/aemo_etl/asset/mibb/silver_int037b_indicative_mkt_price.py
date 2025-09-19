@@ -1,3 +1,4 @@
+import polars_hash as plh
 from dagster import AssetIn, AutomationCondition, MetadataValue
 from dagster import asset as dagster_asset
 from polars import LazyFrame, col
@@ -6,9 +7,9 @@ from aemo_etl.configuration import (
     SILVER_BUCKET,
 )
 from aemo_etl.configuration.mibb.bronze_int037b_v4_indicative_mkt_price_1 import (
-    schema_descriptions,
-    primary_keys,
     group_name,
+    primary_keys,
+    schema_descriptions,
 )
 from aemo_etl.factory.asset import (
     compact_and_vacuum_dataframe_asset_factory,
@@ -72,6 +73,10 @@ def table_asset(
             "%d %b %Y %H:%M:%S", time_zone="Australia/Melbourne", time_unit="ms"
         )
         .dt.convert_time_zone("UTC"),
+    ).with_columns(
+        surrogate_key=plh.concat_str(
+            *[col(key).fill_null("") for key in primary_keys]
+        ).chash.sha256()
     )
 
 

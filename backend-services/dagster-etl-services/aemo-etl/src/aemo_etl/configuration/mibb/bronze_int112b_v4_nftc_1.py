@@ -5,7 +5,6 @@ from aemo_etl.configuration import (
     VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS,
 )
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                      define table and register to table locations                      │
@@ -22,9 +21,7 @@ s3_table_location = f"s3://{BRONZE_BUCKET}/{s3_prefix}/{table_name}"
 
 primary_keys = ["nftc_name", "commencement_date", "ti"]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "nftc_name": String,
@@ -37,6 +34,7 @@ table_schema = {
     "hourly_max_net_wdl_qty_gj": Int64,
     "mod_datetime": String,
     "current_date": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -50,6 +48,7 @@ schema_descriptions = {
     "hourly_max_net_wdl_qty_gj": "1 value for each hour of the gas day",
     "mod_datetime": "NFTC creation/modification time stamp e.g. 07 Jun 2011 08:01:23",
     "current_date": "Date and time the report was produced",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

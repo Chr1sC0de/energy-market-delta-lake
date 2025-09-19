@@ -5,7 +5,6 @@ from aemo_etl.configuration import (
     SOUTH_AUSTRALIAN_GAS_RETAIL_REPORTS,
 )
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                      define table and register to table locations                      │
@@ -26,9 +25,7 @@ primary_keys = [
     "suburb_or_place_or_locality",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "distributor": String,
@@ -39,6 +36,7 @@ table_schema = {
     "state_or_territory": String,
     "site_address_postcode": String,
     "current_date": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -50,6 +48,7 @@ schema_descriptions = {
     "state_or_territory": "State or territory (if available)",
     "site_address_postcode": "Postcode (if available)",
     "current_date": "Report creation date and timestamp",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

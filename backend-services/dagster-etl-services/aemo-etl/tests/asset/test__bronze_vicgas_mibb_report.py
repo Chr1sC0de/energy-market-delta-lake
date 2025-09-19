@@ -2,6 +2,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Callable, Generator, cast
 
+import polars as pl
 from dagster import AssetExecutionContext, Output, build_asset_context
 from dagster_aws.s3 import S3Resource
 from polars import LazyFrame
@@ -72,6 +73,8 @@ def test__asset(
 
     if not any([check in submodule_name for check in skip]):
         assert get_lazyframe_num_rows(table_asset) > 0
+
+    assert len(table_asset.filter(pl.col.surrogate_key.is_null()).collect()) == 0
 
     for asset_check in definition_builder.asset_checks:
         assert asset_check(table_asset)[0]

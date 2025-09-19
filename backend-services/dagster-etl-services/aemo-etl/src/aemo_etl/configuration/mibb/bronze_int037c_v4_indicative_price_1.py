@@ -5,7 +5,6 @@ from aemo_etl.configuration import (
     VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS,
 )
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                      define table and register to table locations                      │
@@ -22,9 +21,7 @@ s3_table_location = f"s3://{BRONZE_BUCKET}/{s3_prefix}/{table_name}"
 
 primary_keys = ["demand_type_name", "transmission_id"]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "demand_type_name": String,
@@ -35,6 +32,7 @@ table_schema = {
     "gas_date": String,
     "approval_datetime": String,
     "current_date": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -46,6 +44,7 @@ schema_descriptions = {
     "gas_date": "e.g. 30 Jun 2007",
     "approval_datetime": "Date and time the schedule was approved 29 Jun 2007 01:23:45",
     "current_date": "Date and time the report is produced e.g. 29 Jun 2007 01:23:45",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

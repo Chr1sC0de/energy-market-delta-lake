@@ -5,7 +5,6 @@ from aemo_etl.configuration import (
     VICTORIAN_WHOLESALE_SETTLEMENTS_AND_METERING_REPORTS,
 )
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                      define table and register to table locations                      │
@@ -25,9 +24,7 @@ primary_keys = [
     "statement_version_id",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "gas_date": String,
@@ -35,6 +32,7 @@ table_schema = {
     "ancillary_amt_gst_ex": Float64,
     "scheduled_out_of_merit_gj": Float64,
     "current_date": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -43,6 +41,7 @@ schema_descriptions = {
     "ancillary_amt_gst_ex": "Total estimated AP for the gas day (net position as at the last schedule of the day) ancillary_amt_gst_ex = SUM(payment_amt) FROM ap_daily_sched_mirn per gas_date for inj_wdl_flag = 'I'",
     "scheduled_out_of_merit_gj": "Net out of merit order GJs scheduled and delivered over the day scheduled_out_of merit_gj = SUM(ap_qty_gj) FROM ap_constrained_up per gas_date for inj_wdl_flag = 'I'",
     "current_date": "Current report run date time. Format dd Mmm yyyy hh:mi:ss e.g. 15 May 2008 12:22:12",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

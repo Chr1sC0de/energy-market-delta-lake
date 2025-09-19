@@ -5,7 +5,6 @@ from aemo_etl.configuration import (
     VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS,
 )
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                      define table and register to table locations                      │
@@ -27,9 +26,7 @@ primary_keys = [
     "commencement_datetime",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "gas_date": String,
@@ -45,6 +42,7 @@ table_schema = {
     "quantity": Int64,
     "current_date": String,
     "approval_date": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -61,6 +59,7 @@ schema_descriptions = {
     "quantity": "Quantity value",
     "current_date": "Date and time the report was produced: Format dd mon yyyy hh:mm:ss",
     "approval_date": "Date of approval (e.g. 30 Jun 2007)",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

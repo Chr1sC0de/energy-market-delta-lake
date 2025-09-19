@@ -5,7 +5,6 @@ from aemo_etl.configuration import (
     VICTORIAN_GAS_RETAIL_REPORTS_DETAILS,
 )
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                      define table and register to table locations                      │
@@ -24,9 +23,7 @@ primary_keys = [
     "gas_date",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "gas_date": String,
@@ -37,6 +34,7 @@ table_schema = {
     "int_transfers_completed": Int64,
     "int_transfers_cancelled": Int64,
     "greenfields_received": Int64,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -48,6 +46,7 @@ schema_descriptions = {
     "int_transfers_completed": "Count of meter_type = 'PC' with last_update",
     "int_transfers_cancelled": "Count of meter_type = 'PD' with last_update",
     "greenfields_received": "Count of mirn with in a mirn_assignment_date",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

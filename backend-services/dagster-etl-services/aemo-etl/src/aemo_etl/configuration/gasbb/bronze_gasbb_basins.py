@@ -2,7 +2,6 @@ from polars import String, Int64
 
 from aemo_etl.configuration import BRONZE_BUCKET
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                define table and register for Basins report                             │
@@ -22,18 +21,14 @@ primary_keys = [
     "BasinId",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
-table_schema = {
-    "BasinId": Int64,
-    "BasinName": String,
-}
+table_schema = {"BasinId": Int64, "BasinName": String, "surrogate_key": String}
 
 schema_descriptions = {
     "BasinId": "A unique AEMO defined Facility Identifier.",
     "BasinName": "The name of the basin. If short name exists then short name included in report.",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

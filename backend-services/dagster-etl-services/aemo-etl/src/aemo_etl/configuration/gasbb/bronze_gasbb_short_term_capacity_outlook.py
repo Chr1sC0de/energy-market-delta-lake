@@ -2,7 +2,6 @@ from polars import Float64, Int64, String
 
 from aemo_etl.configuration import BRONZE_BUCKET
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │           define table and register for Short Term Capacity Outlook reports            │
@@ -24,12 +23,10 @@ primary_keys = [
     "FlowDirection",
     "ReceiptLocation",
     "DeliveryLocation",
-    "LastUpdated"
+    "LastUpdated",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "GasDate": String,
@@ -46,6 +43,7 @@ table_schema = {
     "DeliveryLocationName": String,
     "Description": String,
     "LastUpdated": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -63,6 +61,7 @@ schema_descriptions = {
     "DeliveryLocationName": "Description of the Delivery Location (BB pipelines only).",
     "Description": "Comments about quantity or changes, timing, dates or durations relating to the record.",
     "LastUpdated": "Timestamp of last modification.",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

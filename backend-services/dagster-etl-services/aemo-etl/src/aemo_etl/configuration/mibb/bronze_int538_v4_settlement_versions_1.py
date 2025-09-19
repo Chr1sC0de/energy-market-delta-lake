@@ -5,7 +5,6 @@ from aemo_etl.configuration import (
     QUEENSLAND_GAS_RETAIL_REPORT_DETAILS,
 )
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                      define table and register to table locations                      │
@@ -25,9 +24,7 @@ primary_keys = [
     "version_id",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "network_name": String,
@@ -37,6 +34,7 @@ table_schema = {
     "version_to_date": String,
     "issued_date": String,
     "current_date": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -47,6 +45,7 @@ schema_descriptions = {
     "version_to_date": "Effective End date. (dd mmm yyyy)",
     "issued_date": "Issue date of settlement",
     "current_date": "Date and Time Report Produced (e.g. 30 Jun 2007 06:00:00)",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

@@ -1,4 +1,5 @@
-from dagster import OpExecutionContext
+import polars as pl
+from dagster import OpExecutionContext, ScheduleEvaluationContext
 
 from aemo_etl.configuration import BRONZE_BUCKET, LANDING_BUCKET
 from aemo_etl.configuration._configuration import Link
@@ -37,6 +38,21 @@ class InMemoryCachedLinkFilterIgnoreDuplicates(InMemoryCachedLinkFilter):
         return super().__call__(_, link)
 
 
+def table_exists() -> bool:
+    try:
+        pl.scan_delta(s3_table_location)
+        return True
+    except Exception:
+        return False
+
+
+def schedule_tags_fn(_: ScheduleEvaluationContext) -> dict[str, str]:
+    return {
+        "ecs/cpu": "512" if table_exists() else "8192",
+        "ecs/memory": "2048" if table_exists() else "16384",
+    }
+
+
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                                register the definition                                 │
 #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
@@ -54,10 +70,8 @@ definitions_list.append(
         get_buffer_from_link_hook=None,
         override_get_links_fn=None,
         vacuum_retention_hours=0,
-        job_tags={
-            "ecs/cpu": "512",
-            "ecs/memory": "2048",
-        },
+        job_tags=None,
+        schedule_tags_fn=schedule_tags_fn,
         job_schedule_cron="5 * * * *",  # run every day 5 minutes past the hour
         compact_and_vacuum_schdule_cron="00 23 * * *",  # run at every 11 pm
     )

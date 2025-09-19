@@ -2,7 +2,6 @@ from polars import Int64, String
 
 from aemo_etl.configuration import BRONZE_BUCKET, ECGS_REPORTS
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                      define table and register to table locations                      │
@@ -22,9 +21,7 @@ primary_keys = [
     "last_name",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "company_name": String,
@@ -34,6 +31,7 @@ table_schema = {
     "last_name": String,
     "contact_email": String,
     "current_date": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -44,6 +42,7 @@ schema_descriptions = {
     "last_name": "Last name of the ECGS Responsible Person (sorted by Company_Name then Last_Name)",
     "contact_email": "Email address of the ECGS Responsible Person",
     "current_date": "Date and time the report was produced e.g. 30 Jun 2023 09:33:57",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

@@ -2,7 +2,6 @@ from polars import String, Float64
 
 from aemo_etl.configuration import BRONZE_BUCKET
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                define table and register for LNG Transactions report                   │
@@ -24,9 +23,7 @@ primary_keys = [
     "SupplyEndDate",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "TransactionMonth": String,
@@ -34,6 +31,7 @@ table_schema = {
     "Volume": Float64,
     "SupplyStartDate": String,
     "SupplyEndDate": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -42,6 +40,7 @@ schema_descriptions = {
     "Volume": "The total volume of the transactions for the reporting period.",
     "SupplyStartDate": "The earliest start date of all transactions captured in the reporting period.",
     "SupplyEndDate": "The latest end date of all transactions captured in the reporting period.",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

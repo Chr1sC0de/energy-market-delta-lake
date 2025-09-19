@@ -5,7 +5,6 @@ from aemo_etl.configuration import (
     VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS,
 )
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                      define table and register to table locations                      │
@@ -25,9 +24,7 @@ primary_keys = [
     "gas_date",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "hv_zone": Int64,
@@ -47,6 +44,7 @@ table_schema = {
     "hydrogen": Float64,
     "spec_gravity": Float64,
     "current_date": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -67,6 +65,7 @@ schema_descriptions = {
     "hydrogen": "The daily average of hydrogen. If no hourly values are available for the entire day, NULL is displayed.",
     "spec_gravity": "The daily average of specific gravity",
     "current_date": "The date and time the report is produced (e.g. 29 Jun 2012 01:23:45)",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

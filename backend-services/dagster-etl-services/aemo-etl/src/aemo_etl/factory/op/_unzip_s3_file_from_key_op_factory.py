@@ -10,7 +10,7 @@ from types_boto3_s3 import S3Client
 from aemo_etl.factory.op.schema import OpKwargs
 
 _default_retry_policy = RetryPolicy(
-    max_retries=10,
+    max_retries=3,
     delay=1,  # 1s
     backoff=Backoff.EXPONENTIAL,
     jitter=Jitter.PLUS_MINUS,

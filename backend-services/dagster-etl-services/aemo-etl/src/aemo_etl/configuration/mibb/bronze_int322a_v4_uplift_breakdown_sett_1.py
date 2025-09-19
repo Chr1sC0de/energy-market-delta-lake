@@ -5,7 +5,6 @@ from aemo_etl.configuration import (
     VICTORIAN_WHOLESALE_SETTLEMENTS_AND_METERING_REPORTS,
 )
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                      define table and register to table locations                      │
@@ -24,9 +23,7 @@ primary_keys = [
     "sched_no",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "statement_version_id": Int64,
@@ -48,6 +45,7 @@ table_schema = {
     "common_uplift_amt": Float64,
     "common_uplift_qty": Float64,
     "current_date": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -70,6 +68,7 @@ schema_descriptions = {
     "common_uplift_amt": "Common uplift amount",
     "common_uplift_qty": "Common uplift quantity",
     "current_date": "Date and Time Report Produced, e.g. 29 Jun 2007 01:23:45",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

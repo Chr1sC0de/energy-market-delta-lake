@@ -5,7 +5,6 @@ from aemo_etl.configuration import (
     VICTORIAN_WHOLESALE_SETTLEMENTS_AND_METERING_REPORTS,
 )
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                      define table and register to table locations                      │
@@ -27,9 +26,7 @@ primary_keys = [
     "ti",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "gas_date": String,
@@ -38,6 +35,7 @@ table_schema = {
     "ti": Int64,
     "energy_gj": Float64,
     "current_date": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -47,6 +45,7 @@ schema_descriptions = {
     "ti": "Trading interval (1-24), where 1= 6:00 AM to 7:00 AM, 2= 7:00 AM to 8:00 AM, until the 24th interval",
     "energy_gj": "Energy value (GJ) (not adjusted for UAFG)",
     "current_date": "Time report produced",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

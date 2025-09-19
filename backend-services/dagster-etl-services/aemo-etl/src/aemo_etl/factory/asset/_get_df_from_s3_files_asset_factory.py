@@ -10,6 +10,7 @@ from dagster import (
 from dagster_aws.s3 import S3Resource
 from polars import LazyFrame
 from polars._typing import PolarsDataType
+from types_boto3_s3 import S3Client
 
 from aemo_etl.factory.asset.param_spec import AssetDefinitonParamSpec
 from aemo_etl.util import (
@@ -22,6 +23,7 @@ def get_df_from_s3_files_asset_factory(
     s3_source_bucket: str,
     s3_source_prefix: str,
     s3_source_file_glob: str,
+    s3_archive_bucket: str | None = None,
     post_process_hook: Callable[[AssetExecutionContext, LazyFrame], LazyFrame]
     | None = None,
     process_object_hook: Callable[[Logger | None, bytes], LazyFrame] | None = None,
@@ -36,7 +38,7 @@ def get_df_from_s3_files_asset_factory(
         context: AssetExecutionContext,
         s3: S3Resource,
     ) -> Generator[Output[LazyFrame]]:
-        s3_client = s3.get_client()
+        s3_client: S3Client = s3.get_client()
         s3_object_keys = get_s3_object_keys_from_prefix_and_name_glob(
             s3_client=s3_client,
             s3_bucket=s3_source_bucket,
@@ -71,11 +73,15 @@ def get_df_from_s3_files_asset_factory(
         s3_client = s3.get_client()
 
         for key in s3_object_keys:
-            source_path = f"s3://{s3_source_bucket}/{key}"
-            context.log.info(f"removing {source_path}")
-            response = s3_client.delete_object(Bucket=s3_source_bucket, Key=key)
-            context.log.info(
-                f"ran delete_object for {source_path} with response \n {response}"
-            )
+            if s3_archive_bucket is None:
+                source_path = f"s3://{s3_source_bucket}/{key}"
+                context.log.info(f"removing {source_path}")
+                response = s3_client.delete_object(Bucket=s3_source_bucket, Key=key)
+                context.log.info(
+                    f"ran delete_object for {source_path} with response \n {response}"
+                )
+            else:
+                # need to implement an archiving strategy
+                NotImplementedError()
 
     return get_df_from_s3_files_asset

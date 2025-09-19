@@ -27,7 +27,7 @@ definition_builder = definition_builder_factory(
     table_name,
     group_name=group_name,
     cpu="512",
-    memory="2048",
+    memory="4096",
 )
 
 definitions_list.append(definition_builder.build())

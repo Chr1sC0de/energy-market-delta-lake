@@ -1,3 +1,4 @@
+import polars_hash as plh
 from dagster import AssetIn, AutomationCondition, MetadataValue
 from dagster import asset as dagster_asset
 from polars import LazyFrame, col
@@ -6,10 +7,14 @@ from aemo_etl.configuration import (
     SILVER_BUCKET,
 )
 from aemo_etl.configuration.gasbb.bronze_gasbb_short_term_capacity_outlook import (
+    group_name,
     primary_keys,
     schema_descriptions,
-    group_name,
+)
+from aemo_etl.configuration.gasbb.bronze_gasbb_short_term_capacity_outlook import (
     key_prefix as asset_in_prefix,
+)
+from aemo_etl.configuration.gasbb.bronze_gasbb_short_term_capacity_outlook import (
     table_name as asset_in_name,
 )
 from aemo_etl.factory.asset import (
@@ -22,7 +27,6 @@ from aemo_etl.parameter_specification import (
     PolarsDataFrameReadScanDeltaParamSpec,
     PolarsDataFrameWriteDeltaParamSpec,
 )
-
 
 key_prefix = ["silver", "aemo", "gasbb"]
 table_name = "silver_gasbb_short_term_capacity_outlook"
@@ -68,6 +72,10 @@ def table_asset(
             "%Y/%m/%d %H:%M:%S", time_zone="Australia/Melbourne", time_unit="ms"
         )
         .dt.convert_time_zone("UTC"),
+    ).with_columns(
+        surrogate_key=plh.concat_str(
+            *[col(key).fill_null("") for key in primary_keys]
+        ).chash.sha256()
     )
 
 

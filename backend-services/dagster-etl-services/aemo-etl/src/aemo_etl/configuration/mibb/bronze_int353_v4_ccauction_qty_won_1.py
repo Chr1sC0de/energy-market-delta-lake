@@ -5,7 +5,6 @@ from aemo_etl.configuration import (
     VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS,
 )
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                      define table and register to table locations                      │
@@ -24,9 +23,7 @@ primary_keys = [
     "cc_period",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 
 table_schema = {
@@ -42,6 +39,7 @@ table_schema = {
     "quantities_won_gj": Float64,
     "unallocated_qty": Float64,
     "current_date": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -57,6 +55,7 @@ schema_descriptions = {
     "quantities_won_gj": "Quantity won in GJ",
     "unallocated_qty": "Quantity not won in GJ",
     "current_date": "Report generation date. dd mmm yyyy hh:mm:ss",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

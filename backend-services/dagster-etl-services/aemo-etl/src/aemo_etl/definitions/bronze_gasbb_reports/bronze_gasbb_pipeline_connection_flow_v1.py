@@ -26,6 +26,8 @@ definition_builder = definition_builder_factory(
     s3_file_glob,
     table_name,
     group_name=group_name,
+    cpu="512",
+    memory="4096",
 )
 
 definitions_list.append(definition_builder.build())

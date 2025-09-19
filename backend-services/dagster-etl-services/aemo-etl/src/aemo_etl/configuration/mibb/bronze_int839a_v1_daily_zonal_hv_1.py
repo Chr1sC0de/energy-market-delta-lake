@@ -5,7 +5,6 @@ from aemo_etl.configuration import (
     SOUTH_AUSTRALIAN_GAS_RETAIL_REPORTS,
 )
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                      define table and register to table locations                      │
@@ -25,9 +24,7 @@ primary_keys = [
     "hv_zone",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "gas_date": String,
@@ -35,6 +32,7 @@ table_schema = {
     "hv_zone_description": String,
     "heating_value_mj": Float64,
     "current_date": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -43,6 +41,7 @@ schema_descriptions = {
     "hv_zone_description": "Name of the heating value zone",
     "heating_value_mj": "The Heating value is in MJ per standard cubic meters",
     "current_date": "Report generation date and timestamp. Date format dd Mmm yyyy hh:mm:ss",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

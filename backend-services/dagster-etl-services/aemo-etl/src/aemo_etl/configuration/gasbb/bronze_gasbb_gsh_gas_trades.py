@@ -2,7 +2,6 @@ from polars import Float64, String
 
 from aemo_etl.configuration import BRONZE_BUCKET
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 key_prefix = ["bronze", "aemo", "gasbb"]
 
@@ -24,9 +23,7 @@ primary_keys = [
     "MANUAL_TRADE",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 
 table_schema = {
@@ -39,6 +36,7 @@ table_schema = {
     "START_DATE": String,
     "END_DATE": String,
     "MANUAL_TRADE": String,
+    "surrogate_key": String,
 }
 
 
@@ -52,6 +50,7 @@ schema_descriptions = {
     "START_DATE": "Start Date",
     "END_DATE": "End Date",
     "MANUAL_TRADE": "Manual Trade?",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

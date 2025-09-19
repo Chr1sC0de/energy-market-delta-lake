@@ -1,6 +1,5 @@
 from dagster import AssetExecutionContext
-from deltalake.exceptions import TableNotFoundError
-from polars import LazyFrame, lit, scan_delta
+from polars import LazyFrame, lit
 
 from aemo_etl.configuration.gasbb.bronze_gasbb_shippers_list import (
     group_name,
@@ -45,13 +44,6 @@ def custom_postprocess_hook(
         datetime_pattern=datetime_pattern,
         datetime_column_name=datetime_column_name,
     )
-
-    try:
-        df = df.join(
-            scan_delta(s3_table_location), how="anti", on=primary_keys, nulls_equal=True
-        )
-    except TableNotFoundError:
-        ...
 
     return df
 

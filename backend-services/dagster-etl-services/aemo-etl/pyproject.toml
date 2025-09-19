@@ -20,6 +20,7 @@ dependencies = [
     "pandas>=2.2.3",
     "patito>=0.8.3",
     "polars>=1.30.0",
+    "polars-hash>=0.5.5",
     "pyarrow>=20.0.0",
     "pymupdf>=1.25.5",
     "requests>=2.32.3",

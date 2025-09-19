@@ -2,7 +2,6 @@ from polars import String, Int64, Float64
 
 from aemo_etl.configuration import BRONZE_BUCKET
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                define table and register for Nameplate Rating report                   │
@@ -26,9 +25,7 @@ primary_keys = [
     "lastupdated",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "facilityname": String,
@@ -45,6 +42,7 @@ table_schema = {
     "effectivedate": String,
     "description": String,
     "lastupdated": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -62,6 +60,7 @@ schema_descriptions = {
     "effectivedate": "Gas day date that corresponding record takes effect. Any time component supplied will be ignored.",
     "description": "Free text facility use is restricted to a description for reasons or comments directly related to the quantity or the change in quantity provided in relation to a BB facility.",
     "lastupdated": "Date and time record was last updated.",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

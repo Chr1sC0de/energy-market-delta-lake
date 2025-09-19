@@ -5,7 +5,6 @@ from aemo_etl.configuration import (
     VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS,
 )
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                      define table and register to table locations                      │
@@ -25,9 +24,7 @@ primary_keys = [
     "schedule_interval",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "gas_date": String,
@@ -39,6 +36,7 @@ table_schema = {
     "administered_price": Float64,
     "actual_wdl_gj": Float64,
     "actual_inj_gj": Float64,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -51,6 +49,7 @@ schema_descriptions = {
     "administered_price": "Administered Price",
     "actual_wdl_gj": "Actual metered withdrawals",
     "actual_inj_gj": "Actual metered injections",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

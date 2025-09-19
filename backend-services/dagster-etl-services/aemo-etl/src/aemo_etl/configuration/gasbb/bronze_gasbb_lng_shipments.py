@@ -2,7 +2,6 @@ from polars import Float64, Int64, String
 
 from aemo_etl.configuration import BRONZE_BUCKET
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                define table and register for LNG Shipments report                      │
@@ -24,9 +23,7 @@ primary_keys = [
     "VersionDateTime",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "TransactionId": String,
@@ -35,6 +32,7 @@ table_schema = {
     "VolumePJ": Float64,
     "ShipmentDate": String,
     "VersionDateTime": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -44,6 +42,7 @@ schema_descriptions = {
     "VolumePJ": "Volume of the shipment in PJ.",
     "ShipmentDate": "For LNG export facility, the departure date. For LNG import facility, the date unloading commences at the LNG import facility.",
     "VersionDateTime": "Time a successful submission is accepted by AEMO systems.",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

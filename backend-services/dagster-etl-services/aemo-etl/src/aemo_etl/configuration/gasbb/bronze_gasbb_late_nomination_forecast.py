@@ -2,7 +2,6 @@ from polars import String, Int64, Float64
 
 from aemo_etl.configuration import BRONZE_BUCKET
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                define table and register for Late Nomination And Forecast report       │
@@ -25,9 +24,7 @@ primary_keys = [
     "EarliestSubmissionDate",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "GasDate": String,
@@ -36,6 +33,7 @@ table_schema = {
     "ConnectionPointId": Int64,
     "EarliestSubmissionDate": String,
     "LateTimeSpan": Float64,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -45,6 +43,7 @@ schema_descriptions = {
     "ConnectionPointId": "A unique AEMO defined connection point identifier.",
     "EarliestSubmissionDate": "Date and time of the earliest submission for that gas date.",
     "LateTimeSpan": "Hours and minutes of the time span between the submission cut-off time and the earliest submission date.",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

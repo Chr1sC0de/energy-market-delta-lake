@@ -5,7 +5,6 @@ from aemo_etl.configuration import (
     VICTORIAN_WHOLESALE_SETTLEMENTS_AND_METERING_REPORTS,
 )
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                      define table and register to table locations                      │
@@ -22,9 +21,7 @@ s3_table_location = f"s3://{BRONZE_BUCKET}/{s3_prefix}/{table_name}"
 
 primary_keys = ["gas_date"]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "gas_date": String,
@@ -37,6 +34,7 @@ table_schema = {
     "imb_inj_wtd_ave_price_gst_ex": Float64,
     "imb_wdr_wtd_ave_price_gst_ex": Float64,
     "current_date": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -62,6 +60,7 @@ Where:
 $ wdr imb S,MP = $ of imbalance payments for withdrawals only for Market participant MP in Schedule S
 wdr imb S,MP = GJ of imbalance amount for withdrawals only for Market participant MP in Schedule S""",
     "current_date": "Date and Time Report Produced e.g. 29 Jun 2007 01:23:45",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

@@ -2,7 +2,6 @@ from polars import Boolean, String, Int64
 
 from aemo_etl.configuration import BRONZE_BUCKET
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                define table and register for Nodes And Connection Points report        │
@@ -25,9 +24,7 @@ primary_keys = [
     "LastUpdated",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "FacilityName": String,
@@ -45,6 +42,7 @@ table_schema = {
     "LocationId": Int64,
     "EffectiveDate": String,
     "LastUpdated": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -63,6 +61,7 @@ schema_descriptions = {
     "LocationId": "A unique AEMO defined location identifier.",
     "EffectiveDate": "Date record is effective from",
     "LastUpdated": "Date the record was last modified.",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

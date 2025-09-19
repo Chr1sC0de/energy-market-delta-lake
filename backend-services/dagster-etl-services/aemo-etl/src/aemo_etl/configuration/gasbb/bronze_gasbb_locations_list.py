@@ -2,7 +2,6 @@ from polars import Int64, String
 
 from aemo_etl.configuration import BRONZE_BUCKET
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                define table and register for Locations List report                     │
@@ -23,9 +22,7 @@ primary_keys = [
     "LastUpdated",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "LocationName": String,
@@ -34,6 +31,7 @@ table_schema = {
     "LocationType": String,
     "Description": String,
     "LastUpdated": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -43,6 +41,7 @@ schema_descriptions = {
     "LocationType": "Type of location.",
     "Description": "Free text description of the Location including boundaries and the basis of measurement.",
     "LastUpdated": "Date the list of locations was last updated.",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

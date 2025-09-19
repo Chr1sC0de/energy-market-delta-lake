@@ -5,7 +5,6 @@ from aemo_etl.configuration import (
     VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS,
 )
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                      define table and register to table locations                      │
@@ -25,9 +24,7 @@ primary_keys = [
     "compressor_station_id",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "compressor_id": Int64,
@@ -46,6 +43,7 @@ table_schema = {
     "station_name": String,
     "last_mod_date": String,
     "current_date": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -65,6 +63,7 @@ schema_descriptions = {
     "station_name": "Station name e.g. Brooklyn Compressor Stage III",
     "last_mod_date": "Time last modified e.g. 10 Jun 2001 16:50:46",
     "current_date": "Time the report is produced e.g. 21 Jun2001 16:50:46",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

@@ -81,7 +81,6 @@ definition_builder = definition_builder_factory(
     s3_file_glob,
     table_name,
     group_name=group_name,
-    post_process_hook=medium_term_capacity_post_process_hook,
 )
 
 definitions_list.append(definition_builder.build())

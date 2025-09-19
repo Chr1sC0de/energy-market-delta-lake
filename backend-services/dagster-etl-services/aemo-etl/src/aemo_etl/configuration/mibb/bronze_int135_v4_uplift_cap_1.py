@@ -5,7 +5,6 @@ from aemo_etl.configuration import (
     VICTORIAN_WHOLESALE_SETTLEMENTS_AND_METERING_REPORTS,
 )
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                      define table and register to table locations                      │
@@ -25,9 +24,7 @@ primary_keys = [
     "schedule_no",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "gas_date": String,
@@ -37,6 +34,7 @@ table_schema = {
     "positive_uplift_rate": Float64,
     "negative_uplift_rate": Float64,
     "current_datetime": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -47,6 +45,7 @@ schema_descriptions = {
     "positive_uplift_rate": "Positive uplift rate. UPR(P) variable from the uplift payment calculation.",
     "negative_uplift_rate": "Negative uplift rate. UPR(N) variable from the uplift payment calculation.",
     "current_datetime": "When report produced. The format is dd mm yyyy hh:mm:ss e.g. 23 Jul 2008 16:30:35",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

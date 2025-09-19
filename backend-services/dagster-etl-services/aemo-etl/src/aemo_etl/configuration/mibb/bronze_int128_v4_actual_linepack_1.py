@@ -5,7 +5,6 @@ from aemo_etl.configuration import (
     VICTORIAN_WHOLESALE_SETTLEMENTS_AND_METERING_REPORTS,
 )
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                      define table and register to table locations                      │
@@ -24,20 +23,20 @@ primary_keys = [
     "commencement_datetime",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "commencement_datetime": String,
     "actual_linepack": Float64,
     "current_date": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
     "commencement_datetime": "Commencement date and time (e.g. 25 Apr 2007 1:00:00)",
     "actual_linepack": "Energy value representing the physical linepack",
     "current_date": "Date and time report produced (e.g. 30 Jun 2007 01:23:56)",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

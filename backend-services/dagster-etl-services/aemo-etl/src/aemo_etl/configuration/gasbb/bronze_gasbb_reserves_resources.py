@@ -2,7 +2,6 @@ from polars import String, Int64, Float64
 
 from aemo_etl.configuration import BRONZE_BUCKET
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                define table and register for Reserves And Resources report             │
@@ -25,9 +24,7 @@ primary_keys = [
     "VersionDateTime",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "FieldId": Int64,
@@ -61,6 +58,7 @@ table_schema = {
     "PreparationIndependenceStatement": String,
     "EffectiveDate": String,
     "VersionDateTime": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -95,6 +93,7 @@ schema_descriptions = {
     "PreparationIndependenceStatement": "Whether the qualified gas industry professional who prepared, or supervised the preparation of, the reserves and resources estimates is independent of the BB reporting entity.",
     "EffectiveDate": "The date on which the record takes effect.",
     "VersionDateTime": "Time a successful submission is accepted by AEMO systems.",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

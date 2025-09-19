@@ -5,7 +5,6 @@ from aemo_etl.configuration import (
     VICTORIAN_WHOLESALE_SETTLEMENTS_AND_METERING_REPORTS,
 )
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                      define table and register to table locations                      │
@@ -24,9 +23,7 @@ primary_keys = [
     "mirn",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "mirn": String,
@@ -35,6 +32,7 @@ table_schema = {
     "hv_zone_desc": String,
     "effective_from": String,
     "current_date": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -44,6 +42,7 @@ schema_descriptions = {
     "hv_zone_desc": "Heating value zone name",
     "effective_from": "Date when the HV zone became effective for the mirn, Example: 01 Aug 2023",
     "current_date": "Date and time report produced, Example: 30 Jun 2007 06:00:00)",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

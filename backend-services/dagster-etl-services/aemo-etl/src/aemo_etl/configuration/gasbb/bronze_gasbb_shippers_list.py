@@ -2,7 +2,6 @@ from polars import String, Int64
 
 from aemo_etl.configuration import BRONZE_BUCKET
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                define table and register for Shippers List report                      │
@@ -25,9 +24,7 @@ primary_keys = [
     "LastUpdated",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "EffectiveDate": String,
@@ -38,6 +35,7 @@ table_schema = {
     "OperatorName": String,
     "ShipperName": String,
     "LastUpdated": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -49,6 +47,7 @@ schema_descriptions = {
     "OperatorName": "The name of the company who operates the facility.",
     "ShipperName": "The name of the shipper who holds the capacity.",
     "LastUpdated": "The date data was last submitted.",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

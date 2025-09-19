@@ -1,19 +1,22 @@
+# pyright: reportUnknownMemberType=false, reportMissingTypeStubs=false
 from io import BytesIO
 from time import time
 from typing import Callable, Self
 
+import dagster as dg
 from dagster import (
     DefaultScheduleStatus,
     Definitions,
     OpExecutionContext,
     ScheduleDefinition,
+    ScheduleEvaluationContext,
     define_asset_job,
 )
 from deltalake.exceptions import TableNotFoundError
 from polars import LazyFrame, col, lit, read_delta
 from polars import len as len_
 
-from aemo_etl.configuration import BRONZE_BUCKET, Link
+from aemo_etl.configuration import BRONZE_BUCKET, DEVELOPMENT_LOCATION, Link
 from aemo_etl.factory.asset import (
     compact_and_vacuum_dataframe_asset_factory,
 )
@@ -27,9 +30,6 @@ from aemo_etl.parameter_specification import (
     PolarsDeltaLakeMergeParamSpec,
 )
 from aemo_etl.util import newline_join
-from aemo_etl.configuration import DEVELOPMENT_LOCATION
-
-# pyright: reportUnknownMemberType=false, reportMissingTypeStubs=false
 
 
 class InMemoryCachedLinkFilter:
@@ -86,7 +86,9 @@ def download_nemweb_public_files_to_s3_definition_factory(
     get_buffer_from_link_hook: Callable[[Link], BytesIO] | None = None,
     override_get_links_fn: Callable[[OpExecutionContext], list[Link]] | None = None,
     vacuum_retention_hours: int = 0,
-    job_tags: dict[str, str] = {
+    schedule_tags_fn: Callable[[ScheduleEvaluationContext], dict[str, str]]
+    | None = None,
+    job_tags: dict[str, str] | None = {
         "ecs/cpu": "512",
         "ecs/memory": "2048",
     },
@@ -181,6 +183,7 @@ def download_nemweb_public_files_to_s3_definition_factory(
         asset_job_name,
         selection=[download_nemweb_public_files_to_s3_asset],
         tags=job_tags,
+        # executor_def=None if DEVELOPMENT_LOCATION == "local" else ecs_executor, # setting this variable will allow us execute ops in ecs instances essentially allowing us to massively parallelize our jobs
     )
 
     download_nemweb_public_files_to_s3_compact_and_vacuum_job = define_asset_job(
@@ -192,16 +195,41 @@ def download_nemweb_public_files_to_s3_definition_factory(
     #     │                 create a schedule for the downloaded_public_files_job                  │
     #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
-    download_nemweb_public_files_to_s3_schedule = ScheduleDefinition(
+    @dg.schedule(
         name=f"job_schedule_{name}",
         job=download_nemweb_public_files_to_s3_job,
-        cron_schedule=job_schedule_cron,  # run every 5 minutes past the hour
+        tags=None,
+        cron_schedule=job_schedule_cron,
         default_status=(
             DefaultScheduleStatus.STOPPED
             if DEVELOPMENT_LOCATION == "local"
             else DefaultScheduleStatus.RUNNING
         ),
     )
+    def download_nemweb_public_files_to_s3_schedule(
+        context: dg.ScheduleEvaluationContext,
+    ):
+        run_records = context.instance.get_run_records(
+            dg.RunsFilter(
+                job_name=download_nemweb_public_files_to_s3_job.name,
+                statuses=[
+                    dg.DagsterRunStatus.QUEUED,
+                    dg.DagsterRunStatus.NOT_STARTED,
+                    dg.DagsterRunStatus.STARTING,
+                    dg.DagsterRunStatus.STARTED,
+                ],
+            )
+        )
+
+        # skip a schedule run if another run of the same job is already running
+        if len(run_records) > 0:
+            return dg.SkipReason(
+                "Skipping this run because another run of the same job is already running"
+            )
+        if schedule_tags_fn is not None:
+            tags = schedule_tags_fn(context)
+            return dg.RunRequest(tags=tags)
+        return dg.RunRequest()
 
     download_nemweb_public_files_to_s3_compact_and_vacuum_schedule = ScheduleDefinition(
         name=f"job_schedule_compact_and_vacuum_{name}",

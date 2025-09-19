@@ -2,7 +2,6 @@ from polars import Float64, Int64, String
 
 from aemo_etl.configuration import BRONZE_BUCKET
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                define table and register for Actual Flow and Storage reports           │
@@ -18,16 +17,9 @@ s3_file_glob = "gasbbactualflowstorage*"
 
 s3_table_location = f"s3://{BRONZE_BUCKET}/{s3_prefix}/{table_name}"
 
-primary_keys = [
-    "GasDate",
-    "FacilityId",
-    "LocationId",
-    "LastUpdated"
-]
+primary_keys = ["GasDate", "FacilityId", "LocationId", "LastUpdated"]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "GasDate": String,
@@ -44,6 +36,7 @@ table_schema = {
     "FacilityType": String,
     "CushionGasStorage": Float64,
     "LastUpdated": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -61,6 +54,7 @@ schema_descriptions = {
     "FacilityType": "The type of facility (e.g., BBGPG, COMPRESSOR, PIPE, PROD, STOR, LNGEXPORT, LNGIMPORT, BBLARGE).",
     "CushionGasStorage": "The quantity of gas that must be retained in the Storage or LNG Import facility in order to maintain the required pressure and deliverability rates.",
     "LastUpdated": "The date data was last submitted by a participant based on the report query.",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

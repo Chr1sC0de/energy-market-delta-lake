@@ -5,7 +5,6 @@ from aemo_etl.configuration import (
     VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS,
 )
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 table_name = "bronze_int029a_v4_system_notices_1"
 
@@ -19,9 +18,7 @@ primary_keys = [
     "system_wide_notice_id",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "system_wide_notice_id": Int64,
@@ -32,6 +29,7 @@ table_schema = {
     "notice_end_date": String,
     "url_path": String,
     "current_date": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -43,6 +41,7 @@ schema_descriptions = {
     "notice_end_date": "e.g. 23 Jul 2007 16:30:35",
     "url_path": "Path to any attachment included in the notice e.g. Public/Master_MIBB_report_list.zip",
     "current_date": "Date and time the report was produced e.g. Jul 23 2007 16:30:35",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

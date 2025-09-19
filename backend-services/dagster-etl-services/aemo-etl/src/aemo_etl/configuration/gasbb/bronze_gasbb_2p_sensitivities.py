@@ -2,7 +2,6 @@ from polars import String, Float64
 
 from aemo_etl.configuration import BRONZE_BUCKET
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                define table and register for Reserves And Resources report             │
@@ -23,15 +22,14 @@ primary_keys = [
     "State",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "PeriodID": String,
     "State": String,
     "Increase": Float64,
     "Decrease": Float64,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -39,6 +37,7 @@ schema_descriptions = {
     "State": "state",
     "Increase": "increase value",
     "Decrease": "decrease value",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

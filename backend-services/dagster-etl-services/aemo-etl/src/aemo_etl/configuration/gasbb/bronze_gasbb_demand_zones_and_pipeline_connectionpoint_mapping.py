@@ -2,7 +2,6 @@ from polars import String, Int64
 
 from aemo_etl.configuration import BRONZE_BUCKET
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 
 key_prefix = ["bronze", "aemo", "gasbb"]
@@ -17,9 +16,7 @@ s3_table_location = f"s3://{BRONZE_BUCKET}/{s3_prefix}/{table_name}"
 
 primary_keys = ["FacilityId", "NodeId", "ConnectionPointId", "FlowDirection"]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 
 table_schema = {
@@ -32,6 +29,7 @@ table_schema = {
     "ConnectionPointName": String,
     "State": String,
     "DemandZone": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -44,6 +42,7 @@ schema_descriptions = {
     "ConnectionPointName": "Names of the connection point.",
     "State": "The state where the transaction occurred.",
     "DemandZone": "",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

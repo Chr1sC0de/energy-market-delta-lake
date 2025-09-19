@@ -7,19 +7,18 @@ from dagster import (
 from dagster_aws.s3 import S3Resource, s3_pickle_io_manager
 
 import aemo_etl
-from aemo_etl.configuration import IO_MANAGER_BUCKET
+from aemo_etl.configuration import DEVELOPMENT_LOCATION, IO_MANAGER_BUCKET
 from aemo_etl.definitions import (
     bronze_download_public_nemweb_files_to_s3,
-    bronze_vicgas_mibb_reports,
     bronze_gasbb_reports,
+    bronze_vicgas_mibb_reports,
 )
+from aemo_etl.definitions.sensors import sensor_aemo_gasbb_jobs, sensor_aemo_vicgas_jobs
 from aemo_etl.register import definitions_list
 from aemo_etl.resource import (
     S3PolarsDeltaLakeIOManager,
     S3PolarsParquetIOManager,
 )
-from aemo_etl.configuration import DEVELOPMENT_LOCATION
-from aemo_etl.definitions.sensors import sensor_aemo_vicgas_jobs, sensor_aemo_gasbb_jobs
 
 definitions = Definitions.merge(
     Definitions(

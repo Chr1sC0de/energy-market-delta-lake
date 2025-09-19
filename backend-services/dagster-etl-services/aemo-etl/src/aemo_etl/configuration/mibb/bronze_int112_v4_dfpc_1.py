@@ -5,7 +5,6 @@ from aemo_etl.configuration import (
     VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS,
 )
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                      define table and register to table locations                      │
@@ -25,9 +24,7 @@ primary_keys = [
     "ti",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "dfpc_id": Int64,
@@ -42,6 +39,7 @@ table_schema = {
     "hourly_max_net_wdl_qty_gj": Int64,
     "mod_datetime": String,
     "current_date": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -57,6 +55,7 @@ schema_descriptions = {
     "hourly_max_net_wdl_qty_gj": "1 value for each hour of the gas day",
     "mod_datetime": "DFPC creation/modification time stamp (e.g. 07 Jun 2006 08:01:23)",
     "current_date": "Date and time the report was produced (e.g. 30 Jun 2005 1:23:56)",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

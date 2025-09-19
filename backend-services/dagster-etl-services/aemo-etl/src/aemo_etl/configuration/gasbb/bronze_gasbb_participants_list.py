@@ -2,7 +2,6 @@ from polars import String, Int64
 
 from aemo_etl.configuration import BRONZE_BUCKET
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                define table and register for Participants List report                  │
@@ -22,9 +21,7 @@ primary_keys = [
     "CompanyId",
 ]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "CompanyName": String,
@@ -39,6 +36,7 @@ table_schema = {
     "State": String,
     "Postcode": String,
     "CompanyFax": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -54,6 +52,7 @@ schema_descriptions = {
     "State": "State where the company is located.",
     "Postcode": "Postcode details.",
     "CompanyFax": "Company fax details.",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

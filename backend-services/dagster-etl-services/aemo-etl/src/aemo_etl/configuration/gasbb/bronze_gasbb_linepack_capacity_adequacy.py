@@ -2,7 +2,6 @@ from polars import Int64, String
 
 from aemo_etl.configuration import BRONZE_BUCKET
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │           define table and register for Linepack Capacity Adequacy reports             │
@@ -18,15 +17,9 @@ s3_file_glob = "gasbblinepackcapacityadequacy*"
 
 s3_table_location = f"s3://{BRONZE_BUCKET}/{s3_prefix}/{table_name}"
 
-primary_keys = [
-    "GasDate",
-    "FacilityId",
-    "LastUpdated"
-]
+primary_keys = ["GasDate", "FacilityId", "LastUpdated"]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "GasDate": String,
@@ -36,6 +29,7 @@ table_schema = {
     "Flag": String,
     "Description": String,
     "LastUpdated": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
@@ -46,6 +40,7 @@ schema_descriptions = {
     "Flag": "The flags are traffic light colours (Green, Amber, Red) indicating the LCA status for each pipeline.",
     "Description": "Free text facility use is restricted to a description for reasons or comments directly related to the change in the LCA flag and the times, dates, or duration for which those changes are expected to apply.",
     "LastUpdated": "The date when the record was last updated.",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """

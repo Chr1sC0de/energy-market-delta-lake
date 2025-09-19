@@ -5,7 +5,8 @@
     . ".venv/bin/activate"
     cdk destroy --method direct --force \
         DevEnergyMarketDagsterAemoETLUserCodeService \
-        DevEnergyMarketDagsterWebserverService \
+        DevEnergyMarketDagsterWebserverServiceGuest \
+        DevEnergyMarketDagsterWebserverServiceAdmin \
         DevEnergyMarketDagsterDaemonService
     cdk deploy --all --method direct --require-approval never --concurrency 8
 )

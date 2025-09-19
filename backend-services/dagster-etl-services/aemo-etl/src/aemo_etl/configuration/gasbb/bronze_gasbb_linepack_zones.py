@@ -2,7 +2,6 @@ from polars import String
 
 from aemo_etl.configuration import BRONZE_BUCKET
 from aemo_etl.register import table_locations
-from aemo_etl.util import newline_join
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
 #     │                define table and register for Facilities List report                    │
@@ -21,20 +20,20 @@ s3_table_location = f"s3://{BRONZE_BUCKET}/{s3_prefix}/{table_name}"
 
 primary_keys = ["Operator", "LinepackZone"]
 
-upsert_predicate = newline_join(
-    *[f"s.{col} = t.{col}" for col in primary_keys], extra="and "
-)
+upsert_predicate = "s.surrogate_key = t.surrogate_key"
 
 table_schema = {
     "Operator": String,
     "LinepackZone": String,
     "LinepackZoneDescription": String,
+    "surrogate_key": String,
 }
 
 schema_descriptions = {
     "Operator": "Operator of linepack zone",
     "LinepackZone": "Linepack Zone",
     "LinepackZoneDescription": "Description of Linepack Zone",
+    "surrogate_key": "Unique identifier created using sha256 over the primary keys",
 }
 
 report_purpose = """
