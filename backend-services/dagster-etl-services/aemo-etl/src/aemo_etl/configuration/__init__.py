@@ -1,26 +1,27 @@
 import os
+
 from aemo_etl.configuration._configuration import (
-    NAME_PREFIX,
-    STACK_PREFIX,
+    ADMINISTRATOR_IPS,
+    BRONZE_BUCKET,
     DEVELOPMENT_ENVIRONMENT,
     DEVELOPMENT_LOCATION,
-    ADMINISTRATOR_IPS,
-    SHARED_PREFIX,
+    ECGS_REPORTS,
+    GOLD_BUCKET,
     IO_MANAGER_BUCKET,
     LANDING_BUCKET,
-    BRONZE_BUCKET,
-    SILVER_BUCKET,
-    GOLD_BUCKET,
-    VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS,
-    VICTORIAN_WHOLESALE_SETTLEMENTS_AND_METERING_REPORTS,
-    VICTORIAN_GAS_RETAIL_REPORTS_DETAILS,
+    NAME_PREFIX,
     QUEENSLAND_GAS_RETAIL_REPORT_DETAILS,
+    SHARED_PREFIX,
+    SILVER_BUCKET,
     SOUTH_AUSTRALIAN_GAS_RETAIL_REPORTS,
-    ECGS_REPORTS,
+    STACK_PREFIX,
+    VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS,
+    VICTORIAN_GAS_RETAIL_REPORTS_DETAILS,
+    VICTORIAN_WHOLESALE_SETTLEMENTS_AND_METERING_REPORTS,
     Link,
     ProcessedLink,
 )
-
+from aemo_etl.configuration import gasbb, mibb
 
 __all__ = [
     "NAME_PREFIX",
@@ -42,6 +43,8 @@ __all__ = [
     "ECGS_REPORTS",
     "Link",
     "ProcessedLink",
+    "gasbb",
+    "mibb",
 ]
 
 #     ╭────────────────────────────────────────────────────────────────────────────────────────╮

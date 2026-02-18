@@ -1,0 +1,7 @@
+#!/usr//bin/env bash
+
+. "./scripts/@common"
+
+podman attach --detach-keys "ctrl-a,ctrl-e" "$CONTAINER_NAME"
+
+wait

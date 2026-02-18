@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+branch_name=$(git branch --show-current)
+
+container_identifier=${branch_name/\//-}
+
+CONTAINER_NAME=emdl-"$container_identifier"
+
+export CONTAINER_NAME

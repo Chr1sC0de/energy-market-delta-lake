@@ -9,7 +9,11 @@ from polars import LazyFrame
 from pytest import mark
 from types_boto3_s3 import S3Client
 
-from aemo_etl.definitions import bronze_gasbb_reports
+from aemo_etl.configuration.gasbb import GASBB_CONFIGS
+from aemo_etl.configuration.gasbb.hooks import get_hooks_for_report
+from aemo_etl.definitions.bronze_gasbb_reports.utils import (
+    definition_builder_factory,
+)
 from aemo_etl.factory.definition._get_mibb_report_from_s3_files_definition import (
     GetMibbReportFromS3FilesDefinitionBuilder,
 )
@@ -20,29 +24,33 @@ from aemo_etl.util import get_lazyframe_num_rows
 CWD = Path(__file__).parent
 MOCK_DATA_FOLDER = CWD / "@mockdata/bronze-gasbb"
 
-
-mibb_report_sub_modules = [
-    module for module in dir(bronze_gasbb_reports) if not module.startswith("_")
-]
-
-testable_submmodules = []
-
-for sub_module in mibb_report_sub_modules:
-    if "definition_builder" in dir(getattr(bronze_gasbb_reports, sub_module)):
-        testable_submmodules.append(sub_module)
+# Get all testable configs from registry
+testable_configs = list(GASBB_CONFIGS.keys())
 
 skip = []
 
 
-@mark.parametrize("submodule_name", testable_submmodules)
+@mark.parametrize("table_name", testable_configs)
 def test__asset(
-    create_delta_log: None, create_buckets: None, s3: S3Client, submodule_name: str
+    create_delta_log: None, create_buckets: None, s3: S3Client, table_name: str
 ):
-    module = getattr(bronze_gasbb_reports, submodule_name)
-    definition_builder = module.definition_builder
+    # Get config from registry
+    config = GASBB_CONFIGS[table_name]
 
+    # Get hooks for this report
+    hooks = get_hooks_for_report(table_name)
+
+    # Build definition
     definition_builder = cast(
-        GetMibbReportFromS3FilesDefinitionBuilder, module.definition_builder
+        GetMibbReportFromS3FilesDefinitionBuilder,
+        definition_builder_factory(
+            config=config,
+            process_object_hook=hooks.get("process_object_hook"),
+            preprocess_hook=hooks.get("preprocess_hook"),
+            post_process_hook=hooks.get("post_process_hook"),
+            datetime_pattern=hooks.get("datetime_pattern"),
+            datetime_column_name=hooks.get("datetime_column_name"),
+        ),
     )
 
     mock_s3_data_files = list(
@@ -64,7 +72,7 @@ def test__asset(
 
     table_asset = next(iter(table_asset(build_asset_context(), S3Resource()))).value
 
-    if not any([check in submodule_name for check in skip]):
+    if not any([check in table_name for check in skip]):
         assert get_lazyframe_num_rows(table_asset) > 0
 
     assert len(table_asset.filter(pl.col.surrogate_key.is_null()).collect()) == 0

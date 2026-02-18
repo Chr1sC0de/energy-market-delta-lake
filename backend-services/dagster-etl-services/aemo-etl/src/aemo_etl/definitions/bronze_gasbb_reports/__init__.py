@@ -1,79 +1,28 @@
-from aemo_etl.definitions.bronze_gasbb_reports import (
-    bronze_gasbb_2p_sensitivities,
-    bronze_gasbb_actual_flow_storage,
-    bronze_gasbb_basins,
-    bronze_gasbb_connection_point_nameplate,
-    bronze_gasbb_contacts,
-    bronze_gasbb_demand_zones_and_pipeline_connectionpoint_mapping,
-    bronze_gasbb_facilities,
-    bronze_gasbb_facility_developments,
-    bronze_gasbb_field_interest,
-    bronze_gasbb_field_interest_v2,
-    bronze_gasbb_forecast_utilisation,
-    bronze_gasbb_gsh_gas_trades,
-    bronze_gasbb_late_actual_flow_storage,
-    bronze_gasbb_late_nomination_forecast,
-    bronze_gasbb_linepack_capacity_adequacy,
-    bronze_gasbb_linepack_zones,
-    bronze_gasbb_lng_shipments,
-    bronze_gasbb_lng_transactions,
-    bronze_gasbb_locations_list,
-    bronze_gasbb_medium_term_capacity_outlook,
-    bronze_gasbb_missing_actual_flow_storage,
-    bronze_gasbb_missing_nomination_forecast,
-    bronze_gasbb_nameplate_rating,
-    bronze_gasbb_nodes_connection_points,
-    bronze_gasbb_nomination_and_forecast,
-    bronze_gasbb_nt_lng_flow,
-    bronze_gasbb_participants_list,
-    bronze_gasbb_pipeline_connection_flow_history,
-    bronze_gasbb_pipeline_connection_flow_v1,
-    bronze_gasbb_pipeline_connection_flow_v2,
-    bronze_gasbb_pipeline_nil_quality,
-    bronze_gasbb_reserves_resources,
-    bronze_gasbb_shippers_list,
-    bronze_gasbb_short_term_capacity_outlook,
-    bronze_gasbb_short_term_swap_transactions,
-    bronze_gasbb_short_term_transactions,
-    bronze_gasbb_uncontracted_capacity,
-)
+"""GASBB report definitions - generated from registry."""
 
-__all__ = [
-    "bronze_gasbb_2p_sensitivities",
-    "bronze_gasbb_actual_flow_storage",
-    "bronze_gasbb_basins",
-    "bronze_gasbb_connection_point_nameplate",
-    "bronze_gasbb_contacts",
-    "bronze_gasbb_demand_zones_and_pipeline_connectionpoint_mapping",
-    "bronze_gasbb_facilities",
-    "bronze_gasbb_facility_developments",
-    "bronze_gasbb_field_interest",
-    "bronze_gasbb_field_interest_v2",
-    "bronze_gasbb_forecast_utilisation",
-    "bronze_gasbb_gsh_gas_trades",
-    "bronze_gasbb_late_actual_flow_storage",
-    "bronze_gasbb_late_nomination_forecast",
-    "bronze_gasbb_linepack_capacity_adequacy",
-    "bronze_gasbb_linepack_zones",
-    "bronze_gasbb_lng_shipments",
-    "bronze_gasbb_lng_transactions",
-    "bronze_gasbb_locations_list",
-    "bronze_gasbb_medium_term_capacity_outlook",
-    "bronze_gasbb_missing_actual_flow_storage",
-    "bronze_gasbb_missing_nomination_forecast",
-    "bronze_gasbb_nameplate_rating",
-    "bronze_gasbb_nodes_connection_points",
-    "bronze_gasbb_nomination_and_forecast",
-    "bronze_gasbb_nt_lng_flow",
-    "bronze_gasbb_participants_list",
-    "bronze_gasbb_pipeline_connection_flow_history",
-    "bronze_gasbb_pipeline_connection_flow_v1",
-    "bronze_gasbb_pipeline_connection_flow_v2",
-    "bronze_gasbb_pipeline_nil_quality",
-    "bronze_gasbb_reserves_resources",
-    "bronze_gasbb_shippers_list",
-    "bronze_gasbb_short_term_capacity_outlook",
-    "bronze_gasbb_short_term_swap_transactions",
-    "bronze_gasbb_short_term_transactions",
-    "bronze_gasbb_uncontracted_capacity",
-]
+from aemo_etl.configuration.gasbb import GASBB_CONFIGS
+from aemo_etl.configuration.gasbb.hooks import get_hooks_for_report
+from aemo_etl.definitions.bronze_gasbb_reports.utils import (
+    definition_builder_factory,
+)
+from aemo_etl.register import definitions_list
+
+# Loop through all registered GASBB configs and create definitions
+for config in GASBB_CONFIGS.values():
+    # Get hooks for this report (if any)
+    hooks = get_hooks_for_report(config.table_name)
+
+    # Create definition builder with config and hooks
+    definition_builder = definition_builder_factory(
+        config=config,
+        process_object_hook=hooks.get("process_object_hook"),
+        preprocess_hook=hooks.get("preprocess_hook"),
+        post_process_hook=hooks.get("post_process_hook"),
+        datetime_pattern=hooks.get("datetime_pattern"),
+        datetime_column_name=hooks.get("datetime_column_name"),
+    )
+
+    # Build and register definition
+    definitions_list.append(definition_builder.build())
+
+__all__ = ["GASBB_CONFIGS"]

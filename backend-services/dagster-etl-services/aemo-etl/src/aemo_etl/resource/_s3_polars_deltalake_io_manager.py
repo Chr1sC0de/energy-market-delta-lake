@@ -4,7 +4,8 @@ from typing import cast, override
 from dagster import InputContext, IOManager, MetadataValue, OutputContext
 from deltalake.exceptions import TableNotFoundError
 from deltalake.table import TableMerger
-from polars import LazyFrame, len as len_, scan_delta
+from polars import DataFrame, LazyFrame, scan_delta
+from polars import len as len_
 
 from aemo_etl.parameter_specification import (
     PolarsDataFrameReadScanDeltaParamSpec,
@@ -55,7 +56,7 @@ class S3PolarsDeltaLakeIOManager(IOManager):
         assert isinstance(write_delta_options, PolarsDataFrameWriteDeltaParamSpec), (
             "'write_delta_options' must be of type 'PolarsDataFrameWriteDeltaParamSpec'"
         )
-        collected_obj = obj.collect()
+        collected_obj = cast(DataFrame, obj.collect())
 
         kwargs = write_delta_options.model_dump(by_alias=True)
 
@@ -104,10 +105,12 @@ class S3PolarsDeltaLakeIOManager(IOManager):
         results_df = scan_delta(**scan_delta_options.model_dump(by_alias=True))
 
         markdown_preview = (
-            results_df.head(
-                s3_polars_deltalake_io_manager_options.get("preview_row_count", 5)
+            cast(
+                DataFrame,
+                results_df.head(
+                    s3_polars_deltalake_io_manager_options.get("preview_row_count", 5)
+                ).collect(),
             )
-            .collect()
             .to_pandas()
             .to_markdown()
         )
@@ -116,7 +119,7 @@ class S3PolarsDeltaLakeIOManager(IOManager):
             output_metadata["preview"] = MetadataValue.md(markdown_preview)
 
         output_metadata["dagster/row_count"] = MetadataValue.int(
-            results_df.select(len_()).collect().item()
+            cast(DataFrame, results_df.select(len_()).collect()).item()
         )
 
         if "dagster/column_schema" not in context.definition_metadata:

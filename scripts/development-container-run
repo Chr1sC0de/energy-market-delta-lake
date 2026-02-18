@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+. "./scripts/@common"
+
+worktree_dir=$(grep gitdir: .git | cut -d ' ' -f2 | sed 's/\/worktrees.*//g' | xargs -I {} realpath {})
+
+workspace_dir=$(realpath --canonicalize-missing --relative-to "$worktree_dir" .)
+
+podman run \
+	--userns=host \
+	--interactive \
+	--tty \
+	--detach \
+	--replace \
+	--detach-keys "ctrl-a,ctrl-e" \
+	--publish 3000:3000 \
+	--volume "$SSH_AUTH_SOCK":/ssh-agent \
+	--volume "$XDG_RUNTIME_DIR"/podman/podman.sock:/run/podman/podman.sock \
+	--volume "$HOME"/.config/opencode/opencode.json:/root/.config/opencode/opencode.json \
+	--mount type=bind,source="$worktree_dir",destination=/worktree,relabel=shared \
+	--env ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+	--env SSH_AUTH_SOCK=/ssh-agent \
+	--env DOCKER_HOST=unix:///run/podman/podman.sock \
+	--env TMUX="$TMUX" \
+	--workdir /worktree/"$workspace_dir" \
+	--name "$CONTAINER_NAME" \
+	localhost/emdl-dev:latest \
+	bash -l
+
+podman exec -it "$CONTAINER_NAME" \
+	bash -c \
+	"echo \"alias podman='podman --remote'\" >>/root/.bashrc"
+
+podman cp ~/.gitconfig "$CONTAINER_NAME":/root/.gitconfig

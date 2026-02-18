@@ -1,79 +1,19 @@
-from aemo_etl.configuration.gasbb import (
-    bronze_gasbb_2p_sensitivities,
-    bronze_gasbb_actual_flow_storage,
-    bronze_gasbb_basins,
-    bronze_gasbb_connection_point_nameplate,
-    bronze_gasbb_contacts,
-    bronze_gasbb_demand_zones_and_pipeline_connectionpoint_mapping,
-    bronze_gasbb_facilities,
-    bronze_gasbb_facility_developments,
-    bronze_gasbb_field_interest,
-    bronze_gasbb_field_interest_v2,
-    bronze_gasbb_forecast_utilisation,
-    bronze_gasbb_gsh_gas_trades,
-    bronze_gasbb_late_actual_flow_storage,
-    bronze_gasbb_late_nomination_forecast,
-    bronze_gasbb_linepack_capacity_adequacy,
-    bronze_gasbb_linepack_zones,
-    bronze_gasbb_lng_shipments,
-    bronze_gasbb_lng_transactions,
-    bronze_gasbb_locations_list,
-    bronze_gasbb_medium_term_capacity_outlook,
-    bronze_gasbb_missing_actual_flow_storage,
-    bronze_gasbb_missing_nomination_forecast,
-    bronze_gasbb_nameplate_rating,
-    bronze_gasbb_nodes_connection_points,
-    bronze_gasbb_nomination_and_forecast,
-    bronze_gasbb_nt_lng_flow,
-    bronze_gasbb_participants_list,
-    bronze_gasbb_pipeline_connection_flow_history,
-    bronze_gasbb_pipeline_connection_flow_v1,
-    bronze_gasbb_pipeline_connection_flow_v2,
-    bronze_gasbb_pipeline_nil_quality,
-    bronze_gasbb_reserves_resources,
-    bronze_gasbb_shippers_list,
-    bronze_gasbb_short_term_capacity_outlook,
-    bronze_gasbb_short_term_swap_transactions,
-    bronze_gasbb_short_term_transactions,
-    bronze_gasbb_uncontracted_capacity,
-)
+import pathlib as pt
+from importlib import import_module
 
-__all__ = [
-    "bronze_gasbb_2p_sensitivities",
-    "bronze_gasbb_actual_flow_storage",
-    "bronze_gasbb_basins",
-    "bronze_gasbb_connection_point_nameplate",
-    "bronze_gasbb_contacts",
-    "bronze_gasbb_demand_zones_and_pipeline_connectionpoint_mapping",
-    "bronze_gasbb_facilities",
-    "bronze_gasbb_facility_developments",
-    "bronze_gasbb_field_interest",
-    "bronze_gasbb_field_interest_v2",
-    "bronze_gasbb_forecast_utilisation",
-    "bronze_gasbb_gsh_gas_trades",
-    "bronze_gasbb_late_actual_flow_storage",
-    "bronze_gasbb_late_nomination_forecast",
-    "bronze_gasbb_linepack_capacity_adequacy",
-    "bronze_gasbb_linepack_zones",
-    "bronze_gasbb_lng_shipments",
-    "bronze_gasbb_lng_transactions",
-    "bronze_gasbb_locations_list",
-    "bronze_gasbb_medium_term_capacity_outlook",
-    "bronze_gasbb_missing_actual_flow_storage",
-    "bronze_gasbb_missing_nomination_forecast",
-    "bronze_gasbb_nameplate_rating",
-    "bronze_gasbb_nodes_connection_points",
-    "bronze_gasbb_nomination_and_forecast",
-    "bronze_gasbb_nt_lng_flow",
-    "bronze_gasbb_participants_list",
-    "bronze_gasbb_pipeline_connection_flow_history",
-    "bronze_gasbb_pipeline_connection_flow_v1",
-    "bronze_gasbb_pipeline_connection_flow_v2",
-    "bronze_gasbb_pipeline_nil_quality",
-    "bronze_gasbb_reserves_resources",
-    "bronze_gasbb_shippers_list",
-    "bronze_gasbb_short_term_capacity_outlook",
-    "bronze_gasbb_short_term_swap_transactions",
-    "bronze_gasbb_short_term_transactions",
-    "bronze_gasbb_uncontracted_capacity",
+# Get all bronze_*.py files in this directory
+_config_dir = pt.Path(__file__).parent
+_config_modules = [
+    f.stem
+    for f in _config_dir.glob("bronze_*.py")
+    if f.is_file() and not f.name.startswith("_")
 ]
+
+# Dynamically import all configuration modules
+for _module_name in _config_modules:
+    globals()[_module_name] = import_module(f".{_module_name}", package=__name__)
+
+# Re-export the registry for easy access
+from aemo_etl.configuration.registry import GASBB_CONFIGS
+
+__all__ = _config_modules + ["GASBB_CONFIGS"]

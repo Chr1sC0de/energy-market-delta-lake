@@ -183,7 +183,6 @@ def download_nemweb_public_files_to_s3_definition_factory(
         asset_job_name,
         selection=[download_nemweb_public_files_to_s3_asset],
         tags=job_tags,
-        # executor_def=None if DEVELOPMENT_LOCATION == "local" else ecs_executor, # setting this variable will allow us execute ops in ecs instances essentially allowing us to massively parallelize our jobs
     )
 
     download_nemweb_public_files_to_s3_compact_and_vacuum_job = define_asset_job(

@@ -8,7 +8,11 @@ from dagster_aws.s3 import S3Resource
 from polars import LazyFrame, scan_delta
 from types_boto3_s3 import S3Client
 
-from aemo_etl.definitions import bronze_gasbb_reports
+from aemo_etl.configuration.gasbb import GASBB_CONFIGS
+from aemo_etl.configuration.gasbb.hooks import get_hooks_for_report
+from aemo_etl.definitions.bronze_gasbb_reports.utils import (
+    definition_builder_factory,
+)
 from aemo_etl.util import get_lazyframe_num_rows
 
 CWD = Path(__file__).parent
@@ -19,7 +23,22 @@ testable_submmodules = []
 
 
 def test__asset(create_delta_log: None, create_buckets: None, s3: S3Client):
-    definition_builder = bronze_gasbb_reports.bronze_gasbb_medium_term_capacity_outlook.definition_builder
+    # Get config from registry
+    table_name = "bronze_gasbb_medium_term_capacity_outlook"
+    config = GASBB_CONFIGS[table_name]
+
+    # Get hooks for this report
+    hooks = get_hooks_for_report(table_name)
+
+    # Build definition
+    definition_builder = definition_builder_factory(
+        config=config,
+        process_object_hook=hooks.get("process_object_hook"),
+        preprocess_hook=hooks.get("preprocess_hook"),
+        post_process_hook=hooks.get("post_process_hook"),
+        datetime_pattern=hooks.get("datetime_pattern"),
+        datetime_column_name=hooks.get("datetime_column_name"),
+    )
 
     for file in MOCK_DATA_FOLDER.glob(
         definition_builder.s3_file_glob, case_sensitive=False

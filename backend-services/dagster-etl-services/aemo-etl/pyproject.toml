@@ -1,62 +1,67 @@
+[build-system]
+build-backend = "hatchling.build"
+requires = [ "hatchling" ]
+
 [project]
 name = "aemo-etl"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-authors = [
-    { name = "Chris Mamon", email = "chrisam1993@gmail.com" }
-]
+authors = [ { name = "Chris Mamon", email = "chrisam1993@gmail.com" } ]
 requires-python = ">=3.13"
-dependencies = [
-    "boto3>=1.38.3",
-    "bs4>=0.0.2",
-    "dagster>=1.10.15",
-    "dagster-aws>=0.26.12",
-    "dagster-docker>=0.26.12",
-    "dagster-graphql>=1.10.12",
-    "dagster-postgres>=0.26.12",
-    "dagster-webserver>=1.10.12",
-    "deltalake>=0.25.5",
-    "pandas>=2.2.3",
-    "patito>=0.8.3",
-    "polars>=1.30.0",
-    "polars-hash>=0.5.5",
-    "pyarrow>=20.0.0",
-    "pymupdf>=1.25.5",
-    "requests>=2.32.3",
-    "s3fs>=0.4.2",
-    "types-boto3[s3]>=1.38.3",
+classifiers = [
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
 ]
-
-[project.scripts]
-aemo-etl = "aemo_etl:main"
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+dependencies = [
+  "boto3>=1.38.3",
+  "bs4>=0.0.2",
+  "dagster>=1.10.15",
+  "dagster-aws>=0.26.12",
+  "dagster-docker>=0.26.12",
+  "dagster-graphql>=1.10.12",
+  "dagster-postgres>=0.26.12",
+  "dagster-webserver>=1.10.12",
+  "deltalake>=0.25.5",
+  "pandas>=2.2.3",
+  "patito>=0.8.3",
+  "polars>=1.30",
+  "polars-hash>=0.5.5",
+  "pyarrow>=20",
+  "pydantic>=2.11.9",
+  "pymupdf>=1.25.5",
+  "requests>=2.32.3",
+  "s3fs>=0.4.2",
+  "types-boto3[s3]>=1.38.3",
+]
+scripts.aemo-etl = "aemo_etl:main"
 
 [dependency-groups]
 dev = [
-    "flask>=3.1.0",
-    "flask-cors>=5.0.1",
-    "ipykernel>=6.29.5",
-    "itables>=2.4.4",
-    "moto[s3]>=5.1.4",
-    "pytest>=8.3.5",
-    "pytest-cov>=6.1.1",
-    "pytest-html>=4.1.1",
-    "pytest-xdist>=3.6.1",
-    "types-boto3[dynamodb]>=1.38.3",
+  "flask>=3.1",
+  "flask-cors>=5.0.1",
+  "ipykernel>=6.29.5",
+  "itables>=2.4.4",
+  "moto[s3]>=5.1.4",
+  "pytest>=8.3.5",
+  "pytest-cov>=6.1.1",
+  "pytest-html>=4.1.1",
+  "pytest-xdist>=3.6.1",
+  "types-boto3[dynamodb]>=1.38.3",
 ]
 
+[tool.ruff]
+lint.per-file-ignores."__init__.py" = [ "I" ]
+
 [tool.basedpyright]
-include = ["src"]
+include = [ "src" ]
 typeCheckingMode = "standard"
 exclude = [
-    "**/node_modules",
-    "**/__pycache__",
-    "~/*/neotest/*",
-    "*.venv",
-    "src/experimental",
-    "src/typestubs",
+  "**/node_modules",
+  "**/__pycache__",
+  "~/*/neotest/*",
+  "*.venv",
+  "src/experimental",
+  "src/typestubs",
 ]

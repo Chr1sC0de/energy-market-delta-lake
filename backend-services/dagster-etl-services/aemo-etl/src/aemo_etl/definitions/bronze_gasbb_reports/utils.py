@@ -1,6 +1,6 @@
 from functools import partial
 from logging import Logger
-from typing import Callable, Iterable, Mapping, Protocol
+from typing import Callable, Iterable, Protocol
 
 import polars_hash as plh
 from dagster import (
@@ -11,10 +11,8 @@ from dagster import (
     asset_check,
 )
 from polars import (
-    DataType,
     Datetime,
     LazyFrame,
-    Schema,
     col,
     int_range,
 )
@@ -23,6 +21,7 @@ from polars import (
 )
 
 from aemo_etl.configuration import BRONZE_BUCKET, LANDING_BUCKET
+from aemo_etl.configuration.report_config import ReportConfig
 from aemo_etl.factory.definition import (
     GetMibbReportFromS3FilesDefinitionBuilder,
 )
@@ -120,16 +119,7 @@ def asset_check_factory(
 
 
 def definition_builder_factory(
-    report_purpose: str,
-    table_schema: Mapping[str, type[DataType]] | Schema,
-    schema_descriptions: Mapping[str, str],
-    primary_keys: list[str],
-    upsert_predicate: str,
-    s3_table_location: str,
-    s3_prefix: str,
-    s3_file_glob: str,
-    table_name: str,
-    group_name: str = "aemo",
+    config: ReportConfig,
     cpu: str = "256",
     memory: str = "1024",
     process_object_hook: Callable[[Logger | None, bytes], LazyFrame] | None = None,
@@ -145,44 +135,46 @@ def definition_builder_factory(
             "ecs/cpu": cpu,
             "ecs/memory": memory,
         },
-        key_prefix=["bronze", "aemo", "gasbb"],
+        key_prefix=config.key_prefix,
         io_manager_key="s3_polars_deltalake_io_manager",
         asset_metadata={
             "dagster/column_schema": get_metadata_schema(
-                table_schema, schema_descriptions
+                config.table_schema, config.schema_descriptions
             ),
-            "dagster/primary_keys": MetadataValue.json(primary_keys),
+            "dagster/primary_keys": MetadataValue.json(config.primary_keys),
             "s3_polars_deltalake_io_manager_options": {
                 "write_delta_options": PolarsDataFrameWriteDeltaParamSpec(
-                    target=s3_table_location,
+                    target=config.s3_table_location,
                     mode="merge",
                     delta_merge_options=PolarsDeltaLakeMergeParamSpec(
                         merge_schema=True,
-                        predicate=upsert_predicate,
+                        predicate=config.upsert_predicate,
                         source_alias="s",
                         target_alias="t",
                     ),
                 ),
                 "scan_delta_options": PolarsDataFrameReadScanDeltaParamSpec(
-                    source=s3_table_location
+                    source=config.s3_table_location
                 ),
             },
         },
-        group_name=group_name,
-        name=table_name,
-        asset_description=report_purpose,
+        group_name=config.group_name,
+        name=config.table_name,
+        asset_description=config.report_purpose,
         s3_source_bucket=LANDING_BUCKET,
-        s3_source_prefix=s3_prefix,
-        s3_file_glob=s3_file_glob,
+        s3_source_prefix=config.s3_prefix,
+        s3_file_glob=config.s3_file_glob,
         s3_target_bucket=BRONZE_BUCKET,
-        s3_target_prefix=s3_prefix,
-        table_schema=table_schema,
-        check_factories=[partial(asset_check_factory, primary_keys=primary_keys)],
+        s3_target_prefix=config.s3_prefix,
+        table_schema=config.table_schema,
+        check_factories=[
+            partial(asset_check_factory, primary_keys=config.primary_keys)
+        ],
         process_object_hook=process_object_hook,
         preprocess_hook=preprocess_hook,
         table_post_process_hook=partial(
             post_process_hook,
-            primary_keys=primary_keys,
+            primary_keys=config.primary_keys,
             datetime_pattern=datetime_pattern,
             datetime_column_name=datetime_column_name,
         ),

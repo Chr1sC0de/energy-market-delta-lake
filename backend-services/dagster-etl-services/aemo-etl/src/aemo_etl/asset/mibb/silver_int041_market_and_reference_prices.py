@@ -3,13 +3,9 @@ from dagster import AssetIn, AutomationCondition, MetadataValue
 from dagster import asset as dagster_asset
 from polars import LazyFrame, col
 
-from aemo_etl.configuration import (
-    SILVER_BUCKET,
-)
+from aemo_etl.configuration import SILVER_BUCKET
 from aemo_etl.configuration.mibb.bronze_int041_v4_market_and_reference_prices_1 import (
-    group_name,
-    primary_keys,
-    schema_descriptions,
+    CONFIG as bronze_config,
 )
 from aemo_etl.factory.asset import (
     compact_and_vacuum_dataframe_asset_factory,
@@ -46,10 +42,10 @@ s3_polars_deltalake_io_manager_options = {
             key_prefix=["bronze", "aemo", "vicgas"]
         ),
     },
-    group_name=group_name,
+    group_name=bronze_config.group_name,
     metadata={
-        "dagster/primary_keys": MetadataValue.json(primary_keys),
-        "dagster/column_description": schema_descriptions,
+        "dagster/primary_keys": MetadataValue.json(bronze_config.primary_keys),
+        "dagster/column_description": bronze_config.schema_descriptions,
         "s3_polars_deltalake_io_manager_options": s3_polars_deltalake_io_manager_options,
     },
     automation_condition=AutomationCondition.eager()
@@ -70,7 +66,7 @@ def table_asset(
         .dt.convert_time_zone("UTC"),
     ).with_columns(
         surrogate_key=plh.concat_str(
-            *[col(key).fill_null("") for key in primary_keys]
+            *[col(key).fill_null("") for key in bronze_config.primary_keys]
         ).chash.sha256()
     )
 
@@ -88,5 +84,5 @@ compact_and_vacuum_asset = compact_and_vacuum_dataframe_asset_factory(
 )
 
 asset_check = check_primary_keys_are_unique_factory(
-    table_asset, primary_keys=primary_keys
+    table_asset, primary_keys=bronze_config.primary_keys
 )

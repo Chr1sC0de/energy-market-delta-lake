@@ -14,13 +14,12 @@ from dagster import (
 )
 from dagster_aws.s3 import S3Resource
 
-from aemo_etl.configuration import LANDING_BUCKET, mibb
+from aemo_etl.configuration import DEVELOPMENT_LOCATION, LANDING_BUCKET, mibb
 from aemo_etl.definitions import bronze_vicgas_mibb_reports
 from aemo_etl.util import (
     get_s3_object_keys_from_prefix_and_name_glob,
     get_s3_pagination,
 )
-from aemo_etl.configuration import DEVELOPMENT_LOCATION
 
 configurations = [getattr(mibb, name) for name in dir(mibb) if not name.startswith("_")]
 
