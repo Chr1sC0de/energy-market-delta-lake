@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 
-branch_name=$(git branch --show-current)
+LOCALSTACK_NAME=localstack
 
-CONTAINER_IDENTIFIER=${branch_name/\//-}
-
-CONTAINER_NAME=emdl-"$CONTAINER_IDENTIFIER"
+CONTAINER_NAME=emdl
 
 NETWORK=podman
 
-export CONTAINER_NAME CONTAINER_IDENTIFIER NETWORK
+export CONTAINER_NAME NETWORK LOCALSTACK_NAME
