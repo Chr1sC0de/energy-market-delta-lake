@@ -2,6 +2,23 @@
 
 . "./scripts/@common"
 
-podman exec --interactive --tty --detach-keys "ctrl-a,ctrl-e" "$CONTAINER_NAME" bash -l
+workspace_dir=$(realpath --canonicalize-missing --relative-to "$WORKTREE_DIR" .)
+
+podman exec -it "$CONTAINER_NAME" \
+	bash -lc \
+	"grep -qxF \"alias podman='podman --remote'\" /root/.bashrc || echo \"alias podman='podman --remote'\" >>/root/.bashrc"
+
+podman exec \
+	--workdir "/worktree/$workspace_dir"/backend-services/dagster-etl-services/aemo-etl \
+	"$CONTAINER_NAME" bash -lc 'uv sync && prek install'
+
+podman cp ~/.gitconfig "$CONTAINER_NAME":/root/.gitconfig
+
+podman exec \
+	--interactive \
+	--tty \
+	--detach-keys "ctrl-a,ctrl-e" \
+	--workdir /worktree/"$workspace_dir" \
+	"$CONTAINER_NAME" bash -l
 
 wait

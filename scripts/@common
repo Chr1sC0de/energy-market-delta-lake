@@ -6,4 +6,6 @@ CONTAINER_NAME=emdl
 
 NETWORK=podman
 
-export CONTAINER_NAME NETWORK LOCALSTACK_NAME
+WORKTREE_DIR=$(grep gitdir: .git | cut -d ' ' -f2 | sed 's/\/worktrees.*//g' | xargs -I {} realpath {})
+
+export CONTAINER_NAME NETWORK LOCALSTACK_NAME WORKTREE_DIR

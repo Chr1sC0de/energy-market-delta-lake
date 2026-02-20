@@ -2,10 +2,6 @@
 
 . "./scripts/@common"
 
-worktree_dir=$(grep gitdir: .git | cut -d ' ' -f2 | sed 's/\/worktrees.*//g' | xargs -I {} realpath {})
-
-workspace_dir=$(realpath --canonicalize-missing --relative-to "$worktree_dir" .)
-
 mkdir -p "$HOME"/.cache/localstack/volume
 
 podman run \
@@ -20,7 +16,7 @@ podman run \
 	--volume "$SSH_AUTH_SOCK":/ssh-agent \
 	--volume "$XDG_RUNTIME_DIR"/podman/podman.sock:/run/podman/podman.sock \
 	--volume "$HOME"/.config/opencode/opencode.json:/root/.config/opencode/opencode.json \
-	--mount type=bind,source="$worktree_dir",destination=/worktree,relabel=shared \
+	--mount type=bind,source="$WORKTREE_DIR",destination=/worktree,relabel=shared \
 	--env IN_CONTAINER=true \
 	--env HOST_XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
 	--env HOST_HOME="$HOME" \
@@ -30,19 +26,6 @@ podman run \
 	--env SSH_AUTH_SOCK=/ssh-agent \
 	--env DOCKER_HOST=unix:///run/podman/podman.sock \
 	--env TMUX="$TMUX" \
-	--workdir /worktree/"$workspace_dir" \
 	--name "$CONTAINER_NAME" \
 	localhost/emdl-dev:latest \
 	bash -l
-
-podman exec -it "$CONTAINER_NAME" \
-	bash -lc \
-	"grep -qxF \"alias podman='podman --remote'\" /root/.bashrc || echo \"alias podman='podman --remote'\" >>/root/.bashrc"
-
-podman exec -itd "$CONTAINER_NAME" bash -l
-
-podman exec \
-	--workdir "/worktree/$workspace_dir"/backend-services/dagster-etl-services/aemo-etl \
-	"$CONTAINER_NAME" bash -lc 'uv sync && prek install'
-
-podman cp ~/.gitconfig "$CONTAINER_NAME":/root/.gitconfig
