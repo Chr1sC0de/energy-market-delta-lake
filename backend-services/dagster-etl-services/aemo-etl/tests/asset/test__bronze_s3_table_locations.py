@@ -5,7 +5,7 @@ from aemo_etl.asset import (
 )
 
 
-def test__bronze_mibb_report_list():
+def test__bronze_mibb_report_list() -> None:
     asset = bronze_s3_table_locations_asset()
     asset_check_results = bronze_s3_table_locations_asset_check(asset)
 

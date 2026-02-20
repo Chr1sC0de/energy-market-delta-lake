@@ -25,12 +25,12 @@ def CONFIG() -> ReportConfig:
         schema_descriptions={
             "mirn": "Meter Installation Registration Number",
             "site_company": "Company name",
-            "hv_zone": "Heating value zone number as assigned by the AEMO. Values for Victoria can be in the range of 400-699",
+            "hv_zone": "Heating value zone number as assigned by the AEMO. Values for Victoria can be in the range of 400-699",  # noqa: E501
             "hv_zone_desc": "Heating value zone name",
-            "effective_from": "Date when the HV zone became effective for the mirn, Example: 01 Aug 2023",
-            "current_date": "Date and time report produced, Example: 30 Jun 2007 06:00:00)",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "effective_from": "Date when the HV zone became effective for the mirn, Example: 01 Aug 2023",  # noqa: E501
+            "current_date": "Date and time report produced, Example: 30 Jun 2007 06:00:00)",  # noqa: E501
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nA report containing the DWGM's Custody Transfer Meter (CTM) to Heating Value Zone mapping.\n\nThe report provides the mapping of active DTS CTMs to the Heating Value Zones. The mapping of non-DTS CTM to heating\nvalue zone mapping for South Gippsland, Bairnsdale and Gippsland regions are also provided.\n",
+        report_purpose="\n\nA report containing the DWGM's Custody Transfer Meter (CTM) to Heating Value Zone mapping.\n\nThe report provides the mapping of active DTS CTMs to the Heating Value Zones. The mapping of non-DTS CTM to heating\nvalue zone mapping for South Gippsland, Bairnsdale and Gippsland regions are also provided.\n",  # noqa: E501
         group_name=f"aemo__mibb__{VICTORIAN_WHOLESALE_SETTLEMENTS_AND_METERING_REPORTS}",
     )

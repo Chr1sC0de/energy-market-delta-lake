@@ -30,15 +30,15 @@ def CONFIG() -> ReportConfig:
             "surrogate_key": String,
         },
         schema_descriptions={
-            "FieldName": "The name of the Field in which the Field Interest is located.",
+            "FieldName": "The name of the Field in which the Field Interest is located.",  # noqa: E501
             "FieldInterestId": "A unique AEMO defined Field Interest Identifier.",
             "CompanyId": "The company ID of the responsible participant.",
             "CompanyName": "The company name of the responsible participant.",
             "GroupMembers": "The name of the group member.",
-            "PercentageShare": "The BB field interest (as a percentage) of each member of the field owner group.",
+            "PercentageShare": "The BB field interest (as a percentage) of each member of the field owner group.",  # noqa: E501
             "EffectiveDate": "The date on which the record takes effect.",
             "VersionDateTime": "VersionDatetime",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis report displays information about Field Interests.\n\nGASBB_FIELD_INTEREST is updated daily.\n",
+        report_purpose="\n\nThis report displays information about Field Interests.\n\nGASBB_FIELD_INTEREST is updated daily.\n",  # noqa: E501
     )

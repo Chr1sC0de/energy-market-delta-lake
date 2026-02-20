@@ -43,7 +43,7 @@ def CONFIG() -> ReportConfig:
             "START_DATE": "Start Date",
             "END_DATE": "End Date",
             "MANUAL_TRADE": "Manual Trade?",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThe file below provides a complete list of historical trades.\nThis data can be used to analyse market trends over time.\nIf you are after a more simple and straightforward representation of price trends in the GSH,\nthe benchmark price report (outlined below) may be more appropriate.\n",
+        report_purpose="\n\nThe file below provides a complete list of historical trades.\nThis data can be used to analyse market trends over time.\nIf you are after a more simple and straightforward representation of price trends in the GSH,\nthe benchmark price report (outlined below) may be more appropriate.\n",  # noqa: E501
     )

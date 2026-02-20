@@ -21,10 +21,10 @@ def CONFIG() -> ReportConfig:
         },
         schema_descriptions={
             "gas_date": "Gas day being reported e.g. 02 Feb 2001",
-            "aggregated_amdq_transferred": "Total AMDQ transffered each day for the previous month",
+            "aggregated_amdq_transferred": "Total AMDQ transffered each day for the previous month",  # noqa: E501
             "current_date": "Date and Time report produced e.g. 30 Jun 2007 06:00:00",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis report displays the aggregated AMDQ transfer quantities for the previous 30 days. It registers the daily off market trades and\ntransfer amounts.\n\nA market participant report is produced on a monthly basis showing the total AMDQ transferred each day for the previous 30 days.\n\nEach report contains:\n- the gas date\n- the aggregated AMDQ transferred\n- the date and time when the report was produced\n",
+        report_purpose="\n\nThis report displays the aggregated AMDQ transfer quantities for the previous 30 days. It registers the daily off market trades and\ntransfer amounts.\n\nA market participant report is produced on a monthly basis showing the total AMDQ transferred each day for the previous 30 days.\n\nEach report contains:\n- the gas date\n- the aggregated AMDQ transferred\n- the date and time when the report was produced\n",  # noqa: E501
         group_name=f"aemo__mibb__{VICTORIAN_WHOLESALE_SETTLEMENTS_AND_METERING_REPORTS}",
     )

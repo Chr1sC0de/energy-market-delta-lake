@@ -42,8 +42,8 @@ def CONFIG() -> ReportConfig:
             "FacilityType": "Facility type associated with the Facility Id.",
             "ConnectionPointId": "A unique AEMO defined connection point identifier.",
             "ConnectionPointName": "Name of connection point.",
-            "FlowDirection": "Gas flow direction. Values can be either: Receipt, Delivery, Processed, or DeliveryLngStor.",
-            "Exempt": "Flag indicating whether the connection point has a data exemption.",
+            "FlowDirection": "Gas flow direction. Values can be either: Receipt, Delivery, Processed, or DeliveryLngStor.",  # noqa: E501
+            "Exempt": "Flag indicating whether the connection point has a data exemption.",  # noqa: E501
             "ExemptionDescription": "Description of exemption.",
             "NodeId": "A unique AEMO defined node identifier.",
             "StateId": "A unique AEMO defined state identifier.",
@@ -52,7 +52,7 @@ def CONFIG() -> ReportConfig:
             "LocationId": "A unique AEMO defined location identifier.",
             "EffectiveDate": "Date record is effective from",
             "LastUpdated": "Date the record was last modified.",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nDisplays detailed information on all facilities and their associated nodes and Connection Points.\n\nBoth GASBB_NODES_AND_CONNECTIONPOINTS_LIST and GASBB_NODES_CONNECTIONPOINTS_FULL_LIST are updated daily.\n\nContains all current facilities and their nodes and connection points.\n",
+        report_purpose="\n\nDisplays detailed information on all facilities and their associated nodes and Connection Points.\n\nBoth GASBB_NODES_AND_CONNECTIONPOINTS_LIST and GASBB_NODES_CONNECTIONPOINTS_FULL_LIST are updated daily.\n\nContains all current facilities and their nodes and connection points.\n",  # noqa: E501
     )

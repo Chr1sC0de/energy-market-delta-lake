@@ -28,18 +28,18 @@ def CONFIG() -> ReportConfig:
             "surrogate_key": String,
         },
         schema_descriptions={
-            "GasDate": "Date of gas day. Timestamps are ignored. The gas day as defined in the pipeline contract or market rules.",
+            "GasDate": "Date of gas day. Timestamps are ignored. The gas day as defined in the pipeline contract or market rules.",  # noqa: E501
             "FacilityId": "A unique AEMO defined Facility identifier.",
             "FacilityName": "Name of the facility.",
             "ConnectionPointId": "A unique AEMO defined connection point identifier.",
             "ConnectionPointName": "Names of the connection point.",
-            "FlowDirection": "A conditional value of either: RECEIPT — A flow of gas into the BB pipeline, or DELIVERY — A flow of gas out of the BB pipeline.",
-            "ActualQuantity": "The actual flow quantity reported in TJ to the nearest terajoule with three decimal places.",
+            "FlowDirection": "A conditional value of either: RECEIPT — A flow of gas into the BB pipeline, or DELIVERY — A flow of gas out of the BB pipeline.",  # noqa: E501
+            "ActualQuantity": "The actual flow quantity reported in TJ to the nearest terajoule with three decimal places.",  # noqa: E501
             "State": "Location.",
             "LocationName": "Name of the Location.",
             "LocationId": "Unique Location identifier.",
-            "Quality": "Indicates whether meter data for the submission date is available. Values can be either: OK, NIL, OOR, Not Available.",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "Quality": "Indicates whether meter data for the submission date is available. Values can be either: OK, NIL, OOR, Not Available.",  # noqa: E501
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nProvides a report for the Daily production and usage at each Connection Point.\n\nGASBB_PIPELINE_CONNECTION_FLOW is updated daily.\nGASBB_PIPELINE_CONNECTION_FLOW_LAST_31 is typically updated within 30 minutes of receiving new data.\n\nGASBB_PIPELINE_CONNECTION_FLOW contains historical data from Sep 2018.\nGASBB_PIPELINE_CONNECTION_FLOW_LAST_31 contains data from the last 31 days.\n",
+        report_purpose="\n\nProvides a report for the Daily production and usage at each Connection Point.\n\nGASBB_PIPELINE_CONNECTION_FLOW is updated daily.\nGASBB_PIPELINE_CONNECTION_FLOW_LAST_31 is typically updated within 30 minutes of receiving new data.\n\nGASBB_PIPELINE_CONNECTION_FLOW contains historical data from Sep 2018.\nGASBB_PIPELINE_CONNECTION_FLOW_LAST_31 contains data from the last 31 days.\n",  # noqa: E501
     )

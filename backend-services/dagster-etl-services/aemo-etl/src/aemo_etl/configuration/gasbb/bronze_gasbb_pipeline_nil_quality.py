@@ -21,11 +21,11 @@ def CONFIG() -> ReportConfig:
             "surrogate_key": String,
         },
         schema_descriptions={
-            "GasDate": "Date of gas day. Timestamps are ignored. The gas day as defined in the pipeline contract or market rules.",
+            "GasDate": "Date of gas day. Timestamps are ignored. The gas day as defined in the pipeline contract or market rules.",  # noqa: E501
             "FacilityName": "Name of the facility.",
             "FacilityId": "A unique AEMO defined Facility identifier.",
             "ConnectionPointId": "A unique AEMO defined connection point identifier.",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nA record of all submissions that contain Nil quality against the flow. This indicates that data wasn't available and needs to be updated.\n\nGASBB_PIPELINE_NIL_QUALITY_SUBMISSION is updated daily.\n\nContains all current records of gas flow submissions with Nil quality.\n",
+        report_purpose="\n\nA record of all submissions that contain Nil quality against the flow. This indicates that data wasn't available and needs to be updated.\n\nGASBB_PIPELINE_NIL_QUALITY_SUBMISSION is updated daily.\n\nContains all current records of gas flow submissions with Nil quality.\n",  # noqa: E501
     )

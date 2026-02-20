@@ -32,8 +32,8 @@ def CONFIG() -> ReportConfig:
             "version_to_date": "Effective End date. (dd mmm yyyy)",
             "issued_date": "Issue date of settlement",
             "current_date": "Date and Time Report Produced (e.g. 30 Jun 2007 06:00:00)",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis report is to display recently issued settlement versions when balancing statement is issued.\nParticipants may wish to use this report as a reference to link other reports together based on invoice id(balancing version).\n\nA report is produced when balancing statement is issued.\nThis report is similar to VIC MIBB report INT438.\n\nEach report contains the:\n- statement version identifier\n- settlement category type\n- effective start date\n- effective end date\n- date of issue\n- date and time when the report was produced\n",
+        report_purpose="\n\nThis report is to display recently issued settlement versions when balancing statement is issued.\nParticipants may wish to use this report as a reference to link other reports together based on invoice id(balancing version).\n\nA report is produced when balancing statement is issued.\nThis report is similar to VIC MIBB report INT438.\n\nEach report contains the:\n- statement version identifier\n- settlement category type\n- effective start date\n- effective end date\n- date of issue\n- date and time when the report was produced\n",  # noqa: E501
         group_name=f"aemo__mibb__{QUEENSLAND_GAS_RETAIL_REPORT_DETAILS}",
     )

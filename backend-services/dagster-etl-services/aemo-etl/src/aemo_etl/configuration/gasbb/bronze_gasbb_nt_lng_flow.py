@@ -23,7 +23,7 @@ def CONFIG() -> ReportConfig:
             "Gas Date": "Gas Date",
             "Total Receipts": "Total Receipts",
             "Total Deliveries": "Total Deliveries",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
         report_purpose="\n\nReport outlining lng total flows\n",
     )

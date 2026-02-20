@@ -28,10 +28,6 @@ from pydantic import BaseModel, Field
 # the following is the set of rebuilt types
 _ = {DataTypeClass, DataType, CredentialProvider, GPUEngine}
 
-#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-#     │                       sink/scan parquet parameter specifications                       │
-#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
-
 
 class PolarsLazyFrameSinkParquetParamSpec(BaseModel, arbitrary_types_allowed=True):
     path: str | Path | IO[bytes] | PartitioningScheme
@@ -81,11 +77,6 @@ class PolarsLazyFrameScanParquetParamSpec(BaseModel, arbitrary_types_allowed=Tru
     cast_options: ScanCastOptions | None = None
 
 
-#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-#     │                     polars deltalake writer and merger param spec                      │
-#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
-
-
 class PolarsDeltaLakeWriteParamSpec(BaseModel, arbitrary_types_allowed=True):
     partition_by: list[str] | str | None = None
     mode: Literal["error", "append", "overwrite", "ignore"] = "error"
@@ -111,11 +102,6 @@ class PolarsDeltaLakeMergeParamSpec(BaseModel):
     streamed_exec: bool = True
     post_commithook_properties: PostCommitHookProperties | None = None
     commit_properties: CommitProperties | None = None
-
-
-#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-#     │                       polars write and read deltalake param spec                       │
-#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
 
 class PolarsDataFrameWriteDeltaParamSpec(BaseModel, arbitrary_types_allowed=True):

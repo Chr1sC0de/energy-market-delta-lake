@@ -1,4 +1,3 @@
-import datetime as dt
 import zipfile
 from collections import deque
 from io import BytesIO
@@ -46,7 +45,7 @@ def get_nemweb_links_op() -> list[str]:
     return links
 
 
-def main():
+def main() -> None:
     # download base csv files
     nemweb_links = get_nemweb_links_op()
 

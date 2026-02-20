@@ -8,7 +8,7 @@ MOCKDATA_FOLDER = CWD
 TARGET_FILE_SIZE = 0.0075
 
 
-def main():
+def main() -> None:
     namelist = list(CWD.glob("*.parquet"))
     for file_name in namelist:
         parquet_file = pl.read_parquet(file_name)

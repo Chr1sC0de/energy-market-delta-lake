@@ -32,8 +32,8 @@ def CONFIG() -> ReportConfig:
             "version_to_date": "Effective end date e.g. 30 Jun 2007",
             "issued_date": "Transfer to MIBB date. (dd mm yyyy hh:mm:ss)",
             "current_date": "Time Report Produced e.g. 29 Jun 2007 01:23:45",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis report provides the run version of the basic meter profiles system (BMP) used by AEMO when producing the preliminary,\nfinal and revised settlement versions. Market participants may wish to use this report as a reference for settlement\nreconciliation processing.\n\nThis public report is produced daily on BMP run.\nEach report shows the unique name for each network and only reports the non-DTS (Declared transmission system) networks.\n\nEach report contains the:\n- network name\n- version id\n- extract type\n- version dates\n- issued date\n- date and time when the report was produced\n",
+        report_purpose="\n\nThis report provides the run version of the basic meter profiles system (BMP) used by AEMO when producing the preliminary,\nfinal and revised settlement versions. Market participants may wish to use this report as a reference for settlement\nreconciliation processing.\n\nThis public report is produced daily on BMP run.\nEach report shows the unique name for each network and only reports the non-DTS (Declared transmission system) networks.\n\nEach report contains the:\n- network name\n- version id\n- extract type\n- version dates\n- issued date\n- date and time when the report was produced\n",  # noqa: E501
         group_name=f"aemo__mibb__{VICTORIAN_GAS_RETAIL_REPORTS_DETAILS}",
     )

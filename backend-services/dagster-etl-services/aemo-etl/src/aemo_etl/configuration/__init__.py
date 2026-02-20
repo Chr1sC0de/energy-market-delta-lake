@@ -47,11 +47,6 @@ __all__ = [
     "mibb",
 ]
 
-#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-#     │        the bottom code is only executed locally (which is when we should be in         │
-#     │                                      development)                                      │
-#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
-
 
 if os.environ.get("DEVELOPMENT_LOCATION") == "local-s3":
     from boto3.session import Session
@@ -81,7 +76,11 @@ if os.environ.get("DEVELOPMENT_LOCATION") == "local-s3":
     """ create a test locking table with the bellow code
     aws dynamodb create-table \
     --table-name delta_log \
-    --attribute-definitions AttributeName=tablePath,AttributeType=S AttributeName=fileName,AttributeType=S \
-    --key-schema AttributeName=tablePath,KeyType=HASH AttributeName=fileName,KeyType=RANGE \
+    --attribute-definitions
+        AttributeName=tablePath,AttributeType=S
+        AttributeName=fileName,AttributeType=S \
+    --key-schema
+        AttributeName=tablePath,KeyType=HASH
+        AttributeName=fileName,KeyType=RANGE \
     --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5
     """

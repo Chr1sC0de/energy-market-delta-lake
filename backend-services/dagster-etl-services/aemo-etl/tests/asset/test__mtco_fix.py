@@ -8,8 +8,8 @@ from dagster_aws.s3 import S3Resource
 from polars import LazyFrame, scan_delta
 from types_boto3_s3 import S3Client
 
-from aemo_etl.configuration.gasbb import GASBB_CONFIGS
 from aemo_etl.configuration.gasbb.hooks import get_hooks_for_report
+from aemo_etl.configuration.registry import GASBB_CONFIGS
 from aemo_etl.definitions.bronze_gasbb_reports.utils import (
     definition_builder_factory,
 )
@@ -22,7 +22,7 @@ MOCK_DATA_FOLDER = CWD / "@mockdata/mtco-fix"
 testable_submmodules = []
 
 
-def test__asset(create_delta_log: None, create_buckets: None, s3: S3Client):
+def test__asset(create_delta_log: None, create_buckets: None, s3: S3Client) -> None:
     # Get config from registry
     table_name = "bronze_gasbb_medium_term_capacity_outlook"
     config = GASBB_CONFIGS[table_name]

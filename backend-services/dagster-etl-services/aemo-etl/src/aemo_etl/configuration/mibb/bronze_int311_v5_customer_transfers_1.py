@@ -27,14 +27,14 @@ def CONFIG() -> ReportConfig:
         schema_descriptions={
             "gas_date": "dd mmm yyyy",
             "transfers_lodged": "Count of mirn with Created_timestamp = gas_date",
-            "transfers_completed": "Count of mirn, change_status = 'COM' with last_updated_timestamp = gas_date",
-            "transfers_cancelled": "Count of mirn, change_status = 'CAN' with last_updated_timestamp = gas_date",
-            "int_transfers_lodged": "Count of meter_type in ('PC', 'PD') with created_timestamp",
+            "transfers_completed": "Count of mirn, change_status = 'COM' with last_updated_timestamp = gas_date",  # noqa: E501
+            "transfers_cancelled": "Count of mirn, change_status = 'CAN' with last_updated_timestamp = gas_date",  # noqa: E501
+            "int_transfers_lodged": "Count of meter_type in ('PC', 'PD') with created_timestamp",  # noqa: E501
             "int_transfers_completed": "Count of meter_type = 'PC' with last_update",
             "int_transfers_cancelled": "Count of meter_type = 'PD' with last_update",
             "greenfields_received": "Count of mirn with in a mirn_assignment_date",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis public report is to show a general overview of the total retail customer transfers in the market for the previous 12 months.\nThe report provides some indication of the liquidity in retail churn over the past 12 months and is general information for\nmanagement within each respective organisation.\n\nThe report consists of a rolling 12-month period and reports transfers that have been lodged, completed or cancelled.\nThis report provides an indication of market competition and transfer liquidity through the customer transfers.\n",
+        report_purpose="\n\nThis public report is to show a general overview of the total retail customer transfers in the market for the previous 12 months.\nThe report provides some indication of the liquidity in retail churn over the past 12 months and is general information for\nmanagement within each respective organisation.\n\nThe report consists of a rolling 12-month period and reports transfers that have been lodged, completed or cancelled.\nThis report provides an indication of market competition and transfer liquidity through the customer transfers.\n",  # noqa: E501
         group_name=f"aemo__mibb__{VICTORIAN_GAS_RETAIL_REPORTS_DETAILS}",
     )

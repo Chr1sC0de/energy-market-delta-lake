@@ -16,9 +16,10 @@ from aemo_etl.util import get_metadata_schema
 
 class S3PolarsDeltaLakeIOManager(IOManager):
     """
-    to pass configurations into io manager ensure `s3_polars_deltalake_io_manager_options`
-    is mset in the metadata. The s3_polars_deltalake_io_manager_options should consist of
-    an PolarsDataFrameWriteDeltaParamSpec and PolarsDataFrameReadDeltaParamSpec object e.g.
+    to pass configurations into io manager ensure
+    `s3_polars_deltalake_io_manager_options` is set in the metadata.
+    The s3_polars_deltalake_io_manager_options should consist of an
+    PolarsDataFrameWriteDeltaParamSpec and PolarsDataFrameReadDeltaParamSpec object e.g.
 
             metadata={
                 "s3_polars_deltalake_io_manager_options": {
@@ -35,15 +36,16 @@ class S3PolarsDeltaLakeIOManager(IOManager):
 
     @override
     def handle_output(self, context: OutputContext, obj: LazyFrame) -> None:
-        definiton_metadata = context.definition_metadata
-        assert definiton_metadata is not None, (
-            "writing to s3 requires both write_delta_options and scan_delta_options to be set in asset metadata"
+        definition_metadata = context.definition_metadata
+        assert definition_metadata is not None, (
+            "writing to s3 requires both write_delta_options and scan_delta_options to"
+            " be set in asset metadata"
         )
-        assert "s3_polars_deltalake_io_manager_options" in definiton_metadata, (
+        assert "s3_polars_deltalake_io_manager_options" in definition_metadata, (
             "s3_polars_deltalake_io_manager_options must be set in asset metadata"
         )
 
-        s3_polars_deltalake_io_manager_options = definiton_metadata[
+        s3_polars_deltalake_io_manager_options = definition_metadata[
             "s3_polars_deltalake_io_manager_options"
         ]
 
@@ -139,16 +141,17 @@ class S3PolarsDeltaLakeIOManager(IOManager):
     def load_input(self, context: InputContext) -> LazyFrame:
         assert context.upstream_output is not None, "upstream asset must not be null"
 
-        definiton_metadata = context.upstream_output.definition_metadata
+        definition_metadata = context.upstream_output.definition_metadata
 
-        assert definiton_metadata is not None, (
-            "writing to s3 requires both write_delta_options and scan_delta_options to be set in asset metadata"
+        assert definition_metadata is not None, (
+            "writing to s3 requires both write_delta_options and scan_delta_options to "
+            "be set in asset metadata"
         )
-        assert "s3_polars_deltalake_io_manager_options" in definiton_metadata, (
+        assert "s3_polars_deltalake_io_manager_options" in definition_metadata, (
             "s3_polars_deltalake_io_manager_options must be set in asset metadata"
         )
 
-        s3_polars_deltalake_io_manager_options = definiton_metadata[
+        s3_polars_deltalake_io_manager_options = definition_metadata[
             "s3_polars_deltalake_io_manager_options"
         ]
 
@@ -159,7 +162,8 @@ class S3PolarsDeltaLakeIOManager(IOManager):
         ]
 
         assert isinstance(scan_delta_options, PolarsDataFrameReadScanDeltaParamSpec), (
-            "'scan_delta_options' must be of type 'PolarsDataFrameReadScanDeltaParamSpec'"
+            "'scan_delta_options' must be of type"
+            " 'PolarsDataFrameReadScanDeltaParamSpec'"
         )
         df = scan_delta(**scan_delta_options.model_dump(by_alias=True))
         return df

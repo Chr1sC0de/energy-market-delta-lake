@@ -35,7 +35,7 @@ def CONFIG() -> ReportConfig:
             "surrogate_key": String,
         },
         schema_descriptions={
-            "ConnectionPointName": "Connection Point name where the connection point is associated to a BB Pipeline or BB compression facility.",
+            "ConnectionPointName": "Connection Point name where the connection point is associated to a BB Pipeline or BB compression facility.",  # noqa: E501
             "ConnectionPointId": "A unique AEMO defined connection point identifier.",
             "FacilityName": "The facility reported.",
             "FacilityId": "Unique facility identifier.",
@@ -44,11 +44,11 @@ def CONFIG() -> ReportConfig:
             "OwnerId": "The reporting facility owner ID.",
             "OperatorName": "Name of the operator for the facility.",
             "OperatorId": "The facility operator's ID.",
-            "CapacityQuantity": "Standing capacity quantity in TJ to three decimal places. Three decimal places is not required if the value has trailing zeros after the decimal place.",
-            "EffectiveDate": "Gas day date that corresponding record takes effect. Any time component supplied will be ignored.",
-            "Description": "Reasons or comments directly related to the capacity quantity or the change in quantity provided in relation to a BB facility and the times, dates, or duration for which those quantities or changes in quantities are expected to apply.",
-            "LastUpdated": "The date data was last submitted by a participant based on the report query.",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "CapacityQuantity": "Standing capacity quantity in TJ to three decimal places. Three decimal places is not required if the value has trailing zeros after the decimal place.",  # noqa: E501
+            "EffectiveDate": "Gas day date that corresponding record takes effect. Any time component supplied will be ignored.",  # noqa: E501
+            "Description": "Reasons or comments directly related to the capacity quantity or the change in quantity provided in relation to a BB facility and the times, dates, or duration for which those quantities or changes in quantities are expected to apply.",  # noqa: E501
+            "LastUpdated": "The date data was last submitted by a participant based on the report query.",  # noqa: E501
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis report displays the nameplate rating for each connection point id connected to a BB pipeline or BB compression facility.\n\nThis report is a combination of all submissions for Gate Station Nameplate Rating and Connection Point Nameplate Rating.\n\nThe report is produced daily and contains future records.\n\nThe report can be filtered by:\n- Effective Date\n- FacilityIds\n- ConnectionPointIds\n",
+        report_purpose="\n\nThis report displays the nameplate rating for each connection point id connected to a BB pipeline or BB compression facility.\n\nThis report is a combination of all submissions for Gate Station Nameplate Rating and Connection Point Nameplate Rating.\n\nThe report is produced daily and contains future records.\n\nThe report can be filtered by:\n- Effective Date\n- FacilityIds\n- ConnectionPointIds\n",  # noqa: E501
     )

@@ -1,4 +1,4 @@
-from aemo_etl.factory.definition._downloaded_nemweb_public_files_to_s3_definition_factory import (
+from aemo_etl.factory.definition._downloaded_nemweb_public_files_to_s3_definition_factory import (  # noqa: E501
     download_nemweb_public_files_to_s3_definition_factory,
 )
 

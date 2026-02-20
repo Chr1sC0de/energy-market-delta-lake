@@ -2,7 +2,15 @@ import re
 from collections.abc import Generator
 from typing import Unpack
 
-from dagster import DynamicOut, DynamicOutput, In, Nothing, OpExecutionContext, op
+from dagster import (
+    DynamicOut,
+    DynamicOutput,
+    In,
+    Nothing,
+    OpDefinition,
+    OpExecutionContext,
+    op,
+)
 from dagster_aws.s3 import S3Resource
 from types_boto3_s3 import S3Client
 
@@ -13,7 +21,7 @@ def get_dyanmic_zip_links_op_factory(
     s3_source_bucket: str,
     s3_source_prefix: str,
     **op_kwargs: Unpack[OpKwargs],
-):
+) -> OpDefinition:
     op_kwargs.setdefault("name", "get_dyanmic_zip_links_op")
     op_kwargs.setdefault("out", DynamicOut())
     op_kwargs.setdefault("ins", {"start": In(Nothing)})

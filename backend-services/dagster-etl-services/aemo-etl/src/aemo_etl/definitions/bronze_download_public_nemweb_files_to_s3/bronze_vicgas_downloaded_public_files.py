@@ -4,9 +4,6 @@ from aemo_etl.factory.definition import (
 )
 from aemo_etl.register import definitions_list, table_locations
 
-#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-#     │                      define table and register to table locations                      │
-#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
 table_name = "bronze_vicgas_downloaded_public_files"
 
@@ -22,10 +19,6 @@ table_locations[table_name] = {
     "s3_table_location": s3_table_location,
 }
 
-
-#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-#     │                                register the definition                                 │
-#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
 definitions_list.append(
     download_nemweb_public_files_to_s3_definition_factory(

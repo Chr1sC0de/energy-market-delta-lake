@@ -13,7 +13,7 @@ from aemo_etl.resource._s3_polars_parquet_io_manager import S3PolarsParquetIOMan
 testable_submmodules = []
 
 
-def test__deduplicate_asset(create_delta_log: None, create_buckets: None):
+def test__deduplicate_asset(create_delta_log: None, create_buckets: None) -> None:
     test_df = DataFrame({"a": [1, 1, 3], "b": [1, 1, 7], "c": [1, 2, 3]})
     target_df = DataFrame({"a": [1, 3], "b": [1, 7], "c": [1, 3]})
 

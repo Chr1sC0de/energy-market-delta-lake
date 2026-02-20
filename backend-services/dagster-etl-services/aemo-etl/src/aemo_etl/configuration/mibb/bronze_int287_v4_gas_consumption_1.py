@@ -23,8 +23,8 @@ def CONFIG() -> ReportConfig:
             "gas_date": "Gas day being reported (e.g. 30 Jun 2007)",
             "total_gas_used": "total gas used in gj",
             "current_date": "Date and Time Report Produced (e.g. 30 Jun 2007 01:23:45)",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis public report shows the daily gas consumed  at an operational level and \ntherefore will have minor discrepencies due ot metering substitutions or updates\npost the gas day\n",
+        report_purpose="\n\nThis public report shows the daily gas consumed  at an operational level and \ntherefore will have minor discrepencies due ot metering substitutions or updates\npost the gas day\n",  # noqa: E501
         group_name=f"aemo__mibb__{VICTORIAN_WHOLESALE_SETTLEMENTS_AND_METERING_REPORTS}",
     )

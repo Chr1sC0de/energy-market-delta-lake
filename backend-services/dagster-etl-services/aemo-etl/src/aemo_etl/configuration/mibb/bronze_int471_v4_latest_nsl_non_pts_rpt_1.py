@@ -30,8 +30,8 @@ def CONFIG() -> ReportConfig:
             "distributor_name": "Primary Key for MIBB report",
             "nsl_gj": "Daily nsl energy for a DB",
             "current_date": "Date and Time report created",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis report provides the daily net system load (NSL) for each distribution area for a non-DTS (declared transmission system)\nnetwork for the past 3 years. This report may be used as a reference for settlement information.\n\nSection 2.8.4 of the Victorian Retail Market Procedures AEMO's obligation to publish the NSL and Attachment 6 of the\nVictorian Retail Market Procedures set out how AEMO calculates the NSL.\n\nThis public report is produced upon generation of NSL.\nIt is similar to INT171 but for the non-DTS network and has an additional column for network name.\n\nEach report contains the:\n- date and time when the NSL was created/updated\n- network name\n- gas date\n- distributor name\n- daily NSL energy for a distribution business\n- date and time when the report was created\n",
+        report_purpose="\n\nThis report provides the daily net system load (NSL) for each distribution area for a non-DTS (declared transmission system)\nnetwork for the past 3 years. This report may be used as a reference for settlement information.\n\nSection 2.8.4 of the Victorian Retail Market Procedures AEMO's obligation to publish the NSL and Attachment 6 of the\nVictorian Retail Market Procedures set out how AEMO calculates the NSL.\n\nThis public report is produced upon generation of NSL.\nIt is similar to INT171 but for the non-DTS network and has an additional column for network name.\n\nEach report contains the:\n- date and time when the NSL was created/updated\n- network name\n- gas date\n- distributor name\n- daily NSL energy for a distribution business\n- date and time when the report was created\n",  # noqa: E501
         group_name=f"aemo__mibb__{VICTORIAN_GAS_RETAIL_REPORTS_DETAILS}",
     )

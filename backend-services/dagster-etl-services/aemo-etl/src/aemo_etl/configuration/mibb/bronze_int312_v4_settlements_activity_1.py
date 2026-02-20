@@ -32,17 +32,17 @@ def CONFIG() -> ReportConfig:
             "gas_date": "dd mmm yyyy",
             "uafg_28_days_pct": "Uafg-28-day-rolling in pct",
             "total_scheduled_inj_gj": "Total scheduled injection in GJ",
-            "total_scheduled_wdl_gj": "Sum of total scheduled controllable withdrawals, demand forecasts and AEMO's over-ride in GJ",
+            "total_scheduled_wdl_gj": "Sum of total scheduled controllable withdrawals, demand forecasts and AEMO's over-ride in GJ",  # noqa: E501
             "total_actual_inj_gj": "Total actual injection in GJ",
             "total_actual_wdl_gj": "Total actual withdrawals in GJ",
             "total_uplift_amt": "Total uplift in $",
             "su_uplift_amt": "Total surprise uplift in $",
             "cu_uplift_amt": "Total congestion uplift in $",
-            "vu_uplift_amt": "Total common uplift resulting from unallocated AEMO's demand forecast over-ride in $",
-            "tu_uplift_amt": "Total common uplift from exceedance of DTSP's liability limit in $",
+            "vu_uplift_amt": "Total common uplift resulting from unallocated AEMO's demand forecast over-ride in $",  # noqa: E501
+            "tu_uplift_amt": "Total common uplift from exceedance of DTSP's liability limit in $",  # noqa: E501
             "ru_uplift_amt": "Total residual commin uplift in $",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose='\n\nThis report is to provide the market with information about settlement activity for the previous 12 months. Participants may\nwish to use this report to monitor market activity in the industry.\n\nA report is produced daily to the public with a rolling 12-month period.\n"uafg" in the second column of the report refers to unaccounted for gas shown in percentage. This could be due to a number of\nreasons, such as measurement errors or leakages. This report will show the "uatg" for a rolling 28-day period.\n',
+        report_purpose='\n\nThis report is to provide the market with information about settlement activity for the previous 12 months. Participants may\nwish to use this report to monitor market activity in the industry.\n\nA report is produced daily to the public with a rolling 12-month period.\n"uafg" in the second column of the report refers to unaccounted for gas shown in percentage. This could be due to a number of\nreasons, such as measurement errors or leakages. This report will show the "uatg" for a rolling 28-day period.\n',  # noqa: E501
         group_name=f"aemo__mibb__{VICTORIAN_WHOLESALE_SETTLEMENTS_AND_METERING_REPORTS}",
     )

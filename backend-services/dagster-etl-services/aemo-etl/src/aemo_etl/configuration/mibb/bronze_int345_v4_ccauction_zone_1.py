@@ -31,8 +31,8 @@ def CONFIG() -> ReportConfig:
             "from_date": "Effective from date of the zone",
             "to_date": "Effective end date of the zone",
             "current_date": "Report generation date. dd mmm yyyy hh:mm:ss",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis report provides a listing of the CC zones.\n\nThis report will be regenerated when CC zone data is updated.\n",
+        report_purpose="\n\nThis report provides a listing of the CC zones.\n\nThis report will be regenerated when CC zone data is updated.\n",  # noqa: E501
         group_name=f"aemo__mibb__{VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS}",
     )

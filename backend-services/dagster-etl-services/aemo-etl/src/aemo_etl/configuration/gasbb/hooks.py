@@ -6,18 +6,14 @@ Most reports use standard processing, but ~10 reports need special handling.
 
 from datetime import timedelta
 from logging import Logger
-from typing import Protocol
+from typing import Protocol, TypedDict, cast
 
 from dagster import AssetExecutionContext
-from polars import LazyFrame, col, lit, read_csv
-
-# ============================================================================
-# TYPE DEFINITIONS
-# ============================================================================
+from polars import DataFrame, LazyFrame, col, lit, read_csv
 
 
 class PreprocessHook(Protocol):
-    """Protocol for preprocess hooks that transform LazyFrames before standard processing."""
+    """Protocol for preprocess hooks that transform LazyFrames before standard processing."""  # noqa: E501
 
     def __call__(self, logger: Logger | None, df: LazyFrame) -> LazyFrame: ...
 
@@ -40,11 +36,6 @@ class PostProcessHook(Protocol):
         datetime_pattern: str | None = None,
         datetime_column_name: str | None = None,
     ) -> LazyFrame: ...
-
-
-# ============================================================================
-# PRE-PROCESS HOOKS (DataFrame transformations before standard processing)
-# ============================================================================
 
 
 def forecast_utilisation_preprocess(logger: Logger | None, df: LazyFrame) -> LazyFrame:
@@ -102,10 +93,13 @@ def forecast_utilisation_preprocess(logger: Logger | None, df: LazyFrame) -> Laz
 
     # Calculate forecast period start date
     forecast_period = (
-        df_unpivoted.select("ForecastDate")
-        .unique()
-        .with_columns(col("ForecastDate").str.to_datetime(format="%A %d %b %Y"))
-        .collect()
+        cast(
+            DataFrame,
+            df_unpivoted.select("ForecastDate")
+            .unique()
+            .with_columns(col("ForecastDate").str.to_datetime(format="%A %d %b %Y"))
+            .collect(),
+        )
         .min()
         .item()
         - timedelta(days=1)
@@ -149,11 +143,6 @@ def nameplate_rating_preprocess(logger: Logger | None, df: LazyFrame) -> LazyFra
     return df.rename({c: c.lower() for c in columns})
 
 
-# ============================================================================
-# PROCESS OBJECT HOOKS (Custom file parsing before DataFrame creation)
-# ============================================================================
-
-
 def gsh_gas_trades_process_object(logger: Logger | None, contents: bytes) -> LazyFrame:
     """Parse GSH Gas Trades CSV with non-standard format.
 
@@ -175,11 +164,6 @@ def gsh_gas_trades_process_object(logger: Logger | None, contents: bytes) -> Laz
         ]
     ).encode()
     return read_csv(csv_string).lazy()
-
-
-# ============================================================================
-# POST-PROCESS HOOKS (Custom deduplication after standard processing)
-# ============================================================================
 
 
 def add_missing_primary_keys_postprocess(
@@ -307,7 +291,7 @@ POST_PROCESS_HOOKS: dict[str, PostProcessHook] = {
     "bronze_gasbb_shippers_list": add_missing_primary_keys_postprocess,
     "bronze_gasbb_gsh_gas_trades": add_missing_primary_keys_postprocess,
     # Reports with special deduplication logic
-    "bronze_gasbb_medium_term_capacity_outlook": medium_term_capacity_anti_join_postprocess,
+    "bronze_gasbb_medium_term_capacity_outlook": medium_term_capacity_anti_join_postprocess,  # noqa: E501
 }
 
 DATETIME_PATTERNS: dict[str, str] = {
@@ -325,9 +309,19 @@ DATETIME_COLUMN_NAMES: dict[str, str] = {
 # ============================================================================
 
 
+class ReportHooks(TypedDict):
+    """Typed dictionary of optional hooks for a GASBB report."""
+
+    preprocess_hook: PreprocessHook | None
+    process_object_hook: ProcessObjectHook | None
+    post_process_hook: PostProcessHook | None
+    datetime_pattern: str | None
+    datetime_column_name: str | None
+
+
 def get_hooks_for_report(
     table_name: str,
-) -> dict[str, PreprocessHook | ProcessObjectHook | PostProcessHook | str | None]:
+) -> ReportHooks:
     """Get all hooks for a given report (helper for definitions).
 
     Args:
@@ -335,12 +329,13 @@ def get_hooks_for_report(
 
     Returns:
         Dictionary with keys: preprocess_hook, process_object_hook, post_process_hook,
-        datetime_pattern, datetime_column_name. Values are None if no custom hook needed.
+        datetime_pattern, datetime_column_name.
+        Values are None if no custom hook needed.
     """
-    return {
-        "preprocess_hook": PREPROCESS_HOOKS.get(table_name),
-        "process_object_hook": PROCESS_OBJECT_HOOKS.get(table_name),
-        "post_process_hook": POST_PROCESS_HOOKS.get(table_name),
-        "datetime_pattern": DATETIME_PATTERNS.get(table_name),
-        "datetime_column_name": DATETIME_COLUMN_NAMES.get(table_name),
-    }
+    return ReportHooks(
+        preprocess_hook=PREPROCESS_HOOKS.get(table_name),
+        process_object_hook=PROCESS_OBJECT_HOOKS.get(table_name),
+        post_process_hook=POST_PROCESS_HOOKS.get(table_name),
+        datetime_pattern=DATETIME_PATTERNS.get(table_name),
+        datetime_column_name=DATETIME_COLUMN_NAMES.get(table_name),
+    )

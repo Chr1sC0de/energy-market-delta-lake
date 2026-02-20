@@ -43,25 +43,16 @@ dev = [
   "flask-cors>=5.0.1",
   "ipykernel>=6.29.5",
   "itables>=2.4.4",
-  "moto[s3]>=5.1.4",
+  "prek>=0.3.3",
   "pytest>=8.3.5",
   "pytest-cov>=6.1.1",
   "pytest-html>=4.1.1",
   "pytest-xdist>=3.6.1",
+  "ruff>=0.15.1",
+  "ty>=0.0.17",
   "types-boto3[dynamodb]>=1.38.3",
 ]
 
 [tool.ruff]
+lint.select = [ "ANN", "E", "F" ]
 lint.per-file-ignores."__init__.py" = [ "I" ]
-
-[tool.basedpyright]
-include = [ "src" ]
-typeCheckingMode = "standard"
-exclude = [
-  "**/node_modules",
-  "**/__pycache__",
-  "~/*/neotest/*",
-  "*.venv",
-  "src/experimental",
-  "src/typestubs",
-]

@@ -1,7 +1,4 @@
-#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-#     │                                create the asset sensor                                 │
-#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
-
+from collections.abc import Generator
 
 from dagster import (
     DagsterInstance,
@@ -14,20 +11,17 @@ from dagster import (
 )
 from dagster_aws.s3 import S3Resource
 
-from aemo_etl.configuration import DEVELOPMENT_LOCATION, LANDING_BUCKET, mibb
+from aemo_etl.configuration import DEVELOPMENT_LOCATION, LANDING_BUCKET
+from aemo_etl.configuration.registry import MIBB_CONFIGS
 from aemo_etl.definitions import bronze_vicgas_mibb_reports
 from aemo_etl.util import (
     get_s3_object_keys_from_prefix_and_name_glob,
     get_s3_pagination,
 )
 
-configurations = [getattr(mibb, name) for name in dir(mibb) if not name.startswith("_")]
-
-
 jobs = [
-    getattr(bronze_vicgas_mibb_reports, name).definition_builder.table_asset_job
-    for name in dir(bronze_vicgas_mibb_reports)
-    if name.startswith("bronze_int")
+    builder.table_asset_job
+    for builder in bronze_vicgas_mibb_reports.definition_builders
 ]
 
 
@@ -48,12 +42,14 @@ def has_job_failed(instance: DagsterInstance, job_name: str) -> bool:
         else DefaultSensorStatus.RUNNING
     ),  # Sensor is turned on by default
 )
-def sensor_aemo_vicgas_jobs(context: SensorEvaluationContext, s3: S3Resource):
+def sensor_aemo_vicgas_jobs(
+    context: SensorEvaluationContext, s3: S3Resource
+) -> Generator[RunRequest, None, None]:
     s3_client = s3.get_client()
     s3_source_bucket = LANDING_BUCKET
     s3_source_prefix = "aemo/vicgas"
     pages = get_s3_pagination(s3_client, s3_source_bucket, s3_source_prefix)
-    for configuration in configurations:
+    for configuration in MIBB_CONFIGS.values():
         name = configuration.table_name
         s3_file_glob = configuration.s3_file_glob
 

@@ -13,9 +13,9 @@ class DeduplicateConfig(Config):
 @dagster_asset(
     name="deduplicate_lazyframe_rows", key_prefix=["admin"], group_name="admin"
 )
-def asset(context: AssetExecutionContext, config: DeduplicateConfig):
+def asset(context: AssetExecutionContext, config: DeduplicateConfig) -> None:
     context.log.info(
-        f"deduplicating rows for {config.s3_uri} with primary keys {config.primary_keys}"
+        f"deduplicating rows for {config.s3_uri} with primary keys {config.primary_keys}"  # noqa: E501
     )
     original_df = read_delta(config.s3_uri)
 

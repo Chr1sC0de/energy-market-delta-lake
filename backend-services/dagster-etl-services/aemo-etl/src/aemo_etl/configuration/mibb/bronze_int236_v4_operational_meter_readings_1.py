@@ -37,13 +37,13 @@ def CONFIG() -> ReportConfig:
             "direction_code_name": "Distribution zone or injection meter",
             "direction": "'Withdrawals' or 'Injections'",
             "commencement_datetime": "Start time/date value applies for",
-            "termination_datetime": "End date value applies for (e.g. 30 Jun 2007 06:00:00)",
-            "quantity": "Metered value. Injection: direct reading. Withdrawals: Summed by Distribution Business Zone in GJ.",
+            "termination_datetime": "End date value applies for (e.g. 30 Jun 2007 06:00:00)",  # noqa: E501
+            "quantity": "Metered value. Injection: direct reading. Withdrawals: Summed by Distribution Business Zone in GJ.",  # noqa: E501
             "time_sort_order": "Internal flag",
-            "mod_datetime": "Date and time data last modified (e.g. 30 Jun 2007 06:00:00)",
+            "mod_datetime": "Date and time data last modified (e.g. 30 Jun 2007 06:00:00)",  # noqa: E501
             "current_date": "Date and Time Report Produced (e.g. 30 Jun 2007 06:00:00)",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis report contains the energy by distribution network area data for the previous and the current gas day.\nAs this report is generated on an hourly basis, participants can use this report for adjusting their forecast of system load over\nthe course of the day on a geographical basis. It can be used as an input into Participants bidding decisions leading up to the\nnext schedule.\nDistributors can use this information to monitor energy flows.\nNote this is operational data and is subject to substituted data. Therefore, do not use it to validate settlement outcomes.\n\nThis report is summed by distribution network zones, net of re-injections and transmission customers.\nThis report does not allocate inter-distribution zone energy flows on the infrequent occasions on which they occur. To obtain\ninformation on cross-border flows, users are referred to the specific MIRNs assigned to the cross Distribution Business\nnetwork connections.\n\nEach report contains 24 rows for the previous gas day for:\n- each injection point (for example, Culcairn, Longford, LNG, Iona, VicHub, SEAGas, Bass Gas)\n- each distribution zone\n",
+        report_purpose="\n\nThis report contains the energy by distribution network area data for the previous and the current gas day.\nAs this report is generated on an hourly basis, participants can use this report for adjusting their forecast of system load over\nthe course of the day on a geographical basis. It can be used as an input into Participants bidding decisions leading up to the\nnext schedule.\nDistributors can use this information to monitor energy flows.\nNote this is operational data and is subject to substituted data. Therefore, do not use it to validate settlement outcomes.\n\nThis report is summed by distribution network zones, net of re-injections and transmission customers.\nThis report does not allocate inter-distribution zone energy flows on the infrequent occasions on which they occur. To obtain\ninformation on cross-border flows, users are referred to the specific MIRNs assigned to the cross Distribution Business\nnetwork connections.\n\nEach report contains 24 rows for the previous gas day for:\n- each injection point (for example, Culcairn, Longford, LNG, Iona, VicHub, SEAGas, Bass Gas)\n- each distribution zone\n",  # noqa: E501
         group_name=f"aemo__mibb__{VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS}",
     )

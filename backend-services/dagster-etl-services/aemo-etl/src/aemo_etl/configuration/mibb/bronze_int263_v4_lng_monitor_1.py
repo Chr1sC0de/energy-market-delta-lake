@@ -23,10 +23,10 @@ def CONFIG() -> ReportConfig:
         },
         schema_descriptions={
             "gas_date": "Gas Date data generated e.g. 02 Feb 2001",
-            "allocated_market_stock": "Sum of Allocated Market LNG Stock Holding (tonnes) Sum of participant and AEMO Allocated stock holding excluding participant ID 14 GasNet.",
+            "allocated_market_stock": "Sum of Allocated Market LNG Stock Holding (tonnes) Sum of participant and AEMO Allocated stock holding excluding participant ID 14 GasNet.",  # noqa: E501
             "current_date": "Date and Time report produced e.g. 29 Jun 2007 01:23:45",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis report is one of a number of reports produced to provide market information about the daily total LNG reserves held by\nAEMO and all Market participants.\n\nThis public report displays the sum of LNG reserves (in tonnes) held for each day for the past 60 days.\n\nEach report contains daily data for the last 60 days.\nThe LNG stock reported excludes the status of BOC operations on AEMO's stock holding.\n",
+        report_purpose="\n\nThis report is one of a number of reports produced to provide market information about the daily total LNG reserves held by\nAEMO and all Market participants.\n\nThis public report displays the sum of LNG reserves (in tonnes) held for each day for the past 60 days.\n\nEach report contains daily data for the last 60 days.\nThe LNG stock reported excludes the status of BOC operations on AEMO's stock holding.\n",  # noqa: E501
         group_name=f"aemo__mibb__{VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS}",
     )

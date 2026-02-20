@@ -1,15 +1,18 @@
-import polars as pl
 import pathlib as pt
+from typing import cast
+
 import dagster as dg
-from aemo_etl.definitions.bronze_gasbb_reports.bronze_gasbb_medium_term_capacity_outlook import (
-    default_post_process_hook,
-    primary_keys,
-)
+import polars as pl
+
+from aemo_etl.configuration.registry import GASBB_CONFIGS
+from aemo_etl.definitions.bronze_gasbb_reports.utils import default_post_process_hook
 
 cwd = pt.Path(__file__).parent
 
+primary_keys = GASBB_CONFIGS["bronze_gasbb_medium_term_capacity_outlook"].primary_keys
 
-def main():
+
+def main() -> None:
     source_file = cwd / "gasbbmediumtermcapacityoutlook~250719162416.parquet"
     default_post_process_hook(
         dg.build_asset_context(),
@@ -18,7 +21,9 @@ def main():
         ),
         primary_keys=primary_keys,
         datetime_pattern="%Y/%m/%d %H:%M:%S",
-    ).collect().write_delta(cwd / "bronze_gasbb_medium_term_capacity_outlook")
+    ).pipe(lambda lf: cast(pl.DataFrame, lf.collect())).write_delta(
+        cwd / "bronze_gasbb_medium_term_capacity_outlook"
+    )
 
 
 if __name__ == "__main__":

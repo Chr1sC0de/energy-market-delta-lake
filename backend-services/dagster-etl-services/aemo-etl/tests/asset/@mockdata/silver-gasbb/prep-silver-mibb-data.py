@@ -14,7 +14,7 @@ TARGET_FILE_SIZE = 0.0075
 BUCKET = "dev-energy-market-bronze"
 
 
-def main():
+def main() -> None:
     s3_client = boto3.client("s3")
 
     objects = s3_client.list_objects_v2(

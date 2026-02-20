@@ -2,6 +2,6 @@
 
 . "./scripts/@common"
 
-podman attach --detach-keys "ctrl-a,ctrl-e" "$CONTAINER_NAME"
+podman exec --interactive --tty --detach-keys "ctrl-a,ctrl-e" "$CONTAINER_NAME" bash -l
 
 wait

@@ -40,14 +40,14 @@ def links() -> list[Link]:
 
 
 class Test__get_dynamic_download_groups_op_factory:
-    def test__no_filter(self, links: list[Link]):
+    def test__no_filter(self, links: list[Link]) -> None:
         outputs = list(get_dynamic_nemweb_links_op_factory()(build_op_context(), links))
 
         assert set([output.value.source_absolute_href for output in outputs]) == set(
             [link.source_absolute_href for link in links]
         )
 
-    def test__with_filter(self, links: list[Link]):
+    def test__with_filter(self, links: list[Link]) -> None:
         excludeed_link = "https://www.nemweb.com.au/REPORTS/CURRENT/VicGas/INT029A_V4_SYSTEM_NOTICES_1.CSV"
 
         def _link_filter(_: OpExecutionContext, link: Link) -> bool:

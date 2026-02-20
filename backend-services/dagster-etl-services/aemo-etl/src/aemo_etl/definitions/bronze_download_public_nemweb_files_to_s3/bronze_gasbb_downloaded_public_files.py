@@ -6,14 +6,10 @@ from aemo_etl.configuration._configuration import Link
 from aemo_etl.factory.definition import (
     download_nemweb_public_files_to_s3_definition_factory,
 )
-from aemo_etl.factory.definition._downloaded_nemweb_public_files_to_s3_definition_factory import (
+from aemo_etl.factory.definition._downloaded_nemweb_public_files_to_s3_definition_factory import (  # noqa: E501
     InMemoryCachedLinkFilter,
 )
 from aemo_etl.register import definitions_list, table_locations
-
-#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-#     │                      define table and register to table locations                      │
-#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
 key_prefix = ["bronze", "aemo", "gasbb"]
 
@@ -52,10 +48,6 @@ def schedule_tags_fn(_: ScheduleEvaluationContext) -> dict[str, str]:
         "ecs/memory": "2048" if table_exists() else "16384",
     }
 
-
-#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-#     │                                register the definition                                 │
-#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
 definitions_list.append(
     download_nemweb_public_files_to_s3_definition_factory(

@@ -55,8 +55,8 @@ def CONFIG() -> ReportConfig:
             "common_uplift_amt": "Common uplift amount",
             "common_uplift_qty": "Common uplift quantity",
             "current_date": "Date and Time Report Produced, e.g. 29 Jun 2007 01:23:45",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis is a public Report, to show the breakdown of settlements issued Uplift payments for gas days from 1 January 2023\nonwards.\n",
+        report_purpose="\n\nThis is a public Report, to show the breakdown of settlements issued Uplift payments for gas days from 1 January 2023\nonwards.\n",  # noqa: E501
         group_name=f"aemo__mibb__{VICTORIAN_WHOLESALE_SETTLEMENTS_AND_METERING_REPORTS}",
     )

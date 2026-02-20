@@ -28,25 +28,27 @@ def CONFIG() -> ReportConfig:
             "surrogate_key": String,
         },
         schema_descriptions={
-            "demand_type_name": """Normal Uses Demand forecast used by operational schedule
-    10% exceedence means the estimated market price is based on
-    10 % exceedance of the forecast demand level.
-    90% exceedence means the estimated market price if the demand
-    is 90 % of the the forecast demand.""",
-            "price_value_gst_ex": "Forecast market price ($) for BoD Scheduling horizon of the gas day in question",
-            "transmission_group_id": "Link to the related day(s) ahead operational schedule",
+            "demand_type_name": (
+                "Normal Uses Demand forecast used by operational schedule. "
+                "10% exceedence means the estimated market price is based on "
+                "10% exceedance of the forecast demand level. "
+                "90% exceedence means the estimated market price if the demand "
+                "is 90% of the forecast demand."
+            ),
+            "price_value_gst_ex": "Forecast market price ($) for BoD Scheduling horizon of the gas day in question",  # noqa: E501
+            "transmission_group_id": "Link to the related day(s) ahead operational schedule",  # noqa: E501
             "schedule_type_id": "MS (Market Schedule Id)",
             "transmission_id": "Schedule number these prices are related to",
             "gas_date": "e.g. 30 Jun 2007",
-            "approval_datetime": "Date and time the schedule was approved 29 Jun 2007 01:23:45",
+            "approval_datetime": "Date and time the schedule was approved 29 Jun 2007 01:23:45",  # noqa: E501
             "current_date": "Date and time Report Produced e.g. 29 Jun 2007 01:23:45",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
         report_purpose="""
 
-This report is to indicate what the prices are for the day and what they are predicted to be for the next two days.
+This report indicates prices for the day and predictions for the next two days.
 
-Market participants may wish to use this information to estimate pricing for the following two days.
+Market participants may use this to estimate pricing for the following two days.
 """,
         group_name=f"aemo__mibb__{VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS}",
     )

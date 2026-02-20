@@ -2,18 +2,17 @@ import fnmatch
 from collections.abc import Generator, Mapping
 from logging import Logger
 from math import ceil
-from typing import Callable
+from typing import Callable, cast
 
 import polars as pl
 from botocore.exceptions import ClientError
+from botocore.paginate import PageIterator
 from dagster import TableColumn, TableSchema
 from polars._typing import PolarsDataType
 from types_boto3_s3 import S3Client
 
-# pyright: reportTypedDictNotRequiredAccess=false
 
-
-def newline_join(*args: str, extra=None) -> str:
+def newline_join(*args: str, extra: str | None = None) -> str:
     if extra is None:
         extra = ""
     return f"\n{extra}".join(args)
@@ -24,7 +23,7 @@ def get_s3_pagination(
     s3_bucket: str,
     s3_prefix: str,
     logger: Logger | None = None,
-):
+) -> list[PageIterator]:
     paginator = s3_client.get_paginator("list_objects_v2")
     pages = []
     if logger is not None:
@@ -44,7 +43,7 @@ def get_s3_object_keys_from_prefix_and_name_glob(
     s3_prefix: str,
     s3_file_glob: str,
     case_insensitive: bool = True,
-    pages=None,
+    pages: list[PageIterator] | None = None,
     logger: Logger | None = None,
 ) -> list[str]:
     """given a key prefix and a globbing pattern get all the s3 object keys"""
@@ -62,7 +61,7 @@ def get_s3_object_keys_from_prefix_and_name_glob(
         if logger is not None:
             logger.info(f"processing page {i + 1} of {number_of_pages}")
         if "Contents" in page:
-            original_keys = [c["Key"] for c in page["Contents"]]
+            original_keys = [c["Key"] for c in page["Contents"]]  # type: ignore[not-subscriptable]
             if case_insensitive:
                 case_insensitive_keys = [k.lower() for k in original_keys]
                 mapping = {
@@ -162,7 +161,7 @@ def get_metadata_schema(
 
 
 def get_lazyframe_num_rows(df: pl.LazyFrame) -> int:
-    return df.select(pl.len()).collect().item()
+    return cast(pl.DataFrame, df.select(pl.len()).collect()).item()
 
 
 def split_list[T](list_: list[T], num_chunks: int) -> Generator[list[T]]:

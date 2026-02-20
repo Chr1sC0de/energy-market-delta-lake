@@ -34,13 +34,13 @@ def CONFIG() -> ReportConfig:
             "transmission_id": "Schedule ID from which results were drawn",
             "mirn": "Meter Registration Identification Number of the system point",
             "tie_breaking_event": "Total tie-breaking event",
-            "cc_bids": "If the tie-breaking bids have CC allocated to them, list number of bids with CC allocated to them",
-            "non_cc_bids": "If the tie-breaking bids do not have CC allocated to them, list number of bids with no CC allocated to them",
-            "part_cc_bids": "If the tie-breaking bids have part CC allocated to them, list number of bids with part CC allocated to them",
-            "gas_not_scheduled": "Aggregate tie breaking bids - aggregate tie breaking bids scheduled",
-            "current_date": "Date and time report produced (for example, 30 Jun 2012 06:00:00)",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "cc_bids": "If the tie-breaking bids have CC allocated to them, list number of bids with CC allocated to them",  # noqa: E501
+            "non_cc_bids": "If the tie-breaking bids do not have CC allocated to them, list number of bids with no CC allocated to them",  # noqa: E501
+            "part_cc_bids": "If the tie-breaking bids have part CC allocated to them, list number of bids with part CC allocated to them",  # noqa: E501
+            "gas_not_scheduled": "Aggregate tie breaking bids - aggregate tie breaking bids scheduled",  # noqa: E501
+            "current_date": "Date and time report produced (for example, 30 Jun 2012 06:00:00)",  # noqa: E501
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis report provides information about tie-breaking events that occurred on each gas D on the following gas day D+1.\n\nThis report details the tie-breaking events from the previous gas day for the 5 intraday scheduling intervals.\nThis report does not take into account MPs submitting bids that are inconsistent with their accreditations constraint. In an\nevent MPs bids exceed their accreditation, a tie breaking event may be incorrectly reported.\n\nEach row in the report provides details for each mirn the tie-breaking events for the previous gas days 5 intraday schedules.\n",
+        report_purpose="\n\nThis report provides information about tie-breaking events that occurred on each gas D on the following gas day D+1.\n\nThis report details the tie-breaking events from the previous gas day for the 5 intraday scheduling intervals.\nThis report does not take into account MPs submitting bids that are inconsistent with their accreditations constraint. In an\nevent MPs bids exceed their accreditation, a tie breaking event may be incorrectly reported.\n\nEach row in the report provides details for each mirn the tie-breaking events for the previous gas days 5 intraday schedules.\n",  # noqa: E501
         group_name=f"aemo__mibb__{VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS}",
     )

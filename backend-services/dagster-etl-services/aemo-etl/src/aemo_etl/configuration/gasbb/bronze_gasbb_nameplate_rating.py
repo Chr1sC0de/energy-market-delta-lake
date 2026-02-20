@@ -40,18 +40,18 @@ def CONFIG() -> ReportConfig:
             "facilityname": "Facility name associated with the Facility Id.",
             "facilityid": "A unique AEMO defined Facility identifier.",
             "facilitytype": "Facility type associated with the Facility Id.",
-            "capacitytype": "Capacity type can be either: Storage: Holding capacity in storage, or MDQ: Daily maximum firm capacity (name plate) under the expected operating conditions.",
-            "capacityquantity": "Standing capacity quantity in TJ to three decimal places. Three decimal places is not required if the value has trailing zeros after the decimal place.",
-            "flowdirection": "Gas flow direction. Values can be either: Receipt, Delivery, Processed, DeliveryLngStor, or NONE.",
-            "capacitydescription": "Free text to describe the meaning of the capacity number provided, including relevant assumptions made in the calculation of the capacity number and any other relevant information.",
-            "receiptlocation": "The Connection Point Id that best represents the receipt location. The Receipt Location in conjunction with the Delivery Location indicates the capacity direction and location.",
+            "capacitytype": "Capacity type can be either: Storage: Holding capacity in storage, or MDQ: Daily maximum firm capacity (name plate) under the expected operating conditions.",  # noqa: E501
+            "capacityquantity": "Standing capacity quantity in TJ to three decimal places. Three decimal places is not required if the value has trailing zeros after the decimal place.",  # noqa: E501
+            "flowdirection": "Gas flow direction. Values can be either: Receipt, Delivery, Processed, DeliveryLngStor, or NONE.",  # noqa: E501
+            "capacitydescription": "Free text to describe the meaning of the capacity number provided, including relevant assumptions made in the calculation of the capacity number and any other relevant information.",  # noqa: E501
+            "receiptlocation": "The Connection Point Id that best represents the receipt location. The Receipt Location in conjunction with the Delivery Location indicates the capacity direction and location.",  # noqa: E501
             "receiptlocationName": "The name of the receipt location.",
-            "deliverylocation": "The Connection Point Id that best represents the delivery location. This location in conjunction with the Receipt Location indicates the capacity direction and location.",
+            "deliverylocation": "The Connection Point Id that best represents the delivery location. This location in conjunction with the Receipt Location indicates the capacity direction and location.",  # noqa: E501
             "deliverylocationName": "The name of the delivery location.",
-            "effectivedate": "Gas day date that corresponding record takes effect. Any time component supplied will be ignored.",
-            "description": "Free text facility use is restricted to a description for reasons or comments directly related to the quantity or the change in quantity provided in relation to a BB facility.",
+            "effectivedate": "Gas day date that corresponding record takes effect. Any time component supplied will be ignored.",  # noqa: E501
+            "description": "Free text facility use is restricted to a description for reasons or comments directly related to the quantity or the change in quantity provided in relation to a BB facility.",  # noqa: E501
             "lastupdated": "Date and time record was last updated.",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis report displays the standing nameplate capacity of all BB facilities and BB compression facility. Nameplate rating relates to maximum daily quantities in TJ under normal operating conditions.\n\nGASBB_NAMEPLATE_RATING_FULL_LIST is updated annually / GASBB_NAMEPLATE_RATING_CURRENT is updated within 30 minutes of receiving new data.\n\nGASBB_NAMEPLATE_RATING_FULL_LIST contains historical records / GASBB_NAMEPLATE_RATING_CURRENT contains the current nameplate.\n",
+        report_purpose="\n\nThis report displays the standing nameplate capacity of all BB facilities and BB compression facility. Nameplate rating relates to maximum daily quantities in TJ under normal operating conditions.\n\nGASBB_NAMEPLATE_RATING_FULL_LIST is updated annually / GASBB_NAMEPLATE_RATING_CURRENT is updated within 30 minutes of receiving new data.\n\nGASBB_NAMEPLATE_RATING_FULL_LIST contains historical records / GASBB_NAMEPLATE_RATING_CURRENT contains the current nameplate.\n",  # noqa: E501
     )

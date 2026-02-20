@@ -18,10 +18,10 @@ MOCK_DATA_FOLDER = CWD / "@mockdata/silver-mibb"
     mibb.report_assets,
     ids=[asset.key.path[-1] for asset in mibb.report_assets],
 )
-def test__asset(asset: AssetsDefinition):
+def test__asset(asset: AssetsDefinition) -> None:
     asset_name = asset.key.path[-1]
 
-    input_assets = list(asset.input_names.mapping.keys())  # pyright: ignore[reportAttributeAccessIssue]
+    input_assets = list(asset.input_names)
 
     input_kwargs = {}
 
@@ -37,4 +37,4 @@ def test__asset(asset: AssetsDefinition):
     if asset_name in mibb.__dict__:
         assert getattr(mibb, asset_name).asset_check(results)[0]
 
-    assert results.select(pl.len()).collect().item() > 0
+    assert cast(pl.DataFrame, results.select(pl.len()).collect()).item() > 0

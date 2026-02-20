@@ -7,7 +7,7 @@ from aemo_etl.configuration import Link
 from aemo_etl.factory.op.schema import OpKwargs
 
 
-def _default_link_filter(*_) -> bool:
+def _default_link_filter(*_: object) -> bool:
     return True
 
 

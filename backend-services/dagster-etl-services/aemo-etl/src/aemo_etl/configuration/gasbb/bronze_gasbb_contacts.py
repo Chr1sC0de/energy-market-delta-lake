@@ -31,7 +31,7 @@ def CONFIG() -> ReportConfig:
             "Position": "Job title of person.",
             "Email": "Email address of person.",
             "LastUpdated": "Date and time the record was last modified.",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nProvides a report of registered contact details for each participant.\n\nThis report is updated daily and shows current records.\n",
+        report_purpose="\n\nProvides a report of registered contact details for each participant.\n\nThis report is updated daily and shows current records.\n",  # noqa: E501
     )

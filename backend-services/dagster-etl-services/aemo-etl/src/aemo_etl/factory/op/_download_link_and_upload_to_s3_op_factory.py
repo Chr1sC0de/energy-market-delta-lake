@@ -74,7 +74,7 @@ def download_link_and_upload_to_s3_op_factory(
                 csv_df.write_parquet(link_buffer)
         except Exception as e:
             context.log.info(
-                f"failed to convert from csv to parquet format, using original format with error message {e}"
+                f"failed to convert from csv to parquet format, using original format with error message {e}"  # noqa: E501
             )
             link_buffer = original_buffer
             upload_filename = original_upload_filename
@@ -102,7 +102,7 @@ def download_link_and_upload_to_s3_op_factory(
         )
 
         context.log.info(
-            f"finished processing and uploading {link.source_absolute_href} to {target_s3_href}"
+            f"finished processing and uploading {link.source_absolute_href} to {target_s3_href}"  # noqa: E501
         )
         return processed_link
 

@@ -1,14 +1,11 @@
----
 scheduler:
   module: dagster.core.scheduler
   class: DagsterDaemonScheduler
-
 run_coordinator:
   module: dagster.core.run_coordinator
   class: QueuedRunCoordinator
   config:
     max_concurrent_runs: 1000 # or a high number to effectively remove the cap
-
 run_launcher:
   module: "dagster_aws.ecs"
   class: "EcsRunLauncher"
@@ -16,7 +13,6 @@ run_launcher:
     run_resources:
       cpu: "512"
       memory: "1024"
-
 run_storage:
   module: dagster_postgres.run_storage
   class: PostgresRunStorage
@@ -31,7 +27,6 @@ run_storage:
       db_name:
         env: DAGSTER_POSTGRES_DB
       port: 5432
-
 schedule_storage:
   module: dagster_postgres.schedule_storage
   class: PostgresScheduleStorage
@@ -46,7 +41,6 @@ schedule_storage:
       db_name:
         env: DAGSTER_POSTGRES_DB
       port: 5432
-
 event_log_storage:
   module: dagster_postgres.event_log
   class: PostgresEventLogStorage

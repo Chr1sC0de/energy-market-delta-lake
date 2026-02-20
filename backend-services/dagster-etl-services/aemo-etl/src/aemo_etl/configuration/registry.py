@@ -1,4 +1,4 @@
-"""Central registry for bronze report configurations with decorator-based registration."""
+"""Central registry for bronze report configurations with decorator-based registration."""  # noqa: E501
 
 from collections.abc import Callable
 from typing import overload

@@ -35,14 +35,14 @@ def CONFIG() -> ReportConfig:
             "bid_id": "Bid identifier",
             "zone_id": "Identifier number of CC zone",
             "zone_name": "Name of CC zone",
-            "start_period": "Starting CC product period representing date range period for the capacity",
-            "end_period": "Ending CC product period representing date range period for the capacity",
+            "start_period": "Starting CC product period representing date range period for the capacity",  # noqa: E501
+            "end_period": "Ending CC product period representing date range period for the capacity",  # noqa: E501
             "step": "Bid step number",
             "bid_price": "CC auction bid step price",
             "bid_quantity_gj": "CC auction bid step quantity",
             "current_date": "Report generation date. dd mmm yyyy hh:mm:ss",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis report provides the entire bid stack information without participant data identifying data for the current (latest) CC auction\nas denoted by the auction ID number.\n\nThis report provides the final capacity certificate bid stack data for the current (latest) auction published.\n",
+        report_purpose="\n\nThis report provides the entire bid stack information without participant data identifying data for the current (latest) CC auction\nas denoted by the auction ID number.\n\nThis report provides the final capacity certificate bid stack data for the current (latest) auction published.\n",  # noqa: E501
         group_name=f"aemo__mibb__{VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS}",
     )

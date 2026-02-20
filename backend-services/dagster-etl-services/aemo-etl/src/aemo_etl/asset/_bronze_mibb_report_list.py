@@ -13,9 +13,6 @@ from aemo_etl.parameter_specification import (
 from aemo_etl.register import table_locations
 from aemo_etl.util import get_lazyframe_num_rows, get_metadata_schema
 
-#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-#     │                      define table and register to table locations                      │
-#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
 table_name = "bronze_mibb_report_list"
 s3_table_location = f"s3://{BRONZE_BUCKET}/aemo/{table_name}"
@@ -25,10 +22,6 @@ table_locations[table_name] = {
     "glue_schema": "aemo",
     "s3_table_location": s3_table_location,
 }
-
-#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-#     │                                create helper functions                                 │
-#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
 
 def process_extracted_table(table_contents: list[list[str]]) -> pl.LazyFrame:
@@ -40,16 +33,11 @@ def process_extracted_table(table_contents: list[list[str]]) -> pl.LazyFrame:
     return pl.LazyFrame(df_dict)
 
 
-#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-#     │                                create asset definition                                 │
-#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
-
-
 @dg.asset(
     group_name="aemo__metadata",
     key_prefix=["bronze", "aemo"],
     name=table_name,
-    description="Grab the mibb report list from the following User Guide to MIBB Reports Document found here: https://aemo.com.au/energy-systems/gas/declared-wholesale-gas-market-dwgm/procedures-policies-and-guides",
+    description="Grab the mibb report list from the following User Guide to MIBB Reports Document found here: https://aemo.com.au/energy-systems/gas/declared-wholesale-gas-market-dwgm/procedures-policies-and-guides",  # noqa: E501
     kinds={"source", "table", "parquet"},
     io_manager_key="s3_polars_parquet_io_manager",
     automation_condition=dg.AutomationCondition.missing()
@@ -65,8 +53,8 @@ def process_extracted_table(table_contents: list[list[str]]) -> pl.LazyFrame:
             },
             {
                 "report_name": "Name of the report",
-                "trigger_event_and_or_time_aest": "Trigger (event or time (shown as HH:MM AEST in table below))",
-                "participant": "Participant receiving report (Public, private, Market participant, etc)",
+                "trigger_event_and_or_time_aest": "Trigger (event or time (shown as HH:MM AEST in table below))",  # noqa: E501
+                "participant": "Participant receiving report (Public, private, Market participant, etc)",  # noqa: E501
                 "market": "Market (DWGM – VIC, Retail – VIC, Retail – QLD etc)",
                 "consultative_forum": "Consultative forum owner (GWCF or GRCF)",
             },
@@ -85,7 +73,7 @@ def bronze_vicgas_mibb_report_list_asset() -> pl.LazyFrame:
     response = requests.get(
         "https://aemo.com.au/-/media/files/stakeholder_consultation/consultations/gas_consultations/2024/april-2024-amendment-to-user-guide-to-mibb-reports/user-guide-to-mibb-reports.pdf?la=en",
         headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",  # noqa: E501
             "Accept": "application/pdf",
         },
     )
@@ -112,15 +100,10 @@ def bronze_vicgas_mibb_report_list_asset() -> pl.LazyFrame:
     return output
 
 
-#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-#     │                                  create asset checks                                   │
-#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
-
-
 @dg.asset_check(asset=bronze_vicgas_mibb_report_list_asset, name="no_duplicate_reports")
 def bronze_vicgas_mibb_report_list_asset_check(
     bronze_mibb_report_list: pl.LazyFrame,
-):
+) -> dg.AssetCheckResult:
     return dg.AssetCheckResult(
         passed=bool(
             get_lazyframe_num_rows(bronze_mibb_report_list)

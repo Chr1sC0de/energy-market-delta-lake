@@ -1,4 +1,4 @@
-"""bronze_gasbb_demand_zones_and_pipeline_connectionpoint_mapping - Bronze GASBB report configuration."""
+"""bronze_gasbb_demand_zones_and_pipeline_connectionpoint_mapping - Bronze GASBB report configuration."""  # noqa: E501
 
 from polars import String, Int64
 
@@ -28,14 +28,14 @@ def CONFIG() -> ReportConfig:
         schema_descriptions={
             "FacilityName": "Name of the facility.",
             "FacilityType": "The facility development type.",
-            "FacilityId": "The gas storage facility ID for the facility by means of which the service is provided.",
+            "FacilityId": "The gas storage facility ID for the facility by means of which the service is provided.",  # noqa: E501
             "NodeId": "A unique AEMO defined node identifier.",
             "ConnectionPointId": "A unique AEMO defined connection point identifier.",
-            "FlowDirection": "Gas flow direction. Values can be: RECEIPT, DELIVERY, PROCESSED, DELIVERYLNGSTOR.",
+            "FlowDirection": "Gas flow direction. Values can be: RECEIPT, DELIVERY, PROCESSED, DELIVERYLNGSTOR.",  # noqa: E501
             "ConnectionPointName": "Names of the connection point.",
             "State": "The state where the transaction occurred.",
             "DemandZone": "",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nProvides mapping between pipelines, connectionpoints and  demand zones:w\n",
+        report_purpose="\n\nProvides mapping between pipelines, connectionpoints and  demand zones:w\n",  # noqa: E501
     )

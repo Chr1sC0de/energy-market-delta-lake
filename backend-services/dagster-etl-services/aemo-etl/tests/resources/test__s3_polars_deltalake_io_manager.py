@@ -1,3 +1,5 @@
+from typing import cast
+
 import polars.testing
 from dagster import InMemoryIOManager, asset, materialize
 from polars import DataFrame, LazyFrame, read_delta
@@ -20,7 +22,7 @@ class Test__S3PolarsDeltaLakeIOManager:
 
     def test__handle_input_overwrite(
         self, create_buckets: None, create_delta_log: None, s3: S3Client
-    ):
+    ) -> None:
         test_df = LazyFrame({"col_a": [1, 2, 3], "col_b": [1, 2, 3]})
 
         @asset(
@@ -43,12 +45,12 @@ class Test__S3PolarsDeltaLakeIOManager:
         )
 
         polars.testing.assert_frame_equal(
-            read_delta(f"{self.s3_target_table}/"), test_df.collect()
+            read_delta(f"{self.s3_target_table}/"), cast(DataFrame, test_df.collect())
         )
 
     def test__handle_input_merge(
         self, create_buckets: None, create_delta_log: None, s3: S3Client
-    ):
+    ) -> None:
         io_manager_key = "s3_polars_deltalake_io_manager"
         df_1 = LazyFrame({"col_a": [1, 2, 3], "col_b": [1, 2, 3]})
         df_2 = LazyFrame({"col_a": [1, 4, 5], "col_b": [2, 4, 5]})
@@ -79,7 +81,7 @@ class Test__S3PolarsDeltaLakeIOManager:
         )
 
         polars.testing.assert_frame_equal(
-            read_delta(self.s3_target_table), df_1.collect()
+            read_delta(self.s3_target_table), cast(DataFrame, df_1.collect())
         )
 
         @asset(io_manager_key=io_manager_key, metadata=metadata)
@@ -98,7 +100,7 @@ class Test__S3PolarsDeltaLakeIOManager:
 
     def test__handle_output(
         self, create_buckets: None, create_delta_log: None, s3: S3Client
-    ):
+    ) -> None:
         test_df = LazyFrame({"col_a": [1, 2, 3], "col_b": [1, 2, 3]})
 
         @asset(

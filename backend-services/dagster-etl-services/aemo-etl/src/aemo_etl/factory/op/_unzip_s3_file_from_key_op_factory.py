@@ -57,7 +57,7 @@ def unzip_s3_file_from_key_op_factory(
                         original_filename = file_name
 
                         try:
-                            # if the extension of the file is csv convert it into a parquet file
+                            # if the extension of the file is csv convert it into a parquet file  # noqa: E501
                             if extension == "csv":
                                 file_name = file_name.lower().replace(
                                     ".csv", ".parquet"
@@ -67,7 +67,7 @@ def unzip_s3_file_from_key_op_factory(
                                 csv_df.write_parquet(buffer)
                         except Exception as e:
                             context.log.info(
-                                f"failed to convert from csv to parquet format, using original format with error message {e}"
+                                f"failed to convert from csv to parquet format, using original format with error message {e}"  # noqa: E501
                             )
                             buffer = original_buffer
                             file_name = original_filename
@@ -89,7 +89,7 @@ def unzip_s3_file_from_key_op_factory(
                 f"processed s3://{s3_source_bucket}/{s3_source_key}, sending files to s3://{s3_target_bucket}/{s3_target_prefix}."
             )
             context.log.info(
-                f"finished cleaning file with delete_object response: {get_object_response}"
+                f"finished cleaning file with delete_object response: {get_object_response}"  # noqa: E501
             )
         except s3_client.exceptions.NoSuchKey:
             context.log.info(

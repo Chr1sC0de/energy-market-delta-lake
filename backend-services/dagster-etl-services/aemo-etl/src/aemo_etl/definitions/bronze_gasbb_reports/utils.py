@@ -5,6 +5,7 @@ from typing import Callable, Iterable, Protocol
 import polars_hash as plh
 from dagster import (
     AssetCheckResult,
+    AssetChecksDefinition,
     AssetExecutionContext,
     AssetsDefinition,
     MetadataValue,
@@ -56,7 +57,7 @@ def default_post_process_hook(
     context.log.info("post processing dataframe processing")
     schema = df.collect_schema()
     if len(schema) > 0:
-        # I know this is terrible but I'm probably going to not reuse this pattern in future ingestion, don't break what's working
+        # I know this is terrible but I'm probably going to not reuse this pattern in future ingestion, don't break what's working  # noqa: E501
         if datetime_column_name is None:
             if "current_date" in schema:
                 datetime_column_name = "current_date"
@@ -102,12 +103,12 @@ def default_post_process_hook(
 
 def asset_check_factory(
     asset_definition: AssetsDefinition, *, primary_keys: Iterable[str]
-):
+) -> AssetChecksDefinition:
     @asset_check(
         asset=asset_definition,
         name="check_primary_keys_are_unique",
     )
-    def check_primary_keys_are_unique(input_df: LazyFrame):
+    def check_primary_keys_are_unique(input_df: LazyFrame) -> AssetCheckResult:
         return AssetCheckResult(
             passed=bool(
                 get_lazyframe_num_rows(input_df)

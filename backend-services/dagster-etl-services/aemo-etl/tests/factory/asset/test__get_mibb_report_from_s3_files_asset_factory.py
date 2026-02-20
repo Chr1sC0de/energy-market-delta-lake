@@ -1,16 +1,15 @@
 from io import BytesIO
 from pathlib import Path
 from typing import Generator, cast
+
 from dagster import AssetExecutionContext, Output, build_asset_context
 from dagster_aws.s3 import S3Resource
-
 from polars import LazyFrame, col
 from pytest import fixture
 from types_boto3_s3 import S3Client
 
 from aemo_etl.configuration import LANDING_BUCKET
 from aemo_etl.factory.asset import get_df_from_s3_files_asset_factory
-
 
 cwd = Path(__file__).parent
 mock_data_folder = cwd / "@mockdata/upload_sample_1"
@@ -20,7 +19,9 @@ mock_data_files = list(mock_data_folder.glob("*"))
 
 
 @fixture(scope="function", autouse=True)
-def upload_mock_files(create_buckets: None, create_delta_log: None, s3: S3Client):
+def upload_mock_files(
+    create_buckets: None, create_delta_log: None, s3: S3Client
+) -> None:
     for file_ in mock_data_files:
         s3.upload_fileobj(
             Fileobj=BytesIO(file_.read_bytes()),
@@ -29,8 +30,8 @@ def upload_mock_files(create_buckets: None, create_delta_log: None, s3: S3Client
         )
 
 
-def test__get_mibb_report_from_s3_files_asset_factory(s3: S3Client):
-    def post_process_hook(context: AssetExecutionContext, df: LazyFrame):
+def test__get_mibb_report_from_s3_files_asset_factory(s3: S3Client) -> None:
+    def post_process_hook(context: AssetExecutionContext, df: LazyFrame) -> LazyFrame:
         df_out = df.filter(
             (col("current_date") == col("current_date").max()).over(
                 "demand_type_name",

@@ -30,15 +30,15 @@ def CONFIG() -> ReportConfig:
             "gas_date": "Gas Date data generated e.g. 02 Feb 2001",
             "node_id": "AMDQ node ID",
             "node_name": "AMDQ node name",
-            "current_system_capacity": "Current system spare capacity available for Gas Date (refer to Content notes)",
-            "current_lateral_capacity": "Current lateral spare capacity available for Gas Date (refer to Content notes)",
-            "max_system_capacity": "Maximum future system spare capacity available for Gas Date (refer to Content notes)",
-            "min_system_capacity": "Minimum future system spare capacity available (refer to Content notes)",
-            "max_lateral_capacity": "Maximum future lateral spare capacity available (refer to Content notes)",
-            "min_lateral_capacity": "Minimum future lateral spare capacity available (refer to Content notes)",
+            "current_system_capacity": "Current system spare capacity available for Gas Date (refer to Content notes)",  # noqa: E501
+            "current_lateral_capacity": "Current lateral spare capacity available for Gas Date (refer to Content notes)",  # noqa: E501
+            "max_system_capacity": "Maximum future system spare capacity available for Gas Date (refer to Content notes)",  # noqa: E501
+            "min_system_capacity": "Minimum future system spare capacity available (refer to Content notes)",  # noqa: E501
+            "max_lateral_capacity": "Maximum future lateral spare capacity available (refer to Content notes)",  # noqa: E501
+            "min_lateral_capacity": "Minimum future lateral spare capacity available (refer to Content notes)",  # noqa: E501
             "current_date": "Date and Time report produced e.g. 21 May 2007 01:32:00",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis report displays the current and future maximum and minimum 'lateral' and 'system' spare capacity available for each\nAMDQ node.\n\nThis report is generated daily for the current gas day.\n\nNull capacity values indicate the spare capacity is not calculated for this node as the spare capacity is considered very large.\n",
+        report_purpose="\n\nThis report displays the current and future maximum and minimum 'lateral' and 'system' spare capacity available for each\nAMDQ node.\n\nThis report is generated daily for the current gas day.\n\nNull capacity values indicate the spare capacity is not calculated for this node as the spare capacity is considered very large.\n",  # noqa: E501
         group_name=f"aemo__mibb__{VICTORIAN_WHOLESALE_SETTLEMENTS_AND_METERING_REPORTS}",
     )

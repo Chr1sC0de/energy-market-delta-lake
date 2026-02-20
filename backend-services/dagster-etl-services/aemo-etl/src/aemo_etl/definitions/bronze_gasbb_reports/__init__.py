@@ -1,11 +1,15 @@
 """GASBB report definitions - generated from registry."""
 
-from aemo_etl.configuration.gasbb import GASBB_CONFIGS
+from aemo_etl.factory.definition import GetMibbReportFromS3FilesDefinitionBuilder
+
+from aemo_etl.configuration.registry import GASBB_CONFIGS
 from aemo_etl.configuration.gasbb.hooks import get_hooks_for_report
 from aemo_etl.definitions.bronze_gasbb_reports.utils import (
     definition_builder_factory,
 )
 from aemo_etl.register import definitions_list
+
+definition_builders: list[GetMibbReportFromS3FilesDefinitionBuilder] = []
 
 # Loop through all registered GASBB configs and create definitions
 for config in GASBB_CONFIGS.values():
@@ -21,6 +25,8 @@ for config in GASBB_CONFIGS.values():
         datetime_pattern=hooks.get("datetime_pattern"),
         datetime_column_name=hooks.get("datetime_column_name"),
     )
+
+    definition_builders.append(definition_builder)
 
     # Build and register definition
     definitions_list.append(definition_builder.build())

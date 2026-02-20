@@ -1,9 +1,9 @@
-# pyright: reportUnknownMemberType=false, reportMissingTypeStubs=false
 from io import BytesIO
 from time import time
-from typing import Callable, Self
+from typing import Callable, Self, cast
 
 import dagster as dg
+import polars as pl
 from dagster import (
     DefaultScheduleStatus,
     Definitions,
@@ -36,7 +36,7 @@ class InMemoryCachedLinkFilter:
     table_path: str
     _cache: LazyFrame | None
 
-    def __init__(self, table_path: str, ttl_seconds: int):
+    def __init__(self, table_path: str, ttl_seconds: float) -> None:
         self.table_path = table_path
         self.ttl_seconds = ttl_seconds
         self._cache = None
@@ -67,7 +67,7 @@ class InMemoryCachedLinkFilter:
                     df.collect_schema()["source_upload_datetime"]
                 ),
             )
-            if search_df.select(len_()).collect().item() > 0:
+            if cast(pl.DataFrame, search_df.select(len_()).collect()).item() > 0:
                 return False
             return True
         except TableNotFoundError:
@@ -99,16 +99,12 @@ def download_nemweb_public_files_to_s3_definition_factory(
 
     default_link_filter = InMemoryCachedLinkFilter(table_path, 900)
 
-    #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-    #     │                                   define the assets                                    │
-    #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
-
     if link_filter is None:
         link_filter = default_link_filter
     else:
         link_filter = link_filter
 
-    download_nemweb_public_files_to_s3_asset = download_nemweb_public_files_to_s3_asset_factory(
+    download_nemweb_public_files_to_s3_asset = download_nemweb_public_files_to_s3_asset_factory(  # noqa: E501
         group_name=group_name,
         key_prefix=key_prefix,
         name=name,
@@ -150,10 +146,6 @@ def download_nemweb_public_files_to_s3_definition_factory(
         dependant_definitions=[download_nemweb_public_files_to_s3_asset],
     )
 
-    #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-    #     │                                create the asset checks                                 │
-    #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
-
     download_nemweb_public_files_to_s3_asset_check = duplicate_row_check_factory(
         assets_definition=download_nemweb_public_files_to_s3_asset,
         check_name="check_for_duplicate_rows",
@@ -166,15 +158,11 @@ def download_nemweb_public_files_to_s3_definition_factory(
         description="""
             Check that row group:
 
-                ["source_absolute_href","source_upload_datetime","target_s3_name","target_ingested_datetime"] 
+                ["source_absolute_href","source_upload_datetime","target_s3_name","target_ingested_datetime"]
 
             is unique
             """,
     )
-
-    #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-    #     │                                      create jobs                                       │
-    #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
     asset_job_name = f"asset_{name}_job"
     compact_and_vacuum_job_name = f"compact_and_vacuum_{name}_job"
@@ -190,10 +178,6 @@ def download_nemweb_public_files_to_s3_definition_factory(
         selection=[compact_and_vacuum_asset],
     )
 
-    #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-    #     │                 create a schedule for the downloaded_public_files_job                  │
-    #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
-
     @dg.schedule(
         name=f"job_schedule_{name}",
         job=download_nemweb_public_files_to_s3_job,
@@ -207,7 +191,7 @@ def download_nemweb_public_files_to_s3_definition_factory(
     )
     def download_nemweb_public_files_to_s3_schedule(
         context: dg.ScheduleEvaluationContext,
-    ):
+    ) -> dg.RunRequest | dg.SkipReason:
         run_records = context.instance.get_run_records(
             dg.RunsFilter(
                 job_name=download_nemweb_public_files_to_s3_job.name,
@@ -223,7 +207,7 @@ def download_nemweb_public_files_to_s3_definition_factory(
         # skip a schedule run if another run of the same job is already running
         if len(run_records) > 0:
             return dg.SkipReason(
-                "Skipping this run because another run of the same job is already running"
+                "Skipping this run because another run of the same job is already running"  # noqa: E501
             )
         if schedule_tags_fn is not None:
             tags = schedule_tags_fn(context)
@@ -241,10 +225,6 @@ def download_nemweb_public_files_to_s3_definition_factory(
             else DefaultScheduleStatus.RUNNING
         ),
     )
-
-    #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-    #     │                           generate the required definitions                            │
-    #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
     definition = Definitions(
         assets=[download_nemweb_public_files_to_s3_asset, compact_and_vacuum_asset],

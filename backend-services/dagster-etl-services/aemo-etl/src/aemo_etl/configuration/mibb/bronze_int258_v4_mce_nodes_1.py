@@ -30,9 +30,9 @@ def CONFIG() -> ReportConfig:
             "point_group_identifier_name": "Point group identifier name e.g. Rosebud",
             "nodal_altitude": "Nodal altitude e.g. 37",
             "last_mod_date": "Time last modified e.g. 20 Jun 2001 16:42:35",
-            "current_date": "Date and Time the report is produced e.g. 21 Jun 2001 16:42:35",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "current_date": "Date and Time the report is produced e.g. 21 Jun 2001 16:42:35",  # noqa: E501
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis report contains the current MCE Nodes.\n\nThis public report is produced each time a change occurs.\nIt identifies nodes that the MCE uses. The nodal prices from MCE forms the network prices.\n\nEach report contains the:\n- pipeline identifier\n- point group identifier and name\n- nodal altitude\n- last modified date\n- date and time when the report was produced\n",
+        report_purpose="\n\nThis report contains the current MCE Nodes.\n\nThis public report is produced each time a change occurs.\nIt identifies nodes that the MCE uses. The nodal prices from MCE forms the network prices.\n\nEach report contains the:\n- pipeline identifier\n- point group identifier and name\n- nodal altitude\n- last modified date\n- date and time when the report was produced\n",  # noqa: E501
         group_name=f"aemo__mibb__{VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS}",
     )

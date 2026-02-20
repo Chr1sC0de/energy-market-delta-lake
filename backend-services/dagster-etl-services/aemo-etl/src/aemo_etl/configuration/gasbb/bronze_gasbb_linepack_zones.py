@@ -23,7 +23,7 @@ def CONFIG() -> ReportConfig:
             "Operator": "Operator of linepack zone",
             "LinepackZone": "Linepack Zone",
             "LinepackZoneDescription": "Description of Linepack Zone",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nDisplay list of operator to linepack zones with descriptions\n",
+        report_purpose="\n\nDisplay list of operator to linepack zones with descriptions\n",  # noqa: E501
     )

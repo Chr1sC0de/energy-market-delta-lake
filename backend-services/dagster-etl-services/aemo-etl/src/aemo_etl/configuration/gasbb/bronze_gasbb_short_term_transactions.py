@@ -37,7 +37,7 @@ def CONFIG() -> ReportConfig:
             "TransactionType": "swap transaction type",
             "SupplyPeriodStart": "supply period start of swap",
             "SupplyPeriodEnd": "supply period endo of swap",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThese reports display short term gas transactions for each state/territory, excluding those transactions that are concluded through an AEMO operated exchange. Reports for VIC and QLD are updated weekly while others are updated monthly.\n",
+        report_purpose="\n\nThese reports display short term gas transactions for each state/territory, excluding those transactions that are concluded through an AEMO operated exchange. Reports for VIC and QLD are updated weekly while others are updated monthly.\n",  # noqa: E501
     )

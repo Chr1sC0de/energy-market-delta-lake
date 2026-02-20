@@ -1,7 +1,12 @@
 import pathlib as pt
 from typing import Any
 
-from dagster import AssetExecutionContext, AssetsDefinition, AutomationCondition, asset
+from dagster import (
+    AssetsDefinition,
+    AssetExecutionContext,
+    AutomationCondition,
+    asset,
+)
 from deltalake import DeltaTable
 from deltalake.exceptions import TableNotFoundError
 
@@ -21,7 +26,7 @@ def compact_and_vacuum_dataframe_asset_factory(
     # useful for testing purposes
     table_path_override: pt.Path | None = None,
     captured_response: dict[str, Any] | None = None,
-):
+) -> AssetsDefinition:
     @asset(
         group_name=group_name,
         key_prefix=key_prefix,
@@ -31,7 +36,7 @@ def compact_and_vacuum_dataframe_asset_factory(
         kinds={"task"},
         automation_condition=automation_condition,
     )
-    def compact_and_vacuum(context: AssetExecutionContext):
+    def compact_and_vacuum(context: AssetExecutionContext) -> None:
         delta_table_path = (
             f"s3://{s3_target_bucket}/{s3_target_prefix}/{s3_target_table_name}"
         )

@@ -6,3 +6,6 @@ development-container:
 
 attach:
 	./scripts/development-container-attach
+
+localstack:
+	./scripts/in-podman-run-localstack

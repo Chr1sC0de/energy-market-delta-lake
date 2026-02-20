@@ -34,7 +34,7 @@ def CONFIG() -> ReportConfig:
         schema_descriptions={
             "general_information_id": "General Information Identifier e.g. 5",
             "r_factor": "Ideal gas constant e.g. 47264",
-            "super_compressability_factor": "Super Compressability Factor e.g. 859999999999999999",
+            "super_compressability_factor": "Super Compressability Factor e.g. 859999999999999999",  # noqa: E501
             "t_factor": "Temperature of pipelines e.g. 288.0",
             "viscosity": "Viscosity e.g. 1.15e-005",
             "voll_price": "VOLL_Price ($/GJ) e.g. 800.0",
@@ -44,9 +44,9 @@ def CONFIG() -> ReportConfig:
             "commencement_date": "e.g. 18 Jun 2001 16:34:57",
             "termination_date": "e.g. 19 Jun 2001 16:34:57",
             "last_mod_date": "Time last modified e.g. 20 Jun 2001 16:34:57",
-            "current_date": "Date and Time the report is produced e.g. 21 Jun 2001 16:34:57",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "current_date": "Date and Time the report is produced e.g. 21 Jun 2001 16:34:57",  # noqa: E501
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis report lists what the standard parameters are that are used as input data for Market Clearing Engine (MCE) in generating\nschedules for the market.\n\nThis public report shows the current MCE factors and is produced when a change occurs to the factors.\n\nEach report contains the general information identifier.\n\nNote: From 16 December 2024, this report is decomissioned and AEMO does not produce data for it.\n",
+        report_purpose="\n\nThis report lists what the standard parameters are that are used as input data for Market Clearing Engine (MCE) in generating\nschedules for the market.\n\nThis public report shows the current MCE factors and is produced when a change occurs to the factors.\n\nEach report contains the general information identifier.\n\nNote: From 16 December 2024, this report is decomissioned and AEMO does not produce data for it.\n",  # noqa: E501
         group_name=f"aemo__mibb__{VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS}",
     )

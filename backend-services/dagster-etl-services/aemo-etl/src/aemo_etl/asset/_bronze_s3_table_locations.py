@@ -19,10 +19,6 @@ from aemo_etl.parameter_specification import (
 from aemo_etl.register import table_locations
 from aemo_etl.util import get_lazyframe_num_rows, get_metadata_schema
 
-#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-#     │                      define table and register to table locations                      │
-#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
-
 
 table_name = "bronze_s3_table_locations"
 
@@ -48,11 +44,6 @@ table_locations[table_name] = {
     "glue_schema": "aemo",
     "s3_table_location": s3_table_location,
 }
-
-
-#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-#     │                                create asset definition                                 │
-#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
 
 @asset(
@@ -89,11 +80,6 @@ def bronze_s3_table_locations_asset() -> LazyFrame:
     )
 
 
-#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-#     │                                  create asset checks                                   │
-#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
-
-
 @multi_asset_check(
     # Map checks to targeted assets
     specs=[
@@ -110,7 +96,7 @@ def bronze_s3_table_locations_asset() -> LazyFrame:
         AssetCheckSpec(
             name="storage_type_are_correct",
             asset=bronze_s3_table_locations_asset,
-            description="ensure that the storage type is within ('parquet','deltalake')",
+            description="ensure that the storage type is within ('parquet','deltalake')",  # noqa: E501
         ),
     ],
     ins={"table": AssetIn(bronze_s3_table_locations_asset.key)},

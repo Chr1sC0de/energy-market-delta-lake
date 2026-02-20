@@ -40,8 +40,8 @@ def CONFIG() -> ReportConfig:
             "curr_cum_date": "Current cumulative imbalance issue date",
             "curr_cum_imb_position": "Surplus or Deficit or Balance",
             "current_date": "Date and Time report produced 15 Aug 2007 10:06:54",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis report shows the cumulative imbalance position of Retailers. Retailers may wish to use this report to track their status of\nthe imbalance to do the necessary adjustments.\n\nThis public report is updated at each issue of settlement to show the status of each retailer's imbalance position.\nThere is no equivalent VIC MIBB report.\n\nEach report contains the:\n- network name\n- statement version id\n- financially Responsible Organisation\n- distributor Name\n- withdrawal zone\n- current cumulative imbalance issue date\n- current cumulative imbalance position (Surplus, Deficit or Balanced)\n- date and time report produced\n",
+        report_purpose="\n\nThis report shows the cumulative imbalance position of Retailers. Retailers may wish to use this report to track their status of\nthe imbalance to do the necessary adjustments.\n\nThis public report is updated at each issue of settlement to show the status of each retailer's imbalance position.\nThere is no equivalent VIC MIBB report.\n\nEach report contains the:\n- network name\n- statement version id\n- financially Responsible Organisation\n- distributor Name\n- withdrawal zone\n- current cumulative imbalance issue date\n- current cumulative imbalance position (Surplus, Deficit or Balanced)\n- date and time report produced\n",  # noqa: E501
         group_name=f"aemo__mibb__{QUEENSLAND_GAS_RETAIL_REPORT_DETAILS}",
     )

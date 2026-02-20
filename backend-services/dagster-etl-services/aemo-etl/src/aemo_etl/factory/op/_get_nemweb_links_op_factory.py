@@ -12,11 +12,11 @@ from aemo_etl.factory.op.schema import OpKwargs
 root_url: str = "https://www.nemweb.com.au"
 
 
-def _default_hyperlink_tag_folder_filter(_, tag: bs4.Tag) -> bool:
+def _default_hyperlink_tag_folder_filter(_: object, tag: bs4.Tag) -> bool:
     return tag.text != "[To Parent Directory]"
 
 
-def _default_hyperlink_tag_file_filter(_, tag: bs4.Tag) -> bool:
+def _default_hyperlink_tag_file_filter(_: object, tag: bs4.Tag) -> bool:
     return tag.text != "CURRENTDAY.ZIP"
 
 

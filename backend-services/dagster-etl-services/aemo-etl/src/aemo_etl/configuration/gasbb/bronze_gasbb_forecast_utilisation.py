@@ -51,26 +51,28 @@ def CONFIG() -> ReportConfig:
             "FacilityId": "A unique AEMO defined facility identifier.",
             "FacilityName": "The name of the BB facility.",
             "FacilityType": "Facility type associated with the facility id.",
-            "ReceiptLocationId": "The Connection Point Id that best represents the receipt location associated with a pipeline's nameplate capacity flow direction.",
-            "ReceiptLocationName": "The Connection Point name associated with the ReceiptLocationId.",
-            "DeliveryLocationId": "The Connection Point Id that best represents the delivery location associated with a pipeline's nameplate capacity flow direction.",
-            "DeliveryLocationName": "The Connection Point name associated with the DeliveryLocationId.",
-            "Description": "Describes the calculation that is being performed in each row of the report.",
-            "ForecastMethod": "Describes the calculation that is being performed for each BB pipeline where the Description is Forecast Flow.",
+            "ReceiptLocationId": "The Connection Point Id that best represents the receipt location associated with a pipeline's nameplate capacity flow direction.",  # noqa: E501
+            "ReceiptLocationName": "The Connection Point name associated with the ReceiptLocationId.",  # noqa: E501
+            "DeliveryLocationId": "The Connection Point Id that best represents the delivery location associated with a pipeline's nameplate capacity flow direction.",  # noqa: E501
+            "DeliveryLocationName": "The Connection Point name associated with the DeliveryLocationId.",  # noqa: E501
+            "Description": "Describes the calculation that is being performed in each row of the report.",  # noqa: E501
+            "ForecastMethod": "Describes the calculation that is being performed for each BB pipeline where the Description is Forecast Flow.",  # noqa: E501
             "ForecastedFrom": "Date forecasts were created from",
             "ForecastDate": "Date forecasted for a given period",
             "ForecastDay": "Day+N description for forecast period",
             "Units": "The unit of measure for the calculated values.",
             "ForecastValue": "Value forecasted",
-            "Nameplate": "Standing nameplate capacity quantity in TJ. Nameplate rating relates to maximum daily quantities under normal operating conditions.",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "Nameplate": "Standing nameplate capacity quantity in TJ. Nameplate rating relates to maximum daily quantities under normal operating conditions.",  # noqa: E501
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
         report_purpose="""
 
-The purpose of the forecast utilisation report is to provide a summary of forecast information provided by Gas Bulletin Board (BB) facility operators. 
+The purpose of the forecast utilisation report is to provide a summary of
+forecast information provided by Gas Bulletin Board (BB) facility operators.
 The report is a 7-day outlook of the supply-demand gas balance in the East Coast.
 
-GASBB_FORECAST_UTILISATION_NEXT7 is updated daily. The report is not updated once produced.
+GASBB_FORECAST_UTILISATION_NEXT7 is updated daily.
+The report is not updated once produced.
 
 Data in the report contains information for D+1 through to D+7.
 """,

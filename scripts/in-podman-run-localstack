@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+. "./scripts/@common"
+
+main() {
+	podman --remote run \
+		--rm \
+		--interactive \
+		--tty \
+		--network="$NETWORK" \
+		--env LOCALSTACK_AUTH_TOKEN="${LOCALSTACK_AUTH_TOKEN:?}" \
+		--env DOCKER_SOCK=/run/podman/podman.sock \
+		--env DOCKER_HOST=unix://run/podman/podman.sock \
+		--env CUSTOM_SSL_CERT_PATH=/home/cmamon/.local/lib/localstack/custom/server.test.pem \
+		--volume "$HOST_XDG_RUNTIME_DIR"/podman/podman.sock:/run/podman/podman.sock \
+		--volume "$HOST_HOME"/.cache/localstack/volume:/var/lib/localstack \
+		--name localstack-"$CONTAINER_IDENTIFIER" \
+		localstack/localstack-pro
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+	main "$@"
+fi

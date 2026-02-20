@@ -20,8 +20,8 @@ def CONFIG() -> ReportConfig:
         },
         schema_descriptions={
             "BasinId": "A unique AEMO defined Facility Identifier.",
-            "BasinName": "The name of the basin. If short name exists then short name included in report.",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "BasinName": "The name of the basin. If short name exists then short name included in report.",  # noqa: E501
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
         report_purpose="""
 

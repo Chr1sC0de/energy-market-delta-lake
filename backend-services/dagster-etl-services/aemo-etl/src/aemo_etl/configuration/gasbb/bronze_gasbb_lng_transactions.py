@@ -25,9 +25,9 @@ def CONFIG() -> ReportConfig:
             "TransactionMonth": "Transaction month.",
             "VolWeightPrice": "The volume weighted price for the reporting period.",
             "Volume": "The total volume of the transactions for the reporting period.",
-            "SupplyStartDate": "The earliest start date of all transactions captured in the reporting period.",
-            "SupplyEndDate": "The latest end date of all transactions captured in the reporting period.",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "SupplyStartDate": "The earliest start date of all transactions captured in the reporting period.",  # noqa: E501
+            "SupplyEndDate": "The latest end date of all transactions captured in the reporting period.",  # noqa: E501
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis report displays an LNG transaction aggregated data.\n\nGASBB_LNG_TRANSACTIONS is updated monthly.\n\nContains all short term LNG Export transactions.\n",
+        report_purpose="\n\nThis report displays an LNG transaction aggregated data.\n\nGASBB_LNG_TRANSACTIONS is updated monthly.\n\nContains all short term LNG Export transactions.\n",  # noqa: E501
     )

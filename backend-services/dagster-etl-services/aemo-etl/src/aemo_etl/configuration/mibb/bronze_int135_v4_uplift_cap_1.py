@@ -25,14 +25,14 @@ def CONFIG() -> ReportConfig:
         },
         schema_descriptions={
             "gas_date": "Gas day Format: dd mm yyyy e.g. 23 Jul 2008",
-            "schedule_no": "Pricing schedule horizon that the uplift payment applies to",
-            "positive_ave_ancillary_rate": "Positive average ancillary rate over all injection and withdrawal points and all MP's. PAVAPR variable from the ancillary payment calculations.",
-            "negative_ave_ancillary_rate": "Negative average ancillary rate over all injection and withdrawal points and all MP's. NAVAPR variable from the ancillary payment calculations.",
-            "positive_uplift_rate": "Positive uplift rate. UPR(P) variable from the uplift payment calculation.",
-            "negative_uplift_rate": "Negative uplift rate. UPR(N) variable from the uplift payment calculation.",
-            "current_datetime": "When report produced. The format is dd mm yyyy hh:mm:ss e.g. 23 Jul 2008 16:30:35",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "schedule_no": "Pricing schedule horizon that the uplift payment applies to",  # noqa: E501
+            "positive_ave_ancillary_rate": "Positive average ancillary rate over all injection and withdrawal points and all MP's. PAVAPR variable from the ancillary payment calculations.",  # noqa: E501
+            "negative_ave_ancillary_rate": "Negative average ancillary rate over all injection and withdrawal points and all MP's. NAVAPR variable from the ancillary payment calculations.",  # noqa: E501
+            "positive_uplift_rate": "Positive uplift rate. UPR(P) variable from the uplift payment calculation.",  # noqa: E501
+            "negative_uplift_rate": "Negative uplift rate. UPR(N) variable from the uplift payment calculation.",  # noqa: E501
+            "current_datetime": "When report produced. The format is dd mm yyyy hh:mm:ss e.g. 23 Jul 2008 16:30:35",  # noqa: E501
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nTo provide aggregated information used in Ancillary and Uplift payments calculations.\n\nThis public report is produced whenever ancillary and uplift payments are required.\n\nThe variables PAVAPR and NAVAPR are the average rate of ancillary payment as described in the Ancillary Payment\nProcedures.\n\nThe variables UPR(P) and UPR(N) are part of the uplift rate cap as described in the Uplift Payment Procedures.\n",
+        report_purpose="\n\nTo provide aggregated information used in Ancillary and Uplift payments calculations.\n\nThis public report is produced whenever ancillary and uplift payments are required.\n\nThe variables PAVAPR and NAVAPR are the average rate of ancillary payment as described in the Ancillary Payment\nProcedures.\n\nThe variables UPR(P) and UPR(N) are part of the uplift rate cap as described in the Uplift Payment Procedures.\n",  # noqa: E501
         group_name=f"aemo__mibb__{VICTORIAN_WHOLESALE_SETTLEMENTS_AND_METERING_REPORTS}",
     )

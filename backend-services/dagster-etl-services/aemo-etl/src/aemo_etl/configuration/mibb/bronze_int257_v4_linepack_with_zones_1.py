@@ -27,8 +27,8 @@ def CONFIG() -> ReportConfig:
             "linepack_zone_name": "Name of the linepack zone, e.g. Gippsland",
             "last_mod_date": "Time last modified e.g. 20 June 2001 16:39:58",
             "current_date": "Time the report is produced e.g. 21 Jun 2001 16:39:58",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis report contains the current linepack zones.\n\nThis public report is produced when a change occurs.\n\nEach report contains the:\n- linepack zone where the pipe segment is located\n- linepack zone name\n- last modified date and time\n- date and time when the report was produced.\n\nNote: From 16 December 2024, this report is decomissioned and AEMO does not produce data for it.\n",
+        report_purpose="\n\nThis report contains the current linepack zones.\n\nThis public report is produced when a change occurs.\n\nEach report contains the:\n- linepack zone where the pipe segment is located\n- linepack zone name\n- last modified date and time\n- date and time when the report was produced.\n\nNote: From 16 December 2024, this report is decomissioned and AEMO does not produce data for it.\n",  # noqa: E501
         group_name=f"aemo__mibb__{VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS}",
     )

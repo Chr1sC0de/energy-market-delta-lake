@@ -1,0 +1,69 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "localstack: start",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/start-localstack.sh",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "localstack"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "localstack: setup resources",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/setup-localstack-resources.sh",
+      "options": {
+        "env": {
+          "AWS_DEFAULT_REGION": "ap-southeast-2",
+          "AWS_ACCESS_KEY_ID": "test",
+          "AWS_SECRET_ACCESS_KEY": "test",
+          "DEVELOPMENT_ENVIRONMENT": "dev",
+          "NAME_PREFIX": "energy-market"
+        }
+      },
+      "dependsOn": "localstack: start",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "localstack"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "localstack: start and setup",
+      "dependsOn": "localstack: setup resources",
+      "dependsOrder": "sequence",
+      "presentation": {
+        "reveal": "silent",
+        "panel": "dedicated",
+        "group": "localstack"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "localstack: stop",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/stop-localstack.sh",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "localstack"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "dagster: reset home",
+      "type": "shell",
+      "command": "rm -rf '${workspaceFolder}/.dagster_home' && mkdir -p '${workspaceFolder}/.dagster_home'",
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

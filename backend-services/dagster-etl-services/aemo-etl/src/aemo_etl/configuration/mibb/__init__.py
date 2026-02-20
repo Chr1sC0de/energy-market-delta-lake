@@ -12,8 +12,3 @@ _config_modules = [
 # Dynamically import all configuration modules
 for _module_name in _config_modules:
     globals()[_module_name] = import_module(f".{_module_name}", package=__name__)
-
-# Re-export the registry for easy access
-from aemo_etl.configuration.registry import MIBB_CONFIGS
-
-__all__ = _config_modules + ["MIBB_CONFIGS"]

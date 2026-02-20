@@ -33,10 +33,10 @@ def CONFIG() -> ReportConfig:
             "zone_type": "Type of CC zone. Entry/Exit",
             "capacity_period": "Date ranged period the CC product applies to",
             "auction_date": "Auction run date. dd mmm yyyy",
-            "available_capacity_gj": "Available capacity to bid on for opened auction in GJ",
+            "available_capacity_gj": "Available capacity to bid on for opened auction in GJ",  # noqa: E501
             "current_date": "Report generation date. dd mmm yyyy hh:mm:ss",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis report provides the CC capacities available for auction by zone and period after the announcement that the CC auction is\nopen.\n\nA report is produced when CC auction is triggered.\nThis report will show the auctionable quantity for each product for a particular auction ID in csv format.\nSort order is by Zone and Capacity Period in ascending order.\n",
+        report_purpose="\n\nThis report provides the CC capacities available for auction by zone and period after the announcement that the CC auction is\nopen.\n\nA report is produced when CC auction is triggered.\nThis report will show the auctionable quantity for each product for a particular auction ID in csv format.\nSort order is by Zone and Capacity Period in ascending order.\n",  # noqa: E501
         group_name=f"aemo__mibb__{VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS}",
     )

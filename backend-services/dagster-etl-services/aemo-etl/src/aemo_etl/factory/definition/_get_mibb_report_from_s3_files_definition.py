@@ -48,19 +48,15 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
             list[Callable[[AssetsDefinition], AssetChecksDefinition]] | None
         ) = None,
         job_tags: dict[str, Any] | None = None,
-        execution_timezone="Australia/Melbourne",
+        execution_timezone: str = "Australia/Melbourne",
         compact_and_vacuum_schedule: str = "@weekly",
         asset_description: str | None = None,
-    ):
+    ) -> None:
         self.s3_source_bucket = s3_source_bucket
         self.s3_source_prefix = s3_source_prefix
         self.s3_file_glob = s3_file_glob
         self.s3_target_bucket = s3_target_bucket
         self.s3_target_prefix = s3_target_prefix
-
-        #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-        #     │                                   create the assets                                    │
-        #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
         self.table_asset = get_df_from_s3_files_asset_factory(
             group_name=group_name,
@@ -78,10 +74,6 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
             description="" if asset_description is None else asset_description,
         )
 
-        #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-        #     │                          create the compact and vacuum asset                           │
-        #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
-
         self.compact_and_vacuum_asset = compact_and_vacuum_dataframe_asset_factory(
             group_name="aemo__optimize",
             s3_target_bucket=s3_target_bucket,
@@ -95,28 +87,16 @@ class GetMibbReportFromS3FilesDefinitionBuilder:
             ),
         )
 
-        #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-        #     │                                create the asset checks                                 │
-        #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
-
         self.asset_checks = []
         if check_factories is not None:
             for check_factory in check_factories:
                 self.asset_checks.append(check_factory(self.table_asset))
-
-        #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-        #     │                                      create jobs                                       │
-        #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
         self.table_asset_job = define_asset_job(
             f"asset_{name}_job",
             selection=[self.table_asset],
             tags=job_tags,
         )
-
-        #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-        #     │                  create the schedules for the compact and vacuum job                   │
-        #     ╰────────────────────────────────────────────────────────────────────────────────────────╯
 
     def build(self) -> Definitions:
         return Definitions(

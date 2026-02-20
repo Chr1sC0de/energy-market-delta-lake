@@ -1,21 +1,23 @@
-from pathlib import Path
 from collections.abc import Generator
 from io import BytesIO, StringIO
 from logging import INFO, Formatter, Logger, StreamHandler
+from pathlib import Path
+from typing import cast
 
 from dagster import build_op_context
+from polars import DataFrame
 from pytest import fixture
 from types_boto3_s3 import S3Client
 
 from aemo_etl.configuration import BRONZE_BUCKET
 from aemo_etl.util import (
     get_df_from_s3_keys,
+    get_lazyframe_num_rows,
+    get_metadata_schema,
     get_s3_object_keys_from_prefix_and_name_glob,
     newline_join,
+    split_list,
 )
-from aemo_etl.util import get_lazyframe_num_rows, get_metadata_schema, split_list
-
-# pyright: reportUnusedParameter=false
 
 cwd = Path(__file__).parent
 mock_data_folder = cwd / "@mockdata"
@@ -24,13 +26,9 @@ mock_files = [
     file for file in mock_data_folder.glob("*") if not file.name.endswith(".py")
 ]
 
-#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-#     │                                        fixtures                                        │
-#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
-
 
 @fixture(scope="function", autouse=True)
-def upload_files(create_buckets: None, s3: S3Client):
+def upload_files(create_buckets: None, s3: S3Client) -> None:
     for file in mock_files:
         s3.upload_fileobj(
             Fileobj=BytesIO(file.read_bytes()),
@@ -54,12 +52,7 @@ def string_logger() -> Generator[Logger]:
     stream.close()
 
 
-#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-#     │                                         tests                                          │
-#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
-
-
-def test__newline_join():
+def test__newline_join() -> None:
     assert "\n".join(["line 1", "line 2"]) == newline_join("line 1", "line 2")
 
 
@@ -67,7 +60,7 @@ class Test__get_s3_object_keys_from_prefix_and_name_glob:
     def test__case_insensitive(
         self,
         s3: S3Client,
-    ):
+    ) -> None:
         s3_keys = get_s3_object_keys_from_prefix_and_name_glob(
             s3, BRONZE_BUCKET, "prefix", "mock*"
         )
@@ -83,7 +76,7 @@ class Test__get_s3_object_keys_from_prefix_and_name_glob:
     def test__case_sensitive(
         self,
         s3: S3Client,
-    ):
+    ) -> None:
         s3_keys = get_s3_object_keys_from_prefix_and_name_glob(
             s3,
             BRONZE_BUCKET,
@@ -100,14 +93,16 @@ class Test__get_s3_object_keys_from_prefix_and_name_glob:
 
 
 class Test__get_df_from_s3_keys:
-    def test__existing_object_keys(self, s3: S3Client):
+    def test__existing_object_keys(self, s3: S3Client) -> None:
         s3_keys = get_s3_object_keys_from_prefix_and_name_glob(
             s3, BRONZE_BUCKET, "prefix", "mock_*", case_insensitive=False
         )
         df = get_df_from_s3_keys(
             s3, BRONZE_BUCKET, s3_keys, logger=build_op_context().log
         )
-        assert {k: v.to_list() for k, v in df.collect().to_dict().items()} == {
+        assert {
+            k: v.to_list() for k, v in cast(DataFrame, df.collect()).to_dict().items()
+        } == {
             "column_a": [1, 4, 7, 1, 2, 3],
             "column_b": [2, 5, 8, 3, 4, 5],
             "column_c": [3, 6, 9, 1, 2, 3],
@@ -121,23 +116,23 @@ class Test__get_df_from_s3_keys:
             ],
         }
 
-    def test__zero_bytes(self, s3: S3Client, string_logger: Logger):
+    def test__zero_bytes(self, s3: S3Client, string_logger: Logger) -> None:
         s3_keys = get_s3_object_keys_from_prefix_and_name_glob(
             s3, BRONZE_BUCKET, "prefix", "mock_*", case_insensitive=False
         )
 
         class PatchedS3Client:
-            def get_object(*args, **kwargs):  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType, reportUnusedParameter]
+            def get_object(*args, **kwargs) -> dict[str, BytesIO]:  # noqa: ANN002, ANN003
                 return {"Body": BytesIO()}
 
         _ = get_df_from_s3_keys(
-            PatchedS3Client(),  # pyright: ignore[reportArgumentType]
+            PatchedS3Client(),  # ty:ignore[invalid-argument-type]
             BRONZE_BUCKET,
             s3_keys,
             logger=string_logger,
         )
 
-        stream_content: str = string_logger.handlers[0].stream.getvalue().strip("\n")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportUnknownMemberType, reportUnknownMemberType, reportAttributeAccessIssue]
+        stream_content: str = string_logger.handlers[0].stream.getvalue().strip("\n")  # ty:ignore[unresolved-attribute]
 
         assert stream_content == newline_join(
             "INFO-processing s3://dev-energy-market-bronze/prefix/mock_1.csv",
@@ -149,7 +144,7 @@ class Test__get_df_from_s3_keys:
             "INFO-no valid dataframes found returning empty dataframe",
         )
 
-    def test__failed_to_get(self, s3: S3Client, string_logger: Logger):
+    def test__failed_to_get(self, s3: S3Client, string_logger: Logger) -> None:
         s3_keys = [
             key.replace("mock", "failed_mock")
             for key in get_s3_object_keys_from_prefix_and_name_glob(
@@ -164,7 +159,7 @@ class Test__get_df_from_s3_keys:
             logger=string_logger,
         )
 
-        stream_content: str = string_logger.handlers[0].stream.getvalue().strip("\n")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportUnknownMemberType, reportUnknownMemberType, reportAttributeAccessIssue]
+        stream_content: str = string_logger.handlers[0].stream.getvalue().strip("\n")  # ty:ignore[unresolved-attribute]
 
         assert stream_content == newline_join(
             "INFO-processing s3://dev-energy-market-bronze/prefix/failed_mock_1.csv",
@@ -177,7 +172,7 @@ class Test__get_df_from_s3_keys:
         )
 
 
-def test__get_metadata_schema():
+def test__get_metadata_schema() -> None:
     import polars as pl
     from dagster import TableColumn, TableSchema
 
@@ -218,7 +213,7 @@ def test__get_metadata_schema():
     )
 
 
-def test__get_lazyframe_num_rows():
+def test__get_lazyframe_num_rows() -> None:
     import polars as pl
 
     # Test with empty dataframe
@@ -235,7 +230,7 @@ def test__get_lazyframe_num_rows():
     assert get_lazyframe_num_rows(single_row_df) == 1
 
 
-def test__split_list():
+def test__split_list() -> None:
     empty_list: list[str] = []
     splits = list(split_list(empty_list, 3))
     assert splits == []

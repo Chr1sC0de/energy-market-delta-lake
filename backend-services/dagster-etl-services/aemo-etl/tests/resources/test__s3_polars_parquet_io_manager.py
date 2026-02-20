@@ -1,15 +1,16 @@
-from dagster import InMemoryIOManager, asset, materialize
-from polars import LazyFrame, read_parquet
+from typing import cast
+
 import polars.testing
+from dagster import InMemoryIOManager, asset, materialize
+from polars import DataFrame, LazyFrame, read_parquet
 from types_boto3_s3 import S3Client
 
-from aemo_etl.resource import S3PolarsParquetIOManager
+from aemo_etl.configuration import BRONZE_BUCKET
 from aemo_etl.parameter_specification import (
     PolarsLazyFrameScanParquetParamSpec,
     PolarsLazyFrameSinkParquetParamSpec,
 )
-from aemo_etl.configuration import BRONZE_BUCKET
-
+from aemo_etl.resource import S3PolarsParquetIOManager
 
 # pyright: reportUnusedParameter=false
 
@@ -25,7 +26,7 @@ class Test__S3PolarsParquetIOManager:
 
     def test__hand_input(
         self, create_buckets: None, create_delta_log: None, s3: S3Client
-    ):
+    ) -> None:
         test_df = LazyFrame({"col_a": [1, 2, 3], "col_b": [1, 2, 3]})
 
         @asset(
@@ -46,12 +47,13 @@ class Test__S3PolarsParquetIOManager:
         )
 
         polars.testing.assert_frame_equal(
-            read_parquet(f"{self.s3_target_table}/"), test_df.collect()
+            read_parquet(f"{self.s3_target_table}/"),
+            cast(DataFrame, test_df.collect()),
         )
 
     def test__handle_output(
         self, create_buckets: None, create_delta_log: None, s3: S3Client
-    ):
+    ) -> None:
         test_df = LazyFrame({"col_a": [1, 2, 3], "col_b": [1, 2, 3]})
 
         @asset(

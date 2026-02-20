@@ -2,8 +2,10 @@
 
 branch_name=$(git branch --show-current)
 
-container_identifier=${branch_name/\//-}
+CONTAINER_IDENTIFIER=${branch_name/\//-}
 
-CONTAINER_NAME=emdl-"$container_identifier"
+CONTAINER_NAME=emdl-"$CONTAINER_IDENTIFIER"
 
-export CONTAINER_NAME
+NETWORK=podman
+
+export CONTAINER_NAME CONTAINER_IDENTIFIER NETWORK

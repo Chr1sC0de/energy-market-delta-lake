@@ -1,4 +1,4 @@
-"""bronze_int313_v4_allocated_injections_withdrawals_1 - Bronze MIBB report configuration."""
+"""bronze_int313_v4_allocated_injections_withdrawals_1 - Bronze MIBB report configuration."""  # noqa: E501
 
 from polars import Float64, String
 from aemo_etl.configuration import VICTORIAN_WHOLESALE_SETTLEMENTS_AND_METERING_REPORTS
@@ -24,13 +24,13 @@ def CONFIG() -> ReportConfig:
         },
         schema_descriptions={
             "gas_date": "dd mmm yyyy",
-            "gas_hour": "The start time of the gas day 9:00:00 pre GMP and 6:00:00 post GMP start",
+            "gas_hour": "The start time of the gas day 9:00:00 pre GMP and 6:00:00 post GMP start",  # noqa: E501
             "site_company": "Site Company Name",
             "phy_mirn": "Phy_mirn (commissioned = 'Y', biddin = 'Y')",
             "inject_withdraw": "Sum of Actual Injections",
             "energy_flow_gj": "Actual GJ",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis is a public report that provides historical injection and controllable withdrawal information in a form that has been\nstructured to facilitate graphing and trend analysis of the energy flows in the gas network:\n- out of the network at transmission withdrawal points\n- into the network at transmission injection points.\n\nThis report does not contain a current date column to assist in graphing data directly from presented figures.\nThe energy withdrawals reported in INT313 are controllable withdrawals.\n\nEach report contains daily data for the last 12 months.\nFor each gas day date reported, a separate row will list the energy flow (in GJ) associated with each transmission pipeline\ninjection or withdrawal MIRN.\n",
+        report_purpose="\n\nThis is a public report that provides historical injection and controllable withdrawal information in a form that has been\nstructured to facilitate graphing and trend analysis of the energy flows in the gas network:\n- out of the network at transmission withdrawal points\n- into the network at transmission injection points.\n\nThis report does not contain a current date column to assist in graphing data directly from presented figures.\nThe energy withdrawals reported in INT313 are controllable withdrawals.\n\nEach report contains daily data for the last 12 months.\nFor each gas day date reported, a separate row will list the energy flow (in GJ) associated with each transmission pipeline\ninjection or withdrawal MIRN.\n",  # noqa: E501
         group_name=f"aemo__mibb__{VICTORIAN_WHOLESALE_SETTLEMENTS_AND_METERING_REPORTS}",
     )

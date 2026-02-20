@@ -2,6 +2,7 @@ from io import BytesIO
 from typing import Any, Callable, Unpack
 
 from dagster import (
+    AssetsDefinition,
     In,
     Nothing,
     OpDefinition,
@@ -10,7 +11,7 @@ from dagster import (
     graph_asset,
     op,
 )
-from polars import Datetime, LazyFrame, String
+from polars import Datetime, LazyFrame, Schema, String
 
 from aemo_etl.configuration import LANDING_BUCKET, Link
 from aemo_etl.factory.asset.param_spec import GraphAssetParamSpec
@@ -38,33 +39,35 @@ def download_nemweb_public_files_to_s3_asset_factory(
     get_buffer_from_link_hook: Callable[[Link], BytesIO] | None = None,
     override_get_links_fn: Callable[[OpExecutionContext], list[Link]] | None = None,
     **graph_asset_kwargs: Unpack[GraphAssetParamSpec],
-):
+) -> AssetsDefinition:
     name = graph_asset_kwargs.get("name")
     graph_asset_kwargs.setdefault("group_name", "AEMO")
     graph_asset_kwargs.setdefault(
         "description",
-        f"Table listing public files downloaded from https://www.nemweb.com.au/{nemweb_relative_href} and converted to parquet where possible",
+        f"Table listing public files downloaded from https://www.nemweb.com.au/{nemweb_relative_href} and converted to parquet where possible",  # noqa: E501
     )
     graph_asset_kwargs.setdefault("kinds", {"source", "table", "deltalake"})
 
-    schema = {
-        "source_absolute_href": String,
-        "source_upload_datetime": Datetime("ms", time_zone="Australia/Melbourne"),
-        "target_s3_href": String,
-        "target_s3_bucket": String,
-        "target_s3_prefix": String,
-        "target_s3_name": String,
-        "target_ingested_datetime": Datetime("ms", time_zone="Australia/Melbourne"),
-    }
+    schema = Schema(
+        {
+            "source_absolute_href": String,
+            "source_upload_datetime": Datetime("ms", time_zone="Australia/Melbourne"),
+            "target_s3_href": String,
+            "target_s3_bucket": String,
+            "target_s3_prefix": String,
+            "target_s3_name": String,
+            "target_ingested_datetime": Datetime("ms", time_zone="Australia/Melbourne"),
+        }
+    )
 
     descriptions = {
         "source_absolute_href": "Full link to the source file",
-        "source_upload_datetime": "Time the data was uploaded onto the website in Australia/Melbourne time zone",
-        "target_s3_href": "The s3 bucket the file is stored in, if the file can be converted to a parquet it will be converted to a parquet",
+        "source_upload_datetime": "Time the data was uploaded onto the website in Australia/Melbourne time zone",  # noqa: E501
+        "target_s3_href": "The s3 bucket the file is stored in, if the file can be converted to a parquet it will be converted to a parquet",  # noqa: E501
         "target_s3_bucket": "The name of the bucket the file will be saved in",
         "target_s3_prefix": "The s3 prefix",
         "target_s3_name": "The name of the file saved",
-        "target_ingested_datetime": "The datetime the file was ingested in Australia/Melbourne time zone",
+        "target_ingested_datetime": "The datetime the file was ingested in Australia/Melbourne time zone",  # noqa: E501
     }
 
     if out_metadata is not None:
@@ -140,7 +143,7 @@ def download_nemweb_public_files_to_s3_asset_factory(
         df = combine_processed_links_to_dataframe_op_factory(
             name=f"{name}_combine_processed_links_to_dataframe_op",
             schema=schema,
-            description="for each processed link, combine the downloaded files into a single data frame",
+            description="for each processed link, combine the downloaded files into a single data frame",  # noqa: E501
         )(processed_links)
 
         return final_passthrough_op_factory()(df, start=unzipped_s3_files_log)

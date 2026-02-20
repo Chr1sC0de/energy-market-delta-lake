@@ -15,7 +15,7 @@ table_name = "mock_table"
 
 
 @pytest.fixture(autouse=True)
-def bulid_mock_table():
+def bulid_mock_table() -> None:
     write_path = pt.Path(__file__).parent / "@mockdata/.mock_table"
     for item in write_path.rglob("*"):
         if item.is_file():
@@ -34,7 +34,7 @@ def bulid_mock_table():
             )
 
 
-def test__compact_and_vacuum():
+def test__compact_and_vacuum() -> None:
     captured_response = {}
     compact_and_vacuum_dataframe_asset = (
         factory.asset.compact_and_vacuum_dataframe_asset_factory(

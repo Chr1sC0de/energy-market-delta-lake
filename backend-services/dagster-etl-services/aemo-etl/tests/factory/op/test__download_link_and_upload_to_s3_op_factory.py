@@ -21,7 +21,7 @@ mock_files = {f.name: f for f in mock_data_folder.glob("*")}
 
 
 class Test__download_link_and_upload_to_s3_op_factory:
-    def test__upload_csv_link(self, s3: S3Client, create_buckets: None):
+    def test__upload_csv_link(self, s3: S3Client, create_buckets: None) -> None:
         with patch("requests.get") as mocked_requests_get:
             target_file = "INT891_V1_EDDACT_1.CSV"
 
@@ -52,7 +52,7 @@ class Test__download_link_and_upload_to_s3_op_factory:
 
             assert read_parquet(buffer).shape == (118, 5)
 
-    def test__upload_zip_link(self, s3: S3Client, create_buckets: None):
+    def test__upload_zip_link(self, s3: S3Client, create_buckets: None) -> None:
         with patch("requests.get") as mocked_requests_get:
             target_file = "PUBLICRPTS01.zip"
 

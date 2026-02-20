@@ -1,3 +1,4 @@
 @mockdata
 !dagster.yaml
 !.scratch/
+!.pre-commit-config.yaml

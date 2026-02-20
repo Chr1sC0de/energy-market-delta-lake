@@ -33,7 +33,7 @@ def CONFIG() -> ReportConfig:
             "OperatorName": "The name of the company who operates the facility.",
             "ShipperName": "The name of the shipper who holds the capacity.",
             "LastUpdated": "The date data was last submitted.",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nA list shippers who have contracted primary Storage, Compression or Pipeline capacity.\n\nThis report is updated daily.\n\nGASBB_SHIPPERS_LIST contains current records / GASBB_SHIPPERS_FULL_LIST includes historic records.\n",
+        report_purpose="\n\nA list shippers who have contracted primary Storage, Compression or Pipeline capacity.\n\nThis report is updated daily.\n\nGASBB_SHIPPERS_LIST contains current records / GASBB_SHIPPERS_FULL_LIST includes historic records.\n",  # noqa: E501
     )

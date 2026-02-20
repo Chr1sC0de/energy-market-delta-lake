@@ -1,5 +1,3 @@
-# pyright: reportUnusedParameter=false, reportUnknownMemberType=false, reportMissingTypeStubs=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
-
 import datetime as dt
 import pathlib as pt
 from io import BytesIO
@@ -10,11 +8,10 @@ from dagster_aws.s3 import S3Resource
 from types_boto3_s3 import S3Client
 
 import aemo_etl
-from aemo_etl.configuration import LANDING_BUCKET, BRONZE_BUCKET, Link
-from aemo_etl.factory.definition._downloaded_nemweb_public_files_to_s3_definition_factory import (
+from aemo_etl.configuration import BRONZE_BUCKET, LANDING_BUCKET, Link
+from aemo_etl.factory.definition._downloaded_nemweb_public_files_to_s3_definition_factory import (  # noqa: E501
     InMemoryCachedLinkFilter,
 )
-
 
 cwd = pt.Path(__file__).parent
 
@@ -24,7 +21,9 @@ mock_files = list((mock_data_folder / "upload_sample_1").glob("*"))
 
 
 @pytest.fixture(scope="function", autouse=True)
-def upload_mock_data_to_s3(create_buckets: None, create_delta_log: None, s3: S3Client):
+def upload_mock_data_to_s3(
+    create_buckets: None, create_delta_log: None, s3: S3Client
+) -> None:
     for file in mock_files:
         s3.upload_fileobj(
             Fileobj=BytesIO(file.read_bytes()),
@@ -33,7 +32,7 @@ def upload_mock_data_to_s3(create_buckets: None, create_delta_log: None, s3: S3C
         )
 
 
-def mocked_get_links_fn(*_) -> list[Link]:
+def mocked_get_links_fn(_: dg.OpExecutionContext) -> list[Link]:
     output = []
     for file in mock_files:
         output.append(
@@ -49,11 +48,11 @@ def mocked_get_buffer_from_link_fn(link: Link) -> BytesIO:
     return BytesIO(pt.Path(link.source_absolute_href).read_bytes())
 
 
-def mocked_link_filters(*_) -> bool:
+def mocked_link_filters(_: dg.OpExecutionContext, __: Link) -> bool:
     return True
 
 
-def test__download_nemweb_public_files_to_s3_asset_factory(s3: S3Client):
+def test__download_nemweb_public_files_to_s3_asset_factory(s3: S3Client) -> None:
     key_prefix = ["bronze", "aemo", "vicgas"]
     schema = "aemo_vicgas"
     table_name = "bronze_vicgas_downloaded_public_files"
@@ -88,7 +87,7 @@ def test__download_nemweb_public_files_to_s3_asset_factory(s3: S3Client):
     )
 
 
-def test__with_in_memory_cache(s3: S3Client):
+def test__with_in_memory_cache(s3: S3Client) -> None:
     key_prefix = ["bronze", "aemo", "vicgas"]
     schema = "aemo_vicgas"
     table_name = "bronze_vicgas_downloaded_public_files"

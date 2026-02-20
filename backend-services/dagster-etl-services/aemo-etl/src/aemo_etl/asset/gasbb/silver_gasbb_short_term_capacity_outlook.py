@@ -44,7 +44,7 @@ s3_polars_deltalake_io_manager_options = {
     metadata={
         "dagster/primary_keys": MetadataValue.json(bronze_config.primary_keys),
         "dagster/column_description": bronze_config.schema_descriptions,
-        "s3_polars_deltalake_io_manager_options": s3_polars_deltalake_io_manager_options,
+        "s3_polars_deltalake_io_manager_options": s3_polars_deltalake_io_manager_options,  # noqa: E501
     },
     automation_condition=AutomationCondition.eager()
     .without(~AutomationCondition.any_deps_missing())

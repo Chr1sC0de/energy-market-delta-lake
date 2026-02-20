@@ -1,7 +1,4 @@
-#     ╭────────────────────────────────────────────────────────────────────────────────────────╮
-#     │                                create the asset sensor                                 │
-#     ╰────────────────────────────────────────────────────────────────────────────────────────╯
-
+from collections.abc import Generator
 
 from dagster import (
     DagsterInstance,
@@ -14,25 +11,15 @@ from dagster import (
 )
 from dagster_aws.s3 import S3Resource
 
-from aemo_etl.configuration import DEVELOPMENT_LOCATION, LANDING_BUCKET, gasbb
+from aemo_etl.configuration import DEVELOPMENT_LOCATION, LANDING_BUCKET
+from aemo_etl.configuration.registry import GASBB_CONFIGS
 from aemo_etl.definitions import bronze_gasbb_reports
 from aemo_etl.util import (
     get_s3_object_keys_from_prefix_and_name_glob,
     get_s3_pagination,
 )
 
-configurations = [
-    getattr(gasbb, name)
-    for name in dir(gasbb)
-    if not name.startswith("_") and name in gasbb.__all__
-]
-
-
-jobs = [
-    getattr(bronze_gasbb_reports, name).definition_builder.table_asset_job
-    for name in dir(bronze_gasbb_reports)
-    if name.startswith("bronze_gasbb") and name in bronze_gasbb_reports.__all__
-]
+jobs = [builder.table_asset_job for builder in bronze_gasbb_reports.definition_builders]
 
 
 def has_job_failed(instance: DagsterInstance, job_name: str) -> bool:
@@ -52,12 +39,14 @@ def has_job_failed(instance: DagsterInstance, job_name: str) -> bool:
         else DefaultSensorStatus.RUNNING
     ),  # Sensor is turned on by default
 )
-def sensor_aemo_gasbb_jobs(context: SensorEvaluationContext, s3: S3Resource):
+def sensor_aemo_gasbb_jobs(
+    context: SensorEvaluationContext, s3: S3Resource
+) -> Generator[RunRequest, None, None]:
     s3_client = s3.get_client()
     s3_source_bucket = LANDING_BUCKET
     s3_source_prefix = "aemo/gasbb"
     pages = get_s3_pagination(s3_client, s3_source_bucket, s3_source_prefix)
-    for configuration in configurations:
+    for configuration in GASBB_CONFIGS.values():
         name = configuration.table_name
         s3_file_glob = configuration.s3_file_glob
 

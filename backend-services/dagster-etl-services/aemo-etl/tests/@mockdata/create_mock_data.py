@@ -5,7 +5,7 @@ cwd = pt.Path(__file__).parent
 mock_data_folder = cwd / "@mockdata"
 
 
-def main():
+def main() -> None:
     pl.DataFrame(
         {
             "column_a": [1, 2, 3],

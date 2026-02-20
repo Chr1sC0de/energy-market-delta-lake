@@ -9,12 +9,9 @@ from polars import LazyFrame
 from pytest import mark
 from types_boto3_s3 import S3Client
 
-from aemo_etl.configuration.mibb import MIBB_CONFIGS
+from aemo_etl.configuration.registry import MIBB_CONFIGS
 from aemo_etl.definitions.bronze_vicgas_mibb_reports.utils import (
     definition_builder_factory,
-)
-from aemo_etl.factory.definition._get_mibb_report_from_s3_files_definition import (
-    GetMibbReportFromS3FilesDefinitionBuilder,
 )
 from aemo_etl.util import get_lazyframe_num_rows
 
@@ -39,15 +36,12 @@ skip = [
 @mark.parametrize("table_name", testable_configs)
 def test__asset(
     create_delta_log: None, create_buckets: None, s3: S3Client, table_name: str
-):
+) -> None:
     # Get config from registry
     config = MIBB_CONFIGS[table_name]
 
     # Build definition (MIBB reports don't have custom hooks)
-    definition_builder = cast(
-        GetMibbReportFromS3FilesDefinitionBuilder,
-        definition_builder_factory(config),
-    )
+    definition_builder = definition_builder_factory(config)
 
     # upload files to our mocked s3
     for file in MOCK_DATA_FOLDER.glob(

@@ -27,9 +27,9 @@ def CONFIG() -> ReportConfig:
             "LocationId": "Unique Location identifier.",
             "State": "Location state.",
             "LocationType": "Type of location.",
-            "Description": "Free text description of the Location including boundaries and the basis of measurement.",
+            "Description": "Free text description of the Location including boundaries and the basis of measurement.",  # noqa: E501
             "LastUpdated": "Date the list of locations was last updated.",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis report lists all production and demand locations within the Bulletin Board system.\n\nThis report is updated daily and shows current records.\n",
+        report_purpose="\n\nThis report lists all production and demand locations within the Bulletin Board system.\n\nThis report is updated daily and shows current records.\n",  # noqa: E501
     )

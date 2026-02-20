@@ -38,8 +38,8 @@ def CONFIG() -> ReportConfig:
             "withdrawal_zone": "Withdrawal zone",
             "scaling_factor": "Injection scaling factor",
             "current_date": "Date and Time report produced 15 Aug 2007 10:06:54",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",
+            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
         },
-        report_purpose="\n\nThis report is produced for the settlement period and shows the scaling factor adjustments for aggregated injections in\nDistribution region and withdrawal zone.\n\nThis public report shows the daily scaling factors used in adjusting the retailer injections to match the actual withdrawals in a\ndistribution region and withdrawal zone.\nThere is no equivalent VIC MIBB report.\n\nEach report contents the:\n- network name\n- statement version identifier\n- gas date\n- distributor name\n- withdrawal zone\n- scaling factor\n- current date\n",
+        report_purpose="\n\nThis report is produced for the settlement period and shows the scaling factor adjustments for aggregated injections in\nDistribution region and withdrawal zone.\n\nThis public report shows the daily scaling factors used in adjusting the retailer injections to match the actual withdrawals in a\ndistribution region and withdrawal zone.\nThere is no equivalent VIC MIBB report.\n\nEach report contents the:\n- network name\n- statement version identifier\n- gas date\n- distributor name\n- withdrawal zone\n- scaling factor\n- current date\n",  # noqa: E501
         group_name=f"aemo__mibb__{QUEENSLAND_GAS_RETAIL_REPORT_DETAILS}",
     )
