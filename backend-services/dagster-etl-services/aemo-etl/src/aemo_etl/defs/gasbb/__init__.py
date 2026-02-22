@@ -1,6 +1,6 @@
 from dagster import AssetsDefinition
 
-from aemo_etl.asset.gasbb import silver_gasbb_short_term_capacity_outlook
+from aemo_etl.defs.gasbb import silver_gasbb_short_term_capacity_outlook
 
 
 _assets = [silver_gasbb_short_term_capacity_outlook]

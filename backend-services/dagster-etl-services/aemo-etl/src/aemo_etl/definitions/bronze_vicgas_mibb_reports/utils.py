@@ -67,7 +67,7 @@ def post_process_hook(
     df = df.with_columns(
         surrogate_key=plh.concat_str(
             *[col(key).fill_null("") for key in primary_keys]
-        ).chash.sha256()
+        ).chash.sha2_256()
     )
 
     return df

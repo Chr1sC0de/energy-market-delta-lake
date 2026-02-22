@@ -5,7 +5,7 @@ import polars as pl
 import pytest
 from dagster import AssetsDefinition
 
-from aemo_etl.asset import gasbb
+from aemo_etl.defs import gasbb
 
 CWD = Path(__file__).parent
 MOCK_DATA_FOLDER = CWD / "@mockdata/silver-gasbb"

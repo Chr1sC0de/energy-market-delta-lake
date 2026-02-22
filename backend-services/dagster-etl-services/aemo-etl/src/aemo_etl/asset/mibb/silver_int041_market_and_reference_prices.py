@@ -67,7 +67,7 @@ def table_asset(
     ).with_columns(
         surrogate_key=plh.concat_str(
             *[col(key).fill_null("") for key in bronze_config.primary_keys]
-        ).chash.sha256()
+        ).chash.sha2_256()
     )
 
 
