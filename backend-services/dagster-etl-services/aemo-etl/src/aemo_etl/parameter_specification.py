@@ -1,6 +1,6 @@
 from datetime import datetime
 from pathlib import Path
-from typing import IO, Any, Literal, Mapping, Sequence
+from typing import IO, Any, Literal, Mapping
 
 from deltalake import (
     CommitProperties,
@@ -8,19 +8,18 @@ from deltalake import (
     PostCommitHookProperties,
     WriterProperties,
 )
-from polars import QueryOptFlags, ScanCastOptions
+from polars import LazyFrame, QueryOptFlags, ScanCastOptions
 from polars._typing import (
     EngineType,
     FileSource,
     ParallelStrategy,
     ParquetMetadata,
-    PartitioningScheme,
     SchemaDict,
     SyncOnCloseMethod,
 )
 from polars.datatypes import DataType, DataTypeClass
+from polars.io import PartitionBy
 from polars.io.cloud import CredentialProvider, CredentialProviderFunction
-from polars.io.parquet import ParquetFieldOverwrites
 from polars.lazyframe import GPUEngine
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS
 from pydantic import BaseModel, Field
@@ -28,9 +27,11 @@ from pydantic import BaseModel, Field
 # the following is the set of rebuilt types
 _ = {DataTypeClass, DataType, CredentialProvider, GPUEngine}
 
+LazyFrame.sink_parquet
+
 
 class PolarsLazyFrameSinkParquetParamSpec(BaseModel, arbitrary_types_allowed=True):
-    path: str | Path | IO[bytes] | PartitioningScheme
+    path: str | Path | IO[bytes] | PartitionBy
     compression: str = "zstd"
     compression_level: int | None = None
     statistics: bool | str | dict[str, bool] = True
@@ -44,12 +45,6 @@ class PolarsLazyFrameSinkParquetParamSpec(BaseModel, arbitrary_types_allowed=Tru
     metadata: ParquetMetadata | None = None
     mkdir: bool = False
     lazy: bool = False
-    field_overwrites: (
-        ParquetFieldOverwrites
-        | Sequence[ParquetFieldOverwrites]
-        | Mapping[str, ParquetFieldOverwrites]
-        | None
-    ) = None
     engine: EngineType = "auto"
     optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS
 
@@ -107,7 +102,6 @@ class PolarsDeltaLakeMergeParamSpec(BaseModel):
 class PolarsDataFrameWriteDeltaParamSpec(BaseModel, arbitrary_types_allowed=True):
     target: str | Path | DeltaTable
     mode: Literal["error", "append", "overwrite", "ignore", "merge"] = "error"
-    overwrite_schema: bool | None = None
     storage_options: dict[str, str] | None = None
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto"
     delta_write_options: PolarsDeltaLakeWriteParamSpec | None = None

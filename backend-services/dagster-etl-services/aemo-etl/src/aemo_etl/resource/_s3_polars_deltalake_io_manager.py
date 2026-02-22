@@ -58,13 +58,12 @@ class S3PolarsDeltaLakeIOManager(IOManager):
         assert isinstance(write_delta_options, PolarsDataFrameWriteDeltaParamSpec), (
             "'write_delta_options' must be of type 'PolarsDataFrameWriteDeltaParamSpec'"
         )
-        collected_obj = cast(DataFrame, obj.collect())
 
         kwargs = write_delta_options.model_dump(by_alias=True)
 
         try:
-            if len(collected_obj.columns) > 0:
-                return_obj = collected_obj.write_delta(**kwargs)
+            if len(obj.columns) > 0:
+                return_obj = obj.sink_delta(**kwargs)
                 if kwargs.get("mode", "error") == "merge":
                     context.log.info(f"merging data with settings {kwargs}")
                     merge_results = (
@@ -78,7 +77,7 @@ class S3PolarsDeltaLakeIOManager(IOManager):
         except TableNotFoundError:
             kwargs["mode"] = "error"
             context.log.info(kwargs)
-            collected_obj.write_delta(**kwargs)
+            obj.sink_delta(**kwargs)
 
         context.add_output_metadata(
             {

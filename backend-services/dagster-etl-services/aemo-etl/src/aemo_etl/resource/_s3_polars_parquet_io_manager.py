@@ -1,8 +1,7 @@
 from typing import cast, override
 
 from dagster import InputContext, IOManager, MetadataValue, OutputContext
-from polars import DataFrame, LazyFrame, len, scan_parquet
-from polars._typing import PartitioningScheme
+from polars import DataFrame, LazyFrame, PartitionBy, len, scan_parquet
 
 from aemo_etl.parameter_specification import (
     PolarsLazyFrameScanParquetParamSpec,
@@ -68,7 +67,7 @@ class S3PolarsParquetIOManager(IOManager):
         if isinstance(sink_parquet_options.path, str):
             output_metadata["table_uri"] = MetadataValue.path(sink_parquet_options.path)
 
-        elif isinstance(sink_parquet_options.path, PartitioningScheme):
+        elif isinstance(sink_parquet_options.path, PartitionBy):
             if sink_parquet_options.path._base_path is not None:
                 output_metadata["table_uri"] = MetadataValue.path(
                     sink_parquet_options.path._base_path

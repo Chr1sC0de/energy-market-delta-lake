@@ -1,5 +1,3 @@
-# pyright: reportUnusedParameter=false
-
 import shutil
 
 from dagster import RunConfig, materialize

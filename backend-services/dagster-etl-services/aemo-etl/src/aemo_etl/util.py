@@ -164,6 +164,10 @@ def get_lazyframe_num_rows(df: pl.LazyFrame) -> int:
     return cast(pl.DataFrame, df.select(pl.len()).collect()).item()
 
 
+def get_lazyframe_shape(df: pl.LazyFrame) -> tuple[int, int]:
+    return (get_lazyframe_num_rows(df), len(df.columns))
+
+
 def split_list[T](list_: list[T], num_chunks: int) -> Generator[list[T]]:
     len_list = len(list_)
     split_size = max(1, ceil(len_list / num_chunks))

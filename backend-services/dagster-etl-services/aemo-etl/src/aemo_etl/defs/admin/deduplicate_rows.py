@@ -1,7 +1,9 @@
 from dagster import AssetExecutionContext, Config
 from dagster import asset as dagster_asset
-from polars import col, int_range, read_delta
+from polars import col, int_range, scan_delta
 from polars import len as polars_len
+
+from aemo_etl.util import get_lazyframe_shape
 
 
 class DeduplicateConfig(Config):
@@ -17,9 +19,9 @@ def asset(context: AssetExecutionContext, config: DeduplicateConfig) -> None:
     context.log.info(
         f"deduplicating rows for {config.s3_uri} with primary keys {config.primary_keys}"  # noqa: E501
     )
-    original_df = read_delta(config.s3_uri)
+    original_df = scan_delta(config.s3_uri)
 
-    context.log.info(f"shape of original dataframe {original_df.shape}")
+    context.log.info(f"shape of original dataframe {get_lazyframe_shape(original_df)}")
 
     deduplicated_df = (
         original_df.with_columns(
@@ -29,9 +31,11 @@ def asset(context: AssetExecutionContext, config: DeduplicateConfig) -> None:
         ).filter(col.row_num == 0)
     ).drop("row_num")
 
-    context.log.info(f"shape of deduplicated dataframe {deduplicated_df.shape}")
+    context.log.info(
+        f"shape of deduplicated dataframe {get_lazyframe_shape(deduplicated_df)}"
+    )
 
-    deduplicated_df.write_delta(
+    deduplicated_df.sink_delta(
         config.s3_uri,
         mode="overwrite",
     )
