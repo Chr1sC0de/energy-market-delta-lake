@@ -110,21 +110,18 @@ def localstack_endpoint(aws_credentials: None) -> Generator[str]:
     ]
     _podman(*run_args)
 
-    try:
-        ip = _container_ip(container_name)
-        endpoint = f"http://{ip}:{_LOCALSTACK_PORT}"
+    ip = _container_ip(container_name)
+    endpoint = f"http://{ip}:{_LOCALSTACK_PORT}"
 
-        _wait_for_localstack(
-            endpoint, _LOCALSTACK_READY_TIMEOUT, _LOCALSTACK_READY_POLL_INTERVAL
-        )
+    _wait_for_localstack(
+        endpoint, _LOCALSTACK_READY_TIMEOUT, _LOCALSTACK_READY_POLL_INTERVAL
+    )
 
-        os.environ["AWS_ENDPOINT_URL"] = endpoint
-        yield endpoint
-    finally:
-        try:
-            _podman("stop", container_name)
-        except subprocess.CalledProcessError:
-            pass  # container may have already exited
+    os.environ["AWS_ENDPOINT_URL"] = endpoint
+
+    yield endpoint
+
+    _podman("stop", container_name)
 
 
 @pytest.fixture(scope="function")
