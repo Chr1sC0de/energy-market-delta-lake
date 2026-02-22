@@ -1,4 +1,4 @@
-from aemo_etl.asset.admin import deduplicate_rows
+from aemo_etl.defs.admin import deduplicate_rows
 
 assets = [deduplicate_rows.asset]
 

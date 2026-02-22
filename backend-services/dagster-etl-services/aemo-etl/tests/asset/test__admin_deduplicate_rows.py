@@ -6,11 +6,9 @@ from dagster import RunConfig, materialize
 from polars import DataFrame, read_delta
 from polars import testing as polars_testing
 
-from aemo_etl.asset.admin import deduplicate_rows
 from aemo_etl.configuration import BRONZE_BUCKET
+from aemo_etl.defs.admin import deduplicate_rows
 from aemo_etl.resource._s3_polars_parquet_io_manager import S3PolarsParquetIOManager
-
-testable_submmodules = []
 
 
 def test__deduplicate_asset(create_delta_log: None, create_buckets: None) -> None:
