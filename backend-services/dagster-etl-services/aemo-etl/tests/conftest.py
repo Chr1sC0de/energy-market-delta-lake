@@ -15,7 +15,7 @@ _ = Config.set_tbl_width_chars(1000)
 _ = Config.set_tbl_rows(1000)
 _ = Config.set_tbl_cols(100)
 
-_LOCALSTACK_IMAGE = "localstack/localstack-pro"
+_LOCALSTACK_IMAGE = "localstack/localstack"
 _LOCALSTACK_PORT = 4566
 _LOCALSTACK_HEALTH_PATH = "/_localstack/health"
 _LOCALSTACK_READY_TIMEOUT = 60  # seconds

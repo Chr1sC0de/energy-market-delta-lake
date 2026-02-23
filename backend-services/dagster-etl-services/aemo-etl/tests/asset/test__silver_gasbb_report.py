@@ -1,22 +1,27 @@
+import typing as tp
 from pathlib import Path
 from typing import cast
 
 import polars as pl
 import pytest
-from dagster import AssetsDefinition
+from dagster import AssetsDefinition, load_assets_from_package_module
 
 from aemo_etl.defs import gasbb
 
 CWD = Path(__file__).parent
 MOCK_DATA_FOLDER = CWD / "@mockdata/silver-gasbb"
 
-# get the mibb reports
+assets_list = [
+    asset
+    for asset in tp.cast(list[AssetsDefinition], load_assets_from_package_module(gasbb))
+    if not asset.key.path[-1].endswith("compact_and_vacuum")
+]
 
 
 @pytest.mark.parametrize(
     "asset",
-    gasbb.report_assets,
-    ids=[asset.key.path[-1] for asset in gasbb.report_assets],
+    assets_list,
+    ids=[asset.key.path[-1] for asset in assets_list],
 )
 def test__asset(asset: AssetsDefinition) -> None:
     asset_name = asset.key.path[-1]
