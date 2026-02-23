@@ -25,7 +25,7 @@ from aemo_etl.factory.op import (
 from aemo_etl.factory.op._get_dynamic_zip_links_op_factory import (
     get_dyanmic_zip_links_op_factory,
 )
-from aemo_etl.util import get_metadata_schema
+from aemo_etl.utils import get_metadata_schema
 
 
 def download_nemweb_public_files_to_s3_asset_factory(

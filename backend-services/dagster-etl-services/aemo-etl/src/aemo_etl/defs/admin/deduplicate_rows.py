@@ -3,7 +3,7 @@ from dagster import asset as dagster_asset
 from polars import col, int_range, scan_delta
 from polars import len as polars_len
 
-from aemo_etl.util import get_lazyframe_shape
+from aemo_etl.utils import get_lazyframe_shape
 
 
 class DeduplicateConfig(Config):

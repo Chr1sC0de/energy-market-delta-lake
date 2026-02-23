@@ -10,7 +10,7 @@ from pytest import fixture
 from types_boto3_s3 import S3Client
 
 from aemo_etl.configuration import BRONZE_BUCKET
-from aemo_etl.util import (
+from aemo_etl.utils import (
     get_df_from_s3_keys,
     get_lazyframe_num_rows,
     get_metadata_schema,

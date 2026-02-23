@@ -31,7 +31,7 @@ from aemo_etl.parameter_specification import (
     PolarsDataFrameWriteDeltaParamSpec,
     PolarsDeltaLakeMergeParamSpec,
 )
-from aemo_etl.util import get_lazyframe_num_rows, get_metadata_schema
+from aemo_etl.utils import get_lazyframe_num_rows, get_metadata_schema
 
 
 class PostProcessHook(Protocol):

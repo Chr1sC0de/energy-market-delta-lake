@@ -13,7 +13,7 @@ from aemo_etl.configuration.registry import GASBB_CONFIGS
 from aemo_etl.definitions.bronze_gasbb_reports.utils import (
     definition_builder_factory,
 )
-from aemo_etl.util import get_lazyframe_num_rows
+from aemo_etl.utils import get_lazyframe_num_rows
 
 CWD = Path(__file__).parent
 MOCK_DATA_FOLDER = CWD / "@mockdata/mtco-fix"

@@ -4,7 +4,7 @@ from typing import Callable
 import dagster as dg
 import polars as pl
 
-from aemo_etl.util import get_lazyframe_num_rows
+from aemo_etl.utils import get_lazyframe_num_rows
 
 
 def get_unique_rows_from_primary_key(

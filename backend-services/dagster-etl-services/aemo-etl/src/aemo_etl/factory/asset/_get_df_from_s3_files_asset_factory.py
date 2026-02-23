@@ -13,7 +13,7 @@ from polars._typing import PolarsDataType
 from types_boto3_s3 import S3Client
 
 from aemo_etl.factory.asset.param_spec import AssetDefinitonParamSpec
-from aemo_etl.util import (
+from aemo_etl.utils import (
     get_df_from_s3_keys,
     get_s3_object_keys_from_prefix_and_name_glob,
 )

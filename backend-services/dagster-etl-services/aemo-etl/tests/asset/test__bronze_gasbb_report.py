@@ -12,7 +12,7 @@ from types_boto3_s3 import S3Client
 from aemo_etl.configuration.gasbb.hooks import get_hooks_for_report
 from aemo_etl.configuration.registry import GASBB_CONFIGS
 from aemo_etl.definitions.bronze_gasbb_reports.utils import definition_builder_factory
-from aemo_etl.util import get_lazyframe_num_rows
+from aemo_etl.utils import get_lazyframe_num_rows
 
 # pyright: reportUnusedParameter=false
 

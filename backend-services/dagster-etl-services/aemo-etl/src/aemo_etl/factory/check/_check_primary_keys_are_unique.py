@@ -8,7 +8,7 @@ from dagster import (
 )
 from polars import LazyFrame
 
-from aemo_etl.util import get_lazyframe_num_rows
+from aemo_etl.utils import get_lazyframe_num_rows
 
 
 def check_primary_keys_are_unique_factory(

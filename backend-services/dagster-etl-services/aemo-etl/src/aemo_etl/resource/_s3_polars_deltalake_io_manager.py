@@ -11,7 +11,7 @@ from aemo_etl.parameter_specification import (
     PolarsDataFrameReadScanDeltaParamSpec,
     PolarsDataFrameWriteDeltaParamSpec,
 )
-from aemo_etl.util import get_metadata_schema
+from aemo_etl.utils import get_metadata_schema
 
 
 class S3PolarsDeltaLakeIOManager(IOManager):
