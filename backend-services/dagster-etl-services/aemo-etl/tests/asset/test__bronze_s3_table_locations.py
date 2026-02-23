@@ -1,5 +1,6 @@
-from typing import cast, Iterable
-from aemo_etl.asset import (
+from typing import Iterable, cast
+
+from aemo_etl.defs.bronze_s3_table_locations import (
     bronze_s3_table_locations_asset,
     bronze_s3_table_locations_asset_check,
 )

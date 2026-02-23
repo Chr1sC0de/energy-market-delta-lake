@@ -6,7 +6,6 @@ from dagster import (
 )
 from dagster_aws.s3 import S3Resource, s3_pickle_io_manager
 
-import aemo_etl
 from aemo_etl.configuration import DEVELOPMENT_LOCATION, IO_MANAGER_BUCKET
 from aemo_etl.definitions import (
     bronze_download_public_nemweb_files_to_s3,
@@ -19,11 +18,12 @@ from aemo_etl.resource import (
     S3PolarsDeltaLakeIOManager,
     S3PolarsParquetIOManager,
 )
+from dagster import load_assets_from_package_module
+from aemo_etl import defs
 
 definitions = Definitions.merge(
     Definitions(
-        assets=aemo_etl.asset.asset_list,
-        asset_checks=aemo_etl.asset.asset_check_list,
+        assets=load_assets_from_package_module(defs),
         resources={
             "s3": S3Resource(),
             "s3_polars_parquet_io_manager": S3PolarsParquetIOManager(),

@@ -1,4 +1,4 @@
-from aemo_etl.asset import (
+from aemo_etl.defs.bronze_mibb_report_list import (
     bronze_vicgas_mibb_report_list_asset,
     bronze_vicgas_mibb_report_list_asset_check,
 )
