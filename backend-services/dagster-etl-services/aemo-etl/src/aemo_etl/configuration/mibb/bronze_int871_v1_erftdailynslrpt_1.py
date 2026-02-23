@@ -32,8 +32,18 @@ def CONFIG() -> ReportConfig:
             "total_meter_count_basic": "Total count of basic meters",
             "normalisation_factor": "Normalisation factor",
             "current_date": "Date and time report produced",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
+            "surrogate_key": """
+                Unique identifier created using sha256 over the primary keys
+            """,
         },
-        report_purpose="\n\nThe ERFTDailyNSLRpt report provides net section load and supporting data for each Network\nsection, in CSV format from AEMO to Retailers. The report is placed in the MIBB public folder\nas a .csv file.\n\nThis report is specific to NSW-ACT networks and provides information about the net section load,\ntotal meter count for basic meters, and normalisation factors for each network section.\n",  # noqa: E501
+        report_purpose="""
+            The ERFTDailyNSLRpt report provides net section load and supporting data for
+            each Network section, in CSV format from AEMO to Retailers. The report is
+            placed in the MIBB public folder as a .csv file.
+
+            This report is specific to NSW-ACT networks and provides information about
+            the net section load, total meter count for basic meters, and normalisation
+            factors for each network section.
+        """,
         group_name=f"aemo__mibb__{SOUTH_AUSTRALIAN_GAS_RETAIL_REPORTS}",
     )

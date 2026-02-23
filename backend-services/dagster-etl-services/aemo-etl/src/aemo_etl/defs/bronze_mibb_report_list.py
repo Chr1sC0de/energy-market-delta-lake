@@ -36,7 +36,11 @@ def process_extracted_table(table_contents: list[list[str]]) -> pl.LazyFrame:
     group_name="aemo__metadata",
     key_prefix=["bronze", "aemo"],
     name=table_name,
-    description="Grab the mibb report list from the following User Guide to MIBB Reports Document found here: https://aemo.com.au/energy-systems/gas/declared-wholesale-gas-market-dwgm/procedures-policies-and-guides",  # noqa: E501
+    description="""
+        Grab the mibb report list from the following User Guide to MIBB Reports Document
+        found here:
+        https://aemo.com.au/energy-systems/gas/declared-wholesale-gas-market-dwgm/procedures-policies-and-guides
+    """,
     kinds={"source", "table", "parquet"},
     io_manager_key="s3_polars_parquet_io_manager",
     automation_condition=dg.AutomationCondition.missing()
@@ -52,8 +56,13 @@ def process_extracted_table(table_contents: list[list[str]]) -> pl.LazyFrame:
             },
             {
                 "report_name": "Name of the report",
-                "trigger_event_and_or_time_aest": "Trigger (event or time (shown as HH:MM AEST in table below))",  # noqa: E501
-                "participant": "Participant receiving report (Public, private, Market participant, etc)",  # noqa: E501
+                "trigger_event_and_or_time_aest": """
+                    Trigger (event or time (shown as HH:MM AEST in table below))
+                """,
+                "participant": """
+                    Participant receiving report (Public, private, Market participant,
+                    etc)
+                """,
                 "market": "Market (DWGM – VIC, Retail – VIC, Retail – QLD etc)",
                 "consultative_forum": "Consultative forum owner (GWCF or GRCF)",
             },

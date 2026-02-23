@@ -95,7 +95,9 @@ def bronze_s3_table_locations_asset() -> LazyFrame:
         AssetCheckSpec(
             name="storage_type_are_correct",
             asset=bronze_s3_table_locations_asset,
-            description="ensure that the storage type is within ('parquet','deltalake')",  # noqa: E501
+            description="""
+                ensure that the storage type is within ('parquet','deltalake')
+            """,
         ),
     ],
     ins={"table": AssetIn(bronze_s3_table_locations_asset.key)},

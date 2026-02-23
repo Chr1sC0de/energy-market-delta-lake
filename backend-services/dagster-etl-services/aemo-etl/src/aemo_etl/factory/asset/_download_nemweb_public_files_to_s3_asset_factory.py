@@ -44,7 +44,11 @@ def download_nemweb_public_files_to_s3_asset_factory(
     graph_asset_kwargs.setdefault("group_name", "AEMO")
     graph_asset_kwargs.setdefault(
         "description",
-        f"Table listing public files downloaded from https://www.nemweb.com.au/{nemweb_relative_href} and converted to parquet where possible",  # noqa: E501
+        f"""
+            Table listing public files downloaded from
+            https://www.nemweb.com.au/{nemweb_relative_href} and converted to parquet
+            where possible
+        """,
     )
     graph_asset_kwargs.setdefault("kinds", {"source", "table", "deltalake"})
 
@@ -62,12 +66,19 @@ def download_nemweb_public_files_to_s3_asset_factory(
 
     descriptions = {
         "source_absolute_href": "Full link to the source file",
-        "source_upload_datetime": "Time the data was uploaded onto the website in Australia/Melbourne time zone",  # noqa: E501
-        "target_s3_href": "The s3 bucket the file is stored in, if the file can be converted to a parquet it will be converted to a parquet",  # noqa: E501
+        "source_upload_datetime": """
+            Time the data was uploaded onto the website in Australia/Melbourne time zone
+        """,
+        "target_s3_href": """
+            The s3 bucket the file is stored in, if the file can be converted to a
+            parquet it will be converted to a parquet
+        """,
         "target_s3_bucket": "The name of the bucket the file will be saved in",
         "target_s3_prefix": "The s3 prefix",
         "target_s3_name": "The name of the file saved",
-        "target_ingested_datetime": "The datetime the file was ingested in Australia/Melbourne time zone",  # noqa: E501
+        "target_ingested_datetime": """
+            The datetime the file was ingested in Australia/Melbourne time zone
+        """,
     }
 
     if out_metadata is not None:
@@ -143,7 +154,10 @@ def download_nemweb_public_files_to_s3_asset_factory(
         df = combine_processed_links_to_dataframe_op_factory(
             name=f"{name}_combine_processed_links_to_dataframe_op",
             schema=schema,
-            description="for each processed link, combine the downloaded files into a single data frame",  # noqa: E501
+            description="""
+                for each processed link, combine the downloaded files into a single data
+                frame
+            """,
         )(processed_links)
 
         return final_passthrough_op_factory()(df, start=unzipped_s3_files_log)

@@ -20,11 +20,40 @@ def CONFIG() -> ReportConfig:
             "surrogate_key": String,
         },
         schema_descriptions={
-            "commencement_datetime": "Commencement date and time (e.g. 25 Apr 2007 1:00:00)",  # noqa: E501
+            "commencement_datetime": """
+                Commencement date and time (e.g. 25 Apr 2007 1:00:00)
+            """,
             "actual_linepack": "Energy value representing the physical linepack",
             "current_date": "Date and time report produced (e.g. 30 Jun 2007 01:23:56)",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
+            "surrogate_key": """
+                Unique identifier created using sha256 over the primary keys
+            """,
         },
-        report_purpose="\n\nThis report provides information on changes in physical linepack over a 3-day period, and can be used by Participants as an\ninput into their forecasting and trading activities.\n\nNote the information in this report is derived from real-time gas pressure data and does not relate to the scheduled linepack\nvalues, as the scheduled linepack is a relative value.\n\nIt is also important to recognise that this report contains details about the system's physical linepack and is not the settlement\nlinepack, which is a financial balancing concept not related in any way to the physical linepack in the system on each day.\n\nParticipants may use this report to make assumptions about the physical capabilities of the system when correlated with\nweather, type of day and other variables that impact on demand.\n\nEach report provides hourly linepack quantities for the current and previous 2 gas days.\n\nReports are produced as operational schedules are approved, with information about the linepack movements for the current\ngas day becoming progressively more complete in the course of the day. It follows, therefore, that the number of rows in an\nINT128 report will increase over the course of the day.\n",  # noqa: E501
+        report_purpose="""
+            This report provides information on changes in physical linepack over a
+            3-day period, and can be used by Participants as an input into their
+            forecasting and trading activities.
+
+            Note the information in this report is derived from real-time gas pressure
+            data and does not relate to the scheduled linepack values, as the scheduled
+            linepack is a relative value.
+
+            It is also important to recognise that this report contains details about
+            the system's physical linepack and is not the settlement linepack, which is
+            a financial balancing concept not related in any way to the physical
+            linepack in the system on each day.
+
+            Participants may use this report to make assumptions about the physical
+            capabilities of the system when correlated with weather, type of day and
+            other variables that impact on demand.
+
+            Each report provides hourly linepack quantities for the current and previous
+            2 gas days.
+
+            Reports are produced as operational schedules are approved, with information
+            about the linepack movements for the current gas day becoming progressively
+            more complete in the course of the day. It follows, therefore, that the
+            number of rows in an INT128 report will increase over the course of the day.
+        """,
         group_name=f"aemo__mibb__{VICTORIAN_WHOLESALE_SETTLEMENTS_AND_METERING_REPORTS}",
     )

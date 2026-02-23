@@ -28,11 +28,24 @@ def CONFIG() -> ReportConfig:
             "zone_id": "Identifier number of CC zone",
             "zone_name": "Name of CC zone",
             "zone_type": "Type of CC zone. Entry/Exit",
-            "capacity_period": "CC product period representing date range period for the capacity",  # noqa: E501
+            "capacity_period": """
+                CC product period representing date range period for the capacity
+            """,
             "zone_capacity_gj": "Zone capacity as per current model in GJ",
             "current_date": "Report generation date. dd mmm yyyy hh:mm:ss",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
+            "surrogate_key": """
+                Unique identifier created using sha256 over the primary keys
+            """,
         },
-        report_purpose="\n\nThis report provides the total CC zone modelled capacities by the auction period.\n\nThis report provides the total quantity of each auction product available for allocation on the basis of capacity certificates\nauction. The capacity certificates for a capacity certificates zone available for allocation will be the lower of either the\nmaximum pipeline capacity or maximum facility or system point/s deliverable capacity.\n",  # noqa: E501
+        report_purpose="""
+            This report provides the total CC zone modelled capacities by the auction
+            period.
+
+            This report provides the total quantity of each auction product available
+            for allocation on the basis of capacity certificates auction. The capacity
+            certificates for a capacity certificates zone available for allocation will
+            be the lower of either the maximum pipeline capacity or maximum facility or
+            system point/s deliverable capacity.
+        """,
         group_name=f"aemo__mibb__{VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS}",
     )

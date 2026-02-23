@@ -20,15 +20,19 @@ def CONFIG() -> ReportConfig:
         },
         schema_descriptions={
             "BasinId": "A unique AEMO defined Facility Identifier.",
-            "BasinName": "The name of the basin. If short name exists then short name included in report.",  # noqa: E501
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
+            "BasinName": """
+                The name of the basin. If short name exists then short name included in
+                report.
+            """,
+            "surrogate_key": """
+                Unique identifier created using sha256 over the primary keys
+            """,
         },
         report_purpose="""
+            This report displays a list of all basins.
 
-This report displays a list of all basins.
+            GASBB_BASINS is updated daily.
 
-GASBB_BASINS is updated daily.
-
-Contains all current basins.
-""",
+            Contains all current basins.
+        """,
     )

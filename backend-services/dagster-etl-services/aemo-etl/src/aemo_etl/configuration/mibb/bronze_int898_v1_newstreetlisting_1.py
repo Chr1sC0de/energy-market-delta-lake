@@ -26,7 +26,9 @@ def CONFIG() -> ReportConfig:
             "surrogate_key": String,
         },
         schema_descriptions={
-            "distributor": "Hub profile ID of the distributor providing the data (e.g. AGLGNNWO)",  # noqa: E501
+            "distributor": """
+                Hub profile ID of the distributor providing the data (e.g. AGLGNNWO)
+            """,
             "street_name": "Name of the street",
             "street_id": "Street identifier (if available)",
             "street_suffix": "Street suffix (if available)",
@@ -34,8 +36,20 @@ def CONFIG() -> ReportConfig:
             "state_or_territory": "State or territory (if available)",
             "site_address_postcode": "Postcode (if available)",
             "current_date": "Report creation date and timestamp",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
+            "surrogate_key": """
+                Unique identifier created using sha256 over the primary keys
+            """,
         },
-        report_purpose="\n\nThis report provides a listing of all street/suburb combinations where the distributor is the current distributor.\n\nAEMO processes files sent by distributors and publishes the new street listing data via this public MIBB report.\nThis process is applicable to NSW/ACT networks.\n\nThe 'New Street Listing Report' is a CSV report listing all street/suburb combinations where the distributor is the current distributor.\n",  # noqa: E501
+        report_purpose="""
+            This report provides a listing of all street/suburb combinations where the
+            distributor is the current distributor.
+
+            AEMO processes files sent by distributors and publishes the new street
+            listing data via this public MIBB report. This process is applicable to
+            NSW/ACT networks.
+
+            The 'New Street Listing Report' is a CSV report listing all street/suburb
+            combinations where the distributor is the current distributor.
+        """,
         group_name=f"aemo__mibb__{SOUTH_AUSTRALIAN_GAS_RETAIL_REPORTS}",
     )

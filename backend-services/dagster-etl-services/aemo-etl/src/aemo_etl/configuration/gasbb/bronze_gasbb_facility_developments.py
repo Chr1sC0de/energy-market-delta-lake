@@ -40,12 +40,28 @@ def CONFIG() -> ReportConfig:
             "Location": "The location of the development facility.",
             "PlannedCommissionFrom": "The planned start date of commissioning.",
             "PlannedCommissionTo": "The planned end date of commissioning.",
-            "DevelopmentStage": "The current stage of the development facility being, PROPOSED, COMMITTED, CANCELLED, ENDED.",  # noqa: E501
-            "RelatedFacilityId": "Any facility ID's related to the development facility.",  # noqa: E501
-            "RelatedFacilityName": "The name of any facility ID's related to the development facility.",  # noqa: E501
+            "DevelopmentStage": """
+                The current stage of the development facility being, PROPOSED,
+                COMMITTED, CANCELLED, ENDED.
+            """,
+            "RelatedFacilityId": """
+                Any facility ID's related to the development facility.
+            """,
+            "RelatedFacilityName": """
+                The name of any facility ID's related to the development facility.
+            """,
             "Comments": "Any additional comments included in the submission.",
-            "ReportingEntity": "The entity who is reporting for the facility development.",  # noqa: E501
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
+            "ReportingEntity": """
+                The entity who is reporting for the facility development.
+            """,
+            "surrogate_key": """
+                Unique identifier created using sha256 over the primary keys
+            """,
         },
-        report_purpose="\n\nThis report displays a list of all Facility Developments.\n\nGASBB_FACILITYDEVELOPMENTS is generally updated within 30 minutes of receiving new data.\n",  # noqa: E501
+        report_purpose="""
+            This report displays a list of all Facility Developments.
+
+            GASBB_FACILITYDEVELOPMENTS is generally updated within 30 minutes of
+            receiving new data.
+        """,
     )

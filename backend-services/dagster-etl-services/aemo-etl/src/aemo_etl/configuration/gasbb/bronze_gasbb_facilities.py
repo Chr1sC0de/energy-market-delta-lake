@@ -1,6 +1,6 @@
 """bronze_gasbb_facilities - Bronze GASBB report configuration."""
 
-from polars import String, Int64
+from polars import Int64, String
 
 from aemo_etl.configuration.registry import gasbb_report
 from aemo_etl.configuration.report_config import ReportConfig, gasbb_config_factory
@@ -33,13 +33,24 @@ def CONFIG() -> ReportConfig:
             "FacilityId": "A unique AEMO defined facility identifier.",
             "FacilityType": "Facility type associated with the facility id.",
             "FacilityTypeDescription": "Free text description of the facility type.",
-            "OperatingState": "The operating state (Active or Inactive) of the facility.",  # noqa: E501
+            "OperatingState": """
+                The operating state (Active or Inactive) of the facility.
+            """,
             "OperatingStateDate": "Date the current operating state was set.",
             "OperatorName": "Name of the operator for the facility.",
             "OperatorId": "The facility operator's ID.",
             "OperatorChangeDate": "Date the current operator for the facility was set.",
             "LastUpdated": "Date and time the record was last modified.",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
+            "surrogate_key": """
+                Unique identifier created using sha256 over the primary keys
+            """,
         },
-        report_purpose="\n\nDisplays a list of all currently registered BB facilities and identifies the organisation responsible for the operation of the respective facility.\n\nBoth GASBB_FACILITIES_LIST and GASBB_FACILITIES_FULL_LIST are updated daily.\n\nCurrent records.\n",  # noqa: E501
+        report_purpose="""
+            Displays a list of all currently registered BB facilities and identifies the
+            organisation responsible for the operation of the respective facility.
+
+            Both GASBB_FACILITIES_LIST and GASBB_FACILITIES_FULL_LIST are updated daily.
+
+            Current records.
+        """,
     )

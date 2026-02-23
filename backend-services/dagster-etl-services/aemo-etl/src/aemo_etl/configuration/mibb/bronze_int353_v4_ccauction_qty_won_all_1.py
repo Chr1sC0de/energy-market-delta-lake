@@ -38,13 +38,25 @@ def CONFIG() -> ReportConfig:
             "zone_type": "Type of CC zone. Entry/Exit",
             "start_date": "Starting CC product period start date. Dd mmm yyyy",
             "end_date": "Ending CC product period end date. Dd mmm yyyy",
-            "cc_period": "CC product period name representing date range period for the capacity",  # noqa: E501
+            "cc_period": """
+                CC product period name representing date range period for the capacity
+            """,
             "clearing_price": "Price in which bid cleared",
             "quantities_won_gj": "Quantity won in GJ",
             "unallocated_qty": "Quantity not won in GJ",
             "current_date": "Report generation date. dd mmm yyyy hh:mm:ss",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
+            "surrogate_key": """
+                Unique identifier created using sha256 over the primary keys
+            """,
         },
-        report_purpose="\n\nThis report provides the CC capacities won at auction for the published CC auction by zone and period.\n\nA report is produced on approval of the CC auction results for a CC auction <ID>.\nThis report will show the CC auction results in csv format.\nAggregation of all quantities won by all Market participants.\nSort order is by Zone ID, calendar months for the years within auction period range.\n",  # noqa: E501
+        report_purpose="""
+            This report provides the CC capacities won at auction for the published CC
+            auction by zone and period.
+
+            A report is produced on approval of the CC auction results for a CC auction
+            <ID>. This report will show the CC auction results in csv format.
+            Aggregation of all quantities won by all Market participants. Sort order is
+            by Zone ID, calendar months for the years within auction period range.
+        """,
         group_name=f"aemo__mibb__{VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS}",
     )

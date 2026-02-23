@@ -33,8 +33,22 @@ def CONFIG() -> ReportConfig:
             "issued_date": "Date issued (e.g. 30 Jun 2007)",
             "version_desc": "Description of the version",
             "current_date": "Date and time report produced (e.g. 30 Jun 2007 06:00:00)",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
+            "surrogate_key": """
+                Unique identifier created using sha256 over the primary keys
+            """,
         },
-        report_purpose="\n\nThis report is to display recently issued settlement versions.\n\nParticipants may wish to use this report as a reference to link other reports together based on settlement version.\n\nA report is produced publicly when settlement statement is issued.\n\nEach report contains the:\n- statement version identifier\n- settlement category type\n- effective state date\n- effective end date\n- interest rate\n- date of issue\n- description of the version\n- date and time when the report was produced\n",  # noqa: E501
+        report_purpose="""
+            This report is to display recently issued settlement versions.
+
+            Participants may wish to use this report as a reference to link other
+            reports together based on settlement version.
+
+            A report is produced publicly when settlement statement is issued.
+
+            Each report contains the: - statement version identifier - settlement
+            category type - effective state date - effective end date - interest rate -
+            date of issue - description of the version - date and time when the report
+            was produced
+        """,
         group_name=f"aemo__mibb__{VICTORIAN_WHOLESALE_SETTLEMENTS_AND_METERING_REPORTS}",
     )
