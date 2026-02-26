@@ -1,6 +1,6 @@
 """bronze_gasbb_2p_sensitivities - Bronze GASBB report configuration."""
 
-from polars import String, Float64
+from polars import Float64, String
 
 from aemo_etl.configuration.registry import gasbb_report
 from aemo_etl.configuration.report_config import ReportConfig, gasbb_config_factory
@@ -25,7 +25,17 @@ def CONFIG() -> ReportConfig:
             "State": "state",
             "Increase": "increase value",
             "Decrease": "decrease value",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
+            "surrogate_key": """
+                Unique identifier created using sha256 over the primary keys
+            """,
         },
-        report_purpose="\n\nThis report displays information about Field Reserves and Resources.\n\nBoth GASBB_2P_SENSETIVITIES_ALL and GASBB_2P_SENSETIVITIES_LAST_QUARTER are updated monthly.\n\nContains all current reserve and resource information for a BB field interest.\n",  # noqa: E501
+        report_purpose="""
+            This report displays information about Field Reserves and Resources.
+
+            Both GASBB_2P_SENSETIVITIES_ALL and GASBB_2P_SENSETIVITIES_LAST_QUARTER are
+            updated monthly.
+
+            Contains all current reserve and resource information for a BB field
+            interest.
+        """,
     )

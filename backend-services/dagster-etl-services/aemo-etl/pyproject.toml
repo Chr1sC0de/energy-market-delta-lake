@@ -54,5 +54,7 @@ dev = [
 ]
 
 [tool.ruff]
+line-length = 88
+format.docstring-code-format = true
 lint.select = [ "ANN", "E", "F" ]
 lint.per-file-ignores."__init__.py" = [ "I" ]

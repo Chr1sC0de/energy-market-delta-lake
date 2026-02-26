@@ -41,7 +41,14 @@ def CONFIG() -> ReportConfig:
             "State": "State where the company is located.",
             "Postcode": "Postcode details.",
             "CompanyFax": "Company fax details.",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
+            "surrogate_key": """
+                Unique identifier created using sha256 over the primary keys
+            """,
         },
-        report_purpose="\n\nThis report provides a list of registered participants in the Gas Bulletin Board system.\n\nThis report is updated daily and shows current records.\n",  # noqa: E501
+        report_purpose="""
+            This report provides a list of registered participants in the Gas Bulletin
+            Board system.
+
+            This report is updated daily and shows current records.
+        """,
     )

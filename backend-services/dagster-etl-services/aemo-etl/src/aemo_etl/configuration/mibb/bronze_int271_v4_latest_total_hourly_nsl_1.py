@@ -29,8 +29,30 @@ def CONFIG() -> ReportConfig:
             "ti": "Time Interval (1-24)",
             "nsl_gj": "Hourly nsl total for all DB",
             "current_date": "Date and Time report created (e.g. 30 Jun 2007 06:00:00)",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
+            "surrogate_key": """
+                Unique identifier created using sha256 over the primary keys
+            """,
         },
-        report_purpose="\n\nThis public report is to provide a 3-year rolling history for network system load (NSL) on an hourly basis for both DTS and non-DTS Networks. \nThis report may be used to review non-daily metered load profiles across each network and to forecast non-daily metered load shape in each distribution network area.\n\nParticipants may wish to use this data as an input into their forecasting systems to assist in predicting the daily profile of their\nnon-daily read customers' meters. It should be noted that the larger the number of non-daily read meters for which a Market\nparticipant is the FRO, the NSL will better approximate the hourly behaviour of the Market participants non-daily read load.\n\nSection 2.8.4 of the Victorian Retail Market Procedures AEMO's obligation to publish the NSL and Attachment 6 of the\nVictorian Retail Market Procedures set out how AEMO calculates the NSL.\n\nA report contains data which is grouped by network identifier which is used to distinguish non-DTS networks from the DTS\nnetwork.\n",  # noqa: E501
+        report_purpose="""
+            This public report is to provide a 3-year rolling history for network system
+            load (NSL) on an hourly basis for both DTS and non-DTS Networks.  This
+            report may be used to review non-daily metered load profiles across each
+            network and to forecast non-daily metered load shape in each distribution
+            network area.
+
+            Participants may wish to use this data as an input into their forecasting
+            systems to assist in predicting the daily profile of their non-daily read
+            customers' meters. It should be noted that the larger the number of
+            non-daily read meters for which a Market participant is the FRO, the NSL
+            will better approximate the hourly behaviour of the Market participants
+            non-daily read load.
+
+            Section 2.8.4 of the Victorian Retail Market Procedures AEMO's obligation to
+            publish the NSL and Attachment 6 of the Victorian Retail Market Procedures
+            set out how AEMO calculates the NSL.
+
+            A report contains data which is grouped by network identifier which is used
+            to distinguish non-DTS networks from the DTS network.
+        """,
         group_name=f"aemo__mibb__{VICTORIAN_WHOLESALE_SETTLEMENTS_AND_METERING_REPORTS}",
     )

@@ -13,8 +13,6 @@ from aemo_etl.parameter_specification import (
 )
 from aemo_etl.resource import S3PolarsDeltaLakeIOManager
 
-# pyright: reportUnusedParameter=false
-
 
 class Test__S3PolarsDeltaLakeIOManager:
     s3_target_table = f"s3://{BRONZE_BUCKET}/aemo/gas/test_table"

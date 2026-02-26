@@ -1,6 +1,6 @@
 """bronze_gasbb_late_nomination_forecast - Bronze GASBB report configuration."""
 
-from polars import String, Int64, Float64
+from polars import Float64, Int64, String
 
 from aemo_etl.configuration.registry import gasbb_report
 from aemo_etl.configuration.report_config import ReportConfig, gasbb_config_factory
@@ -28,13 +28,30 @@ def CONFIG() -> ReportConfig:
             "surrogate_key": String,
         },
         schema_descriptions={
-            "GasDate": "Date of gas day. Timestamps are ignored. The gas day as defined in the pipeline contract or market rules.",  # noqa: E501
+            "GasDate": """
+                Date of gas day. Timestamps are ignored. The gas day as defined in the
+                pipeline contract or market rules.
+            """,
             "FacilityName": "Name of the facility.",
             "FacilityId": "A unique AEMO defined Facility identifier.",
             "ConnectionPointId": "A unique AEMO defined connection point identifier.",
-            "EarliestSubmissionDate": "Date and time of the earliest submission for that gas date.",  # noqa: E501
-            "LateTimeSpan": "Hours and minutes of the time span between the submission cut-off time and the earliest submission date.",  # noqa: E501
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
+            "EarliestSubmissionDate": """
+                Date and time of the earliest submission for that gas date.
+            """,
+            "LateTimeSpan": """
+                Hours and minutes of the time span between the submission cut-off time
+                and the earliest submission date.
+            """,
+            "surrogate_key": """
+                Unique identifier created using sha256 over the primary keys
+            """,
         },
-        report_purpose="\n\nA record of late submissions for BB reporting entities for each BB facility type.\n\nGASBB_LATE_NOMINATION_AND_FORECAST is updated daily.\n\nThe report covers the last 31 days.\n",  # noqa: E501
+        report_purpose="""
+            A record of late submissions for BB reporting entities for each BB facility
+            type.
+
+            GASBB_LATE_NOMINATION_AND_FORECAST is updated daily.
+
+            The report covers the last 31 days.
+        """,
     )

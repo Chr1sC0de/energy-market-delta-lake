@@ -29,7 +29,7 @@ from aemo_etl.parameter_specification import (
     PolarsDataFrameWriteDeltaParamSpec,
     PolarsDeltaLakeMergeParamSpec,
 )
-from aemo_etl.util import newline_join
+from aemo_etl.utils import newline_join
 
 
 class InMemoryCachedLinkFilter:

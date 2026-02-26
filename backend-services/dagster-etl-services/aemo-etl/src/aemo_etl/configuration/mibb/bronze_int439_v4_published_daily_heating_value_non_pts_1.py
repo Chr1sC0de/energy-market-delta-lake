@@ -26,8 +26,17 @@ def CONFIG() -> ReportConfig:
             "gas_day": "Gas day being reported e.g. 30 Jun 2007",
             "heating_value": "Heating Value",
             "current_date": "Time Report Produced e.g. 29 Jun 2007 01:23:45",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
+            "surrogate_key": """
+                Unique identifier created using sha256 over the primary keys
+            """,
         },
-        report_purpose="\n\nThis report provides the publish heating values.\n\nThis public report is produced daily.\nOnly reports the non-DTS (Declared transmission) networks.\n\nNote: This report is decommissioned from December 2024.\n",  # noqa: E501
+        report_purpose="""
+            This report provides the publish heating values.
+
+            This public report is produced daily. Only reports the non-DTS (Declared
+            transmission) networks.
+
+            Note: This report is decommissioned from December 2024.
+        """,
         group_name=f"aemo__mibb__{VICTORIAN_GAS_RETAIL_REPORTS_DETAILS}",
     )

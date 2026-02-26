@@ -35,8 +35,19 @@ def CONFIG() -> ReportConfig:
             "total_holding_gj": "Total holding in GJ",
             "source": "Acquired source of the holding. Eg: AUCTION, DTSSP14",
             "current_date": "Report generation date. dd mmm yyyy hh:mm:ss",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
+            "surrogate_key": """
+                Unique identifier created using sha256 over the primary keys
+            """,
         },
-        report_purpose="\n\nThis report provides a registry of the capacity certificates allocated to each auction product.\n\nThis report will provide the total capacity certificates that is allocated at each CC zone and period. The report aggregates the\nCC quantities won and paid for by all Market participants in a CC Auction for a CC zone and period. The report also provides\nquantities allocated by the DTS SP.\nThis report is published daily at midnight.\n",  # noqa: E501
+        report_purpose="""
+            This report provides a registry of the capacity certificates allocated to
+            each auction product.
+
+            This report will provide the total capacity certificates that is allocated
+            at each CC zone and period. The report aggregates the CC quantities won and
+            paid for by all Market participants in a CC Auction for a CC zone and
+            period. The report also provides quantities allocated by the DTS SP. This
+            report is published daily at midnight.
+        """,
         group_name=f"aemo__mibb__{VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS}",
     )

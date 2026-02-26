@@ -17,8 +17,7 @@ from aemo_etl.parameter_specification import (
     PolarsLazyFrameSinkParquetParamSpec,
 )
 from aemo_etl.register import table_locations
-from aemo_etl.util import get_lazyframe_num_rows, get_metadata_schema
-
+from aemo_etl.utils import get_lazyframe_num_rows, get_metadata_schema
 
 table_name = "bronze_s3_table_locations"
 
@@ -96,7 +95,9 @@ def bronze_s3_table_locations_asset() -> LazyFrame:
         AssetCheckSpec(
             name="storage_type_are_correct",
             asset=bronze_s3_table_locations_asset,
-            description="ensure that the storage type is within ('parquet','deltalake')",  # noqa: E501
+            description="""
+                ensure that the storage type is within ('parquet','deltalake')
+            """,
         ),
     ],
     ins={"table": AssetIn(bronze_s3_table_locations_asset.key)},

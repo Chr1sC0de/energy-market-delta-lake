@@ -50,7 +50,9 @@ def CONFIG() -> ReportConfig:
         schema_descriptions={
             "node_id": "MCE node ID",
             "node_name": "MCE node name",
-            "measurement_datetime": "Date and Time of latest pressure measurement (e.g. 30 Jun 2011 12:00:00)",  # noqa: E501
+            "measurement_datetime": """
+                Date and Time of latest pressure measurement (e.g. 30 Jun 2011 12:00:00)
+            """,
             "current_hour": "pressure values at measurement time",
             "hour_01_ago": "pressure values for 1 hour before measurement time",
             "hour_02_ago": "pressure values for 2 hours before measurement time",
@@ -77,8 +79,24 @@ def CONFIG() -> ReportConfig:
             "hour_23_ago": "pressure values for 23 hours before measurement time",
             "hour_24_ago": "pressure values for 24 hours before measurement time",
             "current_date": "Date and Time report created (e.g. 30 Jun 2007 06:00:00)",
-            "surrogate_key": "Unique identifier created using sha256 over the primary keys",  # noqa: E501
+            "surrogate_key": """
+                Unique identifier created using sha256 over the primary keys
+            """,
         },
-        report_purpose="\n\nThis public report is to provide 25 hours of rolling hourly SCADA pressures corresponding to MCE Node (i.e. pressure values\nfor the current and the preceding 24 hours).\n\nThe report contains real time data for actual SCADA pressure reading values in kPa corresponding to MCE nodes post\nvalidation. As these pressure values are subject to validation and substitution methodology, there may be substituted pressure\nreadings.\n\nCurrent and previous 24 hours values from the measurement time are displayed.\nWhere no value is present for a given hour, a NULL will be shown.\nMCE Nodes are set out in INT258 – MCE Nodes.\nHourly pressure values are in kPa units.\n",  # noqa: E501
+        report_purpose="""
+            This public report is to provide 25 hours of rolling hourly SCADA pressures
+            corresponding to MCE Node (i.e. pressure values for the current and the
+            preceding 24 hours).
+
+            The report contains real time data for actual SCADA pressure reading values
+            in kPa corresponding to MCE nodes post validation. As these pressure values
+            are subject to validation and substitution methodology, there may be
+            substituted pressure readings.
+
+            Current and previous 24 hours values from the measurement time are
+            displayed. Where no value is present for a given hour, a NULL will be shown.
+            MCE Nodes are set out in INT258 – MCE Nodes. Hourly pressure values are in
+            kPa units.
+        """,
         group_name=f"aemo__mibb__{VICTORIAN_DECLARED_WHOLESALE_MARKET_SCHEDULING_REPORTS}",
     )

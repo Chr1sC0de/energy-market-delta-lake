@@ -14,7 +14,7 @@ from dagster_aws.s3 import S3Resource
 from aemo_etl.configuration import DEVELOPMENT_LOCATION, LANDING_BUCKET
 from aemo_etl.configuration.registry import GASBB_CONFIGS
 from aemo_etl.definitions import bronze_gasbb_reports
-from aemo_etl.util import (
+from aemo_etl.utils import (
     get_s3_object_keys_from_prefix_and_name_glob,
     get_s3_pagination,
 )

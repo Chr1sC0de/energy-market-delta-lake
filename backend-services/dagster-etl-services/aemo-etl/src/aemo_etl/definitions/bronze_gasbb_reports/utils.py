@@ -31,7 +31,7 @@ from aemo_etl.parameter_specification import (
     PolarsDataFrameWriteDeltaParamSpec,
     PolarsDeltaLakeMergeParamSpec,
 )
-from aemo_etl.util import get_lazyframe_num_rows, get_metadata_schema
+from aemo_etl.utils import get_lazyframe_num_rows, get_metadata_schema
 
 
 class PostProcessHook(Protocol):
@@ -94,7 +94,7 @@ def default_post_process_hook(
     df = df.with_columns(
         surrogate_key=plh.concat_str(
             *[col(key).fill_null("") for key in primary_keys]
-        ).chash.sha256()
+        ).chash.sha2_256()
     )
 
     context.log.info("finished processing dataframe processing")

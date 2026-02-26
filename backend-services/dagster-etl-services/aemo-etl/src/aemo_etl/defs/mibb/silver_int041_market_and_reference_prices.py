@@ -4,7 +4,7 @@ from dagster import asset as dagster_asset
 from polars import LazyFrame, col
 
 from aemo_etl.configuration import SILVER_BUCKET
-from aemo_etl.configuration.mibb.bronze_int037c_v4_indicative_price_1 import (
+from aemo_etl.configuration.mibb.bronze_int041_v4_market_and_reference_prices_1 import (
     CONFIG as bronze_config,
 )
 from aemo_etl.factory.asset import (
@@ -19,7 +19,7 @@ from aemo_etl.parameter_specification import (
 )
 
 key_prefix = ["silver", "aemo", "mibb"]
-table_name = "silver_int037c_indicative_price"
+table_name = "silver_int041_market_and_reference_prices"
 s3_prefix = "aemo/mibb"
 s3_table_location = f"s3://{SILVER_BUCKET}/{s3_prefix}/{table_name}"
 s3_polars_deltalake_io_manager_options = {
@@ -38,7 +38,7 @@ s3_polars_deltalake_io_manager_options = {
     key_prefix=key_prefix,
     io_manager_key="s3_polars_deltalake_io_manager",
     ins={
-        "bronze_int037c_v4_indicative_price_1": AssetIn(
+        "bronze_int041_v4_market_and_reference_prices_1": AssetIn(
             key_prefix=["bronze", "aemo", "vicgas"]
         ),
     },
@@ -53,16 +53,11 @@ s3_polars_deltalake_io_manager_options = {
     .with_label("eager_allow_missing"),
 )
 def table_asset(
-    bronze_int037c_v4_indicative_price_1: LazyFrame,
+    bronze_int041_v4_market_and_reference_prices_1: LazyFrame,
 ) -> LazyFrame:
-    return bronze_int037c_v4_indicative_price_1.with_columns(
+    return bronze_int041_v4_market_and_reference_prices_1.with_columns(
         col("gas_date")
         .str.to_datetime("%d %b %Y", time_zone="Australia/Melbourne", time_unit="ms")
-        .dt.convert_time_zone("UTC"),
-        col("approval_datetime")
-        .str.to_datetime(
-            "%d %b %Y %H:%M:%S", time_zone="Australia/Melbourne", time_unit="ms"
-        )
         .dt.convert_time_zone("UTC"),
         col("current_date")
         .str.to_datetime(
@@ -72,7 +67,7 @@ def table_asset(
     ).with_columns(
         surrogate_key=plh.concat_str(
             *[col(key).fill_null("") for key in bronze_config.primary_keys]
-        ).chash.sha256()
+        ).chash.sha2_256()
     )
 
 

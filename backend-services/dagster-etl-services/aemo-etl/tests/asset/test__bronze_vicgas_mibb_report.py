@@ -13,7 +13,7 @@ from aemo_etl.configuration.registry import MIBB_CONFIGS
 from aemo_etl.definitions.bronze_vicgas_mibb_reports.utils import (
     definition_builder_factory,
 )
-from aemo_etl.util import get_lazyframe_num_rows
+from aemo_etl.utils import get_lazyframe_num_rows
 
 # pyright: reportUnusedParameter=false
 
