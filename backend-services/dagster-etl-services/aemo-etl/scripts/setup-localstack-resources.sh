@@ -4,7 +4,6 @@
 #
 # AWS_ENDPOINT_URL is sourced from .localstack.env (written by start-localstack.sh)
 # if it is not already set in the environment.
-set -euo pipefail
 
 mkdir -p .dagster_home
 

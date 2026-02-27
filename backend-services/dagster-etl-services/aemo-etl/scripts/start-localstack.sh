@@ -3,7 +3,6 @@
 # Discovers the container IP, waits for LocalStack to be healthy, then writes
 # the resolved endpoint to .localstack.env in the project root so that other
 # scripts and VS Code launch configurations can source it.
-set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"

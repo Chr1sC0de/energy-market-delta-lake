@@ -1,0 +1,65 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+  - repo: 'https://github.com/pre-commit/pre-commit-hooks'
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+  - repo: https://github.com/tox-dev/pyproject-fmt
+    rev: "v2.16.1"
+    hooks:
+      - id: pyproject-fmt
+  - repo: local
+    hooks:
+      - id: shfmt
+        name: shell format
+        language: system
+        entry: shfmt --write
+        files: ^scripts/.*
+      - id: shellcheck
+        name: shellcheck
+        language: system
+        entry: shellcheck
+        files: ^scripts/.*
+      - id: ruff-check
+        name: ruff check
+        language: system
+        entry: ruff check
+        types:
+          - python
+      - id: ruff-format
+        name: ruff format
+        language: system
+        entry: ruff format
+        types:
+          - python
+      - id: ty-check
+        name: ty check
+        language: system
+        entry: ty check
+        types:
+          - python
+      - id: pytest
+        name: pytest
+        entry: pytest --cov-fail-under=100 --cov=aemo_etl --cov-report=term-missing tests/
+        language: system
+        types:
+          - python
+      - id: dagster-check-defs
+        name: check dagster definitions
+        entry: dg check defs
+        language: system
+        pass_filenames: false
+      - id: dagster-check-toml
+        name: check dagster toml
+        entry: dg check toml
+        language: system
+        pass_filenames: false
+      - id: dagster-check-yaml
+        name: check dagster yaml
+        entry: dg check yaml
+        language: system
+        pass_filenames: false
