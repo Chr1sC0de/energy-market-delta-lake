@@ -15,17 +15,28 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
+  "boto3>=1.42.58",
   "dagster==1.12.15",
+  "types-boto3[dynamodb,s3]>=1.42.58",
 ]
 
 [dependency-groups]
 dev = [
   "dagster-dg-cli",
   "dagster-webserver",
+  "pytest>=9.0.2",
+  "pytest-cov>=7",
+  "pytest-xdist>=3.8",
 ]
 
 [tool.hatch]
 build.targets.wheel.force-include = { "pyproject.toml" = "pyproject.toml" }
+
+[tool.ruff]
+line-length = 88
+format.docstring-code-format = true
+lint.select = [ "ANN", "E", "F" ]
+lint.per-file-ignores."__init__.py" = [ "I" ]
 
 [tool.dg]
 directory_type = "project"
