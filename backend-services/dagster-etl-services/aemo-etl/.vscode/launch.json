@@ -5,7 +5,7 @@
       "name": "Python: Dagster (LocalStack)",
       "type": "debugpy",
       "request": "launch",
-      "module": "dagster",
+      "program": "${workspaceFolder}/.venv/bin/dg",
       "justMyCode": true,
       "args": [
         "dev",
@@ -20,6 +20,7 @@
         "3000"
       ],
       "preLaunchTask": "localstack: start and setup",
+      "postDebugTask": "localstack: stop",
       "envFile": "${workspaceFolder}/.localstack.env",
       "subProcess": false,
       "env": {
@@ -32,26 +33,6 @@
         "AWS_DEFAULT_REGION": "ap-southeast-2",
         "AWS_ALLOW_HTTP": "true",
         "AWS_S3_LOCKING_PROVIDER": "dynamodb"
-      }
-    },
-    {
-      "name": "Python: Dagster (AWS S3)",
-      "type": "debugpy",
-      "request": "launch",
-      "module": "dagster",
-      "justMyCode": true,
-      "args": [
-        "dev",
-        "-m",
-        "aemo_etl.definitions",
-        "--verbose"
-      ],
-      "env": {
-        "DAGSTER_HOME": "${workspaceFolder}/.dagster_home",
-        "DEVELOPMENT_ENVIRONMENT": "dev",
-        "DEVELOPMENT_LOCATION": "local",
-        "AWS_DEFAULT_REGION": "ap-southeast-2",
-        "AWS_S3_ALLOW_UNSAFE_RENAME": "true"
       }
     }
   ]
