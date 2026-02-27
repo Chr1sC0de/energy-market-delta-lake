@@ -44,6 +44,9 @@ format.docstring-code-format = true
 lint.select = [ "ANN", "E", "F" ]
 lint.per-file-ignores."__init__.py" = [ "I" ]
 
+[tool.pytest]
+ini_options.testpaths = [ "tests" ]
+
 [tool.dg]
 directory_type = "project"
 project.root_module = "aemo_etl"
