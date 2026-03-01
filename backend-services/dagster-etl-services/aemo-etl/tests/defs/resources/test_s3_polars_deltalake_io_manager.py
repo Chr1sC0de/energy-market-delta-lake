@@ -20,7 +20,7 @@ def root_uri(
 
 @pytest.fixture
 def asset_path(root_uri: str) -> str:
-    target_uri = f"{root_uri}/bronze/aemo/gasbb/asset_"
+    target_uri = f"{root_uri}/aemo/gasbb/asset_"
     return target_uri
 
 

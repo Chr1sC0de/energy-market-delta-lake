@@ -14,6 +14,7 @@ from aemo_etl.utils import get_metadata_schema
 
 class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
     root: str
+    skip_prefix: int = 1
     sink_delta_kwargs: dict[str, Any] = {}
     scan_delta_kwargs: dict[str, Any] = {}
     preview_row_count: int = 5
@@ -21,7 +22,7 @@ class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
     @override
     def handle_output(self, context: OutputContext, obj: LazyFrame) -> None:
         """automatically handles merges as upserts"""
-        key_prefix = "/".join(context.asset_key.parts)
+        key_prefix = "/".join(context.asset_key.parts[self.skip_prefix :])
         target_uri = f"{self.root}/{key_prefix}"
 
         return_object = obj.sink_delta(target_uri, **self.sink_delta_kwargs)
@@ -67,6 +68,6 @@ class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
 
     @override
     def load_input(self, context: InputContext) -> LazyFrame:
-        key_prefix = "/".join(context.asset_key.parts)
+        key_prefix = "/".join(context.asset_key.parts[self.skip_prefix :])
         target_uri = f"{self.root}/{key_prefix}"
         return scan_delta(target_uri, **self.scan_delta_kwargs)
