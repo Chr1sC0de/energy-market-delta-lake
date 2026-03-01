@@ -1,28 +1,31 @@
-from pathlib import Path
-
 import pytest
 from dagster import asset, materialize
+from dagster_shared.seven.abc import Callable
 from polars import Int64, LazyFrame, scan_delta
 from polars.testing import assert_frame_equal
 
+from aemo_etl.configs import BRONZE_BUCKET
 from aemo_etl.defs.resources.s3_polars_deltalake_io_manager import (
     PolarsDataFrameSinkDeltaIoManager,
 )
 
 
 @pytest.fixture()
-def root_uri(tmp_path: Path) -> Path:
-    return tmp_path
+def root_uri(
+    localstack_endpoint: str, create_delta_log: None, make_bucket: Callable[[str], str]
+) -> str:
+    bronze_bucket_name = make_bucket(BRONZE_BUCKET)
+    return f"s3://{bronze_bucket_name}"
 
 
 @pytest.fixture
-def asset_path(root_uri: Path) -> Path:
-    target_uri = root_uri / "bronze/aemo/gasbb/asset_"
+def asset_path(root_uri: str) -> str:
+    target_uri = f"{root_uri}/bronze/aemo/gasbb/asset_"
     return target_uri
 
 
 class TestPolarsDataFrameSinkDeltaIoManager:
-    def test_handle_output_write(self, asset_path: Path, root_uri: Path) -> None:
+    def test_handle_output_write(self, asset_path: str, root_uri: str) -> None:
         target_df = LazyFrame(
             {"a": [1, 2, 3], "b": [4, 5, 6]}, schema={"a": Int64, "b": Int64}
         )
@@ -37,7 +40,7 @@ class TestPolarsDataFrameSinkDeltaIoManager:
             [asset_],
             resources={
                 "io_manager": PolarsDataFrameSinkDeltaIoManager(
-                    root=root_uri.as_posix(),
+                    root=root_uri,
                 )
             },
         )
@@ -50,7 +53,7 @@ class TestPolarsDataFrameSinkDeltaIoManager:
         [None, {"column_description": {"a": "a column", "b": "b column"}}],
     )
     def test_handle_output_merge(
-        self, metadata: None | dict[str, str], asset_path: Path, root_uri: Path
+        self, metadata: None | dict[str, str], asset_path: str, root_uri: str
     ) -> None:
         source_df = LazyFrame(
             {"a": [1, 2, 3], "b": [3, 4, 5]},
@@ -66,7 +69,7 @@ class TestPolarsDataFrameSinkDeltaIoManager:
             [asset_],
             resources={
                 "io_manager": PolarsDataFrameSinkDeltaIoManager(
-                    root=root_uri.as_posix(),
+                    root=root_uri,
                     sink_delta_kwargs={
                         "mode": "merge",
                         "delta_merge_options": {
@@ -81,7 +84,7 @@ class TestPolarsDataFrameSinkDeltaIoManager:
         )
         assert_frame_equal(scan_delta(asset_path).sort("a"), upsert_df)
 
-    def test_load_input(self, asset_path: Path, root_uri: Path) -> None:
+    def test_load_input(self, asset_path: str, root_uri: str) -> None:
         target_df = LazyFrame(
             {"a": [1, 2, 3], "b": [4, 5, 6]}, schema={"a": Int64, "b": Int64}
         )
@@ -102,7 +105,7 @@ class TestPolarsDataFrameSinkDeltaIoManager:
             [asset_, asset_1],
             resources={
                 "io_manager": PolarsDataFrameSinkDeltaIoManager(
-                    root=root_uri.as_posix(),
+                    root=root_uri,
                 )
             },
         )

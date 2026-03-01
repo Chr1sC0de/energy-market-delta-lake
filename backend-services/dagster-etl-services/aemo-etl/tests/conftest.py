@@ -1,18 +1,16 @@
 import uuid
-from typing import Generator
+from typing import Callable, Generator
 
 import boto3
 import pytest
 from types_boto3_dynamodb import DynamoDBClient
 from types_boto3_s3 import S3Client
 
-from aemo_etl.configs import BRONZE_BUCKET, IO_MANAGER_BUCKET, LANDING_BUCKET
 from tests.utils import (
     LOCALSTACK_IMAGE,
-    LOCALSTACK_PORT,
     LOCALSTACK_READY_POLL_INTERVAL,
     LOCALSTACK_READY_TIMEOUT,
-    container_ip,
+    get_unused_port,
     podman,
     wait_for_localstack,
 )
@@ -27,7 +25,7 @@ def session_monkeypatch() -> Generator[pytest.MonkeyPatch]:
 
 @pytest.fixture(scope="session", autouse=True)
 def aws_credentials(session_monkeypatch: pytest.MonkeyPatch) -> None:
-    session_monkeypatch.setenv("AWS_PROFILE", "")
+    session_monkeypatch.delenv("AWS_PROFILE", raising=False)
     session_monkeypatch.setenv("DEVELOPMENT_ENVIRONMENT", "dev")
     session_monkeypatch.setenv("AWS_ACCESS_KEY_ID", "test")
     session_monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test")
@@ -41,24 +39,29 @@ def aws_credentials(session_monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture(scope="session")
 def localstack_endpoint(session_monkeypatch: pytest.MonkeyPatch) -> Generator[str]:
     container_name = f"localstack-pytest-{uuid.uuid4().hex[:8]}"
+    ip = "127.0.0.1"
+    port = get_unused_port()
     podman(
         *[
             "run",
             "--rm",
             "--detach",
-            "--network=podman",
+            "--network=host",
             "--name",
             container_name,
             "--env",
-            "--env",
             "DISABLE_CORS_CHECKS=1",
+            "--env",
+            f"GATEWAY_LISTEN={ip}:{port}",
             LOCALSTACK_IMAGE,
         ]
     )
-    ip = container_ip(container_name)
-    endpoint = f"http://{ip}:{LOCALSTACK_PORT}"
+    # ip = container_ip(container_name)
+
     wait_for_localstack(
-        endpoint, LOCALSTACK_READY_TIMEOUT, LOCALSTACK_READY_POLL_INTERVAL
+        endpoint := f"http://{ip}:{port}",
+        LOCALSTACK_READY_TIMEOUT,
+        LOCALSTACK_READY_POLL_INTERVAL,
     )
     session_monkeypatch.setenv("AWS_ENDPOINT_URL", endpoint)
     yield endpoint
@@ -80,17 +83,21 @@ def dynamodb(localstack_endpoint: str) -> Generator[DynamoDBClient]:
 
 
 @pytest.fixture(scope="function")
-def create_buckets(s3: S3Client) -> Generator[None]:
+def make_bucket(s3: S3Client) -> Generator[Callable[[str], str]]:
+    buckets = []
 
-    for bucket in (IO_MANAGER_BUCKET, BRONZE_BUCKET, LANDING_BUCKET):
+    def _make_bucket(prefix: str) -> str:
+        bucket_name = f"{prefix}-{uuid.uuid4().hex[:8]}"
         _ = s3.create_bucket(
-            Bucket=bucket,
+            Bucket=bucket_name,
             CreateBucketConfiguration={"LocationConstraint": "ap-southeast-2"},
         )
+        buckets.append(bucket_name)
+        return bucket_name
 
-    yield
+    yield _make_bucket
 
-    for bucket_name in (LANDING_BUCKET, BRONZE_BUCKET, IO_MANAGER_BUCKET):
+    for bucket_name in buckets:
         response = s3.list_objects_v2(Bucket=bucket_name)
         if "Contents" in response:
             objects = [{"Key": obj["Key"]} for obj in response["Contents"]]
