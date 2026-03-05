@@ -1,4 +1,4 @@
-from typing import cast, override
+from typing import override
 
 from dagster import (
     Any,
@@ -7,7 +7,7 @@ from dagster import (
     MetadataValue,
     OutputContext,
 )
-from polars import DataFrame, LazyFrame, scan_delta
+from polars import LazyFrame, scan_delta
 
 from aemo_etl.utils import get_metadata_schema
 
@@ -42,9 +42,7 @@ class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
             context.log.info(f"merged data with results {merge_results}")
 
         markdown_preview = (
-            cast(DataFrame, obj.head(self.preview_row_count).collect())
-            .to_pandas()
-            .to_markdown()
+            obj.head(self.preview_row_count).collect().to_pandas().to_markdown()
         )
 
         if "dagster/column_schema" not in context.definition_metadata:

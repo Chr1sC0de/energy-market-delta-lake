@@ -5,6 +5,7 @@ import boto3
 import pytest
 from types_boto3_dynamodb import DynamoDBClient
 from types_boto3_s3 import S3Client
+from types_boto3_s3.type_defs import ObjectIdentifierTypeDef
 
 from tests.utils import (
     LOCALSTACK_IMAGE,
@@ -84,7 +85,7 @@ def dynamodb(localstack_endpoint: str) -> Generator[DynamoDBClient]:
 
 @pytest.fixture(scope="function")
 def make_bucket(s3: S3Client) -> Generator[Callable[[str], str]]:
-    buckets = []
+    buckets: list[str] = []
 
     def _make_bucket(prefix: str) -> str:
         bucket_name = f"{prefix}-{uuid.uuid4().hex[:8]}"
@@ -100,7 +101,9 @@ def make_bucket(s3: S3Client) -> Generator[Callable[[str], str]]:
     for bucket_name in buckets:
         response = s3.list_objects_v2(Bucket=bucket_name)
         if "Contents" in response:
-            objects = [{"Key": obj["Key"]} for obj in response["Contents"]]
+            objects: list[ObjectIdentifierTypeDef] = [
+                {"Key": obj["Key"]} for obj in response["Contents"]
+            ]
             _ = s3.delete_objects(Bucket=bucket_name, Delete={"Objects": objects})
         _ = s3.delete_bucket(Bucket=bucket_name)
 

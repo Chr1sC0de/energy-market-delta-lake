@@ -40,7 +40,7 @@ def get_unused_port() -> int:
 
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
-        port = s.getsockname()[1]
+        port: int = s.getsockname()[1]
 
     return port
 

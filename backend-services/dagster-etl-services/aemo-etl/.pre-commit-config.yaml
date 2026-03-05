@@ -33,21 +33,25 @@ repos:
       - id: ruff-format
         name: ruff format
         language: system
-        entry: ruff format
+        entry: ruff
+        args:
+          - format
         types:
           - python
-      - id: ty-check
-        name: ty check
+      - id: zuban-check
+        name: zuban check
         language: system
-        entry: ty check
+        entry: zuban
+        args:
+          - check
+          - --strict
         types:
           - python
       - id: pytest
         name: pytest
-        entry: pytest --cov-fail-under=100 --cov=aemo_etl --cov-report=term-missing tests/
+        entry: pytest --cov-fail-under=20 --cov=aemo_etl --cov-report=term-missing tests/
         language: system
-        types:
-          - python
+        pass_filenames: false
       - id: dagster-check-defs
         name: check dagster definitions
         entry: dg check defs

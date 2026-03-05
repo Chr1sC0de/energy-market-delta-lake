@@ -110,4 +110,4 @@ class TestPolarsDataFrameSinkDeltaIoManager:
             },
         )
 
-        assert_frame_equal(scan_delta(asset_path), LazyFrame({"a": 6, "b": 15}))
+        assert_frame_equal(scan_delta(asset_path), LazyFrame({"a": [6], "b": [15]}))
