@@ -1,4 +1,4 @@
-from typing import cast
+from typing import Unpack, cast
 
 from dagster import (
     Any,
@@ -7,6 +7,7 @@ from dagster import (
 )
 from polars import Datetime, LazyFrame, Schema, String
 
+from aemo_etl.configs import LANDING_BUCKET
 from aemo_etl.factories.download_nemweb_public_files_to_s3.ops.dynamic_nemweb_links_fetcher import (
     DynamicNEMWebLinksFetcher,
     build_dynamic_nemweb_links_fetcher_op,
@@ -23,7 +24,6 @@ from aemo_etl.factories.download_nemweb_public_files_to_s3.ops.processed_link_co
     ProcessedLinkedCombiner,
     build_process_link_combiner_op,
 )
-from aemo_etl.configs import LANDING_BUCKET
 from aemo_etl.models import GraphAssetKwargs
 from aemo_etl.utils import get_metadata_schema
 
@@ -57,18 +57,19 @@ DESCRIPTIONS = {
 }
 
 
-def download_link_and_upload_to_s3_op_factory(
+def download_link_and_upload_to_s3_asset_factory(
+    *,
     name: str,
     nemweb_relative_href: str,
-    s3_source_prefix: str,
+    s3_landing_prefix: str,
     nemweb_link_fetcher: NEMWebLinkFetcher,
     dynamic_nemweb_links_fetcher: DynamicNEMWebLinksFetcher,
     nemweb_link_processor: S3NemwebLinkProcessor,
     processed_link_combiner: ProcessedLinkedCombiner,
-    s3_source_bucket: str = LANDING_BUCKET,
+    s3_landing_bucket: str = LANDING_BUCKET,
     io_manager_key: str | None = None,
     out_metadata_kwargs: dict[str, Any] | None = None,
-    graph_asset_kwargs: GraphAssetKwargs | None = None,
+    **graph_asset_kwargs: Unpack[GraphAssetKwargs],
 ) -> AssetsDefinition:
 
     out_metadata_kwargs = out_metadata_kwargs or {}
@@ -77,9 +78,8 @@ def download_link_and_upload_to_s3_op_factory(
     graph_asset_kwargs.setdefault(
         "description",
         f"""
-            Table listing public files downloaded from
-            https://www.nemweb.com.au/{nemweb_relative_href} and converted to parquet
-            where possible
+            Table listing public files downloaded from https://www.nemweb.com.au/{nemweb_relative_href}
+            and converted to parquet where possible
         """,
     )
     graph_asset_kwargs.setdefault("kinds", {"source", "table", "deltalake"})
@@ -96,7 +96,7 @@ def download_link_and_upload_to_s3_op_factory(
         name, nemweb_relative_href, dynamic_nemweb_links_fetcher
     )
     nemweb_link_processor_op = build_nemweb_link_processor_op(
-        name, s3_source_bucket, s3_source_prefix, nemweb_link_processor
+        name, s3_landing_bucket, s3_landing_prefix, nemweb_link_processor
     )
     processed_link_combiner_op = build_process_link_combiner_op(
         name, SCHEMA, io_manager_key, out_metadata_kwargs, processed_link_combiner

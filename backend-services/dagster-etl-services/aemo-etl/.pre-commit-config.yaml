@@ -45,11 +45,10 @@ repos:
         args:
           - check
           - --strict
-        types:
-          - python
+        pass_filenames: false
       - id: pytest
         name: pytest
-        entry: pytest --cov-fail-under=20 --cov=aemo_etl --cov-report=term-missing tests/
+        entry: pytest --cov-fail-under=100 --cov=aemo_etl --cov-report=term-missing tests/
         language: system
         pass_filenames: false
       - id: dagster-check-defs

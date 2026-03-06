@@ -1,6 +1,7 @@
 import socket
 import subprocess
 import time
+from typing import Protocol
 
 import requests
 
@@ -9,6 +10,10 @@ LOCALSTACK_PORT = 4566
 LOCALSTACK_HEALTH_PATH = "_localstack/health"
 LOCALSTACK_READY_TIMEOUT = 60  # seconds
 LOCALSTACK_READY_POLL_INTERVAL = 1  # seconds
+
+
+class MakeBucketProtocol(Protocol):
+    def __call__(self, bucket_name: str, random_suffix: bool = True) -> str: ...
 
 
 def podman(*args: str) -> subprocess.CompletedProcess[str]:

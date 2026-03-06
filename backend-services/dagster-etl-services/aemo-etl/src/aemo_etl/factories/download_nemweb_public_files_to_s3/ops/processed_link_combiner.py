@@ -45,7 +45,6 @@ def build_process_link_combiner_op(
 
 
 class S3ProcessedLinkCombiner(ProcessedLinkedCombiner):
-    @abstractmethod
     def combine(
         self,
         context: OpExecutionContext,

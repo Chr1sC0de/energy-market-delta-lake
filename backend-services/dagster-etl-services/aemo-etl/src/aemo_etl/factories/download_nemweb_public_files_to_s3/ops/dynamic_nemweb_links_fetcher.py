@@ -74,7 +74,6 @@ class FilteredDynamicNEMWebLinksFetcher(DynamicNEMWebLinksFetcher):
 
 
 class InMemoryCachedLinkFilter:
-    table_path: str
     _cache: LazyFrame | None
 
     def __init__(self, table_path: str, ttl_seconds: float) -> None:
@@ -98,7 +97,7 @@ class InMemoryCachedLinkFilter:
 
         return self._cache
 
-    def __call__(self, _: OpExecutionContext, link: Link) -> bool:
+    def __call__(self, context: OpExecutionContext, link: Link) -> bool:
         try:
             df = self.get()
             search_df = df.filter(
@@ -109,7 +108,12 @@ class InMemoryCachedLinkFilter:
                 ),
             )
             if search_df.select(len_()).collect().item() > 0:
+                context.log.info("link '%s' found and filtered", link)
                 return False
+            context.log.info("link '%s' not filtered", link)
             return True
         except TableNotFoundError:
+            context.log.info(
+                "table path '%s' not found, thus %s not filtered", self.table_path, link
+            )
             return True

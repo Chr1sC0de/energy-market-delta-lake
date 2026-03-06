@@ -6,11 +6,11 @@ from dataclasses import dataclass
 from typing import Callable
 
 import bs4
-import requests
 from dagster import OpDefinition, OpExecutionContext, op
 from requests.models import Response
 
 from aemo_etl.factories.download_nemweb_public_files_to_s3.data_models import Link
+from aemo_etl.utils import request_get
 
 ROOT_URL = "https://www.nemweb.com.au"
 
@@ -51,12 +51,6 @@ def default_file_filter(context: OpExecutionContext, tag: bs4.Tag) -> bool:
 
 def soup_getter(html: str) -> bs4.BeautifulSoup:
     return bs4.BeautifulSoup(html, features="html.parser")
-
-
-def request_get(path: str) -> Response:
-    response: Response = requests.get(path)
-    response.raise_for_status()
-    return response
 
 
 @dataclass

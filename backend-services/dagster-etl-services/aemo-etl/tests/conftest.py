@@ -1,5 +1,5 @@
 import uuid
-from typing import Callable, Generator
+from typing import Generator
 
 import boto3
 import pytest
@@ -7,10 +7,12 @@ from types_boto3_dynamodb import DynamoDBClient
 from types_boto3_s3 import S3Client
 from types_boto3_s3.type_defs import ObjectIdentifierTypeDef
 
+from aemo_etl.utils import add_random_suffix
 from tests.utils import (
     LOCALSTACK_IMAGE,
     LOCALSTACK_READY_POLL_INTERVAL,
     LOCALSTACK_READY_TIMEOUT,
+    MakeBucketProtocol,
     get_unused_port,
     podman,
     wait_for_localstack,
@@ -84,11 +86,12 @@ def dynamodb(localstack_endpoint: str) -> Generator[DynamoDBClient]:
 
 
 @pytest.fixture(scope="function")
-def make_bucket(s3: S3Client) -> Generator[Callable[[str], str]]:
+def make_bucket(s3: S3Client) -> Generator[MakeBucketProtocol]:
     buckets: list[str] = []
 
-    def _make_bucket(prefix: str) -> str:
-        bucket_name = f"{prefix}-{uuid.uuid4().hex[:8]}"
+    def _make_bucket(bucket_name: str, random_suffix: bool = True) -> str:
+        if random_suffix:
+            bucket_name = add_random_suffix(bucket_name)
         _ = s3.create_bucket(
             Bucket=bucket_name,
             CreateBucketConfiguration={"LocationConstraint": "ap-southeast-2"},

@@ -31,6 +31,7 @@ dev = [
   "dagster-webserver",
   "pytest>=9.0.2",
   "pytest-cov>=7",
+  "pytest-mock>=3.15.1",
   "pytest-xdist>=3.8",
   "ruff>=0.15.4",
   "shellcheck-py>=0.11.0.1",

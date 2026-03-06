@@ -21,7 +21,6 @@ from dagster._core.definitions.metadata import RawMetadataMapping
 
 
 class GraphAssetKwargs(TypedDict, total=False):
-    name: str | None
     description: str | None
     ins: Mapping[str, AssetIn] | None
     config: ConfigMapping | Mapping[str, Any] | None
