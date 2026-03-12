@@ -4,7 +4,6 @@
 #
 # AWS_ENDPOINT_URL is sourced from .localstack.env (written by start-localstack.sh)
 # if it is not already set in the environment.
-set -euo pipefail
 
 mkdir -p .dagster_home
 
@@ -31,11 +30,9 @@ ENV="${DEVELOPMENT_ENVIRONMENT:-dev}"
 AWS_CLI="aws --endpoint-url=${AWS_ENDPOINT_URL} --region=${REGION}"
 
 BUCKETS=(
-	"${ENV}-${PREFIX}-bronze"
-	"${ENV}-${PREFIX}-silver"
-	"${ENV}-${PREFIX}-gold"
-	"${ENV}-${PREFIX}-landing"
 	"${ENV}-${PREFIX}-io-manager"
+	"${ENV}-${PREFIX}-landing"
+	"${ENV}-${PREFIX}-aemo"
 )
 
 echo "Creating S3 buckets..." >&2

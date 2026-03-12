@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Stops and removes the LocalStack development container.
-set -euo pipefail
 
 CONTAINER_NAME="localstack-dagster-dev"
 
