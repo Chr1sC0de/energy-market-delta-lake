@@ -1,0 +1,3 @@
+# Minimal dagster.yaml for the aemo-etl gRPC code-server.
+# The code-server does not use instance storage; this file exists only to
+# suppress the "no dagster.yaml found" warning from the Dagster runtime.

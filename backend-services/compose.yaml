@@ -1,0 +1,180 @@
+# Podman Compose — Dagster OSS local deployment
+#
+# Services
+#   postgres          PostgreSQL 16 — Dagster run/schedule/event-log storage
+#   localstack        LocalStack    — mocked AWS S3 for the aemo-etl code location
+#   aemo-etl          Dagster gRPC code-location server
+#   dagster-webserver Dagster UI + GraphQL API
+#   dagster-daemon    Schedules, sensors, and run queue
+#
+# The dagster-core image is built with DAGSTER_DEPLOYMENT=local which selects
+# dagster.local.yaml and workspace.local.yaml as the active instance config.
+# Change the build arg to "aws" when deploying to AWS (ECS run launcher).
+#
+# Usage
+#   podman-compose up --build
+#   Open http://localhost:3000
+name: dagster-local
+# ---------------------------------------------------------------------------
+# Network
+# ---------------------------------------------------------------------------
+networks:
+  dagster_network:
+    name: dagster_network # explicit name prevents compose project prefix
+    driver: bridge
+# ---------------------------------------------------------------------------
+# Volumes
+# ---------------------------------------------------------------------------
+volumes:
+  postgres_data: {}
+  io_manager_storage: {}
+  localstack_data: {}
+# ---------------------------------------------------------------------------
+# Services
+# ---------------------------------------------------------------------------
+services:
+  # -------------------------------------------------------------------------
+  # PostgreSQL — Dagster instance storage backend
+  # -------------------------------------------------------------------------
+  postgres:
+    build:
+      context: ./postgres
+    container_name: postgres
+    restart: on-failure
+    networks:
+      - dagster_network
+    ports:
+      - "5432:5432"
+    env_file:
+      - .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+  # -------------------------------------------------------------------------
+  # LocalStack — mocked AWS S3 (and any other AWS services needed locally)
+  # -------------------------------------------------------------------------
+  localstack:
+    image: docker.io/localstack/localstack:latest
+    container_name: localstack
+    restart: on-failure
+    networks:
+      - dagster_network
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: s3,dynamodb
+      DEFAULT_REGION: ap-southeast-2
+      AWS_DEFAULT_REGION: ap-southeast-2
+    volumes:
+      - localstack_data:/var/lib/localstack
+      - ${XDG_RUNTIME_DIR}/podman/podman.sock:/run/podman/podman.sock
+      - ./localstack/init-s3.sh:/etc/localstack/init/ready.d/init-s3.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health | grep -q '\"s3\"' && curl -sf http://localhost:4566/_localstack/health | grep -q '\"dynamodb\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+  # -------------------------------------------------------------------------
+  # aemo-etl — Dagster gRPC code-location server
+  # workspace.yaml (aliased from workspace.local.yaml) connects to this at host aemo-etl.dagster:4000
+  # -------------------------------------------------------------------------
+  aemo-etl:
+    build:
+      context: ./dagster-user/aemo-etl
+      target: dagster-grpc
+    container_name: aemo-etl
+    restart: on-failure
+    depends_on:
+      localstack:
+        condition: service_healthy
+    networks:
+      dagster_network:
+        aliases:
+          - aemo-etl.dagster # matches workspace.local.yaml grpc_server.host
+    ports:
+      - "4000:4000"
+    env_file:
+      - .env
+    environment:
+      DAGSTER_HOME: /opt/dagster/dagster_home/
+    command:
+      - dagster
+      - code-server
+      - start
+      - -h
+      - "0.0.0.0"
+      - -p
+      - "4000"
+      - -m
+      - aemo_etl.definitions
+  # -------------------------------------------------------------------------
+  # dagster-webserver — Dagster UI and GraphQL API
+  # -------------------------------------------------------------------------
+  dagster-webserver:
+    build:
+      context: ./dagster-core
+      args:
+        DAGSTER_DEPLOYMENT: local
+    container_name: dagster-webserver
+    restart: on-failure
+    depends_on:
+      postgres:
+        condition: service_healthy
+      aemo-etl:
+        condition: service_started
+    networks:
+      - dagster_network
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      DAGSTER_HOME: /opt/dagster/dagster_home/
+      DOCKER_HOST: unix:///run/podman/podman.sock
+    volumes:
+      - ${XDG_RUNTIME_DIR}/podman/podman.sock:/run/podman/podman.sock
+      - io_manager_storage:/tmp/io_manager_storage
+    command:
+      - dagster-webserver
+      - -h
+      - "0.0.0.0"
+      - -p
+      - "3000"
+      - -w
+      - workspace.yaml
+  # -------------------------------------------------------------------------
+  # dagster-daemon — schedules, sensors, run queue processor
+  # -------------------------------------------------------------------------
+  dagster-daemon:
+    build:
+      context: ./dagster-core
+      args:
+        DAGSTER_DEPLOYMENT: local
+    container_name: dagster-daemon
+    restart: on-failure
+    depends_on:
+      postgres:
+        condition: service_healthy
+      aemo-etl:
+        condition: service_started
+    networks:
+      - dagster_network
+    env_file:
+      - .env
+    environment:
+      DAGSTER_HOME: /opt/dagster/dagster_home/
+      DOCKER_HOST: unix:///run/podman/podman.sock
+    volumes:
+      - ${XDG_RUNTIME_DIR}/podman/podman.sock:/run/podman/podman.sock
+      - io_manager_storage:/tmp/io_manager_storage
+    command:
+      - dagster-daemon
+      - run
+      - -w
+      - workspace.yaml

@@ -48,7 +48,7 @@ requires-dist = [
     { name = "boto3", specifier = ">=1.42.58" },
     { name = "bs4", specifier = ">=0.0.2" },
     { name = "cron-descriptor", specifier = ">=2.0.6" },
-    { name = "dagster", specifier = "==1.12.18" },
+    { name = "dagster", specifier = ">=1.12.18" },
     { name = "dagster-aws", specifier = ">=0.28.15" },
     { name = "deltalake", specifier = ">=1.4.2" },
     { name = "pandas", specifier = ">=3.0.1" },
