@@ -35,7 +35,7 @@ RUN uv pip install . --system --prefix=/install;
 RUN rm -rf $HOME/.cargo;
 
 # ------------------------------------------------------------- dagster-grpc
-FROM builder AS dagster-grpc
+FROM docker.io/library/python:3.13-slim AS dagster-grpc
 
 RUN apt-get update && apt-get upgrade -yqq && \
     apt-get install -y --no-install-recommends \
@@ -58,4 +58,4 @@ WORKDIR $DAGSTER_HOME
 COPY dagster.yaml $DAGSTER_HOME
 
 
-CMD ["dagster", "code-server", "start", "-h", "0.0.0.0", "-p", "4000", "-m", "aemo_etl.definitions"]
+# Command is defined in compose.yaml to keep a single canonical source.

@@ -43,7 +43,6 @@ ______________________________________________________________________
 ```
 backend-services/
 ├── compose.yaml                   # Podman Compose — all five services (local deployment)
-├── .env                           # Mocked local environment variables
 ├── localstack/
 │   └── init-s3.sh                 # Auto-creates S3 buckets on LocalStack boot
 ├── postgres/
@@ -83,7 +82,38 @@ ______________________________________________________________________
 
 ## Setup
 
-### 1. Build images and start the stack
+### 1. Load environment variables
+
+`compose.yaml` reads environment variables from the shell at invocation time.
+The variables are defined in `.envrc` in this directory (`backend-services/.envrc`).
+
+**Option A — direnv (recommended)**
+
+Install [direnv](https://direnv.net/docs/installation.html) and allow the file
+once:
+
+```bash
+# from backend-services/
+direnv allow
+```
+
+direnv will reload the variables automatically whenever you `cd` into this directory.
+
+**Option B — manual source**
+
+Run this once per shell session before using `podman-compose`:
+
+```bash
+source .envrc
+```
+
+Verify the variables are set:
+
+```bash
+echo $DAGSTER_POSTGRES_USER   # should print: dagster_user
+```
+
+### 2. Build images and start the stack
 
 All images are built from local Dockerfiles; no pre-built images are pulled for
 application code.
@@ -124,8 +154,10 @@ ______________________________________________________________________
 
 ## Environment variables
 
-All variables are defined in `.env` and consumed by `compose.yaml`. Values are
-mocked for local development — do not use these in any non-local environment.
+All variables are defined in `backend-services/.envrc` with mock values for local
+development. Do not use these in any non-local environment. See [Setup →
+Load environment variables](#1-load-environment-variables) for how to load
+them before starting the stack.
 
 | Variable | Value | Purpose |
 |---|---|---|

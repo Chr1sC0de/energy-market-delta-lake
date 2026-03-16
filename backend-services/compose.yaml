@@ -26,7 +26,6 @@ networks:
 # Volumes
 # ---------------------------------------------------------------------------
 volumes:
-  postgres_data: {}
   io_manager_storage: {}
   localstack_data: {}
 # ---------------------------------------------------------------------------
@@ -53,8 +52,9 @@ services:
       DAGSTER_POSTGRES_USER: ${DAGSTER_POSTGRES_USER}
       DAGSTER_POSTGRES_PASSWORD: ${DAGSTER_POSTGRES_PASSWORD}
       DAGSTER_POSTGRES_DB: ${DAGSTER_POSTGRES_DB}
-    # volumes:
-    #   - postgres_data:/var/lib/postgresql/data
+    # Postgres data is intentionally ephemeral — no volume mount.
+    # Every `podman-compose down` starts from a clean state, which keeps
+    # local dev simple. Add a named volume here if persistence is needed.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
@@ -88,7 +88,7 @@ services:
       start_period: 15s
   # -------------------------------------------------------------------------
   # aemo-etl — Dagster gRPC code-location server
-  # workspace.yaml (aliased from workspace.local.yaml) connects to this at host aemo-etl.dagster:4000
+  # workspace.yaml (aliased from workspace.local.yaml) connects to this at host aemo-etl:4000
   # -------------------------------------------------------------------------
   aemo-etl:
     build:
@@ -100,9 +100,7 @@ services:
       localstack:
         condition: service_healthy
     networks:
-      dagster_network:
-        aliases:
-          - aemo-etl.dagster # matches workspace.local.yaml grpc_server.host
+      - dagster_network
     ports:
       - "4000:4000"
     environment:
