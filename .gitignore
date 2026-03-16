@@ -1,1 +1,5 @@
-.env
+.*
+!.envrc
+!.vscode
+!.ignore
+!.git

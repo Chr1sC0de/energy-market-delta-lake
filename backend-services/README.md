@@ -47,7 +47,7 @@ backend-services/
 ├── localstack/
 │   └── init-s3.sh                 # Auto-creates S3 buckets on LocalStack boot
 ├── postgres/
-│   ├── Dockerfile                 # postgres:16 image + init script
+│   ├── Dockerfile                 # postgres:14 image + init script
 │   └── init.sh                    # Creates dagster_user and dagster DB
 ├── dagster-core/
 │   ├── Dockerfile                 # dagster-webserver / dagster-daemon image

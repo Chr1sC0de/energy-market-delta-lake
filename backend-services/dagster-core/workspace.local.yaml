@@ -1,5 +1,5 @@
 load_from:
   - grpc_server:
-      host: aemo-etl.dagster
+      host: aemo-etl
       port: 4000
       location_name: "aemo-etl"

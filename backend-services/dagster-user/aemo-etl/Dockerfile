@@ -57,4 +57,5 @@ WORKDIR $DAGSTER_HOME
 # Copy minimal dagster.yaml so the runtime doesn't fall back to SQLite storage
 COPY dagster.yaml $DAGSTER_HOME
 
-EXPOSE 4000
+
+CMD ["dagster", "code-server", "start", "-h", "0.0.0.0", "-p", "4000", "-m", "aemo_etl.definitions"]

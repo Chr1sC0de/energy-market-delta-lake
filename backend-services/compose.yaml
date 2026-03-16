@@ -1,7 +1,7 @@
 # Podman Compose — Dagster OSS local deployment
 #
 # Services
-#   postgres          PostgreSQL 16 — Dagster run/schedule/event-log storage
+#   postgres          PostgreSQL 14 — Dagster run/schedule/event-log storage
 #   localstack        LocalStack    — mocked AWS S3 for the aemo-etl code location
 #   aemo-etl          Dagster gRPC code-location server
 #   dagster-webserver Dagster UI + GraphQL API
@@ -45,10 +45,16 @@ services:
       - dagster_network
     ports:
       - "5432:5432"
-    env_file:
-      - .env
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      DAGSTER_POSTGRES_HOSTNAME: ${DAGSTER_POSTGRES_HOSTNAME}
+      DAGSTER_POSTGRES_USER: ${DAGSTER_POSTGRES_USER}
+      DAGSTER_POSTGRES_PASSWORD: ${DAGSTER_POSTGRES_PASSWORD}
+      DAGSTER_POSTGRES_DB: ${DAGSTER_POSTGRES_DB}
+    # volumes:
+    #   - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
@@ -99,10 +105,22 @@ services:
           - aemo-etl.dagster # matches workspace.local.yaml grpc_server.host
     ports:
       - "4000:4000"
-    env_file:
-      - .env
     environment:
       DAGSTER_HOME: /opt/dagster/dagster_home/
+      DAGSTER_POSTGRES_HOSTNAME: ${DAGSTER_POSTGRES_HOSTNAME}
+      DAGSTER_POSTGRES_USER: ${DAGSTER_POSTGRES_USER}
+      DAGSTER_POSTGRES_PASSWORD: ${DAGSTER_POSTGRES_PASSWORD}
+      DAGSTER_POSTGRES_DB: ${DAGSTER_POSTGRES_DB}
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+    healthcheck:
+      test: ["CMD-SHELL", "dagster api grpc-health-check -p 4000"]
+      interval: 3s
+      timeout: 1s
+      retries: 20
+      start_period: 3s
     command:
       - dagster
       - code-server
@@ -127,16 +145,18 @@ services:
       postgres:
         condition: service_healthy
       aemo-etl:
-        condition: service_started
+        condition: service_healthy
     networks:
       - dagster_network
     ports:
       - "3000:3000"
-    env_file:
-      - .env
     environment:
       DAGSTER_HOME: /opt/dagster/dagster_home/
       DOCKER_HOST: unix:///run/podman/podman.sock
+      DAGSTER_POSTGRES_HOSTNAME: ${DAGSTER_POSTGRES_HOSTNAME}
+      DAGSTER_POSTGRES_USER: ${DAGSTER_POSTGRES_USER}
+      DAGSTER_POSTGRES_PASSWORD: ${DAGSTER_POSTGRES_PASSWORD}
+      DAGSTER_POSTGRES_DB: ${DAGSTER_POSTGRES_DB}
     volumes:
       - ${XDG_RUNTIME_DIR}/podman/podman.sock:/run/podman/podman.sock
       - io_manager_storage:/tmp/io_manager_storage
@@ -162,14 +182,16 @@ services:
       postgres:
         condition: service_healthy
       aemo-etl:
-        condition: service_started
+        condition: service_healthy
     networks:
       - dagster_network
-    env_file:
-      - .env
     environment:
       DAGSTER_HOME: /opt/dagster/dagster_home/
       DOCKER_HOST: unix:///run/podman/podman.sock
+      DAGSTER_POSTGRES_HOSTNAME: ${DAGSTER_POSTGRES_HOSTNAME}
+      DAGSTER_POSTGRES_USER: ${DAGSTER_POSTGRES_USER}
+      DAGSTER_POSTGRES_PASSWORD: ${DAGSTER_POSTGRES_PASSWORD}
+      DAGSTER_POSTGRES_DB: ${DAGSTER_POSTGRES_DB}
     volumes:
       - ${XDG_RUNTIME_DIR}/podman/podman.sock:/run/podman/podman.sock
       - io_manager_storage:/tmp/io_manager_storage
