@@ -8,7 +8,6 @@
 # (or isn't) activated in the calling shell. This makes the workspace root
 # pre-commit work correctly even when multiple sub-projects each have their own
 # incompatible environments.
-orphan: true
 repos:
   - repo: 'https://github.com/pre-commit/pre-commit-hooks'
     rev: v6.0.0
@@ -26,33 +25,33 @@ repos:
       - id: shfmt
         name: shell format
         language: system
-        entry: uv run --no-sync shfmt --write
+        entry: uv run shfmt --write
         files: ^scripts/.*
       - id: shellcheck
         name: shellcheck
         language: system
-        entry: uv run --no-sync shellcheck
+        entry: uv run shellcheck
         files: ^scripts/.*
       - id: ruff-check
         name: ruff check
         language: system
-        entry: uv run --no-sync ruff check
+        entry: uv run ruff check
         types:
           - python
       - id: ruff-format
         name: ruff format
         language: system
-        entry: uv run --no-sync ruff format
+        entry: uv run ruff format
         types:
           - python
       - id: zuban-check
         name: zuban check
         language: system
-        entry: uv run --no-sync zuban check --strict
+        entry: uv run zuban check --strict
         pass_filenames: false
       - id: pytest
         name: pytest
-        entry: uv run --no-sync pytest
+        entry: uv run pytest
         args:
           - --cov-fail-under=100
           - --cov=aemo_etl
@@ -64,16 +63,16 @@ repos:
         pass_filenames: false
       - id: dagster-check-defs
         name: check dagster definitions
-        entry: uv run --no-sync dg check defs
+        entry: uv run dg check defs
         language: system
         pass_filenames: false
       - id: dagster-check-toml
         name: check dagster toml
-        entry: uv run --no-sync dg check toml
+        entry: uv run dg check toml
         language: system
         pass_filenames: false
       - id: dagster-check-yaml
         name: check dagster yaml
-        entry: uv run --no-sync dg check yaml
+        entry: uv run dg check yaml
         language: system
         pass_filenames: false

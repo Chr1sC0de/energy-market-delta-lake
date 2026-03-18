@@ -76,7 +76,7 @@ prek run backend-services/dagster-user/aemo-etl/
 1. Create a `.pre-commit-config.yaml` in the sub-project directory.
 1. Add `orphan: true` at the top so its files are not double-processed by the
    workspace root.
-1. Use `uv run --no-sync <tool>` as the entry prefix for any `language: system`
+1. Use `uv run <tool>` as the entry prefix for any `language: system`
    hooks so they resolve the correct virtual environment automatically,
    regardless of what is active in the calling shell.
 
@@ -90,7 +90,7 @@ repos:
       - id: ruff-check
         name: ruff check
         language: system
-        entry: uv run --no-sync ruff check
+        entry: uv run ruff check
         types: [python]
 ```
 
@@ -106,7 +106,7 @@ git commit
               ├─> .pre-commit-config.yaml              (repos: [] — workspace anchor)
               └─> backend-services/dagster-user/aemo-etl/.pre-commit-config.yaml
                     └─> all sub-project hooks run with aemo-etl as cwd
-                        (uv run --no-sync resolves the correct .venv)
+                        (uv run resolves the correct .venv)
 
 git worktree add <path> <branch>
   └─> <bare-repo>/hooks/post-checkout   (installed by scripts/install-hooks.sh)

@@ -21,18 +21,18 @@ repos:
       - id: ruff-check
         name: ruff check
         language: system
-        entry: uv run --no-sync ruff check
+        entry: uv run ruff check
         types:
           - python
       - id: ruff-format
         name: ruff format
         language: system
-        entry: uv run --no-sync ruff format
+        entry: uv run ruff format
         types:
           - python
       - id: pytest
         name: pytest
-        entry: uv run --no-sync pytest
+        entry: uv run pytest
         args:
           - --cov-fail-under=100
           - --cov=main
