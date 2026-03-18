@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# install-hooks.sh — run once per machine to wire up git hooks for this repo.
+#
+# What it does:
+#   1. Copies scripts/post-checkout into the bare repo's shared hooks/ directory
+#      so that `git worktree add` auto-installs prek on every new worktree.
+#   2. Runs `prek install` immediately so the current worktree is ready without
+#      needing a dummy checkout.
+#
+# Usage (from any worktree):
+#   bash scripts/install-hooks.sh
+set -euo pipefail
+
+# ── Resolve paths ──────────────────────────────────────────────────────────────
+WORKTREE_ROOT="$(git rev-parse --show-toplevel)"
+BARE_HOOKS_DIR="$(git rev-parse --git-common-dir)/hooks"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ── Check prek ─────────────────────────────────────────────────────────────────
+if ! command -v prek >/dev/null 2>&1; then
+	echo "ERROR: prek is not installed." >&2
+	echo "  Install it with one of:" >&2
+	echo "    uv tool install prek" >&2
+	echo "    pip install prek" >&2
+	echo "    curl --proto '=https' --tlsv1.2 -LsSf https://github.com/j178/prek/releases/latest/download/prek-installer.sh | sh" >&2
+	exit 1
+fi
+
+# ── Install post-checkout hook into the shared bare-repo hooks dir ─────────────
+POST_CHECKOUT_SRC="$SCRIPT_DIR/post-checkout"
+POST_CHECKOUT_DEST="$BARE_HOOKS_DIR/post-checkout"
+
+if [ ! -f "$POST_CHECKOUT_SRC" ]; then
+	echo "ERROR: $POST_CHECKOUT_SRC not found. Run this script from a worktree that contains scripts/post-checkout." >&2
+	exit 1
+fi
+
+cp "$POST_CHECKOUT_SRC" "$POST_CHECKOUT_DEST"
+chmod +x "$POST_CHECKOUT_DEST"
+echo "Installed: $POST_CHECKOUT_DEST"
+
+# ── Install the prek pre-commit hook for this worktree right now ───────────────
+prek install --overwrite
+echo "Installed: pre-commit hook via prek (worktree: $WORKTREE_ROOT)"
+
+echo ""
+echo "Done. Future worktrees created with 'git worktree add' will have prek"
+echo "installed automatically via the post-checkout hook."

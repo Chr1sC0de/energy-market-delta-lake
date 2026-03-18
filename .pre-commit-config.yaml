@@ -1,0 +1,12 @@
+# Workspace root — prek discovers sub-project configs automatically.
+# See: https://prek.j178.dev/workspace/
+#
+# To install the git hook:
+#   prek install
+#
+# NOTE: local hooks in sub-projects use `language: system`, so the relevant
+# virtual environment must be active before committing, e.g.:
+#   source backend-services/dagster-user/aemo-etl/.venv/bin/activate
+default_install_hook_types:
+  - pre-commit
+repos: []

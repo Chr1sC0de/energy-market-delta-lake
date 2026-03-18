@@ -1,5 +1,14 @@
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
+# orphan: true ensures files here are only processed by this config and not
+# re-processed by the workspace root config (avoids double-processing).
+#
+# All local hooks use `uv run --no-sync` as the entry prefix so they always
+# execute inside this project's own virtual environment, regardless of what is
+# (or isn't) activated in the calling shell. This makes the workspace root
+# pre-commit work correctly even when multiple sub-projects each have their own
+# incompatible environments.
+orphan: true
 repos:
   - repo: 'https://github.com/pre-commit/pre-commit-hooks'
     rev: v6.0.0
@@ -17,38 +26,33 @@ repos:
       - id: shfmt
         name: shell format
         language: system
-        entry: shfmt --write
+        entry: uv run --no-sync shfmt --write
         files: ^scripts/.*
       - id: shellcheck
         name: shellcheck
         language: system
-        entry: shellcheck
+        entry: uv run --no-sync shellcheck
         files: ^scripts/.*
       - id: ruff-check
         name: ruff check
         language: system
-        entry: ruff check
+        entry: uv run --no-sync ruff check
         types:
           - python
       - id: ruff-format
         name: ruff format
         language: system
-        entry: ruff
-        args:
-          - format
+        entry: uv run --no-sync ruff format
         types:
           - python
       - id: zuban-check
         name: zuban check
         language: system
-        entry: zuban
-        args:
-          - check
-          - --strict
+        entry: uv run --no-sync zuban check --strict
         pass_filenames: false
       - id: pytest
         name: pytest
-        entry: pytest
+        entry: uv run --no-sync pytest
         args:
           - --cov-fail-under=100
           - --cov=aemo_etl
@@ -60,16 +64,16 @@ repos:
         pass_filenames: false
       - id: dagster-check-defs
         name: check dagster definitions
-        entry: dg check defs
+        entry: uv run --no-sync dg check defs
         language: system
         pass_filenames: false
       - id: dagster-check-toml
         name: check dagster toml
-        entry: dg check toml
+        entry: uv run --no-sync dg check toml
         language: system
         pass_filenames: false
       - id: dagster-check-yaml
         name: check dagster yaml
-        entry: dg check yaml
+        entry: uv run --no-sync dg check yaml
         language: system
         pass_filenames: false
