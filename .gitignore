@@ -3,3 +3,4 @@
 !.vscode
 !.ignore
 !.git
+!.dockerignore

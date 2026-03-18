@@ -23,12 +23,6 @@ networks:
     name: dagster_network # explicit name prevents compose project prefix
     driver: bridge
 # ---------------------------------------------------------------------------
-# Volumes
-# ---------------------------------------------------------------------------
-volumes:
-  io_manager_storage: {}
-  localstack_data: {}
-# ---------------------------------------------------------------------------
 # Services
 # ---------------------------------------------------------------------------
 services:
@@ -65,7 +59,9 @@ services:
   # LocalStack — mocked AWS S3 (and any other AWS services needed locally)
   # -------------------------------------------------------------------------
   localstack:
-    image: docker.io/localstack/localstack:latest
+    # image: docker.io/localstack/localstack:latest
+    build:
+      context: ./localstack/
     container_name: localstack
     restart: on-failure
     networks:
@@ -74,12 +70,9 @@ services:
       - "4566:4566"
     environment:
       SERVICES: s3,dynamodb
-      DEFAULT_REGION: ap-southeast-2
       AWS_DEFAULT_REGION: ap-southeast-2
     volumes:
-      - localstack_data:/var/lib/localstack
       - ${XDG_RUNTIME_DIR}/podman/podman.sock:/run/podman/podman.sock
-      - ./localstack/init-s3.sh:/etc/localstack/init/ready.d/init-s3.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health | grep -q '\"s3\"' && curl -sf http://localhost:4566/_localstack/health | grep -q '\"dynamodb\"'"]
       interval: 10s
@@ -130,11 +123,30 @@ services:
       - -m
       - aemo_etl.definitions
   # -------------------------------------------------------------------------
+  # authentication — FastAPI OIDC proxy (Cognito → Dagster webserver)
+  # -------------------------------------------------------------------------
+  authentication:
+    build:
+      context: ./authentication
+      target: deploy
+    container_name: authentication
+    restart: on-failure
+    networks:
+      - dagster_network
+    ports:
+      - "8000:8000"
+    environment:
+      COGNITO_DAGSTER_AUTH_CLIENT_ID: ${COGNITO_DAGSTER_AUTH_CLIENT_ID}
+      COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL: ${COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL}
+      COGNITO_DAGSTER_AUTH_CLIENT_SECRET: ${COGNITO_DAGSTER_AUTH_CLIENT_SECRET}
+      WEBSITE_ROOT_URL: ${WEBSITE_ROOT_URL:-http://localhost:3000}
+  # -------------------------------------------------------------------------
   # dagster-webserver — Dagster UI and GraphQL API
   # -------------------------------------------------------------------------
   dagster-webserver:
     build:
       context: ./dagster-core
+      target: deploy
       args:
         DAGSTER_DEPLOYMENT: local
     container_name: dagster-webserver
@@ -157,7 +169,6 @@ services:
       DAGSTER_POSTGRES_DB: ${DAGSTER_POSTGRES_DB}
     volumes:
       - ${XDG_RUNTIME_DIR}/podman/podman.sock:/run/podman/podman.sock
-      - io_manager_storage:/tmp/io_manager_storage
     command:
       - dagster-webserver
       - -h
@@ -172,6 +183,7 @@ services:
   dagster-daemon:
     build:
       context: ./dagster-core
+      target: deploy
       args:
         DAGSTER_DEPLOYMENT: local
     container_name: dagster-daemon
@@ -192,7 +204,6 @@ services:
       DAGSTER_POSTGRES_DB: ${DAGSTER_POSTGRES_DB}
     volumes:
       - ${XDG_RUNTIME_DIR}/podman/podman.sock:/run/podman/podman.sock
-      - io_manager_storage:/tmp/io_manager_storage
     command:
       - dagster-daemon
       - run

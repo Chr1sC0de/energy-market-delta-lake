@@ -37,3 +37,27 @@ awslocal dynamodb create-table \
 	2>/dev/null || echo "Table delta_log already exists"
 
 echo "DynamoDB initialisation complete."
+
+# --- Cognito -------------------------------------------------------------
+
+# awslocal cognito-idp create-user-pool --pool-name p1 --user-pool-tags "_custom_id_=us-east-1_myid123"
+#
+# echo "Creating Cognito-idp user pool and client id"
+# awslocal \
+# 	cognito-idp \
+# 	create-user-pool-client \
+# 	--user-pool-id "$COGNITO_DAGSTER_USER_POOL_ID" \
+# 	--client-name _custom_id_:"$COGNITO_DAGSTER_AUTH_CLIENT_ID"
+
+# to retrieve the client sercret run
+#
+# export client_secret=$(
+# 	awslocal \
+# 		cognito-idp \
+# 		describe-user-pool-client \
+# 		--user-pool-id $pool_id \
+# 		--client-id $client_id |
+# 		jq -r '.UserPoolClient.ClientSecret'
+# )
+
+# echo "Cognito-idp initialisation complete"
