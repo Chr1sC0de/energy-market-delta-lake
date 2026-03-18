@@ -30,7 +30,7 @@
         "AWS_SECRET_ACCESS_KEY": "test",
         "AWS_SECURITY_TOKEN": "test",
         "AWS_SESSION_TOKEN": "test",
-        "AWS_DEFAULT_REGION": "ap-southeast-2",
+        "AWS_DEFAULT_REGION": "ap-southeast-4",
         "AWS_ALLOW_HTTP": "true",
         "AWS_S3_LOCKING_PROVIDER": "dynamodb"
       }

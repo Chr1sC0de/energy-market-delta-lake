@@ -168,7 +168,7 @@ them before starting the stack.
 | `DAGSTER_POSTGRES_PASSWORD` | `dagster_pass` | Dagster application DB password |
 | `DAGSTER_POSTGRES_DB` | `dagster` | Dagster database name |
 | `AWS_ENDPOINT_URL` | `http://localstack:4566` | Routes all AWS SDK calls to LocalStack |
-| `AWS_DEFAULT_REGION` | `ap-southeast-2` | AWS region |
+| `AWS_DEFAULT_REGION` | `ap-southeast-4` | AWS region |
 | `AWS_ACCESS_KEY_ID` | `test` | Dummy credential accepted by LocalStack |
 | `AWS_SECRET_ACCESS_KEY` | `test` | Dummy credential accepted by LocalStack |
 

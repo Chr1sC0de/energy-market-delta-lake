@@ -19,7 +19,7 @@
       "command": "${workspaceFolder}/scripts/setup-localstack-resources.sh",
       "options": {
         "env": {
-          "AWS_DEFAULT_REGION": "ap-southeast-2",
+          "AWS_DEFAULT_REGION": "ap-southeast-4",
           "AWS_ACCESS_KEY_ID": "test",
           "AWS_SECRET_ACCESS_KEY": "test",
           "DEVELOPMENT_ENVIRONMENT": "dev",

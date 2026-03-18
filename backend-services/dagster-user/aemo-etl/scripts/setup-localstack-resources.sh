@@ -23,7 +23,7 @@ if [[ -z "${AWS_ENDPOINT_URL:-}" ]]; then
 	fi
 fi
 
-REGION="${AWS_DEFAULT_REGION:-ap-southeast-2}"
+REGION="${AWS_DEFAULT_REGION:-ap-southeast-4}"
 PREFIX="${NAME_PREFIX:-energy-market}"
 ENV="${DEVELOPMENT_ENVIRONMENT:-dev}"
 

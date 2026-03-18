@@ -26,7 +26,6 @@ run_launcher:
     container_kwargs:
       volumes: # Make podman socket accessible to any launched run containers
         - /run/user/1000/podman/podman.sock:/run/podman/podman.sock
-        - /tmp/io_manager_storage:/tmp/io_manager_storage
 run_storage:
   module: dagster_postgres.run_storage
   class: PostgresRunStorage

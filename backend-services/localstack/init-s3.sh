@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-REGION="${AWS_DEFAULT_REGION:-ap-southeast-2}"
+REGION="${AWS_DEFAULT_REGION:-ap-southeast-4}"
 
 # --- S3 buckets -----------------------------------------------------------
 for bucket in \

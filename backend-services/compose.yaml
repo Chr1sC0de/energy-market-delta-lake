@@ -70,7 +70,7 @@ services:
       - "4566:4566"
     environment:
       SERVICES: s3,dynamodb
-      AWS_DEFAULT_REGION: ap-southeast-2
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
     volumes:
       - ${XDG_RUNTIME_DIR}/podman/podman.sock:/run/podman/podman.sock
     healthcheck:
@@ -106,6 +106,8 @@ services:
       AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_ALLOW_HTTP: true
+      AWS_S3_LOCKING_PROVIDER: dynamodb
     healthcheck:
       test: ["CMD-SHELL", "dagster api grpc-health-check -p 4000"]
       interval: 3s
@@ -167,6 +169,12 @@ services:
       DAGSTER_POSTGRES_USER: ${DAGSTER_POSTGRES_USER}
       DAGSTER_POSTGRES_PASSWORD: ${DAGSTER_POSTGRES_PASSWORD}
       DAGSTER_POSTGRES_DB: ${DAGSTER_POSTGRES_DB}
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_ALLOW_HTTP: true
+      AWS_S3_LOCKING_PROVIDER: dynamodb
     volumes:
       - ${XDG_RUNTIME_DIR}/podman/podman.sock:/run/podman/podman.sock
     command:
@@ -202,6 +210,12 @@ services:
       DAGSTER_POSTGRES_USER: ${DAGSTER_POSTGRES_USER}
       DAGSTER_POSTGRES_PASSWORD: ${DAGSTER_POSTGRES_PASSWORD}
       DAGSTER_POSTGRES_DB: ${DAGSTER_POSTGRES_DB}
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_ALLOW_HTTP: true
+      AWS_S3_LOCKING_PROVIDER: dynamodb
     volumes:
       - ${XDG_RUNTIME_DIR}/podman/podman.sock:/run/podman/podman.sock
     command:

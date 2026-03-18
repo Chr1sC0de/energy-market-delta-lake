@@ -17,7 +17,7 @@
 # Declare before the first FROM so it is in scope for the final stage selector.
 ARG DAGSTER_DEPLOYMENT=local
 
-# ------------------------------------------------------------- builder
+# ── builder ───────────────────────────────────────────────────────────────────────
 FROM docker.io/library/python:3.13-slim AS builder
 
 ENV BUILD_DIR=/build
@@ -36,7 +36,7 @@ WORKDIR ${BUILD_DIR}
 RUN uv export --format requirements-txt --no-dev >requirements.txt;
 RUN uv pip install . --system --prefix=/install;
 
-# ------------------------------------------------------------- base
+# ── base ──────────────────────────────────────────────────────────────────────────
 # Common runtime layer — packages only, no environment-specific config.
 FROM docker.io/library/python:3.13-slim AS base
 
@@ -57,14 +57,14 @@ WORKDIR $DAGSTER_HOME
 # present; the environment-specific stages below select the correct pair.
 COPY . $DAGSTER_HOME
 
-# ------------------------------------------------------------- local
+# ── local ─────────────────────────────────────────────────────────────────────────
 # Local development: DockerRunLauncher, LocalStack S3, Podman socket.
 FROM base AS local
 
 RUN cp dagster.local.yaml dagster.yaml \
     && cp workspace.local.yaml workspace.yaml;
 
-# ------------------------------------------------------------- aws
+# ── aws ───────────────────────────────────────────────────────────────────────────
 # AWS deployment: EcsRunLauncher, real S3, RDS postgres.
 # Run launcher and workspace details to be completed when AWS infra is defined.
 FROM base AS aws
@@ -72,7 +72,7 @@ FROM base AS aws
 RUN cp dagster.aws.yaml dagster.yaml \
     && cp workspace.aws.yaml workspace.yaml;
 
-# ------------------------------------------------------------- deploy
+# ── deploy ────────────────────────────────────────────────────────────────────────
 # Final stage — inherits from the stage named by DAGSTER_DEPLOYMENT.
 # ARG must be re-declared here to bring the build-arg back into scope after
 # the preceding FROM statements (standard multi-stage ARG scoping rule).

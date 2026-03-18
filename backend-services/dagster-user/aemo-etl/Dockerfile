@@ -1,4 +1,4 @@
-# ------------------------------------------------------------- builder
+# ── builder ───────────────────────────────────────────────────────────────────────
 FROM docker.io/library/python:3.13-slim AS builder
 
 # install uv
@@ -34,7 +34,7 @@ RUN uv export --format requirements-txt --no-dev > requirements.txt;
 RUN uv pip install . --system --prefix=/install;
 RUN rm -rf $HOME/.cargo;
 
-# ------------------------------------------------------------- dagster-grpc
+# ── dagster-grpc ──────────────────────────────────────────────────────────────────
 FROM docker.io/library/python:3.13-slim AS dagster-grpc
 
 RUN apt-get update && apt-get upgrade -yqq && \
@@ -47,8 +47,7 @@ RUN apt-get update && apt-get upgrade -yqq && \
     rm -rf /var/lib/apt/lists/*;
 
 # Copy installed packages and created binaries from builder
-COPY --from=builder /install/bin/ /usr/local/bin/
-COPY --from=builder /install/lib/python3.13/site-packages/ /usr/local/lib/python3.13/site-packages/
+COPY --from=builder /install/ /usr/local/
 
 ENV DAGSTER_HOME=/opt/dagster/dagster_home/
 RUN mkdir -p $DAGSTER_HOME;
@@ -56,6 +55,3 @@ WORKDIR $DAGSTER_HOME
 
 # Copy minimal dagster.yaml so the runtime doesn't fall back to SQLite storage
 COPY dagster.yaml $DAGSTER_HOME
-
-
-# Command is defined in compose.yaml to keep a single canonical source.
