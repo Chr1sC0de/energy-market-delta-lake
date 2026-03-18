@@ -17,3 +17,14 @@ dependencies = [
   "requests>=2.32.5",
   "uvicorn>=0.42",
 ]
+
+[dependency-groups]
+dev = [
+  "httpx>=0.28",
+  "pytest>=9.0.2",
+  "pytest-cov>=7",
+  "pytest-mock>=3.15.1",
+]
+
+[tool.pytest]
+ini_options.testpaths = [ "tests" ]

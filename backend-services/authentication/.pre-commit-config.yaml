@@ -1,0 +1,43 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+#
+# All local hooks use `uv run --no-sync` as the entry prefix so they always
+# execute inside this project's own virtual environment, regardless of what is
+# (or isn't) activated in the calling shell.
+repos:
+  - repo: 'https://github.com/pre-commit/pre-commit-hooks'
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+  - repo: https://github.com/tox-dev/pyproject-fmt
+    rev: "v2.16.1"
+    hooks:
+      - id: pyproject-fmt
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        language: system
+        entry: uv run --no-sync ruff check
+        types:
+          - python
+      - id: ruff-format
+        name: ruff format
+        language: system
+        entry: uv run --no-sync ruff format
+        types:
+          - python
+      - id: pytest
+        name: pytest
+        entry: uv run --no-sync pytest
+        args:
+          - --cov-fail-under=100
+          - --cov=main
+          - --cov-report=term-missing
+          - --cov-report=html
+          - tests/
+        language: system
+        pass_filenames: false

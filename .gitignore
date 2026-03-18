@@ -1,6 +1,8 @@
 .*
+__pycache__
 !.envrc
 !.vscode
 !.ignore
 !.git
 !.dockerignore
+!.pre-commit*
