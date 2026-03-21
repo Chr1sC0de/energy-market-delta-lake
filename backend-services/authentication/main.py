@@ -96,19 +96,11 @@ def clear_session(session: dict[str, Any]) -> None:
     session.pop("expires_at", None)
 
 
-@router.get("/oauth2/dagster-webserver/admin/validate")
-async def oauth2_dagster_webserver_validate(request: Request):
-    request.session
-
-    login_redirect_uri = str(request.url_for("oauth2_dagster_webserver_login"))
-    if "localhost" not in login_redirect_uri:
-        login_redirect_uri = login_redirect_uri.replace("http", "https", 1)
-
+def _validate_session(request: Request) -> JSONResponse:
+    """Shared session validation logic for protected service endpoints."""
     if any(
-        [
-            field not in request.session
-            for field in ("user", "token_type", "access_token", "expires_at")
-        ]
+        field not in request.session
+        for field in ("user", "token_type", "access_token", "expires_at")
     ):
         return JSONResponse(
             status_code=HTTP_401_UNAUTHORIZED,
@@ -139,31 +131,79 @@ async def oauth2_dagster_webserver_validate(request: Request):
         )
 
 
-@router.get("/dagster-webserver/admin/login")
-async def oauth2_dagster_webserver_login(request: Request):
-    redirect_uri = str(request.url_for("oauth2_dagster_webserver_authorize"))
+def _build_redirect_uri(request: Request, route_name: str) -> str:
+    """Build a redirect URI, rewriting http→https for non-localhost hosts."""
+    redirect_uri = str(request.url_for(route_name))
     if "localhost" not in redirect_uri:
         redirect_uri = redirect_uri.replace("http", "https", 1)
-    return await oidc.authorize_redirect(request, redirect_uri)
+    return redirect_uri
 
 
-@router.get("/oauth2/dagster-webserver/admin/authorize")
-async def oauth2_dagster_webserver_authorize(request: Request):
+async def _authorize_callback(
+    request: Request, redirect_path: str
+) -> JSONResponse | RedirectResponse:
+    """Shared OIDC callback logic — exchanges code for token, sets session."""
     try:
         token = await oidc.authorize_access_token(request)
         request.session["user"] = token["userinfo"]
         request.session["token_type"] = token["token_type"]
         request.session["access_token"] = token["access_token"]
         request.session["expires_at"] = token["expires_at"]
-        return RedirectResponse(
-            f"{os.environ['WEBSITE_ROOT_URL']}/dagster-webserver/admin"
-        )
+        return RedirectResponse(f"{os.environ['WEBSITE_ROOT_URL']}{redirect_path}")
     except Exception as e:
         clear_session(request.session)
         return JSONResponse(
             status_code=HTTP_401_UNAUTHORIZED,
             content={"message": str(e)},
         )
+
+
+# ---------------------------------------------------------------------------
+# Dagster webserver admin routes
+# ---------------------------------------------------------------------------
+
+
+@router.get("/oauth2/dagster-webserver/admin/validate")
+async def oauth2_dagster_webserver_validate(request: Request):
+    request.session
+
+    login_redirect_uri = str(request.url_for("oauth2_dagster_webserver_login"))
+    if "localhost" not in login_redirect_uri:
+        login_redirect_uri = login_redirect_uri.replace("http", "https", 1)
+
+    return _validate_session(request)
+
+
+@router.get("/dagster-webserver/admin/login")
+async def oauth2_dagster_webserver_login(request: Request):
+    redirect_uri = _build_redirect_uri(request, "oauth2_dagster_webserver_authorize")
+    return await oidc.authorize_redirect(request, redirect_uri)
+
+
+@router.get("/oauth2/dagster-webserver/admin/authorize")
+async def oauth2_dagster_webserver_authorize(request: Request):
+    return await _authorize_callback(request, "/dagster-webserver/admin")
+
+
+# ---------------------------------------------------------------------------
+# Marimo notebook server routes
+# ---------------------------------------------------------------------------
+
+
+@router.get("/oauth2/marimo/validate")
+async def oauth2_marimo_validate(request: Request):
+    return _validate_session(request)
+
+
+@router.get("/marimo/login")
+async def oauth2_marimo_login(request: Request):
+    redirect_uri = _build_redirect_uri(request, "oauth2_marimo_authorize")
+    return await oidc.authorize_redirect(request, redirect_uri)
+
+
+@router.get("/oauth2/marimo/authorize")
+async def oauth2_marimo_authorize(request: Request):
+    return await _authorize_callback(request, "/marimo")
 
 
 app.include_router(router)

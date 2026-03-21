@@ -6,6 +6,9 @@ Achieves 100% coverage of every branch:
   - get_hmac_key_data()          (key found / key not found)
   - verify_jwt()                 (valid / exception path)
   - clear_session()
+  - _validate_session()          (shared helper)
+  - _build_redirect_uri()        (shared helper)
+  - _authorize_callback()        (shared helper)
   - GET /oauth2/dagster-webserver/admin/validate
       missing fields → 401
       expired token  → 401
@@ -18,6 +21,18 @@ Achieves 100% coverage of every branch:
       non-localhost (http→https rewrite)
   - GET /oauth2/dagster-webserver/admin/authorize
       success (sets session, redirects)
+      exception (clears session, 401)
+  - GET /oauth2/marimo/validate
+      missing fields → 401
+      expired token  → 401
+      verify_jwt True  → 200
+      verify_jwt False → 401
+      verify_jwt raises HTTPException → 401
+  - GET /marimo/login
+      non-localhost (http→https rewrite)
+      localhost (no rewrite)
+  - GET /oauth2/marimo/authorize
+      success (sets session, redirects to /marimo)
       exception (clears session, 401)
 
 Session injection strategy: build a signed Starlette session cookie using
@@ -472,3 +487,198 @@ class TestValidateEndpointLoginRedirectRewrite:
         response = client.get(self.URL)
         # Still 401 for missing session, but the non-rewrite path was exercised.
         assert response.status_code == 401
+
+
+# ===========================================================================
+# Marimo endpoint tests
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# TestMarimoValidateEndpoint
+# ---------------------------------------------------------------------------
+
+
+class TestMarimoValidateEndpoint:
+    URL = "/oauth2/marimo/validate"
+
+    def test_missing_session_fields_returns_401(self) -> None:
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.get(self.URL)
+        assert response.status_code == 401
+        assert response.json() == {"message": "unauthorized access"}
+
+    def test_partial_session_fields_returns_401(self) -> None:
+        client, headers = _client_with_session({"user": "bob", "token_type": "Bearer"})
+        response = client.get(self.URL, headers=headers)
+        assert response.status_code == 401
+
+    def test_expired_token_returns_401(self) -> None:
+        session = {
+            "user": {"sub": "abc"},
+            "token_type": "Bearer",
+            "access_token": FAKE_TOKEN,
+            "expires_at": time() - 3600,
+        }
+        client, headers = _client_with_session(session)
+        response = client.get(self.URL, headers=headers)
+        assert response.status_code == 401
+        assert response.json() == {"message": "unauthorized access"}
+
+    def test_valid_token_returns_200(self, mocker: Any) -> None:
+        mocker.patch("main.verify_jwt", return_value=True)
+
+        session = {
+            "user": {"sub": "abc"},
+            "token_type": "Bearer",
+            "access_token": FAKE_TOKEN,
+            "expires_at": time() + 3600,
+        }
+        client, headers = _client_with_session(session)
+        response = client.get(self.URL, headers=headers)
+        assert response.status_code == 200
+        assert response.json() == {"status": "authorized access"}
+
+    def test_verify_jwt_false_returns_401(self, mocker: Any) -> None:
+        mocker.patch("main.verify_jwt", return_value=False)
+
+        session = {
+            "user": {"sub": "abc"},
+            "token_type": "Bearer",
+            "access_token": FAKE_TOKEN,
+            "expires_at": time() + 3600,
+        }
+        client, headers = _client_with_session(session)
+        response = client.get(self.URL, headers=headers)
+        assert response.status_code == 401
+        assert response.json() == {"message": "unauthorized access"}
+
+    def test_verify_jwt_raises_http_exception_propagates(self, mocker: Any) -> None:
+        from fastapi import HTTPException
+
+        mocker.patch(
+            "main.verify_jwt",
+            side_effect=HTTPException(status_code=401, detail="Invalid token, err"),
+        )
+
+        session = {
+            "user": {"sub": "abc"},
+            "token_type": "Bearer",
+            "access_token": FAKE_TOKEN,
+            "expires_at": time() + 3600,
+        }
+        client, headers = _client_with_session(session)
+        response = client.get(self.URL, headers=headers)
+        assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# TestMarimoLoginEndpoint
+# ---------------------------------------------------------------------------
+
+
+class TestMarimoLoginEndpoint:
+    URL = "/marimo/login"
+
+    def test_login_redirects_with_authorize_redirect(self, mocker: Any) -> None:
+        fake_redirect = RedirectResponse(url="https://cognito.example.com/login")
+        mock_authorize = AsyncMock(return_value=fake_redirect)
+        mocker.patch.object(main.oidc, "authorize_redirect", mock_authorize)
+
+        client = TestClient(app, raise_server_exceptions=False)
+        client.follow_redirects = False
+        _ = client.get(self.URL)
+
+        assert mock_authorize.called
+        _, kwargs = mock_authorize.call_args
+        redirect_uri = kwargs.get("redirect_uri") or mock_authorize.call_args[0][1]
+        assert "http" in redirect_uri
+
+    def test_login_non_localhost_redirect_uri_is_rewritten_to_https(
+        self, mocker: Any
+    ) -> None:
+        """
+        TestClient host is 'testserver' (not 'localhost'), so the
+        http→https rewrite fires naturally via _build_redirect_uri.
+        """
+        captured: list[str] = []
+
+        async def capture_redirect(request: Any, redirect_uri: str) -> RedirectResponse:
+            captured.append(redirect_uri)
+            return RedirectResponse(url="https://cognito.example.com/login")
+
+        mocker.patch.object(main.oidc, "authorize_redirect", capture_redirect)
+
+        client = TestClient(app, raise_server_exceptions=False)
+        client.follow_redirects = False
+        client.get(self.URL)
+
+        assert len(captured) == 1
+        assert captured[0].startswith("https://")
+
+    def test_login_localhost_redirect_uri_not_rewritten(self, mocker: Any) -> None:
+        """
+        Force the URL-for result to contain 'localhost' so the rewrite is skipped.
+        """
+        captured: list[str] = []
+
+        async def capture_redirect(request: Any, redirect_uri: str) -> RedirectResponse:
+            captured.append(redirect_uri)
+            return RedirectResponse(url="https://cognito.example.com/login")
+
+        mocker.patch.object(main.oidc, "authorize_redirect", capture_redirect)
+
+        class FakeURL(str):
+            def __str__(self) -> str:
+                return "http://localhost:8000/oauth2/marimo/authorize"
+
+        mocker.patch.object(
+            main.Request,
+            "url_for",
+            return_value=FakeURL("http://localhost:8000/oauth2/marimo/authorize"),
+        )
+
+        client = TestClient(app, raise_server_exceptions=False)
+        client.follow_redirects = False
+        client.get(self.URL)
+
+        assert len(captured) == 1
+        assert captured[0].startswith("http://")
+
+
+# ---------------------------------------------------------------------------
+# TestMarimoAuthorizeEndpoint
+# ---------------------------------------------------------------------------
+
+
+class TestMarimoAuthorizeEndpoint:
+    URL = "/oauth2/marimo/authorize"
+
+    def test_authorize_success_redirects_to_marimo(self, mocker: Any) -> None:
+        token = {
+            "userinfo": {"sub": "abc", "email": "a@b.com"},
+            "token_type": "Bearer",
+            "access_token": FAKE_TOKEN,
+            "expires_at": time() + 3600,
+        }
+        mock_authorize_token = AsyncMock(return_value=token)
+        mocker.patch.object(main.oidc, "authorize_access_token", mock_authorize_token)
+
+        client = TestClient(app, raise_server_exceptions=False)
+        client.follow_redirects = False
+        response = client.get(self.URL)
+
+        assert response.status_code == 307
+        assert response.headers["location"] == "https://example.com/marimo"
+
+    def test_authorize_exception_returns_401_and_clears_session(
+        self, mocker: Any
+    ) -> None:
+        mock_authorize_token = AsyncMock(side_effect=Exception("token exchange failed"))
+        mocker.patch.object(main.oidc, "authorize_access_token", mock_authorize_token)
+
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.get(self.URL)
+
+        assert response.status_code == 401
+        assert "token exchange failed" in response.json()["message"]

@@ -6,6 +6,7 @@
 #   aemo-etl          Dagster gRPC code-location server
 #   dagster-webserver Dagster UI + GraphQL API
 #   dagster-daemon    Schedules, sensors, and run queue
+#   marimo            Marimo notebook server (FastAPI + marimo ASGI)
 #
 # The dagster-core image is built with DAGSTER_DEPLOYMENT=local which selects
 # dagster.local.yaml and workspace.local.yaml as the active instance config.
@@ -125,6 +126,37 @@ services:
       - -m
       - aemo_etl.definitions
   # -------------------------------------------------------------------------
+  # marimo — Marimo notebook server (analytics layer)
+  # Caddy strips the /marimo prefix before proxying to this service.
+  # -------------------------------------------------------------------------
+  marimo:
+    build:
+      context: ./marimo
+      target: deploy
+    container_name: marimo
+    restart: on-failure
+    depends_on:
+      localstack:
+        condition: service_healthy
+    networks:
+      - dagster_network
+    ports:
+      - "2718:2718"
+    environment:
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_ALLOW_HTTP: true
+    volumes:
+      - ./marimo/notebooks:/opt/marimo/notebooks
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:2718/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+  # -------------------------------------------------------------------------
   # authentication — FastAPI OIDC proxy (Cognito → Dagster webserver)
   # -------------------------------------------------------------------------
   authentication:
@@ -155,6 +187,7 @@ services:
     depends_on:
       - authentication
       - dagster-webserver
+      - marimo
     networks:
       - dagster_network
     ports:
@@ -166,6 +199,7 @@ services:
       DAGSTER_WEBSERVER_GUEST: ${DAGSTER_WEBSERVER_GUEST}
       DAGSTER_WEBSERVER_ADMIN: ${DAGSTER_WEBSERVER_ADMIN}
       DAGSTER_AUTHSERVER: ${DAGSTER_AUTHSERVER}
+      MARIMO_SERVER: ${MARIMO_SERVER}
   # -------------------------------------------------------------------------
   # dagster-webserver — Dagster UI and GraphQL API
   # -------------------------------------------------------------------------

@@ -16,7 +16,7 @@
     # /_next/*, /graphql, /favicon.*, /manifest.json are all Dagster assets
     # that the webserver serves from its root regardless of path prefix.
     @static {
-        not path /dagster-webserver* /oauth2* /_next* /graphql* /favicon.* /manifest.json
+        not path /dagster-webserver* /oauth2* /_next* /graphql* /favicon.* /manifest.json /marimo*
     }
     root @static /var/www/html
     file_server @static
@@ -29,17 +29,17 @@
 
     # guest server route
     reverse_proxy /dagster-webserver/guest* {$DAGSTER_WEBSERVER_GUEST}
-    
+
     # Auth server routes (login and OAuth callback)
     reverse_proxy /dagster-webserver/admin/login* {$DAGSTER_AUTHSERVER}
     reverse_proxy /oauth2/dagster-webserver/admin* {$DAGSTER_AUTHSERVER}
-    
+
     # Protected Dagster routes
     @protected {
         path /dagster-webserver/admin*
         not path /dagster-webserver/admin/login*
     }
-    
+
     handle @protected {
         forward_auth {$DAGSTER_AUTHSERVER} {
                 uri /oauth2/dagster-webserver/admin/validate
@@ -57,5 +57,37 @@
 
         reverse_proxy @protected {$DAGSTER_WEBSERVER_ADMIN}
     }
-}
 
+    # ----- Marimo notebook server -----
+
+    # Auth server routes (login and OAuth callback)
+    reverse_proxy /marimo/login*  {$DAGSTER_AUTHSERVER}
+    reverse_proxy /oauth2/marimo* {$DAGSTER_AUTHSERVER}
+
+    # Protected Marimo routes
+    @protectedMarimo {
+        path /marimo*
+        not path /marimo/login*
+    }
+
+    handle @protectedMarimo {
+        forward_auth {$DAGSTER_AUTHSERVER} {
+                uri /oauth2/marimo/validate
+                header_up Host {upstream_hostport}
+                header_up X-Real-IP {remote_host}
+                header_up X-Forwarded-For {remote_host}
+                header_up X-Forwarded-Proto {scheme}
+                header_up X-Forwarded-Host {host}
+
+                @error status 401
+                handle_response @error {
+                    redir * /marimo/login
+                }
+        }
+
+        # Strip /marimo prefix before proxying — the marimo FastAPI app
+        # serves from root inside the container.
+        uri strip_prefix /marimo
+        reverse_proxy {$MARIMO_SERVER}
+    }
+}
