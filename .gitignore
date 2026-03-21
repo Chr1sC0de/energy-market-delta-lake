@@ -6,3 +6,4 @@ __pycache__
 !.git
 !.dockerignore
 !.pre-commit*
+!.gitkeep
