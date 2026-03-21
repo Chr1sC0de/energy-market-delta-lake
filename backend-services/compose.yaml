@@ -142,6 +142,30 @@ services:
       COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL: ${COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL}
       COGNITO_DAGSTER_AUTH_CLIENT_SECRET: ${COGNITO_DAGSTER_AUTH_CLIENT_SECRET}
       WEBSITE_ROOT_URL: ${WEBSITE_ROOT_URL:-http://localhost:3000}
+      FORWARDED_ALLOW_IPS: "*"
+  # -------------------------------------------------------------------------
+  # caddy — reverse proxy + static file server
+  # Local target: plain HTTP on :8080, no TLS/ACME
+  # -------------------------------------------------------------------------
+  caddy:
+    build:
+      context: ./caddy
+    container_name: caddy
+    restart: on-failure
+    depends_on:
+      - authentication
+      - dagster-webserver
+    networks:
+      - dagster_network
+    ports:
+      - "8443:8443"
+    environment:
+      ROOT_DNS: ${ROOT_DNS}
+      LOCAL_CERTS: ${LOCAL_CERTS}
+      DEVELOPER_EMAIL: ${DEVELOPER_EMAIL}
+      DAGSTER_WEBSERVER_GUEST: ${DAGSTER_WEBSERVER_GUEST}
+      DAGSTER_WEBSERVER_ADMIN: ${DAGSTER_WEBSERVER_ADMIN}
+      DAGSTER_AUTHSERVER: ${DAGSTER_AUTHSERVER}
   # -------------------------------------------------------------------------
   # dagster-webserver — Dagster UI and GraphQL API
   # -------------------------------------------------------------------------

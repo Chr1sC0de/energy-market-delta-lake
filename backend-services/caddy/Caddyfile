@@ -1,0 +1,61 @@
+{
+    # LOCAL_CERTS=1 → self-signed cert via Caddy's internal CA (local dev)
+    # LOCAL_CERTS unset/empty → ACME cert via acme_ca below (production)
+    {$LOCAL_CERTS}
+
+    acme_ca https://acme.zerossl.com/v2/DV90
+
+    email {$DEVELOPER_EMAIL}
+    storage file_system {
+        root /data
+    }
+}
+
+{$ROOT_DNS} {
+    # Static files — only served when the path is not a Dagster app path.
+    # /_next/*, /graphql, /favicon.*, /manifest.json are all Dagster assets
+    # that the webserver serves from its root regardless of path prefix.
+    @static {
+        not path /dagster-webserver* /oauth2* /_next* /graphql* /favicon.* /manifest.json
+    }
+    root @static /var/www/html
+    file_server @static
+
+    # Dagster asset paths that have no prefix — proxy to the guest upstream
+    reverse_proxy /_next* {$DAGSTER_WEBSERVER_GUEST}
+    reverse_proxy /graphql* {$DAGSTER_WEBSERVER_GUEST}
+    reverse_proxy /favicon.* {$DAGSTER_WEBSERVER_GUEST}
+    reverse_proxy /manifest.json {$DAGSTER_WEBSERVER_GUEST}
+
+    # guest server route
+    reverse_proxy /dagster-webserver/guest* {$DAGSTER_WEBSERVER_GUEST}
+    
+    # Auth server routes (login and OAuth callback)
+    reverse_proxy /dagster-webserver/admin/login* {$DAGSTER_AUTHSERVER}
+    reverse_proxy /oauth2/dagster-webserver/admin* {$DAGSTER_AUTHSERVER}
+    
+    # Protected Dagster routes
+    @protected {
+        path /dagster-webserver/admin*
+        not path /dagster-webserver/admin/login*
+    }
+    
+    handle @protected {
+        forward_auth {$DAGSTER_AUTHSERVER} {
+                uri /oauth2/dagster-webserver/admin/validate
+                header_up Host {upstream_hostport}
+                header_up X-Real-IP {remote_host}
+                header_up X-Forwarded-For {remote_host}
+                header_up X-Forwarded-Proto {scheme}
+                header_up X-Forwarded-Host {host}
+
+                @error status 401
+                handle_response @error {
+                    redir * /dagster-webserver/admin/login
+                }
+        }
+
+        reverse_proxy @protected {$DAGSTER_WEBSERVER_ADMIN}
+    }
+}
+
