@@ -1,0 +1,14 @@
+[project]
+name = "aws-pulumi"
+version = "0.1.0"
+requires-python = ">=3.14"
+classifiers = [
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+  "pulumi>=3,<4",
+  "pulumi-aws>=7,<8",
+  "pulumi-tls>=5.3",
+  "requests>=2.32.5",
+]
