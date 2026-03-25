@@ -34,6 +34,7 @@ class Vpc(pulumi.ComponentResource):
         internet_gateway = aws.ec2.InternetGateway(
             f"{name}-internet-gateway",
             vpc_id=vpc.id,
+            opts=child_opts,
         )
 
         #     ╭────────────────────────────────────────────────────────────────────────────────────────╮
@@ -97,7 +98,7 @@ class Vpc(pulumi.ComponentResource):
         # Allow SSH from admin IPs
         for idx, ip in enumerate(ADMINISTRATOR_IPS):
             aws.ec2.SecurityGroupRule(
-                f"{name}-nat-security-group-ingress-ssh-{idx}",
+                f"{name}-fk-nat-security-group-ingress-ssh-{idx}",
                 type="ingress",
                 security_group_id=self.fk_nat_security_group.id,
                 from_port=22,
@@ -128,9 +129,11 @@ class Vpc(pulumi.ComponentResource):
             tags={"Name": f"{name}-public-subnet"},
             opts=child_opts,
         )
+
         public_route_table = aws.ec2.RouteTable(
             "public-route-table",
             vpc_id=vpc.id,
+            opts=child_opts,
         )
 
         aws.ec2.Route(
@@ -138,12 +141,14 @@ class Vpc(pulumi.ComponentResource):
             route_table_id=public_route_table.id,
             destination_cidr_block="0.0.0.0/0",
             gateway_id=internet_gateway.id,
+            opts=child_opts,
         )
 
         aws.ec2.RouteTableAssociation(
             "public-route-table-association",
             subnet_id=public_subnet.id,
             route_table_id=public_route_table.id,
+            opts=child_opts,
         )
 
         # -- private subnet --------------------------------------------------------------
@@ -165,17 +170,16 @@ class Vpc(pulumi.ComponentResource):
             vpc_security_group_ids=[self.fk_nat_security_group.id],
             key_name=fk_nat_key_pair.key_name,
             source_dest_check=False,
-            tags={"Name": f"{name}-nat-instance"},
-            opts=child_opts,
+            tags={"Name": f"{name}-fk-nat-instance"},
             user_data=dedent("""#!/bin/bash
-                echo "Enabling NAT"
-                sysctl -w net.ipv4.ip_forward=1
-                iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+                echo "eni_id=${FckNatInterface}" >> /etc/fck-nat.conf
+                service fck-nat restart
             """),
+            opts=child_opts,
         )
 
         aws.ec2.EipAssociation(
-            f"{name}-nat-eip-assoc",
+            f"{name}-fk-nat-eip-assoc",
             instance_id=fk_nat_instance.id,
             allocation_id=fk_nat_eip.allocation_id,
             opts=child_opts,
