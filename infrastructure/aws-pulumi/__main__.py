@@ -1,7 +1,8 @@
 """An AWS Python Pulumi program"""
 
-from components.vpc import Vpc
+from components.security_groups import SecurityGroupsComponentResource
+from components.vpc import VpcComponentResource
+from configs import NAME
 
-NAME = "ausenergymarket"
-
-vpc = Vpc(NAME)
+vpc = VpcComponentResource(NAME)
+security_groups = SecurityGroupsComponentResource(NAME, vpc)

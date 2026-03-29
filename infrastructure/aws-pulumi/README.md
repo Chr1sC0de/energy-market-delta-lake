@@ -95,4 +95,3 @@ If you have questions or need assistance:
 - GitHub Issues: https://github.com/pulumi/pulumi/issues
 
 Contributions and feedback are always welcome!
-

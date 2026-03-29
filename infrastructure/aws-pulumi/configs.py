@@ -13,3 +13,5 @@ else:
     _administrator_ips = os.environ.get("ADMINISTRATOR_IPS", "").split(" ")
 
 ADMINISTRATOR_IPS = _administrator_ips
+ENVIRONMENT = os.environ.get("ENVIRONMENT", "dev")
+NAME = f"{ENVIRONMENT}-ausenergymarket"
