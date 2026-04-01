@@ -14,7 +14,7 @@ class VpcComponentResource(pulumi.ComponentResource):
         name: str,
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
-        super().__init__(f"{name}:components:Vpc", name, {}, opts)
+        super().__init__(f"{name}:components:vpc", name, {}, opts)
         self.name = name
         self.child_opts = pulumi.ResourceOptions(parent=self)
 

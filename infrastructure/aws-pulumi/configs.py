@@ -14,4 +14,4 @@ else:
 
 ADMINISTRATOR_IPS = _administrator_ips
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "dev")
-NAME = f"{ENVIRONMENT}-ausenergymarket"
+NAME = f"{ENVIRONMENT}-energy-market"

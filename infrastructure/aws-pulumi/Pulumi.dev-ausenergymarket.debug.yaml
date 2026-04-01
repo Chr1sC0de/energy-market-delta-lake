@@ -1,0 +1,4 @@
+encryptionsalt: v1:3H8MEt0seIk=:v1:wZZ0GsOGkcvXYXxf:arSaYEpMPaiUKzN/7ptJc9mvlvFfKA==
+config:
+  aws:region: ap-southeast-2
+  is_debug: true
