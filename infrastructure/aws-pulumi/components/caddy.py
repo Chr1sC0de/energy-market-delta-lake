@@ -137,7 +137,7 @@ class CaddyServerComponentResource(pulumi.ComponentResource):
 
         user_data = pulumi.Output.all(
             repo_uri=self.ecr.caddy.repository_url,
-            region=region.name,
+            region=region.region,
             auth_ip=self.fastapi_auth.instance.private_ip,
             developer_email=self._developer_email,
         ).apply(

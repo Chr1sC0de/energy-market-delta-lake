@@ -170,7 +170,7 @@ class IamRolesComponentResource(pulumi.ComponentResource):
             role=self.daemon_task_role.name,
             policy=pulumi.Output.all(
                 account=caller.account_id,
-                region=region.name,
+                region=region.region,
             ).apply(
                 lambda args: json.dumps(
                     {

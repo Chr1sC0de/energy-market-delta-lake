@@ -112,7 +112,7 @@ class FastAPIAuthComponentResource(pulumi.ComponentResource):
 
         user_data = pulumi.Output.all(
             repo_uri=self.ecr.authentication.repository_url,
-            region=region.name,
+            region=region.region,
             cognito_client_id=self._cognito_client_id,
             cognito_server_metadata_url=self._cognito_server_metadata_url,
             cognito_token_signing_key_url=self._cognito_token_signing_key_url,

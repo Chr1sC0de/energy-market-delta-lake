@@ -144,23 +144,34 @@ class PostgresComponentResource(pulumi.ComponentResource):
                 yum install -y postgresql-server postgresql
 
                 postgresql-setup initdb
+
+                # Configure BEFORE first start so PostgreSQL binds on all interfaces
+                # and uses MD5 authentication from the start.
+                #
+                # shared_buffers default (128MB) exceeds available RAM on t4g.nano (512MB).
+                # Set to 64MB to leave headroom for the OS and other processes.
+                sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" \\
+                    /var/lib/pgsql/data/postgresql.conf
+                sed -i "s/^shared_buffers.*/shared_buffers = 64MB/" \\
+                    /var/lib/pgsql/data/postgresql.conf
+                echo "shared_buffers = 64MB" >> /var/lib/pgsql/data/postgresql.conf
+                echo 'host all all 0.0.0.0/0 md5' >> /var/lib/pgsql/data/pg_hba.conf
+
                 systemctl enable postgresql
                 systemctl start postgresql
 
-                # Allow remote connections
-                sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" \\
-                    /var/lib/pgsql/data/postgresql.conf
-                echo 'host all all 0.0.0.0/0 md5' >> /var/lib/pgsql/data/pg_hba.conf
-                systemctl restart postgresql
-
-                # Wait for PostgreSQL to be ready
-                until sudo -u postgres psql -c 'SELECT 1;' > /dev/null 2>&1; do
+                # Wait up to 60 seconds for PostgreSQL to accept connections.
+                for i in $(seq 1 30); do
+                    if sudo -u postgres psql -c 'SELECT 1;' > /dev/null 2>&1; then
+                        break
+                    fi
                     sleep 2
                 done
 
-                sudo -u postgres psql -c "CREATE USER dagster_user WITH PASSWORD '{pw}';"
-                sudo -u postgres psql -c "CREATE DATABASE dagster;"
-                sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE dagster TO dagster_user;"
+                # Idempotent: || true so re-runs on the same instance never fail.
+                sudo -u postgres psql -c "CREATE USER dagster_user WITH PASSWORD '{pw}';" || true
+                sudo -u postgres psql -c "CREATE DATABASE dagster;" || true
+                sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE dagster TO dagster_user;" || true
             """)  # ty:ignore[invalid-argument-type]
         )  # ty:ignore[missing-argument]
 

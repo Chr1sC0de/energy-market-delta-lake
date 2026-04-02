@@ -35,3 +35,9 @@ repos:
         language: system
         entry: uv run zuban check --strict
         pass_filenames: false
+      - id: pytest
+        name: pytest unit tests
+        language: system
+        entry: uv run pytest tests/unit/ -x -q
+        pass_filenames: false
+        always_run: true

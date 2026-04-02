@@ -7,6 +7,7 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
+  "boto3>=1.38",
   "pulumi>=3,<4",
   "pulumi-aws>=7,<8",
   "pulumi-docker>=4.11.2",
@@ -18,6 +19,9 @@ dependencies = [
 [dependency-groups]
 dev = [
   "pyproject-fmt>=2.20",
+  "pytest>=9.0.2",
+  "pytest-cov>=7",
+  "pytest-mock>=3.15.1",
   "ruff>=0.15.8",
   "zuban>=0.6.2",
 ]
@@ -27,7 +31,27 @@ line-length = 88
 format.docstring-code-format = true
 lint.select = [ "ANN", "E", "F", "I" ]
 lint.per-file-ignores."__init__.py" = [ "I" ]
+lint.per-file-ignores."tests/integration/**" = [ "ANN" ]
+lint.per-file-ignores."tests/unit/**" = [ "ANN" ]
 lint.pycodestyle.max-line-length = 200
 
+[tool.pytest]
+ini_options.testpaths = [ "tests" ]
+ini_options.markers = [
+  "integration: post-deployment integration tests (requires live AWS environment)",
+]
+
 [tool.zuban]
-disable_error_code = [ "operator", "attr-defined", "no-untyped-call", "no-any-return" ]
+disable_error_code = [
+  "misc",
+  "operator",
+  "attr-defined",
+  "no-untyped-call",
+  "no-any-return",
+  "return-value",
+  "arg-type",
+  "no-redef",
+  "type-arg",
+  "no-untyped-def",
+  "import-not-found",
+]

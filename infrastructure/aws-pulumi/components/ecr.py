@@ -63,7 +63,6 @@ class ECRComponentResource(pulumi.ComponentResource):
 
         # Obtain an ECR auth token (valid 12 h; refreshed on every pulumi up).
         token = aws.ecr.get_authorization_token_output()
-        aws.get_region()
 
         # Shared ECR registry credentials for docker.Image resources.
         # The registry server is the account-level ECR endpoint (no repo path).

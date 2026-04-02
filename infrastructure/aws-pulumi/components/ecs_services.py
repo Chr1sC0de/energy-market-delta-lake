@@ -49,9 +49,10 @@ def _fargate_service(
                 ],
                 routing_policy="MULTIVALUE",
             ),
-            health_check_custom_config=aws.servicediscovery.ServiceHealthCheckCustomConfigArgs(
-                failure_threshold=1,
-            ),
+            # force_destroy allows Pulumi to deregister all ECS instances before
+            # deleting the service discovery service, preventing the ResourceInUse
+            # error that occurs when the ECS service still has registered instances.
+            force_destroy=True,
             opts=child_opts,
         )
         sd_registration = aws.ecs.ServiceServiceRegistriesArgs(
@@ -65,10 +66,19 @@ def _fargate_service(
         desired_count=1,
         launch_type=None,  # managed by capacity_provider_strategies
         capacity_provider_strategies=[
+            # FARGATE_SPOT preferred (4× cheaper) with FARGATE on-demand as
+            # fallback. base=1 guarantees at least one on-demand task is always
+            # running, preventing complete unavailability during Spot interruptions.
             aws.ecs.ServiceCapacityProviderStrategyArgs(
                 capacity_provider="FARGATE_SPOT",
+                weight=4,
+                base=0,
+            ),
+            aws.ecs.ServiceCapacityProviderStrategyArgs(
+                capacity_provider="FARGATE",
                 weight=1,
-            )
+                base=1,
+            ),
         ],
         network_configuration=aws.ecs.ServiceNetworkConfigurationArgs(
             subnets=[private_subnet_id],
@@ -150,7 +160,7 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
             pg_host=postgres_host,
             pg_pass=postgres_password,
             log_group=cluster.log_group.name,
-            region=aws.get_region().name,
+            region=aws.get_region().region,
         ).apply(
             lambda a: json.dumps(
                 [
@@ -298,7 +308,7 @@ class DagsterWebserverServiceComponentResource(pulumi.ComponentResource):
             pg_host=postgres_host,
             pg_pass=postgres_password,
             log_group=cluster.log_group.name,
-            region=aws.get_region().name,
+            region=aws.get_region().region,
         ).apply(
             lambda a: json.dumps(
                 [
@@ -344,9 +354,15 @@ class DagsterWebserverServiceComponentResource(pulumi.ComponentResource):
             )  # ty:ignore[invalid-argument-type]
         )  # ty:ignore[missing-argument]
 
+        # Derive a distinct task definition family per service variant so that
+        # admin and guest task definitions don't share revision numbers under
+        # the same family (which could cause a stale revision to be used).
+        # cloud_map_name is "webserver-admin" or "webserver-guest".
+        td_family = f"dagster-{cloud_map_name}"
+
         task_def = _task_definition(
             f"{name}-webserver-task-def",
-            family="dagster-webserver",
+            family=td_family,
             cpu="512",
             memory="1024",
             execution_role_arn=iam_roles.webserver_execution_role.arn,
@@ -410,7 +426,7 @@ class DagsterDaemonServiceComponentResource(pulumi.ComponentResource):
             pg_host=postgres_host,
             pg_pass=postgres_password,
             log_group=cluster.log_group.name,
-            region=aws.get_region().name,
+            region=aws.get_region().region,
         ).apply(
             lambda a: json.dumps(
                 [
