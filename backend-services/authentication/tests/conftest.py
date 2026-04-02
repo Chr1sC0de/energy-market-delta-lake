@@ -36,4 +36,4 @@ os.environ.setdefault(
     "COGNITO_TOKEN_SIGNING_KEY_URL",
     "https://cognito.example.com/.well-known/jwks.json",
 )
-os.environ.setdefault("WEBSITE_ROOT_URL", "https://example.com")
+os.environ["WEBSITE_ROOT_URL"] = "https://example.com"

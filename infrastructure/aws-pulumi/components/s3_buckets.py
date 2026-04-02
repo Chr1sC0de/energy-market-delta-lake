@@ -18,6 +18,11 @@ class S3BucketsComponentResource(pulumi.ComponentResource):
         self.archive = self.create_bucket(f"{name}-archive")
         self.aemo = self.create_bucket(f"{name}-aemo")
 
+        # Data lake tiers
+        self.bronze = self.create_bucket(f"{name}-bronze")
+        self.silver = self.create_bucket(f"{name}-silver")
+        self.gold = self.create_bucket(f"{name}-gold")
+
         self.setup_archive_lifecycle()
 
         self.register_outputs({})
