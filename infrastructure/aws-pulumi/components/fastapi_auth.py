@@ -141,8 +141,8 @@ class FastAPIAuthComponentResource(pulumi.ComponentResource):
                     -e WEBSITE_ROOT_URL={a["website_root_url"]} \\
                     {a["repo_uri"]}:latest \\
                     uvicorn main:app --host 0.0.0.0 --port 8000
-            """)
-        )
+            """)  # ty:ignore[invalid-argument-type]
+        )  # ty:ignore[missing-argument]
 
         self.instance = aws.ec2.Instance(
             f"{self.name}-fastapi-auth-instance",

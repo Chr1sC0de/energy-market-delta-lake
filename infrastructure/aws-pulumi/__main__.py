@@ -64,43 +64,30 @@ _docker_provider = docker.Provider(
     host=os.environ.get("DOCKER_HOST", "unix:///var/run/docker.sock"),
 )
 
-# ── 1. VPC ──────────────────────────────────────────────────────────────────
 vpc = VpcComponentResource(NAME)
 
-# ── 2. Security groups ───────────────────────────────────────────────────────
 security_groups = SecurityGroupsComponentResource(NAME, vpc)
 
-# ── 3. IAM roles ─────────────────────────────────────────────────────────────
 iam_roles = IamRolesComponentResource(NAME)
 
-# ── 4. S3 buckets ────────────────────────────────────────────────────────────
 s3_buckets = S3BucketsComponentResource(NAME)
 
-# ── 5. DynamoDB – delta-rs locking table ─────────────────────────────────────
 delta_locking_table = DeltaLockingTableComponentResource(NAME)
 
-# ── 6. ECR repositories + automated Docker build+push ────────────────────────
 ecr = ECRComponentResource(NAME, docker_provider=_docker_provider)
 
-# ── 7. Service discovery ─────────────────────────────────────────────────────
 service_discovery = ServiceDiscoveryComponentResource(NAME, vpc)
 
-# ── 8. PostgreSQL ────────────────────────────────────────────────────────────
 postgres = PostgresComponentResource(NAME, vpc, security_groups)
 
-# ── 9. Bastion host ──────────────────────────────────────────────────────────
 bastion_host = BastionHostComponentResource(NAME, vpc, security_groups, iam_roles)
 
-# ── 10. ECS cluster + CloudWatch log group ───────────────────────────────────
 ecs_cluster = EcsClusterComponentResource(NAME, vpc, security_groups)
 
-# ── 11. FastAPI authentication server ────────────────────────────────────────
 fastapi_auth = FastAPIAuthComponentResource(NAME, vpc, ecr, security_groups)
 
-# ── 12. Caddy reverse proxy ───────────────────────────────────────────────────
 caddy = CaddyServerComponentResource(NAME, vpc, ecr, fastapi_auth, security_groups)
 
-# ── 13. Dagster user-code service (aemo-etl) ─────────────────────────────────
 dagster_user_code = DagsterUserCodeServiceComponentResource(
     f"{NAME}-user-code",
     vpc=vpc,
@@ -112,7 +99,6 @@ dagster_user_code = DagsterUserCodeServiceComponentResource(
     iam_roles=iam_roles,
 )
 
-# ── 14. Dagster webserver – admin (read-write) ────────────────────────────────
 dagster_webserver_admin = DagsterWebserverServiceComponentResource(
     f"{NAME}-webserver-admin",
     vpc=vpc,
@@ -128,7 +114,6 @@ dagster_webserver_admin = DagsterWebserverServiceComponentResource(
     readonly=False,
 )
 
-# ── 15. Dagster webserver – guest (read-only) ─────────────────────────────────
 dagster_webserver_guest = DagsterWebserverServiceComponentResource(
     f"{NAME}-webserver-guest",
     vpc=vpc,
@@ -144,7 +129,6 @@ dagster_webserver_guest = DagsterWebserverServiceComponentResource(
     readonly=True,
 )
 
-# ── 16. Dagster daemon ────────────────────────────────────────────────────────
 dagster_daemon = DagsterDaemonServiceComponentResource(
     f"{NAME}-daemon",
     vpc=vpc,

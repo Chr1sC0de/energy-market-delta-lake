@@ -20,10 +20,6 @@ from components.service_discovery import ServiceDiscoveryComponentResource
 from components.vpc import VpcComponentResource
 from configs import ENVIRONMENT
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
 
 def _fargate_service(
     resource_name: str,
@@ -212,8 +208,8 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
                         },
                     }
                 ]
-            )
-        )
+            )  # ty:ignore[invalid-argument-type]
+        )  # ty:ignore[missing-argument]
 
         task_def = _task_definition(
             f"{name}-user-code-task-def",
@@ -345,8 +341,8 @@ class DagsterWebserverServiceComponentResource(pulumi.ComponentResource):
                         },
                     }
                 ]
-            )
-        )
+            )  # ty:ignore[invalid-argument-type]
+        )  # ty:ignore[missing-argument]
 
         task_def = _task_definition(
             f"{name}-webserver-task-def",
@@ -456,8 +452,8 @@ class DagsterDaemonServiceComponentResource(pulumi.ComponentResource):
                         },
                     }
                 ]
-            )
-        )
+            )  # ty:ignore[invalid-argument-type]
+        )  # ty:ignore[missing-argument]
 
         task_def = _task_definition(
             f"{name}-daemon-task-def",

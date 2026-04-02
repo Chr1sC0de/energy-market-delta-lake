@@ -212,8 +212,8 @@ class CaddyServerComponentResource(pulumi.ComponentResource):
                     -e DAGSTER_WEBSERVER_ADMIN=webserver-admin.dagster:3000 \\
                     -e DAGSTER_WEBSERVER_GUEST=webserver-guest.dagster:3000 \\
                     {a["repo_uri"]}:latest
-            """)
-        )
+            """)  # ty:ignore[invalid-argument-type]
+        )  # ty:ignore[missing-argument]
 
         self.instance = aws.ec2.Instance(
             f"{self.name}-caddy-instance",

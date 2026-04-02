@@ -75,8 +75,8 @@ class ECRComponentResource(pulumi.ComponentResource):
                 server=a["server"],
                 username="AWS",
                 password=a["password"],
-            )
-        )
+            )  # ty:ignore[invalid-argument-type]
+        )  # ty:ignore[missing-argument]
 
         # ── postgres (local-dev only, no image build needed for ECS) ─────────
         self.dagster_postgres = self._make_repo(f"{name}/dagster/postgres")
@@ -171,7 +171,7 @@ class ECRComponentResource(pulumi.ComponentResource):
         Pulumi hashes the build context; a rebuild is triggered only when
         source files change.
         """
-        image_name = repo.repository_url.apply(lambda url: f"{url}:latest")
+        image_name = repo.repository_url.apply(lambda url: f"{url}:latest")  # ty:ignore[missing-argument, invalid-argument-type]
 
         image = docker.Image(
             resource_name,

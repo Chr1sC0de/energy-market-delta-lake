@@ -161,8 +161,8 @@ class PostgresComponentResource(pulumi.ComponentResource):
                 sudo -u postgres psql -c "CREATE USER dagster_user WITH PASSWORD '{pw}';"
                 sudo -u postgres psql -c "CREATE DATABASE dagster;"
                 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE dagster TO dagster_user;"
-            """)
-        )
+            """)  # ty:ignore[invalid-argument-type]
+        )  # ty:ignore[missing-argument]
 
         self.instance = aws.ec2.Instance(
             f"{self.name}-postgres-instance",

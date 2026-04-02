@@ -231,7 +231,7 @@ class IamRolesComponentResource(pulumi.ComponentResource):
                             },
                         ],
                     }
-                )
-            ),
+                )  # ty:ignore[invalid-argument-type]
+            ),  # ty:ignore[missing-argument]
             opts=pulumi.ResourceOptions(parent=self.daemon_task_role),
         )
