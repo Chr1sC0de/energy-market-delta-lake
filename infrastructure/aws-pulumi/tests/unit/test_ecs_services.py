@@ -85,7 +85,7 @@ class TestDagsterUserCodeService:
 
         def check(strategies: list) -> None:
             # Pulumi mocks return snake_case keys in output dicts.
-            # FARGATE_SPOT preferred, FARGATE on-demand as fallback (base=1).
+            # FARGATE_SPOT preferred (weight=4), FARGATE fallback (weight=1), both base=0.
             providers = [s.get("capacity_provider") for s in strategies]
             assert "FARGATE_SPOT" in providers, (
                 f"Expected FARGATE_SPOT in capacity providers, got {providers}"
@@ -252,7 +252,7 @@ class TestDagsterWebserverAdminService:
 
         def check(strategies: list) -> None:
             # Pulumi mocks return snake_case keys.
-            # FARGATE_SPOT preferred, FARGATE on-demand fallback (base=1).
+            # FARGATE_SPOT preferred (weight=4), FARGATE fallback (weight=1), both base=0.
             providers = [s.get("capacity_provider") for s in strategies]
             assert "FARGATE_SPOT" in providers
             assert "FARGATE" in providers
@@ -327,7 +327,7 @@ class TestDagsterWebserverGuestService:
         )
 
         def check(strategies: list) -> None:
-            # FARGATE_SPOT preferred, FARGATE on-demand fallback (base=1).
+            # FARGATE_SPOT preferred (weight=4), FARGATE fallback (weight=1), both base=0.
             providers = [s.get("capacity_provider") for s in strategies]
             assert "FARGATE_SPOT" in providers, (
                 f"Expected FARGATE_SPOT in capacity providers, got {providers}"
@@ -466,7 +466,7 @@ class TestDagsterDaemonService:
 
         def check(strategies: list) -> None:
             # Pulumi mocks return snake_case keys.
-            # FARGATE_SPOT preferred, FARGATE on-demand fallback (base=1).
+            # FARGATE_SPOT preferred (weight=4), FARGATE fallback (weight=1), both base=0.
             providers = [s.get("capacity_provider") for s in strategies]
             assert "FARGATE_SPOT" in providers
             assert "FARGATE" in providers
@@ -560,6 +560,7 @@ class TestFargateServiceConnectivity:
 
     @pulumi.runtime.test
     def test_all_services_use_private_subnet(self) -> None:
+        """Services must be placed in the private subnet, not the public subnet."""
         vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
         user_code = DagsterUserCodeServiceComponentResource(
             "test-energy-market-user-code-subnet",
@@ -581,15 +582,28 @@ class TestFargateServiceConnectivity:
             iam_roles=iam,
         )
 
-        def check_uc(net_config: dict) -> None:
-            subnets = net_config.get("subnets", [])
-            assert len(subnets) == 1, f"Expected 1 subnet, got {subnets}"
+        def check(values: list) -> None:
+            uc_subnets, daemon_subnets, private_id, public_id = values
+            # Both services must use exactly the private subnet
+            for label, subnets in (
+                ("user-code", uc_subnets),
+                ("daemon", daemon_subnets),
+            ):
+                assert len(subnets) == 1, f"{label}: expected 1 subnet, got {subnets}"
+                assert subnets[0] == private_id, (
+                    f"{label}: expected private subnet {private_id!r}, "
+                    f"got {subnets[0]!r} (public={public_id!r})"
+                )
 
-        def check_daemon(net_config: dict) -> None:
-            subnets = net_config.get("subnets", [])
-            assert len(subnets) == 1, f"Expected 1 subnet, got {subnets}"
+        def extract_subnets(nc: object) -> list:
+            assert nc is not None and isinstance(nc, dict), (
+                f"network_configuration must be a dict, got {nc!r}"
+            )
+            return nc.get("subnets", [])  # type: ignore[union-attr]
 
         return pulumi.Output.all(
-            user_code.service.network_configuration.apply(check_uc),
-            daemon.service.network_configuration.apply(check_daemon),
-        )
+            user_code.service.network_configuration.apply(extract_subnets),
+            daemon.service.network_configuration.apply(extract_subnets),
+            vpc.private_subnet.id,
+            vpc.public_subnet.id,
+        ).apply(check)

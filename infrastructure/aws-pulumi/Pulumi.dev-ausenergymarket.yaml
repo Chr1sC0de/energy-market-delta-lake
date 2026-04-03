@@ -9,5 +9,5 @@ config:
     secure: v1:bH2+qbBTeu5FGvBy:kyi434CbnNU+AzwrmHzfyuPrWQIrj1W8iS7Gsb1FcBphobJiT3zskTFWqjwv9vcSb8/2OweYxwVZX/PoyyOHENNfZEFZRxoxPBxZwF2M4f0oWx0lQ8v3MXAYs5CluwRV90MkMVimo82VpR1z4KmP
   aws-pulumi:cognito_client_secret:
     secure: v1:9cKwjZKfJ845iKIr:OXvp1e1BU2cfMCY/ngBxlMt/0OLtWjMZ4pG0t+7Rb5Bn4nMmCXPcZhqbkrXKPu2+jPITUhV3CzQwCosqkf3jVHga9qg=
-  aws-pulumi:website_root_url: ausenergymarketdata.com
+  aws-pulumi:website_root_url: https://ausenergymarketdata.com
   aws-pulumi:developer_email: chrisam1993@live.com

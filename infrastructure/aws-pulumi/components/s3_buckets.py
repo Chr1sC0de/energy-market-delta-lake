@@ -70,7 +70,7 @@ class S3BucketsComponentResource(pulumi.ComponentResource):
             bucket=bucket_name,
             force_destroy=force_destroy,
             opts=pulumi.ResourceOptions(
-                parent=self.child_opts.parent,
+                parent=self,
                 retain_on_delete=retain_on_delete,
             ),
         )

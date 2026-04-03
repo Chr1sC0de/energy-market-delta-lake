@@ -49,9 +49,14 @@ def _fargate_service(
                 ],
                 routing_policy="MULTIVALUE",
             ),
-            # force_destroy allows Pulumi to deregister all ECS instances before
-            # deleting the service discovery service, preventing the ResourceInUse
-            # error that occurs when the ECS service still has registered instances.
+            # health_check_custom_config (empty) signals to AWS Cloud Map that
+            # ECS manages health — without it Cloud Map may attempt its own
+            # health checks and interfere with service routing.
+            # failure_threshold is intentionally omitted: AWS ignores it and
+            # always uses 1; passing it emits a DeprecationWarning from the SDK.
+            # force_destroy deregisters ECS instances before deletion, preventing
+            # the ResourceInUse error when the ECS service still has live tasks.
+            health_check_custom_config=aws.servicediscovery.ServiceHealthCheckCustomConfigArgs(),
             force_destroy=True,
             opts=child_opts,
         )
@@ -66,9 +71,14 @@ def _fargate_service(
         desired_count=1,
         launch_type=None,  # managed by capacity_provider_strategies
         capacity_provider_strategies=[
-            # FARGATE_SPOT preferred (4× cheaper) with FARGATE on-demand as
-            # fallback. base=1 guarantees at least one on-demand task is always
-            # running, preventing complete unavailability during Spot interruptions.
+            # FARGATE_SPOT preferred (4× cheaper). Weight drives placement when
+            # desired_count=1: ECS picks the provider proportionally, so 4:1
+            # means ~80% of new tasks land on Spot and ~20% on on-demand.
+            # base=0 on both so the weight ratio is applied from the first task
+            # (base=1 on FARGATE would always consume the single task quota with
+            # on-demand, defeating the Spot preference for desired_count=1).
+            # When a Spot task is interrupted ECS replaces it — it will land on
+            # on-demand if Spot capacity is unavailable.
             aws.ecs.ServiceCapacityProviderStrategyArgs(
                 capacity_provider="FARGATE_SPOT",
                 weight=4,
@@ -77,7 +87,7 @@ def _fargate_service(
             aws.ecs.ServiceCapacityProviderStrategyArgs(
                 capacity_provider="FARGATE",
                 weight=1,
-                base=1,
+                base=0,
             ),
         ],
         network_configuration=aws.ecs.ServiceNetworkConfigurationArgs(

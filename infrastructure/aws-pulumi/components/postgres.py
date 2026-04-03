@@ -152,9 +152,9 @@ class PostgresComponentResource(pulumi.ComponentResource):
                 # Set to 64MB to leave headroom for the OS and other processes.
                 sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" \\
                     /var/lib/pgsql/data/postgresql.conf
-                sed -i "s/^shared_buffers.*/shared_buffers = 64MB/" \\
-                    /var/lib/pgsql/data/postgresql.conf
-                echo "shared_buffers = 64MB" >> /var/lib/pgsql/data/postgresql.conf
+                grep -q '^shared_buffers' /var/lib/pgsql/data/postgresql.conf \\
+                    && sed -i "s/^shared_buffers.*/shared_buffers = 64MB/" /var/lib/pgsql/data/postgresql.conf \\
+                    || echo "shared_buffers = 64MB" >> /var/lib/pgsql/data/postgresql.conf
                 echo 'host all all 0.0.0.0/0 md5' >> /var/lib/pgsql/data/pg_hba.conf
 
                 systemctl enable postgresql

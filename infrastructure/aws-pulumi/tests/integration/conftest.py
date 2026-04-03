@@ -20,9 +20,13 @@ import pytest
 _INTEGRATION_ENABLED = os.environ.get("PULUMI_INTEGRATION_TESTS") == "1"
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
 def integration_enabled() -> None:
-    """Skip all integration tests unless PULUMI_INTEGRATION_TESTS=1 is set."""
+    """Skip ALL integration tests unless PULUMI_INTEGRATION_TESTS=1 is set.
+
+    autouse=True applies this to every test in the integration suite, so even
+    tests that don't use a boto3 client fixture are still skipped correctly.
+    """
     if not _INTEGRATION_ENABLED:
         pytest.skip(
             "Integration tests disabled. Set PULUMI_INTEGRATION_TESTS=1 to enable."

@@ -186,11 +186,27 @@ class InfrastructureMocks(pulumi.runtime.Mocks):
 # 3. Ensure an asyncio event loop exists before set_mocks creates the root
 #    Stack resource. Python 3.10+ no longer auto-creates a loop in the main
 #    thread, and Python 3.14 raises RuntimeError if none exists.
+#
+#    get_running_loop() raises RuntimeError when no loop is *running* — which
+#    is always true at module-import time regardless of whether a loop is set.
+#    We therefore check whether the policy already has a loop set before
+#    creating a new one, so pytest-asyncio or other test-runner loops are not
+#    silently overwritten.
 # ---------------------------------------------------------------------------
 try:
-    asyncio.get_event_loop()
+    asyncio.get_running_loop()
 except RuntimeError:
-    asyncio.set_event_loop(asyncio.new_event_loop())
+    # No loop is running. Check whether one is already set before creating a
+    # new one so we don't silently overwrite a loop configured by the test
+    # runner (e.g. pytest-asyncio). On Python 3.14, get_event_loop() raises
+    # RuntimeError instead of returning None when no loop is set, so we treat
+    # that exception the same as a None result.
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = None
+    if loop is None:
+        asyncio.set_event_loop(asyncio.new_event_loop())
 
 # ---------------------------------------------------------------------------
 # 4. Install mocks at module scope (runs once per test session)
