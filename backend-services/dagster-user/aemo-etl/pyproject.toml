@@ -5,11 +5,10 @@ requires = [ "hatchling" ]
 [project]
 name = "aemo-etl"
 version = "0.1.0"
-requires-python = ">=3.13,<3.15"
+requires-python = ">=3.13,<3.14"
 classifiers = [
   "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Python :: 3.13",
-  "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
   "boto3>=1.42.58",
@@ -30,6 +29,7 @@ dependencies = [
 dev = [
   "dagster-dg-cli",
   "dagster-webserver",
+  "debugpy>=1.8.20",
   "prek>=0.3.3",
   "pytest>=9.0.2",
   "pytest-cov>=7",
