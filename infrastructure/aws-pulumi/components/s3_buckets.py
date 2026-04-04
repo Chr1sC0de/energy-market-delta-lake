@@ -65,15 +65,24 @@ class S3BucketsComponentResource(pulumi.ComponentResource):
         # fail with BucketAlreadyOwnedByYou — in that case, run:
         #   pulumi import aws:s3/bucket:Bucket <name> <name> --parent <component-urn>
         # for each retained bucket before re-running pulumi up.
-        bucket = aws.s3.Bucket(
-            bucket_name,
-            bucket=bucket_name,
-            force_destroy=force_destroy,
-            opts=pulumi.ResourceOptions(
-                parent=self,
-                retain_on_delete=retain_on_delete,
-            ),
-        )
+        try:
+            bucket = aws.s3.Bucket(
+                bucket_name,
+                bucket=bucket_name,
+                force_destroy=force_destroy,
+                opts=pulumi.ResourceOptions(import_=bucket_name),
+            )
+
+        except Exception:
+            bucket = aws.s3.Bucket(
+                bucket_name,
+                bucket=bucket_name,
+                force_destroy=force_destroy,
+                opts=pulumi.ResourceOptions(
+                    parent=self,
+                    retain_on_delete=retain_on_delete,
+                ),
+            )
 
         bucket_child_opts = pulumi.ResourceOptions(parent=bucket)
 
