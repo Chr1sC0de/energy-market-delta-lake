@@ -2,38 +2,21 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Python: Dagster (LocalStack)",
+      "name": "Attach to Dagster",
       "type": "debugpy",
-      "request": "launch",
-      "program": "${workspaceFolder}/.venv/bin/dg",
+      "request": "attach",
       "justMyCode": true,
-      "args": [
-        "dev",
-        "-m",
-        "aemo_etl.definitions",
-        "--verbose",
-        "--log-format",
-        "json",
-        "-h",
-        "0.0.0.0",
-        "-p",
-        "3000"
-      ],
-      "preLaunchTask": "localstack: start and setup",
-      "postDebugTask": "localstack: stop",
-      "envFile": "${workspaceFolder}/.localstack.env",
       "subProcess": false,
-      "env": {
-        "DAGSTER_HOME": "${workspaceFolder}/.dagster_home",
-        "DEVELOPMENT_ENVIRONMENT": "dev",
-        "AWS_ACCESS_KEY_ID": "test",
-        "AWS_SECRET_ACCESS_KEY": "test",
-        "AWS_SECURITY_TOKEN": "test",
-        "AWS_SESSION_TOKEN": "test",
-        "AWS_DEFAULT_REGION": "ap-southeast-4",
-        "AWS_ALLOW_HTTP": "true",
-        "AWS_S3_LOCKING_PROVIDER": "dynamodb"
-      }
+      "connect": {
+        "host": "127.0.0.1",
+        "port": 5678
+      },
+      "pathMappings": [
+        {
+          "localRoot": "${workspaceFolder}",
+          "remoteRoot": "."
+        }
+      ]
     }
   ]
 }

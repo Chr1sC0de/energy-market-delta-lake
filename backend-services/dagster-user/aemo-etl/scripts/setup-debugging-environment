@@ -1,0 +1,213 @@
+#!/usr/bin/env -S bash -euo  pipefail
+
+: "
+run this script with:
+
+scripts/setup-debugging-environment
+source scripts/setup-debugging-environment
+"
+
+READY_TIMEOUT=60
+ENV_FILE=".localstack.env"
+PREFIX="${NAME_PREFIX:-energy-market}"
+DEVELOPMENT_ENVIRONMENT=dev
+LOCALSTACK_PORT=4566
+LOCALSTACK_HOST=localhost
+DAGSTER_HOME="$(pwd)/.dagster_home"
+
+export DAGSTER_HOME
+export AWS_ENDPOINT_URL=http://$LOCALSTACK_HOST:$LOCALSTACK_PORT
+export AWS_DEFAULT_REGION=ap-southeast-1
+export AWS_ACCESS_KEY_ID=test
+export AWS_SECRET_ACCESS_KEY=test
+export AWS_SECURITY_TOKEN=test
+export AWS_SESSION_TOKEN=test
+export AWS_ALLOW_HTTP=true
+export AWS_S3_LOCKING_PROVIDER=dynamodb
+
+BUCKETS=(
+	"${DEVELOPMENT_ENVIRONMENT}-${PREFIX}-io-manager"
+	"${DEVELOPMENT_ENVIRONMENT}-${PREFIX}-landing"
+	"${DEVELOPMENT_ENVIRONMENT}-${PREFIX}-aemo"
+)
+
+info() {
+	echo INFO:"$(basename "$0")": "$@"
+}
+
+error() {
+	echo ERROR:"$(basename "$0")": "$@"
+}
+
+get-current-branch() {
+	local branch
+	branch=$(git branch --show-current)
+	echo "$branch"
+}
+
+get-network() {
+	local identifier=$1 network
+	local network=grpc-network-$identifier
+	echo "$network"
+}
+
+create-network() {
+	local network=$1
+	if ! (podman network exists "$network"); then
+		podman network create "$network"
+		info created network "$network"
+	else
+		info podman network "$network" already exists, skipping creation
+	fi
+}
+
+check-localstack() {
+	local network=$1 endpoint=$2
+	curl --silent --fail "${endpoint}/_localstack/health"
+}
+
+wait-localstack() {
+	local network=$1 endpoint=$2
+
+	local deadline=$(($(date +%s) + READY_TIMEOUT))
+
+	while true; do
+		if check-localstack "$network" "$endpoint" >/dev/null 2>&1; then
+			info "localstack is ready." >&2
+			break
+		fi
+		if [[ $(date +%s) -ge $deadline ]]; then
+			error "localstack did not become healthy within ${READY_TIMEOUT}s." >&2
+			exit 1
+		fi
+		sleep 1
+	done
+}
+
+start-localstack() {
+	local network=$1 container_name=$2
+
+	podman run \
+		--rm \
+		--detach \
+		--replace \
+		--publish 4566:4566 \
+		--network="$network" \
+		--name "$container_name" \
+		--env "DISABLE_CORS_CHECKS=1" \
+		"${LOCALSTACK_IMAGE:-localstack/localstack}" >/dev/null
+
+	info created container "$container_name"
+	info waiting for "$container_name" to be healthy
+}
+
+write-localstack-endpoint() {
+	local endpoint=$1
+
+	# Write the resolved endpoint to the env file for other scripts and VS Code to consume
+	cat >"$ENV_FILE" <<-EOT
+		AWS_ENDPOINT_URL=$endpoint
+	EOT
+
+	info endpoint written to $ENV_FILE
+
+}
+
+setup-localstack-resources() {
+	info setting up localstack resources
+}
+
+setup-s3-buckets() {
+	local container=$1
+
+	info "creating S3 buckets..."
+
+	for bucket in "${BUCKETS[@]}"; do
+		info "Creating bucket: $bucket"
+		podman exec \
+			"$container" \
+			awslocal \
+			s3 \
+			mb \
+			"s3://${bucket}" --region "$AWS_DEFAULT_REGION" 2>/dev/null ||
+			echo "ERROR: Bucket $bucket already exists"
+	done
+
+	info "finished creating S3 buckets..."
+
+}
+
+setup-dynamodb() {
+	local container=$1
+
+	info "creating DynamoDB table: delta_log"
+
+	podman exec "$container" \
+		awslocal dynamodb create-table \
+		--table-name delta_log \
+		--attribute-definitions \
+		AttributeName=tablePath,AttributeType=S \
+		AttributeName=fileName,AttributeType=S \
+		--key-schema \
+		AttributeName=tablePath,KeyType=HASH \
+		AttributeName=fileName,KeyType=RANGE \
+		--provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
+		--region "$AWS_DEFAULT_REGION" \
+		2>/dev/null || echo "INFO: table delta_log already exists"
+
+	info "DynamoDB initialisation complete."
+
+}
+
+cleanup() {
+	local exit_code=$?
+	local container_name=$1
+	podman rm --force "$container_name"
+	rm -rf "$DAGSTER_HOME"
+	exit $exit_code
+}
+
+main() {
+	info starting dagster debugging
+
+	local branch
+	branch=$(get-current-branch)
+
+	local identifier="${branch//\//-}"
+
+	local network
+	network=$(get-network "$identifier")
+
+	local container_name="localstack-$identifier"
+
+	trap_container_name=$container_name
+
+	local endpoint="http://$LOCALSTACK_HOST:$LOCALSTACK_PORT"
+
+	mkdir -p "$DAGSTER_HOME"
+
+	trap 'cleanup "$trap_container_name"' EXIT
+
+	create-network "$network"
+
+	start-localstack "$network" "$container_name"
+	wait-localstack "$network" "$endpoint"
+	write-localstack-endpoint "$endpoint"
+
+	setup-s3-buckets "$container_name"
+	setup-dynamodb "$container_name"
+
+	PYDEVD_DISABLE_FILE_VALIDATION=1 \
+		uv run \
+		debugpy \
+		--listen 5678 \
+		"$(pwd)"/.venv/bin/dg dev \
+		-m aemo_etl.definitions \
+		--verbose \
+		-h 0.0.0.0 \
+		-p 3000
+}
+
+if ! (return 2 &>/dev/null); then
+	main "$@"
+fi
