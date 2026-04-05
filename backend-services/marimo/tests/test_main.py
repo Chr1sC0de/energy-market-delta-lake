@@ -15,7 +15,6 @@ from fastapi.testclient import TestClient
 from marimoserver.main import NOTEBOOKS_DIR, app, app_names
 from tests.conftest import TEST_NOTEBOOKS_DIR
 
-
 # ---------------------------------------------------------------------------
 # TestHealthEndpoint
 # ---------------------------------------------------------------------------
@@ -63,13 +62,13 @@ class TestAppDiscovery:
 class TestIndexPage:
     def test_index_returns_html(self) -> None:
         client = TestClient(app, raise_server_exceptions=False)
-        response = client.get("/")
+        response = client.get("/marimo")
         assert response.status_code == 200
         assert "text/html" in response.headers.get("content-type", "")
 
     def test_index_lists_notebooks(self) -> None:
         client = TestClient(app, raise_server_exceptions=False)
-        response = client.get("/")
+        response = client.get("/marimo")
         assert "test_notebook" in response.text
 
 
@@ -85,6 +84,6 @@ class TestMarimoMount:
         Marimo returns 200 with HTML for a valid notebook path.
         """
         client = TestClient(app, raise_server_exceptions=False)
-        response = client.get("/test_notebook/")
+        response = client.get("/marimo/test_notebook/")
         assert response.status_code == 200
         assert "text/html" in response.headers.get("content-type", "")

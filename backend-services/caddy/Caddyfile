@@ -87,7 +87,6 @@
 
         # Strip /marimo prefix before proxying — the marimo FastAPI app
         # serves from root inside the container.
-        uri strip_prefix /marimo
         reverse_proxy {$MARIMO_SERVER}
     }
 }

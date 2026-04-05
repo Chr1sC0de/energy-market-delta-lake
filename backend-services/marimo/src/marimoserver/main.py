@@ -45,15 +45,15 @@ if NOTEBOOKS_DIR.is_dir():
     for notebook in sorted(NOTEBOOKS_DIR.iterdir()):
         if notebook.suffix == ".py":
             name = notebook.stem
-            server = server.with_app(path=f"/{name}", root=str(notebook))
+            server = server.with_app(path=f"/marimo/{name}", root=str(notebook))
             app_names.append(name)
 
 
-@app.get("/")
+@app.get("/marimo")
 async def index() -> HTMLResponse:
     """Landing page listing all available notebooks."""
     items = "\n".join(
-        f'        <li><a href="/{name}/">{name}</a></li>' for name in app_names
+        f'        <li><a href="marimo/{name}/">{name}</a></li>' for name in app_names
     )
     html = f"""\
 <!DOCTYPE html>

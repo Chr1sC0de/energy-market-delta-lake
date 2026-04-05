@@ -37,8 +37,6 @@ services:
     restart: on-failure
     networks:
       - dagster_network
-    ports:
-      - "5432:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -67,8 +65,6 @@ services:
     restart: on-failure
     networks:
       - dagster_network
-    ports:
-      - "4566:4566"
     environment:
       SERVICES: s3,dynamodb
       AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
@@ -95,8 +91,6 @@ services:
         condition: service_healthy
     networks:
       - dagster_network
-    ports:
-      - "4000:4000"
     environment:
       DAGSTER_HOME: /opt/dagster/dagster_home/
       DAGSTER_POSTGRES_HOSTNAME: ${DAGSTER_POSTGRES_HOSTNAME}
@@ -140,8 +134,6 @@ services:
         condition: service_healthy
     networks:
       - dagster_network
-    ports:
-      - "2718:2718"
     environment:
       AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL}
       AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
@@ -167,13 +159,12 @@ services:
     restart: on-failure
     networks:
       - dagster_network
-    ports:
-      - "8000:8000"
     environment:
       COGNITO_DAGSTER_AUTH_CLIENT_ID: ${COGNITO_DAGSTER_AUTH_CLIENT_ID}
       COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL: ${COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL}
+      COGNITO_TOKEN_SIGNING_KEY_URL: ${COGNITO_TOKEN_SIGNING_KEY_URL}
       COGNITO_DAGSTER_AUTH_CLIENT_SECRET: ${COGNITO_DAGSTER_AUTH_CLIENT_SECRET}
-      WEBSITE_ROOT_URL: ${WEBSITE_ROOT_URL:-http://localhost:3000}
+      WEBSITE_ROOT_URL: ${WEBSITE_ROOT_URL}
       FORWARDED_ALLOW_IPS: "*"
   # -------------------------------------------------------------------------
   # caddy — reverse proxy + static file server
@@ -186,12 +177,15 @@ services:
     restart: on-failure
     depends_on:
       - authentication
-      - dagster-webserver
+      - dagster-webserver-admin
+      - dagster-webserver-guest
       - marimo
     networks:
       - dagster_network
     ports:
-      - "8443:8443"
+      - 80:80
+      - 443:443
+      - 443:443/udp
     environment:
       ROOT_DNS: ${ROOT_DNS}
       LOCAL_CERTS: ${LOCAL_CERTS}
@@ -203,13 +197,13 @@ services:
   # -------------------------------------------------------------------------
   # dagster-webserver — Dagster UI and GraphQL API
   # -------------------------------------------------------------------------
-  dagster-webserver:
+  dagster-webserver-admin:
     build:
       context: ./dagster-core
       target: deploy
       args:
         DAGSTER_DEPLOYMENT: local
-    container_name: dagster-webserver
+    container_name: dagster-webserver-admin
     restart: on-failure
     depends_on:
       postgres:
@@ -218,8 +212,6 @@ services:
         condition: service_healthy
     networks:
       - dagster_network
-    ports:
-      - "3000:3000"
     environment:
       DAGSTER_HOME: /opt/dagster/dagster_home/
       DOCKER_HOST: unix:///run/podman/podman.sock
@@ -243,6 +235,48 @@ services:
       - "3000"
       - -w
       - workspace.yaml
+      - --path-prefix
+      - /dagster-webserver/admin
+  dagster-webserver-guest:
+    build:
+      context: ./dagster-core
+      target: deploy
+      args:
+        DAGSTER_DEPLOYMENT: local
+    container_name: dagster-webserver-guest
+    restart: on-failure
+    depends_on:
+      postgres:
+        condition: service_healthy
+      aemo-etl:
+        condition: service_healthy
+    networks:
+      - dagster_network
+    environment:
+      DAGSTER_HOME: /opt/dagster/dagster_home/
+      DOCKER_HOST: unix:///run/podman/podman.sock
+      DAGSTER_POSTGRES_HOSTNAME: ${DAGSTER_POSTGRES_HOSTNAME}
+      DAGSTER_POSTGRES_USER: ${DAGSTER_POSTGRES_USER}
+      DAGSTER_POSTGRES_PASSWORD: ${DAGSTER_POSTGRES_PASSWORD}
+      DAGSTER_POSTGRES_DB: ${DAGSTER_POSTGRES_DB}
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_ALLOW_HTTP: true
+      AWS_S3_LOCKING_PROVIDER: dynamodb
+    volumes:
+      - ${XDG_RUNTIME_DIR}/podman/podman.sock:/run/podman/podman.sock
+    command:
+      - dagster-webserver
+      - -h
+      - "0.0.0.0"
+      - -p
+      - "3000"
+      - -w
+      - workspace.yaml
+      - --path-prefix
+      - /dagster-webserver/guest
   # -------------------------------------------------------------------------
   # dagster-daemon — schedules, sensors, run queue processor
   # -------------------------------------------------------------------------
