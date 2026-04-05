@@ -2,9 +2,10 @@ import uuid
 from collections.abc import Mapping
 from typing import Callable, cast
 
+import polars_hash as plh
 import requests
 from dagster import TableColumn, TableSchema
-from polars import DataType, Datetime, LazyFrame, Schema
+from polars import DataType, Datetime, Expr, LazyFrame, Schema, col
 from polars import len as len_
 from requests import Response
 
@@ -36,3 +37,9 @@ def add_random_suffix(prefix: str) -> str:
 
 def get_lazyframe_num_rows(df: LazyFrame) -> int:
     return cast(int, df.select(len_()).collect().item())
+
+
+def get_surrogate_key(primary_keys: list[str]) -> Expr:
+    return plh.concat_str(
+        *[col(key).fill_null("") for key in primary_keys]
+    ).chash.sha2_256()

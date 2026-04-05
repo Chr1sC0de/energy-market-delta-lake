@@ -1,10 +1,6 @@
 from typing import Unpack, cast
 
-from dagster import (
-    Any,
-    AssetsDefinition,
-    graph_asset,
-)
+from dagster import Any, AssetsDefinition, MetadataValue, graph_asset
 from polars import Datetime, LazyFrame, Schema, String
 
 from aemo_etl.configs import LANDING_BUCKET
@@ -35,6 +31,13 @@ from aemo_etl.factories.nemweb_public_files.ops.processed_link_combiner import (
 from aemo_etl.models import GraphAssetKwargs
 from aemo_etl.utils import get_metadata_schema
 
+SURROGATE_KEY_SOURCES = [
+    "source_absolute_href",
+    "source_upload_datetime",
+    "target_s3_name",
+    "target_ingested_datetime",
+]
+
 SCHEMA = Schema(
     {
         "source_absolute_href": String,
@@ -44,6 +47,7 @@ SCHEMA = Schema(
         "target_s3_prefix": String,
         "target_s3_name": String,
         "target_ingested_datetime": Datetime("ms", time_zone="Australia/Melbourne"),
+        "surrogate_key": String,
     }
 )
 
@@ -62,6 +66,7 @@ DESCRIPTIONS = {
     "target_ingested_datetime": """
         The datetime the file was ingested in Australia/Melbourne time zone
     """,
+    "surrogate_key": f"surrogate key created from columns {SURROGATE_KEY_SOURCES}",
 }
 
 
@@ -89,7 +94,7 @@ def nemweb_public_files_asset_factory(
         "description",
         f"""
             Table listing public files downloaded from https://www.nemweb.com.au/{nemweb_relative_href}
-            and converted to parquet where possible
+            and converted to parquet where possible.
         """,
     )
     graph_asset_kwargs.setdefault("kinds", {"source", "table", "deltalake"})
@@ -97,6 +102,9 @@ def nemweb_public_files_asset_factory(
     if "dagster/column_schema" not in out_metadata_kwargs:
         out_metadata_kwargs["dagster/column_schema"] = get_metadata_schema(
             SCHEMA, DESCRIPTIONS
+        )
+        out_metadata_kwargs["surrogate_key_sources"] = MetadataValue.json(
+            SURROGATE_KEY_SOURCES
         )
 
     nemweb_link_fetcher_op = build_nemweb_link_fetcher_op(
@@ -115,7 +123,12 @@ def nemweb_public_files_asset_factory(
         name, s3_landing_bucket, s3_landing_prefix, file_unzipper
     )
     processed_link_combiner_op = build_process_link_combiner_op(
-        name, SCHEMA, io_manager_key, out_metadata_kwargs, processed_link_combiner
+        name,
+        SCHEMA,
+        SURROGATE_KEY_SOURCES,
+        io_manager_key,
+        out_metadata_kwargs,
+        processed_link_combiner,
     )
 
     @graph_asset(name=name, **(graph_asset_kwargs or {}))

@@ -20,6 +20,7 @@ dependencies = [
   "deltalake>=1.4.2",
   "pandas>=3.0.1",
   "polars>=1.38.1",
+  "polars-hash>=0.5.6",
   "pyarrow>=23.0.1",
   "types-boto3[dynamodb,s3]>=1.42.58",
   "types-requests>=2.32.4.20260107",

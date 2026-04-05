@@ -8,6 +8,7 @@ from polars import LazyFrame, Schema, col
 from aemo_etl.factories.nemweb_public_files.data_models import (
     ProcessedLink,
 )
+from aemo_etl.utils import get_surrogate_key
 
 
 class ProcessedLinkedCombiner(ABC):
@@ -23,6 +24,7 @@ class ProcessedLinkedCombiner(ABC):
 def build_process_link_combiner_op(
     name: str,
     schema: Schema,
+    surrogate_key_sources: list[str],
     io_manager_key: str | None,
     out_metadata_kwargs: dict[str, Any] | None,
     processed_link_combiner: ProcessedLinkedCombiner,
@@ -40,7 +42,10 @@ def build_process_link_combiner_op(
     def _op(
         context: OpExecutionContext, processed_links: list[ProcessedLink | None]
     ) -> LazyFrame:
-        return processed_link_combiner.combine(context, processed_links, schema)
+        df = processed_link_combiner.combine(
+            context, processed_links, schema
+        ).with_columns(surrogate_key=get_surrogate_key(surrogate_key_sources))
+        return df
 
     return _op
 

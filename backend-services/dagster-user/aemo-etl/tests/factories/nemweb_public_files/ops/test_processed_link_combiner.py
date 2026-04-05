@@ -8,6 +8,7 @@ from polars.datatypes import Datetime, String
 from aemo_etl.factories.nemweb_public_files.data_models import (
     ProcessedLink,
 )
+from aemo_etl.factories.nemweb_public_files.factory import SURROGATE_KEY_SOURCES
 from aemo_etl.factories.nemweb_public_files.ops.processed_link_combiner import (
     ProcessedLinkedCombiner,
     S3ProcessedLinkCombiner,
@@ -99,6 +100,7 @@ def test_build_process_link_combiner_op(
     combiner_op = build_process_link_combiner_op(
         "mock",
         mock_schema,
+        SURROGATE_KEY_SOURCES,
         None,
         None,
         MockProcessedLinkCombiner(),

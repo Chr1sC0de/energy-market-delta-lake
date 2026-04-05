@@ -10,6 +10,7 @@ from dagster import (
 from aemo_etl.configs import AEMO_BUCKET, LANDING_BUCKET
 from aemo_etl.factories.check_duplicate_rows import duplicate_row_check_factory
 from aemo_etl.factories.nemweb_public_files.factory import (
+    SURROGATE_KEY_SOURCES,
     nemweb_public_files_asset_factory,
 )
 from aemo_etl.factories.nemweb_public_files.ops.dynamic_nemweb_links_fetcher import (
@@ -82,19 +83,8 @@ def definition_factory(
     asset_check = duplicate_row_check_factory(
         assets_definition=asset,
         check_name="check_for_duplicate_rows",
-        primary_key=[
-            "source_absolute_href",
-            "source_upload_datetime",
-            "target_s3_name",
-            "target_ingested_datetime",
-        ],
-        description="""
-            Check that row group:
-
-                ["source_absolute_href","source_upload_datetime","target_s3_name","target_ingested_datetime"]
-
-            is unique
-            """,
+        primary_key="surrogate_key",
+        description=f"Check that surrogate_key({SURROGATE_KEY_SOURCES}) is unique",
     )
 
     return Definitions(
