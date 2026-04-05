@@ -7,3 +7,5 @@ __pycache__
 !.dockerignore
 !.pre-commit*
 !.gitkeep
+
+infrastructure/*-legacy

@@ -1,0 +1,241 @@
+"""Shared Pulumi mock infrastructure for all unit tests.
+
+The Pulumi runtime mocks MUST be installed before any component module is
+imported, so this conftest sets everything up at module-load time — the same
+"env-vars-and-patches-first" pattern used in backend-services/authentication/.
+
+Environment variables are also set here before configs.py can be imported
+as a side effect of importing any component.
+"""
+
+import asyncio
+import os
+
+import pulumi
+import pulumi.runtime
+
+# ---------------------------------------------------------------------------
+# 1. Environment variables — set before configs.py is imported
+# ---------------------------------------------------------------------------
+os.environ.setdefault("ADMINISTRATOR_IPS", "10.0.0.1")
+os.environ.setdefault("ENVIRONMENT", "test")
+# Prevent configs.py from hitting ipify.org
+os.environ.setdefault("DEVELOPMENT_LOCATION", "aws")
+
+
+# ---------------------------------------------------------------------------
+# 2. Pulumi mock implementation
+# ---------------------------------------------------------------------------
+class InfrastructureMocks(pulumi.runtime.Mocks):
+    """Intercepts all provider calls and resource registrations.
+
+    call()         — handles data-source / provider-function invocations
+    new_resource() — handles every resource construction; returns a synthetic
+                     physical ID and passes inputs straight through as outputs
+                     so that Output[T] chains resolve during tests.
+    """
+
+    def call(self, args: pulumi.runtime.MockCallArgs) -> dict:  # type: ignore[override]
+        token = args.token
+
+        if token == "aws:index/getRegion:getRegion":
+            return {
+                "id": "ap-southeast-2",
+                "region": "ap-southeast-2",
+                "description": "Asia Pacific (Sydney)",
+                "endpoint": "ec2.ap-southeast-2.amazonaws.com",
+                "name": "ap-southeast-2",
+            }
+
+        if token == "aws:index/getAvailabilityZones:getAvailabilityZones":
+            return {
+                "id": "ap-southeast-2",
+                "names": ["ap-southeast-2a", "ap-southeast-2b", "ap-southeast-2c"],
+                "zoneIds": ["apse2-az1", "apse2-az2", "apse2-az3"],
+                "state": "available",
+            }
+
+        if token == "aws:index/getCallerIdentity:getCallerIdentity":
+            return {
+                "accountId": "123456789012",
+                "arn": "arn:aws:iam::123456789012:user/test",
+                "id": "123456789012",
+                "userId": "AKIAIOSFODNN7EXAMPLE",
+            }
+
+        if token == "aws:ec2/getAmi:getAmi":
+            return {
+                "id": "ami-0test12345678abcd",
+                "imageId": "ami-0test12345678abcd",
+                "architecture": "x86_64",
+                "name": "al2023-ami-2023.0.0.0-kernel-6.1-x86_64",
+                "ownerId": "137112412989",
+                "state": "available",
+                "virtualizationType": "hvm",
+                "rootDeviceType": "ebs",
+                "rootDeviceName": "/dev/xvda",
+            }
+
+        if token == "aws:ecr/getAuthorizationToken:getAuthorizationToken":
+            return {
+                "id": "ap-southeast-2",
+                "authorizationToken": "dGVzdA==",
+                "proxyEndpoint": "https://123456789012.dkr.ecr.ap-southeast-2.amazonaws.com",
+                "password": "test-ecr-password",
+                "userName": "AWS",
+                "expiresAt": "2099-01-01T00:00:00Z",
+            }
+
+        if token == "aws:ec2/getAvailabilityZone:getAvailabilityZone":
+            return {
+                "id": "ap-southeast-2a",
+                "name": "ap-southeast-2a",
+                "zoneName": "ap-southeast-2a",
+                "zoneId": "apse2-az1",
+                "state": "available",
+                "region": "ap-southeast-2",
+            }
+
+        if token == "aws:route53/getZone:getZone":
+            return {
+                "id": "ZTEST123456789",
+                "zoneId": "ZTEST123456789",
+                "name": "ausenergymarketdata.com",
+                "privateZone": False,
+                "callerReference": "test-ref",
+            }
+
+        # Default: return empty dict for unknown calls
+        return {}
+
+    def new_resource(self, args: pulumi.runtime.MockResourceArgs) -> tuple[str, dict]:  # type: ignore[override]
+        """Return a synthetic physical ID and pass inputs through as outputs."""
+        resource_id = f"{args.name}-mock-id"
+        outputs = dict(args.inputs)
+
+        # Augment outputs with commonly expected fields that aren't in inputs
+        if "arn" not in outputs:
+            outputs["arn"] = f"arn:aws:mock::123456789012:{args.name}"
+        if "id" not in outputs:
+            outputs["id"] = resource_id
+        # Ensure name is always present (many resources expose .name as an Output)
+        if "name" not in outputs:
+            outputs["name"] = args.name
+
+        # Resource-type-specific output augmentation
+        typ = args.typ or ""
+
+        if "ec2/vpc:Vpc" in typ:
+            outputs.setdefault("defaultRouteTableId", f"{args.name}-default-rt-mock-id")
+
+        if "ec2/instance:Instance" in typ:
+            outputs.setdefault("privateDns", f"{args.name}.internal.test")
+            outputs.setdefault("privateIp", "10.0.1.42")
+            outputs.setdefault("publicIp", "1.2.3.4")
+            outputs.setdefault("publicDns", f"{args.name}.compute.test")
+
+        if "ec2/eip:Eip" in typ:
+            outputs.setdefault("publicIp", "54.1.2.3")
+
+        if "ecr/repository:Repository" in typ:
+            outputs.setdefault(
+                "repositoryUrl",
+                f"123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/{args.name}",
+            )
+
+        if "s3/bucket:Bucket" in typ:
+            outputs.setdefault("bucket", args.name)
+            outputs.setdefault("bucketDomainName", f"{args.name}.s3.amazonaws.com")
+
+        if "ecs/cluster:Cluster" in typ:
+            outputs.setdefault(
+                "clusterArn",
+                f"arn:aws:ecs:ap-southeast-2:123456789012:cluster/{args.name}",
+            )
+
+        if "ecs/service:Service" in typ:
+            outputs.setdefault(
+                "clusterArn",
+                "arn:aws:ecs:ap-southeast-2:123456789012:cluster/test-cluster",
+            )
+
+        if "cloudwatch/logGroup:LogGroup" in typ:
+            outputs.setdefault("retentionInDays", 1)
+
+        if "random/randomPassword:RandomPassword" in typ:
+            outputs.setdefault("result", "MockPassword123!")
+
+        if "tls/privateKey:PrivateKey" in typ:
+            outputs.setdefault("privateKeyOpenssh", "mock-private-key")
+            outputs.setdefault("publicKeyOpenssh", "mock-public-key")
+
+        if "servicediscovery/privateDnsNamespace:PrivateDnsNamespace" in typ:
+            outputs.setdefault(
+                "arn",
+                "arn:aws:servicediscovery:ap-southeast-2:123456789012:namespace/ns-mock",
+            )
+            outputs.setdefault("hostedZone", "ZTEST123")
+
+        if "dynamodb/table:Table" in typ:
+            outputs.setdefault("tableName", args.inputs.get("name", "delta_log"))
+
+        return resource_id, outputs
+
+
+# ---------------------------------------------------------------------------
+# 3. Ensure an asyncio event loop exists before set_mocks creates the root
+#    Stack resource. Python 3.10+ no longer auto-creates a loop in the main
+#    thread, and Python 3.14 raises RuntimeError if none exists.
+#
+#    get_running_loop() raises RuntimeError when no loop is *running* — which
+#    is always true at module-import time regardless of whether a loop is set.
+#    We therefore check whether the policy already has a loop set before
+#    creating a new one, so pytest-asyncio or other test-runner loops are not
+#    silently overwritten.
+# ---------------------------------------------------------------------------
+try:
+    asyncio.get_running_loop()
+except RuntimeError:
+    # No loop is running. Check whether one is already set before creating a
+    # new one so we don't silently overwrite a loop configured by the test
+    # runner (e.g. pytest-asyncio). On Python 3.14, get_event_loop() raises
+    # RuntimeError instead of returning None when no loop is set, so we treat
+    # that exception the same as a None result.
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = None
+    if loop is None:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
+# ---------------------------------------------------------------------------
+# 4. Install mocks at module scope (runs once per test session)
+# ---------------------------------------------------------------------------
+pulumi.runtime.set_mocks(
+    InfrastructureMocks(),
+    project="aws-pulumi",
+    stack="test",
+    preview=False,
+)
+
+# ---------------------------------------------------------------------------
+# 5. Inject all config values required by components that call pulumi.Config()
+#    FastAPIAuthComponentResource and CaddyServerComponentResource both read
+#    secrets from Pulumi config at construction time.
+# ---------------------------------------------------------------------------
+pulumi.runtime.set_all_config(
+    {
+        "aws-pulumi:cognito_client_id": "test-cognito-client-id",
+        "aws-pulumi:cognito_server_metadata_url": "https://cognito.test.example.com/.well-known/openid-configuration",
+        "aws-pulumi:cognito_token_signing_key_url": "https://cognito.test.example.com/.well-known/jwks.json",
+        "aws-pulumi:cognito_client_secret": "test-cognito-client-secret",
+        "aws-pulumi:website_root_url": "https://test.ausenergymarketdata.com",
+        "aws-pulumi:developer_email": "test@example.com",
+    },
+    secret_keys=[
+        "aws-pulumi:cognito_client_id",
+        "aws-pulumi:cognito_server_metadata_url",
+        "aws-pulumi:cognito_token_signing_key_url",
+        "aws-pulumi:cognito_client_secret",
+    ],
+)

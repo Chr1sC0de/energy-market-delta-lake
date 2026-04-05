@@ -36,6 +36,18 @@ echo $XDG_RUNTIME_DIR   # should print /run/user/<UID>
 ls $XDG_RUNTIME_DIR/podman/podman.sock  # socket must exist
 ```
 
+to expose the required ports locally
+
+```bash
+sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
+```
+
+to revert
+
+```bash
+sudo sysctl -w net.ipv4.ip_unprivileged_port_start=1024
+```
+
 ______________________________________________________________________
 
 ## Directory layout

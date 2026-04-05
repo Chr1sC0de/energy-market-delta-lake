@@ -1,4 +1,3 @@
-import os
 from collections.abc import Awaitable
 from os import environ
 from secrets import token_urlsafe
@@ -22,6 +21,35 @@ app = FastAPI()
 router = APIRouter()
 
 app.add_middleware(SessionMiddleware, secret_key=token_urlsafe(32))
+
+
+def _normalise_website_root_url(raw: str) -> str:
+    """Normalise WEBSITE_ROOT_URL to a scheme-qualified, slash-free base URL.
+
+    Handles three input forms:
+      - Already correct: "https://example.com"     → "https://example.com"
+      - Plain HTTP:      "http://example.com"       → "https://example.com"
+      - No scheme:       "example.com"              → "https://example.com"
+
+    Trailing slashes are always stripped so callers can safely append a path
+    without producing double-slashes.
+
+    This guards against the config being set without a scheme, which would
+    cause Starlette to treat the redirect as relative and produce a malformed
+    URL such as:
+      /oauth2/…/authorize/ausenergymarketdata.com/dagster-webserver/admin
+    """
+    url = raw.rstrip("/")
+    if url.startswith("http://"):
+        # Upgrade plain HTTP to HTTPS — production must always use TLS.
+        return "https://" + url[len("http://") :]
+    if not url.startswith("https://"):
+        # No scheme at all — prepend https://.
+        return f"https://{url}"
+    return url
+
+
+_website_root_url: str = _normalise_website_root_url(environ["WEBSITE_ROOT_URL"])
 
 
 oauth = OAuth()
@@ -149,7 +177,7 @@ async def _authorize_callback(
         request.session["token_type"] = token["token_type"]
         request.session["access_token"] = token["access_token"]
         request.session["expires_at"] = token["expires_at"]
-        return RedirectResponse(f"{os.environ['WEBSITE_ROOT_URL']}{redirect_path}")
+        return RedirectResponse(f"{_website_root_url}{redirect_path}")
     except Exception as e:
         clear_session(request.session)
         return JSONResponse(

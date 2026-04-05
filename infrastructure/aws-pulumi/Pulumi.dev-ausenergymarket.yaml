@@ -1,0 +1,13 @@
+encryptionsalt: v1:3H8MEt0seIk=:v1:wZZ0GsOGkcvXYXxf:arSaYEpMPaiUKzN/7ptJc9mvlvFfKA==
+config:
+  aws:region: ap-southeast-2
+  aws-pulumi:cognito_client_id:
+    secure: v1:1azEcpTUcYnSzlOa:pvJw88dvwYgl1ZGB7/iYekBunLUJ1CQrAxbqG+798v33vvfVqvr5/Yo1
+  aws-pulumi:cognito_server_metadata_url:
+    secure: v1:JEzNQsvSx7Y4En2g:t4MpAa0zQFjWl7Z03IclQ4ktqJrygi9xTd0s+0akWn2s2+Rlx+B7lsHqZOObkrV9I1WfGPrzX5MykQPuSu1XphYCL1fFd1LJubw/JqdETY0+6ksn6EnYHoPbKrEWtF+WAW9uZEupZuJdEhBZqWGXc7CfCcQZ024K494=
+  aws-pulumi:cognito_token_signing_key_url:
+    secure: v1:bH2+qbBTeu5FGvBy:kyi434CbnNU+AzwrmHzfyuPrWQIrj1W8iS7Gsb1FcBphobJiT3zskTFWqjwv9vcSb8/2OweYxwVZX/PoyyOHENNfZEFZRxoxPBxZwF2M4f0oWx0lQ8v3MXAYs5CluwRV90MkMVimo82VpR1z4KmP
+  aws-pulumi:cognito_client_secret:
+    secure: v1:9cKwjZKfJ845iKIr:OXvp1e1BU2cfMCY/ngBxlMt/0OLtWjMZ4pG0t+7Rb5Bn4nMmCXPcZhqbkrXKPu2+jPITUhV3CzQwCosqkf3jVHga9qg=
+  aws-pulumi:website_root_url: https://ausenergymarketdata.com
+  aws-pulumi:developer_email: chrisam1993@live.com

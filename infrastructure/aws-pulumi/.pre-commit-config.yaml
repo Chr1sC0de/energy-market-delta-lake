@@ -1,0 +1,43 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+#
+# All local hooks use `uv run` so they execute inside this project's own
+# virtual environment, regardless of what is (or isn't) activated in the
+# calling shell.
+repos:
+  - repo: 'https://github.com/pre-commit/pre-commit-hooks'
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+  - repo: https://github.com/tox-dev/pyproject-fmt
+    rev: "v2.16.1"
+    hooks:
+      - id: pyproject-fmt
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        language: system
+        entry: uv run ruff check
+        types:
+          - python
+      - id: ruff-format
+        name: ruff format
+        language: system
+        entry: uv run ruff format
+        types:
+          - python
+      - id: zuban-check
+        name: zuban check
+        language: system
+        entry: uv run zuban check --strict
+        pass_filenames: false
+      - id: pytest
+        name: pytest unit tests
+        language: system
+        entry: uv run pytest tests/unit/ -x -q
+        pass_filenames: false
+        always_run: true

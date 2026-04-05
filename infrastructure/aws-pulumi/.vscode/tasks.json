@@ -1,0 +1,11 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "pulumi-preview",
+      "type": "shell",
+      "command": "pulumi preview --attach-debugger",
+      "isBackground": true
+    }
+  ]
+}

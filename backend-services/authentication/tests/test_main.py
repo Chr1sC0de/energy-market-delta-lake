@@ -451,6 +451,83 @@ class TestAuthorizeEndpoint:
         assert response.status_code == 401
         assert "token exchange failed" in response.json()["message"]
 
+    def test_authorize_redirect_uses_normalised_website_root_url(
+        self, mocker: Any
+    ) -> None:
+        """Redirect must be an absolute https:// URL regardless of how
+        WEBSITE_ROOT_URL was configured.
+
+        Regression guard for: WEBSITE_ROOT_URL set without the https:// scheme
+        (e.g. "ausenergymarketdata.com") causing Starlette to treat the redirect
+        as relative and produce:
+          /oauth2/…/ausenergymarketdata.com/dagster-webserver/admin
+        """
+        token = {
+            "userinfo": {"sub": "abc", "email": "a@b.com"},
+            "token_type": "Bearer",
+            "access_token": FAKE_TOKEN,
+            "expires_at": time() + 3600,
+        }
+        mock_authorize_token = AsyncMock(return_value=token)
+        mocker.patch.object(main.oidc, "authorize_access_token", mock_authorize_token)
+
+        # Confirm the live module value is already normalised (conftest sets
+        # WEBSITE_ROOT_URL="https://example.com", so this should pass as-is).
+        assert main._website_root_url.startswith("https://"), (
+            f"_website_root_url must start with 'https://', got {main._website_root_url!r}"
+        )
+        assert not main._website_root_url.endswith("/"), (
+            f"_website_root_url must not have a trailing slash, "
+            f"got {main._website_root_url!r}"
+        )
+
+        client = TestClient(app, raise_server_exceptions=False)
+        client.follow_redirects = False
+        response = client.get(self.URL)
+
+        location = response.headers["location"]
+        assert location.startswith("https://"), (
+            f"Redirect location must be absolute https://, got {location!r}"
+        )
+
+
+class TestWebsiteRootUrlNormalisation:
+    """Unit tests for _normalise_website_root_url().
+
+    Tests call the real function from main.py so coverage is recorded against
+    the actual implementation rather than a duplicated helper.
+    """
+
+    def test_already_https_unchanged(self) -> None:
+        assert (
+            main._normalise_website_root_url("https://example.com")
+            == "https://example.com"
+        )
+
+    def test_already_https_trailing_slash_stripped(self) -> None:
+        assert (
+            main._normalise_website_root_url("https://example.com/")
+            == "https://example.com"
+        )
+
+    def test_plain_http_upgraded_to_https(self) -> None:
+        """Plain http:// must be upgraded, not passed through."""
+        result = main._normalise_website_root_url("http://example.com")
+        assert result == "https://example.com", (
+            f"Expected http:// to be upgraded to https://, got {result!r}"
+        )
+
+    def test_no_scheme_gets_https_prepended(self) -> None:
+        """Bare domain (no scheme) must have https:// prepended."""
+        result = main._normalise_website_root_url("example.com")
+        assert result == "https://example.com", (
+            f"Expected https:// to be prepended to bare domain, got {result!r}"
+        )
+
+    def test_no_scheme_with_path_gets_https_prepended(self) -> None:
+        result = main._normalise_website_root_url("example.com/some/path")
+        assert result == "https://example.com/some/path"
+
 
 # ---------------------------------------------------------------------------
 # TestValidateEndpointLocalhostBranch (validate login_redirect_uri rewrite)
