@@ -21,11 +21,20 @@
     root @static /var/www/html
     file_server @static
 
-    # Dagster asset paths that have no prefix — proxy to the guest upstream
+    # Dagster asset paths that have no prefix — proxy to the guest upstream.
+    # Exclude /marimo/* sub-paths so notebook-level favicon/manifest route correctly.
     reverse_proxy /_next* {$DAGSTER_WEBSERVER_GUEST}
     reverse_proxy /graphql* {$DAGSTER_WEBSERVER_GUEST}
-    reverse_proxy /favicon.* {$DAGSTER_WEBSERVER_GUEST}
-    reverse_proxy /manifest.json {$DAGSTER_WEBSERVER_GUEST}
+    @dagsterFavicon {
+        path /favicon.*
+        not path /marimo*
+    }
+    reverse_proxy @dagsterFavicon {$DAGSTER_WEBSERVER_GUEST}
+    @dagsterManifest {
+        path /manifest.json
+        not path /marimo*
+    }
+    reverse_proxy @dagsterManifest {$DAGSTER_WEBSERVER_GUEST}
 
     # guest server route
     reverse_proxy /dagster-webserver/guest* {$DAGSTER_WEBSERVER_GUEST}
@@ -48,6 +57,7 @@
                 header_up X-Forwarded-For {remote_host}
                 header_up X-Forwarded-Proto {scheme}
                 header_up X-Forwarded-Host {host}
+                header_up Cookie {http.request.header.Cookie}
 
                 @error status 401
                 handle_response @error {
@@ -68,6 +78,8 @@
     @protectedMarimo {
         path /marimo*
         not path /marimo/login*
+        not header Connection *Upgrade*
+        not path /marimo/*/assets/* /marimo/*/favicon.ico /marimo/*/favicon.* /marimo/*/manifest.json /marimo/*/apple-touch-icon.png
     }
 
     handle @protectedMarimo {
@@ -78,6 +90,7 @@
                 header_up X-Forwarded-For {remote_host}
                 header_up X-Forwarded-Proto {scheme}
                 header_up X-Forwarded-Host {host}
+                header_up Cookie {http.request.header.Cookie}
 
                 @error status 401
                 handle_response @error {
@@ -85,8 +98,10 @@
                 }
         }
 
-        # Strip /marimo prefix before proxying — the marimo FastAPI app
-        # serves from root inside the container.
         reverse_proxy {$MARIMO_SERVER}
     }
+
+    # Assets, WebSocket kernel connections, and any other /marimo* paths excluded
+    # from @protectedMarimo are proxied directly without auth checks.
+    reverse_proxy /marimo* {$MARIMO_SERVER}
 }

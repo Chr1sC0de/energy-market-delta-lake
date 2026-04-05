@@ -1,5 +1,23 @@
+import boto3
 import pulumi
 import pulumi_aws as aws
+from botocore.exceptions import ClientError
+
+
+def bucket_exists(bucket_name: str) -> bool:
+    s3 = boto3.client("s3")
+    try:
+        s3.head_bucket(Bucket=bucket_name)
+        return True
+    except ClientError as e:
+        # If a client error is thrown, check if it's a 404 (Not Found) or 403 (Forbidden)
+        error_code = e.response["Error"]["Code"]
+        if error_code == "404":
+            return False  # Bucket does not exist
+        elif error_code == "403":
+            return True  # Bucket exists, but you don't have access
+        else:
+            raise  # Other unexpected errors
 
 
 class S3BucketsComponentResource(pulumi.ComponentResource):
@@ -65,15 +83,14 @@ class S3BucketsComponentResource(pulumi.ComponentResource):
         # fail with BucketAlreadyOwnedByYou — in that case, run:
         #   pulumi import aws:s3/bucket:Bucket <name> <name> --parent <component-urn>
         # for each retained bucket before re-running pulumi up.
-        try:
+        if bucket_exists(bucket_name):
             bucket = aws.s3.Bucket(
                 bucket_name,
                 bucket=bucket_name,
                 force_destroy=force_destroy,
                 opts=pulumi.ResourceOptions(import_=bucket_name),
             )
-
-        except Exception:
+        else:
             bucket = aws.s3.Bucket(
                 bucket_name,
                 bucket=bucket_name,
