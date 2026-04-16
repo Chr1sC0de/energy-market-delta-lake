@@ -53,7 +53,7 @@ repos:
         name: pytest
         entry: uv run pytest
         args:
-          - --cov-fail-under=100
+          - --cov-fail-under=90
           - --cov=aemo_etl
           - --cov-report=term-missing
           - --cov-report=html

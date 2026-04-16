@@ -3,23 +3,23 @@ from unittest.mock import MagicMock
 import pytest
 from dagster import AssetsDefinition
 
-from aemo_etl.factories.nemweb_public_files.factory import (
+from aemo_etl.factories.assets.nemweb_public_files.factory import (
     nemweb_public_files_asset_factory,
 )
-from aemo_etl.factories.nemweb_public_files.ops.dynamic_nemweb_links_fetcher import (
+from aemo_etl.factories.assets.nemweb_public_files.ops.dynamic_nemweb_links_fetcher import (
     DynamicNEMWebLinksFetcher,
 )
-from aemo_etl.factories.nemweb_public_files.ops.dynamic_zip_links_fetcher import (
+from aemo_etl.factories.assets.nemweb_public_files.ops.dynamic_zip_links_fetcher import (
     DynamicZipLinksFetcher,
 )
-from aemo_etl.factories.nemweb_public_files.ops.file_unzipper import FileUnzipper
-from aemo_etl.factories.nemweb_public_files.ops.nemweb_link_fetcher import (
+from aemo_etl.factories.assets.nemweb_public_files.ops.file_unzipper import FileUnzipper
+from aemo_etl.factories.assets.nemweb_public_files.ops.nemweb_link_fetcher import (
     NEMWebLinkFetcher,
 )
-from aemo_etl.factories.nemweb_public_files.ops.nemweb_link_processor import (
+from aemo_etl.factories.assets.nemweb_public_files.ops.nemweb_link_processor import (
     S3NemwebLinkProcessor,
 )
-from aemo_etl.factories.nemweb_public_files.ops.processed_link_combiner import (
+from aemo_etl.factories.assets.nemweb_public_files.ops.processed_link_combiner import (
     ProcessedLinkedCombiner,
 )
 

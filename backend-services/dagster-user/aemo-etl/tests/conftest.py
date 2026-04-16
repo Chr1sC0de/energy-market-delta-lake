@@ -34,7 +34,7 @@ def aws_credentials(session_monkeypatch: pytest.MonkeyPatch) -> None:
     session_monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test")
     session_monkeypatch.setenv("AWS_SECURITY_TOKEN", "test")
     session_monkeypatch.setenv("AWS_SESSION_TOKEN", "test")
-    session_monkeypatch.setenv("AWS_DEFAULT_REGION", "ap-southeast-4")
+    session_monkeypatch.setenv("AWS_DEFAULT_REGION", "ap-southeast-2")
     session_monkeypatch.setenv("AWS_ALLOW_HTTP", "true")
     session_monkeypatch.setenv("AWS_S3_LOCKING_PROVIDER", "dynamodb")
 
@@ -94,7 +94,7 @@ def make_bucket(s3: S3Client) -> Generator[MakeBucketProtocol]:
             bucket_name = add_random_suffix(bucket_name)
         _ = s3.create_bucket(
             Bucket=bucket_name,
-            CreateBucketConfiguration={"LocationConstraint": "ap-southeast-4"},
+            CreateBucketConfiguration={"LocationConstraint": "ap-southeast-2"},
         )
         buckets.append(bucket_name)
         return bucket_name

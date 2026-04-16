@@ -13,6 +13,8 @@ Abbreviation Key:
 
 import os
 
+DAGSTER_URI = "dagster/uri"
+
 # ────────────────────────────────────────────────────────────────────────────────
 
 NAME_PREFIX = os.environ.get("NAME_PREFIX", "energy-market")

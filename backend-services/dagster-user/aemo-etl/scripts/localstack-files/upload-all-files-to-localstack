@@ -1,0 +1,58 @@
+#!/usr/bin/env -S bash -euo pipefail
+
+: "
+Uploads the contents of a local directory to the LocalStack LANDING bucket.
+
+run this script with:
+
+  scripts/upload-all-files-to-localstack <SOURCE_DIR>
+
+SOURCE_DIR is required — pass the directory you want to sync into the bucket.
+"
+
+WORKING_DIRECTORY="$(dirname "$(realpath "$0")")"
+
+# shellcheck disable=SC1091
+. "$WORKING_DIRECTORY"/common
+
+info() {
+	echo INFO:"$(basename "$0")": "$@"
+}
+
+error() {
+	echo ERROR:"$(basename "$0")": "$@" >&2
+}
+
+check-localstack() {
+	curl --silent --fail "${AWS_ENDPOINT_URL}/_localstack/health" >/dev/null 2>&1
+}
+
+main() {
+
+	if [[ ! -d "$LOCALSTACK_LANDING_DOWNLOAD" ]]; then
+		error "SOURCE_DIR does not exist or is not a directory: ${LOCALSTACK_LANDING_DOWNLOAD}"
+		exit 1
+	fi
+
+	info "source dir: ${LOCALSTACK_LANDING_DOWNLOAD}"
+	info "bucket:     s3://${LANDING_BUCKET}"
+	info "endpoint:   ${AWS_ENDPOINT_URL}"
+
+	if ! check-localstack; then
+		error "LocalStack is not reachable at ${AWS_ENDPOINT_URL}"
+		error "Ensure LocalStack is running before executing this script."
+		exit 1
+	fi
+
+	info "LocalStack is reachable."
+
+	info "starting sync..."
+
+	aws s3 sync \
+		"$LOCALSTACK_LANDING_DOWNLOAD" \
+		"s3://${LANDING_BUCKET}"
+
+	info "sync complete. files uploaded to: s3://${LANDING_BUCKET}"
+}
+
+main "$@"

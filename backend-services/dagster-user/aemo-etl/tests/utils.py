@@ -1,10 +1,13 @@
+import os
 import socket
 import subprocess
 import time
+from pathlib import Path
 from typing import Protocol
 
 import requests
 
+GBB_DATA_DIR = Path(os.environ["HOME"]) / "localstack-landing-download/bronze/gbb"
 LOCALSTACK_IMAGE = "localstack/localstack"
 LOCALSTACK_PORT = 4566
 LOCALSTACK_HEALTH_PATH = "_localstack/health"

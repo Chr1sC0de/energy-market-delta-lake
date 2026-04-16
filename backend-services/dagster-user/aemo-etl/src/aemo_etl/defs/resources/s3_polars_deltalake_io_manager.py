@@ -12,12 +12,11 @@ from dagster import (
 from dagster._core.definitions.metadata import RawMetadataValue
 from polars import LazyFrame, scan_delta
 
-from aemo_etl.configs import AEMO_BUCKET
-from aemo_etl.utils import get_metadata_schema
+from aemo_etl.configs import DAGSTER_URI
+from aemo_etl.utils import get_lazyframe_num_rows, get_metadata_schema
 
 
 class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
-    root: str
     sink_delta_kwargs: dict[str, Any] = {}
     scan_delta_kwargs: dict[str, Any] = {}
     preview_row_count: int = 5
@@ -25,8 +24,9 @@ class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
     @override
     def handle_output(self, context: OutputContext, obj: LazyFrame) -> None:
         """automatically handles merges as upserts"""
-        key_prefix = "/".join(context.asset_key.parts)
-        target_uri = f"{self.root}/{key_prefix}"
+        assert context.metadata is not None, f"asset must set metadata {DAGSTER_URI}"
+        assert DAGSTER_URI in context.metadata, f"asset must set metadata {DAGSTER_URI}"
+        target_uri = context.metadata[DAGSTER_URI]
 
         return_object = obj.sink_delta(target_uri, **self.sink_delta_kwargs)
 
@@ -64,6 +64,7 @@ class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
             {
                 "preview": MetadataValue.md(markdown_preview),
                 "sink_delta_kwargs": MetadataValue.json(self.sink_delta_kwargs),
+                "dagster/row_count": get_lazyframe_num_rows(obj),
             }
         )
 
@@ -71,8 +72,16 @@ class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
 
     @override
     def load_input(self, context: InputContext) -> LazyFrame:
-        key_prefix = "/".join(context.asset_key.parts)
-        target_uri = f"{self.root}/{key_prefix}"
+        assert context.upstream_output is not None, "echo no upstream output found"
+        assert context.upstream_output.metadata is not None, (
+            f"upstream asset must set metadata {DAGSTER_URI}"
+        )
+        assert DAGSTER_URI in context.upstream_output.metadata, (
+            f"upstream asset must set metadata {DAGSTER_URI}"
+        )
+
+        target_uri = context.upstream_output.metadata[DAGSTER_URI]
+
         return scan_delta(target_uri, **self.scan_delta_kwargs)
 
 
@@ -81,7 +90,13 @@ def defs() -> Definitions:
     return Definitions(
         resources={
             "aemo_deltalake_append_io_manager": PolarsDataFrameSinkDeltaIoManager(
-                root=f"s3://{AEMO_BUCKET}", sink_delta_kwargs={"mode": "append"}
-            )
+                sink_delta_kwargs={"mode": "append"}
+            ),
+            "aemo_deltalake_ingest_partitioned_append_io_manager": PolarsDataFrameSinkDeltaIoManager(
+                sink_delta_kwargs={
+                    "mode": "append",
+                    "delta_write_options": {"partition_by": "ingested_date"},
+                },
+            ),
         }
     )

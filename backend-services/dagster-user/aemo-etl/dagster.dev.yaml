@@ -1,0 +1,5 @@
+concurrency:
+  runs:
+    max_concurrent_runs: 10
+  pools:
+    default_limit: 3

@@ -28,6 +28,7 @@ export AWS_S3_LOCKING_PROVIDER=dynamodb
 BUCKETS=(
 	"${DEVELOPMENT_ENVIRONMENT}-${PREFIX}-io-manager"
 	"${DEVELOPMENT_ENVIRONMENT}-${PREFIX}-landing"
+	"${DEVELOPMENT_ENVIRONMENT}-${PREFIX}-archive"
 	"${DEVELOPMENT_ENVIRONMENT}-${PREFIX}-aemo"
 )
 
@@ -185,6 +186,8 @@ main() {
 	local endpoint="http://$LOCALSTACK_HOST:$LOCALSTACK_PORT"
 
 	mkdir -p "$DAGSTER_HOME"
+
+	cp dagster.dev.yaml "$DAGSTER_HOME"/dagster.yaml
 
 	trap 'cleanup "$trap_container_name"' EXIT
 

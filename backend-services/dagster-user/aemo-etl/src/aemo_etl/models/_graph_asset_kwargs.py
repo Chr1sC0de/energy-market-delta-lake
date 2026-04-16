@@ -1,4 +1,4 @@
-from typing import AbstractSet, Any, Mapping, Sequence, TypedDict
+from typing import AbstractSet, Any, Iterable, Mapping, Sequence, TypedDict
 
 from dagster import (
     AssetCheckSpec,
@@ -8,15 +8,19 @@ from dagster import (
     AutomationCondition,
     BackfillPolicy,
     ConfigMapping,
+    DagsterType,
     HookDefinition,
     LegacyFreshnessPolicy,
     PartitionsDefinition,
     ResourceDefinition,
+    RetryPolicy,
 )
+from dagster._config import UserConfigSchema
 from dagster._core.definitions.asset_key import (
     CoercibleToAssetKey,
     CoercibleToAssetKeyPrefix,
 )
+from dagster._core.definitions.assets.definition.asset_dep import CoercibleToAssetDep
 from dagster._core.definitions.metadata import RawMetadataMapping
 
 
@@ -43,3 +47,31 @@ class GraphAssetKwargs(TypedDict, total=False):
     check_specs: Sequence[AssetCheckSpec] | None
     code_version: str | None
     key: CoercibleToAssetKey | None
+
+
+class AssetDefinitonParamSpec(TypedDict, total=False):
+    name: str
+    key_prefix: CoercibleToAssetKeyPrefix
+    metadata: dict[str, Any]
+    io_manager_key: str
+    key: CoercibleToAssetKey
+    ins: Mapping[str, AssetIn]
+    deps: Iterable[CoercibleToAssetDep] | None
+    tags: Mapping[str, str]
+    description: str
+    config_schema: UserConfigSchema
+    required_resource_keys: AbstractSet[str]
+    resource_defs: Mapping[str, object]
+    dagster_type: DagsterType
+    partitions_def: PartitionsDefinition[str]
+    op_tags: Mapping[str, Any]
+    group_name: str | None
+    output_required: bool
+    automation_condition: AutomationCondition[AssetKey]
+    backfill_policy: BackfillPolicy
+    retry_policy: RetryPolicy
+    code_version: str
+    check_specs: Sequence[AssetCheckSpec]
+    owners: Sequence[str]
+    kinds: AbstractSet[str]
+    pool: str

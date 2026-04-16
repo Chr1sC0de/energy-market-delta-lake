@@ -1,0 +1,57 @@
+#!/usr/bin/env -S bash -euo pipefail
+
+: "
+Downloads the entire contents of the LocalStack LANDING bucket to a local directory.
+
+run this script with:
+
+  scripts/download-all-files-from-localhost [TARGET_DIR]
+
+TARGET_DIR defaults to ./localstack-landing-download
+"
+
+WORKING_DIRECTORY="$(dirname "$(realpath "$0")")"
+
+# shellcheck disable=SC1091
+. "$WORKING_DIRECTORY"/common
+
+info() {
+	echo INFO:"$(basename "$0")": "$@"
+}
+
+error() {
+	echo ERROR:"$(basename "$0")": "$@" >&2
+}
+
+check-localstack() {
+	curl --silent --fail "${AWS_ENDPOINT_URL}/_localstack/health" >/dev/null 2>&1
+}
+
+main() {
+
+	info "bucket:     s3://${LANDING_BUCKET}"
+	info "endpoint:   ${AWS_ENDPOINT_URL}"
+	info "target dir: ${LOCALSTACK_LANDING_DOWNLOAD}"
+
+	if ! check-localstack; then
+		error "LocalStack is not reachable at ${AWS_ENDPOINT_URL}"
+		error "Ensure LocalStack is running before executing this script."
+		exit 1
+	fi
+
+	info "LocalStack is reachable."
+
+	mkdir -p "$LOCALSTACK_LANDING_DOWNLOAD"
+
+	info "starting sync..."
+
+	aws s3 sync \
+		"s3://${LANDING_BUCKET}" \
+		"$LOCALSTACK_LANDING_DOWNLOAD"
+
+	info "sync complete. files written to: ${LOCALSTACK_LANDING_DOWNLOAD}"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+	main "$@"
+fi

@@ -3,7 +3,7 @@ from dagster import asset, materialize
 from polars import Int64, LazyFrame, scan_delta
 from polars.testing import assert_frame_equal
 
-from aemo_etl.configs import AEMO_BUCKET
+from aemo_etl.configs import AEMO_BUCKET, DAGSTER_URI
 from aemo_etl.defs.resources.s3_polars_deltalake_io_manager import (
     PolarsDataFrameSinkDeltaIoManager,
 )
@@ -32,17 +32,14 @@ class TestPolarsDataFrameSinkDeltaIoManager:
 
         @asset(
             key_prefix=["bronze", "gasbb"],
+            metadata={DAGSTER_URI: asset_path},
         )
         def asset_() -> LazyFrame:
             return target_df
 
         _ = materialize(
             [asset_],
-            resources={
-                "io_manager": PolarsDataFrameSinkDeltaIoManager(
-                    root=root_uri,
-                )
-            },
+            resources={"io_manager": PolarsDataFrameSinkDeltaIoManager()},
         )
 
         assert_frame_equal(scan_delta(asset_path).sort("a"), target_df)
@@ -50,16 +47,18 @@ class TestPolarsDataFrameSinkDeltaIoManager:
     # parameterize this to also cover the metadata definition
     @pytest.mark.parametrize(
         "metadata",
-        [None, {"column_description": {"a": "a column", "b": "b column"}}],
+        [{}, {"column_description": {"a": "a column", "b": "b column"}}],
     )
     def test_handle_output_merge(
-        self, metadata: None | dict[str, str], asset_path: str, root_uri: str
+        self, metadata: dict[str, str], asset_path: str, root_uri: str
     ) -> None:
         source_df = LazyFrame(
             {"a": [1, 2, 3], "b": [3, 4, 5]},
         )
         source_df.sink_delta(asset_path)
         upsert_df = LazyFrame({"a": [1, 2, 3, 4], "b": [3, 4, 6, 7]})
+
+        metadata[DAGSTER_URI] = asset_path
 
         @asset(key_prefix=["bronze", "gasbb"], metadata=metadata)
         def asset_() -> LazyFrame:
@@ -69,7 +68,6 @@ class TestPolarsDataFrameSinkDeltaIoManager:
             [asset_],
             resources={
                 "io_manager": PolarsDataFrameSinkDeltaIoManager(
-                    root=root_uri,
                     sink_delta_kwargs={
                         "mode": "merge",
                         "delta_merge_options": {
@@ -91,23 +89,18 @@ class TestPolarsDataFrameSinkDeltaIoManager:
 
         @asset(
             key_prefix=["bronze", "gasbb"],
+            metadata={DAGSTER_URI: f"{root_uri}/bronze/gasbb/asset_1"},
         )
         def asset_1() -> LazyFrame:
             return target_df
 
-        @asset(
-            key_prefix=["bronze", "gasbb"],
-        )
+        @asset(key_prefix=["bronze", "gasbb"], metadata={DAGSTER_URI: asset_path})
         def asset_(asset_1: LazyFrame) -> LazyFrame:
             return asset_1.sum()
 
         _ = materialize(
             [asset_, asset_1],
-            resources={
-                "io_manager": PolarsDataFrameSinkDeltaIoManager(
-                    root=root_uri,
-                )
-            },
+            resources={"io_manager": PolarsDataFrameSinkDeltaIoManager()},
         )
 
         assert_frame_equal(scan_delta(asset_path), LazyFrame({"a": [6], "b": [15]}))

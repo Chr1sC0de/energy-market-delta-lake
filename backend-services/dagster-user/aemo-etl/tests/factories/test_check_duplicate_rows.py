@@ -3,7 +3,7 @@ from unittest.mock import Mock
 import dagster as dg
 import polars as pl
 
-from aemo_etl.factories.check_duplicate_rows import (
+from aemo_etl.factories.checks.check_duplicate_rows import (
     default_check_fn,
     duplicate_row_check_factory,
     get_unique_rows,

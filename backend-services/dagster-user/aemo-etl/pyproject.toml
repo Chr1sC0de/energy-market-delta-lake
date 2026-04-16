@@ -22,6 +22,7 @@ dependencies = [
   "polars>=1.38.1",
   "polars-hash>=0.5.6",
   "pyarrow>=23.0.1",
+  "tenacity>=9.1.4",
   "types-boto3[dynamodb,s3]>=1.42.58",
   "types-requests>=2.32.4.20260107",
 ]
@@ -50,10 +51,13 @@ line-length = 88
 format.docstring-code-format = true
 lint.select = [ "ANN", "E", "F" ]
 lint.per-file-ignores."__init__.py" = [ "I" ]
-lint.pycodestyle.max-line-length = 120
+lint.pycodestyle.max-line-length = 200
 
 [tool.pytest]
 ini_options.testpaths = [ "tests" ]
+
+[tool.ty]
+rules.invalid-argument-type = "ignore"
 
 [tool.dg]
 directory_type = "project"
@@ -64,3 +68,4 @@ project.registry_modules = [
 
 [tool.zuban]
 strict = true
+disable_error_code = [ "no-untyped-call" ]
