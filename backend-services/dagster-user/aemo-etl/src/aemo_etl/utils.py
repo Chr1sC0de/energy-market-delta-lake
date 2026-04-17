@@ -6,6 +6,7 @@ from datetime import datetime
 from logging import Logger
 from typing import Callable, TypedDict, cast
 
+import polars as pl
 import polars_hash as plh
 import requests
 from botocore.exceptions import ClientError
@@ -15,7 +16,6 @@ from polars import (
     Expr,
     LazyFrame,
     Schema,
-    col,
     scan_csv,
     scan_parquet,
 )
@@ -24,6 +24,22 @@ from polars._typing import PolarsDataType
 from requests import Response
 from types_boto3_s3 import S3Client
 from types_boto3_s3.type_defs import ListObjectsV2OutputTypeDef
+
+# NOTE:
+#
+# Dagster’s component system:
+#
+# - walks module attributes
+# - calls predicates on them
+# - accidentally hits Polars Expr
+# - Python tries bool(expr)
+#
+# This is a known friction point between:
+#
+# - lazy expression libraries (Polars)
+# - introspection-heavy frameworks (Dagster, Pydantic, etc.)
+#
+# this is why we will use pl.col over col directly
 
 AEST = dt.timezone(dt.timedelta(hours=10))
 
@@ -92,7 +108,7 @@ def get_s3_object_keys_from_prefix_and_name_glob(
 
 
 def get_metadata_schema(
-    df_schema: Mapping[str, PolarsDataType] | Schema,
+    df_schema: Mapping[str, PolarsDataType | type[object]] | Schema,
     descriptions: Mapping[str, str] | None = None,
 ) -> TableSchema:
     descriptions = descriptions or {}
@@ -120,9 +136,19 @@ def get_lazyframe_num_rows(df: LazyFrame) -> int:
     return cast(int, df.select(len_()).collect().item())  # ty:ignore[unresolved-attribute]
 
 
-def get_surrogate_key(primary_keys: list[str]) -> Expr:
+def get_surrogate_key(primary_keys: list[str] | list[Expr]) -> Expr:
+    expressions = []
+    for key in primary_keys:
+        if isinstance(key, str):
+            expressions.append(pl.col(key))
+        elif isinstance(key, Expr):
+            expressions.append(key)
+        else:
+            raise TypeError(
+                f"{key.__class__} is an invalid type should be either str or polars.Expr"
+            )
     return plh.concat_str(
-        *[col(key).fill_null("") for key in primary_keys]
+        *[expression.fill_null("") for expression in expressions]
     ).chash.sha2_256()
 
 

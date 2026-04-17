@@ -55,7 +55,7 @@ def nemweb_public_files_definition_factory(
     cron_schedule: str,
     batch_size: int = 5,
     process_retry: int = 3,
-    initial: int = 3,
+    initial: int = 10,
     exp_base: int = 3,
     max_retry_time: int = 100,
     folder_filter: Callable[
@@ -66,7 +66,9 @@ def nemweb_public_files_definition_factory(
 
     @retry(
         stop=stop_after_attempt(process_retry),
-        wait=wait_exponential_jitter(initial=10, exp_base=exp_base, max=max_retry_time),
+        wait=wait_exponential_jitter(
+            initial=initial, exp_base=exp_base, max=max_retry_time
+        ),
         retry=retry_if_exception_type(RequestException),
         reraise=True,
     )
@@ -83,7 +85,8 @@ def nemweb_public_files_definition_factory(
         metadata={
             "dagster/uri": table_path,
             "dagster/table_name": f"bronze.{domain}.{table_name}",
-            "cron_schedule": get_description(cron_schedule),
+            "cron_schedule": cron_schedule,
+            "cron_description": get_description(cron_schedule),
             "s3_landing_root": f"s3://{LANDING_BUCKET}/{s3_prefix}",
         },
         io_manager_key="aemo_deltalake_append_io_manager",

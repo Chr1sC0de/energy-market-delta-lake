@@ -90,7 +90,20 @@ def defs() -> Definitions:
     return Definitions(
         resources={
             "aemo_deltalake_append_io_manager": PolarsDataFrameSinkDeltaIoManager(
-                sink_delta_kwargs={"mode": "append"}
+                sink_delta_kwargs={
+                    "mode": "append",
+                    "delta_write_options": {
+                        "schema_mode": "merge",
+                    },
+                }
+            ),
+            "aemo_deltalake_overwrite_io_manager": PolarsDataFrameSinkDeltaIoManager(
+                sink_delta_kwargs={
+                    "mode": "overwrite",
+                    "delta_write_options": {
+                        "schema_mode": "merge",
+                    },
+                }
             ),
             "aemo_deltalake_ingest_partitioned_append_io_manager": PolarsDataFrameSinkDeltaIoManager(
                 sink_delta_kwargs={

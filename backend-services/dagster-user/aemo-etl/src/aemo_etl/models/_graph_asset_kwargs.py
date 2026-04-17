@@ -54,6 +54,7 @@ class AssetDefinitonParamSpec(TypedDict, total=False):
     key_prefix: CoercibleToAssetKeyPrefix
     metadata: dict[str, Any]
     io_manager_key: str
+    io_manager_def: object
     key: CoercibleToAssetKey
     ins: Mapping[str, AssetIn]
     deps: Iterable[CoercibleToAssetDep] | None
