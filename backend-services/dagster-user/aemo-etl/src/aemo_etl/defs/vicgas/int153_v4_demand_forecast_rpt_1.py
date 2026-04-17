@@ -51,6 +51,6 @@ defs = df_from_s3_keys_definitions_factory(
         in the report for each demand forecast.
     """).strip("\n"),
     surrogate_key_sources=["forecast_date", "version_id", "ti"],
-    group_name="vicgas__vic_dwm_sched_rpts",
+    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

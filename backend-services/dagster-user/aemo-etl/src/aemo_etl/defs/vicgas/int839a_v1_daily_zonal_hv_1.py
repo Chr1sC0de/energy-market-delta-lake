@@ -51,6 +51,6 @@ defs = df_from_s3_keys_definitions_factory(
         This report contains data for a period of 120 gas days (as available).
     """).strip("\n"),
     surrogate_key_sources=["gas_date", "hv_zone"],
-    group_name="vicgas__sa_gas_ret_rpts",
+    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

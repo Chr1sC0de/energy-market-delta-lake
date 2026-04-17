@@ -47,6 +47,6 @@ defs = df_from_s3_keys_definitions_factory(
         issue, description of the version, date and time when the report was produced.
     """).strip("\n"),
     surrogate_key_sources=["statement_version_id", "version_from_date"],
-    group_name="vicgas__vic_ws_settle_meter_rpts",
+    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

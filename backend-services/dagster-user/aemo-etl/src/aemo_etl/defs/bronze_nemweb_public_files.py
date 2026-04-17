@@ -24,27 +24,27 @@ def gbb_top_folder_filter(
 def defs() -> Definitions:
     return Definitions.merge(
         nemweb_public_files_definition_factory(
-            key_prefix=["bronze", "vicgas"],
+            domain="vicgas",
             table_name="bronze_nemweb_public_files_vicgas",
             nemweb_relative_href="REPORTS/CURRENT/VicGas",
             cron_schedule="*/15 * * * *",
         ),
         nemweb_public_files_definition_factory(
-            key_prefix=["bronze", "gbb"],
+            domain="gbb",
             table_name="bronze_nemweb_public_files_gbb",
             nemweb_relative_href="REPORTS/CURRENT/GBB",
             cron_schedule="*/15 * * * *",
             folder_filter=gbb_top_folder_filter,
         ),
         nemweb_public_files_definition_factory(
-            key_prefix=["bronze", "gbb"],
+            domain="gbb",
             table_name="bronze_nemweb_public_files_gbb_forecast_utilization",
             nemweb_relative_href="REPORTS/CURRENT/GBB/ForecastUtilisation",
             batch_size=100,
             cron_schedule="*/15 * * * *",
         ),
         nemweb_public_files_definition_factory(
-            key_prefix=["bronze", "gbb"],
+            domain="gbb",
             table_name="bronze_nemweb_public_files_gbb_duplicate",
             nemweb_relative_href="REPORTS/CURRENT/GBB/DUPLICATE",
             batch_size=100,

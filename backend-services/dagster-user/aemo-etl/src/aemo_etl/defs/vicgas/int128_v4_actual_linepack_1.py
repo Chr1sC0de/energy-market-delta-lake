@@ -45,6 +45,6 @@ defs = df_from_s3_keys_definitions_factory(
         current gas day becoming progressively more complete in the course of the day.
     """).strip("\n"),
     surrogate_key_sources=["commencement_datetime"],
-    group_name="vicgas__vic_ws_settle_meter_rpts",
+    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

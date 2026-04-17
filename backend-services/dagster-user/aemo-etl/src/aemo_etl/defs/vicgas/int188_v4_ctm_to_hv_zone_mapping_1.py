@@ -41,6 +41,6 @@ defs = df_from_s3_keys_definitions_factory(
         Gippsland, Bairnsdale and Gippsland regions are also provided.
     """).strip("\n"),
     surrogate_key_sources=["mirn"],
-    group_name="vicgas__vic_ws_settle_meter_rpts",
+    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

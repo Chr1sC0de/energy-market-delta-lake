@@ -72,6 +72,6 @@ defs = df_from_s3_keys_definitions_factory(
         metered injections in gigajoules
     """).strip("\n"),
     surrogate_key_sources=["gas_date", "gas_hour"],
-    group_name="vicgas__vic_dwm_sched_rpts",
+    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

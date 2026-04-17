@@ -49,6 +49,6 @@ defs = df_from_s3_keys_definitions_factory(
         published daily at midnight.
     """).strip("\n"),
     surrogate_key_sources=["zone_id", "start_date", "end_date", "source"],
-    group_name="vicgas__vic_dwm_sched_rpts",
+    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

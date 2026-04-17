@@ -57,6 +57,6 @@ defs = df_from_s3_keys_definitions_factory(
         market competition and transfer liquidity through the customer transfers.
     """).strip("\n"),
     surrogate_key_sources=["gas_date"],
-    group_name="vicgas__vic_gas_ret_rpt_dets",
+    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

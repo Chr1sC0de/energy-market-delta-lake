@@ -63,6 +63,6 @@ defs = df_from_s3_keys_definitions_factory(
         payments for gas days from 1 January 2023 onwards.
     """).strip("\n"),
     surrogate_key_sources=["gas_date", "sched_no"],
-    group_name="vicgas__vic_ws_settle_meter_rpts",
+    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

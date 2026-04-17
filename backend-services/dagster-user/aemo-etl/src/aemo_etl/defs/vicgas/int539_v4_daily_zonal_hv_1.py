@@ -47,6 +47,6 @@ defs = df_from_s3_keys_definitions_factory(
         value zone - for a particular gas day
     """).strip("\n"),
     surrogate_key_sources=["gas_date", "hv_zone"],
-    group_name="vicgas__qld_gas_ret_rpt_dets",
+    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

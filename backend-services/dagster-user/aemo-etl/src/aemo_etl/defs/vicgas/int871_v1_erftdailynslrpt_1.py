@@ -46,6 +46,6 @@ defs = df_from_s3_keys_definitions_factory(
         for each network section.
     """).strip("\n"),
     surrogate_key_sources=["network_id", "gas_date"],
-    group_name="vicgas__sa_gas_ret_rpts",
+    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

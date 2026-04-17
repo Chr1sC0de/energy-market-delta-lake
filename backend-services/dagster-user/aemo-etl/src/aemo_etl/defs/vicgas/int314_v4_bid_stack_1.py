@@ -78,6 +78,6 @@ defs = df_from_s3_keys_definitions_factory(
         3,000GJ, then the step_qty_gj associated with bid_step = 3 is 500GJ.
     """).strip("\n"),
     surrogate_key_sources=["bid_id", "gas_date", "mirn", "bid_step"],
-    group_name="vicgas__vic_ws_settle_meter_rpts",
+    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

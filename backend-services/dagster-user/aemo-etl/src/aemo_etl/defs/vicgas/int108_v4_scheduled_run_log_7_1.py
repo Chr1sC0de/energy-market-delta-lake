@@ -95,6 +95,6 @@ defs = df_from_s3_keys_definitions_factory(
         previous 7 gas days is identified in a separate row of the report.
     """).strip("\n"),
     surrogate_key_sources=["transmission_document_id"],
-    group_name="vicgas__vic_dwm_sched_rpts",
+    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

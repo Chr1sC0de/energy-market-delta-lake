@@ -39,6 +39,6 @@ defs = df_from_s3_keys_definitions_factory(
         Note: This report is decommissioned from December 2024.
     """).strip("\n"),
     surrogate_key_sources=["network_name", "gas_day"],
-    group_name="vicgas__vic_gas_ret_rpt_dets",
+    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

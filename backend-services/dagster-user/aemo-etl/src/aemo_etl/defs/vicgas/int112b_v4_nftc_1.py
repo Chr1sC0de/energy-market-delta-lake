@@ -54,6 +54,6 @@ defs = df_from_s3_keys_definitions_factory(
         given day in the reporting window. (See Also INT112)
     """).strip("\n"),
     surrogate_key_sources=["nftc_name", "commencement_date", "ti"],
-    group_name="vicgas__vic_dwm_sched_rpts",
+    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

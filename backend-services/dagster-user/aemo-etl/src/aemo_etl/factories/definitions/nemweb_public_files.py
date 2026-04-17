@@ -45,13 +45,11 @@ from aemo_etl.factories.assets.nemweb_public_files.ops.processed_link_combiner i
 from aemo_etl.factories.checks.check_duplicate_rows import duplicate_row_check_factory
 from aemo_etl.utils import request_get
 
-GROUP_NAME = "aemo_metadata"
-
 ASSET_KEYS: list[AssetsDefinition] = []
 
 
 def nemweb_public_files_definition_factory(
-    key_prefix: list[str],
+    domain: str,
     table_name: str,
     nemweb_relative_href: str,
     cron_schedule: str,
@@ -63,6 +61,7 @@ def nemweb_public_files_definition_factory(
     folder_filter: Callable[
         [OpExecutionContext, bs4.Tag], bool
     ] = default_folder_filter,
+    group_name: str = "gas_raw",
 ) -> Definitions:
 
     @retry(
@@ -74,6 +73,7 @@ def nemweb_public_files_definition_factory(
     def request_getter_with_retries(path: str) -> Response:  # pragma: no cover
         return request_get(path)
 
+    key_prefix = ["bronze", domain]
     s3_prefix = "/".join(key_prefix)
     # since we're using the 'aemo_deltalake_append_io_manager' the
     # table we will be writing to will be stored on
@@ -82,12 +82,12 @@ def nemweb_public_files_definition_factory(
     asset = nemweb_public_files_asset_factory(
         metadata={
             "dagster/uri": table_path,
-            "dagster/table_name": table_name,
+            "dagster/table_name": f"bronze.{domain}.{table_name}",
             "cron_schedule": get_description(cron_schedule),
             "s3_landing_root": f"s3://{LANDING_BUCKET}/{s3_prefix}",
         },
         io_manager_key="aemo_deltalake_append_io_manager",
-        group_name=GROUP_NAME,
+        group_name=group_name,
         key_prefix=key_prefix,
         name=table_name,
         nemweb_relative_href=nemweb_relative_href,

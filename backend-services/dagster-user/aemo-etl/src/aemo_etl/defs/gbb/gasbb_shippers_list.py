@@ -43,7 +43,7 @@ defs = df_from_s3_keys_definitions_factory(
         "ShipperName",
         "LastUpdated",
     ],
-    group_name="gbb__gasbb",
+    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "gbb", "bronze_nemweb_public_files_gbb"])],
     description="Shippers with contracted primary Storage, Compression or Pipeline capacity. Updated daily.",
 )

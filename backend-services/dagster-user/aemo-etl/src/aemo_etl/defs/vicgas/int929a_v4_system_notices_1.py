@@ -70,6 +70,6 @@ defs = df_from_s3_keys_definitions_factory(
         effect for Relevant Entities at the report generation time.
     """).strip("\n"),
     surrogate_key_sources=["system_wide_notice_id"],
-    group_name="vicgas__ecgs_rpts",
+    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

@@ -54,6 +54,6 @@ defs = df_from_s3_keys_definitions_factory(
         distinguish non-DTS networks from the DTS network.
     """).strip("\n"),
     surrogate_key_sources=["network_id", "gas_date", "ti"],
-    group_name="vicgas__vic_ws_settle_meter_rpts",
+    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

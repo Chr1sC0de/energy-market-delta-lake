@@ -46,7 +46,7 @@ defs = df_from_s3_keys_definitions_factory(
     },
     bronze_postprocess_object_hooks=[EnsureColumnsHook([("LastUpdated", String)])],
     surrogate_key_sources=["FacilityId", "LastUpdated"],
-    group_name="gbb__gasbb",
+    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "gbb", "bronze_nemweb_public_files_gbb"])],
     description=(
         "List of all currently registered BB facilities and organisation responsible for operation. "

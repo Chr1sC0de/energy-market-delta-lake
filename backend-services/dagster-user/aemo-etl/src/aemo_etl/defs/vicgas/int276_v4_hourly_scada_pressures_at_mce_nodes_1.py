@@ -97,6 +97,6 @@ defs = df_from_s3_keys_definitions_factory(
         are set out in INT258 – MCE Nodes. Hourly pressure values are in kPa units.
     """).strip("\n"),
     surrogate_key_sources=["node_id", "measurement_datetime"],
-    group_name="vicgas__vic_dwm_sched_rpts",
+    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

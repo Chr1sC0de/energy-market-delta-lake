@@ -52,6 +52,6 @@ defs = df_from_s3_keys_definitions_factory(
         combinations where the distributor is the current distributor.
     """).strip("\n"),
     surrogate_key_sources=["distributor", "street_name", "suburb_or_place_or_locality"],
-    group_name="vicgas__sa_gas_ret_rpts",
+    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

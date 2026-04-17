@@ -55,6 +55,6 @@ defs = df_from_s3_keys_definitions_factory(
         "distributor_name",
         "withdrawal_zone",
     ],
-    group_name="vicgas__qld_gas_ret_rpt_dets",
+    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

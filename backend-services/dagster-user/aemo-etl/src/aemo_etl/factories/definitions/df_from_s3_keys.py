@@ -42,7 +42,7 @@ def df_from_s3_keys_definitions_factory(
         deps=deps,
         description=f"Bronze dataset, contains full un-cleansed dataset.\n\n{description}",
         metadata={
-            "dagster/table_name": bronze_table_name,
+            "dagster/table_name": f"aemo.{domain}.{bronze_table_name}",
             "dagster/uri": f"s3://{AEMO_BUCKET}/{'/'.join(bronze_key_prefix)}/{bronze_table_name}",
             "glob_pattern": glob_pattern,
         },
@@ -59,7 +59,7 @@ def df_from_s3_keys_definitions_factory(
         metadata={
             "dagster/column_schema": get_metadata_schema(schema, schema_descriptions),
             "surrogate_key_sources": surrogate_key_sources,
-            "dagster/table_name": silver_asset_name,
+            "dagster/table_name": f"aemo.{domain}{silver_asset_name}",
             "dagster/uri": (
                 silver_asset_uri
                 := f"s3://{AEMO_BUCKET}/{'/'.join(silver_key_prefix)}/{silver_asset_name}"

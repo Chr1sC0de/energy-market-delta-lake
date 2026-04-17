@@ -61,7 +61,7 @@ defs = df_from_s3_keys_definitions_factory(
         "EffectiveDate",
         "LastUpdated",
     ],
-    group_name="gbb__gasbb",
+    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "gbb", "bronze_nemweb_public_files_gbb"])],
     description=(
         "Detailed information on all facilities and their associated nodes and Connection Points. "
