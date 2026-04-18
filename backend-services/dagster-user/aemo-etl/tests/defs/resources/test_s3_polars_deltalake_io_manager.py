@@ -4,7 +4,7 @@ from polars import Int64, LazyFrame, scan_delta
 from polars.testing import assert_frame_equal
 
 from aemo_etl.configs import AEMO_BUCKET, DAGSTER_URI
-from aemo_etl.defs.resources.s3_polars_deltalake_io_manager import (
+from aemo_etl.defs.resources import (
     PolarsDataFrameSinkDeltaIoManager,
 )
 from tests.utils import MakeBucketProtocol

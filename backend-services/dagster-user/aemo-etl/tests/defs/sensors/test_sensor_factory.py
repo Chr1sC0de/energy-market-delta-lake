@@ -9,12 +9,12 @@ from dagster import (
     SensorDefinition,
 )
 
-from aemo_etl.factories.sensors.df_from_s3_keys_sensor import (
-    factory,
+from aemo_etl.factories.sensors import (
+    df_from_s3_keys_sensor,
     is_running,
 )
 
-MODULE = "aemo_etl.factories.sensors.df_from_s3_keys_sensor"
+MODULE = "aemo_etl.factories.sensors"
 
 ASSET_KEY = AssetKey(["bronze", "vicgas", "int_some_table"])
 ASSET_SELECTION = AssetSelection.assets(ASSET_KEY)
@@ -71,7 +71,7 @@ def _sensor_fn(
 
 
 def _make_sensor(bytes_cap: float = 200e6) -> SensorDefinition:
-    return factory(
+    return df_from_s3_keys_sensor(
         name="test_sensor",
         asset_selection=ASSET_SELECTION,
         s3_source_bucket="bucket",

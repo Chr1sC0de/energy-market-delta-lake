@@ -9,11 +9,11 @@ from polars import Datetime, Int64, LazyFrame, String, col
 from types_boto3_s3 import S3Client
 
 from aemo_etl.configs import ARCHIVE_BUCKET, LANDING_BUCKET
-from aemo_etl.factories.assets.df_from_s3_keys.factory import (
+from aemo_etl.factories.df_from_s3_keys.assets import (
     DFFromS3KeysConfiguration,
-    df_from_s3_keys_asset_factory,
+    bronze_df_from_s3_keys_asset_factory,
 )
-from aemo_etl.factories.assets.df_from_s3_keys.hooks import Deduplicate, Hook
+from aemo_etl.factories.df_from_s3_keys.hooks import Deduplicate, Hook
 from tests.utils import MakeBucketProtocol
 
 MOCK_DATA_CSV = LazyFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": [6, 7, 8]})
@@ -68,9 +68,8 @@ def test_df_from_s3_keys_factory(
 
     mock_context = build_asset_context()
 
-    asset = df_from_s3_keys_asset_factory(
+    asset = bronze_df_from_s3_keys_asset_factory(
         MOCK_SCHEMA,
-        MOCK_DESCRIPTIONS,
         ["a"],
         postprocess_object_hooks=[PassthroughBytesHook()],
         postprocess_lazyframe_hooks=[Deduplicate()],
@@ -110,9 +109,8 @@ def test_df_from_s3_keys_factory_no_valid_files(
     s3_landing_bucket: str, s3_archive_bucket: str
 ) -> None:
     mock_context = build_asset_context()
-    asset = df_from_s3_keys_asset_factory(
+    asset = bronze_df_from_s3_keys_asset_factory(
         MOCK_SCHEMA,
-        MOCK_DESCRIPTIONS,
         ["a"],
         s3_archive_bucket=s3_archive_bucket,
         s3_landing_bucket=s3_landing_bucket,

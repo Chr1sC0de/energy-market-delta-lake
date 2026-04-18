@@ -6,12 +6,12 @@ import pytest
 from dagster import AssetsDefinition, Definitions, materialize
 from dagster_aws.s3 import S3Resource
 
-from aemo_etl.defs.resources.s3_polars_deltalake_io_manager import (
+from aemo_etl.defs.resources import (
     PolarsDataFrameSinkDeltaIoManager,
 )
 from tests.utils import GBB_DATA_DIR
 
-_GBB_DEFS_DIR = Path(__file__).parents[3] / "src" / "aemo_etl" / "defs" / "gbb"
+_GBB_DEFS_DIR = Path(__file__).parents[3] / "src" / "aemo_etl" / "defs" / "raw" / "gbb"
 
 _RESOURCES = {
     "s3": S3Resource(),
@@ -30,7 +30,7 @@ _RESOURCES = {
 def _load_gbb_params() -> Sequence[Any]:
     params = []
     for f in sorted(_GBB_DEFS_DIR.glob("gasbb_*.py")):
-        mod = importlib.import_module(f"aemo_etl.defs.gbb.{f.stem}")
+        mod = importlib.import_module(f"aemo_etl.defs.raw.gbb.{f.stem}")
         params.append(pytest.param(mod.defs, id=f.stem))
     return params
 

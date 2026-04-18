@@ -12,23 +12,23 @@ from dagster import OpExecutionContext, build_op_context
 from dagster_aws.s3 import S3Resource
 from types_boto3_s3 import S3Client
 
-from aemo_etl.factories.assets.nemweb_public_files.models import Link, ProcessedLink
+from aemo_etl.factories.nemweb_public_files.models import Link, ProcessedLink
 from tests.utils import MakeBucketProtocol
-from aemo_etl.factories.assets.nemweb_public_files.ops.dynamic_nemweb_links_fetcher import (
+from aemo_etl.factories.nemweb_public_files.ops.dynamic_nemweb_links_fetcher import (
     FilteredDynamicNEMWebLinksFetcher,
     InMemoryCachedLinkFilter,
     build_dynamic_nemweb_links_fetcher_op,
     default_link_filter,
 )
-from aemo_etl.factories.assets.nemweb_public_files.ops.dynamic_zip_links_fetcher import (
+from aemo_etl.factories.nemweb_public_files.ops.dynamic_zip_links_fetcher import (
     S3DynamicZipLinksFetcher,
     build_dynamic_zip_link_fetcher_op,
 )
-from aemo_etl.factories.assets.nemweb_public_files.ops.file_unzipper import (
+from aemo_etl.factories.nemweb_public_files.ops.file_unzipper import (
     S3FileUnzipper,
     build_unzip_files_op,
 )
-from aemo_etl.factories.assets.nemweb_public_files.ops.nemweb_link_fetcher import (
+from aemo_etl.factories.nemweb_public_files.ops.nemweb_link_fetcher import (
     HTTPNEMWebLinkFetcher,
     NEMWebLinkFetcher,
     build_nemweb_link_fetcher_op,
@@ -36,12 +36,12 @@ from aemo_etl.factories.assets.nemweb_public_files.ops.nemweb_link_fetcher impor
     default_folder_filter,
     soup_getter,
 )
-from aemo_etl.factories.assets.nemweb_public_files.ops.nemweb_link_processor import (
+from aemo_etl.factories.nemweb_public_files.ops.nemweb_link_processor import (
     ParquetProcessor,
     S3NemwebLinkProcessor,
     build_nemweb_link_processor_op,
 )
-from aemo_etl.factories.assets.nemweb_public_files.ops.processed_link_combiner import (
+from aemo_etl.factories.nemweb_public_files.ops.processed_link_combiner import (
     S3ProcessedLinkCombiner,
     build_process_link_combiner_op,
 )
@@ -121,7 +121,7 @@ def test_in_memory_cached_link_filter_table_not_found() -> None:
 
     filt = InMemoryCachedLinkFilter(table_path="s3://fake/path", ttl_seconds=60)
     with patch(
-        "aemo_etl.factories.assets.nemweb_public_files.ops.dynamic_nemweb_links_fetcher.scan_delta",
+        "aemo_etl.factories.nemweb_public_files.ops.dynamic_nemweb_links_fetcher.scan_delta",
         side_effect=TableNotFoundError("not found"),
     ):
         result = filt(_ctx(), _link())
@@ -169,7 +169,7 @@ def test_in_memory_cached_link_filter_ttl_refresh() -> None:
     filt._cache = mock_df
     filt.cache_time = 0.0  # expired immediately
     with patch(
-        "aemo_etl.factories.assets.nemweb_public_files.ops.dynamic_nemweb_links_fetcher.scan_delta",
+        "aemo_etl.factories.nemweb_public_files.ops.dynamic_nemweb_links_fetcher.scan_delta",
         return_value=mock_df,
     ):
         result = filt(_ctx(), link)
@@ -303,7 +303,7 @@ def test_s3_file_unzipper_csv_conversion_failure(
     s3_resource.get_client.return_value = s3
     unzipper = S3FileUnzipper()
     with patch(
-        "aemo_etl.factories.assets.nemweb_public_files.ops.file_unzipper.read_csv",
+        "aemo_etl.factories.nemweb_public_files.ops.file_unzipper.read_csv",
         side_effect=Exception("parse error"),
     ):
         result = unzipper.unzip(_ctx(), s3_resource, "prefix/bad.zip", bucket, "prefix")
@@ -432,7 +432,7 @@ def test_parquet_processor_csv_failure_fallback() -> None:
     processor = ParquetProcessor(request_getter=lambda _: mock_response)
     link = _link("https://host/bad.csv")
     with patch(
-        "aemo_etl.factories.assets.nemweb_public_files.ops.nemweb_link_processor.read_csv",
+        "aemo_etl.factories.nemweb_public_files.ops.nemweb_link_processor.read_csv",
         side_effect=Exception("parse error"),
     ):
         buf, fname = processor.process(_ctx(), link)
@@ -484,7 +484,7 @@ def test_build_process_link_combiner_op_delegates() -> None:
 
 
 def test_s3_processed_link_combiner_combine() -> None:
-    from aemo_etl.factories.assets.nemweb_public_files.factory import (
+    from aemo_etl.factories.nemweb_public_files.assets import (
         SCHEMA,
         SURROGATE_KEY_SOURCES,
     )

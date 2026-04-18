@@ -6,7 +6,7 @@ import pytest
 from dagster import TableColumn, TableSchema
 from polars import LazyFrame
 
-from aemo_etl.defs.table_metadata import (
+from aemo_etl.defs.raw.table_metadata import (
     METADATA_KEYS,
     _safe_json,
     silver_table_metadata,
