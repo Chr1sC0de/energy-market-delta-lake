@@ -1,117 +1,183 @@
-# Pre-commit hooks
+# Energy Market Delta Lake
 
-This worktree contains the pre-commit hook configuration for the monorepo. It
-uses [prek](https://prek.j178.dev) in workspace mode — the root
-`.pre-commit-config.yaml` anchors the workspace and prek auto-discovers
-sub-project configs recursively.
+Monorepo for ingesting, orchestrating, and serving Australian energy market data.
+The repository combines:
 
-## Structure
+- **Data pipelines** (Dagster + `aemo-etl`) for extraction and transformation.
+- **Runtime services** (authentication, notebooks, reverse-proxy, local dependencies).
+- **Infrastructure as code** (Pulumi on AWS).
+- **Specifications and migration notes** for planned and in-progress work.
 
-```
-.pre-commit-config.yaml                           # Workspace root (no hooks, entry point only)
-scripts/
-├── install-hooks.sh                              # One-time machine setup
-└── post-checkout                                 # Git hook — auto-installs prek on worktree add
-backend-services/
-└── dagster-user/
-    └── aemo-etl/
-        └── .pre-commit-config.yaml               # Sub-project hooks (orphan: true)
-```
-
-## Setup — new machine or fresh clone
-
-Run once after cloning:
+## Quickstart (local)
 
 ```bash
-bash scripts/install-hooks.sh
+# 1) start local service stack
+cd backend-services
+source .envrc  # or: direnv allow
+podman-compose up --build -d
+
+# 2) run repository quality checks (from repo root)
+cd ..
+prek run -a
 ```
 
-This will:
+Then open Dagster UI at `http://localhost:3000`.
 
-1. Copy `scripts/post-checkout` into the bare repo's shared `hooks/` directory.
-1. Run `prek install` so the current worktree's pre-commit hook is active immediately.
+## Prerequisites
 
-After that, any `git worktree add` will automatically install prek via the
-`post-checkout` hook — no further action required.
+| Tool | Suggested version | Used for |
+|---|---:|---|
+| Python | 3.11+ | Service and ETL development |
+| uv | latest | Python dependency + tool management |
+| Podman + podman-compose | see `backend-services/README.md` | Local multi-service stack |
+| Pulumi CLI | latest | Infrastructure provisioning |
+| pre-commit tool (`prek`) | latest | Repository lint/format/test hooks |
 
-### Prerequisites
+## High-level architecture
 
-`prek` must be on your PATH before running the setup script. Install it with
-any of:
+```mermaid
+flowchart LR
+  subgraph Sources[External data sources]
+    A[AEMO / NEMWeb / VICGAS / GBB]
+  end
+
+  subgraph Pipelines[Data pipelines]
+    B[aemo-etl Dagster code location]
+    C[Dagster webserver + daemon]
+  end
+
+  subgraph Storage[Data/storage layer]
+    D[(S3 / LocalStack buckets)]
+    E[(PostgreSQL Dagster metadata)]
+  end
+
+  subgraph Consumers[Consumer-facing services]
+    F[Authentication service]
+    G[Marimo service]
+    H[Caddy]
+  end
+
+  subgraph Infra[AWS infrastructure]
+    I[Pulumi components]
+  end
+
+  A --> B
+  B --> D
+  B --> E
+  C --> B
+  C --> E
+  F --> C
+  G --> C
+  H --> F
+  I --> C
+  I --> D
+  I --> E
+```
+
+## Repository tree (high-level)
+
+```text
+energy-market-delta-lake/
+├── backend-services/                 # Local runtime stack and application services
+│   ├── compose.yaml                  # Local Dagster stack composition
+│   ├── dagster-core/                 # Dagster webserver/daemon image and configs
+│   ├── dagster-user/aemo-etl/        # Dagster code location and ETL assets
+│   ├── authentication/               # Auth API service
+│   ├── marimo/                       # Notebook/application service
+│   ├── caddy/                        # Reverse proxy/static entrypoint
+│   ├── localstack/                   # Local AWS emulation setup
+│   └── postgres/                     # Local Postgres setup
+├── infrastructure/
+│   └── aws-pulumi/                   # AWS infrastructure definitions and tests
+├── specs/                            # Design docs, migration plans, technical notes
+├── scripts/                          # Repository-level helper scripts
+└── .pre-commit-config.yaml           # Repository quality/lint entrypoint
+```
+
+## Component map
+
+- **`backend-services/`**
+  - Primary application runtime for local development, centered around Dagster.
+  - See `backend-services/README.md` for full local stack setup and operations.
+- **`backend-services/dagster-user/aemo-etl/`**
+  - Core ETL definitions, sensors, factories, and tests for market datasets.
+- **`infrastructure/aws-pulumi/`**
+  - Cloud resources and deployment logic for AWS environments.
+- **`specs/`**
+  - Architecture decisions, migration plans, and implementation notes.
+- **`scripts/` + root pre-commit config**
+  - Repository workflow tooling (kept secondary to product architecture).
+
+## Environment model
+
+- **Local**: containerized stack in `backend-services/` (Postgres + LocalStack + Dagster services).
+- **Cloud (AWS)**: infrastructure defined in `infrastructure/aws-pulumi/` and deployed per Pulumi stack configuration.
+- **Config sources**:
+  - Local runtime variables: `backend-services/.envrc`
+  - Infrastructure stack config: `infrastructure/aws-pulumi/Pulumi.<stack>.yaml`
+
+## Data lifecycle (conceptual)
+
+1. **Ingest** market source files/events from AEMO/NEMWeb/VICGAS/GBB.
+2. **Land** raw data in object storage (S3 in cloud, LocalStack S3 locally).
+3. **Transform** datasets through Dagster-managed ETL assets/jobs.
+4. **Persist metadata/state** in PostgreSQL for orchestration and run history.
+5. **Serve/consume** via downstream services and user-facing endpoints.
+
+## Where to start
+
+### Run the local backend stack
+
+Follow `backend-services/README.md` to launch the local Dagster stack with
+Postgres and LocalStack.
+
+### Work on ETL pipeline code
+
+Start in `backend-services/dagster-user/aemo-etl/README.md`.
+
+### Work on AWS infrastructure
+
+Start in `infrastructure/aws-pulumi/README.md`.
+
+## Testing and quality commands
+
+| Scope | Command |
+|---|---|
+| Repository-wide hooks | `prek run -a` |
+| ETL project tests | `cd backend-services/dagster-user/aemo-etl && uv run pytest` |
+| AWS Pulumi tests | `cd infrastructure/aws-pulumi && uv run pytest` |
+
+## Deployment pointers
+
+- Infrastructure deploy flow is managed in `infrastructure/aws-pulumi/`.
+- Use Pulumi preview/apply workflows from that directory:
 
 ```bash
-# recommended
-uv tool install prek
-
-# alternatives
-pip install prek
-pipx install prek
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/j178/prek/releases/latest/download/prek-installer.sh | sh
+cd infrastructure/aws-pulumi
+pulumi preview
+pulumi up
 ```
 
-## Running hooks manually
+## Ownership and support
 
-From the worktree root, run all hooks against all files:
+- **Data platform code**: `backend-services/` and `backend-services/dagster-user/aemo-etl/`
+- **Infrastructure**: `infrastructure/aws-pulumi/`
+- **Design docs / decisions**: `specs/`
+
+(If your team has Slack channels/on-call aliases, add them here.)
+
+## Roadmap and known gaps
+
+See `specs/` for active plans and technical notes, including migration and
+warning-remediation documents.
+
+## Development workflow
+
+- Use pre-commit hooks from the repository root:
 
 ```bash
 prek run -a
 ```
 
-Run a specific hook by ID:
-
-```bash
-prek run ruff-check
-prek run pytest
-```
-
-Run hooks for a specific sub-project only:
-
-```bash
-prek run backend-services/dagster-user/aemo-etl/
-```
-
-## Adding a new sub-project
-
-1. Create a `.pre-commit-config.yaml` in the sub-project directory.
-1. Add `orphan: true` at the top so its files are not double-processed by the
-   workspace root.
-1. Use `uv run <tool>` as the entry prefix for any `language: system`
-   hooks so they resolve the correct virtual environment automatically,
-   regardless of what is active in the calling shell.
-
-Example:
-
-```yaml
-orphan: true
-repos:
-  - repo: local
-    hooks:
-      - id: ruff-check
-        name: ruff check
-        language: system
-        entry: uv run ruff check
-        types: [python]
-```
-
-Run `prek run -a --refresh` after adding a new config to force prek to
-re-scan the workspace.
-
-## How it works
-
-```
-git commit
-  └─> <bare-repo>/hooks/pre-commit      (installed by prek install)
-        └─> prek run
-              ├─> .pre-commit-config.yaml              (repos: [] — workspace anchor)
-              └─> backend-services/dagster-user/aemo-etl/.pre-commit-config.yaml
-                    └─> all sub-project hooks run with aemo-etl as cwd
-                        (uv run resolves the correct .venv)
-
-git worktree add <path> <branch>
-  └─> <bare-repo>/hooks/post-checkout   (installed by scripts/install-hooks.sh)
-        └─> prek install --overwrite    (idempotent — safe to run repeatedly)
-```
-
-The bare repo's `hooks/` directory is shared across all worktrees, so
-`post-checkout` and `pre-commit` apply everywhere without per-worktree setup.
+- Service-specific tests and commands should be run from each sub-project
+  directory (`backend-services/...`, `infrastructure/aws-pulumi/...`).
