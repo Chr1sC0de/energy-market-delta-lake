@@ -1,3 +1,4 @@
+# hadolint ignore=DL3007
 FROM docker.io/library/caddy:latest
 
 COPY Caddyfile /etc/caddy/

@@ -27,7 +27,8 @@ root_definitions = defs()
 repository_def = root_definitions.get_repository_def()
 
 asset_keys = sorted(
-    VICGAS_ASSET_SELECTION.resolve(repository_def.assets_defs_by_key.values())
+    VICGAS_ASSET_SELECTION.resolve(repository_def.assets_defs_by_key.values()),
+    key=lambda key: tuple(key.path),
 )
 
 
