@@ -30,6 +30,11 @@ repos:
         entry: uv run ruff format
         types:
           - python
+      - id: zuban-check
+        name: zuban check
+        language: system
+        entry: uv run zuban check
+        pass_filenames: false
       - id: pytest
         name: pytest
         entry: uv run pytest
