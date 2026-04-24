@@ -18,4 +18,4 @@ repos:
           - --baseline
           - .secrets.baseline
           - --exclude-files
-          - (^.*\.lock$|^.*/\.envrc$|^infrastructure/aws-pulumi/Pulumi\..*\.yaml$)
+          - (^.*\.lock$|^.*/\.envrc$|^infrastructure/aws-pulumi/Pulumi\..*\.yaml$|^\.secrets\.baseline$)
