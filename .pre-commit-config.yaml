@@ -9,30 +9,4 @@
 #   source backend-services/dagster-user/aemo-etl/.venv/bin/activate
 default_install_hook_types:
   - pre-commit
-repos:
-  - repo: local
-    hooks:
-      - id: shfmt
-        name: shell format (workspace scripts)
-        language: system
-        entry: shfmt --write
-        files: ^(scripts/.*|infrastructure/aws-pulumi/scripts/.*|backend-services/.*\.sh)$
-        exclude: ^(vendor/.*|generated/.*|backend-services/.*/vendor/.*|backend-services/.*/generated/.*|backend-services/.*/\.venv/.*)$
-      - id: shellcheck-scripts
-        name: shellcheck (scripts)
-        language: system
-        entry: shellcheck
-        files: ^scripts/.*
-        exclude: ^(vendor/.*|generated/.*)$
-      - id: shellcheck-aws-pulumi-scripts
-        name: shellcheck (aws-pulumi scripts)
-        language: system
-        entry: shellcheck
-        files: ^infrastructure/aws-pulumi/scripts/.*
-        exclude: ^(infrastructure/aws-pulumi/vendor/.*|infrastructure/aws-pulumi/generated/.*)$
-      - id: shellcheck-backend-services
-        name: shellcheck (backend-services)
-        language: system
-        entry: shellcheck
-        files: ^backend-services/.*\.sh$
-        exclude: ^(backend-services/.*/vendor/.*|backend-services/.*/generated/.*|backend-services/.*/\.venv/.*)$
+repos: []

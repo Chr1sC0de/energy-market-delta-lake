@@ -1,0 +1,15 @@
+repos:
+  - repo: local
+    hooks:
+      - id: shfmt
+        name: shell format
+        language: system
+        entry: shfmt --write
+        files: ^.*$
+        exclude: ^(vendor/.*|generated/.*)$
+      - id: shellcheck
+        name: shellcheck
+        language: system
+        entry: shellcheck
+        files: ^.*$
+        exclude: ^(vendor/.*|generated/.*)$
