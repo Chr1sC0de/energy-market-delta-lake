@@ -5,6 +5,63 @@ uses [prek](https://prek.j178.dev) in workspace mode — the root
 `.pre-commit-config.yaml` anchors the workspace and prek auto-discovers
 sub-project configs recursively.
 
+
+## System Architecture
+
+This repository is organized as a workspace-oriented pre-commit system for a
+monorepo:
+
+- The root `.pre-commit-config.yaml` is the workspace anchor and discovery
+  entrypoint.
+- Sub-projects own their own hook definitions and runtime context.
+- Shared Git hooks (`pre-commit`, `post-checkout`) are installed once in the
+  bare repository and apply across worktrees.
+- Hook execution delegates to sub-project configuration so tools resolve in the
+  correct local environment (for example via `uv run`).
+
+### Repository tree (high-level)
+
+```text
+energy-market-delta-lake/
+├── .pre-commit-config.yaml                           # Workspace root (entrypoint only)
+├── README.md
+├── scripts/
+│   ├── install-hooks.sh                              # One-time machine setup
+│   └── post-checkout                                 # Auto-installs prek on worktree add
+└── backend-services/
+    └── dagster-user/
+        └── aemo-etl/
+            └── .pre-commit-config.yaml               # Sub-project hooks (orphan: true)
+```
+
+### High-level architecture (Mermaid)
+
+```mermaid
+flowchart TD
+  A[Developer machine] --> B[git worktree add]
+  B --> C[post-checkout hook]
+  C --> D[prek install --overwrite]
+
+  A --> E[git commit]
+  E --> F[pre-commit hook]
+  F --> G[prek run]
+  G --> H[root .pre-commit-config.yaml\nworkspace anchor]
+  H --> I[sub-project configs discovered recursively]
+  I --> J[hooks run in sub-project cwd]
+  J --> K[tools executed via uv run]
+```
+
+### Component responsibilities
+
+- **Root workspace config**: anchors workspace discovery and prevents per-project
+  duplication at the root.
+- **Sub-project config**: defines the actual hooks and quality gates for that
+  project.
+- **`scripts/install-hooks.sh`**: bootstraps hook installation on a new machine
+  or fresh clone.
+- **`scripts/post-checkout`**: ensures new worktrees automatically have
+  pre-commit installed.
+
 ## Structure
 
 ```
