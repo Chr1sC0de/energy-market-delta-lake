@@ -5,6 +5,7 @@ FROM docker.io/library/python:3.13-slim AS builder
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # install the required build tools
+# hadolint ignore=DL3008
 RUN apt-get update  && \
     apt-get install -y --no-install-recommends \
     git \
@@ -17,8 +18,8 @@ RUN apt-get update  && \
 
 
 # install rust
-RUN curl https://sh.rustup.rs -sSf | bash -s -- -y;
-RUN echo 'source $HOME/.cargo/env' >> $HOME/.bashrc;
+# hadolint ignore=DL4006
+RUN ["/bin/bash", "-o", "pipefail", "-c", "curl https://sh.rustup.rs -sSf | bash -s -- -y"]
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # create a build folder and copy contents to folder
@@ -30,9 +31,9 @@ COPY . ${BUILD_DIR}
 WORKDIR ${BUILD_DIR}
 
 # install all the dependencies
-RUN uv export --format requirements-txt --no-dev > requirements.txt;
-RUN uv pip install . --system --prefix=/install;
-RUN rm -rf $HOME/.cargo;
+RUN uv export --format requirements-txt --no-dev >requirements.txt \
+    && uv pip install . --system --prefix=/install \
+    && rm -rf "$HOME/.cargo"
 
 # ── dagster-grpc ──────────────────────────────────────────────────────────────────
 FROM docker.io/library/python:3.13-slim AS dagster-grpc

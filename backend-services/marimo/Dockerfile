@@ -7,23 +7,24 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 ENV BUILD_DIR=/build
 
-RUN apt-get update && apt-get upgrade -yqq \
+# hadolint ignore=DL3008
+RUN apt-get update \
     && apt-get install -y --no-install-recommends git curl build-essential \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*;
 
 # install rust (required by polars / deltalake native extensions)
-RUN curl https://sh.rustup.rs -sSf | bash -s -- -y;
-RUN echo 'source $HOME/.cargo/env' >> $HOME/.bashrc;
+# hadolint ignore=DL4006
+RUN ["/bin/bash", "-o", "pipefail", "-c", "curl https://sh.rustup.rs -sSf | bash -s -- -y"]
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 RUN mkdir -p ${BUILD_DIR}
 COPY . ${BUILD_DIR}
 WORKDIR ${BUILD_DIR}
 
-RUN uv export --format requirements-txt --no-dev >requirements.txt;
-RUN uv pip install . --system --prefix=/install;
-RUN rm -rf $HOME/.cargo;
+RUN uv export --format requirements-txt --no-dev >requirements.txt \
+    && uv pip install . --system --prefix=/install \
+    && rm -rf "$HOME/.cargo"
 
 # ── runtime ───────────────────────────────────────────────────────────────────
 FROM ${IMAGE} AS deploy
