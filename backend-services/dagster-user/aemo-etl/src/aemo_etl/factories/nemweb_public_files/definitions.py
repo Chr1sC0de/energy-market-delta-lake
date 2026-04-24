@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, Mapping
 
 import bs4
 from cron_descriptor import get_description
@@ -25,12 +25,6 @@ from aemo_etl.factories.nemweb_public_files.ops.dynamic_nemweb_links_fetcher imp
     FilteredDynamicNEMWebLinksFetcher,
     InMemoryCachedLinkFilter,
 )
-from aemo_etl.factories.nemweb_public_files.ops.dynamic_zip_links_fetcher import (
-    S3DynamicZipLinksFetcher,
-)
-from aemo_etl.factories.nemweb_public_files.ops.file_unzipper import (
-    S3FileUnzipper,
-)
 from aemo_etl.factories.nemweb_public_files.ops.nemweb_link_fetcher import (
     HTTPNEMWebLinkFetcher,
     default_folder_filter,
@@ -50,7 +44,7 @@ def nemweb_public_files_definitions_factory(
     table_name: str,
     nemweb_relative_href: str,
     cron_schedule: str,
-    batch_size: int = 5,
+    n_executors: int = 1,
     process_retry: int = 3,
     initial: int = 10,
     exp_base: int = 3,
@@ -59,6 +53,7 @@ def nemweb_public_files_definitions_factory(
         [OpExecutionContext, bs4.Tag], bool
     ] = default_folder_filter,
     group_name: str = "gas_raw",
+    tags: Mapping[str, str] | None = None,
 ) -> Definitions:
 
     @retry(
@@ -69,7 +64,7 @@ def nemweb_public_files_definitions_factory(
         retry=retry_if_exception_type(RequestException),
         reraise=True,
     )
-    def request_getter_with_retries(path: str) -> Response:  # pragma: no cover
+    def request_getter_with_retries(path: str) -> Response:
         return request_get(path)
 
     key_prefix = ["bronze", domain]
@@ -79,6 +74,7 @@ def nemweb_public_files_definitions_factory(
     table_path = f"s3://{AEMO_BUCKET}/{s3_prefix}/{table_name}"
 
     asset = nemweb_public_files_asset_factory(
+        tags=tags,
         metadata={
             "dagster/uri": table_path,
             "dagster/table_name": f"bronze.{domain}.{table_name}",
@@ -93,10 +89,8 @@ def nemweb_public_files_definitions_factory(
         nemweb_relative_href=nemweb_relative_href,
         s3_landing_prefix=s3_prefix,
         nemweb_link_fetcher=HTTPNEMWebLinkFetcher(folder_filter=folder_filter),
-        dynamic_zip_link_fetcher=S3DynamicZipLinksFetcher(),
-        file_unzipper=S3FileUnzipper(),
         dynamic_nemweb_links_fetcher=FilteredDynamicNEMWebLinksFetcher(
-            batch_size=batch_size,
+            n_executors=n_executors,
             link_filter=InMemoryCachedLinkFilter(
                 table_path=table_path,
                 ttl_seconds=900,

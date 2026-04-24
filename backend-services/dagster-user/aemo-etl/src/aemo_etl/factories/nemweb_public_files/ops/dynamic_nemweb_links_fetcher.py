@@ -5,7 +5,15 @@ from dataclasses import dataclass
 from time import time
 from typing import Self, TypeAlias
 
-from dagster import DynamicOutput, OpDefinition, OpExecutionContext, op
+from dagster import (
+    Backoff,
+    DynamicOutput,
+    Jitter,
+    OpDefinition,
+    OpExecutionContext,
+    RetryPolicy,
+    op,
+)
 from deltalake.exceptions import TableNotFoundError
 from polars import LazyFrame, col, lit, scan_delta
 from polars import len as len_
@@ -24,11 +32,18 @@ def build_dynamic_nemweb_links_fetcher_op(
     name: str,
     href: str,
     fetcher: DynamicNEMWebLinksFetcher,
+    retry_policy: RetryPolicy = RetryPolicy(
+        max_retries=3,
+        delay=5,
+        backoff=Backoff.EXPONENTIAL,
+        jitter=Jitter.PLUS_MINUS,
+    ),
 ) -> OpDefinition:
 
     @op(
         name=f"{name}_dynamic_nemweb_link_fetcher_op",
         description=f"extract the list of links from {href}",
+        retry_policy=retry_policy,
     )
     def _op(
         context: OpExecutionContext, links: list[Link]
@@ -47,8 +62,9 @@ def default_link_filter(context: OpExecutionContext, link: Link) -> bool:
 
 @dataclass
 class FilteredDynamicNEMWebLinksFetcher(DynamicNEMWebLinksFetcher):
-    link_filter: LinkFilter = default_link_filter
     batch_size: int = 1
+    n_executors: int | None = None
+    link_filter: LinkFilter = default_link_filter
 
     def fetch(
         self, context: OpExecutionContext, links: list[Link]
@@ -58,9 +74,14 @@ class FilteredDynamicNEMWebLinksFetcher(DynamicNEMWebLinksFetcher):
         batch: list[Link] = []
         batches = []
 
+        batch_size = self.batch_size
+
+        if self.n_executors is not None:
+            batch_size = len(links) // self.n_executors
+
         for link in links:
             if self.link_filter(context, link):
-                if len(batch) == self.batch_size:
+                if len(batch) == batch_size:
                     batches.append(batch)
                     batch = [link]
                 else:

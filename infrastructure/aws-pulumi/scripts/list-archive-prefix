@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# list-archive-prefix
+#
+# Lists all objects in the dev-energy-market-archive bucket whose key starts
+# with "int314", printing each file with its size, then a summary of the
+# total object count and combined size.
+#
+# Usage:
+#   ./scripts/list-archive-prefix
+# ---------------------------------------------------------------------------
+
+BUCKET="dev-energy-market-archive"
+PREFIX="bronze/vicgas/int314"
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+bold() { printf '\033[1m%s\033[0m\n' "$*"; }
+green() { printf '\033[0;32m%s\033[0m\n' "$*"; }
+
+human_readable() {
+    python3 -c "
+import sys
+b = int(sys.argv[1])
+for unit in ['B','KB','MB','GB','TB']:
+    if b < 1024 or unit == 'TB':
+        print(f'{b:.2f} {unit}' if unit != 'B' else f'{b} {unit}')
+        break
+    b /= 1024
+" "$1"
+}
+
+# ── Verify bucket is accessible ───────────────────────────────────────────────
+if ! aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
+    echo "Error: bucket '$BUCKET' does not exist or is not accessible." >&2
+    exit 1
+fi
+
+bold ""
+bold "Bucket : $BUCKET"
+bold "Prefix : $PREFIX"
+bold ""
+
+# ── Paginate through all matching objects ─────────────────────────────────────
+total_count=0
+total_bytes=0
+token=""
+
+printf '%-12s  %s\n' "SIZE" "KEY"
+printf '%-12s  %s\n' "------------" "------------------------------------------------------------"
+
+while true; do
+    if [[ -n "$token" ]]; then
+        page=$(aws s3api list-objects-v2 \
+            --bucket "$BUCKET" \
+            --prefix "$PREFIX" \
+            --starting-token "$token" \
+            --output json)
+    else
+        page=$(aws s3api list-objects-v2 \
+            --bucket "$BUCKET" \
+            --prefix "$PREFIX" \
+            --output json)
+    fi
+
+    # Extract and print each object on this page
+    while IFS=$'\t' read -r key size; do
+        [[ -z "$key" ]] && continue
+        printf '%-12s  %s\n' "$(human_readable "$size")" "$key"
+        ((total_count += 1))
+        ((total_bytes += size))
+    done < <(echo "$page" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+for obj in data.get('Contents') or []:
+    print(obj['Key'] + '\t' + str(obj['Size']))
+")
+
+    # Check for next page
+    token=$(echo "$page" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+print(data.get('NextContinuationToken', ''))
+")
+
+    [[ -z "$token" ]] && break
+done
+
+# ── Summary ───────────────────────────────────────────────────────────────────
+echo ""
+bold "────────────────────────────────────"
+printf '%-10s %s\n' "Objects:" "$total_count"
+printf '%-10s %s\n' "Size:" "$(human_readable "$total_bytes")"
+bold "────────────────────────────────────"

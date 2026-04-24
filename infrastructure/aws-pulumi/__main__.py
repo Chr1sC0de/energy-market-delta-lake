@@ -2,21 +2,22 @@
 
 Dependency order (mirrors AWS CDK app.py):
   1.  VPC  (networking foundation)
-  2.  Security groups  (depend on VPC)
-  3.  IAM roles        (independent)
-  4.  S3 buckets       (independent)
-  5.  DynamoDB table   (independent)
-  6.  ECR repositories + Docker image build+push (independent)
-  7.  Service discovery namespace  (depends on VPC)
-  8.  PostgreSQL EC2   (depends on VPC, security groups)
-  9.  Bastion host     (depends on VPC, security groups, IAM)
-  10. ECS cluster      (depends on VPC, security groups)
-  11. FastAPI auth server   (depends on VPC, ECR, security groups)
-  12. Caddy server          (depends on VPC, ECR, FastAPI auth, security groups)
-  13. ECS: user-code service    (depends on cluster, ECR, postgres, service-discovery, SGs)
-  14. ECS: webserver-admin      (depends on cluster, ECR, postgres, service-discovery, SGs, IAM)
-  15. ECS: webserver-guest      (same)
-  16. ECS: daemon               (depends on cluster, ECR, postgres, SGs, IAM)
+  2.  VPC endpoints  (depend on VPC — ECR, CloudWatch Logs, SSM, S3, DynamoDB PrivateLink)
+  3.  Security groups  (depend on VPC)
+  4.  IAM roles        (independent)
+  5.  S3 buckets       (independent)
+  6.  DynamoDB table   (independent)
+  7.  ECR repositories + Docker image build+push (independent)
+  8.  Service discovery namespace  (depends on VPC)
+  9.  PostgreSQL EC2   (depends on VPC, security groups)
+  10. Bastion host     (depends on VPC, security groups, IAM)
+  11. ECS cluster      (depends on VPC, security groups)
+  12. FastAPI auth server   (depends on VPC, ECR, security groups)
+  13. Caddy server          (depends on VPC, ECR, FastAPI auth, security groups)
+  14. ECS: user-code service    (depends on cluster, ECR, postgres, service-discovery, SGs)
+  15. ECS: webserver-admin      (depends on cluster, ECR, postgres, service-discovery, SGs, IAM)
+  16. ECS: webserver-guest      (same)
+  17. ECS: daemon               (depends on cluster, ECR, postgres, SGs, IAM)
 
 Docker socket
 -------------
@@ -48,6 +49,7 @@ from components.s3_buckets import S3BucketsComponentResource
 from components.security_groups import SecurityGroupsComponentResource
 from components.service_discovery import ServiceDiscoveryComponentResource
 from components.vpc import VpcComponentResource
+from components.vpc_endpoints import VpcEndpointsComponentResource
 from configs import NAME
 
 # ── Docker provider ───────────────────────────────────────────────────────────
@@ -65,6 +67,8 @@ _docker_provider = docker.Provider(
 )
 
 vpc = VpcComponentResource(NAME)
+
+vpc_endpoints = VpcEndpointsComponentResource(NAME, vpc)
 
 security_groups = SecurityGroupsComponentResource(NAME, vpc)
 

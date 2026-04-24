@@ -7,6 +7,7 @@ from dagster import (
 )
 
 import aemo_etl.factories.sensors
+import aemo_etl.factories.unzipper.sensors
 from aemo_etl.configs import DEVELOPMENT_LOCATION, LANDING_BUCKET
 
 DEFAULT_STATUS = (
@@ -15,12 +16,27 @@ DEFAULT_STATUS = (
     else DefaultSensorStatus.STOPPED
 )
 
+VICGAS_ASSET_SELECTION = AssetSelection.key_prefixes(
+    ["bronze", "vicgas"]
+) & AssetSelection.key_substring("int")
+
+GBB_ASSET_SELECTION = AssetSelection.key_prefixes(
+    ["bronze", "gbb"]
+) & AssetSelection.key_substring("gasbb")
+
+VICGAS_UNZIPPER_SELECTION = AssetSelection.key_prefixes(
+    ["bronze", "vicgas"]
+) & AssetSelection.key_substring("unzipper")
+
+GBB_UNZIPPER_SELECTION = AssetSelection.key_prefixes(
+    ["bronze", "gbb"]
+) & AssetSelection.key_substring("unzipper")
+
 EVENT_DRIVEN_ASSETS_SELECTION = (
-    AssetSelection.key_prefixes(["bronze", "vicgas"])
-    & AssetSelection.key_substring("int")
-) | (
-    AssetSelection.key_prefixes(["bronze", "gbb"])
-    & AssetSelection.key_substring("gasbb")
+    VICGAS_ASSET_SELECTION
+    | GBB_ASSET_SELECTION
+    | VICGAS_UNZIPPER_SELECTION
+    | GBB_UNZIPPER_SELECTION
 )
 
 
@@ -29,12 +45,35 @@ def defs() -> Definitions:
     return Definitions(
         sensors=[
             aemo_etl.factories.sensors.df_from_s3_keys_sensor(
-                name="event_driven_assets_sensor",
-                asset_selection=EVENT_DRIVEN_ASSETS_SELECTION,
+                name="vicgas_event_driven_assets_sensor",
+                asset_selection=VICGAS_ASSET_SELECTION,
                 s3_source_bucket=LANDING_BUCKET,
                 s3_source_prefix="bronze/vicgas",
-                # 200mb for a 1024 ram ecs instance
-                bytes_cap=200e6,
+                bytes_cap=100e6,
+                files_cap=None,
+                default_status=DEFAULT_STATUS,
+            ),
+            aemo_etl.factories.sensors.df_from_s3_keys_sensor(
+                name="gbb_event_driven_assets_sensor",
+                asset_selection=GBB_ASSET_SELECTION,
+                s3_source_bucket=LANDING_BUCKET,
+                s3_source_prefix="bronze/gbb",
+                bytes_cap=100e6,
+                files_cap=None,
+                default_status=DEFAULT_STATUS,
+            ),
+            aemo_etl.factories.unzipper.sensors.unzipper_sensor(
+                name="vicgas_unzipper_sensor",
+                asset_selection=VICGAS_UNZIPPER_SELECTION,
+                s3_source_bucket=LANDING_BUCKET,
+                s3_source_prefix="bronze/vicgas",
+                default_status=DEFAULT_STATUS,
+            ),
+            aemo_etl.factories.unzipper.sensors.unzipper_sensor(
+                name="gbb_unzipper_sensor",
+                asset_selection=GBB_UNZIPPER_SELECTION,
+                s3_source_bucket=LANDING_BUCKET,
+                s3_source_prefix="bronze/gbb",
                 default_status=DEFAULT_STATUS,
             ),
             AutomationConditionSensorDefinition(

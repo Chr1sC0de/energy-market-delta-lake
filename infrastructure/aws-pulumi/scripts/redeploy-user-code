@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+pulumi up \
+	--target "urn:pulumi:dev-ausenergymarket::aws-pulumi::dev-energy-market:components:ecr\$aws:ecr/repository:Repository::dev-energy-market-dev-energy-market-dagster-user-code-aemo-etl" \
+	--target "urn:pulumi:dev-ausenergymarket::aws-pulumi::dev-energy-market-user-code:components:DagsterUserCodeService\$aws:ecs/taskDefinition:TaskDefinition::dev-energy-market-user-code-user-code-task-def" \
+	--target "urn:pulumi:dev-ausenergymarket::aws-pulumi::dev-energy-market-user-code:components:DagsterUserCodeService\$aws:ecs/service:Service::dev-energy-market-user-code-user-code-service"

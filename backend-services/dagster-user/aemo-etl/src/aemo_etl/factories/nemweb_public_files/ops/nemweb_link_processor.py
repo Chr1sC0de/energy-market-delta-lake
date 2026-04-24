@@ -37,7 +37,7 @@ def build_nemweb_link_processor_op(
     nemweb_link_processor: NEMWebLinkProcessor,
     retry_policy: RetryPolicy = RetryPolicy(
         max_retries=3,
-        delay=0.2,
+        delay=5,
         backoff=Backoff.EXPONENTIAL,
         jitter=Jitter.PLUS_MINUS,
     ),

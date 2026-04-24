@@ -1,0 +1,278 @@
+"""Unit tests for aemo_etl.factories.sensors."""
+
+from unittest.mock import MagicMock
+
+import pytest
+from dagster import AssetKey, AssetSelection, DagsterRunStatus, RunRequest
+from dagster_aws.s3 import S3Resource
+from pytest_mock import MockerFixture
+from types_boto3_s3 import S3Client
+
+from aemo_etl.factories.sensors import (
+    df_from_s3_keys_sensor,
+    has_asset_failed,
+    is_running,
+)
+
+
+# ---------------------------------------------------------------------------
+# Pure helper functions
+# ---------------------------------------------------------------------------
+
+_ASSET_KEY = AssetKey(["bronze", "gbb", "test_asset"])
+
+
+def _make_run(
+    status: DagsterRunStatus, asset_key: AssetKey | None = _ASSET_KEY
+) -> MagicMock:
+    run = MagicMock()
+    run.asset_selection = {asset_key} if asset_key is not None else None
+    run.status = status
+    return run
+
+
+def test_is_running_found() -> None:
+    runs = [_make_run(DagsterRunStatus.STARTED)]
+    assert is_running(runs, _ASSET_KEY) is True
+
+
+def test_is_running_not_found() -> None:
+    other_key = AssetKey(["bronze", "other"])
+    runs = [_make_run(DagsterRunStatus.STARTED, asset_key=other_key)]
+    assert is_running(runs, _ASSET_KEY) is False
+
+
+def test_is_running_empty() -> None:
+    assert is_running([], _ASSET_KEY) is False
+
+
+def test_is_running_no_asset_selection() -> None:
+    run = MagicMock()
+    run.asset_selection = None
+    assert is_running([run], _ASSET_KEY) is False
+
+
+def test_has_asset_failed_true() -> None:
+    runs = [_make_run(DagsterRunStatus.FAILURE)]
+    assert has_asset_failed(runs, _ASSET_KEY) is True
+
+
+def test_has_asset_failed_false_success() -> None:
+    runs = [_make_run(DagsterRunStatus.SUCCESS)]
+    assert has_asset_failed(runs, _ASSET_KEY) is False
+
+
+def test_has_asset_failed_no_match() -> None:
+    other_key = AssetKey(["bronze", "other"])
+    runs = [_make_run(DagsterRunStatus.FAILURE, asset_key=other_key)]
+    assert has_asset_failed(runs, _ASSET_KEY) is False
+
+
+def test_has_asset_failed_empty() -> None:
+    assert has_asset_failed([], _ASSET_KEY) is False
+
+
+def test_has_asset_failed_no_asset_selection() -> None:
+    run = MagicMock()
+    run.asset_selection = None
+    assert has_asset_failed([run], _ASSET_KEY) is False
+
+
+# ---------------------------------------------------------------------------
+# Sensor factory + inner function coverage
+# ---------------------------------------------------------------------------
+
+_S3_OBJECT_KEY = "bronze/gbb/data.parquet"
+_OBJECT_HEAD = {_S3_OBJECT_KEY: {"Size": 100}}
+
+
+def _build_sensor_context(
+    mocker: MockerFixture,
+    asset_key: AssetKey = _ASSET_KEY,
+    active_runs: list[MagicMock] | None = None,
+    completed_runs: list[MagicMock] | None = None,
+    glob_pattern: str = "*.parquet",
+) -> MagicMock:
+    """Return a fully-mocked SensorEvaluationContext."""
+    context = mocker.MagicMock()  # type: ignore[no-any-return]
+    context.log = mocker.MagicMock()
+
+    mock_asset_defs = mocker.MagicMock()
+    mock_asset_defs.metadata_by_key.get.return_value = {"glob_pattern": glob_pattern}
+    context.repository_def.assets_defs_by_key = {asset_key: mock_asset_defs}
+    context.instance.get_runs.side_effect = [
+        active_runs or [],
+        completed_runs or [],
+    ]
+    return context  # type: ignore[no-any-return]
+
+
+def _build_mock_s3(mocker: MockerFixture) -> MagicMock:
+    s3 = mocker.MagicMock(spec=S3Resource)
+    client = mocker.MagicMock(spec=S3Client)
+    s3.get_client.return_value = client
+    return s3  # type: ignore[no-any-return]
+
+
+def test_df_from_s3_keys_sensor_factory_creates_sensor() -> None:
+    sensor_def = df_from_s3_keys_sensor(
+        name="test_sensor",
+        asset_selection=AssetSelection.all(),
+        s3_source_bucket="bucket",
+        s3_source_prefix="prefix",
+    )
+    assert sensor_def.name == "test_sensor"
+
+
+@pytest.mark.parametrize(
+    "active_runs,completed_runs,expected_requests",
+    [
+        # Normal – no runs → yields RunRequest
+        ([], [], 1),
+        # Asset is actively running → skip
+        ([_make_run(DagsterRunStatus.STARTED)], [], 0),
+        # Asset previously failed → skip
+        ([], [_make_run(DagsterRunStatus.FAILURE)], 0),
+    ],
+)
+def test_sensor_inner_function_run_requests(
+    mocker: MockerFixture,
+    active_runs: list[MagicMock],
+    completed_runs: list[MagicMock],
+    expected_requests: int,
+) -> None:
+    mocker.patch(
+        "aemo_etl.factories.sensors.get_s3_pagination",
+        return_value=[{"Contents": []}],
+    )
+    mocker.patch(
+        "aemo_etl.factories.sensors.get_object_head_from_pages",
+        return_value=_OBJECT_HEAD,
+    )
+    mocker.patch(
+        "aemo_etl.factories.sensors.get_s3_object_keys_from_prefix_and_name_glob",
+        return_value=[_S3_OBJECT_KEY] if expected_requests else [],
+    )
+    mocker.patch.object(
+        AssetSelection,
+        "resolve",
+        return_value=frozenset([_ASSET_KEY]),
+    )
+
+    sensor_def = df_from_s3_keys_sensor(
+        name="test_sensor",
+        asset_selection=AssetSelection.all(),
+        s3_source_bucket="bucket",
+        s3_source_prefix="bronze/gbb",
+    )
+    context = _build_sensor_context(
+        mocker,
+        active_runs=active_runs,
+        completed_runs=completed_runs,
+    )
+    mock_s3 = _build_mock_s3(mocker)
+
+    results: list[RunRequest] = list(sensor_def._raw_fn(context, s3=mock_s3))  # type: ignore[call-overload, arg-type]
+    assert len(results) == expected_requests
+
+
+def test_sensor_inner_bytes_cap(mocker: MockerFixture) -> None:
+    """bytes_cap stops adding keys once exceeded."""
+    many_keys = [f"bronze/gbb/file{i}.parquet" for i in range(5)]
+    big_heads = {k: {"Size": 150_000_000} for k in many_keys}
+
+    mocker.patch("aemo_etl.factories.sensors.get_s3_pagination", return_value=[{}])
+    mocker.patch(
+        "aemo_etl.factories.sensors.get_object_head_from_pages",
+        return_value=big_heads,
+    )
+    mocker.patch(
+        "aemo_etl.factories.sensors.get_s3_object_keys_from_prefix_and_name_glob",
+        return_value=many_keys,
+    )
+    mocker.patch.object(AssetSelection, "resolve", return_value=frozenset([_ASSET_KEY]))
+
+    sensor_def = df_from_s3_keys_sensor(
+        name="bytes_cap_sensor",
+        asset_selection=AssetSelection.all(),
+        s3_source_bucket="bucket",
+        s3_source_prefix="bronze/gbb",
+        bytes_cap=200_000_000,  # only room for 1 file at 150MB each
+    )
+    context = _build_sensor_context(mocker)
+    mock_s3 = _build_mock_s3(mocker)
+
+    results: list[RunRequest] = list(sensor_def._raw_fn(context, s3=mock_s3))  # type: ignore[call-overload, arg-type]
+    assert len(results) == 1
+    # Only 1 key fits under 200MB
+    assert (
+        len(
+            results[0].run_config["ops"][_ASSET_KEY.to_python_identifier()]["config"][
+                "s3_keys"
+            ]
+        )
+        == 1
+    )
+
+
+def test_sensor_inner_files_cap(mocker: MockerFixture) -> None:
+    """files_cap stops adding keys once file count exceeded."""
+    many_keys = [f"bronze/gbb/file{i}.parquet" for i in range(5)]
+    small_heads = {k: {"Size": 100} for k in many_keys}
+
+    mocker.patch("aemo_etl.factories.sensors.get_s3_pagination", return_value=[{}])
+    mocker.patch(
+        "aemo_etl.factories.sensors.get_object_head_from_pages",
+        return_value=small_heads,
+    )
+    mocker.patch(
+        "aemo_etl.factories.sensors.get_s3_object_keys_from_prefix_and_name_glob",
+        return_value=many_keys,
+    )
+    mocker.patch.object(AssetSelection, "resolve", return_value=frozenset([_ASSET_KEY]))
+
+    sensor_def = df_from_s3_keys_sensor(
+        name="files_cap_sensor",
+        asset_selection=AssetSelection.all(),
+        s3_source_bucket="bucket",
+        s3_source_prefix="bronze/gbb",
+        files_cap=2,
+    )
+    context = _build_sensor_context(mocker)
+    mock_s3 = _build_mock_s3(mocker)
+
+    results: list[RunRequest] = list(sensor_def._raw_fn(context, s3=mock_s3))  # type: ignore[call-overload, arg-type]
+    assert len(results) == 1
+    assert (
+        len(
+            results[0].run_config["ops"][_ASSET_KEY.to_python_identifier()]["config"][
+                "s3_keys"
+            ]
+        )
+        == 2
+    )
+
+
+def test_sensor_inner_no_keys(mocker: MockerFixture) -> None:
+    """No S3 keys → no RunRequest emitted."""
+    mocker.patch("aemo_etl.factories.sensors.get_s3_pagination", return_value=[{}])
+    mocker.patch(
+        "aemo_etl.factories.sensors.get_object_head_from_pages",
+        return_value={},
+    )
+    mocker.patch(
+        "aemo_etl.factories.sensors.get_s3_object_keys_from_prefix_and_name_glob",
+        return_value=[],
+    )
+    mocker.patch.object(AssetSelection, "resolve", return_value=frozenset([_ASSET_KEY]))
+
+    sensor_def = df_from_s3_keys_sensor(
+        name="no_keys_sensor",
+        asset_selection=AssetSelection.all(),
+        s3_source_bucket="bucket",
+        s3_source_prefix="bronze/gbb",
+    )
+    context = _build_sensor_context(mocker)
+    mock_s3 = _build_mock_s3(mocker)
+    results: list[RunRequest] = list(sensor_def._raw_fn(context, s3=mock_s3))  # type: ignore[call-overload, arg-type]
+    assert results == []

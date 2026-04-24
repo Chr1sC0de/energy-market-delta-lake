@@ -9,14 +9,6 @@ from aemo_etl.factories.nemweb_public_files.ops.dynamic_nemweb_links_fetcher imp
     DynamicNEMWebLinksFetcher,
     build_dynamic_nemweb_links_fetcher_op,
 )
-from aemo_etl.factories.nemweb_public_files.ops.dynamic_zip_links_fetcher import (
-    DynamicZipLinksFetcher,
-    build_dynamic_zip_link_fetcher_op,
-)
-from aemo_etl.factories.nemweb_public_files.ops.file_unzipper import (
-    FileUnzipper,
-    build_unzip_files_op,
-)
 from aemo_etl.factories.nemweb_public_files.ops.nemweb_link_fetcher import (
     NEMWebLinkFetcher,
     build_nemweb_link_fetcher_op,
@@ -42,12 +34,12 @@ SURROGATE_KEY_SOURCES = [
 SCHEMA = Schema(
     {
         "source_absolute_href": String,
-        "source_upload_datetime": Datetime("ms", time_zone="UTC"),
+        "source_upload_datetime": Datetime("us", time_zone="UTC"),
         "target_s3_href": String,
         "target_s3_bucket": String,
         "target_s3_prefix": String,
         "target_s3_name": String,
-        "target_ingested_datetime": Datetime("ms", time_zone="UTC"),
+        "target_ingested_datetime": Datetime("us", time_zone="UTC"),
         "surrogate_key": String,
     }
 )
@@ -81,8 +73,6 @@ def nemweb_public_files_asset_factory(
     nemweb_link_fetcher: NEMWebLinkFetcher,
     dynamic_nemweb_links_fetcher: DynamicNEMWebLinksFetcher,
     nemweb_link_processor: S3NemwebLinkProcessor,
-    dynamic_zip_link_fetcher: DynamicZipLinksFetcher,
-    file_unzipper: FileUnzipper,
     processed_link_combiner: ProcessedLinkedCombiner,
     s3_landing_bucket: str = LANDING_BUCKET,
     io_manager_key: str | None = None,
@@ -120,12 +110,6 @@ def nemweb_public_files_asset_factory(
     nemweb_link_processor_op = build_nemweb_link_processor_op(
         name, s3_landing_bucket, s3_landing_prefix, nemweb_link_processor
     )
-    dynamic_zip_link_fetcher_op = build_dynamic_zip_link_fetcher_op(
-        name, s3_landing_bucket, s3_landing_prefix, dynamic_zip_link_fetcher
-    )
-    unzip_files_op = build_unzip_files_op(
-        name, s3_landing_bucket, s3_landing_prefix, file_unzipper
-    )
     processed_link_combiner_op = build_process_link_combiner_op(
         name,
         SCHEMA,
@@ -143,12 +127,7 @@ def nemweb_public_files_asset_factory(
             .map(nemweb_link_processor_op)
             .collect()
         )
-        unzipped_files_log = (
-            dynamic_zip_link_fetcher_op(start=processed_links)
-            .map(unzip_files_op)
-            .collect()
-        )
-        df = processed_link_combiner_op(processed_links, start=unzipped_files_log)
+        df = processed_link_combiner_op(processed_links)
         return cast(LazyFrame, df)
 
     return download_nemweb_public_files_to_s3_asset

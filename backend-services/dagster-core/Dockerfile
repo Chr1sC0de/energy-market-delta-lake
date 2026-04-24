@@ -42,11 +42,6 @@ FROM docker.io/library/python:3.13-slim AS base
 
 ENV DAGSTER_HOME=/opt/dagster/dagster_home/
 
-RUN apt-get update && apt-get upgrade -yqq \
-    && apt-get install -y --no-install-recommends git curl netcat-openbsd \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*;
-
 COPY --from=builder /install/bin/ /usr/local/bin/
 COPY --from=builder /install/lib/python3.13/site-packages/ /usr/local/lib/python3.13/site-packages/
 

@@ -45,8 +45,8 @@ defs = df_from_s3_keys_definitions_factory(
         "Units": String,
         "ForecastValue": String,
         "Nameplate": Float64,
-        "ingested_timestamp": Datetime("ms", time_zone="UTC"),
-        "ingested_date": Datetime("ms", time_zone="UTC"),
+        "ingested_timestamp": Datetime("us", time_zone="UTC"),
+        "ingested_date": Datetime("us", time_zone="UTC"),
         "surrogate_key": String,
         "source_file": String,
     },
@@ -89,11 +89,7 @@ defs = df_from_s3_keys_definitions_factory(
         "ForecastDate",
     ],
     group_name="gas_raw",
-    deps=[
-        AssetSpec(
-            ["bronze", "gbb", "bronze_nemweb_public_files_gbb_forecast_utilization"]
-        )
-    ],
+    deps=[AssetSpec(["bronze", "gbb", "bronze_nemweb_public_files_gbb"])],
     description=(
         "7-day forecast utilisation outlook for East Coast supply-demand balance. "
         "GASBB_FORECAST_UTILISATION_NEXT7 is updated daily."

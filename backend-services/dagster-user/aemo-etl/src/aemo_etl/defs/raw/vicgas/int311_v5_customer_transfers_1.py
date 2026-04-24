@@ -12,6 +12,7 @@ defs = df_from_s3_keys_definitions_factory(
     glob_pattern="int311_v5_customer_transfers_1*",
     schema={
         "gas_date": String,
+        "market_code": String,
         "transfers_lodged": Int64,
         "transfers_completed": Int64,
         "transfers_cancelled": Int64,
@@ -19,13 +20,14 @@ defs = df_from_s3_keys_definitions_factory(
         "int_transfers_completed": Int64,
         "int_transfers_cancelled": Int64,
         "greenfields_received": Int64,
-        "ingested_timestamp": Datetime("ms", time_zone="UTC"),
-        "ingested_date": Datetime("ms", time_zone="UTC"),
+        "ingested_timestamp": Datetime("us", time_zone="UTC"),
+        "ingested_date": Datetime("us", time_zone="UTC"),
         "surrogate_key": String,
         "source_file": String,
     },
     schema_descriptions={
         "gas_date": "dd mmm yyyy",
+        "market_code": "The code representing the gas market that the Market participant operates in",
         "transfers_lodged": "Count of mirn with Created_timestamp = gas_date",
         "transfers_completed": """
             Count of mirn, change_status = 'COM' with last_updated_timestamp =
@@ -56,7 +58,7 @@ defs = df_from_s3_keys_definitions_factory(
         have been lodged, completed or cancelled. This report provides an indication of
         market competition and transfer liquidity through the customer transfers.
     """).strip("\n"),
-    surrogate_key_sources=["gas_date"],
+    surrogate_key_sources=["gas_date", "market_code"],
     group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

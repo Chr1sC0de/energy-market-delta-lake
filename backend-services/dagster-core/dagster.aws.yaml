@@ -12,7 +12,7 @@ run_launcher:
   config:
     run_resources:
       cpu: "512"
-      memory: "1024"
+      memory: "4096"
 run_storage:
   module: dagster_postgres.run_storage
   class: PostgresRunStorage
@@ -55,3 +55,7 @@ event_log_storage:
       db_name:
         env: DAGSTER_POSTGRES_DB
       port: 5432
+run_monitoring:
+  start_timeout_seconds: 1200
+  cancel_timeout_seconds: 1200
+  max_runtime_seconds: 7200

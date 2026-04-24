@@ -1,9 +1,10 @@
 from pathlib import Path
 
 from dagster import Definitions, definitions, load_from_defs_folder
+from dagster_aws import ecs
 from dagster_aws.s3 import S3Resource, s3_pickle_io_manager
 
-from aemo_etl.configs import IO_MANAGER_BUCKET
+from aemo_etl.configs import DEVELOPMENT_LOCATION, IO_MANAGER_BUCKET
 
 
 @definitions
@@ -18,7 +19,8 @@ def defs() -> Definitions:
                         "s3_prefix": "dagster/storage",
                     }
                 ),
-            }
+            },
+            executor=ecs.ecs_executor if DEVELOPMENT_LOCATION == "aws" else None,
         ),
         load_from_defs_folder(path_within_project=Path(__file__).parent),
     )

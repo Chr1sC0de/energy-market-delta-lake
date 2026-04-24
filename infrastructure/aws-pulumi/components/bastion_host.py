@@ -100,6 +100,7 @@ class BastionHostComponentResource(pulumi.ComponentResource):
             type="String",
             value=self.instance.id,
             opts=self.child_opts,
+            overwrite=True,
         )
 
         aws.ssm.Parameter(
@@ -108,4 +109,5 @@ class BastionHostComponentResource(pulumi.ComponentResource):
             type="String",
             value=self.key_pair.key_pair_id,
             opts=self.child_opts,
+            overwrite=True,
         )

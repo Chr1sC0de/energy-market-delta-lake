@@ -196,6 +196,7 @@ class PostgresComponentResource(pulumi.ComponentResource):
             type="SecureString",
             value=self._password,
             opts=self.child_opts,
+            overwrite=True,
         )
 
         aws.ssm.Parameter(
@@ -204,4 +205,5 @@ class PostgresComponentResource(pulumi.ComponentResource):
             type="String",
             value=self.instance.private_dns,
             opts=pulumi.ResourceOptions(parent=self.instance),
+            overwrite=True,
         )

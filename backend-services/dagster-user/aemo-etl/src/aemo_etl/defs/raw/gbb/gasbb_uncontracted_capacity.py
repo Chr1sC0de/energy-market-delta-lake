@@ -25,8 +25,8 @@ defs = df_from_s3_keys_definitions_factory(
         "DeliveryLocationName": String,
         "Description": String,
         "LastUpdated": String,
-        "ingested_timestamp": Datetime("ms", time_zone="UTC"),
-        "ingested_date": Datetime("ms", time_zone="UTC"),
+        "ingested_timestamp": Datetime("us", time_zone="UTC"),
+        "ingested_date": Datetime("us", time_zone="UTC"),
         "surrogate_key": String,
         "source_file": String,
     },
@@ -65,7 +65,6 @@ defs = df_from_s3_keys_definitions_factory(
     group_name="gas_raw",
     deps=[
         AssetSpec(["bronze", "gbb", "bronze_nemweb_public_files_gbb"]),
-        AssetSpec(["bronze", "gbb", "bronze_nemweb_public_files_gbb_duplicate"]),
     ],
     description=(
         "Uncontracted primary firm capacity outlook for the next 36 months. "

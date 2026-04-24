@@ -10,6 +10,7 @@ Usage:
 """
 
 import os
+import pathlib
 
 import pytest
 
@@ -50,6 +51,11 @@ def stack_name() -> str:
 
 
 @pytest.fixture(scope="session")
+def stack_config_path(stack_name: str) -> pathlib.Path:
+    return pathlib.Path(f"Pulumi.{stack_name}.yaml")
+
+
+@pytest.fixture(scope="session")
 def environment(stack_name: str) -> str:
     """Environment prefix extracted from the stack name, e.g. 'dev'."""
     return stack_name.split("-")[0]
@@ -59,6 +65,39 @@ def environment(stack_name: str) -> str:
 def resource_name(environment: str) -> str:
     """Canonical resource name prefix, e.g. 'dev-energy-market'."""
     return f"{environment}-energy-market"
+
+
+@pytest.fixture(scope="session")
+def base_url(
+    integration_enabled: None, stack_name: str, stack_config_path: pathlib.Path
+) -> str:
+    """Base URL for the selected stack.
+
+    Resolution order:
+      1. PULUMI_BASE_URL env var (explicit CI/test override)
+      2. aws-pulumi:website_root_url in Pulumi.<stack>.yaml
+    """
+    env_url = os.environ.get("PULUMI_BASE_URL")
+    if env_url:
+        return env_url.rstrip("/")
+
+    if not stack_config_path.exists():
+        pytest.fail(
+            f"Stack config {stack_config_path} not found for stack {stack_name!r}. "
+            "Set PULUMI_BASE_URL to override the test target."
+        )
+
+    prefix = "  aws-pulumi:website_root_url:"
+    for line in stack_config_path.read_text().splitlines():
+        if line.startswith(prefix):
+            value = line.split(":", 2)[-1].strip()
+            if value:
+                return value.rstrip("/")
+
+    pytest.fail(
+        f"aws-pulumi:website_root_url not found in {stack_config_path}. "
+        "Set PULUMI_BASE_URL to override the test target."
+    )
 
 
 # ---------------------------------------------------------------------------

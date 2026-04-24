@@ -58,14 +58,13 @@ class EcsClusterComponentResource(pulumi.ComponentResource):
             opts=self.child_opts,
         )
 
-        # Associate FARGATE and FARGATE_SPOT capacity providers with the cluster
         aws.ecs.ClusterCapacityProviders(
             f"{self.name}-dagster-cluster-capacity-providers",
             cluster_name=self.cluster.name,
-            capacity_providers=["FARGATE", "FARGATE_SPOT"],
+            capacity_providers=["FARGATE"],
             default_capacity_provider_strategies=[
                 aws.ecs.ClusterCapacityProvidersDefaultCapacityProviderStrategyArgs(
-                    capacity_provider="FARGATE_SPOT",
+                    capacity_provider="FARGATE",
                     weight=1,
                 )
             ],

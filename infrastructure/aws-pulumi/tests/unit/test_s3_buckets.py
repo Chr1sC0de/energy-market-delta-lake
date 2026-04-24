@@ -3,20 +3,25 @@
 import warnings
 
 import pulumi
+import pytest
 
+import components.s3_buckets as s3_buckets_module
 from components.s3_buckets import S3BucketsComponentResource
 
 
+@pytest.fixture(autouse=True)
+def mock_bucket_exists(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep unit tests hermetic by bypassing live boto3 bucket lookups."""
+    monkeypatch.setattr(s3_buckets_module, "bucket_exists", lambda _bucket_name: False)
+
+
 class TestS3BucketsCreation:
-    def test_all_seven_buckets_created(self) -> None:
+    def test_all_expected_buckets_created(self) -> None:
         s3 = S3BucketsComponentResource("test-energy-market")
         assert s3.io_manager_bucket is not None
         assert s3.landing is not None
         assert s3.archive is not None
         assert s3.aemo is not None
-        assert s3.bronze is not None
-        assert s3.silver is not None
-        assert s3.gold is not None
 
     @pulumi.runtime.test
     def test_io_manager_bucket_name(self) -> None:
@@ -60,46 +65,26 @@ class TestS3BucketsCreation:
 
         return s3.aemo.bucket.apply(check)
 
-    @pulumi.runtime.test
-    def test_bronze_bucket_name(self) -> None:
-        s3 = S3BucketsComponentResource("test-energy-market")
+    def test_archive_lifecycle_setup_is_invoked(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The component must attach archive lifecycle rules during construction."""
+        called = False
 
-        def check(bucket: str) -> None:
-            assert "bronze" in bucket, f"Expected 'bronze' in bucket name, got {bucket}"
+        original = S3BucketsComponentResource.setup_archive_lifecycle
 
-        return s3.bronze.bucket.apply(check)
+        def wrapped(self: S3BucketsComponentResource) -> None:
+            nonlocal called
+            called = True
+            original(self)
 
-    @pulumi.runtime.test
-    def test_silver_bucket_name(self) -> None:
-        s3 = S3BucketsComponentResource("test-energy-market")
-
-        def check(bucket: str) -> None:
-            assert "silver" in bucket, f"Expected 'silver' in bucket name, got {bucket}"
-
-        return s3.silver.bucket.apply(check)
-
-    @pulumi.runtime.test
-    def test_gold_bucket_name(self) -> None:
-        s3 = S3BucketsComponentResource("test-energy-market")
-
-        def check(bucket: str) -> None:
-            assert "gold" in bucket, f"Expected 'gold' in bucket name, got {bucket}"
-
-        return s3.gold.bucket.apply(check)
-
-    def test_archive_has_lifecycle_configuration(self) -> None:
-        """The archive bucket must have a lifecycle configuration created.
-
-        The lifecycle transitions data to Glacier after 30 days, Deep Archive
-        after 180 days, and expires after 3650 days (10 years).
-        """
-        # S3BucketsComponentResource.setup_archive_lifecycle() creates a
-        # BucketLifecycleConfiguration as a side effect. We verify this by
-        # checking that instantiation doesn't raise and the archive bucket exists.
-        s3 = S3BucketsComponentResource("test-energy-market-lifecycle")
-        assert s3.archive is not None, (
-            "Archive bucket must be created before lifecycle can be attached"
+        monkeypatch.setattr(
+            S3BucketsComponentResource, "setup_archive_lifecycle", wrapped
         )
+        s3 = S3BucketsComponentResource("test-energy-market-lifecycle")
+
+        assert s3.archive is not None
+        assert called, "Expected setup_archive_lifecycle() to be invoked during init"
 
     def test_no_deprecation_warnings(self) -> None:
         with warnings.catch_warnings(record=True) as caught:

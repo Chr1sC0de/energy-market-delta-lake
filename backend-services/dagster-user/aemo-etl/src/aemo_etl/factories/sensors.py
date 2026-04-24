@@ -37,13 +37,26 @@ def is_running(runs: Sequence[DagsterRun], asset_key: AssetKey) -> bool:
     return False
 
 
+def has_asset_failed(runs: Sequence[DagsterRun], asset_key: AssetKey) -> bool:
+    """Return True if the most recent completed run containing this asset failed.
+
+    Scans ``runs`` in order (expected newest-first) and returns the status of
+    the first run whose ``asset_selection`` includes ``asset_key``.  If no
+    matching run is found the function returns False.
+    """
+    for run in runs:
+        if run.asset_selection and asset_key in run.asset_selection:
+            return run.status == DagsterRunStatus.FAILURE
+    return False
+
+
 def df_from_s3_keys_sensor(
     name: str,
     asset_selection: AssetSelection,
     s3_source_bucket: str,
     s3_source_prefix: str,
-    # 200mb for a 1024 ram ecs instance
     bytes_cap: float = 200e6,
+    files_cap: int | None = None,
     default_status: DefaultSensorStatus = DefaultSensorStatus.STOPPED,
 ) -> SensorDefinition:
 
@@ -60,8 +73,14 @@ def df_from_s3_keys_sensor(
             context.repository_def.assets_defs_by_key.values()
         )
 
-        runs = context.instance.get_runs(
+        active_runs = context.instance.get_runs(
             filters=RunsFilter(statuses=list(ACTIVE_STATUSES))
+        )
+        completed_runs = context.instance.get_runs(
+            filters=RunsFilter(
+                statuses=[DagsterRunStatus.SUCCESS, DagsterRunStatus.FAILURE]
+            ),
+            limit=100,
         )
         object_head_mapping = get_object_head_from_pages(pages, logger=context.log)
 
@@ -74,14 +93,16 @@ def df_from_s3_keys_sensor(
             )
             s3_file_glob = asset_meta["glob_pattern"]
 
-            if not is_running(runs, asset_key):
+            if not is_running(active_runs, asset_key) and not has_asset_failed(
+                completed_runs, asset_key
+            ):
                 s3_object_keys = get_s3_object_keys_from_prefix_and_name_glob(
                     s3_prefix=s3_source_prefix,
                     s3_file_glob=s3_file_glob,
                     original_keys=cast(list[str], object_head_mapping.keys()),
                 )
                 current_bytes = 0
-                objects_to_process = []
+                objects_to_process: list[str] = []
 
                 for s3_object_key in s3_object_keys:
                     object_head = object_head_mapping[s3_object_key]
@@ -89,6 +110,9 @@ def df_from_s3_keys_sensor(
                     size_in_bytes = object_head["Size"]
                     if current_bytes + size_in_bytes > bytes_cap:
                         break
+                    if files_cap is not None:
+                        if len(objects_to_process) >= files_cap:
+                            break
                     objects_to_process.append(s3_object_key)
                     current_bytes += size_in_bytes
 

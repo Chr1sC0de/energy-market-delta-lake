@@ -1,0 +1,189 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# delete-dev-buckets
+#
+# Deletes all dev S3 buckets for the energy-market project.
+# Each bucket is fully emptied (all object versions and delete-markers
+# removed) before the bucket itself is deleted.
+#
+# Usage:
+#   ./scripts/delete-dev-buckets [--dry-run]
+#
+# Options:
+#   --dry-run   Print what would be deleted without making any changes.
+# ---------------------------------------------------------------------------
+
+DEV_BUCKETS=(
+    "dev-energy-market-io-manager"
+    "dev-energy-market-landing"
+    "dev-energy-market-archive"
+    "dev-energy-market-aemo"
+)
+
+DRY_RUN=false
+
+# ── Argument parsing ────────────────────────────────────────────────────────
+for arg in "$@"; do
+    case "$arg" in
+    --dry-run)
+        DRY_RUN=true
+        ;;
+    -h | --help)
+        sed -n '/^# Usage:/,/^# ─/{ /^# ─/d; s/^# \{0,3\}//; p }' "$0"
+        exit 0
+        ;;
+    *)
+        echo "Unknown option: $arg" >&2
+        echo "Usage: $0 [--dry-run]" >&2
+        exit 1
+        ;;
+    esac
+done
+
+# ── Helpers ─────────────────────────────────────────────────────────────────
+red() { printf '\033[0;31m%s\033[0m\n' "$*"; }
+yellow() { printf '\033[0;33m%s\033[0m\n' "$*"; }
+green() { printf '\033[0;32m%s\033[0m\n' "$*"; }
+bold() { printf '\033[1m%s\033[0m\n' "$*"; }
+
+bucket_exists() {
+    aws s3api head-bucket --bucket "$1" 2>/dev/null
+}
+
+# Delete all object versions in a bucket (handles versioned and non-versioned).
+# AWS delete-objects accepts at most 1000 keys per call, so items are batched.
+empty_bucket() {
+    local bucket="$1"
+
+    echo "  Emptying s3://${bucket} ..."
+
+    # Loop until there are no more versions/delete-markers (AWS pages at 1000)
+    while true; do
+        local versions
+        versions=$(aws s3api list-object-versions \
+            --bucket "$bucket" \
+            --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}, Markers: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' \
+            --output json 2>/dev/null || echo '{"Objects":null,"Markers":null}')
+
+        local objects
+        objects=$(echo "$versions" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+items = (data.get('Objects') or []) + (data.get('Markers') or [])
+print(json.dumps(items))
+")
+
+        local count
+        count=$(echo "$objects" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
+
+        if [[ "$count" -eq 0 ]]; then
+            break
+        fi
+
+        echo "    Deleting ${count} object(s)/marker(s) in batches of 1000 ..."
+
+        # Split into chunks of 1000 (API hard limit) and delete each chunk
+        echo "$objects" | python3 -c "
+import json, sys
+items = json.load(sys.stdin)
+chunk_size = 1000
+for i in range(0, len(items), chunk_size):
+    chunk = items[i:i + chunk_size]
+    print(json.dumps({'Objects': chunk, 'Quiet': True}))
+" | while IFS= read -r batch; do
+            aws s3api delete-objects \
+                --bucket "$bucket" \
+                --delete "$batch" \
+                --output json >/dev/null
+        done
+    done
+
+    echo "  Bucket is now empty."
+}
+
+# ── Discovery ────────────────────────────────────────────────────────────────
+bold ""
+bold "Scanning for dev buckets ..."
+echo ""
+
+existing_buckets=()
+for bucket in "${DEV_BUCKETS[@]}"; do
+    if bucket_exists "$bucket"; then
+        existing_buckets+=("$bucket")
+        echo "  [FOUND]   s3://${bucket}"
+    else
+        yellow "  [MISSING] s3://${bucket} (skipping)"
+    fi
+done
+
+echo ""
+
+if [[ ${#existing_buckets[@]} -eq 0 ]]; then
+    green "No dev buckets found. Nothing to delete."
+    exit 0
+fi
+
+# ── Dry-run output ───────────────────────────────────────────────────────────
+if [[ "$DRY_RUN" == true ]]; then
+    yellow "DRY RUN — no changes will be made."
+    echo ""
+    bold "The following buckets would be emptied and deleted:"
+    for bucket in "${existing_buckets[@]}"; do
+        echo "  - s3://${bucket}"
+    done
+    echo ""
+    exit 0
+fi
+
+# ── Confirmation prompt ──────────────────────────────────────────────────────
+red "WARNING: This will permanently delete the following S3 buckets and ALL their contents:"
+echo ""
+for bucket in "${existing_buckets[@]}"; do
+    red "  - s3://${bucket}"
+done
+echo ""
+printf 'Type "yes" to confirm deletion: '
+read -r confirmation
+
+if [[ "$confirmation" != "yes" ]]; then
+    echo "Aborted."
+    exit 0
+fi
+
+echo ""
+
+# ── Delete ───────────────────────────────────────────────────────────────────
+failed=()
+for bucket in "${existing_buckets[@]}"; do
+    bold "Processing s3://${bucket} ..."
+
+    if empty_bucket "$bucket"; then
+        if aws s3 rb "s3://${bucket}"; then
+            green "  Deleted s3://${bucket}"
+        else
+            red "  Failed to delete s3://${bucket} after emptying."
+            failed+=("$bucket")
+        fi
+    else
+        red "  Failed to empty s3://${bucket}. Skipping deletion."
+        failed+=("$bucket")
+    fi
+
+    echo ""
+done
+
+# ── Summary ──────────────────────────────────────────────────────────────────
+deleted_count=$((${#existing_buckets[@]} - ${#failed[@]}))
+
+bold "Done. ${deleted_count}/${#existing_buckets[@]} bucket(s) deleted."
+
+if [[ ${#failed[@]} -gt 0 ]]; then
+    echo ""
+    red "The following buckets could not be fully deleted:"
+    for bucket in "${failed[@]}"; do
+        red "  - s3://${bucket}"
+    done
+    exit 1
+fi

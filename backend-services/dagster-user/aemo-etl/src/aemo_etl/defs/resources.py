@@ -24,9 +24,13 @@ class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
     @override
     def handle_output(self, context: OutputContext, obj: LazyFrame) -> None:
         """automatically handles merges as upserts"""
-        assert context.metadata is not None, f"asset must set metadata {DAGSTER_URI}"
-        assert DAGSTER_URI in context.metadata, f"asset must set metadata {DAGSTER_URI}"
-        target_uri = context.metadata[DAGSTER_URI]
+        assert context.definition_metadata is not None, (
+            f"asset must set metadata {DAGSTER_URI}"
+        )
+        assert DAGSTER_URI in context.definition_metadata, (
+            f"asset must set metadata {DAGSTER_URI}"
+        )
+        target_uri = context.definition_metadata[DAGSTER_URI]
 
         return_object = obj.sink_delta(target_uri, **self.sink_delta_kwargs)
 
@@ -73,14 +77,14 @@ class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
     @override
     def load_input(self, context: InputContext) -> LazyFrame:
         assert context.upstream_output is not None, "echo no upstream output found"
-        assert context.upstream_output.metadata is not None, (
+        assert context.upstream_output.definition_metadata is not None, (
             f"upstream asset must set metadata {DAGSTER_URI}"
         )
-        assert DAGSTER_URI in context.upstream_output.metadata, (
+        assert DAGSTER_URI in context.upstream_output.definition_metadata, (
             f"upstream asset must set metadata {DAGSTER_URI}"
         )
 
-        target_uri = context.upstream_output.metadata[DAGSTER_URI]
+        target_uri = context.upstream_output.definition_metadata[DAGSTER_URI]
 
         return scan_delta(target_uri, **self.scan_delta_kwargs)
 
@@ -108,7 +112,10 @@ def defs() -> Definitions:
             "aemo_deltalake_ingest_partitioned_append_io_manager": PolarsDataFrameSinkDeltaIoManager(
                 sink_delta_kwargs={
                     "mode": "append",
-                    "delta_write_options": {"partition_by": "ingested_date"},
+                    "delta_write_options": {
+                        "partition_by": "ingested_date",
+                        "schema_mode": "merge",
+                    },
                 },
             ),
         }

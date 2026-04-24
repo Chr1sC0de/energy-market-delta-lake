@@ -4,7 +4,7 @@ import uuid
 from collections.abc import Mapping
 from datetime import datetime
 from logging import Logger
-from typing import Callable, TypedDict, cast
+from typing import Callable, Protocol, TypedDict, cast
 
 import polars as pl
 import polars_hash as plh
@@ -152,7 +152,9 @@ def get_surrogate_key(primary_keys: list[str] | list[Expr]) -> Expr:
     ).chash.sha2_256()
 
 
-BytesToLazyFrameMethod = Callable[[bytes], LazyFrame]
+class BytesToLazyFrameMethod(Protocol):
+    def __call__(self, bytes_: bytes) -> LazyFrame: ...
+
 
 BYTES_TO_LAZYFRAME_REGISTER: dict[str, BytesToLazyFrameMethod] = {}
 
@@ -171,7 +173,7 @@ def register_bytes_to_lazyframe_method(
 
 @register_bytes_to_lazyframe_method("csv")
 def csv_bytes_to_lazyframe(bytes_: bytes) -> LazyFrame:
-    return scan_csv(bytes_)
+    return scan_csv(bytes_, infer_schema_length=None)
 
 
 @register_bytes_to_lazyframe_method("parquet")
@@ -192,8 +194,7 @@ def get_from_s3(
         if logger is not None:
             if e.response["Error"]["Code"] == "NoSuchKey":
                 logger.error(f"key {s3_key} does not exist")
-            # TODO: create tests
-            else:  # pragma: no cover
+            else:
                 logger.error(
                     f"unable to process {s3_key} for bucket {s3_bucket} with error {e}"
                 )

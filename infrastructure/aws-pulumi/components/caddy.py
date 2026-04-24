@@ -262,6 +262,7 @@ class CaddyServerComponentResource(pulumi.ComponentResource):
             ttl=300,
             records=[self.eip.public_ip],
             opts=pulumi.ResourceOptions(parent=self.eip),
+            allow_overwrite=True,
         )
 
     def _setup_ssm_parameters(self) -> None:
@@ -271,6 +272,7 @@ class CaddyServerComponentResource(pulumi.ComponentResource):
             type="String",
             value=self.instance.id,
             opts=pulumi.ResourceOptions(parent=self.instance),
+            overwrite=True,
         )
 
         aws.ssm.Parameter(
@@ -279,4 +281,5 @@ class CaddyServerComponentResource(pulumi.ComponentResource):
             type="String",
             value=self._key_pair.key_pair_id,
             opts=pulumi.ResourceOptions(parent=self._key_pair),
+            overwrite=True,
         )

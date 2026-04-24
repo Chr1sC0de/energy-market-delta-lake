@@ -1,16 +1,21 @@
 from collections.abc import Mapping
 from typing import Iterable
 
-from dagster import AssetIn, AutomationCondition, Definitions
+from dagster import (
+    Definitions,
+)
 from dagster._core.definitions.assets.definition.asset_dep import CoercibleToAssetDep
 from polars import LazyFrame
 from polars._typing import PolarsDataType
 
 from aemo_etl.configs import AEMO_BUCKET
-from aemo_etl.factories.checks import duplicate_row_check_factory
+from aemo_etl.factories.checks import (
+    duplicate_row_check_factory,
+    schema_drift_check_factory,
+    schema_matches_check_factor,
+)
 from aemo_etl.factories.df_from_s3_keys.assets import (
     bronze_df_from_s3_keys_asset_factory,
-    silver_df_from_s3_keys_asset_factory,
 )
 from aemo_etl.factories.df_from_s3_keys.hooks import Hook
 from aemo_etl.utils import get_metadata_schema
@@ -30,58 +35,57 @@ def df_from_s3_keys_definitions_factory(
     description: str | None = None,
 ) -> Definitions:
 
+    bronze_key_prefix = ["bronze", domain]
+    bronze_table_name = f"bronze_{name_suffix}"
+    bronze_uri = f"s3://{AEMO_BUCKET}/{'/'.join(bronze_key_prefix)}/{bronze_table_name}"
+
     bronze_asset = bronze_df_from_s3_keys_asset_factory(
+        uri=bronze_uri,
         schema=schema,
         surrogate_key_sources=surrogate_key_sources,
         postprocess_object_hooks=bronze_postprocess_object_hooks,
         postprocess_lazyframe_hooks=bronze_postprocess_lazyframe_hooks,
-        key_prefix=(bronze_key_prefix := ["bronze", domain]),
-        name=(bronze_table_name := f"bronze_{name_suffix}"),
+        key_prefix=bronze_key_prefix,
+        name=bronze_table_name,
         group_name=group_name,
         io_manager_key="aemo_deltalake_ingest_partitioned_append_io_manager",
         deps=deps,
-        description=f"Bronze dataset, contains full un-cleansed dataset.\n\n{description}",
+        description=f"Bronze dataset, contains deduplicated dataset.\n\n{description}",
         metadata={
             "dagster/column_schema": get_metadata_schema(schema, schema_descriptions),
             "surrogate_key_sources": surrogate_key_sources,
             "dagster/table_name": f"aemo.{domain}.{bronze_table_name}",
-            "dagster/uri": f"s3://{AEMO_BUCKET}/{'/'.join(bronze_key_prefix)}/{bronze_table_name}",
+            "dagster/uri": bronze_uri,
             "glob_pattern": glob_pattern,
         },
     )
 
-    silver_asset_name = f"silver_{name_suffix}"
-    silver_key_prefix = ["silver", domain]
-    silver_asset_uri = (
-        f"s3://{AEMO_BUCKET}/{'/'.join(silver_key_prefix)}/{silver_asset_name}"
-    )
-
-    silver_asset = silver_df_from_s3_keys_asset_factory(
-        uri=silver_asset_uri,
-        group_name=group_name,
-        key_prefix=silver_key_prefix,
-        name=silver_asset_name,
-        ins={"df": AssetIn(bronze_asset.key)},
-        io_manager_key="aemo_deltalake_append_io_manager",
-        description=f"Silver dataset, contains deduplicated dataset.\n\n{description}",
-        metadata={
-            "dagster/column_schema": get_metadata_schema(schema, schema_descriptions),
-            "surrogate_key_sources": surrogate_key_sources,
-            "dagster/table_name": f"aemo.{domain}{silver_asset_name}",
-            "dagster/uri": silver_asset_uri,
-        },
-        kinds={"table", "deltalake"},
-        automation_condition=AutomationCondition.any_deps_updated()
-        & ~AutomationCondition.in_progress(),
-    )
-
-    silver_asset_check = duplicate_row_check_factory(
-        assets_definition=silver_asset,
+    bronze_asset_duplicate_row_check = duplicate_row_check_factory(
+        assets_definition=bronze_asset,
         check_name="check_for_duplicate_rows",
         primary_key="surrogate_key",
         description=f"Check that surrogate_key({surrogate_key_sources}) is unique",
     )
 
+    bronze_asset_schema_check = schema_matches_check_factor(
+        schema=schema,
+        assets_definition=bronze_asset,
+        check_name="check_schema_matches",
+        description="Check observed schema matches target schema",
+    )
+
+    bronze_asset_schema_drift_check = schema_drift_check_factory(
+        schema=schema,
+        assets_definition=bronze_asset,
+        check_name="check_schema_drift",
+        description="Check for schema drift against the declared asset schema",
+    )
+
     return Definitions(
-        assets=[bronze_asset, silver_asset], asset_checks=[silver_asset_check]
+        assets=[bronze_asset],
+        asset_checks=[
+            bronze_asset_duplicate_row_check,
+            bronze_asset_schema_check,
+            bronze_asset_schema_drift_check,
+        ],
     )

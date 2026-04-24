@@ -173,6 +173,26 @@ METADATA_KEYS = {
 }
 
 
+def _silver_extract(raw: str | None, key: str) -> str | None:
+    """Extract a scalar value from a JSON metadata string by key."""
+    if raw is None:
+        return None
+    value = json.loads(raw).get(key)
+    if value is None:
+        return None
+    return value if isinstance(value, str) else json.dumps(value)
+
+
+def _silver_extract_column_schema_field(raw: str | None, field: str) -> str | None:
+    """Extract {col_name: field_value} from the dagster/column_schema dict."""
+    if raw is None:
+        return None
+    schema_dict = json.loads(raw).get("dagster/column_schema")
+    if not schema_dict:
+        return None
+    return json.dumps({col: info[field] for col, info in schema_dict.items()})
+
+
 @asset(
     key_prefix=SILVER_KEY_PREFIX,
     name=SILVER_TABLE_NAME,
@@ -190,37 +210,18 @@ METADATA_KEYS = {
     },
     kinds={"table", "deltalake"},
     automation_condition=(
-        AutomationCondition.any_deps_updated()
-        | AutomationCondition.newly_updated()
-        | AutomationCondition.missing()
+        AutomationCondition.any_deps_updated() | AutomationCondition.missing()
     )
     & ~AutomationCondition.in_progress(),
 )
 def silver_table_metadata(df: LazyFrame) -> LazyFrame:
     collected = df.collect()
 
-    def _extract(raw: str | None, key: str) -> str | None:
-        if raw is None:
-            return None
-        value = json.loads(raw).get(key)
-        if value is None:
-            return None
-        return value if isinstance(value, str) else json.dumps(value)
-
-    def _extract_column_schema_field(raw: str | None, field: str) -> str | None:
-        """Extract {col_name: field_value} from the dagster/column_schema dict."""
-        if raw is None:
-            return None
-        schema_dict = json.loads(raw).get("dagster/column_schema")
-        if not schema_dict:
-            return None
-        return json.dumps({col: info[field] for col, info in schema_dict.items()})
-
     collected = collected.with_columns(
         [
             pl.col("metadata")
             .map_elements(
-                lambda m, k=src_key: _extract(m, k),
+                lambda m, k=src_key: _silver_extract(m, k),
                 return_dtype=pl.String,
             )
             .alias(col_name)
@@ -229,13 +230,13 @@ def silver_table_metadata(df: LazyFrame) -> LazyFrame:
         + [
             pl.col("metadata")
             .map_elements(
-                lambda m: _extract_column_schema_field(m, "type"),
+                lambda m: _silver_extract_column_schema_field(m, "type"),
                 return_dtype=pl.String,
             )
             .alias("column_schema"),
             pl.col("metadata")
             .map_elements(
-                lambda m: _extract_column_schema_field(m, "description"),
+                lambda m: _silver_extract_column_schema_field(m, "description"),
                 return_dtype=pl.String,
             )
             .alias("column_description"),

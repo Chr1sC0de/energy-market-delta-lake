@@ -22,11 +22,6 @@ RUN uv pip install . --system --prefix=/install;
 # ── runtime ───────────────────────────────────────────────────────────────────
 FROM ${IMAGE} AS deploy
 
-RUN apt-get update && apt-get upgrade -yqq \
-    && apt-get install -y --no-install-recommends curl \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*;
-
 COPY --from=builder /install/ /usr/local/
 
 ENV APP_DIR=/opt/authentication

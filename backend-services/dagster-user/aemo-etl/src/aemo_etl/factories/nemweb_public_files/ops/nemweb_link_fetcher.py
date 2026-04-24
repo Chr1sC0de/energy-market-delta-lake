@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 import bs4
-from dagster import OpDefinition, OpExecutionContext, op
+from dagster import Backoff, Jitter, OpDefinition, OpExecutionContext, RetryPolicy, op
 from requests.models import Response
 
 from aemo_etl.factories.nemweb_public_files.models import Link
@@ -27,11 +27,18 @@ def build_nemweb_link_fetcher_op(
     name: str,
     href: str,
     fetcher: NEMWebLinkFetcher,
+    retry_policy: RetryPolicy = RetryPolicy(
+        max_retries=3,
+        delay=5,
+        backoff=Backoff.EXPONENTIAL,
+        jitter=Jitter.PLUS_MINUS,
+    ),
 ) -> OpDefinition:
 
     @op(
         name=f"{name}_nemweb_link_fetcher_op",
         description=f"fetch the list of links from {href}",
+        retry_policy=retry_policy,
     )
     def _op(context: OpExecutionContext) -> list[Link]:
         return fetcher.fetch(context, href)

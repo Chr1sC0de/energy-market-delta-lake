@@ -5,7 +5,7 @@ FROM docker.io/library/python:3.13-slim AS builder
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # install the required build tools
-RUN apt-get update && apt-get upgrade -yqq && \
+RUN apt-get update  && \
     apt-get install -y --no-install-recommends \
     git \
     curl \
@@ -36,15 +36,6 @@ RUN rm -rf $HOME/.cargo;
 
 # ── dagster-grpc ──────────────────────────────────────────────────────────────────
 FROM docker.io/library/python:3.13-slim AS dagster-grpc
-
-RUN apt-get update && apt-get upgrade -yqq && \
-    apt-get install -y --no-install-recommends \
-    curl \
-    vim \
-    netcat-openbsd \
-    && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*;
 
 # Copy installed packages and created binaries from builder
 COPY --from=builder /install/ /usr/local/

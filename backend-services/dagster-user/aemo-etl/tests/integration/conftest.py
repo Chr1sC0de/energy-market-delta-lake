@@ -1,5 +1,5 @@
 import uuid
-from typing import Generator
+from typing import Callable, Generator
 
 import boto3
 import pytest
@@ -7,6 +7,12 @@ from types_boto3_dynamodb import DynamoDBClient
 from types_boto3_s3 import S3Client
 from types_boto3_s3.type_defs import ObjectIdentifierTypeDef
 
+from aemo_etl.configs import (
+    AEMO_BUCKET,
+    ARCHIVE_BUCKET,
+    IO_MANAGER_BUCKET,
+    LANDING_BUCKET,
+)
 from aemo_etl.utils import add_random_suffix
 from tests.utils import (
     LOCALSTACK_IMAGE,
@@ -71,21 +77,21 @@ def localstack_endpoint(session_monkeypatch: pytest.MonkeyPatch) -> Generator[st
     podman("stop", container_name)
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="session")
 def s3(localstack_endpoint: str) -> Generator[S3Client]:
     client: S3Client = boto3.client("s3", endpoint_url=localstack_endpoint)
     yield client
     client.close()
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="session")
 def dynamodb(localstack_endpoint: str) -> Generator[DynamoDBClient]:
     client: DynamoDBClient = boto3.client("dynamodb", endpoint_url=localstack_endpoint)
     yield client
     client.close()
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="session")
 def make_bucket(s3: S3Client) -> Generator[MakeBucketProtocol]:
     buckets: list[str] = []
 
@@ -111,7 +117,7 @@ def make_bucket(s3: S3Client) -> Generator[MakeBucketProtocol]:
         _ = s3.delete_bucket(Bucket=bucket_name)
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="session")
 def create_delta_log(dynamodb: DynamoDBClient) -> Generator[None]:
     _ = dynamodb.create_table(
         AttributeDefinitions=[
@@ -131,3 +137,11 @@ def create_delta_log(dynamodb: DynamoDBClient) -> Generator[None]:
     yield
 
     _ = dynamodb.delete_table(TableName="delta_log")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def setup(make_bucket: Callable[[str, bool], str], create_delta_log: None) -> None:
+    make_bucket(LANDING_BUCKET, False)
+    make_bucket(ARCHIVE_BUCKET, False)
+    make_bucket(AEMO_BUCKET, False)
+    make_bucket(IO_MANAGER_BUCKET, False)

@@ -63,7 +63,7 @@ class DeltaLockingTableComponentResource(pulumi.ComponentResource):
                 ],
                 opts=pulumi.ResourceOptions(
                     parent=self,
-                    retain_on_delete=True,
+                    retain_on_delete=False,
                 ),
             )
 

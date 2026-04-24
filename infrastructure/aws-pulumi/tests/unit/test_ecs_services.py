@@ -8,7 +8,6 @@ This file verifies:
   - Entry points are correct, including --read-only for guest webserver
   - All services share the same private subnet and cluster
   - Circuit breakers are enabled on every service
-  - FARGATE_SPOT capacity provider is used
   - No DeprecationWarning is raised (regression guard for .region fix and failure_threshold fix)
 """
 
@@ -85,11 +84,7 @@ class TestDagsterUserCodeService:
 
         def check(strategies: list) -> None:
             # Pulumi mocks return snake_case keys in output dicts.
-            # FARGATE_SPOT preferred (weight=4), FARGATE fallback (weight=1), both base=0.
             providers = [s.get("capacity_provider") for s in strategies]
-            assert "FARGATE_SPOT" in providers, (
-                f"Expected FARGATE_SPOT in capacity providers, got {providers}"
-            )
             assert "FARGATE" in providers, (
                 f"Expected FARGATE on-demand fallback in capacity providers, got {providers}"
             )
@@ -252,9 +247,7 @@ class TestDagsterWebserverAdminService:
 
         def check(strategies: list) -> None:
             # Pulumi mocks return snake_case keys.
-            # FARGATE_SPOT preferred (weight=4), FARGATE fallback (weight=1), both base=0.
             providers = [s.get("capacity_provider") for s in strategies]
-            assert "FARGATE_SPOT" in providers
             assert "FARGATE" in providers
 
         return svc.service.capacity_provider_strategies.apply(check)
@@ -309,7 +302,6 @@ class TestDagsterWebserverGuestService:
 
     @pulumi.runtime.test
     def test_webserver_guest_fargate_spot(self) -> None:
-        """Guest webserver must use FARGATE_SPOT preferred with FARGATE fallback."""
         vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
         svc = DagsterWebserverServiceComponentResource(
             "test-energy-market-webserver-guest-spot",
@@ -327,11 +319,7 @@ class TestDagsterWebserverGuestService:
         )
 
         def check(strategies: list) -> None:
-            # FARGATE_SPOT preferred (weight=4), FARGATE fallback (weight=1), both base=0.
             providers = [s.get("capacity_provider") for s in strategies]
-            assert "FARGATE_SPOT" in providers, (
-                f"Expected FARGATE_SPOT in capacity providers, got {providers}"
-            )
             assert "FARGATE" in providers, (
                 f"Expected FARGATE on-demand fallback in capacity providers, got {providers}"
             )
@@ -466,9 +454,7 @@ class TestDagsterDaemonService:
 
         def check(strategies: list) -> None:
             # Pulumi mocks return snake_case keys.
-            # FARGATE_SPOT preferred (weight=4), FARGATE fallback (weight=1), both base=0.
             providers = [s.get("capacity_provider") for s in strategies]
-            assert "FARGATE_SPOT" in providers
             assert "FARGATE" in providers
 
         return svc.service.capacity_provider_strategies.apply(check)

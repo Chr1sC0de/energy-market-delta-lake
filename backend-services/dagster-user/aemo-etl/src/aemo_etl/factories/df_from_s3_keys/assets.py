@@ -1,3 +1,4 @@
+import tempfile
 from datetime import datetime
 from typing import Mapping, Unpack
 
@@ -8,7 +9,7 @@ from dagster import (
     asset,
 )
 from dagster_aws.s3 import S3Resource
-from polars import LazyFrame, col, concat, lit, row_index, scan_delta
+from polars import LazyFrame, col, lit, row_index, scan_delta
 from polars._typing import PolarsDataType
 from types_boto3_s3 import S3Client
 
@@ -31,6 +32,7 @@ class DFFromS3KeysConfiguration(Config):
 
 
 def bronze_df_from_s3_keys_asset_factory(
+    uri: str,
     schema: Mapping[str, PolarsDataType],
     surrogate_key_sources: list[str],
     postprocess_object_hooks: list[Hook[bytes]] | None = None,
@@ -56,12 +58,17 @@ def bronze_df_from_s3_keys_asset_factory(
 
         s3_client: S3Client = s3.get_client()
 
-        dfs = []
-
         processed = []
         skipped = []
 
         current_time = datetime.now(AEST)
+
+        # Use a local temp directory as a staging Delta table so that each
+        # file's bytes and LazyFrame are freed from memory immediately after
+        # sinking, rather than accumulating all frames before writing.
+        tmp_dir = tempfile.mkdtemp()
+        tmp_uri = f"{tmp_dir}/bronze_staging"
+        has_data = False
 
         for s3_key in config.s3_keys:
             filetype = s3_key.rsplit(".")[-1].lower()
@@ -94,7 +101,39 @@ def bronze_df_from_s3_keys_asset_factory(
                             source_file=lit(f"s3://{s3_archive_bucket}/{s3_key}")
                         )
 
-                        dfs.append(df)
+                        # Cast declared columns, add any missing declared columns,
+                        # then normalize output order so declared columns always
+                        # come first while preserving unknown source columns.
+                        collected_schema = df.collect_schema()
+                        observed_columns = list(collected_schema.keys())
+                        declared_columns = list(schema.keys())
+                        unknown_columns = [
+                            column
+                            for column in observed_columns
+                            if column not in schema
+                        ]
+
+                        # cast the schema to the correct type
+                        df = df.with_columns(
+                            col(c).cast(d)
+                            for c, d in schema.items()
+                            if c in collected_schema
+                        )
+                        # now add the missing columns
+                        df = df.with_columns(
+                            lit(None).cast(d).alias(c)
+                            for c, d in schema.items()
+                            if c not in collected_schema
+                        )
+                        # now maintain declared column order and append unknown columns
+                        df = df.select([*declared_columns, *unknown_columns])
+
+                        # Sink this file immediately to the local staging table
+                        # so bytes_ and df can be freed before loading the next
+                        # file. schema alignment is enforced via the empty
+                        # template frame.
+                        df.sink_delta(tmp_uri, mode="append")
+                        has_data = True
                         processed.append(s3_key)
                     else:
                         reason = f"skipping {s3_key}, 0 bytes"
@@ -121,11 +160,9 @@ def bronze_df_from_s3_keys_asset_factory(
                     {"filepath": f"s3://{s3_landing_bucket}/{s3_key}", "reason": reason}
                 )
 
-        if len(dfs) == 0:
+        if not has_data:
             context.log.info("no valid dataframes found returning empty dataframe")
             return LazyFrame(schema=schema)
-
-        df = concat([LazyFrame(schema=schema), *dfs], how="diagonal_relaxed")
 
         # now move the files which have been processed to the archive bucket
         for s3_key in processed:
@@ -136,34 +173,33 @@ def bronze_df_from_s3_keys_asset_factory(
             )
             s3_client.delete_object(Bucket=s3_landing_bucket, Key=s3_key)
 
-        return df
+        # --- Dedup & anti-join ---
+        # Scan the raw per-file staging table and deduplicate within the batch,
+        # keeping the first occurrence per surrogate_key ordered by
+        # ingested_timestamp.
+        batch = scan_delta(tmp_uri)
 
-    return _asset
-
-
-def silver_df_from_s3_keys_asset_factory(
-    uri: str,
-    **asset_kwargs: Unpack[AssetDefinitonParamSpec],
-) -> AssetsDefinition:
-
-    asset_kwargs.setdefault("metadata", {})
-
-    asset_kwargs.setdefault("kinds", {"table", "deltalake"})
-
-    # now create a silver asset which deduplicates the rows and cleans up the data
-    @asset(**asset_kwargs)
-    def silver_asset(df: LazyFrame) -> LazyFrame:
-        deduped_df = (
-            df.with_columns(
+        deduped = (
+            batch.with_columns(
                 row_index().over("surrogate_key", order_by="ingested_timestamp")
             )
             .filter(col.index == 0)
             .drop("index")
         )
 
-        if not table_exists(uri):
-            return deduped_df
+        # Sink the cleaned result to a second temp dir so the IO manager
+        # receives a clean scan with no references to the raw staging table.
+        clean_dir = tempfile.mkdtemp()
+        clean_uri = f"{clean_dir}/bronze_clean"
 
+        if not table_exists(uri):
+            # First run — no existing table to anti-join against.
+            deduped.sink_delta(clean_uri, mode="append")
+            return scan_delta(clean_uri)
+
+        # Subsequent runs — filter to only rows newer than the current
+        # watermark and anti-join against existing keys to avoid re-ingesting
+        # duplicates across batches.
         latest = scan_delta(uri)
 
         max_date = latest.select(col.ingested_date.max()).collect().item()
@@ -175,6 +211,13 @@ def silver_df_from_s3_keys_asset_factory(
             .item()
         )
 
+        new_data = deduped.filter(
+            (col.ingested_date > max_date)
+            | ((col.ingested_date == max_date) & (col.ingested_timestamp >= max_ts))
+        )
+
+        # Anti-join against only the recent partition so we don't load
+        # the full historical key set into memory.
         latest_keys = (
             latest.filter(
                 (col.ingested_date >= max_date) & (col.ingested_timestamp >= max_ts)
@@ -183,8 +226,9 @@ def silver_df_from_s3_keys_asset_factory(
             .unique()
         )
 
-        output = deduped_df.join(latest_keys, on="surrogate_key", how="anti")
+        output = new_data.join(latest_keys, on="surrogate_key", how="anti")
 
-        return output
+        output.sink_delta(clean_uri, mode="append")
+        return scan_delta(clean_uri)
 
-    return silver_asset
+    return _asset

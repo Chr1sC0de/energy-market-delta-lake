@@ -9,38 +9,71 @@ flowchart TB
 
         IGW[Internet Gateway]
 
-        subgraph PublicSubnet["Public Subnet 10.0.0.0/24"]
+        subgraph AZ1["Availability Zone (e.g. ap-southeast-2a)"]
 
-            NAT["fk-nat EC2 Instance
-            t4g.nano
-            SourceDestCheck=false"]
+            subgraph PublicSubnet["Public Subnet 10.0.0.0/24"]
 
-            EIP["Elastic IP"]
+                NAT["fk-nat EC2 Instance
+                t4g.nano
+                SourceDestCheck=false
+                (Custom NAT AMI)"]
+
+                EIP["Elastic IP"]
+            end
+
+            subgraph PrivateSubnet["Private Subnet 10.0.1.0/24"]
+
+                PrivateWorkloads["Private Resources
+                (ECS / EC2 / etc)"]
+            end
+
         end
 
-        subgraph PrivateSubnet["Private Subnet 10.0.1.0/24"]
+        PublicRT["Public Route Table
+        0.0.0.0/0 → IGW"]
 
-            PrivateWorkloads["Private Resources
-            (ECS / EC2 / etc)"]
-        end
-
-        PublicRT["Public Route Table"]
-        PrivateRT["Private Route Table"]
+        PrivateRT["Private Route Table
+        0.0.0.0/0 → NAT ENI"]
 
     end
 
-    Internet --> IGW
+    %% Internet connectivity
+    Internet <--> IGW
 
-    IGW --> PublicRT
-    PublicRT --> NAT
+    %% Route table associations (subnet-level, not resource-level)
+    PublicSubnet --> PublicRT
+    PrivateSubnet --> PrivateRT
 
-    NAT --> Internet
+    %% Public subnet routing
+    PublicRT --> IGW
 
-    PrivateWorkloads --> PrivateRT
+    %% Private subnet routing via NAT
     PrivateRT --> NAT
 
+    %% NAT instance behavior
+    NAT --> IGW
+
+    %% EIP association
     EIP --- NAT
 ```
+
+## Traffic
+
+### Private → Internet
+
+Private resource → Private Route Table (0.0.0.0/0 → NAT) → NAT instance → Public Route Table (0.0.0.0/0 → IGW) → Internet
+
+### Public → Internet
+
+Public resource (e.g., NAT) → Public Route Table (0.0.0.0/0 → IGW) → Internet
+
+### Internet → Private
+
+No route exists → blocked
+
+### Internet → Public
+
+Internet → IGW → Public subnet resource (must have public IP/EIP)
 
 ## Resources
 

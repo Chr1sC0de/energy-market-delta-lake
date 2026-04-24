@@ -36,11 +36,6 @@ class S3BucketsComponentResource(pulumi.ComponentResource):
         self.archive = self.create_bucket(f"{name}-archive")
         self.aemo = self.create_bucket(f"{name}-aemo")
 
-        # Data lake tiers
-        self.bronze = self.create_bucket(f"{name}-bronze")
-        self.silver = self.create_bucket(f"{name}-silver")
-        self.gold = self.create_bucket(f"{name}-gold")
-
         self.setup_archive_lifecycle()
 
         self.register_outputs({})
@@ -88,7 +83,10 @@ class S3BucketsComponentResource(pulumi.ComponentResource):
                 bucket_name,
                 bucket=bucket_name,
                 force_destroy=force_destroy,
-                opts=pulumi.ResourceOptions(import_=bucket_name),
+                opts=pulumi.ResourceOptions(
+                    import_=bucket_name,
+                    retain_on_delete=retain_on_delete,
+                ),
             )
         else:
             bucket = aws.s3.Bucket(

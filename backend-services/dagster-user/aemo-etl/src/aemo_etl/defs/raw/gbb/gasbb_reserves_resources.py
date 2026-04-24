@@ -41,8 +41,8 @@ defs = df_from_s3_keys_definitions_factory(
         "PreparationIndependenceStatement": String,
         "EffectiveDate": String,
         "VersionDateTime": String,
-        "ingested_timestamp": Datetime("ms", time_zone="UTC"),
-        "ingested_date": Datetime("ms", time_zone="UTC"),
+        "ingested_timestamp": Datetime("us", time_zone="UTC"),
+        "ingested_date": Datetime("us", time_zone="UTC"),
         "surrogate_key": String,
         "source_file": String,
     },
@@ -92,7 +92,6 @@ defs = df_from_s3_keys_definitions_factory(
     group_name="gas_raw",
     deps=[
         AssetSpec(["bronze", "gbb", "bronze_nemweb_public_files_gbb"]),
-        AssetSpec(["bronze", "gbb", "bronze_nemweb_public_files_gbb_duplicate"]),
     ],
     description="Field Reserves and Resources information. Updated monthly.",
 )

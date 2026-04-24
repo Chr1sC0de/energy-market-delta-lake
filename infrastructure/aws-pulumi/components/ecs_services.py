@@ -32,7 +32,6 @@ def _fargate_service(
     tags: dict[str, str] | None = None,
     child_opts: pulumi.ResourceOptions | None = None,
 ) -> aws.ecs.Service:
-    """Create a FARGATE_SPOT Fargate service with optional Cloud Map registration."""
 
     sd_registration: aws.ecs.ServiceServiceRegistriesArgs | None = None
     if namespace_id is not None and cloud_map_name is not None:
@@ -79,11 +78,11 @@ def _fargate_service(
             # on-demand, defeating the Spot preference for desired_count=1).
             # When a Spot task is interrupted ECS replaces it — it will land on
             # on-demand if Spot capacity is unavailable.
-            aws.ecs.ServiceCapacityProviderStrategyArgs(
-                capacity_provider="FARGATE_SPOT",
-                weight=4,
-                base=0,
-            ),
+            # aws.ecs.ServiceCapacityProviderStrategyArgs(
+            #     capacity_provider="FARGATE_SPOT",
+            #     weight=4,
+            #     base=0,
+            # ),
             aws.ecs.ServiceCapacityProviderStrategyArgs(
                 capacity_provider="FARGATE",
                 weight=1,
@@ -201,6 +200,10 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
                                 "value": a["pg_pass"],
                             },
                             {"name": "AWS_S3_LOCKING_PROVIDER", "value": "dynamodb"},
+                            {
+                                "name": "DAGSTER_CURRENT_IMAGE",
+                                "value": f"{a['repo_url']}:latest",
+                            },
                             {"name": "DAGSTER_GRPC_TIMEOUT_SECONDS", "value": "300"},
                             {"name": "DEVELOPMENT_ENVIRONMENT", "value": ENVIRONMENT},
                             {"name": "DEVELOPMENT_LOCATION", "value": "aws"},

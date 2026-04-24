@@ -153,20 +153,24 @@ class TestServiceDiscoveryRegistration:
 
 
 class TestWebpageAccessibility:
-    def test_caddy_admin_ui_reachable(self, integration_enabled: None) -> None:
+    def test_caddy_admin_ui_reachable(
+        self, integration_enabled: None, base_url: str
+    ) -> None:
         """The Dagster admin UI must return HTTP 200 or 302 (Cognito redirect)."""
         try:
             import requests
         except ImportError:
             pytest.skip("requests not installed")
 
-        url = "https://ausenergymarketdata.com/dagster-webserver/admin"
+        url = f"{base_url}/dagster-webserver/admin"
         response = requests.get(url, timeout=30, allow_redirects=False)
         assert response.status_code in {200, 302}, (
             f"Expected 200 or 302 from {url}, got {response.status_code}"
         )
 
-    def test_caddy_guest_ui_reachable(self, integration_enabled: None) -> None:
+    def test_caddy_guest_ui_reachable(
+        self, integration_enabled: None, base_url: str
+    ) -> None:
         """The Dagster guest UI must return a non-5xx response from Caddy.
 
         Acceptable status codes:
@@ -180,20 +184,22 @@ class TestWebpageAccessibility:
         except ImportError:
             pytest.skip("requests not installed")
 
-        url = "https://ausenergymarketdata.com/dagster-webserver/guest"
+        url = f"{base_url}/dagster-webserver/guest"
         response = requests.get(url, timeout=30, allow_redirects=False)
         assert response.status_code in {200, 302, 307, 502}, (
             f"Expected 200, 302, 307, or 502 from {url}, got {response.status_code}"
         )
 
-    def test_caddy_root_reachable(self, integration_enabled: None) -> None:
+    def test_caddy_root_reachable(
+        self, integration_enabled: None, base_url: str
+    ) -> None:
         """The root URL must respond (Caddy is up and TLS is working)."""
         try:
             import requests
         except ImportError:
             pytest.skip("requests not installed")
 
-        url = "https://ausenergymarketdata.com"
+        url = base_url
         response = requests.get(url, timeout=30, allow_redirects=False)
         assert response.status_code < 500, (
             f"Expected non-5xx from {url}, got {response.status_code}"

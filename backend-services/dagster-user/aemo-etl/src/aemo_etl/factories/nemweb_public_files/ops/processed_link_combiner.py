@@ -2,7 +2,15 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from dagster import In, Nothing, OpDefinition, OpExecutionContext, Out, op
+from dagster import (
+    Backoff,
+    Jitter,
+    OpDefinition,
+    OpExecutionContext,
+    Out,
+    RetryPolicy,
+    op,
+)
 from polars import LazyFrame, Schema, col
 
 from aemo_etl.factories.nemweb_public_files.models import (
@@ -29,6 +37,12 @@ def build_process_link_combiner_op(
     io_manager_key: str | None,
     out_metadata_kwargs: dict[str, Any] | None,
     processed_link_combiner: ProcessedLinkedCombiner,
+    retry_policy: RetryPolicy = RetryPolicy(
+        max_retries=3,
+        delay=5,
+        backoff=Backoff.EXPONENTIAL,
+        jitter=Jitter.PLUS_MINUS,
+    ),
 ) -> OpDefinition:
 
     @op(
@@ -37,8 +51,8 @@ def build_process_link_combiner_op(
             for each processed link, combine the downloaded files into a single data
             frame
         """,
-        ins={"start": In(Nothing)},
         out=Out(io_manager_key=io_manager_key, metadata=out_metadata_kwargs),
+        retry_policy=retry_policy,
     )
     def _op(
         context: OpExecutionContext, processed_links: list[list[ProcessedLink] | None]

@@ -12,8 +12,8 @@ defs = df_from_s3_keys_definitions_factory(
     schema={
         "BasinId": Int64,
         "BasinName": String,
-        "ingested_timestamp": Datetime("ms", time_zone="UTC"),
-        "ingested_date": Datetime("ms", time_zone="UTC"),
+        "ingested_timestamp": Datetime("us", time_zone="UTC"),
+        "ingested_date": Datetime("us", time_zone="UTC"),
         "surrogate_key": String,
         "source_file": String,
     },
