@@ -9,4 +9,12 @@
 #   source backend-services/dagster-user/aemo-etl/.venv/bin/activate
 default_install_hook_types:
   - pre-commit
-repos: []
+repos:
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.14.0
+    hooks:
+      - id: hadolint
+        # Keep hadolint rules fully enabled at the workspace level.
+        # Add per-project `args: [--ignore, RULE]` only when a concrete
+        # Dockerfile pattern makes that exception necessary.
+        files: ^(backend-services/.+/Dockerfile|infrastructure/aws-pulumi/.+/Dockerfile)$
