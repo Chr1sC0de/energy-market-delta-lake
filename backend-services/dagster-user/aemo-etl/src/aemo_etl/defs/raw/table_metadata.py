@@ -73,7 +73,7 @@ def _safe_json(metadata: Mapping[str, object]) -> str | None:
 
 @asset(
     key_prefix=KEY_PREFIX,
-    group_name="metadata_raw",
+    group_name="gas_raw",
     description="Table metadata asset",
     io_manager_key="aemo_deltalake_overwrite_io_manager",
     metadata={
@@ -196,7 +196,7 @@ def _silver_extract_column_schema_field(raw: str | None, field: str) -> str | No
 @asset(
     key_prefix=SILVER_KEY_PREFIX,
     name=SILVER_TABLE_NAME,
-    group_name="metadata_raw",
+    group_name="gas_model",
     description="Silver table metadata asset — flattened metadata dict from bronze",
     ins={"df": AssetIn(bronze_table_metadata.key)},
     io_manager_key="aemo_deltalake_overwrite_io_manager",
