@@ -21,7 +21,7 @@ repos:
       - id: shfmt
         name: shell format
         language: system
-        entry: shfmt --write
+        entry: uv run shfmt --write
         files: ^scripts/.*
         exclude: ^(vendor/.*|generated/.*)$
       - id: shellcheck

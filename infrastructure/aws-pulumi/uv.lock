@@ -41,6 +41,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-mock" },
     { name = "ruff" },
+    { name = "shfmt-py" },
     { name = "zuban" },
 ]
 
@@ -62,6 +63,7 @@ dev = [
     { name = "pytest-cov", specifier = ">=7" },
     { name = "pytest-mock", specifier = ">=3.15.1" },
     { name = "ruff", specifier = ">=0.15.8" },
+    { name = "shfmt-py", specifier = ">=3.12.0.2" },
     { name = "zuban", specifier = ">=0.6.2" },
 ]
 
@@ -687,6 +689,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/72/d1/d3159231aec234a59
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a6/24/4d91e05817e92e3a61c8a21e08fd0f390f5301f1c448b137c57c4bc6e543/semver-3.0.4-py3-none-any.whl", hash = "sha256:9c824d87ba7f7ab4a1890799cec8596f15c1241cb473404ea1cb0c55e4b04746", size = 17912, upload-time = "2025-01-24T13:19:24.949Z" },
 ]
+
+[[package]]
+name = "shfmt-py"
+version = "3.12.0.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/af/d9/a1ea26749bd19467e9fbfe7b34e6c8df517e01de4028a45b954eebe8c03b/shfmt_py-3.12.0.2.tar.gz", hash = "sha256:6a0dc675b37d000eb236609cf15aedd9e7a538927ea02c57b617908b6f237e9c", size = 4467, upload-time = "2025-07-08T06:54:40.396Z" }
 
 [[package]]
 name = "six"
