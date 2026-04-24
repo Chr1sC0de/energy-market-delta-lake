@@ -20,6 +20,15 @@ repos:
     rev: "v2.16.1"
     hooks:
       - id: pyproject-fmt
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args:
+          - --baseline
+          - .secrets.baseline
+          - --exclude-files
+          - (^.*\.lock$|^.*/\.envrc$|^infrastructure/aws-pulumi/Pulumi\..*\.yaml$)
   - repo: local
     hooks:
       - id: shfmt
