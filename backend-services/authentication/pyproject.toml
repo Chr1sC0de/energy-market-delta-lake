@@ -26,7 +26,18 @@ dev = [
   "pytest-cov>=7",
   "pytest-mock>=3.15.1",
   "ruff>=0.15.8",
+  "zuban>=0.6.1",
 ]
+
+[tool.ruff]
+line-length = 88
+format.docstring-code-format = true
+lint.select = [ "ANN", "E", "F" ]
+lint.per-file-ignores."__init__.py" = [ "I" ]
+lint.pycodestyle.max-line-length = 120
 
 [tool.pytest]
 ini_options.testpaths = [ "tests" ]
+
+[tool.zuban]
+strict = false
