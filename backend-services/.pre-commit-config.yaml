@@ -1,0 +1,17 @@
+repos:
+  - repo: local
+    hooks:
+      - id: shfmt
+        name: shell format
+        language: python
+        additional_dependencies:
+          - shfmt-py==3.12.0.2
+        entry: shfmt --write
+        files: ^.*\.sh$
+        exclude: ^(.*/vendor/.*|.*/generated/.*|.*/\.venv/.*)$
+      - id: shellcheck
+        name: shellcheck
+        language: system
+        entry: shellcheck
+        files: ^.*\.sh$
+        exclude: ^(.*/vendor/.*|.*/generated/.*|.*/\.venv/.*)$
