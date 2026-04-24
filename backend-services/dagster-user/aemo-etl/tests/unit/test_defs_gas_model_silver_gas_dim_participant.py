@@ -1,0 +1,116 @@
+from datetime import datetime, timezone
+from typing import cast
+
+import polars as pl
+from dagster import AssetKey, AssetsDefinition, Definitions, MaterializeResult
+
+from aemo_etl.defs.gas_model.silver_gas_dim_participant import (
+    SOURCE_TABLES,
+    defs,
+    silver_gas_dim_participant,
+    silver_gas_dim_participant_required_fields,
+)
+
+
+def _gbb_participants() -> pl.LazyFrame:
+    return pl.LazyFrame(
+        {
+            "CompanyName": ["GBB Participant"],
+            "CompanyId": [1],
+            "OrganisationTypeName": ["Retailer"],
+            "ABN": ["11 222 333 444"],
+            "CompanyPhone": ["1"],
+            "Locale": ["Melbourne"],
+            "LastUpdated": ["01 Jan 2024 00:00:00"],
+            "AddressType": ["Postal"],
+            "Address": ["1 Street"],
+            "State": ["VIC"],
+            "Postcode": ["3000"],
+            "CompanyFax": ["2"],
+            "ingested_timestamp": [datetime(2024, 1, 1, tzinfo=timezone.utc)],
+            "surrogate_key": ["gbb-key"],
+            "source_file": ["s3://gbb"],
+        }
+    )
+
+
+def _vicgas_organisations() -> pl.LazyFrame:
+    return pl.LazyFrame(
+        {
+            "company_id": [1],
+            "company_name": ["VICGAS Participant"],
+            "registered_name": ["Registered VICGAS Participant"],
+            "acn": ["123 456 789"],
+            "abn": ["11222333444"],
+            "organization_class_name": ["Participant"],
+            "organization_type_name": ["Retailer"],
+            "organization_status_name": ["Active"],
+            "line_1": ["1 Street"],
+            "line_2": [None],
+            "line_3": [None],
+            "province_id": ["VIC"],
+            "city": ["Melbourne"],
+            "postal_code": ["3000"],
+            "phone": ["1"],
+            "fax": ["2"],
+            "market_code": ["VICGAS"],
+            "company_code": ["ABC"],
+            "current_date": ["01 Jan 2024 00:00:00"],
+            "ingested_timestamp": [datetime(2024, 1, 2, tzinfo=timezone.utc)],
+            "surrogate_key": ["vic-key"],
+            "source_file": ["s3://vic"],
+        }
+    )
+
+
+def test_silver_gas_dim_participant_transform() -> None:
+    fn = silver_gas_dim_participant.op.compute_fn.decorated_fn  # type: ignore[union-attr]
+
+    result = cast(
+        MaterializeResult[pl.LazyFrame],
+        fn(_gbb_participants(), _vicgas_organisations()),
+    )
+    collected = result.value.collect()
+
+    assert "dagster/column_lineage" in (result.metadata or {})
+    assert collected.height == 1
+    row = collected.row(0, named=True)
+    assert row["participant_identity_source"] == "company_id"
+    assert row["participant_identity_value"] == "1"
+    assert row["surrogate_key"] is not None
+    assert row["source_systems"] == ["GBB", "VICGAS"]
+    assert row["source_tables"] == SOURCE_TABLES
+    assert row["source_surrogate_keys"] == ["gbb-key", "vic-key"]
+
+
+def test_required_fields_check_fails_for_null_required_field() -> None:
+    check_fn = silver_gas_dim_participant_required_fields.op.compute_fn.decorated_fn  # type: ignore[union-attr]
+    input_df = pl.LazyFrame(
+        {
+            "surrogate_key": ["key-1"],
+            "participant_identity_source": ["company_id"],
+            "participant_identity_value": ["1"],
+            "canonical_participant_name": [None],
+        }
+    )
+
+    result = check_fn(input_df)
+
+    assert not result.passed
+
+
+def test_defs_returns_asset_and_checks() -> None:
+    result = defs()
+    asset_key = AssetKey(["silver", "gas_model", "silver_gas_dim_participant"])
+    assets = list(result.assets or [])
+    asset_checks = list(result.asset_checks or [])
+
+    assert isinstance(result, Definitions)
+    assert len(assets) == 1
+    assert len(asset_checks) == 4
+
+    asset_def = cast(AssetsDefinition, assets[0])
+    assert asset_def.metadata_by_key[asset_key]["dagster/table_name"] == (
+        "silver.gas_model.silver_gas_dim_participant"
+    )
+    assert asset_def.metadata_by_key[asset_key]["source_tables"] == SOURCE_TABLES
