@@ -5,11 +5,11 @@ repos:
         name: shell format
         language: system
         entry: shfmt --write
-        files: ^.*$
-        exclude: ^(vendor/.*|generated/.*)$
+        files: ^.*\.sh$
+        exclude: ^(.*/vendor/.*|.*/generated/.*|.*/.venv/.*)$
       - id: shellcheck
         name: shellcheck
         language: system
         entry: shellcheck
-        files: ^.*$
-        exclude: ^(vendor/.*|generated/.*)$
+        files: ^.*\.sh$
+        exclude: ^(.*/vendor/.*|.*/generated/.*|.*/.venv/.*)$
