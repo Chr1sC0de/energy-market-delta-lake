@@ -24,6 +24,7 @@ def defs() -> Definitions:
             nemweb_relative_href="REPORTS/CURRENT/VicGas",
             cron_schedule="*/15 * * * *",
             n_executors=10,
+            group_name="integration",
         ),
         nemweb_public_files_definitions_factory(
             domain="gbb",
@@ -32,5 +33,6 @@ def defs() -> Definitions:
             cron_schedule="*/15 * * * *",
             n_executors=10,
             folder_filter=gbb_folder_filter,
+            group_name="integration",
         ),
     )
