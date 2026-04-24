@@ -2,6 +2,8 @@ from collections.abc import Mapping
 from typing import Iterable
 
 from dagster import (
+    AssetIn,
+    AutomationCondition,
     Definitions,
 )
 from dagster._core.definitions.assets.definition.asset_dep import CoercibleToAssetDep
@@ -16,6 +18,7 @@ from aemo_etl.factories.checks import (
 )
 from aemo_etl.factories.df_from_s3_keys.assets import (
     bronze_df_from_s3_keys_asset_factory,
+    silver_df_from_s3_keys_asset_factory,
 )
 from aemo_etl.factories.df_from_s3_keys.hooks import Hook
 from aemo_etl.utils import get_metadata_schema
@@ -50,7 +53,7 @@ def df_from_s3_keys_definitions_factory(
         group_name=group_name,
         io_manager_key="aemo_deltalake_ingest_partitioned_append_io_manager",
         deps=deps,
-        description=f"Bronze dataset, contains deduplicated dataset.\n\n{description}",
+        description=f"Bronze dataset, contains full un-cleansed dataset.\n\n{description}",
         metadata={
             "dagster/column_schema": get_metadata_schema(schema, schema_descriptions),
             "surrogate_key_sources": surrogate_key_sources,
@@ -60,32 +63,55 @@ def df_from_s3_keys_definitions_factory(
         },
     )
 
-    bronze_asset_duplicate_row_check = duplicate_row_check_factory(
-        assets_definition=bronze_asset,
+    silver_key_prefix = ["silver", domain]
+    silver_table_name = f"silver_{name_suffix}"
+    silver_uri = f"s3://{AEMO_BUCKET}/{'/'.join(silver_key_prefix)}/{silver_table_name}"
+
+    silver_asset = silver_df_from_s3_keys_asset_factory(
+        key_prefix=silver_key_prefix,
+        name=silver_table_name,
+        group_name=f"{group_name}_cleansed",
+        io_manager_key="aemo_deltalake_overwrite_io_manager",
+        ins={"df": AssetIn(bronze_asset.key)},
+        description=f"Silver dataset, contains source-file deduplicated current rows.\n\n{description}",
+        metadata={
+            "dagster/column_schema": get_metadata_schema(schema, schema_descriptions),
+            "surrogate_key_sources": surrogate_key_sources,
+            "dagster/table_name": f"silver.{domain}.{silver_table_name}",
+            "dagster/uri": silver_uri,
+            "bronze_table_name": f"aemo.{domain}.{bronze_table_name}",
+            "glob_pattern": glob_pattern,
+        },
+        automation_condition=AutomationCondition.any_deps_updated()
+        & ~AutomationCondition.in_progress(),
+    )
+
+    silver_asset_duplicate_row_check = duplicate_row_check_factory(
+        assets_definition=silver_asset,
         check_name="check_for_duplicate_rows",
         primary_key="surrogate_key",
         description=f"Check that surrogate_key({surrogate_key_sources}) is unique",
     )
 
-    bronze_asset_schema_check = schema_matches_check_factor(
+    silver_asset_schema_check = schema_matches_check_factor(
         schema=schema,
-        assets_definition=bronze_asset,
+        assets_definition=silver_asset,
         check_name="check_schema_matches",
         description="Check observed schema matches target schema",
     )
 
-    bronze_asset_schema_drift_check = schema_drift_check_factory(
+    silver_asset_schema_drift_check = schema_drift_check_factory(
         schema=schema,
-        assets_definition=bronze_asset,
+        assets_definition=silver_asset,
         check_name="check_schema_drift",
         description="Check for schema drift against the declared asset schema",
     )
 
     return Definitions(
-        assets=[bronze_asset],
+        assets=[bronze_asset, silver_asset],
         asset_checks=[
-            bronze_asset_duplicate_row_check,
-            bronze_asset_schema_check,
-            bronze_asset_schema_drift_check,
+            silver_asset_duplicate_row_check,
+            silver_asset_schema_check,
+            silver_asset_schema_drift_check,
         ],
     )

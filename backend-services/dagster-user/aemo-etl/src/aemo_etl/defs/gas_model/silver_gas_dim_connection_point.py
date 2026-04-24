@@ -34,15 +34,15 @@ SURROGATE_KEY_SOURCES = [
     "flow_direction",
 ]
 SOURCE_TABLES = [
-    "bronze.gbb.bronze_gasbb_nodes_connection_points",
-    "bronze.gbb.bronze_gasbb_demand_zones_and_pipeline_connectionpoint_mapping",
+    "silver.gbb.silver_gasbb_nodes_connection_points",
+    "silver.gbb.silver_gasbb_demand_zones_and_pipeline_connectionpoint_mapping",
 ]
 SOURCE_SYSTEM = "GBB"
 GBB_NODES_CONNECTION_POINTS_KEY = AssetKey(
-    ["bronze", "gbb", "bronze_gasbb_nodes_connection_points"]
+    ["silver", "gbb", "silver_gasbb_nodes_connection_points"]
 )
 GBB_DEMAND_ZONE_MAPPING_KEY = AssetKey(
-    ["bronze", "gbb", "bronze_gasbb_demand_zones_and_pipeline_connectionpoint_mapping"]
+    ["silver", "gbb", "silver_gasbb_demand_zones_and_pipeline_connectionpoint_mapping"]
 )
 FACILITIES_KEY = AssetKey(["silver", "gas_model", "silver_gas_dim_facility"])
 LOCATIONS_KEY = AssetKey(["silver", "gas_model", "silver_gas_dim_location"])
@@ -204,7 +204,7 @@ DESCRIPTIONS = {
     "location_key": "Parent silver_gas_dim_location surrogate_key.",
     "zone_key": "Parent silver_gas_dim_zone surrogate_key when mapped.",
     "source_system": "Source system identifier.",
-    "source_tables": "Bronze source tables used to construct the silver row.",
+    "source_tables": "Silver source tables used to construct the gas model row.",
     "source_facility_id": "Source-system facility identifier.",
     "source_connection_point_id": "Source-system connection point identifier.",
     "source_node_id": "Source-system node identifier.",
@@ -219,7 +219,7 @@ DESCRIPTIONS = {
     "effective_date": "Parsed effective date.",
     "source_last_updated": "Raw source update value.",
     "source_last_updated_timestamp": "Parsed source update timestamp.",
-    "source_surrogate_key": "Bronze source row surrogate key for lineage.",
+    "source_surrogate_key": "Source row surrogate key for lineage.",
     "source_file": "Archived source file for the bronze row.",
     "ingested_timestamp": "Timestamp when the bronze row was ingested.",
 }

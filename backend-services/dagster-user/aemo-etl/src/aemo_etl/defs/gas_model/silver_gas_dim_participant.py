@@ -29,12 +29,12 @@ GROUP_NAME = "gas_model"
 GRAIN = "one current row per merged gas participant identity"
 SURROGATE_KEY_SOURCES = ["participant_identity_source", "participant_identity_value"]
 SOURCE_TABLES = [
-    "bronze.gbb.bronze_gasbb_participants_list",
-    "bronze.vicgas.bronze_int125_v8_details_of_organisations_1",
+    "silver.gbb.silver_gasbb_participants_list",
+    "silver.vicgas.silver_int125_v8_details_of_organisations_1",
 ]
-GBB_PARTICIPANTS_KEY = AssetKey(["bronze", "gbb", "bronze_gasbb_participants_list"])
+GBB_PARTICIPANTS_KEY = AssetKey(["silver", "gbb", "silver_gasbb_participants_list"])
 VICGAS_ORGANISATIONS_KEY = AssetKey(
-    ["bronze", "vicgas", "bronze_int125_v8_details_of_organisations_1"]
+    ["silver", "vicgas", "silver_int125_v8_details_of_organisations_1"]
 )
 
 _IDENTITY_DEPS = [
@@ -141,9 +141,9 @@ DESCRIPTIONS = {
     "participant_type": "Participant or organisation type.",
     "participant_status": "Participant or organisation status.",
     "source_systems": "Source systems contributing to the merged participant.",
-    "source_tables": "Bronze source tables used to construct the silver row.",
+    "source_tables": "Silver source tables used to construct the gas model row.",
     "source_company_ids": "Source-system company identifiers contributing to the row.",
-    "source_surrogate_keys": "Bronze source row surrogate keys for lineage.",
+    "source_surrogate_keys": "Source row surrogate keys for lineage.",
     "source_files": "Archived source files contributing to the row.",
     "ingested_timestamp": "Latest contributing bronze row ingestion timestamp.",
 }
@@ -172,7 +172,7 @@ def _first_non_null(column: str) -> pl.Expr:
 def _gbb_participants(df: LazyFrame) -> LazyFrame:
     return df.select(
         source_system=pl.lit("GBB"),
-        source_tables=pl.lit(["bronze.gbb.bronze_gasbb_participants_list"]).cast(
+        source_tables=pl.lit(["silver.gbb.silver_gasbb_participants_list"]).cast(
             pl.List(pl.String)
         ),
         source_company_id=pl.col("CompanyId").cast(pl.String),
@@ -192,7 +192,7 @@ def _vicgas_participants(df: LazyFrame) -> LazyFrame:
     return df.select(
         source_system=pl.lit("VICGAS"),
         source_tables=pl.lit(
-            ["bronze.vicgas.bronze_int125_v8_details_of_organisations_1"]
+            ["silver.vicgas.silver_int125_v8_details_of_organisations_1"]
         ).cast(pl.List(pl.String)),
         source_company_id=pl.col("company_id").cast(pl.String),
         participant_name=pl.col("company_name").cast(pl.String),

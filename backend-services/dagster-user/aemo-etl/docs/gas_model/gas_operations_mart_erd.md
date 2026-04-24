@@ -189,6 +189,39 @@ erDiagram
     }
 ```
 
+## Bronze Source Lineage
+
+This diagram shows pipeline lineage from bronze source tables into the silver
+Operations Mart fact tables. It is intentionally separate from the dimensional
+ERD above so model relationships and source lineage remain readable.
+
+```mermaid
+flowchart LR
+    B_GBB_FLOW["bronze.gbb.bronze_gasbb_pipeline_connection_flow_v2"]
+    B_GBB_STORAGE["bronze.gbb.bronze_gasbb_actual_flow_storage"]
+    B_GBB_FORECAST["bronze.gbb.bronze_gasbb_nomination_and_forecast"]
+    B_GBB_LINEPACK["bronze.gbb.bronze_gasbb_linepack_capacity_adequacy"]
+
+    B_VIC_DFS["bronze.vicgas.bronze_int126_v4_dfs_data_1"]
+    B_VIC_FORECAST["bronze.vicgas.bronze_int153_v4_demand_forecast_rpt_1"]
+    B_VIC_LINEPACK["bronze.vicgas.bronze_int128_v4_actual_linepack_1"]
+    B_VIC_METER["bronze.vicgas.bronze_int236_v4_operational_meter_readings_1"]
+    B_VIC_ALLOC["bronze.vicgas.bronze_int313_v4_allocated_injections_withdrawals_1"]
+
+    B_GBB_FLOW --> F_CONNECTION_FLOW["silver.gas_model.silver_gas_fact_connection_point_flow"]
+    B_GBB_STORAGE --> F_FACILITY_STORAGE["silver.gas_model.silver_gas_fact_facility_flow_storage"]
+
+    B_GBB_FORECAST --> F_FORECAST["silver.gas_model.silver_gas_fact_nomination_forecast"]
+    B_VIC_DFS --> F_FORECAST
+    B_VIC_FORECAST --> F_FORECAST
+
+    B_GBB_LINEPACK --> F_LINEPACK["silver.gas_model.silver_gas_fact_linepack"]
+    B_VIC_LINEPACK --> F_LINEPACK
+
+    B_VIC_METER --> F_METER_FLOW["silver.gas_model.silver_gas_fact_operational_meter_flow"]
+    B_VIC_ALLOC --> F_METER_FLOW
+```
+
 ## Supporting Dimensions
 
 ### `silver.gas_model.silver_gas_dim_date`

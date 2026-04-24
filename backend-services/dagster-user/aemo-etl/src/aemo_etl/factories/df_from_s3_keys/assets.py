@@ -9,7 +9,7 @@ from dagster import (
     asset,
 )
 from dagster_aws.s3 import S3Resource
-from polars import LazyFrame, col, lit, row_index, scan_delta
+from polars import LazyFrame, col, lit, scan_delta
 from polars._typing import PolarsDataType
 from types_boto3_s3 import S3Client
 
@@ -70,7 +70,7 @@ def bronze_df_from_s3_keys_asset_factory(
         tmp_uri = f"{tmp_dir}/bronze_staging"
         has_data = False
 
-        for s3_key in config.s3_keys:
+        for s3_key in dict.fromkeys(config.s3_keys):
             filetype = s3_key.rsplit(".")[-1].lower()
             if filetype in BYTES_TO_LAZYFRAME_REGISTER:
                 # since we don't know the state of the file we unfortunately can't just lazy
@@ -173,62 +173,34 @@ def bronze_df_from_s3_keys_asset_factory(
             )
             s3_client.delete_object(Bucket=s3_landing_bucket, Key=s3_key)
 
-        # --- Dedup & anti-join ---
-        # Scan the raw per-file staging table and deduplicate within the batch,
-        # keeping the first occurrence per surrogate_key ordered by
-        # ingested_timestamp.
         batch = scan_delta(tmp_uri)
 
-        deduped = (
-            batch.with_columns(
-                row_index().over("surrogate_key", order_by="ingested_timestamp")
-            )
-            .filter(col.index == 0)
-            .drop("index")
-        )
-
-        # Sink the cleaned result to a second temp dir so the IO manager
-        # receives a clean scan with no references to the raw staging table.
-        clean_dir = tempfile.mkdtemp()
-        clean_uri = f"{clean_dir}/bronze_clean"
-
         if not table_exists(uri):
-            # First run — no existing table to anti-join against.
-            deduped.sink_delta(clean_uri, mode="append")
-            return scan_delta(clean_uri)
+            return batch
 
-        # Subsequent runs — filter to only rows newer than the current
-        # watermark and anti-join against existing keys to avoid re-ingesting
-        # duplicates across batches.
-        latest = scan_delta(uri)
-
-        max_date = latest.select(col.ingested_date.max()).collect().item()
-
-        max_ts = (
-            latest.filter(col.ingested_date == max_date)
-            .select(col.ingested_timestamp.max())
-            .collect()
-            .item()
-        )
-
-        new_data = deduped.filter(
-            (col.ingested_date > max_date)
-            | ((col.ingested_date == max_date) & (col.ingested_timestamp >= max_ts))
-        )
-
-        # Anti-join against only the recent partition so we don't load
-        # the full historical key set into memory.
-        latest_keys = (
-            latest.filter(
-                (col.ingested_date >= max_date) & (col.ingested_timestamp >= max_ts)
-            )
-            .select("surrogate_key")
-            .unique()
-        )
-
-        output = new_data.join(latest_keys, on="surrogate_key", how="anti")
-
-        output.sink_delta(clean_uri, mode="append")
-        return scan_delta(clean_uri)
+        existing_source_files = scan_delta(uri).select("source_file").unique()
+        return batch.join(existing_source_files, on="source_file", how="anti")
 
     return _asset
+
+
+def silver_df_from_s3_keys_asset_factory(
+    **asset_kwargs: Unpack[AssetDefinitonParamSpec],
+) -> AssetsDefinition:
+
+    asset_kwargs.setdefault("metadata", {})
+
+    asset_kwargs.setdefault("kinds", {"table", "deltalake"})
+
+    @asset(**asset_kwargs)
+    def silver_asset(df: LazyFrame) -> LazyFrame:
+        deduped = df.sort("source_file", descending=True).unique(
+            subset=["surrogate_key"], keep="first", maintain_order=True
+        )
+
+        tmp_dir = tempfile.mkdtemp()
+        tmp_uri = f"{tmp_dir}/silver_current"
+        deduped.sink_delta(tmp_uri, mode="append")
+        return scan_delta(tmp_uri)
+
+    return silver_asset
