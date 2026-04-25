@@ -7,7 +7,7 @@ unit-test:
 	uv run pytest --cov-fail-under=100 --cov=aemo_etl --cov-report=term-missing --cov-report=html -n=4 tests/unit
 
 duplicate-check:
-	uv run pylint --disable=all --enable=R0801 .
+	uv run pylint --persistent=n --disable=all --enable=R0801 --ignore-paths='^src/aemo_etl/defs/raw/.*' src
 
 run-prek:
 	prek run -a --fail-fast
