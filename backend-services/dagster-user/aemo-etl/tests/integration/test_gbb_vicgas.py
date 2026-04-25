@@ -1,3 +1,4 @@
+from itertools import repeat
 from os import environ
 from pathlib import Path
 
@@ -11,47 +12,62 @@ from aemo_etl.configs import (
 from aemo_etl.definitions import defs
 from aemo_etl.factories.df_from_s3_keys.assets import DFFromS3KeysConfiguration
 
-BRONZE_KEY_PREFIXES = ["bronze", "vicgas"]
-SILVER_KEY_PREFIXES = ["silver", "vicgas"]
-
-LOCAL_DATA_PATH = Path(f"{environ.get('HOME')}/localstack-landing-download")
-
-BRONZE_VICGAS_ASSET_SELECTION = AssetSelection.key_prefixes(
-    BRONZE_KEY_PREFIXES
-) & AssetSelection.key_substring("bronze_int")
-
-SILVER_VICGAS_ASSET_SELECTION = AssetSelection.key_prefixes(
-    SILVER_KEY_PREFIXES
-) & AssetSelection.key_substring("silver")
-
-
-S3_PREFIX = "/".join(BRONZE_KEY_PREFIXES)
-
 ROOT_DEFINITIONS = defs()
 
 REPOSITORY_DEF = ROOT_DEFINITIONS.get_repository_def()
 
-BRONZE_ASSET_KEYS = sorted(
-    BRONZE_VICGAS_ASSET_SELECTION.resolve(REPOSITORY_DEF.assets_defs_by_key.values()),
-    key=lambda key: tuple(key.path),
-)
-SILVER_ASSET_KEYS = sorted(
-    SILVER_VICGAS_ASSET_SELECTION.resolve(REPOSITORY_DEF.assets_defs_by_key.values()),
-    key=lambda key: tuple(key.path),
-)
+LOCAL_DATA_PATH = Path(f"{environ.get('HOME')}/localstack-landing-download")
+
+
+def get_key_name(asset_key: AssetKey) -> str:
+    return list(asset_key.path)[-1]
+
+
+def get_asset_keys(key_prefixes: list[str], key_substring: str) -> list[AssetKey]:
+    asset_selection = AssetSelection.key_prefixes(
+        key_prefixes
+    ) & AssetSelection.key_substring(key_substring)
+    return sorted(
+        asset_selection.resolve(REPOSITORY_DEF.assets_defs_by_key.values()),
+        key=lambda key: tuple(key.path),
+    )
 
 
 def get_local_files(glob_pattern: str) -> list[Path]:
     return list(LOCAL_DATA_PATH.rglob(glob_pattern))
 
 
-@pytest.mark.parametrize(
-    ("bronze_key", "silver_key"),
-    zip(BRONZE_ASSET_KEYS, SILVER_ASSET_KEYS),
-    ids=[list(key.path)[-1].replace("bronze", "") for key in BRONZE_ASSET_KEYS],
+gbb_asset_set = zip(
+    get_asset_keys(["bronze", "gbb"], "bronze_gasbb"),
+    get_asset_keys(["silver", "gbb"], "silver_gasbb"),
+    repeat("bronze/gbb"),
+    repeat(10),
 )
-def test_vicgas_assets_definitions(
-    bronze_key: AssetKey, silver_key: AssetKey, s3: S3Client
+
+vicgas_asset_set = zip(
+    get_asset_keys(["bronze", "vicgas"], "bronze_int"),
+    get_asset_keys(["silver", "vicgas"], "silver_int"),
+    repeat("bronze/vicgas"),
+    repeat(1000),
+)
+
+all_asset_key_sets = [*gbb_asset_set, *vicgas_asset_set]
+
+
+@pytest.mark.parametrize(
+    ("bronze_key", "silver_key", "s3_prefix", "n_files"),
+    all_asset_key_sets,
+    ids=[
+        get_key_name(asset_key_set[0]).replace("bronze", "")
+        for asset_key_set in all_asset_key_sets
+    ],
+)
+def test_gbb_assets_definitions(
+    bronze_key: AssetKey,
+    silver_key: AssetKey,
+    s3_prefix: str,
+    n_files: int,
+    s3: S3Client,
 ) -> None:
 
     asset_defs = REPOSITORY_DEF.assets_defs_by_key.get(bronze_key)
@@ -66,8 +82,10 @@ def test_vicgas_assets_definitions(
 
     assert len(local_file_paths) > 0, "nothing to test"
 
-    for file_path in local_file_paths:
-        s3_key = f"{S3_PREFIX}/{file_path.name}"
+    for i, file_path in enumerate(local_file_paths):
+        if i > n_files:
+            break
+        s3_key = f"{s3_prefix}/{file_path.name}"
 
         s3.upload_file(
             file_path.as_posix(),
