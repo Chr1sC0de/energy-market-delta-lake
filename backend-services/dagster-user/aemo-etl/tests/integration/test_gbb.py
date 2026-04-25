@@ -11,23 +11,33 @@ from aemo_etl.configs import (
 from aemo_etl.definitions import defs
 from aemo_etl.factories.df_from_s3_keys.assets import DFFromS3KeysConfiguration
 
-KEY_PREFIXES = ["bronze", "gbb"]
+BRONZE_KEY_PREFIXES = ["bronze", "gbb"]
+SILVER_KEY_PREFIXES = ["silver", "gbb"]
 
 LOCAL_DATA_PATH = Path(f"{environ.get('HOME')}/localstack-landing-download")
 
-GBB_ASSET_SELECTION = AssetSelection.key_prefixes(
-    KEY_PREFIXES
+BRONZE_GBB_ASSET_SELECTION = AssetSelection.key_prefixes(
+    BRONZE_KEY_PREFIXES
 ) & AssetSelection.key_substring("bronze_gasbb")
 
+SILVER_GBB_ASSET_SELECTION = AssetSelection.key_prefixes(
+    SILVER_KEY_PREFIXES
+) & AssetSelection.key_substring("silver_gasbb")
 
-S3_PREFIX = "/".join(KEY_PREFIXES)
 
-root_definitions = defs()
+S3_PREFIX = "/".join(BRONZE_KEY_PREFIXES)
 
-repository_def = root_definitions.get_repository_def()
+ROOT_DEFINITIONS = defs()
 
-asset_keys = sorted(
-    GBB_ASSET_SELECTION.resolve(repository_def.assets_defs_by_key.values()),
+REPOSITORY_DEF = ROOT_DEFINITIONS.get_repository_def()
+
+BRONZE_ASSET_KEYS = sorted(
+    BRONZE_GBB_ASSET_SELECTION.resolve(REPOSITORY_DEF.assets_defs_by_key.values()),
+    key=lambda key: tuple(key.path),
+)
+
+SILVER_ASSET_KEYS = sorted(
+    SILVER_GBB_ASSET_SELECTION.resolve(REPOSITORY_DEF.assets_defs_by_key.values()),
     key=lambda key: tuple(key.path),
 )
 
@@ -37,15 +47,19 @@ def get_local_files(glob_pattern: str) -> list[Path]:
 
 
 @pytest.mark.parametrize(
-    ("key"), asset_keys, ids=[list(key.path)[-1] for key in asset_keys]
+    ("bronze_key", "silver_key"),
+    zip(BRONZE_ASSET_KEYS, SILVER_ASSET_KEYS),
+    ids=[list(key.path)[-1].replace("bronze", "") for key in BRONZE_ASSET_KEYS],
 )
-def test_gbb_assets_definitions(key: AssetKey, s3: S3Client) -> None:
+def test_gbb_assets_definitions(
+    bronze_key: AssetKey, silver_key: AssetKey, s3: S3Client
+) -> None:
 
-    asset_defs = repository_def.assets_defs_by_key.get(key)
+    asset_defs = REPOSITORY_DEF.assets_defs_by_key.get(bronze_key)
 
     assert hasattr(asset_defs, "metadata_by_key")
 
-    glob_pattern = asset_defs.metadata_by_key[key]["glob_pattern"]
+    glob_pattern = asset_defs.metadata_by_key[bronze_key]["glob_pattern"]
 
     local_file_paths = get_local_files(glob_pattern)
 
@@ -66,18 +80,26 @@ def test_gbb_assets_definitions(key: AssetKey, s3: S3Client) -> None:
 
         s3_keys.append(s3_key)
 
-    result = root_definitions.get_implicit_global_asset_job_def().execute_in_process(
-        run_config=RunConfig(
-            ops={
-                key.to_python_identifier(): DFFromS3KeysConfiguration(s3_keys=s3_keys),
-            }
-        ),
-        asset_selection=[key],
+    bronze_result = (
+        ROOT_DEFINITIONS.get_implicit_global_asset_job_def().execute_in_process(
+            run_config=RunConfig(
+                ops={
+                    bronze_key.to_python_identifier(): DFFromS3KeysConfiguration(
+                        s3_keys=s3_keys
+                    ),
+                }
+            ),
+            asset_selection=[bronze_key],
+        )
     )
 
-    assert result.success
+    assert bronze_result.success
 
-    result.get_asset_check_evaluations()
+    silver_result = (
+        ROOT_DEFINITIONS.get_implicit_global_asset_job_def().execute_in_process(
+            asset_selection=[silver_key],
+        )
+    )
 
-    for check in result.get_asset_check_evaluations():
+    for check in silver_result.get_asset_check_evaluations():
         assert check.passed, check.metadata

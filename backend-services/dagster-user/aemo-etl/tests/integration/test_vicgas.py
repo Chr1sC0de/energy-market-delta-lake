@@ -27,16 +27,16 @@ SILVER_VICGAS_ASSET_SELECTION = AssetSelection.key_prefixes(
 
 S3_PREFIX = "/".join(BRONZE_KEY_PREFIXES)
 
-root_definitions = defs()
+ROOT_DEFINITIONS = defs()
 
-repository_def = root_definitions.get_repository_def()
+REPOSITORY_DEF = ROOT_DEFINITIONS.get_repository_def()
 
-bronze_asset_keys = sorted(
-    BRONZE_VICGAS_ASSET_SELECTION.resolve(repository_def.assets_defs_by_key.values()),
+BRONZE_ASSET_KEYS = sorted(
+    BRONZE_VICGAS_ASSET_SELECTION.resolve(REPOSITORY_DEF.assets_defs_by_key.values()),
     key=lambda key: tuple(key.path),
 )
-silver_asset_keys = sorted(
-    SILVER_VICGAS_ASSET_SELECTION.resolve(repository_def.assets_defs_by_key.values()),
+SILVER_ASSET_KEYS = sorted(
+    SILVER_VICGAS_ASSET_SELECTION.resolve(REPOSITORY_DEF.assets_defs_by_key.values()),
     key=lambda key: tuple(key.path),
 )
 
@@ -47,14 +47,14 @@ def get_local_files(glob_pattern: str) -> list[Path]:
 
 @pytest.mark.parametrize(
     ("bronze_key", "silver_key"),
-    zip(bronze_asset_keys, silver_asset_keys),
-    ids=[list(key.path)[-1].replace("bronze", "") for key in bronze_asset_keys],
+    zip(BRONZE_ASSET_KEYS, SILVER_ASSET_KEYS),
+    ids=[list(key.path)[-1].replace("bronze", "") for key in BRONZE_ASSET_KEYS],
 )
 def test_vicgas_assets_definitions(
     bronze_key: AssetKey, silver_key: AssetKey, s3: S3Client
 ) -> None:
 
-    asset_defs = repository_def.assets_defs_by_key.get(bronze_key)
+    asset_defs = REPOSITORY_DEF.assets_defs_by_key.get(bronze_key)
 
     assert hasattr(asset_defs, "metadata_by_key")
 
@@ -78,7 +78,7 @@ def test_vicgas_assets_definitions(
         s3_keys.append(s3_key)
 
     bronze_result = (
-        root_definitions.get_implicit_global_asset_job_def().execute_in_process(
+        ROOT_DEFINITIONS.get_implicit_global_asset_job_def().execute_in_process(
             run_config=RunConfig(
                 ops={
                     bronze_key.to_python_identifier(): DFFromS3KeysConfiguration(
@@ -93,7 +93,7 @@ def test_vicgas_assets_definitions(
     assert bronze_result.success
 
     silver_result = (
-        root_definitions.get_implicit_global_asset_job_def().execute_in_process(
+        ROOT_DEFINITIONS.get_implicit_global_asset_job_def().execute_in_process(
             asset_selection=[silver_key],
         )
     )
