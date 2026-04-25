@@ -76,8 +76,10 @@ def test_df_from_s3_keys_definitions_factory_attaches_checks_to_silver() -> None
         for spec in asset_check.check_specs
     ]
 
-    assert len(check_specs) == 3
+    assert len(check_specs) == 5
     assert {(spec.asset_key, spec.name) for spec in check_specs} == {
+        (AssetKey(["bronze", "gbb", "bronze_test_table"]), "check_schema_matches"),
+        (AssetKey(["bronze", "gbb", "bronze_test_table"]), "check_schema_drift"),
         (AssetKey(["silver", "gbb", "silver_test_table"]), "check_for_duplicate_rows"),
         (AssetKey(["silver", "gbb", "silver_test_table"]), "check_schema_matches"),
         (AssetKey(["silver", "gbb", "silver_test_table"]), "check_schema_drift"),

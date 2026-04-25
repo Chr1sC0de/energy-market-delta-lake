@@ -32,22 +32,6 @@ class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
         )
         target_uri = context.definition_metadata[DAGSTER_URI]
 
-        return_object = obj.sink_delta(target_uri, **self.sink_delta_kwargs)
-
-        if self.sink_delta_kwargs.get("mode", "error") == "merge":
-            assert return_object is not None, (
-                "mode was set to merge but resulting output is None"
-            )
-
-            context.log.info(f"merging data with settings {self.sink_delta_kwargs}")
-
-            merge_results = (
-                return_object.when_matched_update_all()
-                .when_not_matched_insert_all()
-                .execute()
-            )
-            context.log.info(f"merged data with results {merge_results}")
-
         markdown_preview = (
             obj.head(self.preview_row_count).collect().to_pandas().to_markdown()
         )
@@ -71,6 +55,22 @@ class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
                 "dagster/row_count": get_lazyframe_num_rows(obj),
             }
         )
+
+        return_object = obj.sink_delta(target_uri, **self.sink_delta_kwargs)
+
+        if self.sink_delta_kwargs.get("mode", "error") == "merge":
+            assert return_object is not None, (
+                "mode was set to merge but resulting output is None"
+            )
+
+            context.log.info(f"merging data with settings {self.sink_delta_kwargs}")
+
+            merge_results = (
+                return_object.when_matched_update_all()
+                .when_not_matched_insert_all()
+                .execute()
+            )
+            context.log.info(f"merged data with results {merge_results}")
 
         context.add_output_metadata(output_metadata)
 

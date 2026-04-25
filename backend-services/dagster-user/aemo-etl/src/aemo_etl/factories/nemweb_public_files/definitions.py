@@ -3,6 +3,7 @@ from typing import Callable, Mapping
 import bs4
 from cron_descriptor import get_description
 from dagster import (
+    DefaultScheduleStatus,
     Definitions,
     OpExecutionContext,
     ScheduleDefinition,
@@ -55,6 +56,7 @@ def nemweb_public_files_definitions_factory(
     ] = default_folder_filter,
     group_name: str = "gas_raw",
     tags: Mapping[str, str] | None = None,
+    default_status: DefaultScheduleStatus = DefaultScheduleStatus.STOPPED,
 ) -> Definitions:
 
     @retry(
@@ -116,7 +118,11 @@ def nemweb_public_files_definitions_factory(
 
     job = define_asset_job(name=f"{table_name}_job", selection=[asset])
 
-    schedule = ScheduleDefinition(job=job, cron_schedule=cron_schedule)
+    schedule = ScheduleDefinition(
+        job=job,
+        cron_schedule=cron_schedule,
+        default_status=default_status,
+    )
 
     return Definitions(
         assets=[asset],

@@ -50,6 +50,12 @@ repos:
         entry: uv run ruff format
         types:
           - python
+      # - id: pylint
+      #   name: pylint duplicate check
+      #   language: system
+      #   entry: uv run pylint . --disable=all --enable=R0801
+      #   types:
+      #     - python
       - id: zuban-check
         name: zuban check
         language: system

@@ -63,6 +63,19 @@ def df_from_s3_keys_definitions_factory(
         },
     )
 
+    bronze_asset_schema_check = schema_matches_check_factor(
+        schema=schema,
+        assets_definition=bronze_asset,
+        check_name="check_schema_matches",
+        description="Check observed schema matches target schema",
+    )
+    bronze_asset_schema_drift_check = schema_drift_check_factory(
+        schema=schema,
+        assets_definition=bronze_asset,
+        check_name="check_schema_drift",
+        description="Check for schema drift against the declared asset schema",
+    )
+
     silver_key_prefix = ["silver", domain]
     silver_table_name = f"silver_{name_suffix}"
     silver_uri = f"s3://{AEMO_BUCKET}/{'/'.join(silver_key_prefix)}/{silver_table_name}"
@@ -110,6 +123,8 @@ def df_from_s3_keys_definitions_factory(
     return Definitions(
         assets=[bronze_asset, silver_asset],
         asset_checks=[
+            bronze_asset_schema_check,
+            bronze_asset_schema_drift_check,
             silver_asset_duplicate_row_check,
             silver_asset_schema_check,
             silver_asset_schema_drift_check,

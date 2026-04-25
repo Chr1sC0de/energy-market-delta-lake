@@ -5,6 +5,7 @@ from dagster import (
     definitions,
 )
 
+from aemo_etl.configs import DEFAULT_SCHEDULE_STATUS
 from aemo_etl.factories.nemweb_public_files.definitions import (
     nemweb_public_files_definitions_factory,
 )
@@ -25,6 +26,7 @@ def defs() -> Definitions:
             cron_schedule="*/15 * * * *",
             n_executors=10,
             group_name="integration",
+            default_status=DEFAULT_SCHEDULE_STATUS,
         ),
         nemweb_public_files_definitions_factory(
             domain="gbb",
@@ -34,5 +36,6 @@ def defs() -> Definitions:
             n_executors=10,
             folder_filter=gbb_folder_filter,
             group_name="integration",
+            default_status=DEFAULT_SCHEDULE_STATUS,
         ),
     )

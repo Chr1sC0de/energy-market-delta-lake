@@ -189,24 +189,24 @@ erDiagram
     }
 ```
 
-## Bronze Source Lineage
+## Raw Silver Source Lineage
 
-This diagram shows pipeline lineage from bronze source tables into the silver
+This diagram shows pipeline lineage from generated raw silver source tables into the silver
 Operations Mart fact tables. It is intentionally separate from the dimensional
 ERD above so model relationships and source lineage remain readable.
 
 ```mermaid
 flowchart LR
-    B_GBB_FLOW["bronze.gbb.bronze_gasbb_pipeline_connection_flow_v2"]
-    B_GBB_STORAGE["bronze.gbb.bronze_gasbb_actual_flow_storage"]
-    B_GBB_FORECAST["bronze.gbb.bronze_gasbb_nomination_and_forecast"]
-    B_GBB_LINEPACK["bronze.gbb.bronze_gasbb_linepack_capacity_adequacy"]
+    B_GBB_FLOW["silver.gbb.silver_gasbb_pipeline_connection_flow_v2"]
+    B_GBB_STORAGE["silver.gbb.silver_gasbb_actual_flow_storage"]
+    B_GBB_FORECAST["silver.gbb.silver_gasbb_nomination_and_forecast"]
+    B_GBB_LINEPACK["silver.gbb.silver_gasbb_linepack_capacity_adequacy"]
 
-    B_VIC_DFS["bronze.vicgas.bronze_int126_v4_dfs_data_1"]
-    B_VIC_FORECAST["bronze.vicgas.bronze_int153_v4_demand_forecast_rpt_1"]
-    B_VIC_LINEPACK["bronze.vicgas.bronze_int128_v4_actual_linepack_1"]
-    B_VIC_METER["bronze.vicgas.bronze_int236_v4_operational_meter_readings_1"]
-    B_VIC_ALLOC["bronze.vicgas.bronze_int313_v4_allocated_injections_withdrawals_1"]
+    B_VIC_DFS["silver.vicgas.silver_int126_v4_dfs_data_1"]
+    B_VIC_FORECAST["silver.vicgas.silver_int153_v4_demand_forecast_rpt_1"]
+    B_VIC_LINEPACK["silver.vicgas.silver_int128_v4_actual_linepack_1"]
+    B_VIC_METER["silver.vicgas.silver_int236_v4_operational_meter_readings_1"]
+    B_VIC_ALLOC["silver.vicgas.silver_int313_v4_allocated_injections_withdrawals_1"]
 
     B_GBB_FLOW --> F_CONNECTION_FLOW["silver.gas_model.silver_gas_fact_connection_point_flow"]
     B_GBB_STORAGE --> F_FACILITY_STORAGE["silver.gas_model.silver_gas_fact_facility_flow_storage"]
@@ -236,8 +236,8 @@ flowchart LR
 
 - Grain: one current row per source-qualified operational point.
 - Inputs:
-  `bronze.vicgas.bronze_int236_v4_operational_meter_readings_1`,
-  `bronze.vicgas.bronze_int313_v4_allocated_injections_withdrawals_1`, and
+  `silver.vicgas.silver_int236_v4_operational_meter_readings_1`,
+  `silver.vicgas.silver_int313_v4_allocated_injections_withdrawals_1`, and
   any later VICGAS operations sources that expose MIRN, meter, direction, or
   node identifiers not covered by GBB connection points.
 - Surrogate key sources: `["source_system", "point_type", "source_point_id"]`.
@@ -252,7 +252,7 @@ flowchart LR
 
 - Grain: one row per `GasDate`, `FacilityId`, `ConnectionPointId`,
   `FlowDirection`, and `LastUpdated`.
-- Source: `bronze.gbb.bronze_gasbb_pipeline_connection_flow_v2`.
+- Source: `silver.gbb.silver_gasbb_pipeline_connection_flow_v2`.
 - Surrogate key sources:
   `["gas_date", "facility_key", "connection_point_key", "flow_direction", "source_last_updated_timestamp"]`.
 - Measures: `actual_quantity_tj`.
@@ -269,7 +269,7 @@ flowchart LR
 ### `silver.gas_model.silver_gas_fact_facility_flow_storage`
 
 - Grain: one row per `GasDate`, `FacilityId`, `LocationId`, and `LastUpdated`.
-- Source: `bronze.gbb.bronze_gasbb_actual_flow_storage`.
+- Source: `silver.gbb.silver_gasbb_actual_flow_storage`.
 - Surrogate key sources:
   `["gas_date", "facility_key", "location_key", "source_last_updated_timestamp"]`.
 - Measures: `demand_tj`, `supply_tj`, `transfer_in_tj`, `transfer_out_tj`,
@@ -286,9 +286,9 @@ flowchart LR
 - Grain: source-specific forecast row by gas date, optional facility/location,
   optional forecast version, and optional gas interval.
 - Sources:
-  - `bronze.gbb.bronze_gasbb_nomination_and_forecast`.
-  - `bronze.vicgas.bronze_int126_v4_dfs_data_1`.
-  - `bronze.vicgas.bronze_int153_v4_demand_forecast_rpt_1`.
+  - `silver.gbb.silver_gasbb_nomination_and_forecast`.
+  - `silver.vicgas.silver_int126_v4_dfs_data_1`.
+  - `silver.vicgas.silver_int153_v4_demand_forecast_rpt_1`.
 - Surrogate key sources:
   `["source_system", "source_forecast_identifier", "gas_date", "forecast_version", "gas_interval"]`.
 - Measures: normalize cross-source forecast quantities to GJ:
@@ -307,8 +307,8 @@ flowchart LR
 
 - Grain: one row per source-system linepack observation.
 - Sources:
-  - `bronze.vicgas.bronze_int128_v4_actual_linepack_1`.
-  - `bronze.gbb.bronze_gasbb_linepack_capacity_adequacy`.
+  - `silver.vicgas.silver_int128_v4_actual_linepack_1`.
+  - `silver.gbb.silver_gasbb_linepack_capacity_adequacy`.
 - Surrogate key sources:
   `["source_system", "gas_date", "facility_key", "zone_key", "observation_timestamp", "source_last_updated_timestamp"]`.
 - Measures and status:
@@ -327,8 +327,8 @@ flowchart LR
 - Grain: one row per `gas_date`, operational point, flow direction, and
   interval/hour where provided.
 - Sources:
-  - `bronze.vicgas.bronze_int236_v4_operational_meter_readings_1`.
-  - `bronze.vicgas.bronze_int313_v4_allocated_injections_withdrawals_1`.
+  - `silver.vicgas.silver_int236_v4_operational_meter_readings_1`.
+  - `silver.vicgas.silver_int313_v4_allocated_injections_withdrawals_1`.
 - Surrogate key sources:
   `["source_system", "gas_date", "operational_point_key", "flow_direction", "gas_interval"]`.
 - Measures: `quantity_gj`.
