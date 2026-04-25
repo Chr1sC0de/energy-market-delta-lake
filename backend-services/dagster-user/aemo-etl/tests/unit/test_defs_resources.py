@@ -83,6 +83,34 @@ def test_handle_output_with_column_description(mocker: MockerFixture) -> None:
     assert "dagster/column_schema" in added
 
 
+def test_handle_output_builds_metadata_before_sink_delta(
+    mocker: MockerFixture,
+) -> None:
+    """Collect output metadata before sink_delta consumes the LazyFrame plan."""
+    io_mgr = PolarsDataFrameSinkDeltaIoManager(sink_delta_kwargs={"mode": "append"})
+    ctx = _make_output_context(
+        mocker,
+        definition_metadata={"dagster/column_schema": "pre-defined"},
+    )
+    events: list[str] = []
+
+    def _get_lazyframe_num_rows(_: pl.LazyFrame) -> int:
+        events.append("row_count")
+        return 3
+
+    def _sink_delta(_: pl.LazyFrame, *_args: object, **_kwargs: object) -> None:
+        events.append("sink_delta")
+
+    mocker.patch(
+        "aemo_etl.defs.resources.get_lazyframe_num_rows", _get_lazyframe_num_rows
+    )
+    mocker.patch.object(pl.LazyFrame, "sink_delta", _sink_delta)
+
+    io_mgr.handle_output(ctx, _SMALL_DF)
+
+    assert events == ["row_count", "sink_delta"]
+
+
 def test_handle_output_merge_mode(mocker: MockerFixture) -> None:
     """Merge mode calls when_matched_update_all chain."""
     io_mgr = PolarsDataFrameSinkDeltaIoManager(sink_delta_kwargs={"mode": "merge"})

@@ -3,9 +3,11 @@ from typing import Callable, Mapping
 import bs4
 from cron_descriptor import get_description
 from dagster import (
-    AutomationCondition,
+    DefaultScheduleStatus,
     Definitions,
     OpExecutionContext,
+    ScheduleDefinition,
+    define_asset_job,
 )
 from requests import RequestException, Response
 from tenacity import (
@@ -54,6 +56,7 @@ def nemweb_public_files_definitions_factory(
     ] = default_folder_filter,
     group_name: str = "gas_raw",
     tags: Mapping[str, str] | None = None,
+    default_status: DefaultScheduleStatus = DefaultScheduleStatus.STOPPED,
 ) -> Definitions:
 
     @retry(
@@ -102,8 +105,6 @@ def nemweb_public_files_definitions_factory(
             )
         ),
         processed_link_combiner=S3ProcessedLinkCombiner(),
-        automation_condition=AutomationCondition.on_cron(cron_schedule)
-        & ~AutomationCondition.in_progress(),
     )
 
     asset_check = duplicate_row_check_factory(
@@ -113,7 +114,19 @@ def nemweb_public_files_definitions_factory(
         description=f"Check that surrogate_key({SURROGATE_KEY_SOURCES}) is unique",
     )
 
+    # create a scheduled asset job
+
+    job = define_asset_job(name=f"{table_name}_job", selection=[asset])
+
+    schedule = ScheduleDefinition(
+        job=job,
+        cron_schedule=cron_schedule,
+        default_status=default_status,
+    )
+
     return Definitions(
         assets=[asset],
+        jobs=[job],
+        schedules=[schedule],
         asset_checks=[asset_check],
     )

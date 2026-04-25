@@ -206,9 +206,9 @@ class S3FileUnzipper(FileUnzipper):
             # low_memory=True reduces peak memory at the cost of speed.
             # row_group_size caps how many rows are buffered per Parquet row
             # group, preventing large spikes during sink_parquet writes.
-            scan_csv(tmp_csv_path, low_memory=True).sink_parquet(
-                tmp_parquet_path, row_group_size=PARQUET_ROW_GROUP_SIZE
-            )
+            scan_csv(
+                tmp_csv_path, low_memory=True, infer_schema_length=None
+            ).sink_parquet(tmp_parquet_path, row_group_size=PARQUET_ROW_GROUP_SIZE)
 
             with open(tmp_parquet_path, "rb") as parquet_fh:
                 s3_client.upload_fileobj(parquet_fh, s3_target_bucket, write_key)

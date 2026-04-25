@@ -13,6 +13,8 @@ Abbreviation Key:
 
 import os
 
+from dagster import DefaultScheduleStatus, DefaultSensorStatus
+
 DAGSTER_URI = "dagster/uri"
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -38,3 +40,15 @@ QUEENSLAND_GAS_RETAIL_REPORT_DETAILS = "qld_gas_ret_rpt_dets"
 SOUTH_AUSTRALIAN_GAS_RETAIL_REPORTS = "sa_gas_ret_rpts"
 
 ECGS_REPORTS = "ecgs_rpts"
+
+DEFAULT_SENSOR_STATUS = (
+    DefaultSensorStatus.RUNNING
+    if DEVELOPMENT_LOCATION == "aws"
+    else DefaultSensorStatus.STOPPED
+)
+
+DEFAULT_SCHEDULE_STATUS = (
+    DefaultScheduleStatus.RUNNING
+    if DEVELOPMENT_LOCATION == "aws"
+    else DefaultScheduleStatus.STOPPED
+)

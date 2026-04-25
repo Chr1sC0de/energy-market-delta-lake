@@ -31,6 +31,7 @@ main() {
 
 	info "landing bucket:     s3://${LANDING_BUCKET}"
 	info "archive bucket:     s3://${ARCHIVE_BUCKET}"
+	info "aemo bucket:        s3://${AEMO_BUCKET}"
 	info "endpoint:   ${AWS_ENDPOINT_URL}"
 	info "target dir: ${LOCALSTACK_LANDING_DOWNLOAD}"
 
@@ -57,6 +58,12 @@ main() {
 		"$LOCALSTACK_ARCHIVE_DOWNLOAD"
 
 	info "sync complete. files written to: ${LOCALSTACK_ARCHIVE_DOWNLOAD}"
+
+	aws s3 sync \
+		"s3://${AEMO_BUCKET}" \
+		"$LOCALSTACK_AEMO_DOWNLOAD"
+
+	info "sync complete. files written to: ${LOCALSTACK_AEMO_DOWNLOAD}"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

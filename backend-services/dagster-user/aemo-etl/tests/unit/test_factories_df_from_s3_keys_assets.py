@@ -13,6 +13,7 @@ from types_boto3_s3 import S3Client
 from aemo_etl.factories.df_from_s3_keys.assets import (
     DFFromS3KeysConfiguration,
     bronze_df_from_s3_keys_asset_factory,
+    silver_df_from_s3_keys_asset_factory,
 )
 from aemo_etl.factories.df_from_s3_keys.hooks import Hook
 
@@ -190,8 +191,7 @@ def test_asset_first_run(mocker: MockerFixture) -> None:
 
 
 def test_asset_subsequent_run(mocker: MockerFixture) -> None:
-    """Valid CSV bytes, table already exists → anti-join dedup path."""
-    # scan_delta called multiple times: tmp_uri, uri (existing), clean_uri
+    """Valid CSV bytes, table already exists → source-file anti-join path."""
     call_num = [0]
 
     def _scan_side_effect(uri: str, **_kw: object) -> pl.LazyFrame:
@@ -208,6 +208,76 @@ def test_asset_subsequent_run(mocker: MockerFixture) -> None:
         scan_delta_side_effect=_scan_side_effect,
     )
     assert isinstance(result, pl.LazyFrame)
+
+
+def test_asset_filters_existing_source_file(mocker: MockerFixture) -> None:
+    """Existing source files are not emitted from bronze again."""
+
+    def _scan_side_effect(uri: str, **_kw: object) -> pl.LazyFrame:
+        if uri == "s3://test-aemo/bronze/gbb/test_asset":
+            return pl.LazyFrame({"source_file": ["s3://archive/key.csv"]})
+        return _BATCH_DF
+
+    asset_def = _make_asset()
+    result = _call_asset(
+        mocker,
+        asset_def,
+        s3_keys=["bronze/gbb/data.csv"],
+        bytes_by_key={"bronze/gbb/data.csv": _CSV_BYTES},
+        table_exists_val=True,
+        scan_delta_side_effect=_scan_side_effect,
+    )
+    assert result.collect().height == 0
+
+
+def test_asset_allows_existing_surrogate_key_from_new_source_file(
+    mocker: MockerFixture,
+) -> None:
+    """Bronze source-file idempotency does not dedupe business keys."""
+
+    def _scan_side_effect(uri: str, **_kw: object) -> pl.LazyFrame:
+        if uri == "s3://test-aemo/bronze/gbb/test_asset":
+            return pl.LazyFrame({"source_file": ["s3://archive/old.csv"]})
+        return _BATCH_DF
+
+    asset_def = _make_asset()
+    result = _call_asset(
+        mocker,
+        asset_def,
+        s3_keys=["bronze/gbb/data.csv"],
+        bytes_by_key={"bronze/gbb/data.csv": _CSV_BYTES},
+        table_exists_val=True,
+        scan_delta_side_effect=_scan_side_effect,
+    )
+    assert result.collect().height == 1
+
+
+def test_silver_asset_keeps_latest_source_file_per_surrogate_key(
+    mocker: MockerFixture,
+) -> None:
+    sink_delta_spy = mocker.spy(pl.LazyFrame, "sink_delta")
+    asset_def = silver_df_from_s3_keys_asset_factory(
+        name="silver_test_asset",
+        key_prefix=["silver", "gbb"],
+    )
+    fn = asset_def.op.compute_fn.decorated_fn  # type: ignore[union-attr]
+
+    input_df = pl.LazyFrame(
+        {
+            "col1": ["older", "newer", "only"],
+            "surrogate_key": ["hash1", "hash1", "hash2"],
+            "source_file": [
+                "s3://archive/table~20260421000000.parquet",
+                "s3://archive/table~20260422000000.parquet",
+                "s3://archive/table~20260420000000.parquet",
+            ],
+        }
+    )
+
+    result = fn(input_df).sort("surrogate_key").collect()
+
+    assert result["col1"].to_list() == ["newer", "only"]
+    sink_delta_spy.assert_called_once()
 
 
 def test_asset_with_object_hook(mocker: MockerFixture) -> None:

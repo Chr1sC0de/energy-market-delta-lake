@@ -1,0 +1,404 @@
+import polars as pl
+from dagster import (
+    AssetCheckResult,
+    AssetIn,
+    AssetKey,
+    AutomationCondition,
+    Definitions,
+    MaterializeResult,
+    TableColumnDep,
+    TableColumnLineage,
+    asset,
+    asset_check,
+    definitions,
+)
+from polars import LazyFrame
+
+from aemo_etl.configs import AEMO_BUCKET
+from aemo_etl.factories.checks import (
+    duplicate_row_check_factory,
+    schema_drift_check_factory,
+    schema_matches_check_factor,
+)
+from aemo_etl.utils import get_metadata_schema, get_surrogate_key
+
+DOMAIN = "gas_model"
+TABLE_NAME = "silver_gas_fact_nomination_forecast"
+KEY_PREFIX = ["silver", DOMAIN]
+GROUP_NAME = "gas_model"
+GRAIN = "one row per source-specific forecast row"
+SURROGATE_KEY_SOURCES = [
+    "source_system",
+    "source_table",
+    "gas_date",
+    "forecast_type",
+    "forecast_version",
+    "gas_interval",
+    "source_facility_id",
+    "source_location_id",
+    "source_surrogate_key",
+]
+SOURCE_TABLES = [
+    "silver.gbb.silver_gasbb_nomination_and_forecast",
+    "silver.vicgas.silver_int126_v4_dfs_data_1",
+    "silver.vicgas.silver_int153_v4_demand_forecast_rpt_1",
+]
+
+GBB_NOMINATION_FORECAST_KEY = AssetKey(
+    ["silver", "gbb", "silver_gasbb_nomination_and_forecast"]
+)
+VICGAS_DFS_KEY = AssetKey(["silver", "vicgas", "silver_int126_v4_dfs_data_1"])
+VICGAS_DEMAND_FORECAST_KEY = AssetKey(
+    ["silver", "vicgas", "silver_int153_v4_demand_forecast_rpt_1"]
+)
+DATES_KEY = AssetKey(["silver", "gas_model", "silver_gas_dim_date"])
+FACILITIES_KEY = AssetKey(["silver", "gas_model", "silver_gas_dim_facility"])
+LOCATIONS_KEY = AssetKey(["silver", "gas_model", "silver_gas_dim_location"])
+
+_SOURCE_FORECAST_DEPS = [
+    TableColumnDep(asset_key=GBB_NOMINATION_FORECAST_KEY, column_name="surrogate_key"),
+    TableColumnDep(asset_key=VICGAS_DFS_KEY, column_name="surrogate_key"),
+    TableColumnDep(asset_key=VICGAS_DEMAND_FORECAST_KEY, column_name="surrogate_key"),
+]
+
+COLUMN_LINEAGE = TableColumnLineage(
+    deps_by_column={
+        "surrogate_key": _SOURCE_FORECAST_DEPS,
+        "date_key": [
+            TableColumnDep(
+                asset_key=GBB_NOMINATION_FORECAST_KEY, column_name="Gasdate"
+            ),
+            TableColumnDep(asset_key=VICGAS_DFS_KEY, column_name="gas_date"),
+            TableColumnDep(
+                asset_key=VICGAS_DEMAND_FORECAST_KEY, column_name="forecast_date"
+            ),
+            TableColumnDep(asset_key=DATES_KEY, column_name="surrogate_key"),
+        ],
+        "facility_key": [
+            TableColumnDep(
+                asset_key=GBB_NOMINATION_FORECAST_KEY, column_name="FacilityId"
+            ),
+            TableColumnDep(asset_key=FACILITIES_KEY, column_name="surrogate_key"),
+        ],
+        "location_key": [
+            TableColumnDep(
+                asset_key=GBB_NOMINATION_FORECAST_KEY, column_name="LocationId"
+            ),
+            TableColumnDep(asset_key=LOCATIONS_KEY, column_name="surrogate_key"),
+        ],
+        "demand_forecast_gj": [
+            TableColumnDep(asset_key=GBB_NOMINATION_FORECAST_KEY, column_name="Demand"),
+            TableColumnDep(
+                asset_key=VICGAS_DFS_KEY, column_name="total_demand_forecast"
+            ),
+            TableColumnDep(
+                asset_key=VICGAS_DEMAND_FORECAST_KEY,
+                column_name="forecast_demand_gj",
+            ),
+        ],
+        "supply_forecast_gj": [
+            TableColumnDep(asset_key=GBB_NOMINATION_FORECAST_KEY, column_name="Supply")
+        ],
+        "transfer_in_forecast_gj": [
+            TableColumnDep(
+                asset_key=GBB_NOMINATION_FORECAST_KEY, column_name="TransferIn"
+            )
+        ],
+        "transfer_out_forecast_gj": [
+            TableColumnDep(
+                asset_key=GBB_NOMINATION_FORECAST_KEY, column_name="TransferOut"
+            )
+        ],
+        "override_quantity_gj": [
+            TableColumnDep(
+                asset_key=VICGAS_DEMAND_FORECAST_KEY, column_name="vc_override_gj"
+            )
+        ],
+        "source_surrogate_key": _SOURCE_FORECAST_DEPS,
+    }
+)
+
+SCHEMA = {
+    "surrogate_key": pl.String,
+    "date_key": pl.String,
+    "facility_key": pl.String,
+    "location_key": pl.String,
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "source_table": pl.String,
+    "gas_date": pl.Date,
+    "forecast_type": pl.String,
+    "forecast_version": pl.String,
+    "gas_interval": pl.Int64,
+    "source_facility_id": pl.String,
+    "source_location_id": pl.String,
+    "demand_forecast_gj": pl.Float64,
+    "supply_forecast_gj": pl.Float64,
+    "transfer_in_forecast_gj": pl.Float64,
+    "transfer_out_forecast_gj": pl.Float64,
+    "override_quantity_gj": pl.Float64,
+    "source_last_updated": pl.String,
+    "source_last_updated_timestamp": pl.Datetime("us"),
+    "source_surrogate_key": pl.String,
+    "source_file": pl.String,
+    "ingested_timestamp": pl.Datetime("us", time_zone="UTC"),
+}
+
+DESCRIPTIONS = {
+    "surrogate_key": "Silver fact primary key generated by surrogate_key_sources.",
+    "date_key": "Parent silver_gas_dim_date surrogate_key.",
+    "facility_key": "Parent silver_gas_dim_facility surrogate_key when resolvable.",
+    "location_key": "Parent silver_gas_dim_location surrogate_key when resolvable.",
+    "source_system": "Source system identifier.",
+    "source_tables": "Silver source tables used to construct the gas model row.",
+    "source_table": "Specific silver source table for this row.",
+    "gas_date": "Gas day date.",
+    "forecast_type": "Forecast source and measure type.",
+    "forecast_version": "Source forecast version where provided.",
+    "gas_interval": "Gas interval where provided.",
+    "source_facility_id": "Source-system facility identifier where provided.",
+    "source_location_id": "Source-system location identifier where provided.",
+    "demand_forecast_gj": "Demand forecast normalized to GJ.",
+    "supply_forecast_gj": "Supply forecast normalized to GJ.",
+    "transfer_in_forecast_gj": "Transfer-in forecast normalized to GJ.",
+    "transfer_out_forecast_gj": "Transfer-out forecast normalized to GJ.",
+    "override_quantity_gj": "Override quantity in GJ.",
+    "source_last_updated": "Raw source update value.",
+    "source_last_updated_timestamp": "Parsed source update timestamp.",
+    "source_surrogate_key": "Source row surrogate key for lineage.",
+    "source_file": "Archived source file for the source row.",
+    "ingested_timestamp": "Timestamp when the source row was ingested.",
+}
+
+REQUIRED_COLUMNS = ["surrogate_key", "date_key", "source_system", "gas_date"]
+
+
+def _parse_datetime(column: str) -> pl.Expr:
+    source = pl.col(column).cast(pl.String)
+    return pl.coalesce(
+        source.str.strptime(pl.Datetime("us"), "%d %b %Y %H:%M:%S", strict=False),
+        source.str.strptime(pl.Datetime("us"), "%d %B %Y %H:%M:%S", strict=False),
+        source.str.strptime(pl.Datetime("us"), "%d %b %Y", strict=False),
+        source.str.strptime(pl.Datetime("us"), "%d %B %Y", strict=False),
+        source.str.strptime(pl.Datetime("us"), "%Y/%m/%d %H:%M:%S", strict=False),
+        source.str.strptime(pl.Datetime("us"), "%Y/%m/%d", strict=False),
+        source.str.strptime(pl.Datetime("us"), "%Y-%m-%d %H:%M:%S", strict=False),
+        source.str.strptime(pl.Datetime("us"), "%Y-%m-%d", strict=False),
+    )
+
+
+def _gbb_forecasts(df: LazyFrame) -> LazyFrame:
+    return df.select(
+        source_system=pl.lit("GBB"),
+        source_tables=pl.lit([SOURCE_TABLES[0]]).cast(pl.List(pl.String)),
+        source_table=pl.lit(SOURCE_TABLES[0]),
+        gas_date=_parse_datetime("Gasdate").dt.date(),
+        forecast_type=pl.lit("gbb_nomination_forecast"),
+        forecast_version=pl.col("LastUpdated").cast(pl.String),
+        gas_interval=pl.lit(None).cast(pl.Int64),
+        source_facility_id=pl.col("FacilityId").cast(pl.String),
+        source_location_id=pl.col("LocationId").cast(pl.String),
+        demand_forecast_gj=pl.col("Demand").cast(pl.Float64) * 1000,
+        supply_forecast_gj=pl.col("Supply").cast(pl.Float64) * 1000,
+        transfer_in_forecast_gj=pl.col("TransferIn").cast(pl.Float64) * 1000,
+        transfer_out_forecast_gj=pl.col("TransferOut").cast(pl.Float64) * 1000,
+        override_quantity_gj=pl.lit(None).cast(pl.Float64),
+        source_last_updated=pl.col("LastUpdated").cast(pl.String),
+        source_last_updated_timestamp=_parse_datetime("LastUpdated"),
+        source_surrogate_key=pl.col("surrogate_key").cast(pl.String),
+        source_file=pl.col("source_file").cast(pl.String),
+        ingested_timestamp=pl.col("ingested_timestamp"),
+    )
+
+
+def _vicgas_dfs_forecasts(df: LazyFrame) -> LazyFrame:
+    return df.select(
+        source_system=pl.lit("VICGAS"),
+        source_tables=pl.lit([SOURCE_TABLES[1]]).cast(pl.List(pl.String)),
+        source_table=pl.lit(SOURCE_TABLES[1]),
+        gas_date=_parse_datetime("gas_date").dt.date(),
+        forecast_type=pl.lit("dfs_total_demand"),
+        forecast_version=pl.col("dfs_version").cast(pl.String),
+        gas_interval=pl.lit(None).cast(pl.Int64),
+        source_facility_id=pl.lit(None).cast(pl.String),
+        source_location_id=pl.lit(None).cast(pl.String),
+        demand_forecast_gj=pl.col("total_demand_forecast").cast(pl.Float64),
+        supply_forecast_gj=pl.lit(None).cast(pl.Float64),
+        transfer_in_forecast_gj=pl.lit(None).cast(pl.Float64),
+        transfer_out_forecast_gj=pl.lit(None).cast(pl.Float64),
+        override_quantity_gj=pl.lit(None).cast(pl.Float64),
+        source_last_updated=pl.col("last_update_datetime").cast(pl.String),
+        source_last_updated_timestamp=_parse_datetime("last_update_datetime"),
+        source_surrogate_key=pl.col("surrogate_key").cast(pl.String),
+        source_file=pl.col("source_file").cast(pl.String),
+        ingested_timestamp=pl.col("ingested_timestamp"),
+    )
+
+
+def _vicgas_interval_forecasts(df: LazyFrame) -> LazyFrame:
+    return df.select(
+        source_system=pl.lit("VICGAS"),
+        source_tables=pl.lit([SOURCE_TABLES[2]]).cast(pl.List(pl.String)),
+        source_table=pl.lit(SOURCE_TABLES[2]),
+        gas_date=_parse_datetime("forecast_date").dt.date(),
+        forecast_type=pl.lit("interval_demand"),
+        forecast_version=pl.col("version_id").cast(pl.String),
+        gas_interval=pl.col("ti").cast(pl.Int64),
+        source_facility_id=pl.lit(None).cast(pl.String),
+        source_location_id=pl.lit(None).cast(pl.String),
+        demand_forecast_gj=pl.col("forecast_demand_gj").cast(pl.Float64),
+        supply_forecast_gj=pl.lit(None).cast(pl.Float64),
+        transfer_in_forecast_gj=pl.lit(None).cast(pl.Float64),
+        transfer_out_forecast_gj=pl.lit(None).cast(pl.Float64),
+        override_quantity_gj=pl.col("vc_override_gj").cast(pl.Float64),
+        source_last_updated=pl.col("current_date").cast(pl.String),
+        source_last_updated_timestamp=_parse_datetime("current_date"),
+        source_surrogate_key=pl.col("surrogate_key").cast(pl.String),
+        source_file=pl.col("source_file").cast(pl.String),
+        ingested_timestamp=pl.col("ingested_timestamp"),
+    )
+
+
+def _select_nomination_forecasts(
+    gbb_nomination_forecast: LazyFrame,
+    vicgas_dfs: LazyFrame,
+    vicgas_demand_forecast: LazyFrame,
+    dates: LazyFrame,
+    facilities: LazyFrame,
+    locations: LazyFrame,
+) -> LazyFrame:
+    date_keys = dates.select(
+        date_key=pl.col("surrogate_key"), gas_date=pl.col("gas_date")
+    )
+    facility_keys = facilities.filter(pl.col("source_system") == "GBB").select(
+        facility_key=pl.col("surrogate_key"),
+        source_facility_id=pl.col("source_facility_id"),
+    )
+    location_keys = locations.filter(pl.col("source_system") == "GBB").select(
+        location_key=pl.col("surrogate_key"),
+        source_location_id=pl.col("source_location_id"),
+    )
+    combined = pl.concat(
+        [
+            _gbb_forecasts(gbb_nomination_forecast),
+            _vicgas_dfs_forecasts(vicgas_dfs),
+            _vicgas_interval_forecasts(vicgas_demand_forecast),
+        ],
+        how="diagonal_relaxed",
+    )
+
+    return (
+        combined.with_columns(surrogate_key=get_surrogate_key(SURROGATE_KEY_SOURCES))
+        .join(date_keys, on="gas_date", how="left")
+        .join(facility_keys, on="source_facility_id", how="left")
+        .join(location_keys, on="source_location_id", how="left")
+        .select(list(SCHEMA))
+    )
+
+
+def _materialize_result(value: LazyFrame) -> MaterializeResult[LazyFrame]:
+    return MaterializeResult(
+        value=value,
+        metadata={"dagster/column_lineage": COLUMN_LINEAGE},
+    )
+
+
+@asset(
+    key_prefix=KEY_PREFIX,
+    group_name=GROUP_NAME,
+    description="Silver gas nomination and demand forecast fact.",
+    ins={
+        "gbb_nomination_forecast": AssetIn(key=GBB_NOMINATION_FORECAST_KEY),
+        "vicgas_dfs": AssetIn(key=VICGAS_DFS_KEY),
+        "vicgas_demand_forecast": AssetIn(key=VICGAS_DEMAND_FORECAST_KEY),
+        "dates": AssetIn(key=DATES_KEY),
+        "facilities": AssetIn(key=FACILITIES_KEY),
+        "locations": AssetIn(key=LOCATIONS_KEY),
+    },
+    io_manager_key="aemo_deltalake_overwrite_io_manager",
+    metadata={
+        "dagster/table_name": f"silver.{DOMAIN}.{TABLE_NAME}",
+        "dagster/uri": f"s3://{AEMO_BUCKET}/{'/'.join(KEY_PREFIX)}/{TABLE_NAME}",
+        "dagster/column_schema": get_metadata_schema(SCHEMA, DESCRIPTIONS),
+        "grain": GRAIN,
+        "surrogate_key_sources": SURROGATE_KEY_SOURCES,
+        "source_tables": SOURCE_TABLES,
+    },
+    kinds={"table", "deltalake"},
+    automation_condition=AutomationCondition.any_deps_updated()
+    & ~AutomationCondition.in_progress()
+    & ~AutomationCondition.any_deps_missing(),
+)
+def silver_gas_fact_nomination_forecast(
+    gbb_nomination_forecast: LazyFrame,
+    vicgas_dfs: LazyFrame,
+    vicgas_demand_forecast: LazyFrame,
+    dates: LazyFrame,
+    facilities: LazyFrame,
+    locations: LazyFrame,
+) -> MaterializeResult[LazyFrame]:
+    return _materialize_result(
+        _select_nomination_forecasts(
+            gbb_nomination_forecast,
+            vicgas_dfs,
+            vicgas_demand_forecast,
+            dates,
+            facilities,
+            locations,
+        )
+    )
+
+
+@asset_check(
+    asset=silver_gas_fact_nomination_forecast,
+    name="check_required_fields",
+    description="Check required fact fields are not null.",
+)
+def silver_gas_fact_nomination_forecast_required_fields(
+    input_df: LazyFrame,
+) -> AssetCheckResult:
+    null_counts = (
+        input_df.select(pl.col(column).is_null().sum() for column in REQUIRED_COLUMNS)
+        .collect()
+        .to_dicts()[0]
+    )
+    return AssetCheckResult(
+        passed=all(count == 0 for count in null_counts.values()),
+        check_name="check_required_fields",
+        metadata={"null_counts": null_counts},
+    )
+
+
+silver_gas_fact_nomination_forecast_duplicate_row_check = duplicate_row_check_factory(
+    assets_definition=silver_gas_fact_nomination_forecast,
+    check_name="check_for_duplicate_rows",
+    primary_key="surrogate_key",
+    description="Check that surrogate_key is unique.",
+)
+
+silver_gas_fact_nomination_forecast_schema_check = schema_matches_check_factor(
+    schema=SCHEMA,
+    assets_definition=silver_gas_fact_nomination_forecast,
+    check_name="check_schema_matches",
+    description="Check observed schema matches target schema.",
+)
+
+silver_gas_fact_nomination_forecast_schema_drift_check = schema_drift_check_factory(
+    schema=SCHEMA,
+    assets_definition=silver_gas_fact_nomination_forecast,
+    check_name="check_schema_drift",
+    description="Check for schema drift against the declared asset schema.",
+)
+
+
+@definitions
+def defs() -> Definitions:
+    return Definitions(
+        assets=[silver_gas_fact_nomination_forecast],
+        asset_checks=[
+            silver_gas_fact_nomination_forecast_duplicate_row_check,
+            silver_gas_fact_nomination_forecast_schema_check,
+            silver_gas_fact_nomination_forecast_schema_drift_check,
+            silver_gas_fact_nomination_forecast_required_fields,
+        ],
+    )

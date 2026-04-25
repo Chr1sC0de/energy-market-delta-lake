@@ -1,0 +1,360 @@
+import polars as pl
+from dagster import (
+    AssetCheckResult,
+    AssetIn,
+    AssetKey,
+    AutomationCondition,
+    Definitions,
+    MaterializeResult,
+    TableColumnDep,
+    TableColumnLineage,
+    asset,
+    asset_check,
+    definitions,
+)
+from polars import LazyFrame
+
+from aemo_etl.configs import AEMO_BUCKET
+from aemo_etl.factories.checks import (
+    duplicate_row_check_factory,
+    schema_drift_check_factory,
+    schema_matches_check_factor,
+)
+from aemo_etl.utils import get_metadata_schema, get_surrogate_key
+
+DOMAIN = "gas_model"
+TABLE_NAME = "silver_gas_dim_participant"
+KEY_PREFIX = ["silver", DOMAIN]
+GROUP_NAME = "gas_model"
+GRAIN = "one current row per merged gas participant identity"
+SURROGATE_KEY_SOURCES = ["participant_identity_source", "participant_identity_value"]
+SOURCE_TABLES = [
+    "silver.gbb.silver_gasbb_participants_list",
+    "silver.vicgas.silver_int125_v8_details_of_organisations_1",
+]
+GBB_PARTICIPANTS_KEY = AssetKey(["silver", "gbb", "silver_gasbb_participants_list"])
+VICGAS_ORGANISATIONS_KEY = AssetKey(
+    ["silver", "vicgas", "silver_int125_v8_details_of_organisations_1"]
+)
+
+_IDENTITY_DEPS = [
+    TableColumnDep(asset_key=GBB_PARTICIPANTS_KEY, column_name="CompanyId"),
+    TableColumnDep(asset_key=GBB_PARTICIPANTS_KEY, column_name="ABN"),
+    TableColumnDep(asset_key=GBB_PARTICIPANTS_KEY, column_name="CompanyName"),
+    TableColumnDep(asset_key=VICGAS_ORGANISATIONS_KEY, column_name="company_id"),
+    TableColumnDep(asset_key=VICGAS_ORGANISATIONS_KEY, column_name="abn"),
+    TableColumnDep(asset_key=VICGAS_ORGANISATIONS_KEY, column_name="acn"),
+    TableColumnDep(asset_key=VICGAS_ORGANISATIONS_KEY, column_name="company_name"),
+]
+
+COLUMN_LINEAGE = TableColumnLineage(
+    deps_by_column={
+        "surrogate_key": _IDENTITY_DEPS,
+        "participant_identity_source": _IDENTITY_DEPS,
+        "participant_identity_value": _IDENTITY_DEPS,
+        "canonical_participant_name": [
+            TableColumnDep(asset_key=GBB_PARTICIPANTS_KEY, column_name="CompanyName"),
+            TableColumnDep(
+                asset_key=VICGAS_ORGANISATIONS_KEY, column_name="company_name"
+            ),
+        ],
+        "registered_name": [
+            TableColumnDep(
+                asset_key=VICGAS_ORGANISATIONS_KEY, column_name="registered_name"
+            )
+        ],
+        "abn": [
+            TableColumnDep(asset_key=GBB_PARTICIPANTS_KEY, column_name="ABN"),
+            TableColumnDep(asset_key=VICGAS_ORGANISATIONS_KEY, column_name="abn"),
+        ],
+        "acn": [TableColumnDep(asset_key=VICGAS_ORGANISATIONS_KEY, column_name="acn")],
+        "participant_type": [
+            TableColumnDep(
+                asset_key=GBB_PARTICIPANTS_KEY, column_name="OrganisationTypeName"
+            ),
+            TableColumnDep(
+                asset_key=VICGAS_ORGANISATIONS_KEY,
+                column_name="organization_type_name",
+            ),
+        ],
+        "participant_status": [
+            TableColumnDep(
+                asset_key=VICGAS_ORGANISATIONS_KEY,
+                column_name="organization_status_name",
+            )
+        ],
+        "source_company_ids": [
+            TableColumnDep(asset_key=GBB_PARTICIPANTS_KEY, column_name="CompanyId"),
+            TableColumnDep(
+                asset_key=VICGAS_ORGANISATIONS_KEY, column_name="company_id"
+            ),
+        ],
+        "source_surrogate_keys": [
+            TableColumnDep(asset_key=GBB_PARTICIPANTS_KEY, column_name="surrogate_key"),
+            TableColumnDep(
+                asset_key=VICGAS_ORGANISATIONS_KEY, column_name="surrogate_key"
+            ),
+        ],
+        "source_files": [
+            TableColumnDep(asset_key=GBB_PARTICIPANTS_KEY, column_name="source_file"),
+            TableColumnDep(
+                asset_key=VICGAS_ORGANISATIONS_KEY, column_name="source_file"
+            ),
+        ],
+        "ingested_timestamp": [
+            TableColumnDep(
+                asset_key=GBB_PARTICIPANTS_KEY, column_name="ingested_timestamp"
+            ),
+            TableColumnDep(
+                asset_key=VICGAS_ORGANISATIONS_KEY, column_name="ingested_timestamp"
+            ),
+        ],
+    }
+)
+
+SCHEMA = {
+    "surrogate_key": pl.String,
+    "participant_identity_source": pl.String,
+    "participant_identity_value": pl.String,
+    "canonical_participant_name": pl.String,
+    "registered_name": pl.String,
+    "abn": pl.String,
+    "acn": pl.String,
+    "participant_type": pl.String,
+    "participant_status": pl.String,
+    "source_systems": pl.List(pl.String),
+    "source_tables": pl.List(pl.String),
+    "source_company_ids": pl.List(pl.String),
+    "source_surrogate_keys": pl.List(pl.String),
+    "source_files": pl.List(pl.String),
+    "ingested_timestamp": pl.Datetime("us", time_zone="UTC"),
+}
+
+DESCRIPTIONS = {
+    "surrogate_key": "Silver dimension primary key generated by surrogate_key_sources.",
+    "participant_identity_source": "Identifier type used for participant identity.",
+    "participant_identity_value": "Identifier value used for participant identity.",
+    "canonical_participant_name": "Canonical participant name.",
+    "registered_name": "Registered participant name where available.",
+    "abn": "Normalized Australian Business Number.",
+    "acn": "Normalized Australian Company Number.",
+    "participant_type": "Participant or organisation type.",
+    "participant_status": "Participant or organisation status.",
+    "source_systems": "Source systems contributing to the merged participant.",
+    "source_tables": "Silver source tables used to construct the gas model row.",
+    "source_company_ids": "Source-system company identifiers contributing to the row.",
+    "source_surrogate_keys": "Source row surrogate keys for lineage.",
+    "source_files": "Archived source files contributing to the row.",
+    "ingested_timestamp": "Latest contributing bronze row ingestion timestamp.",
+}
+
+REQUIRED_COLUMNS = [
+    "surrogate_key",
+    "participant_identity_source",
+    "participant_identity_value",
+    "canonical_participant_name",
+]
+
+
+def _normalize_identifier(column: str) -> pl.Expr:
+    return (
+        pl.col(column)
+        .cast(pl.String)
+        .str.replace_all(r"[^0-9A-Za-z]", "")
+        .str.to_uppercase()
+    )
+
+
+def _first_non_null(column: str) -> pl.Expr:
+    return pl.col(column).drop_nulls().first()
+
+
+def _gbb_participants(df: LazyFrame) -> LazyFrame:
+    return df.select(
+        source_system=pl.lit("GBB"),
+        source_tables=pl.lit(["silver.gbb.silver_gasbb_participants_list"]).cast(
+            pl.List(pl.String)
+        ),
+        source_company_id=pl.col("CompanyId").cast(pl.String),
+        participant_name=pl.col("CompanyName").cast(pl.String),
+        registered_name=pl.lit(None).cast(pl.String),
+        abn=_normalize_identifier("ABN"),
+        acn=pl.lit(None).cast(pl.String),
+        participant_type=pl.col("OrganisationTypeName").cast(pl.String),
+        participant_status=pl.lit(None).cast(pl.String),
+        source_surrogate_key=pl.col("surrogate_key").cast(pl.String),
+        source_file=pl.col("source_file").cast(pl.String),
+        ingested_timestamp=pl.col("ingested_timestamp"),
+    )
+
+
+def _vicgas_participants(df: LazyFrame) -> LazyFrame:
+    return df.select(
+        source_system=pl.lit("VICGAS"),
+        source_tables=pl.lit(
+            ["silver.vicgas.silver_int125_v8_details_of_organisations_1"]
+        ).cast(pl.List(pl.String)),
+        source_company_id=pl.col("company_id").cast(pl.String),
+        participant_name=pl.col("company_name").cast(pl.String),
+        registered_name=pl.col("registered_name").cast(pl.String),
+        abn=_normalize_identifier("abn"),
+        acn=_normalize_identifier("acn"),
+        participant_type=pl.col("organization_type_name").cast(pl.String),
+        participant_status=pl.col("organization_status_name").cast(pl.String),
+        source_surrogate_key=pl.col("surrogate_key").cast(pl.String),
+        source_file=pl.col("source_file").cast(pl.String),
+        ingested_timestamp=pl.col("ingested_timestamp"),
+    )
+
+
+def _with_identity(df: LazyFrame) -> LazyFrame:
+    return df.with_columns(
+        participant_identity_source=(
+            pl.when(pl.col("source_company_id").is_not_null())
+            .then(pl.lit("company_id"))
+            .when(pl.col("abn").is_not_null() & (pl.col("abn") != ""))
+            .then(pl.lit("abn"))
+            .when(pl.col("acn").is_not_null() & (pl.col("acn") != ""))
+            .then(pl.lit("acn"))
+            .otherwise(pl.lit("participant_name"))
+        ),
+        participant_identity_value=(
+            pl.when(pl.col("source_company_id").is_not_null())
+            .then(pl.col("source_company_id"))
+            .when(pl.col("abn").is_not_null() & (pl.col("abn") != ""))
+            .then(pl.col("abn"))
+            .when(pl.col("acn").is_not_null() & (pl.col("acn") != ""))
+            .then(pl.col("acn"))
+            .otherwise(pl.col("participant_name").str.to_uppercase())
+        ),
+    )
+
+
+def _select_current_participants(
+    gbb_participants: LazyFrame, vicgas_organisations: LazyFrame
+) -> LazyFrame:
+    combined = pl.concat(
+        [
+            _gbb_participants(gbb_participants),
+            _vicgas_participants(vicgas_organisations),
+        ],
+        how="diagonal_relaxed",
+    )
+    return (
+        _with_identity(combined)
+        .sort(["participant_identity_source", "participant_identity_value"])
+        .group_by(SURROGATE_KEY_SOURCES)
+        .agg(
+            canonical_participant_name=_first_non_null("participant_name"),
+            registered_name=_first_non_null("registered_name"),
+            abn=_first_non_null("abn"),
+            acn=_first_non_null("acn"),
+            participant_type=_first_non_null("participant_type"),
+            participant_status=_first_non_null("participant_status"),
+            source_systems=pl.col("source_system").drop_nulls().unique().sort(),
+            source_tables=pl.col("source_tables")
+            .explode()
+            .drop_nulls()
+            .unique()
+            .sort(),
+            source_company_ids=pl.col("source_company_id").drop_nulls().unique().sort(),
+            source_surrogate_keys=pl.col("source_surrogate_key")
+            .drop_nulls()
+            .unique()
+            .sort(),
+            source_files=pl.col("source_file").drop_nulls().unique().sort(),
+            ingested_timestamp=pl.col("ingested_timestamp").max(),
+        )
+        .with_columns(surrogate_key=get_surrogate_key(SURROGATE_KEY_SOURCES))
+        .select(list(SCHEMA))
+    )
+
+
+def _materialize_result(value: LazyFrame) -> MaterializeResult[LazyFrame]:
+    return MaterializeResult(
+        value=value,
+        metadata={"dagster/column_lineage": COLUMN_LINEAGE},
+    )
+
+
+@asset(
+    key_prefix=KEY_PREFIX,
+    group_name=GROUP_NAME,
+    description="Silver current-snapshot gas participant dimension.",
+    ins={
+        "gbb_participants": AssetIn(key=GBB_PARTICIPANTS_KEY),
+        "vicgas_organisations": AssetIn(key=VICGAS_ORGANISATIONS_KEY),
+    },
+    io_manager_key="aemo_deltalake_overwrite_io_manager",
+    metadata={
+        "dagster/table_name": f"silver.{DOMAIN}.{TABLE_NAME}",
+        "dagster/uri": f"s3://{AEMO_BUCKET}/{'/'.join(KEY_PREFIX)}/{TABLE_NAME}",
+        "dagster/column_schema": get_metadata_schema(SCHEMA, DESCRIPTIONS),
+        "grain": GRAIN,
+        "surrogate_key_sources": SURROGATE_KEY_SOURCES,
+        "source_tables": SOURCE_TABLES,
+    },
+    kinds={"table", "deltalake"},
+    automation_condition=AutomationCondition.any_deps_updated()
+    & ~AutomationCondition.in_progress()
+    & ~AutomationCondition.any_deps_missing(),
+)
+def silver_gas_dim_participant(
+    gbb_participants: LazyFrame, vicgas_organisations: LazyFrame
+) -> MaterializeResult[LazyFrame]:
+    return _materialize_result(
+        _select_current_participants(gbb_participants, vicgas_organisations)
+    )
+
+
+@asset_check(
+    asset=silver_gas_dim_participant,
+    name="check_required_fields",
+    description="Check required dimension fields are not null.",
+)
+def silver_gas_dim_participant_required_fields(input_df: LazyFrame) -> AssetCheckResult:
+    null_counts = (
+        input_df.select(pl.col(column).is_null().sum() for column in REQUIRED_COLUMNS)
+        .collect()
+        .to_dicts()[0]
+    )
+    return AssetCheckResult(
+        passed=all(count == 0 for count in null_counts.values()),
+        check_name="check_required_fields",
+        metadata={"null_counts": null_counts},
+    )
+
+
+silver_gas_dim_participant_duplicate_row_check = duplicate_row_check_factory(
+    assets_definition=silver_gas_dim_participant,
+    check_name="check_for_duplicate_rows",
+    primary_key="surrogate_key",
+    description="Check that surrogate_key is unique.",
+)
+
+silver_gas_dim_participant_schema_check = schema_matches_check_factor(
+    schema=SCHEMA,
+    assets_definition=silver_gas_dim_participant,
+    check_name="check_schema_matches",
+    description="Check observed schema matches target schema.",
+)
+
+silver_gas_dim_participant_schema_drift_check = schema_drift_check_factory(
+    schema=SCHEMA,
+    assets_definition=silver_gas_dim_participant,
+    check_name="check_schema_drift",
+    description="Check for schema drift against the declared asset schema.",
+)
+
+
+@definitions
+def defs() -> Definitions:
+    return Definitions(
+        assets=[silver_gas_dim_participant],
+        asset_checks=[
+            silver_gas_dim_participant_duplicate_row_check,
+            silver_gas_dim_participant_schema_check,
+            silver_gas_dim_participant_schema_drift_check,
+            silver_gas_dim_participant_required_fields,
+        ],
+    )

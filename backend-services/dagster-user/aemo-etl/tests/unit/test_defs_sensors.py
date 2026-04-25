@@ -23,7 +23,7 @@ def test_default_status_aws_branch(monkeypatch: object) -> None:
     importlib.reload(_cfg)
     importlib.reload(_sensors)
 
-    assert _sensors.DEFAULT_STATUS == DefaultSensorStatus.RUNNING
+    assert _cfg.DEFAULT_SENSOR_STATUS == DefaultSensorStatus.RUNNING
 
     # Restore
     monkeypatch.delenv("DEVELOPMENT_LOCATION", raising=False)  # type: ignore[attr-defined]

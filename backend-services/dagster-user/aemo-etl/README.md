@@ -1,61 +1,231 @@
-# aemo_etl
+# aemo-etl
 
-## Getting started
+`aemo-etl` is a Dagster-based AEMO gas ETL project for discovering and ingesting AEMO/NEMWeb source files, staging raw datasets into Delta tables on S3-compatible storage, transforming source-specific silver tables and `gas_model` marts, and supporting both LocalStack-backed local development and AWS execution.
 
-### Installing dependencies
+## Table of contents
 
-**Option 1: uv**
+- [What the project does](#what-the-project-does)
+- [High-level architecture](#high-level-architecture)
+- [Ingestion flow](#ingestion-flow)
+- [Data domains and asset layers](#data-domains-and-asset-layers)
+- [Requirements and installation](#requirements-and-installation)
+- [Environment configuration](#environment-configuration)
+- [Running locally](#running-locally)
+- [Common commands](#common-commands)
+- [Project layout](#project-layout)
+- [Further documentation](#further-documentation)
 
-Ensure [`uv`](https://docs.astral.sh/uv/) is installed following their [official documentation](https://docs.astral.sh/uv/getting-started/installation/).
+## What the project does
 
-Create a virtual environment, and install the required dependencies using _sync_:
+The project materializes Dagster assets defined under `src/aemo_etl/defs` to build a gas-market lakehouse on Delta tables.
+
+- Scheduled NEMWeb discovery assets poll `REPORTS/CURRENT/VicGas` and `REPORTS/CURRENT/GBB` every 15 minutes and copy source files into landing storage.
+- Unzipper assets expand zipped source payloads in landing storage and archive the original zip files after successful extraction.
+- Event-driven bronze assets read matching landing files, normalize them into partitioned Delta tables, and move processed source files into archive storage.
+- Silver assets deduplicate the current source-specific state.
+- `gas_model` assets combine GBB and VICGAS silver tables into shared dimensions and marts.
+
+## High-level architecture
+
+```mermaid
+flowchart LR
+    subgraph Sources
+        NEMWeb["AEMO / NEMWeb public files"]
+    end
+
+    subgraph Dagster
+        Schedules["Scheduled discovery assets"]
+        UnzipSensors["Unzipper sensors"]
+        RawSensors["Event-driven raw sensors"]
+        RawAssets["Bronze/raw assets"]
+        SilverAssets["Source-specific silver assets"]
+        GasModel["gas_model marts and dimensions"]
+    end
+
+    subgraph Storage
+        Landing["Landing bucket"]
+        Archive["Archive bucket"]
+        AEMO["AEMO Delta bucket"]
+        IOMgr["IO manager bucket"]
+    end
+
+    NEMWeb --> Schedules
+    Schedules --> Landing
+    Landing --> UnzipSensors
+    UnzipSensors --> Landing
+    UnzipSensors --> Archive
+    Landing --> RawSensors
+    RawSensors --> RawAssets
+    RawAssets --> Archive
+    RawAssets --> AEMO
+    SilverAssets --> AEMO
+    GasModel --> AEMO
+    RawAssets -. intermediates .-> IOMgr
+    SilverAssets -. intermediates .-> IOMgr
+    GasModel -. intermediates .-> IOMgr
+```
+
+```mermaid
+flowchart TD
+    Root["aemo-etl"] --> Src["src/aemo_etl"]
+    Root --> Docs["docs/"]
+    Root --> Tests["tests/"]
+    Root --> Make["Makefile"]
+    Root --> Env[".localstack.env"]
+
+    Src --> Definitions["definitions.py"]
+    Src --> Config["configs.py"]
+    Src --> Defs["defs/"]
+    Src --> Factories["factories/"]
+
+    Defs --> Raw["raw/"]
+    Defs --> Sensors["sensors.py"]
+    Defs --> Resources["resources.py"]
+    Defs --> GasModel["gas_model/"]
+
+    Factories --> Nemweb["nemweb_public_files/"]
+    Factories --> Unzip["unzipper/"]
+    Factories --> DfS3["df_from_s3_keys/"]
+
+    Docs --> ArchDocs["architecture/"]
+    Docs --> DevDocs["development/"]
+    Docs --> GasDocs["gas_model/"]
+```
+
+- Raw ingestion: `factories/nemweb_public_files`, `factories/unzipper`, and `factories/df_from_s3_keys` define the discovery, extraction, and bronze/silver ingestion patterns reused across many source tables.
+- Source-specific silver assets: `silver.gbb.*` and `silver.vicgas.*` assets deduplicate current source rows and expose consistent Delta-backed tables for downstream use.
+- Gas-model marts: `src/aemo_etl/defs/gas_model` builds cross-source dimensions and fact tables from the source-specific silver layer.
+- Storage: landing and archive buckets hold files; the AEMO bucket holds Delta tables; the IO manager bucket stores Dagster-managed intermediates.
+- Orchestration: `src/aemo_etl/definitions.py` merges shared resources with definitions discovered from `src/aemo_etl/defs`.
+
+## Ingestion flow
+
+```mermaid
+sequenceDiagram
+    participant Source as AEMO / NEMWeb
+    participant Discover as Discovery asset
+    participant Landing as Landing bucket
+    participant Unzip as Unzipper asset
+    participant Raw as Bronze/raw asset
+    participant Archive as Archive bucket
+    participant Silver as Silver asset
+    participant GasModel as gas_model asset
+
+    Source->>Discover: Publish files
+    Discover->>Landing: Save discovered files
+    Landing->>Unzip: Zip files detected by unzipper sensor
+    Unzip->>Landing: Write extracted csv/parquet members
+    Unzip->>Archive: Archive successful zip inputs
+    Landing->>Raw: Matching files selected by raw sensor
+    Raw->>Archive: Move processed source files
+    Raw->>Silver: Trigger downstream deduplicated tables
+    Silver->>GasModel: Trigger dimensions and marts
+```
+
+Detailed sequence diagrams for GBB, VICGAS, and raw-to-silver behavior live in [docs/architecture/ingestion_flows.md](docs/architecture/ingestion_flows.md).
+
+## Data domains and asset layers
+
+- `raw`: scheduled discovery assets plus bronze ingestion assets that capture full source datasets from landing storage into Delta tables.
+- `gbb`: source-specific silver assets for Gas Bulletin Board datasets such as flows, capacity, locations, linepack, and nomination data.
+- `vicgas`: source-specific silver assets for Victorian gas reports such as operational meter readings, allocations, prices, linepack, heating values, and settlements.
+- `gas_model`: shared dimensions and marts that reconcile GBB and VICGAS source data into reporting-friendly tables.
+
+Detailed gas-model ERDs remain under `docs/gas_model/`:
+
+- [Gas dimensions ERD](docs/gas_model/gas_dim_erd.md)
+- [Gas operations mart ERD](docs/gas_model/gas_operations_mart_erd.md)
+- [Gas market mart ERD](docs/gas_model/gas_market_mart_erd.md)
+- [Gas capacity and settlement mart ERD](docs/gas_model/gas_capacity_settlement_mart_erd.md)
+- [Gas quality and status mart ERD](docs/gas_model/gas_quality_status_mart_erd.md)
+
+## Requirements and installation
+
+- Python `>=3.13,<3.14`
+- [`uv`](https://docs.astral.sh/uv/)
+
+Install dependencies with:
 
 ```bash
 uv sync
 ```
 
-Then, activate the virtual environment:
+## Environment configuration
 
-| OS | Command |
-| --- | --- |
-| MacOS | `source .venv/bin/activate` |
-| Windows | `.venv\Scripts\activate` |
+The runtime configuration is driven primarily by environment variables read in `src/aemo_etl/configs.py`.
 
-**Option 2: pip**
+- `DEVELOPMENT_ENVIRONMENT`: logical environment name, defaults to `dev`.
+- `DEVELOPMENT_LOCATION`: execution location, defaults to `local`. Use `aws` for deployed execution defaults.
+- `NAME_PREFIX`: project prefix used in derived bucket names, defaults to `energy-market`.
+- `AWS_ENDPOINT_URL`: optional S3/DynamoDB endpoint override. Set this for LocalStack workflows, typically through `.localstack.env`.
 
-Install the python dependencies with [pip](https://pypi.org/project/pip/):
+Derived bucket names are built from `DEVELOPMENT_ENVIRONMENT` and `NAME_PREFIX`:
+
+- `IO_MANAGER_BUCKET`: `{env}-{prefix}-io-manager`
+- `LANDING_BUCKET`: `{env}-{prefix}-landing`
+- `ARCHIVE_BUCKET`: `{env}-{prefix}-archive`
+- `AEMO_BUCKET`: `{env}-{prefix}-aemo`
+
+For LocalStack-backed runs and tests, expect local AWS-style credentials such as:
+
+- `AWS_ACCESS_KEY_ID=test`
+- `AWS_SECRET_ACCESS_KEY=test`
+- `AWS_SESSION_TOKEN=test`
+- `AWS_DEFAULT_REGION=ap-southeast-2`
+
+Integration tests also set `AWS_ALLOW_HTTP=true` and `AWS_S3_LOCKING_PROVIDER=dynamodb` for local Delta workflows.
+
+## Running locally
+
+Use `.localstack.env` when you want Dagster and the ETL assets to talk to LocalStack instead of AWS:
 
 ```bash
-python3 -m venv .venv
+source .localstack.env
 ```
 
-Then activate the virtual environment:
+LocalStack is required for local end-to-end ingestion or integration-test workflows because the project expects S3-compatible storage and DynamoDB-backed Delta locking. It is not required just to read the code or edit docs.
 
-| OS | Command |
-| --- | --- |
-| MacOS | `source .venv/bin/activate` |
-| Windows | `.venv\Scripts\activate` |
-
-Install the required dependencies:
-
-```bash
-pip install -e ".[dev]"
-```
-
-### Running Dagster
-
-Start the Dagster UI web server:
+Start the local Dagster UI with:
 
 ```bash
 dg dev
 ```
 
-Open http://localhost:3000 in your browser to see the project.
+The local UI is available at `http://localhost:3000`.
 
-## Learn more
+Sensors and schedules default to stopped in local execution and default to running on AWS. That behavior comes from `DEVELOPMENT_LOCATION` in `src/aemo_etl/configs.py`.
 
-To learn more about this template and Dagster in general:
+## Common commands
 
-- [Dagster Documentation](https://docs.dagster.io/)
-- [Dagster University](https://courses.dagster.io/)
-- [Dagster Slack Community](https://dagster.io/slack)
+```bash
+make unit-test
+make integration-test
+make duplicate-check
+make run-prek
+```
+
+## Project layout
+
+```text
+aemo-etl/
+├── docs/
+│   ├── architecture/
+│   ├── development/
+│   └── gas_model/
+├── src/aemo_etl/
+│   ├── configs.py
+│   ├── definitions.py
+│   ├── defs/
+│   └── factories/
+├── tests/
+├── .localstack.env
+├── Makefile
+└── pyproject.toml
+```
+
+## Further documentation
+
+- [Architecture overview](docs/architecture/high_level_architecture.md)
+- [Ingestion sequence diagrams](docs/architecture/ingestion_flows.md)
+- [Local development guide](docs/development/local_development.md)
+- [Gas-model ERDs](docs/gas_model/)
