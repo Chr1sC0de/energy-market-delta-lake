@@ -5,6 +5,7 @@
 - [2) Current Pulumi baseline (what already exists)](#2-current-pulumi-baseline-what-already-exists)
 - [3) Target architecture for per-user marimo services](#3-target-architecture-for-per-user-marimo-services)
 - [4) Spec backlog broken into subtasks](#4-spec-backlog-broken-into-subtasks)
+- [Spec implementation folders](#spec-implementation-folders)
 - [5) Detailed spec cards (work one at a time)](#5-detailed-spec-cards-work-one-at-a-time)
 - [6) Suggested implementation order](#6-suggested-implementation-order)
 - [7) Risks and open decisions](#7-risks-and-open-decisions)
@@ -82,6 +83,22 @@ We should **extend** this architecture (not replace it):
 | S7 | Idle shutdown, cost controls, quotas | Predictable spend and auto-lifecycle management | S2, S6 | todo |
 | S8 | Observability, audit, SLOs | End-to-end traceability and operational readiness | S1-S7 | todo |
 | S9 | Security hardening + threat model | Baseline controls documented and validated | S1-S8 | todo |
+
+
+## Spec implementation folders
+
+Each subtask now has a dedicated implementation plan file in `specs/marimo-multi-tenant-strategy/`:
+
+- [S0 baseline architecture alignment](./marimo-multi-tenant-strategy/S0-baseline-architecture-alignment.md)
+- [S1 identity and session broker](./marimo-multi-tenant-strategy/S1-identity-and-session-broker.md)
+- [S2 per-user compute lifecycle](./marimo-multi-tenant-strategy/S2-per-user-compute-lifecycle.md)
+- [S3 marimo runtime image and bootstrap](./marimo-multi-tenant-strategy/S3-marimo-runtime-image-and-bootstrap.md)
+- [S4 networking and ingress model](./marimo-multi-tenant-strategy/S4-networking-and-ingress-model.md)
+- [S5 data access SDK and IAM policy model](./marimo-multi-tenant-strategy/S5-data-access-sdk-and-iam-policy-model.md)
+- [S6 workspace persistence and backup](./marimo-multi-tenant-strategy/S6-workspace-persistence-and-backup.md)
+- [S7 idle shutdown, cost controls, and quotas](./marimo-multi-tenant-strategy/S7-idle-shutdown-cost-controls-and-quotas.md)
+- [S8 observability, audit, and SLOs](./marimo-multi-tenant-strategy/S8-observability-audit-and-slos.md)
+- [S9 security hardening and threat model](./marimo-multi-tenant-strategy/S9-security-hardening-and-threat-model.md)
 
 ## 5) Detailed spec cards (work one at a time)
 
