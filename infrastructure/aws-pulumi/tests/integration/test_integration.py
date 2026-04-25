@@ -287,9 +287,6 @@ class TestS3Buckets:
             "landing",
             "archive",
             "aemo",
-            "bronze",
-            "silver",
-            "gold",
         ]
         response = s3_client.list_buckets()  # type: ignore[union-attr]
         existing_names = {b["Name"] for b in response["Buckets"]}

@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+STACK="${PULUMI_STACK:-dev-ausenergymarket}"
+AWS_REGION="${AWS_DEFAULT_REGION:-ap-southeast-2}"
+RUN_UP=1
+RUN_IDEMPOTENCY=0
+
+usage() {
+	printf 'Usage: %s [--skip-up] [--with-idempotency] [--stack STACK]\n' "$0"
+	printf '\n'
+	printf 'Runs the live AWS integration test workflow for this Pulumi project.\n'
+	printf '\n'
+	printf 'Options:\n'
+	printf '  --skip-up           Do not run pulumi up before tests.\n'
+	printf '  --with-idempotency  Run pulumi preview --expect-no-changes after tests.\n'
+	printf '  --stack STACK       Pulumi stack to target. Defaults to PULUMI_STACK or dev-ausenergymarket.\n'
+	printf '  -h, --help          Show this help.\n'
+}
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+	--skip-up)
+		RUN_UP=0
+		shift
+		;;
+	--with-idempotency)
+		RUN_IDEMPOTENCY=1
+		shift
+		;;
+	--stack)
+		if [[ $# -lt 2 ]]; then
+			printf 'ERROR: --stack requires a value.\n' >&2
+			exit 2
+		fi
+		STACK="$2"
+		shift 2
+		;;
+	-h | --help)
+		usage
+		exit 0
+		;;
+	*)
+		printf 'ERROR: unknown argument: %s\n' "$1" >&2
+		usage >&2
+		exit 2
+		;;
+	esac
+done
+
+require_command() {
+	if ! command -v "$1" >/dev/null 2>&1; then
+		printf 'ERROR: required command not found: %s\n' "$1" >&2
+		exit 127
+	fi
+}
+
+require_command pulumi
+require_command uv
+
+export PULUMI_STACK="$STACK"
+export AWS_DEFAULT_REGION="$AWS_REGION"
+
+if command -v aws >/dev/null 2>&1; then
+	aws sts get-caller-identity >/dev/null
+else
+	printf 'WARN: aws CLI not found; Pulumi/pytest will still validate AWS credentials.\n' >&2
+fi
+
+printf 'Using Pulumi stack: %s\n' "$PULUMI_STACK"
+printf 'Using AWS region: %s\n' "$AWS_DEFAULT_REGION"
+
+pulumi stack select "$PULUMI_STACK"
+
+if [[ "$RUN_UP" -eq 1 ]]; then
+	printf '\n==> Applying Pulumi stack\n'
+	pulumi up --yes --non-interactive --stack "$PULUMI_STACK"
+else
+	printf '\n==> Skipping pulumi up\n'
+fi
+
+printf '\n==> Running live integration tests\n'
+PULUMI_INTEGRATION_TESTS=1 uv run pytest tests/integration -v
+
+if [[ "$RUN_IDEMPOTENCY" -eq 1 ]]; then
+	printf '\n==> Checking for Pulumi no-op preview\n'
+	pulumi preview --expect-no-changes --non-interactive --stack "$PULUMI_STACK"
+fi

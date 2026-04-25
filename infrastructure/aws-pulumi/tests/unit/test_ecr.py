@@ -17,6 +17,43 @@ class TestEcrRepositories:
         assert ecr.caddy is not None
         assert ecr.authentication is not None
 
+    def test_all_image_resources_created(self) -> None:
+        ecr = ECRComponentResource("test-energy-market")
+        assert ecr.dagster_webserver_image is not None
+        assert ecr.dagster_daemon_image is not None
+        assert ecr.dagster_user_code_aemo_etl_image is not None
+        assert ecr.caddy_image is not None
+        assert ecr.authentication_image is not None
+
+    @pulumi.runtime.test
+    def test_fargate_image_resources_expose_repo_digests(self) -> None:
+        ecr = ECRComponentResource("test-energy-market")
+
+        def check(digests: list[str]) -> None:
+            for digest in digests:
+                assert "@sha256:" in digest
+
+        return pulumi.Output.all(
+            ecr.dagster_webserver_image.repo_digest,
+            ecr.dagster_daemon_image.repo_digest,
+            ecr.dagster_user_code_aemo_etl_image.repo_digest,
+        ).apply(check)
+
+    @pulumi.runtime.test
+    def test_fargate_image_uris_use_ecr_digest(self) -> None:
+        ecr = ECRComponentResource("test-energy-market")
+
+        def check(image_uris: list[str]) -> None:
+            for image_uri in image_uris:
+                assert "@sha256:" in image_uri
+                assert not image_uri.endswith(":latest")
+
+        return pulumi.Output.all(
+            ecr.dagster_webserver_image_uri,
+            ecr.dagster_daemon_image_uri,
+            ecr.dagster_user_code_aemo_etl_image_uri,
+        ).apply(check)
+
     @pulumi.runtime.test
     def test_postgres_repo_url_contains_dagster_postgres(self) -> None:
         ecr = ECRComponentResource("test-energy-market")

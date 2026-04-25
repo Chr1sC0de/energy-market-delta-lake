@@ -1,6 +1,61 @@
-# AWS Python S3 Bucket Pulumi Template
+# AWS Pulumi Infrastructure
 
-A minimal Pulumi template for provisioning a single AWS S3 bucket using Python.
+Pulumi infrastructure for the AWS-hosted energy-market Dagster deployment.
+
+## Full Integration Tests
+
+The live integration workflow targets the existing `dev-ausenergymarket` stack by
+default. It applies the stack, then runs the AWS integration suite against the
+deployed resources.
+
+Prerequisites:
+
+- Pulumi CLI installed and logged in.
+- AWS credentials configured for the target account.
+- `uv` installed.
+- Docker or Podman available for Pulumi image builds.
+- Stack config secrets already set, for example via `scripts/setup_secrets`.
+
+Run the full workflow from this directory:
+
+```bash
+AWS_DEFAULT_REGION=ap-southeast-2 scripts/run-integration-tests
+```
+
+Run tests against an already-deployed stack:
+
+```bash
+AWS_DEFAULT_REGION=ap-southeast-2 scripts/run-integration-tests --skip-up
+```
+
+Include the no-op idempotency check after the integration suite:
+
+```bash
+AWS_DEFAULT_REGION=ap-southeast-2 scripts/run-integration-tests --with-idempotency
+```
+
+Override the stack when needed:
+
+```bash
+AWS_DEFAULT_REGION=ap-southeast-2 scripts/run-integration-tests --stack dev-ausenergymarket
+```
+
+The idempotency check runs:
+
+```bash
+pulumi preview --expect-no-changes --non-interactive --stack "$PULUMI_STACK"
+```
+
+Only run it after a successful `pulumi up`. The first deployment after changing
+Fargate images from `:latest` to immutable digests is expected to update the
+Fargate task definitions once; the no-op preview should pass after that rollout
+has been applied.
+
+The integration suite remains opt-in. To run it directly:
+
+```bash
+PULUMI_INTEGRATION_TESTS=1 PULUMI_STACK=dev-ausenergymarket uv run pytest tests/integration -v
+```
 
 ## Overview
 
