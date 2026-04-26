@@ -61,3 +61,16 @@ rather than directly.
 - [Marimo notebook service](../marimo/README.md)
 - [Repository architecture](../../docs/architecture.md)
 - [AWS Pulumi infrastructure](../../infrastructure/aws-pulumi/README.md)
+
+## Sync metadata
+
+- `sync.owner`: `docs`
+- `sync.sources`:
+  - `backend-services/authentication/main.py`
+  - `backend-services/compose.yaml`
+  - `backend-services/caddy/Caddyfile`
+- `sync.scope`: `interface`
+- `sync.qa`:
+  - `git diff --name-only`
+  - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`
+  - `verify links, diagrams, commands, paths, ports, env vars, and names`

@@ -8,6 +8,7 @@ workflow. The production workflow is the canonical one.
 - [Production data and orchestration flow](#production-data-and-orchestration-flow)
 - [Local development and testing workflow](#local-development-and-testing-workflow)
 - [Where to work](#where-to-work)
+- [Documentation maintenance](#documentation-maintenance)
 
 ## Production data and orchestration flow
 
@@ -97,3 +98,22 @@ Local workflow notes:
   - [aemo-etl ingestion flows](../backend-services/dagster-user/aemo-etl/docs/architecture/ingestion_flows.md)
 - For specs, migration notes, and design references:
   - [specs/README.md](../specs/README.md)
+
+## Documentation maintenance
+
+For the doc-sync contract, searchable `sync.sources` metadata, and the required
+`git diff` to `rg` to QA flow, use
+[documentation-sync.md](documentation-sync.md).
+
+## Sync metadata
+
+- `sync.owner`: `docs`
+- `sync.sources`:
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/sensors.py`
+  - `backend-services/compose.yaml`
+- `sync.scope`: `behavior`
+- `sync.qa`:
+  - `git diff --name-only`
+  - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`
+  - `verify links, diagrams, commands, paths, ports, env vars, and names`

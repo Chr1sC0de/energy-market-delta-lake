@@ -11,6 +11,7 @@ entrypoint used by the Dagster-based deployment.
 - [What this stack provisions](#what-this-stack-provisions)
 - [Architecture summary](#architecture-summary)
 - [Component order](#component-order)
+- [Component docs](#component-docs)
 - [Container images and service source](#container-images-and-service-source)
 - [Runtime behavior](#runtime-behavior)
 - [Configuration](#configuration)
@@ -118,6 +119,17 @@ In practical terms:
 - compute and service discovery follow
 - public-facing and Dagster runtime services are created last
 
+## Component docs
+
+Detailed subsystem docs live under [docs/](docs/README.md):
+
+- [VPC architecture](docs/vpc.md)
+- [Connectivity](docs/connectivity.md)
+- [Identity and discovery](docs/identity-and-discovery.md)
+- [Storage](docs/storage.md)
+- [Runtime](docs/runtime.md)
+- [Edge and access](docs/edge-and-access.md)
+
 ## Container images and service source
 
 `components/ecr.py` builds and pushes the deployed images directly from the
@@ -214,5 +226,19 @@ system's services and Dagster workflows.
 - [Repository overview](../../README.md)
 - [Repository architecture](../../docs/architecture.md)
 - [Repository workflow](../../docs/workflow.md)
+- [AWS Pulumi component docs](docs/README.md)
 - [VPC architecture notes](docs/vpc.md)
 - [Local backend-services stack](../../backend-services/README.md)
+
+## Sync metadata
+
+- `sync.owner`: `docs`
+- `sync.sources`:
+  - `infrastructure/aws-pulumi/__main__.py`
+  - `infrastructure/aws-pulumi/configs.py`
+  - `infrastructure/aws-pulumi/Pulumi.dev-ausenergymarket.yaml`
+- `sync.scope`: `architecture`
+- `sync.qa`:
+  - `git diff --name-only`
+  - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`
+  - `verify links, diagrams, commands, paths, ports, env vars, and names`

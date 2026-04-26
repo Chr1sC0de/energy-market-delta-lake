@@ -38,3 +38,16 @@ server at a different notebook directory.
 - [Local backend-services stack](../README.md)
 - [Authentication service](../authentication/README.md)
 - [Repository workflow](../../docs/workflow.md)
+
+## Sync metadata
+
+- `sync.owner`: `docs`
+- `sync.sources`:
+  - `backend-services/marimo/src/marimoserver/main.py`
+  - `backend-services/compose.yaml`
+  - `backend-services/caddy/Caddyfile`
+- `sync.scope`: `interface`
+- `sync.qa`:
+  - `git diff --name-only`
+  - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`
+  - `verify links, diagrams, commands, paths, ports, env vars, and names`

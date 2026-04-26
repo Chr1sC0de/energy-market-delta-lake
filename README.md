@@ -161,6 +161,7 @@ Follow the docs in repository order:
 ### `docs/`
 
 - [docs/architecture.md](docs/architecture.md)
+- [docs/documentation-sync.md](docs/documentation-sync.md)
 - [docs/workflow.md](docs/workflow.md)
 
 ### `backend-services/`
@@ -178,6 +179,7 @@ Follow the docs in repository order:
 ### `infrastructure/aws-pulumi/`
 
 - [infrastructure/aws-pulumi/README.md](infrastructure/aws-pulumi/README.md)
+- [infrastructure/aws-pulumi/docs/README.md](infrastructure/aws-pulumi/docs/README.md)
 - [infrastructure/aws-pulumi/docs/vpc.md](infrastructure/aws-pulumi/docs/vpc.md)
 
 ### `specs/`
@@ -215,3 +217,16 @@ pulumi up
 
 See [infrastructure/aws-pulumi/README.md](infrastructure/aws-pulumi/README.md)
 for stack details, component breakdown, and integration-test commands.
+
+## Sync metadata
+
+- `sync.owner`: `docs`
+- `sync.sources`:
+  - `infrastructure/aws-pulumi/__main__.py`
+  - `backend-services/compose.yaml`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
+- `sync.scope`: `architecture`
+- `sync.qa`:
+  - `git diff --name-only`
+  - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`
+  - `verify links, diagrams, commands, paths, ports, env vars, and names`

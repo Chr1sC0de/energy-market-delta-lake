@@ -18,3 +18,9 @@ repos:
         # Add per-project `args: [--ignore, RULE]` only when a concrete
         # Dockerfile pattern makes that exception necessary.
         files: ^(backend-services/.+/Dockerfile|infrastructure/aws-pulumi/.+/Dockerfile)$
+        # .pre-commit-config.yaml
+hooks:
+  - id: lychee
+    name: lychee link check
+    language: markdown
+    entry: lychee --offline *.md

@@ -462,3 +462,18 @@ The same socket path is hard-coded in `dagster.local.yaml` under
 `run_launcher.config.container_kwargs.volumes` for run-worker containers
 (`/run/user/1000/podman/podman.sock`). If your UID is not `1000`, update
 that path accordingly.
+
+## Sync metadata
+
+- `sync.owner`: `docs`
+- `sync.sources`:
+  - `backend-services/compose.yaml`
+  - `backend-services/.envrc`
+  - `backend-services/localstack/init-s3.sh`
+  - `backend-services/dagster-core/dagster.local.yaml`
+  - `backend-services/dagster-core/dagster.aws.yaml`
+- `sync.scope`: `operations`
+- `sync.qa`:
+  - `git diff --name-only`
+  - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`
+  - `verify links, diagrams, commands, paths, ports, env vars, and names`

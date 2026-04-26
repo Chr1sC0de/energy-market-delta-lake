@@ -127,7 +127,21 @@ current Pulumi deployment.
 
 ## Related docs
 
+- [Documentation sync workflow](documentation-sync.md)
 - [Repository workflow](workflow.md)
 - [AWS Pulumi infrastructure](../infrastructure/aws-pulumi/README.md)
 - [aemo-etl architecture](../backend-services/dagster-user/aemo-etl/docs/architecture/high_level_architecture.md)
 - [Specs and design notes](../specs/README.md)
+
+## Sync metadata
+
+- `sync.owner`: `docs`
+- `sync.sources`:
+  - `infrastructure/aws-pulumi/__main__.py`
+  - `backend-services/compose.yaml`
+  - `backend-services/caddy/Caddyfile`
+- `sync.scope`: `architecture`
+- `sync.qa`:
+  - `git diff --name-only`
+  - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`
+  - `verify links, diagrams, commands, paths, ports, env vars, and names`
