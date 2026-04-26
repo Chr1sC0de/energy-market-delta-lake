@@ -1,6 +1,7 @@
 """Unit tests for defs/raw/gbb/hooks.py – all four hook classes."""
 
 import io
+import tempfile
 
 import polars as pl
 
@@ -69,6 +70,110 @@ def test_lowercase_columns_hook_mixed_case() -> None:
     out_df = pl.read_parquet(io.BytesIO(result))
     assert "cola" in out_df.columns
     assert "colb" in out_df.columns
+
+
+def test_lowercase_columns_hook_drops_mixed_case_duplicates() -> None:
+    df = pl.DataFrame(
+        {
+            "receiptlocationname": ["declared"],
+            "receiptlocationName": ["duplicate"],
+            "DeliveryLocationName": ["mixed"],
+        }
+    )
+    raw = _parquet_bytes(df)
+    hook = LowercaseColumnsHook()
+
+    result = hook.process("bucket", "key", raw)
+
+    out_df = pl.read_parquet(io.BytesIO(result))
+    assert out_df.columns == ["receiptlocationname", "deliverylocationname"]
+    assert out_df["receiptlocationname"].to_list() == ["declared"]
+    assert out_df["deliverylocationname"].to_list() == ["mixed"]
+
+
+def test_lowercase_columns_hook_deduplicates_mixed_case_pair() -> None:
+    df = pl.DataFrame({"ReceiptLocationName": ["kept"], "receiptlocationName": ["dup"]})
+    raw = _parquet_bytes(df)
+    hook = LowercaseColumnsHook()
+
+    result = hook.process("bucket", "key", raw)
+
+    out_df = pl.read_parquet(io.BytesIO(result))
+    assert out_df.columns == ["receiptlocationname"]
+    assert out_df["receiptlocationname"].to_list() == ["kept"]
+
+
+def test_lowercase_columns_hook_prefers_existing_lowercase_duplicate() -> None:
+    df = pl.DataFrame(
+        {
+            "ReceiptLocationName": ["mixed"],
+            "receiptlocationname": ["lowercase"],
+        }
+    )
+    raw = _parquet_bytes(df)
+    hook = LowercaseColumnsHook()
+
+    result = hook.process("bucket", "key", raw)
+
+    out_df = pl.read_parquet(io.BytesIO(result))
+    assert out_df.columns == ["receiptlocationname"]
+    assert out_df["receiptlocationname"].to_list() == ["lowercase"]
+
+
+def test_lowercase_columns_hook_drops_duplicate_without_renaming() -> None:
+    df = pl.DataFrame({"cola": ["lowercase"], "Cola": ["mixed"]})
+    raw = _parquet_bytes(df)
+    hook = LowercaseColumnsHook()
+
+    result = hook.process("bucket", "key", raw)
+
+    out_df = pl.read_parquet(io.BytesIO(result))
+    assert out_df.columns == ["cola"]
+    assert out_df["cola"].to_list() == ["lowercase"]
+
+
+def test_lowercase_columns_hook_normalizes_archived_nameplate_variants_for_delta() -> (
+    None
+):
+    archived_full_file = pl.DataFrame(
+        {
+            "FacilityName": ["full"],
+            "facilityid": [1],
+            "ReceiptLocationName": ["receipt"],
+            "DeliveryLocationName": ["delivery"],
+            "LastUpdated": ["2026-04-25"],
+        }
+    )
+    archived_current_file = pl.DataFrame(
+        {
+            "facilityname": ["current"],
+            "facilityid": [2],
+            "ReceiptLocationName": ["receipt"],
+            "DeliveryLocationName": ["delivery"],
+            "LastUpdated": ["2026-04-25"],
+        }
+    )
+    hook = LowercaseColumnsHook()
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        table_uri = f"{tmp_dir}/nameplate"
+        for source in [archived_full_file, archived_current_file]:
+            processed = pl.read_parquet(
+                io.BytesIO(
+                    hook.process("archive", "nameplate.parquet", _parquet_bytes(source))
+                )
+            )
+            processed.lazy().sink_delta(table_uri, mode="append")
+
+        out_schema = pl.scan_delta(table_uri).collect_schema()
+
+    assert out_schema.names() == [
+        "facilityname",
+        "facilityid",
+        "receiptlocationname",
+        "deliverylocationname",
+        "lastupdated",
+    ]
 
 
 # ---------------------------------------------------------------------------

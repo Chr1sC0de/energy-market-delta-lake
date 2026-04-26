@@ -94,4 +94,5 @@ defs = df_from_s3_keys_definitions_factory(
         "7-day forecast utilisation outlook for East Coast supply-demand balance. "
         "GASBB_FORECAST_UTILISATION_NEXT7 is updated daily."
     ),
+    silver_op_tags={"ecs/cpu": "1024", "ecs/memory": "8192"},
 )

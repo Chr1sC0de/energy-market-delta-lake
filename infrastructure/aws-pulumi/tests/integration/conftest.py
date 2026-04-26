@@ -150,6 +150,17 @@ def logs_client(integration_enabled: None, aws_region: str):
 
 
 @pytest.fixture(scope="session")
+def route53_client(integration_enabled: None):
+    """Boto3 Route53 client."""
+    try:
+        import boto3
+
+        return boto3.client("route53")
+    except ImportError as exc:
+        pytest.skip(f"boto3 not installed: {exc}")
+
+
+@pytest.fixture(scope="session")
 def s3_client(integration_enabled: None, aws_region: str):
     """Boto3 S3 client."""
     try:

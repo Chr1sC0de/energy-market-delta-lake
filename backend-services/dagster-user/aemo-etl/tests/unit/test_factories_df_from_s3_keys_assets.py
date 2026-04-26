@@ -277,7 +277,9 @@ def test_silver_asset_keeps_latest_source_file_per_surrogate_key(
     result = fn(input_df).sort("surrogate_key").collect()
 
     assert result["col1"].to_list() == ["newer", "only"]
-    sink_delta_spy.assert_called_once()
+    assert sink_delta_spy.call_count == 2
+    assert sink_delta_spy.call_args_list[0].args[1].endswith("/silver_input")
+    assert sink_delta_spy.call_args_list[1].args[1].endswith("/silver_current")
 
 
 def test_asset_with_object_hook(mocker: MockerFixture) -> None:

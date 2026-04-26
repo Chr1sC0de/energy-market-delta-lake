@@ -1,11 +1,9 @@
-from typing import Callable, Mapping
+from typing import Mapping
 
-import bs4
 from cron_descriptor import get_description
 from dagster import (
     DefaultScheduleStatus,
     Definitions,
-    OpExecutionContext,
     ScheduleDefinition,
     define_asset_job,
 )
@@ -29,6 +27,8 @@ from aemo_etl.factories.nemweb_public_files.ops.dynamic_nemweb_links_fetcher imp
 )
 from aemo_etl.factories.nemweb_public_files.ops.nemweb_link_fetcher import (
     HTTPNEMWebLinkFetcher,
+    TagFilter,
+    default_file_filter,
     default_folder_filter,
 )
 from aemo_etl.factories.nemweb_public_files.ops.nemweb_link_processor import (
@@ -51,9 +51,8 @@ def nemweb_public_files_definitions_factory(
     initial: int = 10,
     exp_base: int = 3,
     max_retry_time: int = 100,
-    folder_filter: Callable[
-        [OpExecutionContext, bs4.Tag], bool
-    ] = default_folder_filter,
+    folder_filter: TagFilter = default_folder_filter,
+    file_filter: TagFilter = default_file_filter,
     group_name: str = "gas_raw",
     tags: Mapping[str, str] | None = None,
     default_status: DefaultScheduleStatus = DefaultScheduleStatus.STOPPED,
@@ -91,7 +90,10 @@ def nemweb_public_files_definitions_factory(
         name=table_name,
         nemweb_relative_href=nemweb_relative_href,
         s3_landing_prefix=s3_prefix,
-        nemweb_link_fetcher=HTTPNEMWebLinkFetcher(folder_filter=folder_filter),
+        nemweb_link_fetcher=HTTPNEMWebLinkFetcher(
+            folder_filter=folder_filter,
+            file_filter=file_filter,
+        ),
         dynamic_nemweb_links_fetcher=FilteredDynamicNEMWebLinksFetcher(
             n_executors=n_executors,
             link_filter=InMemoryCachedLinkFilter(

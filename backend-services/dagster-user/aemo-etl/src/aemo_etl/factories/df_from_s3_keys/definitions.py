@@ -36,6 +36,8 @@ def df_from_s3_keys_definitions_factory(
     group_name: str | None = None,
     deps: Iterable[CoercibleToAssetDep] | None = None,
     description: str | None = None,
+    bronze_op_tags: Mapping[str, object] | None = None,
+    silver_op_tags: Mapping[str, object] | None = None,
 ) -> Definitions:
 
     bronze_key_prefix = ["bronze", domain]
@@ -54,6 +56,7 @@ def df_from_s3_keys_definitions_factory(
         io_manager_key="aemo_deltalake_ingest_partitioned_append_io_manager",
         deps=deps,
         description=f"Bronze dataset, contains full un-cleansed dataset.\n\n{description}",
+        op_tags=bronze_op_tags or {},
         metadata={
             "dagster/column_schema": get_metadata_schema(schema, schema_descriptions),
             "surrogate_key_sources": surrogate_key_sources,
@@ -87,6 +90,7 @@ def df_from_s3_keys_definitions_factory(
         io_manager_key="aemo_deltalake_overwrite_io_manager",
         ins={"df": AssetIn(bronze_asset.key)},
         description=f"Silver dataset, contains source-file deduplicated current rows.\n\n{description}",
+        op_tags=silver_op_tags or {},
         metadata={
             "dagster/column_schema": get_metadata_schema(schema, schema_descriptions),
             "surrogate_key_sources": surrogate_key_sources,

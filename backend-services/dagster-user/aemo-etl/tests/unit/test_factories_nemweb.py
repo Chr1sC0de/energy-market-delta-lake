@@ -108,6 +108,35 @@ def test_default_file_filter_normal(mocker: MockerFixture) -> None:
     assert default_file_filter(ctx, tag) is True  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "CurrentDay.zip",
+        "CURRENTDAY.ZIP",
+        "PublicRpts01.zip",
+        "publicrpts31.zip",
+    ],
+)
+def test_vicgas_file_filter_excludes_zip_bundles(
+    mocker: MockerFixture, filename: str
+) -> None:
+    from aemo_etl.defs.raw.nemweb_public_files import vicgas_file_filter
+
+    ctx = mocker.MagicMock()
+    tag = bs4.BeautifulSoup(f"<a>{filename}</a>", "html.parser").find("a")
+    assert vicgas_file_filter(ctx, tag) is False  # type: ignore[arg-type]
+
+
+def test_vicgas_file_filter_keeps_csv(mocker: MockerFixture) -> None:
+    from aemo_etl.defs.raw.nemweb_public_files import vicgas_file_filter
+
+    ctx = mocker.MagicMock()
+    tag = bs4.BeautifulSoup(
+        "<a>INT047_V4_HEATING_VALUES_1.CSV</a>", "html.parser"
+    ).find("a")
+    assert vicgas_file_filter(ctx, tag) is True  # type: ignore[arg-type]
+
+
 def test_soup_getter() -> None:
     soup = soup_getter("<html><body><a>link</a></body></html>")
     assert soup.find("a") is not None
@@ -553,6 +582,33 @@ def test_nemweb_public_files_definitions_factory_returns_definitions() -> None:
         n_executors=1,
     )
     assert isinstance(defs, Definitions)
+
+
+def test_nemweb_public_files_definitions_factory_passes_file_filter(
+    mocker: MockerFixture,
+) -> None:
+    file_filter = mocker.MagicMock(return_value=True)
+
+    defs = nemweb_public_files_definitions_factory(
+        domain="vicgas",
+        table_name="bronze_nemweb_public_files_vicgas_test",
+        nemweb_relative_href="REPORTS/CURRENT/VicGas",
+        cron_schedule="*/15 * * * *",
+        n_executors=1,
+        file_filter=file_filter,
+    )
+
+    asset = list(defs.assets)[0]  # type: ignore[call-overload]
+    fetcher_node = next(
+        n
+        for n in asset.node_def.nodes
+        if n.name.endswith("_nemweb_link_fetcher_op") and "dynamic" not in n.name
+    )
+    op_fn = fetcher_node.definition._compute_fn.decorated_fn  # type: ignore[union-attr]
+    idx = op_fn.__code__.co_freevars.index("fetcher")
+    fetcher = op_fn.__closure__[idx].cell_contents
+
+    assert fetcher.file_filter is file_filter
 
 
 def test_nemweb_definitions_request_getter_retries(mocker: MockerFixture) -> None:

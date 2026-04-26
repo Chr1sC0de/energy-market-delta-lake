@@ -161,7 +161,7 @@ class CaddyServerComponentResource(pulumi.ComponentResource):
                 # Find the EBS volume device: look for the nvme device that is
                 # NOT the root volume (nvme0n1) and is not a partition.
                 DEVICE=""
-                for attempt in $(seq 1 30); do
+                for attempt in $(seq 1 120); do
                     for dev in /dev/nvme[1-9]n1; do
                         if [ -b "$dev" ]; then
                             DEVICE="$dev"
@@ -173,7 +173,7 @@ class CaddyServerComponentResource(pulumi.ComponentResource):
                 done
 
                 if [ -z "$DEVICE" ]; then
-                    echo "ERROR: EBS volume not found after 150 seconds" >&2
+                    echo "ERROR: EBS volume not found after 600 seconds" >&2
                     exit 1
                 fi
 
@@ -198,7 +198,17 @@ class CaddyServerComponentResource(pulumi.ComponentResource):
                 # ECR login and pull
                 aws ecr get-login-password --region {a["region"]} | \\
                     docker login --username AWS --password-stdin {a["repo_uri"].split("/")[0]}
-                docker pull {a["repo_uri"]}:latest
+                for attempt in $(seq 1 30); do
+                    if docker pull {a["repo_uri"]}:latest; then
+                        break
+                    fi
+                    if [ "$attempt" -eq 30 ]; then
+                        echo "ERROR: failed to pull Caddy image after $attempt attempts" >&2
+                        exit 1
+                    fi
+                    echo "Waiting for Caddy image to be available... attempt $attempt"
+                    sleep 10
+                done
 
                 docker run -d \\
                     --restart unless-stopped \\
@@ -248,7 +258,9 @@ class CaddyServerComponentResource(pulumi.ComponentResource):
             volume_id=self._ebs_volume.id,
             # Stop the instance before detaching on destroy (safe for cert volumes)
             stop_instance_before_detaching=True,
-            opts=pulumi.ResourceOptions(parent=self.instance),
+            opts=pulumi.ResourceOptions(
+                parent=self.instance, delete_before_replace=True
+            ),
         )
 
     def _setup_route53(self) -> None:

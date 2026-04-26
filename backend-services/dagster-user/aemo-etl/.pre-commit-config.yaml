@@ -33,11 +33,15 @@ repos:
         language: system
         entry: uv run shfmt --write
         files: ^scripts/.*
+        types:
+          - shell
       - id: shellcheck
         name: shellcheck
         language: system
         entry: uv run shellcheck
         files: ^scripts/.*
+        types:
+          - shell
       - id: ruff-check
         name: ruff check
         language: system

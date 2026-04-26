@@ -16,6 +16,13 @@ def gbb_folder_filter(_: OpExecutionContext, tag: bs4.Tag) -> bool:
     return tag_text not in ["[To Parent Directory]", "DUPLICATE"]
 
 
+def vicgas_file_filter(_: OpExecutionContext, tag: bs4.Tag) -> bool:
+    filename = tag.text.strip().lower()
+    return filename != "currentday.zip" and not (
+        filename.startswith("publicrpts") and filename.endswith(".zip")
+    )
+
+
 @definitions
 def defs() -> Definitions:
     return Definitions.merge(
@@ -25,6 +32,7 @@ def defs() -> Definitions:
             nemweb_relative_href="REPORTS/CURRENT/VicGas",
             cron_schedule="*/15 * * * *",
             n_executors=10,
+            file_filter=vicgas_file_filter,
             group_name="integration",
             default_status=DEFAULT_SCHEDULE_STATUS,
         ),

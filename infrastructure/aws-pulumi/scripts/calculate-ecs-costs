@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+
+CLUSTER="dev-energy-market-dagster-cluster"
+REGION=ap-southeast-2
+
+# Fargate pricing (adjust for your region)
+VCPU_PRICE=0.04048
+MEM_PRICE=0.004445
+
+# Time window (last 24h)
+START_TIME=$(date -u -d "24 hours ago" +"%Y-%m-%dT%H:%M:%SZ")
+
+TOTAL_COST=0
+
+echo "Fetching stopped tasks from last 24h..."
+
+TASK_ARNS=$(aws ecs list-tasks \
+	--cluster "$CLUSTER" \
+	--region "$REGION" \
+	--desired-status STOPPED \
+	--query 'taskArns[]' \
+	--output text)
+
+for TASK in $TASK_ARNS; do
+	DESC=$(aws ecs describe-tasks \
+		--cluster "$CLUSTER" \
+		--tasks "$TASK" \
+		--region "$REGION")
+
+	STOPPED_AT=$(echo "$DESC" | jq -r '.tasks[0].stoppedAt')
+	STARTED_AT=$(echo "$DESC" | jq -r '.tasks[0].startedAt')
+
+	# Skip tasks older than 24h
+	if [[ "$STOPPED_AT" < "$START_TIME" ]]; then
+		continue
+	fi
+
+	TASK_DEF=$(echo "$DESC" | jq -r '.tasks[0].taskDefinitionArn')
+
+	DEF=$(aws ecs describe-task-definition \
+		--task-definition "$TASK_DEF" \
+		--region "$REGION")
+
+	CPU=$(echo "$DEF" | jq -r '.taskDefinition.cpu')
+	MEM=$(echo "$DEF" | jq -r '.taskDefinition.memory')
+
+	# Convert CPU units to vCPU (1024 units = 1 vCPU)
+	VCPU=$(echo "$CPU / 1024" | bc -l)
+	MEM_GB=$(echo "$MEM / 1024" | bc -l)
+
+	# Calculate runtime in seconds
+	START_SEC=$(date -d "$STARTED_AT" +%s)
+	STOP_SEC=$(date -d "$STOPPED_AT" +%s)
+	DURATION_SEC=$((STOP_SEC - START_SEC))
+
+	HOURS=$(echo "$DURATION_SEC / 3600" | bc -l)
+
+	COST=$(echo "($VCPU * $VCPU_PRICE + $MEM_GB * $MEM_PRICE) * $HOURS" | bc -l)
+
+	TOTAL_COST=$(echo "$TOTAL_COST + $COST" | bc -l)
+
+	echo "Task: $TASK ran ${HOURS}h → Cost: \$${COST}, Total: \$${TOTAL_COST}"
+done
+
+echo "-----------------------------------"
+echo "Estimated total cost (24h): \$${TOTAL_COST}"

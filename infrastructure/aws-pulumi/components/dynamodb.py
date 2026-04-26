@@ -13,10 +13,8 @@ class DeltaLockingTableComponentResource(pulumi.ComponentResource):
     Sort key:      fileName  (String)
     Billing:       PAY_PER_REQUEST
 
-    The table is retained on stack destruction (retain_on_delete=True) to
-    protect live data.  On the next pulumi up the table is automatically
-    re-imported rather than recreated — matching the same create-or-adopt
-    pattern used by S3BucketsComponentResource.
+    Existing retained tables can be adopted by setting
+    `aws-pulumi:adopt_existing_delta_log_table=true` before running Pulumi.
     """
 
     table: aws.dynamodb.Table
@@ -30,9 +28,19 @@ class DeltaLockingTableComponentResource(pulumi.ComponentResource):
         self.name = name
         self.child_opts = pulumi.ResourceOptions(parent=self)
 
-        try:
-            aws.dynamodb.get_table(name=TABLE_NAME)
-            # Table already exists — adopt it rather than create it.
+        config = pulumi.Config()
+        adopt_existing_table = (
+            config.get_bool("adopt_existing_delta_log_table") or False
+        )
+        table_exists = False
+        if adopt_existing_table:
+            try:
+                aws.dynamodb.get_table(name=TABLE_NAME)
+                table_exists = True
+            except Exception:
+                table_exists = False
+
+        if table_exists:
             self.table = aws.dynamodb.Table(
                 f"{name}-delta-locking-table",
                 name=TABLE_NAME,
@@ -49,8 +57,7 @@ class DeltaLockingTableComponentResource(pulumi.ComponentResource):
                     import_=TABLE_NAME,
                 ),
             )
-        except Exception:
-            # Table does not exist — create it fresh.
+        else:
             self.table = aws.dynamodb.Table(
                 f"{name}-delta-locking-table",
                 name=TABLE_NAME,
