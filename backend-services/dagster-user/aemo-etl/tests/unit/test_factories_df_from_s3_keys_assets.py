@@ -255,7 +255,7 @@ def test_asset_allows_existing_surrogate_key_from_new_source_file(
 def test_silver_asset_keeps_latest_source_file_per_surrogate_key(
     mocker: MockerFixture,
 ) -> None:
-    sink_delta_spy = mocker.spy(pl.LazyFrame, "sink_delta")
+    sink_parquet_spy = mocker.spy(pl.LazyFrame, "sink_parquet")
     asset_def = silver_df_from_s3_keys_asset_factory(
         name="silver_test_asset",
         key_prefix=["silver", "gbb"],
@@ -277,9 +277,11 @@ def test_silver_asset_keeps_latest_source_file_per_surrogate_key(
     result = fn(input_df).sort("surrogate_key").collect()
 
     assert result["col1"].to_list() == ["newer", "only"]
-    assert sink_delta_spy.call_count == 2
-    assert sink_delta_spy.call_args_list[0].args[1].endswith("/silver_input")
-    assert sink_delta_spy.call_args_list[1].args[1].endswith("/silver_current")
+    assert sink_parquet_spy.call_count == 2
+    assert sink_parquet_spy.call_args_list[0].args[1].endswith("/silver_input.parquet")
+    assert (
+        sink_parquet_spy.call_args_list[1].args[1].endswith("/silver_current.parquet")
+    )
 
 
 def test_asset_with_object_hook(mocker: MockerFixture) -> None:

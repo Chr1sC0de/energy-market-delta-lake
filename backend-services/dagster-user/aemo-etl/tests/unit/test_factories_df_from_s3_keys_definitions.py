@@ -50,7 +50,7 @@ def test_df_from_s3_keys_definitions_factory_wires_bronze_and_silver() -> None:
     )
     assert (
         assets_by_key[silver_key].get_io_manager_key_for_asset_key(silver_key)
-        == "aemo_deltalake_overwrite_io_manager"
+        == "aemo_parquet_overwrite_io_manager"
     )
     assert assets_by_key[silver_key].keys_by_input_name == {"df": bronze_key}
     assert (

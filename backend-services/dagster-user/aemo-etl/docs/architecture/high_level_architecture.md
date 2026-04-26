@@ -173,7 +173,7 @@ Example defaults:
 
 ## S3-backed IO managers
 
-`src/aemo_etl/defs/resources.py` defines three custom Delta-oriented IO managers:
+`src/aemo_etl/defs/resources.py` defines three Delta-oriented IO managers plus one Parquet overwrite IO manager:
 
 - `aemo_deltalake_append_io_manager`
   - append mode with schema merge
@@ -181,8 +181,10 @@ Example defaults:
   - overwrite mode with schema merge
 - `aemo_deltalake_ingest_partitioned_append_io_manager`
   - append mode partitioned by `ingested_date`
+- `aemo_parquet_overwrite_io_manager`
+  - overwrites a Parquet dataset directory with the current snapshot
 
-These managers persist `polars.LazyFrame` outputs to Delta tables in the AEMO bucket using the `dagster/uri` asset metadata. They also publish preview, row count, and schema metadata back into Dagster.
+The Delta managers persist `polars.LazyFrame` outputs to Delta tables in the AEMO bucket using the `dagster/uri` asset metadata. The Parquet manager overwrites a Parquet dataset directory at the same metadata URI contract. All managers publish preview, row count, and schema metadata back into Dagster.
 
 ## Module map
 

@@ -2,7 +2,7 @@
 
 ## Code change
 
-- Run relevant QA. Use `prek` where it fits.
+- Run relevant QA. Use `git add` and `prek` where it fits.
 - Sync maintained docs with impl/config changes.
 
 ## Doc sync
@@ -16,9 +16,9 @@
 ## Flow
 
 1. `git diff --name-only`
-2. `rg` changed path in maintained docs
-3. update every doc whose `sync.sources` matches
-4. run doc QA
+1. `rg` changed path in maintained docs
+1. update every doc whose `sync.sources` matches
+1. run doc QA
 
 Commands:
 

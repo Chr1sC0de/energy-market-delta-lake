@@ -48,7 +48,7 @@ vicgas_asset_set = zip(
     get_asset_keys(["bronze", "vicgas"], "bronze_int"),
     get_asset_keys(["silver", "vicgas"], "silver_int"),
     repeat("bronze/vicgas"),
-    repeat(1000),
+    repeat(10),
 )
 
 all_asset_key_sets = [*gbb_asset_set, *vicgas_asset_set]

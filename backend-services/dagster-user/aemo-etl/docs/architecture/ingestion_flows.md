@@ -114,14 +114,14 @@ sequenceDiagram
     DeltaBronze->>SilverAsset: Dependency update observed
     SilverAsset->>DeltaBronze: Read bronze Delta table
     SilverAsset->>SilverAsset: Sort by source recency and deduplicate on surrogate_key
-    SilverAsset->>DeltaSilver: Overwrite current snapshot
-    DeltaSilver->>GasModel: Trigger shared dimensions or fact assets when selected as input
+    SilverAsset->>ParquetSilver: Overwrite current Parquet snapshot dataset
+    ParquetSilver->>GasModel: Trigger shared dimensions or fact assets when selected as input
 ```
 
 Trigger and output notes:
 
 - The bronze run can come from an event-driven sensor or from a manual asset launch with explicit `s3_keys`.
-- Bronze uses `aemo_deltalake_ingest_partitioned_append_io_manager`; silver uses `aemo_deltalake_overwrite_io_manager`.
+- Bronze uses `aemo_deltalake_ingest_partitioned_append_io_manager`; `df_from_s3_keys` silver uses `aemo_parquet_overwrite_io_manager`.
 - A representative downstream example is `silver_gas_fact_operational_meter_flow`, which reads VICGAS silver inputs plus shared dimensions and writes a `silver/gas_model/...` Delta table.
 
 ## LocalStack and S3-compatible behavior
@@ -140,7 +140,9 @@ When `AWS_ENDPOINT_URL` points at LocalStack, the same flow runs against local S
 - `sync.sources`:
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/sensors.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/unzipper/definitions.py`
 - `sync.scope`: `behavior`
 - `sync.qa`:

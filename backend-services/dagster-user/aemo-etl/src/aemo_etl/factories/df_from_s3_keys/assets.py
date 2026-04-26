@@ -9,7 +9,7 @@ from dagster import (
     asset,
 )
 from dagster_aws.s3 import S3Resource
-from polars import LazyFrame, col, lit, scan_delta
+from polars import LazyFrame, col, lit, scan_delta, scan_parquet
 from polars._typing import PolarsDataType
 from types_boto3_s3 import S3Client
 
@@ -190,19 +190,20 @@ def silver_df_from_s3_keys_asset_factory(
 
     asset_kwargs.setdefault("metadata", {})
 
-    asset_kwargs.setdefault("kinds", {"table", "deltalake"})
+    asset_kwargs.setdefault("kinds", {"table", "parquet"})
 
     @asset(**asset_kwargs)
     def silver_asset(df: LazyFrame) -> LazyFrame:
         tmp_dir = tempfile.mkdtemp()
-        input_uri = f"{tmp_dir}/silver_input"
-        output_uri = f"{tmp_dir}/silver_current"
-        df.sink_delta(input_uri, mode="append")
-        cached_df = scan_delta(input_uri)
+        input_path = f"{tmp_dir}/silver_input.parquet"
+        output_path = f"{tmp_dir}/silver_current.parquet"
+
+        df.sink_parquet(input_path)
+        cached_df = scan_parquet(input_path)
         deduped = cached_df.sort("source_file", descending=True).unique(
             subset=["surrogate_key"], keep="first", maintain_order=True
         )
-        deduped.sink_delta(output_uri, mode="append")
-        return scan_delta(output_uri)
+        deduped.sink_parquet(output_path)
+        return scan_parquet(output_path)
 
     return silver_asset

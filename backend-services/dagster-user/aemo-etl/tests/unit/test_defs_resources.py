@@ -1,4 +1,4 @@
-"""Unit tests for defs/resources.py – PolarsDataFrameSinkDeltaIoManager."""
+"""Unit tests for defs/resources.py IO managers."""
 
 from typing import Any
 from unittest.mock import MagicMock
@@ -8,7 +8,11 @@ from dagster import Definitions
 from pytest_mock import MockerFixture
 
 from aemo_etl.configs import DAGSTER_URI
-from aemo_etl.defs.resources import PolarsDataFrameSinkDeltaIoManager, defs
+from aemo_etl.defs.resources import (
+    PolarsDataFrameSinkDeltaIoManager,
+    PolarsDataFrameSinkParquetIoManager,
+    defs,
+)
 
 _URI = "s3://test-bucket/table"
 _SMALL_DF = pl.LazyFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
@@ -143,11 +147,116 @@ def test_load_input(mocker: MockerFixture) -> None:
     assert isinstance(result, pl.LazyFrame)
 
 
+def test_handle_output_parquet_builds_metadata_before_write(
+    mocker: MockerFixture,
+) -> None:
+    io_mgr = PolarsDataFrameSinkParquetIoManager()
+    ctx = _make_output_context(
+        mocker,
+        definition_metadata={"dagster/column_schema": "pre-defined"},
+    )
+    events: list[str] = []
+
+    def _get_lazyframe_num_rows(_: pl.LazyFrame) -> int:
+        events.append("row_count")
+        return 3
+
+    def _write_s3_parquet_dataset(_uri: str, _obj: pl.LazyFrame) -> None:
+        events.append("write_parquet")
+
+    mocker.patch(
+        "aemo_etl.defs.resources.get_lazyframe_num_rows", _get_lazyframe_num_rows
+    )
+    mocker.patch(
+        "aemo_etl.defs.resources._write_s3_parquet_dataset",
+        _write_s3_parquet_dataset,
+    )
+
+    io_mgr.handle_output(ctx, _SMALL_DF)
+
+    assert events == ["row_count", "write_parquet"]
+
+
+def test_handle_output_parquet_auto_schema(mocker: MockerFixture) -> None:
+    io_mgr = PolarsDataFrameSinkParquetIoManager()
+    ctx = _make_output_context(mocker, definition_metadata={})
+    mocker.patch("aemo_etl.defs.resources._write_s3_parquet_dataset")
+
+    io_mgr.handle_output(ctx, _SMALL_DF)
+    added = ctx.add_output_metadata.call_args[0][0]
+    assert "preview" in added
+    assert "dagster/column_schema" in added
+    assert "dagster/row_count" in added
+
+
+def test_handle_output_parquet_with_column_description(
+    mocker: MockerFixture,
+) -> None:
+    io_mgr = PolarsDataFrameSinkParquetIoManager()
+    ctx = _make_output_context(
+        mocker,
+        definition_metadata={"column_description": {"a": "col a desc"}},
+    )
+    mocker.patch("aemo_etl.defs.resources._write_s3_parquet_dataset")
+
+    io_mgr.handle_output(ctx, _SMALL_DF)
+
+    added = ctx.add_output_metadata.call_args[0][0]
+    assert "dagster/column_schema" in added
+
+
+def test_handle_output_parquet_skips_schema_when_defined(
+    mocker: MockerFixture,
+) -> None:
+    io_mgr = PolarsDataFrameSinkParquetIoManager()
+    ctx = _make_output_context(
+        mocker,
+        definition_metadata={"dagster/column_schema": "pre-defined"},
+    )
+    mocker.patch("aemo_etl.defs.resources._write_s3_parquet_dataset")
+
+    io_mgr.handle_output(ctx, _SMALL_DF)
+    added = ctx.add_output_metadata.call_args[0][0]
+    assert "dagster/column_schema" not in added
+
+
+def test_handle_output_parquet_uses_local_writer_for_local_paths(
+    mocker: MockerFixture,
+) -> None:
+    io_mgr = PolarsDataFrameSinkParquetIoManager()
+    ctx = _make_output_context(mocker, uri="/tmp/test-table")
+    mocker.patch("aemo_etl.defs.resources._write_local_parquet_dataset")
+
+    io_mgr.handle_output(ctx, _SMALL_DF)
+
+
+def test_load_input_parquet(mocker: MockerFixture) -> None:
+    io_mgr = PolarsDataFrameSinkParquetIoManager()
+    ctx = _make_input_context(mocker)
+    mock_lf = pl.LazyFrame({"a": [1]})
+    scan_parquet = mocker.patch(
+        "aemo_etl.defs.resources.scan_parquet",
+        return_value=mock_lf,
+    )
+
+    result = io_mgr.load_input(ctx)
+
+    assert isinstance(result, pl.LazyFrame)
+    scan_parquet.assert_called_once_with("s3://test-bucket/table/*.parquet")
+
+
 # ---------------------------------------------------------------------------
 # defs() function
 # ---------------------------------------------------------------------------
 
 
-def test_defs_returns_definitions_with_three_io_managers() -> None:
+def test_defs_returns_definitions_with_four_io_managers() -> None:
     d = defs()
     assert isinstance(d, Definitions)
+    assert d.resources is not None
+    assert set(d.resources) == {
+        "aemo_deltalake_append_io_manager",
+        "aemo_deltalake_overwrite_io_manager",
+        "aemo_deltalake_ingest_partitioned_append_io_manager",
+        "aemo_parquet_overwrite_io_manager",
+    }

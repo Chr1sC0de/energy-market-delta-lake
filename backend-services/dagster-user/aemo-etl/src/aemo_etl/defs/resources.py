@@ -10,7 +10,7 @@ from dagster import (
     definitions,
 )
 from dagster._core.definitions.metadata import RawMetadataValue
-from polars import LazyFrame, scan_delta
+from polars import LazyFrame, scan_delta, scan_parquet
 
 from aemo_etl.configs import DAGSTER_URI
 from aemo_etl.utils import get_lazyframe_num_rows, get_metadata_schema
@@ -89,6 +89,64 @@ class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
         return scan_delta(target_uri, **self.scan_delta_kwargs)
 
 
+def _parquet_dataset_glob(uri: str) -> str:
+    return f"{uri.rstrip('/')}/*.parquet"
+
+
+class PolarsDataFrameSinkParquetIoManager(ConfigurableIOManager):
+    preview_row_count: int = 5
+
+    @override
+    def handle_output(self, context: OutputContext, obj: LazyFrame) -> None:
+        assert context.definition_metadata is not None, (
+            f"asset must set metadata {DAGSTER_URI}"
+        )
+        assert DAGSTER_URI in context.definition_metadata, (
+            f"asset must set metadata {DAGSTER_URI}"
+        )
+        target_uri = context.definition_metadata[DAGSTER_URI]
+
+        markdown_preview = (
+            obj.head(self.preview_row_count).collect().to_pandas().to_markdown()
+        )
+        output_metadata: dict[str, RawMetadataValue] = {}
+
+        if "dagster/column_schema" not in context.definition_metadata:
+            if "column_description" in context.definition_metadata:
+                updated_column_schema = get_metadata_schema(
+                    obj.collect_schema(),
+                    context.definition_metadata["column_description"],
+                )
+            else:
+                updated_column_schema = get_metadata_schema(obj.collect_schema())
+
+            output_metadata["dagster/column_schema"] = updated_column_schema
+
+        output_metadata.update(
+            {
+                "preview": MetadataValue.md(markdown_preview),
+                "dagster/row_count": get_lazyframe_num_rows(obj),
+            }
+        )
+
+        obj.sink_parquet(f"{target_uri.rstrip('/')}/part-00000.parquet", mkdir=True)
+
+        context.add_output_metadata(output_metadata)
+
+    @override
+    def load_input(self, context: InputContext) -> LazyFrame:
+        assert context.upstream_output is not None, "echo no upstream output found"
+        assert context.upstream_output.definition_metadata is not None, (
+            f"upstream asset must set metadata {DAGSTER_URI}"
+        )
+        assert DAGSTER_URI in context.upstream_output.definition_metadata, (
+            f"upstream asset must set metadata {DAGSTER_URI}"
+        )
+
+        target_uri = context.upstream_output.definition_metadata[DAGSTER_URI]
+        return scan_parquet(_parquet_dataset_glob(target_uri))
+
+
 @definitions
 def defs() -> Definitions:
     return Definitions(
@@ -118,5 +176,6 @@ def defs() -> Definitions:
                     },
                 },
             ),
+            "aemo_parquet_overwrite_io_manager": PolarsDataFrameSinkParquetIoManager(),
         }
     )

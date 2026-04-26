@@ -87,7 +87,7 @@ def df_from_s3_keys_definitions_factory(
         key_prefix=silver_key_prefix,
         name=silver_table_name,
         group_name=f"{group_name}_cleansed",
-        io_manager_key="aemo_deltalake_overwrite_io_manager",
+        io_manager_key="aemo_parquet_overwrite_io_manager",
         ins={"df": AssetIn(bronze_asset.key)},
         description=f"Silver dataset, contains source-file deduplicated current rows.\n\n{description}",
         op_tags=silver_op_tags or {},
