@@ -75,7 +75,7 @@ def _safe_json(metadata: Mapping[str, object]) -> str | None:
     key_prefix=KEY_PREFIX,
     group_name="gas_raw",
     description="Table metadata asset",
-    io_manager_key="aemo_deltalake_overwrite_io_manager",
+    io_manager_key="aemo_parquet_overwrite_io_manager",
     metadata={
         "dagster/table_name": f"aemo.{DOMAIN}.{TABLE_NAME}",
         "dagster/uri": f"s3://{AEMO_BUCKET}/{'/'.join(KEY_PREFIX)}/{TABLE_NAME}",
@@ -199,7 +199,7 @@ def _silver_extract_column_schema_field(raw: str | None, field: str) -> str | No
     group_name="gas_model",
     description="Silver table metadata asset — flattened metadata dict from bronze",
     ins={"df": AssetIn(bronze_table_metadata.key)},
-    io_manager_key="aemo_deltalake_overwrite_io_manager",
+    io_manager_key="aemo_parquet_overwrite_io_manager",
     metadata={
         "dagster/table_name": f"aemo.{DOMAIN}.{SILVER_TABLE_NAME}",
         "dagster/uri": f"s3://{AEMO_BUCKET}/{'/'.join(SILVER_KEY_PREFIX)}/{SILVER_TABLE_NAME}",

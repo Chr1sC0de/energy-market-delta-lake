@@ -95,6 +95,25 @@ What to expect locally:
 
 This default-stopped behavior is intentional and comes from `DEFAULT_SENSOR_STATUS` and `DEFAULT_SCHEDULE_STATUS` in `src/aemo_etl/configs.py`.
 
+For the debugger-driven local stack, use:
+
+```bash
+scripts/setup-debugging-environment
+```
+
+That script now starts:
+
+- a LocalStack container on `localhost:4566`
+- a PostgreSQL container on `localhost:5432`
+- `dg dev` with `workspace.dev.yaml`
+
+During that flow, `dagster.dev.yaml` configures Dagster run, schedule, and event-log storage to use the local Postgres container via:
+
+- `DAGSTER_POSTGRES_HOSTNAME=localhost`
+- `DAGSTER_POSTGRES_USER=dagster_user`
+- `DAGSTER_POSTGRES_PASSWORD=dagster_pass`
+- `DAGSTER_POSTGRES_DB=dagster`
+
 ## Test assumptions
 
 Integration tests in `tests/integration/conftest.py` make these assumptions:
@@ -132,6 +151,9 @@ make run-prek
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/configs.py`
   - `backend-services/dagster-user/aemo-etl/tests/integration/conftest.py`
   - `backend-services/dagster-user/aemo-etl/.localstack.env`
+  - `backend-services/dagster-user/aemo-etl/scripts/setup-debugging-environment`
+  - `backend-services/dagster-user/aemo-etl/dagster.dev.yaml`
+  - `backend-services/dagster-user/aemo-etl/workspace.dev.yaml`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

@@ -11,6 +11,7 @@ from aemo_etl.configs import DAGSTER_URI
 from aemo_etl.defs.resources import (
     PolarsDataFrameSinkDeltaIoManager,
     PolarsDataFrameSinkParquetIoManager,
+    _parquet_dataset_glob,
     defs,
 )
 
@@ -147,6 +148,11 @@ def test_load_input(mocker: MockerFixture) -> None:
     assert isinstance(result, pl.LazyFrame)
 
 
+def test_parquet_dataset_glob() -> None:
+    assert _parquet_dataset_glob("s3://test-bucket/table") == "s3://test-bucket/table/*.parquet"
+    assert _parquet_dataset_glob("/tmp/test-table/") == "/tmp/test-table/*.parquet"
+
+
 def test_handle_output_parquet_builds_metadata_before_write(
     mocker: MockerFixture,
 ) -> None:
@@ -161,28 +167,29 @@ def test_handle_output_parquet_builds_metadata_before_write(
         events.append("row_count")
         return 3
 
-    def _write_s3_parquet_dataset(_uri: str, _obj: pl.LazyFrame) -> None:
-        events.append("write_parquet")
+    def _sink_parquet(
+        _: pl.LazyFrame, *_args: object, **_kwargs: object
+    ) -> None:
+        events.append("sink_parquet")
 
     mocker.patch(
         "aemo_etl.defs.resources.get_lazyframe_num_rows", _get_lazyframe_num_rows
     )
-    mocker.patch(
-        "aemo_etl.defs.resources._write_s3_parquet_dataset",
-        _write_s3_parquet_dataset,
-    )
+    mocker.patch.object(pl.LazyFrame, "sink_parquet", _sink_parquet)
 
     io_mgr.handle_output(ctx, _SMALL_DF)
 
-    assert events == ["row_count", "write_parquet"]
+    assert events == ["row_count", "sink_parquet"]
 
 
 def test_handle_output_parquet_auto_schema(mocker: MockerFixture) -> None:
     io_mgr = PolarsDataFrameSinkParquetIoManager()
     ctx = _make_output_context(mocker, definition_metadata={})
-    mocker.patch("aemo_etl.defs.resources._write_s3_parquet_dataset")
+    sink_parquet = mocker.patch.object(pl.LazyFrame, "sink_parquet", return_value=None)
 
     io_mgr.handle_output(ctx, _SMALL_DF)
+
+    sink_parquet.assert_called_once_with("s3://test-bucket/table/part-00000.parquet", mkdir=True)
     added = ctx.add_output_metadata.call_args[0][0]
     assert "preview" in added
     assert "dagster/column_schema" in added
@@ -197,7 +204,7 @@ def test_handle_output_parquet_with_column_description(
         mocker,
         definition_metadata={"column_description": {"a": "col a desc"}},
     )
-    mocker.patch("aemo_etl.defs.resources._write_s3_parquet_dataset")
+    mocker.patch.object(pl.LazyFrame, "sink_parquet", return_value=None)
 
     io_mgr.handle_output(ctx, _SMALL_DF)
 
@@ -213,9 +220,10 @@ def test_handle_output_parquet_skips_schema_when_defined(
         mocker,
         definition_metadata={"dagster/column_schema": "pre-defined"},
     )
-    mocker.patch("aemo_etl.defs.resources._write_s3_parquet_dataset")
+    mocker.patch.object(pl.LazyFrame, "sink_parquet", return_value=None)
 
     io_mgr.handle_output(ctx, _SMALL_DF)
+
     added = ctx.add_output_metadata.call_args[0][0]
     assert "dagster/column_schema" not in added
 
@@ -225,9 +233,11 @@ def test_handle_output_parquet_uses_local_writer_for_local_paths(
 ) -> None:
     io_mgr = PolarsDataFrameSinkParquetIoManager()
     ctx = _make_output_context(mocker, uri="/tmp/test-table")
-    mocker.patch("aemo_etl.defs.resources._write_local_parquet_dataset")
+    sink_parquet = mocker.patch.object(pl.LazyFrame, "sink_parquet", return_value=None)
 
     io_mgr.handle_output(ctx, _SMALL_DF)
+
+    sink_parquet.assert_called_once_with("/tmp/test-table/part-00000.parquet", mkdir=True)
 
 
 def test_load_input_parquet(mocker: MockerFixture) -> None:

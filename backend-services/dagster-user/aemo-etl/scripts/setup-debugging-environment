@@ -13,17 +13,28 @@ PREFIX="${NAME_PREFIX:-energy-market}"
 DEVELOPMENT_ENVIRONMENT=dev
 LOCALSTACK_PORT=4566
 LOCALSTACK_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_HOST=localhost
 DAGSTER_HOME="$(pwd)/.dagster_home"
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+POSTGRES_INIT_SCRIPT="$REPO_ROOT/backend-services/postgres/init.sh"
 
 export DAGSTER_HOME
 export AWS_ENDPOINT_URL=http://$LOCALSTACK_HOST:$LOCALSTACK_PORT
-export AWS_DEFAULT_REGION=ap-southeast-1
+export AWS_DEFAULT_REGION=ap-southeast-2
 export AWS_ACCESS_KEY_ID=test
 export AWS_SECRET_ACCESS_KEY=test
 export AWS_SECURITY_TOKEN=test
 export AWS_SESSION_TOKEN=test
 export AWS_ALLOW_HTTP=true
 export AWS_S3_LOCKING_PROVIDER=dynamodb
+export POSTGRES_USER=postgres
+export POSTGRES_PASSWORD=postgres
+export POSTGRES_DB=postgres
+export DAGSTER_POSTGRES_HOSTNAME=$POSTGRES_HOST
+export DAGSTER_POSTGRES_USER=dagster_user
+export DAGSTER_POSTGRES_PASSWORD=dagster_pass
+export DAGSTER_POSTGRES_DB=dagster
 
 BUCKETS=(
 	"${DEVELOPMENT_ENVIRONMENT}-${PREFIX}-io-manager"
@@ -67,6 +78,11 @@ check-localstack() {
 	curl --silent --fail "${endpoint}/_localstack/health"
 }
 
+check-postgres() {
+	local container_name=$1
+	podman exec "$container_name" pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+}
+
 wait-localstack() {
 	local network=$1 endpoint=$2
 
@@ -85,6 +101,23 @@ wait-localstack() {
 	done
 }
 
+wait-postgres() {
+	local container_name=$1
+	local deadline=$(($(date +%s) + READY_TIMEOUT))
+
+	while true; do
+		if check-postgres "$container_name" >/dev/null 2>&1; then
+			info "postgres is ready." >&2
+			break
+		fi
+		if [[ $(date +%s) -ge $deadline ]]; then
+			error "postgres did not become healthy within ${READY_TIMEOUT}s." >&2
+			exit 1
+		fi
+		sleep 1
+	done
+}
+
 start-localstack() {
 	local network=$1 container_name=$2
 
@@ -97,6 +130,29 @@ start-localstack() {
 		--name "$container_name" \
 		--env "DISABLE_CORS_CHECKS=1" \
 		"${LOCALSTACK_IMAGE:-localstack/localstack}" >/dev/null
+
+	info created container "$container_name"
+	info waiting for "$container_name" to be healthy
+}
+
+start-postgres() {
+	local network=$1 container_name=$2
+
+	podman run \
+		--rm \
+		--detach \
+		--replace \
+		--publish "$POSTGRES_PORT:5432" \
+		--network="$network" \
+		--name "$container_name" \
+		--env "POSTGRES_USER=$POSTGRES_USER" \
+		--env "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" \
+		--env "POSTGRES_DB=$POSTGRES_DB" \
+		--env "DAGSTER_POSTGRES_USER=$DAGSTER_POSTGRES_USER" \
+		--env "DAGSTER_POSTGRES_PASSWORD=$DAGSTER_POSTGRES_PASSWORD" \
+		--env "DAGSTER_POSTGRES_DB=$DAGSTER_POSTGRES_DB" \
+		--volume "$POSTGRES_INIT_SCRIPT:/docker-entrypoint-initdb.d/init.sh:ro" \
+		"${POSTGRES_IMAGE:-docker.io/library/postgres:14}" >/dev/null
 
 	info created container "$container_name"
 	info waiting for "$container_name" to be healthy
@@ -162,8 +218,9 @@ setup-dynamodb() {
 
 cleanup() {
 	local exit_code=$?
-	local container_name=$1
-	podman rm --force "$container_name"
+	local localstack_container_name=$1 postgres_container_name=$2
+	podman rm --force "$localstack_container_name" >/dev/null 2>&1 || true
+	podman rm --force "$postgres_container_name" >/dev/null 2>&1 || true
 	rm -rf "$DAGSTER_HOME"
 	exit $exit_code
 }
@@ -179,9 +236,11 @@ main() {
 	local network
 	network=$(get-network "$identifier")
 
-	local container_name="localstack-$identifier"
+	local localstack_container_name="localstack-$identifier"
+	local postgres_container_name="postgres-$identifier"
 
-	trap_container_name=$container_name
+	trap_localstack_container_name=$localstack_container_name
+	trap_postgres_container_name=$postgres_container_name
 
 	local endpoint="http://$LOCALSTACK_HOST:$LOCALSTACK_PORT"
 
@@ -189,23 +248,25 @@ main() {
 
 	cp dagster.dev.yaml "$DAGSTER_HOME"/dagster.yaml
 
-	trap 'cleanup "$trap_container_name"' EXIT
+	trap 'cleanup "$trap_localstack_container_name" "$trap_postgres_container_name"' EXIT
 
 	create-network "$network"
 
-	start-localstack "$network" "$container_name"
+	start-postgres "$network" "$postgres_container_name"
+	wait-postgres "$postgres_container_name"
+	start-localstack "$network" "$localstack_container_name"
 	wait-localstack "$network" "$endpoint"
 	write-localstack-endpoint "$endpoint"
 
-	setup-s3-buckets "$container_name"
-	setup-dynamodb "$container_name"
+	setup-s3-buckets "$localstack_container_name"
+	setup-dynamodb "$localstack_container_name"
 
 	PYDEVD_DISABLE_FILE_VALIDATION=1 \
 		uv run \
 		debugpy \
 		--listen 5678 \
 		"$(pwd)"/.venv/bin/dg dev \
-		-m aemo_etl.definitions \
+		-w workspace.dev.yaml \
 		--verbose \
 		-h 0.0.0.0 \
 		-p 3000

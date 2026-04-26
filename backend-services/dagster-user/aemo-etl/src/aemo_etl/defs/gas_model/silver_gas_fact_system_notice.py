@@ -128,7 +128,7 @@ def _materialize_result(value: LazyFrame) -> MaterializeResult[LazyFrame]:
     group_name=GROUP_NAME,
     description="Silver gas system notice fact.",
     ins={"int029a": AssetIn(key=INT029A_KEY), "int929a": AssetIn(key=INT929A_KEY)},
-    io_manager_key="aemo_deltalake_overwrite_io_manager",
+    io_manager_key="aemo_parquet_overwrite_io_manager",
     metadata={
         "dagster/table_name": f"silver.{DOMAIN}.{TABLE_NAME}",
         "dagster/uri": f"s3://{AEMO_BUCKET}/{'/'.join(KEY_PREFIX)}/{TABLE_NAME}",
@@ -137,7 +137,7 @@ def _materialize_result(value: LazyFrame) -> MaterializeResult[LazyFrame]:
         "surrogate_key_sources": SURROGATE_KEY_SOURCES,
         "source_tables": SOURCE_TABLES,
     },
-    kinds={"table", "deltalake"},
+    kinds={"table", "parquet"},
     automation_condition=AutomationCondition.any_deps_updated()
     & ~AutomationCondition.in_progress()
     & ~AutomationCondition.any_deps_missing(),
