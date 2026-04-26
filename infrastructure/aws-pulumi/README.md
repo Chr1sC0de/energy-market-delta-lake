@@ -1,152 +1,198 @@
 # AWS Pulumi Infrastructure
 
-Pulumi infrastructure for the AWS-hosted energy-market Dagster deployment.
+Pulumi program for the deployed AWS energy-market platform.
 
-## Full Integration Tests
+This directory is the source of truth for the main runtime architecture. It
+provisions the network, storage, container images, compute platform, and public
+entrypoint used by the Dagster-based deployment.
 
-The live integration workflow targets the existing `dev-ausenergymarket` stack by
-default. It applies the stack, then runs the AWS integration suite against the
-deployed resources.
+## What this stack provisions
 
-Prerequisites:
+From `__main__.py`, the stack builds these layers:
 
-- Pulumi CLI installed and logged in.
-- AWS credentials configured for the target account.
-- `uv` installed.
-- Docker or Podman available for Pulumi image builds.
-- Stack config secrets already set, for example via `scripts/setup_secrets`.
+- networking: VPC, public/private subnets, route tables, and VPC endpoints
+- security: security groups and IAM roles for EC2 and ECS tasks
+- data services: S3 buckets, DynamoDB `delta_log`, PostgreSQL, and a bastion host
+- container platform: ECR repositories and image builds, ECS cluster, Cloud Map
+- public services: Caddy reverse proxy and FastAPI authentication service
+- Dagster services:
+  - `aemo-etl` user-code gRPC service
+  - Dagster webserver admin
+  - Dagster webserver guest
+  - Dagster daemon
 
-Run the full workflow from this directory:
+## Architecture summary
+
+```mermaid
+flowchart LR
+  subgraph Internet[Internet]
+    U[Users]
+    S[AEMO / NEMWeb sources]
+  end
+
+  subgraph Edge[Public edge]
+    C[Caddy EC2 instance]
+    A[FastAPI auth EC2 instance]
+  end
+
+  subgraph AWS[AWS private services]
+    W[Dagster webserver admin ECS service]
+    G[Dagster webserver guest ECS service]
+    D[Dagster daemon ECS service]
+    UCODE[aemo-etl user-code ECS service]
+    P[(PostgreSQL EC2)]
+    B[(S3 buckets)]
+    L[(DynamoDB delta_log)]
+    M[Cloud Map namespace]
+  end
+
+  subgraph Platform[Platform resources]
+    V[VPC + endpoints]
+    SG[Security groups]
+    IAM[IAM roles]
+    E[ECR images]
+    ECS[ECS cluster]
+  end
+
+  U --> C
+  C --> A
+  C --> W
+  C --> G
+  A --> W
+  W --> UCODE
+  G --> UCODE
+  D --> UCODE
+  UCODE --> B
+  D --> B
+  UCODE --> L
+  W --> P
+  G --> P
+  D --> P
+  M --> UCODE
+  M --> W
+  M --> G
+  V --> SG
+  SG --> ECS
+  IAM --> ECS
+  E --> ECS
+```
+
+## Component order
+
+The dependency order in `__main__.py` is deliberate:
+
+1. `VpcComponentResource`
+2. `VpcEndpointsComponentResource`
+3. `SecurityGroupsComponentResource`
+4. `IamRolesComponentResource`
+5. `S3BucketsComponentResource`
+6. `DeltaLockingTableComponentResource`
+7. `ECRComponentResource`
+8. `ServiceDiscoveryComponentResource`
+9. `PostgresComponentResource`
+10. `BastionHostComponentResource`
+11. `EcsClusterComponentResource`
+12. `FastAPIAuthComponentResource`
+13. `CaddyServerComponentResource`
+14. `DagsterUserCodeServiceComponentResource`
+15. `DagsterWebserverServiceComponentResource` for admin
+16. `DagsterWebserverServiceComponentResource` for guest
+17. `DagsterDaemonServiceComponentResource`
+
+In practical terms:
+
+- the network and access controls are created first
+- shared storage and image registry come next
+- compute and service discovery follow
+- public-facing and Dagster runtime services are created last
+
+## Container images and service source
+
+`components/ecr.py` builds and pushes the deployed images directly from the
+repository:
+
+- `backend-services/dagster-core` for Dagster webserver and daemon
+- `backend-services/dagster-user/aemo-etl` for the gRPC user-code service
+- `backend-services/authentication` for the auth service
+- `backend-services/caddy` for the public reverse proxy
+
+The Pulumi deployment uses the AWS-targeted Dagster configuration by building
+`dagster-core` with `DAGSTER_DEPLOYMENT=aws`.
+
+## Runtime behavior
+
+Key deployed behaviors visible in the infrastructure code:
+
+- Caddy runs on a public EC2 instance and proxies to:
+  - `webserver-admin.dagster:3000`
+  - `webserver-guest.dagster:3000`
+  - the FastAPI auth service
+- Dagster services run as ECS Fargate services in private subnets
+- Cloud Map provides private DNS names under the `dagster` namespace
+- PostgreSQL is used for Dagster run, schedule, and event-log storage
+- S3 holds landing, archive, Delta-table, and IO-manager data
+- DynamoDB `delta_log` supports Delta locking
+
+## Configuration
+
+This project reads a small set of important config values:
+
+- `ENVIRONMENT`
+  - defaults to `dev`
+  - contributes to the shared resource prefix
+- `ADMINISTRATOR_IPS`
+  - used outside local mode for admin-access configuration
+- `aws:region`
+  - stack region, shown in `Pulumi.dev-ausenergymarket.yaml` as `ap-southeast-2`
+- Pulumi secrets for Cognito/auth and public site configuration:
+  - `aws-pulumi:cognito_client_id`
+  - `aws-pulumi:cognito_server_metadata_url`
+  - `aws-pulumi:cognito_token_signing_key_url`
+  - `aws-pulumi:cognito_client_secret`
+  - `aws-pulumi:website_root_url`
+  - `aws-pulumi:developer_email`
+
+The stack name prefix resolves to `"{ENVIRONMENT}-energy-market"`.
+
+## Common commands
+
+Preview infrastructure changes:
+
+```bash
+pulumi preview
+```
+
+Apply infrastructure changes:
+
+```bash
+pulumi up
+```
+
+Run the full integration workflow against the default stack:
 
 ```bash
 AWS_DEFAULT_REGION=ap-southeast-2 scripts/run-integration-tests
 ```
 
-Run tests against an already-deployed stack:
+Run integration tests without applying infrastructure first:
 
 ```bash
 AWS_DEFAULT_REGION=ap-southeast-2 scripts/run-integration-tests --skip-up
 ```
 
-Include the no-op idempotency check after the integration suite:
-
-```bash
-AWS_DEFAULT_REGION=ap-southeast-2 scripts/run-integration-tests --with-idempotency
-```
-
-Override the stack when needed:
-
-```bash
-AWS_DEFAULT_REGION=ap-southeast-2 scripts/run-integration-tests --stack dev-ausenergymarket
-```
-
-The idempotency check runs:
-
-```bash
-pulumi preview --expect-no-changes --non-interactive --stack "$PULUMI_STACK"
-```
-
-Only run it after a successful `pulumi up`. The first deployment after changing
-Fargate images from `:latest` to immutable digests is expected to update the
-Fargate task definitions once; the no-op preview should pass after that rollout
-has been applied.
-
-The integration suite remains opt-in. To run it directly:
+Run the integration suite directly:
 
 ```bash
 PULUMI_INTEGRATION_TESTS=1 PULUMI_STACK=dev-ausenergymarket uv run pytest tests/integration -v
 ```
 
-## Overview
+## Relationship to local development
 
-This template provisions an S3 bucket (`pulumi_aws.s3.BucketV2`) in your AWS account and exports its ID as an output. It’s an ideal starting point when:
+The local compose setup under `backend-services/` is not the canonical
+architecture. It exists to support development and testing of the deployed
+system's services and Dagster workflows.
 
-- You want to learn Pulumi with AWS in Python.
-- You need a barebones S3 bucket deployment to build upon.
-- You prefer a minimal template without extra dependencies.
-
-## Prerequisites
-
-- An AWS account with permissions to create S3 buckets.
-- AWS credentials configured in your environment (for example via AWS CLI or environment variables).
-- Python 3.6 or later installed.
-- Pulumi CLI already installed and logged in.
-
-## Getting Started
-
-1. Generate a new project from this template:
-   ```bash
-   pulumi new aws-python
-   ```
-1. Follow the prompts to set your project name and AWS region (default: `us-east-1`).
-1. Change into your project directory:
-   ```bash
-   cd <project-name>
-   ```
-1. Preview the planned changes:
-   ```bash
-   pulumi preview
-   ```
-1. Deploy the stack:
-   ```bash
-   pulumi up
-   ```
-1. Tear down when finished:
-   ```bash
-   pulumi destroy
-   ```
-
-## Project Layout
-
-After running `pulumi new`, your directory will look like:
-
-```
-├── __main__.py         # Entry point of the Pulumi program
-├── Pulumi.yaml         # Project metadata and template configuration
-├── requirements.txt    # Python dependencies
-└── Pulumi.<stack>.yaml # Stack-specific configuration (e.g., Pulumi.dev.yaml)
-```
-
-## Configuration
-
-This template defines the following config value:
-
-- `aws:region` (string)
-  The AWS region to deploy resources into.
-  Default: `us-east-1`
-
-View or update configuration with:
-
-```bash
-pulumi config get aws:region
-pulumi config set aws:region us-west-2
-```
-
-## Outputs
-
-Once deployed, the stack exports:
-
-- `bucket_name` — the ID of the created S3 bucket.
-
-Retrieve outputs with:
-
-```bash
-pulumi stack output bucket_name
-```
-
-## Next Steps
-
-- Customize `__main__.py` to add or configure additional resources.
-- Explore the Pulumi AWS SDK: https://www.pulumi.com/registry/packages/aws/
-- Break your infrastructure into modules for better organization.
-- Integrate into CI/CD pipelines for automated deployments.
-
-## Help and Community
-
-If you have questions or need assistance:
-
-- Pulumi Documentation: https://www.pulumi.com/docs/
-- Community Slack: https://slack.pulumi.com/
-- GitHub Issues: https://github.com/pulumi/pulumi/issues
-
-Contributions and feedback are always welcome!
+- Use this directory when you are provisioning or validating AWS resources.
+- Use `backend-services/` when you need a local test/dev harness.
+- Use `backend-services/dagster-user/aemo-etl/` for ETL definitions and
+  Dagster-specific data pipeline docs.
