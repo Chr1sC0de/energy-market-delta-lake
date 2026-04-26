@@ -89,7 +89,7 @@ sequenceDiagram
 Trigger and output notes:
 
 - This follows the same factory pattern as GBB, but the downstream assets are the `int*` VICGAS report assets under `src/aemo_etl/defs/raw/vicgas`.
-- The bronze assets write partitioned Delta tables by `ingested_date`; the silver assets overwrite the deduplicated current snapshot.
+- The bronze assets write partitioned Delta tables by `ingested_date`; the silver assets overwrite the deduplicated current parquet snapshot.
 
 ## Raw-to-silver transformation flow
 
@@ -122,7 +122,7 @@ Trigger and output notes:
 
 - The bronze run can come from an event-driven sensor or from a manual asset launch with explicit `s3_keys`.
 - Bronze uses `aemo_deltalake_ingest_partitioned_append_io_manager`; `df_from_s3_keys` silver uses `aemo_parquet_overwrite_io_manager`.
-- A representative downstream example is `silver_gas_fact_operational_meter_flow`, which reads VICGAS silver inputs plus shared dimensions and writes a `silver/gas_model/...` Delta table.
+- A representative downstream example is `silver_gas_fact_operational_meter_flow`, which reads VICGAS silver inputs plus shared dimensions and writes a `silver/gas_model/...` parquet snapshot dataset.
 
 ## LocalStack and S3-compatible behavior
 
@@ -143,6 +143,7 @@ When `AWS_ENDPOINT_URL` points at LocalStack, the same flow runs against local S
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_operational_meter_flow.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/unzipper/definitions.py`
 - `sync.scope`: `behavior`
 - `sync.qa`:

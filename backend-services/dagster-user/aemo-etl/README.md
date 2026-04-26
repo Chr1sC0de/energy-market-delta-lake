@@ -1,6 +1,6 @@
 # aemo-etl
 
-`aemo-etl` is a Dagster-based AEMO gas ETL project for discovering and ingesting AEMO/NEMWeb source files, staging raw datasets into Delta tables on S3-compatible storage, transforming source-specific silver tables and `gas_model` marts, and supporting both LocalStack-backed local development and AWS execution.
+`aemo-etl` is a Dagster-based AEMO gas ETL project for discovering and ingesting AEMO/NEMWeb source files, staging raw datasets into Delta tables on S3-compatible storage, transforming source-specific silver and `gas_model` marts into parquet snapshot datasets, and supporting both LocalStack-backed local development and AWS execution.
 
 ## Table of contents
 
@@ -93,9 +93,9 @@ flowchart TD
 ```
 
 - Raw ingestion: `factories/nemweb_public_files`, `factories/unzipper`, and `factories/df_from_s3_keys` define the discovery, extraction, and bronze/silver ingestion patterns reused across many source tables.
-- Source-specific silver assets: `silver.gbb.*` and `silver.vicgas.*` assets deduplicate current source rows and expose consistent Delta-backed tables for downstream use.
+- Source-specific silver assets: `silver.gbb.*` and `silver.vicgas.*` assets deduplicate current source rows and expose consistent parquet snapshot datasets for downstream use.
 - Gas-model marts: `src/aemo_etl/defs/gas_model` builds cross-source dimensions and fact tables from the source-specific silver layer.
-- Storage: landing and archive buckets hold files; the AEMO bucket holds Delta tables; the IO manager bucket stores Dagster-managed intermediates.
+- Storage: landing and archive buckets hold files; the AEMO bucket holds bronze Delta tables plus parquet snapshot datasets for source silver and `gas_model`; the IO manager bucket stores Dagster-managed intermediates.
 - Orchestration: `src/aemo_etl/definitions.py` merges shared resources with definitions discovered from `src/aemo_etl/defs`.
 
 ## Ingestion flow
@@ -238,6 +238,9 @@ aemo-etl/
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/configs.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/sensors.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`

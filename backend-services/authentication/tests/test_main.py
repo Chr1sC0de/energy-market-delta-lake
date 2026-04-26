@@ -49,6 +49,8 @@ from unittest.mock import AsyncMock, MagicMock
 import itsdangerous
 import pytest
 from fastapi.testclient import TestClient
+from pytest_mock import MockerFixture
+from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
 # conftest.py has already set env vars + patched token_urlsafe before this
@@ -113,7 +115,7 @@ def _client_with_session(
 
 
 class TestGetUserPoolTokenSigningKey:
-    def test_returns_jwks(self, mocker: Any) -> None:
+    def test_returns_jwks(self, mocker: MockerFixture) -> None:
         mock_response = MagicMock()
         mock_response.json.return_value = FAKE_JWKS
         mocker.patch("main.requests.get", return_value=mock_response)
@@ -132,12 +134,12 @@ class TestGetUserPoolTokenSigningKey:
 
 
 class TestGetHmacKeyData:
-    def test_key_found(self, mocker: Any) -> None:
+    def test_key_found(self, mocker: MockerFixture) -> None:
         mocker.patch("main.jwt.get_unverified_header", return_value={"kid": "test-kid"})
         result = get_hmac_key_data(FAKE_TOKEN, FAKE_JWKS)
         assert result == FAKE_JWKS["keys"][0]
 
-    def test_key_not_found_returns_none(self, mocker: Any) -> None:
+    def test_key_not_found_returns_none(self, mocker: MockerFixture) -> None:
         mocker.patch(
             "main.jwt.get_unverified_header", return_value={"kid": "no-match-kid"}
         )
@@ -151,7 +153,9 @@ class TestGetHmacKeyData:
 
 
 class TestVerifyJwt:
-    def _patch_dependencies(self, mocker: Any, verify_return: bool = True) -> None:
+    def _patch_dependencies(
+        self, mocker: MockerFixture, verify_return: bool = True
+    ) -> None:
         mock_response = MagicMock()
         mock_response.json.return_value = FAKE_JWKS
         mocker.patch("main.requests.get", return_value=mock_response)
@@ -161,12 +165,12 @@ class TestVerifyJwt:
         mocker.patch("main.jwk.construct", return_value=mock_hmac_key)
         mocker.patch("main.base64url_decode", return_value=b"decoded-sig")
 
-    def test_valid_jwt_returns_true(self, mocker: Any) -> None:
+    def test_valid_jwt_returns_true(self, mocker: MockerFixture) -> None:
         self._patch_dependencies(mocker, verify_return=True)
         result = verify_jwt(FAKE_TOKEN)
         assert result is True
 
-    def test_exception_raises_http_exception(self, mocker: Any) -> None:
+    def test_exception_raises_http_exception(self, mocker: MockerFixture) -> None:
         # Make requests.get raise so the except branch is hit.
         mocker.patch("main.requests.get", side_effect=RuntimeError("network error"))
 
@@ -178,7 +182,7 @@ class TestVerifyJwt:
         assert exc_info.value.status_code == 401
         assert "network error" in exc_info.value.detail
 
-    def test_no_matching_key_raises_http_exception(self, mocker: Any) -> None:
+    def test_no_matching_key_raises_http_exception(self, mocker: MockerFixture) -> None:
         # get_hmac_key_data returns None (no matching kid) → ValueError → HTTPException
         mock_response = MagicMock()
         mock_response.json.return_value = FAKE_JWKS
@@ -257,7 +261,7 @@ class TestValidateEndpoint:
         assert response.status_code == 401
         assert response.json() == {"message": "unauthorized access"}
 
-    def test_valid_token_returns_200(self, mocker: Any) -> None:
+    def test_valid_token_returns_200(self, mocker: MockerFixture) -> None:
         # Patch verify_jwt to return True so we exercise the 200 branch.
         mocker.patch("main.verify_jwt", return_value=True)
 
@@ -272,7 +276,7 @@ class TestValidateEndpoint:
         assert response.status_code == 200
         assert response.json() == {"status": "authorized access"}
 
-    def test_verify_jwt_false_returns_401(self, mocker: Any) -> None:
+    def test_verify_jwt_false_returns_401(self, mocker: MockerFixture) -> None:
         # verify_jwt returning False exercises the else branch → clear + 401.
         mocker.patch("main.verify_jwt", return_value=False)
 
@@ -287,7 +291,9 @@ class TestValidateEndpoint:
         assert response.status_code == 401
         assert response.json() == {"message": "unauthorized access"}
 
-    def test_verify_jwt_raises_http_exception_propagates(self, mocker: Any) -> None:
+    def test_verify_jwt_raises_http_exception_propagates(
+        self, mocker: MockerFixture
+    ) -> None:
         # verify_jwt can raise HTTPException (401) — the route lets it bubble up.
         from fastapi import HTTPException
 
@@ -315,7 +321,9 @@ class TestValidateEndpoint:
 class TestLoginEndpoint:
     URL = "/dagster-webserver/admin/login"
 
-    def test_login_redirects_with_authorize_redirect(self, mocker: Any) -> None:
+    def test_login_redirects_with_authorize_redirect(
+        self, mocker: MockerFixture
+    ) -> None:
         # oidc.authorize_redirect is called and its return value is returned.
         fake_redirect = RedirectResponse(url="https://cognito.example.com/login")
         mock_authorize = AsyncMock(return_value=fake_redirect)
@@ -333,10 +341,12 @@ class TestLoginEndpoint:
         # For localhost test server the URI stays http.
         assert "http" in redirect_uri
 
-    def test_login_localhost_url_not_rewritten(self, mocker: Any) -> None:
+    def test_login_localhost_url_not_rewritten(self, mocker: MockerFixture) -> None:
         captured: list[str] = []
 
-        async def capture_redirect(request: Any, redirect_uri: str) -> RedirectResponse:
+        async def capture_redirect(
+            request: Request, redirect_uri: str
+        ) -> RedirectResponse:
             captured.append(redirect_uri)
             return RedirectResponse(url="https://cognito.example.com/login")
 
@@ -355,7 +365,7 @@ class TestLoginEndpoint:
         assert isinstance(captured[0], str)
 
     def test_login_non_localhost_redirect_uri_is_rewritten_to_https(
-        self, mocker: Any
+        self, mocker: MockerFixture
     ) -> None:
         """
         When the redirect_uri does NOT contain 'localhost', the code rewrites
@@ -364,7 +374,9 @@ class TestLoginEndpoint:
         """
         captured: list[str] = []
 
-        async def capture_redirect(request: Any, redirect_uri: str) -> RedirectResponse:
+        async def capture_redirect(
+            request: Request, redirect_uri: str
+        ) -> RedirectResponse:
             captured.append(redirect_uri)
             return RedirectResponse(url="https://cognito.example.com/login")
 
@@ -378,13 +390,17 @@ class TestLoginEndpoint:
         # 'testserver' is not 'localhost', so the rewrite fires → https
         assert captured[0].startswith("https://")
 
-    def test_login_localhost_redirect_uri_not_rewritten(self, mocker: Any) -> None:
+    def test_login_localhost_redirect_uri_not_rewritten(
+        self, mocker: MockerFixture
+    ) -> None:
         """
         Force the URL-for result to contain 'localhost' so the rewrite is skipped.
         """
         captured: list[str] = []
 
-        async def capture_redirect(request: Any, redirect_uri: str) -> RedirectResponse:
+        async def capture_redirect(
+            request: Request, redirect_uri: str
+        ) -> RedirectResponse:
             captured.append(redirect_uri)
             return RedirectResponse(url="https://cognito.example.com/login")
 
@@ -419,7 +435,9 @@ class TestLoginEndpoint:
 class TestAuthorizeEndpoint:
     URL = "/oauth2/dagster-webserver/admin/authorize"
 
-    def test_authorize_success_redirects_to_website_root(self, mocker: Any) -> None:
+    def test_authorize_success_redirects_to_website_root(
+        self, mocker: MockerFixture
+    ) -> None:
         token = {
             "userinfo": {"sub": "abc", "email": "a@b.com"},
             "token_type": "Bearer",
@@ -440,7 +458,7 @@ class TestAuthorizeEndpoint:
         )
 
     def test_authorize_exception_returns_401_and_clears_session(
-        self, mocker: Any
+        self, mocker: MockerFixture
     ) -> None:
         mock_authorize_token = AsyncMock(side_effect=Exception("token exchange failed"))
         mocker.patch.object(main.oidc, "authorize_access_token", mock_authorize_token)
@@ -452,7 +470,7 @@ class TestAuthorizeEndpoint:
         assert "token exchange failed" in response.json()["message"]
 
     def test_authorize_redirect_uses_normalised_website_root_url(
-        self, mocker: Any
+        self, mocker: MockerFixture
     ) -> None:
         """Redirect must be an absolute https:// URL regardless of how
         WEBSITE_ROOT_URL was configured.
@@ -543,7 +561,9 @@ class TestValidateEndpointLoginRedirectRewrite:
 
     URL = "/oauth2/dagster-webserver/admin/validate"
 
-    def test_validate_non_localhost_rewrites_login_redirect(self, mocker: Any) -> None:
+    def test_validate_non_localhost_rewrites_login_redirect(
+        self, mocker: MockerFixture
+    ) -> None:
         # With TestClient (host=testserver), 'localhost' is absent → rewrite fires.
         # We just need to reach any branch past the URL rewrite; the missing
         # session fields will cause an early 401 — which is fine, we just want
@@ -553,7 +573,7 @@ class TestValidateEndpointLoginRedirectRewrite:
         # Missing session → 401; the rewrite branch has been exercised.
         assert response.status_code == 401
 
-    def test_validate_localhost_skips_rewrite(self, mocker: Any) -> None:
+    def test_validate_localhost_skips_rewrite(self, mocker: MockerFixture) -> None:
         class FakeURL(str):
             def __str__(self) -> str:
                 return "http://localhost:8000/dagster-webserver/admin/login"
@@ -602,7 +622,7 @@ class TestMarimoValidateEndpoint:
         assert response.status_code == 401
         assert response.json() == {"message": "unauthorized access"}
 
-    def test_valid_token_returns_200(self, mocker: Any) -> None:
+    def test_valid_token_returns_200(self, mocker: MockerFixture) -> None:
         mocker.patch("main.verify_jwt", return_value=True)
 
         session = {
@@ -616,7 +636,7 @@ class TestMarimoValidateEndpoint:
         assert response.status_code == 200
         assert response.json() == {"status": "authorized access"}
 
-    def test_verify_jwt_false_returns_401(self, mocker: Any) -> None:
+    def test_verify_jwt_false_returns_401(self, mocker: MockerFixture) -> None:
         mocker.patch("main.verify_jwt", return_value=False)
 
         session = {
@@ -630,7 +650,9 @@ class TestMarimoValidateEndpoint:
         assert response.status_code == 401
         assert response.json() == {"message": "unauthorized access"}
 
-    def test_verify_jwt_raises_http_exception_propagates(self, mocker: Any) -> None:
+    def test_verify_jwt_raises_http_exception_propagates(
+        self, mocker: MockerFixture
+    ) -> None:
         from fastapi import HTTPException
 
         mocker.patch(
@@ -657,7 +679,9 @@ class TestMarimoValidateEndpoint:
 class TestMarimoLoginEndpoint:
     URL = "/marimo/login"
 
-    def test_login_redirects_with_authorize_redirect(self, mocker: Any) -> None:
+    def test_login_redirects_with_authorize_redirect(
+        self, mocker: MockerFixture
+    ) -> None:
         fake_redirect = RedirectResponse(url="https://cognito.example.com/login")
         mock_authorize = AsyncMock(return_value=fake_redirect)
         mocker.patch.object(main.oidc, "authorize_redirect", mock_authorize)
@@ -672,7 +696,7 @@ class TestMarimoLoginEndpoint:
         assert "http" in redirect_uri
 
     def test_login_non_localhost_redirect_uri_is_rewritten_to_https(
-        self, mocker: Any
+        self, mocker: MockerFixture
     ) -> None:
         """
         TestClient host is 'testserver' (not 'localhost'), so the
@@ -680,7 +704,9 @@ class TestMarimoLoginEndpoint:
         """
         captured: list[str] = []
 
-        async def capture_redirect(request: Any, redirect_uri: str) -> RedirectResponse:
+        async def capture_redirect(
+            request: Request, redirect_uri: str
+        ) -> RedirectResponse:
             captured.append(redirect_uri)
             return RedirectResponse(url="https://cognito.example.com/login")
 
@@ -693,13 +719,17 @@ class TestMarimoLoginEndpoint:
         assert len(captured) == 1
         assert captured[0].startswith("https://")
 
-    def test_login_localhost_redirect_uri_not_rewritten(self, mocker: Any) -> None:
+    def test_login_localhost_redirect_uri_not_rewritten(
+        self, mocker: MockerFixture
+    ) -> None:
         """
         Force the URL-for result to contain 'localhost' so the rewrite is skipped.
         """
         captured: list[str] = []
 
-        async def capture_redirect(request: Any, redirect_uri: str) -> RedirectResponse:
+        async def capture_redirect(
+            request: Request, redirect_uri: str
+        ) -> RedirectResponse:
             captured.append(redirect_uri)
             return RedirectResponse(url="https://cognito.example.com/login")
 
@@ -731,7 +761,7 @@ class TestMarimoLoginEndpoint:
 class TestMarimoAuthorizeEndpoint:
     URL = "/oauth2/marimo/authorize"
 
-    def test_authorize_success_redirects_to_marimo(self, mocker: Any) -> None:
+    def test_authorize_success_redirects_to_marimo(self, mocker: MockerFixture) -> None:
         token = {
             "userinfo": {"sub": "abc", "email": "a@b.com"},
             "token_type": "Bearer",
@@ -749,7 +779,7 @@ class TestMarimoAuthorizeEndpoint:
         assert response.headers["location"] == "https://example.com/marimo"
 
     def test_authorize_exception_returns_401_and_clears_session(
-        self, mocker: Any
+        self, mocker: MockerFixture
     ) -> None:
         mock_authorize_token = AsyncMock(side_effect=Exception("token exchange failed"))
         mocker.patch.object(main.oidc, "authorize_access_token", mock_authorize_token)

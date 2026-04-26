@@ -149,7 +149,10 @@ def test_load_input(mocker: MockerFixture) -> None:
 
 
 def test_parquet_dataset_glob() -> None:
-    assert _parquet_dataset_glob("s3://test-bucket/table") == "s3://test-bucket/table/*.parquet"
+    assert (
+        _parquet_dataset_glob("s3://test-bucket/table")
+        == "s3://test-bucket/table/*.parquet"
+    )
     assert _parquet_dataset_glob("/tmp/test-table/") == "/tmp/test-table/*.parquet"
 
 
@@ -167,9 +170,7 @@ def test_handle_output_parquet_builds_metadata_before_write(
         events.append("row_count")
         return 3
 
-    def _sink_parquet(
-        _: pl.LazyFrame, *_args: object, **_kwargs: object
-    ) -> None:
+    def _sink_parquet(_: pl.LazyFrame, *_args: object, **_kwargs: object) -> None:
         events.append("sink_parquet")
 
     mocker.patch(
@@ -189,7 +190,9 @@ def test_handle_output_parquet_auto_schema(mocker: MockerFixture) -> None:
 
     io_mgr.handle_output(ctx, _SMALL_DF)
 
-    sink_parquet.assert_called_once_with("s3://test-bucket/table/part-00000.parquet", mkdir=True)
+    sink_parquet.assert_called_once_with(
+        "s3://test-bucket/table/part-00000.parquet", mkdir=True
+    )
     added = ctx.add_output_metadata.call_args[0][0]
     assert "preview" in added
     assert "dagster/column_schema" in added
@@ -237,7 +240,9 @@ def test_handle_output_parquet_uses_local_writer_for_local_paths(
 
     io_mgr.handle_output(ctx, _SMALL_DF)
 
-    sink_parquet.assert_called_once_with("/tmp/test-table/part-00000.parquet", mkdir=True)
+    sink_parquet.assert_called_once_with(
+        "/tmp/test-table/part-00000.parquet", mkdir=True
+    )
 
 
 def test_load_input_parquet(mocker: MockerFixture) -> None:

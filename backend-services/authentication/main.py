@@ -10,7 +10,7 @@ from fastapi import APIRouter, FastAPI, HTTPException, Request
 from jose import jwk, jwt
 from jose.utils import base64url_decode
 from starlette.middleware.sessions import SessionMiddleware
-from starlette.responses import JSONResponse, RedirectResponse
+from starlette.responses import JSONResponse, RedirectResponse, Response
 from starlette.status import (
     HTTP_200_OK,
     HTTP_401_UNAUTHORIZED,
@@ -169,7 +169,7 @@ def _build_redirect_uri(request: Request, route_name: str) -> str:
 
 async def _authorize_callback(
     request: Request, redirect_path: str
-) -> JSONResponse | RedirectResponse:
+) -> Response:
     """Shared OIDC callback logic — exchanges code for token, sets session."""
     try:
         token = await oidc.authorize_access_token(request)
@@ -192,7 +192,7 @@ async def _authorize_callback(
 
 
 @router.get("/oauth2/dagster-webserver/admin/validate")
-async def oauth2_dagster_webserver_validate(request: Request):
+async def oauth2_dagster_webserver_validate(request: Request) -> JSONResponse:
     request.session
 
     login_redirect_uri = str(request.url_for("oauth2_dagster_webserver_login"))
@@ -203,13 +203,15 @@ async def oauth2_dagster_webserver_validate(request: Request):
 
 
 @router.get("/dagster-webserver/admin/login")
-async def oauth2_dagster_webserver_login(request: Request):
+async def oauth2_dagster_webserver_login(request: Request) -> RedirectResponse:
     redirect_uri = _build_redirect_uri(request, "oauth2_dagster_webserver_authorize")
     return await oidc.authorize_redirect(request, redirect_uri)
 
 
-@router.get("/oauth2/dagster-webserver/admin/authorize")
-async def oauth2_dagster_webserver_authorize(request: Request):
+@router.get("/oauth2/dagster-webserver/admin/authorize", response_model=None)
+async def oauth2_dagster_webserver_authorize(
+    request: Request,
+) -> Response:
     return await _authorize_callback(request, "/dagster-webserver/admin")
 
 
@@ -219,18 +221,18 @@ async def oauth2_dagster_webserver_authorize(request: Request):
 
 
 @router.get("/oauth2/marimo/validate")
-async def oauth2_marimo_validate(request: Request):
+async def oauth2_marimo_validate(request: Request) -> JSONResponse:
     return _validate_session(request)
 
 
 @router.get("/marimo/login")
-async def oauth2_marimo_login(request: Request):
+async def oauth2_marimo_login(request: Request) -> RedirectResponse:
     redirect_uri = _build_redirect_uri(request, "oauth2_marimo_authorize")
     return await oidc.authorize_redirect(request, redirect_uri)
 
 
-@router.get("/oauth2/marimo/authorize")
-async def oauth2_marimo_authorize(request: Request):
+@router.get("/oauth2/marimo/authorize", response_model=None)
+async def oauth2_marimo_authorize(request: Request) -> Response:
     return await _authorize_callback(request, "/marimo")
 
 

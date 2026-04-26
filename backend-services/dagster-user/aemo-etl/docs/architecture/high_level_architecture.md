@@ -1,6 +1,6 @@
 # High-Level Architecture
 
-This project packages Dagster definitions for ingesting public AEMO gas files into Delta tables and then transforming those source-specific tables into a shared `gas_model` layer.
+This project packages Dagster definitions for ingesting public AEMO gas files into bronze Delta tables and then transforming those source-specific datasets into parquet-backed source silver and shared `gas_model` layers.
 
 ## Table of contents
 
@@ -121,7 +121,7 @@ The corresponding silver asset:
 
 - reads the bronze Delta table
 - sorts and deduplicates by `surrogate_key`
-- overwrites the current snapshot in the AEMO bucket
+- overwrites the current parquet snapshot in the AEMO bucket
 - auto-materializes when its bronze dependency changes
 
 ### Gas-model assets
@@ -132,7 +132,7 @@ The corresponding silver asset:
 - `silver_gas_dim_operational_point`
 - `silver_gas_fact_operational_meter_flow`
 
-These assets consume the source silver layer and publish shared dimensions and marts back into `silver/gas_model/...` Delta tables.
+These assets consume the source silver layer and publish shared dimensions and marts back into `silver/gas_model/...` parquet snapshot datasets.
 
 ## Sensors and automation
 
@@ -156,7 +156,7 @@ Bucket naming comes from `src/aemo_etl/configs.py`:
 
 - `LANDING_BUCKET`: incoming files ready for unzip or bronze ingestion
 - `ARCHIVE_BUCKET`: successfully processed raw source files and zips
-- `AEMO_BUCKET`: Delta table storage for bronze and silver assets
+- `AEMO_BUCKET`: Delta table storage for bronze assets and parquet snapshot storage for source silver and `gas_model` assets
 - `IO_MANAGER_BUCKET`: Dagster IO manager payloads and intermediates
 
 All bucket names are derived from:
@@ -223,6 +223,9 @@ flowchart TD
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/sensors.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/table_metadata.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_operational_meter_flow.py`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`
