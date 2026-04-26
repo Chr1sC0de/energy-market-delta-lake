@@ -6,6 +6,12 @@ from dagster_aws.s3 import S3Resource, s3_pickle_io_manager
 
 from aemo_etl.configs import DEVELOPMENT_LOCATION, IO_MANAGER_BUCKET
 
+AWS_ECS_EXECUTOR_CONFIG = {
+    "cpu": 512,
+    "memory": 4096,
+    "max_concurrent": 3,
+}
+
 
 @definitions
 def defs() -> Definitions:
@@ -20,7 +26,11 @@ def defs() -> Definitions:
                     }
                 ),
             },
-            executor=ecs.ecs_executor if DEVELOPMENT_LOCATION == "aws" else None,
+            executor=(
+                ecs.ecs_executor.configured(AWS_ECS_EXECUTOR_CONFIG)
+                if DEVELOPMENT_LOCATION == "aws"
+                else None
+            ),
         ),
         load_from_defs_folder(path_within_project=Path(__file__).parent),
     )

@@ -84,3 +84,30 @@ def test_df_from_s3_keys_definitions_factory_attaches_checks_to_silver() -> None
         (AssetKey(["silver", "gbb", "silver_test_table"]), "check_schema_matches"),
         (AssetKey(["silver", "gbb", "silver_test_table"]), "check_schema_drift"),
     }
+
+
+def test_df_from_s3_keys_definitions_factory_wires_step_op_tags() -> None:
+    defs = df_from_s3_keys_definitions_factory(
+        domain="gbb",
+        name_suffix="test_table",
+        glob_pattern="test*",
+        schema={"col1": String},
+        schema_descriptions={"col1": "test column"},
+        surrogate_key_sources=["col1"],
+        description="A test table",
+        bronze_op_tags={"ecs/cpu": "512", "ecs/memory": "4096"},
+        silver_op_tags={"ecs/cpu": "1024", "ecs/memory": "5120"},
+    )
+
+    assets_by_key = {
+        next(iter(asset.keys)): asset
+        for asset in defs.assets or []
+        if isinstance(asset, AssetsDefinition)
+    }
+
+    assert assets_by_key[
+        AssetKey(["bronze", "gbb", "bronze_test_table"])
+    ].node_def.tags == {"ecs/cpu": "512", "ecs/memory": "4096"}
+    assert assets_by_key[
+        AssetKey(["silver", "gbb", "silver_test_table"])
+    ].node_def.tags == {"ecs/cpu": "1024", "ecs/memory": "5120"}

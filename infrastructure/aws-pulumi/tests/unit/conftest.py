@@ -86,6 +86,20 @@ class InfrastructureMocks(pulumi.runtime.Mocks):
                 "expiresAt": "2099-01-01T00:00:00Z",
             }
 
+        if token == "aws:ecr/getImage:getImage":
+            repository_name = args.args.get("repositoryName", "test-repo")
+            return {
+                "id": f"{repository_name}@sha256:testdigest",
+                "imageDigest": "sha256:testdigest",
+                "imagePushedAt": 1_765_000_000,
+                "imageSizeInBytes": 123,
+                "imageTag": args.args.get("imageTag", "latest"),
+                "imageTags": [args.args.get("imageTag", "latest")],
+                "imageUri": f"123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/{repository_name}@sha256:testdigest",
+                "registryId": "123456789012",
+                "repositoryName": repository_name,
+            }
+
         if token == "aws:ec2/getAvailabilityZone:getAvailabilityZone":
             return {
                 "id": "ap-southeast-2a",
@@ -142,6 +156,10 @@ class InfrastructureMocks(pulumi.runtime.Mocks):
                 "repositoryUrl",
                 f"123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/{args.name}",
             )
+
+        if "docker:index/image:Image" in typ:
+            image_name = outputs.get("imageName") or outputs.get("image_name")
+            outputs.setdefault("repoDigest", f"{image_name}@sha256:testdigest")
 
         if "s3/bucket:Bucket" in typ:
             outputs.setdefault("bucket", args.name)

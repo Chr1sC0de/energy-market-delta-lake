@@ -11,6 +11,7 @@ This file verifies:
   - No DeprecationWarning is raised (regression guard for .region fix and failure_threshold fix)
 """
 
+import json
 import warnings
 
 import pulumi
@@ -46,6 +47,19 @@ def _make_all_deps() -> tuple[
     pg = PostgresComponentResource("test-energy-market", vpc, sgs)
     cluster = EcsClusterComponentResource("test-energy-market", vpc, sgs)
     return vpc, cluster, ecr, pg, sgs, sd, iam
+
+
+def _first_container(container_definitions: str) -> dict:
+    containers = json.loads(container_definitions)
+    assert len(containers) == 1
+    return containers[0]
+
+
+def _env_value(container: dict, name: str) -> str:
+    for item in container["environment"]:
+        if item["name"] == name:
+            return item["value"]
+    raise AssertionError(f"Missing environment variable {name!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +153,29 @@ class TestDagsterUserCodeService:
         return svc.service.network_configuration.apply(check)
 
     @pulumi.runtime.test
+    def test_user_code_task_definition_uses_image_digest(self) -> None:
+        vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
+        svc = DagsterUserCodeServiceComponentResource(
+            "test-energy-market-user-code",
+            vpc=vpc,
+            cluster=cluster,
+            ecr=ecr,
+            postgres=pg,
+            security_groups=sgs,
+            service_discovery=sd,
+            iam_roles=iam,
+        )
+
+        def check(container_definitions: str) -> None:
+            container = _first_container(container_definitions)
+            image = container["image"]
+            assert "@sha256:" in image
+            assert not image.endswith(":latest")
+            assert _env_value(container, "DAGSTER_CURRENT_IMAGE") == image
+
+        return svc.task_definition.container_definitions.apply(check)
+
+    @pulumi.runtime.test
     def test_user_code_task_definition_has_port_4000(self) -> None:
         vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
         svc = DagsterUserCodeServiceComponentResource(
@@ -202,6 +239,31 @@ class TestDagsterWebserverAdminService:
             readonly=False,
         )
         assert svc.service is not None
+
+    @pulumi.runtime.test
+    def test_webserver_admin_task_definition_uses_image_digest(self) -> None:
+        vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
+        svc = DagsterWebserverServiceComponentResource(
+            "test-energy-market-webserver-admin",
+            vpc=vpc,
+            cluster=cluster,
+            ecr=ecr,
+            postgres=pg,
+            security_groups=sgs,
+            service_discovery=sd,
+            iam_roles=iam,
+            cloud_map_name="webserver-admin",
+            path_prefix="/dagster-webserver/admin",
+            stream_prefix="dagster-webserver-service-admin",
+            readonly=False,
+        )
+
+        def check(container_definitions: str) -> None:
+            image = _first_container(container_definitions)["image"]
+            assert "@sha256:" in image
+            assert not image.endswith(":latest")
+
+        return svc.task_definition.container_definitions.apply(check)
 
     @pulumi.runtime.test
     def test_webserver_admin_circuit_breaker_enabled(self) -> None:
@@ -301,6 +363,71 @@ class TestDagsterWebserverGuestService:
         assert svc.service is not None
 
     @pulumi.runtime.test
+    def test_webserver_guest_task_definition_uses_image_digest(self) -> None:
+        vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
+        svc = DagsterWebserverServiceComponentResource(
+            "test-energy-market-webserver-guest",
+            vpc=vpc,
+            cluster=cluster,
+            ecr=ecr,
+            postgres=pg,
+            security_groups=sgs,
+            service_discovery=sd,
+            iam_roles=iam,
+            cloud_map_name="webserver-guest",
+            path_prefix="/dagster-webserver/guest",
+            stream_prefix="dagster-webserver-service-guest",
+            readonly=True,
+        )
+
+        def check(container_definitions: str) -> None:
+            image = _first_container(container_definitions)["image"]
+            assert "@sha256:" in image
+            assert not image.endswith(":latest")
+
+        return svc.task_definition.container_definitions.apply(check)
+
+    @pulumi.runtime.test
+    def test_webserver_admin_and_guest_have_distinct_families(self) -> None:
+        vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
+        admin = DagsterWebserverServiceComponentResource(
+            "test-energy-market-webserver-admin-family",
+            vpc=vpc,
+            cluster=cluster,
+            ecr=ecr,
+            postgres=pg,
+            security_groups=sgs,
+            service_discovery=sd,
+            iam_roles=iam,
+            cloud_map_name="webserver-admin",
+            path_prefix="/dagster-webserver/admin",
+            stream_prefix="dagster-webserver-service-admin",
+            readonly=False,
+        )
+        guest = DagsterWebserverServiceComponentResource(
+            "test-energy-market-webserver-guest-family",
+            vpc=vpc,
+            cluster=cluster,
+            ecr=ecr,
+            postgres=pg,
+            security_groups=sgs,
+            service_discovery=sd,
+            iam_roles=iam,
+            cloud_map_name="webserver-guest",
+            path_prefix="/dagster-webserver/guest",
+            stream_prefix="dagster-webserver-service-guest",
+            readonly=True,
+        )
+
+        def check(families: list[str]) -> None:
+            assert families == ["dagster-webserver-admin", "dagster-webserver-guest"]
+
+        return pulumi.Output.all(
+            admin.task_definition.family,
+            guest.task_definition.family,
+        ).apply(check)
+
+    @pulumi.runtime.test
     def test_webserver_guest_fargate_spot(self) -> None:
         vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
         svc = DagsterWebserverServiceComponentResource(
@@ -397,6 +524,26 @@ class TestDagsterDaemonService:
             iam_roles=iam,
         )
         assert svc.service is not None
+
+    @pulumi.runtime.test
+    def test_daemon_task_definition_uses_image_digest(self) -> None:
+        vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
+        svc = DagsterDaemonServiceComponentResource(
+            "test-energy-market-daemon",
+            vpc=vpc,
+            cluster=cluster,
+            ecr=ecr,
+            postgres=pg,
+            security_groups=sgs,
+            iam_roles=iam,
+        )
+
+        def check(container_definitions: str) -> None:
+            image = _first_container(container_definitions)["image"]
+            assert "@sha256:" in image
+            assert not image.endswith(":latest")
+
+        return svc.task_definition.container_definitions.apply(check)
 
     @pulumi.runtime.test
     def test_daemon_no_service_registries(self) -> None:

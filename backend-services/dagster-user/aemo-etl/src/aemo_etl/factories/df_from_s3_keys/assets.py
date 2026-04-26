@@ -194,13 +194,15 @@ def silver_df_from_s3_keys_asset_factory(
 
     @asset(**asset_kwargs)
     def silver_asset(df: LazyFrame) -> LazyFrame:
-        deduped = df.sort("source_file", descending=True).unique(
+        tmp_dir = tempfile.mkdtemp()
+        input_uri = f"{tmp_dir}/silver_input"
+        output_uri = f"{tmp_dir}/silver_current"
+        df.sink_delta(input_uri, mode="append")
+        cached_df = scan_delta(input_uri)
+        deduped = cached_df.sort("source_file", descending=True).unique(
             subset=["surrogate_key"], keep="first", maintain_order=True
         )
-
-        tmp_dir = tempfile.mkdtemp()
-        tmp_uri = f"{tmp_dir}/silver_current"
-        deduped.sink_delta(tmp_uri, mode="append")
-        return scan_delta(tmp_uri)
+        deduped.sink_delta(output_uri, mode="append")
+        return scan_delta(output_uri)
 
     return silver_asset

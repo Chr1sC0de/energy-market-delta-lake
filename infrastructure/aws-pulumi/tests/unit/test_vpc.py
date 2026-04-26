@@ -49,7 +49,7 @@ class TestVpcResourceCreation:
         vpc = VpcComponentResource("test-energy-market")
 
         def check(cidr: str) -> None:
-            assert cidr == "10.0.1.0/24", f"Expected 10.0.1.0/24, got {cidr}"
+            assert cidr == "10.0.16.0/20", f"Expected 10.0.16.0/20, got {cidr}"
 
         return vpc.private_subnet.cidr_block.apply(check)
 

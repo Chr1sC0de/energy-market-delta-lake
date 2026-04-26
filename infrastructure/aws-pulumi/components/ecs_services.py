@@ -57,7 +57,10 @@ def _fargate_service(
             # the ResourceInUse error when the ECS service still has live tasks.
             health_check_custom_config=aws.servicediscovery.ServiceHealthCheckCustomConfigArgs(),
             force_destroy=True,
-            opts=child_opts,
+            opts=pulumi.ResourceOptions.merge(
+                child_opts,
+                pulumi.ResourceOptions(ignore_changes=["healthCheckCustomConfig"]),
+            ),
         )
         sd_registration = aws.ecs.ServiceServiceRegistriesArgs(
             registry_arn=sd_service.arn
@@ -143,6 +146,7 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
     """
 
     service: aws.ecs.Service
+    task_definition: aws.ecs.TaskDefinition
 
     def __init__(
         self,
@@ -165,7 +169,7 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
         postgres_password = postgres.password
 
         container_defs = pulumi.Output.all(
-            repo_url=ecr.dagster_user_code_aemo_etl.repository_url,
+            image=ecr.dagster_user_code_aemo_etl_image_uri,
             pg_host=postgres_host,
             pg_pass=postgres_password,
             log_group=cluster.log_group.name,
@@ -175,7 +179,7 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
                 [
                     {
                         "name": "dagster-grpc",
-                        "image": f"{a['repo_url']}:latest",
+                        "image": a["image"],
                         "essential": True,
                         "entryPoint": [
                             "dagster",
@@ -202,7 +206,7 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
                             {"name": "AWS_S3_LOCKING_PROVIDER", "value": "dynamodb"},
                             {
                                 "name": "DAGSTER_CURRENT_IMAGE",
-                                "value": f"{a['repo_url']}:latest",
+                                "value": a["image"],
                             },
                             {"name": "DAGSTER_GRPC_TIMEOUT_SECONDS", "value": "300"},
                             {"name": "DEVELOPMENT_ENVIRONMENT", "value": ENVIRONMENT},
@@ -234,7 +238,7 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
             )  # ty:ignore[invalid-argument-type]
         )  # ty:ignore[missing-argument]
 
-        task_def = _task_definition(
+        self.task_definition = _task_definition(
             f"{name}-user-code-task-def",
             family="dagster-user-code-aemo-etl",
             cpu="256",
@@ -248,7 +252,7 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
         self.service = _fargate_service(
             f"{name}-user-code-service",
             cluster=cluster.cluster,
-            task_definition=task_def,
+            task_definition=self.task_definition,
             security_group=security_groups.register.dagster_user_code,
             private_subnet_id=vpc.private_subnet.id,
             namespace_id=service_discovery.namespace.id,
@@ -276,6 +280,7 @@ class DagsterWebserverServiceComponentResource(pulumi.ComponentResource):
     """
 
     service: aws.ecs.Service
+    task_definition: aws.ecs.TaskDefinition
 
     def __init__(
         self,
@@ -317,7 +322,7 @@ class DagsterWebserverServiceComponentResource(pulumi.ComponentResource):
             entry_point.insert(1, "--read-only")
 
         container_defs = pulumi.Output.all(
-            repo_url=ecr.dagster_webserver.repository_url,
+            image=ecr.dagster_webserver_image_uri,
             pg_host=postgres_host,
             pg_pass=postgres_password,
             log_group=cluster.log_group.name,
@@ -327,7 +332,7 @@ class DagsterWebserverServiceComponentResource(pulumi.ComponentResource):
                 [
                     {
                         "name": "webserver",
-                        "image": f"{a['repo_url']}:latest",
+                        "image": a["image"],
                         "essential": True,
                         "entryPoint": entry_point,
                         "environment": [
@@ -373,7 +378,7 @@ class DagsterWebserverServiceComponentResource(pulumi.ComponentResource):
         # cloud_map_name is "webserver-admin" or "webserver-guest".
         td_family = f"dagster-{cloud_map_name}"
 
-        task_def = _task_definition(
+        self.task_definition = _task_definition(
             f"{name}-webserver-task-def",
             family=td_family,
             cpu="512",
@@ -387,7 +392,7 @@ class DagsterWebserverServiceComponentResource(pulumi.ComponentResource):
         self.service = _fargate_service(
             f"{name}-webserver-service",
             cluster=cluster.cluster,
-            task_definition=task_def,
+            task_definition=self.task_definition,
             security_group=security_groups.register.dagster_webserver,
             private_subnet_id=vpc.private_subnet.id,
             namespace_id=service_discovery.namespace.id,
@@ -414,6 +419,7 @@ class DagsterDaemonServiceComponentResource(pulumi.ComponentResource):
     """
 
     service: aws.ecs.Service
+    task_definition: aws.ecs.TaskDefinition
 
     def __init__(
         self,
@@ -435,7 +441,7 @@ class DagsterDaemonServiceComponentResource(pulumi.ComponentResource):
         postgres_password = postgres.password
 
         container_defs = pulumi.Output.all(
-            repo_url=ecr.dagster_daemon.repository_url,
+            image=ecr.dagster_daemon_image_uri,
             pg_host=postgres_host,
             pg_pass=postgres_password,
             log_group=cluster.log_group.name,
@@ -445,7 +451,7 @@ class DagsterDaemonServiceComponentResource(pulumi.ComponentResource):
                 [
                     {
                         "name": "DagsterDaemonContainer",
-                        "image": f"{a['repo_url']}:latest",
+                        "image": a["image"],
                         "essential": True,
                         "entryPoint": ["dagster-daemon", "run"],
                         "environment": [
@@ -484,7 +490,7 @@ class DagsterDaemonServiceComponentResource(pulumi.ComponentResource):
             )  # ty:ignore[invalid-argument-type]
         )  # ty:ignore[missing-argument]
 
-        task_def = _task_definition(
+        self.task_definition = _task_definition(
             f"{name}-daemon-task-def",
             family="dagster-daemon",
             cpu="256",
@@ -498,7 +504,7 @@ class DagsterDaemonServiceComponentResource(pulumi.ComponentResource):
         self.service = _fargate_service(
             f"{name}-daemon-service",
             cluster=cluster.cluster,
-            task_definition=task_def,
+            task_definition=self.task_definition,
             security_group=security_groups.register.dagster_daemon,
             private_subnet_id=vpc.private_subnet.id,
             # No Cloud Map – daemon does not receive inbound connections

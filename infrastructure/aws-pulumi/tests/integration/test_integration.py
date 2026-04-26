@@ -21,6 +21,11 @@ Shared fixtures (integration_enabled, aws_region, stack_name, environment,
 resource_name, and all boto3 clients) are defined in conftest.py.
 """
 
+import socket
+from collections.abc import Iterator
+from contextlib import contextmanager
+from urllib.parse import urlparse
+
 import pytest
 
 pytestmark = pytest.mark.integration
@@ -152,24 +157,110 @@ class TestServiceDiscoveryRegistration:
 # ---------------------------------------------------------------------------
 
 
+def _public_route53_a_record(route53_client: object, hostname: str) -> str | None:
+    response = route53_client.list_hosted_zones_by_name(  # type: ignore[union-attr]
+        DNSName=hostname,
+        MaxItems="1",
+    )
+    hosted_zones = response.get("HostedZones", [])
+    if not hosted_zones:
+        return None
+
+    zone = hosted_zones[0]
+    if zone.get("Name", "").rstrip(".") != hostname:
+        return None
+    if zone.get("Config", {}).get("PrivateZone", False):
+        return None
+
+    zone_id = str(zone["Id"]).rsplit("/", maxsplit=1)[-1]
+    records = route53_client.list_resource_record_sets(  # type: ignore[union-attr]
+        HostedZoneId=zone_id,
+        StartRecordName=hostname,
+        StartRecordType="A",
+        MaxItems="1",
+    )
+    for record in records.get("ResourceRecordSets", []):
+        if record.get("Name", "").rstrip(".") != hostname:
+            continue
+        if record.get("Type") != "A":
+            continue
+        values = record.get("ResourceRecords", [])
+        if values:
+            return str(values[0]["Value"])
+
+    return None
+
+
+@contextmanager
+def _temporary_hostname_override(hostname: str, ip_address: str) -> Iterator[None]:
+    original_getaddrinfo = socket.getaddrinfo
+
+    def getaddrinfo(
+        host: str,
+        port: str | int | None,
+        family: int = 0,
+        type: int = 0,
+        proto: int = 0,
+        flags: int = 0,
+    ) -> list[tuple]:
+        if host == hostname:
+            return original_getaddrinfo(ip_address, port, family, type, proto, flags)
+        return original_getaddrinfo(host, port, family, type, proto, flags)
+
+    socket.getaddrinfo = getaddrinfo  # type: ignore[assignment,method-assign]
+    try:
+        yield
+    finally:
+        socket.getaddrinfo = original_getaddrinfo  # type: ignore[method-assign]
+
+
+def _get_with_route53_dns_fallback(
+    route53_client: object,
+    url: str,
+    *,
+    timeout: int,
+    allow_redirects: bool,
+):
+    import requests
+
+    try:
+        return requests.get(url, timeout=timeout, allow_redirects=allow_redirects)
+    except requests.exceptions.ConnectionError:
+        hostname = urlparse(url).hostname
+        if hostname is None:
+            raise
+
+        ip_address = _public_route53_a_record(route53_client, hostname)
+        if ip_address is None:
+            raise
+
+        with _temporary_hostname_override(hostname, ip_address):
+            return requests.get(url, timeout=timeout, allow_redirects=allow_redirects)
+
+
 class TestWebpageAccessibility:
     def test_caddy_admin_ui_reachable(
-        self, integration_enabled: None, base_url: str
+        self, integration_enabled: None, route53_client: object, base_url: str
     ) -> None:
         """The Dagster admin UI must return HTTP 200 or 302 (Cognito redirect)."""
         try:
-            import requests
+            import requests  # noqa: F401
         except ImportError:
             pytest.skip("requests not installed")
 
         url = f"{base_url}/dagster-webserver/admin"
-        response = requests.get(url, timeout=30, allow_redirects=False)
+        response = _get_with_route53_dns_fallback(
+            route53_client,
+            url,
+            timeout=30,
+            allow_redirects=False,
+        )
         assert response.status_code in {200, 302}, (
             f"Expected 200 or 302 from {url}, got {response.status_code}"
         )
 
     def test_caddy_guest_ui_reachable(
-        self, integration_enabled: None, base_url: str
+        self, integration_enabled: None, route53_client: object, base_url: str
     ) -> None:
         """The Dagster guest UI must return a non-5xx response from Caddy.
 
@@ -180,27 +271,37 @@ class TestWebpageAccessibility:
           502 — backend starting up; Caddy is live but Fargate task not ready yet
         """
         try:
-            import requests
+            import requests  # noqa: F401
         except ImportError:
             pytest.skip("requests not installed")
 
         url = f"{base_url}/dagster-webserver/guest"
-        response = requests.get(url, timeout=30, allow_redirects=False)
+        response = _get_with_route53_dns_fallback(
+            route53_client,
+            url,
+            timeout=30,
+            allow_redirects=False,
+        )
         assert response.status_code in {200, 302, 307, 502}, (
             f"Expected 200, 302, 307, or 502 from {url}, got {response.status_code}"
         )
 
     def test_caddy_root_reachable(
-        self, integration_enabled: None, base_url: str
+        self, integration_enabled: None, route53_client: object, base_url: str
     ) -> None:
         """The root URL must respond (Caddy is up and TLS is working)."""
         try:
-            import requests
+            import requests  # noqa: F401
         except ImportError:
             pytest.skip("requests not installed")
 
         url = base_url
-        response = requests.get(url, timeout=30, allow_redirects=False)
+        response = _get_with_route53_dns_fallback(
+            route53_client,
+            url,
+            timeout=30,
+            allow_redirects=False,
+        )
         assert response.status_code < 500, (
             f"Expected non-5xx from {url}, got {response.status_code}"
         )
@@ -287,9 +388,6 @@ class TestS3Buckets:
             "landing",
             "archive",
             "aemo",
-            "bronze",
-            "silver",
-            "gold",
         ]
         response = s3_client.list_buckets()  # type: ignore[union-attr]
         existing_names = {b["Name"] for b in response["Buckets"]}

@@ -130,7 +130,17 @@ class FastAPIAuthComponentResource(pulumi.ComponentResource):
                 usermod -a -G docker ec2-user
                 aws ecr get-login-password --region {a["region"]} | \\
                     docker login --username AWS --password-stdin {a["repo_uri"].split("/")[0]}
-                docker pull {a["repo_uri"]}:latest
+                for attempt in $(seq 1 30); do
+                    if docker pull {a["repo_uri"]}:latest; then
+                        break
+                    fi
+                    if [ "$attempt" -eq 30 ]; then
+                        echo "ERROR: failed to pull auth image after $attempt attempts" >&2
+                        exit 1
+                    fi
+                    echo "Waiting for auth image to be available... attempt $attempt"
+                    sleep 10
+                done
                 docker run -d \\
                     --restart unless-stopped \\
                     -p 8000:8000 \\

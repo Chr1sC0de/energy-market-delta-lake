@@ -82,7 +82,7 @@ class ECRComponentResource(pulumi.ComponentResource):
 
         # ── dagster-core: webserver ───────────────────────────────────────────
         self.dagster_webserver = self._make_repo(f"{name}/dagster/webserver")
-        self._build_image(
+        self.dagster_webserver_image = self._build_image(
             resource_name=f"{name}-dagster-webserver-image",
             repo=self.dagster_webserver,
             context=str(_SERVICES / "dagster-core"),
@@ -90,10 +90,14 @@ class ECRComponentResource(pulumi.ComponentResource):
             build_args={"DAGSTER_DEPLOYMENT": "aws"},
             platform="linux/amd64",
         )
+        self.dagster_webserver_image_uri = self._published_image_uri(
+            self.dagster_webserver,
+            self.dagster_webserver_image,
+        )
 
         # ── dagster-core: daemon (same Dockerfile, same target) ───────────────
         self.dagster_daemon = self._make_repo(f"{name}/dagster/daemon")
-        self._build_image(
+        self.dagster_daemon_image = self._build_image(
             resource_name=f"{name}-dagster-daemon-image",
             repo=self.dagster_daemon,
             context=str(_SERVICES / "dagster-core"),
@@ -101,21 +105,29 @@ class ECRComponentResource(pulumi.ComponentResource):
             build_args={"DAGSTER_DEPLOYMENT": "aws"},
             platform="linux/amd64",
         )
+        self.dagster_daemon_image_uri = self._published_image_uri(
+            self.dagster_daemon,
+            self.dagster_daemon_image,
+        )
 
         # ── user-code: aemo-etl ───────────────────────────────────────────────
         self.dagster_user_code_aemo_etl = self._make_repo(
             f"{name}/dagster/user-code/aemo-etl"
         )
-        self._build_image(
+        self.dagster_user_code_aemo_etl_image = self._build_image(
             resource_name=f"{name}-dagster-user-code-aemo-etl-image",
             repo=self.dagster_user_code_aemo_etl,
             context=str(_SERVICES / "dagster-user" / "aemo-etl"),
             platform="linux/amd64",
         )
+        self.dagster_user_code_aemo_etl_image_uri = self._published_image_uri(
+            self.dagster_user_code_aemo_etl,
+            self.dagster_user_code_aemo_etl_image,
+        )
 
         # ── caddy ─────────────────────────────────────────────────────────────
         self.caddy = self._make_repo(f"{name}/dagster/caddy")
-        self._build_image(
+        self.caddy_image = self._build_image(
             resource_name=f"{name}-dagster-caddy-image",
             repo=self.caddy,
             context=str(_SERVICES / "caddy"),
@@ -124,7 +136,7 @@ class ECRComponentResource(pulumi.ComponentResource):
 
         # ── authentication ────────────────────────────────────────────────────
         self.authentication = self._make_repo(f"{name}/dagster/authentication")
-        self._build_image(
+        self.authentication_image = self._build_image(
             resource_name=f"{name}-dagster-authentication-image",
             repo=self.authentication,
             context=str(_SERVICES / "authentication"),
@@ -192,3 +204,18 @@ class ECRComponentResource(pulumi.ComponentResource):
             ),
         )
         return image
+
+    def _published_image_uri(
+        self,
+        repo: aws.ecr.Repository,
+        image: docker.Image,
+    ) -> pulumi.Output[str]:
+        ecr_image = aws.ecr.get_image_output(
+            repository_name=repo.name,
+            image_tag="latest",
+            opts=pulumi.InvokeOutputOptions(depends_on=[image]),
+        )
+        return pulumi.Output.all(
+            repo_url=repo.repository_url,
+            image_digest=ecr_image.image_digest,
+        ).apply(lambda a: f"{a['repo_url']}@{a['image_digest']}")  # ty:ignore[missing-argument, invalid-argument-type]

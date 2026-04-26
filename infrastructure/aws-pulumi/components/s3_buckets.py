@@ -29,6 +29,9 @@ class S3BucketsComponentResource(pulumi.ComponentResource):
 
         self.name = name
         self.child_opts = pulumi.ResourceOptions(parent=self)
+        self._adopt_existing_buckets = (
+            pulumi.Config().get_bool("adopt_existing_s3_buckets") or False
+        )
         super().__init__(f"{name}:components:S3Buckets", name, {}, opts)
 
         self.io_manager_bucket = self.create_bucket(f"{name}-io-manager")
@@ -73,31 +76,23 @@ class S3BucketsComponentResource(pulumi.ComponentResource):
         retain_on_delete: bool = True,
     ) -> aws.s3.Bucket:
 
-        # Always declare with the component as parent so the URN is stable.
-        # On fresh deployments after pulumi down (buckets retained), Pulumi will
-        # fail with BucketAlreadyOwnedByYou — in that case, run:
-        #   pulumi import aws:s3/bucket:Bucket <name> <name> --parent <component-urn>
-        # for each retained bucket before re-running pulumi up.
-        if bucket_exists(bucket_name):
-            bucket = aws.s3.Bucket(
-                bucket_name,
-                bucket=bucket_name,
-                force_destroy=force_destroy,
-                opts=pulumi.ResourceOptions(
-                    import_=bucket_name,
-                    retain_on_delete=retain_on_delete,
-                ),
+        opts = pulumi.ResourceOptions(
+            parent=self,
+            retain_on_delete=retain_on_delete,
+        )
+        if self._adopt_existing_buckets and bucket_exists(bucket_name):
+            opts = pulumi.ResourceOptions(
+                parent=self,
+                import_=bucket_name,
+                retain_on_delete=retain_on_delete,
             )
-        else:
-            bucket = aws.s3.Bucket(
-                bucket_name,
-                bucket=bucket_name,
-                force_destroy=force_destroy,
-                opts=pulumi.ResourceOptions(
-                    parent=self,
-                    retain_on_delete=retain_on_delete,
-                ),
-            )
+
+        bucket = aws.s3.Bucket(
+            bucket_name,
+            bucket=bucket_name,
+            force_destroy=force_destroy,
+            opts=opts,
+        )
 
         bucket_child_opts = pulumi.ResourceOptions(parent=bucket)
 

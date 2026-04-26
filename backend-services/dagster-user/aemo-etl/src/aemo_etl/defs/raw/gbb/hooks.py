@@ -55,9 +55,35 @@ class LowercaseColumnsHook(Hook[bytes]):
 
     def process(self, s3_bucket: str, s3_key: str, object_: bytes) -> bytes:
         df = pl.read_parquet(io.BytesIO(object_))
-        rename_map = {c: c.lower() for c in df.columns if c != c.lower()}
-        if not rename_map:
+        keep_by_lowercase: dict[str, str] = {}
+        columns_to_drop: list[str] = []
+        for column in df.columns:
+            lowercase_column = column.lower()
+            existing = keep_by_lowercase.get(lowercase_column)
+            if existing is None:
+                keep_by_lowercase[lowercase_column] = column
+                continue
+            if existing == lowercase_column:
+                columns_to_drop.append(column)
+                continue
+            if column == lowercase_column:
+                columns_to_drop.append(existing)
+                keep_by_lowercase[lowercase_column] = column
+                continue
+            columns_to_drop.append(column)
+        rename_map = {
+            column: column.lower()
+            for column in df.columns
+            if column != column.lower() and column not in columns_to_drop
+        }
+        if not columns_to_drop and not rename_map:
             return object_
+        if columns_to_drop:
+            df = df.drop(columns_to_drop)
+        if not rename_map:
+            out = io.BytesIO()
+            df.write_parquet(out)
+            return out.getvalue()
         df = df.rename(rename_map)
         out = io.BytesIO()
         df.write_parquet(out)

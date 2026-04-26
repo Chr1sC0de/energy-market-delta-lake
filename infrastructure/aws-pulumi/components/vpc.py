@@ -138,7 +138,7 @@ class VpcComponentResource(pulumi.ComponentResource):
         self.private_subnet = aws.ec2.Subnet(
             f"{self.name}-private-subnet",
             vpc_id=self.vpc.id,
-            cidr_block="10.0.1.0/24",
+            cidr_block="10.0.16.0/20",
             availability_zone=self.availability_zone,
             map_public_ip_on_launch=False,
             opts=self.child_opts,
