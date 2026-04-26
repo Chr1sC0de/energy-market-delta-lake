@@ -1,5 +1,14 @@
 # VPC Architecture
 
+## Table of contents
+
+- [Traffic](#traffic)
+- [Resources](#resources)
+- [Components](#components)
+- [CIDR Explained](#cidr-explained)
+- [Traffic Flow](#traffic-flow)
+- [Related docs](#related-docs)
+
 ```mermaid
 flowchart TB
 
@@ -143,3 +152,9 @@ The subnets are carved out of the VPC's address space:
 - **Outbound (public → internet)**: Public resource → public route table → Internet Gateway → internet
 - **Inbound (internet → public)**: Internet → Internet Gateway → public subnet resource (requires public IP or EIP)
 - **No inbound path to private subnet** — NAT is outbound-only; there is no route from the internet into the private subnet
+
+## Related docs
+
+- [AWS Pulumi infrastructure](../README.md)
+- [Repository architecture](../../../docs/architecture.md)
+- [Repository workflow](../../../docs/workflow.md)

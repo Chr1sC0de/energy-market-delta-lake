@@ -10,6 +10,21 @@ This fastapi server should be added to caddy and protected like the dagster admi
 
 ______________________________________________________________________
 
+## Table of contents
+
+- [Implementation Plan](#implementation-plan)
+- [Overview](#overview)
+- [1. New `backend-servicesmarimo` service directory](#1-new-backend-servicesmarimo-service-directory)
+- [2. `composeyaml` changes](#2-composeyaml-changes)
+- [3. `.envrc` changes](#3-envrc-changes)
+- [4. `authenticationmainpy` changes](#4-authenticationmainpy-changes)
+- [5. `caddycaddyfile` changes](#5-caddycaddyfile-changes)
+- [6. `caddyindexhtml` changes](#6-caddyindexhtml-changes)
+- [Key design decisions](#key-design-decisions)
+- [AWS deployment considerations](#aws-deployment-considerations)
+
+______________________________________________________________________
+
 ## Implementation Plan
 
 ### Overview

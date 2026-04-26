@@ -2,6 +2,16 @@
 
 This guide covers the local workflow for running `aemo-etl` against LocalStack-backed storage and for executing the repository's tests and Dagster UI.
 
+## Table of contents
+
+- [LocalStack workflow](#localstack-workflow)
+- [Environment variables](#environment-variables)
+- [Install dependencies](#install-dependencies)
+- [Local Dagster workflow](#local-dagster-workflow)
+- [Test assumptions](#test-assumptions)
+- [Useful commands](#useful-commands)
+- [Related docs](#related-docs)
+
 ## LocalStack workflow
 
 The project's local end-to-end flow expects an S3-compatible endpoint and, for integration-style Delta writes, a DynamoDB-backed lock table.

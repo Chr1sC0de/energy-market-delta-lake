@@ -4,6 +4,13 @@ This repository's main architecture is the AWS deployment provisioned from
 `infrastructure/aws-pulumi`. The local compose stack exists to support
 development and testing of that deployed platform.
 
+## Table of contents
+
+- [AWS deployed system](#aws-deployed-system)
+- [Local test and development harness](#local-test-and-development-harness)
+- [Repository responsibilities](#repository-responsibilities)
+- [Related docs](#related-docs)
+
 ## AWS deployed system
 
 ```mermaid
@@ -123,3 +130,4 @@ current Pulumi deployment.
 - [Repository workflow](workflow.md)
 - [AWS Pulumi infrastructure](../infrastructure/aws-pulumi/README.md)
 - [aemo-etl architecture](../backend-services/dagster-user/aemo-etl/docs/architecture/high_level_architecture.md)
+- [Specs and design notes](../specs/README.md)

@@ -3,6 +3,12 @@
 This page summarizes the production workflow and the local development/testing
 workflow. The production workflow is the canonical one.
 
+## Table of contents
+
+- [Production data and orchestration flow](#production-data-and-orchestration-flow)
+- [Local development and testing workflow](#local-development-and-testing-workflow)
+- [Where to work](#where-to-work)
+
 ## Production data and orchestration flow
 
 ```mermaid
@@ -89,3 +95,5 @@ Local workflow notes:
   - [backend-services/dagster-user/aemo-etl/README.md](../backend-services/dagster-user/aemo-etl/README.md)
   - [aemo-etl architecture docs](../backend-services/dagster-user/aemo-etl/docs/architecture/high_level_architecture.md)
   - [aemo-etl ingestion flows](../backend-services/dagster-user/aemo-etl/docs/architecture/ingestion_flows.md)
+- For specs, migration notes, and design references:
+  - [specs/README.md](../specs/README.md)

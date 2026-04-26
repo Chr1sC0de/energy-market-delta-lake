@@ -3,6 +3,14 @@
 This document covers the implemented capacity, auction, transfer, and
 settlement facts in `silver.gas_model`.
 
+## Table of contents
+
+- [Fact Inventory](#fact-inventory)
+- [ERD](#erd)
+- [Implemented Source Tables](#implemented-source-tables)
+- [Notes](#notes)
+- [Related docs](#related-docs)
+
 ## Fact Inventory
 
 | Asset | Grain |
@@ -174,3 +182,10 @@ erDiagram
   facility and location identifiers.
 - `silver_gas_fact_capacity_auction` and `silver_gas_fact_settlement_activity`
   only share the conformed date dimension in the implemented schema.
+
+## Related docs
+
+- [Gas-model index](README.md)
+- [Shared dimensions ERD](gas_dim_erd.md)
+- [High-level architecture](../architecture/high_level_architecture.md)
+- [Ingestion sequence diagrams](../architecture/ingestion_flows.md)

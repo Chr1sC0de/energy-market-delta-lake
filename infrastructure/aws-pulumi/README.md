@@ -6,6 +6,18 @@ This directory is the source of truth for the main runtime architecture. It
 provisions the network, storage, container images, compute platform, and public
 entrypoint used by the Dagster-based deployment.
 
+## Table of contents
+
+- [What this stack provisions](#what-this-stack-provisions)
+- [Architecture summary](#architecture-summary)
+- [Component order](#component-order)
+- [Container images and service source](#container-images-and-service-source)
+- [Runtime behavior](#runtime-behavior)
+- [Configuration](#configuration)
+- [Common commands](#common-commands)
+- [Relationship to local development](#relationship-to-local-development)
+- [Related docs](#related-docs)
+
 ## What this stack provisions
 
 From `__main__.py`, the stack builds these layers:
@@ -82,22 +94,22 @@ flowchart LR
 The dependency order in `__main__.py` is deliberate:
 
 1. `VpcComponentResource`
-2. `VpcEndpointsComponentResource`
-3. `SecurityGroupsComponentResource`
-4. `IamRolesComponentResource`
-5. `S3BucketsComponentResource`
-6. `DeltaLockingTableComponentResource`
-7. `ECRComponentResource`
-8. `ServiceDiscoveryComponentResource`
-9. `PostgresComponentResource`
-10. `BastionHostComponentResource`
-11. `EcsClusterComponentResource`
-12. `FastAPIAuthComponentResource`
-13. `CaddyServerComponentResource`
-14. `DagsterUserCodeServiceComponentResource`
-15. `DagsterWebserverServiceComponentResource` for admin
-16. `DagsterWebserverServiceComponentResource` for guest
-17. `DagsterDaemonServiceComponentResource`
+1. `VpcEndpointsComponentResource`
+1. `SecurityGroupsComponentResource`
+1. `IamRolesComponentResource`
+1. `S3BucketsComponentResource`
+1. `DeltaLockingTableComponentResource`
+1. `ECRComponentResource`
+1. `ServiceDiscoveryComponentResource`
+1. `PostgresComponentResource`
+1. `BastionHostComponentResource`
+1. `EcsClusterComponentResource`
+1. `FastAPIAuthComponentResource`
+1. `CaddyServerComponentResource`
+1. `DagsterUserCodeServiceComponentResource`
+1. `DagsterWebserverServiceComponentResource` for admin
+1. `DagsterWebserverServiceComponentResource` for guest
+1. `DagsterDaemonServiceComponentResource`
 
 In practical terms:
 
@@ -196,3 +208,11 @@ system's services and Dagster workflows.
 - Use `backend-services/` when you need a local test/dev harness.
 - Use `backend-services/dagster-user/aemo-etl/` for ETL definitions and
   Dagster-specific data pipeline docs.
+
+## Related docs
+
+- [Repository overview](../../README.md)
+- [Repository architecture](../../docs/architecture.md)
+- [Repository workflow](../../docs/workflow.md)
+- [VPC architecture notes](docs/vpc.md)
+- [Local backend-services stack](../../backend-services/README.md)

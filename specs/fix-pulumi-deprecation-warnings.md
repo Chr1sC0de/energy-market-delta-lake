@@ -1,5 +1,17 @@
 # Fix Pulumi Deprecation Warnings & Automated Test Suite
 
+## Table of contents
+
+- [Overview](#overview)
+- [1. Deprecation Warnings Analysis](#1-deprecation-warnings-analysis)
+- [2. Code Changes](#2-code-changes)
+- [3. Code Quality Verification](#3-code-quality-verification)
+- [4. Automated Test Suite](#4-automated-test-suite)
+- [5. Execution Order](#5-execution-order)
+- [6. Acceptance Criteria](#6-acceptance-criteria)
+- [7. Post-Deployment Verification Checks](#7-post-deployment-verification-checks)
+- [8. Known Issues and Mitigations](#8-known-issues-and-mitigations)
+
 ## Overview
 
 This document is the authoritative specification for:

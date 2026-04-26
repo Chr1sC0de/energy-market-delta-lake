@@ -2,6 +2,17 @@
 
 This project packages Dagster definitions for ingesting public AEMO gas files into Delta tables and then transforming those source-specific tables into a shared `gas_model` layer.
 
+## Table of contents
+
+- [Runtime overview](#runtime-overview)
+- [How definitions are loaded](#how-definitions-are-loaded)
+- [Component roles](#component-roles)
+- [Sensors and automation](#sensors-and-automation)
+- [Storage model](#storage-model)
+- [S3-backed IO managers](#s3-backed-io-managers)
+- [Module map](#module-map)
+- [Related docs](#related-docs)
+
 ## Runtime overview
 
 ```mermaid

@@ -6,12 +6,24 @@ The canonical system architecture is the AWS deployment provisioned from
 `infrastructure/aws-pulumi`. Local compose under `backend-services/` exists to
 support development, testing, and validation of the deployed platform.
 
+## Table of contents
+
+- [What this repo contains](#what-this-repo-contains)
+- [Canonical architecture](#canonical-architecture)
+- [Workflow](#workflow)
+- [Repository layout](#repository-layout)
+- [Local development and testing](#local-development-and-testing)
+- [Documentation map](#documentation-map)
+- [Prerequisites](#prerequisites)
+- [Commands](#commands)
+- [Deployment](#deployment)
+
 ## What this repo contains
 
 - Dagster-based ETL code in `backend-services/dagster-user/aemo-etl`
 - Dagster runtime, auth, proxy, and local support services in `backend-services`
 - AWS infrastructure as code in `infrastructure/aws-pulumi`
-- Technical specs and implementation notes in `specs`
+- Technical specs and implementation notes in [specs/](specs/README.md)
 
 ## Canonical architecture
 
@@ -84,11 +96,11 @@ See [docs/architecture.md](docs/architecture.md) for the fuller system view.
 At a high level the deployed workflow is:
 
 1. Discovery assets poll public AEMO/NEMWeb sources and land files in S3.
-2. Unzipper sensors expand zipped inputs and archive successful zip payloads.
-3. Event-driven bronze assets ingest landed files into Delta tables.
-4. Source-specific silver assets deduplicate and standardize current-state tables.
-5. `gas_model` assets build shared dimensions and marts from the source silver layer.
-6. Dagster metadata and orchestration state live in PostgreSQL, while data products live in S3-backed Delta tables.
+1. Unzipper sensors expand zipped inputs and archive successful zip payloads.
+1. Event-driven bronze assets ingest landed files into Delta tables.
+1. Source-specific silver assets deduplicate and standardize current-state tables.
+1. `gas_model` assets build shared dimensions and marts from the source silver layer.
+1. Dagster metadata and orchestration state live in PostgreSQL, while data products live in S3-backed Delta tables.
 
 The orchestration details come from the Dagster definitions in
 `backend-services/dagster-user/aemo-etl`, including event-driven sensors and
@@ -142,28 +154,35 @@ Use the local stack when you need:
 
 See [backend-services/README.md](backend-services/README.md) for the local stack.
 
-## Quickstart
+## Documentation map
 
-### Work on the deployed architecture
+Follow the docs in repository order:
 
-Start with:
+### `docs/`
 
 - [docs/architecture.md](docs/architecture.md)
 - [docs/workflow.md](docs/workflow.md)
-- [infrastructure/aws-pulumi/README.md](infrastructure/aws-pulumi/README.md)
 
-### Work on ETL definitions
+### `backend-services/`
 
-Start with:
+- [backend-services/README.md](backend-services/README.md)
+- [backend-services/authentication/README.md](backend-services/authentication/README.md)
+- [backend-services/marimo/README.md](backend-services/marimo/README.md)
+
+### `backend-services/dagster-user/aemo-etl/`
 
 - [backend-services/dagster-user/aemo-etl/README.md](backend-services/dagster-user/aemo-etl/README.md)
 - [backend-services/dagster-user/aemo-etl/docs/architecture/high_level_architecture.md](backend-services/dagster-user/aemo-etl/docs/architecture/high_level_architecture.md)
+- [backend-services/dagster-user/aemo-etl/docs/gas_model/README.md](backend-services/dagster-user/aemo-etl/docs/gas_model/README.md)
 
-### Work on local test/dev services
+### `infrastructure/aws-pulumi/`
 
-Start with:
+- [infrastructure/aws-pulumi/README.md](infrastructure/aws-pulumi/README.md)
+- [infrastructure/aws-pulumi/docs/vpc.md](infrastructure/aws-pulumi/docs/vpc.md)
 
-- [backend-services/README.md](backend-services/README.md)
+### `specs/`
+
+- [specs/README.md](specs/README.md)
 
 ## Prerequisites
 

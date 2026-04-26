@@ -5,6 +5,20 @@ This stack is useful for validating service interactions and Dagster workflows
 locally, but it is not the canonical architecture. The primary deployed
 architecture is defined in `infrastructure/aws-pulumi/`.
 
+## Table of contents
+
+- [Prerequisites](#prerequisites)
+- [Directory layout](#directory-layout)
+- [Deployment configuration](#deployment-configuration)
+- [Setup](#setup)
+- [Environment variables](#environment-variables)
+- [LocalStack S3 buckets](#localstack-s3-buckets)
+- [Launching a job via the GraphQL API](#launching-a-job-via-the-graphql-api)
+- [Useful commands](#useful-commands)
+- [Related docs](#related-docs)
+- [Teardown](#teardown)
+- [Architecture notes](#architecture-notes)
+
 | Container | Role | Port |
 |---|---|---|
 | `postgres` | Dagster instance storage (run, schedule, event-log) | `5432` |
@@ -70,9 +84,9 @@ backend-services/
 │   ├── Dockerfile                 # dagster-webserver / dagster-daemon image
 │   │                              # Accepts DAGSTER_DEPLOYMENT build arg (local | aws)
 │   ├── dagster.local.yaml         # Instance config: DockerRunLauncher, LocalStack S3
-│   ├── dagster.aws.yaml           # Instance config: EcsRunLauncher, real S3 (future)
+│   ├── dagster.aws.yaml           # Instance config: EcsRunLauncher, deployed AWS runtime
 │   ├── workspace.local.yaml       # gRPC code-location — local container network
-│   └── workspace.aws.yaml         # gRPC code-location — AWS network (future)
+│   └── workspace.aws.yaml         # gRPC code-location — AWS network
 └── dagster-user/
     └── aemo-etl/
         ├── Dockerfile             # aemo-etl gRPC code-location + run-worker image
@@ -90,7 +104,7 @@ is baked into the image at build time as `dagster.yaml` and `workspace.yaml`.
 | `DAGSTER_DEPLOYMENT` | `dagster.yaml` source | `workspace.yaml` source | Run launcher |
 |---|---|---|---|
 | `local` (default) | `dagster.local.yaml` | `workspace.local.yaml` | `DockerRunLauncher` (Podman) |
-| `aws` | `dagster.aws.yaml` | `workspace.aws.yaml` | `EcsRunLauncher` (future) |
+| `aws` | `dagster.aws.yaml` | `workspace.aws.yaml` | `EcsRunLauncher` |
 
 `compose.yaml` passes `DAGSTER_DEPLOYMENT=local` as a build arg for the two
 Dagster webservers and the daemon. To target AWS, update the build arg
@@ -206,12 +220,14 @@ ______________________________________________________________________
 ## LocalStack S3 buckets
 
 The `localstack/init-s3.sh` script runs automatically inside LocalStack on first
-boot and creates the three buckets used by the `aemo-etl` code location:
+boot and creates the four buckets used by the `aemo-etl` code location, plus
+the DynamoDB `delta_log` table used for Delta locking:
 
 | Bucket | Purpose |
 |---|---|
 | `dev-energy-market-io-manager` | Dagster IO manager intermediate storage |
 | `dev-energy-market-landing` | Raw landing zone |
+| `dev-energy-market-archive` | Archived source files and successful zip payloads |
 | `dev-energy-market-aemo` | AEMO source data |
 
 Bucket names are derived from the defaults in `aemo_etl/configs.py`
@@ -305,6 +321,15 @@ Run-worker containers are ephemeral. List all containers including exited ones:
 podman ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"
 podman logs <container-name>
 ```
+
+## Related docs
+
+- [Repository overview](../README.md)
+- [Repository architecture](../docs/architecture.md)
+- [AWS Pulumi infrastructure](../infrastructure/aws-pulumi/README.md)
+- [Authentication service](authentication/README.md)
+- [Marimo notebook service](marimo/README.md)
+- [aemo-etl project docs](dagster-user/aemo-etl/README.md)
 
 ### Rebuild a single service after a code change
 
