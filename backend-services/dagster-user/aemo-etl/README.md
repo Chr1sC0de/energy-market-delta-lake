@@ -229,3 +229,17 @@ aemo-etl/
 - [Ingestion sequence diagrams](docs/architecture/ingestion_flows.md)
 - [Local development guide](docs/development/local_development.md)
 - [Gas-model ERDs](docs/gas_model/)
+
+## Sync metadata
+
+- `sync.owner`: `docs`
+- `sync.sources`:
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/configs.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/sensors.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
+- `sync.scope`: `architecture`
+- `sync.qa`:
+  - `git diff --name-only`
+  - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`
+  - `verify links, diagrams, commands, paths, ports, env vars, and names`

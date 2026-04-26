@@ -2,6 +2,14 @@
 
 These diagrams show the main ingestion paths implemented by the current factories and definition modules. They stay close to the repo's real layers: scheduled NEMWeb discovery, landing and archive buckets, unzipper assets, bronze ingestion assets, source silver assets, and downstream `gas_model` automation.
 
+## Table of contents
+
+- [GBB ingestion flow](#gbb-ingestion-flow)
+- [VICGAS ingestion flow](#vicgas-ingestion-flow)
+- [Raw-to-silver transformation flow](#raw-to-silver-transformation-flow)
+- [LocalStack and S3-compatible behavior](#localstack-and-s3-compatible-behavior)
+- [Related docs](#related-docs)
+
 ## GBB ingestion flow
 
 ```mermaid
@@ -125,3 +133,17 @@ When `AWS_ENDPOINT_URL` points at LocalStack, the same flow runs against local S
 - [High-level architecture](high_level_architecture.md)
 - [Local development guide](../development/local_development.md)
 - [Gas-model ERDs](../gas_model/)
+
+## Sync metadata
+
+- `sync.owner`: `docs`
+- `sync.sources`:
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/sensors.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/unzipper/definitions.py`
+- `sync.scope`: `behavior`
+- `sync.qa`:
+  - `git diff --name-only`
+  - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`
+  - `verify links, diagrams, commands, paths, ports, env vars, and names`

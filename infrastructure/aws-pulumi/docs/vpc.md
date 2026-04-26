@@ -1,5 +1,14 @@
 # VPC Architecture
 
+## Table of contents
+
+- [Traffic](#traffic)
+- [Resources](#resources)
+- [Components](#components)
+- [CIDR Explained](#cidr-explained)
+- [Traffic Flow](#traffic-flow)
+- [Related docs](#related-docs)
+
 ```mermaid
 flowchart TB
 
@@ -21,7 +30,7 @@ flowchart TB
                 EIP["Elastic IP"]
             end
 
-            subgraph PrivateSubnet["Private Subnet 10.0.1.0/24"]
+            subgraph PrivateSubnet["Private Subnet 10.0.16.0/20"]
 
                 PrivateWorkloads["Private Resources
                 (ECS / EC2 / etc)"]
@@ -89,7 +98,7 @@ Internet → IGW → Public subnet resource (must have public IP/EIP)
 |-----------|------|-------------|
 | VPC | 10.0.0.0/16 | Main virtual network |
 | Public Subnet | 10.0.0.0/24 | Contains NAT instance with Elastic IP |
-| Private Subnet | 10.0.1.0/24 | Private resources, outbound traffic via NAT |
+| Private Subnet | 10.0.16.0/20 | Private resources, outbound traffic via NAT |
 
 ## CIDR Explained
 
@@ -129,13 +138,13 @@ So usable = 256 − 5 = **251 addresses** per /24 subnet.
 |---------|------|-------|------------|
 | VPC | 10.0.0.0/16 | 65,536 | 65,531 |
 | Public Subnet | 10.0.0.0/24 | 256 | 251 |
-| Private Subnet | 10.0.1.0/24 | 256 | 251 |
+| Private Subnet | 10.0.16.0/20 | 4,096 | 4,091 |
 
 The subnets are carved out of the VPC's address space:
 
 - VPC: `10.0.0.0/16` → covers `10.0.0.0` – `10.0.255.255`
 - Public: `10.0.0.0/24` → covers `10.0.0.0` – `10.0.0.255`
-- Private: `10.0.1.0/24` → covers `10.0.1.0` – `10.0.1.255`
+- Private: `10.0.16.0/20` → covers `10.0.16.0` – `10.0.31.255`
 
 ## Traffic Flow
 
@@ -143,3 +152,27 @@ The subnets are carved out of the VPC's address space:
 - **Outbound (public → internet)**: Public resource → public route table → Internet Gateway → internet
 - **Inbound (internet → public)**: Internet → Internet Gateway → public subnet resource (requires public IP or EIP)
 - **No inbound path to private subnet** — NAT is outbound-only; there is no route from the internet into the private subnet
+
+## Related docs
+
+- [AWS Pulumi component docs](README.md)
+- [AWS Pulumi infrastructure](../README.md)
+- [Connectivity](connectivity.md)
+- [Identity and discovery](identity-and-discovery.md)
+- [Storage](storage.md)
+- [Runtime](runtime.md)
+- [Edge and access](edge-and-access.md)
+- [Repository architecture](../../../docs/architecture.md)
+- [Repository workflow](../../../docs/workflow.md)
+
+## Sync metadata
+
+- `sync.owner`: `docs`
+- `sync.sources`:
+  - `infrastructure/aws-pulumi/components/vpc.py`
+  - `infrastructure/aws-pulumi/tests/unit/test_vpc.py`
+- `sync.scope`: `architecture`
+- `sync.qa`:
+  - `git diff --name-only`
+  - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`
+  - `verify links, diagrams, commands, paths, ports, env vars, and names`

@@ -4,6 +4,14 @@ This document covers the currently implemented operational flow and storage
 facts in `silver.gas_model`. Shared dimensions are defined once in
 `docs/gas_model/gas_dim_erd.md`.
 
+## Table of contents
+
+- [Fact Inventory](#fact-inventory)
+- [ERD](#erd)
+- [Implemented Source Tables](#implemented-source-tables)
+- [Notes](#notes)
+- [Related docs](#related-docs)
+
 ## Fact Inventory
 
 | Asset | Grain |
@@ -178,3 +186,25 @@ erDiagram
   `source_table` to preserve source-specific forecast semantics.
 - `facility_key`, `location_key`, `zone_key`, and `pipeline_segment_key` are
   nullable where the current transforms cannot safely resolve a conformed parent.
+
+## Related docs
+
+- [Gas-model index](README.md)
+- [Shared dimensions ERD](gas_dim_erd.md)
+- [High-level architecture](../architecture/high_level_architecture.md)
+- [Ingestion sequence diagrams](../architecture/ingestion_flows.md)
+
+## Sync metadata
+
+- `sync.owner`: `docs`
+- `sync.sources`:
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_connection_point_flow.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_facility_flow_storage.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_nomination_forecast.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_linepack.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_operational_meter_flow.py`
+- `sync.scope`: `interface`
+- `sync.qa`:
+  - `git diff --name-only`
+  - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`
+  - `verify links, diagrams, commands, paths, ports, env vars, and names`

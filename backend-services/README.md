@@ -1,15 +1,35 @@
-# Local Development — Dagster OSS Stack
+# Local Development and Testing — Podman Compose Stack
 
-Full local deployment of the Dagster OSS architecture using Podman Compose.
-Spins up five containers that mirror a production deployment:
+Local development and testing harness for the repository using Podman Compose.
+This stack is useful for validating service interactions and Dagster workflows
+locally, but it is not the canonical architecture. The primary deployed
+architecture is defined in `infrastructure/aws-pulumi/`.
+
+## Table of contents
+
+- [Prerequisites](#prerequisites)
+- [Directory layout](#directory-layout)
+- [Deployment configuration](#deployment-configuration)
+- [Setup](#setup)
+- [Environment variables](#environment-variables)
+- [LocalStack S3 buckets](#localstack-s3-buckets)
+- [Launching a job via the GraphQL API](#launching-a-job-via-the-graphql-api)
+- [Useful commands](#useful-commands)
+- [Related docs](#related-docs)
+- [Teardown](#teardown)
+- [Architecture notes](#architecture-notes)
 
 | Container | Role | Port |
 |---|---|---|
 | `postgres` | Dagster instance storage (run, schedule, event-log) | `5432` |
-| `localstack` | Mocked AWS S3 | `4566` |
+| `localstack` | Mocked AWS services for local storage workflows | `4566` |
 | `aemo-etl` | Dagster gRPC code-location server | `4000` |
-| `dagster-webserver` | Dagster UI + GraphQL API | `3000` |
+| `dagster-webserver-admin` | Protected Dagster UI + GraphQL API | internal |
+| `dagster-webserver-guest` | Guest Dagster UI + GraphQL API | internal |
 | `dagster-daemon` | Schedule, sensor, and run queue processor | — |
+| `authentication` | OIDC/session bridge for protected routes | internal |
+| `marimo` | Local notebook service | internal |
+| `caddy` | Local reverse proxy and public entrypoint | `80`, `443` |
 
 ______________________________________________________________________
 
@@ -54,7 +74,7 @@ ______________________________________________________________________
 
 ```
 backend-services/
-├── compose.yaml                   # Podman Compose — all five services (local deployment)
+├── compose.yaml                   # Podman Compose — local test/dev service stack
 ├── localstack/
 │   └── init-s3.sh                 # Auto-creates S3 buckets on LocalStack boot
 ├── postgres/
@@ -64,9 +84,9 @@ backend-services/
 │   ├── Dockerfile                 # dagster-webserver / dagster-daemon image
 │   │                              # Accepts DAGSTER_DEPLOYMENT build arg (local | aws)
 │   ├── dagster.local.yaml         # Instance config: DockerRunLauncher, LocalStack S3
-│   ├── dagster.aws.yaml           # Instance config: EcsRunLauncher, real S3 (future)
+│   ├── dagster.aws.yaml           # Instance config: EcsRunLauncher, deployed AWS runtime
 │   ├── workspace.local.yaml       # gRPC code-location — local container network
-│   └── workspace.aws.yaml         # gRPC code-location — AWS network (future)
+│   └── workspace.aws.yaml         # gRPC code-location — AWS network
 └── dagster-user/
     └── aemo-etl/
         ├── Dockerfile             # aemo-etl gRPC code-location + run-worker image
@@ -84,10 +104,10 @@ is baked into the image at build time as `dagster.yaml` and `workspace.yaml`.
 | `DAGSTER_DEPLOYMENT` | `dagster.yaml` source | `workspace.yaml` source | Run launcher |
 |---|---|---|---|
 | `local` (default) | `dagster.local.yaml` | `workspace.local.yaml` | `DockerRunLauncher` (Podman) |
-| `aws` | `dagster.aws.yaml` | `workspace.aws.yaml` | `EcsRunLauncher` (future) |
+| `aws` | `dagster.aws.yaml` | `workspace.aws.yaml` | `EcsRunLauncher` |
 
-`compose.yaml` passes `DAGSTER_DEPLOYMENT=local` as a build arg for both
-`dagster-webserver` and `dagster-daemon`. To target AWS, update the build arg
+`compose.yaml` passes `DAGSTER_DEPLOYMENT=local` as a build arg for the two
+Dagster webservers and the daemon. To target AWS, update the build arg
 to `aws` and supply the appropriate environment variables.
 
 ______________________________________________________________________
@@ -144,23 +164,34 @@ dependency downloads). Subsequent runs use the layer cache and are near-instant.
 podman ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 ```
 
-Expected output (all containers up, `postgres` and `localstack` show `healthy`):
+Expected output: all containers are up, with `postgres`, `localstack`,
+`aemo-etl`, and `marimo` eventually becoming healthy.
 
 ```
-NAMES              STATUS                   PORTS
-postgres           Up 30 seconds (healthy)  0.0.0.0:5432->5432/tcp
-localstack         Up 30 seconds (healthy)  0.0.0.0:4566->4566/tcp
-aemo-etl           Up 20 seconds            0.0.0.0:4000->4000/tcp
-dagster-webserver  Up 20 seconds            0.0.0.0:3000->3000/tcp
-dagster-daemon     Up 20 seconds
+NAMES                    STATUS                   PORTS
+postgres                 Up 30 seconds (healthy)  0.0.0.0:5432->5432/tcp
+localstack               Up 30 seconds (healthy)  0.0.0.0:4566->4566/tcp
+aemo-etl                 Up 20 seconds (healthy)
+dagster-webserver-admin  Up 20 seconds
+dagster-webserver-guest  Up 20 seconds
+dagster-daemon           Up 20 seconds
+authentication           Up 20 seconds
+marimo                   Up 20 seconds (healthy)
+caddy                    Up 20 seconds            0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp
 ```
 
 ### 3. Open the Dagster UI
 
-Navigate to **http://localhost:3000** in your browser.
+Navigate to **https://localhost** in your browser.
 
-The `aemo-etl` code location should appear under **Deployment → Code locations**
-with its assets and jobs loaded.
+Useful routes:
+
+- `/dagster-webserver/guest` for the guest Dagster UI
+- `/dagster-webserver/admin` for the protected admin Dagster UI
+- `/marimo` for local notebooks
+
+The `aemo-etl` code location should appear in Dagster under
+**Deployment → Code locations** with its assets and jobs loaded.
 
 ______________________________________________________________________
 
@@ -189,12 +220,14 @@ ______________________________________________________________________
 ## LocalStack S3 buckets
 
 The `localstack/init-s3.sh` script runs automatically inside LocalStack on first
-boot and creates the three buckets used by the `aemo-etl` code location:
+boot and creates the four buckets used by the `aemo-etl` code location, plus
+the DynamoDB `delta_log` table used for Delta locking:
 
 | Bucket | Purpose |
 |---|---|
 | `dev-energy-market-io-manager` | Dagster IO manager intermediate storage |
 | `dev-energy-market-landing` | Raw landing zone |
+| `dev-energy-market-archive` | Archived source files and successful zip payloads |
 | `dev-energy-market-aemo` | AEMO source data |
 
 Bucket names are derived from the defaults in `aemo_etl/configs.py`
@@ -204,12 +237,13 @@ ______________________________________________________________________
 
 ## Launching a job via the GraphQL API
 
-The Dagster GraphQL API is available at `http://localhost:3000/graphql`.
+The guest Dagster GraphQL API is available through Caddy at
+`https://localhost/graphql`.
 
 ### Discover available jobs
 
 ```bash
-curl -s -X POST http://localhost:3000/graphql \
+curl -sk -X POST https://localhost/graphql \
   -H "Content-Type: application/json" \
   -d '{
     "query": "{ repositoryOrError(repositorySelector: {repositoryName: \"__repository__\", repositoryLocationName: \"aemo-etl\"}) { ... on Repository { name jobs { name } } } }"
@@ -219,7 +253,7 @@ curl -s -X POST http://localhost:3000/graphql \
 ### Launch a run
 
 ```bash
-curl -s -X POST http://localhost:3000/graphql \
+curl -sk -X POST https://localhost/graphql \
   -H "Content-Type: application/json" \
   -d '{
     "query": "mutation LaunchRun($executionParams: ExecutionParams!) { launchRun(executionParams: $executionParams) { __typename ... on LaunchRunSuccess { run { runId status } } ... on PythonError { message } } }",
@@ -242,7 +276,7 @@ curl -s -X POST http://localhost:3000/graphql \
 Replace `<RUN_ID>` with the `runId` from the launch response:
 
 ```bash
-curl -s -X POST http://localhost:3000/graphql \
+curl -sk -X POST https://localhost/graphql \
   -H "Content-Type: application/json" \
   -d '{
     "query": "{ runOrError(runId: \"<RUN_ID>\") { ... on Run { runId status startTime endTime } } }"
@@ -259,10 +293,12 @@ ______________________________________________________________________
 
 ```bash
 podman logs -f dagster-daemon
-podman logs -f dagster-webserver
+podman logs -f dagster-webserver-admin
+podman logs -f dagster-webserver-guest
 podman logs -f aemo-etl
 podman logs -f postgres
 podman logs -f localstack
+podman logs -f caddy
 ```
 
 ### Connect to the Dagster database directly
@@ -286,6 +322,15 @@ podman ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"
 podman logs <container-name>
 ```
 
+## Related docs
+
+- [Repository overview](../README.md)
+- [Repository architecture](../docs/architecture.md)
+- [AWS Pulumi infrastructure](../infrastructure/aws-pulumi/README.md)
+- [Authentication service](authentication/README.md)
+- [Marimo notebook service](marimo/README.md)
+- [aemo-etl project docs](dagster-user/aemo-etl/README.md)
+
 ### Rebuild a single service after a code change
 
 ```bash
@@ -296,9 +341,9 @@ podman-compose up -d --no-build aemo-etl
 For `dagster-core` changes (e.g. `dagster.local.yaml`):
 
 ```bash
-podman-compose build dagster-webserver   # also rebuilds dagster-daemon image
-podman rm -f dagster-webserver dagster-daemon
-podman-compose up -d --no-build dagster-webserver dagster-daemon
+podman-compose build dagster-webserver-admin dagster-webserver-guest dagster-daemon
+podman rm -f dagster-webserver-admin dagster-webserver-guest dagster-daemon
+podman-compose up -d --no-build dagster-webserver-admin dagster-webserver-guest dagster-daemon
 ```
 
 To build for a specific deployment target manually:
@@ -370,7 +415,8 @@ To also remove all locally built images:
 ```bash
 podman rmi \
   localhost/dagster-local_aemo-etl:latest \
-  localhost/dagster-local_dagster-webserver:latest \
+  localhost/dagster-local_dagster-webserver-admin:latest \
+  localhost/dagster-local_dagster-webserver-guest:latest \
   localhost/dagster-local_dagster-daemon:latest \
   localhost/dagster-local_postgres:latest
 ```
@@ -386,10 +432,12 @@ ______________________________________________________________________
 ### Startup order
 
 ```
-postgres  ──(healthy)──► dagster-webserver
+postgres  ──(healthy)──► dagster-webserver-admin
+                      ├─► dagster-webserver-guest
                       └─► dagster-daemon
 
-localstack ──(healthy)──► aemo-etl ──(started)──► dagster-webserver
+localstack ──(healthy)──► aemo-etl ──(started)──► dagster-webserver-admin
+                                              ├─► dagster-webserver-guest
                                               └─► dagster-daemon
 ```
 
@@ -414,3 +462,18 @@ The same socket path is hard-coded in `dagster.local.yaml` under
 `run_launcher.config.container_kwargs.volumes` for run-worker containers
 (`/run/user/1000/podman/podman.sock`). If your UID is not `1000`, update
 that path accordingly.
+
+## Sync metadata
+
+- `sync.owner`: `docs`
+- `sync.sources`:
+  - `backend-services/compose.yaml`
+  - `backend-services/.envrc`
+  - `backend-services/localstack/init-s3.sh`
+  - `backend-services/dagster-core/dagster.local.yaml`
+  - `backend-services/dagster-core/dagster.aws.yaml`
+- `sync.scope`: `operations`
+- `sync.qa`:
+  - `git diff --name-only`
+  - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`
+  - `verify links, diagrams, commands, paths, ports, env vars, and names`

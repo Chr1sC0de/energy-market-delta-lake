@@ -1,5 +1,18 @@
 # AWS CDK to Pulumi Migration Plan
 
+## Table of contents
+
+- [Overview](#overview)
+- [1. Current State](#1-current-state)
+- [2. Target Architecture](#2-target-architecture)
+- [3. New Pulumi Component Files](#3-new-pulumi-component-files)
+- [4. Resource Specifications](#4-resource-specifications)
+- [5. Deployment Process](#5-deployment-process)
+- [6. Testing Strategy](#6-testing-strategy)
+- [7. Remediation Guide](#7-remediation-guide)
+- [8. Post-Migration Cleanup](#8-post-migration-cleanup)
+- [9. File Map – CDK → Pulumi](#9-file-map--cdk--pulumi)
+
 ## Overview
 
 This document is the authoritative specification for completing the migration of the
