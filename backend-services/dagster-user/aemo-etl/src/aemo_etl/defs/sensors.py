@@ -1,6 +1,5 @@
 from dagster import (
     AssetSelection,
-    AutomationConditionSensorDefinition,
     Definitions,
     definitions,
 )
@@ -67,11 +66,6 @@ def defs() -> Definitions:
                 asset_selection=GBB_UNZIPPER_SELECTION,
                 s3_source_bucket=LANDING_BUCKET,
                 s3_source_prefix="bronze/gbb",
-                default_status=DEFAULT_SENSOR_STATUS,
-            ),
-            AutomationConditionSensorDefinition(
-                name="default_automation_condition_sensor",
-                target=AssetSelection.all() - EVENT_DRIVEN_ASSETS_SELECTION,
                 default_status=DEFAULT_SENSOR_STATUS,
             ),
         ]

@@ -633,8 +633,8 @@ def test_capacity_and_settlement_transforms() -> None:
                 bid_id=1,
                 zone_id=1,
                 zone_name="Z",
-                start_period="01 Jan 2024",
-                end_period="02 Jan 2024",
+                start_period="Apr-2026",
+                end_period="May-2026",
                 step=1,
                 bid_price=1.0,
                 bid_quantity_gj=2.0,
@@ -644,7 +644,7 @@ def test_capacity_and_settlement_transforms() -> None:
                 zone_id=1,
                 zone_name="Z",
                 zone_type="T",
-                capacity_period="P",
+                capacity_period="Apr-2027",
                 zone_capacity_gj=3.0,
                 current_date="01 Jan 2024",
             ),
@@ -653,7 +653,7 @@ def test_capacity_and_settlement_transforms() -> None:
                 zone_id=1,
                 zone_name="Z",
                 zone_type="T",
-                capacity_period="P",
+                capacity_period="Apr-2027",
                 auction_date="01 Jan 2024",
                 available_capacity_gj=4.0,
                 current_date="01 Jan 2024",
@@ -835,7 +835,20 @@ def test_capacity_and_settlement_transforms() -> None:
     settlement_df = _collect(settlement_result)
 
     assert transaction_df.height == 5
-    assert _collect(auction_result).height == 9
+    auction_df = _collect(auction_result)
+    assert auction_df.height == 9
+    assert auction_df.filter(pl.col("auction_metric") == "bid_stack")[
+        "capacity_period"
+    ].to_list() == ["Apr-2026"]
+    assert auction_df.filter(pl.col("auction_metric") == "bid_stack")[
+        "start_date"
+    ].to_list() == [None]
+    assert auction_df.filter(pl.col("auction_metric") == "bid_stack")[
+        "end_date"
+    ].to_list() == [None]
+    assert auction_df.filter(pl.col("auction_metric") == "system_capability")[
+        "capacity_period"
+    ].to_list() == ["Apr-2027"]
     assert settlement_df.height == 8
     assert "monthly_cumulative_imbalance_position_surplus" in (
         settlement_df["activity_type"].to_list()

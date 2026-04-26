@@ -4,6 +4,7 @@ from dagster import (
     AssetIn,
     AssetKey,
     AutomationCondition,
+    AutomationConditionSensorDefinition,
     Definitions,
     MaterializeResult,
     TableColumnDep,
@@ -14,7 +15,8 @@ from dagster import (
 )
 from polars import LazyFrame
 
-from aemo_etl.configs import AEMO_BUCKET
+from aemo_etl.configs import AEMO_BUCKET, DEFAULT_SENSOR_STATUS
+from aemo_etl.defs.gas_model._parsing import parse_gas_datetime
 from aemo_etl.factories.checks import (
     duplicate_row_check_factory,
     schema_drift_check_factory,
@@ -101,13 +103,7 @@ REQUIRED_COLUMNS = ["surrogate_key", "source_system", "source_table", "auction_m
 
 
 def _parse_datetime(column: str) -> pl.Expr:
-    source = pl.col(column).cast(pl.String)
-    return pl.coalesce(
-        source.str.strptime(pl.Datetime("us"), "%d %b %Y %H:%M:%S", strict=False),
-        source.str.strptime(pl.Datetime("us"), "%d %B %Y %H:%M:%S", strict=False),
-        source.str.strptime(pl.Datetime("us"), "%d %b %Y", strict=False),
-        source.str.strptime(pl.Datetime("us"), "%d %B %Y", strict=False),
-    )
+    return parse_gas_datetime(column)
 
 
 def _base(source_table: str, updated_column: str = "current_date") -> list[pl.Expr]:
@@ -143,8 +139,8 @@ def _select_capacity_auction(
             zone_name=pl.col("zone_name").cast(pl.String),
             zone_type=pl.lit(None).cast(pl.String),
             capacity_period=pl.col("start_period").cast(pl.String),
-            start_date=_parse_datetime("start_period").dt.date(),
-            end_date=_parse_datetime("end_period").dt.date(),
+            start_date=pl.lit(None).cast(pl.Date),
+            end_date=pl.lit(None).cast(pl.Date),
             auction_metric=pl.lit("bid_stack"),
             quantity_gj=pl.col("bid_quantity_gj").cast(pl.Float64),
             price=pl.col("bid_price").cast(pl.Float64),
@@ -363,5 +359,12 @@ def defs() -> Definitions:
             silver_gas_fact_capacity_auction_schema_check,
             silver_gas_fact_capacity_auction_schema_drift_check,
             silver_gas_fact_capacity_auction_required_fields,
+        ],
+        sensors=[
+            AutomationConditionSensorDefinition(
+                name="silver_gas_fact_capacity_auction_sensor",
+                target=[silver_gas_fact_capacity_auction.key],
+                default_status=DEFAULT_SENSOR_STATUS,
+            )
         ],
     )

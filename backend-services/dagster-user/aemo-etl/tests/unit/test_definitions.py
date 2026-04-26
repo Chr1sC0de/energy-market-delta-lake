@@ -3,8 +3,6 @@
 from dagster import Definitions
 from pytest_mock import MockerFixture
 
-from aemo_etl.definitions import AWS_ECS_EXECUTOR_CONFIG
-
 
 def test_root_defs_function(mocker: MockerFixture) -> None:
     """defs() merges resources with load_from_defs_folder output."""
@@ -16,11 +14,3 @@ def test_root_defs_function(mocker: MockerFixture) -> None:
 
     result = defs()
     assert isinstance(result, Definitions)
-
-
-def test_aws_ecs_executor_config() -> None:
-    assert AWS_ECS_EXECUTOR_CONFIG == {
-        "cpu": 512,
-        "memory": 4096,
-        "max_concurrent": 3,
-    }

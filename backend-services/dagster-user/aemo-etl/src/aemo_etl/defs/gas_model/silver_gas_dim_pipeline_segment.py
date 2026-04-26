@@ -4,6 +4,7 @@ from dagster import (
     AssetIn,
     AssetKey,
     AutomationCondition,
+    AutomationConditionSensorDefinition,
     Definitions,
     MaterializeResult,
     TableColumnDep,
@@ -14,7 +15,7 @@ from dagster import (
 )
 from polars import LazyFrame
 
-from aemo_etl.configs import AEMO_BUCKET
+from aemo_etl.configs import AEMO_BUCKET, DEFAULT_SENSOR_STATUS
 from aemo_etl.factories.checks import (
     duplicate_row_check_factory,
     schema_drift_check_factory,
@@ -390,5 +391,12 @@ def defs() -> Definitions:
             silver_gas_dim_pipeline_segment_schema_check,
             silver_gas_dim_pipeline_segment_schema_drift_check,
             silver_gas_dim_pipeline_segment_required_fields,
+        ],
+        sensors=[
+            AutomationConditionSensorDefinition(
+                name="silver_gas_dim_pipeline_segment_sensor",
+                target=[silver_gas_dim_pipeline_segment.key],
+                default_status=DEFAULT_SENSOR_STATUS,
+            )
         ],
     )

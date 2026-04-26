@@ -4,13 +4,14 @@ from typing import Iterable
 from dagster import (
     AssetIn,
     AutomationCondition,
+    AutomationConditionSensorDefinition,
     Definitions,
 )
 from dagster._core.definitions.assets.definition.asset_dep import CoercibleToAssetDep
 from polars import LazyFrame
 from polars._typing import PolarsDataType
 
-from aemo_etl.configs import AEMO_BUCKET
+from aemo_etl.configs import AEMO_BUCKET, DEFAULT_SENSOR_STATUS
 from aemo_etl.factories.checks import (
     duplicate_row_check_factory,
     schema_drift_check_factory,
@@ -132,5 +133,12 @@ def df_from_s3_keys_definitions_factory(
             silver_asset_duplicate_row_check,
             silver_asset_schema_check,
             silver_asset_schema_drift_check,
+        ],
+        sensors=[
+            AutomationConditionSensorDefinition(
+                name=f"{silver_table_name}_sensor",
+                target=[silver_asset.key],
+                default_status=DEFAULT_SENSOR_STATUS,
+            )
         ],
     )

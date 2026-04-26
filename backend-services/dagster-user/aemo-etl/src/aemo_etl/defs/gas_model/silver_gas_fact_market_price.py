@@ -4,6 +4,7 @@ from dagster import (
     AssetIn,
     AssetKey,
     AutomationCondition,
+    AutomationConditionSensorDefinition,
     Definitions,
     MaterializeResult,
     TableColumnDep,
@@ -14,7 +15,7 @@ from dagster import (
 )
 from polars import LazyFrame
 
-from aemo_etl.configs import AEMO_BUCKET
+from aemo_etl.configs import AEMO_BUCKET, DEFAULT_SENSOR_STATUS
 from aemo_etl.defs.gas_model._parsing import parse_gas_datetime
 from aemo_etl.factories.checks import (
     duplicate_row_check_factory,
@@ -448,5 +449,12 @@ def defs() -> Definitions:
             silver_gas_fact_market_price_schema_check,
             silver_gas_fact_market_price_schema_drift_check,
             silver_gas_fact_market_price_required_fields,
+        ],
+        sensors=[
+            AutomationConditionSensorDefinition(
+                name="silver_gas_fact_market_price_sensor",
+                target=[silver_gas_fact_market_price.key],
+                default_status=DEFAULT_SENSOR_STATUS,
+            )
         ],
     )

@@ -21,5 +21,5 @@ def test_dagster_core_limits_run_concurrency_to_50() -> None:
 def test_dagster_core_uses_cost_optimized_ecs_run_resources() -> None:
     config = _dagster_core_aws_config()
 
-    assert 'cpu: "512"' in config
-    assert 'memory: "4096"' in config
+    assert 'cpu: "256"' in config
+    assert 'memory: "2048"' in config

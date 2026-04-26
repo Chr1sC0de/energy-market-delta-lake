@@ -1,9 +1,15 @@
 """Unit tests for defs/sensors.py."""
 
 import importlib
+from pathlib import Path
 from typing import Any
 
-from dagster import DefaultSensorStatus, Definitions
+from dagster import (
+    AssetKey,
+    AutomationConditionSensorDefinition,
+    DefaultSensorStatus,
+    Definitions,
+)
 from pytest_mock import MockerFixture
 
 
@@ -40,9 +46,9 @@ def test_event_driven_raw_sensor_byte_caps(mocker: MockerFixture) -> None:
         calls.append(kwargs)
         return mocker.MagicMock()
 
-    from aemo_etl.defs import sensors as sensors_module
     import aemo_etl.factories.sensors as df_from_s3_keys_sensors
     import aemo_etl.factories.unzipper.sensors as unzipper_sensors
+    from aemo_etl.defs import sensors as sensors_module
 
     mocker.patch.object(
         df_from_s3_keys_sensors,
@@ -52,11 +58,6 @@ def test_event_driven_raw_sensor_byte_caps(mocker: MockerFixture) -> None:
     mocker.patch.object(
         unzipper_sensors,
         "unzipper_sensor",
-        return_value=mocker.MagicMock(),
-    )
-    mocker.patch.object(
-        sensors_module,
-        "AutomationConditionSensorDefinition",
         return_value=mocker.MagicMock(),
     )
     mocker.patch.object(
@@ -79,3 +80,28 @@ def test_event_driven_raw_sensor_byte_caps(mocker: MockerFixture) -> None:
     }
     assert raw_sensor_calls["vicgas_event_driven_assets_sensor"]["bytes_cap"] == 250e6
     assert raw_sensor_calls["gbb_event_driven_assets_sensor"]["bytes_cap"] == 250e6
+
+
+def test_gas_model_silver_modules_define_asset_targeted_automation_sensors() -> None:
+    gas_model_dir = (
+        Path(__file__).resolve().parents[2] / "src" / "aemo_etl" / "defs" / "gas_model"
+    )
+    module_names = sorted(path.stem for path in gas_model_dir.glob("silver_*.py"))
+
+    assert module_names
+
+    for module_name in module_names:
+        module = importlib.import_module(f"aemo_etl.defs.gas_model.{module_name}")
+        definitions = module.defs()
+        sensors = list(definitions.sensors or [])
+
+        assert len(sensors) == 1, module_name
+
+        sensor = sensors[0]
+        assert isinstance(sensor, AutomationConditionSensorDefinition), module_name
+        assert sensor.name == f"{module_name}_sensor"
+        asset_selection: Any = sensor.asset_selection
+        assert asset_selection.__class__.__name__ == "KeysAssetSelection"
+        assert asset_selection.selected_keys == [
+            AssetKey(["silver", "gas_model", module_name])
+        ]

@@ -9,6 +9,7 @@ from dagster import (
     AssetExecutionContext,
     AssetIn,
     AutomationCondition,
+    AutomationConditionSensorDefinition,
     Definitions,
     TableSchema,
     asset,
@@ -16,7 +17,7 @@ from dagster import (
 )
 from polars import LazyFrame, String
 
-from aemo_etl.configs import AEMO_BUCKET
+from aemo_etl.configs import AEMO_BUCKET, DEFAULT_SENSOR_STATUS
 from aemo_etl.utils import get_metadata_schema, get_surrogate_key
 
 pkg_version = version("aemo_etl")
@@ -248,4 +249,13 @@ def silver_table_metadata(df: LazyFrame) -> LazyFrame:
 
 @definitions
 def defs() -> Definitions:
-    return Definitions(assets=[bronze_table_metadata, silver_table_metadata])
+    return Definitions(
+        assets=[bronze_table_metadata, silver_table_metadata],
+        sensors=[
+            AutomationConditionSensorDefinition(
+                name=f"{SILVER_TABLE_NAME}_sensor",
+                target=[silver_table_metadata.key],
+                default_status=DEFAULT_SENSOR_STATUS,
+            )
+        ],
+    )
