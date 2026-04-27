@@ -71,6 +71,22 @@ class TestIamRolesCreation:
 
         return iam.daemon_execution_role.assume_role_policy.apply(check)
 
+    @pulumi.runtime.test
+    def test_daemon_task_role_can_publish_sns_alerts(self) -> None:
+        iam = IamRolesComponentResource("test-energy-market")
+
+        def check(policy_doc: str) -> None:
+            policy = json.loads(policy_doc)
+            statements = policy.get("Statement", [])
+            assert any(
+                "sns:Publish" in statement.get("Action", [])
+                and statement.get("Resource")
+                == "arn:aws:sns:ap-southeast-2:123456789012:dagster-failed-run-alerts"
+                for statement in statements
+            )
+
+        return iam.daemon_task_policy.policy.apply(check)
+
     def test_no_deprecation_warnings(self) -> None:
         """Regression guard: .region must be used, not .name, on GetRegionResult."""
         with warnings.catch_warnings(record=True) as caught:

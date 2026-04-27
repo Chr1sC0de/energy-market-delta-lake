@@ -20,6 +20,9 @@ from components.service_discovery import ServiceDiscoveryComponentResource
 from components.vpc import VpcComponentResource
 from configs import ENVIRONMENT
 
+DAGSTER_ADMIN_PATH_PREFIX = "/dagster-webserver/admin"
+FAILURE_ALERT_TOPIC_ARN_CONFIG_KEY = "dagster_failure_alert_topic_arn"
+
 
 def _fargate_service(
     resource_name: str,
@@ -156,6 +159,14 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
         # Use direct Output references – avoids SSM data-source calls during preview
         postgres_host = postgres.private_dns
         postgres_password = postgres.password
+        config = pulumi.Config()
+        failure_alert_topic_arn = config.get(FAILURE_ALERT_TOPIC_ARN_CONFIG_KEY) or ""
+        website_root_url = config.get("website_root_url")
+        failure_alert_base_url = (
+            f"{website_root_url.rstrip('/')}{DAGSTER_ADMIN_PATH_PREFIX}"
+            if website_root_url is not None
+            else ""
+        )
 
         container_defs = pulumi.Output.all(
             image=ecr.dagster_user_code_aemo_etl_image_uri,
@@ -163,6 +174,8 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
             pg_pass=postgres_password,
             log_group=cluster.log_group.name,
             region=aws.get_region().region,
+            failure_alert_topic_arn=failure_alert_topic_arn,
+            failure_alert_base_url=failure_alert_base_url,
         ).apply(
             lambda a: json.dumps(
                 [
@@ -193,6 +206,7 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
                                 "value": a["pg_pass"],
                             },
                             {"name": "AWS_S3_LOCKING_PROVIDER", "value": "dynamodb"},
+                            {"name": "AWS_DEFAULT_REGION", "value": a["region"]},
                             {
                                 "name": "DAGSTER_CURRENT_IMAGE",
                                 "value": a["image"],
@@ -200,6 +214,14 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
                             {"name": "DAGSTER_GRPC_TIMEOUT_SECONDS", "value": "300"},
                             {"name": "DEVELOPMENT_ENVIRONMENT", "value": ENVIRONMENT},
                             {"name": "DEVELOPMENT_LOCATION", "value": "aws"},
+                            {
+                                "name": "DAGSTER_FAILURE_ALERT_TOPIC_ARN",
+                                "value": a["failure_alert_topic_arn"],
+                            },
+                            {
+                                "name": "DAGSTER_FAILURE_ALERT_BASE_URL",
+                                "value": a["failure_alert_base_url"],
+                            },
                         ],
                         "portMappings": [
                             {"containerPort": 4000, "hostPort": 4000, "protocol": "tcp"}

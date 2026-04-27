@@ -158,6 +158,8 @@ The runtime configuration is driven primarily by environment variables read in `
 - `DEVELOPMENT_LOCATION`: execution location, defaults to `local`. Use `aws` for deployed execution defaults.
 - `NAME_PREFIX`: project prefix used in derived bucket names, defaults to `energy-market`.
 - `AWS_ENDPOINT_URL`: optional S3/DynamoDB endpoint override. Set this for LocalStack workflows, typically through `.localstack.env`.
+- `DAGSTER_FAILURE_ALERT_TOPIC_ARN`: optional SNS topic ARN for failed-run alerts. If unset, the alert sensor logs a warning and skips notification delivery.
+- `DAGSTER_FAILURE_ALERT_BASE_URL`: optional Dagster UI base URL used in failed-run alert links.
 
 Derived bucket names are built from `DEVELOPMENT_ENVIRONMENT` and `NAME_PREFIX`:
 
@@ -194,6 +196,10 @@ dg dev
 The local UI is available at `http://localhost:3000`.
 
 Sensors and schedules default to stopped in local execution and default to running on AWS. That behavior comes from `DEVELOPMENT_LOCATION` in `src/aemo_etl/configs.py`.
+
+The `aemo_etl_failed_run_alert_sensor` also follows that default. In AWS it sends
+failed-run notifications through an AWS SNS topic when
+`DAGSTER_FAILURE_ALERT_TOPIC_ARN` is configured.
 
 ## Common commands
 
@@ -235,6 +241,7 @@ aemo-etl/
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/alerts.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/configs.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/sensors.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`

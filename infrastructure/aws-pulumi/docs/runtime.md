@@ -74,6 +74,7 @@ flowchart LR
     PG[(Postgres)]
     DDB[(DynamoDB delta_log)]
     S3[(S3 buckets)]
+    SNS[AWS SNS alert topic]
     CM[Cloud Map namespace]
 
     WEBADMIN --> UCODE
@@ -85,6 +86,7 @@ flowchart LR
     UCODE --> PG
     UCODE --> DDB
     UCODE --> S3
+    UCODE --> SNS
     DAEMON --> S3
     CM --> WEBADMIN
     CM --> WEBGUEST
@@ -138,6 +140,9 @@ at 20 concurrent runs to limit peak compute spend.
   user code and both webservers.
 - The daemon task does not register in Cloud Map because it only initiates
   outbound orchestration work.
+- The user-code task receives `DAGSTER_FAILURE_ALERT_TOPIC_ARN` and
+  `DAGSTER_FAILURE_ALERT_BASE_URL` so the AEMO ETL failure sensor can publish
+  alerts to a manually managed AWS SNS topic.
 
 ## Related docs
 

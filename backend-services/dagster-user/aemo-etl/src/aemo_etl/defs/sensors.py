@@ -1,11 +1,14 @@
 from dagster import (
     AssetSelection,
     Definitions,
+    RunFailureSensorContext,
     definitions,
+    run_failure_sensor,
 )
 
 import aemo_etl.factories.sensors
 import aemo_etl.factories.unzipper.sensors
+from aemo_etl.alerts import send_failed_run_alert
 from aemo_etl.configs import DEFAULT_SENSOR_STATUS, LANDING_BUCKET
 
 VICGAS_ASSET_SELECTION = AssetSelection.key_prefixes(
@@ -32,10 +35,19 @@ EVENT_DRIVEN_ASSETS_SELECTION = (
 )
 
 
+@run_failure_sensor(
+    name="aemo_etl_failed_run_alert_sensor",
+    default_status=DEFAULT_SENSOR_STATUS,
+)
+def aemo_etl_failed_run_alert_sensor(context: RunFailureSensorContext) -> None:
+    send_failed_run_alert(context)
+
+
 @definitions
 def defs() -> Definitions:
     return Definitions(
         sensors=[
+            aemo_etl_failed_run_alert_sensor,
             aemo_etl.factories.sensors.df_from_s3_keys_sensor(
                 name="vicgas_event_driven_assets_sensor",
                 asset_selection=VICGAS_ASSET_SELECTION,

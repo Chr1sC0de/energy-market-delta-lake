@@ -15,6 +15,7 @@ entrypoint used by the Dagster-based deployment.
 - [Container images and service source](#container-images-and-service-source)
 - [Runtime behavior](#runtime-behavior)
 - [Configuration](#configuration)
+- [Failed-run alert topic setup](#failed-run-alert-topic-setup)
 - [Common commands](#common-commands)
 - [Relationship to local development](#relationship-to-local-development)
 - [Related docs](#related-docs)
@@ -175,8 +176,46 @@ This project reads a small set of important config values:
   - `aws-pulumi:cognito_client_secret`
   - `aws-pulumi:website_root_url`
   - `aws-pulumi:developer_email`
+- Optional Pulumi config for Dagster failed-run alerts:
+  - `aws-pulumi:dagster_failure_alert_topic_arn`
 
 The stack name prefix resolves to `"{ENVIRONMENT}-energy-market"`.
+
+## Failed-run alert topic setup
+
+The stack does not create or manage the alert topic. Create a Standard Amazon
+SNS topic manually, subscribe the people or distribution endpoints that should
+receive alerts, then pass the topic ARN into Pulumi.
+
+Manual setup:
+
+1. In the Amazon SNS console, choose a Region that supports SMS messaging, then
+   create a Standard topic such as `dagster-failed-run-alerts`.
+1. Create subscriptions on that topic:
+   - use protocol `sms` with E.164 phone numbers for text alerts
+   - use protocol `email` for email recipients or email distribution lists
+1. Confirm email subscriptions before expecting delivery.
+1. For SMS recipients, verify destination numbers while the account is in the
+   AWS End User Messaging SMS sandbox, or request production access before using
+   unverified production recipients.
+1. Configure an SMS origination identity where the target country or AWS account
+   setup requires one.
+1. Store the topic ARN for this stack:
+
+```bash
+pulumi config set dagster_failure_alert_topic_arn <topic-arn>
+```
+
+Then run `pulumi preview` and `pulumi up`. Pulumi injects the topic ARN into
+the AEMO ETL user-code task and grants that task role `sns:Publish` on that
+topic.
+
+AWS references:
+
+- [Publishing SMS messages with Amazon SNS](https://docs.aws.amazon.com/sns/latest/dg/sms_sending-overview.html)
+- [SNS Publish API](https://docs.aws.amazon.com/sns/latest/api/API_Publish.html)
+- [SMS/MMS sandbox](https://docs.aws.amazon.com/sms-voice/latest/userguide/sandbox.html)
+- [SNS SMS origination identities](https://docs.aws.amazon.com/sns/latest/dg/channels-sms-originating-identities.html)
 
 ## Common commands
 
@@ -236,6 +275,9 @@ system's services and Dagster workflows.
 - `sync.sources`:
   - `infrastructure/aws-pulumi/__main__.py`
   - `infrastructure/aws-pulumi/configs.py`
+  - `infrastructure/aws-pulumi/components/ecs_services.py`
+  - `infrastructure/aws-pulumi/components/iam_roles.py`
+  - `infrastructure/aws-pulumi/scripts/setup_secrets`
   - `infrastructure/aws-pulumi/Pulumi.dev-ausenergymarket.yaml`
 - `sync.scope`: `architecture`
 - `sync.qa`:

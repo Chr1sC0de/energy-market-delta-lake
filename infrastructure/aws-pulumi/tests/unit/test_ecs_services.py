@@ -200,6 +200,34 @@ class TestDagsterUserCodeService:
 
         return svc.service.task_definition.apply(check)
 
+    @pulumi.runtime.test
+    def test_user_code_task_definition_has_failure_alert_env(self) -> None:
+        vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
+        svc = DagsterUserCodeServiceComponentResource(
+            "test-energy-market-user-code",
+            vpc=vpc,
+            cluster=cluster,
+            ecr=ecr,
+            postgres=pg,
+            security_groups=sgs,
+            service_discovery=sd,
+            iam_roles=iam,
+        )
+
+        def check(container_definitions: str) -> None:
+            container = _first_container(container_definitions)
+            assert (
+                _env_value(container, "DAGSTER_FAILURE_ALERT_TOPIC_ARN")
+                == "arn:aws:sns:ap-southeast-2:123456789012:dagster-failed-run-alerts"
+            )
+            assert (
+                _env_value(container, "DAGSTER_FAILURE_ALERT_BASE_URL")
+                == "https://test.ausenergymarketdata.com/dagster-webserver/admin"
+            )
+            assert _env_value(container, "AWS_DEFAULT_REGION") == "ap-southeast-2"
+
+        return svc.task_definition.container_definitions.apply(check)
+
     def test_no_deprecation_warnings(self) -> None:
         """Regression guard: failure_threshold and .name must not be used."""
         vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()

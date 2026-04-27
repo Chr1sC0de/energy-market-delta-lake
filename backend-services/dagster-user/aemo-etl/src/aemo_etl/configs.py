@@ -16,6 +16,8 @@ import os
 from dagster import DefaultScheduleStatus, DefaultSensorStatus
 
 DAGSTER_URI = "dagster/uri"
+DAGSTER_FAILURE_ALERT_TOPIC_ARN_ENV_VAR = "DAGSTER_FAILURE_ALERT_TOPIC_ARN"
+DAGSTER_FAILURE_ALERT_BASE_URL_ENV_VAR = "DAGSTER_FAILURE_ALERT_BASE_URL"
 
 # ────────────────────────────────────────────────────────────────────────────────
 

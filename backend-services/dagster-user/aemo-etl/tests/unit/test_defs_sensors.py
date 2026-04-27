@@ -20,6 +20,31 @@ def test_defs_sensors_returns_definitions() -> None:
     assert isinstance(d, Definitions)
 
 
+def test_failed_run_alert_sensor_registered() -> None:
+    from aemo_etl.configs import DEFAULT_SENSOR_STATUS
+    from aemo_etl.defs.sensors import defs
+
+    d = defs()
+    sensors = {sensor.name: sensor for sensor in d.sensors or []}
+
+    assert "aemo_etl_failed_run_alert_sensor" in sensors
+    assert (
+        sensors["aemo_etl_failed_run_alert_sensor"].default_status
+        == DEFAULT_SENSOR_STATUS
+    )
+
+
+def test_failed_run_alert_sensor_invokes_alert_sender(mocker: MockerFixture) -> None:
+    from aemo_etl.defs import sensors as sensors_module
+
+    context = mocker.MagicMock()
+    send_alert = mocker.patch.object(sensors_module, "send_failed_run_alert")
+
+    sensors_module.aemo_etl_failed_run_alert_sensor._run_status_sensor_fn(context)  # type: ignore[attr-defined]
+
+    send_alert.assert_called_once_with(context)
+
+
 def test_default_status_aws_branch(monkeypatch: object) -> None:
     """Cover the DefaultSensorStatus.RUNNING branch when DEVELOPMENT_LOCATION=aws."""
 

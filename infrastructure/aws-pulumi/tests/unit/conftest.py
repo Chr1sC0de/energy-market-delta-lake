@@ -20,7 +20,7 @@ import pulumi.runtime
 os.environ.setdefault("ADMINISTRATOR_IPS", "10.0.0.1")
 os.environ.setdefault("ENVIRONMENT", "test")
 # Prevent configs.py from hitting ipify.org
-os.environ.setdefault("DEVELOPMENT_LOCATION", "aws")
+os.environ["DEVELOPMENT_LOCATION"] = "aws"
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +249,7 @@ pulumi.runtime.set_all_config(
         "aws-pulumi:cognito_client_secret": "test-cognito-client-secret",
         "aws-pulumi:website_root_url": "https://test.ausenergymarketdata.com",
         "aws-pulumi:developer_email": "test@example.com",
+        "aws-pulumi:dagster_failure_alert_topic_arn": "arn:aws:sns:ap-southeast-2:123456789012:dagster-failed-run-alerts",
     },
     secret_keys=[
         "aws-pulumi:cognito_client_id",

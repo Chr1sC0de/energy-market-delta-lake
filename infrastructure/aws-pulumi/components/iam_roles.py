@@ -5,6 +5,75 @@ import pulumi_aws as aws
 
 from configs import ENVIRONMENT
 
+FAILURE_ALERT_TOPIC_ARN_CONFIG_KEY = "dagster_failure_alert_topic_arn"
+
+
+def _daemon_task_policy_document(args: dict[str, str]) -> str:
+    statements: list[dict[str, object]] = [
+        # ECS orchestration
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ec2:DescribeNetworkInterfaces",
+                "ecs:DescribeTasks",
+                "ecs:DescribeTaskDefinition",
+                "ecs:ListAccountSettings",
+                "ecs:RegisterTaskDefinition",
+                "ecs:RunTask",
+                "ecs:StopTask",
+                "ecs:TagResource",
+                "secretsmanager:DescribeSecret",
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:ListSecrets",
+            ],
+            "Resource": "*",
+        },
+        # DynamoDB delta-rs locking table
+        {
+            "Effect": "Allow",
+            "Action": [
+                "dynamodb:GetItem",
+                "dynamodb:PutItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:Query",
+            ],
+            "Resource": f"arn:aws:dynamodb:{args['region']}:{args['account']}:table/delta_log",
+        },
+        # S3 data-lake buckets
+        {
+            "Effect": "Allow",
+            "Action": [
+                "s3:ListBucket",
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:DeleteObject",
+                "s3:GetBucketLocation",
+            ],
+            "Resource": f"arn:aws:s3:::{ENVIRONMENT}-energy-market*",
+        },
+        # Allow passing this role to ECS
+        {
+            "Effect": "Allow",
+            "Action": ["iam:PassRole"],
+            "Resource": "*",
+            "Condition": {
+                "StringLike": {"iam:PassedToService": "ecs-tasks.amazonaws.com"}
+            },
+        },
+    ]
+
+    if args["failure_alert_topic_arn"] != "":
+        statements.append(
+            {
+                "Effect": "Allow",
+                "Action": ["sns:Publish"],
+                "Resource": args["failure_alert_topic_arn"],
+            }
+        )
+
+    return json.dumps({"Version": "2012-10-17", "Statement": statements})
+
 
 class IamRolesComponentResource(pulumi.ComponentResource):
     bastion_profile: aws.iam.InstanceProfile
@@ -14,6 +83,7 @@ class IamRolesComponentResource(pulumi.ComponentResource):
     # ECS task roles
     webserver_task_role: aws.iam.Role
     daemon_task_role: aws.iam.Role
+    daemon_task_policy: aws.iam.RolePolicy
 
     def __init__(self, name: str, opts: pulumi.ResourceOptions | None = None) -> None:
         super().__init__(f"{name}:components:IamRoles", name, {}, opts)
@@ -164,74 +234,17 @@ class IamRolesComponentResource(pulumi.ComponentResource):
         # Retrieve the current AWS caller identity to build ARNs
         caller = aws.get_caller_identity()
         region = aws.get_region()
+        failure_alert_topic_arn = (
+            pulumi.Config().get(FAILURE_ALERT_TOPIC_ARN_CONFIG_KEY) or ""
+        )
 
-        aws.iam.RolePolicy(
+        self.daemon_task_policy = aws.iam.RolePolicy(
             f"{self.name}-ecs-daemon-task-policy",
             role=self.daemon_task_role.name,
             policy=pulumi.Output.all(
                 account=caller.account_id,
                 region=region.region,
-            ).apply(
-                lambda args: json.dumps(
-                    {
-                        "Version": "2012-10-17",
-                        "Statement": [
-                            # ECS orchestration
-                            {
-                                "Effect": "Allow",
-                                "Action": [
-                                    "ec2:DescribeNetworkInterfaces",
-                                    "ecs:DescribeTasks",
-                                    "ecs:DescribeTaskDefinition",
-                                    "ecs:ListAccountSettings",
-                                    "ecs:RegisterTaskDefinition",
-                                    "ecs:RunTask",
-                                    "ecs:StopTask",
-                                    "ecs:TagResource",
-                                    "secretsmanager:DescribeSecret",
-                                    "secretsmanager:GetSecretValue",
-                                    "secretsmanager:ListSecrets",
-                                ],
-                                "Resource": "*",
-                            },
-                            # DynamoDB delta-rs locking table
-                            {
-                                "Effect": "Allow",
-                                "Action": [
-                                    "dynamodb:GetItem",
-                                    "dynamodb:PutItem",
-                                    "dynamodb:DeleteItem",
-                                    "dynamodb:UpdateItem",
-                                    "dynamodb:Query",
-                                ],
-                                "Resource": f"arn:aws:dynamodb:{args['region']}:{args['account']}:table/delta_log",
-                            },
-                            # S3 data-lake buckets
-                            {
-                                "Effect": "Allow",
-                                "Action": [
-                                    "s3:ListBucket",
-                                    "s3:GetObject",
-                                    "s3:PutObject",
-                                    "s3:DeleteObject",
-                                    "s3:GetBucketLocation",
-                                ],
-                                "Resource": f"arn:aws:s3:::{ENVIRONMENT}-energy-market*",
-                            },
-                            # Allow passing this role to ECS
-                            {
-                                "Effect": "Allow",
-                                "Action": ["iam:PassRole"],
-                                "Resource": "*",
-                                "Condition": {
-                                    "StringLike": {
-                                        "iam:PassedToService": "ecs-tasks.amazonaws.com"
-                                    }
-                                },
-                            },
-                        ],
-                    }
-                )  # ty:ignore[invalid-argument-type]
-            ),  # ty:ignore[missing-argument]
+                failure_alert_topic_arn=failure_alert_topic_arn,
+            ).apply(_daemon_task_policy_document),  # ty:ignore[missing-argument]
             opts=pulumi.ResourceOptions(parent=self.daemon_task_role),
         )

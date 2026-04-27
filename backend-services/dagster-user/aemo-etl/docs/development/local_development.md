@@ -58,6 +58,11 @@ The main project-level environment variables are defined in `src/aemo_etl/config
 - `AWS_ENDPOINT_URL`
   - set this for LocalStack
   - omit it when running against AWS-managed services
+- `DAGSTER_FAILURE_ALERT_TOPIC_ARN`
+  - optional SNS topic ARN for failed-run alert fan-out
+  - leave empty locally unless you want the stopped-by-default alert sensor to publish through LocalStack or AWS
+- `DAGSTER_FAILURE_ALERT_BASE_URL`
+  - optional Dagster UI base URL included in failed-run alert links
 
 Derived bucket behavior:
 
@@ -149,6 +154,7 @@ make run-prek
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/configs.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/alerts.py`
   - `backend-services/dagster-user/aemo-etl/tests/integration/conftest.py`
   - `backend-services/dagster-user/aemo-etl/.localstack.env`
   - `backend-services/dagster-user/aemo-etl/scripts/setup-debugging-environment`

@@ -144,6 +144,10 @@ These assets consume the source silver layer and publish shared dimensions and m
 - `vicgas_event_driven_assets_sensor` and `gbb_event_driven_assets_sensor`
   - watch landing storage for file patterns declared on bronze assets
   - launch bronze ingestion assets with matching S3 keys
+- `aemo_etl_failed_run_alert_sensor`
+  - watches failed runs in the AEMO ETL code location
+  - publishes one alert to an AWS SNS topic when
+    `DAGSTER_FAILURE_ALERT_TOPIC_ARN` is configured
 - `default_automation_condition_sensor`
   - covers everything else
   - lets the non-event-driven silver and `gas_model` assets materialize when dependencies update
@@ -220,6 +224,7 @@ flowchart TD
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/alerts.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/sensors.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`

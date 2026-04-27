@@ -103,6 +103,8 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_ALLOW_HTTP: true
       AWS_S3_LOCKING_PROVIDER: dynamodb
+      DAGSTER_FAILURE_ALERT_TOPIC_ARN: ${DAGSTER_FAILURE_ALERT_TOPIC_ARN:-}
+      DAGSTER_FAILURE_ALERT_BASE_URL: ${DAGSTER_FAILURE_ALERT_BASE_URL:-https://localhost/dagster-webserver/admin}
     healthcheck:
       test: ["CMD-SHELL", "dagster api grpc-health-check -p 4000"]
       interval: 3s

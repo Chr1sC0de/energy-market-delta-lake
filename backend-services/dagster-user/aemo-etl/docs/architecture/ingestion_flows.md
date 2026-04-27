@@ -48,7 +48,7 @@ sequenceDiagram
 Trigger and output notes:
 
 - The first step is schedule-driven from `src/aemo_etl/defs/raw/nemweb_public_files.py`.
-- The unzip and bronze steps are sensor-driven from `src/aemo_etl/defs/sensors.py`.
+- The unzip and bronze steps are sensor-driven from `src/aemo_etl/defs/sensors.py`; that module also registers the failed-run alert sensor, which is not part of the ingestion data path shown here.
 - Outputs land in Delta tables under the AEMO bucket plus archived source files under `ARCHIVE_BUCKET/bronze/gbb`.
 
 ## VICGAS ingestion flow
@@ -139,6 +139,7 @@ When `AWS_ENDPOINT_URL` points at LocalStack, the same flow runs against local S
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/alerts.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/sensors.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
