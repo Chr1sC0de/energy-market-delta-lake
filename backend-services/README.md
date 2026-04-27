@@ -72,7 +72,7 @@ ______________________________________________________________________
 
 ## Directory layout
 
-```
+```text
 backend-services/
 ├── compose.yaml                   # Podman Compose — local test/dev service stack
 ├── localstack/
@@ -123,7 +123,7 @@ ______________________________________________________________________
 `compose.yaml` reads environment variables from the shell at invocation time.
 The variables are defined in `.envrc` in this directory (`backend-services/.envrc`).
 
-**Option A — direnv (recommended)**
+#### Option A — direnv (recommended)
 
 Install [direnv](https://direnv.net/docs/installation.html) and allow the file
 once:
@@ -135,7 +135,7 @@ direnv allow
 
 direnv will reload the variables automatically whenever you `cd` into this directory.
 
-**Option B — manual source**
+#### Option B — manual source
 
 Run this once per shell session before using `podman-compose`:
 
@@ -171,7 +171,7 @@ podman ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 Expected output: all containers are up, with `postgres`, `localstack`,
 `aemo-etl`, and `marimo` eventually becoming healthy.
 
-```
+```text
 NAMES                    STATUS                   PORTS
 postgres                 Up 30 seconds (healthy)  0.0.0.0:5432->5432/tcp
 localstack               Up 30 seconds (healthy)  0.0.0.0:4566->4566/tcp
@@ -186,7 +186,7 @@ caddy                    Up 20 seconds            0.0.0.0:80->80/tcp, 0.0.0.0:44
 
 ### 3. Open the Dagster UI
 
-Navigate to **https://localhost** in your browser.
+Navigate to <https://localhost> in your browser.
 
 Useful routes:
 
@@ -373,7 +373,7 @@ ______________________________________________________________________
 > They remain attached to `dagster_network`, which causes `podman-compose down`
 > to print a network-removal warning:
 >
-> ```
+> ```text
 > Error: "dagster_network" has associated containers with it.
 > ```
 >
@@ -435,7 +435,7 @@ ______________________________________________________________________
 
 ### Startup order
 
-```
+```text
 postgres  ──(healthy)──► dagster-webserver-admin
                       ├─► dagster-webserver-guest
                       └─► dagster-daemon

@@ -15,6 +15,7 @@ support development, testing, and validation of the deployed platform.
 - [Local development and testing](#local-development-and-testing)
 - [Documentation map](#documentation-map)
 - [Prerequisites](#prerequisites)
+- [Tooling](#tooling)
 - [Commands](#commands)
 - [Deployment](#deployment)
 
@@ -195,12 +196,39 @@ Follow the docs in repository order:
 | Podman + podman-compose | see `backend-services/README.md` | Local test/dev stack |
 | Pulumi CLI | latest | AWS infrastructure deployment |
 | `prek` | latest | Repository lint/format/test hooks |
+| `lychee` | latest | Offline root Markdown link checks |
+
+## Tooling
+
+`prek` is the workspace hook runner for this repo. Run it from the repository
+root so it can discover the root hooks and subproject hook configs.
+
+The configured hooks cover:
+
+- generic file hygiene from `pre-commit-hooks`, including trailing whitespace,
+  final newlines, YAML syntax, and large-file checks
+- Dockerfile linting with `hadolint`
+- Markdown linting and formatting with `rumdl`
+- offline root Markdown link checking with `lychee`
+- shell formatting and linting with `shfmt` and `shellcheck`
+- Python project metadata formatting with `pyproject-fmt`
+- Python linting and formatting with `ruff`
+- Python type checking with `zuban`
+- Python tests with `pytest`
+- Dagster definition and config validation with `dg check defs`,
+  `dg check toml`, and `dg check yaml` for the ETL project
+
+Most Python project hooks run through `uv run` inside the project that owns the
+hook config. System hooks such as `shellcheck` must also be available on
+`PATH` where the relevant subproject config uses them directly.
 
 ## Commands
 
 | Scope | Command |
 |---|---|
+| Install git hooks | `prek install` |
 | Repository-wide hooks | `prek run -a` |
+| Root Markdown link check | `prek run lychee -a` |
 | ETL project tests | `cd backend-services/dagster-user/aemo-etl && uv run pytest` |
 | AWS Pulumi tests | `cd infrastructure/aws-pulumi && uv run pytest` |
 | Local stack | `cd backend-services && source .envrc && podman-compose up --build -d` |
@@ -222,10 +250,17 @@ for stack details, component breakdown, and integration-test commands.
 
 - `sync.owner`: `docs`
 - `sync.sources`:
+  - `.pre-commit-config.yaml`
+  - `backend-services/.pre-commit-config.yaml`
+  - `backend-services/authentication/.pre-commit-config.yaml`
+  - `backend-services/dagster-user/aemo-etl/.pre-commit-config.yaml`
+  - `backend-services/marimo/.pre-commit-config.yaml`
   - `infrastructure/aws-pulumi/__main__.py`
+  - `infrastructure/aws-pulumi/.pre-commit-config.yaml`
   - `backend-services/compose.yaml`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
-- `sync.scope`: `architecture`
+  - `scripts/.pre-commit-config.yaml`
+- `sync.scope`: `architecture, tooling`
 - `sync.qa`:
   - `git diff --name-only`
   - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`

@@ -87,7 +87,7 @@ Internet → IGW → Public subnet resource (must have public IP/EIP)
 ## Resources
 
 - [What is network CIDR notation](https://www.youtube.com/watch?v=tpa9QSiiiUo&t=14s)
-- [IP address network and host portion ](https://www.youtube.com/watch?v=eHV1aOnu7oM)
+- [IP address network and host portion](https://www.youtube.com/watch?v=eHV1aOnu7oM)
 - [Subnetting Made Simple](https://www.youtube.com/watch?v=nFYilGQ-p-8)
 - [Subnet Mask](https://www.youtube.com/watch?v=s_Ntt6eTn94&t=8s)
 - [How to find the number of subnets valid hosts](https://www.youtube.com/watch?v=uyRtYUg6bnw)
