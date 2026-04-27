@@ -29,6 +29,7 @@ flowchart LR
         Bronze["Bronze assets"]
         Silver["Source silver assets"]
         GasModel["gas_model assets"]
+        Maintenance["Delta maintenance job"]
     end
 
     subgraph Storage
@@ -51,21 +52,24 @@ flowchart LR
     Bronze --> Delta
     Silver --> Delta
     GasModel --> Delta
+    Maintenance --> Delta
     Bronze -. intermediates .-> DagsterStore
     Silver -. intermediates .-> DagsterStore
     GasModel -. intermediates .-> DagsterStore
     Delta -. local locking .-> Dynamo
+    Maintenance -. local locking .-> Dynamo
 ```
 
 ## How definitions are loaded
 
-`src/aemo_etl/definitions.py` is the project entrypoint for Dagster. It does two things:
+`src/aemo_etl/definitions.py` is the project entrypoint for Dagster. It does three things:
 
 1. Declares shared resources:
    - `s3`: `dagster_aws.s3.S3Resource`
    - `io_manager`: Dagster's S3 pickle IO manager pointing at `IO_MANAGER_BUCKET`
    - ECS executor when `DEVELOPMENT_LOCATION == "aws"`
-2. Calls `load_from_defs_folder(path_within_project=Path(__file__).parent)` to discover all definitions under `src/aemo_etl/defs`.
+2. Calls `load_from_defs_folder(path_within_project=Path(__file__).parent)` once to discover all definitions under `src/aemo_etl/defs`.
+3. Builds the scheduled Delta maintenance definitions from discovered Delta-backed asset metadata.
 
 That means the actual asset topology is assembled from small modules in:
 
@@ -134,6 +138,14 @@ The corresponding silver asset:
 
 Most of these assets consume the source silver layer and publish shared dimensions and marts back into `silver/gas_model/...` parquet snapshot datasets. `silver_gas_dim_date` is a standalone scheduled calendar generated from `1900-01-01` through the run date.
 
+### Delta maintenance
+
+`src/aemo_etl/maintenance/delta_tables.py` defines `delta_table_vacuum_job` and `delta_table_vacuum_schedule`. The root definitions inspect loaded assets, select those using Delta IO managers with `dagster/uri` metadata, resolve optional `delta_maintenance/*` metadata, and pass those table paths and settings to one scheduled job.
+
+The schedule runs daily at 02:00 Australia/Melbourne. Each run can compact and vacuum each discovered Delta table. Missing metadata defaults to compact enabled, vacuum enabled, retention `0`, retention enforcement disabled, and `dry_run=False`; this immediately deletes unreferenced Delta files but does not remove files referenced by the current table version.
+
+Per-asset overrides use flat metadata keys: `delta_maintenance/enabled`, `delta_maintenance/compact`, `delta_maintenance/vacuum`, `delta_maintenance/retention_hours`, `delta_maintenance/enforce_retention_duration`, and `delta_maintenance/dry_run`.
+
 ## Sensors and automation
 
 `src/aemo_etl/defs/sensors.py` wires three orchestration patterns:
@@ -150,7 +162,8 @@ Most of these assets consume the source silver layer and publish shared dimensio
 
 `silver_gas_dim_date` is refreshed by its own daily schedule at 06:03 Australia/Melbourne time.
 
-Locally these sensors and the date schedule default to stopped. On AWS they default to running.
+Locally these sensors and schedules default to stopped. On AWS they default to running.
+The Delta maintenance schedule follows the same local-stopped and AWS-running default schedule status.
 
 ## Storage model
 
@@ -194,6 +207,7 @@ The Delta managers persist `polars.LazyFrame` outputs to Delta tables in the AEM
 flowchart TD
     Definitions["src/aemo_etl/definitions.py"] --> Defs["src/aemo_etl/defs"]
     Definitions --> Config["src/aemo_etl/configs.py"]
+    Definitions --> Maintenance["src/aemo_etl/maintenance"]
 
     Defs --> Raw["raw/"]
     Defs --> Sensors["sensors.py"]
@@ -222,6 +236,7 @@ flowchart TD
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/sensors.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`

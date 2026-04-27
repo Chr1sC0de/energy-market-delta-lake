@@ -24,6 +24,7 @@ The project materializes Dagster assets defined under `src/aemo_etl/defs` to bui
 - Event-driven bronze assets read matching landing files, normalize them into partitioned Delta tables, and move processed source files into archive storage.
 - Silver assets deduplicate the current source-specific state.
 - `gas_model` assets combine GBB and VICGAS silver tables into shared dimensions and marts.
+- `delta_table_vacuum_schedule` runs `delta_table_vacuum_job` daily at 02:00 Australia/Melbourne to compact and vacuum Delta-backed assets.
 
 ## High-level architecture
 
@@ -40,6 +41,7 @@ flowchart LR
         RawAssets["Bronze/raw assets"]
         SilverAssets["Source-specific silver assets"]
         GasModel["gas_model marts and dimensions"]
+        Maintenance["Delta maintenance job"]
     end
 
     subgraph Storage
@@ -60,6 +62,7 @@ flowchart LR
     RawAssets --> AEMO
     SilverAssets --> AEMO
     GasModel --> AEMO
+    Maintenance --> AEMO
     RawAssets -. intermediates .-> IOMgr
     SilverAssets -. intermediates .-> IOMgr
     GasModel -. intermediates .-> IOMgr
@@ -77,6 +80,7 @@ flowchart TD
     Src --> Config["configs.py"]
     Src --> Defs["defs/"]
     Src --> Factories["factories/"]
+    Src --> Maintenance["maintenance/"]
 
     Defs --> Raw["raw/"]
     Defs --> Sensors["sensors.py"]
@@ -96,7 +100,17 @@ flowchart TD
 - Source-specific silver assets: `silver.gbb.*` and `silver.vicgas.*` assets deduplicate current source rows and expose consistent parquet snapshot datasets for downstream use.
 - Gas-model marts: `src/aemo_etl/defs/gas_model` builds cross-source dimensions and fact tables from the source-specific silver layer.
 - Storage: landing and archive buckets hold files; the AEMO bucket holds bronze Delta tables plus parquet snapshot datasets for source silver and `gas_model`; the IO manager bucket stores Dagster-managed intermediates.
-- Orchestration: `src/aemo_etl/definitions.py` merges shared resources with definitions discovered from `src/aemo_etl/defs`.
+- Orchestration: `src/aemo_etl/definitions.py` merges shared resources, definitions discovered from `src/aemo_etl/defs`, and the scheduled Delta maintenance definitions from `src/aemo_etl/maintenance`.
+- Delta maintenance: `delta_table_vacuum_job` discovers assets backed by Delta IO managers and a `dagster/uri`, then uses per-asset `delta_maintenance/*` metadata. Missing metadata defaults to compacting and full-vacuuming with retention `0`, retention enforcement disabled, and `dry_run=False`.
+
+Delta maintenance metadata is optional and flat:
+
+- `delta_maintenance/enabled`: set `False` to skip the asset.
+- `delta_maintenance/compact`: set `False` to skip compaction.
+- `delta_maintenance/vacuum`: set `False` to skip vacuum.
+- `delta_maintenance/retention_hours`: non-negative retention hours, default `0`.
+- `delta_maintenance/enforce_retention_duration`: whether Delta enforces safe retention duration, default `False`.
+- `delta_maintenance/dry_run`: set `True` to list removable files without deleting them.
 
 ## Ingestion flow
 
@@ -216,7 +230,8 @@ aemo-etl/
 │   ├── configs.py
 │   ├── definitions.py
 │   ├── defs/
-│   └── factories/
+│   ├── factories/
+│   └── maintenance/
 ├── tests/
 ├── .localstack.env
 ├── Makefile
@@ -235,6 +250,7 @@ aemo-etl/
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/configs.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/sensors.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
