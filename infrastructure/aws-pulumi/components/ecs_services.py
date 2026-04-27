@@ -73,19 +73,8 @@ def _fargate_service(
         desired_count=1,
         launch_type=None,  # managed by capacity_provider_strategies
         capacity_provider_strategies=[
-            # FARGATE_SPOT preferred (4× cheaper). Weight drives placement when
-            # desired_count=1: ECS picks the provider proportionally, so 4:1
-            # means ~80% of new tasks land on Spot and ~20% on on-demand.
-            # base=0 on both so the weight ratio is applied from the first task
-            # (base=1 on FARGATE would always consume the single task quota with
-            # on-demand, defeating the Spot preference for desired_count=1).
-            # When a Spot task is interrupted ECS replaces it — it will land on
-            # on-demand if Spot capacity is unavailable.
-            # aws.ecs.ServiceCapacityProviderStrategyArgs(
-            #     capacity_provider="FARGATE_SPOT",
-            #     weight=4,
-            #     base=0,
-            # ),
+            # Long-running control-plane services stay on on-demand Fargate.
+            # Ephemeral Dagster run workers prefer Spot in dagster.aws.yaml.
             aws.ecs.ServiceCapacityProviderStrategyArgs(
                 capacity_provider="FARGATE",
                 weight=1,
@@ -381,7 +370,7 @@ class DagsterWebserverServiceComponentResource(pulumi.ComponentResource):
         self.task_definition = _task_definition(
             f"{name}-webserver-task-def",
             family=td_family,
-            cpu="512",
+            cpu="256",
             memory="1024",
             execution_role_arn=iam_roles.webserver_execution_role.arn,
             task_role_arn=iam_roles.webserver_task_role.arn,

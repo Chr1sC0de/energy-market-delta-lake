@@ -7,6 +7,7 @@ This file verifies:
   - Port mappings match the service roles (4000 for gRPC, 3000 for webserver)
   - Entry points are correct, including --read-only for guest webserver
   - All services share the same private subnet and cluster
+  - Long-running services use on-demand Fargate capacity
   - Circuit breakers are enabled on every service
   - No DeprecationWarning is raised (regression guard for .region fix and failure_threshold fix)
 """
@@ -62,6 +63,15 @@ def _env_value(container: dict, name: str) -> str:
     raise AssertionError(f"Missing environment variable {name!r}")
 
 
+def _assert_on_demand_fargate_strategy(strategies: list) -> None:
+    providers = [s.get("capacity_provider") for s in strategies]
+    assert providers == ["FARGATE"], (
+        f"Expected on-demand FARGATE only for long-running service, got {providers}"
+    )
+    assert strategies[0].get("weight") == 1
+    assert strategies[0].get("base") == 0
+
+
 # ---------------------------------------------------------------------------
 # User-code service
 # ---------------------------------------------------------------------------
@@ -83,7 +93,7 @@ class TestDagsterUserCodeService:
         assert svc.service is not None
 
     @pulumi.runtime.test
-    def test_user_code_fargate_spot_capacity_provider(self) -> None:
+    def test_user_code_uses_on_demand_fargate(self) -> None:
         vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
         svc = DagsterUserCodeServiceComponentResource(
             "test-energy-market-user-code",
@@ -96,14 +106,9 @@ class TestDagsterUserCodeService:
             iam_roles=iam,
         )
 
-        def check(strategies: list) -> None:
-            # Pulumi mocks return snake_case keys in output dicts.
-            providers = [s.get("capacity_provider") for s in strategies]
-            assert "FARGATE" in providers, (
-                f"Expected FARGATE on-demand fallback in capacity providers, got {providers}"
-            )
-
-        return svc.service.capacity_provider_strategies.apply(check)
+        return svc.service.capacity_provider_strategies.apply(
+            _assert_on_demand_fargate_strategy
+        )
 
     @pulumi.runtime.test
     def test_user_code_circuit_breaker_enabled(self) -> None:
@@ -290,7 +295,7 @@ class TestDagsterWebserverAdminService:
         return svc.service.deployment_circuit_breaker.apply(check)
 
     @pulumi.runtime.test
-    def test_webserver_admin_fargate_spot(self) -> None:
+    def test_webserver_admin_uses_on_demand_fargate(self) -> None:
         vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
         svc = DagsterWebserverServiceComponentResource(
             "test-energy-market-webserver-admin",
@@ -307,12 +312,9 @@ class TestDagsterWebserverAdminService:
             readonly=False,
         )
 
-        def check(strategies: list) -> None:
-            # Pulumi mocks return snake_case keys.
-            providers = [s.get("capacity_provider") for s in strategies]
-            assert "FARGATE" in providers
-
-        return svc.service.capacity_provider_strategies.apply(check)
+        return svc.service.capacity_provider_strategies.apply(
+            _assert_on_demand_fargate_strategy
+        )
 
     def test_webserver_admin_no_deprecation_warnings(self) -> None:
         vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
@@ -428,7 +430,7 @@ class TestDagsterWebserverGuestService:
         ).apply(check)
 
     @pulumi.runtime.test
-    def test_webserver_guest_fargate_spot(self) -> None:
+    def test_webserver_guest_uses_on_demand_fargate(self) -> None:
         vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
         svc = DagsterWebserverServiceComponentResource(
             "test-energy-market-webserver-guest-spot",
@@ -445,13 +447,9 @@ class TestDagsterWebserverGuestService:
             readonly=True,
         )
 
-        def check(strategies: list) -> None:
-            providers = [s.get("capacity_provider") for s in strategies]
-            assert "FARGATE" in providers, (
-                f"Expected FARGATE on-demand fallback in capacity providers, got {providers}"
-            )
-
-        return svc.service.capacity_provider_strategies.apply(check)
+        return svc.service.capacity_provider_strategies.apply(
+            _assert_on_demand_fargate_strategy
+        )
 
     @pulumi.runtime.test
     def test_webserver_guest_circuit_breaker_enabled(self) -> None:
@@ -587,7 +585,7 @@ class TestDagsterDaemonService:
         return svc.service.deployment_circuit_breaker.apply(check)
 
     @pulumi.runtime.test
-    def test_daemon_fargate_spot(self) -> None:
+    def test_daemon_uses_on_demand_fargate(self) -> None:
         vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
         svc = DagsterDaemonServiceComponentResource(
             "test-energy-market-daemon",
@@ -599,12 +597,9 @@ class TestDagsterDaemonService:
             iam_roles=iam,
         )
 
-        def check(strategies: list) -> None:
-            # Pulumi mocks return snake_case keys.
-            providers = [s.get("capacity_provider") for s in strategies]
-            assert "FARGATE" in providers
-
-        return svc.service.capacity_provider_strategies.apply(check)
+        return svc.service.capacity_provider_strategies.apply(
+            _assert_on_demand_fargate_strategy
+        )
 
     @pulumi.runtime.test
     def test_daemon_no_public_ip(self) -> None:

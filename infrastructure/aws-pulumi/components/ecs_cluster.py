@@ -12,6 +12,7 @@ class EcsClusterComponentResource(pulumi.ComponentResource):
     """
 
     cluster: aws.ecs.Cluster
+    capacity_providers: aws.ecs.ClusterCapacityProviders
     log_group: aws.cloudwatch.LogGroup
 
     def __init__(
@@ -58,10 +59,10 @@ class EcsClusterComponentResource(pulumi.ComponentResource):
             opts=self.child_opts,
         )
 
-        aws.ecs.ClusterCapacityProviders(
+        self.capacity_providers = aws.ecs.ClusterCapacityProviders(
             f"{self.name}-dagster-cluster-capacity-providers",
             cluster_name=self.cluster.name,
-            capacity_providers=["FARGATE"],
+            capacity_providers=["FARGATE", "FARGATE_SPOT"],
             default_capacity_provider_strategies=[
                 aws.ecs.ClusterCapacityProvidersDefaultCapacityProviderStrategyArgs(
                     capacity_provider="FARGATE",

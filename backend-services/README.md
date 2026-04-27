@@ -110,6 +110,10 @@ is baked into the image at build time as `dagster.yaml` and `workspace.yaml`.
 Dagster webservers and the daemon. To target AWS, update the build arg
 to `aws` and supply the appropriate environment variables.
 
+For the AWS deployment, `dagster.aws.yaml` caps queued runs at 20 concurrent
+tasks. Run-worker ECS tasks prefer `FARGATE_SPOT` with on-demand `FARGATE`
+fallback, while the long-running Dagster services are provisioned by Pulumi.
+
 ______________________________________________________________________
 
 ## Setup

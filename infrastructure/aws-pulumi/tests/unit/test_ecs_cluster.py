@@ -21,6 +21,30 @@ class TestEcsClusterComponent:
         cluster = EcsClusterComponentResource("test-energy-market", vpc, sgs)
         assert cluster.cluster is not None
 
+    @pulumi.runtime.test
+    def test_cluster_registers_fargate_and_spot_capacity_providers(self) -> None:
+        vpc, sgs = _make_deps()
+        cluster = EcsClusterComponentResource("test-energy-market", vpc, sgs)
+
+        def check(providers: list[str]) -> None:
+            assert providers == ["FARGATE", "FARGATE_SPOT"]
+
+        return cluster.capacity_providers.capacity_providers.apply(check)
+
+    @pulumi.runtime.test
+    def test_cluster_default_capacity_provider_remains_on_demand(self) -> None:
+        vpc, sgs = _make_deps()
+        cluster = EcsClusterComponentResource("test-energy-market", vpc, sgs)
+
+        def check(strategies: list) -> None:
+            assert len(strategies) == 1
+            assert strategies[0].get("capacity_provider") == "FARGATE"
+            assert strategies[0].get("weight") == 1
+
+        return cluster.capacity_providers.default_capacity_provider_strategies.apply(
+            check
+        )
+
     def test_log_group_created(self) -> None:
         vpc, sgs = _make_deps()
         cluster = EcsClusterComponentResource("test-energy-market", vpc, sgs)

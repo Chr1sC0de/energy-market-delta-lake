@@ -107,10 +107,16 @@ flowchart LR
 Cluster-level behavior:
 
 - one shared CloudWatch log group with one-day retention
-- one Fargate-only capacity-provider configuration
+- cluster capacity providers include `FARGATE` and `FARGATE_SPOT`
+- long-running Dagster services use on-demand `FARGATE`
 - one private subnet placement strategy for all services
 - no public IP assignment on tasks
 - deployment circuit breaker enabled on services
+
+Dagster run-worker tasks are launched by `EcsRunLauncher` from
+`backend-services/dagster-core/dagster.aws.yaml`. Those ephemeral tasks prefer
+`FARGATE_SPOT` with on-demand `FARGATE` fallback, and the AWS run queue is capped
+at 20 concurrent runs to limit peak compute spend.
 
 ## Component summary
 

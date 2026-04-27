@@ -5,11 +5,17 @@ run_coordinator:
   module: dagster.core.run_coordinator
   class: QueuedRunCoordinator
   config:
-    max_concurrent_runs: 50
+    max_concurrent_runs: 20
 run_launcher:
   module: "dagster_aws.ecs"
   class: "EcsRunLauncher"
   config:
+    run_task_kwargs:
+      capacityProviderStrategy:
+        - capacityProvider: "FARGATE_SPOT"
+          weight: 4
+        - capacityProvider: "FARGATE"
+          weight: 1
     run_resources:
       cpu: "256"
       memory: "2048"
