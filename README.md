@@ -101,11 +101,15 @@ At a high level the deployed workflow is:
 1. Event-driven bronze assets ingest landed files into Delta tables.
 1. Source-specific silver assets deduplicate and standardize current-state tables.
 1. `gas_model` assets build shared dimensions and marts from the source silver layer.
+1. A daily Delta maintenance job compacts and full-vacuums Delta-backed tables.
 1. Dagster metadata and orchestration state live in PostgreSQL, while data products live in S3-backed Delta tables.
 
 The orchestration details come from the Dagster definitions in
 `backend-services/dagster-user/aemo-etl`, including event-driven sensors and
-automation-conditioned downstream assets.
+automation-conditioned downstream assets. The Delta maintenance schedule runs
+`delta_table_vacuum_job` at 02:00 Australia/Melbourne and uses full vacuum
+retention `0` for unreferenced Delta files unless an asset overrides maintenance
+settings in its metadata.
 
 See [docs/workflow.md](docs/workflow.md) for the repo-level workflow summary and
 [backend-services/dagster-user/aemo-etl/docs/architecture/high_level_architecture.md](backend-services/dagster-user/aemo-etl/docs/architecture/high_level_architecture.md)
@@ -259,6 +263,7 @@ for stack details, component breakdown, and integration-test commands.
   - `infrastructure/aws-pulumi/.pre-commit-config.yaml`
   - `backend-services/compose.yaml`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`
   - `scripts/.pre-commit-config.yaml`
 - `sync.scope`: `architecture, tooling`
 - `sync.qa`:

@@ -24,6 +24,7 @@ flowchart LR
     D[Event-driven bronze assets]
     E[Source silver assets]
     F[gas_model assets]
+    M[Delta maintenance schedule]
   end
 
   subgraph Storage[AWS data plane]
@@ -45,6 +46,7 @@ flowchart LR
   D --> I
   E --> I
   F --> I
+  M --> I
   D -. intermediates .-> J
   E -. intermediates .-> J
   F -. intermediates .-> J
@@ -53,8 +55,10 @@ flowchart LR
   D --> K
   E --> K
   F --> K
+  M --> K
   D --> L
   F --> L
+  M --> L
 ```
 
 Production orchestration behavior:
@@ -63,8 +67,9 @@ Production orchestration behavior:
 2. Unzipper sensors detect zip payloads, expand their members, and archive the original zip files after success.
 3. Event-driven bronze assets ingest matching landed files into Delta tables and archive processed source files.
 4. Downstream silver and `gas_model` assets materialize through Dagster automation based on dependency updates.
-5. Dagster metadata and orchestration state are stored in PostgreSQL.
-6. Delta-table storage lives in S3, with `delta_log` in DynamoDB for locking.
+5. `delta_table_vacuum_schedule` runs daily at 02:00 Australia/Melbourne and launches `delta_table_vacuum_job` to compact and vacuum Delta-backed assets using per-asset metadata defaults or overrides.
+6. Dagster metadata and orchestration state are stored in PostgreSQL.
+7. Delta-table storage lives in S3, with `delta_log` in DynamoDB for locking.
 
 ## Local development and testing workflow
 
@@ -110,6 +115,7 @@ For the doc-sync contract, searchable `sync.sources` metadata, and the required
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/sensors.py`
   - `backend-services/compose.yaml`
 - `sync.scope`: `behavior`

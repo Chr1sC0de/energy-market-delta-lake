@@ -102,8 +102,9 @@ sequenceDiagram
     participant Archive as Archive bucket object(s)
     participant DeltaBronze as AEMO Delta bronze table
     participant SilverAsset as silver table asset
-    participant DeltaSilver as AEMO Delta silver table
+    participant ParquetSilver as AEMO Parquet silver dataset
     participant GasModel as Downstream gas_model asset
+    participant Maintenance as delta_table_vacuum_job
 
     Operator->>BronzeAsset: Run with s3_keys
     BronzeAsset->>Landing: Download matching objects
@@ -116,12 +117,14 @@ sequenceDiagram
     SilverAsset->>SilverAsset: Sort by source recency and deduplicate on surrogate_key
     SilverAsset->>ParquetSilver: Overwrite current Parquet snapshot dataset
     ParquetSilver->>GasModel: Trigger shared dimensions or fact assets when selected as input
+    Maintenance->>DeltaBronze: Daily compact and full vacuum
 ```
 
 Trigger and output notes:
 
 - The bronze run can come from an event-driven sensor or from a manual asset launch with explicit `s3_keys`.
 - Bronze uses `aemo_deltalake_ingest_partitioned_append_io_manager`; `df_from_s3_keys` silver uses `aemo_parquet_overwrite_io_manager`.
+- `delta_table_vacuum_schedule` runs daily at 02:00 Australia/Melbourne and uses each Delta asset's `delta_maintenance/*` metadata, defaulting to compact plus full vacuum retention `0`.
 - A representative downstream example is `silver_gas_fact_operational_meter_flow`, which reads VICGAS silver inputs plus shared dimensions and writes a `silver/gas_model/...` parquet snapshot dataset.
 
 ## LocalStack and S3-compatible behavior
@@ -142,6 +145,7 @@ When `AWS_ENDPOINT_URL` points at LocalStack, the same flow runs against local S
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/sensors.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_operational_meter_flow.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/unzipper/definitions.py`
