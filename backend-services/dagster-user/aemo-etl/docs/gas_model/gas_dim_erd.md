@@ -20,7 +20,7 @@ corresponding Python definitions.
 
 | Asset | Grain |
 | --- | --- |
-| `silver.gas_model.silver_gas_dim_date` | one row per gas date observed in operations mart source tables |
+| `silver.gas_model.silver_gas_dim_date` | one row per calendar date from 1900-01-01 through the run date |
 | `silver.gas_model.silver_gas_dim_participant` | one current row per merged gas participant identity |
 | `silver.gas_model.silver_gas_participant_market_membership` | one row per participant, source system, and market code |
 | `silver.gas_model.silver_gas_dim_facility` | one current row per source-qualified gas facility |
@@ -52,10 +52,6 @@ erDiagram
         int gas_month
         int gas_day
         string day_name
-        list source_tables
-        list source_surrogate_keys
-        list source_files
-        timestamp ingested_timestamp
     }
 
     SILVER_GAS_DIM_PARTICIPANT {
@@ -210,16 +206,8 @@ erDiagram
 
 ## Implemented Source Tables
 
-- `silver_gas_dim_date`:
-  `silver.gbb.silver_gasbb_pipeline_connection_flow_v2`,
-  `silver.gbb.silver_gasbb_actual_flow_storage`,
-  `silver.gbb.silver_gasbb_nomination_and_forecast`,
-  `silver.gbb.silver_gasbb_linepack_capacity_adequacy`,
-  `silver.vicgas.silver_int126_v4_dfs_data_1`,
-  `silver.vicgas.silver_int153_v4_demand_forecast_rpt_1`,
-  `silver.vicgas.silver_int128_v4_actual_linepack_1`,
-  `silver.vicgas.silver_int236_v4_operational_meter_readings_1`,
-  `silver.vicgas.silver_int313_v4_allocated_injections_withdrawals_1`
+- `silver_gas_dim_date`: no source table; generated as a scheduled calendar
+  from `1900-01-01` through the run date.
 - `silver_gas_dim_participant`:
   `silver.gbb.silver_gasbb_participants_list`,
   `silver.vicgas.silver_int125_v8_details_of_organisations_1`
@@ -248,8 +236,8 @@ erDiagram
 
 - `surrogate_key` is the primary key for every shared asset, including
   `silver_gas_dim_date`.
-- `silver_gas_dim_date` is a conformed calendar derived from observed source
-  dates and keeps list-valued lineage columns.
+- `silver_gas_dim_date` is a conformed calendar generated independently of
+  source tables and refreshed by a daily Dagster schedule.
 - `silver_gas_dim_zone` also keeps list-valued lineage because multiple source
   rows can contribute to one conformed zone row.
 - `silver_gas_dim_operational_point` currently has nullable `zone_key` and

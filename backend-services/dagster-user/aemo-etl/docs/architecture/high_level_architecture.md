@@ -132,7 +132,7 @@ The corresponding silver asset:
 - `silver_gas_dim_operational_point`
 - `silver_gas_fact_operational_meter_flow`
 
-These assets consume the source silver layer and publish shared dimensions and marts back into `silver/gas_model/...` parquet snapshot datasets.
+Most of these assets consume the source silver layer and publish shared dimensions and marts back into `silver/gas_model/...` parquet snapshot datasets. `silver_gas_dim_date` is a standalone scheduled calendar generated from `1900-01-01` through the run date.
 
 ## Sensors and automation
 
@@ -146,9 +146,11 @@ These assets consume the source silver layer and publish shared dimensions and m
   - launch bronze ingestion assets with matching S3 keys
 - `default_automation_condition_sensor`
   - covers everything else
-  - lets the non-event-driven silver and `gas_model` assets materialize when dependencies update
+  - lets the non-event-driven silver and dependency-driven `gas_model` assets materialize when dependencies update
 
-Locally these sensors default to stopped. On AWS they default to running.
+`silver_gas_dim_date` is refreshed by its own daily schedule at 06:03 Australia/Melbourne time.
+
+Locally these sensors and the date schedule default to stopped. On AWS they default to running.
 
 ## Storage model
 
@@ -225,6 +227,7 @@ flowchart TD
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/table_metadata.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_dim_date.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_operational_meter_flow.py`
 - `sync.scope`: `architecture`
 - `sync.qa`:

@@ -95,6 +95,14 @@ def test_gas_model_silver_modules_define_asset_targeted_automation_sensors() -> 
         definitions = module.defs()
         sensors = list(definitions.sensors or [])
 
+        if module_name == "silver_gas_dim_date":
+            schedules = list(definitions.schedules or [])
+
+            assert sensors == []
+            assert len(schedules) == 1
+            assert schedules[0].name == "silver_gas_dim_date_schedule"
+            continue
+
         assert len(sensors) == 1, module_name
 
         sensor = sensors[0]

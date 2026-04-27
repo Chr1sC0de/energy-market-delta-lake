@@ -2,11 +2,17 @@ from datetime import date, datetime, timezone
 from typing import cast
 
 import polars as pl
-from dagster import AssetKey, AssetsDefinition, Definitions, MaterializeResult
-
-from aemo_etl.defs.gas_model.silver_gas_dim_date import (
-    SOURCE_TABLES as DATE_SOURCE_TABLES,
+from dagster import (
+    AssetKey,
+    AssetsDefinition,
+    Definitions,
+    MaterializeResult,
+    ScheduleDefinition,
 )
+from pytest import MonkeyPatch, raises
+
+import aemo_etl.defs.gas_model.silver_gas_dim_date as date_module
+from aemo_etl.configs import DEFAULT_SCHEDULE_STATUS
 from aemo_etl.defs.gas_model.silver_gas_dim_date import (
     defs as date_defs,
 )
@@ -149,39 +155,37 @@ def _operational_points() -> pl.LazyFrame:
     )
 
 
-def _minimal_date_source(column: str, value: str) -> pl.LazyFrame:
-    return pl.LazyFrame(
-        {
-            column: [value],
-            "surrogate_key": [f"{column}-source-key"],
-            "source_file": [f"s3://archive/{column}.csv"],
-            "ingested_timestamp": [_ingested()],
-        }
+def test_silver_gas_dim_date_transform(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        date_module,
+        "_current_schedule_date",
+        lambda: date(1900, 1, 3),
     )
-
-
-def test_silver_gas_dim_date_transform() -> None:
     fn = silver_gas_dim_date.op.compute_fn.decorated_fn  # type: ignore[union-attr]
 
     result = cast(
         MaterializeResult[pl.LazyFrame],
-        fn(
-            _minimal_date_source("GasDate", "01 Jan 2024"),
-            _minimal_date_source("GasDate", "01 Jan 2024"),
-            _minimal_date_source("Gasdate", "01 Jan 2024"),
-            _minimal_date_source("GasDate", "02 Jan 2024"),
-            _minimal_date_source("gas_date", "01 Jan 2024"),
-            _minimal_date_source("forecast_date", "01 Jan 2024"),
-            _minimal_date_source("commencement_datetime", "02 Jan 2024 06:00:00"),
-            _minimal_date_source("gas_date", "01 Jan 2024"),
-            _minimal_date_source("gas_date", "01 Jan 2024"),
-        ),
+        fn(),
     )
     collected = result.value.sort("gas_date").collect()
 
-    assert "dagster/column_lineage" in (result.metadata or {})
-    assert collected["gas_date"].to_list() == [date(2024, 1, 1), date(2024, 1, 2)]
-    assert collected["day_name"].to_list() == ["Monday", "Tuesday"]
+    assert "dagster/column_lineage" not in (result.metadata or {})
+    assert collected.columns == list(date_module.SCHEMA)
+    assert collected["gas_date"].to_list() == [
+        date(1900, 1, 1),
+        date(1900, 1, 2),
+        date(1900, 1, 3),
+    ]
+    assert collected["day_name"].to_list() == ["Monday", "Tuesday", "Wednesday"]
+
+
+def test_silver_gas_dim_date_current_schedule_date() -> None:
+    assert date_module._current_schedule_date() >= date_module.CALENDAR_START_DATE
+
+
+def test_silver_gas_dim_date_rejects_end_before_calendar_start() -> None:
+    with raises(ValueError, match="1900-01-01"):
+        date_module._select_dates(date(1899, 12, 31))
 
 
 def test_silver_gas_dim_operational_point_transform() -> None:
@@ -433,13 +437,31 @@ def test_silver_gas_fact_operational_meter_flow_transform() -> None:
 
 
 def test_new_operations_defs_return_asset_and_checks() -> None:
+    date_result = date_defs()
+    date_assets = list(date_result.assets or [])
+    date_asset_checks = list(date_result.asset_checks or [])
+    date_schedules = list(date_result.schedules or [])
+    date_schedule = cast(ScheduleDefinition, date_schedules[0])
+    date_asset_def = cast(AssetsDefinition, date_assets[0])
+    date_asset_key = AssetKey(["silver", "gas_model", "silver_gas_dim_date"])
+    date_metadata = date_asset_def.metadata_by_key[date_asset_key]
+
+    assert isinstance(date_result, Definitions)
+    assert len(date_assets) == 1
+    assert len(date_asset_checks) == 4
+    assert len(date_schedules) == 1
+    assert date_asset_def.group_names_by_key[date_asset_key] == "gas_model"
+    assert date_metadata["dagster/table_name"] == ".".join(date_asset_key.path)
+    assert date_metadata["calendar_start_date"] == "1900-01-01"
+    assert date_metadata["schedule_cron"] == date_module.SCHEDULE_CRON
+    assert date_metadata["schedule_timezone"] == date_module.SCHEDULE_TIMEZONE
+    assert "source_tables" not in date_metadata
+    assert date_schedule.name == "silver_gas_dim_date_schedule"
+    assert date_schedule.cron_schedule == date_module.SCHEDULE_CRON
+    assert date_schedule.execution_timezone == date_module.SCHEDULE_TIMEZONE
+    assert date_schedule.default_status == DEFAULT_SCHEDULE_STATUS
+
     definitions_by_table = [
-        (
-            date_defs(),
-            AssetKey(["silver", "gas_model", "silver_gas_dim_date"]),
-            DATE_SOURCE_TABLES,
-            "gas_model",
-        ),
         (
             operational_point_defs(),
             AssetKey(["silver", "gas_model", "silver_gas_dim_operational_point"]),
