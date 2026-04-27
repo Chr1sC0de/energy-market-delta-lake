@@ -1,6 +1,5 @@
 from typing import override
 
-import polars as pl
 from dagster import (
     Any,
     ConfigurableIOManager,
@@ -32,7 +31,9 @@ class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
         )
         target_uri = context.definition_metadata[DAGSTER_URI]
 
-        if obj.select(pl.len()).collect().item() > 0 or not table_exists(target_uri):
+        row_count = get_lazyframe_num_rows(obj)
+
+        if row_count > 0 or not table_exists(target_uri):
             output_metadata: dict[str, RawMetadataValue] = {}
 
             if "dagster/column_schema" not in context.definition_metadata:
@@ -49,7 +50,7 @@ class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
             output_metadata.update(
                 {
                     "sink_delta_kwargs": MetadataValue.json(self.sink_delta_kwargs),
-                    "dagster/row_count": get_lazyframe_num_rows(obj),
+                    "dagster/row_count": row_count,
                 }
             )
 
