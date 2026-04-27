@@ -53,7 +53,6 @@ def test_handle_output_append_auto_schema(mocker: MockerFixture) -> None:
     io_mgr.handle_output(ctx, _SMALL_DF)
     ctx.add_output_metadata.assert_called_once()
     added = ctx.add_output_metadata.call_args[0][0]
-    assert "preview" in added
     assert "dagster/column_schema" in added
 
 
@@ -194,7 +193,6 @@ def test_handle_output_parquet_auto_schema(mocker: MockerFixture) -> None:
         "s3://test-bucket/table/part-00000.parquet", mkdir=True
     )
     added = ctx.add_output_metadata.call_args[0][0]
-    assert "preview" in added
     assert "dagster/column_schema" in added
     assert "dagster/row_count" in added
 

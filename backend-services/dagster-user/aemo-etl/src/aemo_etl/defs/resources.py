@@ -20,7 +20,6 @@ from aemo_etl.utils import get_lazyframe_num_rows, get_metadata_schema, table_ex
 class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
     sink_delta_kwargs: dict[str, Any] = {}
     scan_delta_kwargs: dict[str, Any] = {}
-    preview_row_count: int = 5
 
     @override
     def handle_output(self, context: OutputContext, obj: LazyFrame) -> None:
@@ -34,9 +33,6 @@ class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
         target_uri = context.definition_metadata[DAGSTER_URI]
 
         if obj.select(pl.len()).collect().item() > 0 or not table_exists(target_uri):
-            markdown_preview = (
-                obj.head(self.preview_row_count).collect().to_pandas().to_markdown()
-            )
             output_metadata: dict[str, RawMetadataValue] = {}
 
             if "dagster/column_schema" not in context.definition_metadata:
@@ -52,7 +48,6 @@ class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
 
             output_metadata.update(
                 {
-                    "preview": MetadataValue.md(markdown_preview),
                     "sink_delta_kwargs": MetadataValue.json(self.sink_delta_kwargs),
                     "dagster/row_count": get_lazyframe_num_rows(obj),
                 }
@@ -96,8 +91,6 @@ def _parquet_dataset_glob(uri: str) -> str:
 
 
 class PolarsDataFrameSinkParquetIoManager(ConfigurableIOManager):
-    preview_row_count: int = 5
-
     @override
     def handle_output(self, context: OutputContext, obj: LazyFrame) -> None:
         assert context.definition_metadata is not None, (
@@ -108,9 +101,6 @@ class PolarsDataFrameSinkParquetIoManager(ConfigurableIOManager):
         )
         target_uri = context.definition_metadata[DAGSTER_URI]
 
-        markdown_preview = (
-            obj.head(self.preview_row_count).collect().to_pandas().to_markdown()
-        )
         output_metadata: dict[str, RawMetadataValue] = {}
 
         if "dagster/column_schema" not in context.definition_metadata:
@@ -126,7 +116,6 @@ class PolarsDataFrameSinkParquetIoManager(ConfigurableIOManager):
 
         output_metadata.update(
             {
-                "preview": MetadataValue.md(markdown_preview),
                 "dagster/row_count": get_lazyframe_num_rows(obj),
             }
         )

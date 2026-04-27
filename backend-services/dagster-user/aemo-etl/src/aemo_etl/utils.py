@@ -133,7 +133,7 @@ def add_random_suffix(prefix: str) -> str:
 
 
 def get_lazyframe_num_rows(df: LazyFrame) -> int:
-    return cast(int, df.select(len_()).collect().item())  # ty:ignore[unresolved-attribute]
+    return cast(int, df.select(len_()).collect(engine="streaming").item())  # ty:ignore[unresolved-attribute]
 
 
 def get_surrogate_key(primary_keys: list[str] | list[Expr]) -> Expr:
