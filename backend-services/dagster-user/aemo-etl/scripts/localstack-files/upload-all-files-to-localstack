@@ -55,4 +55,6 @@ main() {
 	info "sync complete. files uploaded to: s3://${LANDING_BUCKET}"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+	main "$@"
+fi

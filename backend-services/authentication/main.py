@@ -167,9 +167,7 @@ def _build_redirect_uri(request: Request, route_name: str) -> str:
     return redirect_uri
 
 
-async def _authorize_callback(
-    request: Request, redirect_path: str
-) -> Response:
+async def _authorize_callback(request: Request, redirect_path: str) -> Response:
     """Shared OIDC callback logic — exchanges code for token, sets session."""
     try:
         token = await oidc.authorize_access_token(request)

@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+main() {
+	: "${LOCALSTACK_LANDING_DOWNLOAD:=$HOME/localstack-landing-download}"
+
+	aws s3 sync \
+		"s3://dev-energy-market-archive" \
+		"$LOCALSTACK_LANDING_DOWNLOAD"
+
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+	main "$@"
+fi

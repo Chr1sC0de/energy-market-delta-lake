@@ -58,11 +58,11 @@ all_asset_key_sets = [*gbb_asset_set, *vicgas_asset_set]
     ("bronze_key", "silver_key", "s3_prefix", "n_files"),
     all_asset_key_sets,
     ids=[
-        get_key_name(asset_key_set[0]).replace("bronze", "")
+        get_key_name(asset_key_set[0]).replace("bronze_", "")
         for asset_key_set in all_asset_key_sets
     ],
 )
-def test_gbb_assets_definitions(
+def test_assets_definitions(
     bronze_key: AssetKey,
     silver_key: AssetKey,
     s3_prefix: str,

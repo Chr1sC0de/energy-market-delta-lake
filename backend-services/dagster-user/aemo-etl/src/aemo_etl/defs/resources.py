@@ -1,5 +1,6 @@
 from typing import override
 
+import polars as pl
 from dagster import (
     Any,
     ConfigurableIOManager,
@@ -13,7 +14,7 @@ from dagster._core.definitions.metadata import RawMetadataValue
 from polars import LazyFrame, scan_delta, scan_parquet
 
 from aemo_etl.configs import DAGSTER_URI
-from aemo_etl.utils import get_lazyframe_num_rows, get_metadata_schema
+from aemo_etl.utils import get_lazyframe_num_rows, get_metadata_schema, table_exists
 
 
 class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
@@ -32,47 +33,48 @@ class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
         )
         target_uri = context.definition_metadata[DAGSTER_URI]
 
-        markdown_preview = (
-            obj.head(self.preview_row_count).collect().to_pandas().to_markdown()
-        )
-        output_metadata: dict[str, RawMetadataValue] = {}
+        if obj.select(pl.len()).collect().item() > 0 or not table_exists(target_uri):
+            markdown_preview = (
+                obj.head(self.preview_row_count).collect().to_pandas().to_markdown()
+            )
+            output_metadata: dict[str, RawMetadataValue] = {}
 
-        if "dagster/column_schema" not in context.definition_metadata:
-            if "column_description" in context.definition_metadata:
-                updated_column_schema = get_metadata_schema(
-                    obj.collect_schema(),
-                    context.definition_metadata["column_description"],
+            if "dagster/column_schema" not in context.definition_metadata:
+                if "column_description" in context.definition_metadata:
+                    updated_column_schema = get_metadata_schema(
+                        obj.collect_schema(),
+                        context.definition_metadata["column_description"],
+                    )
+                else:
+                    updated_column_schema = get_metadata_schema(obj.collect_schema())
+
+                output_metadata["dagster/column_schema"] = updated_column_schema
+
+            output_metadata.update(
+                {
+                    "preview": MetadataValue.md(markdown_preview),
+                    "sink_delta_kwargs": MetadataValue.json(self.sink_delta_kwargs),
+                    "dagster/row_count": get_lazyframe_num_rows(obj),
+                }
+            )
+
+            return_object = obj.sink_delta(target_uri, **self.sink_delta_kwargs)
+
+            if self.sink_delta_kwargs.get("mode", "error") == "merge":
+                assert return_object is not None, (
+                    "mode was set to merge but resulting output is None"
                 )
-            else:
-                updated_column_schema = get_metadata_schema(obj.collect_schema())
 
-            output_metadata["dagster/column_schema"] = updated_column_schema
+                context.log.info(f"merging data with settings {self.sink_delta_kwargs}")
 
-        output_metadata.update(
-            {
-                "preview": MetadataValue.md(markdown_preview),
-                "sink_delta_kwargs": MetadataValue.json(self.sink_delta_kwargs),
-                "dagster/row_count": get_lazyframe_num_rows(obj),
-            }
-        )
+                merge_results = (
+                    return_object.when_matched_update_all()
+                    .when_not_matched_insert_all()
+                    .execute()
+                )
+                context.log.info(f"merged data with results {merge_results}")
 
-        return_object = obj.sink_delta(target_uri, **self.sink_delta_kwargs)
-
-        if self.sink_delta_kwargs.get("mode", "error") == "merge":
-            assert return_object is not None, (
-                "mode was set to merge but resulting output is None"
-            )
-
-            context.log.info(f"merging data with settings {self.sink_delta_kwargs}")
-
-            merge_results = (
-                return_object.when_matched_update_all()
-                .when_not_matched_insert_all()
-                .execute()
-            )
-            context.log.info(f"merged data with results {merge_results}")
-
-        context.add_output_metadata(output_metadata)
+            context.add_output_metadata(output_metadata)
 
     @override
     def load_input(self, context: InputContext) -> LazyFrame:

@@ -189,7 +189,6 @@ def _materialize_result(value: LazyFrame) -> MaterializeResult[LazyFrame]:
         "surrogate_key_sources": SURROGATE_KEY_SOURCES,
         "source_tables": SOURCE_TABLES,
     },
-    tags={"ecs/cpu": "512", "ecs/memory": "4096"},
     kinds={"table", "parquet"},
     automation_condition=AutomationCondition.any_deps_updated()
     & ~AutomationCondition.in_progress()
@@ -243,6 +242,7 @@ def defs() -> Definitions:
                 name="silver_gas_fact_bid_stack_sensor",
                 target=[silver_gas_fact_bid_stack.key],
                 default_status=DEFAULT_SENSOR_STATUS,
+                run_tags={"ecs/cpu": "512", "ecs/memory": "4096"},
             )
         ],
     )

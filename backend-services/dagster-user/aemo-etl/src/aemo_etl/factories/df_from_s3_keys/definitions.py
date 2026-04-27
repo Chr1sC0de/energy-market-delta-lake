@@ -139,6 +139,7 @@ def df_from_s3_keys_definitions_factory(
                 name=f"{silver_table_name}_sensor",
                 target=[silver_asset.key],
                 default_status=DEFAULT_SENSOR_STATUS,
+                run_tags=silver_op_tags,
             )
         ],
     )
