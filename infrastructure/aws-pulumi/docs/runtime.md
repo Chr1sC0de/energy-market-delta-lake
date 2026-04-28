@@ -118,7 +118,10 @@ Cluster-level behavior:
 Dagster run-worker tasks are launched by `EcsRunLauncher` from
 `backend-services/dagster-core/dagster.aws.yaml`. Those ephemeral tasks prefer
 `FARGATE_SPOT` with on-demand `FARGATE` fallback, and the AWS run queue is capped
-at 20 concurrent runs to limit peak compute spend.
+at 20 concurrent runs to limit peak compute spend. AWS run monitoring is enabled
+so the daemon can detect interrupted or orphaned run-worker tasks, poll ECS every
+120 seconds, cap runtime at 30 minutes, and mark unrecovered runs failed after up
+to three resume attempts.
 
 ## Component summary
 
@@ -159,6 +162,7 @@ at 20 concurrent runs to limit peak compute spend.
   - `infrastructure/aws-pulumi/components/ecr.py`
   - `infrastructure/aws-pulumi/components/ecs_cluster.py`
   - `infrastructure/aws-pulumi/components/ecs_services.py`
+  - `backend-services/dagster-core/dagster.aws.yaml`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`

@@ -8,7 +8,7 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
-  "dagster>=1.12.19",
+  "dagster>=1.13.1",
   "dagster-aws>=0.28.19",
   "dagster-docker>=0.28.19",
   "dagster-graphql>=1.12.19",

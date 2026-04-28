@@ -35,3 +35,15 @@ def test_dagster_core_uses_cost_optimized_ecs_run_resources() -> None:
 
     assert 'cpu: "256"' in config
     assert 'memory: "2048"' in config
+
+
+def test_dagster_core_enables_run_monitoring_for_interrupted_workers() -> None:
+    config = _dagster_core_aws_config()
+
+    assert "run_monitoring:" in config
+    assert "enabled: true" in config
+    assert "max_runtime_seconds: 1800" in config
+    assert "start_timeout_seconds: 180" in config
+    assert "cancel_timeout_seconds: 180" in config
+    assert "max_resume_run_attempts: 3" in config
+    assert "poll_interval_seconds: 120" in config

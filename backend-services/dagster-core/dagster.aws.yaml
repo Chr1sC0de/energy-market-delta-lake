@@ -62,6 +62,10 @@ event_log_storage:
         env: DAGSTER_POSTGRES_DB
       port: 5432
 run_monitoring:
-  start_timeout_seconds: 1200
-  cancel_timeout_seconds: 1200
-  max_runtime_seconds: 7200
+  enabled: true
+  max_runtime_seconds: 1800
+  # values below are the defaults, and don't need to be specified except to override them
+  start_timeout_seconds: 180
+  cancel_timeout_seconds: 180
+  max_resume_run_attempts: 3
+  poll_interval_seconds: 120
