@@ -217,7 +217,6 @@ def _silver_extract_column_schema_field(raw: str | None, field: str) -> str | No
 )
 def silver_table_metadata(df: LazyFrame) -> LazyFrame:
     collected = df.collect()
-
     collected = collected.with_columns(
         [
             pl.col("metadata")
@@ -243,7 +242,6 @@ def silver_table_metadata(df: LazyFrame) -> LazyFrame:
             .alias("column_description"),
         ]
     )
-
     return collected.drop("metadata").lazy()
 
 

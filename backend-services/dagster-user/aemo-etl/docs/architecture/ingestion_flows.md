@@ -126,6 +126,7 @@ Trigger and output notes:
 - Bronze uses `aemo_deltalake_ingest_partitioned_append_io_manager`; `df_from_s3_keys` silver uses `aemo_parquet_overwrite_io_manager`.
 - `delta_table_vacuum_schedule` runs daily at 02:00 Australia/Melbourne and uses each Delta asset's `delta_maintenance/*` metadata, defaulting to compact plus full vacuum retention `0`.
 - A representative downstream example is `silver_gas_fact_operational_meter_flow`, which reads VICGAS silver inputs plus shared dimensions and writes a `silver/gas_model/...` parquet snapshot dataset.
+- Downstream `gas_model` silver assets retry failed materializations up to three times with a 60-second exponential backoff and plus/minus jitter.
 
 ## LocalStack and S3-compatible behavior
 

@@ -5,8 +5,11 @@ import polars as pl
 from dagster import (
     AssetCheckResult,
     AutomationCondition,
+    Backoff,
     Definitions,
+    Jitter,
     MaterializeResult,
+    RetryPolicy,
     ScheduleDefinition,
     asset,
     asset_check,
@@ -110,6 +113,12 @@ def _materialize_result(value: LazyFrame) -> MaterializeResult[LazyFrame]:
         "schedule_timezone": SCHEDULE_TIMEZONE,
     },
     kinds={"table", "parquet"},
+    retry_policy=RetryPolicy(
+        max_retries=3,
+        delay=60,
+        backoff=Backoff.EXPONENTIAL,
+        jitter=Jitter.PLUS_MINUS,
+    ),
     automation_condition=AutomationCondition.missing(),
 )
 def silver_gas_dim_date() -> MaterializeResult[LazyFrame]:

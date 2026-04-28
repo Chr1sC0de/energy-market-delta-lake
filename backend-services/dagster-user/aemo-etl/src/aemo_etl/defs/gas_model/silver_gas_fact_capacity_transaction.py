@@ -5,8 +5,11 @@ from dagster import (
     AssetKey,
     AutomationCondition,
     AutomationConditionSensorDefinition,
+    Backoff,
     Definitions,
+    Jitter,
     MaterializeResult,
+    RetryPolicy,
     TableColumnDep,
     TableColumnLineage,
     asset,
@@ -223,6 +226,12 @@ def _materialize_result(value: LazyFrame) -> MaterializeResult[LazyFrame]:
         "source_tables": SOURCE_TABLES,
     },
     kinds={"table", "parquet"},
+    retry_policy=RetryPolicy(
+        max_retries=3,
+        delay=60,
+        backoff=Backoff.EXPONENTIAL,
+        jitter=Jitter.PLUS_MINUS,
+    ),
     automation_condition=AutomationCondition.any_deps_updated()
     & ~AutomationCondition.in_progress()
     & ~AutomationCondition.any_deps_missing(),

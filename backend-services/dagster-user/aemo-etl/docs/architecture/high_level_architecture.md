@@ -137,6 +137,7 @@ The corresponding silver asset:
 - `silver_gas_fact_operational_meter_flow`
 
 Most of these assets consume the source silver layer and publish shared dimensions and marts back into `silver/gas_model/...` parquet snapshot datasets. `silver_gas_dim_date` is a standalone scheduled calendar generated from `1900-01-01` through the run date.
+Gas-model silver assets retry failed materializations up to three times with a 60-second exponential backoff and plus/minus jitter.
 
 ### Delta maintenance
 

@@ -5,7 +5,10 @@ from typing import Mapping, Unpack
 from dagster import (
     AssetExecutionContext,
     AssetsDefinition,
+    Backoff,
     Config,
+    Jitter,
+    RetryPolicy,
     asset,
 )
 from dagster_aws.s3 import S3Resource
@@ -191,6 +194,15 @@ def silver_df_from_s3_keys_asset_factory(
     asset_kwargs.setdefault("metadata", {})
 
     asset_kwargs.setdefault("kinds", {"table", "parquet"})
+    asset_kwargs.setdefault(
+        "retry_policy",
+        RetryPolicy(
+            max_retries=3,
+            delay=60,
+            backoff=Backoff.EXPONENTIAL,
+            jitter=Jitter.PLUS_MINUS,
+        ),
+    )
 
     @asset(**asset_kwargs)
     def silver_asset(df: LazyFrame) -> LazyFrame:
