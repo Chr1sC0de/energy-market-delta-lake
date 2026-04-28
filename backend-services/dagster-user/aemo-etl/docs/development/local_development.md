@@ -100,6 +100,17 @@ What to expect locally:
 
 This default-stopped behavior is intentional and comes from `DEFAULT_SENSOR_STATUS` and `DEFAULT_SCHEDULE_STATUS` in `src/aemo_etl/configs.py`.
 
+To validate failed-run alert handling, launch the manual probe asset:
+
+```bash
+dg launch --assets "key:ops/testing/failed_run_alert_probe"
+```
+
+That asset always raises `Intentional failure for Dagster failed-run alert
+testing.`. In a live AWS Dagster deployment, the failed run should trigger
+`aemo_etl_failed_run_alert_sensor` and publish to the configured SNS topic. A
+local `dg launch` run only validates local Dagster behavior.
+
 For the debugger-driven local stack, use:
 
 ```bash
@@ -155,6 +166,7 @@ make run-prek
 - `sync.sources`:
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/configs.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/alerts.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/testing.py`
   - `backend-services/dagster-user/aemo-etl/tests/integration/conftest.py`
   - `backend-services/dagster-user/aemo-etl/.localstack.env`
   - `backend-services/dagster-user/aemo-etl/scripts/setup-debugging-environment`

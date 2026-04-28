@@ -160,6 +160,9 @@ Per-asset overrides use flat metadata keys: `delta_maintenance/enabled`, `delta_
   - watches failed runs in the AEMO ETL code location
   - publishes one alert to an AWS SNS topic when
     `DAGSTER_FAILURE_ALERT_TOPIC_ARN` is configured
+- `ops/testing/failed_run_alert_probe`
+  - manual asset that always raises an intentional error
+  - creates a real failed run for live alert sensor and SNS validation
 - `default_automation_condition_sensor`
   - covers everything else
   - lets the non-event-driven silver and dependency-driven `gas_model` assets materialize when dependencies update
@@ -243,6 +246,7 @@ flowchart TD
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/alerts.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/sensors.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/testing.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`

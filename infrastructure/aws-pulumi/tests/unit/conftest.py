@@ -256,5 +256,6 @@ pulumi.runtime.set_all_config(
         "aws-pulumi:cognito_server_metadata_url",
         "aws-pulumi:cognito_token_signing_key_url",
         "aws-pulumi:cognito_client_secret",
+        "aws-pulumi:dagster_failure_alert_topic_arn",
     ],
 )

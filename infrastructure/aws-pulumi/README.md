@@ -176,7 +176,7 @@ This project reads a small set of important config values:
   - `aws-pulumi:cognito_client_secret`
   - `aws-pulumi:website_root_url`
   - `aws-pulumi:developer_email`
-- Optional Pulumi config for Dagster failed-run alerts:
+- Optional Pulumi secret for Dagster failed-run alerts:
   - `aws-pulumi:dagster_failure_alert_topic_arn`
 
 The stack name prefix resolves to `"{ENVIRONMENT}-energy-market"`.
@@ -203,7 +203,7 @@ Manual setup:
 1. Store the topic ARN for this stack:
 
 ```bash
-pulumi config set dagster_failure_alert_topic_arn <topic-arn>
+pulumi config set --secret dagster_failure_alert_topic_arn <topic-arn>
 ```
 
 Then run `pulumi preview` and `pulumi up`. Pulumi injects the topic ARN into

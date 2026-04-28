@@ -2,13 +2,14 @@ encryptionsalt: v1:3H8MEt0seIk=:v1:wZZ0GsOGkcvXYXxf:arSaYEpMPaiUKzN/7ptJc9mvlvFf
 config:
   aws:region: ap-southeast-2
   aws-pulumi:cognito_client_id:
-    secure: v1:ZraZSIf+h0e+zgPH:rHCWqn+surygwlNWR2sPr+jINNdAvqofCbIhLfNdgPuHgehDWf2ruN9r
+    secure: v1:4d6Dbpd3vQz7faGm:fHJ1Y9y1QDIa8frm3zafKwAUDUGkX6oKEPUYevgFa4yuu2XBKa5D4wPJ
   aws-pulumi:cognito_server_metadata_url:
-    secure: v1:FFtNw+Jz3zxdDglM:+gjdb5iAdg7FP79CR5zqkm9slW9CouvbQQCcSfWcvRaqkBR5OLdtkJqhAZJPgjxIwEDFeAo8X9NQ82mKMiRoFMc5wp0/F8VZH2yTlXI+HicusavneCzUOtyDgZN1r5cywusQFmaV0GBi7FCaKwL5wBf5DzhPwv2sHAE=
+    secure: v1:pVRAkAt/LJXvi3UI:YmtvDVBlUjgYg+1ieBnykJszJ69QxMwvPSqNxUbIyMFGpVNWRdkOifFXfhi46tUfyUFxHZpAyfqbHyibKBRp7qsIlyK8tZ2zpGJg3eS7pJh7DKi+GMoMPhrxeV9S0g7/2IfmNbsbUAyTp+c58xU5dwuRkN8jCjZ+XjU=
   aws-pulumi:cognito_token_signing_key_url:
-    secure: v1:puqTS1wTpCMG+ps3:L39Yls1EoEqriE8xbqJ3Jw7JXscXHlKl/zBap25ZLI5eHyFN7vMEXreoWjfA4UcDXWtdabRwM8yA23QotVUPk+a8755l5zjqYE25STYBEpbAuSlcjFNMWjWeWYgAQsuUZUo2NdZ6x2I9B1zPv+nv
+    secure: v1:oZxYpYqpWzw/xUI1:iT0hSnsIxhW6aWyioBE5zv1xvkV3T30GoWLfXtTSmxk0pAONMvYHaHl2Tq+NIn4KafKCz0PAHqaX3sge1ute2P0Ny0lL8koOd2+gR2t04w1dDIWUb/+SOk0kFdr5gOMIHhrkA0MAF9GaUkTjwhUx
   aws-pulumi:cognito_client_secret:
-    secure: v1:I/f+km0DuuLWGcmB:0gjniiKbvk2poSoAxckvx+wcbEi2cSF3keS5GXE8MMBkFCt6+5Jh3hpyNUKGh9/lXJCo1XGF80efQYhnmBqmLRJPHds=
-  aws-pulumi:website_root_url: ausenergymarketdata.com
-  aws-pulumi:developer_email: ""
-  aws-pulumi:dagster_failure_alert_topic_arn: arn:aws:sns:ap-southeast-2:100187958338:dagster-failed-run-alerts
+    secure: v1:QWkFW2W4B+hYL5c8:/KHR5SLYvs5qS7fqJ7+gn7dM48yTm44fRSst7oDy/bu6hssj7CMVlyxAMTBJUheiujFExdg3u5CvD0Sf0JFXKKvPEm0=
+  aws-pulumi:website_root_url: https://ausenergymarketdata.com
+  aws-pulumi:developer_email: "chrisam1993@live.com"
+  aws-pulumi:dagster_failure_alert_topic_arn:
+    secure: v1:FMyLuiBLJcG3ru4U:GEvmQ3pCo0nNKWIyGn98nIkH30O6GonNTCVDyUJ2QSNz5p4i4/ZGnXHhJR8Evpa3IIjF935c9xYvC//hn/I3zxp9DktG3WeQi1Dk/qqqlRt9

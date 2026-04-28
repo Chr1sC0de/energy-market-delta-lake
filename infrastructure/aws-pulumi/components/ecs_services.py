@@ -160,7 +160,9 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
         postgres_host = postgres.private_dns
         postgres_password = postgres.password
         config = pulumi.Config()
-        failure_alert_topic_arn = config.get(FAILURE_ALERT_TOPIC_ARN_CONFIG_KEY) or ""
+        failure_alert_topic_arn = (
+            config.get_secret(FAILURE_ALERT_TOPIC_ARN_CONFIG_KEY) or ""
+        )
         website_root_url = config.get("website_root_url")
         failure_alert_base_url = (
             f"{website_root_url.rstrip('/')}{DAGSTER_ADMIN_PATH_PREFIX}"

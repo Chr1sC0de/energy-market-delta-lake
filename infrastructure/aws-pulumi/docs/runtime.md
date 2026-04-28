@@ -140,9 +140,10 @@ at 20 concurrent runs to limit peak compute spend.
   user code and both webservers.
 - The daemon task does not register in Cloud Map because it only initiates
   outbound orchestration work.
-- The user-code task receives `DAGSTER_FAILURE_ALERT_TOPIC_ARN` and
-  `DAGSTER_FAILURE_ALERT_BASE_URL` so the AEMO ETL failure sensor can publish
-  alerts to a manually managed AWS SNS topic.
+- The user-code task receives `DAGSTER_FAILURE_ALERT_TOPIC_ARN` from Pulumi
+  secret config and `DAGSTER_FAILURE_ALERT_BASE_URL` from public site config so
+  the AEMO ETL failure sensor can publish alerts to a manually managed AWS SNS
+  topic.
 
 ## Related docs
 

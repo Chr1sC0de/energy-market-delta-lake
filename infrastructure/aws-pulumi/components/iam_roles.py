@@ -235,7 +235,7 @@ class IamRolesComponentResource(pulumi.ComponentResource):
         caller = aws.get_caller_identity()
         region = aws.get_region()
         failure_alert_topic_arn = (
-            pulumi.Config().get(FAILURE_ALERT_TOPIC_ARN_CONFIG_KEY) or ""
+            pulumi.Config().get_secret(FAILURE_ALERT_TOPIC_ARN_CONFIG_KEY) or ""
         )
 
         self.daemon_task_policy = aws.iam.RolePolicy(

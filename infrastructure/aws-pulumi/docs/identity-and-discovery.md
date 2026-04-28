@@ -111,7 +111,8 @@ The daemon is not registered because it does not accept inbound traffic.
 - The daemon task role includes:
   - ECS orchestration calls
   - Secrets Manager reads
-  - SNS topic publish for Dagster failed-run alerts when a topic ARN is configured
+  - SNS topic publish for Dagster failed-run alerts when a Pulumi secret topic
+    ARN is configured
   - DynamoDB access to `delta_log`
   - S3 access to the environment-scoped `*-energy-market*` buckets
   - `iam:PassRole` for ECS task launches

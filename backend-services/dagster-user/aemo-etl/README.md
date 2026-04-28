@@ -215,6 +215,10 @@ The `aemo_etl_failed_run_alert_sensor` also follows that default. In AWS it send
 failed-run notifications through an AWS SNS topic when
 `DAGSTER_FAILURE_ALERT_TOPIC_ARN` is configured.
 
+Use the manual `ops/testing/failed_run_alert_probe` asset to create a real
+failed run when validating the alert sensor in a live Dagster deployment. It is
+not scheduled or sensor-triggered.
+
 ## Common commands
 
 ```bash
@@ -222,6 +226,7 @@ make unit-test
 make integration-test
 make duplicate-check
 make run-prek
+dg launch --assets "key:ops/testing/failed_run_alert_probe"
 ```
 
 ## Project layout
@@ -260,6 +265,7 @@ aemo-etl/
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/configs.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/sensors.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/testing.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
