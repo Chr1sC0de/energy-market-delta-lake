@@ -12,6 +12,7 @@ point for understanding the current runtime architecture.
 
 ## Related docs
 
+- [AEMO document corpus architecture spec](./aemo-document-corpus-architecture-spec.md)
 - [Repository overview](../README.md)
 - [Repository architecture](../docs/architecture.md)
 - [Repository workflow](../docs/workflow.md)
