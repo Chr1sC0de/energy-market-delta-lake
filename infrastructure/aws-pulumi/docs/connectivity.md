@@ -109,6 +109,7 @@ flowchart LR
 ## Traffic rules
 
 - Caddy is the only internet-facing service security group.
+- Caddy accepts SSH (port `22`) only from the bastion host.
 - FastAPI auth is private and only accepts traffic from Caddy plus SSH from the
   bastion host.
 - Dagster webservers accept port `3000` from Caddy and the bastion host.

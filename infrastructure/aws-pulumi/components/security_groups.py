@@ -199,19 +199,14 @@ class SecurityGroupsComponentResource(pulumi.ComponentResource):
 
     def _setup_caddy_instance(self) -> None:
         sg = self.register.caddy_instance
-        # SSH from admin IPs
-        for idx, ip in enumerate(ADMINISTRATOR_IPS):
-            aws.ec2.SecurityGroupRule(
-                f"{self.name}-caddy-ssh-{idx}",
-                type="ingress",
-                security_group_id=sg.id,
-                from_port=22,
-                to_port=22,
-                protocol="tcp",
-                cidr_blocks=[f"{ip}/32"],
-                description=f"SSH from admin {ip}",
-                opts=pulumi.ResourceOptions(parent=sg),
-            )
+        # SSH from bastion host only
+        self._tcp_ingress_from_sg(
+            f"{self.name}-caddy-ssh",
+            sg,
+            self.register.bastion_host,
+            22,
+            "SSH from bastion host",
+        )
         # HTTP + HTTPS from anywhere (ACME challenge + user traffic)
         for port, label in [(80, "http"), (443, "https")]:
             self._tcp_ingress_from_cidr(
