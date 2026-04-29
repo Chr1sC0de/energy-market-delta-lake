@@ -1,3 +1,4 @@
+import os
 import uuid
 from typing import Callable, Generator
 
@@ -25,9 +26,20 @@ from tests.utils import (
 )
 
 
+_LOCAL_INTEGRATION_ENABLED = os.environ.get("LOCAL_INTEGRATION_TESTS") == "1"
+
+
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     for item in items:
         item.add_marker(pytest.mark.integration)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def local_integration_enabled() -> None:
+    if not _LOCAL_INTEGRATION_ENABLED:
+        pytest.skip(
+            "Local integration tests disabled. Set LOCAL_INTEGRATION_TESTS=1 to enable."
+        )
 
 
 @pytest.fixture(scope="session")
@@ -38,7 +50,9 @@ def session_monkeypatch() -> Generator[pytest.MonkeyPatch]:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def aws_credentials(session_monkeypatch: pytest.MonkeyPatch) -> None:
+def aws_credentials(
+    local_integration_enabled: None, session_monkeypatch: pytest.MonkeyPatch
+) -> None:
     session_monkeypatch.delenv("AWS_PROFILE", raising=False)
     session_monkeypatch.setenv("DEVELOPMENT_ENVIRONMENT", "dev")
     session_monkeypatch.setenv("AWS_ACCESS_KEY_ID", "test")
@@ -51,7 +65,9 @@ def aws_credentials(session_monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(scope="session")
-def localstack_endpoint(session_monkeypatch: pytest.MonkeyPatch) -> Generator[str]:
+def localstack_endpoint(
+    local_integration_enabled: None, session_monkeypatch: pytest.MonkeyPatch
+) -> Generator[str]:
     container_name = f"localstack-pytest-{uuid.uuid4().hex[:8]}"
     ip = "127.0.0.1"
     port = get_unused_port()

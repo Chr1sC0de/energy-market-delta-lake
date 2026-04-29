@@ -65,8 +65,8 @@ repos:
         language: system
         entry: uv run zuban check --strict
         pass_filenames: false
-      - id: pytest-unit
-        name: pytest-unit
+      - id: pytest-fast
+        name: pytest fast
         entry: uv run pytest
         args:
           - --cov-fail-under=100
@@ -75,17 +75,20 @@ repos:
           - --cov-report=html
           - -n=4
           - tests/unit
+          - tests/component
         language: system
         pass_filenames: false
       - id: pytest-integration
-        name: pytest-integration
-        entry: uv run pytest
+        name: pytest local integration
+        entry: env LOCAL_INTEGRATION_TESTS=1 uv run pytest
         args:
-          - --testmon
           - -n=4
           - tests/integration
         language: system
         pass_filenames: false
+        always_run: true
+        stages:
+          - pre-push
       - id: dagster-check-defs
         name: check dagster definitions
         entry: uv run dg check defs
