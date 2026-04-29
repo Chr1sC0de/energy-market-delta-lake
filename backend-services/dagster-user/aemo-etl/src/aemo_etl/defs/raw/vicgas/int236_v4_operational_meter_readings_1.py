@@ -54,7 +54,6 @@ defs = df_from_s3_keys_definitions_factory(
         zone.
     """).strip("\n"),
     surrogate_key_sources=[
-        "gas_date",
         "direction_code_name",
         "direction",
         "commencement_datetime",

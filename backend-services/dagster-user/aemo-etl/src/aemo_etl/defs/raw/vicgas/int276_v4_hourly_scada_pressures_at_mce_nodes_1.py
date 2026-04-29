@@ -96,7 +96,7 @@ defs = df_from_s3_keys_definitions_factory(
         Where no value is present for a given hour, a NULL will be shown. MCE Nodes
         are set out in INT258 – MCE Nodes. Hourly pressure values are in kPa units.
     """).strip("\n"),
-    surrogate_key_sources=["node_id", "measurement_datetime"],
+    surrogate_key_sources=["node_id"],
     group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

@@ -68,7 +68,7 @@ defs = df_from_s3_keys_definitions_factory(
         Each row in the report provides details for each mirn the tie-breaking events
         for the previous gas days 5 intraday schedules.
     """).strip("\n"),
-    surrogate_key_sources=["gas_date", "schedule_interval", "transmission_id", "mirn"],
+    surrogate_key_sources=["schedule_interval", "transmission_id", "mirn"],
     group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

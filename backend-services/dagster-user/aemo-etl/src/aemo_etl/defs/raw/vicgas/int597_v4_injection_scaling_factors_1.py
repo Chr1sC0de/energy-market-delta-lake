@@ -49,7 +49,6 @@ defs = df_from_s3_keys_definitions_factory(
         date - distributor name - withdrawal zone - scaling factor - current date
     """).strip("\n"),
     surrogate_key_sources=[
-        "network_name",
         "version_id",
         "gas_date",
         "distributor_name",

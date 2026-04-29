@@ -52,7 +52,7 @@ defs = df_from_s3_keys_definitions_factory(
         gas day, multiplied by 7 days which will give potentially a total of 5040 rows
         of data per report for the previous 7 days.
     """).strip("\n"),
-    surrogate_key_sources=["gas_date", "node_name", "ti", "transmission_id"],
+    surrogate_key_sources=["node_name", "ti", "transmission_id"],
     group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

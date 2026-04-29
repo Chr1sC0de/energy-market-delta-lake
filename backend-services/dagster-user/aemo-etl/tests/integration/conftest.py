@@ -108,12 +108,26 @@ def make_bucket(s3: S3Client) -> Generator[MakeBucketProtocol]:
     yield _make_bucket
 
     for bucket_name in buckets:
-        response = s3.list_objects_v2(Bucket=bucket_name)
-        if "Contents" in response:
+        continuation_token: str | None = None
+        while True:
+            if continuation_token is None:
+                response = s3.list_objects_v2(Bucket=bucket_name)
+            else:
+                response = s3.list_objects_v2(
+                    Bucket=bucket_name,
+                    ContinuationToken=continuation_token,
+                )
+
             objects: list[ObjectIdentifierTypeDef] = [
-                {"Key": obj["Key"]} for obj in response["Contents"]
+                {"Key": obj["Key"]} for obj in response.get("Contents", [])
             ]
-            _ = s3.delete_objects(Bucket=bucket_name, Delete={"Objects": objects})
+            if objects:
+                _ = s3.delete_objects(Bucket=bucket_name, Delete={"Objects": objects})
+
+            if not response.get("IsTruncated", False):
+                break
+
+            continuation_token = response.get("NextContinuationToken")
         _ = s3.delete_bucket(Bucket=bucket_name)
 
 
