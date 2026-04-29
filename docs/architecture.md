@@ -122,8 +122,6 @@ current Pulumi deployment.
   - provides the reverse-proxy image and routing rules
 - `backend-services/marimo`
   - local notebook-oriented service used in the test/dev harness
-- `specs`
-  - captures migration notes, design intent, and implementation plans
 
 ## Related docs
 
@@ -131,7 +129,6 @@ current Pulumi deployment.
 - [Repository workflow](workflow.md)
 - [AWS Pulumi infrastructure](../infrastructure/aws-pulumi/README.md)
 - [aemo-etl architecture](../backend-services/dagster-user/aemo-etl/docs/architecture/high_level_architecture.md)
-- [Specs and design notes](../specs/README.md)
 
 ## Sync metadata
 

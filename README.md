@@ -24,7 +24,6 @@ support development, testing, and validation of the deployed platform.
 - Dagster-based ETL code in `backend-services/dagster-user/aemo-etl`
 - Dagster runtime, auth, proxy, and local support services in `backend-services`
 - AWS infrastructure as code in `infrastructure/aws-pulumi`
-- Technical specs and implementation notes in [specs/](specs/README.md)
 
 ## Canonical architecture
 
@@ -130,7 +129,6 @@ energy-market-delta-lake/
 ├── docs/                             # Repo-level architecture and workflow docs
 ├── infrastructure/
 │   └── aws-pulumi/                   # Canonical AWS deployment definitions
-├── specs/                            # Specs, migration notes, design docs
 └── scripts/                          # Repo-level helper scripts
 ```
 
@@ -186,10 +184,6 @@ Follow the docs in repository order:
 - [infrastructure/aws-pulumi/README.md](infrastructure/aws-pulumi/README.md)
 - [infrastructure/aws-pulumi/docs/README.md](infrastructure/aws-pulumi/docs/README.md)
 - [infrastructure/aws-pulumi/docs/vpc.md](infrastructure/aws-pulumi/docs/vpc.md)
-
-### `specs/`
-
-- [specs/README.md](specs/README.md)
 
 ## Prerequisites
 

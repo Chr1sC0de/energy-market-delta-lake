@@ -101,8 +101,6 @@ Local workflow notes:
   - [backend-services/dagster-user/aemo-etl/README.md](../backend-services/dagster-user/aemo-etl/README.md)
   - [aemo-etl architecture docs](../backend-services/dagster-user/aemo-etl/docs/architecture/high_level_architecture.md)
   - [aemo-etl ingestion flows](../backend-services/dagster-user/aemo-etl/docs/architecture/ingestion_flows.md)
-- For specs, migration notes, and design references:
-  - [specs/README.md](../specs/README.md)
 
 ## Documentation maintenance
 

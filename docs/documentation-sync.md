@@ -22,8 +22,9 @@ The sync workflow applies to maintained documentation files:
 - `infrastructure/aws-pulumi/**/*.md`
 - `backend-services/dagster-user/aemo-etl/**/*.md`
 
-`specs/` stays out of scope. Spec files are design references and do not carry
-sync metadata.
+The removed legacy `specs/` tree stays out of scope. New maintained design or
+migration docs should live under the maintained documentation paths above and
+carry sync metadata.
 
 ## Sync metadata contract
 
