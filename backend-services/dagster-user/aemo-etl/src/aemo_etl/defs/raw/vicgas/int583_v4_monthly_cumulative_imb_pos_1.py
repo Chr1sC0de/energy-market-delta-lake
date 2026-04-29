@@ -52,7 +52,6 @@ defs = df_from_s3_keys_definitions_factory(
         (Surplus, Deficit or Balanced) - date and time report produced
     """).strip("\n"),
     surrogate_key_sources=[
-        "network_name",
         "version_id",
         "fro_name",
         "distributor_name",

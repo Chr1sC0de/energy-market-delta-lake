@@ -77,8 +77,14 @@ defs = df_from_s3_keys_definitions_factory(
         values. For example, if bid step 2 is for 2,500GJ and bid step 3 is for
         3,000GJ, then the step_qty_gj associated with bid_step = 3 is 500GJ.
     """).strip("\n"),
-    surrogate_key_sources=["bid_id", "gas_date", "mirn", "bid_step"],
+    surrogate_key_sources=[
+        "bid_id",
+        "gas_date",
+        "market_participant_id",
+        "mirn",
+        "bid_step",
+    ],
     group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
-    silver_op_tags={"ecs/cpu": "1024", "ecs/memory": "8192"},
+    job_tags={"ecs/cpu": "1024", "ecs/memory": "8192"},
 )

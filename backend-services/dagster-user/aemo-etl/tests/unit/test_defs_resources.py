@@ -263,7 +263,7 @@ def test_load_input_parquet(mocker: MockerFixture) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_defs_returns_definitions_with_four_io_managers() -> None:
+def test_defs_returns_definitions_with_resources() -> None:
     d = defs()
     assert isinstance(d, Definitions)
     assert d.resources is not None
@@ -272,4 +272,6 @@ def test_defs_returns_definitions_with_four_io_managers() -> None:
         "aemo_deltalake_overwrite_io_manager",
         "aemo_deltalake_ingest_partitioned_append_io_manager",
         "aemo_parquet_overwrite_io_manager",
+        "io_manager",
+        "s3",
     }

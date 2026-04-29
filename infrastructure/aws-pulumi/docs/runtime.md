@@ -120,8 +120,8 @@ Dagster run-worker tasks are launched by `EcsRunLauncher` from
 `FARGATE_SPOT` with on-demand `FARGATE` fallback, and the AWS run queue is capped
 at 20 concurrent runs to limit peak compute spend. AWS run monitoring is enabled
 so the daemon can detect interrupted or orphaned run-worker tasks, poll ECS every
-120 seconds, cap runtime at 30 minutes, and mark unrecovered runs failed after up
-to three resume attempts.
+120 seconds, cap runtime at 30 minutes, and mark unrecovered runs failed without
+automatic resume attempts.
 
 ## Component summary
 

@@ -38,7 +38,7 @@ sequenceDiagram
     UnzipAsset->>Archive: Copy successful zip inputs, then delete from landing
 
     Landing->>RawSensor: Matching source files become visible
-    RawSensor->>Bronze: Launch matching bronze_gasbb_* asset with s3_keys
+    RawSensor->>Bronze: Launch matching gasbb_*_job with s3_keys
     Bronze->>Landing: Read csv/parquet objects
     Bronze->>Archive: Move processed source files from landing
     Bronze->>Silver: Trigger silver_gasbb_* auto-materialization
@@ -48,7 +48,7 @@ sequenceDiagram
 Trigger and output notes:
 
 - The first step is schedule-driven from `src/aemo_etl/defs/raw/nemweb_public_files.py`.
-- The unzip and bronze steps are sensor-driven from `src/aemo_etl/defs/sensors.py`; that module also registers the failed-run alert sensor, which is not part of the ingestion data path shown here.
+- The unzip and bronze steps are sensor-driven from `src/aemo_etl/definitions.py`; that module also registers the failed-run alert sensor, which is not part of the ingestion data path shown here.
 - Outputs land in Delta tables under the AEMO bucket plus archived source files under `ARCHIVE_BUCKET/bronze/gbb`.
 
 ## VICGAS ingestion flow
@@ -85,7 +85,7 @@ sequenceDiagram
     UnzipAsset->>Archive: Archive successful zip inputs
 
     Landing->>RawSensor: Detect files matching bronze asset glob_pattern
-    RawSensor->>Bronze: Launch matching bronze_int* asset with s3_keys
+    RawSensor->>Bronze: Launch matching int*_job with s3_keys
     Bronze->>Landing: Read source members
     Bronze->>Archive: Copy then delete processed source files
     Bronze->>Silver: Trigger silver_int* current-snapshot assets
@@ -121,7 +121,7 @@ sequenceDiagram
 
     DeltaBronze->>SilverAsset: Dependency update observed
     SilverAsset->>DeltaBronze: Read bronze Delta table
-    SilverAsset->>SilverAsset: Sort by source recency and deduplicate on surrogate_key
+    SilverAsset->>SilverAsset: Select latest source_file and deduplicate on surrogate_key
     SilverAsset->>ParquetSilver: Overwrite current Parquet snapshot dataset
     ParquetSilver->>GasModel: Trigger shared dimensions or fact assets when selected as input
     Maintenance->>DeltaBronze: Daily compact and full vacuum
@@ -152,7 +152,7 @@ When `AWS_ENDPOINT_URL` points at LocalStack, the same flow runs against local S
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/jobs/download_vicgas_public_report_zip_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/alerts.py`
-  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/sensors.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`

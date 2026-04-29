@@ -10,9 +10,10 @@ from dagster import (
     definitions,
 )
 from dagster._core.definitions.metadata import RawMetadataValue
+from dagster_aws.s3 import S3Resource, s3_pickle_io_manager
 from polars import LazyFrame, scan_delta, scan_parquet
 
-from aemo_etl.configs import DAGSTER_URI
+from aemo_etl.configs import DAGSTER_URI, IO_MANAGER_BUCKET
 from aemo_etl.utils import get_lazyframe_num_rows, get_metadata_schema, table_exists
 
 
@@ -169,5 +170,12 @@ def defs() -> Definitions:
                 },
             ),
             "aemo_parquet_overwrite_io_manager": PolarsDataFrameSinkParquetIoManager(),
+            "s3": S3Resource(),
+            "io_manager": s3_pickle_io_manager.configured(
+                {
+                    "s3_bucket": IO_MANAGER_BUCKET,
+                    "s3_prefix": "dagster/storage",
+                }
+            ),
         }
     )

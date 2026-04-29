@@ -27,14 +27,11 @@ def download_vicgas_public_report_zip_files_op(
     response = requests.get(REPORT_URL, timeout=30)
     response.raise_for_status()
 
-    soup = bs4.BeautifulSoup(response.text)
+    soup = bs4.BeautifulSoup(response.text, features="html.parser")
 
-    public_report_links = []
+    public_report_links: list[str] = []
 
-    for link in soup.findAll("a"):
-        if not isinstance(link, bs4.Tag):
-            continue
-
+    for link in soup.find_all("a"):
         if link.text.lower() == "[to parent directory]":
             continue
 

@@ -1,4 +1,4 @@
-"""Unit tests for defs/sensors.py."""
+"""Unit tests for top-level sensor definitions."""
 
 import importlib
 from pathlib import Path
@@ -13,8 +13,8 @@ from dagster import (
 from pytest_mock import MockerFixture
 
 
-def test_defs_sensors_returns_definitions() -> None:
-    from aemo_etl.defs.sensors import defs
+def test_definitions_returns_definitions() -> None:
+    from aemo_etl.definitions import defs
 
     d = defs()
     assert isinstance(d, Definitions)
@@ -22,7 +22,7 @@ def test_defs_sensors_returns_definitions() -> None:
 
 def test_failed_run_alert_sensor_registered() -> None:
     from aemo_etl.configs import DEFAULT_SENSOR_STATUS
-    from aemo_etl.defs.sensors import defs
+    from aemo_etl.definitions import defs
 
     d = defs()
     sensors = {sensor.name: sensor for sensor in d.sensors or []}
@@ -35,12 +35,12 @@ def test_failed_run_alert_sensor_registered() -> None:
 
 
 def test_failed_run_alert_sensor_invokes_alert_sender(mocker: MockerFixture) -> None:
-    from aemo_etl.defs import sensors as sensors_module
+    import aemo_etl.definitions as definitions_module
 
     context = mocker.MagicMock()
-    send_alert = mocker.patch.object(sensors_module, "send_failed_run_alert")
+    send_alert = mocker.patch.object(definitions_module, "send_failed_run_alert")
 
-    sensors_module.aemo_etl_failed_run_alert_sensor._run_status_sensor_fn(context)  # type: ignore[attr-defined]
+    definitions_module.aemo_etl_failed_run_alert_sensor._run_status_sensor_fn(context)  # type: ignore[attr-defined]
 
     send_alert.assert_called_once_with(context)
 
@@ -51,17 +51,21 @@ def test_default_status_aws_branch(monkeypatch: object) -> None:
     monkeypatch.setenv("DEVELOPMENT_LOCATION", "aws")  # type: ignore[attr-defined]
 
     import aemo_etl.configs as _cfg
-    import aemo_etl.defs.sensors as _sensors
+    import aemo_etl.definitions as _definitions
 
     importlib.reload(_cfg)
-    importlib.reload(_sensors)
+    importlib.reload(_definitions)
 
     assert _cfg.DEFAULT_SENSOR_STATUS == DefaultSensorStatus.RUNNING
+    assert (
+        _definitions.aemo_etl_failed_run_alert_sensor.default_status
+        == DefaultSensorStatus.RUNNING
+    )
 
     # Restore
     monkeypatch.delenv("DEVELOPMENT_LOCATION", raising=False)  # type: ignore[attr-defined]
     importlib.reload(_cfg)
-    importlib.reload(_sensors)
+    importlib.reload(_definitions)
 
 
 def test_event_driven_raw_sensor_byte_caps(mocker: MockerFixture) -> None:
@@ -73,7 +77,11 @@ def test_event_driven_raw_sensor_byte_caps(mocker: MockerFixture) -> None:
 
     import aemo_etl.factories.sensors as df_from_s3_keys_sensors
     import aemo_etl.factories.unzipper.sensors as unzipper_sensors
-    from aemo_etl.defs import sensors as sensors_module
+    import aemo_etl.definitions as definitions_module
+
+    jobs = [mocker.MagicMock()]
+    loaded_definitions = mocker.MagicMock()
+    loaded_definitions.jobs = jobs
 
     mocker.patch.object(
         df_from_s3_keys_sensors,
@@ -86,12 +94,22 @@ def test_event_driven_raw_sensor_byte_caps(mocker: MockerFixture) -> None:
         return_value=mocker.MagicMock(),
     )
     mocker.patch.object(
-        sensors_module,
+        definitions_module,
+        "load_from_defs_folder",
+        return_value=loaded_definitions,
+    )
+    mocker.patch.object(
+        definitions_module,
+        "delta_table_maintenance_definitions_factory",
+        return_value=mocker.MagicMock(),
+    )
+    mocker.patch.object(
+        definitions_module,
         "Definitions",
         return_value=mocker.MagicMock(),
     )
 
-    defs_load_fn: Any = getattr(sensors_module.defs, "load_fn")
+    defs_load_fn: Any = getattr(definitions_module.defs, "load_fn")
     defs_load_fn()
 
     raw_sensor_calls = {
@@ -105,6 +123,8 @@ def test_event_driven_raw_sensor_byte_caps(mocker: MockerFixture) -> None:
     }
     assert raw_sensor_calls["vicgas_event_driven_assets_sensor"]["bytes_cap"] == 250e6
     assert raw_sensor_calls["gbb_event_driven_assets_sensor"]["bytes_cap"] == 250e6
+    assert raw_sensor_calls["vicgas_event_driven_assets_sensor"]["jobs"] == tuple(jobs)
+    assert raw_sensor_calls["gbb_event_driven_assets_sensor"]["jobs"] == tuple(jobs)
 
 
 def test_gas_model_silver_modules_define_asset_targeted_automation_sensors() -> None:

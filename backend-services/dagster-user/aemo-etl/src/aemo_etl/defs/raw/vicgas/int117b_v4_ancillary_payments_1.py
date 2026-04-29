@@ -46,7 +46,7 @@ defs = df_from_s3_keys_definitions_factory(
         business day after the gas day (D+3). The ancillary payment amount can be
         positive or negative.
     """).strip("\n"),
-    surrogate_key_sources=["ap_run_id", "gas_date", "schedule_no"],
+    surrogate_key_sources=["ap_run_id"],
     group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

@@ -5,10 +5,7 @@ from typing import Mapping, Unpack
 from dagster import (
     AssetExecutionContext,
     AssetsDefinition,
-    Backoff,
     Config,
-    Jitter,
-    RetryPolicy,
     asset,
 )
 from dagster_aws.s3 import S3Resource
@@ -194,15 +191,6 @@ def silver_df_from_s3_keys_asset_factory(
     asset_kwargs.setdefault("metadata", {})
 
     asset_kwargs.setdefault("kinds", {"table", "parquet"})
-    asset_kwargs.setdefault(
-        "retry_policy",
-        RetryPolicy(
-            max_retries=3,
-            delay=60,
-            backoff=Backoff.EXPONENTIAL,
-            jitter=Jitter.PLUS_MINUS,
-        ),
-    )
 
     @asset(**asset_kwargs)
     def silver_asset(df: LazyFrame) -> LazyFrame:
@@ -212,10 +200,20 @@ def silver_df_from_s3_keys_asset_factory(
 
         df.sink_parquet(input_path)
         cached_df = scan_parquet(input_path)
-        deduped = cached_df.sort("source_file", descending=True).unique(
-            subset=["surrogate_key"], keep="first", maintain_order=True
+
+        latest_keys = cached_df.group_by("surrogate_key").agg(
+            col("source_file").max().alias("source_file")
         )
-        deduped.sink_parquet(output_path)
+
+        deduped = cached_df.join(
+            latest_keys,
+            on=["surrogate_key", "source_file"],
+            how="semi",
+        )
+
+        last_deduped = deduped.unique("surrogate_key", maintain_order=False)
+
+        last_deduped.sink_parquet(output_path)
         return scan_parquet(output_path)
 
     return silver_asset
