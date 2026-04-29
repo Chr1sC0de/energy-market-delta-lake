@@ -10,7 +10,7 @@ from types_boto3_s3 import S3Client
 
 from aemo_etl.factories.sensors import (
     df_from_s3_keys_sensor,
-    has_asset_failed,
+    has_job_failed,
     is_running,
 )
 
@@ -20,62 +20,67 @@ from aemo_etl.factories.sensors import (
 # ---------------------------------------------------------------------------
 
 _ASSET_KEY = AssetKey(["bronze", "gbb", "test_asset"])
+_TARGET_JOB_NAME = "test_asset_job"
 
 
 def _make_run(
-    status: DagsterRunStatus, asset_key: AssetKey | None = _ASSET_KEY
+    status: DagsterRunStatus,
+    asset_key: AssetKey | None = _ASSET_KEY,
+    job_name: str = _TARGET_JOB_NAME,
 ) -> MagicMock:
     run = MagicMock()
     run.asset_selection = {asset_key} if asset_key is not None else None
     run.status = status
+    run.job_name = job_name
     return run
 
 
 def test_is_running_found() -> None:
     runs = [_make_run(DagsterRunStatus.STARTED)]
-    assert is_running(runs, _ASSET_KEY) is True
+    assert is_running(runs, _TARGET_JOB_NAME) is True
 
 
 def test_is_running_not_found() -> None:
-    other_key = AssetKey(["bronze", "other"])
-    runs = [_make_run(DagsterRunStatus.STARTED, asset_key=other_key)]
-    assert is_running(runs, _ASSET_KEY) is False
+    runs = [_make_run(DagsterRunStatus.STARTED, job_name="other_job")]
+    assert is_running(runs, _TARGET_JOB_NAME) is False
 
 
 def test_is_running_empty() -> None:
-    assert is_running([], _ASSET_KEY) is False
+    assert is_running([], _TARGET_JOB_NAME) is False
 
 
 def test_is_running_no_asset_selection() -> None:
-    run = MagicMock()
-    run.asset_selection = None
-    assert is_running([run], _ASSET_KEY) is False
+    run = _make_run(DagsterRunStatus.QUEUED, asset_key=None)
+    assert is_running([run], _TARGET_JOB_NAME) is True
 
 
-def test_has_asset_failed_true() -> None:
+def test_is_running_ignores_asset_selection() -> None:
+    run = _make_run(DagsterRunStatus.QUEUED, job_name="other_job")
+    assert is_running([run], _TARGET_JOB_NAME) is False
+
+
+def test_has_job_failed_true() -> None:
     runs = [_make_run(DagsterRunStatus.FAILURE)]
-    assert has_asset_failed(runs, _ASSET_KEY) is True
+    assert has_job_failed(runs, _TARGET_JOB_NAME) is True
 
 
-def test_has_asset_failed_false_success() -> None:
+def test_has_job_failed_false_success() -> None:
     runs = [_make_run(DagsterRunStatus.SUCCESS)]
-    assert has_asset_failed(runs, _ASSET_KEY) is False
+    assert has_job_failed(runs, _TARGET_JOB_NAME) is False
 
 
-def test_has_asset_failed_no_match() -> None:
-    other_key = AssetKey(["bronze", "other"])
-    runs = [_make_run(DagsterRunStatus.FAILURE, asset_key=other_key)]
-    assert has_asset_failed(runs, _ASSET_KEY) is False
+def test_has_job_failed_no_match() -> None:
+    runs = [_make_run(DagsterRunStatus.FAILURE, job_name="other_job")]
+    assert has_job_failed(runs, _TARGET_JOB_NAME) is False
 
 
-def test_has_asset_failed_empty() -> None:
-    assert has_asset_failed([], _ASSET_KEY) is False
+def test_has_job_failed_empty() -> None:
+    assert has_job_failed([], _TARGET_JOB_NAME) is False
 
 
-def test_has_asset_failed_no_asset_selection() -> None:
-    run = MagicMock()
-    run.asset_selection = None
-    assert has_asset_failed([run], _ASSET_KEY) is False
+def test_has_job_failed_no_asset_selection() -> None:
+    run = _make_run(DagsterRunStatus.FAILURE, asset_key=None)
+    assert has_job_failed([run], _TARGET_JOB_NAME) is True
 
 
 # ---------------------------------------------------------------------------
@@ -129,10 +134,16 @@ def test_df_from_s3_keys_sensor_factory_creates_sensor() -> None:
     [
         # Normal – no runs → yields RunRequest
         ([], [], 1),
-        # Asset is actively running → skip
+        # Target job is actively running → skip
         ([_make_run(DagsterRunStatus.STARTED)], [], 0),
-        # Asset previously failed → skip
+        # Target job is queued without asset selection → skip
+        ([_make_run(DagsterRunStatus.QUEUED, asset_key=None)], [], 0),
+        # Another job is active, even for the same asset → do not skip
+        ([_make_run(DagsterRunStatus.STARTED, job_name="other_job")], [], 1),
+        # Target job previously failed → skip
         ([], [_make_run(DagsterRunStatus.FAILURE)], 0),
+        # Another job previously failed, even for the same asset → do not skip
+        ([], [_make_run(DagsterRunStatus.FAILURE, job_name="other_job")], 1),
     ],
 )
 def test_sensor_inner_function_run_requests(

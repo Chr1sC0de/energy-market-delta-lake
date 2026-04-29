@@ -1,7 +1,6 @@
 from typing import Sequence, cast
 
 from dagster import (
-    AssetKey,
     AssetSelection,
     DagsterRun,
     DagsterRunStatus,
@@ -30,23 +29,22 @@ ACTIVE_STATUSES = [
 ]
 
 
-def is_running(runs: Sequence[DagsterRun], asset_key: AssetKey) -> bool:
+def is_running(runs: Sequence[DagsterRun], job_name: str) -> bool:
     for run in runs:
-        if run.asset_selection:
-            if asset_key in run.asset_selection:
-                return True
+        if run.job_name == job_name:
+            return True
     return False
 
 
-def has_asset_failed(runs: Sequence[DagsterRun], asset_key: AssetKey) -> bool:
-    """Return True if the most recent completed run containing this asset failed.
+def has_job_failed(runs: Sequence[DagsterRun], job_name: str) -> bool:
+    """Return True if the most recent completed run for this job failed.
 
     Scans ``runs`` in order (expected newest-first) and returns the status of
-    the first run whose ``asset_selection`` includes ``asset_key``.  If no
-    matching run is found the function returns False.
+    the first run whose ``job_name`` matches ``job_name``.  If no matching run
+    is found the function returns False.
     """
     for run in runs:
-        if run.asset_selection and asset_key in run.asset_selection:
+        if run.job_name == job_name:
             return run.status == DagsterRunStatus.FAILURE
     return False
 
@@ -100,9 +98,11 @@ def df_from_s3_keys_sensor(
                 f"{name} sensor unable to process {bronze_key}"
             )
             s3_file_glob = asset_meta["glob_pattern"]
+            name_suffix = list(bronze_key.parts)[-1].replace("bronze_", "")
+            job_name = f"{name_suffix}_job"
 
-            if not is_running(active_runs, bronze_key) and not has_asset_failed(
-                completed_runs, bronze_key
+            if not is_running(active_runs, job_name) and not has_job_failed(
+                completed_runs, job_name
             ):
                 s3_object_keys = get_s3_object_keys_from_prefix_and_name_glob(
                     s3_prefix=s3_source_prefix,
@@ -124,8 +124,6 @@ def df_from_s3_keys_sensor(
                     objects_to_process.append(s3_object_key)
                     current_bytes += size_in_bytes
 
-                name_suffix = list(bronze_key.parts)[-1].replace("bronze_", "")
-                job_name = f"{name_suffix}_job"
                 if s3_object_keys:
                     yield RunRequest(
                         job_name=job_name,

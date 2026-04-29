@@ -54,4 +54,5 @@ defs = df_from_s3_keys_definitions_factory(
     surrogate_key_sources=["distributor", "street_name", "suburb_or_place_or_locality"],
     group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
+    job_tags={"ecs/cpu": "512", "ecs/memory": "4096"},
 )
