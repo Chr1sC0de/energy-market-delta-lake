@@ -32,6 +32,7 @@ dev = [
   "dagster-dg-cli",
   "dagster-webserver",
   "debugpy>=1.8.20",
+  "matplotlib>=3.10.9",
   "prek>=0.3.3",
   "pylint>=4.0.5",
   "pytest>=9.0.2",

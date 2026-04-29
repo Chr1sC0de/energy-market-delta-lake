@@ -124,7 +124,7 @@ The bronze asset:
 The corresponding silver asset:
 
 - reads the bronze Delta table
-- sorts and deduplicates by `surrogate_key`
+- selects the latest `source_file` per `surrogate_key` and deduplicates the current snapshot
 - overwrites the current parquet snapshot in the AEMO bucket
 - auto-materializes when its bronze dependency changes
 
@@ -250,6 +250,7 @@ flowchart TD
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/testing.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/table_metadata.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_dim_date.py`

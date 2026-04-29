@@ -55,4 +55,5 @@ defs = df_from_s3_keys_definitions_factory(
     group_name="gas_raw",
     deps=[AssetSpec(["bronze", "gbb", "bronze_nemweb_public_files_gbb"])],
     description="Daily production and usage at each Connection Point (v2, with LastUpdated key).",
+    silver_op_tags={"ecs/cpu": "512", "ecs/memory": "4096"},
 )

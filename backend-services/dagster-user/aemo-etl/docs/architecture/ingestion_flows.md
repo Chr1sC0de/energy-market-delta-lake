@@ -114,7 +114,7 @@ sequenceDiagram
 
     DeltaBronze->>SilverAsset: Dependency update observed
     SilverAsset->>DeltaBronze: Read bronze Delta table
-    SilverAsset->>SilverAsset: Sort by source recency and deduplicate on surrogate_key
+    SilverAsset->>SilverAsset: Select latest source_file and deduplicate on surrogate_key
     SilverAsset->>ParquetSilver: Overwrite current Parquet snapshot dataset
     ParquetSilver->>GasModel: Trigger shared dimensions or fact assets when selected as input
     Maintenance->>DeltaBronze: Daily compact and full vacuum

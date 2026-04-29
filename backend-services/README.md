@@ -116,8 +116,8 @@ fallback, while the long-running Dagster services are provisioned by Pulumi.
 Dagster run monitoring is enabled for AWS runs so interrupted or otherwise
 orphaned ECS run-worker tasks are detected by the daemon. The monitor polls
 every 120 seconds, allows 180 seconds for run start and cancellation, caps run
-runtime at 30 minutes, and may try to resume a crashed run up to three times
-before the run is marked failed and the failure alert sensor publishes to SNS.
+runtime at 30 minutes, and marks unrecovered runs failed without automatic
+resume attempts so the failure alert sensor can publish to SNS.
 
 ______________________________________________________________________
 
