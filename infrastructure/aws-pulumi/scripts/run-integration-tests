@@ -9,7 +9,7 @@ RUN_IDEMPOTENCY=0
 usage() {
 	printf 'Usage: %s [--skip-up] [--with-idempotency] [--stack STACK]\n' "$0"
 	printf '\n'
-	printf 'Runs the live AWS integration test workflow for this Pulumi project.\n'
+	printf 'Runs the deployed AWS test workflow for this Pulumi project.\n'
 	printf '\n'
 	printf 'Options:\n'
 	printf '  --skip-up           Do not run pulumi up before tests.\n'
@@ -79,8 +79,8 @@ else
 	printf '\n==> Skipping pulumi up\n'
 fi
 
-printf '\n==> Running live integration tests\n'
-PULUMI_INTEGRATION_TESTS=1 uv run pytest tests/integration -v
+printf '\n==> Running deployed AWS tests\n'
+PULUMI_INTEGRATION_TESTS=1 uv run pytest tests/deployed -v
 
 if [[ "$RUN_IDEMPOTENCY" -eq 1 ]]; then
 	printf '\n==> Checking for Pulumi no-op preview\n'

@@ -32,7 +32,8 @@ line-length = 88
 format.docstring-code-format = true
 lint.select = [ "ANN", "E", "F", "I" ]
 lint.per-file-ignores."__init__.py" = [ "I" ]
-lint.per-file-ignores."tests/integration/**" = [ "ANN" ]
+lint.per-file-ignores."tests/component/**" = [ "ANN" ]
+lint.per-file-ignores."tests/deployed/**" = [ "ANN" ]
 lint.per-file-ignores."tests/unit/**" = [ "ANN" ]
 lint.pycodestyle.max-line-length = 200
 

@@ -1,12 +1,12 @@
-"""Shared fixtures for post-deployment integration tests.
+"""Shared fixtures for deployed AWS tests.
 
 All fixtures are session-scoped for efficiency — boto3 clients are created once
 per test session. Every fixture that needs live AWS access depends on
-`integration_enabled`, which skips the entire suite unless
+`deployed_enabled`, which skips the entire suite unless
 PULUMI_INTEGRATION_TESTS=1 is set in the environment.
 
 Usage:
-    PULUMI_INTEGRATION_TESTS=1 uv run pytest tests/integration/ -v
+    PULUMI_INTEGRATION_TESTS=1 uv run pytest tests/deployed/ -v
 """
 
 import os
@@ -17,7 +17,7 @@ import pytest
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     for item in items:
-        item.add_marker(pytest.mark.integration)
+        item.add_marker(pytest.mark.deployed)
 
 
 # ---------------------------------------------------------------------------
@@ -28,15 +28,15 @@ _INTEGRATION_ENABLED = os.environ.get("PULUMI_INTEGRATION_TESTS") == "1"
 
 
 @pytest.fixture(scope="session", autouse=True)
-def integration_enabled() -> None:
-    """Skip ALL integration tests unless PULUMI_INTEGRATION_TESTS=1 is set.
+def deployed_enabled() -> None:
+    """Skip ALL deployed tests unless PULUMI_INTEGRATION_TESTS=1 is set.
 
-    autouse=True applies this to every test in the integration suite, so even
+    autouse=True applies this to every test in the deployed suite, so even
     tests that don't use a boto3 client fixture are still skipped correctly.
     """
     if not _INTEGRATION_ENABLED:
         pytest.skip(
-            "Integration tests disabled. Set PULUMI_INTEGRATION_TESTS=1 to enable."
+            "Deployed tests disabled. Set PULUMI_INTEGRATION_TESTS=1 to enable."
         )
 
 
@@ -75,7 +75,7 @@ def resource_name(environment: str) -> str:
 
 @pytest.fixture(scope="session")
 def base_url(
-    integration_enabled: None, stack_name: str, stack_config_path: pathlib.Path
+    deployed_enabled: None, stack_name: str, stack_config_path: pathlib.Path
 ) -> str:
     """Base URL for the selected stack.
 
@@ -112,7 +112,7 @@ def base_url(
 
 
 @pytest.fixture(scope="session")
-def ecs_client(integration_enabled: None, aws_region: str):
+def ecs_client(deployed_enabled: None, aws_region: str):
     """Boto3 ECS client."""
     try:
         import boto3
@@ -123,7 +123,7 @@ def ecs_client(integration_enabled: None, aws_region: str):
 
 
 @pytest.fixture(scope="session")
-def ssm_client(integration_enabled: None, aws_region: str):
+def ssm_client(deployed_enabled: None, aws_region: str):
     """Boto3 SSM client."""
     try:
         import boto3
@@ -134,7 +134,7 @@ def ssm_client(integration_enabled: None, aws_region: str):
 
 
 @pytest.fixture(scope="session")
-def servicediscovery_client(integration_enabled: None, aws_region: str):
+def servicediscovery_client(deployed_enabled: None, aws_region: str):
     """Boto3 Service Discovery client."""
     try:
         import boto3
@@ -145,7 +145,7 @@ def servicediscovery_client(integration_enabled: None, aws_region: str):
 
 
 @pytest.fixture(scope="session")
-def logs_client(integration_enabled: None, aws_region: str):
+def logs_client(deployed_enabled: None, aws_region: str):
     """Boto3 CloudWatch Logs client."""
     try:
         import boto3
@@ -156,7 +156,7 @@ def logs_client(integration_enabled: None, aws_region: str):
 
 
 @pytest.fixture(scope="session")
-def route53_client(integration_enabled: None):
+def route53_client(deployed_enabled: None):
     """Boto3 Route53 client."""
     try:
         import boto3
@@ -167,7 +167,7 @@ def route53_client(integration_enabled: None):
 
 
 @pytest.fixture(scope="session")
-def s3_client(integration_enabled: None, aws_region: str):
+def s3_client(deployed_enabled: None, aws_region: str):
     """Boto3 S3 client."""
     try:
         import boto3
@@ -178,7 +178,7 @@ def s3_client(integration_enabled: None, aws_region: str):
 
 
 @pytest.fixture(scope="session")
-def dynamodb_client(integration_enabled: None, aws_region: str):
+def dynamodb_client(deployed_enabled: None, aws_region: str):
     """Boto3 DynamoDB client."""
     try:
         import boto3
@@ -189,7 +189,7 @@ def dynamodb_client(integration_enabled: None, aws_region: str):
 
 
 @pytest.fixture(scope="session")
-def ec2_client(integration_enabled: None, aws_region: str):
+def ec2_client(deployed_enabled: None, aws_region: str):
     """Boto3 EC2 client."""
     try:
         import boto3

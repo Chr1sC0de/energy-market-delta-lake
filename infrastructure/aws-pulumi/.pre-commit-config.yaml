@@ -54,8 +54,8 @@ repos:
         entry: uv run zuban check --strict
         pass_filenames: false
       - id: pytest
-        name: pytest unit tests
+        name: pytest fast tests
         language: system
-        entry: uv run pytest tests/unit/ -x -q
+        entry: uv run pytest tests/unit tests/component -x -q
         pass_filenames: false
         always_run: true

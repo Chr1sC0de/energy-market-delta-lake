@@ -1,13 +1,13 @@
-"""Post-deployment integration tests.
+"""Deployed AWS tests.
 
 These tests run against the live AWS environment AFTER a successful `pulumi up`.
 They are skipped by default; opt in with:
 
-    PULUMI_INTEGRATION_TESTS=1 uv run pytest tests/integration/ -v
+    PULUMI_INTEGRATION_TESTS=1 uv run pytest tests/deployed/ -v
 
 or using the pytest marker:
 
-    uv run pytest -m integration -v
+    uv run pytest -m deployed -v
 
 Prerequisites:
   - Valid AWS credentials configured (AWS_PROFILE or key env vars)
@@ -17,7 +17,7 @@ Prerequisites:
 The PULUMI_STACK environment variable controls which stack's resources are
 targeted (defaults to "dev-ausenergymarket").
 
-Shared fixtures (integration_enabled, aws_region, stack_name, environment,
+Shared fixtures (deployed_enabled, aws_region, stack_name, environment,
 resource_name, and all boto3 clients) are defined in conftest.py.
 """
 
@@ -27,9 +27,6 @@ from contextlib import contextmanager
 from urllib.parse import urlparse
 
 import pytest
-
-pytestmark = pytest.mark.integration
-
 
 # ---------------------------------------------------------------------------
 # ECS service health tests
@@ -240,7 +237,7 @@ def _get_with_route53_dns_fallback(
 
 class TestWebpageAccessibility:
     def test_caddy_admin_ui_reachable(
-        self, integration_enabled: None, route53_client: object, base_url: str
+        self, deployed_enabled: None, route53_client: object, base_url: str
     ) -> None:
         """The Dagster admin UI must return HTTP 200 or 302 (Cognito redirect)."""
         try:
@@ -260,7 +257,7 @@ class TestWebpageAccessibility:
         )
 
     def test_caddy_guest_ui_reachable(
-        self, integration_enabled: None, route53_client: object, base_url: str
+        self, deployed_enabled: None, route53_client: object, base_url: str
     ) -> None:
         """The Dagster guest UI must return a non-5xx response from Caddy.
 
@@ -287,7 +284,7 @@ class TestWebpageAccessibility:
         )
 
     def test_caddy_root_reachable(
-        self, integration_enabled: None, route53_client: object, base_url: str
+        self, deployed_enabled: None, route53_client: object, base_url: str
     ) -> None:
         """The root URL must respond (Caddy is up and TLS is working)."""
         try:
