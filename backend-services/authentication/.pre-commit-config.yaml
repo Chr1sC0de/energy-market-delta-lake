@@ -42,13 +42,13 @@ repos:
         entry: uv run zuban check
         pass_filenames: false
       - id: pytest
-        name: pytest
+        name: pytest component tests
         entry: uv run pytest
         args:
           - --cov-fail-under=100
           - --cov=main
           - --cov-report=term-missing
           - --cov-report=html
-          - tests/
+          - tests/component
         language: system
         pass_filenames: false

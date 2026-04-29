@@ -63,7 +63,7 @@ from main import (
     get_user_pool_token_signing_key,
     verify_jwt,
 )
-from tests.conftest import TEST_SESSION_SECRET
+from tests.component.conftest import TEST_SESSION_SECRET
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -14,6 +14,14 @@ build correctly-signed session cookies via itsdangerous.
 import os
 from unittest.mock import patch
 
+import pytest
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    for item in items:
+        item.add_marker(pytest.mark.component)
+
+
 # ---------------------------------------------------------------------------
 # Fixed secret used by SessionMiddleware during tests.
 # Must be set before main.py is imported.

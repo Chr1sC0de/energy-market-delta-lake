@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 # conftest.py sets MARIMO_NOTEBOOKS_DIR before this import.
 from marimoserver.main import NOTEBOOKS_DIR, app, app_names
-from tests.conftest import TEST_NOTEBOOKS_DIR
+from tests.component.conftest import TEST_NOTEBOOKS_DIR
 
 # ---------------------------------------------------------------------------
 # TestHealthEndpoint
