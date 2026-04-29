@@ -231,22 +231,22 @@ Apply infrastructure changes:
 pulumi up
 ```
 
-Run the full integration workflow against the default stack:
+Run the full deployed-test workflow against the default stack:
 
 ```bash
 AWS_DEFAULT_REGION=ap-southeast-2 scripts/run-integration-tests
 ```
 
-Run integration tests without applying infrastructure first:
+Run deployed tests without applying infrastructure first:
 
 ```bash
 AWS_DEFAULT_REGION=ap-southeast-2 scripts/run-integration-tests --skip-up
 ```
 
-Run the integration suite directly:
+Run the deployed suite directly:
 
 ```bash
-PULUMI_INTEGRATION_TESTS=1 PULUMI_STACK=dev-ausenergymarket uv run pytest tests/integration -v
+PULUMI_INTEGRATION_TESTS=1 PULUMI_STACK=dev-ausenergymarket uv run pytest tests/deployed -v
 ```
 
 ## Relationship to local development
@@ -278,6 +278,9 @@ system's services and Dagster workflows.
   - `infrastructure/aws-pulumi/components/ecs_services.py`
   - `infrastructure/aws-pulumi/components/iam_roles.py`
   - `infrastructure/aws-pulumi/scripts/setup_secrets`
+  - `infrastructure/aws-pulumi/scripts/run-integration-tests`
+  - `infrastructure/aws-pulumi/tests/deployed/conftest.py`
+  - `infrastructure/aws-pulumi/tests/deployed/test_integration.py`
   - `infrastructure/aws-pulumi/Pulumi.dev-ausenergymarket.yaml`
 - `sync.scope`: `architecture`
 - `sync.qa`:

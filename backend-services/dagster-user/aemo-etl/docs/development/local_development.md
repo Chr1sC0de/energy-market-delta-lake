@@ -145,6 +145,8 @@ During that flow, `dagster.dev.yaml` configures Dagster run, schedule, and event
 
 Integration tests in `tests/integration/conftest.py` make these assumptions:
 
+- `LOCAL_INTEGRATION_TESTS=1` is set; otherwise the lane skips before
+  containers are started
 - LocalStack is started dynamically for the test session
 - `AWS_PROFILE` is removed
 - local test credentials are injected
@@ -161,7 +163,10 @@ Representative integration behavior lives in `tests/integration/test_gbb_vicgas.
 
 ```bash
 make unit-test
+make component-test
+make fast-test
 make integration-test
+make integration-test-testmon
 make duplicate-check
 make run-prek
 ```
@@ -179,6 +184,8 @@ make run-prek
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/alerts.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/jobs/download_vicgas_public_report_zip_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/testing.py`
+  - `backend-services/dagster-user/aemo-etl/Makefile`
+  - `backend-services/dagster-user/aemo-etl/.pre-commit-config.yaml`
   - `backend-services/dagster-user/aemo-etl/tests/integration/conftest.py`
   - `backend-services/dagster-user/aemo-etl/.localstack.env`
   - `backend-services/dagster-user/aemo-etl/scripts/setup-debugging-environment`

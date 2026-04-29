@@ -212,7 +212,8 @@ The configured hooks cover:
 - Python project metadata formatting with `pyproject-fmt`
 - Python linting and formatting with `ruff`
 - Python type checking with `zuban`
-- Python tests with `pytest`
+- Python tests with `pytest`, split into explicit unit, component,
+  integration, and deployed lanes where a subproject needs them
 - Dagster definition and config validation with `dg check defs`,
   `dg check toml`, and `dg check yaml` for the ETL project
 
@@ -227,8 +228,10 @@ hook config. System hooks such as `shellcheck` must also be available on
 | Install git hooks | `prek install` |
 | Repository-wide hooks | `prek run -a` |
 | Root Markdown link check | `prek run lychee -a` |
-| ETL project tests | `cd backend-services/dagster-user/aemo-etl && uv run pytest` |
-| AWS Pulumi tests | `cd infrastructure/aws-pulumi && uv run pytest` |
+| ETL fast tests | `cd backend-services/dagster-user/aemo-etl && make fast-test` |
+| ETL local integration tests | `cd backend-services/dagster-user/aemo-etl && make integration-test` |
+| AWS Pulumi fast tests | `cd infrastructure/aws-pulumi && uv run pytest tests/unit tests/component -x -q` |
+| AWS Pulumi deployed tests | `cd infrastructure/aws-pulumi && PULUMI_INTEGRATION_TESTS=1 uv run pytest tests/deployed -v` |
 | Local stack | `cd backend-services && source .envrc && podman-compose up --build -d` |
 
 ## Deployment
@@ -242,19 +245,22 @@ pulumi up
 ```
 
 See [infrastructure/aws-pulumi/README.md](infrastructure/aws-pulumi/README.md)
-for stack details, component breakdown, and integration-test commands.
+for stack details, component breakdown, and deployed-test commands.
 
 ## Sync metadata
 
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `.pre-commit-config.yaml`
+  - `CONTEXT.md`
   - `backend-services/.pre-commit-config.yaml`
   - `backend-services/authentication/.pre-commit-config.yaml`
   - `backend-services/dagster-user/aemo-etl/.pre-commit-config.yaml`
+  - `backend-services/dagster-user/aemo-etl/Makefile`
   - `backend-services/marimo/.pre-commit-config.yaml`
   - `infrastructure/aws-pulumi/__main__.py`
   - `infrastructure/aws-pulumi/.pre-commit-config.yaml`
+  - `infrastructure/aws-pulumi/scripts/run-integration-tests`
   - `backend-services/compose.yaml`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`

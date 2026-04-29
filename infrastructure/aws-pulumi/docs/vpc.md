@@ -170,7 +170,7 @@ The subnets are carved out of the VPC's address space:
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `infrastructure/aws-pulumi/components/vpc.py`
-  - `infrastructure/aws-pulumi/tests/unit/test_vpc.py`
+  - `infrastructure/aws-pulumi/tests/component/test_vpc.py`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`

@@ -224,7 +224,10 @@ not scheduled or sensor-triggered.
 
 ```bash
 make unit-test
+make component-test
+make fast-test
 make integration-test
+make integration-test-testmon
 make duplicate-check
 make run-prek
 uv run dg launch --job download_vicgas_public_report_zip_files_job
@@ -272,6 +275,8 @@ aemo-etl/
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
+  - `backend-services/dagster-user/aemo-etl/Makefile`
+  - `backend-services/dagster-user/aemo-etl/.pre-commit-config.yaml`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`
