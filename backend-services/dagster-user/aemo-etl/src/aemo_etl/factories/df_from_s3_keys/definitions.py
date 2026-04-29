@@ -3,7 +3,6 @@ from typing import Iterable
 
 from dagster import (
     AssetIn,
-    AutomationCondition,
     Definitions,
     define_asset_job,
 )
@@ -98,8 +97,6 @@ def df_from_s3_keys_definitions_factory(
             "bronze_table_name": f"aemo.{domain}.{bronze_table_name}",
             "glob_pattern": glob_pattern,
         },
-        automation_condition=AutomationCondition.any_deps_updated()
-        & ~AutomationCondition.in_progress(),
     )
 
     silver_asset_duplicate_row_check = duplicate_row_check_factory(
