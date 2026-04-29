@@ -116,7 +116,6 @@ For the doc-sync contract, searchable `sync.sources` metadata, and the required
 - `sync.sources`:
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`
-  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/sensors.py`
   - `backend-services/compose.yaml`
 - `sync.scope`: `behavior`
 - `sync.qa`:

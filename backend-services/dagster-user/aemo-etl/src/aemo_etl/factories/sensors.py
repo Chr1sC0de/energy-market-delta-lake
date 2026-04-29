@@ -13,6 +13,7 @@ from dagster import (
     SensorReturnTypesUnion,
     sensor,
 )
+from dagster._core.definitions.target import ExecutableDefinition
 from dagster_aws.s3 import S3Resource
 
 from aemo_etl.utils import (
@@ -58,9 +59,14 @@ def df_from_s3_keys_sensor(
     bytes_cap: float = 200e6,
     files_cap: int | None = None,
     default_status: DefaultSensorStatus = DefaultSensorStatus.STOPPED,
+    jobs: Sequence[ExecutableDefinition] | None = None,
 ) -> SensorDefinition:
 
-    @sensor(asset_selection=asset_selection, name=name, default_status=default_status)
+    @sensor(
+        name=name,
+        default_status=default_status,
+        jobs=jobs,
+    )
     def sensor_(
         context: SensorEvaluationContext, s3: S3Resource
     ) -> SensorReturnTypesUnion:
@@ -69,7 +75,7 @@ def df_from_s3_keys_sensor(
 
         assert hasattr(context.repository_def, "assets_defs_by_key")
 
-        asset_keys = asset_selection.resolve(
+        bronze_keys = asset_selection.resolve(
             context.repository_def.assets_defs_by_key.values()
         )
 
@@ -84,17 +90,19 @@ def df_from_s3_keys_sensor(
         )
         object_head_mapping = get_object_head_from_pages(pages, logger=context.log)
 
-        for asset_key in asset_keys:
-            asset_defs = context.repository_def.assets_defs_by_key.get(asset_key)
+        for bronze_key in bronze_keys:
+            asset_defs = context.repository_def.assets_defs_by_key.get(bronze_key)
             assert hasattr(asset_defs, "metadata_by_key")
-            asset_meta = cast(dict[str, str], asset_defs.metadata_by_key.get(asset_key))
+            asset_meta = cast(
+                dict[str, str], asset_defs.metadata_by_key.get(bronze_key)
+            )
             assert "glob_pattern" in asset_meta, (
-                f"{name} sensor unable to process {asset_key}"
+                f"{name} sensor unable to process {bronze_key}"
             )
             s3_file_glob = asset_meta["glob_pattern"]
 
-            if not is_running(active_runs, asset_key) and not has_asset_failed(
-                completed_runs, asset_key
+            if not is_running(active_runs, bronze_key) and not has_asset_failed(
+                completed_runs, bronze_key
             ):
                 s3_object_keys = get_s3_object_keys_from_prefix_and_name_glob(
                     s3_prefix=s3_source_prefix,
@@ -116,13 +124,14 @@ def df_from_s3_keys_sensor(
                     objects_to_process.append(s3_object_key)
                     current_bytes += size_in_bytes
 
+                name_suffix = list(bronze_key.parts)[-1].replace("bronze_", "")
+                job_name = f"{name_suffix}_job"
                 if s3_object_keys:
-                    # ensure
                     yield RunRequest(
-                        asset_selection=[asset_key],
+                        job_name=job_name,
                         run_config={
                             "ops": {
-                                asset_key.to_python_identifier(): {
+                                bronze_key.to_python_identifier(): {
                                     "config": {
                                         "s3_keys": objects_to_process,
                                     },

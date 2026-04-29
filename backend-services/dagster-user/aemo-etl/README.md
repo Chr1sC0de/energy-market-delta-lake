@@ -83,9 +83,9 @@ flowchart TD
     Src --> Maintenance["maintenance/"]
 
     Defs --> Raw["raw/"]
-    Defs --> Sensors["sensors.py"]
     Defs --> Resources["resources.py"]
     Defs --> GasModel["gas_model/"]
+    Src --> Sensors["definitions.py sensors"]
 
     Factories --> Nemweb["nemweb_public_files/"]
     Factories --> Unzip["unzipper/"]
@@ -100,7 +100,7 @@ flowchart TD
 - Source-specific silver assets: `silver.gbb.*` and `silver.vicgas.*` assets deduplicate current source rows and expose consistent parquet snapshot datasets for downstream use.
 - Gas-model marts: `src/aemo_etl/defs/gas_model` builds cross-source dimensions and fact tables from the source-specific silver layer.
 - Storage: landing and archive buckets hold files; the AEMO bucket holds bronze Delta tables plus parquet snapshot datasets for source silver and `gas_model`; the IO manager bucket stores Dagster-managed intermediates.
-- Orchestration: `src/aemo_etl/definitions.py` merges shared resources, definitions discovered from `src/aemo_etl/defs`, and the scheduled Delta maintenance definitions from `src/aemo_etl/maintenance`.
+- Orchestration: `src/aemo_etl/definitions.py` loads definitions from `src/aemo_etl/defs`, wires event-driven and failed-run sensors, and merges the scheduled Delta maintenance definitions from `src/aemo_etl/maintenance`.
 - Delta maintenance: `delta_table_vacuum_job` discovers assets backed by Delta IO managers and a `dagster/uri`, then uses per-asset `delta_maintenance/*` metadata. Missing metadata defaults to compacting and full-vacuuming with retention `0`, retention enforcement disabled, and `dry_run=False`.
 
 Delta maintenance metadata is optional and flat:
@@ -264,7 +264,6 @@ aemo-etl/
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/alerts.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/configs.py`
-  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/sensors.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/testing.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`

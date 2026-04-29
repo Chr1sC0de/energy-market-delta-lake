@@ -64,17 +64,13 @@ flowchart LR
 
 `src/aemo_etl/definitions.py` is the project entrypoint for Dagster. It does three things:
 
-1. Declares shared resources:
-   - `s3`: `dagster_aws.s3.S3Resource`
-   - `io_manager`: Dagster's S3 pickle IO manager pointing at `IO_MANAGER_BUCKET`
-   - ECS executor when `DEVELOPMENT_LOCATION == "aws"`
-2. Calls `load_from_defs_folder(path_within_project=Path(__file__).parent)` once to discover all definitions under `src/aemo_etl/defs`.
-3. Builds the scheduled Delta maintenance definitions from discovered Delta-backed asset metadata.
+1. Calls `load_from_defs_folder(path_within_project=Path(__file__).parent)` once to discover all definitions under `src/aemo_etl/defs`, including shared resources from `src/aemo_etl/defs/resources.py`.
+2. Builds the scheduled Delta maintenance definitions from discovered Delta-backed asset metadata.
+3. Wires the event-driven ingestion sensors, unzipper sensors, and failed-run alert sensor.
 
 That means the actual asset topology is assembled from small modules in:
 
 - `src/aemo_etl/defs/raw`
-- `src/aemo_etl/defs/sensors.py`
 - `src/aemo_etl/defs/resources.py`
 - `src/aemo_etl/defs/gas_model`
 
@@ -149,14 +145,14 @@ Per-asset overrides use flat metadata keys: `delta_maintenance/enabled`, `delta_
 
 ## Sensors and automation
 
-`src/aemo_etl/defs/sensors.py` wires three orchestration patterns:
+`src/aemo_etl/definitions.py` wires three orchestration patterns:
 
 - `vicgas_unzipper_sensor` and `gbb_unzipper_sensor`
   - watch landing storage for `*.zip`
   - launch unzipper assets with matching S3 keys
 - `vicgas_event_driven_assets_sensor` and `gbb_event_driven_assets_sensor`
   - watch landing storage for file patterns declared on bronze assets
-  - launch bronze ingestion assets with matching S3 keys
+  - launch matching raw ingestion jobs with S3 keys
 - `aemo_etl_failed_run_alert_sensor`
   - watches failed runs in the AEMO ETL code location
   - publishes one alert to an AWS SNS topic when
@@ -246,7 +242,6 @@ flowchart TD
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/alerts.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`
-  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/sensors.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/testing.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`

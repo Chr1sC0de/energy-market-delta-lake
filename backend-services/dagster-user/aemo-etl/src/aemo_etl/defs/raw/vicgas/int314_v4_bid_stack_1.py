@@ -86,5 +86,5 @@ defs = df_from_s3_keys_definitions_factory(
     ],
     group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
-    silver_op_tags={"ecs/cpu": "1024", "ecs/memory": "8192"},
+    job_tags={"ecs/cpu": "1024", "ecs/memory": "8192"},
 )

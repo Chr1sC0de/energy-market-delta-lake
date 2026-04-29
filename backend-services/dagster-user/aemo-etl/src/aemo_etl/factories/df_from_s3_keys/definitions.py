@@ -4,14 +4,14 @@ from typing import Iterable
 from dagster import (
     AssetIn,
     AutomationCondition,
-    AutomationConditionSensorDefinition,
     Definitions,
+    define_asset_job,
 )
 from dagster._core.definitions.assets.definition.asset_dep import CoercibleToAssetDep
 from polars import LazyFrame
 from polars._typing import PolarsDataType
 
-from aemo_etl.configs import AEMO_BUCKET, DEFAULT_SENSOR_STATUS
+from aemo_etl.configs import AEMO_BUCKET
 from aemo_etl.factories.checks import (
     duplicate_row_check_factory,
     schema_drift_check_factory,
@@ -37,8 +37,7 @@ def df_from_s3_keys_definitions_factory(
     group_name: str | None = None,
     deps: Iterable[CoercibleToAssetDep] | None = None,
     description: str | None = None,
-    bronze_op_tags: Mapping[str, object] | None = None,
-    silver_op_tags: Mapping[str, object] | None = None,
+    job_tags: Mapping[str, object] | None = None,
 ) -> Definitions:
 
     bronze_key_prefix = ["bronze", domain]
@@ -57,7 +56,6 @@ def df_from_s3_keys_definitions_factory(
         io_manager_key="aemo_deltalake_ingest_partitioned_append_io_manager",
         deps=deps,
         description=f"Bronze dataset, contains full un-cleansed dataset.\n\n{description}",
-        op_tags=bronze_op_tags or {},
         metadata={
             "dagster/column_schema": get_metadata_schema(schema, schema_descriptions),
             "surrogate_key_sources": surrogate_key_sources,
@@ -91,7 +89,7 @@ def df_from_s3_keys_definitions_factory(
         io_manager_key="aemo_parquet_overwrite_io_manager",
         ins={"df": AssetIn(bronze_asset.key)},
         description=f"Silver dataset, contains source-file deduplicated current rows.\n\n{description}",
-        op_tags=silver_op_tags or {},
+        op_tags=job_tags or {},
         metadata={
             "dagster/column_schema": get_metadata_schema(schema, schema_descriptions),
             "surrogate_key_sources": surrogate_key_sources,
@@ -125,6 +123,12 @@ def df_from_s3_keys_definitions_factory(
         description="Check for schema drift against the declared asset schema",
     )
 
+    asset_job = define_asset_job(
+        f"{name_suffix}_job",
+        selection=[bronze_asset, silver_asset],
+        tags=job_tags,
+    )
+
     return Definitions(
         assets=[bronze_asset, silver_asset],
         asset_checks=[
@@ -134,12 +138,5 @@ def df_from_s3_keys_definitions_factory(
             silver_asset_schema_check,
             silver_asset_schema_drift_check,
         ],
-        sensors=[
-            AutomationConditionSensorDefinition(
-                name=f"{silver_table_name}_sensor",
-                target=[silver_asset.key],
-                default_status=DEFAULT_SENSOR_STATUS,
-                run_tags=silver_op_tags,
-            )
-        ],
+        jobs=[asset_job],
     )
