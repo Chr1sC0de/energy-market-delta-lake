@@ -5,6 +5,7 @@ import polars as pl
 import pytest
 from botocore.exceptions import ClientError
 from pytest_mock import MockerFixture
+from requests import RequestException
 from types_boto3_s3 import S3Client
 from types_boto3_s3.type_defs import ListObjectsV2OutputTypeDef, ObjectTypeDef
 
@@ -16,6 +17,7 @@ from aemo_etl.utils import (
     get_lazyframe_num_rows,
     get_metadata_schema,
     get_object_head_from_pages,
+    get_response_factory,
     get_s3_object_keys_from_prefix_and_name_glob,
     get_s3_pagination,
     get_surrogate_key,
@@ -120,6 +122,49 @@ def test_request_get_raises(mocker: MockerFixture) -> None:
     getter = mocker.MagicMock(return_value=mock_response)
     with pytest.raises(requests.HTTPError):
         request_get("https://example.com", getter=getter)
+
+
+def test_get_response_factory_returns_response_content(mocker: MockerFixture) -> None:
+    mock_response = mocker.MagicMock(content=b"data")
+    request_get_mock = mocker.patch(
+        "aemo_etl.utils.request_get", return_value=mock_response
+    )
+
+    getter = get_response_factory(process_retry=1, initial=0, max_retry_time=0)
+
+    assert getter("https://example.com/report.zip") == b"data"
+    request_get_mock.assert_called_once_with("https://example.com/report.zip")
+
+
+def test_get_response_factory_retries_request_exception(
+    mocker: MockerFixture,
+) -> None:
+    mock_response = mocker.MagicMock(content=b"data")
+    request_get_mock = mocker.patch(
+        "aemo_etl.utils.request_get",
+        side_effect=[RequestException("transient"), mock_response],
+    )
+
+    getter = get_response_factory(
+        process_retry=2, initial=0, exp_base=1, max_retry_time=0
+    )
+
+    assert getter("https://example.com/report.zip") == b"data"
+    assert request_get_mock.call_count == 2
+
+
+def test_get_response_factory_reraises_request_exception(
+    mocker: MockerFixture,
+) -> None:
+    request_get_mock = mocker.patch(
+        "aemo_etl.utils.request_get", side_effect=RequestException("failed")
+    )
+
+    getter = get_response_factory(process_retry=1, initial=0, max_retry_time=0)
+
+    with pytest.raises(RequestException):
+        getter("https://example.com/report.zip")
+    request_get_mock.assert_called_once_with("https://example.com/report.zip")
 
 
 def test_add_random_suffix() -> None:

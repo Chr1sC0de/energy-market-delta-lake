@@ -1,10 +1,10 @@
 import datetime as dt
 import fnmatch
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from logging import Logger
-from typing import Callable, Protocol, TypedDict, cast
+from typing import Protocol, TypedDict, cast
 
 import polars as pl
 import polars_hash as plh
@@ -21,7 +21,13 @@ from polars import (
 )
 from polars import len as len_
 from polars._typing import PolarsDataType
-from requests import Response
+from requests import RequestException, Response
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential_jitter,
+)
 from types_boto3_s3 import S3Client
 from types_boto3_s3.type_defs import ListObjectsV2OutputTypeDef
 
@@ -204,3 +210,24 @@ def get_from_s3(
 
 def table_exists(s3_table_location: str) -> bool:
     return DeltaTable.is_deltatable(s3_table_location)
+
+
+def get_response_factory(
+    process_retry: int = 3,
+    initial: int = 10,
+    exp_base: int = 3,
+    max_retry_time: int = 100,
+) -> Callable[[str], bytes]:
+
+    @retry(
+        stop=stop_after_attempt(process_retry),
+        wait=wait_exponential_jitter(
+            initial=initial, exp_base=exp_base, max=max_retry_time
+        ),
+        retry=retry_if_exception_type(RequestException),
+        reraise=True,
+    )
+    def get_bytes(link: str) -> bytes:
+        return request_get(link).content
+
+    return get_bytes

@@ -57,6 +57,8 @@ Trigger and output notes:
 sequenceDiagram
     autonumber
     participant NEMWeb as NEMWeb VicGas folder
+    participant Operator as Manual launch
+    participant ManualJob as download_vicgas_public_report_zip_files_job
     participant Schedule as bronze_nemweb_public_files_vicgas_job_schedule
     participant Discover as bronze_nemweb_public_files_vicgas
     participant Landing as LANDING_BUCKET/bronze/vicgas
@@ -67,6 +69,10 @@ sequenceDiagram
     participant Archive as ARCHIVE_BUCKET/bronze/vicgas
     participant Silver as silver_int*
     participant GasModel as silver/gas_model/*
+
+    Operator->>ManualJob: Optional bootstrap/backfill launch
+    ManualJob->>NEMWeb: List and fetch PublicRptsNN.zip bundles
+    ManualJob->>Landing: Write zip objects for unzipper processing
 
     Schedule->>Discover: Run every 15 minutes
     Discover->>NEMWeb: List and fetch links from REPORTS/CURRENT/VicGas
@@ -89,6 +95,7 @@ sequenceDiagram
 Trigger and output notes:
 
 - This follows the same factory pattern as GBB, but the downstream assets are the `int*` VICGAS report assets under `src/aemo_etl/defs/raw/vicgas`.
+- `download_vicgas_public_report_zip_files_job` is ad hoc only. It is used for bootstrap or backfill of `PublicRptsNN.zip` bundles into `LANDING_BUCKET/bronze/vicgas`; the existing unzipper and raw sensors handle downstream processing.
 - The bronze assets write partitioned Delta tables by `ingested_date`; the silver assets overwrite the deduplicated current parquet snapshot.
 
 ## Raw-to-silver transformation flow
@@ -143,6 +150,7 @@ When `AWS_ENDPOINT_URL` points at LocalStack, the same flow runs against local S
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/jobs/download_vicgas_public_report_zip_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/alerts.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/sensors.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`

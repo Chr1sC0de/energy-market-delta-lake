@@ -111,6 +111,17 @@ testing.`. In a live AWS Dagster deployment, the failed run should trigger
 `aemo_etl_failed_run_alert_sensor` and publish to the configured SNS topic. A
 local `dg launch` run only validates local Dagster behavior.
 
+To bootstrap or backfill VicGas public report bundles into the landing bucket,
+run the manual job:
+
+```bash
+uv run dg launch --job download_vicgas_public_report_zip_files_job
+```
+
+When `AWS_ENDPOINT_URL` is set, this writes to LocalStack-backed landing
+storage. Without that override, the job writes to the configured AWS landing
+bucket.
+
 For the debugger-driven local stack, use:
 
 ```bash
@@ -166,6 +177,7 @@ make run-prek
 - `sync.sources`:
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/configs.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/alerts.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/jobs/download_vicgas_public_report_zip_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/testing.py`
   - `backend-services/dagster-user/aemo-etl/tests/integration/conftest.py`
   - `backend-services/dagster-user/aemo-etl/.localstack.env`

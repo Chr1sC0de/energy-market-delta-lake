@@ -16,3 +16,12 @@ def test_root_defs_function(mocker: MockerFixture) -> None:
     result = defs()
     assert isinstance(result, Definitions)
     assert [job.name for job in result.jobs or []] == [DELTA_TABLE_VACUUM_JOB_NAME]
+
+
+def test_root_defs_registers_manual_vicgas_report_job() -> None:
+    from aemo_etl.definitions import defs
+
+    result = defs()
+    job_names = {job.name for job in result.jobs or []}
+
+    assert "download_vicgas_public_report_zip_files_job" in job_names

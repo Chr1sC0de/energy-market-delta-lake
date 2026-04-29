@@ -20,6 +20,7 @@
 The project materializes Dagster assets defined under `src/aemo_etl/defs` to build a gas-market lakehouse on Delta tables.
 
 - Scheduled NEMWeb discovery assets poll `REPORTS/CURRENT/VicGas` and `REPORTS/CURRENT/GBB` every 15 minutes and copy source files into landing storage.
+- `download_vicgas_public_report_zip_files_job` can be launched manually to bootstrap or backfill VicGas `PublicRptsNN.zip` bundles into landing storage.
 - Unzipper assets expand zipped source payloads in landing storage and archive the original zip files after successful extraction.
 - Event-driven bronze assets read matching landing files, normalize them into partitioned Delta tables, and move processed source files into archive storage.
 - Silver assets deduplicate the current source-specific state.
@@ -226,6 +227,7 @@ make unit-test
 make integration-test
 make duplicate-check
 make run-prek
+uv run dg launch --job download_vicgas_public_report_zip_files_job
 dg launch --assets "key:ops/testing/failed_run_alert_probe"
 ```
 
@@ -265,6 +267,7 @@ aemo-etl/
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/configs.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/sensors.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/jobs/download_vicgas_public_report_zip_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/testing.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
