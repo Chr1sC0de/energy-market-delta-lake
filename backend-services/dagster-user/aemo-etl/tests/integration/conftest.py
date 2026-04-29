@@ -25,6 +25,11 @@ from tests.utils import (
 )
 
 
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    for item in items:
+        item.add_marker(pytest.mark.integration)
+
+
 @pytest.fixture(scope="session")
 def session_monkeypatch() -> Generator[pytest.MonkeyPatch]:
     monkeypatch = pytest.MonkeyPatch()

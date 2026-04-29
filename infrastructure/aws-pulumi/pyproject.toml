@@ -39,7 +39,11 @@ lint.pycodestyle.max-line-length = 200
 [tool.pytest]
 ini_options.testpaths = [ "tests" ]
 ini_options.markers = [
-  "integration: post-deployment integration tests (requires live AWS environment)",
+  "unit: pure or mocked tests without framework runtime or external resources",
+  "component: in-process framework/runtime wiring tests",
+  "integration: local external dependency tests using tools such as LocalStack or Podman",
+  "deployed: opt-in tests against deployed cloud resources",
+  "e2e: complete local service stack tests across subprojects",
 ]
 
 [tool.zuban]
