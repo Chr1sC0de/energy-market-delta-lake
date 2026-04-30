@@ -42,6 +42,23 @@ class RalphHelperTests(unittest.TestCase):
             with self.subTest(remote=remote):
                 self.assertEqual(ralph.parse_repo_slug(remote), expected)
 
+    def test_issue_from_gh_counts_comment_lists_from_issue_list_payload(self) -> None:
+        issue = ralph.Issue.from_gh(
+            {
+                "number": 42,
+                "title": "Implement thing",
+                "body": "",
+                "labels": [{"name": "ready-for-agent"}],
+                "createdAt": "2026-04-30T00:00:00Z",
+                "updatedAt": "2026-04-30T00:00:00Z",
+                "url": "https://github.com/example/repo/issues/42",
+                "comments": [{"id": "one"}, {"id": "two"}],
+                "author": {"login": "reporter"},
+            }
+        )
+
+        self.assertEqual(issue.comments, 2)
+
     def test_slugify_limits_and_normalizes_titles(self) -> None:
         self.assertEqual(
             ralph.slugify("Introduce shared S3 pending-object planning!"),
@@ -144,6 +161,22 @@ Build it.
             None,
         )
         self.assertTrue(ralph.looks_like_environment_failure(error))
+
+    def test_codex_exec_command_uses_supported_unattended_flags(self) -> None:
+        self.assertEqual(
+            ralph.codex_exec_command(Path("/repo")),
+            [
+                "codex",
+                "exec",
+                "--cd",
+                "/repo",
+                "--sandbox",
+                "workspace-write",
+                "--full-auto",
+                "--json",
+                "-",
+            ],
+        )
 
     def test_default_worktree_container_matches_sibling_worktree_layout(self) -> None:
         current = Path("/work/repo__worktrees/refactor")

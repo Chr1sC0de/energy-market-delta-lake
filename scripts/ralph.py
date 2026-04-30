@@ -158,7 +158,7 @@ class Issue:
             created_at=parse_github_datetime(str(payload.get("createdAt") or "")),
             updated_at=parse_github_datetime(str(payload.get("updatedAt") or "")),
             url=str(payload.get("url") or ""),
-            comments=int(payload.get("comments") or 0),
+            comments=parse_comment_count(payload.get("comments")),
             author=extract_login(payload.get("author")),
         )
 
@@ -211,6 +211,14 @@ def extract_login(value: Any) -> str | None:
     if isinstance(value, dict) and "login" in value:
         return str(value["login"])
     return None
+
+
+def parse_comment_count(value: Any) -> int:
+    if isinstance(value, list):
+        return len(value)
+    if value is None:
+        return 0
+    return int(value)
 
 
 def parse_repo_slug(remote_url: str) -> str:
@@ -344,6 +352,20 @@ def parse_git_status_paths(status_output: str) -> list[str]:
 def looks_like_environment_failure(error: CommandFailure) -> bool:
     output = f"{error.stdout}\n{error.stderr}".lower()
     return any(pattern in output for pattern in ENVIRONMENT_FAILURE_PATTERNS)
+
+
+def codex_exec_command(cwd: Path) -> list[str]:
+    return [
+        "codex",
+        "exec",
+        "--cd",
+        str(cwd),
+        "--sandbox",
+        "workspace-write",
+        "--full-auto",
+        "--json",
+        "-",
+    ]
 
 
 class CommandRunner:
@@ -885,18 +907,7 @@ class RalphLoop:
         if not self.runner.dry_run:
             log_path.with_suffix(".prompt.md").write_text(prompt, encoding="utf-8")
         self.runner.run(
-            [
-                "codex",
-                "exec",
-                "--cd",
-                str(cwd),
-                "--sandbox",
-                "workspace-write",
-                "--ask-for-approval",
-                "never",
-                "--json",
-                "-",
-            ],
+            codex_exec_command(cwd),
             cwd=cwd,
             input_text=prompt,
             log_path=log_path,
