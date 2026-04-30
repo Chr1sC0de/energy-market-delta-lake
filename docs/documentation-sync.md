@@ -17,7 +17,7 @@ configuration changes across the repo.
 The sync workflow applies to maintained documentation files:
 
 - `README.md`
-- `docs/*.md`
+- `docs/**/*.md`
 - maintained `backend-services/**/*.md`
 - `infrastructure/aws-pulumi/**/*.md`
 - `backend-services/dagster-user/aemo-etl/**/*.md`
@@ -88,6 +88,7 @@ These commands support the intended flow:
 
 - [Repository architecture](architecture.md)
 - [Repository workflow](workflow.md)
+- [Agent issue loop](agent-issue-loop.md)
 - [Repository root README](../README.md)
 - [Agent policy](../AGENTS.md)
 

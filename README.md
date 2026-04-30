@@ -164,8 +164,12 @@ Follow the docs in repository order:
 ### `docs/`
 
 - [docs/architecture.md](docs/architecture.md)
+- [docs/agent-issue-loop.md](docs/agent-issue-loop.md)
 - [docs/documentation-sync.md](docs/documentation-sync.md)
 - [docs/workflow.md](docs/workflow.md)
+- [docs/agents/issue-tracker.md](docs/agents/issue-tracker.md)
+- [docs/agents/triage-labels.md](docs/agents/triage-labels.md)
+- [docs/agents/domain.md](docs/agents/domain.md)
 
 ### `backend-services/`
 
@@ -253,6 +257,7 @@ for stack details, component breakdown, and deployed-test commands.
 - `sync.sources`:
   - `.pre-commit-config.yaml`
   - `CONTEXT.md`
+  - `AGENTS.md`
   - `backend-services/.pre-commit-config.yaml`
   - `backend-services/authentication/.pre-commit-config.yaml`
   - `backend-services/dagster-user/aemo-etl/.pre-commit-config.yaml`
@@ -264,7 +269,7 @@ for stack details, component breakdown, and deployed-test commands.
   - `backend-services/compose.yaml`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`
-  - `scripts/.pre-commit-config.yaml`
+  - `scripts/ralph.py`
 - `sync.scope`: `architecture, tooling`
 - `sync.qa`:
   - `git diff --name-only`

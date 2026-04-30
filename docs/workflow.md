@@ -7,6 +7,7 @@ workflow. The production workflow is the canonical one.
 
 - [Production data and orchestration flow](#production-data-and-orchestration-flow)
 - [Local development and testing workflow](#local-development-and-testing-workflow)
+- [Agent issue loop](#agent-issue-loop)
 - [Where to work](#where-to-work)
 - [Documentation maintenance](#documentation-maintenance)
 
@@ -91,6 +92,15 @@ Local workflow notes:
 - Caddy is still the local front door so auth and routing behavior can be tested.
 - `marimo` is available locally for exploration, but it is not part of the Pulumi-deployed stack.
 
+## Agent issue loop
+
+The repo-local Ralph loop in
+[agent-issue-loop.md](agent-issue-loop.md) drains GitHub Issues through Codex
+implementation, deterministic local QA, draft PR creation, and post-loop issue
+triage. It uses the default triage labels documented under
+[docs/agents/triage-labels.md](agents/triage-labels.md) and keeps implementation
+gated by the relevant **Test lane** commands before a draft PR is opened.
+
 ## Where to work
 
 - For deployed architecture and operations:
@@ -115,6 +125,7 @@ For the doc-sync contract, searchable `sync.sources` metadata, and the required
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`
   - `backend-services/compose.yaml`
+  - `scripts/ralph.py`
 - `sync.scope`: `behavior`
 - `sync.qa`:
   - `git diff --name-only`

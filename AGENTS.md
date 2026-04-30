@@ -6,6 +6,23 @@
   **Test lane**, **Fast check**, **Commit check**, and **Push check**.
 - Do not use "submodule" for repo projects. There are no Git submodules here.
 
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues for `Chr1sC0de/energy-market-delta-lake`.
+See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the default triage label vocabulary plus Ralph runtime labels. See
+`docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This repo uses a single root `CONTEXT.md` for canonical language. See
+`docs/agents/domain.md`.
+
 ## Code change
 
 - Work from the owning **Subproject** directory when running project-local
@@ -36,7 +53,7 @@
 
 ## Doc sync
 
-- Scope: `README.md`, `docs/*.md`, maintained `backend-services/**/*.md`, `infrastructure/aws-pulumi/**/*.md`, `backend-services/dagster-user/aemo-etl/**/*.md`
+- Scope: `README.md`, `docs/**/*.md`, maintained `backend-services/**/*.md`, `infrastructure/aws-pulumi/**/*.md`, `backend-services/dagster-user/aemo-etl/**/*.md`
 - Out: `specs/`
 - Each maintained doc ends with `## Sync metadata`
 - Required keys: `sync.owner`, `sync.sources`, `sync.scope`, `sync.qa`
