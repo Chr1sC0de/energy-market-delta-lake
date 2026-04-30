@@ -42,6 +42,14 @@ repos:
         files: ^scripts/.*
         types:
           - shell
+      - id: shell-script-headers
+        name: shell script headers
+        language: system
+        entry: python3 ../../../scripts/check_shell_script_headers.py
+        files: ^scripts/.*
+        types:
+          - shell
+          - executable
       - id: ruff-check
         name: ruff check
         language: system

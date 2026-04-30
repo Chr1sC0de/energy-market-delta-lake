@@ -1,4 +1,5 @@
 #!/usr/bin/env -S bash -euo pipefail
+# Downloads the LocalStack landing bucket into a local directory.
 
 : "
 Downloads the entire contents of the LocalStack LANDING bucket to a local directory.

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Syncs the AWS dev archive bucket into a LocalStack landing download folder.
 
 main() {
 	: "${LOCALSTACK_LANDING_DOWNLOAD:=$HOME/localstack-landing-download}"

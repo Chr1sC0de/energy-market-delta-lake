@@ -1,4 +1,5 @@
 #!/usr/bin/env -S bash -euo pipefail
+# Uploads a local directory into the LocalStack landing bucket.
 
 : "
 Uploads the contents of a local directory to the LocalStack LANDING bucket.

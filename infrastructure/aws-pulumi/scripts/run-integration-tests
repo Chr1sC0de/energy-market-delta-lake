@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Runs the guarded AWS Pulumi deployed-test command sequence.
+
 set -euo pipefail
 
 STACK="${PULUMI_STACK:-dev-ausenergymarket}"

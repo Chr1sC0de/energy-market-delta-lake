@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Estimates Fargate ECS task costs for the deployed Dagster services.
 
 CLUSTER="dev-energy-market-dagster-cluster"
 REGION=ap-southeast-2

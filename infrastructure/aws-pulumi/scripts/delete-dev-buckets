@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Deletes and empties all dev S3 buckets for the energy-market project.
+
 set -euo pipefail
 
 # ---------------------------------------------------------------------------

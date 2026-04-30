@@ -1,4 +1,5 @@
 #!/usr/bin/env -S bash -euo  pipefail
+# Starts the local debugging stack for the aemo-etl Subproject.
 
 : "
 run this script with:

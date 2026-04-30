@@ -15,3 +15,12 @@ repos:
         entry: shellcheck
         files: ^.*\.sh$
         exclude: ^(.*/vendor/.*|.*/generated/.*|.*/\.venv/.*)$
+      - id: shell-script-headers
+        name: shell script headers
+        language: system
+        entry: python3 ../scripts/check_shell_script_headers.py
+        files: ^.*\.sh$
+        types:
+          - shell
+          - executable
+        exclude: ^(.*/vendor/.*|.*/generated/.*|.*/\.venv/.*)$

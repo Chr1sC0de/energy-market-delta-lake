@@ -36,6 +36,15 @@ repos:
         entry: shellcheck
         files: ^scripts/.*
         exclude: ^(vendor/.*|generated/.*)$
+      - id: shell-script-headers
+        name: shell script headers
+        language: system
+        entry: python3 ../../scripts/check_shell_script_headers.py
+        files: ^scripts/.*
+        types:
+          - shell
+          - executable
+        exclude: ^(vendor/.*|generated/.*)$
       - id: ruff-check
         name: ruff check
         language: system

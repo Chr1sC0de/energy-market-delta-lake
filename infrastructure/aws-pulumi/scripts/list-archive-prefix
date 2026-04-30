@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Lists dev archive bucket objects for the configured key prefix.
+
 set -euo pipefail
 
 # ---------------------------------------------------------------------------

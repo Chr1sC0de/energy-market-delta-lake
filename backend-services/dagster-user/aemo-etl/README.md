@@ -234,6 +234,9 @@ uv run dg launch --job download_vicgas_public_report_zip_files_job
 dg launch --assets "key:ops/testing/failed_run_alert_probe"
 ```
 
+`make run-prek` is this Subproject's **Commit check**. It runs the configured
+hooks, including executable shell script header documentation for scripts.
+
 ## Project layout
 
 ```text

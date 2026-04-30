@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Redeploys only the Pulumi resources needed for Dagster user code.
 
 pulumi up \
 	--target "urn:pulumi:dev-ausenergymarket::aws-pulumi::dev-energy-market:components:ecr\$aws:ecr/repository:Repository::dev-energy-market-dev-energy-market-dagster-user-code-aemo-etl" \

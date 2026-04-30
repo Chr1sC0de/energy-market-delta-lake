@@ -171,6 +171,10 @@ make duplicate-check
 make run-prek
 ```
 
+`make run-prek` is this Subproject's **Commit check**. It includes executable
+shell script header documentation alongside the existing shell formatting,
+shell linting, Python, pytest, and Dagster validation hooks.
+
 ## Related docs
 
 - [High-level architecture](../architecture/high_level_architecture.md)
