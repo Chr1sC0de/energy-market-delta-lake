@@ -1,3 +1,5 @@
+"""Dagster definitions for the silver gas date dimension asset."""
+
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -122,6 +124,7 @@ def _materialize_result(value: LazyFrame) -> MaterializeResult[LazyFrame]:
     automation_condition=AutomationCondition.missing(),
 )
 def silver_gas_dim_date() -> MaterializeResult[LazyFrame]:
+    """Materialize the silver gas date dimension asset."""
     return _materialize_result(_select_dates(_current_schedule_date()))
 
 
@@ -131,6 +134,7 @@ def silver_gas_dim_date() -> MaterializeResult[LazyFrame]:
     description="Check required dimension fields are not null.",
 )
 def silver_gas_dim_date_required_fields(input_df: LazyFrame) -> AssetCheckResult:
+    """Validate required fields for the silver gas date dimension asset."""
     null_counts = (
         input_df.select(pl.col(column).is_null().sum() for column in REQUIRED_COLUMNS)
         .collect()
@@ -167,6 +171,7 @@ silver_gas_dim_date_schema_drift_check = schema_drift_check_factory(
 
 @definitions
 def defs() -> Definitions:
+    """Return Dagster definitions for the silver gas date dimension asset."""
     job = define_asset_job(
         name="silver_gas_dim_date_job",
         selection=[silver_gas_dim_date],

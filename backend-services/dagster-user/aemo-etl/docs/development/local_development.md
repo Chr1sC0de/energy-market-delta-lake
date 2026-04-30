@@ -175,7 +175,7 @@ make run-prek
 shell script header documentation alongside the existing shell formatting,
 shell linting, Python, pytest, and Dagster validation hooks. Ruff enforces
 Google-style docstrings for public production ETL APIs while excluding tests and
-generated-like or schema-heavy data definition surfaces.
+generated-like raw source-table and TypedDict model definition surfaces.
 
 ## Related docs
 

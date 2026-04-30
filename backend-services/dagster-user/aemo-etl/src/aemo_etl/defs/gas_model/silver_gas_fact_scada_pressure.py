@@ -1,3 +1,5 @@
+"""Dagster definitions for the silver gas scada pressure fact asset."""
+
 import polars as pl
 from dagster import (
     AssetCheckResult,
@@ -174,6 +176,7 @@ def _materialize_result(value: LazyFrame) -> MaterializeResult[LazyFrame]:
     & ~AutomationCondition.any_deps_missing(),
 )
 def silver_gas_fact_scada_pressure(int276: LazyFrame) -> MaterializeResult[LazyFrame]:
+    """Materialize the silver gas scada pressure fact asset."""
     return _materialize_result(_select_scada_pressure(int276))
 
 
@@ -181,6 +184,7 @@ def silver_gas_fact_scada_pressure(int276: LazyFrame) -> MaterializeResult[LazyF
 def silver_gas_fact_scada_pressure_required_fields(
     input_df: LazyFrame,
 ) -> AssetCheckResult:
+    """Validate required fields for the silver gas scada pressure fact asset."""
     null_counts = (
         input_df.select(pl.col(column).is_null().sum() for column in REQUIRED_COLUMNS)
         .collect()
@@ -208,6 +212,7 @@ silver_gas_fact_scada_pressure_schema_drift_check = schema_drift_check_factory(
 
 @definitions
 def defs() -> Definitions:
+    """Return Dagster definitions for the silver gas scada pressure fact asset."""
     return Definitions(
         assets=[silver_gas_fact_scada_pressure],
         asset_checks=[

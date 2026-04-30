@@ -1,3 +1,5 @@
+"""Dagster definitions for the silver gas linepack fact asset."""
+
 import polars as pl
 from dagster import (
     AssetCheckResult,
@@ -257,6 +259,7 @@ def silver_gas_fact_linepack(
     dates: LazyFrame,
     facilities: LazyFrame,
 ) -> MaterializeResult[LazyFrame]:
+    """Materialize the silver gas linepack fact asset."""
     return _materialize_result(
         _select_linepack(gbb_linepack, vicgas_linepack, dates, facilities)
     )
@@ -268,6 +271,7 @@ def silver_gas_fact_linepack(
     description="Check required fact fields are not null.",
 )
 def silver_gas_fact_linepack_required_fields(input_df: LazyFrame) -> AssetCheckResult:
+    """Validate required fields for the silver gas linepack fact asset."""
     null_counts = (
         input_df.select(pl.col(column).is_null().sum() for column in REQUIRED_COLUMNS)
         .collect()
@@ -304,6 +308,7 @@ silver_gas_fact_linepack_schema_drift_check = schema_drift_check_factory(
 
 @definitions
 def defs() -> Definitions:
+    """Return Dagster definitions for the silver gas linepack fact asset."""
     return Definitions(
         assets=[silver_gas_fact_linepack],
         asset_checks=[

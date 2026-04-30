@@ -1,3 +1,5 @@
+"""Dagster definitions for the silver gas market price fact asset."""
+
 import polars as pl
 from dagster import (
     AssetCheckResult,
@@ -392,6 +394,7 @@ def silver_gas_fact_market_price(
     int310_v4: LazyFrame,
     int235: LazyFrame,
 ) -> MaterializeResult[LazyFrame]:
+    """Materialize the silver gas market price fact asset."""
     return _materialize_result(
         _select_market_prices(
             int037b,
@@ -415,6 +418,7 @@ def silver_gas_fact_market_price(
 def silver_gas_fact_market_price_required_fields(
     input_df: LazyFrame,
 ) -> AssetCheckResult:
+    """Validate required fields for the silver gas market price fact asset."""
     null_counts = (
         input_df.select(pl.col(column).is_null().sum() for column in REQUIRED_COLUMNS)
         .collect()
@@ -451,6 +455,7 @@ silver_gas_fact_market_price_schema_drift_check = schema_drift_check_factory(
 
 @definitions
 def defs() -> Definitions:
+    """Return Dagster definitions for the silver gas market price fact asset."""
     return Definitions(
         assets=[silver_gas_fact_market_price],
         asset_checks=[

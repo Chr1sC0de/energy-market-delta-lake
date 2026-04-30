@@ -1,3 +1,5 @@
+"""Dagster definitions for the silver gas heating value fact asset."""
+
 import polars as pl
 from dagster import (
     AssetCheckResult,
@@ -248,6 +250,7 @@ def silver_gas_fact_heating_value(
     int539: LazyFrame,
     int839a: LazyFrame,
 ) -> MaterializeResult[LazyFrame]:
+    """Materialize the silver gas heating value fact asset."""
     return _materialize_result(
         _select_heating_values(int047, int139, int139a, int439, int539, int839a)
     )
@@ -257,6 +260,7 @@ def silver_gas_fact_heating_value(
 def silver_gas_fact_heating_value_required_fields(
     input_df: LazyFrame,
 ) -> AssetCheckResult:
+    """Validate required fields for the silver gas heating value fact asset."""
     null_counts = (
         input_df.select(pl.col(column).is_null().sum() for column in REQUIRED_COLUMNS)
         .collect()
@@ -284,6 +288,7 @@ silver_gas_fact_heating_value_schema_drift_check = schema_drift_check_factory(
 
 @definitions
 def defs() -> Definitions:
+    """Return Dagster definitions for the silver gas heating value fact asset."""
     return Definitions(
         assets=[silver_gas_fact_heating_value],
         asset_checks=[

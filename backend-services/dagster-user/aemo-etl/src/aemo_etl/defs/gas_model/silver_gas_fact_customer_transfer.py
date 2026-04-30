@@ -1,3 +1,5 @@
+"""Dagster definitions for the silver gas customer transfer fact asset."""
+
 import polars as pl
 from dagster import (
     AssetCheckResult,
@@ -134,6 +136,7 @@ def _materialize_result(value: LazyFrame) -> MaterializeResult[LazyFrame]:
 def silver_gas_fact_customer_transfer(
     int311: LazyFrame,
 ) -> MaterializeResult[LazyFrame]:
+    """Materialize the silver gas customer transfer fact asset."""
     return _materialize_result(_select_customer_transfers(int311))
 
 
@@ -141,6 +144,7 @@ def silver_gas_fact_customer_transfer(
 def silver_gas_fact_customer_transfer_required_fields(
     input_df: LazyFrame,
 ) -> AssetCheckResult:
+    """Validate required fields for the silver gas customer transfer fact asset."""
     null_counts = (
         input_df.select(pl.col(column).is_null().sum() for column in REQUIRED_COLUMNS)
         .collect()
@@ -168,6 +172,7 @@ silver_gas_fact_customer_transfer_schema_drift_check = schema_drift_check_factor
 
 @definitions
 def defs() -> Definitions:
+    """Return Dagster definitions for the silver gas customer transfer fact asset."""
     return Definitions(
         assets=[silver_gas_fact_customer_transfer],
         asset_checks=[

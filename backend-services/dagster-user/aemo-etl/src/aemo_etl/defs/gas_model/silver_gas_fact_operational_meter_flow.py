@@ -1,3 +1,5 @@
+"""Dagster definitions for the silver gas operational meter flow fact asset."""
+
 import polars as pl
 from dagster import (
     AssetCheckResult,
@@ -286,6 +288,7 @@ def silver_gas_fact_operational_meter_flow(
     dates: LazyFrame,
     operational_points: LazyFrame,
 ) -> MaterializeResult[LazyFrame]:
+    """Materialize the silver gas operational meter flow fact asset."""
     return _materialize_result(
         _select_operational_meter_flow(
             vicgas_meter_readings,
@@ -304,6 +307,7 @@ def silver_gas_fact_operational_meter_flow(
 def silver_gas_fact_operational_meter_flow_required_fields(
     input_df: LazyFrame,
 ) -> AssetCheckResult:
+    """Validate required fields for the silver gas operational meter flow fact asset."""
     null_counts = (
         input_df.select(pl.col(column).is_null().sum() for column in REQUIRED_COLUMNS)
         .collect()
@@ -342,6 +346,7 @@ silver_gas_fact_operational_meter_flow_schema_drift_check = schema_drift_check_f
 
 @definitions
 def defs() -> Definitions:
+    """Return Dagster definitions for the silver gas operational meter flow fact asset."""
     return Definitions(
         assets=[silver_gas_fact_operational_meter_flow],
         asset_checks=[

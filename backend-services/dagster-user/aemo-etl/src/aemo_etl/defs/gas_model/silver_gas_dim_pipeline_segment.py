@@ -1,3 +1,5 @@
+"""Dagster definitions for the silver gas pipeline segment dimension asset."""
+
 import polars as pl
 from dagster import (
     AssetCheckResult,
@@ -344,6 +346,7 @@ def silver_gas_dim_pipeline_segment(
     vicgas_mce_nodes: LazyFrame,
     zones: LazyFrame,
 ) -> MaterializeResult[LazyFrame]:
+    """Materialize the silver gas pipeline segment dimension asset."""
     return _materialize_result(
         _select_current_pipeline_segments(vicgas_pipe_segments, vicgas_mce_nodes, zones)
     )
@@ -357,6 +360,7 @@ def silver_gas_dim_pipeline_segment(
 def silver_gas_dim_pipeline_segment_required_fields(
     input_df: LazyFrame,
 ) -> AssetCheckResult:
+    """Validate required fields for the silver gas pipeline segment dimension asset."""
     null_counts = (
         input_df.select(pl.col(column).is_null().sum() for column in REQUIRED_COLUMNS)
         .collect()
@@ -393,6 +397,7 @@ silver_gas_dim_pipeline_segment_schema_drift_check = schema_drift_check_factory(
 
 @definitions
 def defs() -> Definitions:
+    """Return Dagster definitions for the silver gas pipeline segment dimension asset."""
     return Definitions(
         assets=[silver_gas_dim_pipeline_segment],
         asset_checks=[

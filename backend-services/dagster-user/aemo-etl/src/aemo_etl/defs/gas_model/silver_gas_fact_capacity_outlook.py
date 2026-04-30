@@ -1,3 +1,5 @@
+"""Dagster definitions for the silver gas capacity outlook fact asset."""
+
 import polars as pl
 from dagster import (
     AssetCheckResult,
@@ -306,6 +308,7 @@ def silver_gas_fact_capacity_outlook(
     nameplate: LazyFrame,
     cp_nameplate: LazyFrame,
 ) -> MaterializeResult[LazyFrame]:
+    """Materialize the silver gas capacity outlook fact asset."""
     return _materialize_result(
         _select_capacity_outlook(short, medium, uncontracted, nameplate, cp_nameplate)
     )
@@ -315,6 +318,7 @@ def silver_gas_fact_capacity_outlook(
 def silver_gas_fact_capacity_outlook_required_fields(
     input_df: LazyFrame,
 ) -> AssetCheckResult:
+    """Validate required fields for the silver gas capacity outlook fact asset."""
     null_counts = (
         input_df.select(pl.col(column).is_null().sum() for column in REQUIRED_COLUMNS)
         .collect()
@@ -342,6 +346,7 @@ silver_gas_fact_capacity_outlook_schema_drift_check = schema_drift_check_factory
 
 @definitions
 def defs() -> Definitions:
+    """Return Dagster definitions for the silver gas capacity outlook fact asset."""
     return Definitions(
         assets=[silver_gas_fact_capacity_outlook],
         asset_checks=[

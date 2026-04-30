@@ -1,3 +1,5 @@
+"""Dagster definitions for the silver gas schedule run fact asset."""
+
 import polars as pl
 from dagster import (
     AssetCheckResult,
@@ -169,6 +171,7 @@ def _materialize_result(value: LazyFrame) -> MaterializeResult[LazyFrame]:
     & ~AutomationCondition.any_deps_missing(),
 )
 def silver_gas_fact_schedule_run(int108: LazyFrame) -> MaterializeResult[LazyFrame]:
+    """Materialize the silver gas schedule run fact asset."""
     return _materialize_result(_select_schedule_runs(int108))
 
 
@@ -176,6 +179,7 @@ def silver_gas_fact_schedule_run(int108: LazyFrame) -> MaterializeResult[LazyFra
 def silver_gas_fact_schedule_run_required_fields(
     input_df: LazyFrame,
 ) -> AssetCheckResult:
+    """Validate required fields for the silver gas schedule run fact asset."""
     null_counts = (
         input_df.select(pl.col(column).is_null().sum() for column in REQUIRED_COLUMNS)
         .collect()
@@ -203,6 +207,7 @@ silver_gas_fact_schedule_run_schema_drift_check = schema_drift_check_factory(
 
 @definitions
 def defs() -> Definitions:
+    """Return Dagster definitions for the silver gas schedule run fact asset."""
     return Definitions(
         assets=[silver_gas_fact_schedule_run],
         asset_checks=[

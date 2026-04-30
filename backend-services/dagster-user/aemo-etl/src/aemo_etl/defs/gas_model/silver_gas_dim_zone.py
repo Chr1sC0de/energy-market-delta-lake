@@ -1,3 +1,5 @@
+"""Dagster definitions for the silver gas zone dimension asset."""
+
 import polars as pl
 from dagster import (
     AssetCheckResult,
@@ -327,6 +329,7 @@ def silver_gas_dim_zone(
     vicgas_tuos_zone_mapping: LazyFrame,
     vicgas_pipe_segments: LazyFrame,
 ) -> MaterializeResult[LazyFrame]:
+    """Materialize the silver gas zone dimension asset."""
     return _materialize_result(
         _select_current_zones(
             gbb_demand_zone_mapping,
@@ -344,6 +347,7 @@ def silver_gas_dim_zone(
     description="Check required dimension fields are not null.",
 )
 def silver_gas_dim_zone_required_fields(input_df: LazyFrame) -> AssetCheckResult:
+    """Validate required fields for the silver gas zone dimension asset."""
     null_counts = (
         input_df.select(pl.col(column).is_null().sum() for column in REQUIRED_COLUMNS)
         .collect()
@@ -380,6 +384,7 @@ silver_gas_dim_zone_schema_drift_check = schema_drift_check_factory(
 
 @definitions
 def defs() -> Definitions:
+    """Return Dagster definitions for the silver gas zone dimension asset."""
     return Definitions(
         assets=[silver_gas_dim_zone],
         asset_checks=[

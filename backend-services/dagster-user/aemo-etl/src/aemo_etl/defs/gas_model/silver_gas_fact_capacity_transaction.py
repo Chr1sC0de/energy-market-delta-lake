@@ -1,3 +1,5 @@
+"""Dagster definitions for the silver gas capacity transaction fact asset."""
+
 import polars as pl
 from dagster import (
     AssetCheckResult,
@@ -243,6 +245,7 @@ def silver_gas_fact_capacity_transaction(
     lng_transactions: LazyFrame,
     lng_shipments: LazyFrame,
 ) -> MaterializeResult[LazyFrame]:
+    """Materialize the silver gas capacity transaction fact asset."""
     return _materialize_result(
         _select_capacity_transactions(short, swap, gsh, lng_transactions, lng_shipments)
     )
@@ -252,6 +255,7 @@ def silver_gas_fact_capacity_transaction(
 def silver_gas_fact_capacity_transaction_required_fields(
     input_df: LazyFrame,
 ) -> AssetCheckResult:
+    """Validate required fields for the silver gas capacity transaction fact asset."""
     null_counts = (
         input_df.select(pl.col(column).is_null().sum() for column in REQUIRED_COLUMNS)
         .collect()
@@ -279,6 +283,7 @@ silver_gas_fact_capacity_transaction_schema_drift_check = schema_drift_check_fac
 
 @definitions
 def defs() -> Definitions:
+    """Return Dagster definitions for the silver gas capacity transaction fact asset."""
     return Definitions(
         assets=[silver_gas_fact_capacity_transaction],
         asset_checks=[

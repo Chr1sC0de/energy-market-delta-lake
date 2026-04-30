@@ -1,3 +1,5 @@
+"""Dagster definitions for the silver gas participant market membership asset."""
+
 import polars as pl
 from dagster import (
     AssetCheckResult,
@@ -278,6 +280,7 @@ def silver_gas_participant_market_membership(
     vicgas_organisations: LazyFrame,
     participants: LazyFrame,
 ) -> MaterializeResult[LazyFrame]:
+    """Materialize the silver gas participant market membership asset."""
     return _materialize_result(
         _select_market_memberships(gbb_participants, vicgas_organisations, participants)
     )
@@ -291,6 +294,7 @@ def silver_gas_participant_market_membership(
 def silver_gas_participant_market_membership_required_fields(
     input_df: LazyFrame,
 ) -> AssetCheckResult:
+    """Validate required fields for the silver gas participant market membership asset."""
     null_counts = (
         input_df.select(pl.col(column).is_null().sum() for column in REQUIRED_COLUMNS)
         .collect()
@@ -331,6 +335,7 @@ silver_gas_participant_market_membership_schema_drift_check = (
 
 @definitions
 def defs() -> Definitions:
+    """Return Dagster definitions for the silver gas participant market membership asset."""
     return Definitions(
         assets=[silver_gas_participant_market_membership],
         asset_checks=[

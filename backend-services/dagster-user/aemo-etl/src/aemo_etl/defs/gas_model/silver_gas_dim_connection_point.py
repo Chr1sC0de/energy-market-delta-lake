@@ -1,3 +1,5 @@
+"""Dagster definitions for the silver gas connection point dimension asset."""
+
 import polars as pl
 from dagster import (
     AssetCheckResult,
@@ -397,6 +399,7 @@ def silver_gas_dim_connection_point(
     locations: LazyFrame,
     zones: LazyFrame,
 ) -> MaterializeResult[LazyFrame]:
+    """Materialize the silver gas connection point dimension asset."""
     return _materialize_result(
         _select_current_connection_points(
             gbb_nodes_connection_points,
@@ -416,6 +419,7 @@ def silver_gas_dim_connection_point(
 def silver_gas_dim_connection_point_required_fields(
     input_df: LazyFrame,
 ) -> AssetCheckResult:
+    """Validate required fields for the silver gas connection point dimension asset."""
     null_counts = (
         input_df.select(pl.col(column).is_null().sum() for column in REQUIRED_COLUMNS)
         .collect()
@@ -452,6 +456,7 @@ silver_gas_dim_connection_point_schema_drift_check = schema_drift_check_factory(
 
 @definitions
 def defs() -> Definitions:
+    """Return Dagster definitions for the silver gas connection point dimension asset."""
     return Definitions(
         assets=[silver_gas_dim_connection_point],
         asset_checks=[

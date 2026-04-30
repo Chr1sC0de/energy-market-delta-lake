@@ -237,8 +237,8 @@ dg launch --assets "key:ops/testing/failed_run_alert_probe"
 `make run-prek` is this Subproject's **Commit check**. It runs the configured
 hooks, including executable shell script header documentation for scripts.
 Ruff enforces Google-style docstrings for public production ETL APIs. Tests,
-generated-like raw source-table definitions, schema-heavy `gas_model`
-definition files, and TypedDict model specs are outside this docstring ratchet.
+generated-like raw source-table definitions, and TypedDict model specs are
+outside this docstring ratchet.
 
 ## Project layout
 
