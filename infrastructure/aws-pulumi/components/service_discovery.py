@@ -1,3 +1,5 @@
+"""Cloud Map service discovery component for private Dagster DNS."""
+
 import pulumi
 import pulumi_aws as aws
 
@@ -24,6 +26,7 @@ class ServiceDiscoveryComponentResource(pulumi.ComponentResource):
         vpc: VpcComponentResource,
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
+        """Create the service discovery component."""
         super().__init__(f"{name}:components:ServiceDiscovery", name, {}, opts)
         self.name = name
         self.vpc = vpc

@@ -215,7 +215,8 @@ The configured hooks cover:
 - shell formatting, linting, and executable-script header documentation with
   `shfmt`, `shellcheck`, and `scripts/check_shell_script_headers.py`
 - Python project metadata formatting with `pyproject-fmt`
-- Python linting and formatting with `ruff`
+- Python linting and formatting with `ruff`, including Subproject-specific
+  Google-style docstring ratchets where enabled
 - Python type checking with `zuban`
 - Python tests with `pytest`, split into explicit unit, component,
   integration, and deployed lanes where a subproject needs them
@@ -266,6 +267,7 @@ for stack details, component breakdown, and deployed-test commands.
   - `backend-services/marimo/.pre-commit-config.yaml`
   - `infrastructure/aws-pulumi/__main__.py`
   - `infrastructure/aws-pulumi/.pre-commit-config.yaml`
+  - `infrastructure/aws-pulumi/pyproject.toml`
   - `infrastructure/aws-pulumi/scripts/run-integration-tests`
   - `backend-services/compose.yaml`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`

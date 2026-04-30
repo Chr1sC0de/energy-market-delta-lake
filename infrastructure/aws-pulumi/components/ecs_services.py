@@ -152,6 +152,7 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
         iam_roles: IamRolesComponentResource,
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
+        """Create the Dagster user-code ECS service component."""
         super().__init__(f"{name}:components:DagsterUserCodeService", name, {}, opts)
         self.name = name
         self.child_opts = pulumi.ResourceOptions(parent=self)
@@ -311,6 +312,7 @@ class DagsterWebserverServiceComponentResource(pulumi.ComponentResource):
         readonly: bool = False,
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
+        """Create a Dagster webserver ECS service component."""
         super().__init__(f"{name}:components:DagsterWebserverService", name, {}, opts)
         self.name = name
         self.child_opts = pulumi.ResourceOptions(parent=self)
@@ -445,6 +447,7 @@ class DagsterDaemonServiceComponentResource(pulumi.ComponentResource):
         iam_roles: IamRolesComponentResource,
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
+        """Create the Dagster daemon ECS service component."""
         super().__init__(f"{name}:components:DagsterDaemonService", name, {}, opts)
         self.name = name
         self.child_opts = pulumi.ResourceOptions(parent=self)

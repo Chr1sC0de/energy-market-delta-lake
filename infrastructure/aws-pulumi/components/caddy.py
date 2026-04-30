@@ -22,6 +22,8 @@ from components.vpc import VpcComponentResource
 
 
 class CaddyServerComponentResource(pulumi.ComponentResource):
+    """Public Caddy reverse proxy with persistent certificate storage."""
+
     instance: aws.ec2.Instance
     eip: aws.ec2.Eip
 
@@ -34,6 +36,7 @@ class CaddyServerComponentResource(pulumi.ComponentResource):
         security_groups: SecurityGroupsComponentResource,
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
+        """Create the Caddy reverse-proxy component."""
         super().__init__(f"{name}:components:CaddyServer", name, {}, opts)
         self.name = name
         self.vpc = vpc

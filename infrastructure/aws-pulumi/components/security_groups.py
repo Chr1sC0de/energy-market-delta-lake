@@ -1,3 +1,5 @@
+"""Security group component for AWS network access controls."""
+
 from dataclasses import dataclass
 
 import pulumi
@@ -9,6 +11,8 @@ from configs import ADMINISTRATOR_IPS
 
 @dataclass
 class SecurityGroupRegister:
+    """Container for security groups created by the component."""
+
     # Existing
     bastion_host: aws.ec2.SecurityGroup
     # New – Dagster ECS services
@@ -22,12 +26,15 @@ class SecurityGroupRegister:
 
 
 class SecurityGroupsComponentResource(pulumi.ComponentResource):
+    """Security groups and ingress rules for AWS runtime resources."""
+
     def __init__(
         self,
         name: str,
         vpc: VpcComponentResource,
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
+        """Create the security groups component."""
         super().__init__(f"{name}:components:SecurityGroups", name, {}, opts)
 
         self.name = name

@@ -20,6 +20,8 @@ from components.vpc import VpcComponentResource
 
 
 class FastAPIAuthComponentResource(pulumi.ComponentResource):
+    """Private FastAPI authentication service instance."""
+
     instance: aws.ec2.Instance
 
     def __init__(
@@ -30,6 +32,7 @@ class FastAPIAuthComponentResource(pulumi.ComponentResource):
         security_groups: SecurityGroupsComponentResource,
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
+        """Create the FastAPI authentication component."""
         super().__init__(f"{name}:components:FastAPIAuth", name, {}, opts)
         self.name = name
         self.vpc = vpc

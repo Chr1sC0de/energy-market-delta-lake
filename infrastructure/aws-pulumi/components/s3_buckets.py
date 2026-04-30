@@ -1,3 +1,5 @@
+"""S3 bucket component for data-lake storage."""
+
 import boto3
 import pulumi
 import pulumi_aws as aws
@@ -5,6 +7,7 @@ from botocore.exceptions import ClientError
 
 
 def bucket_exists(bucket_name: str) -> bool:
+    """Return whether an S3 bucket exists or is access-restricted."""
     s3 = boto3.client("s3")
     try:
         s3.head_bucket(Bucket=bucket_name)
@@ -21,12 +24,14 @@ def bucket_exists(bucket_name: str) -> bool:
 
 
 class S3BucketsComponentResource(pulumi.ComponentResource):
+    """S3 buckets for IO manager, landing, archive, and AEMO data."""
+
     def __init__(
         self,
         name: str,
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
-
+        """Create the S3 buckets component."""
         self.name = name
         self.child_opts = pulumi.ResourceOptions(parent=self)
         super().__init__(f"{name}:components:S3Buckets", name, {}, opts)
@@ -41,6 +46,7 @@ class S3BucketsComponentResource(pulumi.ComponentResource):
         self.register_outputs({})
 
     def setup_archive_lifecycle(self) -> None:
+        """Configure archive bucket lifecycle transitions and expiration."""
         aws.s3.BucketLifecycleConfiguration(
             f"{self.name}-archive-lifecycle",
             bucket=self.archive.bucket,
@@ -72,7 +78,7 @@ class S3BucketsComponentResource(pulumi.ComponentResource):
         force_destroy: bool = False,
         retain_on_delete: bool = True,
     ) -> aws.s3.Bucket:
-
+        """Create or adopt a managed S3 bucket with baseline controls."""
         # Always declare with the component as parent so the URN is stable.
         # On fresh deployments after pulumi down (buckets retained), Pulumi will
         # fail with BucketAlreadyOwnedByYou — in that case, run:

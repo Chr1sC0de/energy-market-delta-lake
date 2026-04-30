@@ -1,3 +1,5 @@
+"""DynamoDB table component for Delta Lake lock coordination."""
+
 import pulumi
 import pulumi_aws as aws
 
@@ -24,6 +26,7 @@ class DeltaLockingTableComponentResource(pulumi.ComponentResource):
         name: str,
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
+        """Create the Delta locking table component."""
         super().__init__(f"{name}:components:DeltaLockingTable", name, {}, opts)
         self.name = name
         self.child_opts = pulumi.ResourceOptions(parent=self)

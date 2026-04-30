@@ -1,3 +1,5 @@
+"""IAM role component for AWS runtime and administration permissions."""
+
 import json
 
 import pulumi
@@ -76,6 +78,8 @@ def _daemon_task_policy_document(args: dict[str, str]) -> str:
 
 
 class IamRolesComponentResource(pulumi.ComponentResource):
+    """IAM roles and policies shared by bastion and ECS resources."""
+
     bastion_profile: aws.iam.InstanceProfile
     # ECS task execution roles
     webserver_execution_role: aws.iam.Role
@@ -86,6 +90,7 @@ class IamRolesComponentResource(pulumi.ComponentResource):
     daemon_task_policy: aws.iam.RolePolicy
 
     def __init__(self, name: str, opts: pulumi.ResourceOptions | None = None) -> None:
+        """Create the IAM roles component."""
         super().__init__(f"{name}:components:IamRoles", name, {}, opts)
         self.name = name
         self.child_opts = pulumi.ResourceOptions(parent=self)
@@ -99,6 +104,7 @@ class IamRolesComponentResource(pulumi.ComponentResource):
     # ── helpers ──────────────────────────────────────────────────────────────
 
     def get_ec2_assume_role(self) -> str:
+        """Return an EC2 assume-role policy document."""
         return json.dumps(
             {
                 "Version": "2012-10-17",
@@ -113,6 +119,7 @@ class IamRolesComponentResource(pulumi.ComponentResource):
         )
 
     def get_ecs_task_assume_role(self) -> str:
+        """Return an ECS task assume-role policy document."""
         return json.dumps(
             {
                 "Version": "2012-10-17",
@@ -129,6 +136,7 @@ class IamRolesComponentResource(pulumi.ComponentResource):
     # ── bastion host ─────────────────────────────────────────────────────────
 
     def setup_bastion_host(self) -> None:
+        """Create the bastion host IAM role and instance profile."""
         bastion_role = aws.iam.Role(
             f"{self.name}-bastion-role",
             assume_role_policy=self.get_ec2_assume_role(),
@@ -148,6 +156,7 @@ class IamRolesComponentResource(pulumi.ComponentResource):
     # ── ECS – webserver ───────────────────────────────────────────────────────
 
     def setup_ecs_webserver_roles(self) -> None:
+        """Create ECS execution and task roles for Dagster webservers."""
         # Execution role: allows ECS to pull images and write logs
         self.webserver_execution_role = aws.iam.Role(
             f"{self.name}-ecs-webserver-execution-role",
@@ -196,6 +205,7 @@ class IamRolesComponentResource(pulumi.ComponentResource):
     # ── ECS – daemon ──────────────────────────────────────────────────────────
 
     def setup_ecs_daemon_roles(self) -> None:
+        """Create ECS execution and task roles for the Dagster daemon."""
         # Execution role: allows ECS to pull images, write logs, fetch SSM secrets
         self.daemon_execution_role = aws.iam.Role(
             f"{self.name}-ecs-daemon-execution-role",

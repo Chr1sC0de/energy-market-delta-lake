@@ -55,6 +55,7 @@ class ECRComponentResource(pulumi.ComponentResource):
         docker_provider: docker.Provider | None = None,
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
+        """Create ECR repositories and image publishing resources."""
         super().__init__(f"{name}:components:ecr", name, {}, opts)
         self.name = name
         self.child_opts = pulumi.ResourceOptions(parent=self)

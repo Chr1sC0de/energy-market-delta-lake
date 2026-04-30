@@ -1,3 +1,5 @@
+"""ECS cluster component for the Dagster runtime services."""
+
 import pulumi
 import pulumi_aws as aws
 
@@ -22,6 +24,7 @@ class EcsClusterComponentResource(pulumi.ComponentResource):
         security_groups: SecurityGroupsComponentResource,
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
+        """Create the ECS cluster component."""
         super().__init__(f"{name}:components:EcsCluster", name, {}, opts)
         self.name = name
         self.vpc = vpc

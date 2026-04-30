@@ -1,3 +1,5 @@
+"""Bastion host component for private AWS administration access."""
+
 from textwrap import dedent
 
 import pulumi
@@ -10,6 +12,8 @@ from components.vpc import VpcComponentResource
 
 
 class BastionHostComponentResource(pulumi.ComponentResource):
+    """EC2 bastion host with SSM parameters for administrative access."""
+
     def __init__(
         self,
         name: str,
@@ -18,6 +22,7 @@ class BastionHostComponentResource(pulumi.ComponentResource):
         iam_roles: IamRolesComponentResource,
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
+        """Create the bastion host component."""
         super().__init__(f"{name}:components:BastionHost", name, {}, opts)
         self.name = name
         self.vpc = vpc
@@ -35,6 +40,7 @@ class BastionHostComponentResource(pulumi.ComponentResource):
         self.register_outputs({})
 
     def setup_private_key(self) -> None:
+        """Create the bastion host private key."""
         self.private_key = tls.PrivateKey(
             f"{self.name}-bastion-host-private-key",
             algorithm="ED25519",
@@ -42,6 +48,7 @@ class BastionHostComponentResource(pulumi.ComponentResource):
         )
 
     def setup_key_pair(self) -> None:
+        """Create the EC2 key pair for the bastion host."""
         key_pair_name = f"{self.name}-bastion-host-key-pair"
         self.key_pair = aws.ec2.KeyPair(
             key_pair_name,
@@ -51,6 +58,7 @@ class BastionHostComponentResource(pulumi.ComponentResource):
         )
 
     def setup_eip(self) -> None:
+        """Create the Elastic IP for the bastion host."""
         eip_name = f"{self.name}-bastion-host-eip"
         self.eip = aws.ec2.Eip(
             eip_name,
@@ -59,6 +67,7 @@ class BastionHostComponentResource(pulumi.ComponentResource):
         )
 
     def setup_ami(self) -> None:
+        """Select the Amazon Linux 2023 AMI for the bastion host."""
         self.ami = aws.ec2.get_ami(
             most_recent=True,
             owners=["amazon"],
@@ -70,6 +79,7 @@ class BastionHostComponentResource(pulumi.ComponentResource):
         )
 
     def setup_instance(self) -> None:
+        """Create the bastion EC2 instance and attach its Elastic IP."""
         self.instance = aws.ec2.Instance(
             f"{self.name}-bastion-host-instance",
             instance_type="t3.nano",
@@ -94,6 +104,7 @@ class BastionHostComponentResource(pulumi.ComponentResource):
         )
 
     def setup_ssm_parameters(self) -> None:
+        """Publish bastion host identifiers to SSM Parameter Store."""
         aws.ssm.Parameter(
             f"{self.name}-instance-id-ssm",
             name=f"/{self.name}/dagster/bastion-host/instance-id",

@@ -1,3 +1,5 @@
+"""PostgreSQL component for Dagster metadata storage."""
+
 import json
 from textwrap import dedent
 
@@ -37,6 +39,7 @@ class PostgresComponentResource(pulumi.ComponentResource):
         security_groups: SecurityGroupsComponentResource,
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
+        """Create the PostgreSQL component."""
         super().__init__(f"{name}:components:Postgres", name, {}, opts)
         self.name = name
         self.vpc = vpc

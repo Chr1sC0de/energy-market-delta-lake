@@ -1,3 +1,5 @@
+"""VPC component for the AWS network foundation."""
+
 from textwrap import dedent
 
 import pulumi
@@ -9,11 +11,14 @@ from configs import ADMINISTRATOR_IPS
 
 
 class VpcComponentResource(pulumi.ComponentResource):
+    """VPC, subnets, NAT instance, and route tables for the stack."""
+
     def __init__(
         self,
         name: str,
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
+        """Create the VPC component."""
         super().__init__(f"{name}:components:vpc", name, {}, opts)
         self.name = name
         self.child_opts = pulumi.ResourceOptions(parent=self)
@@ -35,6 +40,7 @@ class VpcComponentResource(pulumi.ComponentResource):
         self.register_outputs({})
 
     def setup_vpc(self) -> None:
+        """Create the base VPC."""
         self.vpc = aws.ec2.Vpc(
             f"{self.name}-vpc",
             cidr_block="10.0.0.0/16",
@@ -44,10 +50,12 @@ class VpcComponentResource(pulumi.ComponentResource):
         )
 
     def setup_availability_zones(self) -> None:
+        """Select the first available Availability Zone."""
         self.availability_zone_results = get_availability_zones(state="available")
         self.availability_zone = self.availability_zone_results.names[0]
 
     def setup_internet_gateways(self) -> None:
+        """Create the internet gateway for public routing."""
         self.internet_gateway = aws.ec2.InternetGateway(
             f"{self.name}-internet-gateway",
             vpc_id=self.vpc.id,
@@ -55,6 +63,7 @@ class VpcComponentResource(pulumi.ComponentResource):
         )
 
     def setup_fk_nat_eip(self) -> None:
+        """Create the Elastic IP for the fck-nat instance."""
         self.fk_nat_eip = aws.ec2.Eip(
             f"{self.name}-fk-nat-eip",
             domain="vpc",
@@ -62,6 +71,7 @@ class VpcComponentResource(pulumi.ComponentResource):
         )
 
     def setup_fk_nat_private_key(self) -> None:
+        """Create the private key for the fck-nat instance."""
         self.fk_nat_private_key = tls.PrivateKey(
             f"{self.name}-fk-nat-private-key",
             algorithm="ED25519",
@@ -69,6 +79,7 @@ class VpcComponentResource(pulumi.ComponentResource):
         )
 
     def setup_fk_nat_key_pair(self) -> None:
+        """Create the EC2 key pair for the fck-nat instance."""
         self.fk_nat_key_pair = aws.ec2.KeyPair(
             f"{self.name}-fck-nat-instance-key-pair",
             key_name="fck-nat-instance-key-pair",
@@ -77,6 +88,7 @@ class VpcComponentResource(pulumi.ComponentResource):
         )
 
     def setup_fk_nat_security_groups(self) -> None:
+        """Create the security group for the fck-nat instance."""
         self.fk_nat_security_group = aws.ec2.SecurityGroup(
             f"{self.name}-fk-nat-security-group",
             vpc_id=self.vpc.id,
@@ -85,6 +97,7 @@ class VpcComponentResource(pulumi.ComponentResource):
         )
 
     def setup_fk_nat_security_group_private_ingress(self) -> None:
+        """Allow private VPC ingress to the fck-nat instance."""
         aws.ec2.SecurityGroupRule(
             f"{self.name}-fk-nat-sg-ingress-vpc",
             type="ingress",
@@ -98,6 +111,7 @@ class VpcComponentResource(pulumi.ComponentResource):
         )
 
     def setup_fk_nat_security_group_egress(self) -> None:
+        """Allow outbound and administrator SSH access for fck-nat."""
         aws.ec2.SecurityGroupRule(
             f"{self.name}-fk-nat-security-group-egress",
             type="egress",
@@ -125,6 +139,7 @@ class VpcComponentResource(pulumi.ComponentResource):
             )
 
     def setup_subnets(self) -> None:
+        """Create the public and private subnets."""
         self.public_subnet = aws.ec2.Subnet(
             f"{self.name}-public-subnet",
             vpc_id=self.vpc.id,
@@ -145,7 +160,7 @@ class VpcComponentResource(pulumi.ComponentResource):
         )
 
     def setup_fk_nat_instance(self) -> None:
-
+        """Create the fck-nat EC2 instance and attach its Elastic IP."""
         fck_nat_ami = aws.ec2.get_ami(
             most_recent=True,
             owners=["568608671756"],
@@ -175,7 +190,7 @@ class VpcComponentResource(pulumi.ComponentResource):
         )
 
     def setup_route_tables(self) -> None:
-
+        """Create public and private route tables."""
         self.private_route_table = aws.ec2.RouteTable(
             f"{self.name}-private-route-table",
             vpc_id=self.vpc.id,
@@ -189,7 +204,7 @@ class VpcComponentResource(pulumi.ComponentResource):
         )
 
     def setup_routes(self) -> None:
-
+        """Create public and private route table associations."""
         # -- public routes ---------------------------------------------------------------
 
         aws.ec2.Route(

@@ -219,6 +219,15 @@ AWS references:
 
 ## Common commands
 
+Run the AWS Pulumi **Commit check** hook set from this **Subproject** directory:
+
+```bash
+prek run -a
+```
+
+Ruff enforces Google-style docstrings for production component APIs; unit,
+component, and deployed tests are outside that first docstring ratchet.
+
 Preview infrastructure changes:
 
 ```bash
@@ -277,12 +286,14 @@ system's services and Dagster workflows.
   - `infrastructure/aws-pulumi/configs.py`
   - `infrastructure/aws-pulumi/components/ecs_services.py`
   - `infrastructure/aws-pulumi/components/iam_roles.py`
+  - `infrastructure/aws-pulumi/.pre-commit-config.yaml`
+  - `infrastructure/aws-pulumi/pyproject.toml`
   - `infrastructure/aws-pulumi/scripts/setup_secrets`
   - `infrastructure/aws-pulumi/scripts/run-integration-tests`
   - `infrastructure/aws-pulumi/tests/deployed/conftest.py`
   - `infrastructure/aws-pulumi/tests/deployed/test_integration.py`
   - `infrastructure/aws-pulumi/Pulumi.dev-ausenergymarket.yaml`
-- `sync.scope`: `architecture`
+- `sync.scope`: `architecture, tooling`
 - `sync.qa`:
   - `git diff --name-only`
   - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`

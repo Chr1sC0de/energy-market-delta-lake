@@ -1,3 +1,5 @@
+"""VPC endpoint component for private AWS service access."""
+
 import pulumi
 import pulumi_aws as aws
 
@@ -7,12 +9,15 @@ _REGION: str = aws.config.region or "ap-southeast-2"
 
 
 class VpcEndpointsComponentResource(pulumi.ComponentResource):
+    """Interface and gateway endpoints used by private subnets."""
+
     def __init__(
         self,
         name: str,
         vpc: VpcComponentResource,
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
+        """Create the VPC endpoints component."""
         super().__init__(f"{name}:components:VpcEndpoints", name, {}, opts)
 
         self.name = name
