@@ -17,11 +17,7 @@ from aemo_etl.factories.unzipper.assets import (
 )
 from aemo_etl.factories.unzipper.definitions import unzipper_definitions_factory
 from aemo_etl.factories.unzipper.file_unzipper import S3FileUnzipper
-from aemo_etl.factories.unzipper.sensors import (
-    _has_asset_failed,
-    _is_running,
-    unzipper_sensor,
-)
+from aemo_etl.factories.unzipper.sensors import unzipper_sensor
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -57,51 +53,6 @@ _DIR_ZIP = _create_zip({"subdir/": b""})
 
 class _NoSuchKey(Exception):
     """Stand-in for s3_client.exceptions.NoSuchKey."""
-
-
-# ===========================================================================
-# sensors: _is_running / _has_asset_failed
-# ===========================================================================
-
-
-def test_is_running_found() -> None:
-    assert _is_running([_make_run(DagsterRunStatus.STARTED)], _ASSET_KEY) is True
-
-
-def test_is_running_not_found() -> None:
-    assert _is_running([], _ASSET_KEY) is False
-
-
-def test_is_running_no_selection() -> None:
-    run = MagicMock()
-    run.asset_selection = None
-    assert _is_running([run], _ASSET_KEY) is False
-
-
-def test_has_asset_failed_true() -> None:
-    assert _has_asset_failed([_make_run(DagsterRunStatus.FAILURE)], _ASSET_KEY) is True
-
-
-def test_has_asset_failed_false_success() -> None:
-    assert _has_asset_failed([_make_run(DagsterRunStatus.SUCCESS)], _ASSET_KEY) is False
-
-
-def test_has_asset_failed_no_match() -> None:
-    other = AssetKey(["bronze", "other"])
-    assert (
-        _has_asset_failed([_make_run(DagsterRunStatus.FAILURE, other)], _ASSET_KEY)
-        is False
-    )
-
-
-def test_has_asset_failed_empty() -> None:
-    assert _has_asset_failed([], _ASSET_KEY) is False
-
-
-def test_has_asset_failed_no_selection() -> None:
-    run = MagicMock()
-    run.asset_selection = None
-    assert _has_asset_failed([run], _ASSET_KEY) is False
 
 
 # ===========================================================================
@@ -157,7 +108,7 @@ def test_unzipper_sensor_inner(
         return_value={_ZIP_KEY: {"Size": 100}},
     )
     mocker.patch(
-        "aemo_etl.factories.unzipper.sensors.get_s3_object_keys_from_prefix_and_name_glob",
+        "aemo_etl.factories.s3_pending_objects.get_s3_object_keys_from_prefix_and_name_glob",
         return_value=[_ZIP_KEY] if has_requests or not active_runs else [],
     )
     mocker.patch.object(AssetSelection, "resolve", return_value=frozenset([_ASSET_KEY]))
@@ -191,7 +142,7 @@ def test_unzipper_sensor_bytes_cap(mocker: MockerFixture) -> None:
         return_value=big_heads,
     )
     mocker.patch(
-        "aemo_etl.factories.unzipper.sensors.get_s3_object_keys_from_prefix_and_name_glob",
+        "aemo_etl.factories.s3_pending_objects.get_s3_object_keys_from_prefix_and_name_glob",
         return_value=many_keys,
     )
     mocker.patch.object(AssetSelection, "resolve", return_value=frozenset([_ASSET_KEY]))
@@ -231,7 +182,7 @@ def test_unzipper_sensor_files_cap(mocker: MockerFixture) -> None:
         return_value=small_heads,
     )
     mocker.patch(
-        "aemo_etl.factories.unzipper.sensors.get_s3_object_keys_from_prefix_and_name_glob",
+        "aemo_etl.factories.s3_pending_objects.get_s3_object_keys_from_prefix_and_name_glob",
         return_value=many_keys,
     )
     mocker.patch.object(AssetSelection, "resolve", return_value=frozenset([_ASSET_KEY]))
@@ -268,7 +219,7 @@ def test_unzipper_sensor_no_keys(mocker: MockerFixture) -> None:
         return_value={},
     )
     mocker.patch(
-        "aemo_etl.factories.unzipper.sensors.get_s3_object_keys_from_prefix_and_name_glob",
+        "aemo_etl.factories.s3_pending_objects.get_s3_object_keys_from_prefix_and_name_glob",
         return_value=[],
     )
     mocker.patch.object(AssetSelection, "resolve", return_value=frozenset([_ASSET_KEY]))
