@@ -203,7 +203,7 @@ Follow the docs in repository order:
 ## Tooling
 
 `prek` is the workspace hook runner for this repo. Run it from the repository
-root so it can discover the root hooks and subproject hook configs.
+root so it can discover the root hooks and **Subproject** hook configs.
 
 The configured hooks cover:
 
@@ -218,25 +218,57 @@ The configured hooks cover:
 - Python linting and formatting with `ruff`, including Subproject-specific
   Google-style docstring ratchets where enabled
 - Python type checking with `zuban`
-- Python tests with `pytest`, split into explicit unit, component,
-  integration, and deployed lanes where a subproject needs them
+- Python tests with `pytest`, split into explicit **Unit test**,
+  **Component test**, **Integration test**, and **Deployed test** lanes where a
+  **Subproject** needs them
 - Dagster definition and config validation with `dg check defs`,
   `dg check toml`, and `dg check yaml` for the ETL project
 
+### Documentation QA ratchet
+
+The documentation QA ratchet is staged by **Subproject** and enforced through
+the same `prek` command surfaces as code QA:
+
+- The repo **Commit check** is `prek run -a` from the repository root. For a
+  single **Subproject**, use that Subproject's documented **Commit check**
+  command, such as `make run-prek` for `aemo-etl` or `prek run -a` from
+  `infrastructure/aws-pulumi`. These **Commit check** surfaces are the local
+  **Fast check** path: static checks plus **Unit tests** and **Component tests**,
+  without containers, live network, or deployed cloud resources. A **Push check**
+  may add guarded **Integration tests**, such as the ETL LocalStack lane.
+- Ruff owns Python linting and formatting. A Python **Subproject** is under the
+  Google-style docstring ratchet only when its `pyproject.toml` selects Ruff `D`
+  rules and its hook config runs `ruff check`. The current ratchet covers
+  `backend-services/authentication`, `backend-services/marimo`,
+  `backend-services/dagster-user/aemo-etl`, and
+  `infrastructure/aws-pulumi`, with each Subproject's pyproject defining its
+  test, generated, schema-heavy, or entrypoint exclusions.
+  `backend-services/dagster-core` is not currently on this ratchet.
+- `shfmt` formats shell scripts.
+- `shellcheck` checks shell correctness.
+- `scripts/check_shell_script_headers.py` enforces shell documentation for
+  executable shell scripts: a script with a shell shebang must have a human
+  purpose/context comment block immediately after the shebang. Tool directives
+  such as `shellcheck` or `shfmt` comments do not count as that human header.
+
+Do not treat a future **Subproject** as covered by the ratchet until its own
+hook and project config have been added and the maintained docs name those files
+in `sync.sources`.
+
 Most Python project hooks run through `uv run` inside the project that owns the
 hook config. System hooks such as `shellcheck` must also be available on
-`PATH` where the relevant subproject config uses them directly.
+`PATH` where the relevant **Subproject** config uses them directly.
 
 ## Commands
 
 | Scope | Command |
 |---|---|
 | Install git hooks | `prek install` |
-| Repository-wide hooks | `prek run -a` |
+| Repository **Commit check** | `prek run -a` |
 | Root Markdown link check | `prek run lychee -a` |
-| ETL fast tests | `cd backend-services/dagster-user/aemo-etl && make fast-test` |
-| ETL local integration tests | `cd backend-services/dagster-user/aemo-etl && make integration-test` |
-| AWS Pulumi fast tests | `cd infrastructure/aws-pulumi && uv run pytest tests/unit tests/component -x -q` |
+| ETL pytest fast target | `cd backend-services/dagster-user/aemo-etl && make fast-test` |
+| ETL local **Integration tests** | `cd backend-services/dagster-user/aemo-etl && make integration-test` |
+| AWS Pulumi unit/component pytest target | `cd infrastructure/aws-pulumi && uv run pytest tests/unit tests/component -x -q` |
 | AWS Pulumi deployed tests | `cd infrastructure/aws-pulumi && PULUMI_INTEGRATION_TESTS=1 uv run pytest tests/deployed -v` |
 | Local stack | `cd backend-services && source .envrc && podman-compose up --build -d` |
 
@@ -262,10 +294,13 @@ for stack details, component breakdown, and deployed-test commands.
   - `AGENTS.md`
   - `backend-services/.pre-commit-config.yaml`
   - `backend-services/authentication/.pre-commit-config.yaml`
+  - `backend-services/authentication/pyproject.toml`
+  - `backend-services/dagster-core/pyproject.toml`
   - `backend-services/dagster-user/aemo-etl/.pre-commit-config.yaml`
   - `backend-services/dagster-user/aemo-etl/Makefile`
   - `backend-services/dagster-user/aemo-etl/pyproject.toml`
   - `backend-services/marimo/.pre-commit-config.yaml`
+  - `backend-services/marimo/pyproject.toml`
   - `infrastructure/aws-pulumi/__main__.py`
   - `infrastructure/aws-pulumi/.pre-commit-config.yaml`
   - `infrastructure/aws-pulumi/pyproject.toml`
