@@ -1,12 +1,7 @@
-from typing import Sequence, cast
-
 from dagster import (
-    AssetKey,
     AssetSelection,
-    DagsterRun,
     DagsterRunStatus,
     DefaultSensorStatus,
-    RunRequest,
     RunsFilter,
     SensorDefinition,
     SensorEvaluationContext,
@@ -15,33 +10,14 @@ from dagster import (
 )
 from dagster_aws.s3 import S3Resource
 
+from aemo_etl.factories.s3_pending_objects import (
+    ACTIVE_RUN_STATUSES,
+    plan_s3_pending_objects_run_request,
+)
 from aemo_etl.utils import (
     get_object_head_from_pages,
-    get_s3_object_keys_from_prefix_and_name_glob,
     get_s3_pagination,
 )
-
-ACTIVE_STATUSES = [
-    DagsterRunStatus.QUEUED,
-    DagsterRunStatus.NOT_STARTED,
-    DagsterRunStatus.STARTING,
-    DagsterRunStatus.STARTED,
-]
-
-
-def _is_running(runs: Sequence[DagsterRun], asset_key: AssetKey) -> bool:
-    for run in runs:
-        if run.asset_selection and asset_key in run.asset_selection:
-            return True
-    return False
-
-
-def _has_asset_failed(runs: Sequence[DagsterRun], asset_key: AssetKey) -> bool:
-    """Return True if the most recent completed run containing this asset failed."""
-    for run in runs:
-        if run.asset_selection and asset_key in run.asset_selection:
-            return run.status == DagsterRunStatus.FAILURE
-    return False
 
 
 def unzipper_sensor(
@@ -96,7 +72,7 @@ def unzipper_sensor(
         )
 
         active_runs = context.instance.get_runs(
-            filters=RunsFilter(statuses=list(ACTIVE_STATUSES))
+            filters=RunsFilter(statuses=list(ACTIVE_RUN_STATUSES))
         )
         completed_runs = context.instance.get_runs(
             filters=RunsFilter(
@@ -107,49 +83,18 @@ def unzipper_sensor(
         object_head_mapping = get_object_head_from_pages(pages, logger=context.log)
 
         for asset_key in asset_keys:
-            asset_defs = context.repository_def.assets_defs_by_key.get(asset_key)
-            assert hasattr(asset_defs, "metadata_by_key")
-            asset_meta = cast(dict[str, str], asset_defs.metadata_by_key.get(asset_key))
-            assert "glob_pattern" in asset_meta, (
-                f"{name} sensor unable to process {asset_key}: missing 'glob_pattern' metadata"
+            run_request = plan_s3_pending_objects_run_request(
+                context,
+                sensor_name=name,
+                asset_key=asset_key,
+                active_runs=active_runs,
+                completed_runs=completed_runs,
+                s3_source_prefix=s3_source_prefix,
+                object_head_mapping=object_head_mapping,
+                bytes_cap=bytes_cap,
+                files_cap=files_cap,
             )
-            s3_file_glob = asset_meta["glob_pattern"]
-
-            if _is_running(active_runs, asset_key) or _has_asset_failed(
-                completed_runs, asset_key
-            ):
-                continue
-
-            s3_object_keys = get_s3_object_keys_from_prefix_and_name_glob(
-                s3_prefix=s3_source_prefix,
-                s3_file_glob=s3_file_glob,
-                original_keys=cast(list[str], object_head_mapping.keys()),
-            )
-            current_bytes = 0
-            objects_to_process: list[str] = []
-
-            for s3_object_key in s3_object_keys:
-                object_head = object_head_mapping[s3_object_key]
-                size_in_bytes = object_head["Size"]
-                if current_bytes + size_in_bytes > bytes_cap:
-                    break
-                if files_cap is not None and len(objects_to_process) >= files_cap:
-                    break
-                objects_to_process.append(s3_object_key)
-                current_bytes += size_in_bytes
-
-            if objects_to_process:
-                yield RunRequest(
-                    asset_selection=[asset_key],
-                    run_config={
-                        "ops": {
-                            asset_key.to_python_identifier(): {
-                                "config": {
-                                    "s3_keys": objects_to_process,
-                                },
-                            }
-                        }
-                    },
-                )
+            if run_request is not None:
+                yield run_request
 
     return sensor_
