@@ -310,8 +310,84 @@ Build it.
         self.assertIn("python3 -m unittest discover -s tests", comment)
         self.assertIn("Issue #42 will be closed by the Ralph loop.", comment)
 
+    def test_user_facing_error_includes_command_stderr(self) -> None:
+        error = ralph.CommandFailure(
+            ["gh", "auth", "status"],
+            Path("/repo"),
+            1,
+            "",
+            "The token in default is invalid.",
+            None,
+        )
+
+        message = ralph.user_facing_error(error)
+
+        self.assertIn("Command: gh auth status", message)
+        self.assertIn("Exit code: 1", message)
+        self.assertIn("The token in default is invalid.", message)
+
 
 class RalphLoopLocalIntegrationTests(unittest.TestCase):
+    def test_malformed_issue_marks_failed_without_creating_worktree(self) -> None:
+        runner = FakeRunner()
+        malformed_body = """## What to build
+Build it.
+
+## Acceptance criteria
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(Path(tmp), runner)
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._handle_implementation(
+                    make_issue({"ready-for-agent"}, malformed_body)
+                )
+
+            comment_path = next((Path(tmp) / "logs").glob("issue-42-*/issue-42-comment.md"))
+            comment = comment_path.read_text(encoding="utf-8")
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "edit",
+                "42",
+                "-R",
+                "example/repo",
+                "--add-label",
+                "agent-running",
+                "--remove-label",
+                "ready-for-agent",
+                "--remove-label",
+                "agent-failed",
+                "--remove-label",
+                "agent-merged",
+            ),
+            commands,
+        )
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "edit",
+                "42",
+                "-R",
+                "example/repo",
+                "--add-label",
+                "agent-failed",
+                "--remove-label",
+                "agent-running",
+                "--remove-label",
+                "ready-for-agent",
+            ),
+            commands,
+        )
+        self.assertFalse(any(command[:3] == ("git", "worktree", "add") for command in commands))
+        self.assertIn(
+            "Missing required issue section(s): Acceptance criteria, Blocked by",
+            comment,
+        )
+
     def test_successful_implementation_squash_merges_pushes_comments_and_closes(self) -> None:
         runner = FakeRunner(
             status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],

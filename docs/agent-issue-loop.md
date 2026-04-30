@@ -8,8 +8,10 @@ integration** as the success path after QA.
 ## Table of contents
 
 - [Purpose](#purpose)
+- [Drain flow](#drain-flow)
 - [Labels](#labels)
 - [Run modes](#run-modes)
+- [Live run preflight](#live-run-preflight)
 - [Implementation pass](#implementation-pass)
 - [Triage pass](#triage-pass)
 - [QA policy](#qa-policy)
@@ -29,6 +31,30 @@ Ralph drains agent-ready GitHub issues through a guarded local loop:
 
 The loop stops when the queue has no unblocked implementation or triage
 candidates, or when `--max-issues` is reached.
+
+## Drain flow
+
+```mermaid
+flowchart TD
+  START[Start drain] --> PREFLIGHT[Validate tools, GitHub auth, and labels]
+  PREFLIGHT --> READY{Unblocked ready-for-agent issue?}
+  READY -->|Yes| CLAIM[Claim issue with agent-running]
+  CLAIM --> CONTRACT{Issue contract valid?}
+  CONTRACT -->|No| FAIL[Mark agent-failed and comment evidence]
+  CONTRACT -->|Yes| WORKTREE[Create issue branch and worktree]
+  WORKTREE --> CODEX[Run Codex implementation]
+  CODEX --> QA[Run selected Test lane QA]
+  QA --> INTEGRATE[Run Local integration]
+  INTEGRATE --> CLOSE[Comment evidence, mark agent-merged, close issue]
+  CLOSE --> LIMIT{Max implementation attempts reached?}
+  LIMIT -->|No| READY
+  LIMIT -->|Yes| STOP[Stop drain]
+  READY -->|No| TRIAGE{Unblocked triage candidate?}
+  TRIAGE -->|Yes| TRIAGEPASS[Run automated triage]
+  TRIAGEPASS --> READY
+  TRIAGE -->|No| STOP
+  FAIL --> READY
+```
 
 ## Labels
 
@@ -87,6 +113,22 @@ Implement one specific issue:
 python3 scripts/ralph.py --issue 25
 ```
 
+## Live run preflight
+
+Before a live drain, validate both GitHub API auth and Git push auth:
+
+```bash
+gh auth status
+git push --dry-run origin HEAD:main
+```
+
+When using token-based GitHub CLI auth, export `GH_TOKEN` in the shell that runs
+Ralph. Do not paste token values into commands, issue comments, docs, or logs.
+
+Run Ralph from a clean local `main` that is aligned with `origin/main`. The
+script fetches `origin/main` during implementation and rebases issue work if the
+base moves, but the operator should start from a known repo state.
+
 ## Implementation pass
 
 An implementation issue must have these sections:
@@ -114,6 +156,26 @@ branch, creates one integration commit, pushes it to `main`, posts a completion
 comment with the commit SHA, changed files, QA commands, and run log path, marks
 the issue `agent-merged`, and closes the issue. Ralph does not open a GitHub
 draft PR.
+
+```mermaid
+sequenceDiagram
+  participant Ralph
+  participant IssueBranch as Issue branch
+  participant Origin as origin/main
+  participant Integration as Integration worktree
+  participant GitHubIssue as GitHub Issue
+
+  Ralph->>IssueBranch: Commit validated issue work
+  Ralph->>Origin: Fetch latest base
+  alt origin/main moved
+    Ralph->>IssueBranch: Rebase and rerun selected QA
+  end
+  Ralph->>Integration: Create detached worktree at origin/main
+  Integration->>IssueBranch: git merge --squash
+  Integration->>Origin: git push HEAD:main
+  Ralph->>GitHubIssue: Comment evidence
+  Ralph->>GitHubIssue: Add agent-merged and close
+```
 
 ## Triage pass
 

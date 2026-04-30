@@ -863,8 +863,6 @@ class RalphLoop:
         worktree_path: Path | None = None
         integration_path: Path | None = None
         try:
-            emit(f"#{issue.number}: validating issue contract")
-            self._validate_issue_contract(issue)
             emit(f"#{issue.number}: claiming issue with {AGENT_RUNNING_LABEL}")
             self.github.edit_issue_labels(
                 issue.number,
@@ -872,6 +870,8 @@ class RalphLoop:
                 remove=[READY_LABEL, AGENT_FAILED_LABEL, AGENT_MERGED_LABEL],
             )
             claimed = True
+            emit(f"#{issue.number}: validating issue contract")
+            self._validate_issue_contract(issue)
             branch, worktree_path, integration_path = self._branch_and_worktrees(issue)
             emit(f"#{issue.number}: fetching origin/{self.config.base}")
             self.git.fetch_base(self.config.base, run_dir=run_dir)
@@ -1154,7 +1154,7 @@ class RalphLoop:
         self.github.edit_issue_labels(
             issue.number,
             add=[AGENT_FAILED_LABEL],
-            remove=[AGENT_RUNNING_LABEL],
+            remove=[AGENT_RUNNING_LABEL, READY_LABEL],
         )
         log_line = f"\n\nLog: `{error.log_path}`" if error.log_path is not None else ""
         emit(f"#{issue.number}: commenting failure evidence")
@@ -1277,6 +1277,12 @@ def tail_text(value: str, *, max_lines: int = 80) -> str:
     return "\n".join(lines[-max_lines:])
 
 
+def user_facing_error(error: Exception) -> str:
+    if isinstance(error, CommandFailure):
+        return command_failure_summary(error)
+    return str(error)
+
+
 def build_completion_comment(
     issue: Issue,
     commit_sha: str,
@@ -1395,10 +1401,10 @@ def main(argv: list[str] | None = None) -> int:
         config = build_config(parsed_args, runner)
         RalphLoop(config, runner).run()
     except RalphError as error:
-        emit(f"ralph: {error}", err=True)
+        emit(f"ralph: {user_facing_error(error)}", err=True)
         return 1
     except ValueError as error:
-        emit(f"ralph: {error}", err=True)
+        emit(f"ralph: {user_facing_error(error)}", err=True)
         return 1
     return 0
 
