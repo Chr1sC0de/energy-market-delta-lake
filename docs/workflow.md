@@ -96,10 +96,11 @@ Local workflow notes:
 
 The repo-local Ralph loop in
 [agent-issue-loop.md](agent-issue-loop.md) drains GitHub Issues through Codex
-implementation, deterministic local QA, draft PR creation, and post-loop issue
-triage. It uses the default triage labels documented under
+implementation, deterministic local QA, **Local integration**, and post-loop
+issue triage. It uses the default triage labels documented under
 [docs/agents/triage-labels.md](agents/triage-labels.md) and keeps implementation
-gated by the relevant **Test lane** commands before a draft PR is opened.
+gated by the relevant **Test lane** commands before `main` is pushed and the
+issue is closed.
 
 ## Where to work
 

@@ -3,7 +3,8 @@
 ## Language
 
 - Use the canonical repo terms in `CONTEXT.md`, especially **Subproject**,
-  **Test lane**, **Fast check**, **Commit check**, and **Push check**.
+  **Test lane**, **Fast check**, **Commit check**, **Push check**, and
+  **Local integration**.
 - Do not use "submodule" for repo projects. There are no Git submodules here.
 
 ## Agent skills
@@ -11,7 +12,9 @@
 ### Issue tracker
 
 Issues are tracked in GitHub Issues for `Chr1sC0de/energy-market-delta-lake`.
-See `docs/agents/issue-tracker.md`.
+Ralph uses those issues as the board and queue, then performs successful code
+changes through **Local integration** before closing the issue. See
+`docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Drain GitHub issues through Codex implementation and triage loops."""
+"""Drain GitHub issues through Codex implementation and local integration loops."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ WONTFIX_LABEL = "wontfix"
 
 AGENT_RUNNING_LABEL = "agent-running"
 AGENT_FAILED_LABEL = "agent-failed"
-AGENT_PR_OPEN_LABEL = "agent-pr-open"
+AGENT_MERGED_LABEL = "agent-merged"
 
 TRIAGE_STATE_LABELS = frozenset(
     {
@@ -46,7 +46,7 @@ IMPLEMENTATION_STOP_LABELS = frozenset(
         WONTFIX_LABEL,
         AGENT_RUNNING_LABEL,
         AGENT_FAILED_LABEL,
-        AGENT_PR_OPEN_LABEL,
+        AGENT_MERGED_LABEL,
     }
 )
 TRIAGE_STOP_LABELS = frozenset(
@@ -56,7 +56,7 @@ TRIAGE_STOP_LABELS = frozenset(
         WONTFIX_LABEL,
         AGENT_RUNNING_LABEL,
         AGENT_FAILED_LABEL,
-        AGENT_PR_OPEN_LABEL,
+        AGENT_MERGED_LABEL,
     }
 )
 
@@ -89,7 +89,7 @@ LABEL_SPECS = (
     LabelSpec(WONTFIX_LABEL, "FFFFFF", "Will not be actioned."),
     LabelSpec(AGENT_RUNNING_LABEL, "1D76DB", "Agent issue loop is running."),
     LabelSpec(AGENT_FAILED_LABEL, "B60205", "Agent issue loop failed."),
-    LabelSpec(AGENT_PR_OPEN_LABEL, "0E8A16", "Agent issue loop opened a PR."),
+    LabelSpec(AGENT_MERGED_LABEL, "0E8A16", "Agent issue loop merged local integration."),
 )
 
 
@@ -128,6 +128,14 @@ class IssueFailure(RalphError):
 
 class EnvironmentFailure(IssueFailure):
     """A local environment failure that should stop the drain."""
+
+
+class PostPushFailure(RalphError):
+    """A failure after main was pushed, where issue state may be inconsistent."""
+
+    def __init__(self, message: str, log_path: Path | None = None) -> None:
+        super().__init__(message)
+        self.log_path = log_path
 
 
 @dataclass(frozen=True)
@@ -577,40 +585,22 @@ class GitHubClient:
             execute_in_dry_run=False,
         )
 
-    def create_draft_pr(
-        self,
-        *,
-        title: str,
-        body: str,
-        branch: str,
-        base: str,
-        run_dir: Path,
-    ) -> str:
-        body_path = run_dir / "pull-request-body.md"
-        if not self.runner.dry_run:
-            body_path.write_text(body, encoding="utf-8")
-        result = self.runner.run(
+    def close_issue(self, number: int, *, run_dir: Path) -> None:
+        self.runner.run(
             [
                 "gh",
-                "pr",
-                "create",
+                "issue",
+                "close",
+                str(number),
                 "-R",
                 self.repo,
-                "--base",
-                base,
-                "--head",
-                branch,
-                "--title",
-                title,
-                "--body-file",
-                str(body_path),
-                "--draft",
+                "--reason",
+                "completed",
             ],
             cwd=self.repo_root,
-            log_path=run_dir / "gh-pr-create.log",
+            log_path=run_dir / "gh-issue-close.log",
             execute_in_dry_run=False,
         )
-        return result.stdout.strip()
 
     def _json(self, args: list[str]) -> Any:
         result = self.runner.run(args, cwd=self.repo_root)
@@ -621,6 +611,13 @@ class GitClient:
     def __init__(self, *, repo_root: Path, runner: CommandRunner) -> None:
         self.repo_root = repo_root
         self.runner = runner
+
+    def rev_parse(self, ref: str, *, cwd: Path | None = None) -> str:
+        result = self.runner.run(
+            ["git", "rev-parse", ref],
+            cwd=self.repo_root if cwd is None else cwd,
+        )
+        return result.stdout.strip()
 
     def fetch_base(self, base: str, *, run_dir: Path) -> None:
         self.runner.run(
@@ -640,46 +637,89 @@ class GitClient:
             execute_in_dry_run=False,
         )
 
+    def add_detached_worktree(self, *, path: Path, ref: str, run_dir: Path) -> None:
+        if path.exists():
+            raise IssueFailure(f"Worktree already exists: {path}")
+        self.runner.run(
+            ["git", "worktree", "add", "--detach", str(path), ref],
+            cwd=self.repo_root,
+            log_path=run_dir / "git-worktree-add-integration.log",
+            execute_in_dry_run=False,
+        )
+
     def changed_files(self, *, cwd: Path) -> list[str]:
         result = self.runner.run(["git", "status", "--porcelain"], cwd=cwd)
         return parse_git_status_paths(result.stdout)
+
+    def changed_files_against(self, *, cwd: Path, base_ref: str) -> list[str]:
+        result = self.runner.run(
+            ["git", "diff", "--name-only", f"{base_ref}...HEAD"],
+            cwd=cwd,
+        )
+        return sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
 
     def has_uncommitted_changes(self, *, cwd: Path) -> bool:
         result = self.runner.run(["git", "status", "--porcelain"], cwd=cwd)
         return result.stdout.strip() != ""
 
-    def commit_and_push(
+    def commit_all(
         self,
         *,
         cwd: Path,
-        branch: str,
         message: str,
         run_dir: Path,
+        log_prefix: str,
     ) -> None:
         self.runner.run(
             ["git", "add", "-A"],
             cwd=cwd,
-            log_path=run_dir / "git-add.log",
+            log_path=run_dir / f"{log_prefix}-git-add.log",
             execute_in_dry_run=False,
         )
         self.runner.run(
             ["git", "commit", "-m", message],
             cwd=cwd,
-            log_path=run_dir / "git-commit.log",
-            execute_in_dry_run=False,
-        )
-        self.runner.run(
-            ["git", "push", "-u", "origin", branch],
-            cwd=cwd,
-            log_path=run_dir / "git-push.log",
+            log_path=run_dir / f"{log_prefix}-git-commit.log",
             execute_in_dry_run=False,
         )
 
-    def remove_worktree(self, path: Path, *, run_dir: Path) -> None:
+    def rebase(self, *, cwd: Path, upstream: str, run_dir: Path) -> None:
+        self.runner.run(
+            ["git", "rebase", upstream],
+            cwd=cwd,
+            log_path=run_dir / "git-rebase.log",
+            execute_in_dry_run=False,
+        )
+
+    def squash_merge(self, *, cwd: Path, branch: str, run_dir: Path) -> None:
+        self.runner.run(
+            ["git", "merge", "--squash", branch],
+            cwd=cwd,
+            log_path=run_dir / "git-squash-merge.log",
+            execute_in_dry_run=False,
+        )
+
+    def push_head(self, *, cwd: Path, branch: str, run_dir: Path) -> None:
+        self.runner.run(
+            ["git", "push", "origin", f"HEAD:{branch}"],
+            cwd=cwd,
+            log_path=run_dir / "git-push-main.log",
+            execute_in_dry_run=False,
+        )
+
+    def remove_worktree(self, path: Path, *, run_dir: Path, log_name: str) -> None:
         self.runner.run(
             ["git", "worktree", "remove", str(path)],
             cwd=self.repo_root,
-            log_path=run_dir / "git-worktree-remove.log",
+            log_path=run_dir / log_name,
+            execute_in_dry_run=False,
+        )
+
+    def delete_branch(self, branch: str, *, run_dir: Path) -> None:
+        self.runner.run(
+            ["git", "branch", "-D", branch],
+            cwd=self.repo_root,
+            log_path=run_dir / "git-branch-delete.log",
             execute_in_dry_run=False,
         )
 
@@ -818,17 +858,25 @@ class RalphLoop:
         run_dir.mkdir(parents=True, exist_ok=True)
 
         claimed = False
+        pushed = False
+        branch = ""
         worktree_path: Path | None = None
+        integration_path: Path | None = None
         try:
+            emit(f"#{issue.number}: validating issue contract")
             self._validate_issue_contract(issue)
+            emit(f"#{issue.number}: claiming issue with {AGENT_RUNNING_LABEL}")
             self.github.edit_issue_labels(
                 issue.number,
                 add=[AGENT_RUNNING_LABEL],
-                remove=[READY_LABEL, AGENT_FAILED_LABEL],
+                remove=[READY_LABEL, AGENT_FAILED_LABEL, AGENT_MERGED_LABEL],
             )
             claimed = True
-            branch, worktree_path = self._branch_and_worktree(issue)
+            branch, worktree_path, integration_path = self._branch_and_worktrees(issue)
+            emit(f"#{issue.number}: fetching origin/{self.config.base}")
             self.git.fetch_base(self.config.base, run_dir=run_dir)
+            base_sha = self.git.rev_parse(f"origin/{self.config.base}")
+            emit(f"#{issue.number}: creating implementation worktree {worktree_path}")
             self.git.add_worktree(
                 branch=branch,
                 base=self.config.base,
@@ -840,32 +888,106 @@ class RalphLoop:
             if not changed_files:
                 raise IssueFailure("Codex completed without producing file changes.")
 
-            self.git.commit_and_push(
+            emit(f"#{issue.number}: committing implementation branch {branch}")
+            self.git.commit_all(
                 cwd=worktree_path,
-                branch=branch,
                 message=f"Implement issue #{issue.number}: {issue.title}",
                 run_dir=run_dir,
+                log_prefix="issue",
             )
-            pr_url = self.github.create_draft_pr(
-                title=f"Implement #{issue.number}: {issue.title}",
-                body=build_pr_body(issue, changed_files, qa_results, run_dir),
-                branch=branch,
-                base=self.config.base,
+
+            emit(f"#{issue.number}: checking for origin/{self.config.base} updates")
+            self.git.fetch_base(self.config.base, run_dir=run_dir)
+            latest_base_sha = self.git.rev_parse(f"origin/{self.config.base}")
+            if latest_base_sha != base_sha:
+                emit(f"#{issue.number}: origin/{self.config.base} moved; rebasing {branch}")
+                self.git.rebase(
+                    cwd=worktree_path,
+                    upstream=f"origin/{self.config.base}",
+                    run_dir=run_dir,
+                )
+                changed_files = self.git.changed_files_against(
+                    cwd=worktree_path,
+                    base_ref=f"origin/{self.config.base}",
+                )
+                if not changed_files:
+                    raise IssueFailure("Rebase left no changed files to integrate.")
+                emit(f"#{issue.number}: rerunning QA after rebase")
+                qa_results.extend(
+                    self._run_qa_for_files(
+                        issue,
+                        changed_files,
+                        worktree_path,
+                        run_dir,
+                        log_prefix="qa-rebase",
+                    )
+                )
+                if self.git.has_uncommitted_changes(cwd=worktree_path):
+                    emit(f"#{issue.number}: committing post-rebase QA updates")
+                    self.git.commit_all(
+                        cwd=worktree_path,
+                        message=(
+                            f"Apply post-rebase QA updates for issue #{issue.number}: "
+                            f"{issue.title}"
+                        ),
+                        run_dir=run_dir,
+                        log_prefix="issue-rebase",
+                    )
+                    changed_files = self.git.changed_files_against(
+                        cwd=worktree_path,
+                        base_ref=f"origin/{self.config.base}",
+                    )
+            else:
+                changed_files = self.git.changed_files_against(
+                    cwd=worktree_path,
+                    base_ref=f"origin/{self.config.base}",
+                )
+
+            if not changed_files:
+                raise IssueFailure("Implementation branch has no diff against current base.")
+
+            emit(f"#{issue.number}: creating integration worktree {integration_path}")
+            self.git.add_detached_worktree(
+                path=integration_path,
+                ref=f"origin/{self.config.base}",
                 run_dir=run_dir,
             )
-            self.github.edit_issue_labels(
-                issue.number,
-                add=[AGENT_PR_OPEN_LABEL],
-                remove=[AGENT_RUNNING_LABEL],
+            emit(f"#{issue.number}: squash merging {branch}")
+            self.git.squash_merge(cwd=integration_path, branch=branch, run_dir=run_dir)
+            emit(f"#{issue.number}: committing local integration")
+            self.git.commit_all(
+                cwd=integration_path,
+                message=f"Implement issue #{issue.number}: {issue.title}",
+                run_dir=run_dir,
+                log_prefix="integration",
             )
+            commit_sha = self.git.rev_parse("HEAD", cwd=integration_path)
+            emit(f"#{issue.number}: pushing {commit_sha} to {self.config.base}")
+            self.git.push_head(cwd=integration_path, branch=self.config.base, run_dir=run_dir)
+            pushed = True
+
+            emit(f"#{issue.number}: commenting completion evidence")
             self.github.comment_issue(
                 issue.number,
-                f"Draft PR opened: {pr_url}\n\nRun logs: `{run_dir}`",
+                build_completion_comment(issue, commit_sha, changed_files, qa_results, run_dir),
                 run_dir=run_dir,
             )
-            if worktree_path is not None:
-                self.git.remove_worktree(worktree_path, run_dir=run_dir)
-            emit(f"Opened draft PR for #{issue.number}: {pr_url}")
+            emit(f"#{issue.number}: marking {AGENT_MERGED_LABEL}")
+            self.github.edit_issue_labels(
+                issue.number,
+                add=[AGENT_MERGED_LABEL],
+                remove=[AGENT_RUNNING_LABEL, AGENT_FAILED_LABEL],
+            )
+            emit(f"#{issue.number}: closing issue")
+            self.github.close_issue(issue.number, run_dir=run_dir)
+            self._cleanup_success_artifacts(
+                issue,
+                branch=branch,
+                worktree_path=worktree_path,
+                integration_path=integration_path,
+                run_dir=run_dir,
+            )
+            emit(f"Issue #{issue.number} merged to {self.config.base}: {commit_sha}")
         except EnvironmentFailure as error:
             if claimed:
                 self._mark_issue_failed(issue, error, run_dir)
@@ -875,6 +997,13 @@ class RalphLoop:
                 self._mark_issue_failed(issue, error, run_dir)
             emit(f"Issue #{issue.number} failed: {error}", err=True)
         except CommandFailure as error:
+            if pushed:
+                post_push_error = PostPushFailure(
+                    f"Post-push issue metadata failed for #{issue.number}: {error}",
+                    log_path=error.log_path,
+                )
+                emit(str(post_push_error), err=True)
+                raise post_push_error from error
             issue_error = IssueFailure(str(error), log_path=error.log_path)
             if claimed:
                 self._mark_issue_failed(issue, issue_error, run_dir)
@@ -885,23 +1014,31 @@ class RalphLoop:
         if missing:
             raise IssueFailure(f"Missing required issue section(s): {', '.join(missing)}")
 
-    def _branch_and_worktree(self, issue: Issue) -> tuple[str, Path]:
+    def _branch_and_worktrees(self, issue: Issue) -> tuple[str, Path, Path]:
         slug = slugify(issue.title)
         branch = f"agent/issue-{issue.number}-{slug}"
         worktree_path = self.config.worktree_container / f"agent-issue-{issue.number}-{slug}"
-        return branch, worktree_path
+        integration_path = self.config.worktree_container / f"agent-integrate-{issue.number}-{slug}"
+        return branch, worktree_path, integration_path
 
-    def _implement_with_retry(self, issue: Issue, worktree_path: Path, run_dir: Path) -> list[QAResult]:
+    def _implement_with_retry(
+        self,
+        issue: Issue,
+        worktree_path: Path,
+        run_dir: Path,
+    ) -> list[QAResult]:
         first_prompt = implementation_prompt(issue)
         try:
+            emit(f"#{issue.number}: running Codex implementation attempt 1")
             self._run_codex(first_prompt, worktree_path, run_dir / "codex-implementation-1.jsonl")
-            return self._run_qa(worktree_path, run_dir)
+            return self._run_qa(issue, worktree_path, run_dir, log_prefix="qa")
         except EnvironmentFailure:
             raise
         except (CommandFailure, IssueFailure) as first_error:
+            emit(f"#{issue.number}: attempt 1 failed; running Codex implementation attempt 2")
             retry_prompt = retry_implementation_prompt(issue, first_error)
             self._run_codex(retry_prompt, worktree_path, run_dir / "codex-implementation-2.jsonl")
-            return self._run_qa(worktree_path, run_dir)
+            return self._run_qa(issue, worktree_path, run_dir, log_prefix="qa-retry")
 
     def _run_codex(self, prompt: str, cwd: Path, log_path: Path) -> None:
         if not self.runner.dry_run:
@@ -914,10 +1051,34 @@ class RalphLoop:
             execute_in_dry_run=False,
         )
 
-    def _run_qa(self, worktree_path: Path, run_dir: Path) -> list[QAResult]:
+    def _run_qa(
+        self,
+        issue: Issue,
+        worktree_path: Path,
+        run_dir: Path,
+        *,
+        log_prefix: str,
+    ) -> list[QAResult]:
         changed_files = self.git.changed_files(cwd=worktree_path)
         if not changed_files:
             raise IssueFailure("No changed files available for QA selection.")
+        return self._run_qa_for_files(
+            issue,
+            changed_files,
+            worktree_path,
+            run_dir,
+            log_prefix=log_prefix,
+        )
+
+    def _run_qa_for_files(
+        self,
+        issue: Issue,
+        changed_files: list[str],
+        worktree_path: Path,
+        run_dir: Path,
+        *,
+        log_prefix: str,
+    ) -> list[QAResult]:
         commands = select_qa_commands(changed_files, worktree_path)
         if not commands:
             raise IssueFailure(
@@ -926,8 +1087,12 @@ class RalphLoop:
 
         results: list[QAResult] = []
         for index, command in enumerate(commands, start=1):
-            log_path = run_dir / f"qa-{index}-{slugify(command.name)}.log"
+            log_path = run_dir / f"{log_prefix}-{index}-{slugify(command.name)}.log"
             try:
+                emit(
+                    f"#{issue.number}: running QA {command.name}: "
+                    f"{format_command(command.args)}"
+                )
                 self.runner.run(
                     list(command.args),
                     cwd=command.cwd,
@@ -942,16 +1107,57 @@ class RalphLoop:
                         log_path=error.log_path,
                     ) from error
                 raise
+            emit(f"#{issue.number}: QA passed {command.name}")
             results.append(QAResult(command=command, log_path=log_path))
         return results
 
+    def _cleanup_success_artifacts(
+        self,
+        issue: Issue,
+        *,
+        branch: str,
+        worktree_path: Path | None,
+        integration_path: Path | None,
+        run_dir: Path,
+    ) -> None:
+        if worktree_path is not None:
+            emit(f"#{issue.number}: removing implementation worktree {worktree_path}")
+            try:
+                self.git.remove_worktree(
+                    worktree_path,
+                    run_dir=run_dir,
+                    log_name="git-worktree-remove-implementation.log",
+                )
+            except CommandFailure as error:
+                emit(f"Cleanup warning: {error}", err=True)
+
+        if integration_path is not None:
+            emit(f"#{issue.number}: removing integration worktree {integration_path}")
+            try:
+                self.git.remove_worktree(
+                    integration_path,
+                    run_dir=run_dir,
+                    log_name="git-worktree-remove-integration.log",
+                )
+            except CommandFailure as error:
+                emit(f"Cleanup warning: {error}", err=True)
+
+        if branch != "":
+            emit(f"#{issue.number}: deleting temporary branch {branch}")
+            try:
+                self.git.delete_branch(branch, run_dir=run_dir)
+            except CommandFailure as error:
+                emit(f"Cleanup warning: {error}", err=True)
+
     def _mark_issue_failed(self, issue: Issue, error: IssueFailure, run_dir: Path) -> None:
+        emit(f"#{issue.number}: marking {AGENT_FAILED_LABEL}")
         self.github.edit_issue_labels(
             issue.number,
             add=[AGENT_FAILED_LABEL],
             remove=[AGENT_RUNNING_LABEL],
         )
         log_line = f"\n\nLog: `{error.log_path}`" if error.log_path is not None else ""
+        emit(f"#{issue.number}: commenting failure evidence")
         self.github.comment_issue(
             issue.number,
             f"Agent issue loop failed: {error}{log_line}\n\nRun logs: `{run_dir}`",
@@ -977,10 +1183,10 @@ def implementation_prompt(issue: Issue) -> str:
 
         Work in this repository worktree only. Follow AGENTS.md and the repo's
         canonical terms, especially Subproject, Test lane, Fast check, Commit
-        check, and Push check.
+        check, Push check, and Local integration.
 
-        Do not commit, push, open a PR, or edit GitHub labels/comments. The
-        Ralph script owns those steps after validation.
+        Do not commit, push, or edit GitHub labels/comments. The Ralph script
+        owns those steps after validation.
 
         You may run narrowed checks while debugging. The Ralph script will run
         final required QA after your turn.
@@ -1005,7 +1211,7 @@ def retry_implementation_prompt(issue: Issue, error: Exception) -> str:
         Continue implementing GitHub issue #{issue.number}: {issue.title}
 
         The previous attempt failed. Fix the issue in the current worktree.
-        Do not commit, push, open a PR, or edit GitHub labels/comments.
+        Do not commit, push, or edit GitHub labels/comments.
 
         Failure detail:
 
@@ -1034,7 +1240,7 @@ def triage_prompt(issue: Issue, repo: str) -> str:
         Runtime labels owned by the Ralph loop:
         - agent-running
         - agent-failed
-        - agent-pr-open
+        - agent-merged
 
         Every issue comment you post must begin with:
         {AI_TRIAGE_DISCLAIMER}
@@ -1071,8 +1277,9 @@ def tail_text(value: str, *, max_lines: int = 80) -> str:
     return "\n".join(lines[-max_lines:])
 
 
-def build_pr_body(
+def build_completion_comment(
     issue: Issue,
+    commit_sha: str,
     changed_files: list[str],
     qa_results: list[QAResult],
     run_dir: Path,
@@ -1084,11 +1291,9 @@ def build_pr_body(
     changed_lines = [f"- `{path}`" for path in changed_files]
     return "\n".join(
         [
-            f"Closes #{issue.number}",
+            "Ralph local integration completed.",
             "",
-            "## Summary",
-            "",
-            f"Implements `{issue.title}` through the Ralph agent issue loop.",
+            f"Commit: `{commit_sha}`",
             "",
             "## Changed files",
             "",
@@ -1100,7 +1305,7 @@ def build_pr_body(
             "",
             f"Run logs: `{run_dir}`",
             "",
-            "This PR was opened as a draft by the Ralph loop for human review.",
+            f"Issue #{issue.number} will be closed by the Ralph loop.",
             "",
         ]
     )
@@ -1148,10 +1353,10 @@ def build_config(args: argparse.Namespace, runner: CommandRunner) -> LoopConfig:
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Drain ready GitHub issues through Codex implementation and triage."
+        description="Drain ready GitHub issues through Codex implementation and local integration."
     )
     parser.add_argument("--repo", help="GitHub repository in OWNER/REPO form.")
-    parser.add_argument("--base", default="main", help="Base branch for generated PRs.")
+    parser.add_argument("--base", default="main", help="Base branch for local integration.")
     parser.add_argument("--issue", type=int, help="Implement one specific issue number.")
     parser.add_argument(
         "--drain",

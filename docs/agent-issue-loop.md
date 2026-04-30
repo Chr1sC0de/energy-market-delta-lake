@@ -2,8 +2,8 @@
 
 This page documents the repo-local Ralph loop in `scripts/ralph.py`. The loop
 uses GitHub Issues as the queue, Codex as the implementation and triage worker,
-and repo **Test lane** commands as the validation boundary before opening draft
-PRs.
+repo **Test lane** commands as the validation boundary, and **Local
+integration** as the success path after QA.
 
 ## Table of contents
 
@@ -23,8 +23,9 @@ Ralph drains agent-ready GitHub issues through a guarded local loop:
 2. Create a `main`-based worktree and branch.
 3. Run `codex exec` to implement the issue.
 4. Run deterministic local QA.
-5. Open a draft PR with `Closes #N`.
-6. If no ready issue exists, triage the next unblocked issue and rescan.
+5. Squash-merge validated work onto latest `origin/main` locally.
+6. Push `main`, comment completion evidence, and close the issue.
+7. If no ready issue exists, triage the next unblocked issue and rescan.
 
 The loop stops when the queue has no unblocked implementation or triage
 candidates, or when `--max-issues` is reached.
@@ -48,11 +49,11 @@ Ralph runtime labels:
 
 - `agent-running`
 - `agent-failed`
-- `agent-pr-open`
+- `agent-merged`
 
 Use `ready-for-agent` as the queue selection signal. `needs-triage`,
 `needs-info`, `ready-for-human`, `wontfix`, `agent-running`, `agent-failed`,
-and `agent-pr-open` block implementation.
+and `agent-merged` block implementation.
 
 Create or refresh the labels with:
 
@@ -100,8 +101,19 @@ leaves a result comment with the run log path.
 
 Ralph creates branches named `agent/issue-N-slug` from `origin/main` and creates
 sibling worktrees under the repo worktree container. Codex is instructed not to
-commit, push, open PRs, or edit GitHub issue state; Ralph owns those steps after
-QA passes.
+commit, push, or edit GitHub issue state; Ralph owns those steps after QA
+passes.
+
+After QA passes, Ralph commits the issue branch, fetches `origin/main`, and
+rebases the issue branch if the base moved. A rebase triggers the selected QA
+commands again before **Local integration** continues.
+
+For **Local integration**, Ralph creates a temporary detached integration
+worktree at latest `origin/main`, runs `git merge --squash` from the issue
+branch, creates one integration commit, pushes it to `main`, posts a completion
+comment with the commit SHA, changed files, QA commands, and run log path, marks
+the issue `agent-merged`, and closes the issue. Ralph does not open a GitHub
+draft PR.
 
 ## Triage pass
 
@@ -147,6 +159,9 @@ For Ralph script or unit-test changes, Ralph runs:
 python3 -m unittest discover -s tests
 ```
 
+If `origin/main` changes after the implementation worktree was created, Ralph
+rebases the issue branch and reruns the selected QA commands before merging.
+
 ## Failure handling
 
 Codex or QA failures get one retry in the same worktree. If retry fails, Ralph:
@@ -156,6 +171,15 @@ Codex or QA failures get one retry in the same worktree. If retry fails, Ralph:
 - removes `agent-running`
 - leaves a result comment with the failing command and log path
 - continues drain mode with the next actionable issue
+
+Successful issues remove the implementation worktree, integration worktree, and
+temporary issue branch after the issue is closed. Cleanup failures are warnings;
+the pushed commit and closed issue remain the source of truth.
+
+Merge or push failures before `main` is updated are issue failures and keep the
+worktrees for inspection. Failures after `main` is pushed stop the drain because
+the code may already be published while GitHub issue metadata may be
+inconsistent.
 
 Environment failures stop the run. Examples include invalid `gh` auth, missing
 labels, unavailable tools, failing Git operations before claim, or unavailable

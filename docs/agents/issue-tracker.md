@@ -10,8 +10,10 @@ auth must pass before running triage or the Ralph loop:
 gh auth status
 ```
 
-The Ralph loop uses GitHub Issues as its queue and opens draft PRs back to the
-same repository.
+The Ralph loop uses GitHub Issues as its queue and board. Successful
+implementation work uses **Local integration** instead of GitHub PRs: Ralph
+squash-merges validated work onto latest `origin/main`, pushes `main`, comments
+completion evidence on the issue, and closes the issue.
 
 ## Sync metadata
 

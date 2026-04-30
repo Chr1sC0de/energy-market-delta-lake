@@ -59,6 +59,12 @@ A check expected before pushing. It may include guarded **Integration tests**,
 but must not include **Deployed tests** by default.
 _Avoid_: Pre-push test
 
+**Local integration**:
+The Ralph success path that squash-merges validated issue work onto latest
+`origin/main`, pushes `main`, comments evidence, and closes the issue without a
+GitHub PR.
+_Avoid_: Local PR, draft PR gate
+
 ## Relationships
 
 - A **Pytest subproject** is one kind of **Subproject**.
@@ -75,6 +81,9 @@ _Avoid_: Pre-push test
   current test refactor.
 - A **Commit check** runs the **Fast check** set.
 - A **Push check** may add local **Integration tests** to the **Fast check** set.
+- **Local integration** happens after Ralph implementation QA and before closing
+  the GitHub issue.
+- **Local integration** is not a **Test lane**.
 
 ## Example dialogue
 
@@ -89,3 +98,5 @@ _Avoid_: Pre-push test
   this repo, so **Subproject** is the canonical term.
 - "complete local integration test" was used for a full local stack. Resolved:
   call this an **End-to-end test**, and defer it from the current refactor.
+- "local PR" was considered for Ralph's post-QA path. Resolved: call it
+  **Local integration** because no GitHub PR object is created.

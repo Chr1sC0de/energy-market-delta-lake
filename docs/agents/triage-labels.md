@@ -26,7 +26,7 @@ Ralph owns these labels while processing the issue queue:
 
 - `agent-running`: Ralph has claimed an implementation issue.
 - `agent-failed`: Ralph failed after retry and left logs for inspection.
-- `agent-pr-open`: Ralph opened a draft PR for the issue.
+- `agent-merged`: Ralph pushed **Local integration** and closed the issue.
 
 Runtime labels are not triage state labels. `ready-for-agent` remains the queue
 selection label for implementation.
