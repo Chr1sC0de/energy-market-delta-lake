@@ -1,3 +1,5 @@
+"""Dagster ops and strategies for landing NEMWeb source files."""
+
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -19,6 +21,8 @@ from aemo_etl.utils import AEST, request_get
 
 
 class NEMWebLinkProcessor(ABC):
+    """Strategy for downloading and landing discovered NEMWeb links."""
+
     @abstractmethod
     def process(
         self,
@@ -27,7 +31,9 @@ class NEMWebLinkProcessor(ABC):
         links: list[Link],
         s3_target_bucket: str,
         s3_target_prefix: str,
-    ) -> list[ProcessedLink]: ...
+    ) -> list[ProcessedLink]:
+        """Process source links into landing storage records."""
+        ...
 
 
 def build_nemweb_link_processor_op(
@@ -42,6 +48,7 @@ def build_nemweb_link_processor_op(
         jitter=Jitter.PLUS_MINUS,
     ),
 ) -> OpDefinition:
+    """Build the Dagster op that processes discovered NEMWeb links."""
 
     @op(
         name=f"{name}_nemweb_link_processor_op",
@@ -65,18 +72,22 @@ def build_nemweb_link_processor_op(
 
 
 class BufferProcessor(ABC):
+    """Strategy for converting one NEMWeb link into an upload buffer."""
+
     @abstractmethod
     def process(
         self,
         context: OpExecutionContext,
         link: Link,
-    ) -> tuple[BytesIO, str]: ...
-
-    """returns a tuple of the output buffer and the upload filename"""
+    ) -> tuple[BytesIO, str]:
+        """Return the upload buffer and filename for a NEMWeb link."""
+        ...
 
 
 @dataclass
 class ParquetProcessor(BufferProcessor):
+    """Buffer processor that converts CSV responses to parquet when possible."""
+
     request_getter: Callable[[str], Response] = request_get
 
     def process(
@@ -84,6 +95,7 @@ class ParquetProcessor(BufferProcessor):
         context: OpExecutionContext,
         link: Link,
     ) -> tuple[BytesIO, str]:
+        """Download a link and return an upload buffer plus target filename."""
         path = link.source_absolute_href
         response = self.request_getter(path)
         link_buffer = BytesIO(response.content)
@@ -116,6 +128,8 @@ class ParquetProcessor(BufferProcessor):
 
 @dataclass
 class S3NemwebLinkProcessor(NEMWebLinkProcessor):
+    """NEMWeb link processor that uploads processed buffers to S3."""
+
     buffer_processor: BufferProcessor
 
     def process(
@@ -126,6 +140,7 @@ class S3NemwebLinkProcessor(NEMWebLinkProcessor):
         s3_target_bucket: str,
         s3_target_prefix: str,
     ) -> list[ProcessedLink]:
+        """Download links, upload results to S3, and return landing records."""
         s3_client: S3Client = s3.get_client()
 
         output: list[ProcessedLink] = []

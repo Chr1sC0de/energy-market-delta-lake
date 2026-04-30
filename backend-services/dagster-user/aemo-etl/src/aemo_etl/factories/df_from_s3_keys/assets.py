@@ -1,3 +1,5 @@
+"""Asset factories for S3-key driven raw and silver datasets."""
+
 import tempfile
 from datetime import datetime
 from typing import Mapping, Unpack
@@ -26,8 +28,9 @@ from aemo_etl.utils import (
 )
 
 
-# Define the config schema
 class DFFromS3KeysConfiguration(Config):
+    """Runtime config containing S3 keys selected by a sensor."""
+
     s3_keys: list[str] = []
 
 
@@ -41,7 +44,7 @@ def bronze_df_from_s3_keys_asset_factory(
     s3_landing_bucket: str = LANDING_BUCKET,
     **asset_kwargs: Unpack[AssetDefinitonParamSpec],
 ) -> AssetsDefinition:
-
+    """Create a bronze asset that ingests selected S3 objects into Delta."""
     postprocess_object_hooks = postprocess_object_hooks or []
     postprocess_lazyframe_hooks = postprocess_lazyframe_hooks or []
 
@@ -187,7 +190,7 @@ def bronze_df_from_s3_keys_asset_factory(
 def silver_df_from_s3_keys_asset_factory(
     **asset_kwargs: Unpack[AssetDefinitonParamSpec],
 ) -> AssetsDefinition:
-
+    """Create a silver asset that keeps the latest row per surrogate key."""
     asset_kwargs.setdefault("metadata", {})
 
     asset_kwargs.setdefault("kinds", {"table", "parquet"})

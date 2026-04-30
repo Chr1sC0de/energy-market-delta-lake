@@ -1,3 +1,5 @@
+"""Shared utility functions for S3, HTTP, Polars, and Dagster metadata."""
+
 import datetime as dt
 import fnmatch
 import uuid
@@ -56,6 +58,7 @@ def get_s3_pagination(
     s3_prefix: str,
     logger: Logger | None = None,
 ) -> list[ListObjectsV2OutputTypeDef]:
+    """Return all S3 list-object pages for a bucket and prefix."""
     paginator = s3_client.get_paginator("list_objects_v2")
     pages = []
     if logger is not None:
@@ -70,6 +73,8 @@ def get_s3_pagination(
 
 
 class S3ObjectHead(TypedDict, total=False):
+    """Typed representation of S3 object metadata used by sensors."""
+
     ChecksumAlgorithm: list[str]
     ChecksumType: str
     ETag: str
@@ -83,6 +88,7 @@ def get_object_head_from_pages(
     pages: list[ListObjectsV2OutputTypeDef],
     logger: Logger | None = None,
 ) -> dict[str, S3ObjectHead]:
+    """Build an object metadata mapping from S3 list-object pages."""
     number_of_pages = len(pages)
     output = {}
     for i, page in enumerate(pages):
@@ -100,6 +106,7 @@ def get_s3_object_keys_from_prefix_and_name_glob(
     original_keys: list[str],
     case_insensitive: bool = True,
 ) -> list[str]:
+    """Return S3 keys under a prefix that match a file-name glob."""
     s3_objects = []
     if case_insensitive:
         case_insensitive_keys = [k.lower() for k in original_keys]
@@ -117,6 +124,7 @@ def get_metadata_schema(
     df_schema: Mapping[str, PolarsDataType | type[object]] | Schema,
     descriptions: Mapping[str, str] | None = None,
 ) -> TableSchema:
+    """Convert a Polars-style schema to Dagster table metadata."""
     descriptions = descriptions or {}
     return TableSchema(
         columns=[
@@ -129,20 +137,24 @@ def get_metadata_schema(
 def request_get(
     path: str, getter: Callable[[str], Response] = requests.get
 ) -> Response:
+    """Run an HTTP GET and raise for unsuccessful responses."""
     response: Response = getter(path)
     response.raise_for_status()
     return response
 
 
 def add_random_suffix(prefix: str) -> str:
+    """Append a short random suffix to a string prefix."""
     return f"{prefix}-{uuid.uuid4().hex[:8]}"
 
 
 def get_lazyframe_num_rows(df: LazyFrame) -> int:
+    """Return the row count for a LazyFrame using the streaming engine."""
     return cast(int, df.select(len_()).collect(engine="streaming").item())  # ty:ignore[unresolved-attribute]
 
 
 def get_surrogate_key(primary_keys: list[str] | list[Expr]) -> Expr:
+    """Build a SHA-256 surrogate key expression from string or Polars keys."""
     expressions = []
     for key in primary_keys:
         if isinstance(key, str):
@@ -159,7 +171,11 @@ def get_surrogate_key(primary_keys: list[str] | list[Expr]) -> Expr:
 
 
 class BytesToLazyFrameMethod(Protocol):
-    def __call__(self, bytes_: bytes) -> LazyFrame: ...
+    """Callable that converts bytes into a Polars LazyFrame."""
+
+    def __call__(self, bytes_: bytes) -> LazyFrame:
+        """Convert raw file bytes into a LazyFrame."""
+        ...
 
 
 BYTES_TO_LAZYFRAME_REGISTER: dict[str, BytesToLazyFrameMethod] = {}
@@ -168,6 +184,8 @@ BYTES_TO_LAZYFRAME_REGISTER: dict[str, BytesToLazyFrameMethod] = {}
 def register_bytes_to_lazyframe_method(
     filetype: str,
 ) -> Callable[[BytesToLazyFrameMethod], BytesToLazyFrameMethod]:
+    """Register a bytes-to-LazyFrame converter for a file type."""
+
     def _register_bytes_to_lazyframe_method(
         function: BytesToLazyFrameMethod,
     ) -> BytesToLazyFrameMethod:
@@ -179,21 +197,25 @@ def register_bytes_to_lazyframe_method(
 
 @register_bytes_to_lazyframe_method("csv")
 def csv_bytes_to_lazyframe(bytes_: bytes) -> LazyFrame:
+    """Scan CSV bytes into a LazyFrame."""
     return scan_csv(bytes_, infer_schema_length=None)
 
 
 @register_bytes_to_lazyframe_method("parquet")
 def parquet_bytes_to_lazyframe(bytes_: bytes) -> LazyFrame:
+    """Scan parquet bytes into a LazyFrame."""
     return scan_parquet(bytes_)
 
 
 def bytes_to_lazyframe(filetype: str, bytes_: bytes) -> LazyFrame:
+    """Convert file bytes into a LazyFrame using the registered converter."""
     return BYTES_TO_LAZYFRAME_REGISTER[filetype](bytes_)
 
 
 def get_from_s3(
     s3_client: S3Client, s3_bucket: str, s3_key: str, logger: Logger | None = None
 ) -> bytes | None:
+    """Read an S3 object body or return None when the object cannot be read."""
     try:
         bytes_ = s3_client.get_object(Bucket=s3_bucket, Key=s3_key)["Body"].read()
     except ClientError as e:
@@ -209,6 +231,7 @@ def get_from_s3(
 
 
 def table_exists(s3_table_location: str) -> bool:
+    """Return whether an S3 location contains a Delta table."""
     return DeltaTable.is_deltatable(s3_table_location)
 
 
@@ -218,6 +241,7 @@ def get_response_factory(
     exp_base: int = 3,
     max_retry_time: int = 100,
 ) -> Callable[[str], bytes]:
+    """Build a retrying HTTP getter that returns response bytes."""
 
     @retry(
         stop=stop_after_attempt(process_retry),

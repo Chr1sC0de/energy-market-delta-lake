@@ -1,3 +1,5 @@
+"""Zip extraction strategies for S3 landing storage."""
+
 import gc
 import os
 import tempfile
@@ -16,6 +18,8 @@ PARQUET_ROW_GROUP_SIZE = 100_000
 
 
 class FileUnzipper(ABC):
+    """Strategy for extracting source zip files from landing storage."""
+
     @abstractmethod
     def unzip(
         self,
@@ -25,10 +29,14 @@ class FileUnzipper(ABC):
         s3_landing_bucket: str,
         s3_landing_prefix: str,
         s3_archive_bucket: str,
-    ) -> list[dict[str, str]]: ...
+    ) -> list[dict[str, str]]:
+        """Extract source zip files and return completion metadata."""
+        ...
 
 
 class S3FileUnzipper(FileUnzipper):
+    """File unzipper implementation backed by S3 object operations."""
+
     def unzip(
         self,
         context: AssetExecutionContext,
@@ -38,6 +46,7 @@ class S3FileUnzipper(FileUnzipper):
         s3_landing_prefix: str,
         s3_archive_bucket: str,
     ) -> list[dict[str, str]]:
+        """Extract S3 zip files and archive each source zip after success."""
         # Return value is used only as a completion signal by downstream ops
         # (In(Nothing)). We do not accumulate results to avoid holding a
         # potentially large list in memory across all zip files in the batch.
@@ -178,9 +187,7 @@ class S3FileUnzipper(FileUnzipper):
         s3_target_bucket: str,
         s3_target_prefix: str,
     ) -> str:
-        """
-        Extracts a CSV from a zip member, converts it to parquet via a lazy
-        scan (no full in-memory load), and uploads to S3.
+        """Extract a CSV zip member, convert it to parquet, and upload it.
 
         Falls back to uploading the raw CSV if conversion fails.
         Returns the S3 write key.

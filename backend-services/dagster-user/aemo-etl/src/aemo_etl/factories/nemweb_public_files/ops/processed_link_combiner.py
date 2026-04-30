@@ -1,4 +1,5 @@
-# ────────────────────────────────────────────────────────────────────────────────
+"""Dagster ops and strategies for combining processed NEMWeb links."""
+
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -20,6 +21,8 @@ from aemo_etl.utils import get_surrogate_key
 
 
 class ProcessedLinkedCombiner(ABC):
+    """Strategy for combining processed link records into a LazyFrame."""
+
     @abstractmethod
     def combine(
         self,
@@ -27,7 +30,9 @@ class ProcessedLinkedCombiner(ABC):
         processed_links: list[list[ProcessedLink] | None],
         schema: Schema,
         surrogate_key_sources: list[str],
-    ) -> LazyFrame: ...
+    ) -> LazyFrame:
+        """Combine processed link batches into a LazyFrame."""
+        ...
 
 
 def build_process_link_combiner_op(
@@ -44,6 +49,7 @@ def build_process_link_combiner_op(
         jitter=Jitter.PLUS_MINUS,
     ),
 ) -> OpDefinition:
+    """Build the Dagster op that combines processed link batches."""
 
     @op(
         name=f"{name}_processed_link_to_dataframe_combiner_op",
@@ -66,6 +72,8 @@ def build_process_link_combiner_op(
 
 
 class S3ProcessedLinkCombiner(ProcessedLinkedCombiner):
+    """Processed link combiner for S3 landing records."""
+
     def combine(
         self,
         context: OpExecutionContext,
@@ -73,6 +81,7 @@ class S3ProcessedLinkCombiner(ProcessedLinkedCombiner):
         schema: Schema,
         surrogate_key_sources: list[str],
     ) -> LazyFrame:
+        """Combine processed S3 link records into a typed LazyFrame."""
         context.log.info("combining links into dataframe")
         filtered_links: list[ProcessedLink] = []
 

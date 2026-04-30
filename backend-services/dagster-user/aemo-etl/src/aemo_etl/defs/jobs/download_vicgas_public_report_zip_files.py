@@ -1,3 +1,5 @@
+"""Ad hoc job for downloading VICGAS public report zip files."""
+
 import re
 from io import BytesIO
 from textwrap import dedent
@@ -24,6 +26,7 @@ DESCRIPTION = dedent(f"""
 def download_vicgas_public_report_zip_files_op(
     context: OpExecutionContext, s3: S3Resource
 ) -> None:
+    """Download current VICGAS public report zips into landing storage."""
     response = requests.get(REPORT_URL, timeout=30)
     response.raise_for_status()
 
@@ -62,4 +65,5 @@ def download_vicgas_public_report_zip_files_op(
     )
 )
 def download_vicgas_public_report_zip_files_job() -> None:
+    """Run the VICGAS public report zip download operation."""
     download_vicgas_public_report_zip_files_op()

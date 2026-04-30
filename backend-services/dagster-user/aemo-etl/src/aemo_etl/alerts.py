@@ -1,3 +1,5 @@
+"""Failed-run alert helpers for Dagster sensors."""
+
 import os
 from typing import Protocol
 
@@ -14,7 +16,11 @@ FAILED_RUN_ALERT_SUBJECT = "Dagster run failed"
 
 
 class SnsClient(Protocol):
-    def publish(self, *, TopicArn: str, Message: str, Subject: str) -> object: ...
+    """Protocol for the SNS client subset used by failed-run alerts."""
+
+    def publish(self, *, TopicArn: str, Message: str, Subject: str) -> object:
+        """Publish an SNS message."""
+        ...
 
 
 def _trim_failed_run_alert_message(message: str) -> str:
@@ -31,6 +37,7 @@ def _run_url(run_id: str) -> str | None:
 
 
 def build_failed_run_alert_message(context: RunFailureSensorContext) -> str:
+    """Build the alert body for a failed Dagster run."""
     dagster_run = context.dagster_run
     failure_message = context.failure_event.message or "No failure message available."
     message_lines = [
@@ -51,6 +58,7 @@ def send_failed_run_alert(
     context: RunFailureSensorContext,
     sns_client: SnsClient | None = None,
 ) -> None:
+    """Send a failed-run alert to SNS when alert configuration is present."""
     topic_arn = os.environ.get(DAGSTER_FAILURE_ALERT_TOPIC_ARN_ENV_VAR, "").strip()
     if topic_arn == "":
         context.log.warning(

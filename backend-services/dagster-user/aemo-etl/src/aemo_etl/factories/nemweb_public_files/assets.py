@@ -1,3 +1,5 @@
+"""Graph asset factory for discovering and landing NEMWeb public files."""
+
 from typing import Unpack, cast
 
 from dagster import Any, AssetsDefinition, MetadataValue, graph_asset
@@ -79,7 +81,7 @@ def nemweb_public_files_asset_factory(
     out_metadata_kwargs: dict[str, Any] | None = None,
     **graph_asset_kwargs: Unpack[GraphAssetKwargs],
 ) -> AssetsDefinition:
-
+    """Create a graph asset that discovers, downloads, and records NEMWeb files."""
     out_metadata_kwargs = out_metadata_kwargs or {}
     graph_asset_kwargs = graph_asset_kwargs or {}
     graph_asset_kwargs.setdefault("group_name", "AEMO")

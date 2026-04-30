@@ -1,3 +1,5 @@
+"""Helpers for planning sensor-triggered runs from pending S3 objects."""
+
 from collections.abc import Mapping, Sequence
 from typing import cast
 
@@ -23,6 +25,7 @@ ACTIVE_RUN_STATUSES = (
 
 
 def is_asset_running(runs: Sequence[DagsterRun], asset_key: AssetKey) -> bool:
+    """Return whether an active run already targets the asset."""
     for run in runs:
         if run.asset_selection and asset_key in run.asset_selection:
             return True
@@ -43,6 +46,7 @@ def get_asset_glob_pattern(
     sensor_name: str,
     asset_key: AssetKey,
 ) -> str:
+    """Read the S3 glob pattern from Dagster asset metadata."""
     assert hasattr(context.repository_def, "assets_defs_by_key")
 
     asset_defs = context.repository_def.assets_defs_by_key.get(asset_key)
@@ -69,6 +73,7 @@ def select_s3_pending_object_keys(
     bytes_cap: float,
     files_cap: int | None,
 ) -> list[str]:
+    """Select matching S3 object keys while respecting byte and file caps."""
     s3_object_keys = get_s3_object_keys_from_prefix_and_name_glob(
         s3_prefix=s3_source_prefix,
         s3_file_glob=s3_file_glob,
@@ -95,6 +100,7 @@ def build_s3_keys_run_config(
     asset_key: AssetKey,
     s3_keys: Sequence[str],
 ) -> dict[str, object]:
+    """Build Dagster run config for selected S3 keys."""
     return {
         "ops": {
             asset_key.to_python_identifier(): {
@@ -111,6 +117,7 @@ def build_s3_pending_objects_run_request(
     asset_key: AssetKey,
     s3_keys: Sequence[str],
 ) -> RunRequest | None:
+    """Build a run request for pending S3 keys when any keys are selected."""
     if not s3_keys:
         return None
     return RunRequest(
@@ -131,6 +138,7 @@ def plan_s3_pending_objects_run_request(
     bytes_cap: float,
     files_cap: int | None,
 ) -> RunRequest | None:
+    """Plan a run request for an asset by scanning pending S3 objects."""
     s3_file_glob = get_asset_glob_pattern(
         context,
         sensor_name=sensor_name,

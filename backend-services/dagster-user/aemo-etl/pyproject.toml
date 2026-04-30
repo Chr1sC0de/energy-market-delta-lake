@@ -52,9 +52,17 @@ build.targets.wheel.force-include = { "pyproject.toml" = "pyproject.toml" }
 [tool.ruff]
 line-length = 88
 format.docstring-code-format = true
-lint.select = [ "ANN", "E", "F" ]
+lint.select = [ "ANN", "D", "E", "F" ]
 lint.per-file-ignores."__init__.py" = [ "I" ]
+lint.per-file-ignores."src/aemo_etl/defs/gas_model/silver_gas_*.py" = [ "D" ]
+# Raw source-table modules are generated-like data definition files. The gas_model
+# assets and TypedDict specs are schema-heavy definition surfaces where required
+# docstrings would mostly duplicate table, column, or Dagster metadata.
+lint.per-file-ignores."src/aemo_etl/defs/raw/**/*.py" = [ "D" ]
+lint.per-file-ignores."src/aemo_etl/models/**/*.py" = [ "D" ]
+lint.per-file-ignores."tests/**" = [ "D" ]
 lint.pycodestyle.max-line-length = 200
+lint.pydocstyle.convention = "google"
 
 [tool.pytest]
 ini_options.testpaths = [ "tests" ]

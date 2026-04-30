@@ -1,3 +1,5 @@
+"""Definitions factory for sensor-driven unzipper assets."""
+
 from dagster import Definitions
 
 from aemo_etl.configs import ARCHIVE_BUCKET, LANDING_BUCKET

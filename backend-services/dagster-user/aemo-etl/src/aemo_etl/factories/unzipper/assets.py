@@ -1,3 +1,5 @@
+"""Asset factory for extracting zip files from S3 landing storage."""
+
 from typing import Unpack
 
 from dagster import (

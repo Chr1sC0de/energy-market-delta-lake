@@ -1,3 +1,5 @@
+"""Sensor factories for S3-key driven raw ingestion assets."""
+
 from typing import Sequence, cast
 
 from dagster import (
@@ -30,6 +32,7 @@ ACTIVE_STATUSES = [
 
 
 def is_running(runs: Sequence[DagsterRun], job_name: str) -> bool:
+    """Return whether an active run already uses the job name."""
     for run in runs:
         if run.job_name == job_name:
             return True
@@ -59,6 +62,7 @@ def df_from_s3_keys_sensor(
     default_status: DefaultSensorStatus = DefaultSensorStatus.STOPPED,
     jobs: Sequence[ExecutableDefinition] | None = None,
 ) -> SensorDefinition:
+    """Create a sensor that launches raw ingestion jobs for matching S3 keys."""
 
     @sensor(
         name=name,

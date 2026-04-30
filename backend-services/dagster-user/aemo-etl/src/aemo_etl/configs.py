@@ -1,5 +1,6 @@
-"""
-Abbreviation Key:
+"""Runtime constants and environment-derived settings for aemo-etl.
+
+Abbreviation key:
 - vic, qld, sa = state abbreviations
 - dwm = Declared Wholesale Market
 - sched = scheduling

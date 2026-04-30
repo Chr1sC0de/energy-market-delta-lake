@@ -1,3 +1,5 @@
+"""Sensor factory for S3 zip extraction assets."""
+
 from dagster import (
     AssetSelection,
     DagsterRunStatus,

@@ -1,3 +1,5 @@
+"""Reusable Dagster asset check factories."""
+
 import tempfile
 from collections.abc import Iterable
 from functools import partial
@@ -24,16 +26,19 @@ from aemo_etl.utils import get_lazyframe_num_rows
 def get_unique_rows_from_primary_key(
     df: pl.LazyFrame, primary_key: str | Iterable[str]
 ) -> int:
+    """Return the number of unique rows for the selected primary key columns."""
     return get_lazyframe_num_rows(df.select(primary_key).unique())
 
 
 def get_unique_rows(df: pl.LazyFrame) -> int:
+    """Return the number of unique rows across all columns."""
     return get_lazyframe_num_rows(df.unique())
 
 
 def default_check_fn(
     df: pl.LazyFrame, *, row_count_fn: Callable[[pl.LazyFrame], int]
 ) -> bool:
+    """Return whether total row count matches the supplied unique row count."""
     return get_lazyframe_num_rows(df) == row_count_fn(df)
 
 
@@ -46,7 +51,7 @@ def duplicate_row_check_factory(
     blocking: bool = False,
     retry_policy: RetryPolicy | None = None,
 ) -> AssetChecksDefinition:
-
+    """Create an asset check that fails when duplicate rows are present."""
     if primary_key is not None:
         row_count_fn = partial(
             get_unique_rows_from_primary_key, primary_key=primary_key
@@ -106,6 +111,7 @@ def schema_matches_check_factor(
     description: str | None = None,
     retry_policy: RetryPolicy | None = None,
 ) -> AssetChecksDefinition:
+    """Create an asset check that compares observed columns against a schema."""
     # NOTE: checks that there is a part of the observed schema which matches the target schema
 
     @asset_check(
@@ -158,6 +164,7 @@ def schema_drift_check_factory(
     description: str | None = None,
     retry_policy: RetryPolicy | None = None,
 ) -> AssetChecksDefinition:
+    """Create an asset check that warns about unexpected observed columns."""
 
     @asset_check(
         asset=assets_definition,

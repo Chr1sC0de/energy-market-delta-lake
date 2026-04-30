@@ -1,3 +1,5 @@
+"""Shared Dagster resources and IO managers for aemo-etl."""
+
 from typing import override
 
 from dagster import (
@@ -18,12 +20,14 @@ from aemo_etl.utils import get_lazyframe_num_rows, get_metadata_schema, table_ex
 
 
 class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
+    """IO manager that writes Polars lazy frames to Delta tables."""
+
     sink_delta_kwargs: dict[str, Any] = {}
     scan_delta_kwargs: dict[str, Any] = {}
 
     @override
     def handle_output(self, context: OutputContext, obj: LazyFrame) -> None:
-        """automatically handles merges as upserts"""
+        """Write output frames to Delta and handle merge mode as an upsert."""
         assert context.definition_metadata is not None, (
             f"asset must set metadata {DAGSTER_URI}"
         )
@@ -93,6 +97,8 @@ def _parquet_dataset_glob(uri: str) -> str:
 
 
 class PolarsDataFrameSinkParquetIoManager(ConfigurableIOManager):
+    """IO manager that writes Polars lazy frames as parquet datasets."""
+
     @override
     def handle_output(self, context: OutputContext, obj: LazyFrame) -> None:
         assert context.definition_metadata is not None, (
@@ -142,6 +148,7 @@ class PolarsDataFrameSinkParquetIoManager(ConfigurableIOManager):
 
 @definitions
 def defs() -> Definitions:
+    """Provide the shared Dagster resources for loaded definitions."""
     return Definitions(
         resources={
             "aemo_deltalake_append_io_manager": PolarsDataFrameSinkDeltaIoManager(

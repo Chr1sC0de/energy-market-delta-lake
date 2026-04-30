@@ -1,3 +1,5 @@
+"""Dagster ops and strategies for batching NEMWeb links dynamically."""
+
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -22,10 +24,14 @@ from aemo_etl.factories.nemweb_public_files.models import Link
 
 
 class DynamicNEMWebLinksFetcher(ABC):
+    """Strategy for splitting NEMWeb links into dynamic output batches."""
+
     @abstractmethod
     def fetch(
         self, context: OpExecutionContext, links: list[Link]
-    ) -> list[DynamicOutput[list[Link]]]: ...
+    ) -> list[DynamicOutput[list[Link]]]:
+        """Return dynamic output batches for the provided links."""
+        ...
 
 
 def build_dynamic_nemweb_links_fetcher_op(
@@ -39,6 +45,7 @@ def build_dynamic_nemweb_links_fetcher_op(
         jitter=Jitter.PLUS_MINUS,
     ),
 ) -> OpDefinition:
+    """Build the Dagster op that batches discovered NEMWeb links."""
 
     @op(
         name=f"{name}_dynamic_nemweb_link_fetcher_op",
@@ -57,11 +64,14 @@ LinkFilter: TypeAlias = Callable[[OpExecutionContext, Link], bool]
 
 
 def default_link_filter(context: OpExecutionContext, link: Link) -> bool:
+    """Accept every discovered link."""
     return True
 
 
 @dataclass
 class FilteredDynamicNEMWebLinksFetcher(DynamicNEMWebLinksFetcher):
+    """Batch links after applying a configurable link filter."""
+
     batch_size: int = 1
     n_executors: int | None = None
     link_filter: LinkFilter = default_link_filter
@@ -69,6 +79,7 @@ class FilteredDynamicNEMWebLinksFetcher(DynamicNEMWebLinksFetcher):
     def fetch(
         self, context: OpExecutionContext, links: list[Link]
     ) -> list[DynamicOutput[list[Link]]]:
+        """Return filtered NEMWeb link batches for dynamic mapping."""
         context.log.info("creating dynamic download group")
 
         batch: list[Link] = []
@@ -109,19 +120,24 @@ class FilteredDynamicNEMWebLinksFetcher(DynamicNEMWebLinksFetcher):
 
 
 class InMemoryCachedLinkFilter:
+    """Filter out links already present in a cached Delta table scan."""
+
     _cache: LazyFrame | None
 
     def __init__(self, table_path: str, ttl_seconds: float) -> None:
+        """Initialise the filter for a Delta table path and cache TTL."""
         self.table_path = table_path
         self.ttl_seconds = ttl_seconds
         self._cache = None
 
     def set(self) -> Self:
+        """Refresh the cached Delta scan."""
         self._cache = scan_delta(self.table_path)
         self.cache_time = time()
         return self
 
     def get(self) -> LazyFrame:
+        """Return the cached Delta scan, refreshing it when stale."""
         if self._cache is None:
             self.set()
         else:
@@ -133,6 +149,7 @@ class InMemoryCachedLinkFilter:
         return self._cache
 
     def __call__(self, context: OpExecutionContext, link: Link) -> bool:
+        """Return whether a link is absent from the cached table."""
         try:
             df = self.get()
             search_df = df.filter(

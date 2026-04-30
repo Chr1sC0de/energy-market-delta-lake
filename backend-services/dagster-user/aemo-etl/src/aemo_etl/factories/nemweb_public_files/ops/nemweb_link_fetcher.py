@@ -1,3 +1,5 @@
+"""Dagster ops and strategies for fetching NEMWeb directory links."""
+
 import datetime as dt
 from abc import ABC, abstractmethod
 from collections import deque
@@ -18,8 +20,11 @@ TagFilter = Callable[[OpExecutionContext, bs4.Tag], bool]
 
 
 class NEMWebLinkFetcher(ABC):
+    """Strategy for discovering file links below a NEMWeb path."""
+
     @abstractmethod
     def fetch(self, context: OpExecutionContext, relative_root_href: str) -> list[Link]:
+        """Fetch source file links below a relative NEMWeb root."""
         raise NotImplementedError
 
 
@@ -34,6 +39,7 @@ def build_nemweb_link_fetcher_op(
         jitter=Jitter.PLUS_MINUS,
     ),
 ) -> OpDefinition:
+    """Build the Dagster op that fetches NEMWeb source links."""
 
     @op(
         name=f"{name}_nemweb_link_fetcher_op",
@@ -47,27 +53,33 @@ def build_nemweb_link_fetcher_op(
 
 
 def default_folder_filter(_: OpExecutionContext, tag: bs4.Tag) -> bool:
+    """Return whether a NEMWeb folder link should be traversed."""
     tag_text: str = tag.text
     return tag_text != "[To Parent Directory]"
 
 
 def default_file_filter(_: OpExecutionContext, tag: bs4.Tag) -> bool:
+    """Return whether a NEMWeb file link should be processed."""
     tag_text: str = tag.text
     return tag_text != "CURRENTDAY.ZIP"
 
 
 def soup_getter(html: str) -> bs4.BeautifulSoup:
+    """Parse NEMWeb HTML into a BeautifulSoup document."""
     return bs4.BeautifulSoup(html, features="html.parser")
 
 
 @dataclass
 class HTTPNEMWebLinkFetcher(NEMWebLinkFetcher):
+    """HTTP implementation of NEMWeb recursive link discovery."""
+
     folder_filter: TagFilter = default_folder_filter
     file_filter: TagFilter = default_file_filter
     soup_getter: Callable[[str], bs4.BeautifulSoup] = soup_getter
     request_getter: Callable[[str], Response] = request_get
 
     def fetch(self, context: OpExecutionContext, relative_root_href: str) -> list[Link]:
+        """Fetch file links by walking NEMWeb folder pages breadth-first."""
         tag: bs4.Tag
 
         paths = deque([f"{ROOT_URL}/{relative_root_href}"])

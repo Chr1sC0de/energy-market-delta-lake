@@ -1,3 +1,5 @@
+"""Definitions factory for S3-key driven bronze and silver assets."""
+
 from collections.abc import Mapping
 from typing import Iterable
 
@@ -38,7 +40,7 @@ def df_from_s3_keys_definitions_factory(
     description: str | None = None,
     job_tags: Mapping[str, object] | None = None,
 ) -> Definitions:
-
+    """Create paired bronze and silver definitions for an S3-key source table."""
     bronze_key_prefix = ["bronze", domain]
     bronze_table_name = f"bronze_{name_suffix}"
     bronze_uri = f"s3://{AEMO_BUCKET}/{'/'.join(bronze_key_prefix)}/{bronze_table_name}"

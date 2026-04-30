@@ -1,3 +1,5 @@
+"""Delta table maintenance definitions for aemo-etl assets."""
+
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from typing import Final
@@ -45,6 +47,8 @@ DELTA_IO_MANAGER_KEYS: Final = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class DeltaTableMaintenanceConfig:
+    """Per-asset Delta maintenance settings."""
+
     enabled: bool
     compact: bool
     vacuum: bool
@@ -55,6 +59,8 @@ class DeltaTableMaintenanceConfig:
 
 @dataclass(frozen=True, slots=True)
 class DeltaTableMaintenanceTarget:
+    """Delta table selected for scheduled maintenance."""
+
     asset_key: str
     table_uri: str
     config: DeltaTableMaintenanceConfig
@@ -137,6 +143,7 @@ def _maintenance_config_from_metadata(
 def collect_delta_table_maintenance_targets(
     definitions: Definitions,
 ) -> tuple[DeltaTableMaintenanceTarget, ...]:
+    """Collect Delta-backed asset targets from loaded Dagster definitions."""
     targets: dict[str, DeltaTableMaintenanceTarget] = {}
 
     for asset in definitions.assets or []:
@@ -172,6 +179,7 @@ def run_delta_table_maintenance(
     *,
     targets: tuple[DeltaTableMaintenanceTarget, ...],
 ) -> None:
+    """Compact and vacuum selected Delta tables and record metadata."""
     results: list[dict[str, object]] = []
     skipped_count = 0
 
@@ -266,6 +274,7 @@ def delta_table_maintenance_definitions_factory(
     *,
     default_status: DefaultScheduleStatus,
 ) -> Definitions:
+    """Create the scheduled Delta table maintenance job definitions."""
     targets = collect_delta_table_maintenance_targets(source_definitions)
 
     @op(name="compact_and_full_vacuum_delta_tables")

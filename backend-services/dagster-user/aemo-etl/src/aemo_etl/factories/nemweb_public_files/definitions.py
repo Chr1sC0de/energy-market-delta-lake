@@ -1,3 +1,5 @@
+"""Definitions factory for scheduled NEMWeb public file discovery."""
+
 from typing import Mapping
 
 from cron_descriptor import get_description
@@ -57,6 +59,7 @@ def nemweb_public_files_definitions_factory(
     tags: Mapping[str, str] | None = None,
     default_status: DefaultScheduleStatus = DefaultScheduleStatus.STOPPED,
 ) -> Definitions:
+    """Create scheduled definitions for a NEMWeb public file listing asset."""
 
     @retry(
         stop=stop_after_attempt(process_retry),

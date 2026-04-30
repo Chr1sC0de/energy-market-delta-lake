@@ -236,6 +236,9 @@ dg launch --assets "key:ops/testing/failed_run_alert_probe"
 
 `make run-prek` is this Subproject's **Commit check**. It runs the configured
 hooks, including executable shell script header documentation for scripts.
+Ruff enforces Google-style docstrings for public production ETL APIs. Tests,
+generated-like raw source-table definitions, schema-heavy `gas_model`
+definition files, and TypedDict model specs are outside this docstring ratchet.
 
 ## Project layout
 
@@ -282,7 +285,8 @@ aemo-etl/
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
   - `backend-services/dagster-user/aemo-etl/Makefile`
   - `backend-services/dagster-user/aemo-etl/.pre-commit-config.yaml`
-- `sync.scope`: `architecture`
+  - `backend-services/dagster-user/aemo-etl/pyproject.toml`
+- `sync.scope`: `architecture, tooling`
 - `sync.qa`:
   - `git diff --name-only`
   - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`

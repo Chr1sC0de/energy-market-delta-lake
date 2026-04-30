@@ -264,6 +264,7 @@ for stack details, component breakdown, and deployed-test commands.
   - `backend-services/authentication/.pre-commit-config.yaml`
   - `backend-services/dagster-user/aemo-etl/.pre-commit-config.yaml`
   - `backend-services/dagster-user/aemo-etl/Makefile`
+  - `backend-services/dagster-user/aemo-etl/pyproject.toml`
   - `backend-services/marimo/.pre-commit-config.yaml`
   - `infrastructure/aws-pulumi/__main__.py`
   - `infrastructure/aws-pulumi/.pre-commit-config.yaml`

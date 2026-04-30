@@ -1,3 +1,5 @@
+"""Opt-in Dagster definitions for operational testing probes."""
+
 from dagster import AssetExecutionContext, Definitions, asset, definitions
 
 FAILED_RUN_ALERT_PROBE_ERROR = (
@@ -18,4 +20,5 @@ def failed_run_alert_probe(context: AssetExecutionContext) -> None:
 
 @definitions
 def defs() -> Definitions:
+    """Register operational testing assets."""
     return Definitions(assets=[failed_run_alert_probe])

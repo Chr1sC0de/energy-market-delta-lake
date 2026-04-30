@@ -173,7 +173,9 @@ make run-prek
 
 `make run-prek` is this Subproject's **Commit check**. It includes executable
 shell script header documentation alongside the existing shell formatting,
-shell linting, Python, pytest, and Dagster validation hooks.
+shell linting, Python, pytest, and Dagster validation hooks. Ruff enforces
+Google-style docstrings for public production ETL APIs while excluding tests and
+generated-like or schema-heavy data definition surfaces.
 
 ## Related docs
 
@@ -190,12 +192,13 @@ shell linting, Python, pytest, and Dagster validation hooks.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/testing.py`
   - `backend-services/dagster-user/aemo-etl/Makefile`
   - `backend-services/dagster-user/aemo-etl/.pre-commit-config.yaml`
+  - `backend-services/dagster-user/aemo-etl/pyproject.toml`
   - `backend-services/dagster-user/aemo-etl/tests/integration/conftest.py`
   - `backend-services/dagster-user/aemo-etl/.localstack.env`
   - `backend-services/dagster-user/aemo-etl/scripts/setup-debugging-environment`
   - `backend-services/dagster-user/aemo-etl/dagster.dev.yaml`
   - `backend-services/dagster-user/aemo-etl/workspace.dev.yaml`
-- `sync.scope`: `operations`
+- `sync.scope`: `operations, tooling`
 - `sync.qa`:
   - `git diff --name-only`
   - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`

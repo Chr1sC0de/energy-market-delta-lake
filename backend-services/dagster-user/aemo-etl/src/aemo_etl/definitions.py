@@ -1,3 +1,5 @@
+"""Root Dagster definitions for the aemo-etl project."""
+
 from pathlib import Path
 
 from dagster import (
@@ -50,11 +52,13 @@ EVENT_DRIVEN_ASSETS_SELECTION = (
     default_status=DEFAULT_SENSOR_STATUS,
 )
 def aemo_etl_failed_run_alert_sensor(context: RunFailureSensorContext) -> None:
+    """Forward failed Dagster runs to the configured alert channel."""
     send_failed_run_alert(context)
 
 
 @definitions
 def defs() -> Definitions:
+    """Load and merge all project Dagster definitions."""
     loaded_definitions = load_from_defs_folder(
         path_within_project=Path(__file__).parent
     )
