@@ -1,5 +1,4 @@
-"""
-Marimo notebook server — FastAPI wrapper.
+"""FastAPI wrapper for the marimo notebook server.
 
 Serves marimo notebooks from the ``notebooks/`` directory using marimo's
 built-in ASGI integration (``marimo.create_asgi_app``).  A ``/health``
@@ -52,9 +51,11 @@ class MimeTypeFixMiddleware:  # pragma: no cover
     }
 
     def __init__(self, app: ASGIApp) -> None:
+        """Store the wrapped ASGI app."""
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Patch font response MIME types before sending HTTP responses."""
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
