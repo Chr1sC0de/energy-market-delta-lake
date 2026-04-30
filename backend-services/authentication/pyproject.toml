@@ -32,9 +32,11 @@ dev = [
 [tool.ruff]
 line-length = 88
 format.docstring-code-format = true
-lint.select = [ "ANN", "E", "F" ]
+lint.select = [ "ANN", "D", "E", "F" ]
 lint.per-file-ignores."__init__.py" = [ "I" ]
+lint.per-file-ignores."tests/**" = [ "D" ]
 lint.pycodestyle.max-line-length = 120
+lint.pydocstyle.convention = "google"
 
 [tool.pytest]
 ini_options.testpaths = [ "tests" ]

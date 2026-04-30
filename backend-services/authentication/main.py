@@ -1,3 +1,5 @@
+"""FastAPI OIDC authentication service for protected backend routes."""
+
 from collections.abc import Awaitable
 from os import environ
 from secrets import token_urlsafe
@@ -77,6 +79,7 @@ JWKS = dict[str, list[JWK]]
 
 
 def get_user_pool_token_signing_key() -> JWKS:
+    """Fetch the configured Cognito token signing key set."""
     return cast(
         JWKS,
         requests.get(environ["COGNITO_TOKEN_SIGNING_KEY_URL"]).json(),
@@ -84,6 +87,7 @@ def get_user_pool_token_signing_key() -> JWKS:
 
 
 def get_hmac_key_data(token: str, jwks: JWKS) -> JWK | None:
+    """Return the JWKS key matching the JWT key ID."""
     kid = jwt.get_unverified_header(token).get("kid")
     for key in jwks.get("keys", []):
         if key.get("kid") == kid:
@@ -91,6 +95,7 @@ def get_hmac_key_data(token: str, jwks: JWKS) -> JWK | None:
 
 
 def verify_jwt(token: str) -> bool:
+    """Verify a JWT against the configured Cognito signing keys."""
     try:
         jwks = get_user_pool_token_signing_key()
 
@@ -118,6 +123,7 @@ def verify_jwt(token: str) -> bool:
 
 
 def clear_session(session: dict[str, Any]) -> None:
+    """Clear authentication fields from a session mapping."""
     session.pop("user", None)
     session.pop("token_type", None)
     session.pop("access_token", None)
@@ -191,6 +197,7 @@ async def _authorize_callback(request: Request, redirect_path: str) -> Response:
 
 @router.get("/oauth2/dagster-webserver/admin/validate")
 async def oauth2_dagster_webserver_validate(request: Request) -> JSONResponse:
+    """Validate the Dagster webserver admin browser session."""
     request.session
 
     login_redirect_uri = str(request.url_for("oauth2_dagster_webserver_login"))
@@ -202,6 +209,7 @@ async def oauth2_dagster_webserver_validate(request: Request) -> JSONResponse:
 
 @router.get("/dagster-webserver/admin/login")
 async def oauth2_dagster_webserver_login(request: Request) -> RedirectResponse:
+    """Start the Dagster webserver admin OIDC login flow."""
     redirect_uri = _build_redirect_uri(request, "oauth2_dagster_webserver_authorize")
     return await oidc.authorize_redirect(request, redirect_uri)
 
@@ -210,6 +218,7 @@ async def oauth2_dagster_webserver_login(request: Request) -> RedirectResponse:
 async def oauth2_dagster_webserver_authorize(
     request: Request,
 ) -> Response:
+    """Handle the Dagster webserver admin OIDC authorization callback."""
     return await _authorize_callback(request, "/dagster-webserver/admin")
 
 
@@ -220,17 +229,20 @@ async def oauth2_dagster_webserver_authorize(
 
 @router.get("/oauth2/marimo/validate")
 async def oauth2_marimo_validate(request: Request) -> JSONResponse:
+    """Validate the marimo browser session."""
     return _validate_session(request)
 
 
 @router.get("/marimo/login")
 async def oauth2_marimo_login(request: Request) -> RedirectResponse:
+    """Start the marimo OIDC login flow."""
     redirect_uri = _build_redirect_uri(request, "oauth2_marimo_authorize")
     return await oidc.authorize_redirect(request, redirect_uri)
 
 
 @router.get("/oauth2/marimo/authorize", response_model=None)
 async def oauth2_marimo_authorize(request: Request) -> Response:
+    """Handle the marimo OIDC authorization callback."""
     return await _authorize_callback(request, "/marimo")
 
 
