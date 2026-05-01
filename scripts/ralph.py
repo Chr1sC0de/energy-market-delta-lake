@@ -28,6 +28,17 @@ WONTFIX_LABEL = "wontfix"
 AGENT_RUNNING_LABEL = "agent-running"
 AGENT_FAILED_LABEL = "agent-failed"
 AGENT_MERGED_LABEL = "agent-merged"
+AGENT_INTEGRATED_LABEL = "agent-integrated"
+
+GITFLOW_MODE = "gitflow"
+TRUNK_MODE = "trunk"
+DELIVERY_MODES = (GITFLOW_MODE, TRUNK_MODE)
+DELIVERY_GITFLOW_LABEL = "delivery-gitflow"
+DELIVERY_TRUNK_LABEL = "delivery-trunk"
+DELIVERY_LABELS = frozenset({DELIVERY_GITFLOW_LABEL, DELIVERY_TRUNK_LABEL})
+DEFAULT_GITFLOW_BRANCH = "dev"
+DEFAULT_TRUNK_BRANCH = "main"
+COMMIT_LINE_PATTERN = re.compile(r"(?m)^Commit: `(?P<sha>[0-9a-f]{7,40})`$")
 
 TRIAGE_STATE_LABELS = frozenset(
     {
@@ -47,6 +58,7 @@ IMPLEMENTATION_STOP_LABELS = frozenset(
         AGENT_RUNNING_LABEL,
         AGENT_FAILED_LABEL,
         AGENT_MERGED_LABEL,
+        AGENT_INTEGRATED_LABEL,
     }
 )
 TRIAGE_STOP_LABELS = frozenset(
@@ -57,6 +69,7 @@ TRIAGE_STOP_LABELS = frozenset(
         AGENT_RUNNING_LABEL,
         AGENT_FAILED_LABEL,
         AGENT_MERGED_LABEL,
+        AGENT_INTEGRATED_LABEL,
     }
 )
 
@@ -90,6 +103,9 @@ LABEL_SPECS = (
     LabelSpec(AGENT_RUNNING_LABEL, "1D76DB", "Agent issue loop is running."),
     LabelSpec(AGENT_FAILED_LABEL, "B60205", "Agent issue loop failed."),
     LabelSpec(AGENT_MERGED_LABEL, "0E8A16", "Agent issue loop merged local integration."),
+    LabelSpec(AGENT_INTEGRATED_LABEL, "0E8A16", "Agent issue loop integrated work for promotion."),
+    LabelSpec(DELIVERY_GITFLOW_LABEL, "C5DEF5", "Issue should integrate to dev before promotion."),
+    LabelSpec(DELIVERY_TRUNK_LABEL, "BFDADC", "Issue may integrate directly to trunk."),
 )
 
 
@@ -185,10 +201,22 @@ class QAResult:
 
 
 @dataclass(frozen=True)
+class DeliveryPlan:
+    mode: str
+    target_branch: str
+    label: str
+    add_labels: tuple[str, ...]
+    remove_labels: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class LoopConfig:
     repo_root: Path
     repo: str
-    base: str
+    delivery_mode: str
+    target_branch: str | None
+    source_branch: str
+    promote: bool
     issue: int | None
     drain: bool
     max_issues: int
@@ -295,6 +323,53 @@ def is_basic_triage_candidate(issue: Issue) -> bool:
         return False
     state_labels = issue.labels.intersection(TRIAGE_STATE_LABELS)
     return not state_labels or NEEDS_TRIAGE_LABEL in state_labels
+
+
+def delivery_label_for_mode(mode: str) -> str:
+    if mode == GITFLOW_MODE:
+        return DELIVERY_GITFLOW_LABEL
+    if mode == TRUNK_MODE:
+        return DELIVERY_TRUNK_LABEL
+    raise ValueError(f"Unsupported delivery mode: {mode}")
+
+
+def default_target_branch_for_mode(mode: str) -> str:
+    if mode == GITFLOW_MODE:
+        return DEFAULT_GITFLOW_BRANCH
+    if mode == TRUNK_MODE:
+        return DEFAULT_TRUNK_BRANCH
+    raise ValueError(f"Unsupported delivery mode: {mode}")
+
+
+def resolve_delivery_plan(
+    issue: Issue,
+    *,
+    default_mode: str,
+    target_branch: str | None,
+) -> DeliveryPlan:
+    labels = issue.labels.intersection(DELIVERY_LABELS)
+    if DELIVERY_GITFLOW_LABEL in labels:
+        mode = GITFLOW_MODE
+    elif DELIVERY_TRUNK_LABEL in labels:
+        mode = TRUNK_MODE
+    else:
+        mode = default_mode
+
+    label = delivery_label_for_mode(mode)
+    add_labels = [] if label in issue.labels else [label]
+    remove_labels: list[str] = []
+    if mode == GITFLOW_MODE and DELIVERY_TRUNK_LABEL in issue.labels:
+        remove_labels.append(DELIVERY_TRUNK_LABEL)
+    if mode == TRUNK_MODE and DELIVERY_GITFLOW_LABEL in issue.labels:
+        remove_labels.append(DELIVERY_GITFLOW_LABEL)
+
+    return DeliveryPlan(
+        mode=mode,
+        target_branch=target_branch or default_target_branch_for_mode(mode),
+        label=label,
+        add_labels=tuple(add_labels),
+        remove_labels=tuple(remove_labels),
+    )
 
 
 def root_prek_needed(changed_file: str) -> bool:
@@ -623,7 +698,28 @@ class GitClient:
         self.runner.run(
             ["git", "fetch", "origin", base],
             cwd=self.repo_root,
-            log_path=run_dir / "git-fetch.log",
+            log_path=run_dir / f"git-fetch-{slugify(base)}.log",
+            execute_in_dry_run=False,
+        )
+
+    def remote_branch_exists(self, branch: str, *, run_dir: Path) -> bool:
+        try:
+            result = self.runner.run(
+                ["git", "ls-remote", "--exit-code", "--heads", "origin", branch],
+                cwd=self.repo_root,
+                log_path=run_dir / f"git-ls-remote-{slugify(branch)}.log",
+            )
+        except CommandFailure as error:
+            if error.returncode == 2:
+                return False
+            raise
+        return result.stdout.strip() != ""
+
+    def create_remote_branch(self, *, branch: str, from_ref: str, run_dir: Path) -> None:
+        self.runner.run(
+            ["git", "push", "origin", f"{from_ref}:refs/heads/{branch}"],
+            cwd=self.repo_root,
+            log_path=run_dir / f"git-create-branch-{slugify(branch)}.log",
             execute_in_dry_run=False,
         )
 
@@ -655,6 +751,13 @@ class GitClient:
         result = self.runner.run(
             ["git", "diff", "--name-only", f"{base_ref}...HEAD"],
             cwd=cwd,
+        )
+        return sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
+
+    def changed_files_between(self, *, base_ref: str, head_ref: str) -> list[str]:
+        result = self.runner.run(
+            ["git", "diff", "--name-only", f"{base_ref}...{head_ref}"],
+            cwd=self.repo_root,
         )
         return sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
 
@@ -699,13 +802,33 @@ class GitClient:
             execute_in_dry_run=False,
         )
 
+    def merge_no_ff(self, *, cwd: Path, ref: str, message: str, run_dir: Path) -> None:
+        self.runner.run(
+            ["git", "merge", "--no-ff", ref, "-m", message],
+            cwd=cwd,
+            log_path=run_dir / "git-merge-promotion.log",
+            execute_in_dry_run=False,
+        )
+
     def push_head(self, *, cwd: Path, branch: str, run_dir: Path) -> None:
         self.runner.run(
             ["git", "push", "origin", f"HEAD:{branch}"],
             cwd=cwd,
-            log_path=run_dir / "git-push-main.log",
+            log_path=run_dir / f"git-push-{slugify(branch)}.log",
             execute_in_dry_run=False,
         )
+
+    def is_ancestor(self, *, ancestor: str, descendant: str) -> bool:
+        try:
+            self.runner.run(
+                ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+                cwd=self.repo_root,
+            )
+        except CommandFailure as error:
+            if error.returncode == 1:
+                return False
+            raise
+        return True
 
     def remove_worktree(self, path: Path, *, run_dir: Path, log_name: str) -> None:
         self.runner.run(
@@ -744,11 +867,26 @@ class RalphLoop:
                 else "Bootstrapped issue labels."
             )
             emit(message)
-            if self.config.dry_run or (not self.config.drain and self.config.issue is None):
+            if self.config.dry_run or (
+                not self.config.drain
+                and self.config.issue is None
+                and not self.config.promote
+            ):
                 return
 
         self.github.auth_status()
         self._validate_labels()
+
+        if self.config.promote:
+            if self.config.dry_run:
+                emit(
+                    "DRY RUN: would promote "
+                    f"origin/{self.config.source_branch} to "
+                    f"origin/{self._promotion_target_branch()}."
+                )
+                return
+            self._promote()
+            return
 
         implemented = 0
         while True:
@@ -782,7 +920,8 @@ class RalphLoop:
             self.triaged_this_run.add(triage_issue.number)
 
     def _validate_tools(self) -> None:
-        missing = [tool for tool in ("git", "gh", "codex") if shutil.which(tool) is None]
+        tools = ("git", "gh") if self.config.promote else ("git", "gh", "codex")
+        missing = [tool for tool in tools if shutil.which(tool) is None]
         if missing:
             raise RalphError(f"Missing required command(s): {', '.join(missing)}")
 
@@ -853,6 +992,175 @@ class RalphLoop:
                 return True
         return False
 
+    def _promotion_target_branch(self) -> str:
+        return self.config.target_branch or DEFAULT_TRUNK_BRANCH
+
+    def _promote(self) -> None:
+        source_branch = self.config.source_branch
+        target_branch = self._promotion_target_branch()
+        run_dir = self._promotion_run_dir()
+        promote_path = self.config.worktree_container / (
+            f"agent-promote-{slugify(source_branch)}-to-{slugify(target_branch)}"
+        )
+        run_dir.mkdir(parents=True, exist_ok=True)
+        pushed = False
+
+        try:
+            emit(f"Promoting origin/{source_branch} to origin/{target_branch}")
+            self.git.fetch_base(source_branch, run_dir=run_dir)
+            self.git.fetch_base(target_branch, run_dir=run_dir)
+            changed_files = self.git.changed_files_between(
+                base_ref=f"origin/{target_branch}",
+                head_ref=f"origin/{source_branch}",
+            )
+            if not changed_files:
+                emit(f"No changes to promote from {source_branch} to {target_branch}.")
+                return
+
+            qa_results = self._run_qa_commands(
+                changed_files,
+                self.config.repo_root,
+                run_dir,
+                log_prefix="promotion-qa",
+                subject="promotion",
+            )
+            integrated_issues = self._verified_integrated_issues(
+                source_branch=source_branch,
+                target_branch=target_branch,
+            )
+
+            emit(f"Creating promotion worktree {promote_path}")
+            self.git.add_detached_worktree(
+                path=promote_path,
+                ref=f"origin/{target_branch}",
+                run_dir=run_dir,
+            )
+            emit(f"Merging origin/{source_branch} into promotion worktree")
+            self.git.merge_no_ff(
+                cwd=promote_path,
+                ref=f"origin/{source_branch}",
+                message=f"Promote {source_branch} to {target_branch}",
+                run_dir=run_dir,
+            )
+            promotion_sha = self.git.rev_parse("HEAD", cwd=promote_path)
+            emit(f"Pushing promotion {promotion_sha} to {target_branch}")
+            self.git.push_head(cwd=promote_path, branch=target_branch, run_dir=run_dir)
+            pushed = True
+
+            self._close_promoted_issues(
+                integrated_issues,
+                promotion_sha=promotion_sha,
+                source_branch=source_branch,
+                target_branch=target_branch,
+                changed_files=changed_files,
+                qa_results=qa_results,
+                run_dir=run_dir,
+            )
+            try:
+                self.git.remove_worktree(
+                    promote_path,
+                    run_dir=run_dir,
+                    log_name="git-worktree-remove-promotion.log",
+                )
+            except CommandFailure as error:
+                emit(f"Cleanup warning: {error}", err=True)
+            emit(
+                f"Promoted {source_branch} to {target_branch}: {promotion_sha}; "
+                f"closed {len(integrated_issues)} issue(s)."
+            )
+        except IssueFailure as error:
+            raise RalphError(str(error)) from error
+        except CommandFailure as error:
+            if pushed:
+                post_push_error = PostPushFailure(
+                    f"Post-push promotion metadata failed: {error}",
+                    log_path=error.log_path,
+                )
+                emit(str(post_push_error), err=True)
+                raise post_push_error from error
+            raise
+
+    def _verified_integrated_issues(
+        self,
+        *,
+        source_branch: str,
+        target_branch: str,
+    ) -> list[tuple[Issue, str]]:
+        issues: list[tuple[Issue, str]] = []
+        for issue in self.github.list_open_issues(limit=self.config.issue_limit):
+            if AGENT_INTEGRATED_LABEL not in issue.labels:
+                continue
+            comments = self.github.issue_comments(issue.number)
+            commit_sha = integrated_commit_from_comments(comments)
+            if commit_sha is None:
+                emit(f"Skipping #{issue.number}: no recorded Gitflow integration commit.")
+                continue
+            if not self._commit_is_in_promotion_range(
+                commit_sha,
+                source_branch=source_branch,
+                target_branch=target_branch,
+            ):
+                emit(
+                    f"Skipping #{issue.number}: commit {commit_sha} is not in "
+                    f"origin/{target_branch}..origin/{source_branch}."
+                )
+                continue
+            issues.append((issue, commit_sha))
+        return issues
+
+    def _commit_is_in_promotion_range(
+        self,
+        commit_sha: str,
+        *,
+        source_branch: str,
+        target_branch: str,
+    ) -> bool:
+        source_ref = f"origin/{source_branch}"
+        target_ref = f"origin/{target_branch}"
+        return self.git.is_ancestor(
+            ancestor=commit_sha,
+            descendant=source_ref,
+        ) and not self.git.is_ancestor(
+            ancestor=commit_sha,
+            descendant=target_ref,
+        )
+
+    def _close_promoted_issues(
+        self,
+        issues: list[tuple[Issue, str]],
+        *,
+        promotion_sha: str,
+        source_branch: str,
+        target_branch: str,
+        changed_files: list[str],
+        qa_results: list[QAResult],
+        run_dir: Path,
+    ) -> None:
+        for issue, integrated_commit in issues:
+            emit(f"#{issue.number}: commenting promotion evidence")
+            self.github.comment_issue(
+                issue.number,
+                build_promotion_comment(
+                    issue,
+                    promotion_sha,
+                    integrated_commit,
+                    source_branch,
+                    target_branch,
+                    changed_files,
+                    qa_results,
+                    run_dir,
+                ),
+                run_dir=run_dir,
+            )
+            emit(f"#{issue.number}: marking {AGENT_MERGED_LABEL}")
+            self.github.edit_issue_labels(
+                issue.number,
+                add=[AGENT_MERGED_LABEL],
+                remove=[AGENT_INTEGRATED_LABEL, AGENT_RUNNING_LABEL, AGENT_FAILED_LABEL],
+            )
+            emit(f"#{issue.number}: closing issue")
+            self.github.close_issue(issue.number, run_dir=run_dir)
+
     def _handle_implementation(self, issue: Issue) -> None:
         run_dir = self._run_dir(issue)
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -863,23 +1171,35 @@ class RalphLoop:
         worktree_path: Path | None = None
         integration_path: Path | None = None
         try:
+            delivery_plan = resolve_delivery_plan(
+                issue,
+                default_mode=self.config.delivery_mode,
+                target_branch=self.config.target_branch,
+            )
             emit(f"#{issue.number}: claiming issue with {AGENT_RUNNING_LABEL}")
             self.github.edit_issue_labels(
                 issue.number,
-                add=[AGENT_RUNNING_LABEL],
-                remove=[READY_LABEL, AGENT_FAILED_LABEL, AGENT_MERGED_LABEL],
+                add=[AGENT_RUNNING_LABEL, *delivery_plan.add_labels],
+                remove=[
+                    READY_LABEL,
+                    AGENT_FAILED_LABEL,
+                    AGENT_MERGED_LABEL,
+                    AGENT_INTEGRATED_LABEL,
+                    *delivery_plan.remove_labels,
+                ],
             )
             claimed = True
             emit(f"#{issue.number}: validating issue contract")
             self._validate_issue_contract(issue)
             branch, worktree_path, integration_path = self._branch_and_worktrees(issue)
-            emit(f"#{issue.number}: fetching origin/{self.config.base}")
-            self.git.fetch_base(self.config.base, run_dir=run_dir)
-            base_sha = self.git.rev_parse(f"origin/{self.config.base}")
+            self._ensure_integration_target(delivery_plan, run_dir)
+            emit(f"#{issue.number}: fetching origin/{delivery_plan.target_branch}")
+            self.git.fetch_base(delivery_plan.target_branch, run_dir=run_dir)
+            base_sha = self.git.rev_parse(f"origin/{delivery_plan.target_branch}")
             emit(f"#{issue.number}: creating implementation worktree {worktree_path}")
             self.git.add_worktree(
                 branch=branch,
-                base=self.config.base,
+                base=delivery_plan.target_branch,
                 path=worktree_path,
                 run_dir=run_dir,
             )
@@ -896,19 +1216,22 @@ class RalphLoop:
                 log_prefix="issue",
             )
 
-            emit(f"#{issue.number}: checking for origin/{self.config.base} updates")
-            self.git.fetch_base(self.config.base, run_dir=run_dir)
-            latest_base_sha = self.git.rev_parse(f"origin/{self.config.base}")
+            emit(f"#{issue.number}: checking for origin/{delivery_plan.target_branch} updates")
+            self.git.fetch_base(delivery_plan.target_branch, run_dir=run_dir)
+            latest_base_sha = self.git.rev_parse(f"origin/{delivery_plan.target_branch}")
             if latest_base_sha != base_sha:
-                emit(f"#{issue.number}: origin/{self.config.base} moved; rebasing {branch}")
+                emit(
+                    f"#{issue.number}: origin/{delivery_plan.target_branch} moved; "
+                    f"rebasing {branch}"
+                )
                 self.git.rebase(
                     cwd=worktree_path,
-                    upstream=f"origin/{self.config.base}",
+                    upstream=f"origin/{delivery_plan.target_branch}",
                     run_dir=run_dir,
                 )
                 changed_files = self.git.changed_files_against(
                     cwd=worktree_path,
-                    base_ref=f"origin/{self.config.base}",
+                    base_ref=f"origin/{delivery_plan.target_branch}",
                 )
                 if not changed_files:
                     raise IssueFailure("Rebase left no changed files to integrate.")
@@ -935,12 +1258,12 @@ class RalphLoop:
                     )
                     changed_files = self.git.changed_files_against(
                         cwd=worktree_path,
-                        base_ref=f"origin/{self.config.base}",
+                        base_ref=f"origin/{delivery_plan.target_branch}",
                     )
             else:
                 changed_files = self.git.changed_files_against(
                     cwd=worktree_path,
-                    base_ref=f"origin/{self.config.base}",
+                    base_ref=f"origin/{delivery_plan.target_branch}",
                 )
 
             if not changed_files:
@@ -949,7 +1272,7 @@ class RalphLoop:
             emit(f"#{issue.number}: creating integration worktree {integration_path}")
             self.git.add_detached_worktree(
                 path=integration_path,
-                ref=f"origin/{self.config.base}",
+                ref=f"origin/{delivery_plan.target_branch}",
                 run_dir=run_dir,
             )
             emit(f"#{issue.number}: squash merging {branch}")
@@ -962,24 +1285,50 @@ class RalphLoop:
                 log_prefix="integration",
             )
             commit_sha = self.git.rev_parse("HEAD", cwd=integration_path)
-            emit(f"#{issue.number}: pushing {commit_sha} to {self.config.base}")
-            self.git.push_head(cwd=integration_path, branch=self.config.base, run_dir=run_dir)
+            emit(f"#{issue.number}: pushing {commit_sha} to {delivery_plan.target_branch}")
+            self.git.push_head(
+                cwd=integration_path,
+                branch=delivery_plan.target_branch,
+                run_dir=run_dir,
+            )
             pushed = True
 
             emit(f"#{issue.number}: commenting completion evidence")
             self.github.comment_issue(
                 issue.number,
-                build_completion_comment(issue, commit_sha, changed_files, qa_results, run_dir),
+                build_completion_comment(
+                    issue,
+                    commit_sha,
+                    changed_files,
+                    qa_results,
+                    run_dir,
+                    delivery_plan=delivery_plan,
+                ),
                 run_dir=run_dir,
             )
-            emit(f"#{issue.number}: marking {AGENT_MERGED_LABEL}")
-            self.github.edit_issue_labels(
-                issue.number,
-                add=[AGENT_MERGED_LABEL],
-                remove=[AGENT_RUNNING_LABEL, AGENT_FAILED_LABEL],
-            )
-            emit(f"#{issue.number}: closing issue")
-            self.github.close_issue(issue.number, run_dir=run_dir)
+            if delivery_plan.mode == TRUNK_MODE:
+                emit(f"#{issue.number}: marking {AGENT_MERGED_LABEL}")
+                self.github.edit_issue_labels(
+                    issue.number,
+                    add=[AGENT_MERGED_LABEL],
+                    remove=[AGENT_RUNNING_LABEL, AGENT_FAILED_LABEL, AGENT_INTEGRATED_LABEL],
+                )
+                emit(f"#{issue.number}: closing issue")
+                self.github.close_issue(issue.number, run_dir=run_dir)
+                result_message = (
+                    f"Issue #{issue.number} merged to {delivery_plan.target_branch}: {commit_sha}"
+                )
+            else:
+                emit(f"#{issue.number}: marking {AGENT_INTEGRATED_LABEL}")
+                self.github.edit_issue_labels(
+                    issue.number,
+                    add=[AGENT_INTEGRATED_LABEL],
+                    remove=[AGENT_RUNNING_LABEL, AGENT_FAILED_LABEL, AGENT_MERGED_LABEL],
+                )
+                result_message = (
+                    f"Issue #{issue.number} integrated to {delivery_plan.target_branch}: "
+                    f"{commit_sha}"
+                )
             self._cleanup_success_artifacts(
                 issue,
                 branch=branch,
@@ -987,7 +1336,7 @@ class RalphLoop:
                 integration_path=integration_path,
                 run_dir=run_dir,
             )
-            emit(f"Issue #{issue.number} merged to {self.config.base}: {commit_sha}")
+            emit(result_message)
         except EnvironmentFailure as error:
             if claimed:
                 self._mark_issue_failed(issue, error, run_dir)
@@ -1013,6 +1362,25 @@ class RalphLoop:
         missing = missing_required_sections(issue.body)
         if missing:
             raise IssueFailure(f"Missing required issue section(s): {', '.join(missing)}")
+
+    def _ensure_integration_target(self, delivery_plan: DeliveryPlan, run_dir: Path) -> None:
+        if delivery_plan.mode != GITFLOW_MODE:
+            return
+        if delivery_plan.target_branch != DEFAULT_GITFLOW_BRANCH:
+            return
+        if self.git.remote_branch_exists(delivery_plan.target_branch, run_dir=run_dir):
+            return
+
+        emit(
+            f"origin/{DEFAULT_GITFLOW_BRANCH} does not exist; creating it from "
+            f"origin/{DEFAULT_TRUNK_BRANCH}"
+        )
+        self.git.fetch_base(DEFAULT_TRUNK_BRANCH, run_dir=run_dir)
+        self.git.create_remote_branch(
+            branch=DEFAULT_GITFLOW_BRANCH,
+            from_ref=f"origin/{DEFAULT_TRUNK_BRANCH}",
+            run_dir=run_dir,
+        )
 
     def _branch_and_worktrees(self, issue: Issue) -> tuple[str, Path, Path]:
         slug = slugify(issue.title)
@@ -1079,7 +1447,24 @@ class RalphLoop:
         *,
         log_prefix: str,
     ) -> list[QAResult]:
-        commands = select_qa_commands(changed_files, worktree_path)
+        return self._run_qa_commands(
+            changed_files,
+            worktree_path,
+            run_dir,
+            log_prefix=log_prefix,
+            subject=f"#{issue.number}",
+        )
+
+    def _run_qa_commands(
+        self,
+        changed_files: list[str],
+        repo_root: Path,
+        run_dir: Path,
+        *,
+        log_prefix: str,
+        subject: str,
+    ) -> list[QAResult]:
+        commands = select_qa_commands(changed_files, repo_root)
         if not commands:
             raise IssueFailure(
                 "No QA command matched changed files: " + ", ".join(changed_files)
@@ -1090,7 +1475,7 @@ class RalphLoop:
             log_path = run_dir / f"{log_prefix}-{index}-{slugify(command.name)}.log"
             try:
                 emit(
-                    f"#{issue.number}: running QA {command.name}: "
+                    f"{subject}: running QA {command.name}: "
                     f"{format_command(command.args)}"
                 )
                 self.runner.run(
@@ -1107,7 +1492,7 @@ class RalphLoop:
                         log_path=error.log_path,
                     ) from error
                 raise
-            emit(f"#{issue.number}: QA passed {command.name}")
+            emit(f"{subject}: QA passed {command.name}")
             results.append(QAResult(command=command, log_path=log_path))
         return results
 
@@ -1175,6 +1560,10 @@ class RalphLoop:
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         return self.config.log_root / f"{prefix}-{issue.number}-{timestamp}"
 
+    def _promotion_run_dir(self) -> Path:
+        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        return self.config.log_root / f"promote-{timestamp}"
+
 
 def implementation_prompt(issue: Issue) -> str:
     return textwrap.dedent(
@@ -1183,7 +1572,8 @@ def implementation_prompt(issue: Issue) -> str:
 
         Work in this repository worktree only. Follow AGENTS.md and the repo's
         canonical terms, especially Subproject, Test lane, Fast check, Commit
-        check, Push check, and Local integration.
+        check, Push check, Local integration, Delivery mode, and Integration
+        target.
 
         Do not commit, push, or edit GitHub labels/comments. The Ralph script
         owns those steps after validation.
@@ -1223,24 +1613,10 @@ def retry_implementation_prompt(issue: Issue, error: Exception) -> str:
 def triage_prompt(issue: Issue, repo: str) -> str:
     return textwrap.dedent(
         f"""
-        Use the $triage skill to triage GitHub issue #{issue.number} in {repo}.
+        Use the $ralph-triage skill to triage GitHub issue #{issue.number} in {repo}.
 
         You may use gh to label, comment, or close the issue. Do not edit repo
         files during this automated post-loop triage pass.
-
-        Triage label mapping:
-        - bug: bug
-        - enhancement: enhancement
-        - needs-triage: needs-triage
-        - needs-info: needs-info
-        - ready-for-agent: ready-for-agent
-        - ready-for-human: ready-for-human
-        - wontfix: wontfix
-
-        Runtime labels owned by the Ralph loop:
-        - agent-running
-        - agent-failed
-        - agent-merged
 
         Every issue comment you post must begin with:
         {AI_TRIAGE_DISCLAIMER}
@@ -1289,6 +1665,56 @@ def build_completion_comment(
     changed_files: list[str],
     qa_results: list[QAResult],
     run_dir: Path,
+    *,
+    delivery_plan: DeliveryPlan,
+) -> str:
+    qa_lines = [
+        f"- `{format_command(result.command.args)}` from `{result.command.cwd}`"
+        for result in qa_results
+    ]
+    changed_lines = [f"- `{path}`" for path in changed_files]
+    if delivery_plan.mode == TRUNK_MODE:
+        title = "Ralph trunk integration completed."
+        issue_state = f"Issue #{issue.number} will be closed by the Ralph loop."
+    else:
+        title = "Ralph Gitflow integration completed."
+        issue_state = (
+            f"Issue #{issue.number} will stay open until Ralph promotes "
+            f"`{delivery_plan.target_branch}`."
+        )
+    return "\n".join(
+        [
+            title,
+            "",
+            f"Commit: `{commit_sha}`",
+            f"Delivery mode: `{delivery_plan.mode}`",
+            f"Target branch: `{delivery_plan.target_branch}`",
+            "",
+            "## Changed files",
+            "",
+            *changed_lines,
+            "",
+            "## QA",
+            "",
+            *qa_lines,
+            "",
+            f"Run logs: `{run_dir}`",
+            "",
+            issue_state,
+            "",
+        ]
+    )
+
+
+def build_promotion_comment(
+    issue: Issue,
+    promotion_sha: str,
+    integrated_commit: str,
+    source_branch: str,
+    target_branch: str,
+    changed_files: list[str],
+    qa_results: list[QAResult],
+    run_dir: Path,
 ) -> str:
     qa_lines = [
         f"- `{format_command(result.command.args)}` from `{result.command.cwd}`"
@@ -1297,11 +1723,14 @@ def build_completion_comment(
     changed_lines = [f"- `{path}`" for path in changed_files]
     return "\n".join(
         [
-            "Ralph local integration completed.",
+            "Ralph promotion completed.",
             "",
-            f"Commit: `{commit_sha}`",
+            f"Promotion commit: `{promotion_sha}`",
+            f"Integrated commit: `{integrated_commit}`",
+            f"Source branch: `{source_branch}`",
+            f"Target branch: `{target_branch}`",
             "",
-            "## Changed files",
+            "## Promoted files",
             "",
             *changed_lines,
             "",
@@ -1315,6 +1744,17 @@ def build_completion_comment(
             "",
         ]
     )
+
+
+def integrated_commit_from_comments(comments: list[dict[str, Any]]) -> str | None:
+    for comment in reversed(comments):
+        body = str(comment.get("body") or "")
+        if "Ralph Gitflow integration completed." not in body:
+            continue
+        match = COMMIT_LINE_PATTERN.search(body)
+        if match is not None:
+            return match.group("sha")
+    return None
 
 
 def discover_repo_root(runner: CommandRunner) -> Path:
@@ -1342,10 +1782,19 @@ def build_config(args: argparse.Namespace, runner: CommandRunner) -> LoopConfig:
         if args.worktree_container is not None
         else default_worktree_container(repo_root).resolve()
     )
+    if args.base is not None and args.target_branch is not None:
+        raise ValueError("Use --target-branch instead of combining it with deprecated --base.")
+    target_branch = args.target_branch or args.base
+    delivery_mode = args.delivery_mode
+    if delivery_mode is None:
+        delivery_mode = TRUNK_MODE if args.base is not None else GITFLOW_MODE
     return LoopConfig(
         repo_root=repo_root,
         repo=repo,
-        base=args.base,
+        delivery_mode=delivery_mode,
+        target_branch=target_branch,
+        source_branch=args.source_branch,
+        promote=args.promote,
         issue=args.issue,
         drain=args.drain,
         max_issues=args.max_issues,
@@ -1359,10 +1808,32 @@ def build_config(args: argparse.Namespace, runner: CommandRunner) -> LoopConfig:
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Drain ready GitHub issues through Codex implementation and local integration."
+        description="Drain ready GitHub issues through Codex implementation and Ralph integration."
     )
     parser.add_argument("--repo", help="GitHub repository in OWNER/REPO form.")
-    parser.add_argument("--base", default="main", help="Base branch for local integration.")
+    parser.add_argument(
+        "--delivery-mode",
+        choices=DELIVERY_MODES,
+        help="Default delivery mode for issues without a delivery label. Defaults to gitflow.",
+    )
+    parser.add_argument(
+        "--target-branch",
+        help="Remote branch to integrate into. Defaults to dev for gitflow and main for trunk.",
+    )
+    parser.add_argument(
+        "--source-branch",
+        default=DEFAULT_GITFLOW_BRANCH,
+        help="Source branch for --promote. Defaults to dev.",
+    )
+    parser.add_argument(
+        "--promote",
+        action="store_true",
+        help="Promote the source branch to the target branch and close verified integrated issues.",
+    )
+    parser.add_argument(
+        "--base",
+        help="Deprecated alias for --target-branch. Also defaults unlabeled issues to trunk mode.",
+    )
     parser.add_argument("--issue", type=int, help="Implement one specific issue number.")
     parser.add_argument(
         "--drain",

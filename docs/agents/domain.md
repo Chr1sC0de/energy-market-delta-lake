@@ -7,7 +7,8 @@ This repo has a single domain context at the root:
 There is no `CONTEXT-MAP.md` and no per-Subproject context map. Agent workflows
 should read the root context first and use its canonical language across the
 repo, especially **Subproject**, **Test lane**, **Fast check**, **Commit check**,
-**Push check**, and **Local integration**.
+**Push check**, **Local integration**, **Delivery mode**, **Integration target**,
+and **Promotion**.
 
 Repo-wide ADRs live in `docs/adr/`. Create ADRs only when a decision is hard to
 reverse, surprising without context, and the result of a real trade-off.
@@ -19,6 +20,7 @@ reverse, surprising without context, and the result of a real trade-off.
   - `CONTEXT.md`
   - `AGENTS.md`
   - `docs/adr/0001-ralph-local-integration.md`
+  - `docs/adr/0002-ralph-delivery-modes.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

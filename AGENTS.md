@@ -4,7 +4,8 @@
 
 - Use the canonical repo terms in `CONTEXT.md`, especially **Subproject**,
   **Test lane**, **Fast check**, **Commit check**, **Push check**, and
-  **Local integration**.
+  **Local integration**, **Delivery mode**, **Integration target**, and
+  **Promotion**.
 - Do not use "submodule" for repo projects. There are no Git submodules here.
 
 ## Agent skills
@@ -13,8 +14,18 @@
 
 Issues are tracked in GitHub Issues for `Chr1sC0de/energy-market-delta-lake`.
 Ralph uses those issues as the board and queue, then performs successful code
-changes through **Local integration** before closing the issue. See
-`docs/agents/issue-tracker.md`.
+changes through **Local integration**. **Trunk delivery** closes issues after
+integration to `main`; **Gitflow delivery** closes them after **Promotion** from
+`dev` to `main`. See `docs/agents/issue-tracker.md`.
+
+### Ralph loop
+
+Use the repo-local `ralph-loop` skill for Ralph operation, failure inspection,
+**Delivery mode** rules, and **Promotion**.
+
+Use the repo-local `ralph-triage` skill to prepare GitHub Issues for Ralph
+drain. Triage sets category, state, and **Delivery mode** labels before
+`ralph-loop` drains ready work.
 
 ### Triage labels
 

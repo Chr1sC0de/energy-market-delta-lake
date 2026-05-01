@@ -6,6 +6,12 @@ __pycache__
 !.git
 !.dockerignore
 !.pre-commit*
+!.agents
+!.agents/skills
+!.agents/skills/ralph-loop
+!.agents/skills/ralph-loop/SKILL.md
+!.agents/skills/ralph-triage
+!.agents/skills/ralph-triage/SKILL.md
 !.gitkeep
 
 infrastructure/*-legacy

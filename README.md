@@ -271,6 +271,9 @@ hook config. System hooks such as `shellcheck` must also be available on
 | AWS Pulumi unit/component pytest target | `cd infrastructure/aws-pulumi && uv run pytest tests/unit tests/component -x -q` |
 | AWS Pulumi deployed tests | `cd infrastructure/aws-pulumi && PULUMI_INTEGRATION_TESTS=1 uv run pytest tests/deployed -v` |
 | Local stack | `cd backend-services && source .envrc && podman-compose up --build -d` |
+| Ralph Gitflow drain | `python3 scripts/ralph.py --drain` |
+| Ralph trunk drain | `python3 scripts/ralph.py --drain --delivery-mode trunk` |
+| Ralph promotion | `python3 scripts/ralph.py --promote` |
 
 ## Deployment
 

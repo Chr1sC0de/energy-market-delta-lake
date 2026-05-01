@@ -6,6 +6,9 @@ keeps the board useful for planning while making the AFK loop responsible for
 the whole validated path: squash-merge onto latest `origin/main`, push `main`,
 comment completion evidence, and close the issue.
 
+ADR 0002 generalizes this trunk-only path with **Delivery modes**. The
+trunk-style behavior described here remains the **Trunk delivery** path.
+
 ## Considered options
 
 - GitHub PRs as the success gate: preserves a familiar review object, but keeps

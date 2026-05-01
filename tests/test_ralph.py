@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import json
 import sys
 import tempfile
 import unittest
@@ -61,14 +62,19 @@ class FakeRunner:
         status_outputs: list[str] | None = None,
         diff_outputs: list[str] | None = None,
         rev_parse_outputs: list[str] | None = None,
-        fail_commands: set[tuple[str, ...]] | None = None,
+        command_outputs: dict[tuple[str, ...], list[str]] | None = None,
+        fail_commands: set[tuple[str, ...]] | dict[tuple[str, ...], int] | None = None,
     ) -> None:
         self.dry_run = False
         self.calls: list[FakeCall] = []
         self.status_outputs = status_outputs or []
         self.diff_outputs = diff_outputs or []
         self.rev_parse_outputs = rev_parse_outputs or []
-        self.fail_commands = fail_commands or set()
+        self.command_outputs = command_outputs or {}
+        if isinstance(fail_commands, dict):
+            self.fail_commands = fail_commands
+        else:
+            self.fail_commands = {command: 1 for command in fail_commands or set()}
 
     def run(
         self,
@@ -93,17 +99,47 @@ class FakeRunner:
             log_path.parent.mkdir(parents=True, exist_ok=True)
             log_path.write_text("fake log", encoding="utf-8")
         if command in self.fail_commands:
-            raise ralph.CommandFailure(args, cwd, 1, "", "fake failure", log_path)
+            raise ralph.CommandFailure(
+                args,
+                cwd,
+                self.fail_commands[command],
+                "",
+                "fake failure",
+                log_path,
+            )
+        if command in self.command_outputs:
+            return ralph.CompletedCommand(
+                stdout=self.command_outputs[command].pop(0),
+                stderr="",
+            )
         if command == ("git", "status", "--porcelain"):
             return ralph.CompletedCommand(stdout=self.status_outputs.pop(0), stderr="")
         if command[:3] == ("git", "diff", "--name-only"):
             return ralph.CompletedCommand(stdout=self.diff_outputs.pop(0), stderr="")
         if command[:2] == ("git", "rev-parse"):
             return ralph.CompletedCommand(stdout=self.rev_parse_outputs.pop(0), stderr="")
+        if command[:5] == ("git", "ls-remote", "--exit-code", "--heads", "origin"):
+            branch = command[5]
+            return ralph.CompletedCommand(
+                stdout=f"abc123\trefs/heads/{branch}\n",
+                stderr="",
+            )
+        if command[:3] == ("gh", "issue", "list"):
+            return ralph.CompletedCommand(stdout="[]", stderr="")
+        if command[:3] == ("gh", "issue", "view") and "comments" in command:
+            return ralph.CompletedCommand(stdout=json.dumps({"comments": []}), stderr="")
         return ralph.CompletedCommand(stdout="", stderr="")
 
 
-def make_loop(tmp_path: Path, runner: FakeRunner) -> ralph.RalphLoop:
+def make_loop(
+    tmp_path: Path,
+    runner: FakeRunner,
+    *,
+    delivery_mode: str = ralph.TRUNK_MODE,
+    target_branch: str | None = None,
+    source_branch: str = ralph.DEFAULT_GITFLOW_BRANCH,
+    promote: bool = False,
+) -> ralph.RalphLoop:
     repo_root = tmp_path / "repo"
     worktree_container = tmp_path / "worktrees"
     log_root = tmp_path / "logs"
@@ -112,7 +148,10 @@ def make_loop(tmp_path: Path, runner: FakeRunner) -> ralph.RalphLoop:
     config = ralph.LoopConfig(
         repo_root=repo_root,
         repo="example/repo",
-        base="main",
+        delivery_mode=delivery_mode,
+        target_branch=target_branch,
+        source_branch=source_branch,
+        promote=promote,
         issue=None,
         drain=False,
         max_issues=3,
@@ -216,6 +255,35 @@ Build it.
         self.assertFalse(ralph.is_basic_triage_candidate(make_issue({"wontfix"})))
         self.assertFalse(ralph.is_basic_triage_candidate(make_issue({"agent-merged"})))
 
+    def test_delivery_plan_defaults_to_gitflow_and_adds_label(self) -> None:
+        plan = ralph.resolve_delivery_plan(
+            make_issue({"ready-for-agent"}),
+            default_mode=ralph.GITFLOW_MODE,
+            target_branch=None,
+        )
+
+        self.assertEqual(plan.mode, ralph.GITFLOW_MODE)
+        self.assertEqual(plan.target_branch, "dev")
+        self.assertEqual(plan.add_labels, ("delivery-gitflow",))
+
+    def test_delivery_plan_normalizes_conflict_to_gitflow(self) -> None:
+        plan = ralph.resolve_delivery_plan(
+            make_issue({"ready-for-agent", "delivery-gitflow", "delivery-trunk"}),
+            default_mode=ralph.TRUNK_MODE,
+            target_branch=None,
+        )
+
+        self.assertEqual(plan.mode, ralph.GITFLOW_MODE)
+        self.assertEqual(plan.remove_labels, ("delivery-trunk",))
+
+    def test_triage_prompt_uses_ralph_triage_skill(self) -> None:
+        prompt = ralph.triage_prompt(make_issue({"needs-triage"}), "example/repo")
+
+        self.assertIn("Use the $ralph-triage skill", prompt)
+        self.assertNotIn("Use the $triage skill", prompt)
+        self.assertIn(ralph.AI_TRIAGE_DISCLAIMER, prompt)
+        self.assertIn("Do not edit repo", prompt)
+
     def test_select_qa_commands_for_aemo_etl_changes(self) -> None:
         commands = ralph.select_qa_commands(
             ["backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"],
@@ -283,6 +351,36 @@ Build it.
         main = Path("/work/repo")
         self.assertEqual(ralph.default_worktree_container(main), Path("/work/repo__worktrees"))
 
+    def test_build_config_defaults_to_gitflow_without_target_branch(self) -> None:
+        runner = FakeRunner(
+            command_outputs={
+                ("git", "rev-parse", "--show-toplevel"): ["/work/repo\n"],
+                ("git", "config", "--get", "remote.origin.url"): [
+                    "git@github.com:example/repo.git\n"
+                ],
+            }
+        )
+
+        config = ralph.build_config(ralph.parse_args([]), runner)
+
+        self.assertEqual(config.delivery_mode, ralph.GITFLOW_MODE)
+        self.assertIsNone(config.target_branch)
+
+    def test_build_config_base_alias_uses_trunk_compatibility(self) -> None:
+        runner = FakeRunner(
+            command_outputs={
+                ("git", "rev-parse", "--show-toplevel"): ["/work/repo\n"],
+                ("git", "config", "--get", "remote.origin.url"): [
+                    "git@github.com:example/repo.git\n"
+                ],
+            }
+        )
+
+        config = ralph.build_config(ralph.parse_args(["--base", "main"]), runner)
+
+        self.assertEqual(config.delivery_mode, ralph.TRUNK_MODE)
+        self.assertEqual(config.target_branch, "main")
+
     def test_completion_comment_records_local_integration_evidence(self) -> None:
         issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
         qa_results = [
@@ -302,10 +400,18 @@ Build it.
             ["scripts/ralph.py"],
             qa_results,
             Path("/logs/run"),
+            delivery_plan=ralph.DeliveryPlan(
+                mode=ralph.TRUNK_MODE,
+                target_branch="main",
+                label="delivery-trunk",
+                add_labels=(),
+                remove_labels=(),
+            ),
         )
 
-        self.assertIn("Ralph local integration completed.", comment)
+        self.assertIn("Ralph trunk integration completed.", comment)
         self.assertIn("Commit: `abc123`", comment)
+        self.assertIn("Delivery mode: `trunk`", comment)
         self.assertIn("- `scripts/ralph.py`", comment)
         self.assertIn("python3 -m unittest discover -s tests", comment)
         self.assertIn("Issue #42 will be closed by the Ralph loop.", comment)
@@ -356,12 +462,16 @@ Build it.
                 "example/repo",
                 "--add-label",
                 "agent-running",
+                "--add-label",
+                "delivery-trunk",
                 "--remove-label",
                 "ready-for-agent",
                 "--remove-label",
                 "agent-failed",
                 "--remove-label",
                 "agent-merged",
+                "--remove-label",
+                "agent-integrated",
             ),
             commands,
         )
@@ -430,8 +540,55 @@ Build it.
 
             comment_path = next((Path(tmp) / "logs").glob("issue-42-*/issue-42-comment.md"))
             comment = comment_path.read_text(encoding="utf-8")
-            self.assertIn("Ralph local integration completed.", comment)
+            self.assertIn("Ralph trunk integration completed.", comment)
             self.assertIn("Commit: `merge-sha`", comment)
+
+    def test_gitflow_implementation_creates_dev_integrates_and_leaves_issue_open(self) -> None:
+        ls_remote = ("git", "ls-remote", "--exit-code", "--heads", "origin", "dev")
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            fail_commands={ls_remote: 2},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(Path(tmp), runner, delivery_mode=ralph.GITFLOW_MODE)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                loop._handle_implementation(issue)
+
+            commands = [call.args for call in runner.calls]
+            self.assertIn(("git", "push", "origin", "origin/main:refs/heads/dev"), commands)
+            self.assertIn(("git", "push", "origin", "HEAD:dev"), commands)
+            self.assertIn(
+                (
+                    "gh",
+                    "issue",
+                    "edit",
+                    "42",
+                    "-R",
+                    "example/repo",
+                    "--add-label",
+                    "agent-integrated",
+                    "--remove-label",
+                    "agent-running",
+                    "--remove-label",
+                    "agent-failed",
+                    "--remove-label",
+                    "agent-merged",
+                ),
+                commands,
+            )
+            self.assertFalse(any(command[:3] == ("gh", "issue", "close") for command in commands))
+            self.assertIn("Issue #42 integrated to dev: merge-sha", output.getvalue())
+
+            comment_path = next((Path(tmp) / "logs").glob("issue-42-*/issue-42-comment.md"))
+            comment = comment_path.read_text(encoding="utf-8")
+            self.assertIn("Ralph Gitflow integration completed.", comment)
+            self.assertIn("Target branch: `dev`", comment)
+            self.assertIn("will stay open until Ralph promotes `dev`", comment)
 
     def test_base_drift_rebases_and_reruns_qa_before_squash_merge(self) -> None:
         runner = FakeRunner(
@@ -467,6 +624,124 @@ Build it.
             ),
             commands,
         )
+
+    def test_promotion_merges_dev_and_closes_verified_integrated_issue(self) -> None:
+        issue_list_command = (
+            "gh",
+            "issue",
+            "list",
+            "-R",
+            "example/repo",
+            "--state",
+            "open",
+            "--limit",
+            "100",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        issue_comments_command = (
+            "gh",
+            "issue",
+            "view",
+            "42",
+            "-R",
+            "example/repo",
+            "--comments",
+            "--json",
+            "comments",
+        )
+        target_ancestor_command = (
+            "git",
+            "merge-base",
+            "--is-ancestor",
+            "abc1234",
+            "origin/main",
+        )
+        issue_payload = [
+            {
+                "number": 42,
+                "title": "Implement thing",
+                "body": IMPLEMENTATION_BODY,
+                "labels": [{"name": "agent-integrated"}],
+                "createdAt": "2026-04-30T00:00:00Z",
+                "updatedAt": "2026-04-30T00:00:00Z",
+                "url": "https://github.com/example/repo/issues/42",
+                "comments": [],
+                "author": {"login": "reporter"},
+            }
+        ]
+        comments_payload = {
+            "comments": [
+                {
+                    "body": "\n".join(
+                        [
+                            "Ralph Gitflow integration completed.",
+                            "",
+                            "Commit: `abc1234`",
+                        ]
+                    )
+                }
+            ]
+        }
+        runner = FakeRunner(
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["promotion-sha\n"],
+            command_outputs={
+                issue_list_command: [json.dumps(issue_payload)],
+                issue_comments_command: [json.dumps(comments_payload)],
+            },
+            fail_commands={target_ancestor_command: 1},
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(Path(tmp), runner, promote=True)
+            with redirect_stdout(io.StringIO()):
+                loop._promote()
+
+            comment_path = next((Path(tmp) / "logs").glob("promote-*/issue-42-comment.md"))
+            comment = comment_path.read_text(encoding="utf-8")
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn(
+            ("git", "merge", "--no-ff", "origin/dev", "-m", "Promote dev to main"),
+            commands,
+        )
+        self.assertIn(("git", "push", "origin", "HEAD:main"), commands)
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "edit",
+                "42",
+                "-R",
+                "example/repo",
+                "--add-label",
+                "agent-merged",
+                "--remove-label",
+                "agent-integrated",
+                "--remove-label",
+                "agent-running",
+                "--remove-label",
+                "agent-failed",
+            ),
+            commands,
+        )
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "close",
+                "42",
+                "-R",
+                "example/repo",
+                "--reason",
+                "completed",
+            ),
+            commands,
+        )
+        self.assertIn("Ralph promotion completed.", comment)
+        self.assertIn("Promotion commit: `promotion-sha`", comment)
+        self.assertIn("Integrated commit: `abc1234`", comment)
 
     def test_post_push_issue_metadata_failure_stops_without_cleanup(self) -> None:
         close_command = (

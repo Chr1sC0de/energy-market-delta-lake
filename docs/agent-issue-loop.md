@@ -3,7 +3,7 @@
 This page documents the repo-local Ralph loop in `scripts/ralph.py`. The loop
 uses GitHub Issues as the queue, Codex as the implementation and triage worker,
 repo **Test lane** commands as the validation boundary, and **Local
-integration** as the success path after QA.
+integration** plus **Promotion** as the success path after QA.
 
 ## Table of contents
 
@@ -13,6 +13,7 @@ integration** as the success path after QA.
 - [Run modes](#run-modes)
 - [Live run preflight](#live-run-preflight)
 - [Implementation pass](#implementation-pass)
+- [Promotion pass](#promotion-pass)
 - [Triage pass](#triage-pass)
 - [QA policy](#qa-policy)
 - [Failure handling](#failure-handling)
@@ -22,15 +23,27 @@ integration** as the success path after QA.
 Ralph drains agent-ready GitHub issues through a guarded local loop:
 
 1. Find the oldest unblocked `ready-for-agent` issue.
-2. Create a `main`-based worktree and branch.
+2. Resolve the issue **Delivery mode** and **Integration target**.
 3. Run `codex exec` to implement the issue.
 4. Run deterministic local QA.
-5. Squash-merge validated work onto latest `origin/main` locally.
-6. Push `main`, comment completion evidence, and close the issue.
-7. If no ready issue exists, triage the next unblocked issue and rescan.
+5. Squash-merge validated work onto the latest **Integration target** locally.
+6. In **Gitflow delivery**, push `dev`, comment evidence, mark
+   `agent-integrated`, and leave the issue open for **Promotion**.
+7. In **Trunk delivery**, push `main`, comment evidence, mark `agent-merged`,
+   and close the issue.
+8. If no ready issue exists, triage the next unblocked issue and rescan.
 
 The loop stops when the queue has no unblocked implementation or triage
 candidates, or when `--max-issues` is reached.
+
+Human operators should call Ralph through repo-local skills:
+
+```text
+$grill-with-docs <feature idea> -> $to-prd -> $to-issues -> $ralph-triage -> $ralph-loop drain
+```
+
+`$ralph-triage` prepares GitHub Issues for drain by setting category, state, and
+**Delivery mode** labels. `$ralph-loop` owns the backing script commands.
 
 ## Drain flow
 
@@ -41,12 +54,16 @@ flowchart TD
   READY -->|Yes| CLAIM[Claim issue with agent-running]
   CLAIM --> CONTRACT{Issue contract valid?}
   CONTRACT -->|No| FAIL[Mark agent-failed and comment evidence]
-  CONTRACT -->|Yes| WORKTREE[Create issue branch and worktree]
+  CONTRACT -->|Yes| MODE[Resolve Delivery mode and Integration target]
+  MODE --> WORKTREE[Create issue branch and worktree]
   WORKTREE --> CODEX[Run Codex implementation]
   CODEX --> QA[Run selected Test lane QA]
   QA --> INTEGRATE[Run Local integration]
-  INTEGRATE --> CLOSE[Comment evidence, mark agent-merged, close issue]
-  CLOSE --> LIMIT{Max implementation attempts reached?}
+  INTEGRATE --> DONE{Delivery mode?}
+  DONE -->|Gitflow| STAGE[Comment evidence and mark agent-integrated]
+  DONE -->|Trunk| CLOSE[Comment evidence, mark agent-merged, close issue]
+  STAGE --> LIMIT{Max implementation attempts reached?}
+  CLOSE --> LIMIT
   LIMIT -->|No| READY
   LIMIT -->|Yes| STOP[Stop drain]
   READY -->|No| TRIAGE{Unblocked triage candidate?}
@@ -76,10 +93,21 @@ Ralph runtime labels:
 - `agent-running`
 - `agent-failed`
 - `agent-merged`
+- `agent-integrated`
+
+Ralph delivery labels:
+
+- `delivery-gitflow`
+- `delivery-trunk`
 
 Use `ready-for-agent` as the queue selection signal. `needs-triage`,
 `needs-info`, `ready-for-human`, `wontfix`, `agent-running`, `agent-failed`,
-and `agent-merged` block implementation.
+`agent-merged`, and `agent-integrated` block implementation.
+
+`delivery-gitflow` is the default **Delivery mode**. `delivery-trunk` is an
+opt-in label for small docs, tests, tooling, or script changes. If both delivery
+labels are present, Ralph keeps `delivery-gitflow`, removes `delivery-trunk`,
+and proceeds through the safer default.
 
 Create or refresh the labels with:
 
@@ -101,6 +129,12 @@ Drain up to three implementation attempts:
 python3 scripts/ralph.py --drain
 ```
 
+Drain directly to trunk for small low-risk changes:
+
+```bash
+python3 scripts/ralph.py --drain --delivery-mode trunk
+```
+
 Drain until only blocked or non-actionable issues remain:
 
 ```bash
@@ -113,9 +147,22 @@ Implement one specific issue:
 python3 scripts/ralph.py --issue 25
 ```
 
+Promote reviewed Gitflow work from `dev` to `main`:
+
+```bash
+python3 scripts/ralph.py --promote
+```
+
+Override the **Integration target** explicitly when needed:
+
+```bash
+python3 scripts/ralph.py --issue 25 --target-branch feature/my-branch
+```
+
 ## Live run preflight
 
-Before a live drain, validate both GitHub API auth and Git push auth:
+Before a live drain, validate both GitHub API auth and Git push auth for the
+expected **Integration target**:
 
 ```bash
 gh auth status
@@ -125,9 +172,11 @@ git push --dry-run origin HEAD:main
 When using token-based GitHub CLI auth, export `GH_TOKEN` in the shell that runs
 Ralph. Do not paste token values into commands, issue comments, docs, or logs.
 
-Run Ralph from a clean local `main` that is aligned with `origin/main`. The
-script fetches `origin/main` during implementation and rebases issue work if the
-base moves, but the operator should start from a known repo state.
+Use `HEAD:dev` for Gitflow target validation and `HEAD:main` for trunk or
+promotion validation. Run Ralph from a clean local worktree that is aligned with
+the remote branch being operated on. The script fetches the **Integration
+target** during implementation and rebases issue work if the target moves, but
+the operator should start from a known repo state.
 
 ## Implementation pass
 
@@ -141,46 +190,70 @@ If any referenced blocker in `Blocked by` is still open, Ralph skips the issue.
 If the issue contract is malformed, Ralph marks the issue `agent-failed` and
 leaves a result comment with the run log path.
 
-Ralph creates branches named `agent/issue-N-slug` from `origin/main` and creates
-sibling worktrees under the repo worktree container. Codex is instructed not to
-commit, push, or edit GitHub issue state; Ralph owns those steps after QA
-passes.
+Ralph chooses **Delivery mode** from issue labels first, then from the CLI
+default. Missing delivery labels are written back to the issue before
+implementation. `delivery-gitflow` defaults to `origin/dev`; if that branch does
+not exist, Ralph creates it from `origin/main`. `delivery-trunk` defaults to
+`origin/main`. `--target-branch` overrides the **Integration target** explicitly.
 
-After QA passes, Ralph commits the issue branch, fetches `origin/main`, and
-rebases the issue branch if the base moved. A rebase triggers the selected QA
-commands again before **Local integration** continues.
+Ralph creates branches named `agent/issue-N-slug` from the **Integration target**
+and creates sibling worktrees under the repo worktree container. Codex is
+instructed not to commit, push, or edit GitHub issue state; Ralph owns those
+steps after QA passes.
+
+After QA passes, Ralph commits the issue branch, fetches the **Integration
+target**, and rebases the issue branch if the target moved. A rebase triggers
+the selected QA commands again before **Local integration** continues.
 
 For **Local integration**, Ralph creates a temporary detached integration
-worktree at latest `origin/main`, runs `git merge --squash` from the issue
-branch, creates one integration commit, pushes it to `main`, posts a completion
-comment with the commit SHA, changed files, QA commands, and run log path, marks
-the issue `agent-merged`, and closes the issue. Ralph does not open a GitHub
-draft PR.
+worktree at latest target, runs `git merge --squash` from the issue branch,
+creates one integration commit, pushes it to the target, and posts completion
+evidence with the commit SHA, changed files, QA commands, and run log path.
+Trunk integration marks the issue `agent-merged` and closes it. Gitflow
+integration marks the issue `agent-integrated` and leaves it open for
+**Promotion**. Ralph does not open a GitHub draft PR.
 
 ```mermaid
 sequenceDiagram
   participant Ralph
   participant IssueBranch as Issue branch
-  participant Origin as origin/main
+  participant Target as Integration target
   participant Integration as Integration worktree
   participant GitHubIssue as GitHub Issue
 
   Ralph->>IssueBranch: Commit validated issue work
-  Ralph->>Origin: Fetch latest base
-  alt origin/main moved
+  Ralph->>Target: Fetch latest target
+  alt target moved
     Ralph->>IssueBranch: Rebase and rerun selected QA
   end
-  Ralph->>Integration: Create detached worktree at origin/main
+  Ralph->>Integration: Create detached worktree at target
   Integration->>IssueBranch: git merge --squash
-  Integration->>Origin: git push HEAD:main
+  Integration->>Target: git push HEAD:target
   Ralph->>GitHubIssue: Comment evidence
-  Ralph->>GitHubIssue: Add agent-merged and close
+  alt Trunk delivery
+    Ralph->>GitHubIssue: Add agent-merged and close
+  else Gitflow delivery
+    Ralph->>GitHubIssue: Add agent-integrated
+  end
 ```
+
+## Promotion pass
+
+`python3 scripts/ralph.py --promote` promotes reviewed Gitflow work from
+`origin/dev` to `origin/main` by default. Ralph fetches both branches, computes
+the changed files between them, runs the aggregate matching **Push check** QA,
+merges `origin/dev` into a detached `origin/main` worktree with per-issue commits
+preserved, and pushes `main`.
+
+After the push succeeds, Ralph scans open `agent-integrated` issues. It closes
+only issues whose recorded Gitflow integration commit is still in the promoted
+`origin/main..origin/dev` range, then comments promotion evidence and replaces
+`agent-integrated` with `agent-merged`.
 
 ## Triage pass
 
 When no unblocked `ready-for-agent` issue exists, Ralph asks Codex to run the
-`triage` skill on the next unblocked triage candidate:
+`ralph-triage` skill on the next unblocked triage candidate:
 
 - unlabeled issues
 - `needs-triage` issues
@@ -197,6 +270,12 @@ begin with:
 Ralph v1 does not let automated triage write `.out-of-scope/` files. If an
 enhancement looks like `wontfix` and needs an out-of-scope record, triage should
 mark it `ready-for-human` instead.
+
+Automated triage also applies Ralph delivery labels. It should default to
+`delivery-gitflow` and use `delivery-trunk` only for clearly small docs, tests,
+tooling, or script changes. Runtime behavior, infrastructure, Dagster, S3,
+LocalStack, cross-**Subproject** work, broad refactors, or unclear scope should
+stay on `delivery-gitflow`.
 
 ## QA policy
 
@@ -221,8 +300,13 @@ For Ralph script or unit-test changes, Ralph runs:
 python3 -m unittest discover -s tests
 ```
 
-If `origin/main` changes after the implementation worktree was created, Ralph
-rebases the issue branch and reruns the selected QA commands before merging.
+If the **Integration target** changes after the implementation worktree was
+created, Ralph rebases the issue branch and reruns the selected QA commands
+before merging.
+
+During **Promotion**, Ralph computes all files changed between `origin/main` and
+`origin/dev`, then runs the matching QA set as an aggregate **Push check** before
+pushing `main`.
 
 ## Failure handling
 
@@ -235,13 +319,16 @@ Codex or QA failures get one retry in the same worktree. If retry fails, Ralph:
 - continues drain mode with the next actionable issue
 
 Successful issues remove the implementation worktree, integration worktree, and
-temporary issue branch after the issue is closed. Cleanup failures are warnings;
-the pushed commit and closed issue remain the source of truth.
+temporary issue branch after trunk closure or Gitflow integration. Cleanup
+failures are warnings; the pushed commit and GitHub issue metadata remain the
+source of truth.
 
-Merge or push failures before `main` is updated are issue failures and keep the
-worktrees for inspection. Failures after `main` is pushed stop the drain because
-the code may already be published while GitHub issue metadata may be
-inconsistent.
+Merge or push failures before the **Integration target** is updated are issue
+failures and keep the worktrees for inspection. Failures after the target is
+pushed stop the drain because the code may already be published while GitHub
+issue metadata may be inconsistent. Promotion failures before `main` is pushed
+leave issues open with `agent-integrated`; failures after `main` is pushed stop
+the run for the same metadata consistency reason.
 
 Environment failures stop the run. Examples include invalid `gh` auth, missing
 labels, unavailable tools, failing Git operations before claim, or unavailable
@@ -253,6 +340,8 @@ container-backed **Integration test** dependencies.
 - `sync.sources`:
   - `scripts/ralph.py`
   - `docs/agents/triage-labels.md`
+  - `.agents/skills/ralph-loop/SKILL.md`
+  - `.agents/skills/ralph-triage/SKILL.md`
   - `AGENTS.md`
 - `sync.scope`: `operations`
 - `sync.qa`:

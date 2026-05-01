@@ -60,10 +60,33 @@ but must not include **Deployed tests** by default.
 _Avoid_: Pre-push test
 
 **Local integration**:
-The Ralph success path that squash-merges validated issue work onto latest
-`origin/main`, pushes `main`, comments evidence, and closes the issue without a
-GitHub PR.
+The Ralph action that squash-merges validated issue work onto an
+**Integration target** without a GitHub PR.
 _Avoid_: Local PR, draft PR gate
+
+**Delivery mode**:
+The Ralph branch strategy that decides where validated issue work is integrated
+and when its GitHub issue is closed.
+_Avoid_: Agent type, agent kind
+
+**Integration target**:
+The explicit remote branch that Ralph updates after issue QA.
+_Avoid_: Current branch, working branch
+
+**Gitflow delivery**:
+The default **Delivery mode** where Ralph integrates issue work to `dev` for
+review before **Promotion** to `main`.
+_Avoid_: Development-agent mode
+
+**Trunk delivery**:
+The opt-in **Delivery mode** where Ralph integrates issue work directly to
+`main` and closes the issue after QA.
+_Avoid_: Fast agent mode
+
+**Promotion**:
+The Ralph operation that merges reviewed `dev` work into `main` and closes the
+verified GitHub issues included in that branch range.
+_Avoid_: Manual dev merge
 
 ## Relationships
 
@@ -81,9 +104,14 @@ _Avoid_: Local PR, draft PR gate
   current test refactor.
 - A **Commit check** runs the **Fast check** set.
 - A **Push check** may add local **Integration tests** to the **Fast check** set.
-- **Local integration** happens after Ralph implementation QA and before closing
-  the GitHub issue.
+- **Local integration** happens after Ralph implementation QA and before either
+  issue closure or **Promotion**.
 - **Local integration** is not a **Test lane**.
+- A **Delivery mode** selects an **Integration target**.
+- **Gitflow delivery** uses `dev` as the default **Integration target**.
+- **Trunk delivery** uses `main` as the default **Integration target**.
+- **Promotion** closes only issues whose `dev` integration commit is verified in
+  the promoted branch range.
 
 ## Example dialogue
 
@@ -100,3 +128,9 @@ _Avoid_: Local PR, draft PR gate
   call this an **End-to-end test**, and defer it from the current refactor.
 - "local PR" was considered for Ralph's post-QA path. Resolved: call it
   **Local integration** because no GitHub PR object is created.
+- "current working branch" was considered for Ralph branch selection. Resolved:
+  use an explicit **Integration target** so worktree context does not choose
+  where Ralph publishes.
+- "gitflow agents" and "trunk agents" were considered for issue allocation.
+  Resolved: use **Delivery mode** labels because the Ralph loop is the same
+  agent workflow in both cases.

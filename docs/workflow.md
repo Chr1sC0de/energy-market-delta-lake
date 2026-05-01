@@ -7,6 +7,7 @@ workflow. The production workflow is the canonical one.
 
 - [Production data and orchestration flow](#production-data-and-orchestration-flow)
 - [Local development and testing workflow](#local-development-and-testing-workflow)
+- [Human agent workflow](#human-agent-workflow)
 - [Agent issue loop](#agent-issue-loop)
 - [Where to work](#where-to-work)
 - [Documentation maintenance](#documentation-maintenance)
@@ -92,15 +93,32 @@ Local workflow notes:
 - Caddy is still the local front door so auth and routing behavior can be tested.
 - `marimo` is available locally for exploration, but it is not part of the Pulumi-deployed stack.
 
+## Human agent workflow
+
+For feature work that should flow through Ralph, call the workflow skills at a
+high level:
+
+```text
+$grill-with-docs <feature idea> -> $to-prd -> $to-issues -> $ralph-triage -> $ralph-loop drain
+```
+
+Use `$grill-with-docs` to sharpen the feature against `CONTEXT.md` and ADRs,
+`$to-prd` to publish the PRD, `$to-issues` to create tracer-bullet GitHub
+Issues, `$ralph-triage` to set category, state, and **Delivery mode** labels,
+and `$ralph-loop drain` to run the implementation loop. The skill calls are the
+human-facing interface; the underlying commands stay inside the skills.
+
 ## Agent issue loop
 
 The repo-local Ralph loop in
 [agent-issue-loop.md](agent-issue-loop.md) drains GitHub Issues through Codex
-implementation, deterministic local QA, **Local integration**, and post-loop
-issue triage. It uses the default triage labels documented under
-[docs/agents/triage-labels.md](agents/triage-labels.md) and keeps implementation
-gated by the relevant **Test lane** commands before `main` is pushed and the
-issue is closed.
+implementation, deterministic local QA, **Local integration**, **Promotion**,
+and post-loop issue triage. Use `$ralph-triage` as the gate before
+`$ralph-loop drain`. Ralph uses the default triage labels documented under
+[docs/agents/triage-labels.md](agents/triage-labels.md) plus Ralph
+**Delivery mode** labels. **Gitflow delivery** integrates to `dev` for review
+before promotion to `main`; **Trunk delivery** is an opt-in path for small
+low-risk changes that can close after integration to `main`.
 
 ## Where to work
 
@@ -126,6 +144,8 @@ For the doc-sync contract, searchable `sync.sources` metadata, and the required
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`
   - `backend-services/compose.yaml`
+  - `.agents/skills/ralph-loop/SKILL.md`
+  - `.agents/skills/ralph-triage/SKILL.md`
   - `scripts/ralph.py`
 - `sync.scope`: `behavior`
 - `sync.qa`:

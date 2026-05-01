@@ -1,7 +1,7 @@
 # Triage Labels
 
-The triage skill uses canonical roles and this repo maps those roles directly to
-GitHub label strings.
+The `ralph-triage` skill uses canonical roles and this repo maps those roles
+directly to GitHub label strings.
 
 ## Category labels
 
@@ -27,9 +27,24 @@ Ralph owns these labels while processing the issue queue:
 - `agent-running`: Ralph has claimed an implementation issue.
 - `agent-failed`: Ralph failed after retry and left logs for inspection.
 - `agent-merged`: Ralph pushed **Local integration** and closed the issue.
+- `agent-integrated`: Ralph integrated Gitflow work to `dev`; the issue waits
+  for **Promotion** to `main`.
 
 Runtime labels are not triage state labels. `ready-for-agent` remains the queue
 selection label for implementation.
+
+## Ralph delivery labels
+
+Ralph and triage use these labels to choose the issue **Delivery mode**:
+
+- `delivery-gitflow`: default; integrate to `dev`, review, then close during
+  **Promotion** to `main`.
+- `delivery-trunk`: opt-in for small docs, tests, tooling, or script changes
+  that can integrate directly to `main`.
+
+An issue should carry at most one delivery label. If both are present, Ralph
+keeps `delivery-gitflow`, removes `delivery-trunk`, and proceeds through the
+safer default path.
 
 ## Sync metadata
 
@@ -37,6 +52,7 @@ selection label for implementation.
 - `sync.sources`:
   - `AGENTS.md`
   - `scripts/ralph.py`
+  - `.agents/skills/ralph-triage/SKILL.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`
