@@ -19,10 +19,10 @@
 
 The project materializes Dagster assets defined under `src/aemo_etl/defs` to build a gas-market lakehouse on Delta tables.
 
-- Scheduled NEMWeb discovery assets poll `REPORTS/CURRENT/VicGas` and `REPORTS/CURRENT/GBB` every 15 minutes and copy source files into landing storage.
+- Scheduled NEMWeb discovery/listing assets poll `REPORTS/CURRENT/VicGas` and `REPORTS/CURRENT/GBB` every 15 minutes and copy source files into landing storage.
 - `download_vicgas_public_report_zip_files_job` can be launched manually to bootstrap or backfill VicGas `PublicRptsNN.zip` bundles into landing storage.
 - Unzipper assets expand zipped source payloads in landing storage and archive the original zip files after successful extraction.
-- Event-driven bronze assets read matching landing files, collapse each micro-batch to the latest `source_file` row per `surrogate_key`, merge current-state Delta rows by `surrogate_key`, and move processed source files into archive storage.
+- Event-driven source-table bronze assets read matching landing files, collapse each micro-batch to the latest `source_file` row per `surrogate_key`, merge current-state Delta rows by `surrogate_key`, and move processed source files into archive storage.
 - Silver assets overwrite source-specific parquet snapshots from the current bronze state.
 - `gas_model` assets combine GBB and VICGAS silver tables into shared dimensions and marts.
 - `delta_table_vacuum_schedule` runs `delta_table_vacuum_job` daily at 02:00 Australia/Melbourne to compact and vacuum Delta-backed assets.
@@ -97,7 +97,7 @@ flowchart TD
     Docs --> GasDocs["gas_model/"]
 ```
 
-- Raw ingestion: `factories/nemweb_public_files`, `factories/unzipper`, and `factories/df_from_s3_keys` define the discovery, extraction, and bronze/silver ingestion patterns reused across many source tables.
+- Raw ingestion: `factories/nemweb_public_files`, `factories/unzipper`, and `factories/df_from_s3_keys` define three separate roles: discovery/listing bronze assets, unzipper extraction assets, and source-table bronze/silver ingestion assets.
 - Source-specific silver assets: `silver.gbb.*` and `silver.vicgas.*` assets deduplicate current source rows and expose consistent parquet snapshot datasets for downstream use.
 - Gas-model marts: `src/aemo_etl/defs/gas_model` builds cross-source dimensions and fact tables from the source-specific silver layer.
 - Storage: landing and archive buckets hold files; the AEMO bucket holds bronze Delta tables plus parquet snapshot datasets for source silver and `gas_model`; the IO manager bucket stores Dagster-managed intermediates.
@@ -141,7 +141,7 @@ Detailed sequence diagrams for GBB, VICGAS, and raw-to-silver behavior live in [
 
 ## Data domains and asset layers
 
-- `raw`: scheduled discovery assets plus bronze ingestion assets that capture current source-table state from landing storage into Delta tables.
+- `raw`: scheduled discovery/listing assets plus source-table bronze ingestion assets that capture current source-table state from landing storage into Delta tables. Source-table bronze stores bounded current state; append replay history remains in archive storage.
 - `gbb`: source-specific silver assets for Gas Bulletin Board datasets such as flows, capacity, locations, linepack, and nomination data.
 - `vicgas`: source-specific silver assets for Victorian gas reports such as operational meter readings, allocations, prices, linepack, heating values, and settlements.
 - `gas_model`: shared dimensions and marts that reconcile GBB and VICGAS source data into reporting-friendly tables.
@@ -245,7 +245,11 @@ outside this docstring ratchet.
 `aemo-replay-bronze-archive` is dry-run unless `--replace` is present. Dry-run
 reports matching archive files, planned batch count, total bytes, and target
 Delta table URI for all source-table bronze assets (`--all`), one domain
-(`--domain`), or one table (`--table`).
+(`--domain`), or one table (`--table`). Replace mode rebuilds from archive in
+bounded batches; the first non-empty replay batch overwrites the target table,
+and later batches merge on `surrogate_key`, update only when
+`source_content_hash` changes, insert new keys, and retain target rows absent
+from later files.
 
 ## Project layout
 
@@ -273,6 +277,7 @@ aemo-etl/
 - [Architecture overview](docs/architecture/high_level_architecture.md)
 - [Ingestion sequence diagrams](docs/architecture/ingestion_flows.md)
 - [Local development guide](docs/development/local_development.md)
+- [ADR 0003: bounded current-state bronze source tables](../../../docs/adr/0003-bounded-current-state-bronze-source-tables.md)
 - [Gas-model ERDs](docs/gas_model/)
 
 ## Sync metadata
@@ -289,14 +294,15 @@ aemo-etl/
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/s3_pending_objects.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/unzipper/sensors.py`
-  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
   - `backend-services/dagster-user/aemo-etl/Makefile`
   - `backend-services/dagster-user/aemo-etl/.pre-commit-config.yaml`
   - `backend-services/dagster-user/aemo-etl/pyproject.toml`
+  - `docs/adr/0003-bounded-current-state-bronze-source-tables.md`
 - `sync.scope`: `architecture, tooling`
 - `sync.qa`:
   - `git diff --name-only`
