@@ -26,6 +26,10 @@ from aemo_etl.factories.df_from_s3_keys.assets import (
     with_source_content_hash_schema,
 )
 from aemo_etl.factories.df_from_s3_keys.hooks import Hook
+from aemo_etl.factories.df_from_s3_keys.source_tables import (
+    DFFromS3KeysSourceTableSpec,
+    register_source_table_spec,
+)
 from aemo_etl.utils import get_metadata_schema
 
 
@@ -51,6 +55,18 @@ def df_from_s3_keys_definitions_factory(
     bronze_key_prefix = ["bronze", domain]
     bronze_table_name = f"bronze_{name_suffix}"
     bronze_uri = f"s3://{AEMO_BUCKET}/{'/'.join(bronze_key_prefix)}/{bronze_table_name}"
+
+    register_source_table_spec(
+        DFFromS3KeysSourceTableSpec(
+            domain=domain,
+            name_suffix=name_suffix,
+            glob_pattern=glob_pattern,
+            schema=schema,
+            surrogate_key_sources=tuple(surrogate_key_sources),
+            postprocess_object_hooks=tuple(bronze_postprocess_object_hooks or ()),
+            postprocess_lazyframe_hooks=tuple(bronze_postprocess_lazyframe_hooks or ()),
+        )
+    )
 
     bronze_asset = bronze_df_from_s3_keys_asset_factory(
         uri=bronze_uri,
