@@ -2,7 +2,7 @@
 
 import tempfile
 from datetime import datetime
-from typing import Mapping, Unpack
+from typing import Final, Mapping, Unpack
 
 from dagster import (
     AssetExecutionContext,
@@ -11,7 +11,8 @@ from dagster import (
     asset,
 )
 from dagster_aws.s3 import S3Resource
-from polars import LazyFrame, col, lit, scan_delta, scan_parquet
+import polars_hash as plh
+from polars import Expr, LazyFrame, String, col, lit, scan_delta, scan_parquet
 from polars._typing import PolarsDataType
 from types_boto3_s3 import S3Client
 
@@ -24,7 +25,21 @@ from aemo_etl.utils import (
     bytes_to_lazyframe,
     get_from_s3,
     get_surrogate_key,
-    table_exists,
+)
+
+SOURCE_CONTENT_HASH_COLUMN: Final = "source_content_hash"
+SOURCE_CONTENT_HASH_DESCRIPTION: Final = (
+    "SHA-256 hash generated from declared source columns, excluding ingestion "
+    "metadata, surrogate_key, source_file, and source_content_hash"
+)
+SOURCE_CONTENT_HASH_EXCLUDED_COLUMNS: Final = frozenset(
+    {
+        "ingested_timestamp",
+        "ingested_date",
+        "surrogate_key",
+        "source_file",
+        SOURCE_CONTENT_HASH_COLUMN,
+    }
 )
 
 
@@ -32,6 +47,60 @@ class DFFromS3KeysConfiguration(Config):
     """Runtime config containing S3 keys selected by a sensor."""
 
     s3_keys: list[str] = []
+
+
+def with_source_content_hash_schema(
+    schema: Mapping[str, PolarsDataType],
+) -> dict[str, PolarsDataType]:
+    """Return schema with the source content hash column declared."""
+    return {**schema, SOURCE_CONTENT_HASH_COLUMN: String}
+
+
+def with_source_content_hash_descriptions(
+    schema_descriptions: Mapping[str, str],
+) -> dict[str, str]:
+    """Return schema descriptions with the source content hash described."""
+    return {
+        **schema_descriptions,
+        SOURCE_CONTENT_HASH_COLUMN: SOURCE_CONTENT_HASH_DESCRIPTION,
+    }
+
+
+def source_content_hash_columns(schema: Mapping[str, PolarsDataType]) -> list[str]:
+    """Return declared source columns used for source_content_hash."""
+    return [
+        column
+        for column in schema
+        if column not in SOURCE_CONTENT_HASH_EXCLUDED_COLUMNS
+    ]
+
+
+def get_source_content_hash(source_columns: list[str]) -> Expr:
+    """Build a SHA-256 hash expression from declared source columns."""
+    expressions = [col(column).cast(String).fill_null("") for column in source_columns]
+    if not expressions:
+        expressions = [lit("")]
+    return plh.concat_str(*expressions).chash.sha2_256()
+
+
+def add_source_content_hash(df: LazyFrame, source_columns: list[str]) -> LazyFrame:
+    """Add source_content_hash derived from declared source columns."""
+    return df.with_columns(
+        get_source_content_hash(source_columns).alias(SOURCE_CONTENT_HASH_COLUMN)
+    )
+
+
+def collapse_current_state_batch(batch: LazyFrame) -> LazyFrame:
+    """Keep the maximum source_file row for each surrogate_key in a batch."""
+    latest_keys = batch.group_by("surrogate_key").agg(
+        col("source_file").max().alias("source_file")
+    )
+    deduped = batch.join(
+        latest_keys,
+        on=["surrogate_key", "source_file"],
+        how="semi",
+    )
+    return deduped.unique("surrogate_key", maintain_order=False)
 
 
 def bronze_df_from_s3_keys_asset_factory(
@@ -47,6 +116,8 @@ def bronze_df_from_s3_keys_asset_factory(
     """Create a bronze asset that ingests selected S3 objects into Delta."""
     postprocess_object_hooks = postprocess_object_hooks or []
     postprocess_lazyframe_hooks = postprocess_lazyframe_hooks or []
+    schema = with_source_content_hash_schema(schema)
+    content_hash_columns = source_content_hash_columns(schema)
 
     asset_kwargs.setdefault("metadata", {})
 
@@ -128,6 +199,7 @@ def bronze_df_from_s3_keys_asset_factory(
                             for c, d in schema.items()
                             if c not in collected_schema
                         )
+                        df = add_source_content_hash(df, content_hash_columns)
                         # now maintain declared column order and append unknown columns
                         df = df.select([*declared_columns, *unknown_columns])
 
@@ -177,12 +249,7 @@ def bronze_df_from_s3_keys_asset_factory(
             s3_client.delete_object(Bucket=s3_landing_bucket, Key=s3_key)
 
         batch = scan_delta(tmp_uri)
-
-        if not table_exists(uri):
-            return batch
-
-        existing_source_files = scan_delta(uri).select("source_file").unique()
-        return batch.join(existing_source_files, on="source_file", how="anti")
+        return collapse_current_state_batch(batch)
 
     return _asset
 
@@ -204,17 +271,7 @@ def silver_df_from_s3_keys_asset_factory(
         df.sink_parquet(input_path)
         cached_df = scan_parquet(input_path)
 
-        latest_keys = cached_df.group_by("surrogate_key").agg(
-            col("source_file").max().alias("source_file")
-        )
-
-        deduped = cached_df.join(
-            latest_keys,
-            on=["surrogate_key", "source_file"],
-            how="semi",
-        )
-
-        last_deduped = deduped.unique("surrogate_key", maintain_order=False)
+        last_deduped = collapse_current_state_batch(cached_df)
 
         last_deduped.sink_parquet(output_path)
         return scan_parquet(output_path)

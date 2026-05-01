@@ -21,6 +21,9 @@ from aemo_etl.factories.checks import (
 from aemo_etl.factories.df_from_s3_keys.assets import (
     bronze_df_from_s3_keys_asset_factory,
     silver_df_from_s3_keys_asset_factory,
+    source_content_hash_columns,
+    with_source_content_hash_descriptions,
+    with_source_content_hash_schema,
 )
 from aemo_etl.factories.df_from_s3_keys.hooks import Hook
 from aemo_etl.utils import get_metadata_schema
@@ -41,6 +44,10 @@ def df_from_s3_keys_definitions_factory(
     job_tags: Mapping[str, object] | None = None,
 ) -> Definitions:
     """Create paired bronze and silver definitions for an S3-key source table."""
+    schema = with_source_content_hash_schema(schema)
+    schema_descriptions = with_source_content_hash_descriptions(schema_descriptions)
+    content_hash_columns = source_content_hash_columns(schema)
+
     bronze_key_prefix = ["bronze", domain]
     bronze_table_name = f"bronze_{name_suffix}"
     bronze_uri = f"s3://{AEMO_BUCKET}/{'/'.join(bronze_key_prefix)}/{bronze_table_name}"
@@ -54,12 +61,13 @@ def df_from_s3_keys_definitions_factory(
         key_prefix=bronze_key_prefix,
         name=bronze_table_name,
         group_name=group_name,
-        io_manager_key="aemo_deltalake_ingest_partitioned_append_io_manager",
+        io_manager_key="aemo_deltalake_current_state_merge_io_manager",
         deps=deps,
-        description=f"Bronze dataset, contains full un-cleansed dataset.\n\n{description}",
+        description=f"Bronze dataset, contains current un-cleansed source state.\n\n{description}",
         metadata={
             "dagster/column_schema": get_metadata_schema(schema, schema_descriptions),
             "surrogate_key_sources": surrogate_key_sources,
+            "source_content_hash_sources": content_hash_columns,
             "dagster/table_name": f"aemo.{domain}.{bronze_table_name}",
             "dagster/uri": bronze_uri,
             "glob_pattern": glob_pattern,
@@ -94,6 +102,7 @@ def df_from_s3_keys_definitions_factory(
         metadata={
             "dagster/column_schema": get_metadata_schema(schema, schema_descriptions),
             "surrogate_key_sources": surrogate_key_sources,
+            "source_content_hash_sources": content_hash_columns,
             "dagster/table_name": f"silver.{domain}.{silver_table_name}",
             "dagster/uri": silver_uri,
             "bronze_table_name": f"aemo.{domain}.{bronze_table_name}",

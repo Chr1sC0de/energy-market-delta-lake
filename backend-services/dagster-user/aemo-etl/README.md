@@ -22,8 +22,8 @@ The project materializes Dagster assets defined under `src/aemo_etl/defs` to bui
 - Scheduled NEMWeb discovery assets poll `REPORTS/CURRENT/VicGas` and `REPORTS/CURRENT/GBB` every 15 minutes and copy source files into landing storage.
 - `download_vicgas_public_report_zip_files_job` can be launched manually to bootstrap or backfill VicGas `PublicRptsNN.zip` bundles into landing storage.
 - Unzipper assets expand zipped source payloads in landing storage and archive the original zip files after successful extraction.
-- Event-driven bronze assets read matching landing files, normalize them into partitioned Delta tables, and move processed source files into archive storage.
-- Silver assets deduplicate the current source-specific state.
+- Event-driven bronze assets read matching landing files, collapse each micro-batch to the latest `source_file` row per `surrogate_key`, merge current-state Delta rows by `surrogate_key`, and move processed source files into archive storage.
+- Silver assets overwrite source-specific parquet snapshots from the current bronze state.
 - `gas_model` assets combine GBB and VICGAS silver tables into shared dimensions and marts.
 - `delta_table_vacuum_schedule` runs `delta_table_vacuum_job` daily at 02:00 Australia/Melbourne to compact and vacuum Delta-backed assets.
 
@@ -132,8 +132,8 @@ sequenceDiagram
     Unzip->>Landing: Write extracted csv/parquet members
     Unzip->>Archive: Archive successful zip inputs
     Landing->>Raw: Matching files selected by raw sensor
-    Raw->>Archive: Move processed source files
-    Raw->>Silver: Trigger downstream deduplicated tables
+    Raw->>Archive: Move processed source files after staging
+    Raw->>Silver: Trigger downstream current-state snapshots
     Silver->>GasModel: Trigger dimensions and marts
 ```
 
@@ -141,7 +141,7 @@ Detailed sequence diagrams for GBB, VICGAS, and raw-to-silver behavior live in [
 
 ## Data domains and asset layers
 
-- `raw`: scheduled discovery assets plus bronze ingestion assets that capture full source datasets from landing storage into Delta tables.
+- `raw`: scheduled discovery assets plus bronze ingestion assets that capture current source-table state from landing storage into Delta tables.
 - `gbb`: source-specific silver assets for Gas Bulletin Board datasets such as flows, capacity, locations, linepack, and nomination data.
 - `vicgas`: source-specific silver assets for Victorian gas reports such as operational meter readings, allocations, prices, linepack, heating values, and settlements.
 - `gas_model`: shared dimensions and marts that reconcile GBB and VICGAS source data into reporting-friendly tables.

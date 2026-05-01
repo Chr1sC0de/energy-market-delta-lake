@@ -122,12 +122,61 @@ def test_handle_output_merge_mode(mocker: MockerFixture) -> None:
     merge_builder = mocker.MagicMock()
     merge_builder.when_matched_update_all.return_value = merge_builder
     merge_builder.when_not_matched_insert_all.return_value = merge_builder
+    mocker.patch("aemo_etl.defs.resources.table_exists", return_value=True)
     mocker.patch.object(pl.LazyFrame, "sink_delta", return_value=merge_builder)
 
     io_mgr.handle_output(ctx, _SMALL_DF)
-    merge_builder.when_matched_update_all.assert_called_once()
+    merge_builder.when_matched_update_all.assert_called_once_with(predicate=None)
     merge_builder.when_not_matched_insert_all.assert_called_once()
     merge_builder.execute.assert_called_once()
+
+
+def test_handle_output_merge_mode_uses_update_predicate(
+    mocker: MockerFixture,
+) -> None:
+    """Merge mode skips matched updates when the configured predicate is false."""
+    io_mgr = PolarsDataFrameSinkDeltaIoManager(
+        sink_delta_kwargs={"mode": "merge"},
+        merge_update_predicate="source.source_content_hash != target.source_content_hash",
+    )
+    ctx = _make_output_context(mocker)
+    merge_builder = mocker.MagicMock()
+    merge_builder.when_matched_update_all.return_value = merge_builder
+    merge_builder.when_not_matched_insert_all.return_value = merge_builder
+    mocker.patch("aemo_etl.defs.resources.table_exists", return_value=True)
+    mocker.patch.object(pl.LazyFrame, "sink_delta", return_value=merge_builder)
+
+    io_mgr.handle_output(ctx, _SMALL_DF)
+
+    merge_builder.when_matched_update_all.assert_called_once_with(
+        predicate="source.source_content_hash != target.source_content_hash"
+    )
+    merge_builder.when_not_matched_insert_all.assert_called_once()
+    assert all(
+        call[0] != "when_not_matched_by_source_delete"
+        for call in merge_builder.method_calls
+    )
+
+
+def test_handle_output_merge_mode_creates_missing_table_with_append(
+    mocker: MockerFixture,
+) -> None:
+    """Merge IO managers create missing tables before later merge runs."""
+    io_mgr = PolarsDataFrameSinkDeltaIoManager(
+        sink_delta_kwargs={
+            "mode": "merge",
+            "delta_merge_options": {
+                "predicate": "source.surrogate_key = target.surrogate_key"
+            },
+        }
+    )
+    ctx = _make_output_context(mocker)
+    sink_delta = mocker.patch.object(pl.LazyFrame, "sink_delta", return_value=None)
+    mocker.patch("aemo_etl.defs.resources.table_exists", return_value=False)
+
+    io_mgr.handle_output(ctx, _SMALL_DF)
+
+    sink_delta.assert_called_once_with(_URI, mode="append")
 
 
 # ---------------------------------------------------------------------------
@@ -271,6 +320,7 @@ def test_defs_returns_definitions_with_resources() -> None:
         "aemo_deltalake_append_io_manager",
         "aemo_deltalake_overwrite_io_manager",
         "aemo_deltalake_ingest_partitioned_append_io_manager",
+        "aemo_deltalake_current_state_merge_io_manager",
         "aemo_parquet_overwrite_io_manager",
         "io_manager",
         "s3",
