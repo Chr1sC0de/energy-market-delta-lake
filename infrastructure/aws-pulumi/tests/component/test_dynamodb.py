@@ -4,7 +4,39 @@ import warnings
 
 import pulumi
 
-from components.dynamodb import TABLE_NAME, DeltaLockingTableComponentResource
+from components.dynamodb import (
+    TABLE_NAME,
+    TTL_ATTRIBUTE_NAME,
+    DeltaLockingTableComponentResource,
+)
+
+
+def _set_adopt_existing_delta_log_table(enabled: bool) -> None:
+    pulumi.runtime.set_config(
+        "aws-pulumi:adopt_existing_delta_log_table",
+        "true" if enabled else "false",
+    )
+
+
+def _assert_ttl_enabled_for_expire_time(ttl: object) -> None:
+    if hasattr(ttl, "attribute_name"):
+        attribute_name = getattr(ttl, "attribute_name")
+    elif isinstance(ttl, dict):
+        attribute_name = ttl.get("attributeName", ttl.get("attribute_name"))
+    else:
+        attribute_name = None
+
+    if hasattr(ttl, "enabled"):
+        enabled = getattr(ttl, "enabled")
+    elif isinstance(ttl, dict):
+        enabled = ttl.get("enabled")
+    else:
+        enabled = None
+
+    assert attribute_name == TTL_ATTRIBUTE_NAME, (
+        f"Expected TTL attribute '{TTL_ATTRIBUTE_NAME}', got {ttl}"
+    )
+    assert enabled is True, f"Expected TTL enabled, got {ttl}"
 
 
 class TestDeltaLockingTable:
@@ -56,6 +88,28 @@ class TestDeltaLockingTable:
             )
 
         return ddb.table.range_key.apply(check)
+
+    @pulumi.runtime.test
+    def test_ttl_uses_expire_time_attribute(self) -> None:
+        ddb = DeltaLockingTableComponentResource("test-energy-market")
+
+        def check(ttl: object) -> None:
+            _assert_ttl_enabled_for_expire_time(ttl)
+
+        return ddb.table.ttl.apply(check)
+
+    @pulumi.runtime.test
+    def test_adopted_table_ttl_uses_expire_time_attribute(self) -> None:
+        _set_adopt_existing_delta_log_table(True)
+        try:
+            ddb = DeltaLockingTableComponentResource("test-energy-market-adopted")
+        finally:
+            _set_adopt_existing_delta_log_table(False)
+
+        def check(ttl: object) -> None:
+            _assert_ttl_enabled_for_expire_time(ttl)
+
+        return ddb.table.ttl.apply(check)
 
     def test_no_deprecation_warnings(self) -> None:
         with warnings.catch_warnings(record=True) as caught:
