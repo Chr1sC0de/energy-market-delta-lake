@@ -40,6 +40,22 @@ def has_asset_failed(runs: Sequence[DagsterRun], asset_key: AssetKey) -> bool:
     return False
 
 
+def is_job_running(runs: Sequence[DagsterRun], job_name: str) -> bool:
+    """Return whether an active run already uses the job name."""
+    for run in runs:
+        if run.job_name == job_name:
+            return True
+    return False
+
+
+def has_job_failed(runs: Sequence[DagsterRun], job_name: str) -> bool:
+    """Return True if the most recent completed run for this job failed."""
+    for run in runs:
+        if run.job_name == job_name:
+            return run.status == DagsterRunStatus.FAILURE
+    return False
+
+
 def get_asset_glob_pattern(
     context: SensorEvaluationContext,
     *,
@@ -126,6 +142,21 @@ def build_s3_pending_objects_run_request(
     )
 
 
+def build_s3_pending_objects_job_run_request(
+    *,
+    asset_key: AssetKey,
+    job_name: str,
+    s3_keys: Sequence[str],
+) -> RunRequest | None:
+    """Build a job-targeted run request when any pending S3 keys are selected."""
+    if not s3_keys:
+        return None
+    return RunRequest(
+        job_name=job_name,
+        run_config=build_s3_keys_run_config(asset_key=asset_key, s3_keys=s3_keys),
+    )
+
+
 def plan_s3_pending_objects_run_request(
     context: SensorEvaluationContext,
     *,
@@ -159,5 +190,44 @@ def plan_s3_pending_objects_run_request(
     )
     return build_s3_pending_objects_run_request(
         asset_key=asset_key,
+        s3_keys=objects_to_process,
+    )
+
+
+def plan_s3_pending_objects_job_run_request(
+    context: SensorEvaluationContext,
+    *,
+    sensor_name: str,
+    asset_key: AssetKey,
+    job_name: str,
+    active_runs: Sequence[DagsterRun],
+    completed_runs: Sequence[DagsterRun],
+    s3_source_prefix: str,
+    object_head_mapping: Mapping[str, S3ObjectHead],
+    bytes_cap: float,
+    files_cap: int | None,
+) -> RunRequest | None:
+    """Plan a job-targeted run request by scanning pending S3 objects."""
+    s3_file_glob = get_asset_glob_pattern(
+        context,
+        sensor_name=sensor_name,
+        asset_key=asset_key,
+    )
+
+    if is_job_running(active_runs, job_name) or has_job_failed(
+        completed_runs, job_name
+    ):
+        return None
+
+    objects_to_process = select_s3_pending_object_keys(
+        s3_source_prefix=s3_source_prefix,
+        s3_file_glob=s3_file_glob,
+        object_head_mapping=object_head_mapping,
+        bytes_cap=bytes_cap,
+        files_cap=files_cap,
+    )
+    return build_s3_pending_objects_job_run_request(
+        asset_key=asset_key,
+        job_name=job_name,
         s3_keys=objects_to_process,
     )
