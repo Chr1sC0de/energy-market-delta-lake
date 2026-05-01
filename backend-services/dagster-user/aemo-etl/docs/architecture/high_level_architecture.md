@@ -153,6 +153,7 @@ Per-asset overrides use flat metadata keys: `delta_maintenance/enabled`, `delta_
 - `vicgas_event_driven_assets_sensor` and `gbb_event_driven_assets_sensor`
   - watch landing storage for file patterns declared on bronze assets
   - launch matching raw ingestion jobs with S3 keys
+  - use source-table defaults of 128 MB (128,000,000 bytes) and 25 selected landing files per bronze run request; these caps are not the full repo **Fast check** or **Push check** configuration
 - `aemo_etl_failed_run_alert_sensor`
   - watches failed runs in the AEMO ETL code location
   - publishes one alert to an AWS SNS topic when

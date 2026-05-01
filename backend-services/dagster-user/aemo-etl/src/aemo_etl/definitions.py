@@ -1,6 +1,7 @@
 """Root Dagster definitions for the aemo-etl project."""
 
 from pathlib import Path
+from typing import Final
 
 from dagster import (
     AssetSelection,
@@ -46,6 +47,9 @@ EVENT_DRIVEN_ASSETS_SELECTION = (
     | GBB_UNZIPPER_SELECTION
 )
 
+SOURCE_TABLE_SENSOR_BYTES_CAP: Final = 128_000_000
+SOURCE_TABLE_SENSOR_FILES_CAP: Final = 25
+
 
 @run_failure_sensor(
     name="aemo_etl_failed_run_alert_sensor",
@@ -79,8 +83,8 @@ def defs() -> Definitions:
                     asset_selection=VICGAS_ASSET_SELECTION,
                     s3_source_bucket=LANDING_BUCKET,
                     s3_source_prefix="bronze/vicgas",
-                    bytes_cap=250e6,
-                    files_cap=None,
+                    bytes_cap=SOURCE_TABLE_SENSOR_BYTES_CAP,
+                    files_cap=SOURCE_TABLE_SENSOR_FILES_CAP,
                     default_status=DEFAULT_SENSOR_STATUS,
                     jobs=jobs,
                 ),
@@ -89,8 +93,8 @@ def defs() -> Definitions:
                     asset_selection=GBB_ASSET_SELECTION,
                     s3_source_bucket=LANDING_BUCKET,
                     s3_source_prefix="bronze/gbb",
-                    bytes_cap=250e6,
-                    files_cap=None,
+                    bytes_cap=SOURCE_TABLE_SENSOR_BYTES_CAP,
+                    files_cap=SOURCE_TABLE_SENSOR_FILES_CAP,
                     default_status=DEFAULT_SENSOR_STATUS,
                     jobs=jobs,
                 ),

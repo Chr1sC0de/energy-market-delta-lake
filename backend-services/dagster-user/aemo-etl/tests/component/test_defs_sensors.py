@@ -68,11 +68,16 @@ def test_default_status_aws_branch(monkeypatch: object) -> None:
     importlib.reload(_definitions)
 
 
-def test_event_driven_raw_sensor_byte_caps(mocker: MockerFixture) -> None:
+def test_event_driven_raw_sensor_batch_caps(mocker: MockerFixture) -> None:
     calls: list[dict[str, object]] = []
+    unzipper_calls: list[dict[str, object]] = []
 
     def _df_from_s3_keys_sensor(**kwargs: object) -> object:
         calls.append(kwargs)
+        return mocker.MagicMock()
+
+    def _unzipper_sensor(**kwargs: object) -> object:
+        unzipper_calls.append(kwargs)
         return mocker.MagicMock()
 
     import aemo_etl.factories.sensors as df_from_s3_keys_sensors
@@ -91,7 +96,7 @@ def test_event_driven_raw_sensor_byte_caps(mocker: MockerFixture) -> None:
     mocker.patch.object(
         unzipper_sensors,
         "unzipper_sensor",
-        return_value=mocker.MagicMock(),
+        side_effect=_unzipper_sensor,
     )
     mocker.patch.object(
         definitions_module,
@@ -121,10 +126,21 @@ def test_event_driven_raw_sensor_byte_caps(mocker: MockerFixture) -> None:
             "gbb_event_driven_assets_sensor",
         }
     }
-    assert raw_sensor_calls["vicgas_event_driven_assets_sensor"]["bytes_cap"] == 250e6
-    assert raw_sensor_calls["gbb_event_driven_assets_sensor"]["bytes_cap"] == 250e6
+    assert (
+        raw_sensor_calls["vicgas_event_driven_assets_sensor"]["bytes_cap"]
+        == 128_000_000
+    )
+    assert raw_sensor_calls["vicgas_event_driven_assets_sensor"]["files_cap"] == 25
+    assert (
+        raw_sensor_calls["gbb_event_driven_assets_sensor"]["bytes_cap"] == 128_000_000
+    )
+    assert raw_sensor_calls["gbb_event_driven_assets_sensor"]["files_cap"] == 25
     assert raw_sensor_calls["vicgas_event_driven_assets_sensor"]["jobs"] == tuple(jobs)
     assert raw_sensor_calls["gbb_event_driven_assets_sensor"]["jobs"] == tuple(jobs)
+    assert unzipper_calls
+    for call in unzipper_calls:
+        assert "bytes_cap" not in call
+        assert "files_cap" not in call
 
 
 def test_gas_model_silver_modules_define_asset_targeted_automation_sensors() -> None:
