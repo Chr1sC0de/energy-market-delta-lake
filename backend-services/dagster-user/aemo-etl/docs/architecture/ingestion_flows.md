@@ -96,7 +96,7 @@ Trigger and output notes:
 
 - This follows the same factory pattern as GBB, but the downstream assets are the `int*` VICGAS report assets under `src/aemo_etl/defs/raw/vicgas`.
 - `download_vicgas_public_report_zip_files_job` is ad hoc only. It is used for bootstrap or backfill of `PublicRptsNN.zip` bundles into `LANDING_BUCKET/bronze/vicgas`; the existing unzipper and raw sensors handle downstream processing.
-- The bronze assets write partitioned Delta tables by `ingested_date`; the silver assets overwrite the deduplicated current parquet snapshot.
+- The bronze assets merge current-state Delta rows by `surrogate_key` after collapsing each micro-batch to the maximum `source_file` per key; the silver assets overwrite the current parquet snapshot.
 
 ## Raw-to-silver transformation flow
 
@@ -116,8 +116,9 @@ sequenceDiagram
     Operator->>BronzeAsset: Run with s3_keys
     BronzeAsset->>Landing: Download matching objects
     BronzeAsset->>BronzeAsset: Parse bytes to LazyFrame and apply hooks
-    BronzeAsset->>DeltaBronze: Append partitioned rows with ingested_date
-    BronzeAsset->>Archive: Copy processed files and delete from landing
+    BronzeAsset->>BronzeAsset: Add source_content_hash and keep max source_file per surrogate_key
+    BronzeAsset->>DeltaBronze: Merge rows by surrogate_key when source_content_hash changed
+    BronzeAsset->>Archive: Copy staged source files and delete from landing
 
     DeltaBronze->>SilverAsset: Dependency update observed
     SilverAsset->>DeltaBronze: Read bronze Delta table
@@ -130,7 +131,7 @@ sequenceDiagram
 Trigger and output notes:
 
 - The bronze run can come from an event-driven sensor or from a manual asset launch with explicit `s3_keys`.
-- Bronze uses `aemo_deltalake_ingest_partitioned_append_io_manager`; `df_from_s3_keys` silver uses `aemo_parquet_overwrite_io_manager`.
+- Bronze uses `aemo_deltalake_current_state_merge_io_manager`; `df_from_s3_keys` silver uses `aemo_parquet_overwrite_io_manager`.
 - `delta_table_vacuum_schedule` runs daily at 02:00 Australia/Melbourne and uses each Delta asset's `delta_maintenance/*` metadata, defaulting to compact plus full vacuum retention `0`.
 - A representative downstream example is `silver_gas_fact_operational_meter_flow`, which reads VICGAS silver inputs plus shared dimensions and writes a `silver/gas_model/...` parquet snapshot dataset.
 - Downstream `gas_model` silver assets retry failed materializations up to three times with a 60-second exponential backoff and plus/minus jitter.

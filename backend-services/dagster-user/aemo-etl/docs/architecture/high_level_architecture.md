@@ -192,7 +192,7 @@ Example defaults:
 
 ## S3-backed IO managers
 
-`src/aemo_etl/defs/resources.py` defines three Delta-oriented IO managers plus one Parquet overwrite IO manager:
+`src/aemo_etl/defs/resources.py` defines four Delta-oriented IO managers plus one Parquet overwrite IO manager:
 
 - `aemo_deltalake_append_io_manager`
   - append mode with schema merge
@@ -200,6 +200,8 @@ Example defaults:
   - overwrite mode with schema merge
 - `aemo_deltalake_ingest_partitioned_append_io_manager`
   - append mode partitioned by `ingested_date`
+- `aemo_deltalake_current_state_merge_io_manager`
+  - merge mode by `surrogate_key`, updating matched rows only when `source_content_hash` changed
 - `aemo_parquet_overwrite_io_manager`
   - overwrites a Parquet dataset directory with the current snapshot
 

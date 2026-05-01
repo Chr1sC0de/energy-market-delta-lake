@@ -41,6 +41,7 @@ DELTA_IO_MANAGER_KEYS: Final = frozenset(
         "aemo_deltalake_append_io_manager",
         "aemo_deltalake_overwrite_io_manager",
         "aemo_deltalake_ingest_partitioned_append_io_manager",
+        "aemo_deltalake_current_state_merge_io_manager",
     }
 )
 

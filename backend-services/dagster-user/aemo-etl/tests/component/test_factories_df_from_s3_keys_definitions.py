@@ -6,6 +6,7 @@ from dagster._core.definitions.unresolved_asset_job_definition import (
 )
 from polars import String
 
+from aemo_etl.factories.df_from_s3_keys.assets import SOURCE_CONTENT_HASH_COLUMN
 from aemo_etl.factories.df_from_s3_keys.definitions import (
     df_from_s3_keys_definitions_factory,
 )
@@ -51,7 +52,7 @@ def test_df_from_s3_keys_definitions_factory_wires_bronze_and_silver() -> None:
     assert set(assets_by_key) == {bronze_key, silver_key}
     assert (
         assets_by_key[bronze_key].get_io_manager_key_for_asset_key(bronze_key)
-        == "aemo_deltalake_ingest_partitioned_append_io_manager"
+        == "aemo_deltalake_current_state_merge_io_manager"
     )
     assert (
         assets_by_key[silver_key].get_io_manager_key_for_asset_key(silver_key)
@@ -62,6 +63,16 @@ def test_df_from_s3_keys_definitions_factory_wires_bronze_and_silver() -> None:
         assets_by_key[silver_key].metadata_by_key[silver_key]["dagster/table_name"]
         == "silver.gbb.silver_test_table"
     )
+    assert assets_by_key[bronze_key].metadata_by_key[bronze_key][
+        "source_content_hash_sources"
+    ] == ["col1"]
+    column_names = [
+        column.name
+        for column in assets_by_key[bronze_key]
+        .metadata_by_key[bronze_key]["dagster/column_schema"]
+        .columns
+    ]
+    assert SOURCE_CONTENT_HASH_COLUMN in column_names
 
 
 def test_df_from_s3_keys_definitions_factory_attaches_checks_to_silver() -> None:

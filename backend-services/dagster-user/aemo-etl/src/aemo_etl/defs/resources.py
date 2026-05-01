@@ -24,6 +24,7 @@ class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
 
     sink_delta_kwargs: dict[str, Any] = {}
     scan_delta_kwargs: dict[str, Any] = {}
+    merge_update_predicate: str | None = None
 
     @override
     def handle_output(self, context: OutputContext, obj: LazyFrame) -> None:
@@ -38,7 +39,12 @@ class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
 
         row_count = get_lazyframe_num_rows(obj)
 
-        if row_count > 0 or not table_exists(target_uri):
+        mode = self.sink_delta_kwargs.get("mode", "error")
+        target_exists = True
+        if row_count == 0 or mode == "merge":
+            target_exists = table_exists(target_uri)
+
+        if row_count > 0 or not target_exists:
             output_metadata: dict[str, RawMetadataValue] = {}
 
             if "dagster/column_schema" not in context.definition_metadata:
@@ -59,9 +65,18 @@ class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
                 }
             )
 
-            return_object = obj.sink_delta(target_uri, **self.sink_delta_kwargs)
+            sink_delta_kwargs = self.sink_delta_kwargs
+            if mode == "merge" and not target_exists:
+                sink_delta_kwargs = {
+                    key: value
+                    for key, value in self.sink_delta_kwargs.items()
+                    if key != "delta_merge_options"
+                }
+                sink_delta_kwargs["mode"] = "append"
 
-            if self.sink_delta_kwargs.get("mode", "error") == "merge":
+            return_object = obj.sink_delta(target_uri, **sink_delta_kwargs)
+
+            if mode == "merge" and target_exists:
                 assert return_object is not None, (
                     "mode was set to merge but resulting output is None"
                 )
@@ -69,7 +84,9 @@ class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
                 context.log.info(f"merging data with settings {self.sink_delta_kwargs}")
 
                 merge_results = (
-                    return_object.when_matched_update_all()
+                    return_object.when_matched_update_all(
+                        predicate=self.merge_update_predicate
+                    )
                     .when_not_matched_insert_all()
                     .execute()
                 )
@@ -175,6 +192,20 @@ def defs() -> Definitions:
                         "schema_mode": "merge",
                     },
                 },
+            ),
+            "aemo_deltalake_current_state_merge_io_manager": PolarsDataFrameSinkDeltaIoManager(
+                sink_delta_kwargs={
+                    "mode": "merge",
+                    "delta_merge_options": {
+                        "predicate": "source.surrogate_key = target.surrogate_key",
+                        "source_alias": "source",
+                        "target_alias": "target",
+                    },
+                },
+                merge_update_predicate=(
+                    "target.source_content_hash IS NULL OR "
+                    "source.source_content_hash != target.source_content_hash"
+                ),
             ),
             "aemo_parquet_overwrite_io_manager": PolarsDataFrameSinkParquetIoManager(),
             "s3": S3Resource(),

@@ -69,7 +69,7 @@ All bucket names are prefixed by `"{ENVIRONMENT}-energy-market"`.
 | Component | Key resources | Purpose |
 |---|---|---|
 | `S3BucketsComponentResource` | 4 S3 buckets plus encryption, public-access-block, versioning, archive lifecycle | Host raw files, Delta tables, and Dagster intermediates |
-| `DeltaLockingTableComponentResource` | 1 DynamoDB table named `delta_log` | Distributed lock table for `delta-rs` |
+| `DeltaLockingTableComponentResource` | 1 DynamoDB table named `delta_log` with TTL on `expireTime` | Distributed lock table for `delta-rs` |
 | `PostgresComponentResource` | 1 private EC2 instance, password generator, 2 SSM params | Dagster run, schedule, and event-log metadata |
 
 ## Implementation notes
@@ -78,6 +78,9 @@ All bucket names are prefixed by `"{ENVIRONMENT}-energy-market"`.
   `DEEP_ARCHIVE` after 180 days, with long-term expiration after 3650 days.
 - The S3 and DynamoDB components both support adoption/import of existing
   retained resources through Pulumi config flags.
+- The DynamoDB Delta locking table uses `tablePath` as the partition key,
+  `fileName` as the sort key, `PAY_PER_REQUEST` billing, and `expireTime` as
+  the TTL attribute for automatic lock metadata expiry.
 - Postgres is provisioned on a private `t4g.nano` instance and bootstrapped by
   user data that installs PostgreSQL 14, creates `dagster_user`, and creates
   the `dagster` database.

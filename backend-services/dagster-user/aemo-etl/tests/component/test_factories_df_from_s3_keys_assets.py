@@ -4,6 +4,7 @@ import datetime as dt
 from datetime import timezone
 
 import polars as pl
+import pytest
 from dagster import AssetsDefinition
 from dagster_aws.s3 import S3Resource
 from polars import Datetime, String
@@ -41,6 +42,7 @@ _BATCH_DF = pl.LazyFrame(
         "ingested_timestamp": [dt.datetime(2024, 1, 1, 10, tzinfo=_AEST)],
         "ingested_date": [dt.datetime(2024, 1, 1, tzinfo=_UTC)],
         "surrogate_key": ["hash1"],
+        "source_content_hash": ["content-hash1"],
         "source_file": ["s3://archive/key.csv"],
     },
     schema={
@@ -48,6 +50,7 @@ _BATCH_DF = pl.LazyFrame(
         "ingested_timestamp": Datetime("us", time_zone="UTC"),
         "ingested_date": Datetime("us", time_zone="UTC"),
         "surrogate_key": String,
+        "source_content_hash": String,
         "source_file": String,
     },
 )
@@ -73,7 +76,6 @@ def _call_asset(
     asset_def: AssetsDefinition,
     s3_keys: list[str],
     bytes_by_key: dict[str, bytes | None] | None = None,
-    table_exists_val: bool = False,
     scan_delta_side_effect: object = None,
 ) -> pl.LazyFrame:
     """Invoke the inner _asset function with standard mocks."""
@@ -94,10 +96,6 @@ def _call_asset(
     mocker.patch(
         "aemo_etl.factories.df_from_s3_keys.assets.get_from_s3",
         side_effect=_get_from_s3_side_effect,
-    )
-    mocker.patch(
-        "aemo_etl.factories.df_from_s3_keys.assets.table_exists",
-        return_value=table_exists_val,
     )
     mocker.patch.object(pl.LazyFrame, "sink_delta", return_value=None)
 
@@ -131,7 +129,6 @@ def test_asset_no_keys(mocker: MockerFixture) -> None:
     """Empty s3_keys → returns an empty LazyFrame matching the schema."""
     asset_def = _make_asset()
     mocker.patch("aemo_etl.factories.df_from_s3_keys.assets.get_from_s3")
-    mocker.patch("aemo_etl.factories.df_from_s3_keys.assets.table_exists")
     context = mocker.MagicMock()
     context.log = mocker.MagicMock()
     mock_s3 = mocker.MagicMock(spec=S3Resource)
@@ -185,71 +182,68 @@ def test_asset_first_run(mocker: MockerFixture) -> None:
         asset_def,
         s3_keys=["bronze/gbb/data.csv"],
         bytes_by_key={"bronze/gbb/data.csv": _CSV_BYTES},
-        table_exists_val=False,
     )
     assert isinstance(result, pl.LazyFrame)
 
 
-def test_asset_subsequent_run(mocker: MockerFixture) -> None:
-    """Valid CSV bytes, table already exists → source-file anti-join path."""
-    call_num = [0]
-
-    def _scan_side_effect(uri: str, **_kw: object) -> pl.LazyFrame:
-        call_num[0] += 1
-        return _BATCH_DF
-
+def test_asset_returns_current_state_batch(mocker: MockerFixture) -> None:
+    """Bronze emits one max-source_file row per surrogate_key."""
+    staged_batch = pl.LazyFrame(
+        {
+            "col1": ["older", "newer", "only"],
+            "ingested_timestamp": [
+                dt.datetime(2024, 1, 1, 10, tzinfo=_AEST),
+                dt.datetime(2024, 1, 1, 10, tzinfo=_AEST),
+                dt.datetime(2024, 1, 1, 10, tzinfo=_AEST),
+            ],
+            "ingested_date": [
+                dt.datetime(2024, 1, 1, tzinfo=_UTC),
+                dt.datetime(2024, 1, 1, tzinfo=_UTC),
+                dt.datetime(2024, 1, 1, tzinfo=_UTC),
+            ],
+            "surrogate_key": ["hash1", "hash1", "hash2"],
+            "source_content_hash": ["old-content", "new-content", "only-content"],
+            "source_file": [
+                "s3://archive/table~20260421000000.parquet",
+                "s3://archive/table~20260422000000.parquet",
+                "s3://archive/table~20260420000000.parquet",
+            ],
+        }
+    )
     asset_def = _make_asset()
     result = _call_asset(
         mocker,
         asset_def,
         s3_keys=["bronze/gbb/data.csv"],
         bytes_by_key={"bronze/gbb/data.csv": _CSV_BYTES},
-        table_exists_val=True,
-        scan_delta_side_effect=_scan_side_effect,
+        scan_delta_side_effect=lambda *_args, **_kwargs: staged_batch,
     )
-    assert isinstance(result, pl.LazyFrame)
+    collected = result.sort("surrogate_key").collect()
+    assert collected["col1"].to_list() == ["newer", "only"]
 
 
-def test_asset_filters_existing_source_file(mocker: MockerFixture) -> None:
-    """Existing source files are not emitted from bronze again."""
-
-    def _scan_side_effect(uri: str, **_kw: object) -> pl.LazyFrame:
-        if uri == "s3://test-aemo/bronze/gbb/test_asset":
-            return pl.LazyFrame({"source_file": ["s3://archive/key.csv"]})
-        return _BATCH_DF
-
+def test_asset_does_not_archive_when_staging_fails(mocker: MockerFixture) -> None:
     asset_def = _make_asset()
-    result = _call_asset(
-        mocker,
-        asset_def,
-        s3_keys=["bronze/gbb/data.csv"],
-        bytes_by_key={"bronze/gbb/data.csv": _CSV_BYTES},
-        table_exists_val=True,
-        scan_delta_side_effect=_scan_side_effect,
+    context = mocker.MagicMock()
+    context.log = mocker.MagicMock()
+    mock_s3_client = mocker.MagicMock(spec=S3Client)
+    mock_s3 = mocker.MagicMock(spec=S3Resource)
+    mock_s3.get_client.return_value = mock_s3_client
+    mocker.patch(
+        "aemo_etl.factories.df_from_s3_keys.assets.get_from_s3",
+        return_value=_CSV_BYTES,
     )
-    assert result.collect().height == 0
-
-
-def test_asset_allows_existing_surrogate_key_from_new_source_file(
-    mocker: MockerFixture,
-) -> None:
-    """Bronze source-file idempotency does not dedupe business keys."""
-
-    def _scan_side_effect(uri: str, **_kw: object) -> pl.LazyFrame:
-        if uri == "s3://test-aemo/bronze/gbb/test_asset":
-            return pl.LazyFrame({"source_file": ["s3://archive/old.csv"]})
-        return _BATCH_DF
-
-    asset_def = _make_asset()
-    result = _call_asset(
-        mocker,
-        asset_def,
-        s3_keys=["bronze/gbb/data.csv"],
-        bytes_by_key={"bronze/gbb/data.csv": _CSV_BYTES},
-        table_exists_val=True,
-        scan_delta_side_effect=_scan_side_effect,
+    mocker.patch.object(
+        pl.LazyFrame, "sink_delta", side_effect=RuntimeError("stage failed")
     )
-    assert result.collect().height == 1
+    config = DFFromS3KeysConfiguration(s3_keys=["bronze/gbb/data.csv"])
+    fn = asset_def.op.compute_fn.decorated_fn  # type: ignore[union-attr]
+
+    with pytest.raises(RuntimeError, match="stage failed"):
+        fn(context, s3=mock_s3, config=config)
+
+    mock_s3_client.copy_object.assert_not_called()
+    mock_s3_client.delete_object.assert_not_called()
 
 
 def test_silver_asset_keeps_latest_source_file_per_surrogate_key(
@@ -295,7 +289,6 @@ def test_asset_with_object_hook(mocker: MockerFixture) -> None:
         asset_def,
         s3_keys=["bronze/gbb/data.csv"],
         bytes_by_key={"bronze/gbb/data.csv": _CSV_BYTES},
-        table_exists_val=False,
     )
     assert isinstance(result, pl.LazyFrame)
     mock_hook.process.assert_called_once()
@@ -316,6 +309,5 @@ def test_asset_with_lazyframe_hook(mocker: MockerFixture) -> None:
         asset_def,
         s3_keys=["bronze/gbb/data.csv"],
         bytes_by_key={"bronze/gbb/data.csv": _CSV_BYTES},
-        table_exists_val=False,
     )
     assert isinstance(result, pl.LazyFrame)
