@@ -193,8 +193,11 @@ leaves a result comment with the run log path.
 Ralph chooses **Delivery mode** from issue labels first, then from the CLI
 default. Missing delivery labels are written back to the issue before
 implementation. `delivery-gitflow` defaults to `origin/dev`; if that branch does
-not exist, Ralph creates it from `origin/main`. `delivery-trunk` defaults to
-`origin/main`. `--target-branch` overrides the **Integration target** explicitly.
+not exist, Ralph creates it from `origin/main`. Before creating a Gitflow issue
+branch, Ralph also syncs `origin/main` into `origin/dev` when `main` is not
+already an ancestor of `dev`, so the **Integration target** is not behind trunk.
+`delivery-trunk` defaults to `origin/main`. `--target-branch` overrides the
+**Integration target** explicitly.
 
 Ralph creates branches named `agent/issue-N-slug` from the **Integration target**
 and creates sibling worktrees under the repo worktree container. Codex is
@@ -243,7 +246,8 @@ sequenceDiagram
 `origin/dev` to `origin/main` by default. Ralph fetches both branches, computes
 the changed files between them, runs the aggregate matching **Push check** QA,
 merges `origin/dev` into a detached `origin/main` worktree with per-issue commits
-preserved, and pushes `main`.
+preserved, pushes `main`, and then fast-forwards `dev` to the promotion commit so
+the next Gitflow drain starts from a `dev` branch that contains `main`.
 
 After the push succeeds, Ralph scans open `agent-integrated` issues. It closes
 only issues whose recorded Gitflow integration commit is still in the promoted

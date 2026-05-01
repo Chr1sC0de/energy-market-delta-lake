@@ -590,6 +590,58 @@ Build it.
             self.assertIn("Target branch: `dev`", comment)
             self.assertIn("will stay open until Ralph promotes `dev`", comment)
 
+    def test_gitflow_implementation_syncs_dev_with_main_before_issue_branch(self) -> None:
+        ancestor_command = (
+            "git",
+            "merge-base",
+            "--is-ancestor",
+            "origin/main",
+            "origin/dev",
+        )
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["sync-sha\n", "base-sha\n", "base-sha\n", "merge-sha\n"],
+            fail_commands={ancestor_command: 1},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(Path(tmp), runner, delivery_mode=ralph.GITFLOW_MODE)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                loop._handle_implementation(issue)
+
+            worktrees = Path(tmp) / "worktrees"
+            sync_path = worktrees / "agent-sync-main-into-dev"
+            issue_path = worktrees / "agent-issue-42-implement-thing"
+
+        commands = [call.args for call in runner.calls]
+        sync_push = ("git", "push", "origin", "HEAD:dev")
+        issue_worktree = (
+            "git",
+            "worktree",
+            "add",
+            "-b",
+            "agent/issue-42-implement-thing",
+            str(issue_path),
+            "origin/dev",
+        )
+        self.assertIn(
+            ("git", "worktree", "add", "--detach", str(sync_path), "origin/dev"),
+            commands,
+        )
+        self.assertIn(
+            ("git", "merge", "--no-ff", "origin/main", "-m", "Sync main into dev"),
+            commands,
+        )
+        self.assertLess(commands.index(sync_push), commands.index(issue_worktree))
+        self.assertIn(
+            ("git", "worktree", "remove", str(sync_path)),
+            commands,
+        )
+        self.assertIn("Syncing origin/main into origin/dev", output.getvalue())
+
     def test_base_drift_rebases_and_reruns_qa_before_squash_merge(self) -> None:
         runner = FakeRunner(
             status_outputs=[
@@ -707,6 +759,7 @@ Build it.
             commands,
         )
         self.assertIn(("git", "push", "origin", "HEAD:main"), commands)
+        self.assertIn(("git", "push", "origin", "HEAD:dev"), commands)
         self.assertIn(
             (
                 "gh",

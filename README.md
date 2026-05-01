@@ -95,9 +95,9 @@ See [docs/architecture.md](docs/architecture.md) for the fuller system view.
 
 At a high level the deployed workflow is:
 
-1. Discovery assets poll public AEMO/NEMWeb sources and land files in S3.
+1. Discovery/listing assets poll public AEMO/NEMWeb sources and land files in S3.
 1. Unzipper sensors expand zipped inputs and archive successful zip payloads.
-1. Event-driven bronze assets ingest landed files into Delta tables.
+1. Event-driven source-table bronze assets ingest landed files into current-state Delta tables.
 1. Source-specific silver assets deduplicate and standardize current-state tables.
 1. `gas_model` assets build shared dimensions and marts from the source silver layer.
 1. A daily Delta maintenance job compacts and full-vacuums Delta-backed tables.
@@ -105,7 +105,8 @@ At a high level the deployed workflow is:
 
 The ETL Subproject also exposes `aemo-replay-bronze-archive` for dry-run
 planning and explicit `--replace` rebuilds of source-table bronze Delta tables
-from archived source files.
+from archived source files. Source-table bronze keeps bounded current state;
+append replay history remains in archive storage.
 
 The orchestration details come from the Dagster definitions in
 `backend-services/dagster-user/aemo-etl`, including event-driven sensors and
@@ -279,6 +280,9 @@ hook config. System hooks such as `shellcheck` must also be available on
 | Ralph trunk drain | `python3 scripts/ralph.py --drain --delivery-mode trunk` |
 | Ralph promotion | `python3 scripts/ralph.py --promote` |
 
+Ralph Gitflow drain keeps `dev` current with `main` before integrating work, and
+Promotion fast-forwards `dev` to the promotion commit after pushing `main`.
+
 ## Deployment
 
 Pulumi is the source of truth for deployed infrastructure:
@@ -306,6 +310,10 @@ for stack details, component breakdown, and deployed-test commands.
   - `backend-services/dagster-user/aemo-etl/.pre-commit-config.yaml`
   - `backend-services/dagster-user/aemo-etl/Makefile`
   - `backend-services/dagster-user/aemo-etl/pyproject.toml`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
   - `backend-services/marimo/.pre-commit-config.yaml`
@@ -320,6 +328,7 @@ for stack details, component breakdown, and deployed-test commands.
   - `scripts/check_shell_script_headers.py`
   - `scripts/ralph.py`
   - `tests/test_documentation_qa_ratchet.py`
+  - `docs/adr/0003-bounded-current-state-bronze-source-tables.md`
 - `sync.scope`: `architecture, tooling`
 - `sync.qa`:
   - `git diff --name-only`

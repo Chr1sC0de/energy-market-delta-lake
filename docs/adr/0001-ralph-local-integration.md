@@ -21,10 +21,12 @@ trunk-style behavior described here remains the **Trunk delivery** path.
 
 ## Consequences
 
-Ralph must be conservative around git drift. If `origin/main` moves after the
-issue worktree is created, Ralph rebases the issue branch and reruns selected QA
-before squash-merging. If `main` is pushed but issue metadata cannot be updated,
-the drain stops because code and board state may no longer agree.
+Ralph must be conservative around git drift. Trunk delivery integrates against
+latest `origin/main`. Gitflow delivery keeps `origin/dev` current with
+`origin/main` before issue branches are created, then rebases and reruns selected
+QA if the **Integration target** moves before squash-merging. If a target branch
+is pushed but issue metadata cannot be updated, the drain stops because code and
+board state may no longer agree.
 
 ## Sync metadata
 

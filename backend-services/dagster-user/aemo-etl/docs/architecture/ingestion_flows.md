@@ -132,6 +132,13 @@ Trigger and output notes:
 
 - The bronze run can come from an event-driven sensor or from a manual asset launch with explicit `s3_keys`.
 - Bronze uses `aemo_deltalake_current_state_merge_io_manager`; `df_from_s3_keys` silver uses `aemo_parquet_overwrite_io_manager`.
+- Source-table bronze assets are current-state Delta tables, not append-history
+  tables. Discovery/listing assets such as `bronze_nemweb_public_files_*` and
+  extraction assets such as `unzipper_*` are separate ingestion roles.
+- `source_content_hash` is calculated from declared source columns, while
+  `surrogate_key` is generated from each table's configured key columns. The
+  merge updates a matched `surrogate_key` only when the hash changes and inserts
+  new keys; target rows absent from a later source file remain in bronze.
 - `aemo-replay-bronze-archive` rebuilds source-table bronze Delta tables from
   archive storage. It can target all source-table bronze assets, one domain, or
   one table; dry-run is the default and reports matching archive files, planned
@@ -150,6 +157,7 @@ When `AWS_ENDPOINT_URL` points at LocalStack, the same flow runs against local S
 
 - [High-level architecture](high_level_architecture.md)
 - [Local development guide](../development/local_development.md)
+- [ADR 0003: bounded current-state bronze source tables](../../../../../docs/adr/0003-bounded-current-state-bronze-source-tables.md)
 - [Gas-model ERDs](../gas_model/)
 
 ## Sync metadata
@@ -171,6 +179,7 @@ When `AWS_ENDPOINT_URL` points at LocalStack, the same flow runs against local S
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_operational_meter_flow.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/unzipper/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/unzipper/sensors.py`
+  - `docs/adr/0003-bounded-current-state-bronze-source-tables.md`
 - `sync.scope`: `behavior`
 - `sync.qa`:
   - `git diff --name-only`

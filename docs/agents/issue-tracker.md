@@ -13,10 +13,11 @@ gh auth status
 The Ralph loop uses GitHub Issues as its queue and board. Successful
 implementation work uses **Local integration** instead of GitHub PRs. In
 default **Gitflow delivery**, Ralph squash-merges validated work to `dev`,
-comments evidence, and leaves the issue open with `agent-integrated`; Ralph
-later closes verified issues during **Promotion** from `dev` to `main`. In
-opt-in **Trunk delivery**, Ralph integrates directly to `main`, comments
-evidence, and closes the issue.
+comments evidence, and leaves the issue open with `agent-integrated`. Ralph
+syncs `main` into `dev` before Gitflow integration when needed, then later
+closes verified issues during **Promotion** from `dev` to `main` and
+fast-forwards `dev` to the promotion commit. In opt-in **Trunk delivery**, Ralph
+integrates directly to `main`, comments evidence, and closes the issue.
 
 ## Sync metadata
 
