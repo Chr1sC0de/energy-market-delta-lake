@@ -1,6 +1,6 @@
 """Shared Dagster resources and IO managers for aemo-etl."""
 
-from typing import override
+from typing import Final, override
 
 from dagster import (
     Any,
@@ -17,6 +17,16 @@ from polars import LazyFrame, scan_delta, scan_parquet
 
 from aemo_etl.configs import DAGSTER_URI, IO_MANAGER_BUCKET
 from aemo_etl.utils import get_lazyframe_num_rows, get_metadata_schema, table_exists
+
+CURRENT_STATE_DELTA_MERGE_OPTIONS: Final = {
+    "predicate": "source.surrogate_key = target.surrogate_key",
+    "source_alias": "source",
+    "target_alias": "target",
+}
+CURRENT_STATE_MERGE_UPDATE_PREDICATE: Final = (
+    "target.source_content_hash IS NULL OR "
+    "source.source_content_hash != target.source_content_hash"
+)
 
 
 class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
@@ -196,16 +206,9 @@ def defs() -> Definitions:
             "aemo_deltalake_current_state_merge_io_manager": PolarsDataFrameSinkDeltaIoManager(
                 sink_delta_kwargs={
                     "mode": "merge",
-                    "delta_merge_options": {
-                        "predicate": "source.surrogate_key = target.surrogate_key",
-                        "source_alias": "source",
-                        "target_alias": "target",
-                    },
+                    "delta_merge_options": CURRENT_STATE_DELTA_MERGE_OPTIONS,
                 },
-                merge_update_predicate=(
-                    "target.source_content_hash IS NULL OR "
-                    "source.source_content_hash != target.source_content_hash"
-                ),
+                merge_update_predicate=CURRENT_STATE_MERGE_UPDATE_PREDICATE,
             ),
             "aemo_parquet_overwrite_io_manager": PolarsDataFrameSinkParquetIoManager(),
             "s3": S3Resource(),

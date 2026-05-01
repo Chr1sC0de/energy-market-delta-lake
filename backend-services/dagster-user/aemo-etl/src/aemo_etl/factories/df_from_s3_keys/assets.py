@@ -1,6 +1,7 @@
 """Asset factories for S3-key driven raw and silver datasets."""
 
 import tempfile
+from collections.abc import Iterable
 from datetime import datetime
 from typing import Final, Mapping, Unpack
 
@@ -103,6 +104,58 @@ def collapse_current_state_batch(batch: LazyFrame) -> LazyFrame:
     return deduped.unique("surrogate_key", maintain_order=False)
 
 
+def source_table_bronze_frame_from_bytes(
+    *,
+    s3_bucket: str,
+    s3_key: str,
+    object_bytes: bytes,
+    schema: Mapping[str, PolarsDataType],
+    surrogate_key_sources: list[str] | tuple[str, ...],
+    current_time: datetime,
+    postprocess_object_hooks: Iterable[Hook[bytes]] = (),
+    postprocess_lazyframe_hooks: Iterable[Hook[LazyFrame]] = (),
+    source_file_bucket: str = ARCHIVE_BUCKET,
+) -> LazyFrame:
+    """Parse and normalize one source-table object into bronze rows."""
+    filetype = s3_key.rsplit(".")[-1].lower()
+    if filetype not in BYTES_TO_LAZYFRAME_REGISTER:
+        raise ValueError(f"{s3_key} filetype {filetype} not supported")
+
+    for hook in postprocess_object_hooks:
+        object_bytes = hook.process(s3_bucket, s3_key, object_bytes)
+
+    df = bytes_to_lazyframe(filetype, object_bytes).with_columns(
+        ingested_timestamp=lit(current_time),
+        ingested_date=lit(current_time)
+        .dt.replace_time_zone("UTC")
+        .dt.replace(hour=0, minute=0, second=0, microsecond=0),
+        surrogate_key=get_surrogate_key(list(surrogate_key_sources)),
+    )
+
+    for hook in postprocess_lazyframe_hooks:
+        df = hook.process(s3_bucket, s3_key, df)
+
+    df = df.with_columns(source_file=lit(f"s3://{source_file_bucket}/{s3_key}"))
+
+    collected_schema = df.collect_schema()
+    observed_columns = list(collected_schema.keys())
+    declared_columns = list(schema.keys())
+    unknown_columns = [column for column in observed_columns if column not in schema]
+
+    df = df.with_columns(
+        col(column).cast(data_type)
+        for column, data_type in schema.items()
+        if column in collected_schema
+    )
+    df = df.with_columns(
+        lit(None).cast(data_type).alias(column)
+        for column, data_type in schema.items()
+        if column not in collected_schema
+    )
+    df = add_source_content_hash(df, source_content_hash_columns(schema))
+    return df.select([*declared_columns, *unknown_columns])
+
+
 def bronze_df_from_s3_keys_asset_factory(
     uri: str,
     schema: Mapping[str, PolarsDataType],
@@ -117,7 +170,6 @@ def bronze_df_from_s3_keys_asset_factory(
     postprocess_object_hooks = postprocess_object_hooks or []
     postprocess_lazyframe_hooks = postprocess_lazyframe_hooks or []
     schema = with_source_content_hash_schema(schema)
-    content_hash_columns = source_content_hash_columns(schema)
 
     asset_kwargs.setdefault("metadata", {})
 
@@ -155,53 +207,17 @@ def bronze_df_from_s3_keys_asset_factory(
                 )
                 if bytes_ is not None:
                     if len(bytes_) > 0:
-                        for hook in postprocess_object_hooks:
-                            bytes_ = hook.process(s3_landing_bucket, s3_key, bytes_)
-
-                        df = bytes_to_lazyframe(filetype, bytes_).with_columns(
-                            ingested_timestamp=lit(current_time),
-                            ingested_date=lit(current_time)
-                            .dt.replace_time_zone("UTC")
-                            .dt.replace(hour=0, minute=0, second=0, microsecond=0),
-                            surrogate_key=get_surrogate_key(surrogate_key_sources),
+                        df = source_table_bronze_frame_from_bytes(
+                            s3_bucket=s3_landing_bucket,
+                            s3_key=s3_key,
+                            object_bytes=bytes_,
+                            schema=schema,
+                            surrogate_key_sources=surrogate_key_sources,
+                            current_time=current_time,
+                            postprocess_object_hooks=postprocess_object_hooks,
+                            postprocess_lazyframe_hooks=postprocess_lazyframe_hooks,
+                            source_file_bucket=s3_archive_bucket,
                         )
-
-                        for hook in postprocess_lazyframe_hooks:
-                            df = hook.process(s3_landing_bucket, s3_key, df)
-
-                        # because we'll be moving the file to the archive bucket
-                        # use that path here
-                        df = df.with_columns(
-                            source_file=lit(f"s3://{s3_archive_bucket}/{s3_key}")
-                        )
-
-                        # Cast declared columns, add any missing declared columns,
-                        # then normalize output order so declared columns always
-                        # come first while preserving unknown source columns.
-                        collected_schema = df.collect_schema()
-                        observed_columns = list(collected_schema.keys())
-                        declared_columns = list(schema.keys())
-                        unknown_columns = [
-                            column
-                            for column in observed_columns
-                            if column not in schema
-                        ]
-
-                        # cast the schema to the correct type
-                        df = df.with_columns(
-                            col(c).cast(d)
-                            for c, d in schema.items()
-                            if c in collected_schema
-                        )
-                        # now add the missing columns
-                        df = df.with_columns(
-                            lit(None).cast(d).alias(c)
-                            for c, d in schema.items()
-                            if c not in collected_schema
-                        )
-                        df = add_source_content_hash(df, content_hash_columns)
-                        # now maintain declared column order and append unknown columns
-                        df = df.select([*declared_columns, *unknown_columns])
 
                         # Sink this file immediately to the local staging table
                         # so bytes_ and df can be freed before loading the next

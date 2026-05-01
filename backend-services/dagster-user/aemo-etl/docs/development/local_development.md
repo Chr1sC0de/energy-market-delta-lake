@@ -169,6 +169,7 @@ make integration-test
 make integration-test-testmon
 make duplicate-check
 make run-prek
+uv run aemo-replay-bronze-archive --domain gbb
 ```
 
 `make run-prek` is this Subproject's **Commit check**. It includes executable
@@ -193,6 +194,7 @@ generated-like raw source-table and TypedDict model definition surfaces.
   - `backend-services/dagster-user/aemo-etl/Makefile`
   - `backend-services/dagster-user/aemo-etl/.pre-commit-config.yaml`
   - `backend-services/dagster-user/aemo-etl/pyproject.toml`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
   - `backend-services/dagster-user/aemo-etl/tests/integration/conftest.py`
   - `backend-services/dagster-user/aemo-etl/.localstack.env`
   - `backend-services/dagster-user/aemo-etl/scripts/setup-debugging-environment`

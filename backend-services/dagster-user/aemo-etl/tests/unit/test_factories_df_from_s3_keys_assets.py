@@ -5,11 +5,13 @@ from datetime import timezone
 
 import polars as pl
 from polars import Datetime, String
+import pytest
 
 from aemo_etl.factories.df_from_s3_keys.assets import (
     SOURCE_CONTENT_HASH_COLUMN,
     add_source_content_hash,
     collapse_current_state_batch,
+    source_table_bronze_frame_from_bytes,
     source_content_hash_columns,
 )
 
@@ -85,3 +87,15 @@ def test_collapse_current_state_batch_keeps_max_source_file_per_surrogate_key() 
     result = collapse_current_state_batch(batch).sort("surrogate_key").collect()
 
     assert result["business_col"].to_list() == ["newer", "only"]
+
+
+def test_source_table_bronze_frame_from_bytes_rejects_unknown_filetype() -> None:
+    with pytest.raises(ValueError, match="not supported"):
+        source_table_bronze_frame_from_bytes(
+            s3_bucket="landing",
+            s3_key="bronze/gbb/table.txt",
+            object_bytes=b"ignored",
+            schema={},
+            surrogate_key_sources=(),
+            current_time=dt.datetime(2024, 1, 1, tzinfo=_AEST),
+        )

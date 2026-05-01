@@ -103,6 +103,10 @@ At a high level the deployed workflow is:
 1. A daily Delta maintenance job compacts and full-vacuums Delta-backed tables.
 1. Dagster metadata and orchestration state live in PostgreSQL, while data products live in S3-backed Delta tables.
 
+The ETL Subproject also exposes `aemo-replay-bronze-archive` for dry-run
+planning and explicit `--replace` rebuilds of source-table bronze Delta tables
+from archived source files.
+
 The orchestration details come from the Dagster definitions in
 `backend-services/dagster-user/aemo-etl`, including event-driven sensors and
 automation-conditioned downstream assets. The Delta maintenance schedule runs
@@ -302,6 +306,8 @@ for stack details, component breakdown, and deployed-test commands.
   - `backend-services/dagster-user/aemo-etl/.pre-commit-config.yaml`
   - `backend-services/dagster-user/aemo-etl/Makefile`
   - `backend-services/dagster-user/aemo-etl/pyproject.toml`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
   - `backend-services/marimo/.pre-commit-config.yaml`
   - `backend-services/marimo/pyproject.toml`
   - `infrastructure/aws-pulumi/__main__.py`

@@ -114,8 +114,17 @@ The bronze asset:
 - receives S3 object keys from a sensor run config
 - reads bytes from landing storage
 - applies optional preprocessing hooks
-- writes a partitioned Delta append table into the AEMO bucket
+- collapses each micro-batch to current state by `surrogate_key`
+- merges current-state rows into the bronze Delta table in the AEMO bucket
 - archives processed source files by moving them from landing to archive
+
+`aemo-replay-bronze-archive` is the standalone rebuild path for those same
+bronze source tables. It imports the same source-table definitions, defaults to
+dry-run planning, reports matching archive files, planned batches, total bytes,
+and target Delta table URI, and only writes when `--replace` is provided. Replace
+mode processes archived source files in bounded batches, writes the first
+non-empty batch as an overwrite, then applies the same current-state merge
+predicate used by `aemo_deltalake_current_state_merge_io_manager`.
 
 The corresponding silver asset:
 
@@ -153,6 +162,7 @@ Per-asset overrides use flat metadata keys: `delta_maintenance/enabled`, `delta_
 - `vicgas_event_driven_assets_sensor` and `gbb_event_driven_assets_sensor`
   - watch landing storage for file patterns declared on bronze assets
   - launch matching raw ingestion jobs with S3 keys
+  - use source-table defaults of 128 MB (128,000,000 bytes) and 25 selected landing files per bronze run request; these caps are not the full repo **Fast check** or **Push check** configuration
 - `aemo_etl_failed_run_alert_sensor`
   - watches failed runs in the AEMO ETL code location
   - publishes one alert to an AWS SNS topic when
@@ -249,6 +259,9 @@ flowchart TD
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/s3_pending_objects.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/unzipper/sensors.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/table_metadata.py`
