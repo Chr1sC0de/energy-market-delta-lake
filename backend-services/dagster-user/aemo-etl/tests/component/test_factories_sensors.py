@@ -19,7 +19,7 @@ from aemo_etl.factories.sensors import (
 # Pure helper functions
 # ---------------------------------------------------------------------------
 
-_ASSET_KEY = AssetKey(["bronze", "gbb", "test_asset"])
+_ASSET_KEY = AssetKey(["bronze", "gbb", "bronze_test_asset"])
 _TARGET_JOB_NAME = "test_asset_job"
 
 
@@ -161,7 +161,7 @@ def test_sensor_inner_function_run_requests(
         return_value=_OBJECT_HEAD,
     )
     mocker.patch(
-        "aemo_etl.factories.sensors.get_s3_object_keys_from_prefix_and_name_glob",
+        "aemo_etl.factories.s3_pending_objects.get_s3_object_keys_from_prefix_and_name_glob",
         return_value=[_S3_OBJECT_KEY] if expected_requests else [],
     )
     mocker.patch.object(
@@ -185,6 +185,11 @@ def test_sensor_inner_function_run_requests(
 
     results: list[RunRequest] = list(sensor_def._raw_fn(context, s3=mock_s3))  # type: ignore[call-overload, arg-type]
     assert len(results) == expected_requests
+    if expected_requests:
+        assert results[0].job_name == _TARGET_JOB_NAME
+        assert results[0].run_config["ops"][_ASSET_KEY.to_python_identifier()][
+            "config"
+        ]["s3_keys"] == [_S3_OBJECT_KEY]
 
 
 def test_sensor_inner_bytes_cap(mocker: MockerFixture) -> None:
@@ -198,7 +203,7 @@ def test_sensor_inner_bytes_cap(mocker: MockerFixture) -> None:
         return_value=big_heads,
     )
     mocker.patch(
-        "aemo_etl.factories.sensors.get_s3_object_keys_from_prefix_and_name_glob",
+        "aemo_etl.factories.s3_pending_objects.get_s3_object_keys_from_prefix_and_name_glob",
         return_value=many_keys,
     )
     mocker.patch.object(AssetSelection, "resolve", return_value=frozenset([_ASSET_KEY]))
@@ -237,7 +242,7 @@ def test_sensor_inner_files_cap(mocker: MockerFixture) -> None:
         return_value=small_heads,
     )
     mocker.patch(
-        "aemo_etl.factories.sensors.get_s3_object_keys_from_prefix_and_name_glob",
+        "aemo_etl.factories.s3_pending_objects.get_s3_object_keys_from_prefix_and_name_glob",
         return_value=many_keys,
     )
     mocker.patch.object(AssetSelection, "resolve", return_value=frozenset([_ASSET_KEY]))
@@ -264,6 +269,35 @@ def test_sensor_inner_files_cap(mocker: MockerFixture) -> None:
     )
 
 
+def test_sensor_inner_suppresses_cap_selected_empty_keys(
+    mocker: MockerFixture,
+) -> None:
+    """Matching S3 keys that caps exclude do not launch a no-op run."""
+    mocker.patch("aemo_etl.factories.sensors.get_s3_pagination", return_value=[{}])
+    mocker.patch(
+        "aemo_etl.factories.sensors.get_object_head_from_pages",
+        return_value={_S3_OBJECT_KEY: {"Size": 100}},
+    )
+    mocker.patch(
+        "aemo_etl.factories.s3_pending_objects.get_s3_object_keys_from_prefix_and_name_glob",
+        return_value=[_S3_OBJECT_KEY],
+    )
+    mocker.patch.object(AssetSelection, "resolve", return_value=frozenset([_ASSET_KEY]))
+
+    sensor_def = df_from_s3_keys_sensor(
+        name="cap_zero_sensor",
+        asset_selection=AssetSelection.all(),
+        s3_source_bucket="bucket",
+        s3_source_prefix="bronze/gbb",
+        bytes_cap=0,
+    )
+    context = _build_sensor_context(mocker)
+    mock_s3 = _build_mock_s3(mocker)
+
+    results: list[RunRequest] = list(sensor_def._raw_fn(context, s3=mock_s3))  # type: ignore[call-overload, arg-type]
+    assert results == []
+
+
 def test_sensor_inner_no_keys(mocker: MockerFixture) -> None:
     """No S3 keys → no RunRequest emitted."""
     mocker.patch("aemo_etl.factories.sensors.get_s3_pagination", return_value=[{}])
@@ -272,7 +306,7 @@ def test_sensor_inner_no_keys(mocker: MockerFixture) -> None:
         return_value={},
     )
     mocker.patch(
-        "aemo_etl.factories.sensors.get_s3_object_keys_from_prefix_and_name_glob",
+        "aemo_etl.factories.s3_pending_objects.get_s3_object_keys_from_prefix_and_name_glob",
         return_value=[],
     )
     mocker.patch.object(AssetSelection, "resolve", return_value=frozenset([_ASSET_KEY]))

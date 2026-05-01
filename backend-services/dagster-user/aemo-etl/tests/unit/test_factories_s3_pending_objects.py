@@ -4,11 +4,15 @@ import pytest
 from dagster import AssetKey, DagsterRunStatus, RunRequest
 
 from aemo_etl.factories.s3_pending_objects import (
+    build_s3_pending_objects_job_run_request,
     build_s3_pending_objects_run_request,
     build_s3_keys_run_config,
     get_asset_glob_pattern,
     has_asset_failed,
+    has_job_failed,
     is_asset_running,
+    is_job_running,
+    plan_s3_pending_objects_job_run_request,
     plan_s3_pending_objects_run_request,
     select_s3_pending_object_keys,
 )
@@ -16,15 +20,18 @@ from aemo_etl.utils import S3ObjectHead
 
 _ASSET_KEY = AssetKey(["bronze", "vicgas", "unzipper_vicgas"])
 _ZIP_KEY = "bronze/vicgas/data.zip"
+_JOB_NAME = "unzipper_vicgas_job"
 
 
 def _make_run(
     status: DagsterRunStatus,
     asset_key: AssetKey | None = _ASSET_KEY,
+    job_name: str = _JOB_NAME,
 ) -> MagicMock:
     run = MagicMock()
     run.asset_selection = {asset_key} if asset_key is not None else None
     run.status = status
+    run.job_name = job_name
     return run
 
 
@@ -67,6 +74,27 @@ def test_has_asset_failed_ignores_other_assets_and_unselected_runs() -> None:
     )
     assert (
         has_asset_failed([_make_run(DagsterRunStatus.FAILURE, None)], _ASSET_KEY)
+        is False
+    )
+
+
+def test_is_job_running_matches_job_name() -> None:
+    assert is_job_running([_make_run(DagsterRunStatus.STARTED)], _JOB_NAME) is True
+    assert (
+        is_job_running(
+            [_make_run(DagsterRunStatus.STARTED, job_name="other_job")], _JOB_NAME
+        )
+        is False
+    )
+
+
+def test_has_job_failed_matches_job_name() -> None:
+    assert has_job_failed([_make_run(DagsterRunStatus.FAILURE)], _JOB_NAME) is True
+    assert has_job_failed([_make_run(DagsterRunStatus.SUCCESS)], _JOB_NAME) is False
+    assert (
+        has_job_failed(
+            [_make_run(DagsterRunStatus.FAILURE, job_name="other_job")], _JOB_NAME
+        )
         is False
     )
 
@@ -163,6 +191,20 @@ def test_build_s3_pending_objects_run_request_targets_asset_selection() -> None:
     ] == [_ZIP_KEY]
 
 
+def test_build_s3_pending_objects_job_run_request_targets_job_name() -> None:
+    run_request = build_s3_pending_objects_job_run_request(
+        asset_key=_ASSET_KEY,
+        job_name=_JOB_NAME,
+        s3_keys=[_ZIP_KEY],
+    )
+
+    assert isinstance(run_request, RunRequest)
+    assert run_request.job_name == _JOB_NAME
+    assert run_request.run_config["ops"][_ASSET_KEY.to_python_identifier()]["config"][
+        "s3_keys"
+    ] == [_ZIP_KEY]
+
+
 def test_plan_s3_pending_objects_run_request_gates_active_asset_runs() -> None:
     context = _build_context()
 
@@ -240,6 +282,73 @@ def test_plan_s3_pending_objects_run_request_builds_request_for_pending_keys() -
 
     assert isinstance(run_request, RunRequest)
     assert run_request.asset_selection == [_ASSET_KEY]
+    assert run_request.run_config["ops"][_ASSET_KEY.to_python_identifier()]["config"][
+        "s3_keys"
+    ] == [_ZIP_KEY]
+
+
+def test_plan_s3_pending_objects_job_run_request_gates_active_job_runs() -> None:
+    context = _build_context()
+
+    with patch(
+        "aemo_etl.factories.s3_pending_objects.get_s3_object_keys_from_prefix_and_name_glob"
+    ) as match_keys:
+        run_request = plan_s3_pending_objects_job_run_request(
+            context,
+            sensor_name="test_sensor",
+            asset_key=_ASSET_KEY,
+            job_name=_JOB_NAME,
+            active_runs=[_make_run(DagsterRunStatus.STARTED)],
+            completed_runs=[],
+            s3_source_prefix="bronze/vicgas",
+            object_head_mapping={_ZIP_KEY: {"Size": 100}},
+            bytes_cap=500,
+            files_cap=None,
+        )
+
+    assert run_request is None
+    match_keys.assert_not_called()
+
+
+def test_plan_s3_pending_objects_job_run_request_suppresses_cap_selected_empty_keys() -> (
+    None
+):
+    context = _build_context()
+
+    run_request = plan_s3_pending_objects_job_run_request(
+        context,
+        sensor_name="test_sensor",
+        asset_key=_ASSET_KEY,
+        job_name=_JOB_NAME,
+        active_runs=[],
+        completed_runs=[],
+        s3_source_prefix="bronze/vicgas",
+        object_head_mapping={_ZIP_KEY: {"Size": 100}},
+        bytes_cap=0,
+        files_cap=None,
+    )
+
+    assert run_request is None
+
+
+def test_plan_s3_pending_objects_job_run_request_builds_job_request() -> None:
+    context = _build_context()
+
+    run_request = plan_s3_pending_objects_job_run_request(
+        context,
+        sensor_name="test_sensor",
+        asset_key=_ASSET_KEY,
+        job_name=_JOB_NAME,
+        active_runs=[],
+        completed_runs=[],
+        s3_source_prefix="bronze/vicgas",
+        object_head_mapping={_ZIP_KEY: {"Size": 100}},
+        bytes_cap=500,
+        files_cap=None,
+    )
+
+    assert isinstance(run_request, RunRequest)
+    assert run_request.job_name == _JOB_NAME
     assert run_request.run_config["ops"][_ASSET_KEY.to_python_identifier()]["config"][
         "s3_keys"
     ] == [_ZIP_KEY]

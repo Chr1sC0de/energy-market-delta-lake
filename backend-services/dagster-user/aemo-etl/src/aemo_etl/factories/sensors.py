@@ -1,13 +1,12 @@
 """Sensor factories for S3-key driven raw ingestion assets."""
 
-from typing import Sequence, cast
+from typing import Sequence
 
 from dagster import (
     AssetSelection,
     DagsterRun,
     DagsterRunStatus,
     DefaultSensorStatus,
-    RunRequest,
     RunsFilter,
     SensorDefinition,
     SensorEvaluationContext,
@@ -17,26 +16,23 @@ from dagster import (
 from dagster._core.definitions.target import ExecutableDefinition
 from dagster_aws.s3 import S3Resource
 
+from aemo_etl.factories.s3_pending_objects import (
+    ACTIVE_RUN_STATUSES,
+    has_job_failed as _has_job_failed,
+    is_job_running,
+    plan_s3_pending_objects_job_run_request,
+)
 from aemo_etl.utils import (
     get_object_head_from_pages,
-    get_s3_object_keys_from_prefix_and_name_glob,
     get_s3_pagination,
 )
 
-ACTIVE_STATUSES = [
-    DagsterRunStatus.QUEUED,
-    DagsterRunStatus.NOT_STARTED,
-    DagsterRunStatus.STARTING,
-    DagsterRunStatus.STARTED,
-]
+ACTIVE_STATUSES = list(ACTIVE_RUN_STATUSES)
 
 
 def is_running(runs: Sequence[DagsterRun], job_name: str) -> bool:
     """Return whether an active run already uses the job name."""
-    for run in runs:
-        if run.job_name == job_name:
-            return True
-    return False
+    return is_job_running(runs, job_name)
 
 
 def has_job_failed(runs: Sequence[DagsterRun], job_name: str) -> bool:
@@ -46,10 +42,7 @@ def has_job_failed(runs: Sequence[DagsterRun], job_name: str) -> bool:
     the first run whose ``job_name`` matches ``job_name``.  If no matching run
     is found the function returns False.
     """
-    for run in runs:
-        if run.job_name == job_name:
-            return run.status == DagsterRunStatus.FAILURE
-    return False
+    return _has_job_failed(runs, job_name)
 
 
 def df_from_s3_keys_sensor(
@@ -93,53 +86,22 @@ def df_from_s3_keys_sensor(
         object_head_mapping = get_object_head_from_pages(pages, logger=context.log)
 
         for bronze_key in bronze_keys:
-            asset_defs = context.repository_def.assets_defs_by_key.get(bronze_key)
-            assert hasattr(asset_defs, "metadata_by_key")
-            asset_meta = cast(
-                dict[str, str], asset_defs.metadata_by_key.get(bronze_key)
-            )
-            assert "glob_pattern" in asset_meta, (
-                f"{name} sensor unable to process {bronze_key}"
-            )
-            s3_file_glob = asset_meta["glob_pattern"]
             name_suffix = list(bronze_key.parts)[-1].replace("bronze_", "")
             job_name = f"{name_suffix}_job"
 
-            if not is_running(active_runs, job_name) and not has_job_failed(
-                completed_runs, job_name
-            ):
-                s3_object_keys = get_s3_object_keys_from_prefix_and_name_glob(
-                    s3_prefix=s3_source_prefix,
-                    s3_file_glob=s3_file_glob,
-                    original_keys=cast(list[str], object_head_mapping.keys()),
-                )
-                current_bytes = 0
-                objects_to_process: list[str] = []
-
-                for s3_object_key in s3_object_keys:
-                    object_head = object_head_mapping[s3_object_key]
-
-                    size_in_bytes = object_head["Size"]
-                    if current_bytes + size_in_bytes > bytes_cap:
-                        break
-                    if files_cap is not None:
-                        if len(objects_to_process) >= files_cap:
-                            break
-                    objects_to_process.append(s3_object_key)
-                    current_bytes += size_in_bytes
-
-                if s3_object_keys:
-                    yield RunRequest(
-                        job_name=job_name,
-                        run_config={
-                            "ops": {
-                                bronze_key.to_python_identifier(): {
-                                    "config": {
-                                        "s3_keys": objects_to_process,
-                                    },
-                                }
-                            }
-                        },
-                    )
+            run_request = plan_s3_pending_objects_job_run_request(
+                context,
+                sensor_name=name,
+                asset_key=bronze_key,
+                job_name=job_name,
+                active_runs=active_runs,
+                completed_runs=completed_runs,
+                s3_source_prefix=s3_source_prefix,
+                object_head_mapping=object_head_mapping,
+                bytes_cap=bytes_cap,
+                files_cap=files_cap,
+            )
+            if run_request is not None:
+                yield run_request
 
     return sensor_
