@@ -313,6 +313,7 @@ for stack details, component breakdown, and deployed-test commands.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`
   - `scripts/check_shell_script_headers.py`
   - `scripts/ralph.py`
+  - `tests/test_documentation_qa_ratchet.py`
 - `sync.scope`: `architecture, tooling`
 - `sync.qa`:
   - `git diff --name-only`
