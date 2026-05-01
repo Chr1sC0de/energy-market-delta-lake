@@ -116,9 +116,10 @@ implementation, deterministic local QA, **Local integration**, **Promotion**,
 and post-loop issue triage. Use `$ralph-triage` as the gate before
 `$ralph-loop drain`. Ralph uses the default triage labels documented under
 [docs/agents/triage-labels.md](agents/triage-labels.md) plus Ralph
-**Delivery mode** labels. **Gitflow delivery** integrates to `dev` for review
-before promotion to `main`; **Trunk delivery** is an opt-in path for small
-low-risk changes that can close after integration to `main`.
+**Delivery mode** labels. **Gitflow delivery** keeps `dev` synced with `main`,
+integrates to `dev` for review, and then promotes to `main`; **Trunk delivery**
+is an opt-in path for small low-risk changes that can close after integration
+to `main`.
 
 ## Where to work
 

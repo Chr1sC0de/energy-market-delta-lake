@@ -280,6 +280,9 @@ hook config. System hooks such as `shellcheck` must also be available on
 | Ralph trunk drain | `python3 scripts/ralph.py --drain --delivery-mode trunk` |
 | Ralph promotion | `python3 scripts/ralph.py --promote` |
 
+Ralph Gitflow drain keeps `dev` current with `main` before integrating work, and
+Promotion fast-forwards `dev` to the promotion commit after pushing `main`.
+
 ## Deployment
 
 Pulumi is the source of truth for deployed infrastructure:

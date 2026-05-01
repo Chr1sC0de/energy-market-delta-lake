@@ -733,13 +733,20 @@ class GitClient:
             execute_in_dry_run=False,
         )
 
-    def add_detached_worktree(self, *, path: Path, ref: str, run_dir: Path) -> None:
+    def add_detached_worktree(
+        self,
+        *,
+        path: Path,
+        ref: str,
+        run_dir: Path,
+        log_name: str = "git-worktree-add-integration.log",
+    ) -> None:
         if path.exists():
             raise IssueFailure(f"Worktree already exists: {path}")
         self.runner.run(
             ["git", "worktree", "add", "--detach", str(path), ref],
             cwd=self.repo_root,
-            log_path=run_dir / "git-worktree-add-integration.log",
+            log_path=run_dir / log_name,
             execute_in_dry_run=False,
         )
 
@@ -802,19 +809,34 @@ class GitClient:
             execute_in_dry_run=False,
         )
 
-    def merge_no_ff(self, *, cwd: Path, ref: str, message: str, run_dir: Path) -> None:
+    def merge_no_ff(
+        self,
+        *,
+        cwd: Path,
+        ref: str,
+        message: str,
+        run_dir: Path,
+        log_name: str = "git-merge-promotion.log",
+    ) -> None:
         self.runner.run(
             ["git", "merge", "--no-ff", ref, "-m", message],
             cwd=cwd,
-            log_path=run_dir / "git-merge-promotion.log",
+            log_path=run_dir / log_name,
             execute_in_dry_run=False,
         )
 
-    def push_head(self, *, cwd: Path, branch: str, run_dir: Path) -> None:
+    def push_head(
+        self,
+        *,
+        cwd: Path,
+        branch: str,
+        run_dir: Path,
+        log_name: str | None = None,
+    ) -> None:
         self.runner.run(
             ["git", "push", "origin", f"HEAD:{branch}"],
             cwd=cwd,
-            log_path=run_dir / f"git-push-{slugify(branch)}.log",
+            log_path=run_dir / (log_name or f"git-push-{slugify(branch)}.log"),
             execute_in_dry_run=False,
         )
 
@@ -1046,6 +1068,13 @@ class RalphLoop:
             emit(f"Pushing promotion {promotion_sha} to {target_branch}")
             self.git.push_head(cwd=promote_path, branch=target_branch, run_dir=run_dir)
             pushed = True
+            self._sync_source_branch_after_promotion(
+                source_branch=source_branch,
+                target_branch=target_branch,
+                promotion_sha=promotion_sha,
+                promote_path=promote_path,
+                run_dir=run_dir,
+            )
 
             self._close_promoted_issues(
                 integrated_issues,
@@ -1369,6 +1398,7 @@ class RalphLoop:
         if delivery_plan.target_branch != DEFAULT_GITFLOW_BRANCH:
             return
         if self.git.remote_branch_exists(delivery_plan.target_branch, run_dir=run_dir):
+            self._sync_default_gitflow_target_with_trunk(delivery_plan, run_dir)
             return
 
         emit(
@@ -1381,6 +1411,90 @@ class RalphLoop:
             from_ref=f"origin/{DEFAULT_TRUNK_BRANCH}",
             run_dir=run_dir,
         )
+        self._sync_default_gitflow_target_with_trunk(delivery_plan, run_dir)
+
+    def _sync_default_gitflow_target_with_trunk(
+        self,
+        delivery_plan: DeliveryPlan,
+        run_dir: Path,
+    ) -> None:
+        if delivery_plan.mode != GITFLOW_MODE:
+            return
+        if delivery_plan.target_branch != DEFAULT_GITFLOW_BRANCH:
+            return
+
+        source_branch = DEFAULT_TRUNK_BRANCH
+        target_branch = delivery_plan.target_branch
+        self.git.fetch_base(source_branch, run_dir=run_dir)
+        self.git.fetch_base(target_branch, run_dir=run_dir)
+        if self.git.is_ancestor(
+            ancestor=f"origin/{source_branch}",
+            descendant=f"origin/{target_branch}",
+        ):
+            return
+
+        sync_path = self.config.worktree_container / (
+            f"agent-sync-{slugify(source_branch)}-into-{slugify(target_branch)}"
+        )
+        emit(f"Syncing origin/{source_branch} into origin/{target_branch}")
+        sync_pushed = False
+        self.git.add_detached_worktree(
+            path=sync_path,
+            ref=f"origin/{target_branch}",
+            run_dir=run_dir,
+            log_name="git-worktree-add-branch-sync.log",
+        )
+        try:
+            self.git.merge_no_ff(
+                cwd=sync_path,
+                ref=f"origin/{source_branch}",
+                message=f"Sync {source_branch} into {target_branch}",
+                run_dir=run_dir,
+                log_name=f"git-merge-{slugify(source_branch)}-into-{slugify(target_branch)}.log",
+            )
+            sync_sha = self.git.rev_parse("HEAD", cwd=sync_path)
+            emit(f"Pushing sync {sync_sha} to {target_branch}")
+            self.git.push_head(
+                cwd=sync_path,
+                branch=target_branch,
+                run_dir=run_dir,
+                log_name=f"git-push-{slugify(target_branch)}-branch-sync.log",
+            )
+            sync_pushed = True
+            self.git.fetch_base(target_branch, run_dir=run_dir)
+        finally:
+            if sync_pushed:
+                try:
+                    self.git.remove_worktree(
+                        sync_path,
+                        run_dir=run_dir,
+                        log_name="git-worktree-remove-branch-sync.log",
+                    )
+                except CommandFailure as error:
+                    emit(f"Cleanup warning: {error}", err=True)
+
+    def _sync_source_branch_after_promotion(
+        self,
+        *,
+        source_branch: str,
+        target_branch: str,
+        promotion_sha: str,
+        promote_path: Path,
+        run_dir: Path,
+    ) -> None:
+        if source_branch != DEFAULT_GITFLOW_BRANCH:
+            return
+        if target_branch != DEFAULT_TRUNK_BRANCH:
+            return
+
+        emit(f"Fast-forwarding {source_branch} to promotion {promotion_sha}")
+        self.git.push_head(
+            cwd=promote_path,
+            branch=source_branch,
+            run_dir=run_dir,
+            log_name=f"git-push-{slugify(source_branch)}-after-promotion.log",
+        )
+        self.git.fetch_base(source_branch, run_dir=run_dir)
 
     def _branch_and_worktrees(self, issue: Issue) -> tuple[str, Path, Path]:
         slug = slugify(issue.title)
