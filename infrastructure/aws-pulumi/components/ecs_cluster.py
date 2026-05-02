@@ -68,7 +68,7 @@ class EcsClusterComponentResource(pulumi.ComponentResource):
             capacity_providers=["FARGATE", "FARGATE_SPOT"],
             default_capacity_provider_strategies=[
                 aws.ecs.ClusterCapacityProvidersDefaultCapacityProviderStrategyArgs(
-                    capacity_provider="FARGATE",
+                    capacity_provider="FARGATE_SPOT",
                     weight=1,
                 )
             ],

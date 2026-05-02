@@ -161,6 +161,13 @@ def test_silver_table_metadata_missing_keys() -> None:
     assert len(collected) == 2
 
 
+def test_silver_table_metadata_waits_for_upstream_dependency() -> None:
+    condition = silver_table_metadata.automation_conditions_by_key[
+        silver_table_metadata.key
+    ]
+    assert "any_deps_missing" in repr(condition)
+
+
 # ---------------------------------------------------------------------------
 # _silver_extract (module-level, directly testable)
 # ---------------------------------------------------------------------------

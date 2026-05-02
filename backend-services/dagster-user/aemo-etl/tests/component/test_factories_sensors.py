@@ -3,7 +3,13 @@
 from unittest.mock import MagicMock
 
 import pytest
-from dagster import AssetKey, AssetSelection, DagsterRunStatus, RunRequest
+from dagster import (
+    AssetKey,
+    AssetSelection,
+    DagsterRunStatus,
+    RunRequest,
+    define_asset_job,
+)
 from dagster_aws.s3 import S3Resource
 from pytest_mock import MockerFixture
 from types_boto3_s3 import S3Client
@@ -27,11 +33,13 @@ def _make_run(
     status: DagsterRunStatus,
     asset_key: AssetKey | None = _ASSET_KEY,
     job_name: str = _TARGET_JOB_NAME,
+    tags: dict[str, str] | None = None,
 ) -> MagicMock:
     run = MagicMock()
     run.asset_selection = {asset_key} if asset_key is not None else None
     run.status = status
     run.job_name = job_name
+    run.tags = tags or {}
     return run
 
 
@@ -190,6 +198,56 @@ def test_sensor_inner_function_run_requests(
         assert results[0].run_config["ops"][_ASSET_KEY.to_python_identifier()][
             "config"
         ]["s3_keys"] == [_S3_OBJECT_KEY]
+
+
+def test_sensor_inner_retries_failed_job_when_current_job_tags_changed(
+    mocker: MockerFixture,
+) -> None:
+    mocker.patch(
+        "aemo_etl.factories.sensors.get_s3_pagination",
+        return_value=[{"Contents": []}],
+    )
+    mocker.patch(
+        "aemo_etl.factories.sensors.get_object_head_from_pages",
+        return_value=_OBJECT_HEAD,
+    )
+    mocker.patch(
+        "aemo_etl.factories.s3_pending_objects.get_s3_object_keys_from_prefix_and_name_glob",
+        return_value=[_S3_OBJECT_KEY],
+    )
+    mocker.patch.object(
+        AssetSelection,
+        "resolve",
+        return_value=frozenset([_ASSET_KEY]),
+    )
+
+    sensor_def = df_from_s3_keys_sensor(
+        name="test_sensor",
+        asset_selection=AssetSelection.all(),
+        s3_source_bucket="bucket",
+        s3_source_prefix="bronze/gbb",
+        jobs=[
+            define_asset_job(
+                _TARGET_JOB_NAME,
+                tags={"ecs/cpu": "1024", "ecs/memory": "8192"},
+            )
+        ],
+    )
+    context = _build_sensor_context(
+        mocker,
+        completed_runs=[
+            _make_run(
+                DagsterRunStatus.FAILURE,
+                tags={"ecs/cpu": "512", "ecs/memory": "4096"},
+            )
+        ],
+    )
+    mock_s3 = _build_mock_s3(mocker)
+
+    results: list[RunRequest] = list(sensor_def._raw_fn(context, s3=mock_s3))  # type: ignore[call-overload, arg-type]
+
+    assert len(results) == 1
+    assert results[0].job_name == _TARGET_JOB_NAME
 
 
 def test_sensor_inner_bytes_cap(mocker: MockerFixture) -> None:

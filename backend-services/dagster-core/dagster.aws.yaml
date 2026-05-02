@@ -13,8 +13,6 @@ run_launcher:
     run_task_kwargs:
       capacityProviderStrategy:
         - capacityProvider: "FARGATE_SPOT"
-          weight: 4
-        - capacityProvider: "FARGATE"
           weight: 1
     run_resources:
       cpu: "256"

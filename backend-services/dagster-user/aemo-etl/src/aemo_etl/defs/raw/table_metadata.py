@@ -213,7 +213,8 @@ def _silver_extract_column_schema_field(raw: str | None, field: str) -> str | No
     automation_condition=(
         AutomationCondition.any_deps_updated() | AutomationCondition.missing()
     )
-    & ~AutomationCondition.in_progress(),
+    & ~AutomationCondition.in_progress()
+    & ~AutomationCondition.any_deps_missing(),
 )
 def silver_table_metadata(df: LazyFrame) -> LazyFrame:
     collected = df.collect()

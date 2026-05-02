@@ -48,11 +48,29 @@ def is_job_running(runs: Sequence[DagsterRun], job_name: str) -> bool:
     return False
 
 
-def has_job_failed(runs: Sequence[DagsterRun], job_name: str) -> bool:
-    """Return True if the most recent completed run for this job failed."""
+def _failed_run_tags_match_current_job(
+    run_tags: Mapping[str, str],
+    expected_job_tags: Mapping[str, object] | None,
+) -> bool:
+    """Return whether a failed run used the same retry-relevant job tags."""
+    if not expected_job_tags:
+        return True
+    return all(
+        run_tags.get(key) == str(value) for key, value in expected_job_tags.items()
+    )
+
+
+def has_job_failed(
+    runs: Sequence[DagsterRun],
+    job_name: str,
+    expected_job_tags: Mapping[str, object] | None = None,
+) -> bool:
+    """Return True if the most recent completed run blocks another job launch."""
     for run in runs:
         if run.job_name == job_name:
-            return run.status == DagsterRunStatus.FAILURE
+            return run.status == DagsterRunStatus.FAILURE and (
+                _failed_run_tags_match_current_job(run.tags, expected_job_tags)
+            )
     return False
 
 
@@ -206,6 +224,7 @@ def plan_s3_pending_objects_job_run_request(
     object_head_mapping: Mapping[str, S3ObjectHead],
     bytes_cap: float,
     files_cap: int | None,
+    job_tags: Mapping[str, object] | None = None,
 ) -> RunRequest | None:
     """Plan a job-targeted run request by scanning pending S3 objects."""
     s3_file_glob = get_asset_glob_pattern(
@@ -215,7 +234,7 @@ def plan_s3_pending_objects_job_run_request(
     )
 
     if is_job_running(active_runs, job_name) or has_job_failed(
-        completed_runs, job_name
+        completed_runs, job_name, expected_job_tags=job_tags
     ):
         return None
 

@@ -8,9 +8,15 @@ Importing the module executes that statement and covers all lines in the file.
 
 import importlib
 import pkgutil
+from typing import cast
 
 import bs4
 from dagster import Definitions
+from dagster._core.definitions.unresolved_asset_job_definition import (
+    UnresolvedAssetJobDefinition,
+)
+
+from aemo_etl.defs.raw.gbb._ecs import rebuild_sized_spot_ecs_tags
 
 
 def _import_all_under(package: str) -> None:
@@ -29,6 +35,38 @@ def test_import_all_gbb_table_modules() -> None:
 
 def test_import_all_vicgas_table_modules() -> None:
     _import_all_under("aemo_etl.defs.raw.vicgas")
+
+
+def test_gbb_pipeline_connection_flow_v1_job_uses_rebuild_sized_ecs_task() -> None:
+    from aemo_etl.defs.raw.gbb.gasbb_pipeline_connection_flow_v1 import defs
+
+    job = cast(UnresolvedAssetJobDefinition, next(iter(defs.jobs or ())))
+
+    assert job.tags == rebuild_sized_spot_ecs_tags()
+
+
+def test_gbb_pipeline_connection_flow_v2_job_uses_rebuild_sized_ecs_task() -> None:
+    from aemo_etl.defs.raw.gbb.gasbb_pipeline_connection_flow_v2 import defs
+
+    job = cast(UnresolvedAssetJobDefinition, next(iter(defs.jobs or ())))
+
+    assert job.tags == rebuild_sized_spot_ecs_tags()
+
+
+def test_gbb_short_term_capacity_outlook_job_uses_rebuild_sized_ecs_task() -> None:
+    from aemo_etl.defs.raw.gbb.gasbb_short_term_capacity_outlook import defs
+
+    job = cast(UnresolvedAssetJobDefinition, next(iter(defs.jobs or ())))
+
+    assert job.tags == rebuild_sized_spot_ecs_tags()
+
+
+def test_gbb_linepack_capacity_adequacy_job_uses_rebuild_sized_ecs_task() -> None:
+    from aemo_etl.defs.raw.gbb.gasbb_linepack_capacity_adequacy import defs
+
+    job = cast(UnresolvedAssetJobDefinition, next(iter(defs.jobs or ())))
+
+    assert job.tags == rebuild_sized_spot_ecs_tags()
 
 
 # ---------------------------------------------------------------------------

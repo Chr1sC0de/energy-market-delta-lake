@@ -4,6 +4,7 @@ from polars import Datetime, Float64, Int64, String
 from aemo_etl.factories.df_from_s3_keys.definitions import (
     df_from_s3_keys_definitions_factory,
 )
+from aemo_etl.defs.raw.gbb._ecs import rebuild_sized_spot_ecs_tags
 
 defs = df_from_s3_keys_definitions_factory(
     domain="gbb",
@@ -65,4 +66,5 @@ defs = df_from_s3_keys_definitions_factory(
         "Expected daily capacity of a BB facility for the next seven days. "
         "Historical outlooks updated daily; future data updated within 30 minutes."
     ),
+    job_tags=rebuild_sized_spot_ecs_tags(),
 )
