@@ -4,6 +4,7 @@ from polars import Datetime, Float64, Int64, String
 from aemo_etl.factories.df_from_s3_keys.definitions import (
     df_from_s3_keys_definitions_factory,
 )
+from aemo_etl.defs.raw.gbb._ecs import rebuild_sized_spot_ecs_tags
 
 defs = df_from_s3_keys_definitions_factory(
     domain="gbb",
@@ -55,5 +56,5 @@ defs = df_from_s3_keys_definitions_factory(
     group_name="gas_raw",
     deps=[AssetSpec(["bronze", "gbb", "bronze_nemweb_public_files_gbb"])],
     description="Daily production and usage at each Connection Point (v2, with LastUpdated key).",
-    job_tags={"ecs/cpu": "512", "ecs/memory": "4096"},
+    job_tags=rebuild_sized_spot_ecs_tags(),
 )

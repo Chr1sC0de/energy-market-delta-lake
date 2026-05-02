@@ -1,6 +1,6 @@
 """Sensor factories for S3-key driven raw ingestion assets."""
 
-from typing import Sequence
+from collections.abc import Mapping, Sequence
 
 from dagster import (
     AssetSelection,
@@ -45,6 +45,12 @@ def has_job_failed(runs: Sequence[DagsterRun], job_name: str) -> bool:
     return _has_job_failed(runs, job_name)
 
 
+def _job_tags_by_name(
+    jobs: Sequence[ExecutableDefinition] | None,
+) -> dict[str, Mapping[str, object]]:
+    return {job.name: dict(getattr(job, "tags", {}) or {}) for job in jobs or ()}
+
+
 def df_from_s3_keys_sensor(
     name: str,
     asset_selection: AssetSelection,
@@ -84,6 +90,7 @@ def df_from_s3_keys_sensor(
             limit=100,
         )
         object_head_mapping = get_object_head_from_pages(pages, logger=context.log)
+        job_tags = _job_tags_by_name(jobs)
 
         for bronze_key in bronze_keys:
             name_suffix = list(bronze_key.parts)[-1].replace("bronze_", "")
@@ -100,6 +107,7 @@ def df_from_s3_keys_sensor(
                 object_head_mapping=object_head_mapping,
                 bytes_cap=bytes_cap,
                 files_cap=files_cap,
+                job_tags=job_tags.get(job_name),
             )
             if run_request is not None:
                 yield run_request

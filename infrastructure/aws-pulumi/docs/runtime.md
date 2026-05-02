@@ -110,18 +110,18 @@ Cluster-level behavior:
 
 - one shared CloudWatch log group with one-day retention
 - cluster capacity providers include `FARGATE` and `FARGATE_SPOT`
-- long-running Dagster services use on-demand `FARGATE`
+- long-running Dagster services use `FARGATE_SPOT`
 - one private subnet placement strategy for all services
 - no public IP assignment on tasks
 - deployment circuit breaker enabled on services
 
 Dagster run-worker tasks are launched by `EcsRunLauncher` from
-`backend-services/dagster-core/dagster.aws.yaml`. Those ephemeral tasks prefer
-`FARGATE_SPOT` with on-demand `FARGATE` fallback, and the AWS run queue is capped
-at 20 concurrent runs to limit peak compute spend. AWS run monitoring is enabled
-so the daemon can detect interrupted or orphaned run-worker tasks, poll ECS every
-120 seconds, cap runtime at 30 minutes, and mark unrecovered runs failed without
-automatic resume attempts.
+`backend-services/dagster-core/dagster.aws.yaml`. Those ephemeral tasks use
+`FARGATE_SPOT`, and the AWS run queue is capped at 20 concurrent runs to limit
+peak compute in the dev deployment. Spot capacity can be unavailable or
+interrupted. AWS run monitoring is enabled so the daemon can detect interrupted
+or orphaned run-worker tasks, poll ECS every 120 seconds, cap runtime at 30
+minutes, and mark unrecovered runs failed without automatic resume attempts.
 
 ## Component summary
 

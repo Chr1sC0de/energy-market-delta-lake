@@ -32,13 +32,13 @@ class TestEcsClusterComponent:
         return cluster.capacity_providers.capacity_providers.apply(check)
 
     @pulumi.runtime.test
-    def test_cluster_default_capacity_provider_remains_on_demand(self) -> None:
+    def test_cluster_default_capacity_provider_uses_spot(self) -> None:
         vpc, sgs = _make_deps()
         cluster = EcsClusterComponentResource("test-energy-market", vpc, sgs)
 
         def check(strategies: list) -> None:
             assert len(strategies) == 1
-            assert strategies[0].get("capacity_provider") == "FARGATE"
+            assert strategies[0].get("capacity_provider") == "FARGATE_SPOT"
             assert strategies[0].get("weight") == 1
 
         return cluster.capacity_providers.default_capacity_provider_strategies.apply(

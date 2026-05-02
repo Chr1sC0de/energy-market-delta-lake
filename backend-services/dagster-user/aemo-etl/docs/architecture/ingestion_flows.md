@@ -48,7 +48,7 @@ sequenceDiagram
 Trigger and output notes:
 
 - The first step is schedule-driven from `src/aemo_etl/defs/raw/nemweb_public_files.py`.
-- The unzip and bronze steps are sensor-driven from `src/aemo_etl/definitions.py`; that module also registers the failed-run alert sensor, which is not part of the ingestion data path shown here. Source-table bronze raw sensors select at most 128 MB (128,000,000 bytes) and 25 landing files per run request by default. Those caps are source-table batching defaults, not the full repo **Fast check** or **Push check** configuration.
+- The unzip and bronze steps are sensor-driven from `src/aemo_etl/definitions.py`; that module also registers the failed-run alert sensor, which is not part of the ingestion data path shown here. Source-table bronze raw sensors select at most 128 MB (128,000,000 bytes) and 25 landing files per run request by default. Those caps are source-table batching defaults, not the full repo **Fast check** or **Push check** configuration. The source-table sensor suppresses repeated launches after a failed job at the same job tags, while allowing a retry after retry-relevant tags such as ECS CPU or memory change.
 - Outputs land in Delta tables under the AEMO bucket plus archived source files under `ARCHIVE_BUCKET/bronze/gbb`.
 
 ## VICGAS ingestion flow

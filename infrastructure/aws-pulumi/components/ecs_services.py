@@ -76,10 +76,8 @@ def _fargate_service(
         desired_count=1,
         launch_type=None,  # managed by capacity_provider_strategies
         capacity_provider_strategies=[
-            # Long-running control-plane services stay on on-demand Fargate.
-            # Ephemeral Dagster run workers prefer Spot in dagster.aws.yaml.
             aws.ecs.ServiceCapacityProviderStrategyArgs(
-                capacity_provider="FARGATE",
+                capacity_provider="FARGATE_SPOT",
                 weight=1,
                 base=0,
             ),
@@ -95,6 +93,7 @@ def _fargate_service(
             enable=True,
             rollback=True,
         ),
+        force_new_deployment=True,
         propagate_tags="SERVICE",
         service_registries=sd_registration,
         tags=tags or {},

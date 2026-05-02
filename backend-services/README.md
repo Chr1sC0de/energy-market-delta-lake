@@ -111,12 +111,11 @@ Dagster webservers and the daemon. To target AWS, update the build arg
 to `aws` and supply the appropriate environment variables.
 
 For the AWS deployment, `dagster.aws.yaml` caps queued runs at 20 concurrent
-tasks. Run-worker ECS tasks prefer `FARGATE_SPOT` with on-demand `FARGATE`
-fallback, while the long-running Dagster services are provisioned by Pulumi.
-Dagster run monitoring is enabled for AWS runs so interrupted or otherwise
-orphaned ECS run-worker tasks are detected by the daemon. The monitor polls
-every 120 seconds, allows 180 seconds for run start and cancellation, caps run
-runtime at 30 minutes, and marks unrecovered runs failed without automatic
+tasks. Run-worker ECS tasks and the long-running Dagster services use
+`FARGATE_SPOT` in the AWS dev deployment. Spot capacity can be unavailable or
+interrupted, so Dagster run monitoring is enabled for AWS runs. The monitor
+polls every 120 seconds, allows 180 seconds for run start and cancellation, caps
+run runtime at 30 minutes, and marks unrecovered runs failed without automatic
 resume attempts so the failure alert sensor can publish to SNS.
 
 ______________________________________________________________________

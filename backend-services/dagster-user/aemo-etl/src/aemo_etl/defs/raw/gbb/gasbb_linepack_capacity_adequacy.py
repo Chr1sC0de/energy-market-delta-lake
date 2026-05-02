@@ -4,6 +4,7 @@ from polars import Datetime, Int64, String
 from aemo_etl.factories.df_from_s3_keys.definitions import (
     df_from_s3_keys_definitions_factory,
 )
+from aemo_etl.defs.raw.gbb._ecs import rebuild_sized_spot_ecs_tags
 
 defs = df_from_s3_keys_definitions_factory(
     domain="gbb",
@@ -44,4 +45,5 @@ defs = df_from_s3_keys_definitions_factory(
         "Linepack Capacity Adequacy for each Pipeline for D to D+2. "
         "Produced daily with historical and future data."
     ),
+    job_tags=rebuild_sized_spot_ecs_tags(),
 )

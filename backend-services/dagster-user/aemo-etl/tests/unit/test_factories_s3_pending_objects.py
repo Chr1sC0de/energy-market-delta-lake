@@ -27,11 +27,13 @@ def _make_run(
     status: DagsterRunStatus,
     asset_key: AssetKey | None = _ASSET_KEY,
     job_name: str = _JOB_NAME,
+    tags: dict[str, str] | None = None,
 ) -> MagicMock:
     run = MagicMock()
     run.asset_selection = {asset_key} if asset_key is not None else None
     run.status = status
     run.job_name = job_name
+    run.tags = tags or {}
     return run
 
 
@@ -96,6 +98,30 @@ def test_has_job_failed_matches_job_name() -> None:
             [_make_run(DagsterRunStatus.FAILURE, job_name="other_job")], _JOB_NAME
         )
         is False
+    )
+
+
+def test_has_job_failed_allows_retry_when_expected_tags_changed() -> None:
+    failed_run = _make_run(
+        DagsterRunStatus.FAILURE,
+        tags={"ecs/cpu": "512", "ecs/memory": "4096"},
+    )
+
+    assert (
+        has_job_failed(
+            [failed_run],
+            _JOB_NAME,
+            expected_job_tags={"ecs/cpu": "1024", "ecs/memory": "8192"},
+        )
+        is False
+    )
+    assert (
+        has_job_failed(
+            [failed_run],
+            _JOB_NAME,
+            expected_job_tags={"ecs/cpu": "512", "ecs/memory": "4096"},
+        )
+        is True
     )
 
 
@@ -329,6 +355,32 @@ def test_plan_s3_pending_objects_job_run_request_suppresses_cap_selected_empty_k
     )
 
     assert run_request is None
+
+
+def test_plan_s3_pending_objects_job_run_request_retries_changed_job_tags() -> None:
+    context = _build_context()
+
+    run_request = plan_s3_pending_objects_job_run_request(
+        context,
+        sensor_name="test_sensor",
+        asset_key=_ASSET_KEY,
+        job_name=_JOB_NAME,
+        active_runs=[],
+        completed_runs=[
+            _make_run(
+                DagsterRunStatus.FAILURE,
+                tags={"ecs/cpu": "512", "ecs/memory": "4096"},
+            )
+        ],
+        s3_source_prefix="bronze/vicgas",
+        object_head_mapping={_ZIP_KEY: {"Size": 100}},
+        bytes_cap=500,
+        files_cap=None,
+        job_tags={"ecs/cpu": "1024", "ecs/memory": "8192"},
+    )
+
+    assert isinstance(run_request, RunRequest)
+    assert run_request.job_name == _JOB_NAME
 
 
 def test_plan_s3_pending_objects_job_run_request_builds_job_request() -> None:
