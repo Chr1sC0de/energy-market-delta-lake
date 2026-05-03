@@ -281,6 +281,8 @@ instead of relying on the caller's `PATH`.
 | Ralph Gitflow drain | `python3 scripts/ralph.py --drain` |
 | Ralph trunk drain | `python3 scripts/ralph.py --drain --delivery-mode trunk` |
 | Ralph promotion | `python3 scripts/ralph.py --promote` |
+| Ralph run inspection | `python3 scripts/ralph.py --inspect-run .ralph/runs/issue-25-...` |
+| Ralph metadata recovery | `python3 scripts/ralph.py --recover-run .ralph/runs/issue-25-...` |
 
 Ralph Gitflow drain keeps `dev` current with `main` before integrating work, and
 Promotion fast-forwards `dev` to the promotion commit after pushing `main`. A
@@ -294,7 +296,12 @@ phases, Ralph prints heartbeat lines with the active phase and log path, and the
 command logs under `.ralph/runs/...` update while the command is still running.
 Each implementation and **Promotion** run also maintains
 `.ralph/runs/.../ralph-run.json` with issue, **Delivery mode**, **Integration
-target**, QA, push, commit, and GitHub metadata state for recovery.
+target**, QA, push, commit, and GitHub metadata state for recovery. Use
+`--inspect-run` for a read-only summary, then use `--recover-run` only after
+the recorded **Local integration** commit is verified reachable from the
+expected **Integration target**; recovery reconciles GitHub comments, runtime
+labels, integrated or merged labels, and issue closure according to **Delivery
+mode**.
 
 ## Deployment
 

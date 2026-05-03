@@ -183,6 +183,77 @@ def make_loop(
     return ralph.RalphLoop(config, runner)
 
 
+def write_recovery_manifest(
+    tmp_path: Path,
+    *,
+    delivery_mode: str = ralph.TRUNK_MODE,
+    target_branch: str = ralph.DEFAULT_TRUNK_BRANCH,
+    metadata_status: str = "failed",
+    push_status: str = "pushed",
+    commit_sha: str = "abc1234",
+) -> Path:
+    run_dir = tmp_path / "logs" / "issue-42-20260504T010203Z"
+    run_dir.mkdir(parents=True)
+    manifest = {
+        "schema_version": ralph.MANIFEST_SCHEMA_VERSION,
+        "run_kind": "implementation",
+        "status": "failed",
+        "stage": "failed",
+        "repo": "example/repo",
+        "issue": {
+            "number": 42,
+            "title": "Implement thing",
+            "url": "https://github.com/example/repo/issues/42",
+        },
+        "delivery_mode": delivery_mode,
+        "integration_target": target_branch,
+        "paths": {"run_dir": str(run_dir), "repo_root": str(tmp_path / "repo")},
+        "changed_files": ["scripts/ralph.py"],
+        "qa_results": [
+            {
+                "name": "Ralph unit tests",
+                "command": ["python3", "-m", "unittest", "discover", "-s", "tests"],
+                "cwd": str(tmp_path / "repo"),
+                "log_path": str(run_dir / "qa.log"),
+                "status": "passed",
+            }
+        ],
+        "integration_commit": {"sha": commit_sha, "branch": target_branch},
+        "pushes": {
+            "integration_target": {
+                "branch": target_branch,
+                "status": push_status,
+                "commit": commit_sha,
+                "log_path": str(run_dir / f"git-push-{target_branch}.log"),
+            }
+        },
+        "github_metadata": {"status": metadata_status},
+        "failure": {"message": "Post-push issue metadata failed", "log_path": None},
+        "events": [],
+    }
+    (run_dir / "ralph-run.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return run_dir
+
+
+def issue_view_output(*, labels: list[str] | None = None) -> str:
+    return json.dumps(
+        {
+            "number": 42,
+            "title": "Implement thing",
+            "body": IMPLEMENTATION_BODY,
+            "labels": [{"name": label} for label in labels or []],
+            "createdAt": "2026-04-30T00:00:00Z",
+            "updatedAt": "2026-04-30T00:00:00Z",
+            "url": "https://github.com/example/repo/issues/42",
+            "comments": [],
+            "author": {"login": "reporter"},
+        }
+    )
+
+
 class CountingRalphLoop(ralph.RalphLoop):
     def __init__(self, config: ralph.LoopConfig, runner: FakeRunner, ready_count: int) -> None:
         super().__init__(config, runner)
@@ -645,6 +716,212 @@ Build it.
         self.assertIn("Command: gh auth status", message)
         self.assertIn("Exit code: 1", message)
         self.assertIn("The token in default is invalid.", message)
+
+
+class RalphRunInspectionRecoveryTests(unittest.TestCase):
+    def test_inspect_run_reports_manifest_state_without_runner(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = write_recovery_manifest(
+                Path(tmp),
+                metadata_status="completion_commented",
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.inspect_run(run_dir)
+
+        text = output.getvalue()
+        self.assertIn("Issue: #42 Implement thing", text)
+        self.assertIn("Delivery mode: trunk", text)
+        self.assertIn("Integration target: main", text)
+        self.assertIn("QA status: passed (1/1)", text)
+        self.assertIn("Push status: pushed (main @ abc1234)", text)
+        self.assertIn("Metadata status: completion_commented", text)
+        self.assertIn("--recover-run", text)
+
+    def test_recover_run_refuses_when_commit_not_reachable_from_target(self) -> None:
+        ancestor_command = (
+            "git",
+            "merge-base",
+            "--is-ancestor",
+            "abc1234",
+            "origin/main",
+        )
+        runner = FakeRunner(fail_commands={ancestor_command: 1})
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = write_recovery_manifest(tmp_path)
+            loop = make_loop(tmp_path, runner)
+
+            with self.assertRaises(ralph.RalphError) as caught:
+                ralph.RalphRunRecovery(loop.config, runner).recover(run_dir)
+
+        self.assertIn("not reachable from expected Integration target", str(caught.exception))
+        commands = [call.args for call in runner.calls]
+        self.assertIn(("git", "fetch", "origin", "main"), commands)
+        self.assertNotIn(
+            (
+                "gh",
+                "issue",
+                "comment",
+                "42",
+                "-R",
+                "example/repo",
+                "--body-file",
+            ),
+            [command[:7] for command in commands],
+        )
+        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+        self.assertFalse(any(command[:3] == ("gh", "issue", "close") for command in commands))
+
+    def test_recover_run_reconciles_trunk_comment_labels_and_closure(self) -> None:
+        issue_view_command = (
+            "gh",
+            "issue",
+            "view",
+            "42",
+            "-R",
+            "example/repo",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        issue_state_command = (
+            "gh",
+            "issue",
+            "view",
+            "42",
+            "-R",
+            "example/repo",
+            "--json",
+            "state",
+        )
+        runner = FakeRunner(
+            command_outputs={
+                issue_view_command: [issue_view_output(labels=[ralph.AGENT_RUNNING_LABEL])],
+                issue_state_command: [json.dumps({"state": "OPEN"})],
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = write_recovery_manifest(tmp_path)
+            loop = make_loop(tmp_path, runner)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.RalphRunRecovery(loop.config, runner).recover(run_dir)
+
+            comment_path = run_dir / "issue-42-comment.md"
+            comment = comment_path.read_text(encoding="utf-8")
+            manifest = json.loads((run_dir / "ralph-run.json").read_text(encoding="utf-8"))
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn("Ralph trunk integration completed.", comment)
+        self.assertIn("Commit: `abc1234`", comment)
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "edit",
+                "42",
+                "-R",
+                "example/repo",
+                "--add-label",
+                "agent-merged",
+                "--remove-label",
+                "agent-running",
+                "--remove-label",
+                "agent-failed",
+                "--remove-label",
+                "agent-integrated",
+                "--remove-label",
+                "ready-for-agent",
+            ),
+            commands,
+        )
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "close",
+                "42",
+                "-R",
+                "example/repo",
+                "--reason",
+                "completed",
+            ),
+            commands,
+        )
+        self.assertEqual(manifest["github_metadata"]["status"], "closed")
+        self.assertIn("Recovered issue #42 trunk metadata for abc1234.", output.getvalue())
+
+    def test_recover_run_reconciles_gitflow_without_closing_issue(self) -> None:
+        issue_view_command = (
+            "gh",
+            "issue",
+            "view",
+            "42",
+            "-R",
+            "example/repo",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        issue_state_command = (
+            "gh",
+            "issue",
+            "view",
+            "42",
+            "-R",
+            "example/repo",
+            "--json",
+            "state",
+        )
+        runner = FakeRunner(
+            command_outputs={
+                issue_view_command: [issue_view_output(labels=[ralph.AGENT_RUNNING_LABEL])],
+                issue_state_command: [json.dumps({"state": "OPEN"})],
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = write_recovery_manifest(
+                tmp_path,
+                delivery_mode=ralph.GITFLOW_MODE,
+                target_branch=ralph.DEFAULT_GITFLOW_BRANCH,
+            )
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.GITFLOW_MODE)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.RalphRunRecovery(loop.config, runner).recover(run_dir)
+
+            manifest = json.loads((run_dir / "ralph-run.json").read_text(encoding="utf-8"))
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn(("git", "fetch", "origin", "dev"), commands)
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "edit",
+                "42",
+                "-R",
+                "example/repo",
+                "--add-label",
+                "agent-integrated",
+                "--remove-label",
+                "agent-running",
+                "--remove-label",
+                "agent-failed",
+                "--remove-label",
+                "agent-merged",
+                "--remove-label",
+                "ready-for-agent",
+            ),
+            commands,
+        )
+        self.assertFalse(any(command[:3] == ("gh", "issue", "close") for command in commands))
+        self.assertEqual(manifest["github_metadata"]["status"], "marked_integrated")
+        self.assertIn("Recovered issue #42 Gitflow metadata for abc1234.", output.getvalue())
 
 
 class CommandRunnerTests(unittest.TestCase):
