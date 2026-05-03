@@ -97,7 +97,7 @@ At a high level the deployed workflow is:
 
 1. Discovery/listing assets poll public AEMO/NEMWeb sources and land files in S3.
 1. Unzipper sensors expand zipped inputs and archive successful zip payloads.
-1. Event-driven source-table bronze assets ingest landed files into current-state Delta tables.
+1. Event-driven source-table bronze assets ingest landed files into current-state Delta tables through explicit source-table ingestion logic, archiving processed files only after a table write, deleting zero-byte landing objects, and warning on skipped selected keys.
 1. Source-specific silver assets deduplicate and standardize current-state tables.
 1. `gas_model` assets build shared dimensions and marts from the source silver layer.
 1. A daily Delta maintenance job compacts and full-vacuums Delta-backed tables.
@@ -310,6 +310,7 @@ for stack details, component breakdown, and deployed-test commands.
   - `backend-services/dagster-user/aemo-etl/.pre-commit-config.yaml`
   - `backend-services/dagster-user/aemo-etl/Makefile`
   - `backend-services/dagster-user/aemo-etl/pyproject.toml`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/current_state.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`

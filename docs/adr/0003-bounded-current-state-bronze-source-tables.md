@@ -22,6 +22,17 @@ rows update only when `target.source_content_hash IS NULL` or
 rows insert. Target rows with no matching source row are retained. A row's
 absence from a later source file is not a delete signal.
 
+Normal source-table bronze asset ingestion and archive replay share the same
+current-state Delta write helper. Source-table bronze assets do not delegate
+current-state writes to an IO manager; their Dagster IO manager is read-only and
+loads existing bronze Delta tables for downstream silver assets and checks.
+Normal ingestion archives processed landing files only after the helper reports
+a table write. If the helper returns without writing a table, processed files
+remain in landing and the bronze materialization emits a non-blocking WARN asset
+check. Zero-byte landing objects are deleted after the write helper returns
+normally. Missing and unsupported selected keys remain in landing and are
+reported by the same skipped-key check.
+
 The archive bucket remains the replay source for source-table bronze rebuilds.
 Rebuilds must use the bounded `aemo-replay-bronze-archive` CLI with explicit
 operator intent:
@@ -53,6 +64,11 @@ and continue overwriting parquet snapshots from that state. Historical replay
 comes from archived source files and Delta table history, not from duplicated
 append-history rows inside source-table bronze tables.
 
+The archive bucket contains only source files whose source-table bronze run
+reached an actual table write. Operators should inspect the skipped-key WARN
+asset check when selected files are missing, unsupported, or processed but left
+in landing because no table write occurred.
+
 No-delete-on-absence is intentional. If a source table later publishes a file
 that omits a previously seen `surrogate_key`, bronze keeps the existing row
 until a separate, explicit deletion design exists.
@@ -67,6 +83,7 @@ the intended rebuild.
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/current_state.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`

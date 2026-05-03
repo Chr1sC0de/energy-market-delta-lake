@@ -11,6 +11,8 @@ from aemo_etl.configs import DAGSTER_URI
 from aemo_etl.defs.resources import (
     PolarsDataFrameSinkDeltaIoManager,
     PolarsDataFrameSinkParquetIoManager,
+    PolarsDataFrameReadOnlyDeltaIoManager,
+    SOURCE_TABLE_BRONZE_READ_IO_MANAGER_KEY,
     _parquet_dataset_glob,
     defs,
 )
@@ -196,6 +198,53 @@ def test_load_input(mocker: MockerFixture) -> None:
     assert isinstance(result, pl.LazyFrame)
 
 
+def test_read_only_delta_io_manager_rejects_output_writes(
+    mocker: MockerFixture,
+) -> None:
+    io_mgr = PolarsDataFrameReadOnlyDeltaIoManager()
+    ctx = _make_output_context(mocker)
+
+    try:
+        io_mgr.handle_output(ctx, _SMALL_DF)
+    except RuntimeError as error:
+        assert "read-only Delta IO manager cannot write" in str(error)
+    else:
+        raise AssertionError("expected read-only IO manager to reject writes")
+
+
+def test_read_only_delta_io_manager_accepts_metadata_only_output(
+    mocker: MockerFixture,
+) -> None:
+    io_mgr = PolarsDataFrameReadOnlyDeltaIoManager()
+    ctx = _make_output_context(mocker)
+
+    io_mgr.handle_output(ctx, None)
+
+    ctx.add_output_metadata.assert_not_called()
+
+
+def test_read_only_delta_io_manager_loads_existing_delta_table(
+    mocker: MockerFixture,
+) -> None:
+    io_mgr = PolarsDataFrameReadOnlyDeltaIoManager(
+        scan_delta_kwargs={"storage_options": {"AWS_REGION": "ap-southeast-2"}}
+    )
+    ctx = _make_input_context(mocker)
+    mock_lf = pl.LazyFrame({"a": [1]})
+    scan_delta = mocker.patch(
+        "aemo_etl.defs.resources.scan_delta",
+        return_value=mock_lf,
+    )
+
+    result = io_mgr.load_input(ctx)
+
+    assert isinstance(result, pl.LazyFrame)
+    scan_delta.assert_called_once_with(
+        _URI,
+        storage_options={"AWS_REGION": "ap-southeast-2"},
+    )
+
+
 def test_parquet_dataset_glob() -> None:
     assert (
         _parquet_dataset_glob("s3://test-bucket/table")
@@ -320,7 +369,7 @@ def test_defs_returns_definitions_with_resources() -> None:
         "aemo_deltalake_append_io_manager",
         "aemo_deltalake_overwrite_io_manager",
         "aemo_deltalake_ingest_partitioned_append_io_manager",
-        "aemo_deltalake_current_state_merge_io_manager",
+        SOURCE_TABLE_BRONZE_READ_IO_MANAGER_KEY,
         "aemo_parquet_overwrite_io_manager",
         "io_manager",
         "s3",

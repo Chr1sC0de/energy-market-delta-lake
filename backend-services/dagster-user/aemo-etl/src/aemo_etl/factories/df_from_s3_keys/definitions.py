@@ -13,6 +13,7 @@ from polars import LazyFrame
 from polars._typing import PolarsDataType
 
 from aemo_etl.configs import AEMO_BUCKET
+from aemo_etl.defs.resources import SOURCE_TABLE_BRONZE_READ_IO_MANAGER_KEY
 from aemo_etl.factories.checks import (
     duplicate_row_check_factory,
     schema_drift_check_factory,
@@ -77,7 +78,7 @@ def df_from_s3_keys_definitions_factory(
         key_prefix=bronze_key_prefix,
         name=bronze_table_name,
         group_name=group_name,
-        io_manager_key="aemo_deltalake_current_state_merge_io_manager",
+        io_manager_key=SOURCE_TABLE_BRONZE_READ_IO_MANAGER_KEY,
         deps=deps,
         description=f"Bronze dataset, contains current un-cleansed source state.\n\n{description}",
         metadata={

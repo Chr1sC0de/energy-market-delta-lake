@@ -116,7 +116,10 @@ The bronze asset:
 - applies optional preprocessing hooks
 - collapses each micro-batch to current state by `surrogate_key`
 - merges current-state rows into the bronze Delta table in the AEMO bucket
-- archives processed source files by moving them from landing to archive
+- archives processed source files only after a table write
+- deletes zero-byte landing objects
+- reports missing, unsupported, and deferred selected keys with a
+  non-blocking WARN asset check
 
 Source-table bronze is deliberately narrower than every asset whose key starts
 with `bronze`. The current-state decision applies to the GBB and VICGAS
@@ -139,6 +142,9 @@ Source-table bronze semantics:
   is missing
 - unmatched source rows insert, and unmatched target rows stay in place, so
   absence from a later source file is not a delete signal
+- processed landing files move to archive only when the write helper reports a
+  table write; otherwise they remain in landing and the skipped-key check warns
+- zero-byte landing objects are deleted after the write helper returns normally
 - archived source files remain the replay source for rebuilding source-table
   bronze
 
@@ -149,7 +155,7 @@ and target Delta table URI, and only writes when `--replace` is provided.
 Operators choose exactly one scope with `--all`, `--domain`, or `--table`.
 Replace mode processes archived source files in bounded batches, writes the
 first non-empty batch as an overwrite, then applies the same current-state merge
-predicate used by `aemo_deltalake_current_state_merge_io_manager`.
+predicate used by normal source-table bronze ingestion.
 
 The corresponding silver asset:
 
@@ -228,7 +234,7 @@ Example defaults:
 
 ## S3-backed IO managers
 
-`src/aemo_etl/defs/resources.py` defines four Delta-oriented IO managers plus one Parquet overwrite IO manager:
+`src/aemo_etl/defs/resources.py` defines three write-oriented Delta IO managers, one read-only source-table bronze Delta IO manager, and one Parquet overwrite IO manager:
 
 - `aemo_deltalake_append_io_manager`
   - append mode with schema merge
@@ -236,12 +242,12 @@ Example defaults:
   - overwrite mode with schema merge
 - `aemo_deltalake_ingest_partitioned_append_io_manager`
   - append mode partitioned by `ingested_date`
-- `aemo_deltalake_current_state_merge_io_manager`
-  - merge mode by `surrogate_key`, updating matched rows only when `source_content_hash` changed and retaining target rows that are absent from the source batch
+- `aemo_deltalake_source_table_bronze_read_io_manager`
+  - read-only Delta loading for source-table bronze assets after their explicit ingestion logic has written current-state rows
 - `aemo_parquet_overwrite_io_manager`
   - overwrites a Parquet dataset directory with the current snapshot
 
-The Delta managers persist `polars.LazyFrame` outputs to Delta tables in the AEMO bucket using the `dagster/uri` asset metadata. The Parquet manager overwrites a Parquet dataset directory at the same metadata URI contract. All managers publish preview, row count, and schema metadata back into Dagster.
+The write-oriented Delta managers persist `polars.LazyFrame` outputs to Delta tables in the AEMO bucket using the `dagster/uri` asset metadata. Source-table bronze assets write through `factories/df_from_s3_keys/current_state.py`; their read-only IO manager only scans the existing Delta table for downstream consumers and checks. The Parquet manager overwrites a Parquet dataset directory at the same metadata URI contract. Write managers publish row count and schema metadata back into Dagster.
 
 ## Module map
 
@@ -284,6 +290,7 @@ flowchart TD
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/testing.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/current_state.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`

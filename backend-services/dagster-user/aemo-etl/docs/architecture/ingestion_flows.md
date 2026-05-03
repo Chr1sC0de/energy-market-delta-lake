@@ -40,7 +40,7 @@ sequenceDiagram
     Landing->>RawSensor: Matching source files become visible
     RawSensor->>Bronze: Launch matching gasbb_*_job with s3_keys
     Bronze->>Landing: Read csv/parquet objects
-    Bronze->>Archive: Move processed source files from landing
+    Bronze->>Archive: Move processed source files after table write
     Bronze->>Silver: Trigger silver_gasbb_* auto-materialization
     Silver->>GasModel: Trigger shared dimensions and marts when relevant
 ```
@@ -49,7 +49,11 @@ Trigger and output notes:
 
 - The first step is schedule-driven from `src/aemo_etl/defs/raw/nemweb_public_files.py`.
 - The unzip and bronze steps are sensor-driven from `src/aemo_etl/definitions.py`; that module also registers the failed-run alert sensor, which is not part of the ingestion data path shown here. Source-table bronze raw sensors select at most 128 MB (128,000,000 bytes) and 25 landing files per run request by default. Those caps are source-table batching defaults, not the full repo **Fast check** or **Push check** configuration. The source-table sensor suppresses repeated launches after a failed job at the same job tags, while allowing a retry after retry-relevant tags such as ECS CPU or memory change.
-- Outputs land in Delta tables under the AEMO bucket plus archived source files under `ARCHIVE_BUCKET/bronze/gbb`.
+- Outputs land in Delta tables under the AEMO bucket plus archived source files
+  under `ARCHIVE_BUCKET/bronze/gbb`. Processed source files are archived only
+  after a table write; zero-byte landing objects are deleted; missing,
+  unsupported, and deferred selected keys produce a non-blocking WARN asset
+  check.
 
 ## VICGAS ingestion flow
 
@@ -87,7 +91,7 @@ sequenceDiagram
     Landing->>RawSensor: Detect files matching bronze asset glob_pattern
     RawSensor->>Bronze: Launch matching int*_job with s3_keys
     Bronze->>Landing: Read source members
-    Bronze->>Archive: Copy then delete processed source files
+    Bronze->>Archive: Copy then delete processed source files after table write
     Bronze->>Silver: Trigger silver_int* current-snapshot assets
     Silver->>GasModel: Feed shared dimensions and fact marts
 ```
@@ -96,7 +100,11 @@ Trigger and output notes:
 
 - This follows the same factory pattern as GBB, but the downstream assets are the `int*` VICGAS report assets under `src/aemo_etl/defs/raw/vicgas`.
 - `download_vicgas_public_report_zip_files_job` is ad hoc only. It is used for bootstrap or backfill of `PublicRptsNN.zip` bundles into `LANDING_BUCKET/bronze/vicgas`; the existing unzipper and raw sensors handle downstream processing.
-- The bronze assets merge current-state Delta rows by `surrogate_key` after collapsing each micro-batch to the maximum `source_file` per key; the silver assets overwrite the current parquet snapshot.
+- The bronze assets merge current-state Delta rows by `surrogate_key` after
+  collapsing each micro-batch to the maximum `source_file` per key, archive
+  processed source files only after a table write, delete zero-byte landing
+  objects, and warn on skipped selected keys; the silver assets overwrite the
+  current parquet snapshot.
 
 ## Raw-to-silver transformation flow
 
@@ -118,7 +126,9 @@ sequenceDiagram
     BronzeAsset->>BronzeAsset: Parse bytes to LazyFrame and apply hooks
     BronzeAsset->>BronzeAsset: Add source_content_hash and keep max source_file per surrogate_key
     BronzeAsset->>DeltaBronze: Merge rows by surrogate_key when source_content_hash changed
-    BronzeAsset->>Archive: Copy staged source files and delete from landing
+    BronzeAsset->>Archive: Copy written source files and delete from landing
+    BronzeAsset->>Landing: Delete zero-byte objects
+    BronzeAsset->>BronzeAsset: Warn on skipped or deferred selected keys
 
     DeltaBronze->>SilverAsset: Dependency update observed
     SilverAsset->>DeltaBronze: Read bronze Delta table
@@ -131,7 +141,7 @@ sequenceDiagram
 Trigger and output notes:
 
 - The bronze run can come from an event-driven sensor or from a manual asset launch with explicit `s3_keys`.
-- Bronze uses `aemo_deltalake_current_state_merge_io_manager`; `df_from_s3_keys` silver uses `aemo_parquet_overwrite_io_manager`.
+- Bronze writes current-state Delta rows through explicit `df_from_s3_keys` ingestion logic. It archives processed landing files only after a table write, deletes zero-byte landing objects after the write helper returns normally, and emits `check_skipped_s3_keys` as a non-blocking WARN asset check for missing, unsupported, or deferred selected keys. Downstream silver assets and checks load existing bronze Delta tables through `aemo_deltalake_source_table_bronze_read_io_manager`; `df_from_s3_keys` silver uses `aemo_parquet_overwrite_io_manager`.
 - Source-table bronze assets are current-state Delta tables, not append-history
   tables. Discovery/listing assets such as `bronze_nemweb_public_files_*` and
   extraction assets such as `unzipper_*` are separate ingestion roles.
@@ -168,6 +178,7 @@ When `AWS_ENDPOINT_URL` points at LocalStack, the same flow runs against local S
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/jobs/download_vicgas_public_report_zip_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/alerts.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/current_state.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`
