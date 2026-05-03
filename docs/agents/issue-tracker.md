@@ -19,7 +19,13 @@ closes verified issues during **Promotion** from `dev` to `main` and
 fast-forwards `dev` to the promotion commit. In opt-in **Trunk delivery**, Ralph
 integrates directly to `main`, comments evidence, and closes the issue. A plain
 drain has a default budget of 10 implementation attempts; `--max-issues 0` is
-the explicit unlimited drain mode.
+the explicit unlimited drain mode. Live `--issue`, `--drain`, and `--promote`
+runs require a clean root worktree before issue claim, worktree creation,
+**Local integration**, or push; `--allow-dirty-worktree` is the explicit
+override and `--dry-run` remains usable on dirty worktrees. Each implementation
+and **Promotion** run keeps `.ralph/runs/.../ralph-run.json` updated with the
+issue, **Delivery mode**, **Integration target**, QA, push, commit, and GitHub
+metadata state for inspection and recovery.
 
 ## Sync metadata
 

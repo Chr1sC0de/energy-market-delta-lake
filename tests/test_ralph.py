@@ -4,12 +4,15 @@ import importlib.util
 import io
 import json
 import sys
+import threading
+import time
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 
 RALPH_PATH = Path(__file__).resolve().parents[1] / "scripts" / "ralph.py"
@@ -46,12 +49,18 @@ def make_issue(labels: set[str], body: str = ""):
     )
 
 
+def load_run_manifest(tmp_path: Path, run_glob: str = "issue-42-*") -> dict[str, Any]:
+    manifest_path = next((tmp_path / "logs").glob(f"{run_glob}/ralph-run.json"))
+    return json.loads(manifest_path.read_text(encoding="utf-8"))
+
+
 @dataclass(frozen=True)
 class FakeCall:
     args: tuple[str, ...]
     cwd: Path
     input_text: str | None
     log_path: Path | None
+    phase: str | None
     execute_in_dry_run: bool
 
 
@@ -83,6 +92,7 @@ class FakeRunner:
         cwd: Path,
         input_text: str | None = None,
         log_path: Path | None = None,
+        phase: str | None = None,
         execute_in_dry_run: bool = True,
     ):
         command = tuple(args)
@@ -92,6 +102,7 @@ class FakeRunner:
                 cwd=cwd,
                 input_text=input_text,
                 log_path=log_path,
+                phase=phase,
                 execute_in_dry_run=execute_in_dry_run,
             )
         )
@@ -113,7 +124,8 @@ class FakeRunner:
                 stderr="",
             )
         if command == ("git", "status", "--porcelain"):
-            return ralph.CompletedCommand(stdout=self.status_outputs.pop(0), stderr="")
+            stdout = self.status_outputs.pop(0) if self.status_outputs else ""
+            return ralph.CompletedCommand(stdout=stdout, stderr="")
         if command[:3] == ("git", "diff", "--name-only"):
             return ralph.CompletedCommand(stdout=self.diff_outputs.pop(0), stderr="")
         if command[:2] == ("git", "rev-parse"):
@@ -139,8 +151,11 @@ def make_loop(
     target_branch: str | None = None,
     source_branch: str = ralph.DEFAULT_GITFLOW_BRANCH,
     promote: bool = False,
+    issue: int | None = None,
     drain: bool = False,
     max_issues: int = ralph.DEFAULT_DRAIN_BUDGET,
+    dry_run: bool = False,
+    allow_dirty_worktree: bool = False,
 ) -> ralph.RalphLoop:
     repo_root = tmp_path / "repo"
     worktree_container = tmp_path / "worktrees"
@@ -154,15 +169,17 @@ def make_loop(
         target_branch=target_branch,
         source_branch=source_branch,
         promote=promote,
-        issue=None,
+        issue=issue,
         drain=drain,
         max_issues=max_issues,
-        dry_run=False,
+        dry_run=dry_run,
+        allow_dirty_worktree=allow_dirty_worktree,
         bootstrap_labels=False,
         issue_limit=100,
         log_root=log_root,
         worktree_container=worktree_container,
     )
+    runner.dry_run = dry_run
     return ralph.RalphLoop(config, runner)
 
 
@@ -188,6 +205,35 @@ class CountingRalphLoop(ralph.RalphLoop):
 
     def _next_triage_issue(self) -> ralph.Issue | None:
         return None
+
+
+class PreflightProbeLoop(ralph.RalphLoop):
+    def __init__(self, config: ralph.LoopConfig, runner: FakeRunner) -> None:
+        super().__init__(config, runner)
+        self.ready_returned = False
+        self.implemented = 0
+        self.promoted = False
+
+    def _validate_tools(self) -> None:
+        pass
+
+    def _validate_labels(self) -> None:
+        pass
+
+    def _next_ready_issue(self) -> ralph.Issue | None:
+        if self.ready_returned:
+            return None
+        self.ready_returned = True
+        return make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+
+    def _handle_implementation(self, issue: ralph.Issue) -> None:
+        self.implemented += 1
+
+    def _next_triage_issue(self) -> ralph.Issue | None:
+        return None
+
+    def _promote(self) -> None:
+        self.promoted = True
 
 
 class RalphHelperTests(unittest.TestCase):
@@ -401,6 +447,18 @@ Build it.
         help_text = output.getvalue()
         self.assertIn("Defaults to 10", help_text)
         self.assertIn("Use 0 for unlimited", help_text)
+        self.assertIn("--allow-dirty-worktree", help_text)
+
+    def test_dirty_root_worktree_message_lists_changed_paths_and_override(self) -> None:
+        message = ralph.dirty_root_worktree_message(
+            Path("/repo"),
+            " M scripts/ralph.py\n?? tests/test_ralph.py\n",
+        )
+
+        self.assertIn("Root worktree has uncommitted changes: /repo", message)
+        self.assertIn("--allow-dirty-worktree", message)
+        self.assertIn("- scripts/ralph.py", message)
+        self.assertIn("- tests/test_ralph.py", message)
 
     def test_drain_defaults_to_ten_implementation_attempts(self) -> None:
         runner = FakeRunner()
@@ -452,6 +510,90 @@ Build it.
 
         self.assertEqual(config.delivery_mode, ralph.TRUNK_MODE)
         self.assertEqual(config.target_branch, "main")
+
+    def test_dirty_root_blocks_live_issue_drain_and_promote_before_side_effects(self) -> None:
+        cases = [
+            {"issue": 42},
+            {"drain": True},
+            {"promote": True},
+        ]
+        for kwargs in cases:
+            with self.subTest(kwargs=kwargs):
+                runner = FakeRunner(status_outputs=[" M scripts/ralph.py\n"])
+                with tempfile.TemporaryDirectory() as tmp:
+                    loop = make_loop(Path(tmp), runner, **kwargs)
+                    probe = PreflightProbeLoop(loop.config, runner)
+
+                    with self.assertRaises(ralph.RalphError) as caught:
+                        probe.run()
+
+                self.assertIn("Root worktree has uncommitted changes", str(caught.exception))
+                self.assertEqual(probe.implemented, 0)
+                self.assertFalse(probe.promoted)
+                commands = [call.args for call in runner.calls]
+                self.assertEqual(commands, [("git", "status", "--porcelain")])
+                self.assertNotIn(
+                    (
+                        "gh",
+                        "issue",
+                        "edit",
+                        "42",
+                        "-R",
+                        "example/repo",
+                        "--add-label",
+                        "agent-running",
+                    ),
+                    commands,
+                )
+                self.assertFalse(
+                    any(command[:3] == ("git", "worktree", "add") for command in commands)
+                )
+                self.assertFalse(
+                    any(command[:3] == ("git", "push", "origin") for command in commands)
+                )
+
+    def test_allow_dirty_worktree_bypasses_live_preflight(self) -> None:
+        runner = FakeRunner(status_outputs=[" M scripts/ralph.py\n"])
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(
+                Path(tmp),
+                runner,
+                drain=True,
+                allow_dirty_worktree=True,
+            )
+            probe = PreflightProbeLoop(loop.config, runner)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                probe.run()
+
+        self.assertEqual(probe.implemented, 1)
+        self.assertIn(
+            "Clean root worktree preflight bypassed by --allow-dirty-worktree.",
+            output.getvalue(),
+        )
+        commands = [call.args for call in runner.calls]
+        self.assertNotIn(("git", "status", "--porcelain"), commands)
+
+    def test_dry_run_remains_usable_with_dirty_root_worktree(self) -> None:
+        runner = FakeRunner(status_outputs=[" M scripts/ralph.py\n"])
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(
+                Path(tmp),
+                runner,
+                issue=42,
+                dry_run=True,
+            )
+            probe = PreflightProbeLoop(loop.config, runner)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                probe.run()
+
+        self.assertEqual(probe.implemented, 0)
+        self.assertIn("DRY RUN: would implement #42: Implement thing", output.getvalue())
+        commands = [call.args for call in runner.calls]
+        self.assertNotIn(("git", "status", "--porcelain"), commands)
 
     def test_completion_comment_records_local_integration_evidence(self) -> None:
         issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
@@ -505,6 +647,107 @@ Build it.
         self.assertIn("The token in default is invalid.", message)
 
 
+class CommandRunnerTests(unittest.TestCase):
+    def test_command_runner_streams_log_and_heartbeat_while_command_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            log_path = tmp_path / "stream.log"
+            runner = ralph.CommandRunner(dry_run=False, heartbeat_interval=0.05)
+            command = [
+                sys.executable,
+                "-c",
+                (
+                    "import sys, time; "
+                    "print('first line', flush=True); "
+                    "time.sleep(0.5); "
+                    "print('second line', flush=True); "
+                    "print('error line', file=sys.stderr, flush=True)"
+                ),
+            ]
+            result_box: dict[str, ralph.CompletedCommand] = {}
+            error_box: dict[str, BaseException] = {}
+
+            def run_command() -> None:
+                try:
+                    result_box["result"] = runner.run(
+                        command,
+                        cwd=tmp_path,
+                        log_path=log_path,
+                        phase="streaming test phase",
+                    )
+                except BaseException as error:
+                    error_box["error"] = error
+
+            output = io.StringIO()
+            with redirect_stdout(output):
+                thread = threading.Thread(target=run_command)
+                thread.start()
+                deadline = time.monotonic() + 2.0
+                streamed_log = ""
+                while time.monotonic() < deadline:
+                    if log_path.exists():
+                        streamed_log = log_path.read_text(encoding="utf-8")
+                        if "first line" in streamed_log:
+                            break
+                    time.sleep(0.01)
+                else:
+                    self.fail("command log did not stream first stdout line")
+
+                self.assertIn("exit: running", streamed_log)
+                self.assertTrue(thread.is_alive())
+                thread.join(timeout=3.0)
+
+            self.assertFalse(thread.is_alive())
+            if "error" in error_box:
+                raise error_box["error"]
+
+            result = result_box["result"]
+            final_log = log_path.read_text(encoding="utf-8")
+            self.assertEqual(result.stdout, "first line\nsecond line\n")
+            self.assertEqual(result.stderr, "error line\n")
+            self.assertIn(f"$ {ralph.format_command(command)}", final_log)
+            self.assertIn(f"cwd: {tmp_path}", final_log)
+            self.assertIn("exit: 0", final_log)
+            self.assertIn("STDOUT:\nfirst line\nsecond line\n", final_log)
+            self.assertIn("STDERR:\nerror line\n", final_log)
+            self.assertIn("Ralph heartbeat: phase=streaming test phase; log=", output.getvalue())
+
+    def test_command_runner_failure_preserves_command_log_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            log_path = tmp_path / "failure.log"
+            runner = ralph.CommandRunner(dry_run=False)
+            command = [
+                sys.executable,
+                "-c",
+                (
+                    "import sys; "
+                    "print('before failure'); "
+                    "print('failure detail', file=sys.stderr); "
+                    "raise SystemExit(7)"
+                ),
+            ]
+
+            with self.assertRaises(ralph.CommandFailure) as caught:
+                runner.run(
+                    command,
+                    cwd=tmp_path,
+                    log_path=log_path,
+                    phase="failure logging phase",
+                )
+
+            error = caught.exception
+            log = log_path.read_text(encoding="utf-8")
+            self.assertEqual(error.returncode, 7)
+            self.assertEqual(error.stdout, "before failure\n")
+            self.assertEqual(error.stderr, "failure detail\n")
+            self.assertIn(f"$ {ralph.format_command(command)}", log)
+            self.assertIn(f"cwd: {tmp_path}", log)
+            self.assertIn("exit: 7", log)
+            self.assertIn("STDOUT:\nbefore failure\n", log)
+            self.assertIn("STDERR:\nfailure detail\n", log)
+
+
 class RalphLoopLocalIntegrationTests(unittest.TestCase):
     def test_malformed_issue_marks_failed_without_creating_worktree(self) -> None:
         runner = FakeRunner()
@@ -522,6 +765,7 @@ Build it.
 
             comment_path = next((Path(tmp) / "logs").glob("issue-42-*/issue-42-comment.md"))
             comment = comment_path.read_text(encoding="utf-8")
+            manifest = load_run_manifest(Path(tmp))
 
         commands = [call.args for call in runner.calls]
         self.assertIn(
@@ -569,6 +813,12 @@ Build it.
             "Missing required issue section(s): Acceptance criteria, Blocked by",
             comment,
         )
+        self.assertEqual(manifest["run_kind"], "implementation")
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["delivery_mode"], "trunk")
+        self.assertEqual(manifest["integration_target"], "main")
+        self.assertEqual(manifest["github_metadata"]["status"], "failure_commented")
+        self.assertIn("Missing required issue section", manifest["failure"]["message"])
 
     def test_successful_implementation_squash_merges_pushes_comments_and_closes(self) -> None:
         runner = FakeRunner(
@@ -585,6 +835,7 @@ Build it.
                 loop._handle_implementation(issue)
 
             commands = [call.args for call in runner.calls]
+            phases = [call.phase for call in runner.calls]
             self.assertIn(
                 ("git", "merge", "--squash", "agent/issue-42-implement-thing"),
                 commands,
@@ -609,11 +860,23 @@ Build it.
             self.assertIn("#42: running QA Ralph unit tests", progress)
             self.assertIn("#42: pushing merge-sha to main", progress)
             self.assertIn("Issue #42 merged to main: merge-sha", progress)
+            self.assertIn("#42: Codex implementation attempt 1", phases)
+            self.assertIn("#42: QA Ralph unit tests", phases)
 
             comment_path = next((Path(tmp) / "logs").glob("issue-42-*/issue-42-comment.md"))
             comment = comment_path.read_text(encoding="utf-8")
+            manifest = load_run_manifest(Path(tmp))
             self.assertIn("Ralph trunk integration completed.", comment)
             self.assertIn("Commit: `merge-sha`", comment)
+            self.assertEqual(manifest["status"], "succeeded")
+            self.assertEqual(manifest["issue"]["number"], 42)
+            self.assertEqual(manifest["delivery_mode"], "trunk")
+            self.assertEqual(manifest["integration_target"], "main")
+            self.assertEqual(manifest["branches"]["issue"], "agent/issue-42-implement-thing")
+            self.assertEqual(manifest["integration_commit"]["sha"], "merge-sha")
+            self.assertEqual(manifest["pushes"]["integration_target"]["status"], "pushed")
+            self.assertEqual(manifest["github_metadata"]["status"], "closed")
+            self.assertEqual(manifest["qa_results"][0]["status"], "passed")
 
     def test_gitflow_implementation_creates_dev_integrates_and_leaves_issue_open(self) -> None:
         ls_remote = ("git", "ls-remote", "--exit-code", "--heads", "origin", "dev")
@@ -749,6 +1012,35 @@ Build it.
             commands,
         )
 
+    def test_failed_qa_persists_failed_manifest_state(self) -> None:
+        qa_command = ("python3", "-m", "unittest", "discover", "-s", "tests")
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            rev_parse_outputs=["base-sha\n"],
+            fail_commands={qa_command},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(Path(tmp), runner)
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._handle_implementation(
+                    make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+                )
+
+            manifest = load_run_manifest(Path(tmp))
+
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["github_metadata"]["status"], "failure_commented")
+        self.assertIn("Command failed", manifest["failure"]["message"])
+        failed_qa = [
+            result
+            for result in manifest["qa_results"]
+            if result["name"] == "Ralph unit tests" and result["status"] == "failed"
+        ]
+        self.assertGreaterEqual(len(failed_qa), 1)
+        self.assertTrue(
+            any(event["stage"] == "qa_failed" for event in manifest["events"])
+        )
+
     def test_promotion_merges_dev_and_closes_verified_integrated_issue(self) -> None:
         issue_list_command = (
             "gh",
@@ -824,6 +1116,7 @@ Build it.
 
             comment_path = next((Path(tmp) / "logs").glob("promote-*/issue-42-comment.md"))
             comment = comment_path.read_text(encoding="utf-8")
+            manifest = load_run_manifest(Path(tmp), run_glob="promote-*")
 
         commands = [call.args for call in runner.calls]
         self.assertIn(
@@ -867,6 +1160,23 @@ Build it.
         self.assertIn("Ralph promotion completed.", comment)
         self.assertIn("Promotion commit: `promotion-sha`", comment)
         self.assertIn("Integrated commit: `abc1234`", comment)
+        self.assertEqual(manifest["run_kind"], "promotion")
+        self.assertEqual(manifest["status"], "succeeded")
+        self.assertEqual(manifest["delivery_mode"], "gitflow")
+        self.assertEqual(manifest["source_branch"], "dev")
+        self.assertEqual(manifest["integration_target"], "main")
+        self.assertEqual(manifest["promotion_commit"]["sha"], "promotion-sha")
+        self.assertEqual(manifest["pushes"]["promotion_target"]["status"], "pushed")
+        self.assertEqual(manifest["pushes"]["source_branch_sync"]["status"], "pushed")
+        self.assertEqual(manifest["github_metadata"]["issues"][0]["number"], 42)
+        self.assertEqual(
+            manifest["github_metadata"]["issues"][0]["integrated_commit"],
+            "abc1234",
+        )
+        self.assertEqual(
+            manifest["github_metadata"]["issues"][0]["metadata_status"],
+            "closed",
+        )
 
     def test_post_push_issue_metadata_failure_stops_without_cleanup(self) -> None:
         close_command = (

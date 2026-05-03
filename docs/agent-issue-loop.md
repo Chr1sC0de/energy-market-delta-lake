@@ -12,6 +12,8 @@ integration** plus **Promotion** as the success path after QA.
 - [Labels](#labels)
 - [Run modes](#run-modes)
 - [Live run preflight](#live-run-preflight)
+- [AFK run monitoring](#afk-run-monitoring)
+- [Run manifest](#run-manifest)
 - [Implementation pass](#implementation-pass)
 - [Promotion pass](#promotion-pass)
 - [Triage pass](#triage-pass)
@@ -51,7 +53,7 @@ $grill-with-docs <feature idea> -> $to-prd -> $to-issues -> $ralph-triage -> $ra
 
 ```mermaid
 flowchart TD
-  START[Start drain] --> PREFLIGHT[Validate tools, GitHub auth, and labels]
+  START[Start drain] --> PREFLIGHT[Validate tools, root worktree, GitHub auth, and labels]
   PREFLIGHT --> READY{Unblocked ready-for-agent issue?}
   READY -->|Yes| CLAIM[Claim issue with agent-running]
   CLAIM --> CONTRACT{Issue contract valid?}
@@ -161,7 +163,21 @@ Override the **Integration target** explicitly when needed:
 python3 scripts/ralph.py --issue 25 --target-branch feature/my-branch
 ```
 
+Bypass the live clean-root preflight only when the operator intentionally wants
+Ralph to run with uncommitted root worktree changes:
+
+```bash
+python3 scripts/ralph.py --drain --allow-dirty-worktree
+```
+
 ## Live run preflight
+
+Live `--issue`, `--drain`, and `--promote` runs fail before GitHub issue claim,
+worktree creation, **Local integration**, or push when the root worktree has
+uncommitted changes. Commit or stash root worktree changes before live Ralph
+runs. Use `--allow-dirty-worktree` only for an explicit dirty-worktree
+operation. `--dry-run` remains available on a dirty root worktree so operators
+can inspect the next Ralph action without mutating issues or branches.
 
 Before a live drain, validate both GitHub API auth and Git push auth for the
 expected **Integration target**:
@@ -175,10 +191,62 @@ When using token-based GitHub CLI auth, export `GH_TOKEN` in the shell that runs
 Ralph. Do not paste token values into commands, issue comments, docs, or logs.
 
 Use `HEAD:dev` for Gitflow target validation and `HEAD:main` for trunk or
-promotion validation. Run Ralph from a clean local worktree that is aligned with
-the remote branch being operated on. The script fetches the **Integration
-target** during implementation and rebases issue work if the target moves, but
-the operator should start from a known repo state.
+promotion validation. Run Ralph from a local worktree that is aligned with the
+remote branch being operated on. The script fetches the **Integration target**
+during implementation and rebases issue work if the target moves, but the
+operator should start from a known repo state.
+
+## AFK run monitoring
+
+Ralph writes command logs while subprocesses are still running. Long Codex
+implementation attempts write to `codex-implementation-N.jsonl`, triage writes
+to `codex-triage.jsonl`, QA writes to `qa-*` logs, and Git operations write to
+their named `git-*` logs under the current `.ralph/runs/...` run directory.
+While a command is active, the log has `exit: running`; after the command
+finishes, Ralph rewrites the same log with the final exit status while
+preserving stdout, stderr, command, and cwd.
+
+During logged long-running phases, Ralph prints a heartbeat about every 30
+seconds:
+
+```text
+Ralph heartbeat: phase=#49: Codex implementation attempt 1; log=/repo/.ralph/runs/issue-49-.../codex-implementation-1.jsonl
+```
+
+For AFK drains, use the heartbeat phase to see what Ralph is waiting on and tail
+the active log path to inspect live command output. If the terminal only shows
+heartbeats and no completion message, the phase is still running. If a command
+fails, the same log path appears in the failure output or issue evidence.
+
+## Run manifest
+
+Every implementation run and **Promotion** run writes
+`.ralph/runs/.../ralph-run.json`. The manifest is rewritten as milestones
+complete, so a failed run still records the last known recovery state.
+
+Key fields for inspection:
+
+- `schema_version`: manifest format version.
+- `run_kind`: `implementation` or `promotion`.
+- `status` and `stage`: current run outcome and latest milestone.
+- `events`: timestamped milestone history.
+- `issue`: implementation issue number, title, and URL.
+- `github_metadata.issues`: promoted issue numbers and their recorded Gitflow
+  integration commits during **Promotion**.
+- `delivery_mode`: issue **Delivery mode**; **Promotion** records `gitflow`.
+- `integration_target`: branch Ralph is updating for the run.
+- `source_branch`: **Promotion** source branch, usually `dev`.
+- `branches`: issue, source, and target branch names that apply to the run.
+- `paths`: repo root, run directory, worktree container, and implementation,
+  integration, or promotion worktree paths.
+- `changed_files`: current file diff used for QA and integration.
+- `qa_results`: selected QA commands, cwd, log path, and pass/fail state.
+- `integration_commit`: implementation **Local integration** commit.
+- `promotion_commit`: **Promotion** commit pushed to `main`.
+- `pushes`: per-branch push state, commit SHA, and push log path.
+- `github_metadata`: claim, completion, failure, Promotion comment, label, and
+  close state.
+- `failure`: user-facing error message and command log path when the run fails.
 
 ## Implementation pass
 

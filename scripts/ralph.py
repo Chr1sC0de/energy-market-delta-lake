@@ -4,13 +4,17 @@
 from __future__ import annotations
 
 import argparse
+import codecs
 import json
+import os
 import re
+import selectors
 import shlex
 import shutil
 import subprocess
 import sys
 import textwrap
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -39,7 +43,12 @@ DELIVERY_LABELS = frozenset({DELIVERY_GITFLOW_LABEL, DELIVERY_TRUNK_LABEL})
 DEFAULT_GITFLOW_BRANCH = "dev"
 DEFAULT_TRUNK_BRANCH = "main"
 DEFAULT_DRAIN_BUDGET = 10
+DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30.0
+DIRTY_WORKTREE_STATUS_PREVIEW_LIMIT = 12
+COMMAND_READ_CHUNK_SIZE = 65536
 COMMIT_LINE_PATTERN = re.compile(r"(?m)^Commit: `(?P<sha>[0-9a-f]{7,40})`$")
+MANIFEST_NAME = "ralph-run.json"
+MANIFEST_SCHEMA_VERSION = 1
 
 TRIAGE_STATE_LABELS = frozenset(
     {
@@ -222,10 +231,342 @@ class LoopConfig:
     drain: bool
     max_issues: int
     dry_run: bool
+    allow_dirty_worktree: bool
     bootstrap_labels: bool
     issue_limit: int
     log_root: Path
     worktree_container: Path
+
+
+def utc_now_text() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def path_text(path: Path | None) -> str | None:
+    if path is None:
+        return None
+    return str(path)
+
+
+class RunManifest:
+    """Machine-readable recovery state for a single Ralph run."""
+
+    def __init__(self, path: Path, data: dict[str, Any]) -> None:
+        self.path = path
+        self.data = data
+
+    @classmethod
+    def for_implementation(
+        cls,
+        *,
+        run_dir: Path,
+        issue: Issue,
+        delivery_plan: DeliveryPlan,
+        branch: str,
+        worktree_path: Path,
+        integration_path: Path,
+        config: LoopConfig,
+    ) -> "RunManifest":
+        data: dict[str, Any] = {
+            "schema_version": MANIFEST_SCHEMA_VERSION,
+            "run_kind": "implementation",
+            "status": "running",
+            "stage": "created",
+            "started_at": utc_now_text(),
+            "updated_at": utc_now_text(),
+            "repo": config.repo,
+            "issue": {
+                "number": issue.number,
+                "title": issue.title,
+                "url": issue.url,
+            },
+            "delivery_mode": delivery_plan.mode,
+            "integration_target": delivery_plan.target_branch,
+            "branches": {
+                "issue": branch,
+                "integration_target": delivery_plan.target_branch,
+            },
+            "paths": {
+                "repo_root": str(config.repo_root),
+                "run_dir": str(run_dir),
+                "worktree_container": str(config.worktree_container),
+                "implementation_worktree": str(worktree_path),
+                "integration_worktree": str(integration_path),
+            },
+            "changed_files": [],
+            "qa_results": [],
+            "codex_attempts": [],
+            "commits": {},
+            "integration_commit": None,
+            "pushes": {},
+            "github_metadata": {"status": "not_started"},
+            "failure": None,
+            "events": [],
+        }
+        manifest = cls(run_dir / MANIFEST_NAME, data)
+        manifest.record_event("created")
+        return manifest
+
+    @classmethod
+    def for_promotion(
+        cls,
+        *,
+        run_dir: Path,
+        source_branch: str,
+        target_branch: str,
+        promote_path: Path,
+        config: LoopConfig,
+    ) -> "RunManifest":
+        data: dict[str, Any] = {
+            "schema_version": MANIFEST_SCHEMA_VERSION,
+            "run_kind": "promotion",
+            "status": "running",
+            "stage": "created",
+            "started_at": utc_now_text(),
+            "updated_at": utc_now_text(),
+            "repo": config.repo,
+            "delivery_mode": GITFLOW_MODE,
+            "source_branch": source_branch,
+            "integration_target": target_branch,
+            "branches": {
+                "source": source_branch,
+                "integration_target": target_branch,
+            },
+            "paths": {
+                "repo_root": str(config.repo_root),
+                "run_dir": str(run_dir),
+                "worktree_container": str(config.worktree_container),
+                "promotion_worktree": str(promote_path),
+            },
+            "changed_files": [],
+            "qa_results": [],
+            "commits": {},
+            "promotion_commit": None,
+            "pushes": {},
+            "github_metadata": {"status": "not_started", "issues": []},
+            "failure": None,
+            "events": [],
+        }
+        manifest = cls(run_dir / MANIFEST_NAME, data)
+        manifest.record_event("created")
+        return manifest
+
+    def record_event(
+        self,
+        stage: str,
+        *,
+        status: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        if status is not None:
+            self.data["status"] = status
+        self.data["stage"] = stage
+        event: dict[str, Any] = {
+            "timestamp": utc_now_text(),
+            "stage": stage,
+            "status": self.data["status"],
+        }
+        if details is not None:
+            event["details"] = details
+        events = self.data.setdefault("events", [])
+        if not isinstance(events, list):
+            raise RalphError("Manifest events field is not a list.")
+        events.append(event)
+        self._write()
+
+    def record_changed_files(self, changed_files: list[str], *, stage: str) -> None:
+        self.data["changed_files"] = list(changed_files)
+        self.record_event(stage, details={"count": len(changed_files)})
+
+    def record_commit(self, name: str, sha: str) -> None:
+        commits = self.data.setdefault("commits", {})
+        if not isinstance(commits, dict):
+            raise RalphError("Manifest commits field is not an object.")
+        commits[name] = sha
+        self.record_event(f"{name}_recorded", details={"commit": sha})
+
+    def record_integration_commit(self, sha: str, *, branch: str) -> None:
+        self.data["integration_commit"] = {"sha": sha, "branch": branch}
+        self.record_event("integration_commit_recorded", details={"commit": sha, "branch": branch})
+
+    def record_promotion_commit(self, sha: str, *, branch: str) -> None:
+        self.data["promotion_commit"] = {"sha": sha, "branch": branch}
+        self.record_event("promotion_commit_recorded", details={"commit": sha, "branch": branch})
+
+    def record_codex_attempt(
+        self,
+        attempt: int,
+        *,
+        status: str,
+        log_path: Path,
+        error: str | None = None,
+    ) -> None:
+        entry: dict[str, Any] = {
+            "attempt": attempt,
+            "status": status,
+            "log_path": str(log_path),
+        }
+        if error is not None:
+            entry["error"] = error
+        self._upsert_list_entry("codex_attempts", "attempt", attempt, entry)
+        self.record_event(
+            f"codex_attempt_{attempt}_{status}",
+            details={"attempt": attempt, "log_path": str(log_path)},
+        )
+
+    def record_qa(
+        self,
+        command: QACommand,
+        *,
+        log_path: Path,
+        status: str,
+        error: str | None = None,
+    ) -> None:
+        entry: dict[str, Any] = {
+            "name": command.name,
+            "command": list(command.args),
+            "cwd": str(command.cwd),
+            "log_path": str(log_path),
+            "status": status,
+        }
+        if error is not None:
+            entry["error"] = error
+        self._upsert_list_entry("qa_results", "log_path", str(log_path), entry)
+        self.record_event(
+            f"qa_{status}",
+            details={"name": command.name, "log_path": str(log_path)},
+        )
+
+    def record_push(
+        self,
+        *,
+        key: str,
+        branch: str,
+        status: str,
+        commit_sha: str | None,
+        log_path: Path | None,
+        error: str | None = None,
+    ) -> None:
+        pushes = self.data.setdefault("pushes", {})
+        if not isinstance(pushes, dict):
+            raise RalphError("Manifest pushes field is not an object.")
+        entry = {
+            "branch": branch,
+            "status": status,
+            "commit": commit_sha,
+            "log_path": path_text(log_path),
+        }
+        if error is not None:
+            entry["error"] = error
+        pushes[key] = entry
+        self.record_event(
+            f"push_{key}_{status}",
+            details={"branch": branch, "commit": commit_sha, "log_path": path_text(log_path)},
+        )
+
+    def record_metadata_status(
+        self,
+        status: str,
+        *,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        metadata = self.data.setdefault("github_metadata", {})
+        if not isinstance(metadata, dict):
+            raise RalphError("Manifest github_metadata field is not an object.")
+        metadata["status"] = status
+        if details is not None:
+            metadata.update(details)
+        self.record_event(f"github_metadata_{status}", details=details)
+
+    def record_promoted_issues(self, issues: list[tuple[Issue, str]]) -> None:
+        metadata = self.data.setdefault("github_metadata", {})
+        if not isinstance(metadata, dict):
+            raise RalphError("Manifest github_metadata field is not an object.")
+        metadata["issues"] = [
+            {
+                "number": issue.number,
+                "title": issue.title,
+                "url": issue.url,
+                "integrated_commit": integrated_commit,
+                "metadata_status": "verified",
+            }
+            for issue, integrated_commit in issues
+        ]
+        metadata["status"] = "verified_issues"
+        self.record_event("github_metadata_verified_issues", details={"count": len(issues)})
+
+    def record_promoted_issue_metadata(
+        self,
+        issue: Issue,
+        *,
+        integrated_commit: str,
+        status: str,
+    ) -> None:
+        metadata = self.data.setdefault("github_metadata", {})
+        if not isinstance(metadata, dict):
+            raise RalphError("Manifest github_metadata field is not an object.")
+        issues = metadata.setdefault("issues", [])
+        if not isinstance(issues, list):
+            raise RalphError("Manifest github_metadata.issues field is not a list.")
+        entry = {
+            "number": issue.number,
+            "title": issue.title,
+            "url": issue.url,
+            "integrated_commit": integrated_commit,
+            "metadata_status": status,
+        }
+        replaced = False
+        for index, existing in enumerate(issues):
+            if isinstance(existing, dict) and existing.get("number") == issue.number:
+                updated = {**existing, **entry}
+                issues[index] = updated
+                replaced = True
+                break
+        if not replaced:
+            issues.append(entry)
+        metadata["status"] = status
+        self.record_event(
+            f"github_metadata_issue_{status}",
+            details={"issue": issue.number, "integrated_commit": integrated_commit},
+        )
+
+    def record_failure(self, error: Exception, *, log_path: Path | None = None) -> None:
+        failure = {
+            "message": str(error),
+            "log_path": path_text(log_path),
+        }
+        self.data["failure"] = failure
+        self.record_event("failed", status="failed", details=failure)
+
+    def record_success(self, stage: str = "succeeded") -> None:
+        self.data["failure"] = None
+        self.record_event(stage, status="succeeded")
+
+    def _upsert_list_entry(
+        self,
+        field: str,
+        key: str,
+        value: Any,
+        entry: dict[str, Any],
+    ) -> None:
+        items = self.data.setdefault(field, [])
+        if not isinstance(items, list):
+            raise RalphError(f"Manifest {field} field is not a list.")
+        for index, item in enumerate(items):
+            if isinstance(item, dict) and item.get(key) == value:
+                items[index] = entry
+                return
+        items.append(entry)
+
+    def _write(self) -> None:
+        self.data["updated_at"] = utc_now_text()
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = self.path.with_name(f"{self.path.name}.tmp")
+        tmp_path.write_text(
+            json.dumps(self.data, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        tmp_path.replace(self.path)
 
 
 def emit(message: str, *, err: bool = False) -> None:
@@ -433,6 +774,26 @@ def parse_git_status_paths(status_output: str) -> list[str]:
     return sorted(set(paths))
 
 
+def dirty_root_worktree_message(repo_root: Path, status_output: str) -> str:
+    paths = parse_git_status_paths(status_output)
+    lines = [
+        f"Root worktree has uncommitted changes: {repo_root}",
+        (
+            "Commit or stash these changes before a live Ralph run, or pass "
+            "--allow-dirty-worktree to bypass this preflight."
+        ),
+    ]
+    if not paths:
+        return "\n".join(lines)
+
+    preview = paths[:DIRTY_WORKTREE_STATUS_PREVIEW_LIMIT]
+    lines.extend(["", "Changed paths:", *[f"- {path}" for path in preview]])
+    remaining = len(paths) - len(preview)
+    if remaining > 0:
+        lines.append(f"- ... and {remaining} more")
+    return "\n".join(lines)
+
+
 def looks_like_environment_failure(error: CommandFailure) -> bool:
     output = f"{error.stdout}\n{error.stderr}".lower()
     return any(pattern in output for pattern in ENVIRONMENT_FAILURE_PATTERNS)
@@ -453,8 +814,14 @@ def codex_exec_command(cwd: Path) -> list[str]:
 
 
 class CommandRunner:
-    def __init__(self, *, dry_run: bool) -> None:
+    def __init__(
+        self,
+        *,
+        dry_run: bool,
+        heartbeat_interval: float = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+    ) -> None:
         self.dry_run = dry_run
+        self.heartbeat_interval = heartbeat_interval
 
     def run(
         self,
@@ -463,6 +830,7 @@ class CommandRunner:
         cwd: Path,
         input_text: str | None = None,
         log_path: Path | None = None,
+        phase: str | None = None,
         execute_in_dry_run: bool = True,
     ) -> CompletedCommand:
         if self.dry_run and not execute_in_dry_run:
@@ -471,26 +839,127 @@ class CommandRunner:
 
         if log_path is not None:
             log_path.parent.mkdir(parents=True, exist_ok=True)
+            write_command_log(log_path, args, cwd, "", "", None)
+
+        process = subprocess.Popen(
+            args,
+            cwd=cwd,
+            stdin=subprocess.PIPE if input_text is not None else None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if input_text is not None:
+            self._write_stdin(process, input_text)
 
         try:
-            result = subprocess.run(
-                args,
+            stdout, stderr = self._capture_process_output(
+                process,
+                args=args,
                 cwd=cwd,
-                input=input_text,
-                text=True,
-                capture_output=True,
-                check=True,
+                log_path=log_path,
+                phase=phase,
             )
-        except subprocess.CalledProcessError as error:
-            stdout = error.stdout or ""
-            stderr = error.stderr or ""
-            if log_path is not None:
-                write_command_log(log_path, args, cwd, stdout, stderr, error.returncode)
-            raise CommandFailure(args, cwd, error.returncode, stdout, stderr, log_path) from error
-
+        except BaseException:
+            process.kill()
+            process.wait()
+            raise
+        returncode = process.wait()
         if log_path is not None:
-            write_command_log(log_path, args, cwd, result.stdout, result.stderr, result.returncode)
-        return CompletedCommand(stdout=result.stdout, stderr=result.stderr)
+            write_command_log(log_path, args, cwd, stdout, stderr, returncode)
+        if returncode != 0:
+            raise CommandFailure(args, cwd, returncode, stdout, stderr, log_path)
+        return CompletedCommand(stdout=stdout, stderr=stderr)
+
+    def _write_stdin(self, process: subprocess.Popen[bytes], input_text: str) -> None:
+        if process.stdin is None:
+            return
+        try:
+            process.stdin.write(input_text.encode())
+        except BrokenPipeError:
+            pass
+        finally:
+            try:
+                process.stdin.close()
+            except OSError:
+                pass
+
+    def _capture_process_output(
+        self,
+        process: subprocess.Popen[bytes],
+        *,
+        args: list[str],
+        cwd: Path,
+        log_path: Path | None,
+        phase: str | None,
+    ) -> tuple[str, str]:
+        if process.stdout is None or process.stderr is None:
+            raise RalphError("Subprocess output pipes were not created.")
+
+        selector = selectors.DefaultSelector()
+        selector.register(process.stdout, selectors.EVENT_READ, "stdout")
+        selector.register(process.stderr, selectors.EVENT_READ, "stderr")
+        decoders = {
+            "stdout": codecs.getincrementaldecoder("utf-8")("replace"),
+            "stderr": codecs.getincrementaldecoder("utf-8")("replace"),
+        }
+        outputs: dict[str, list[str]] = {"stdout": [], "stderr": []}
+        phase_name = phase or format_command(args)
+        next_heartbeat = self._next_heartbeat_deadline(log_path)
+        try:
+            while selector.get_map():
+                timeout = None
+                if next_heartbeat is not None:
+                    timeout = max(0.0, next_heartbeat - time.monotonic())
+                events = selector.select(timeout)
+                if not events:
+                    if process.poll() is None:
+                        self._emit_heartbeat(phase_name, log_path)
+                    next_heartbeat = self._next_heartbeat_deadline(log_path)
+                    continue
+
+                for key, _ in events:
+                    stream_name = str(key.data)
+                    chunk = os.read(key.fileobj.fileno(), COMMAND_READ_CHUNK_SIZE)
+                    if chunk:
+                        text = decoders[stream_name].decode(chunk)
+                    else:
+                        selector.unregister(key.fileobj)
+                        text = decoders[stream_name].decode(b"", final=True)
+                    if not text:
+                        continue
+                    outputs[stream_name].append(text)
+                    if log_path is not None:
+                        write_command_log(
+                            log_path,
+                            args,
+                            cwd,
+                            "".join(outputs["stdout"]),
+                            "".join(outputs["stderr"]),
+                            None,
+                        )
+
+                if next_heartbeat is not None and time.monotonic() >= next_heartbeat:
+                    if process.poll() is None:
+                        self._emit_heartbeat(phase_name, log_path)
+                    next_heartbeat = self._next_heartbeat_deadline(log_path)
+        finally:
+            selector.close()
+            process.stdout.close()
+            process.stderr.close()
+
+        return "".join(outputs["stdout"]), "".join(outputs["stderr"])
+
+    def _next_heartbeat_deadline(self, log_path: Path | None) -> float | None:
+        if log_path is None:
+            return None
+        if self.heartbeat_interval <= 0:
+            return None
+        return time.monotonic() + self.heartbeat_interval
+
+    def _emit_heartbeat(self, phase: str, log_path: Path | None) -> None:
+        if log_path is None:
+            return
+        emit(f"Ralph heartbeat: phase={phase}; log={log_path}")
 
 
 def write_command_log(
@@ -499,14 +968,15 @@ def write_command_log(
     cwd: Path,
     stdout: str,
     stderr: str,
-    returncode: int,
+    returncode: int | None,
 ) -> None:
+    exit_status = "running" if returncode is None else str(returncode)
     path.write_text(
         "\n".join(
             [
                 f"$ {format_command(args)}",
                 f"cwd: {cwd}",
-                f"exit: {returncode}",
+                f"exit: {exit_status}",
                 "",
                 "STDOUT:",
                 stdout,
@@ -752,8 +1222,7 @@ class GitClient:
         )
 
     def changed_files(self, *, cwd: Path) -> list[str]:
-        result = self.runner.run(["git", "status", "--porcelain"], cwd=cwd)
-        return parse_git_status_paths(result.stdout)
+        return parse_git_status_paths(self.status_porcelain(cwd=cwd))
 
     def changed_files_against(self, *, cwd: Path, base_ref: str) -> list[str]:
         result = self.runner.run(
@@ -770,8 +1239,11 @@ class GitClient:
         return sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
 
     def has_uncommitted_changes(self, *, cwd: Path) -> bool:
+        return self.status_porcelain(cwd=cwd).strip() != ""
+
+    def status_porcelain(self, *, cwd: Path) -> str:
         result = self.runner.run(["git", "status", "--porcelain"], cwd=cwd)
-        return result.stdout.strip() != ""
+        return result.stdout
 
     def commit_all(
         self,
@@ -880,6 +1352,7 @@ class RalphLoop:
 
     def run(self) -> None:
         self._validate_tools()
+        self._validate_clean_root_worktree_for_live_run()
 
         if self.config.bootstrap_labels:
             self.github.auth_status()
@@ -941,6 +1414,29 @@ class RalphLoop:
                 return
             self._run_triage(triage_issue)
             self.triaged_this_run.add(triage_issue.number)
+
+    def _validate_clean_root_worktree_for_live_run(self) -> None:
+        if self.config.dry_run:
+            return
+        if not self._uses_live_issue_or_promotion_flow():
+            return
+        if self.config.allow_dirty_worktree:
+            emit("Clean root worktree preflight bypassed by --allow-dirty-worktree.")
+            return
+
+        status_output = self.git.status_porcelain(cwd=self.config.repo_root)
+        if status_output.strip() == "":
+            return
+        raise RalphError(dirty_root_worktree_message(self.config.repo_root, status_output))
+
+    def _uses_live_issue_or_promotion_flow(self) -> bool:
+        if self.config.promote:
+            return True
+        if self.config.drain:
+            return True
+        if self.config.issue is not None:
+            return True
+        return not self.config.bootstrap_labels
 
     def _validate_tools(self) -> None:
         tools = ("git", "gh") if self.config.promote else ("git", "gh", "codex")
@@ -1026,18 +1522,28 @@ class RalphLoop:
             f"agent-promote-{slugify(source_branch)}-to-{slugify(target_branch)}"
         )
         run_dir.mkdir(parents=True, exist_ok=True)
+        manifest = RunManifest.for_promotion(
+            run_dir=run_dir,
+            source_branch=source_branch,
+            target_branch=target_branch,
+            promote_path=promote_path,
+            config=self.config,
+        )
         pushed = False
 
         try:
             emit(f"Promoting origin/{source_branch} to origin/{target_branch}")
+            manifest.record_event("fetching_branches")
             self.git.fetch_base(source_branch, run_dir=run_dir)
             self.git.fetch_base(target_branch, run_dir=run_dir)
             changed_files = self.git.changed_files_between(
                 base_ref=f"origin/{target_branch}",
                 head_ref=f"origin/{source_branch}",
             )
+            manifest.record_changed_files(changed_files, stage="promotion_changes_detected")
             if not changed_files:
                 emit(f"No changes to promote from {source_branch} to {target_branch}.")
+                manifest.record_success("no_changes_to_promote")
                 return
 
             qa_results = self._run_qa_commands(
@@ -1046,19 +1552,23 @@ class RalphLoop:
                 run_dir,
                 log_prefix="promotion-qa",
                 subject="promotion",
+                manifest=manifest,
             )
             integrated_issues = self._verified_integrated_issues(
                 source_branch=source_branch,
                 target_branch=target_branch,
             )
+            manifest.record_promoted_issues(integrated_issues)
 
             emit(f"Creating promotion worktree {promote_path}")
+            manifest.record_event("creating_promotion_worktree")
             self.git.add_detached_worktree(
                 path=promote_path,
                 ref=f"origin/{target_branch}",
                 run_dir=run_dir,
             )
             emit(f"Merging origin/{source_branch} into promotion worktree")
+            manifest.record_event("merging_source_branch")
             self.git.merge_no_ff(
                 cwd=promote_path,
                 ref=f"origin/{source_branch}",
@@ -1066,8 +1576,35 @@ class RalphLoop:
                 run_dir=run_dir,
             )
             promotion_sha = self.git.rev_parse("HEAD", cwd=promote_path)
+            manifest.record_promotion_commit(promotion_sha, branch=target_branch)
             emit(f"Pushing promotion {promotion_sha} to {target_branch}")
-            self.git.push_head(cwd=promote_path, branch=target_branch, run_dir=run_dir)
+            target_push_log = run_dir / f"git-push-{slugify(target_branch)}.log"
+            manifest.record_push(
+                key="promotion_target",
+                branch=target_branch,
+                status="running",
+                commit_sha=promotion_sha,
+                log_path=target_push_log,
+            )
+            try:
+                self.git.push_head(cwd=promote_path, branch=target_branch, run_dir=run_dir)
+            except CommandFailure as error:
+                manifest.record_push(
+                    key="promotion_target",
+                    branch=target_branch,
+                    status="failed",
+                    commit_sha=promotion_sha,
+                    log_path=error.log_path or target_push_log,
+                    error=str(error),
+                )
+                raise
+            manifest.record_push(
+                key="promotion_target",
+                branch=target_branch,
+                status="pushed",
+                commit_sha=promotion_sha,
+                log_path=target_push_log,
+            )
             pushed = True
             self._sync_source_branch_after_promotion(
                 source_branch=source_branch,
@@ -1075,6 +1612,7 @@ class RalphLoop:
                 promotion_sha=promotion_sha,
                 promote_path=promote_path,
                 run_dir=run_dir,
+                manifest=manifest,
             )
 
             self._close_promoted_issues(
@@ -1085,8 +1623,10 @@ class RalphLoop:
                 changed_files=changed_files,
                 qa_results=qa_results,
                 run_dir=run_dir,
+                manifest=manifest,
             )
             try:
+                manifest.record_event("cleaning_up_promotion_worktree")
                 self.git.remove_worktree(
                     promote_path,
                     run_dir=run_dir,
@@ -1098,9 +1638,17 @@ class RalphLoop:
                 f"Promoted {source_branch} to {target_branch}: {promotion_sha}; "
                 f"closed {len(integrated_issues)} issue(s)."
             )
+            manifest.record_success()
         except IssueFailure as error:
+            manifest.record_failure(error, log_path=error.log_path)
             raise RalphError(str(error)) from error
         except CommandFailure as error:
+            if pushed:
+                manifest.record_metadata_status(
+                    "failed",
+                    details={"error": str(error), "log_path": path_text(error.log_path)},
+                )
+            manifest.record_failure(error, log_path=error.log_path)
             if pushed:
                 post_push_error = PostPushFailure(
                     f"Post-push promotion metadata failed: {error}",
@@ -1165,9 +1713,15 @@ class RalphLoop:
         changed_files: list[str],
         qa_results: list[QAResult],
         run_dir: Path,
+        manifest: RunManifest,
     ) -> None:
         for issue, integrated_commit in issues:
             emit(f"#{issue.number}: commenting promotion evidence")
+            manifest.record_promoted_issue_metadata(
+                issue,
+                integrated_commit=integrated_commit,
+                status="commenting",
+            )
             self.github.comment_issue(
                 issue.number,
                 build_promotion_comment(
@@ -1182,14 +1736,39 @@ class RalphLoop:
                 ),
                 run_dir=run_dir,
             )
+            manifest.record_promoted_issue_metadata(
+                issue,
+                integrated_commit=integrated_commit,
+                status="commented",
+            )
             emit(f"#{issue.number}: marking {AGENT_MERGED_LABEL}")
+            manifest.record_promoted_issue_metadata(
+                issue,
+                integrated_commit=integrated_commit,
+                status="labeling",
+            )
             self.github.edit_issue_labels(
                 issue.number,
                 add=[AGENT_MERGED_LABEL],
                 remove=[AGENT_INTEGRATED_LABEL, AGENT_RUNNING_LABEL, AGENT_FAILED_LABEL],
             )
+            manifest.record_promoted_issue_metadata(
+                issue,
+                integrated_commit=integrated_commit,
+                status="labeled",
+            )
             emit(f"#{issue.number}: closing issue")
+            manifest.record_promoted_issue_metadata(
+                issue,
+                integrated_commit=integrated_commit,
+                status="closing",
+            )
             self.github.close_issue(issue.number, run_dir=run_dir)
+            manifest.record_promoted_issue_metadata(
+                issue,
+                integrated_commit=integrated_commit,
+                status="closed",
+            )
 
     def _handle_implementation(self, issue: Issue) -> None:
         run_dir = self._run_dir(issue)
@@ -1200,13 +1779,37 @@ class RalphLoop:
         branch = ""
         worktree_path: Path | None = None
         integration_path: Path | None = None
+        manifest: RunManifest | None = None
         try:
             delivery_plan = resolve_delivery_plan(
                 issue,
                 default_mode=self.config.delivery_mode,
                 target_branch=self.config.target_branch,
             )
+            branch, worktree_path, integration_path = self._branch_and_worktrees(issue)
+            manifest = RunManifest.for_implementation(
+                run_dir=run_dir,
+                issue=issue,
+                delivery_plan=delivery_plan,
+                branch=branch,
+                worktree_path=worktree_path,
+                integration_path=integration_path,
+                config=self.config,
+            )
             emit(f"#{issue.number}: claiming issue with {AGENT_RUNNING_LABEL}")
+            manifest.record_metadata_status(
+                "claiming",
+                details={
+                    "add_labels": [AGENT_RUNNING_LABEL, *delivery_plan.add_labels],
+                    "remove_labels": [
+                        READY_LABEL,
+                        AGENT_FAILED_LABEL,
+                        AGENT_MERGED_LABEL,
+                        AGENT_INTEGRATED_LABEL,
+                        *delivery_plan.remove_labels,
+                    ],
+                },
+            )
             self.github.edit_issue_labels(
                 issue.number,
                 add=[AGENT_RUNNING_LABEL, *delivery_plan.add_labels],
@@ -1219,50 +1822,65 @@ class RalphLoop:
                 ],
             )
             claimed = True
+            manifest.record_metadata_status("claimed")
             emit(f"#{issue.number}: validating issue contract")
+            manifest.record_event("validating_issue_contract")
             self._validate_issue_contract(issue)
-            branch, worktree_path, integration_path = self._branch_and_worktrees(issue)
+            manifest.record_event("issue_contract_validated")
+            manifest.record_event("ensuring_integration_target")
             self._ensure_integration_target(delivery_plan, run_dir)
             emit(f"#{issue.number}: fetching origin/{delivery_plan.target_branch}")
+            manifest.record_event("fetching_integration_target")
             self.git.fetch_base(delivery_plan.target_branch, run_dir=run_dir)
             base_sha = self.git.rev_parse(f"origin/{delivery_plan.target_branch}")
+            manifest.record_commit("base", base_sha)
             emit(f"#{issue.number}: creating implementation worktree {worktree_path}")
+            manifest.record_event("creating_implementation_worktree")
             self.git.add_worktree(
                 branch=branch,
                 base=delivery_plan.target_branch,
                 path=worktree_path,
                 run_dir=run_dir,
             )
-            qa_results = self._implement_with_retry(issue, worktree_path, run_dir)
+            manifest.record_event("implementation_worktree_created")
+            qa_results = self._implement_with_retry(issue, worktree_path, run_dir, manifest)
             changed_files = self.git.changed_files(cwd=worktree_path)
+            manifest.record_changed_files(changed_files, stage="implementation_changes_detected")
             if not changed_files:
                 raise IssueFailure("Codex completed without producing file changes.")
 
             emit(f"#{issue.number}: committing implementation branch {branch}")
+            manifest.record_event("committing_implementation_branch")
             self.git.commit_all(
                 cwd=worktree_path,
                 message=f"Implement issue #{issue.number}: {issue.title}",
                 run_dir=run_dir,
                 log_prefix="issue",
             )
+            manifest.record_event("implementation_branch_committed")
 
             emit(f"#{issue.number}: checking for origin/{delivery_plan.target_branch} updates")
+            manifest.record_event("checking_integration_target_drift")
             self.git.fetch_base(delivery_plan.target_branch, run_dir=run_dir)
             latest_base_sha = self.git.rev_parse(f"origin/{delivery_plan.target_branch}")
+            manifest.record_commit("latest_base", latest_base_sha)
             if latest_base_sha != base_sha:
                 emit(
                     f"#{issue.number}: origin/{delivery_plan.target_branch} moved; "
                     f"rebasing {branch}"
                 )
+                manifest.record_event("rebasing_implementation_branch")
                 self.git.rebase(
                     cwd=worktree_path,
                     upstream=f"origin/{delivery_plan.target_branch}",
                     run_dir=run_dir,
                 )
+                manifest.record_event("implementation_branch_rebased")
                 changed_files = self.git.changed_files_against(
                     cwd=worktree_path,
                     base_ref=f"origin/{delivery_plan.target_branch}",
                 )
+                manifest.record_changed_files(changed_files, stage="post_rebase_changes_detected")
                 if not changed_files:
                     raise IssueFailure("Rebase left no changed files to integrate.")
                 emit(f"#{issue.number}: rerunning QA after rebase")
@@ -1273,10 +1891,12 @@ class RalphLoop:
                         worktree_path,
                         run_dir,
                         log_prefix="qa-rebase",
+                        manifest=manifest,
                     )
                 )
                 if self.git.has_uncommitted_changes(cwd=worktree_path):
                     emit(f"#{issue.number}: committing post-rebase QA updates")
+                    manifest.record_event("committing_post_rebase_qa_updates")
                     self.git.commit_all(
                         cwd=worktree_path,
                         message=(
@@ -1290,24 +1910,33 @@ class RalphLoop:
                         cwd=worktree_path,
                         base_ref=f"origin/{delivery_plan.target_branch}",
                     )
+                    manifest.record_changed_files(
+                        changed_files,
+                        stage="post_rebase_qa_changes_detected",
+                    )
             else:
                 changed_files = self.git.changed_files_against(
                     cwd=worktree_path,
                     base_ref=f"origin/{delivery_plan.target_branch}",
                 )
+                manifest.record_changed_files(changed_files, stage="current_base_changes_detected")
 
             if not changed_files:
                 raise IssueFailure("Implementation branch has no diff against current base.")
 
             emit(f"#{issue.number}: creating integration worktree {integration_path}")
+            manifest.record_event("creating_integration_worktree")
             self.git.add_detached_worktree(
                 path=integration_path,
                 ref=f"origin/{delivery_plan.target_branch}",
                 run_dir=run_dir,
             )
+            manifest.record_event("integration_worktree_created")
             emit(f"#{issue.number}: squash merging {branch}")
+            manifest.record_event("squash_merging")
             self.git.squash_merge(cwd=integration_path, branch=branch, run_dir=run_dir)
             emit(f"#{issue.number}: committing local integration")
+            manifest.record_event("committing_local_integration")
             self.git.commit_all(
                 cwd=integration_path,
                 message=f"Implement issue #{issue.number}: {issue.title}",
@@ -1315,15 +1944,43 @@ class RalphLoop:
                 log_prefix="integration",
             )
             commit_sha = self.git.rev_parse("HEAD", cwd=integration_path)
+            manifest.record_integration_commit(commit_sha, branch=delivery_plan.target_branch)
             emit(f"#{issue.number}: pushing {commit_sha} to {delivery_plan.target_branch}")
-            self.git.push_head(
-                cwd=integration_path,
+            push_log = run_dir / f"git-push-{slugify(delivery_plan.target_branch)}.log"
+            manifest.record_push(
+                key="integration_target",
                 branch=delivery_plan.target_branch,
-                run_dir=run_dir,
+                status="running",
+                commit_sha=commit_sha,
+                log_path=push_log,
+            )
+            try:
+                self.git.push_head(
+                    cwd=integration_path,
+                    branch=delivery_plan.target_branch,
+                    run_dir=run_dir,
+                )
+            except CommandFailure as error:
+                manifest.record_push(
+                    key="integration_target",
+                    branch=delivery_plan.target_branch,
+                    status="failed",
+                    commit_sha=commit_sha,
+                    log_path=error.log_path or push_log,
+                    error=str(error),
+                )
+                raise
+            manifest.record_push(
+                key="integration_target",
+                branch=delivery_plan.target_branch,
+                status="pushed",
+                commit_sha=commit_sha,
+                log_path=push_log,
             )
             pushed = True
 
             emit(f"#{issue.number}: commenting completion evidence")
+            manifest.record_metadata_status("commenting_completion")
             self.github.comment_issue(
                 issue.number,
                 build_completion_comment(
@@ -1336,25 +1993,32 @@ class RalphLoop:
                 ),
                 run_dir=run_dir,
             )
+            manifest.record_metadata_status("completion_commented")
             if delivery_plan.mode == TRUNK_MODE:
                 emit(f"#{issue.number}: marking {AGENT_MERGED_LABEL}")
+                manifest.record_metadata_status("marking_merged")
                 self.github.edit_issue_labels(
                     issue.number,
                     add=[AGENT_MERGED_LABEL],
                     remove=[AGENT_RUNNING_LABEL, AGENT_FAILED_LABEL, AGENT_INTEGRATED_LABEL],
                 )
+                manifest.record_metadata_status("marked_merged")
                 emit(f"#{issue.number}: closing issue")
+                manifest.record_metadata_status("closing_issue")
                 self.github.close_issue(issue.number, run_dir=run_dir)
+                manifest.record_metadata_status("closed")
                 result_message = (
                     f"Issue #{issue.number} merged to {delivery_plan.target_branch}: {commit_sha}"
                 )
             else:
                 emit(f"#{issue.number}: marking {AGENT_INTEGRATED_LABEL}")
+                manifest.record_metadata_status("marking_integrated")
                 self.github.edit_issue_labels(
                     issue.number,
                     add=[AGENT_INTEGRATED_LABEL],
                     remove=[AGENT_RUNNING_LABEL, AGENT_FAILED_LABEL, AGENT_MERGED_LABEL],
                 )
+                manifest.record_metadata_status("marked_integrated")
                 result_message = (
                     f"Issue #{issue.number} integrated to {delivery_plan.target_branch}: "
                     f"{commit_sha}"
@@ -1366,16 +2030,28 @@ class RalphLoop:
                 integration_path=integration_path,
                 run_dir=run_dir,
             )
+            manifest.record_success()
             emit(result_message)
         except EnvironmentFailure as error:
+            if manifest is not None:
+                manifest.record_failure(error, log_path=error.log_path)
             if claimed:
-                self._mark_issue_failed(issue, error, run_dir)
+                self._mark_issue_failed(issue, error, run_dir, manifest=manifest)
             raise
         except IssueFailure as error:
+            if manifest is not None:
+                manifest.record_failure(error, log_path=error.log_path)
             if claimed:
-                self._mark_issue_failed(issue, error, run_dir)
+                self._mark_issue_failed(issue, error, run_dir, manifest=manifest)
             emit(f"Issue #{issue.number} failed: {error}", err=True)
         except CommandFailure as error:
+            if manifest is not None:
+                if pushed:
+                    manifest.record_metadata_status(
+                        "failed",
+                        details={"error": str(error), "log_path": path_text(error.log_path)},
+                    )
+                manifest.record_failure(error, log_path=error.log_path)
             if pushed:
                 post_push_error = PostPushFailure(
                     f"Post-push issue metadata failed for #{issue.number}: {error}",
@@ -1385,7 +2061,7 @@ class RalphLoop:
                 raise post_push_error from error
             issue_error = IssueFailure(str(error), log_path=error.log_path)
             if claimed:
-                self._mark_issue_failed(issue, issue_error, run_dir)
+                self._mark_issue_failed(issue, issue_error, run_dir, manifest=manifest)
             emit(f"Issue #{issue.number} failed: {error}", err=True)
 
     def _validate_issue_contract(self, issue: Issue) -> None:
@@ -1482,18 +2158,47 @@ class RalphLoop:
         promotion_sha: str,
         promote_path: Path,
         run_dir: Path,
+        manifest: RunManifest,
     ) -> None:
         if source_branch != DEFAULT_GITFLOW_BRANCH:
+            manifest.record_event("source_branch_sync_skipped")
             return
         if target_branch != DEFAULT_TRUNK_BRANCH:
+            manifest.record_event("source_branch_sync_skipped")
             return
 
         emit(f"Fast-forwarding {source_branch} to promotion {promotion_sha}")
-        self.git.push_head(
-            cwd=promote_path,
+        source_push_log = run_dir / f"git-push-{slugify(source_branch)}-after-promotion.log"
+        manifest.record_push(
+            key="source_branch_sync",
             branch=source_branch,
-            run_dir=run_dir,
-            log_name=f"git-push-{slugify(source_branch)}-after-promotion.log",
+            status="running",
+            commit_sha=promotion_sha,
+            log_path=source_push_log,
+        )
+        try:
+            self.git.push_head(
+                cwd=promote_path,
+                branch=source_branch,
+                run_dir=run_dir,
+                log_name=f"git-push-{slugify(source_branch)}-after-promotion.log",
+            )
+        except CommandFailure as error:
+            manifest.record_push(
+                key="source_branch_sync",
+                branch=source_branch,
+                status="failed",
+                commit_sha=promotion_sha,
+                log_path=error.log_path or source_push_log,
+                error=str(error),
+            )
+            raise
+        manifest.record_push(
+            key="source_branch_sync",
+            branch=source_branch,
+            status="pushed",
+            commit_sha=promotion_sha,
+            log_path=source_push_log,
         )
         self.git.fetch_base(source_branch, run_dir=run_dir)
 
@@ -1509,21 +2214,74 @@ class RalphLoop:
         issue: Issue,
         worktree_path: Path,
         run_dir: Path,
+        manifest: RunManifest,
     ) -> list[QAResult]:
         first_prompt = implementation_prompt(issue)
+        first_log = run_dir / "codex-implementation-1.jsonl"
+        first_codex_completed = False
         try:
             emit(f"#{issue.number}: running Codex implementation attempt 1")
-            self._run_codex(first_prompt, worktree_path, run_dir / "codex-implementation-1.jsonl")
-            return self._run_qa(issue, worktree_path, run_dir, log_prefix="qa")
+            manifest.record_codex_attempt(1, status="running", log_path=first_log)
+            self._run_codex(
+                first_prompt,
+                worktree_path,
+                first_log,
+                phase=f"#{issue.number}: Codex implementation attempt 1",
+            )
+            manifest.record_codex_attempt(1, status="completed", log_path=first_log)
+            first_codex_completed = True
+            return self._run_qa(issue, worktree_path, run_dir, log_prefix="qa", manifest=manifest)
         except EnvironmentFailure:
+            if not first_codex_completed:
+                manifest.record_codex_attempt(1, status="failed", log_path=first_log)
             raise
         except (CommandFailure, IssueFailure) as first_error:
+            if first_codex_completed:
+                manifest.record_event(
+                    "implementation_attempt_1_failed",
+                    details={"error": str(first_error)},
+                )
+            else:
+                first_log_path = (
+                    first_error.log_path if isinstance(first_error, IssueFailure) else None
+                )
+                if isinstance(first_error, CommandFailure):
+                    first_log_path = first_error.log_path
+                manifest.record_codex_attempt(
+                    1,
+                    status="failed",
+                    log_path=first_log_path or first_log,
+                    error=str(first_error),
+                )
             emit(f"#{issue.number}: attempt 1 failed; running Codex implementation attempt 2")
             retry_prompt = retry_implementation_prompt(issue, first_error)
-            self._run_codex(retry_prompt, worktree_path, run_dir / "codex-implementation-2.jsonl")
-            return self._run_qa(issue, worktree_path, run_dir, log_prefix="qa-retry")
+            retry_log = run_dir / "codex-implementation-2.jsonl"
+            manifest.record_codex_attempt(2, status="running", log_path=retry_log)
+            try:
+                self._run_codex(
+                    retry_prompt,
+                    worktree_path,
+                    retry_log,
+                    phase=f"#{issue.number}: Codex implementation attempt 2",
+                )
+            except CommandFailure as retry_error:
+                manifest.record_codex_attempt(
+                    2,
+                    status="failed",
+                    log_path=retry_error.log_path or retry_log,
+                    error=str(retry_error),
+                )
+                raise
+            manifest.record_codex_attempt(2, status="completed", log_path=retry_log)
+            return self._run_qa(
+                issue,
+                worktree_path,
+                run_dir,
+                log_prefix="qa-retry",
+                manifest=manifest,
+            )
 
-    def _run_codex(self, prompt: str, cwd: Path, log_path: Path) -> None:
+    def _run_codex(self, prompt: str, cwd: Path, log_path: Path, *, phase: str) -> None:
         if not self.runner.dry_run:
             log_path.with_suffix(".prompt.md").write_text(prompt, encoding="utf-8")
         self.runner.run(
@@ -1531,6 +2289,7 @@ class RalphLoop:
             cwd=cwd,
             input_text=prompt,
             log_path=log_path,
+            phase=phase,
             execute_in_dry_run=False,
         )
 
@@ -1541,16 +2300,19 @@ class RalphLoop:
         run_dir: Path,
         *,
         log_prefix: str,
+        manifest: RunManifest,
     ) -> list[QAResult]:
         changed_files = self.git.changed_files(cwd=worktree_path)
         if not changed_files:
             raise IssueFailure("No changed files available for QA selection.")
+        manifest.record_changed_files(changed_files, stage=f"{log_prefix}_qa_changes_detected")
         return self._run_qa_for_files(
             issue,
             changed_files,
             worktree_path,
             run_dir,
             log_prefix=log_prefix,
+            manifest=manifest,
         )
 
     def _run_qa_for_files(
@@ -1561,6 +2323,7 @@ class RalphLoop:
         run_dir: Path,
         *,
         log_prefix: str,
+        manifest: RunManifest,
     ) -> list[QAResult]:
         return self._run_qa_commands(
             changed_files,
@@ -1568,6 +2331,7 @@ class RalphLoop:
             run_dir,
             log_prefix=log_prefix,
             subject=f"#{issue.number}",
+            manifest=manifest,
         )
 
     def _run_qa_commands(
@@ -1578,6 +2342,7 @@ class RalphLoop:
         *,
         log_prefix: str,
         subject: str,
+        manifest: RunManifest | None = None,
     ) -> list[QAResult]:
         commands = select_qa_commands(changed_files, repo_root)
         if not commands:
@@ -1593,21 +2358,40 @@ class RalphLoop:
                     f"{subject}: running QA {command.name}: "
                     f"{format_command(command.args)}"
                 )
+                if manifest is not None:
+                    manifest.record_qa(command, log_path=log_path, status="running")
                 self.runner.run(
                     list(command.args),
                     cwd=command.cwd,
                     log_path=log_path,
+                    phase=f"{subject}: QA {command.name}",
                     execute_in_dry_run=False,
                 )
             except CommandFailure as error:
                 if looks_like_environment_failure(error):
+                    if manifest is not None:
+                        manifest.record_qa(
+                            command,
+                            log_path=error.log_path or log_path,
+                            status="failed",
+                            error=str(error),
+                        )
                     raise EnvironmentFailure(
                         f"Environment failure while running {command.name}: "
                         f"{format_command(command.args)}",
                         log_path=error.log_path,
                     ) from error
+                if manifest is not None:
+                    manifest.record_qa(
+                        command,
+                        log_path=error.log_path or log_path,
+                        status="failed",
+                        error=str(error),
+                    )
                 raise
             emit(f"{subject}: QA passed {command.name}")
+            if manifest is not None:
+                manifest.record_qa(command, log_path=log_path, status="passed")
             results.append(QAResult(command=command, log_path=log_path))
         return results
 
@@ -1649,26 +2433,52 @@ class RalphLoop:
             except CommandFailure as error:
                 emit(f"Cleanup warning: {error}", err=True)
 
-    def _mark_issue_failed(self, issue: Issue, error: IssueFailure, run_dir: Path) -> None:
+    def _mark_issue_failed(
+        self,
+        issue: Issue,
+        error: IssueFailure,
+        run_dir: Path,
+        *,
+        manifest: RunManifest | None = None,
+    ) -> None:
         emit(f"#{issue.number}: marking {AGENT_FAILED_LABEL}")
+        if manifest is not None:
+            manifest.record_metadata_status(
+                "marking_failed",
+                details={
+                    "add_labels": [AGENT_FAILED_LABEL],
+                    "remove_labels": [AGENT_RUNNING_LABEL, READY_LABEL],
+                },
+            )
         self.github.edit_issue_labels(
             issue.number,
             add=[AGENT_FAILED_LABEL],
             remove=[AGENT_RUNNING_LABEL, READY_LABEL],
         )
+        if manifest is not None:
+            manifest.record_metadata_status("marked_failed")
         log_line = f"\n\nLog: `{error.log_path}`" if error.log_path is not None else ""
         emit(f"#{issue.number}: commenting failure evidence")
+        if manifest is not None:
+            manifest.record_metadata_status("commenting_failure")
         self.github.comment_issue(
             issue.number,
             f"Agent issue loop failed: {error}{log_line}\n\nRun logs: `{run_dir}`",
             run_dir=run_dir,
         )
+        if manifest is not None:
+            manifest.record_metadata_status("failure_commented")
 
     def _run_triage(self, issue: Issue) -> None:
         run_dir = self._run_dir(issue, prefix="triage")
         run_dir.mkdir(parents=True, exist_ok=True)
         prompt = triage_prompt(issue, self.config.repo)
-        self._run_codex(prompt, self.config.repo_root, run_dir / "codex-triage.jsonl")
+        self._run_codex(
+            prompt,
+            self.config.repo_root,
+            run_dir / "codex-triage.jsonl",
+            phase=f"#{issue.number}: triage",
+        )
         emit(f"Triage pass completed for #{issue.number}.")
 
     def _run_dir(self, issue: Issue, *, prefix: str = "issue") -> Path:
@@ -1914,6 +2724,7 @@ def build_config(args: argparse.Namespace, runner: CommandRunner) -> LoopConfig:
         drain=args.drain,
         max_issues=args.max_issues,
         dry_run=args.dry_run,
+        allow_dirty_worktree=args.allow_dirty_worktree,
         bootstrap_labels=args.bootstrap_labels,
         issue_limit=args.issue_limit,
         log_root=log_root,
@@ -1965,6 +2776,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         ),
     )
     parser.add_argument("--dry-run", action="store_true", help="Show the next action only.")
+    parser.add_argument(
+        "--allow-dirty-worktree",
+        action="store_true",
+        help=(
+            "Allow live implementation and Promotion runs to start when the root "
+            "worktree has uncommitted changes."
+        ),
+    )
     parser.add_argument(
         "--bootstrap-labels",
         action="store_true",
