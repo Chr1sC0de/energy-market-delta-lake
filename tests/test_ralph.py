@@ -12,6 +12,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 
 RALPH_PATH = Path(__file__).resolve().parents[1] / "scripts" / "ralph.py"
@@ -46,6 +47,11 @@ def make_issue(labels: set[str], body: str = ""):
         comments=0,
         author="reporter",
     )
+
+
+def load_run_manifest(tmp_path: Path, run_glob: str = "issue-42-*") -> dict[str, Any]:
+    manifest_path = next((tmp_path / "logs").glob(f"{run_glob}/ralph-run.json"))
+    return json.loads(manifest_path.read_text(encoding="utf-8"))
 
 
 @dataclass(frozen=True)
@@ -628,6 +634,7 @@ Build it.
 
             comment_path = next((Path(tmp) / "logs").glob("issue-42-*/issue-42-comment.md"))
             comment = comment_path.read_text(encoding="utf-8")
+            manifest = load_run_manifest(Path(tmp))
 
         commands = [call.args for call in runner.calls]
         self.assertIn(
@@ -675,6 +682,12 @@ Build it.
             "Missing required issue section(s): Acceptance criteria, Blocked by",
             comment,
         )
+        self.assertEqual(manifest["run_kind"], "implementation")
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["delivery_mode"], "trunk")
+        self.assertEqual(manifest["integration_target"], "main")
+        self.assertEqual(manifest["github_metadata"]["status"], "failure_commented")
+        self.assertIn("Missing required issue section", manifest["failure"]["message"])
 
     def test_successful_implementation_squash_merges_pushes_comments_and_closes(self) -> None:
         runner = FakeRunner(
@@ -721,8 +734,18 @@ Build it.
 
             comment_path = next((Path(tmp) / "logs").glob("issue-42-*/issue-42-comment.md"))
             comment = comment_path.read_text(encoding="utf-8")
+            manifest = load_run_manifest(Path(tmp))
             self.assertIn("Ralph trunk integration completed.", comment)
             self.assertIn("Commit: `merge-sha`", comment)
+            self.assertEqual(manifest["status"], "succeeded")
+            self.assertEqual(manifest["issue"]["number"], 42)
+            self.assertEqual(manifest["delivery_mode"], "trunk")
+            self.assertEqual(manifest["integration_target"], "main")
+            self.assertEqual(manifest["branches"]["issue"], "agent/issue-42-implement-thing")
+            self.assertEqual(manifest["integration_commit"]["sha"], "merge-sha")
+            self.assertEqual(manifest["pushes"]["integration_target"]["status"], "pushed")
+            self.assertEqual(manifest["github_metadata"]["status"], "closed")
+            self.assertEqual(manifest["qa_results"][0]["status"], "passed")
 
     def test_gitflow_implementation_creates_dev_integrates_and_leaves_issue_open(self) -> None:
         ls_remote = ("git", "ls-remote", "--exit-code", "--heads", "origin", "dev")
@@ -858,6 +881,35 @@ Build it.
             commands,
         )
 
+    def test_failed_qa_persists_failed_manifest_state(self) -> None:
+        qa_command = ("python3", "-m", "unittest", "discover", "-s", "tests")
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            rev_parse_outputs=["base-sha\n"],
+            fail_commands={qa_command},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(Path(tmp), runner)
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._handle_implementation(
+                    make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+                )
+
+            manifest = load_run_manifest(Path(tmp))
+
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["github_metadata"]["status"], "failure_commented")
+        self.assertIn("Command failed", manifest["failure"]["message"])
+        failed_qa = [
+            result
+            for result in manifest["qa_results"]
+            if result["name"] == "Ralph unit tests" and result["status"] == "failed"
+        ]
+        self.assertGreaterEqual(len(failed_qa), 1)
+        self.assertTrue(
+            any(event["stage"] == "qa_failed" for event in manifest["events"])
+        )
+
     def test_promotion_merges_dev_and_closes_verified_integrated_issue(self) -> None:
         issue_list_command = (
             "gh",
@@ -933,6 +985,7 @@ Build it.
 
             comment_path = next((Path(tmp) / "logs").glob("promote-*/issue-42-comment.md"))
             comment = comment_path.read_text(encoding="utf-8")
+            manifest = load_run_manifest(Path(tmp), run_glob="promote-*")
 
         commands = [call.args for call in runner.calls]
         self.assertIn(
@@ -976,6 +1029,23 @@ Build it.
         self.assertIn("Ralph promotion completed.", comment)
         self.assertIn("Promotion commit: `promotion-sha`", comment)
         self.assertIn("Integrated commit: `abc1234`", comment)
+        self.assertEqual(manifest["run_kind"], "promotion")
+        self.assertEqual(manifest["status"], "succeeded")
+        self.assertEqual(manifest["delivery_mode"], "gitflow")
+        self.assertEqual(manifest["source_branch"], "dev")
+        self.assertEqual(manifest["integration_target"], "main")
+        self.assertEqual(manifest["promotion_commit"]["sha"], "promotion-sha")
+        self.assertEqual(manifest["pushes"]["promotion_target"]["status"], "pushed")
+        self.assertEqual(manifest["pushes"]["source_branch_sync"]["status"], "pushed")
+        self.assertEqual(manifest["github_metadata"]["issues"][0]["number"], 42)
+        self.assertEqual(
+            manifest["github_metadata"]["issues"][0]["integrated_commit"],
+            "abc1234",
+        )
+        self.assertEqual(
+            manifest["github_metadata"]["issues"][0]["metadata_status"],
+            "closed",
+        )
 
     def test_post_push_issue_metadata_failure_stops_without_cleanup(self) -> None:
         close_command = (

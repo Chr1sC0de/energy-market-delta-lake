@@ -123,7 +123,9 @@ integrates to `dev` for review, and then promotes to `main`; **Trunk delivery**
 is an opt-in path for small low-risk changes that can close after integration
 to `main`. During AFK drains, Ralph prints heartbeat lines with the active phase
 and log path, and command logs under `.ralph/runs/...` update while Codex and QA
-commands are still running.
+commands are still running. Implementation and **Promotion** runs also keep
+`.ralph/runs/.../ralph-run.json` updated with **Delivery mode**, **Integration
+target**, QA, push, commit, and GitHub metadata state for recovery.
 
 ## Where to work
 

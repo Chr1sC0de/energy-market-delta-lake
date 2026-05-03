@@ -288,7 +288,9 @@ plain Ralph drain uses a default budget of 10 implementation attempts; pass
 `--max-issues 0` only for explicit unlimited drain mode. During long Codex and
 QA phases, Ralph prints heartbeat lines with the active phase and log path, and
 the command logs under `.ralph/runs/...` update while the command is still
-running.
+running. Each implementation and **Promotion** run also maintains
+`.ralph/runs/.../ralph-run.json` with issue, **Delivery mode**, **Integration
+target**, QA, push, commit, and GitHub metadata state for recovery.
 
 ## Deployment
 

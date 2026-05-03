@@ -13,6 +13,7 @@ integration** plus **Promotion** as the success path after QA.
 - [Run modes](#run-modes)
 - [Live run preflight](#live-run-preflight)
 - [AFK run monitoring](#afk-run-monitoring)
+- [Run manifest](#run-manifest)
 - [Implementation pass](#implementation-pass)
 - [Promotion pass](#promotion-pass)
 - [Triage pass](#triage-pass)
@@ -202,6 +203,36 @@ For AFK drains, use the heartbeat phase to see what Ralph is waiting on and tail
 the active log path to inspect live command output. If the terminal only shows
 heartbeats and no completion message, the phase is still running. If a command
 fails, the same log path appears in the failure output or issue evidence.
+
+## Run manifest
+
+Every implementation run and **Promotion** run writes
+`.ralph/runs/.../ralph-run.json`. The manifest is rewritten as milestones
+complete, so a failed run still records the last known recovery state.
+
+Key fields for inspection:
+
+- `schema_version`: manifest format version.
+- `run_kind`: `implementation` or `promotion`.
+- `status` and `stage`: current run outcome and latest milestone.
+- `events`: timestamped milestone history.
+- `issue`: implementation issue number, title, and URL.
+- `github_metadata.issues`: promoted issue numbers and their recorded Gitflow
+  integration commits during **Promotion**.
+- `delivery_mode`: issue **Delivery mode**; **Promotion** records `gitflow`.
+- `integration_target`: branch Ralph is updating for the run.
+- `source_branch`: **Promotion** source branch, usually `dev`.
+- `branches`: issue, source, and target branch names that apply to the run.
+- `paths`: repo root, run directory, worktree container, and implementation,
+  integration, or promotion worktree paths.
+- `changed_files`: current file diff used for QA and integration.
+- `qa_results`: selected QA commands, cwd, log path, and pass/fail state.
+- `integration_commit`: implementation **Local integration** commit.
+- `promotion_commit`: **Promotion** commit pushed to `main`.
+- `pushes`: per-branch push state, commit SHA, and push log path.
+- `github_metadata`: claim, completion, failure, Promotion comment, label, and
+  close state.
+- `failure`: user-facing error message and command log path when the run fails.
 
 ## Implementation pass
 
