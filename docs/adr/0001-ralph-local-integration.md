@@ -26,7 +26,10 @@ latest `origin/main`. Gitflow delivery keeps `origin/dev` current with
 `origin/main` before issue branches are created, then rebases and reruns selected
 QA if the **Integration target** moves before squash-merging. If a target branch
 is pushed but issue metadata cannot be updated, the drain stops because code and
-board state may no longer agree.
+board state may no longer agree. Ralph also blocks live implementation and
+**Promotion** runs on a dirty root worktree unless the operator passes
+`--allow-dirty-worktree`; dry-run remains available for inspection without issue
+or branch mutation.
 
 ## Sync metadata
 

@@ -124,7 +124,8 @@ class FakeRunner:
                 stderr="",
             )
         if command == ("git", "status", "--porcelain"):
-            return ralph.CompletedCommand(stdout=self.status_outputs.pop(0), stderr="")
+            stdout = self.status_outputs.pop(0) if self.status_outputs else ""
+            return ralph.CompletedCommand(stdout=stdout, stderr="")
         if command[:3] == ("git", "diff", "--name-only"):
             return ralph.CompletedCommand(stdout=self.diff_outputs.pop(0), stderr="")
         if command[:2] == ("git", "rev-parse"):
@@ -150,8 +151,11 @@ def make_loop(
     target_branch: str | None = None,
     source_branch: str = ralph.DEFAULT_GITFLOW_BRANCH,
     promote: bool = False,
+    issue: int | None = None,
     drain: bool = False,
     max_issues: int = ralph.DEFAULT_DRAIN_BUDGET,
+    dry_run: bool = False,
+    allow_dirty_worktree: bool = False,
 ) -> ralph.RalphLoop:
     repo_root = tmp_path / "repo"
     worktree_container = tmp_path / "worktrees"
@@ -165,15 +169,17 @@ def make_loop(
         target_branch=target_branch,
         source_branch=source_branch,
         promote=promote,
-        issue=None,
+        issue=issue,
         drain=drain,
         max_issues=max_issues,
-        dry_run=False,
+        dry_run=dry_run,
+        allow_dirty_worktree=allow_dirty_worktree,
         bootstrap_labels=False,
         issue_limit=100,
         log_root=log_root,
         worktree_container=worktree_container,
     )
+    runner.dry_run = dry_run
     return ralph.RalphLoop(config, runner)
 
 
@@ -199,6 +205,35 @@ class CountingRalphLoop(ralph.RalphLoop):
 
     def _next_triage_issue(self) -> ralph.Issue | None:
         return None
+
+
+class PreflightProbeLoop(ralph.RalphLoop):
+    def __init__(self, config: ralph.LoopConfig, runner: FakeRunner) -> None:
+        super().__init__(config, runner)
+        self.ready_returned = False
+        self.implemented = 0
+        self.promoted = False
+
+    def _validate_tools(self) -> None:
+        pass
+
+    def _validate_labels(self) -> None:
+        pass
+
+    def _next_ready_issue(self) -> ralph.Issue | None:
+        if self.ready_returned:
+            return None
+        self.ready_returned = True
+        return make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+
+    def _handle_implementation(self, issue: ralph.Issue) -> None:
+        self.implemented += 1
+
+    def _next_triage_issue(self) -> ralph.Issue | None:
+        return None
+
+    def _promote(self) -> None:
+        self.promoted = True
 
 
 class RalphHelperTests(unittest.TestCase):
@@ -412,6 +447,18 @@ Build it.
         help_text = output.getvalue()
         self.assertIn("Defaults to 10", help_text)
         self.assertIn("Use 0 for unlimited", help_text)
+        self.assertIn("--allow-dirty-worktree", help_text)
+
+    def test_dirty_root_worktree_message_lists_changed_paths_and_override(self) -> None:
+        message = ralph.dirty_root_worktree_message(
+            Path("/repo"),
+            " M scripts/ralph.py\n?? tests/test_ralph.py\n",
+        )
+
+        self.assertIn("Root worktree has uncommitted changes: /repo", message)
+        self.assertIn("--allow-dirty-worktree", message)
+        self.assertIn("- scripts/ralph.py", message)
+        self.assertIn("- tests/test_ralph.py", message)
 
     def test_drain_defaults_to_ten_implementation_attempts(self) -> None:
         runner = FakeRunner()
@@ -463,6 +510,90 @@ Build it.
 
         self.assertEqual(config.delivery_mode, ralph.TRUNK_MODE)
         self.assertEqual(config.target_branch, "main")
+
+    def test_dirty_root_blocks_live_issue_drain_and_promote_before_side_effects(self) -> None:
+        cases = [
+            {"issue": 42},
+            {"drain": True},
+            {"promote": True},
+        ]
+        for kwargs in cases:
+            with self.subTest(kwargs=kwargs):
+                runner = FakeRunner(status_outputs=[" M scripts/ralph.py\n"])
+                with tempfile.TemporaryDirectory() as tmp:
+                    loop = make_loop(Path(tmp), runner, **kwargs)
+                    probe = PreflightProbeLoop(loop.config, runner)
+
+                    with self.assertRaises(ralph.RalphError) as caught:
+                        probe.run()
+
+                self.assertIn("Root worktree has uncommitted changes", str(caught.exception))
+                self.assertEqual(probe.implemented, 0)
+                self.assertFalse(probe.promoted)
+                commands = [call.args for call in runner.calls]
+                self.assertEqual(commands, [("git", "status", "--porcelain")])
+                self.assertNotIn(
+                    (
+                        "gh",
+                        "issue",
+                        "edit",
+                        "42",
+                        "-R",
+                        "example/repo",
+                        "--add-label",
+                        "agent-running",
+                    ),
+                    commands,
+                )
+                self.assertFalse(
+                    any(command[:3] == ("git", "worktree", "add") for command in commands)
+                )
+                self.assertFalse(
+                    any(command[:3] == ("git", "push", "origin") for command in commands)
+                )
+
+    def test_allow_dirty_worktree_bypasses_live_preflight(self) -> None:
+        runner = FakeRunner(status_outputs=[" M scripts/ralph.py\n"])
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(
+                Path(tmp),
+                runner,
+                drain=True,
+                allow_dirty_worktree=True,
+            )
+            probe = PreflightProbeLoop(loop.config, runner)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                probe.run()
+
+        self.assertEqual(probe.implemented, 1)
+        self.assertIn(
+            "Clean root worktree preflight bypassed by --allow-dirty-worktree.",
+            output.getvalue(),
+        )
+        commands = [call.args for call in runner.calls]
+        self.assertNotIn(("git", "status", "--porcelain"), commands)
+
+    def test_dry_run_remains_usable_with_dirty_root_worktree(self) -> None:
+        runner = FakeRunner(status_outputs=[" M scripts/ralph.py\n"])
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(
+                Path(tmp),
+                runner,
+                issue=42,
+                dry_run=True,
+            )
+            probe = PreflightProbeLoop(loop.config, runner)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                probe.run()
+
+        self.assertEqual(probe.implemented, 0)
+        self.assertIn("DRY RUN: would implement #42: Implement thing", output.getvalue())
+        commands = [call.args for call in runner.calls]
+        self.assertNotIn(("git", "status", "--porcelain"), commands)
 
     def test_completion_comment_records_local_integration_evidence(self) -> None:
         issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)

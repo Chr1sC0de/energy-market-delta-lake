@@ -53,7 +53,7 @@ $grill-with-docs <feature idea> -> $to-prd -> $to-issues -> $ralph-triage -> $ra
 
 ```mermaid
 flowchart TD
-  START[Start drain] --> PREFLIGHT[Validate tools, GitHub auth, and labels]
+  START[Start drain] --> PREFLIGHT[Validate tools, root worktree, GitHub auth, and labels]
   PREFLIGHT --> READY{Unblocked ready-for-agent issue?}
   READY -->|Yes| CLAIM[Claim issue with agent-running]
   CLAIM --> CONTRACT{Issue contract valid?}
@@ -163,7 +163,21 @@ Override the **Integration target** explicitly when needed:
 python3 scripts/ralph.py --issue 25 --target-branch feature/my-branch
 ```
 
+Bypass the live clean-root preflight only when the operator intentionally wants
+Ralph to run with uncommitted root worktree changes:
+
+```bash
+python3 scripts/ralph.py --drain --allow-dirty-worktree
+```
+
 ## Live run preflight
+
+Live `--issue`, `--drain`, and `--promote` runs fail before GitHub issue claim,
+worktree creation, **Local integration**, or push when the root worktree has
+uncommitted changes. Commit or stash root worktree changes before live Ralph
+runs. Use `--allow-dirty-worktree` only for an explicit dirty-worktree
+operation. `--dry-run` remains available on a dirty root worktree so operators
+can inspect the next Ralph action without mutating issues or branches.
 
 Before a live drain, validate both GitHub API auth and Git push auth for the
 expected **Integration target**:
@@ -177,10 +191,10 @@ When using token-based GitHub CLI auth, export `GH_TOKEN` in the shell that runs
 Ralph. Do not paste token values into commands, issue comments, docs, or logs.
 
 Use `HEAD:dev` for Gitflow target validation and `HEAD:main` for trunk or
-promotion validation. Run Ralph from a clean local worktree that is aligned with
-the remote branch being operated on. The script fetches the **Integration
-target** during implementation and rebases issue work if the target moves, but
-the operator should start from a known repo state.
+promotion validation. Run Ralph from a local worktree that is aligned with the
+remote branch being operated on. The script fetches the **Integration target**
+during implementation and rebases issue work if the target moves, but the
+operator should start from a known repo state.
 
 ## AFK run monitoring
 

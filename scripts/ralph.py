@@ -44,6 +44,7 @@ DEFAULT_GITFLOW_BRANCH = "dev"
 DEFAULT_TRUNK_BRANCH = "main"
 DEFAULT_DRAIN_BUDGET = 10
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30.0
+DIRTY_WORKTREE_STATUS_PREVIEW_LIMIT = 12
 COMMAND_READ_CHUNK_SIZE = 65536
 COMMIT_LINE_PATTERN = re.compile(r"(?m)^Commit: `(?P<sha>[0-9a-f]{7,40})`$")
 MANIFEST_NAME = "ralph-run.json"
@@ -230,6 +231,7 @@ class LoopConfig:
     drain: bool
     max_issues: int
     dry_run: bool
+    allow_dirty_worktree: bool
     bootstrap_labels: bool
     issue_limit: int
     log_root: Path
@@ -772,6 +774,26 @@ def parse_git_status_paths(status_output: str) -> list[str]:
     return sorted(set(paths))
 
 
+def dirty_root_worktree_message(repo_root: Path, status_output: str) -> str:
+    paths = parse_git_status_paths(status_output)
+    lines = [
+        f"Root worktree has uncommitted changes: {repo_root}",
+        (
+            "Commit or stash these changes before a live Ralph run, or pass "
+            "--allow-dirty-worktree to bypass this preflight."
+        ),
+    ]
+    if not paths:
+        return "\n".join(lines)
+
+    preview = paths[:DIRTY_WORKTREE_STATUS_PREVIEW_LIMIT]
+    lines.extend(["", "Changed paths:", *[f"- {path}" for path in preview]])
+    remaining = len(paths) - len(preview)
+    if remaining > 0:
+        lines.append(f"- ... and {remaining} more")
+    return "\n".join(lines)
+
+
 def looks_like_environment_failure(error: CommandFailure) -> bool:
     output = f"{error.stdout}\n{error.stderr}".lower()
     return any(pattern in output for pattern in ENVIRONMENT_FAILURE_PATTERNS)
@@ -1200,8 +1222,7 @@ class GitClient:
         )
 
     def changed_files(self, *, cwd: Path) -> list[str]:
-        result = self.runner.run(["git", "status", "--porcelain"], cwd=cwd)
-        return parse_git_status_paths(result.stdout)
+        return parse_git_status_paths(self.status_porcelain(cwd=cwd))
 
     def changed_files_against(self, *, cwd: Path, base_ref: str) -> list[str]:
         result = self.runner.run(
@@ -1218,8 +1239,11 @@ class GitClient:
         return sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
 
     def has_uncommitted_changes(self, *, cwd: Path) -> bool:
+        return self.status_porcelain(cwd=cwd).strip() != ""
+
+    def status_porcelain(self, *, cwd: Path) -> str:
         result = self.runner.run(["git", "status", "--porcelain"], cwd=cwd)
-        return result.stdout.strip() != ""
+        return result.stdout
 
     def commit_all(
         self,
@@ -1328,6 +1352,7 @@ class RalphLoop:
 
     def run(self) -> None:
         self._validate_tools()
+        self._validate_clean_root_worktree_for_live_run()
 
         if self.config.bootstrap_labels:
             self.github.auth_status()
@@ -1389,6 +1414,29 @@ class RalphLoop:
                 return
             self._run_triage(triage_issue)
             self.triaged_this_run.add(triage_issue.number)
+
+    def _validate_clean_root_worktree_for_live_run(self) -> None:
+        if self.config.dry_run:
+            return
+        if not self._uses_live_issue_or_promotion_flow():
+            return
+        if self.config.allow_dirty_worktree:
+            emit("Clean root worktree preflight bypassed by --allow-dirty-worktree.")
+            return
+
+        status_output = self.git.status_porcelain(cwd=self.config.repo_root)
+        if status_output.strip() == "":
+            return
+        raise RalphError(dirty_root_worktree_message(self.config.repo_root, status_output))
+
+    def _uses_live_issue_or_promotion_flow(self) -> bool:
+        if self.config.promote:
+            return True
+        if self.config.drain:
+            return True
+        if self.config.issue is not None:
+            return True
+        return not self.config.bootstrap_labels
 
     def _validate_tools(self) -> None:
         tools = ("git", "gh") if self.config.promote else ("git", "gh", "codex")
@@ -2676,6 +2724,7 @@ def build_config(args: argparse.Namespace, runner: CommandRunner) -> LoopConfig:
         drain=args.drain,
         max_issues=args.max_issues,
         dry_run=args.dry_run,
+        allow_dirty_worktree=args.allow_dirty_worktree,
         bootstrap_labels=args.bootstrap_labels,
         issue_limit=args.issue_limit,
         log_root=log_root,
@@ -2727,6 +2776,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         ),
     )
     parser.add_argument("--dry-run", action="store_true", help="Show the next action only.")
+    parser.add_argument(
+        "--allow-dirty-worktree",
+        action="store_true",
+        help=(
+            "Allow live implementation and Promotion runs to start when the root "
+            "worktree has uncommitted changes."
+        ),
+    )
     parser.add_argument(
         "--bootstrap-labels",
         action="store_true",
