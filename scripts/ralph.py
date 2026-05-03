@@ -4,13 +4,17 @@
 from __future__ import annotations
 
 import argparse
+import codecs
 import json
+import os
 import re
+import selectors
 import shlex
 import shutil
 import subprocess
 import sys
 import textwrap
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -39,6 +43,8 @@ DELIVERY_LABELS = frozenset({DELIVERY_GITFLOW_LABEL, DELIVERY_TRUNK_LABEL})
 DEFAULT_GITFLOW_BRANCH = "dev"
 DEFAULT_TRUNK_BRANCH = "main"
 DEFAULT_DRAIN_BUDGET = 10
+DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30.0
+COMMAND_READ_CHUNK_SIZE = 65536
 COMMIT_LINE_PATTERN = re.compile(r"(?m)^Commit: `(?P<sha>[0-9a-f]{7,40})`$")
 
 TRIAGE_STATE_LABELS = frozenset(
@@ -453,8 +459,14 @@ def codex_exec_command(cwd: Path) -> list[str]:
 
 
 class CommandRunner:
-    def __init__(self, *, dry_run: bool) -> None:
+    def __init__(
+        self,
+        *,
+        dry_run: bool,
+        heartbeat_interval: float = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+    ) -> None:
         self.dry_run = dry_run
+        self.heartbeat_interval = heartbeat_interval
 
     def run(
         self,
@@ -463,6 +475,7 @@ class CommandRunner:
         cwd: Path,
         input_text: str | None = None,
         log_path: Path | None = None,
+        phase: str | None = None,
         execute_in_dry_run: bool = True,
     ) -> CompletedCommand:
         if self.dry_run and not execute_in_dry_run:
@@ -471,26 +484,127 @@ class CommandRunner:
 
         if log_path is not None:
             log_path.parent.mkdir(parents=True, exist_ok=True)
+            write_command_log(log_path, args, cwd, "", "", None)
+
+        process = subprocess.Popen(
+            args,
+            cwd=cwd,
+            stdin=subprocess.PIPE if input_text is not None else None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if input_text is not None:
+            self._write_stdin(process, input_text)
 
         try:
-            result = subprocess.run(
-                args,
+            stdout, stderr = self._capture_process_output(
+                process,
+                args=args,
                 cwd=cwd,
-                input=input_text,
-                text=True,
-                capture_output=True,
-                check=True,
+                log_path=log_path,
+                phase=phase,
             )
-        except subprocess.CalledProcessError as error:
-            stdout = error.stdout or ""
-            stderr = error.stderr or ""
-            if log_path is not None:
-                write_command_log(log_path, args, cwd, stdout, stderr, error.returncode)
-            raise CommandFailure(args, cwd, error.returncode, stdout, stderr, log_path) from error
-
+        except BaseException:
+            process.kill()
+            process.wait()
+            raise
+        returncode = process.wait()
         if log_path is not None:
-            write_command_log(log_path, args, cwd, result.stdout, result.stderr, result.returncode)
-        return CompletedCommand(stdout=result.stdout, stderr=result.stderr)
+            write_command_log(log_path, args, cwd, stdout, stderr, returncode)
+        if returncode != 0:
+            raise CommandFailure(args, cwd, returncode, stdout, stderr, log_path)
+        return CompletedCommand(stdout=stdout, stderr=stderr)
+
+    def _write_stdin(self, process: subprocess.Popen[bytes], input_text: str) -> None:
+        if process.stdin is None:
+            return
+        try:
+            process.stdin.write(input_text.encode())
+        except BrokenPipeError:
+            pass
+        finally:
+            try:
+                process.stdin.close()
+            except OSError:
+                pass
+
+    def _capture_process_output(
+        self,
+        process: subprocess.Popen[bytes],
+        *,
+        args: list[str],
+        cwd: Path,
+        log_path: Path | None,
+        phase: str | None,
+    ) -> tuple[str, str]:
+        if process.stdout is None or process.stderr is None:
+            raise RalphError("Subprocess output pipes were not created.")
+
+        selector = selectors.DefaultSelector()
+        selector.register(process.stdout, selectors.EVENT_READ, "stdout")
+        selector.register(process.stderr, selectors.EVENT_READ, "stderr")
+        decoders = {
+            "stdout": codecs.getincrementaldecoder("utf-8")("replace"),
+            "stderr": codecs.getincrementaldecoder("utf-8")("replace"),
+        }
+        outputs: dict[str, list[str]] = {"stdout": [], "stderr": []}
+        phase_name = phase or format_command(args)
+        next_heartbeat = self._next_heartbeat_deadline(log_path)
+        try:
+            while selector.get_map():
+                timeout = None
+                if next_heartbeat is not None:
+                    timeout = max(0.0, next_heartbeat - time.monotonic())
+                events = selector.select(timeout)
+                if not events:
+                    if process.poll() is None:
+                        self._emit_heartbeat(phase_name, log_path)
+                    next_heartbeat = self._next_heartbeat_deadline(log_path)
+                    continue
+
+                for key, _ in events:
+                    stream_name = str(key.data)
+                    chunk = os.read(key.fileobj.fileno(), COMMAND_READ_CHUNK_SIZE)
+                    if chunk:
+                        text = decoders[stream_name].decode(chunk)
+                    else:
+                        selector.unregister(key.fileobj)
+                        text = decoders[stream_name].decode(b"", final=True)
+                    if not text:
+                        continue
+                    outputs[stream_name].append(text)
+                    if log_path is not None:
+                        write_command_log(
+                            log_path,
+                            args,
+                            cwd,
+                            "".join(outputs["stdout"]),
+                            "".join(outputs["stderr"]),
+                            None,
+                        )
+
+                if next_heartbeat is not None and time.monotonic() >= next_heartbeat:
+                    if process.poll() is None:
+                        self._emit_heartbeat(phase_name, log_path)
+                    next_heartbeat = self._next_heartbeat_deadline(log_path)
+        finally:
+            selector.close()
+            process.stdout.close()
+            process.stderr.close()
+
+        return "".join(outputs["stdout"]), "".join(outputs["stderr"])
+
+    def _next_heartbeat_deadline(self, log_path: Path | None) -> float | None:
+        if log_path is None:
+            return None
+        if self.heartbeat_interval <= 0:
+            return None
+        return time.monotonic() + self.heartbeat_interval
+
+    def _emit_heartbeat(self, phase: str, log_path: Path | None) -> None:
+        if log_path is None:
+            return
+        emit(f"Ralph heartbeat: phase={phase}; log={log_path}")
 
 
 def write_command_log(
@@ -499,14 +613,15 @@ def write_command_log(
     cwd: Path,
     stdout: str,
     stderr: str,
-    returncode: int,
+    returncode: int | None,
 ) -> None:
+    exit_status = "running" if returncode is None else str(returncode)
     path.write_text(
         "\n".join(
             [
                 f"$ {format_command(args)}",
                 f"cwd: {cwd}",
-                f"exit: {returncode}",
+                f"exit: {exit_status}",
                 "",
                 "STDOUT:",
                 stdout,
@@ -1513,17 +1628,27 @@ class RalphLoop:
         first_prompt = implementation_prompt(issue)
         try:
             emit(f"#{issue.number}: running Codex implementation attempt 1")
-            self._run_codex(first_prompt, worktree_path, run_dir / "codex-implementation-1.jsonl")
+            self._run_codex(
+                first_prompt,
+                worktree_path,
+                run_dir / "codex-implementation-1.jsonl",
+                phase=f"#{issue.number}: Codex implementation attempt 1",
+            )
             return self._run_qa(issue, worktree_path, run_dir, log_prefix="qa")
         except EnvironmentFailure:
             raise
         except (CommandFailure, IssueFailure) as first_error:
             emit(f"#{issue.number}: attempt 1 failed; running Codex implementation attempt 2")
             retry_prompt = retry_implementation_prompt(issue, first_error)
-            self._run_codex(retry_prompt, worktree_path, run_dir / "codex-implementation-2.jsonl")
+            self._run_codex(
+                retry_prompt,
+                worktree_path,
+                run_dir / "codex-implementation-2.jsonl",
+                phase=f"#{issue.number}: Codex implementation attempt 2",
+            )
             return self._run_qa(issue, worktree_path, run_dir, log_prefix="qa-retry")
 
-    def _run_codex(self, prompt: str, cwd: Path, log_path: Path) -> None:
+    def _run_codex(self, prompt: str, cwd: Path, log_path: Path, *, phase: str) -> None:
         if not self.runner.dry_run:
             log_path.with_suffix(".prompt.md").write_text(prompt, encoding="utf-8")
         self.runner.run(
@@ -1531,6 +1656,7 @@ class RalphLoop:
             cwd=cwd,
             input_text=prompt,
             log_path=log_path,
+            phase=phase,
             execute_in_dry_run=False,
         )
 
@@ -1597,6 +1723,7 @@ class RalphLoop:
                     list(command.args),
                     cwd=command.cwd,
                     log_path=log_path,
+                    phase=f"{subject}: QA {command.name}",
                     execute_in_dry_run=False,
                 )
             except CommandFailure as error:
@@ -1668,7 +1795,12 @@ class RalphLoop:
         run_dir = self._run_dir(issue, prefix="triage")
         run_dir.mkdir(parents=True, exist_ok=True)
         prompt = triage_prompt(issue, self.config.repo)
-        self._run_codex(prompt, self.config.repo_root, run_dir / "codex-triage.jsonl")
+        self._run_codex(
+            prompt,
+            self.config.repo_root,
+            run_dir / "codex-triage.jsonl",
+            phase=f"#{issue.number}: triage",
+        )
         emit(f"Triage pass completed for #{issue.number}.")
 
     def _run_dir(self, issue: Issue, *, prefix: str = "issue") -> Path:

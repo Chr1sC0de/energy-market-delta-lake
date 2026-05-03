@@ -12,6 +12,7 @@ integration** plus **Promotion** as the success path after QA.
 - [Labels](#labels)
 - [Run modes](#run-modes)
 - [Live run preflight](#live-run-preflight)
+- [AFK run monitoring](#afk-run-monitoring)
 - [Implementation pass](#implementation-pass)
 - [Promotion pass](#promotion-pass)
 - [Triage pass](#triage-pass)
@@ -179,6 +180,28 @@ promotion validation. Run Ralph from a clean local worktree that is aligned with
 the remote branch being operated on. The script fetches the **Integration
 target** during implementation and rebases issue work if the target moves, but
 the operator should start from a known repo state.
+
+## AFK run monitoring
+
+Ralph writes command logs while subprocesses are still running. Long Codex
+implementation attempts write to `codex-implementation-N.jsonl`, triage writes
+to `codex-triage.jsonl`, QA writes to `qa-*` logs, and Git operations write to
+their named `git-*` logs under the current `.ralph/runs/...` run directory.
+While a command is active, the log has `exit: running`; after the command
+finishes, Ralph rewrites the same log with the final exit status while
+preserving stdout, stderr, command, and cwd.
+
+During logged long-running phases, Ralph prints a heartbeat about every 30
+seconds:
+
+```text
+Ralph heartbeat: phase=#49: Codex implementation attempt 1; log=/repo/.ralph/runs/issue-49-.../codex-implementation-1.jsonl
+```
+
+For AFK drains, use the heartbeat phase to see what Ralph is waiting on and tail
+the active log path to inspect live command output. If the terminal only shows
+heartbeats and no completion message, the phase is still running. If a command
+fails, the same log path appears in the failure output or issue evidence.
 
 ## Implementation pass
 

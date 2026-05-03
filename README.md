@@ -285,7 +285,10 @@ instead of relying on the caller's `PATH`.
 Ralph Gitflow drain keeps `dev` current with `main` before integrating work, and
 Promotion fast-forwards `dev` to the promotion commit after pushing `main`. A
 plain Ralph drain uses a default budget of 10 implementation attempts; pass
-`--max-issues 0` only for explicit unlimited drain mode.
+`--max-issues 0` only for explicit unlimited drain mode. During long Codex and
+QA phases, Ralph prints heartbeat lines with the active phase and log path, and
+the command logs under `.ralph/runs/...` update while the command is still
+running.
 
 ## Deployment
 

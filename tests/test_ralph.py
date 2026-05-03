@@ -4,6 +4,8 @@ import importlib.util
 import io
 import json
 import sys
+import threading
+import time
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -52,6 +54,7 @@ class FakeCall:
     cwd: Path
     input_text: str | None
     log_path: Path | None
+    phase: str | None
     execute_in_dry_run: bool
 
 
@@ -83,6 +86,7 @@ class FakeRunner:
         cwd: Path,
         input_text: str | None = None,
         log_path: Path | None = None,
+        phase: str | None = None,
         execute_in_dry_run: bool = True,
     ):
         command = tuple(args)
@@ -92,6 +96,7 @@ class FakeRunner:
                 cwd=cwd,
                 input_text=input_text,
                 log_path=log_path,
+                phase=phase,
                 execute_in_dry_run=execute_in_dry_run,
             )
         )
@@ -505,6 +510,107 @@ Build it.
         self.assertIn("The token in default is invalid.", message)
 
 
+class CommandRunnerTests(unittest.TestCase):
+    def test_command_runner_streams_log_and_heartbeat_while_command_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            log_path = tmp_path / "stream.log"
+            runner = ralph.CommandRunner(dry_run=False, heartbeat_interval=0.05)
+            command = [
+                sys.executable,
+                "-c",
+                (
+                    "import sys, time; "
+                    "print('first line', flush=True); "
+                    "time.sleep(0.5); "
+                    "print('second line', flush=True); "
+                    "print('error line', file=sys.stderr, flush=True)"
+                ),
+            ]
+            result_box: dict[str, ralph.CompletedCommand] = {}
+            error_box: dict[str, BaseException] = {}
+
+            def run_command() -> None:
+                try:
+                    result_box["result"] = runner.run(
+                        command,
+                        cwd=tmp_path,
+                        log_path=log_path,
+                        phase="streaming test phase",
+                    )
+                except BaseException as error:
+                    error_box["error"] = error
+
+            output = io.StringIO()
+            with redirect_stdout(output):
+                thread = threading.Thread(target=run_command)
+                thread.start()
+                deadline = time.monotonic() + 2.0
+                streamed_log = ""
+                while time.monotonic() < deadline:
+                    if log_path.exists():
+                        streamed_log = log_path.read_text(encoding="utf-8")
+                        if "first line" in streamed_log:
+                            break
+                    time.sleep(0.01)
+                else:
+                    self.fail("command log did not stream first stdout line")
+
+                self.assertIn("exit: running", streamed_log)
+                self.assertTrue(thread.is_alive())
+                thread.join(timeout=3.0)
+
+            self.assertFalse(thread.is_alive())
+            if "error" in error_box:
+                raise error_box["error"]
+
+            result = result_box["result"]
+            final_log = log_path.read_text(encoding="utf-8")
+            self.assertEqual(result.stdout, "first line\nsecond line\n")
+            self.assertEqual(result.stderr, "error line\n")
+            self.assertIn(f"$ {ralph.format_command(command)}", final_log)
+            self.assertIn(f"cwd: {tmp_path}", final_log)
+            self.assertIn("exit: 0", final_log)
+            self.assertIn("STDOUT:\nfirst line\nsecond line\n", final_log)
+            self.assertIn("STDERR:\nerror line\n", final_log)
+            self.assertIn("Ralph heartbeat: phase=streaming test phase; log=", output.getvalue())
+
+    def test_command_runner_failure_preserves_command_log_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            log_path = tmp_path / "failure.log"
+            runner = ralph.CommandRunner(dry_run=False)
+            command = [
+                sys.executable,
+                "-c",
+                (
+                    "import sys; "
+                    "print('before failure'); "
+                    "print('failure detail', file=sys.stderr); "
+                    "raise SystemExit(7)"
+                ),
+            ]
+
+            with self.assertRaises(ralph.CommandFailure) as caught:
+                runner.run(
+                    command,
+                    cwd=tmp_path,
+                    log_path=log_path,
+                    phase="failure logging phase",
+                )
+
+            error = caught.exception
+            log = log_path.read_text(encoding="utf-8")
+            self.assertEqual(error.returncode, 7)
+            self.assertEqual(error.stdout, "before failure\n")
+            self.assertEqual(error.stderr, "failure detail\n")
+            self.assertIn(f"$ {ralph.format_command(command)}", log)
+            self.assertIn(f"cwd: {tmp_path}", log)
+            self.assertIn("exit: 7", log)
+            self.assertIn("STDOUT:\nbefore failure\n", log)
+            self.assertIn("STDERR:\nfailure detail\n", log)
+
+
 class RalphLoopLocalIntegrationTests(unittest.TestCase):
     def test_malformed_issue_marks_failed_without_creating_worktree(self) -> None:
         runner = FakeRunner()
@@ -585,6 +691,7 @@ Build it.
                 loop._handle_implementation(issue)
 
             commands = [call.args for call in runner.calls]
+            phases = [call.phase for call in runner.calls]
             self.assertIn(
                 ("git", "merge", "--squash", "agent/issue-42-implement-thing"),
                 commands,
@@ -609,6 +716,8 @@ Build it.
             self.assertIn("#42: running QA Ralph unit tests", progress)
             self.assertIn("#42: pushing merge-sha to main", progress)
             self.assertIn("Issue #42 merged to main: merge-sha", progress)
+            self.assertIn("#42: Codex implementation attempt 1", phases)
+            self.assertIn("#42: QA Ralph unit tests", phases)
 
             comment_path = next((Path(tmp) / "logs").glob("issue-42-*/issue-42-comment.md"))
             comment = comment_path.read_text(encoding="utf-8")

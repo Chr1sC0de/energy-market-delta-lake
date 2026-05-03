@@ -121,7 +121,9 @@ the default triage labels documented under
 **Delivery mode** labels. **Gitflow delivery** keeps `dev` synced with `main`,
 integrates to `dev` for review, and then promotes to `main`; **Trunk delivery**
 is an opt-in path for small low-risk changes that can close after integration
-to `main`.
+to `main`. During AFK drains, Ralph prints heartbeat lines with the active phase
+and log path, and command logs under `.ralph/runs/...` update while Codex and QA
+commands are still running.
 
 ## Where to work
 
