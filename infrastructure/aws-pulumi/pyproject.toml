@@ -23,6 +23,7 @@ dev = [
   "pytest-cov>=7",
   "pytest-mock>=3.15.1",
   "ruff>=0.15.8",
+  "shellcheck-py>=0.11.0.1",
   "shfmt-py>=3.12.0.2",
   "zuban>=0.6.2",
 ]

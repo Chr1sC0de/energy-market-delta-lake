@@ -33,7 +33,7 @@ repos:
       - id: shellcheck
         name: shellcheck
         language: system
-        entry: shellcheck
+        entry: uv run shellcheck
         files: ^scripts/.*
         exclude: ^(vendor/.*|generated/.*)$
       - id: shell-script-headers

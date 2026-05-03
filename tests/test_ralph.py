@@ -139,6 +139,8 @@ def make_loop(
     target_branch: str | None = None,
     source_branch: str = ralph.DEFAULT_GITFLOW_BRANCH,
     promote: bool = False,
+    drain: bool = False,
+    max_issues: int = ralph.DEFAULT_DRAIN_BUDGET,
 ) -> ralph.RalphLoop:
     repo_root = tmp_path / "repo"
     worktree_container = tmp_path / "worktrees"
@@ -153,8 +155,8 @@ def make_loop(
         source_branch=source_branch,
         promote=promote,
         issue=None,
-        drain=False,
-        max_issues=3,
+        drain=drain,
+        max_issues=max_issues,
         dry_run=False,
         bootstrap_labels=False,
         issue_limit=100,
@@ -162,6 +164,30 @@ def make_loop(
         worktree_container=worktree_container,
     )
     return ralph.RalphLoop(config, runner)
+
+
+class CountingRalphLoop(ralph.RalphLoop):
+    def __init__(self, config: ralph.LoopConfig, runner: FakeRunner, ready_count: int) -> None:
+        super().__init__(config, runner)
+        self.ready_count = ready_count
+        self.implemented = 0
+
+    def _validate_tools(self) -> None:
+        pass
+
+    def _validate_labels(self) -> None:
+        pass
+
+    def _next_ready_issue(self) -> ralph.Issue | None:
+        if self.implemented >= self.ready_count:
+            return None
+        return make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+
+    def _handle_implementation(self, issue: ralph.Issue) -> None:
+        self.implemented += 1
+
+    def _next_triage_issue(self) -> ralph.Issue | None:
+        return None
 
 
 class RalphHelperTests(unittest.TestCase):
@@ -365,6 +391,52 @@ Build it.
 
         self.assertEqual(config.delivery_mode, ralph.GITFLOW_MODE)
         self.assertIsNone(config.target_branch)
+
+    def test_parse_args_help_describes_default_drain_budget(self) -> None:
+        output = io.StringIO()
+
+        with redirect_stdout(output), self.assertRaises(SystemExit):
+            ralph.parse_args(["--help"])
+
+        help_text = output.getvalue()
+        self.assertIn("Defaults to 10", help_text)
+        self.assertIn("Use 0 for unlimited", help_text)
+
+    def test_drain_defaults_to_ten_implementation_attempts(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(
+                Path(tmp),
+                runner,
+                drain=True,
+                max_issues=ralph.parse_args(["--drain"]).max_issues,
+            )
+            counting_loop = CountingRalphLoop(loop.config, runner, ready_count=12)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                counting_loop.run()
+
+        self.assertEqual(counting_loop.implemented, 10)
+        self.assertIn("Reached --max-issues 10.", output.getvalue())
+
+    def test_max_issues_zero_keeps_drain_unlimited(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(
+                Path(tmp),
+                runner,
+                drain=True,
+                max_issues=ralph.parse_args(["--drain", "--max-issues", "0"]).max_issues,
+            )
+            counting_loop = CountingRalphLoop(loop.config, runner, ready_count=12)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                counting_loop.run()
+
+        self.assertEqual(counting_loop.implemented, 12)
+        self.assertNotIn("Reached --max-issues", output.getvalue())
 
     def test_build_config_base_alias_uses_trunk_compatibility(self) -> None:
         runner = FakeRunner(

@@ -34,7 +34,9 @@ Ralph drains agent-ready GitHub issues through a guarded local loop:
 8. If no ready issue exists, triage the next unblocked issue and rescan.
 
 The loop stops when the queue has no unblocked implementation or triage
-candidates, or when `--max-issues` is reached.
+candidates, or when `--max-issues` is reached. A plain `--drain` run defaults
+to 10 implementation attempts; `--max-issues 0` is the explicit unlimited drain
+mode.
 
 Human operators should call Ralph through repo-local skills:
 
@@ -123,7 +125,7 @@ Dry-run the next action:
 python3 scripts/ralph.py --drain --dry-run
 ```
 
-Drain up to three implementation attempts:
+Drain up to 10 implementation attempts:
 
 ```bash
 python3 scripts/ralph.py --drain

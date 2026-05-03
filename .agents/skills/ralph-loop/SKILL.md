@@ -55,6 +55,9 @@ python3 scripts/ralph.py --issue 25
 python3 scripts/ralph.py --promote
 ```
 
+Plain `--drain` stops after 10 implementation attempts by default. Use
+`--max-issues 0` only for explicit unlimited drain mode.
+
 Use `--target-branch <branch>` only when the maintainer explicitly wants a
 non-default **Integration target**.
 

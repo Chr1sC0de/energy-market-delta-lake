@@ -261,8 +261,10 @@ hook and project config have been added and the maintained docs name those files
 in `sync.sources`.
 
 Most Python project hooks run through `uv run` inside the project that owns the
-hook config. System hooks such as `shellcheck` must also be available on
-`PATH` where the relevant **Subproject** config uses them directly.
+hook config. AWS Pulumi shell hooks, including `shfmt` and `shellcheck`, are
+pinned in that **Subproject**'s uv dev environment. The shared
+`backend-services` shell lint hook pins `shellcheck-py` in its hook environment
+instead of relying on the caller's `PATH`.
 
 ## Commands
 
@@ -281,7 +283,9 @@ hook config. System hooks such as `shellcheck` must also be available on
 | Ralph promotion | `python3 scripts/ralph.py --promote` |
 
 Ralph Gitflow drain keeps `dev` current with `main` before integrating work, and
-Promotion fast-forwards `dev` to the promotion commit after pushing `main`.
+Promotion fast-forwards `dev` to the promotion commit after pushing `main`. A
+plain Ralph drain uses a default budget of 10 implementation attempts; pass
+`--max-issues 0` only for explicit unlimited drain mode.
 
 ## Deployment
 

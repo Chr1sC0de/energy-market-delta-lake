@@ -38,6 +38,7 @@ DELIVERY_TRUNK_LABEL = "delivery-trunk"
 DELIVERY_LABELS = frozenset({DELIVERY_GITFLOW_LABEL, DELIVERY_TRUNK_LABEL})
 DEFAULT_GITFLOW_BRANCH = "dev"
 DEFAULT_TRUNK_BRANCH = "main"
+DEFAULT_DRAIN_BUDGET = 10
 COMMIT_LINE_PATTERN = re.compile(r"(?m)^Commit: `(?P<sha>[0-9a-f]{7,40})`$")
 
 TRIAGE_STATE_LABELS = frozenset(
@@ -1957,8 +1958,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--max-issues",
         type=int,
-        default=3,
-        help="Maximum implementation attempts in --drain mode. Use 0 for unlimited.",
+        default=DEFAULT_DRAIN_BUDGET,
+        help=(
+            "Maximum implementation attempts in --drain mode. "
+            f"Defaults to {DEFAULT_DRAIN_BUDGET}. Use 0 for unlimited."
+        ),
     )
     parser.add_argument("--dry-run", action="store_true", help="Show the next action only.")
     parser.add_argument(
