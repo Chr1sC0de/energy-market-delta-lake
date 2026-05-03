@@ -97,7 +97,7 @@ At a high level the deployed workflow is:
 
 1. Discovery/listing assets poll public AEMO/NEMWeb sources and land files in S3.
 1. Unzipper sensors expand zipped inputs and archive successful zip payloads.
-1. Event-driven source-table bronze assets ingest landed files into current-state Delta tables through explicit source-table ingestion logic.
+1. Event-driven source-table bronze assets ingest landed files into current-state Delta tables through explicit source-table ingestion logic, archiving processed files only after a table write, deleting zero-byte landing objects, and warning on skipped selected keys.
 1. Source-specific silver assets deduplicate and standardize current-state tables.
 1. `gas_model` assets build shared dimensions and marts from the source silver layer.
 1. A daily Delta maintenance job compacts and full-vacuums Delta-backed tables.

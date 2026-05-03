@@ -116,7 +116,10 @@ The bronze asset:
 - applies optional preprocessing hooks
 - collapses each micro-batch to current state by `surrogate_key`
 - merges current-state rows into the bronze Delta table in the AEMO bucket
-- archives processed source files by moving them from landing to archive
+- archives processed source files only after a table write
+- deletes zero-byte landing objects
+- reports missing, unsupported, and deferred selected keys with a
+  non-blocking WARN asset check
 
 Source-table bronze is deliberately narrower than every asset whose key starts
 with `bronze`. The current-state decision applies to the GBB and VICGAS
@@ -139,6 +142,9 @@ Source-table bronze semantics:
   is missing
 - unmatched source rows insert, and unmatched target rows stay in place, so
   absence from a later source file is not a delete signal
+- processed landing files move to archive only when the write helper reports a
+  table write; otherwise they remain in landing and the skipped-key check warns
+- zero-byte landing objects are deleted after the write helper returns normally
 - archived source files remain the replay source for rebuilding source-table
   bronze
 

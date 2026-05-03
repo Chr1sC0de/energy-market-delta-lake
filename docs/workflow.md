@@ -67,7 +67,7 @@ Production orchestration behavior:
 
 1. Discovery assets poll public source locations and register landed files.
 2. Unzipper sensors detect zip payloads, expand their members, and archive the original zip files after success.
-3. Event-driven bronze assets ingest matching landed files into Delta tables and archive processed source files.
+3. Event-driven bronze assets ingest matching landed files into Delta tables, archive processed source files only after a table write, delete zero-byte landing objects, and warn on skipped selected keys.
 4. Downstream silver and `gas_model` assets materialize through Dagster automation based on dependency updates.
 5. `delta_table_vacuum_schedule` runs daily at 02:00 Australia/Melbourne and launches `delta_table_vacuum_job` to compact and vacuum Delta-backed assets using per-asset metadata defaults or overrides.
 6. Dagster metadata and orchestration state are stored in PostgreSQL.
@@ -143,6 +143,7 @@ For the doc-sync contract, searchable `sync.sources` metadata, and the required
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`
   - `backend-services/compose.yaml`
   - `.agents/skills/ralph-loop/SKILL.md`

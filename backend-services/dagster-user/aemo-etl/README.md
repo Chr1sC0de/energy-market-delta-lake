@@ -22,7 +22,7 @@ The project materializes Dagster assets defined under `src/aemo_etl/defs` to bui
 - Scheduled NEMWeb discovery/listing assets poll `REPORTS/CURRENT/VicGas` and `REPORTS/CURRENT/GBB` every 15 minutes and copy source files into landing storage.
 - `download_vicgas_public_report_zip_files_job` can be launched manually to bootstrap or backfill VicGas `PublicRptsNN.zip` bundles into landing storage.
 - Unzipper assets expand zipped source payloads in landing storage and archive the original zip files after successful extraction.
-- Event-driven source-table bronze assets read matching landing files, collapse each micro-batch to the latest `source_file` row per `surrogate_key`, move processed source files into archive storage, and explicitly merge current-state Delta rows by `surrogate_key`.
+- Event-driven source-table bronze assets read matching landing files, collapse each micro-batch to the latest `source_file` row per `surrogate_key`, explicitly merge current-state Delta rows by `surrogate_key`, archive processed files only after a table write, delete zero-byte landing objects, and warn on skipped selected keys.
 - Silver assets overwrite source-specific parquet snapshots from the current bronze state.
 - `gas_model` assets combine GBB and VICGAS silver tables into shared dimensions and marts.
 - `delta_table_vacuum_schedule` runs `delta_table_vacuum_job` daily at 02:00 Australia/Melbourne to compact and vacuum Delta-backed assets.
@@ -97,7 +97,7 @@ flowchart TD
     Docs --> GasDocs["gas_model/"]
 ```
 
-- Raw ingestion: `factories/nemweb_public_files`, `factories/unzipper`, and `factories/df_from_s3_keys` define three separate roles: discovery/listing bronze assets, unzipper extraction assets, and source-table bronze/silver ingestion assets. Source-table bronze writes current-state Delta tables through explicit ingestion logic, while downstream silver assets and checks load those tables through a read-only Delta IO manager.
+- Raw ingestion: `factories/nemweb_public_files`, `factories/unzipper`, and `factories/df_from_s3_keys` define three separate roles: discovery/listing bronze assets, unzipper extraction assets, and source-table bronze/silver ingestion assets. Source-table bronze writes current-state Delta tables through explicit ingestion logic, archives processed files only after a table write, deletes zero-byte landing objects, and reports skipped selected keys with a non-blocking WARN asset check; downstream silver assets and checks load bronze tables through a read-only Delta IO manager.
 - Source-specific silver assets: `silver.gbb.*` and `silver.vicgas.*` assets deduplicate current source rows and expose consistent parquet snapshot datasets for downstream use.
 - Gas-model marts: `src/aemo_etl/defs/gas_model` builds cross-source dimensions and fact tables from the source-specific silver layer.
 - Storage: landing and archive buckets hold files; the AEMO bucket holds bronze Delta tables plus parquet snapshot datasets for source silver and `gas_model`; the IO manager bucket stores Dagster-managed intermediates.
@@ -132,7 +132,7 @@ sequenceDiagram
     Unzip->>Landing: Write extracted csv/parquet members
     Unzip->>Archive: Archive successful zip inputs
     Landing->>Raw: Matching files selected by raw sensor
-    Raw->>Archive: Move processed source files after staging
+    Raw->>Archive: Move processed source files after table write
     Raw->>Silver: Trigger downstream current-state snapshots
     Silver->>GasModel: Trigger dimensions and marts
 ```

@@ -5,15 +5,20 @@ from collections.abc import Iterable
 from datetime import datetime
 from typing import Final, Mapping, Unpack
 
+import polars_hash as plh
 from dagster import (
+    AssetCheckResult,
+    AssetCheckSeverity,
+    AssetCheckSpec,
     AssetExecutionContext,
     AssetsDefinition,
     Config,
     MaterializeResult,
+    MetadataValue,
     asset,
 )
+from dagster._core.definitions.asset_key import CoercibleToAssetKey
 from dagster_aws.s3 import S3Resource
-import polars_hash as plh
 from polars import Expr, LazyFrame, String, col, lit, scan_delta, scan_parquet
 from polars._typing import PolarsDataType
 from types_boto3_s3 import S3Client
@@ -39,6 +44,7 @@ SOURCE_CONTENT_HASH_DESCRIPTION: Final = (
     "SHA-256 hash generated from declared source columns, excluding ingestion "
     "metadata, surrogate_key, source_file, and source_content_hash"
 )
+SKIPPED_S3_KEYS_CHECK_NAME: Final = "check_skipped_s3_keys"
 SOURCE_CONTENT_HASH_EXCLUDED_COLUMNS: Final = frozenset(
     {
         "ingested_timestamp",
@@ -54,6 +60,74 @@ class DFFromS3KeysConfiguration(Config):
     """Runtime config containing S3 keys selected by a sensor."""
 
     s3_keys: list[str] = []
+
+
+def _asset_key_from_kwargs(
+    asset_kwargs: AssetDefinitonParamSpec,
+) -> CoercibleToAssetKey:
+    """Return the asset key Dagster will assign from @asset kwargs."""
+    asset_key = asset_kwargs.get("key")
+    if asset_key is not None:
+        return asset_key
+
+    name = asset_kwargs.get("name", "_asset")
+    key_prefix = asset_kwargs.get("key_prefix")
+    if key_prefix is None:
+        return name
+    if isinstance(key_prefix, str):
+        return [key_prefix, name]
+    return [*key_prefix, name]
+
+
+def _skipped_s3_keys_check_result(
+    *,
+    missing_keys: list[str],
+    unsupported_keys: list[str],
+    deferred_processed_keys: list[str],
+) -> AssetCheckResult:
+    """Return the inline check result for selected keys left unresolved."""
+    passed = not missing_keys and not unsupported_keys and not deferred_processed_keys
+    if passed:
+        message = "No selected non-empty S3 keys were skipped or deferred."
+    else:
+        message = "Selected non-empty S3 keys were skipped or left in landing."
+
+    return AssetCheckResult(
+        passed=passed,
+        check_name=SKIPPED_S3_KEYS_CHECK_NAME,
+        severity=AssetCheckSeverity.WARN,
+        metadata={
+            "message": MetadataValue.text(message),
+            "missing_key_count": len(missing_keys),
+            "unsupported_key_count": len(unsupported_keys),
+            "deferred_processed_key_count": len(deferred_processed_keys),
+            "missing_keys": MetadataValue.json(missing_keys),
+            "unsupported_keys": MetadataValue.json(unsupported_keys),
+            "deferred_processed_keys": MetadataValue.json(deferred_processed_keys),
+        },
+    )
+
+
+def _file_outcome_metadata(
+    *,
+    processed_keys: list[str],
+    archived_keys: list[str],
+    zero_byte_keys: list[str],
+    deleted_zero_byte_keys: list[str],
+    missing_keys: list[str],
+    unsupported_keys: list[str],
+    deferred_processed_keys: list[str],
+) -> dict[str, int]:
+    """Return stable materialization counts for selected S3 key outcomes."""
+    return {
+        "processed_file_count": len(processed_keys),
+        "archived_file_count": len(archived_keys),
+        "zero_byte_file_count": len(zero_byte_keys),
+        "deleted_zero_byte_file_count": len(deleted_zero_byte_keys),
+        "missing_key_count": len(missing_keys),
+        "unsupported_key_count": len(unsupported_keys),
+        "deferred_processed_file_count": len(deferred_processed_keys),
+    }
 
 
 def with_source_content_hash_schema(
@@ -167,18 +241,32 @@ def bronze_df_from_s3_keys_asset_factory(
     asset_kwargs.setdefault("metadata", {})
 
     asset_kwargs.setdefault("kinds", {"table", "deltalake"})
+    asset_kwargs["check_specs"] = [
+        *(asset_kwargs.get("check_specs") or ()),
+        AssetCheckSpec(
+            name=SKIPPED_S3_KEYS_CHECK_NAME,
+            asset=_asset_key_from_kwargs(asset_kwargs),
+            description=(
+                "Warns when selected non-empty S3 keys are skipped or left in "
+                "landing storage."
+            ),
+            blocking=False,
+        ),
+    ]
 
     @asset(**asset_kwargs)
     def _asset(
         context: AssetExecutionContext,
         s3: S3Resource,
         config: DFFromS3KeysConfiguration,
-    ) -> MaterializeResult[None]:
+    ) -> MaterializeResult:  # type: ignore[type-arg]
 
         s3_client: S3Client = s3.get_client()
 
-        processed = []
-        skipped = []
+        processed_keys: list[str] = []
+        zero_byte_keys: list[str] = []
+        missing_keys: list[str] = []
+        unsupported_keys: list[str] = []
 
         current_time = datetime.now(AEST)
 
@@ -218,45 +306,23 @@ def bronze_df_from_s3_keys_asset_factory(
                         # template frame.
                         df.sink_delta(tmp_uri, mode="append")
                         has_data = True
-                        processed.append(s3_key)
+                        processed_keys.append(s3_key)
                     else:
-                        reason = f"skipping {s3_key}, 0 bytes"
-                        context.log.info(reason)
-                        skipped.append(
-                            {
-                                "filepath": f"s3://{s3_landing_bucket}/{s3_key}",
-                                "reason": reason,
-                            }
-                        )
+                        context.log.info(f"skipping {s3_key}, 0 bytes")
+                        zero_byte_keys.append(s3_key)
                 else:
                     reason = f"skipping {s3_key}, no such key"
-                    context.log.info(reason)
-                    skipped.append(
-                        {
-                            "filepath": f"s3://{s3_landing_bucket}/{s3_key}",
-                            "reason": reason,
-                        }
-                    )
+                    context.log.warning(reason)
+                    missing_keys.append(s3_key)
             else:
                 reason = f"{s3_key} filetype {filetype} not supported"
-                context.log.info(reason)
-                skipped.append(
-                    {"filepath": f"s3://{s3_landing_bucket}/{s3_key}", "reason": reason}
-                )
+                context.log.warning(reason)
+                unsupported_keys.append(s3_key)
 
         if not has_data:
             context.log.info("no valid dataframes found returning empty dataframe")
             current_state_batch = LazyFrame(schema=schema)
         else:
-            # now move the files which have been processed to the archive bucket
-            for s3_key in processed:
-                s3_client.copy_object(
-                    CopySource={"Bucket": s3_landing_bucket, "Key": s3_key},
-                    Bucket=s3_archive_bucket,
-                    Key=s3_key,
-                )
-                s3_client.delete_object(Bucket=s3_landing_bucket, Key=s3_key)
-
             batch = scan_delta(tmp_uri)
             current_state_batch = collapse_current_state_batch(batch)
 
@@ -265,8 +331,52 @@ def bronze_df_from_s3_keys_asset_factory(
             target_table_uri=uri,
             logger=context.log,
         )
+
+        archived_keys: list[str] = []
+        deferred_processed_keys: list[str] = []
+        if write_result.wrote_table:
+            for s3_key in processed_keys:
+                s3_client.copy_object(
+                    CopySource={"Bucket": s3_landing_bucket, "Key": s3_key},
+                    Bucket=s3_archive_bucket,
+                    Key=s3_key,
+                )
+                s3_client.delete_object(Bucket=s3_landing_bucket, Key=s3_key)
+                archived_keys.append(s3_key)
+        else:
+            deferred_processed_keys = processed_keys.copy()
+            for s3_key in deferred_processed_keys:
+                context.log.warning(
+                    "leaving processed source-table bronze file in landing "
+                    f"because no Delta table write occurred: {s3_key}"
+                )
+
+        deleted_zero_byte_keys: list[str] = []
+        for s3_key in zero_byte_keys:
+            s3_client.delete_object(Bucket=s3_landing_bucket, Key=s3_key)
+            deleted_zero_byte_keys.append(s3_key)
+            context.log.info(f"deleted zero-byte landing object {s3_key}")
+
         return MaterializeResult(
-            metadata=source_table_bronze_materialization_metadata(write_result)
+            metadata={
+                **source_table_bronze_materialization_metadata(write_result),
+                **_file_outcome_metadata(
+                    processed_keys=processed_keys,
+                    archived_keys=archived_keys,
+                    zero_byte_keys=zero_byte_keys,
+                    deleted_zero_byte_keys=deleted_zero_byte_keys,
+                    missing_keys=missing_keys,
+                    unsupported_keys=unsupported_keys,
+                    deferred_processed_keys=deferred_processed_keys,
+                ),
+            },
+            check_results=[
+                _skipped_s3_keys_check_result(
+                    missing_keys=missing_keys,
+                    unsupported_keys=unsupported_keys,
+                    deferred_processed_keys=deferred_processed_keys,
+                )
+            ],
         )
 
     return _asset

@@ -7,7 +7,10 @@ from dagster._core.definitions.unresolved_asset_job_definition import (
 from polars import String
 
 from aemo_etl.defs.resources import SOURCE_TABLE_BRONZE_READ_IO_MANAGER_KEY
-from aemo_etl.factories.df_from_s3_keys.assets import SOURCE_CONTENT_HASH_COLUMN
+from aemo_etl.factories.df_from_s3_keys.assets import (
+    SKIPPED_S3_KEYS_CHECK_NAME,
+    SOURCE_CONTENT_HASH_COLUMN,
+)
 from aemo_etl.factories.df_from_s3_keys.definitions import (
     df_from_s3_keys_definitions_factory,
 )
@@ -67,6 +70,9 @@ def test_df_from_s3_keys_definitions_factory_wires_bronze_and_silver() -> None:
     assert assets_by_key[bronze_key].metadata_by_key[bronze_key][
         "source_content_hash_sources"
     ] == ["col1"]
+    assert {
+        (spec.asset_key, spec.name) for spec in assets_by_key[bronze_key].check_specs
+    } == {(bronze_key, SKIPPED_S3_KEYS_CHECK_NAME)}
     column_names = [
         column.name
         for column in assets_by_key[bronze_key]
