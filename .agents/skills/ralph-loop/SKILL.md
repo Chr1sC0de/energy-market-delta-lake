@@ -55,6 +55,13 @@ python3 scripts/ralph.py --issue 25
 python3 scripts/ralph.py --promote
 ```
 
+Live `--issue`, `--drain`, and `--promote` runs require a clean root worktree.
+Ralph checks `git status --porcelain` before claiming issues, creating
+worktrees, running **Local integration**, or pushing an **Integration target**.
+`--dry-run` stays usable from a dirty root worktree. Use
+`--allow-dirty-worktree` only when the operator explicitly accepts
+dirty-worktree operation.
+
 Plain `--drain` stops after 10 implementation attempts by default. Use
 `--max-issues 0` only for explicit unlimited drain mode.
 
