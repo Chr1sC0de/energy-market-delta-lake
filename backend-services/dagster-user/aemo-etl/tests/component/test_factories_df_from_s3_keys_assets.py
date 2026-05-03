@@ -5,12 +5,15 @@ from datetime import timezone
 
 import polars as pl
 import pytest
-from dagster import AssetsDefinition
+from dagster import AssetsDefinition, MaterializeResult
 from dagster_aws.s3 import S3Resource
 from polars import Datetime, String
 from pytest_mock import MockerFixture
 from types_boto3_s3 import S3Client
 
+from aemo_etl.factories.df_from_s3_keys.current_state import (
+    SourceTableBronzeWriteResult,
+)
 from aemo_etl.factories.df_from_s3_keys.assets import (
     DFFromS3KeysConfiguration,
     bronze_df_from_s3_keys_asset_factory,
@@ -77,7 +80,8 @@ def _call_asset(
     s3_keys: list[str],
     bytes_by_key: dict[str, bytes | None] | None = None,
     scan_delta_side_effect: object = None,
-) -> pl.LazyFrame:
+    patch_writer: bool = True,
+) -> MaterializeResult[None]:
     """Invoke the inner _asset function with standard mocks."""
     context = mocker.MagicMock()
     context.log = mocker.MagicMock()
@@ -98,6 +102,16 @@ def _call_asset(
         side_effect=_get_from_s3_side_effect,
     )
     mocker.patch.object(pl.LazyFrame, "sink_delta", return_value=None)
+    if patch_writer:
+        mocker.patch(
+            "aemo_etl.factories.df_from_s3_keys.assets.write_source_table_current_state_batch",
+            return_value=SourceTableBronzeWriteResult(
+                row_count=1,
+                target_exists_before_write=True,
+                wrote_table=True,
+                write_mode="merge",
+            ),
+        )
 
     if scan_delta_side_effect is None:
         mocker.patch(
@@ -126,16 +140,26 @@ def test_config_defaults() -> None:
 
 
 def test_asset_no_keys(mocker: MockerFixture) -> None:
-    """Empty s3_keys → returns an empty LazyFrame matching the schema."""
+    """Empty s3_keys materializes an empty current-state batch."""
     asset_def = _make_asset()
     mocker.patch("aemo_etl.factories.df_from_s3_keys.assets.get_from_s3")
+    mocker.patch(
+        "aemo_etl.factories.df_from_s3_keys.assets.write_source_table_current_state_batch",
+        return_value=SourceTableBronzeWriteResult(
+            row_count=0,
+            target_exists_before_write=True,
+            wrote_table=False,
+            write_mode="skip",
+        ),
+    )
     context = mocker.MagicMock()
     context.log = mocker.MagicMock()
     mock_s3 = mocker.MagicMock(spec=S3Resource)
     mock_s3.get_client.return_value = mocker.MagicMock(spec=S3Client)
     config = DFFromS3KeysConfiguration(s3_keys=[])
-    result = asset_def(context=context, s3=mock_s3, config=config)
-    assert isinstance(result, pl.LazyFrame)
+    fn = asset_def.op.compute_fn.decorated_fn  # type: ignore[union-attr]
+    result = fn(context, s3=mock_s3, config=config)
+    assert isinstance(result, MaterializeResult)
 
 
 def test_asset_unsupported_filetype(mocker: MockerFixture) -> None:
@@ -146,8 +170,7 @@ def test_asset_unsupported_filetype(mocker: MockerFixture) -> None:
         asset_def,
         s3_keys=["file.xyz"],
     )
-    # No data → empty schema LazyFrame
-    assert isinstance(result, pl.LazyFrame)
+    assert isinstance(result, MaterializeResult)
 
 
 def test_asset_key_not_found(mocker: MockerFixture) -> None:
@@ -159,7 +182,7 @@ def test_asset_key_not_found(mocker: MockerFixture) -> None:
         s3_keys=["bronze/gbb/missing.csv"],
         bytes_by_key={"bronze/gbb/missing.csv": None},
     )
-    assert isinstance(result, pl.LazyFrame)
+    assert isinstance(result, MaterializeResult)
 
 
 def test_asset_empty_bytes(mocker: MockerFixture) -> None:
@@ -171,7 +194,7 @@ def test_asset_empty_bytes(mocker: MockerFixture) -> None:
         s3_keys=["bronze/gbb/empty.csv"],
         bytes_by_key={"bronze/gbb/empty.csv": _EMPTY_BYTES},
     )
-    assert isinstance(result, pl.LazyFrame)
+    assert isinstance(result, MaterializeResult)
 
 
 def test_asset_first_run(mocker: MockerFixture) -> None:
@@ -183,11 +206,11 @@ def test_asset_first_run(mocker: MockerFixture) -> None:
         s3_keys=["bronze/gbb/data.csv"],
         bytes_by_key={"bronze/gbb/data.csv": _CSV_BYTES},
     )
-    assert isinstance(result, pl.LazyFrame)
+    assert isinstance(result, MaterializeResult)
 
 
-def test_asset_returns_current_state_batch(mocker: MockerFixture) -> None:
-    """Bronze emits one max-source_file row per surrogate_key."""
+def test_asset_writes_current_state_batch(mocker: MockerFixture) -> None:
+    """Bronze writes one max-source_file row per surrogate_key."""
     staged_batch = pl.LazyFrame(
         {
             "col1": ["older", "newer", "only"],
@@ -211,14 +234,35 @@ def test_asset_returns_current_state_batch(mocker: MockerFixture) -> None:
         }
     )
     asset_def = _make_asset()
+    written_batches: list[pl.LazyFrame] = []
+
+    def _write_source_table_current_state_batch(
+        batch: pl.LazyFrame,
+        **_kwargs: object,
+    ) -> SourceTableBronzeWriteResult:
+        written_batches.append(batch)
+        return SourceTableBronzeWriteResult(
+            row_count=2,
+            target_exists_before_write=True,
+            wrote_table=True,
+            write_mode="merge",
+        )
+
+    mocker.patch(
+        "aemo_etl.factories.df_from_s3_keys.assets.write_source_table_current_state_batch",
+        side_effect=_write_source_table_current_state_batch,
+    )
     result = _call_asset(
         mocker,
         asset_def,
         s3_keys=["bronze/gbb/data.csv"],
         bytes_by_key={"bronze/gbb/data.csv": _CSV_BYTES},
         scan_delta_side_effect=lambda *_args, **_kwargs: staged_batch,
+        patch_writer=False,
     )
-    collected = result.sort("surrogate_key").collect()
+
+    assert isinstance(result, MaterializeResult)
+    collected = written_batches[0].sort("surrogate_key").collect()
     assert collected["col1"].to_list() == ["newer", "only"]
 
 
@@ -290,7 +334,7 @@ def test_asset_with_object_hook(mocker: MockerFixture) -> None:
         s3_keys=["bronze/gbb/data.csv"],
         bytes_by_key={"bronze/gbb/data.csv": _CSV_BYTES},
     )
-    assert isinstance(result, pl.LazyFrame)
+    assert isinstance(result, MaterializeResult)
     mock_hook.process.assert_called_once()
 
 
@@ -310,4 +354,4 @@ def test_asset_with_lazyframe_hook(mocker: MockerFixture) -> None:
         s3_keys=["bronze/gbb/data.csv"],
         bytes_by_key={"bronze/gbb/data.csv": _CSV_BYTES},
     )
-    assert isinstance(result, pl.LazyFrame)
+    assert isinstance(result, MaterializeResult)

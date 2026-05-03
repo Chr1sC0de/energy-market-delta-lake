@@ -10,9 +10,11 @@ import pytest
 from aemo_etl.factories.df_from_s3_keys.assets import (
     SOURCE_CONTENT_HASH_COLUMN,
     add_source_content_hash,
-    collapse_current_state_batch,
     source_table_bronze_frame_from_bytes,
     source_content_hash_columns,
+)
+from aemo_etl.factories.df_from_s3_keys.current_state import (
+    collapse_current_state_batch,
 )
 
 _AEST = dt.timezone(dt.timedelta(hours=10))
@@ -87,6 +89,29 @@ def test_collapse_current_state_batch_keeps_max_source_file_per_surrogate_key() 
     result = collapse_current_state_batch(batch).sort("surrogate_key").collect()
 
     assert result["business_col"].to_list() == ["newer", "only"]
+
+
+def test_source_table_bronze_frame_from_bytes_stores_archive_source_file() -> None:
+    df = source_table_bronze_frame_from_bytes(
+        s3_bucket="landing",
+        s3_key="bronze/gbb/table.csv",
+        object_bytes=b"business_col\nvalue\n",
+        schema={
+            "business_col": String,
+            "ingested_timestamp": Datetime("us", time_zone="UTC"),
+            "ingested_date": Datetime("us", time_zone="UTC"),
+            "surrogate_key": String,
+            "source_file": String,
+            SOURCE_CONTENT_HASH_COLUMN: String,
+        },
+        surrogate_key_sources=("business_col",),
+        current_time=dt.datetime(2024, 1, 1, tzinfo=_AEST),
+        source_file_bucket="archive",
+    )
+
+    result = df.collect()
+
+    assert result["source_file"].to_list() == ["s3://archive/bronze/gbb/table.csv"]
 
 
 def test_source_table_bronze_frame_from_bytes_rejects_unknown_filetype() -> None:

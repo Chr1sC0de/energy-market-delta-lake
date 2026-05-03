@@ -9,6 +9,7 @@ from dagster import (
     AssetExecutionContext,
     AssetsDefinition,
     Config,
+    MaterializeResult,
     asset,
 )
 from dagster_aws.s3 import S3Resource
@@ -18,6 +19,11 @@ from polars._typing import PolarsDataType
 from types_boto3_s3 import S3Client
 
 from aemo_etl.configs import ARCHIVE_BUCKET, LANDING_BUCKET
+from aemo_etl.factories.df_from_s3_keys.current_state import (
+    collapse_current_state_batch,
+    source_table_bronze_materialization_metadata,
+    write_source_table_current_state_batch,
+)
 from aemo_etl.factories.df_from_s3_keys.hooks import Hook
 from aemo_etl.models._graph_asset_kwargs import AssetDefinitonParamSpec
 from aemo_etl.utils import (
@@ -89,19 +95,6 @@ def add_source_content_hash(df: LazyFrame, source_columns: list[str]) -> LazyFra
     return df.with_columns(
         get_source_content_hash(source_columns).alias(SOURCE_CONTENT_HASH_COLUMN)
     )
-
-
-def collapse_current_state_batch(batch: LazyFrame) -> LazyFrame:
-    """Keep the maximum source_file row for each surrogate_key in a batch."""
-    latest_keys = batch.group_by("surrogate_key").agg(
-        col("source_file").max().alias("source_file")
-    )
-    deduped = batch.join(
-        latest_keys,
-        on=["surrogate_key", "source_file"],
-        how="semi",
-    )
-    return deduped.unique("surrogate_key", maintain_order=False)
 
 
 def source_table_bronze_frame_from_bytes(
@@ -180,7 +173,7 @@ def bronze_df_from_s3_keys_asset_factory(
         context: AssetExecutionContext,
         s3: S3Resource,
         config: DFFromS3KeysConfiguration,
-    ) -> LazyFrame:
+    ) -> MaterializeResult[None]:
 
         s3_client: S3Client = s3.get_client()
 
@@ -253,19 +246,28 @@ def bronze_df_from_s3_keys_asset_factory(
 
         if not has_data:
             context.log.info("no valid dataframes found returning empty dataframe")
-            return LazyFrame(schema=schema)
+            current_state_batch = LazyFrame(schema=schema)
+        else:
+            # now move the files which have been processed to the archive bucket
+            for s3_key in processed:
+                s3_client.copy_object(
+                    CopySource={"Bucket": s3_landing_bucket, "Key": s3_key},
+                    Bucket=s3_archive_bucket,
+                    Key=s3_key,
+                )
+                s3_client.delete_object(Bucket=s3_landing_bucket, Key=s3_key)
 
-        # now move the files which have been processed to the archive bucket
-        for s3_key in processed:
-            s3_client.copy_object(
-                CopySource={"Bucket": s3_landing_bucket, "Key": s3_key},
-                Bucket=s3_archive_bucket,
-                Key=s3_key,
-            )
-            s3_client.delete_object(Bucket=s3_landing_bucket, Key=s3_key)
+            batch = scan_delta(tmp_uri)
+            current_state_batch = collapse_current_state_batch(batch)
 
-        batch = scan_delta(tmp_uri)
-        return collapse_current_state_batch(batch)
+        write_result = write_source_table_current_state_batch(
+            current_state_batch,
+            target_table_uri=uri,
+            logger=context.log,
+        )
+        return MaterializeResult(
+            metadata=source_table_bronze_materialization_metadata(write_result)
+        )
 
     return _asset
 

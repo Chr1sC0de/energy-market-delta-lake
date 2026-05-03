@@ -10,7 +10,7 @@ from polars import Datetime, String
 import pytest
 from pytest_mock import MockerFixture
 
-from aemo_etl.defs.resources import (
+from aemo_etl.factories.df_from_s3_keys.current_state import (
     CURRENT_STATE_DELTA_MERGE_OPTIONS,
     CURRENT_STATE_MERGE_UPDATE_PREDICATE,
 )
@@ -326,6 +326,10 @@ def test_write_current_state_batch_uses_replace_then_merge(
     merge_builder.when_not_matched_insert_all.return_value = merge_builder
     sink_delta.reset_mock()
     sink_delta.return_value = merge_builder
+    mocker.patch(
+        "aemo_etl.factories.df_from_s3_keys.current_state.table_exists",
+        return_value=True,
+    )
 
     write_current_state_batch(
         df,

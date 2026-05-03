@@ -117,8 +117,8 @@ sequenceDiagram
     BronzeAsset->>Landing: Download matching objects
     BronzeAsset->>BronzeAsset: Parse bytes to LazyFrame and apply hooks
     BronzeAsset->>BronzeAsset: Add source_content_hash and keep max source_file per surrogate_key
-    BronzeAsset->>DeltaBronze: Merge rows by surrogate_key when source_content_hash changed
     BronzeAsset->>Archive: Copy staged source files and delete from landing
+    BronzeAsset->>DeltaBronze: Merge rows by surrogate_key when source_content_hash changed
 
     DeltaBronze->>SilverAsset: Dependency update observed
     SilverAsset->>DeltaBronze: Read bronze Delta table
@@ -131,7 +131,7 @@ sequenceDiagram
 Trigger and output notes:
 
 - The bronze run can come from an event-driven sensor or from a manual asset launch with explicit `s3_keys`.
-- Bronze uses `aemo_deltalake_current_state_merge_io_manager`; `df_from_s3_keys` silver uses `aemo_parquet_overwrite_io_manager`.
+- Bronze writes current-state Delta rows through explicit `df_from_s3_keys` ingestion logic. Downstream silver assets and checks load existing bronze Delta tables through `aemo_deltalake_source_table_bronze_read_io_manager`; `df_from_s3_keys` silver uses `aemo_parquet_overwrite_io_manager`.
 - Source-table bronze assets are current-state Delta tables, not append-history
   tables. Discovery/listing assets such as `bronze_nemweb_public_files_*` and
   extraction assets such as `unzipper_*` are separate ingestion roles.
@@ -168,6 +168,7 @@ When `AWS_ENDPOINT_URL` points at LocalStack, the same flow runs against local S
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/jobs/download_vicgas_public_report_zip_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/alerts.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/current_state.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`

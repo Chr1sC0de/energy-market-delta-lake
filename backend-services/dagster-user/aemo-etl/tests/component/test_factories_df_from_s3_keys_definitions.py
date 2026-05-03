@@ -6,6 +6,7 @@ from dagster._core.definitions.unresolved_asset_job_definition import (
 )
 from polars import String
 
+from aemo_etl.defs.resources import SOURCE_TABLE_BRONZE_READ_IO_MANAGER_KEY
 from aemo_etl.factories.df_from_s3_keys.assets import SOURCE_CONTENT_HASH_COLUMN
 from aemo_etl.factories.df_from_s3_keys.definitions import (
     df_from_s3_keys_definitions_factory,
@@ -52,7 +53,7 @@ def test_df_from_s3_keys_definitions_factory_wires_bronze_and_silver() -> None:
     assert set(assets_by_key) == {bronze_key, silver_key}
     assert (
         assets_by_key[bronze_key].get_io_manager_key_for_asset_key(bronze_key)
-        == "aemo_deltalake_current_state_merge_io_manager"
+        == SOURCE_TABLE_BRONZE_READ_IO_MANAGER_KEY
     )
     assert (
         assets_by_key[silver_key].get_io_manager_key_for_asset_key(silver_key)

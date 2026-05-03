@@ -18,6 +18,7 @@ from deltalake import DeltaTable
 from deltalake.exceptions import TableNotFoundError
 
 from aemo_etl.configs import DAGSTER_URI
+from aemo_etl.defs.resources import SOURCE_TABLE_BRONZE_READ_IO_MANAGER_KEY
 
 
 DELTA_TABLE_VACUUM_JOB_NAME: Final = "delta_table_vacuum_job"
@@ -41,7 +42,7 @@ DELTA_IO_MANAGER_KEYS: Final = frozenset(
         "aemo_deltalake_append_io_manager",
         "aemo_deltalake_overwrite_io_manager",
         "aemo_deltalake_ingest_partitioned_append_io_manager",
-        "aemo_deltalake_current_state_merge_io_manager",
+        SOURCE_TABLE_BRONZE_READ_IO_MANAGER_KEY,
     }
 )
 

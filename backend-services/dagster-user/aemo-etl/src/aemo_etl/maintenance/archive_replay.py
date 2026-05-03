@@ -10,13 +10,12 @@ from polars import LazyFrame, scan_delta
 from types_boto3_s3 import S3Client
 
 from aemo_etl.configs import AEMO_BUCKET, ARCHIVE_BUCKET
-from aemo_etl.defs.resources import (
-    CURRENT_STATE_DELTA_MERGE_OPTIONS,
-    CURRENT_STATE_MERGE_UPDATE_PREDICATE,
-)
 from aemo_etl.factories.df_from_s3_keys.assets import (
-    collapse_current_state_batch,
     source_table_bronze_frame_from_bytes,
+)
+from aemo_etl.factories.df_from_s3_keys.current_state import (
+    collapse_current_state_batch,
+    write_source_table_current_state_batch,
 )
 from aemo_etl.factories.df_from_s3_keys.source_tables import (
     DFFromS3KeysSourceTableSpec,
@@ -221,23 +220,11 @@ def write_current_state_batch(
     replace_existing: bool,
 ) -> None:
     """Write a current-state batch using replacement or merge semantics."""
-    if replace_existing:
-        batch.sink_delta(
-            target_table_uri,
-            mode="overwrite",
-            delta_write_options={"schema_mode": "overwrite"},
-        )
-        return
-
-    merge_builder = batch.sink_delta(
-        target_table_uri,
-        mode="merge",
-        delta_merge_options=CURRENT_STATE_DELTA_MERGE_OPTIONS,
+    write_source_table_current_state_batch(
+        batch,
+        target_table_uri=target_table_uri,
+        replace_existing=replace_existing,
     )
-    assert merge_builder is not None, "mode was set to merge but result is None"
-    merge_builder.when_matched_update_all(
-        predicate=CURRENT_STATE_MERGE_UPDATE_PREDICATE
-    ).when_not_matched_insert_all().execute()
 
 
 def _stage_archive_batch(

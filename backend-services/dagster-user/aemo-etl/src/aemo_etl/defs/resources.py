@@ -18,14 +18,8 @@ from polars import LazyFrame, scan_delta, scan_parquet
 from aemo_etl.configs import DAGSTER_URI, IO_MANAGER_BUCKET
 from aemo_etl.utils import get_lazyframe_num_rows, get_metadata_schema, table_exists
 
-CURRENT_STATE_DELTA_MERGE_OPTIONS: Final = {
-    "predicate": "source.surrogate_key = target.surrogate_key",
-    "source_alias": "source",
-    "target_alias": "target",
-}
-CURRENT_STATE_MERGE_UPDATE_PREDICATE: Final = (
-    "target.source_content_hash IS NULL OR "
-    "source.source_content_hash != target.source_content_hash"
+SOURCE_TABLE_BRONZE_READ_IO_MANAGER_KEY: Final = (
+    "aemo_deltalake_source_table_bronze_read_io_manager"
 )
 
 
@@ -103,6 +97,37 @@ class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
                 context.log.info(f"merged data with results {merge_results}")
 
             context.add_output_metadata(output_metadata)
+
+    @override
+    def load_input(self, context: InputContext) -> LazyFrame:
+        assert context.upstream_output is not None, "echo no upstream output found"
+        assert context.upstream_output.definition_metadata is not None, (
+            f"upstream asset must set metadata {DAGSTER_URI}"
+        )
+        assert DAGSTER_URI in context.upstream_output.definition_metadata, (
+            f"upstream asset must set metadata {DAGSTER_URI}"
+        )
+
+        target_uri = context.upstream_output.definition_metadata[DAGSTER_URI]
+
+        return scan_delta(target_uri, **self.scan_delta_kwargs)
+
+
+class PolarsDataFrameReadOnlyDeltaIoManager(ConfigurableIOManager):
+    """IO manager that only loads existing Delta tables."""
+
+    scan_delta_kwargs: dict[str, Any] = {}
+
+    @override
+    def handle_output(self, context: OutputContext, obj: object) -> None:
+        """Accept metadata-only completions and reject value persistence."""
+        if obj is None:
+            return
+
+        raise RuntimeError(
+            "read-only Delta IO manager cannot write asset outputs; "
+            "source-table bronze assets write through explicit ingestion logic"
+        )
 
     @override
     def load_input(self, context: InputContext) -> LazyFrame:
@@ -203,13 +228,7 @@ def defs() -> Definitions:
                     },
                 },
             ),
-            "aemo_deltalake_current_state_merge_io_manager": PolarsDataFrameSinkDeltaIoManager(
-                sink_delta_kwargs={
-                    "mode": "merge",
-                    "delta_merge_options": CURRENT_STATE_DELTA_MERGE_OPTIONS,
-                },
-                merge_update_predicate=CURRENT_STATE_MERGE_UPDATE_PREDICATE,
-            ),
+            SOURCE_TABLE_BRONZE_READ_IO_MANAGER_KEY: PolarsDataFrameReadOnlyDeltaIoManager(),
             "aemo_parquet_overwrite_io_manager": PolarsDataFrameSinkParquetIoManager(),
             "s3": S3Resource(),
             "io_manager": s3_pickle_io_manager.configured(

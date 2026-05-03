@@ -22,6 +22,11 @@ rows update only when `target.source_content_hash IS NULL` or
 rows insert. Target rows with no matching source row are retained. A row's
 absence from a later source file is not a delete signal.
 
+Normal source-table bronze asset ingestion and archive replay share the same
+current-state Delta write helper. Source-table bronze assets do not delegate
+current-state writes to an IO manager; their Dagster IO manager is read-only and
+loads existing bronze Delta tables for downstream silver assets and checks.
+
 The archive bucket remains the replay source for source-table bronze rebuilds.
 Rebuilds must use the bounded `aemo-replay-bronze-archive` CLI with explicit
 operator intent:
@@ -67,6 +72,7 @@ the intended rebuild.
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/current_state.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
