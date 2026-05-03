@@ -11,7 +11,9 @@ repos:
         exclude: ^(.*/vendor/.*|.*/generated/.*|.*/\.venv/.*)$
       - id: shellcheck
         name: shellcheck
-        language: system
+        language: python
+        additional_dependencies:
+          - shellcheck-py==0.11.0.1
         entry: shellcheck
         files: ^.*\.sh$
         exclude: ^(.*/vendor/.*|.*/generated/.*|.*/\.venv/.*)$

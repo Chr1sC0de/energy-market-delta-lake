@@ -114,7 +114,9 @@ The repo-local Ralph loop in
 [agent-issue-loop.md](agent-issue-loop.md) drains GitHub Issues through Codex
 implementation, deterministic local QA, **Local integration**, **Promotion**,
 and post-loop issue triage. Use `$ralph-triage` as the gate before
-`$ralph-loop drain`. Ralph uses the default triage labels documented under
+`$ralph-loop drain`; a plain drain has a default budget of 10 implementation
+attempts, while `--max-issues 0` is explicit unlimited drain mode. Ralph uses
+the default triage labels documented under
 [docs/agents/triage-labels.md](agents/triage-labels.md) plus Ralph
 **Delivery mode** labels. **Gitflow delivery** keeps `dev` synced with `main`,
 integrates to `dev` for review, and then promotes to `main`; **Trunk delivery**

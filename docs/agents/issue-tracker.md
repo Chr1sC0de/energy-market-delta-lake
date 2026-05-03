@@ -17,7 +17,9 @@ comments evidence, and leaves the issue open with `agent-integrated`. Ralph
 syncs `main` into `dev` before Gitflow integration when needed, then later
 closes verified issues during **Promotion** from `dev` to `main` and
 fast-forwards `dev` to the promotion commit. In opt-in **Trunk delivery**, Ralph
-integrates directly to `main`, comments evidence, and closes the issue.
+integrates directly to `main`, comments evidence, and closes the issue. A plain
+drain has a default budget of 10 implementation attempts; `--max-issues 0` is
+the explicit unlimited drain mode.
 
 ## Sync metadata
 
