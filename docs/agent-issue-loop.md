@@ -14,6 +14,7 @@ integration** plus **Promotion** as the success path after QA.
 - [Live run preflight](#live-run-preflight)
 - [AFK run monitoring](#afk-run-monitoring)
 - [Run manifest](#run-manifest)
+- [Run inspection and recovery](#run-inspection-and-recovery)
 - [Implementation pass](#implementation-pass)
 - [Promotion pass](#promotion-pass)
 - [Triage pass](#triage-pass)
@@ -163,6 +164,20 @@ Override the **Integration target** explicitly when needed:
 python3 scripts/ralph.py --issue 25 --target-branch feature/my-branch
 ```
 
+Inspect a completed or failed implementation run without mutating GitHub or git
+state:
+
+```bash
+python3 scripts/ralph.py --inspect-run .ralph/runs/issue-25-20260504T010203Z
+```
+
+Recover missing GitHub metadata after verifying the recorded **Local
+integration** commit reached the expected **Integration target**:
+
+```bash
+python3 scripts/ralph.py --recover-run .ralph/runs/issue-25-20260504T010203Z
+```
+
 Bypass the live clean-root preflight only when the operator intentionally wants
 Ralph to run with uncommitted root worktree changes:
 
@@ -247,6 +262,35 @@ Key fields for inspection:
 - `github_metadata`: claim, completion, failure, Promotion comment, label, and
   close state.
 - `failure`: user-facing error message and command log path when the run fails.
+
+## Run inspection and recovery
+
+Use `--inspect-run <run_dir>` first when a terminal shows a post-push metadata
+failure, a completed issue looks inconsistent in GitHub, or an AFK run needs a
+read-only summary. Inspection reads only `<run_dir>/ralph-run.json` and reports
+the issue, **Delivery mode**, **Integration target**, QA status, push status,
+metadata status, and recommended next action. It does not call `gh`, run git
+commands, edit labels, comment, close issues, or change refs.
+
+Use `--recover-run <run_dir>` only for implementation runs whose manifest
+records an integration commit. Recovery fetches the expected target branch and
+refuses to proceed unless the recorded integration commit is reachable from
+`origin/<integration-target>`. This guard keeps GitHub metadata reconciliation
+behind proof that the **Local integration** commit reached the expected branch.
+
+After reachability is verified, recovery reconciles GitHub metadata to the
+issue's **Delivery mode**:
+
+- **Trunk delivery**: ensure the completion comment exists, remove runtime
+  labels, apply `agent-merged`, and close the issue.
+- **Gitflow delivery**: ensure the completion comment exists, remove runtime
+  labels, apply `agent-integrated`, and leave the issue open for **Promotion**.
+  If the issue was closed prematurely, recovery reopens it.
+
+Recovery does not rerun Codex, rerun QA, create commits, push branches, or clean
+worktrees. Normal Ralph runs keep fail-stop behavior: if metadata operations
+fail after a push, Ralph stops loudly so an operator can inspect the run and
+recover deliberately.
 
 ## Implementation pass
 

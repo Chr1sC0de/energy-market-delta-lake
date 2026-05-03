@@ -1148,6 +1148,21 @@ class GitHubClient:
             execute_in_dry_run=False,
         )
 
+    def reopen_issue(self, number: int, *, run_dir: Path) -> None:
+        self.runner.run(
+            [
+                "gh",
+                "issue",
+                "reopen",
+                str(number),
+                "-R",
+                self.repo,
+            ],
+            cwd=self.repo_root,
+            log_path=run_dir / "gh-issue-reopen.log",
+            execute_in_dry_run=False,
+        )
+
     def _json(self, args: list[str]) -> Any:
         result = self.runner.run(args, cwd=self.repo_root)
         return json.loads(result.stdout)
@@ -2490,6 +2505,436 @@ class RalphLoop:
         return self.config.log_root / f"promote-{timestamp}"
 
 
+def manifest_path_for_run(run_dir: Path) -> Path:
+    if run_dir.name == MANIFEST_NAME:
+        return run_dir
+    return run_dir / MANIFEST_NAME
+
+
+def load_run_manifest(run_dir: Path) -> RunManifest:
+    manifest_path = manifest_path_for_run(run_dir)
+    if not manifest_path.exists():
+        raise RalphError(f"Run manifest not found: {manifest_path}")
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise RalphError(f"Run manifest is invalid JSON: {manifest_path}: {error}") from error
+    if not isinstance(data, dict):
+        raise RalphError(f"Run manifest is not a JSON object: {manifest_path}")
+    return RunManifest(manifest_path, data)
+
+
+def manifest_run_dir(manifest: RunManifest) -> Path:
+    paths = manifest.data.get("paths")
+    if isinstance(paths, dict):
+        run_dir = paths.get("run_dir")
+        if isinstance(run_dir, str) and run_dir != "":
+            return Path(run_dir)
+    return manifest.path.parent
+
+
+def manifest_issue_number(manifest: RunManifest) -> int:
+    issue = manifest.data.get("issue")
+    if not isinstance(issue, dict):
+        raise RalphError("Run manifest does not include an issue object.")
+    try:
+        return int(issue["number"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise RalphError("Run manifest does not include a valid issue number.") from error
+
+
+def manifest_issue_title(manifest: RunManifest) -> str:
+    issue = manifest.data.get("issue")
+    if not isinstance(issue, dict):
+        return ""
+    return str(issue.get("title") or "")
+
+
+def manifest_delivery_mode(manifest: RunManifest) -> str:
+    mode = str(manifest.data.get("delivery_mode") or "")
+    if mode not in DELIVERY_MODES:
+        raise RalphError(f"Run manifest has unsupported Delivery mode: {mode or '<missing>'}")
+    return mode
+
+
+def manifest_integration_target(manifest: RunManifest) -> str:
+    target = str(manifest.data.get("integration_target") or "")
+    if target == "":
+        raise RalphError("Run manifest does not include an Integration target.")
+    return target
+
+
+def manifest_integration_commit(manifest: RunManifest) -> tuple[str, str]:
+    value = manifest.data.get("integration_commit")
+    if not isinstance(value, dict):
+        raise RalphError("Run manifest does not include a recorded integration commit.")
+    sha = str(value.get("sha") or "")
+    branch = str(value.get("branch") or manifest.data.get("integration_target") or "")
+    if sha == "":
+        raise RalphError("Run manifest does not include a recorded integration commit SHA.")
+    if branch == "":
+        raise RalphError("Run manifest does not include the integration commit branch.")
+    return sha, branch
+
+
+def qa_status_summary(manifest: RunManifest) -> str:
+    results = manifest.data.get("qa_results")
+    if not isinstance(results, list) or not results:
+        return "not_started"
+
+    statuses = [str(item.get("status") or "unknown") for item in results if isinstance(item, dict)]
+    if not statuses:
+        return "not_started"
+    passed = statuses.count("passed")
+    failed = statuses.count("failed")
+    running = statuses.count("running")
+    total = len(statuses)
+    if failed > 0:
+        return f"failed ({failed} failed, {passed}/{total} passed)"
+    if running > 0:
+        return f"running ({running} running, {passed}/{total} passed)"
+    if passed == total:
+        return f"passed ({passed}/{total})"
+    return ", ".join(sorted(set(statuses)))
+
+
+def manifest_push_entry(manifest: RunManifest) -> dict[str, Any] | None:
+    pushes = manifest.data.get("pushes")
+    if not isinstance(pushes, dict):
+        return None
+    run_kind = str(manifest.data.get("run_kind") or "")
+    key = "promotion_target" if run_kind == "promotion" else "integration_target"
+    entry = pushes.get(key)
+    return entry if isinstance(entry, dict) else None
+
+
+def push_status_value(manifest: RunManifest) -> str:
+    entry = manifest_push_entry(manifest)
+    if entry is None:
+        return "not_started"
+    return str(entry.get("status") or "unknown")
+
+
+def push_status_summary(manifest: RunManifest) -> str:
+    entry = manifest_push_entry(manifest)
+    if entry is None:
+        return "not_started"
+    status = str(entry.get("status") or "unknown")
+    branch = str(entry.get("branch") or manifest.data.get("integration_target") or "")
+    commit = str(entry.get("commit") or "")
+    if branch and commit:
+        return f"{status} ({branch} @ {commit})"
+    if branch:
+        return f"{status} ({branch})"
+    return status
+
+
+def metadata_status_value(manifest: RunManifest) -> str:
+    metadata = manifest.data.get("github_metadata")
+    if not isinstance(metadata, dict):
+        return "not_started"
+    return str(metadata.get("status") or "not_started")
+
+
+def metadata_recovery_complete_status(mode: str) -> str:
+    if mode == TRUNK_MODE:
+        return "closed"
+    if mode == GITFLOW_MODE:
+        return "marked_integrated"
+    raise ValueError(f"Unsupported delivery mode: {mode}")
+
+
+def recommended_run_action(manifest: RunManifest) -> str:
+    run_kind = str(manifest.data.get("run_kind") or "")
+    if run_kind != "implementation":
+        return "Inspect the Promotion manifest manually; --recover-run is for implementation runs."
+
+    try:
+        mode = manifest_delivery_mode(manifest)
+        manifest_integration_commit(manifest)
+    except RalphError as error:
+        return f"Recovery unavailable: {error}"
+
+    push_status = push_status_value(manifest)
+    metadata_status = metadata_status_value(manifest)
+    complete_status = metadata_recovery_complete_status(mode)
+    if push_status != "pushed":
+        return (
+            "Do not recover metadata yet; the manifest does not record a pushed "
+            "Local integration commit."
+        )
+    if (
+        metadata_status == complete_status
+        and str(manifest.data.get("status") or "") == "succeeded"
+    ):
+        return "No recovery needed according to the manifest."
+    run_dir = manifest_run_dir(manifest)
+    return (
+        "Verify the recorded commit on the Integration target, then run "
+        f"`python3 scripts/ralph.py --recover-run {run_dir}`."
+    )
+
+
+def inspect_run(run_dir: Path) -> None:
+    manifest = load_run_manifest(run_dir)
+    issue_number = None
+    try:
+        issue_number = manifest_issue_number(manifest)
+    except RalphError:
+        pass
+    issue_title = manifest_issue_title(manifest)
+    issue_text = "none"
+    if issue_number is not None:
+        issue_text = f"#{issue_number}"
+        if issue_title:
+            issue_text = f"{issue_text} {issue_title}"
+
+    emit("Ralph run inspection")
+    emit(f"Run directory: {manifest_run_dir(manifest)}")
+    emit(f"Run kind: {manifest.data.get('run_kind') or 'unknown'}")
+    emit(f"Issue: {issue_text}")
+    emit(f"Delivery mode: {manifest.data.get('delivery_mode') or 'unknown'}")
+    emit(f"Integration target: {manifest.data.get('integration_target') or 'unknown'}")
+    emit(f"QA status: {qa_status_summary(manifest)}")
+    emit(f"Push status: {push_status_summary(manifest)}")
+    emit(f"Metadata status: {metadata_status_value(manifest)}")
+    emit(f"Recommended next action: {recommended_run_action(manifest)}")
+
+
+def qa_results_from_manifest(manifest: RunManifest) -> list[QAResult]:
+    results = manifest.data.get("qa_results")
+    if not isinstance(results, list):
+        return []
+
+    qa_results: list[QAResult] = []
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        command_value = item.get("command")
+        if not isinstance(command_value, list):
+            continue
+        command = tuple(str(part) for part in command_value)
+        cwd = Path(str(item.get("cwd") or manifest_run_dir(manifest)))
+        name = str(item.get("name") or format_command(command))
+        log_path_value = item.get("log_path")
+        log_path = Path(str(log_path_value)) if log_path_value else None
+        qa_results.append(QAResult(command=QACommand(command, cwd, name), log_path=log_path))
+    return qa_results
+
+
+def issue_from_manifest(manifest: RunManifest) -> Issue:
+    issue = manifest.data.get("issue")
+    if not isinstance(issue, dict):
+        raise RalphError("Run manifest does not include an issue object.")
+    number = manifest_issue_number(manifest)
+    return Issue(
+        number=number,
+        title=str(issue.get("title") or f"Issue #{number}"),
+        body="",
+        labels=frozenset(),
+        created_at=datetime.min.replace(tzinfo=UTC),
+        updated_at=datetime.min.replace(tzinfo=UTC),
+        url=str(issue.get("url") or ""),
+        comments=0,
+        author=None,
+    )
+
+
+def completion_comment_exists(
+    comments: list[dict[str, Any]],
+    *,
+    commit_sha: str,
+    delivery_mode: str,
+) -> bool:
+    title = (
+        "Ralph trunk integration completed."
+        if delivery_mode == TRUNK_MODE
+        else "Ralph Gitflow integration completed."
+    )
+    for comment in comments:
+        body = str(comment.get("body") or "")
+        if title not in body:
+            continue
+        if f"Commit: `{commit_sha}`" in body.splitlines():
+            return True
+        match = COMMIT_LINE_PATTERN.search(body)
+        if match is not None and match.group("sha") == commit_sha:
+            return True
+    return False
+
+
+class RalphRunRecovery:
+    def __init__(self, config: LoopConfig, runner: CommandRunner) -> None:
+        self.config = config
+        self.runner = runner
+        self.github = GitHubClient(repo=config.repo, repo_root=config.repo_root, runner=runner)
+        self.git = GitClient(repo_root=config.repo_root, runner=runner)
+
+    def validate_tools(self) -> None:
+        missing = [tool for tool in ("git", "gh") if shutil.which(tool) is None]
+        if missing:
+            raise RalphError(f"Missing required command(s): {', '.join(missing)}")
+
+    def recover(self, run_dir: Path) -> None:
+        manifest = load_run_manifest(run_dir)
+        if str(manifest.data.get("run_kind") or "") != "implementation":
+            raise RalphError("--recover-run only supports implementation run manifests.")
+
+        issue_number = manifest_issue_number(manifest)
+        delivery_mode = manifest_delivery_mode(manifest)
+        target_branch = manifest_integration_target(manifest)
+        commit_sha, commit_branch = manifest_integration_commit(manifest)
+        if commit_branch != target_branch:
+            raise RalphError(
+                "Run manifest integration commit branch does not match the expected "
+                f"Integration target: {commit_branch} != {target_branch}"
+            )
+
+        recovery_run_dir = manifest_run_dir(manifest)
+        self.github.auth_status()
+        self.git.fetch_base(target_branch, run_dir=recovery_run_dir)
+        if not self.git.is_ancestor(
+            ancestor=commit_sha,
+            descendant=f"origin/{target_branch}",
+        ):
+            raise RalphError(
+                f"Recorded integration commit {commit_sha} is not reachable from "
+                f"expected Integration target origin/{target_branch}."
+            )
+
+        try:
+            manifest.record_event(
+                "recovery_reachability_verified",
+                details={"commit": commit_sha, "integration_target": target_branch},
+            )
+            issue = self.github.view_issue(issue_number)
+            self._recover_completion_comment(
+                manifest,
+                issue=issue,
+                commit_sha=commit_sha,
+                delivery_mode=delivery_mode,
+                target_branch=target_branch,
+                run_dir=recovery_run_dir,
+            )
+            if delivery_mode == TRUNK_MODE:
+                self._recover_trunk_metadata(
+                    manifest,
+                    issue_number=issue_number,
+                    run_dir=recovery_run_dir,
+                )
+                emit(f"Recovered issue #{issue_number} trunk metadata for {commit_sha}.")
+            else:
+                self._recover_gitflow_metadata(manifest, issue_number=issue_number)
+                emit(f"Recovered issue #{issue_number} Gitflow metadata for {commit_sha}.")
+        except CommandFailure as error:
+            manifest.record_metadata_status(
+                "failed",
+                details={"error": str(error), "log_path": path_text(error.log_path)},
+            )
+            raise PostPushFailure(
+                f"Run recovery metadata failed for #{issue_number}: {error}",
+                log_path=error.log_path,
+            ) from error
+
+    def _recover_completion_comment(
+        self,
+        manifest: RunManifest,
+        *,
+        issue: Issue,
+        commit_sha: str,
+        delivery_mode: str,
+        target_branch: str,
+        run_dir: Path,
+    ) -> None:
+        comments = self.github.issue_comments(issue.number)
+        if completion_comment_exists(
+            comments,
+            commit_sha=commit_sha,
+            delivery_mode=delivery_mode,
+        ):
+            manifest.record_metadata_status("completion_already_present")
+            return
+
+        manifest_issue = issue_from_manifest(manifest)
+        comment_issue = Issue(
+            number=issue.number,
+            title=issue.title or manifest_issue.title,
+            body=issue.body,
+            labels=issue.labels,
+            created_at=issue.created_at,
+            updated_at=issue.updated_at,
+            url=issue.url or manifest_issue.url,
+            comments=issue.comments,
+            author=issue.author,
+        )
+        delivery_plan = DeliveryPlan(
+            mode=delivery_mode,
+            target_branch=target_branch,
+            label=delivery_label_for_mode(delivery_mode),
+            add_labels=(),
+            remove_labels=(),
+        )
+        manifest.record_metadata_status("commenting_completion")
+        changed_values = manifest.data.get("changed_files")
+        changed_files: list[str] = []
+        if isinstance(changed_values, list):
+            changed_files = [str(path) for path in changed_values if isinstance(path, str)]
+        self.github.comment_issue(
+            issue.number,
+            build_completion_comment(
+                comment_issue,
+                commit_sha,
+                changed_files,
+                qa_results_from_manifest(manifest),
+                run_dir,
+                delivery_plan=delivery_plan,
+            ),
+            run_dir=run_dir,
+        )
+        manifest.record_metadata_status("completion_commented")
+
+    def _recover_trunk_metadata(
+        self,
+        manifest: RunManifest,
+        *,
+        issue_number: int,
+        run_dir: Path,
+    ) -> None:
+        emit(f"#{issue_number}: reconciling {AGENT_MERGED_LABEL}")
+        manifest.record_metadata_status("marking_merged")
+        self.github.edit_issue_labels(
+            issue_number,
+            add=[AGENT_MERGED_LABEL],
+            remove=[
+                AGENT_RUNNING_LABEL,
+                AGENT_FAILED_LABEL,
+                AGENT_INTEGRATED_LABEL,
+                READY_LABEL,
+            ],
+        )
+        manifest.record_metadata_status("marked_merged")
+        if self.github.issue_state(issue_number) != "CLOSED":
+            emit(f"#{issue_number}: closing issue")
+            manifest.record_metadata_status("closing_issue")
+            self.github.close_issue(issue_number, run_dir=run_dir)
+        manifest.record_metadata_status("closed")
+
+    def _recover_gitflow_metadata(self, manifest: RunManifest, *, issue_number: int) -> None:
+        emit(f"#{issue_number}: reconciling {AGENT_INTEGRATED_LABEL}")
+        manifest.record_metadata_status("marking_integrated")
+        self.github.edit_issue_labels(
+            issue_number,
+            add=[AGENT_INTEGRATED_LABEL],
+            remove=[AGENT_RUNNING_LABEL, AGENT_FAILED_LABEL, AGENT_MERGED_LABEL, READY_LABEL],
+        )
+        manifest.record_metadata_status("marked_integrated")
+        if self.github.issue_state(issue_number) == "CLOSED":
+            emit(f"#{issue_number}: reopening issue for Gitflow Promotion")
+            manifest.record_metadata_status("reopening_issue")
+            self.github.reopen_issue(issue_number, run_dir=manifest_run_dir(manifest))
+            manifest.record_metadata_status("marked_integrated")
+
+
 def implementation_prompt(issue: Issue) -> str:
     return textwrap.dedent(
         f"""
@@ -2762,6 +3207,20 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("--issue", type=int, help="Implement one specific issue number.")
     parser.add_argument(
+        "--inspect-run",
+        help=(
+            "Read a Ralph run directory manifest and report recovery state without "
+            "mutating GitHub or git state."
+        ),
+    )
+    parser.add_argument(
+        "--recover-run",
+        help=(
+            "Recover GitHub issue metadata for a run after verifying the recorded "
+            "Local integration commit reached the expected Integration target."
+        ),
+    )
+    parser.add_argument(
         "--drain",
         action="store_true",
         help="Continue through implementation and triage until the queue is blocked or empty.",
@@ -2799,14 +3258,27 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--worktree-container",
         help="Directory where per-issue worktrees should be created.",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.inspect_run is not None and args.recover_run is not None:
+        parser.error("Use only one of --inspect-run or --recover-run.")
+    return args
 
 
 def main(argv: list[str] | None = None) -> int:
     parsed_args = parse_args(sys.argv[1:] if argv is None else argv)
     runner = CommandRunner(dry_run=parsed_args.dry_run)
     try:
+        if parsed_args.inspect_run is not None:
+            inspect_run(Path(parsed_args.inspect_run))
+            return 0
+        if parsed_args.recover_run is not None and parsed_args.dry_run:
+            raise RalphError("--recover-run does not support --dry-run; use --inspect-run first.")
         config = build_config(parsed_args, runner)
+        if parsed_args.recover_run is not None:
+            recovery = RalphRunRecovery(config, runner)
+            recovery.validate_tools()
+            recovery.recover(Path(parsed_args.recover_run))
+            return 0
         RalphLoop(config, runner).run()
     except RalphError as error:
         emit(f"ralph: {user_facing_error(error)}", err=True)
