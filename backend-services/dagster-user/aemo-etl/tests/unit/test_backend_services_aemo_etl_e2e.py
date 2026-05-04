@@ -1,7 +1,9 @@
 """Unit tests for the backend-services AEMO ETL e2e stack command."""
 
+import json
 import runpy
 import socket
+import subprocess
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -17,7 +19,8 @@ EMBEDDED_DAGSTER_GRAPHQL_DOCUMENTS = (
     ("definition-state query", "DAGSTER_DEFINITION_STATE_QUERY"),
     ("sensor mutation", "START_SENSOR_MUTATION"),
     ("launch mutation", "LAUNCH_RUN_MUTATION"),
-    ("dataflow status query", "DAGSTER_DATAFLOW_STATUS_QUERY"),
+    ("dataflow run status query", "DAGSTER_DATAFLOW_RUN_STATUS_QUERY"),
+    ("dataflow target status query", "DAGSTER_DATAFLOW_TARGET_STATUS_QUERY"),
 )
 
 
@@ -177,6 +180,61 @@ def test_graphql_document_validation_reports_actionable_schema_errors(
     assert "Local integration or Promotion" in message
 
 
+def test_dagster_graphql_client_wraps_connection_reset() -> None:
+    """Transient socket resets are retried by the Dagster readiness wait loop."""
+    module = load_e2e_command_module()
+    dagster_graphql_client = cast("Any", get_callable(module, "DagsterGraphQLClient"))
+    command_error = get_exception_class(module, "CommandError")
+
+    def raise_connection_reset(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise ConnectionResetError("connection reset by peer")
+
+    dagster_graphql_client.execute.__globals__["urlopen"] = raise_connection_reset
+    client = dagster_graphql_client("http://127.0.0.1:3001/graphql")
+
+    try:
+        client.execute("query E2EPing { version }")
+    except command_error as error:
+        assert "Dagster GraphQL request failed" in str(error)
+        assert "connection reset by peer" in str(error)
+    else:
+        raise AssertionError("connection reset was not wrapped")
+
+
+def test_transient_dagster_graphql_errors_are_retried() -> None:
+    """Idempotent GraphQL calls retry local transport failures."""
+    module = load_e2e_command_module()
+    execute_with_retries = get_callable(module, "execute_dagster_graphql_with_retries")
+    command_error = get_exception_class(module, "CommandError")
+
+    class FakeClient:
+        """Fail once with a transient transport error, then return data."""
+
+        def __init__(self) -> None:
+            self.attempts = 0
+
+        def execute(
+            self,
+            query: str,
+            variables: Mapping[str, object] | None = None,
+        ) -> Mapping[str, object]:
+            del query, variables
+            self.attempts += 1
+            if self.attempts == 1:
+                raise command_error(
+                    "Dagster GraphQL request failed at http://127.0.0.1:3001/graphql: timed out"
+                )
+            return {"ok": True}
+
+    client = FakeClient()
+
+    payload = execute_with_retries(client, "query E2EPing { version }", context="ping")
+
+    assert payload == {"ok": True}
+    assert client.attempts == 2
+
+
 def test_podman_socket_is_derived_from_xdg_runtime_dir() -> None:
     """The command uses the current user runtime dir, not a fixed UID path."""
     module = load_e2e_command_module()
@@ -328,11 +386,143 @@ def test_generated_compose_is_isolated_e2e_stack(tmp_path: Path) -> None:
     assert "name: aemo-etl-e2e" in compose
     assert "container_name: aemo-etl-e2e-dagster-webserver" in compose
     assert "aemo-etl-seed-localstack:" in compose
+    assert "depends_on:" not in compose
     assert "dagster-webserver-admin" not in compose
     assert "dagster-webserver-guest" not in compose
     assert "authentication:" not in compose
     assert "marimo:" not in compose
     assert "caddy:" not in compose
+
+
+def test_start_stack_services_runs_compose_in_dependency_phases(tmp_path: Path) -> None:
+    """The e2e command avoids Podman dependency graph hangs by phasing startup."""
+    module = load_e2e_command_module()
+    run_options_class = get_callable(module, "RunOptions")
+    start_stack_services = get_callable(module, "start_stack_services")
+    compose_command = ("podman-compose", "--no-ansi", "-f", "compose.yaml")
+
+    class FakeRunner:
+        """Record commands and return ready container states."""
+
+        def __init__(self) -> None:
+            self.calls: list[list[str]] = []
+
+        def run(
+            self,
+            args: list[str],
+            *,
+            cwd: Path | None = None,
+            env: Mapping[str, str] | None = None,
+            capture_output: bool = False,
+            check: bool = True,
+        ) -> subprocess.CompletedProcess[str]:
+            del cwd, env, check
+            self.calls.append(list(args))
+            if capture_output and args[:2] == ["podman", "inspect"]:
+                container_name = args[2]
+                state = {
+                    "Status": "running",
+                    "ExitCode": 0,
+                    "Health": {"Status": "healthy"},
+                }
+                if container_name == "aemo-etl-e2e-seed-localstack":
+                    state = {"Status": "exited", "ExitCode": 0}
+                return subprocess.CompletedProcess(
+                    args,
+                    0,
+                    stdout=json.dumps([{"State": state}]),
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    runner = FakeRunner()
+    options = run_options_class(
+        rebuild=False,
+        reuse=False,
+        always_clean=False,
+        webserver_port=3001,
+        raw_latest_count=3,
+        zip_latest_count=3,
+        timeout_seconds=90 * 60,
+        max_concurrent_runs=6,
+    )
+
+    start_stack_services(
+        runner,
+        compose_command,
+        backend_dir=tmp_path,
+        options=options,
+        deadline=1_000_000_000.0,
+    )
+
+    compose_up_calls = [
+        call
+        for call in runner.calls
+        if call[: len(compose_command) + 1] == [*compose_command, "up"]
+    ]
+    assert compose_up_calls == [
+        [
+            *compose_command,
+            "up",
+            "-d",
+            "--no-build",
+            "postgres",
+            "localstack",
+        ],
+        [*compose_command, "up", "--no-build", "aemo-etl-seed-localstack"],
+        [*compose_command, "up", "-d", "--no-build", "aemo-etl"],
+        [
+            *compose_command,
+            "up",
+            "-d",
+            "--no-build",
+            "dagster-webserver",
+            "dagster-daemon",
+        ],
+    ]
+
+
+def test_cleanup_stack_removes_dagster_worker_containers() -> None:
+    """Dagster run workers are not compose services and need explicit cleanup."""
+    module = load_e2e_command_module()
+    cleanup_stack = get_callable(module, "cleanup_stack")
+    compose_command = ("podman-compose", "--no-ansi", "-f", "compose.yaml")
+
+    class FakeRunner:
+        """Return stale workers before and after compose cleanup."""
+
+        def __init__(self) -> None:
+            self.calls: list[list[str]] = []
+            self.worker_lists = iter(("worker-before\n", "worker-after\n"))
+
+        def run(
+            self,
+            args: list[str],
+            *,
+            cwd: Path | None = None,
+            env: Mapping[str, str] | None = None,
+            capture_output: bool = False,
+            check: bool = True,
+        ) -> subprocess.CompletedProcess[str]:
+            del cwd, env, check
+            self.calls.append(list(args))
+            if capture_output and args[:3] == ["podman", "ps", "-aq"]:
+                return subprocess.CompletedProcess(
+                    args,
+                    0,
+                    stdout=next(self.worker_lists),
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    runner = FakeRunner()
+
+    cleanup_stack(runner, compose_command)
+
+    assert ["podman", "rm", "-f", "worker-before"] in runner.calls
+    assert [*compose_command, "down", "-v", "--remove-orphans"] in runner.calls
+    assert ["podman", "rm", "-f", "worker-after"] in runner.calls
+    assert ["podman", "network", "rm", "aemo-etl-e2e-dagster-network"] in runner.calls
 
 
 def test_automation_validation_allows_only_expected_sensors() -> None:
@@ -527,6 +717,68 @@ def test_dataflow_status_fails_warn_level_asset_checks() -> None:
     )
 
 
+def test_postgres_asset_check_rows_are_failed_check_labels() -> None:
+    """Dagster DB check rows keep the same failed-check label contract."""
+    module = load_e2e_command_module()
+    format_failed_asset_check_row = get_callable(
+        module,
+        "format_failed_asset_check_row",
+    )
+
+    label = format_failed_asset_check_row(
+        {
+            "asset_key": '["silver", "gas_model", "target"]',
+            "check_name": "check_required_fields",
+            "execution_status": "FAILED",
+            "evaluation_event": {
+                "dagster_event": {
+                    "event_specific_data": {
+                        "success": False,
+                        "severity": {"__enum__": "AssetCheckSeverity.ERROR"},
+                    }
+                }
+            },
+        }
+    )
+
+    assert label == "silver/gas_model/target:check_required_fields=FAILED/ERROR"
+
+
+def test_dataflow_failure_waits_for_active_runs_before_failing_checks() -> None:
+    """Transient failed checks can clear while related Dagster runs are active."""
+    module = load_e2e_command_module()
+    status_class = get_callable(module, "DagsterDataflowStatus")
+    dagster_dataflow_failure_summary = get_callable(
+        module,
+        "dagster_dataflow_failure_summary",
+    )
+
+    active_status = status_class(
+        active_runs=("run-active(job=STARTED)",),
+        failed_runs=(),
+        materialized_target_assets=("silver/gas_model/target",),
+        missing_target_assets=(),
+        failed_target_assets=(),
+        missing_asset_checks=(),
+        failed_asset_checks=("bronze/vicgas/raw:check_skipped_s3_keys=FAILED/WARN",),
+    )
+    terminal_status = status_class(
+        active_runs=(),
+        failed_runs=(),
+        materialized_target_assets=("silver/gas_model/target",),
+        missing_target_assets=(),
+        failed_target_assets=(),
+        missing_asset_checks=(),
+        failed_asset_checks=("bronze/vicgas/raw:check_skipped_s3_keys=FAILED/WARN",),
+    )
+
+    assert dagster_dataflow_failure_summary(active_status) is None
+    assert (
+        dagster_dataflow_failure_summary(terminal_status)
+        == "failed asset checks: bronze/vicgas/raw:check_skipped_s3_keys=FAILED/WARN"
+    )
+
+
 def test_dataflow_status_fails_target_materialization_failure() -> None:
     """Failed target materialization events fail the End-to-end dataflow monitor."""
     module = load_e2e_command_module()
@@ -600,3 +852,184 @@ def test_dataflow_status_reports_missing_target_materialization() -> None:
     )
 
     assert status.missing_target_assets == ("silver/gas_model/missing",)
+
+
+def test_dataflow_status_reports_target_progress_while_runs_are_active() -> None:
+    """The monitor reports target progress without querying every asset check."""
+    module = load_e2e_command_module()
+    selector_class = get_callable(module, "DagsterRepositorySelector")
+    fetch_dagster_dataflow_status = get_callable(
+        module,
+        "fetch_dagster_dataflow_status",
+    )
+
+    class FakeClient:
+        """Return active run status, then partial target status."""
+
+        def __init__(self) -> None:
+            self.queries: list[str] = []
+
+        def execute(
+            self,
+            query: str,
+            variables: Mapping[str, object] | None = None,
+            *,
+            timeout_seconds: int | None = None,
+        ) -> Mapping[str, object]:
+            del variables, timeout_seconds
+            self.queries.append(query)
+            assert "E2EDataflowCheckStatus" not in query
+            if "E2EDataflowRunStatus" in query:
+                return {
+                    "activeRuns": {
+                        "__typename": "Runs",
+                        "results": [
+                            {
+                                "runId": "run-active",
+                                "jobName": "gasbb_facilities_job",
+                                "status": "STARTED",
+                            }
+                        ],
+                    },
+                    "failedRuns": {"__typename": "Runs", "results": []},
+                }
+            assert "E2EDataflowTargetStatus" in query
+            return {
+                "targetAssets": [
+                    {
+                        "assetKey": {"path": ["silver", "gas_model", "done"]},
+                        "isMaterializable": True,
+                        "assetMaterializations": [
+                            {"runId": "run-target", "timestamp": 200.0}
+                        ],
+                        "assetChecksOrError": {
+                            "__typename": "AssetChecks",
+                            "checks": [],
+                        },
+                    },
+                    {
+                        "assetKey": {"path": ["silver", "gas_model", "missing"]},
+                        "isMaterializable": True,
+                        "assetMaterializations": [],
+                        "assetChecksOrError": {
+                            "__typename": "AssetChecks",
+                            "checks": [],
+                        },
+                    },
+                ],
+                "targetAssetEvents": {"__typename": "AssetConnection", "nodes": []},
+            }
+
+    client = FakeClient()
+
+    status = fetch_dagster_dataflow_status(
+        client,
+        selector_class("repo", "aemo-etl"),
+        started_after=100.0,
+    )
+
+    assert status.active_runs == ("run-active(gasbb_facilities_job=STARTED)",)
+    assert status.target_asset_count == 2
+    assert status.materialized_target_assets == ("silver/gas_model/done",)
+    assert status.missing_target_assets == ("silver/gas_model/missing",)
+    assert ["E2EDataflowCheckStatus" in query for query in client.queries] == [
+        False,
+        False,
+    ]
+
+
+def test_dataflow_status_reads_postgres_checks_after_target_materializes() -> None:
+    """Failed asset check validation waits for target completion."""
+    module = load_e2e_command_module()
+    selector_class = get_callable(module, "DagsterRepositorySelector")
+    fetch_dagster_dataflow_status = get_callable(
+        module,
+        "fetch_dagster_dataflow_status",
+    )
+
+    class FakeClient:
+        """Return active run status, then complete target status."""
+
+        def __init__(self) -> None:
+            self.queries: list[str] = []
+
+        def execute(
+            self,
+            query: str,
+            variables: Mapping[str, object] | None = None,
+            *,
+            timeout_seconds: int | None = None,
+        ) -> Mapping[str, object]:
+            del variables, timeout_seconds
+            self.queries.append(query)
+            if "E2EDataflowRunStatus" in query:
+                return {
+                    "activeRuns": {
+                        "__typename": "Runs",
+                        "results": [
+                            {
+                                "runId": "run-active",
+                                "jobName": "background_job",
+                                "status": "STARTED",
+                            }
+                        ],
+                    },
+                    "failedRuns": {"__typename": "Runs", "results": []},
+                }
+            assert "E2EDataflowTargetStatus" in query
+            return {
+                "targetAssets": [
+                    {
+                        "assetKey": {"path": ["silver", "gas_model", "target"]},
+                        "isMaterializable": True,
+                        "assetMaterializations": [
+                            {"runId": "run-target", "timestamp": 200.0}
+                        ],
+                    }
+                ],
+                "targetAssetEvents": {"__typename": "AssetConnection", "nodes": []},
+            }
+
+    class FakeRunner:
+        """Return an empty Dagster asset-check failure result."""
+
+        def __init__(self) -> None:
+            self.calls: list[list[str]] = []
+
+        def run(
+            self,
+            args: list[str],
+            *,
+            cwd: Path | None = None,
+            env: Mapping[str, str] | None = None,
+            capture_output: bool = False,
+            check: bool = True,
+        ) -> subprocess.CompletedProcess[str]:
+            del cwd, env, check
+            self.calls.append(list(args))
+            assert capture_output
+            return subprocess.CompletedProcess(args, 0, stdout="[]\n", stderr="")
+
+    client = FakeClient()
+    runner = FakeRunner()
+
+    status = fetch_dagster_dataflow_status(
+        client,
+        selector_class("repo", "aemo-etl"),
+        started_after=100.0,
+        runner=runner,
+    )
+
+    assert status.is_successful
+    assert status.active_runs == ("run-active(background_job=STARTED)",)
+    assert ["E2EDataflowRunStatus" in query for query in client.queries] == [
+        True,
+        False,
+    ]
+    assert ["E2EDataflowTargetStatus" in query for query in client.queries] == [
+        False,
+        True,
+    ]
+    assert all("E2EDataflowCheckStatus" not in query for query in client.queries)
+    assert len(runner.calls) == 1
+    assert runner.calls[0][:4] == ["podman", "exec", "aemo-etl-e2e-postgres", "psql"]

@@ -317,12 +317,13 @@ containers and attaches them to the e2e network. The default timeout is 90
 minutes and the default Dagster `max_concurrent_runs` is `6`; override them with
 `--timeout-seconds` and `--max-concurrent-runs`.
 
-Successful runs clean e2e containers and named volumes by default after the full
-dataflow completes. Failed runs, including cached seed coverage shortfalls,
-preserve containers, volumes, service logs, the run manifest, and the
-seed-run manifest for inspection. Use `--reuse` to keep and reuse the e2e stack
-after a successful run, or `--always-clean` to clean containers and volumes even
-after failure.
+Successful runs clean e2e containers, Dagster run-worker containers, named
+volumes, and the e2e network by default after the full dataflow completes.
+Failed runs, including cached seed coverage shortfalls, preserve containers,
+volumes, service logs, the run manifest, and the seed-run manifest for
+inspection. Use `--reuse` to keep and reuse the e2e stack after a successful
+run, or `--always-clean` to clean containers, volumes, and run-worker containers
+even after failure.
 
 ______________________________________________________________________
 

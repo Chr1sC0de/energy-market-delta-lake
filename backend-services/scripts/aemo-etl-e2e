@@ -12,7 +12,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 
@@ -27,6 +26,7 @@ DEFAULT_ZIP_LATEST_COUNT = 3
 DEFAULT_DAGSTER_GRAPHQL_TIMEOUT_SECONDS = 30
 DEFAULT_DAGSTER_POLL_INTERVAL_SECONDS = 10
 DAGSTER_GRAPHQL_READY_TIMEOUT_SECONDS = 60
+DAGSTER_DATAFLOW_STATUS_TIMEOUT_SECONDS = 120
 DAGSTER_REPOSITORY_LOCATION_NAME = "aemo-etl"
 IMPLICIT_ASSET_JOB_NAME = "__ASSET_JOB"
 E2E_RUN_TAG = "aemo-etl/e2e-run-id"
@@ -47,6 +47,11 @@ SERVICE_NAMES = (
     "dagster-webserver",
     "dagster-daemon",
 )
+FOUNDATION_SERVICE_NAMES = ("postgres", "localstack")
+SEED_SERVICE_NAMES = ("aemo-etl-seed-localstack",)
+AEMO_ETL_SERVICE_NAMES = ("aemo-etl",)
+DAGSTER_SERVICE_NAMES = ("dagster-webserver", "dagster-daemon")
+FOUNDATION_CONTAINERS = (POSTGRES_CONTAINER, LOCALSTACK_CONTAINER)
 LONG_RUNNING_CONTAINERS = {
     POSTGRES_CONTAINER,
     LOCALSTACK_CONTAINER,
@@ -203,12 +208,9 @@ mutation E2ELaunchRun($executionParams: ExecutionParams!) {
 }
 """
 
-DAGSTER_DATAFLOW_STATUS_QUERY = """
-query E2EDataflowStatus(
-  $repositoryName: String!
-  $repositoryLocationName: String!
+DAGSTER_DATAFLOW_RUN_STATUS_QUERY = """
+query E2EDataflowRunStatus(
   $createdAfter: Float!
-  $startedAfterMillis: String!
   $activeStatuses: [RunStatus!]
   $failedStatuses: [RunStatus!]
 ) {
@@ -244,6 +246,15 @@ query E2EDataflowStatus(
       message
     }
   }
+}
+"""
+
+DAGSTER_DATAFLOW_TARGET_STATUS_QUERY = """
+query E2EDataflowTargetStatus(
+  $repositoryName: String!
+  $repositoryLocationName: String!
+  $startedAfterMillis: String!
+) {
   targetAssets: assetNodes(
     group: {
       groupName: "gas_model"
@@ -259,30 +270,6 @@ query E2EDataflowStatus(
     assetMaterializations(limit: 1) {
       runId
       timestamp
-    }
-    assetChecksOrError {
-      __typename
-      ... on AssetChecks {
-        checks {
-          name
-          executionForLatestMaterialization {
-            runId
-            status
-            timestamp
-            evaluation {
-              success
-              severity
-              targetMaterialization {
-                runId
-                timestamp
-              }
-            }
-          }
-        }
-      }
-      ... on Error {
-        message
-      }
     }
   }
   targetAssetEvents: assetsOrError(
@@ -317,34 +304,8 @@ query E2EDataflowStatus(
       message
     }
   }
-  checkedAssets: assetNodes(loadMaterializations: true) {
-    assetKey {
-      path
-    }
-    assetChecksOrError {
-      __typename
-      ... on AssetChecks {
-        checks {
-          name
-          executionForLatestMaterialization {
-            runId
-            status
-            timestamp
-            evaluation {
-              success
-              severity
-            }
-          }
-        }
-      }
-      ... on Error {
-        message
-      }
-    }
-  }
 }
 """
-
 
 class CommandError(RuntimeError):
     """Raised for user-actionable command failures."""
@@ -431,8 +392,7 @@ class DagsterDataflowStatus:
     def is_successful(self) -> bool:
         """Return whether the full target has reached a successful terminal state."""
         return (
-            len(self.active_runs) == 0
-            and len(self.failed_runs) == 0
+            len(self.failed_runs) == 0
             and len(self.missing_target_assets) == 0
             and len(self.failed_target_assets) == 0
             and len(self.missing_asset_checks) == 0
@@ -481,6 +441,8 @@ class DagsterGraphQLClient:
         self,
         query: str,
         variables: Mapping[str, object] | None = None,
+        *,
+        timeout_seconds: int | None = None,
     ) -> Mapping[str, object]:
         """Execute a Dagster GraphQL request and return its data payload."""
         body = json.dumps({"query": query, "variables": dict(variables or {})}).encode(
@@ -492,10 +454,13 @@ class DagsterGraphQLClient:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
+        request_timeout_seconds = (
+            self.timeout_seconds if timeout_seconds is None else timeout_seconds
+        )
         try:
-            with urlopen(request, timeout=self.timeout_seconds) as response:
+            with urlopen(request, timeout=request_timeout_seconds) as response:
                 payload = json.loads(response.read().decode("utf-8"))
-        except URLError as error:
+        except OSError as error:
             raise CommandError(
                 f"Dagster GraphQL request failed at {self.url}: {error}"
             ) from error
@@ -697,12 +662,13 @@ def run_stack(
             rebuild=options.rebuild,
             cwd=backend_dir,
         )
-        up_args = [*compose_command, "up", "-d", "--no-build"]
-        if options.reuse and not options.rebuild:
-            up_args.append("--no-recreate")
-        if options.reuse and options.rebuild:
-            up_args.append("--force-recreate")
-        command_runner.run(up_args, cwd=backend_dir)
+        start_stack_services(
+            command_runner,
+            compose_command,
+            backend_dir=backend_dir,
+            options=options,
+            deadline=deadline,
+        )
         wait_for_ready_stack(
             command_runner,
             timeout_seconds=remaining_timeout_seconds(deadline),
@@ -712,6 +678,7 @@ def run_stack(
             timeout_seconds=remaining_timeout_seconds(deadline),
             expected_max_concurrent_runs=options.max_concurrent_runs,
             run_id=run_id,
+            runner=command_runner,
         )
     except Exception as error:
         collect_logs(command_runner, compose_command, logs_dir, backend_dir)
@@ -864,6 +831,91 @@ def build_required_images(
         runner.run(build_args, cwd=cwd)
 
 
+def start_stack_services(
+    runner: CommandRunner,
+    compose_command: Sequence[str],
+    *,
+    backend_dir: Path,
+    options: RunOptions,
+    deadline: float,
+) -> None:
+    """Start the compose services in dependency phases for Podman."""
+    runner.run(
+        compose_up_args(
+            compose_command,
+            services=FOUNDATION_SERVICE_NAMES,
+            detach=True,
+            options=options,
+        ),
+        cwd=backend_dir,
+    )
+    wait_for_containers_ready(
+        runner,
+        container_names=FOUNDATION_CONTAINERS,
+        timeout_seconds=remaining_timeout_seconds(deadline),
+    )
+
+    runner.run(
+        compose_up_args(
+            compose_command,
+            services=SEED_SERVICE_NAMES,
+            detach=False,
+            options=options,
+        ),
+        cwd=backend_dir,
+    )
+    wait_for_containers_ready(
+        runner,
+        container_names=(SEED_CONTAINER,),
+        timeout_seconds=remaining_timeout_seconds(deadline),
+    )
+
+    runner.run(
+        compose_up_args(
+            compose_command,
+            services=AEMO_ETL_SERVICE_NAMES,
+            detach=True,
+            options=options,
+        ),
+        cwd=backend_dir,
+    )
+    wait_for_containers_ready(
+        runner,
+        container_names=(AEMO_ETL_CONTAINER,),
+        timeout_seconds=remaining_timeout_seconds(deadline),
+    )
+
+    runner.run(
+        compose_up_args(
+            compose_command,
+            services=DAGSTER_SERVICE_NAMES,
+            detach=True,
+            options=options,
+        ),
+        cwd=backend_dir,
+    )
+
+
+def compose_up_args(
+    compose_command: Sequence[str],
+    *,
+    services: Sequence[str],
+    detach: bool,
+    options: RunOptions,
+) -> list[str]:
+    """Return a podman-compose up command with options before services."""
+    args = [*compose_command, "up"]
+    if detach:
+        args.append("-d")
+    args.append("--no-build")
+    if options.reuse and not options.rebuild:
+        args.append("--no-recreate")
+    if options.reuse and options.rebuild:
+        args.append("--force-recreate")
+    args.extend(services)
+    return args
+
+
 def render_runtime_files(
     *,
     compose_file: Path,
@@ -979,9 +1031,6 @@ services:
   aemo-etl-seed-localstack:
     image: {yaml_quote(images["aemo-etl"])}
     container_name: {SEED_CONTAINER}
-    depends_on:
-      localstack:
-        condition: service_healthy
     networks:
       - dagster_network
     environment:
@@ -1017,11 +1066,6 @@ services:
   aemo-etl:
     image: {yaml_quote(images["aemo-etl"])}
     container_name: {AEMO_ETL_CONTAINER}
-    depends_on:
-      localstack:
-        condition: service_healthy
-      aemo-etl-seed-localstack:
-        condition: service_completed_successfully
     networks:
       - dagster_network
     environment:
@@ -1046,11 +1090,6 @@ services:
   dagster-webserver:
     image: {yaml_quote(images["dagster-core"])}
     container_name: {DAGSTER_WEBSERVER_CONTAINER}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      aemo-etl:
-        condition: service_healthy
     networks:
       - dagster_network
     ports:
@@ -1073,11 +1112,6 @@ services:
   dagster-daemon:
     image: {yaml_quote(images["dagster-core"])}
     container_name: {DAGSTER_DAEMON_CONTAINER}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      aemo-etl:
-        condition: service_healthy
     networks:
       - dagster_network
     environment:
@@ -1227,6 +1261,49 @@ load_from:
 """
 
 
+def wait_for_containers_ready(
+    runner: CommandRunner,
+    *,
+    container_names: Sequence[str],
+    timeout_seconds: int,
+) -> None:
+    """Wait until selected e2e containers reach their ready state."""
+    deadline = time.monotonic() + timeout_seconds
+    last_summary = ""
+    while time.monotonic() < deadline:
+        states = inspect_container_states(runner, container_names)
+        last_summary = summarize_container_states(states)
+        failure = ready_failure(states)
+        if failure is not None:
+            raise CommandError(f"e2e stack failed to start: {failure}")
+        if containers_are_ready(states, container_names):
+            return
+        time.sleep(2)
+
+    expected = ", ".join(container_names)
+    raise CommandError(f"timed out waiting for {expected}: {last_summary}")
+
+
+def containers_are_ready(
+    states: Mapping[str, ContainerState],
+    container_names: Sequence[str],
+) -> bool:
+    """Return whether the selected e2e containers are ready."""
+    for name in container_names:
+        if name not in states:
+            return False
+        state = states[name]
+        if name == SEED_CONTAINER:
+            if state.status != "exited" or state.exit_code != 0:
+                return False
+            continue
+        if state.status != "running":
+            return False
+        if name in HEALTHCHECK_CONTAINERS and state.health != "healthy":
+            return False
+    return True
+
+
 def wait_for_ready_stack(runner: CommandRunner, *, timeout_seconds: int) -> None:
     """Wait until the e2e stack reaches its ready state."""
     deadline = time.monotonic() + timeout_seconds
@@ -1260,9 +1337,11 @@ def drive_dagster_dataflow(
     timeout_seconds: int,
     expected_max_concurrent_runs: int,
     run_id: str,
+    runner: CommandRunner | None = None,
 ) -> dict[str, object]:
     """Start intended Dagster automation and monitor the full e2e dataflow."""
     client = DagsterGraphQLClient(dagster_graphql_url(webserver_port))
+    command_runner = runner or CommandRunner()
     deadline = time.monotonic() + timeout_seconds
     wait_for_dagster_graphql(
         client,
@@ -1293,6 +1372,7 @@ def drive_dagster_dataflow(
         definition_state.selector,
         started_after=started_after,
         timeout_seconds=remaining_timeout_seconds(deadline),
+        runner=command_runner,
     )
     return {
         "repository_name": definition_state.selector.repository_name,
@@ -1330,11 +1410,49 @@ def wait_for_dagster_graphql(
     raise CommandError(f"timed out waiting for Dagster GraphQL: {last_error}")
 
 
+def execute_dagster_graphql_with_retries(
+    client: DagsterGraphQLClient,
+    query: str,
+    variables: Mapping[str, object] | None = None,
+    *,
+    context: str,
+    attempts: int = 3,
+    timeout_seconds: int | None = None,
+) -> Mapping[str, object]:
+    """Execute an idempotent Dagster GraphQL request with transient retries."""
+    last_error = "not attempted"
+    for attempt in range(1, attempts + 1):
+        try:
+            if timeout_seconds is None:
+                return client.execute(query, variables)
+            return client.execute(
+                query,
+                variables,
+                timeout_seconds=timeout_seconds,
+            )
+        except CommandError as error:
+            if not is_transient_dagster_graphql_error(error):
+                raise
+            last_error = str(error)
+            if attempt < attempts:
+                time.sleep(2)
+    raise CommandError(f"{context} failed after {attempts} attempts: {last_error}")
+
+
+def is_transient_dagster_graphql_error(error: CommandError) -> bool:
+    """Return whether a GraphQL failure came from the local transport."""
+    return str(error).startswith("Dagster GraphQL request failed at ")
+
+
 def fetch_dagster_definition_state(
     client: DagsterGraphQLClient,
 ) -> DagsterDefinitionState:
     """Fetch the e2e Dagster repository, sensor, schedule, and run queue state."""
-    data = client.execute(DAGSTER_DEFINITION_STATE_QUERY)
+    data = execute_dagster_graphql_with_retries(
+        client,
+        DAGSTER_DEFINITION_STATE_QUERY,
+        context="fetch Dagster definition state",
+    )
     instance = data.get("instance")
     if not isinstance(instance, Mapping):
         raise CommandError("Dagster GraphQL did not return instance state")
@@ -1502,7 +1620,8 @@ def start_expected_sensors(
 ) -> None:
     """Start only the sensors required for the e2e dataflow."""
     for sensor_name in EXPECTED_DATAFLOW_SENSOR_NAMES:
-        payload = client.execute(
+        payload = execute_dagster_graphql_with_retries(
+            client,
             START_SENSOR_MUTATION,
             {
                 "selector": {
@@ -1510,6 +1629,7 @@ def start_expected_sensors(
                     "sensorName": sensor_name,
                 }
             },
+            context=f"start sensor {sensor_name}",
         )
         result = require_graphql_typename(
             payload.get("startSensor"),
@@ -1602,19 +1722,23 @@ def monitor_dagster_dataflow(
     *,
     started_after: float,
     timeout_seconds: int,
+    runner: CommandRunner | None = None,
     poll_interval_seconds: int = DEFAULT_DAGSTER_POLL_INTERVAL_SECONDS,
 ) -> DagsterDataflowStatus:
     """Poll Dagster until the gas_model target succeeds, fails, or times out."""
     deadline = time.monotonic() + timeout_seconds
+    command_runner = runner or CommandRunner()
     last_summary = "Dagster dataflow has not been checked yet"
     while time.monotonic() < deadline:
         status = fetch_dagster_dataflow_status(
             client,
             selector,
             started_after=started_after,
+            runner=command_runner,
         )
         last_summary = summarize_dagster_dataflow_status(status)
         sys.stdout.write(f"{last_summary}\n")
+        sys.stdout.flush()
         fail_fast_summary = dagster_dataflow_failure_summary(status)
         if fail_fast_summary is not None:
             raise CommandError(f"Dagster dataflow failed: {fail_fast_summary}")
@@ -1630,38 +1754,67 @@ def fetch_dagster_dataflow_status(
     selector: DagsterRepositorySelector,
     *,
     started_after: float,
+    runner: CommandRunner | None = None,
 ) -> DagsterDataflowStatus:
     """Fetch and normalize the current Dagster dataflow monitor state."""
-    data = client.execute(
-        DAGSTER_DATAFLOW_STATUS_QUERY,
+    run_data = execute_dagster_graphql_with_retries(
+        client,
+        DAGSTER_DATAFLOW_RUN_STATUS_QUERY,
         {
-            **selector.to_graphql(),
             "createdAfter": started_after,
-            "startedAfterMillis": str(int(started_after * 1000)),
             "activeStatuses": list(ACTIVE_RUN_STATUSES),
             "failedStatuses": list(FAILED_RUN_STATUSES),
         },
+        context="fetch Dagster run status",
+        timeout_seconds=DAGSTER_DATAFLOW_STATUS_TIMEOUT_SECONDS,
     )
-    active_runs = read_runs(data.get("activeRuns"), context="activeRuns")
-    failed_runs = read_runs(data.get("failedRuns"), context="failedRuns")
-    target_assets = data.get("targetAssets")
+    active_runs = read_runs(run_data.get("activeRuns"), context="activeRuns")
+    failed_runs = read_runs(run_data.get("failedRuns"), context="failedRuns")
+
+    target_data = execute_dagster_graphql_with_retries(
+        client,
+        DAGSTER_DATAFLOW_TARGET_STATUS_QUERY,
+        {
+            **selector.to_graphql(),
+            "startedAfterMillis": str(int(started_after * 1000)),
+        },
+        context="fetch Dagster target status",
+        timeout_seconds=DAGSTER_DATAFLOW_STATUS_TIMEOUT_SECONDS,
+    )
+    target_assets = target_data.get("targetAssets")
     if not isinstance(target_assets, list):
         raise CommandError("Dagster targetAssets was not a list")
-    checked_assets = data.get("checkedAssets")
-    if not isinstance(checked_assets, list):
-        raise CommandError("Dagster checkedAssets was not a list")
     target_asset_events = read_assets_or_error(
-        data.get("targetAssetEvents"),
+        target_data.get("targetAssetEvents"),
         context="targetAssetEvents",
     )
+    status = evaluate_dagster_dataflow_status(
+        active_runs=active_runs,
+        failed_runs=failed_runs,
+        target_assets=target_assets,
+        target_asset_events=target_asset_events,
+        checked_assets=(),
+        started_after=started_after,
+    )
+    if (
+        status.failed_runs
+        or status.failed_target_assets
+        or status.missing_target_assets
+    ):
+        return status
 
+    failed_asset_check_labels = fetch_failed_asset_checks_from_postgres(
+        runner or CommandRunner(),
+        started_after=started_after,
+    )
     return evaluate_dagster_dataflow_status(
         active_runs=active_runs,
         failed_runs=failed_runs,
         target_assets=target_assets,
         target_asset_events=target_asset_events,
-        checked_assets=checked_assets,
+        checked_assets=(),
         started_after=started_after,
+        failed_asset_check_labels=failed_asset_check_labels,
     )
 
 
@@ -1673,13 +1826,14 @@ def evaluate_dagster_dataflow_status(
     target_asset_events: Sequence[object],
     checked_assets: Sequence[object],
     started_after: float,
+    failed_asset_check_labels: Sequence[str] = (),
 ) -> DagsterDataflowStatus:
     """Evaluate raw Dagster GraphQL status payloads."""
     materialized_target_assets: list[str] = []
     missing_target_assets: list[str] = []
     failed_target_assets: list[str] = []
     missing_asset_checks: list[str] = []
-    failed_asset_checks: list[str] = []
+    failed_asset_checks: list[str] = list(failed_asset_check_labels)
     target_asset_keys: set[str] = set()
 
     for asset in target_assets:
@@ -1833,6 +1987,148 @@ def append_failed_check_if_needed(
         failed_asset_checks.append(f"{check_label}={status}/{severity}")
 
 
+def fetch_failed_asset_checks_from_postgres(
+    runner: CommandRunner,
+    *,
+    started_after: float,
+) -> tuple[str, ...]:
+    """Read failed e2e asset checks directly from Dagster event-log storage."""
+    query = failed_asset_checks_sql(started_after)
+    try:
+        result = runner.run(
+            [
+                "podman",
+                "exec",
+                POSTGRES_CONTAINER,
+                "psql",
+                "-X",
+                "-q",
+                "-t",
+                "-A",
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-U",
+                E2E_ENVIRONMENT["DAGSTER_POSTGRES_USER"],
+                "-d",
+                E2E_ENVIRONMENT["DAGSTER_POSTGRES_DB"],
+                "-c",
+                query,
+            ],
+            capture_output=True,
+        )
+    except subprocess.CalledProcessError as error:
+        detail = (error.stderr or error.stdout or str(error)).strip()
+        raise CommandError(f"fetch Dagster asset check status failed: {detail}") from error
+
+    payload_text = result.stdout.strip()
+    if payload_text == "":
+        payload_text = "[]"
+    payload = json.loads(payload_text)
+    if not isinstance(payload, list):
+        raise CommandError("Dagster asset check status query did not return a list")
+    return tuple(
+        sorted(
+            format_failed_asset_check_row(row)
+            for row in payload
+            if isinstance(row, Mapping)
+        )
+    )
+
+
+def failed_asset_checks_sql(started_after: float) -> str:
+    """Return the Dagster Postgres query for failed asset checks in this run."""
+    started_at = datetime.fromtimestamp(started_after, timezone.utc).replace(
+        tzinfo=None
+    )
+    started_at_sql = started_at.isoformat(sep=" ", timespec="microseconds")
+    return f"""
+with latest_check_executions as (
+  select
+    asset_key,
+    check_name,
+    execution_status,
+    evaluation_event,
+    coalesce(evaluation_event_timestamp, create_timestamp) as sort_timestamp,
+    row_number() over (
+      partition by asset_key, check_name
+      order by coalesce(evaluation_event_timestamp, create_timestamp) desc, run_id desc
+    ) as latest_rank
+  from asset_check_executions
+  where coalesce(evaluation_event_timestamp, create_timestamp)
+    >= timestamp '{started_at_sql}'
+)
+select coalesce(
+  json_agg(
+    json_build_object(
+      'asset_key', asset_key,
+      'check_name', check_name,
+      'execution_status', execution_status,
+      'evaluation_event', evaluation_event::json
+    )
+    order by sort_timestamp, asset_key, check_name
+  ),
+  '[]'::json
+)
+from latest_check_executions
+where latest_rank = 1
+  and evaluation_event is not null
+  and (
+    execution_status in ('FAILED', 'EXECUTION_FAILED', 'SKIPPED')
+    or coalesce(
+      evaluation_event::json #>> '{{dagster_event,event_specific_data,success}}',
+      'true'
+    ) = 'false'
+  );
+"""
+
+
+def format_failed_asset_check_row(row: Mapping[str, object]) -> str:
+    """Return a compact failed-check label from one Dagster DB row."""
+    asset_key = format_postgres_asset_key(row.get("asset_key"))
+    check_name = expect_str(row.get("check_name"), "asset check name")
+    execution_status = expect_str(
+        row.get("execution_status"),
+        f"execution status for {asset_key}:{check_name}",
+    )
+    severity = read_asset_check_severity(row.get("evaluation_event"))
+    return f"{asset_key}:{check_name}={execution_status}/{severity}"
+
+
+def format_postgres_asset_key(value: object) -> str:
+    """Return a slash-separated asset key from Dagster's stored JSON text."""
+    if isinstance(value, list) and all(isinstance(part, str) for part in value):
+        return "/".join(value)
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return value
+        if isinstance(parsed, list) and all(isinstance(part, str) for part in parsed):
+            return "/".join(parsed)
+        return value
+    raise CommandError("expected asset check asset key to be a string or list")
+
+
+def read_asset_check_severity(evaluation_event: object) -> str:
+    """Return the failed asset check severity stored in a Dagster event payload."""
+    if not isinstance(evaluation_event, Mapping):
+        return "<unknown>"
+    dagster_event = evaluation_event.get("dagster_event")
+    if not isinstance(dagster_event, Mapping):
+        return "<unknown>"
+    event_data = dagster_event.get("event_specific_data")
+    if not isinstance(event_data, Mapping):
+        return "<unknown>"
+    severity = event_data.get("severity")
+    if isinstance(severity, str):
+        return severity.rsplit(".", maxsplit=1)[-1]
+    if isinstance(severity, Mapping):
+        enum_value = severity.get("__enum__")
+        if isinstance(enum_value, str):
+            return enum_value.rsplit(".", maxsplit=1)[-1]
+    return "<unknown>"
+
+
 def read_asset_checks(
     asset: Mapping[str, object],
     *,
@@ -1953,6 +2249,8 @@ def dagster_dataflow_failure_summary(
             status.failed_target_assets[:10]
         )
     if status.failed_asset_checks:
+        if status.active_runs:
+            return None
         return "failed asset checks: " + ", ".join(status.failed_asset_checks[:10])
     return None
 
@@ -1964,7 +2262,8 @@ def summarize_dagster_dataflow_status(status: DagsterDataflowStatus) -> str:
         f"{len(status.materialized_target_assets)}/{status.target_asset_count} "
         "target assets materialized; "
         f"{len(status.active_runs)} active runs; "
-        f"{len(status.missing_asset_checks)} missing target checks"
+        f"{len(status.missing_asset_checks)} missing target checks; "
+        f"{len(status.failed_asset_checks)} failed checks"
     )
 
 
@@ -2112,11 +2411,39 @@ def cleanup_stack(
     runner: CommandRunner,
     compose_command: Sequence[str],
 ) -> None:
-    """Remove e2e stack containers and named volumes."""
+    """Remove e2e stack containers, worker containers, and named volumes."""
+    cleanup_dagster_run_worker_containers(runner)
     runner.run(
         [*compose_command, "down", "-v", "--remove-orphans"],
         check=False,
     )
+    cleanup_dagster_run_worker_containers(runner)
+    runner.run(["podman", "network", "rm", NETWORK_NAME], check=False)
+
+
+def cleanup_dagster_run_worker_containers(runner: CommandRunner) -> None:
+    """Remove Dagster run workers launched outside the compose project."""
+    result = runner.run(
+        [
+            "podman",
+            "ps",
+            "-aq",
+            "--filter",
+            f"network={NETWORK_NAME}",
+            "--filter",
+            "label=dagster/run_id",
+        ],
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return
+    container_ids = tuple(
+        line.strip() for line in result.stdout.splitlines() if line.strip()
+    )
+    if len(container_ids) == 0:
+        return
+    runner.run(["podman", "rm", "-f", *container_ids], check=False)
 
 
 def base_manifest(

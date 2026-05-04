@@ -105,9 +105,10 @@ Local workflow notes:
   only the intended sensors through Dagster GraphQL, bootstraps non-sensor
   prerequisites, and monitors the full `gas_model` dataflow until success,
   failure, or timeout. Defaults are host webserver port `3001`, 90 minute
-  timeout, Dagster `max_concurrent_runs` `6`, 10 cached raw objects per
+  timeout, Dagster `max_concurrent_runs` `6`, 3 cached raw objects per
   required source table, and 3 cached zip objects per required domain.
-  Successful non-reuse runs clean e2e containers and named volumes; failures
+  Successful non-reuse runs clean e2e containers, Dagster run-worker
+  containers, named volumes, and the e2e network; failures
   preserve the stack, logs, run manifest, and seed-run manifest unless
   `--always-clean` is used.
 - Caddy is still the local front door so auth and routing behavior can be tested.
