@@ -15,6 +15,10 @@ default. The sandbox receives a `GH_TOKEN` sourced from the parent environment
 or local `gh auth`, and a wrapper limits `gh` to issue metadata commands. Git
 push auth is separate; **Local integration**, **Integration target** pushes,
 and **Promotion** stay outside the sandbox.
+Spawned Codex subprocesses and Ralph-run QA commands also receive writable QA
+runtime path variables. Operator-provided `DAGSTER_HOME`, `XDG_CACHE_HOME`, and
+`UV_CACHE_DIR` values are preserved; unset or empty values fall back under
+`/tmp/ralph-qa-runtime/<repo-slug>/<run-dir-name>/`.
 
 The Ralph loop uses GitHub Issues as its queue and board. Successful
 implementation work uses **Local integration** instead of GitHub PRs. In
@@ -35,8 +39,9 @@ worktree fixed at the fetched source-branch revision, before any Promotion
 merge, push, branch sync, metadata update, or issue closure. Each
 implementation and **Promotion** run keeps `.ralph/runs/.../ralph-run.json`
 updated with the issue, **Delivery mode**, **Integration target**, Promotion
-source tree, QA, push, commit, and GitHub metadata state for inspection and
-recovery. Use `--inspect-run <run_dir>` for a read-only manifest summary. Use
+source tree, QA, QA runtime environment, push, commit, and GitHub metadata
+state for inspection and recovery. Use `--inspect-run <run_dir>` for a
+read-only manifest summary. Use
 `--recover-run <run_dir>` only after Ralph verifies the recorded **Local
 integration** commit is reachable from the expected **Integration target**.
 

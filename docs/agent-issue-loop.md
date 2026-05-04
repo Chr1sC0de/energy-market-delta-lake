@@ -212,6 +212,15 @@ triage-safe `gh issue` reads and writes. This does not grant Git push access;
 Git fetches, **Local integration**, **Integration target** pushes, and
 **Promotion** stay in Ralph's outer loop.
 
+Ralph also standardizes writable QA runtime paths for spawned Codex
+subprocesses and Ralph-run QA commands. If the operator exports `DAGSTER_HOME`,
+`XDG_CACHE_HOME`, or `UV_CACHE_DIR`, Ralph preserves that explicit value.
+Otherwise it sets the variable under
+`/tmp/ralph-qa-runtime/<repo-slug>/<run-dir-name>/` using `dagster-home`,
+`xdg-cache`, and `uv-cache` child directories. These defaults keep sandboxed
+**Commit check**, **Push check**, and Dagster CLI commands away from
+home-directory cache locations that may be read-only.
+
 Use `HEAD:dev` for Gitflow target validation and `HEAD:main` for trunk or
 promotion validation. Run Ralph from a local worktree that is aligned with the
 remote branch being operated on. The script fetches the **Integration target**
@@ -265,6 +274,9 @@ Key fields for inspection:
   integration, Promotion source, or Promotion target worktree paths.
 - `changed_files`: current file diff used for QA and integration.
 - `qa_results`: selected QA commands, cwd, log path, and pass/fail state.
+- `qa_runtime_env`: effective `DAGSTER_HOME`, `XDG_CACHE_HOME`, and
+  `UV_CACHE_DIR` values plus whether each came from the operator environment or
+  Ralph's writable fallback.
 - `sandboxed_issue_access`: non-secret token source, wrapper path, allowed
   command set, and network access state for spawned Codex subprocesses.
 - `integration_commit`: implementation **Local integration** commit.
@@ -447,6 +459,13 @@ before merging.
 During **Promotion**, Ralph computes all files changed between `origin/main` and
 `origin/dev`, then runs the matching QA set as an aggregate **Push check** before
 pushing `main`.
+
+Every Codex implementation attempt, implementation QA command, Promotion
+**Push check**, and Promotion gate receives writable QA runtime path variables.
+Operators can override all or part of this behavior by exporting
+`DAGSTER_HOME`, `XDG_CACHE_HOME`, or `UV_CACHE_DIR` before running Ralph; unset
+or empty variables fall back to the run-scoped `/tmp/ralph-qa-runtime/...`
+paths recorded in the run manifest.
 
 If that Promotion range includes files under
 `backend-services/dagster-user/aemo-etl/`, Ralph also runs the AEMO ETL

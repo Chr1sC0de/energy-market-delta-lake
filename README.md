@@ -318,8 +318,8 @@ heartbeat lines with the active phase and log path, and the command logs under
 `.ralph/runs/...` update while the command is still running.
 Each implementation and **Promotion** run also maintains
 `.ralph/runs/.../ralph-run.json` with issue, **Delivery mode**, **Integration
-target**, Promotion source tree, QA, push, commit, and GitHub metadata state for
-recovery. Use
+target**, Promotion source tree, QA, QA runtime environment, push, commit, and
+GitHub metadata state for recovery. Use
 `--inspect-run` for a read-only summary, then use `--recover-run` only after
 the recorded **Local integration** commit is verified reachable from the
 expected **Integration target**; recovery reconciles GitHub comments, runtime
@@ -330,6 +330,12 @@ default so they can run authenticated `gh issue` reads and writes during AFK
 drains. The sandbox receives a `GH_TOKEN` from the parent environment or local
 `gh auth`, with a wrapper that blocks broader `gh` commands; Git push auth and
 **Local integration** remain outside the sandbox.
+Ralph passes writable QA runtime paths to spawned Codex subprocesses and to
+Ralph-run QA commands. Explicit operator values for `DAGSTER_HOME`,
+`XDG_CACHE_HOME`, and `UV_CACHE_DIR` are preserved; unset or empty values fall
+back to child directories named `dagster-home`, `xdg-cache`, and `uv-cache`
+under `/tmp/ralph-qa-runtime/<repo-slug>/<run-dir-name>/`, with the effective
+values recorded in the run manifest.
 
 ## Deployment
 

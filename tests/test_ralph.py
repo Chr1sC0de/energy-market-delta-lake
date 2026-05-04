@@ -536,6 +536,53 @@ Build it.
             ],
         )
 
+    def test_qa_runtime_env_uses_operator_values_when_present(self) -> None:
+        operator_env = {
+            "DAGSTER_HOME": "/operator/dagster",
+            "XDG_CACHE_HOME": "/operator/cache",
+            "UV_CACHE_DIR": "/operator/uv-cache",
+        }
+
+        runtime_env = ralph.resolve_qa_runtime_env(
+            repo="example/repo",
+            run_dir=Path("/tmp/ralph-test-run"),
+            base_env=operator_env,
+        )
+
+        self.assertEqual(runtime_env.values, operator_env)
+        self.assertEqual(
+            runtime_env.metadata["DAGSTER_HOME"],
+            {"value": "/operator/dagster", "source": "operator"},
+        )
+        self.assertEqual(runtime_env.metadata["XDG_CACHE_HOME"]["source"], "operator")
+        self.assertEqual(runtime_env.metadata["UV_CACHE_DIR"]["source"], "operator")
+
+    def test_qa_runtime_env_falls_back_to_run_scoped_tmp_paths(self) -> None:
+        runtime_env = ralph.resolve_qa_runtime_env(
+            repo="example/repo",
+            run_dir=Path("/work/.ralph/runs/issue-42-20260504T010203Z"),
+            base_env={},
+        )
+        runtime_root = (
+            Path("/tmp")
+            / ralph.QA_RUNTIME_ROOT_DIR_NAME
+            / "example-repo"
+            / "issue-42-20260504T010203Z"
+        )
+
+        self.assertEqual(
+            runtime_env.values,
+            {
+                "DAGSTER_HOME": str(runtime_root / "dagster-home"),
+                "XDG_CACHE_HOME": str(runtime_root / "xdg-cache"),
+                "UV_CACHE_DIR": str(runtime_root / "uv-cache"),
+            },
+        )
+        for name, value in runtime_env.values.items():
+            with self.subTest(name=name):
+                self.assertEqual(runtime_env.metadata[name]["source"], "ralph_default")
+                self.assertTrue(Path(value).is_dir())
+
     def test_sandbox_token_uses_parent_gh_token_first(self) -> None:
         runner = FakeRunner()
         with patch.dict(
@@ -657,21 +704,48 @@ Build it.
                     manifest=manifest,
                 )
 
-            codex_call = next(call for call in runner.calls if call.args[:2] == ("codex", "exec"))
+            codex_call = next(
+                call for call in runner.calls if call.args[:2] == ("codex", "exec")
+            )
             self.assertIsNotNone(codex_call.env)
             assert codex_call.env is not None
             self.assertEqual(codex_call.env["GH_TOKEN"], "fake-gh-token")
             self.assertEqual(codex_call.env["GH_REPO"], "example/repo")
+            runtime_root = ralph.default_qa_runtime_root("example/repo", run_dir)
+            self.assertEqual(
+                codex_call.env["DAGSTER_HOME"],
+                str(runtime_root / "dagster-home"),
+            )
+            self.assertEqual(
+                codex_call.env["XDG_CACHE_HOME"],
+                str(runtime_root / "xdg-cache"),
+            )
+            self.assertEqual(
+                codex_call.env["UV_CACHE_DIR"],
+                str(runtime_root / "uv-cache"),
+            )
             wrapper_path = run_dir / ralph.SANDBOX_GH_WRAPPER_DIR_NAME / "gh"
             self.assertTrue(wrapper_path.exists())
-            manifest_text = manifest.path.read_text(encoding="utf-8")
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+            manifest_text = json.dumps(manifest_payload)
             self.assertIn('"token_source": "gh-auth"', manifest_text)
             self.assertIn(str(wrapper_path), manifest_text)
             self.assertNotIn("fake-gh-token", manifest_text)
+            self.assertEqual(
+                manifest_payload["qa_runtime_env"]["variables"]["DAGSTER_HOME"]["source"],
+                "ralph_default",
+            )
+            self.assertEqual(
+                manifest_payload["qa_runtime_env"]["variables"]["UV_CACHE_DIR"]["value"],
+                str(runtime_root / "uv-cache"),
+            )
 
     def test_default_worktree_container_matches_sibling_worktree_layout(self) -> None:
         current = Path("/work/repo__worktrees/refactor")
-        self.assertEqual(ralph.default_worktree_container(current), Path("/work/repo__worktrees"))
+        self.assertEqual(
+            ralph.default_worktree_container(current),
+            Path("/work/repo__worktrees"),
+        )
         main = Path("/work/repo")
         self.assertEqual(ralph.default_worktree_container(main), Path("/work/repo__worktrees"))
 
@@ -1277,6 +1351,72 @@ Build it.
         self.assertEqual(manifest["integration_target"], "main")
         self.assertEqual(manifest["github_metadata"]["status"], "failure_commented")
         self.assertIn("Missing required issue section", manifest["failure"]["message"])
+
+    def test_qa_commands_receive_fallback_runtime_env_and_record_manifest(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=loop.config.delivery_mode,
+                target_branch=loop.config.target_branch,
+            )
+            branch, worktree_path, integration_path = loop._branch_and_worktrees(issue)
+            run_dir = tmp_path / "logs" / "issue-42-test"
+            manifest = ralph.RunManifest.for_implementation(
+                run_dir=run_dir,
+                issue=issue,
+                delivery_plan=delivery_plan,
+                branch=branch,
+                worktree_path=worktree_path,
+                integration_path=integration_path,
+                config=loop.config,
+            )
+
+            with patch.dict(ralph.os.environ, {"PATH": "/usr/bin"}, clear=True):
+                with redirect_stdout(io.StringIO()):
+                    loop._run_qa_commands(
+                        ["scripts/ralph.py"],
+                        loop.config.repo_root,
+                        run_dir,
+                        log_prefix="qa",
+                        subject="#42",
+                        manifest=manifest,
+                    )
+
+            qa_call = next(
+                call
+                for call in runner.calls
+                if call.args == ("python3", "-m", "unittest", "discover", "-s", "tests")
+            )
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        self.assertIsNotNone(qa_call.env)
+        assert qa_call.env is not None
+        runtime_root = ralph.default_qa_runtime_root("example/repo", run_dir)
+        self.assertEqual(
+            qa_call.env["DAGSTER_HOME"],
+            str(runtime_root / "dagster-home"),
+        )
+        self.assertEqual(
+            qa_call.env["XDG_CACHE_HOME"],
+            str(runtime_root / "xdg-cache"),
+        )
+        self.assertEqual(
+            qa_call.env["UV_CACHE_DIR"],
+            str(runtime_root / "uv-cache"),
+        )
+        self.assertEqual(
+            manifest_payload["qa_runtime_env"]["variables"]["DAGSTER_HOME"]["source"],
+            "ralph_default",
+        )
+        self.assertEqual(
+            manifest_payload["qa_runtime_env"]["variables"]["UV_CACHE_DIR"]["value"],
+            str(runtime_root / "uv-cache"),
+        )
+        self.assertEqual(manifest_payload["qa_results"][0]["status"], "passed")
 
     def test_successful_implementation_squash_merges_pushes_comments_and_closes(self) -> None:
         runner = FakeRunner(

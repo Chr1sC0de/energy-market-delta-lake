@@ -72,10 +72,19 @@ SANDBOX_CODEX_ENV_INCLUDE_ONLY = (
     "GH_REPO",
     "GH_PROMPT_DISABLED",
     "GH_NO_UPDATE_NOTIFIER",
+    "DAGSTER_HOME",
+    "XDG_CACHE_HOME",
+    "UV_CACHE_DIR",
     "NO_COLOR",
     "CLICOLOR",
     "CLICOLOR_FORCE",
 )
+QA_RUNTIME_ROOT_DIR_NAME = "ralph-qa-runtime"
+QA_RUNTIME_ENV_DIRS = {
+    "DAGSTER_HOME": "dagster-home",
+    "XDG_CACHE_HOME": "xdg-cache",
+    "UV_CACHE_DIR": "uv-cache",
+}
 
 TRIAGE_STATE_LABELS = frozenset(
     {
@@ -208,6 +217,12 @@ class SandboxIssueAccess:
 
 
 @dataclass(frozen=True)
+class QARuntimeEnv:
+    values: dict[str, str]
+    metadata: dict[str, dict[str, str]]
+
+
+@dataclass(frozen=True)
 class Issue:
     number: int
     title: str
@@ -332,6 +347,7 @@ class RunManifest:
             },
             "changed_files": [],
             "qa_results": [],
+            "qa_runtime_env": {"status": "not_started"},
             "codex_attempts": [],
             "sandboxed_issue_access": {"status": "not_started"},
             "commits": {},
@@ -380,6 +396,7 @@ class RunManifest:
             },
             "changed_files": [],
             "qa_results": [],
+            "qa_runtime_env": {"status": "not_started"},
             "commits": {},
             "source_tree": None,
             "promotion_commit": None,
@@ -486,6 +503,14 @@ class RunManifest:
             f"qa_{status}",
             details={"name": command.name, "log_path": str(log_path)},
         )
+
+    def record_qa_runtime_env(self, qa_runtime_env: QARuntimeEnv) -> None:
+        metadata = {
+            "status": "ready",
+            "variables": qa_runtime_env.metadata,
+        }
+        self.data["qa_runtime_env"] = metadata
+        self.record_event("qa_runtime_env_ready", details=metadata)
 
     def record_push(
         self,
@@ -687,6 +712,40 @@ def slugify(value: str, *, max_length: int = 56) -> str:
     if len(slug) <= max_length:
         return slug
     return slug[:max_length].rstrip("-")
+
+
+def default_qa_runtime_root(repo: str, run_dir: Path) -> Path:
+    return Path("/tmp") / QA_RUNTIME_ROOT_DIR_NAME / slugify(repo) / run_dir.name
+
+
+def resolve_qa_runtime_env(
+    *,
+    repo: str,
+    run_dir: Path,
+    base_env: dict[str, str] | None = None,
+) -> QARuntimeEnv:
+    source_env = os.environ if base_env is None else base_env
+    runtime_root = default_qa_runtime_root(repo, run_dir)
+    values: dict[str, str] = {}
+    metadata: dict[str, dict[str, str]] = {}
+    for name, directory_name in QA_RUNTIME_ENV_DIRS.items():
+        operator_value = source_env.get(name)
+        if operator_value is not None and operator_value != "":
+            values[name] = operator_value
+            metadata[name] = {"value": operator_value, "source": "operator"}
+            continue
+
+        runtime_path = runtime_root / directory_name
+        runtime_path.mkdir(parents=True, exist_ok=True)
+        values[name] = str(runtime_path)
+        metadata[name] = {"value": str(runtime_path), "source": "ralph_default"}
+    return QARuntimeEnv(values=values, metadata=metadata)
+
+
+def env_with_qa_runtime(qa_runtime_env: QARuntimeEnv) -> dict[str, str]:
+    env = dict(os.environ)
+    env.update(qa_runtime_env.values)
+    return env
 
 
 def section_body(markdown: str, heading: str) -> str | None:
@@ -983,8 +1042,14 @@ def prepare_sandbox_issue_access(
     )
 
 
-def codex_env_for_sandbox_issue_access(access: SandboxIssueAccess) -> dict[str, str]:
+def codex_env_for_sandbox_issue_access(
+    access: SandboxIssueAccess,
+    *,
+    qa_runtime_env: QARuntimeEnv | None = None,
+) -> dict[str, str]:
     env = dict(os.environ)
+    if qa_runtime_env is not None:
+        env.update(qa_runtime_env.values)
     wrapper_dir = str(access.wrapper_path.parent)
     current_path = env.get("PATH", "")
     env["PATH"] = f"{wrapper_dir}{os.pathsep}{current_path}" if current_path else wrapper_dir
@@ -2550,8 +2615,13 @@ class RalphLoop:
             repo=self.config.repo,
             run_dir=log_path.parent,
         )
+        qa_runtime_env = resolve_qa_runtime_env(
+            repo=self.config.repo,
+            run_dir=log_path.parent,
+        )
         if manifest is not None:
             manifest.record_sandboxed_issue_access(sandbox_issue_access)
+            manifest.record_qa_runtime_env(qa_runtime_env)
         self.runner.run(
             codex_exec_command(cwd),
             cwd=cwd,
@@ -2559,7 +2629,10 @@ class RalphLoop:
             log_path=log_path,
             phase=phase,
             execute_in_dry_run=False,
-            env=codex_env_for_sandbox_issue_access(sandbox_issue_access),
+            env=codex_env_for_sandbox_issue_access(
+                sandbox_issue_access,
+                qa_runtime_env=qa_runtime_env,
+            ),
         )
 
     def _run_qa(
@@ -2653,6 +2726,10 @@ class RalphLoop:
         manifest: RunManifest | None = None,
     ) -> list[QAResult]:
         results: list[QAResult] = []
+        qa_runtime_env = resolve_qa_runtime_env(repo=self.config.repo, run_dir=run_dir)
+        qa_env = env_with_qa_runtime(qa_runtime_env)
+        if manifest is not None:
+            manifest.record_qa_runtime_env(qa_runtime_env)
         for index, command in enumerate(commands, start=1):
             log_path = run_dir / f"{log_prefix}-{index}-{slugify(command.name)}.log"
             try:
@@ -2668,6 +2745,7 @@ class RalphLoop:
                     log_path=log_path,
                     phase=f"{subject}: QA {command.name}",
                     execute_in_dry_run=False,
+                    env=qa_env,
                 )
             except CommandFailure as error:
                 if looks_like_environment_failure(error):
