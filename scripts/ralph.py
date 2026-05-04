@@ -49,6 +49,33 @@ COMMAND_READ_CHUNK_SIZE = 65536
 COMMIT_LINE_PATTERN = re.compile(r"(?m)^Commit: `(?P<sha>[0-9a-f]{7,40})`$")
 MANIFEST_NAME = "ralph-run.json"
 MANIFEST_SCHEMA_VERSION = 1
+SANDBOX_GH_WRAPPER_DIR_NAME = "sandbox-bin"
+SANDBOX_ALLOWED_GH_ISSUE_COMMANDS = (
+    "view",
+    "list",
+    "status",
+    "comment",
+    "edit",
+    "close",
+    "reopen",
+)
+SANDBOX_CODEX_ENV_INCLUDE_ONLY = (
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "SHELL",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "GH_TOKEN",
+    "GH_REPO",
+    "GH_PROMPT_DISABLED",
+    "GH_NO_UPDATE_NOTIFIER",
+    "NO_COLOR",
+    "CLICOLOR",
+    "CLICOLOR_FORCE",
+)
 
 TRIAGE_STATE_LABELS = frozenset(
     {
@@ -168,6 +195,14 @@ class PostPushFailure(RalphError):
 class CompletedCommand:
     stdout: str
     stderr: str
+
+
+@dataclass(frozen=True)
+class SandboxIssueAccess:
+    token: str
+    token_source: str
+    wrapper_path: Path
+    repo: str
 
 
 @dataclass(frozen=True)
@@ -296,6 +331,7 @@ class RunManifest:
             "changed_files": [],
             "qa_results": [],
             "codex_attempts": [],
+            "sandboxed_issue_access": {"status": "not_started"},
             "commits": {},
             "integration_commit": None,
             "pushes": {},
@@ -477,6 +513,23 @@ class RunManifest:
         if details is not None:
             metadata.update(details)
         self.record_event(f"github_metadata_{status}", details=details)
+
+    def record_sandboxed_issue_access(self, access: SandboxIssueAccess) -> None:
+        metadata = {
+            "status": "ready",
+            "token_source": access.token_source,
+            "wrapper_path": str(access.wrapper_path),
+            "allowed_commands": [
+                "gh auth status",
+                *[
+                    f"gh issue {command}"
+                    for command in SANDBOX_ALLOWED_GH_ISSUE_COMMANDS
+                ],
+            ],
+            "network_access": True,
+        }
+        self.data["sandboxed_issue_access"] = metadata
+        self.record_event("sandboxed_issue_access_ready", details=metadata)
 
     def record_promoted_issues(self, issues: list[tuple[Issue, str]]) -> None:
         metadata = self.data.setdefault("github_metadata", {})
@@ -807,10 +860,114 @@ def codex_exec_command(cwd: Path) -> list[str]:
         str(cwd),
         "--sandbox",
         "workspace-write",
+        "-c",
+        "sandbox_workspace_write.network_access=true",
+        "-c",
+        'shell_environment_policy.inherit="all"',
+        "-c",
+        "shell_environment_policy.ignore_default_excludes=true",
+        "-c",
+        "shell_environment_policy.include_only="
+        + json.dumps(list(SANDBOX_CODEX_ENV_INCLUDE_ONLY)),
         "--full-auto",
         "--json",
         "-",
     ]
+
+
+def resolve_sandbox_gh_token(runner: "CommandRunner", repo_root: Path) -> tuple[str, str]:
+    gh_token = os.environ.get("GH_TOKEN", "").strip()
+    if gh_token != "":
+        return gh_token, "env:GH_TOKEN"
+
+    github_token = os.environ.get("GITHUB_TOKEN", "").strip()
+    if github_token != "":
+        return github_token, "env:GITHUB_TOKEN"
+
+    try:
+        result = runner.run(["gh", "auth", "token"], cwd=repo_root)
+    except CommandFailure as error:
+        raise EnvironmentFailure(
+            "Sandboxed issue access requires GH_TOKEN, GITHUB_TOKEN, or a valid "
+            "gh auth login. Refresh local auth with "
+            "`gh auth login -h github.com --git-protocol ssh` or export GH_TOKEN."
+        ) from error
+
+    token = result.stdout.strip()
+    if token == "":
+        raise EnvironmentFailure(
+            "Sandboxed issue access could not get a token from `gh auth token`; "
+            "export GH_TOKEN or refresh local gh auth."
+        )
+    return token, "gh-auth"
+
+
+def write_sandbox_gh_wrapper(wrapper_path: Path, real_gh_path: Path) -> None:
+    allowed_issue_cases = "|".join(SANDBOX_ALLOWED_GH_ISSUE_COMMANDS)
+    wrapper_path.parent.mkdir(parents=True, exist_ok=True)
+    wrapper_path.write_text(
+        textwrap.dedent(
+            f"""\
+            #!/usr/bin/env sh
+            set -eu
+
+            if [ "$#" -ge 2 ] && [ "$1" = "auth" ] && [ "$2" = "status" ]; then
+              exec {shlex.quote(str(real_gh_path))} "$@"
+            fi
+
+            if [ "$#" -ge 2 ] && [ "$1" = "issue" ]; then
+              case "$2" in
+                {allowed_issue_cases})
+                  exec {shlex.quote(str(real_gh_path))} "$@"
+                  ;;
+              esac
+            fi
+
+            printf '%s\\n' "Ralph sandbox blocked gh command: gh $*" >&2
+            exit 126
+            """
+        ),
+        encoding="utf-8",
+    )
+    wrapper_path.chmod(0o700)
+
+
+def prepare_sandbox_issue_access(
+    *,
+    runner: "CommandRunner",
+    repo_root: Path,
+    repo: str,
+    run_dir: Path,
+) -> SandboxIssueAccess:
+    token, token_source = resolve_sandbox_gh_token(runner, repo_root)
+    wrapper_path = run_dir / SANDBOX_GH_WRAPPER_DIR_NAME / "gh"
+    write_sandbox_gh_wrapper(wrapper_path, Path(shutil.which("gh") or "gh"))
+    return SandboxIssueAccess(
+        token=token,
+        token_source=token_source,
+        wrapper_path=wrapper_path,
+        repo=repo,
+    )
+
+
+def codex_env_for_sandbox_issue_access(access: SandboxIssueAccess) -> dict[str, str]:
+    env = dict(os.environ)
+    wrapper_dir = str(access.wrapper_path.parent)
+    current_path = env.get("PATH", "")
+    env["PATH"] = f"{wrapper_dir}{os.pathsep}{current_path}" if current_path else wrapper_dir
+    env["GH_TOKEN"] = access.token
+    env["GH_REPO"] = access.repo
+    env["GH_PROMPT_DISABLED"] = "1"
+    env["GH_NO_UPDATE_NOTIFIER"] = "1"
+    for name in (
+        "GITHUB_TOKEN",
+        "GH_ENTERPRISE_TOKEN",
+        "GITHUB_ENTERPRISE_TOKEN",
+        "GH_CONFIG_DIR",
+        "GH_HOST",
+    ):
+        env.pop(name, None)
+    return env
 
 
 class CommandRunner:
@@ -832,6 +989,7 @@ class CommandRunner:
         log_path: Path | None = None,
         phase: str | None = None,
         execute_in_dry_run: bool = True,
+        env: dict[str, str] | None = None,
     ) -> CompletedCommand:
         if self.dry_run and not execute_in_dry_run:
             emit(f"DRY RUN: {format_command(args)}")
@@ -847,6 +1005,7 @@ class CommandRunner:
             stdin=subprocess.PIPE if input_text is not None else None,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            env=env,
         )
         if input_text is not None:
             self._write_stdin(process, input_text)
@@ -2242,6 +2401,7 @@ class RalphLoop:
                 worktree_path,
                 first_log,
                 phase=f"#{issue.number}: Codex implementation attempt 1",
+                manifest=manifest,
             )
             manifest.record_codex_attempt(1, status="completed", log_path=first_log)
             first_codex_completed = True
@@ -2278,6 +2438,7 @@ class RalphLoop:
                     worktree_path,
                     retry_log,
                     phase=f"#{issue.number}: Codex implementation attempt 2",
+                    manifest=manifest,
                 )
             except CommandFailure as retry_error:
                 manifest.record_codex_attempt(
@@ -2296,9 +2457,25 @@ class RalphLoop:
                 manifest=manifest,
             )
 
-    def _run_codex(self, prompt: str, cwd: Path, log_path: Path, *, phase: str) -> None:
+    def _run_codex(
+        self,
+        prompt: str,
+        cwd: Path,
+        log_path: Path,
+        *,
+        phase: str,
+        manifest: RunManifest | None = None,
+    ) -> None:
         if not self.runner.dry_run:
             log_path.with_suffix(".prompt.md").write_text(prompt, encoding="utf-8")
+        sandbox_issue_access = prepare_sandbox_issue_access(
+            runner=self.runner,
+            repo_root=self.config.repo_root,
+            repo=self.config.repo,
+            run_dir=log_path.parent,
+        )
+        if manifest is not None:
+            manifest.record_sandboxed_issue_access(sandbox_issue_access)
         self.runner.run(
             codex_exec_command(cwd),
             cwd=cwd,
@@ -2306,6 +2483,7 @@ class RalphLoop:
             log_path=log_path,
             phase=phase,
             execute_in_dry_run=False,
+            env=codex_env_for_sandbox_issue_access(sandbox_issue_access),
         )
 
     def _run_qa(

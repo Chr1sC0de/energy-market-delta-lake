@@ -54,7 +54,7 @@ $grill-with-docs <feature idea> -> $to-prd -> $to-issues -> $ralph-triage -> $ra
 
 ```mermaid
 flowchart TD
-  START[Start drain] --> PREFLIGHT[Validate tools, root worktree, GitHub auth, and labels]
+  START[Start drain] --> PREFLIGHT[Validate tools, root worktree, GitHub auth, sandboxed issue access, and labels]
   PREFLIGHT --> READY{Unblocked ready-for-agent issue?}
   READY -->|Yes| CLAIM[Claim issue with agent-running]
   CLAIM --> CONTRACT{Issue contract valid?}
@@ -204,6 +204,13 @@ git push --dry-run origin HEAD:main
 
 When using token-based GitHub CLI auth, export `GH_TOKEN` in the shell that runs
 Ralph. Do not paste token values into commands, issue comments, docs, or logs.
+Ralph also gives spawned Codex subprocesses **Sandboxed issue access** by
+default: it resolves a token from `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth
+token`, injects it as `GH_TOKEN`, enables network for the workspace-write Codex
+sandbox, and prepends a wrapper that permits only `gh auth status` plus
+triage-safe `gh issue` reads and writes. This does not grant Git push access;
+Git fetches, **Local integration**, **Integration target** pushes, and
+**Promotion** stay in Ralph's outer loop.
 
 Use `HEAD:dev` for Gitflow target validation and `HEAD:main` for trunk or
 promotion validation. Run Ralph from a local worktree that is aligned with the
@@ -256,6 +263,8 @@ Key fields for inspection:
   integration, or promotion worktree paths.
 - `changed_files`: current file diff used for QA and integration.
 - `qa_results`: selected QA commands, cwd, log path, and pass/fail state.
+- `sandboxed_issue_access`: non-secret token source, wrapper path, allowed
+  command set, and network access state for spawned Codex subprocesses.
 - `integration_commit`: implementation **Local integration** commit.
 - `promotion_commit`: **Promotion** commit pushed to `main`.
 - `pushes`: per-branch push state, commit SHA, and push log path.

@@ -10,6 +10,12 @@ auth must pass before running `$ralph-triage` or `$ralph-loop`:
 gh auth status
 ```
 
+Ralph provides **Sandboxed issue access** to spawned Codex subprocesses by
+default. The sandbox receives a `GH_TOKEN` sourced from the parent environment
+or local `gh auth`, and a wrapper limits `gh` to issue metadata commands. Git
+push auth is separate; **Local integration**, **Integration target** pushes,
+and **Promotion** stay outside the sandbox.
+
 The Ralph loop uses GitHub Issues as its queue and board. Successful
 implementation work uses **Local integration** instead of GitHub PRs. In
 default **Gitflow delivery**, Ralph squash-merges validated work to `dev`,

@@ -3,16 +3,18 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import subprocess
 import sys
+import tempfile
 import threading
 import time
-import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 
 RALPH_PATH = Path(__file__).resolve().parents[1] / "scripts" / "ralph.py"
@@ -62,6 +64,7 @@ class FakeCall:
     log_path: Path | None
     phase: str | None
     execute_in_dry_run: bool
+    env: dict[str, str] | None
 
 
 class FakeRunner:
@@ -94,6 +97,7 @@ class FakeRunner:
         log_path: Path | None = None,
         phase: str | None = None,
         execute_in_dry_run: bool = True,
+        env: dict[str, str] | None = None,
     ):
         command = tuple(args)
         self.calls.append(
@@ -104,6 +108,7 @@ class FakeRunner:
                 log_path=log_path,
                 phase=phase,
                 execute_in_dry_run=execute_in_dry_run,
+                env=env,
             )
         )
         if log_path is not None:
@@ -140,6 +145,8 @@ class FakeRunner:
             return ralph.CompletedCommand(stdout="[]", stderr="")
         if command[:3] == ("gh", "issue", "view") and "comments" in command:
             return ralph.CompletedCommand(stdout=json.dumps({"comments": []}), stderr="")
+        if command == ("gh", "auth", "token"):
+            return ralph.CompletedCommand(stdout="fake-gh-token\n", stderr="")
         return ralph.CompletedCommand(stdout="", stderr="")
 
 
@@ -482,11 +489,153 @@ Build it.
                 "/repo",
                 "--sandbox",
                 "workspace-write",
+                "-c",
+                "sandbox_workspace_write.network_access=true",
+                "-c",
+                'shell_environment_policy.inherit="all"',
+                "-c",
+                "shell_environment_policy.ignore_default_excludes=true",
+                "-c",
+                "shell_environment_policy.include_only="
+                + json.dumps(list(ralph.SANDBOX_CODEX_ENV_INCLUDE_ONLY)),
                 "--full-auto",
                 "--json",
                 "-",
             ],
         )
+
+    def test_sandbox_token_uses_parent_gh_token_first(self) -> None:
+        runner = FakeRunner()
+        with patch.dict(
+            ralph.os.environ,
+            {"GH_TOKEN": " parent-token ", "GITHUB_TOKEN": "fallback-token"},
+            clear=True,
+        ):
+            token, source = ralph.resolve_sandbox_gh_token(runner, Path("/repo"))
+
+        self.assertEqual(token, "parent-token")
+        self.assertEqual(source, "env:GH_TOKEN")
+        self.assertEqual(runner.calls, [])
+
+    def test_sandbox_token_falls_back_to_gh_auth_token(self) -> None:
+        runner = FakeRunner()
+        with patch.dict(ralph.os.environ, {}, clear=True):
+            token, source = ralph.resolve_sandbox_gh_token(runner, Path("/repo"))
+
+        self.assertEqual(token, "fake-gh-token")
+        self.assertEqual(source, "gh-auth")
+        self.assertEqual(runner.calls[0].args, ("gh", "auth", "token"))
+
+    def test_sandbox_codex_env_injects_only_gh_token_auth(self) -> None:
+        access = ralph.SandboxIssueAccess(
+            token="sandbox-token",
+            token_source="env:GH_TOKEN",
+            wrapper_path=Path("/tmp/ralph-sandbox-bin/gh"),
+            repo="example/repo",
+        )
+
+        with patch.dict(
+            ralph.os.environ,
+            {
+                "PATH": "/usr/bin",
+                "GITHUB_TOKEN": "remove-me",
+                "GH_CONFIG_DIR": "/home/user/.config/gh",
+            },
+            clear=True,
+        ):
+            env = ralph.codex_env_for_sandbox_issue_access(access)
+
+        self.assertEqual(env["GH_TOKEN"], "sandbox-token")
+        self.assertEqual(env["GH_REPO"], "example/repo")
+        self.assertEqual(env["GH_PROMPT_DISABLED"], "1")
+        self.assertEqual(env["PATH"], "/tmp/ralph-sandbox-bin:/usr/bin")
+        self.assertNotIn("GITHUB_TOKEN", env)
+        self.assertNotIn("GH_CONFIG_DIR", env)
+
+    def test_sandbox_gh_wrapper_allows_only_triage_safe_issue_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            captured_args = tmp_path / "captured-args.txt"
+            real_gh = tmp_path / "real-gh"
+            real_gh.write_text(
+                "#!/usr/bin/env sh\n"
+                "printf '%s\\n' \"$@\" > "
+                f"{ralph.shlex.quote(str(captured_args))}\n",
+                encoding="utf-8",
+            )
+            real_gh.chmod(0o700)
+            wrapper = tmp_path / "bin" / "gh"
+
+            ralph.write_sandbox_gh_wrapper(wrapper, real_gh)
+            subprocess.run(
+                [str(wrapper), "issue", "edit", "42", "--add-label", "ready-for-agent"],
+                check=True,
+            )
+            self.assertEqual(
+                captured_args.read_text(encoding="utf-8").splitlines(),
+                ["issue", "edit", "42", "--add-label", "ready-for-agent"],
+            )
+
+            blocked = subprocess.run(
+                [str(wrapper), "api", "user"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(blocked.returncode, 126)
+            self.assertIn("blocked gh command", blocked.stderr)
+
+            blocked_issue = subprocess.run(
+                [str(wrapper), "issue", "delete", "42"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(blocked_issue.returncode, 126)
+
+    def test_run_codex_injects_sandbox_issue_access_without_recording_token(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            runner = FakeRunner()
+            loop = make_loop(tmp_path, runner)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=loop.config.delivery_mode,
+                target_branch=loop.config.target_branch,
+            )
+            branch, worktree_path, integration_path = loop._branch_and_worktrees(issue)
+            run_dir = tmp_path / "logs" / "issue-42-test"
+            manifest = ralph.RunManifest.for_implementation(
+                run_dir=run_dir,
+                issue=issue,
+                delivery_plan=delivery_plan,
+                branch=branch,
+                worktree_path=worktree_path,
+                integration_path=integration_path,
+                config=loop.config,
+            )
+
+            with patch.dict(ralph.os.environ, {}, clear=True):
+                loop._run_codex(
+                    "prompt",
+                    loop.config.repo_root,
+                    run_dir / "codex.jsonl",
+                    phase="test codex",
+                    manifest=manifest,
+                )
+
+            codex_call = next(call for call in runner.calls if call.args[:2] == ("codex", "exec"))
+            self.assertIsNotNone(codex_call.env)
+            assert codex_call.env is not None
+            self.assertEqual(codex_call.env["GH_TOKEN"], "fake-gh-token")
+            self.assertEqual(codex_call.env["GH_REPO"], "example/repo")
+            wrapper_path = run_dir / ralph.SANDBOX_GH_WRAPPER_DIR_NAME / "gh"
+            self.assertTrue(wrapper_path.exists())
+            manifest_text = manifest.path.read_text(encoding="utf-8")
+            self.assertIn('"token_source": "gh-auth"', manifest_text)
+            self.assertIn(str(wrapper_path), manifest_text)
+            self.assertNotIn("fake-gh-token", manifest_text)
 
     def test_default_worktree_container_matches_sibling_worktree_layout(self) -> None:
         current = Path("/work/repo__worktrees/refactor")
