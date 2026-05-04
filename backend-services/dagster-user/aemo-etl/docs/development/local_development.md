@@ -208,6 +208,14 @@ AEMO ETL gRPC service, one Dagster webserver, and the Dagster daemon with
 generated e2e Dagster config. It builds missing local images by default, supports
 `--rebuild`, derives the Podman socket from `XDG_RUNTIME_DIR`, and preserves the
 stack plus run manifests on failure unless `--always-clean` is used.
+After startup, it uses Dagster GraphQL to start only the intended unzipper,
+event-driven raw, and gas model automation sensors. NEMWeb discovery schedules,
+the failed-run alert sensor, the date-dimension schedule, and maintenance
+schedules remain stopped. The command bootstraps non-sensor prerequisites,
+including date dimension and table metadata materialization, then monitors until
+the full `gas_model` target succeeds, fails, or the timeout is reached. The
+default timeout is 90 minutes and the default Dagster `max_concurrent_runs` is
+`6`; override them with `--timeout-seconds` and `--max-concurrent-runs`.
 
 ## Bronze archive rebuild runbook
 

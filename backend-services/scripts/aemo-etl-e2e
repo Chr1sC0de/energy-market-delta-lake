@@ -12,15 +12,25 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 
 STACK_NAME = "aemo-etl-e2e"
 NETWORK_NAME = f"{STACK_NAME}-dagster-network"
 CONTAINER_SOCKET_PATH = "/run/podman/podman.sock"
 DEFAULT_WEBSERVER_PORT = 3001
-DEFAULT_TIMEOUT_SECONDS = 240
+DEFAULT_TIMEOUT_SECONDS = 90 * 60
+DEFAULT_MAX_CONCURRENT_RUNS = 6
 DEFAULT_RAW_LATEST_COUNT = 10
 DEFAULT_ZIP_LATEST_COUNT = 3
+DEFAULT_DAGSTER_GRAPHQL_TIMEOUT_SECONDS = 30
+DEFAULT_DAGSTER_POLL_INTERVAL_SECONDS = 10
+DAGSTER_GRAPHQL_READY_TIMEOUT_SECONDS = 60
+DAGSTER_REPOSITORY_LOCATION_NAME = "aemo-etl"
+IMPLICIT_ASSET_JOB_NAME = "__ASSET_JOB"
+E2E_RUN_TAG = "aemo-etl/e2e-run-id"
+GAS_MODEL_GROUP_NAME = "gas_model"
 
 POSTGRES_CONTAINER = f"{STACK_NAME}-postgres"
 LOCALSTACK_CONTAINER = f"{STACK_NAME}-localstack"
@@ -73,6 +83,268 @@ E2E_ENVIRONMENT = {
     "ARCHIVE_BUCKET": "dev-energy-market-archive",
 }
 
+EXPECTED_DATAFLOW_SENSOR_NAMES = (
+    "gbb_event_driven_assets_sensor",
+    "gbb_unzipper_sensor",
+    "silver_gas_dim_connection_point_sensor",
+    "silver_gas_dim_facility_sensor",
+    "silver_gas_dim_location_sensor",
+    "silver_gas_dim_operational_point_sensor",
+    "silver_gas_dim_participant_sensor",
+    "silver_gas_dim_pipeline_segment_sensor",
+    "silver_gas_dim_zone_sensor",
+    "silver_gas_fact_bid_stack_sensor",
+    "silver_gas_fact_capacity_auction_sensor",
+    "silver_gas_fact_capacity_outlook_sensor",
+    "silver_gas_fact_capacity_transaction_sensor",
+    "silver_gas_fact_connection_point_flow_sensor",
+    "silver_gas_fact_customer_transfer_sensor",
+    "silver_gas_fact_facility_flow_storage_sensor",
+    "silver_gas_fact_gas_quality_sensor",
+    "silver_gas_fact_heating_value_sensor",
+    "silver_gas_fact_linepack_balance_sensor",
+    "silver_gas_fact_linepack_sensor",
+    "silver_gas_fact_market_price_sensor",
+    "silver_gas_fact_nomination_forecast_sensor",
+    "silver_gas_fact_operational_meter_flow_sensor",
+    "silver_gas_fact_scada_pressure_sensor",
+    "silver_gas_fact_schedule_run_sensor",
+    "silver_gas_fact_scheduled_quantity_sensor",
+    "silver_gas_fact_settlement_activity_sensor",
+    "silver_gas_fact_system_notice_sensor",
+    "silver_gas_participant_market_membership_sensor",
+    "silver_table_metadata_sensor",
+    "vicgas_event_driven_assets_sensor",
+    "vicgas_unzipper_sensor",
+)
+PROTECTED_STOPPED_SCHEDULE_NAMES = (
+    "bronze_nemweb_public_files_gbb_job_schedule",
+    "bronze_nemweb_public_files_vicgas_job_schedule",
+    "delta_table_vacuum_schedule",
+    "silver_gas_dim_date_schedule",
+)
+BOOTSTRAP_JOB_NAMES = ("silver_gas_dim_date_job",)
+BOOTSTRAP_ASSET_KEYS = (("bronze", "metadata", "bronze_table_metadata"),)
+ACTIVE_RUN_STATUSES = ("QUEUED", "NOT_STARTED", "STARTING", "STARTED", "CANCELING")
+FAILED_RUN_STATUSES = ("FAILURE", "CANCELED")
+FAILED_CHECK_STATUSES = ("FAILED", "EXECUTION_FAILED", "SKIPPED")
+
+PING_QUERY = "query E2EPing { version }"
+
+DAGSTER_DEFINITION_STATE_QUERY = """
+query E2EDefinitionState {
+  instance {
+    runQueueConfig {
+      maxConcurrentRuns
+    }
+  }
+  repositoriesOrError {
+    __typename
+    ... on RepositoryConnection {
+      nodes {
+        name
+        location {
+          name
+        }
+        sensors {
+          name
+          defaultStatus
+          sensorState {
+            status
+          }
+        }
+        schedules {
+          name
+          defaultStatus
+          scheduleState {
+            status
+          }
+        }
+      }
+    }
+    ... on Error {
+      message
+    }
+  }
+}
+"""
+
+START_SENSOR_MUTATION = """
+mutation E2EStartSensor($selector: SensorSelector!) {
+  startSensor(sensorSelector: $selector) {
+    __typename
+    ... on Sensor {
+      name
+      sensorState {
+        status
+      }
+    }
+    ... on Error {
+      message
+    }
+  }
+}
+"""
+
+LAUNCH_RUN_MUTATION = """
+mutation E2ELaunchRun($executionParams: ExecutionParams!) {
+  launchRun(executionParams: $executionParams) {
+    __typename
+    ... on LaunchRunSuccess {
+      run {
+        runId
+        status
+      }
+    }
+    ... on Error {
+      message
+    }
+  }
+}
+"""
+
+DAGSTER_DATAFLOW_STATUS_QUERY = """
+query E2EDataflowStatus(
+  $repositoryName: String!
+  $repositoryLocationName: String!
+  $createdAfter: Float!
+  $startedAfterMillis: String!
+  $activeStatuses: [RunStatus!]
+  $failedStatuses: [RunStatus!]
+) {
+  activeRuns: runsOrError(
+    filter: {createdAfter: $createdAfter, statuses: $activeStatuses}
+    limit: 1000
+  ) {
+    __typename
+    ... on Runs {
+      results {
+        runId
+        jobName
+        status
+      }
+    }
+    ... on Error {
+      message
+    }
+  }
+  failedRuns: runsOrError(
+    filter: {createdAfter: $createdAfter, statuses: $failedStatuses}
+    limit: 1000
+  ) {
+    __typename
+    ... on Runs {
+      results {
+        runId
+        jobName
+        status
+      }
+    }
+    ... on Error {
+      message
+    }
+  }
+  targetAssets: assetNodes(
+    group: {
+      groupName: "gas_model"
+      repositoryName: $repositoryName
+      repositoryLocationName: $repositoryLocationName
+    }
+    loadMaterializations: true
+  ) {
+    assetKey {
+      path
+    }
+    isMaterializable
+    assetMaterializations(limit: 1) {
+      runId
+      timestamp
+    }
+    assetChecksOrError {
+      __typename
+      ... on AssetChecks {
+        checks {
+          name
+          executionForLatestMaterialization {
+            runId
+            status
+            timestamp
+            evaluation {
+              success
+              severity
+              targetMaterialization {
+                runId
+                timestamp
+              }
+            }
+          }
+        }
+      }
+      ... on Error {
+        message
+      }
+    }
+  }
+  targetAssetEvents: assetsOrError(
+    prefix: ["silver", "gas_model"]
+    limit: 1000
+  ) {
+    __typename
+    ... on AssetConnection {
+      nodes {
+        key {
+          path
+        }
+        assetEventHistory(
+          afterTimestampMillis: $startedAfterMillis
+          limit: 1
+          eventTypeSelectors: [FAILED_TO_MATERIALIZE]
+        ) {
+          results {
+            __typename
+            ... on FailedToMaterializeEvent {
+              runId
+              timestamp
+              message
+              materializationFailureReason
+              materializationFailureType
+            }
+          }
+        }
+      }
+    }
+    ... on Error {
+      message
+    }
+  }
+  checkedAssets: assetNodes(loadMaterializations: true) {
+    assetKey {
+      path
+    }
+    assetChecksOrError {
+      __typename
+      ... on AssetChecks {
+        checks {
+          name
+          executionForLatestMaterialization {
+            runId
+            status
+            timestamp
+            evaluation {
+              success
+              severity
+            }
+          }
+        }
+      }
+      ... on Error {
+        message
+      }
+    }
+  }
+}
+"""
+
 
 class CommandError(RuntimeError):
     """Raised for user-actionable command failures."""
@@ -100,6 +372,7 @@ class RunOptions:
     raw_latest_count: int
     zip_latest_count: int
     timeout_seconds: int
+    max_concurrent_runs: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +383,62 @@ class ContainerState:
     status: str
     exit_code: int | None
     health: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class DagsterRepositorySelector:
+    """Dagster GraphQL repository selector values."""
+
+    repository_name: str
+    repository_location_name: str
+
+    def to_graphql(self) -> dict[str, str]:
+        """Return this selector in Dagster GraphQL input shape."""
+        return {
+            "repositoryName": self.repository_name,
+            "repositoryLocationName": self.repository_location_name,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class DagsterDefinitionState:
+    """Relevant Dagster definition state discovered through GraphQL."""
+
+    selector: DagsterRepositorySelector
+    max_concurrent_runs: int
+    sensors: Mapping[str, str]
+    schedules: Mapping[str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class DagsterDataflowStatus:
+    """Normalized monitor state for the e2e Dagster dataflow."""
+
+    active_runs: tuple[str, ...]
+    failed_runs: tuple[str, ...]
+    materialized_target_assets: tuple[str, ...]
+    missing_target_assets: tuple[str, ...]
+    failed_target_assets: tuple[str, ...]
+    missing_asset_checks: tuple[str, ...]
+    failed_asset_checks: tuple[str, ...]
+
+    @property
+    def target_asset_count(self) -> int:
+        """Return the total number of target assets observed by the monitor."""
+        return len(self.materialized_target_assets) + len(self.missing_target_assets)
+
+    @property
+    def is_successful(self) -> bool:
+        """Return whether the full target has reached a successful terminal state."""
+        return (
+            len(self.active_runs) == 0
+            and len(self.failed_runs) == 0
+            and len(self.missing_target_assets) == 0
+            and len(self.failed_target_assets) == 0
+            and len(self.missing_asset_checks) == 0
+            and len(self.failed_asset_checks) == 0
+            and self.target_asset_count > 0
+        )
 
 
 class CommandRunner:
@@ -135,6 +464,52 @@ class CommandRunner:
         )
 
 
+class DagsterGraphQLClient:
+    """Small stdlib GraphQL client for the local Dagster webserver."""
+
+    def __init__(
+        self,
+        url: str,
+        *,
+        timeout_seconds: int = DEFAULT_DAGSTER_GRAPHQL_TIMEOUT_SECONDS,
+    ) -> None:
+        """Initialize the client for one Dagster GraphQL endpoint."""
+        self.url = url
+        self.timeout_seconds = timeout_seconds
+
+    def execute(
+        self,
+        query: str,
+        variables: Mapping[str, object] | None = None,
+    ) -> Mapping[str, object]:
+        """Execute a Dagster GraphQL request and return its data payload."""
+        body = json.dumps({"query": query, "variables": dict(variables or {})}).encode(
+            "utf-8"
+        )
+        request = Request(
+            self.url,
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=self.timeout_seconds) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except URLError as error:
+            raise CommandError(
+                f"Dagster GraphQL request failed at {self.url}: {error}"
+            ) from error
+        if not isinstance(payload, dict):
+            raise CommandError("Dagster GraphQL returned a non-object payload")
+        errors = payload.get("errors")
+        if errors:
+            raise CommandError(f"Dagster GraphQL returned errors: {errors}")
+        data = payload.get("data")
+        if not isinstance(data, Mapping):
+            raise CommandError("Dagster GraphQL response did not include data")
+        return data
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the backend-services AEMO ETL e2e command."""
     parser = build_parser()
@@ -151,6 +526,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     raw_latest_count=args.raw_latest_count,
                     zip_latest_count=args.zip_latest_count,
                     timeout_seconds=args.timeout_seconds,
+                    max_concurrent_runs=args.max_concurrent_runs,
                 )
             )
             return 0
@@ -226,8 +602,17 @@ def build_parser() -> argparse.ArgumentParser:
         type=positive_int,
         default=DEFAULT_TIMEOUT_SECONDS,
         help=(
-            "seconds to wait for the e2e stack to reach ready state "
+            "seconds to wait for the e2e stack and dataflow to complete "
             f"(default: {DEFAULT_TIMEOUT_SECONDS})"
+        ),
+    )
+    run_parser.add_argument(
+        "--max-concurrent-runs",
+        type=positive_int,
+        default=DEFAULT_MAX_CONCURRENT_RUNS,
+        help=(
+            "Dagster queued run coordinator max_concurrent_runs "
+            f"(default: {DEFAULT_MAX_CONCURRENT_RUNS})"
         ),
     )
     return parser
@@ -288,6 +673,7 @@ def run_stack(
         options=options,
     )
     write_json(run_dir / "run-manifest.json", manifest)
+    deadline = time.monotonic() + options.timeout_seconds
 
     try:
         render_runtime_files(
@@ -301,6 +687,7 @@ def run_stack(
             webserver_port=options.webserver_port,
             raw_latest_count=options.raw_latest_count,
             zip_latest_count=options.zip_latest_count,
+            max_concurrent_runs=options.max_concurrent_runs,
         )
         if not options.reuse:
             cleanup_stack(command_runner, compose_command)
@@ -318,7 +705,13 @@ def run_stack(
         command_runner.run(up_args, cwd=backend_dir)
         wait_for_ready_stack(
             command_runner,
-            timeout_seconds=options.timeout_seconds,
+            timeout_seconds=remaining_timeout_seconds(deadline),
+        )
+        manifest["dataflow"] = drive_dagster_dataflow(
+            webserver_port=options.webserver_port,
+            timeout_seconds=remaining_timeout_seconds(deadline),
+            expected_max_concurrent_runs=options.max_concurrent_runs,
+            run_id=run_id,
         )
     except Exception as error:
         collect_logs(command_runner, compose_command, logs_dir, backend_dir)
@@ -346,7 +739,8 @@ def run_stack(
         manifest["cleanup"] = "preserved-for-reuse"
         write_json(run_dir / "run-manifest.json", manifest)
         sys.stdout.write(
-            f"{STACK_NAME} is ready at http://localhost:{options.webserver_port}\n"
+            f"{STACK_NAME} completed the dataflow at "
+            f"http://localhost:{options.webserver_port}\n"
         )
         sys.stdout.write(f"run manifest: {run_dir / 'run-manifest.json'}\n")
         return
@@ -354,13 +748,21 @@ def run_stack(
     cleanup_stack(command_runner, compose_command)
     manifest["cleanup"] = "completed-after-success"
     write_json(run_dir / "run-manifest.json", manifest)
-    sys.stdout.write(f"{STACK_NAME} reached ready state and was cleaned.\n")
+    sys.stdout.write(f"{STACK_NAME} completed the dataflow and was cleaned.\n")
     sys.stdout.write(f"run manifest: {run_dir / 'run-manifest.json'}\n")
 
 
 def backend_services_dir() -> Path:
     """Return the backend-services directory containing this script."""
     return Path(__file__).resolve().parents[1]
+
+
+def remaining_timeout_seconds(deadline: float) -> int:
+    """Return remaining whole seconds before an e2e timeout deadline."""
+    remaining = int(deadline - time.monotonic())
+    if remaining <= 0:
+        raise CommandError("timed out waiting for the e2e stack and dataflow")
+    return remaining
 
 
 def require_tool(name: str) -> None:
@@ -474,6 +876,7 @@ def render_runtime_files(
     webserver_port: int,
     raw_latest_count: int,
     zip_latest_count: int,
+    max_concurrent_runs: int,
 ) -> None:
     """Render the compose and Dagster runtime files for this e2e run."""
     images = {spec.name: spec.tag for spec in image_specs}
@@ -494,6 +897,7 @@ def render_runtime_files(
         render_dagster_yaml(
             aemo_etl_image=images["aemo-etl"],
             podman_socket=podman_socket,
+            max_concurrent_runs=max_concurrent_runs,
         ),
         encoding="utf-8",
     )
@@ -727,7 +1131,12 @@ def render_common_runtime_environment(
     )
 
 
-def render_dagster_yaml(*, aemo_etl_image: str, podman_socket: Path) -> str:
+def render_dagster_yaml(
+    *,
+    aemo_etl_image: str,
+    podman_socket: Path,
+    max_concurrent_runs: int = DEFAULT_MAX_CONCURRENT_RUNS,
+) -> str:
     """Return the e2e Dagster instance config."""
     socket_volume = f"{podman_socket}:{CONTAINER_SOCKET_PATH}"
     return f"""# Generated by backend-services/scripts/aemo-etl-e2e.
@@ -738,7 +1147,7 @@ run_coordinator:
   module: dagster.core.run_coordinator
   class: QueuedRunCoordinator
   config:
-    max_concurrent_runs: 1000
+    max_concurrent_runs: {max_concurrent_runs}
 run_launcher:
   module: dagster_docker
   class: DockerRunLauncher
@@ -843,6 +1252,760 @@ def wait_for_ready_stack(runner: CommandRunner, *, timeout_seconds: int) -> None
     raise CommandError(
         f"timed out waiting for {STACK_NAME} to become ready: {last_summary}"
     )
+
+
+def drive_dagster_dataflow(
+    *,
+    webserver_port: int,
+    timeout_seconds: int,
+    expected_max_concurrent_runs: int,
+    run_id: str,
+) -> dict[str, object]:
+    """Start intended Dagster automation and monitor the full e2e dataflow."""
+    client = DagsterGraphQLClient(dagster_graphql_url(webserver_port))
+    deadline = time.monotonic() + timeout_seconds
+    wait_for_dagster_graphql(
+        client,
+        timeout_seconds=min(
+            DAGSTER_GRAPHQL_READY_TIMEOUT_SECONDS,
+            remaining_timeout_seconds(deadline),
+        ),
+    )
+    started_after = time.time()
+    definition_state = fetch_dagster_definition_state(client)
+    validate_dagster_max_concurrent_runs(
+        definition_state,
+        expected_max_concurrent_runs=expected_max_concurrent_runs,
+    )
+    validate_dagster_automation_state(definition_state)
+    start_expected_sensors(client, definition_state.selector)
+    validate_dagster_automation_state(
+        fetch_dagster_definition_state(client),
+        expected_sensor_status="RUNNING",
+    )
+    bootstrap_run_ids = launch_bootstrap_runs(
+        client,
+        definition_state.selector,
+        run_id=run_id,
+    )
+    final_status = monitor_dagster_dataflow(
+        client,
+        definition_state.selector,
+        started_after=started_after,
+        timeout_seconds=remaining_timeout_seconds(deadline),
+    )
+    return {
+        "repository_name": definition_state.selector.repository_name,
+        "repository_location_name": definition_state.selector.repository_location_name,
+        "started_at": datetime.fromtimestamp(
+            started_after,
+            timezone.utc,
+        ).isoformat(),
+        "bootstrap_run_ids": bootstrap_run_ids,
+        "target_asset_count": final_status.target_asset_count,
+        "materialized_target_assets": list(final_status.materialized_target_assets),
+    }
+
+
+def dagster_graphql_url(webserver_port: int) -> str:
+    """Return the host URL for the e2e Dagster GraphQL endpoint."""
+    return f"http://127.0.0.1:{webserver_port}/graphql"
+
+
+def wait_for_dagster_graphql(
+    client: DagsterGraphQLClient,
+    *,
+    timeout_seconds: int = DAGSTER_GRAPHQL_READY_TIMEOUT_SECONDS,
+) -> None:
+    """Wait until the Dagster webserver can answer GraphQL requests."""
+    deadline = time.monotonic() + timeout_seconds
+    last_error = "not checked"
+    while time.monotonic() < deadline:
+        try:
+            client.execute(PING_QUERY)
+            return
+        except CommandError as error:
+            last_error = str(error)
+            time.sleep(2)
+    raise CommandError(f"timed out waiting for Dagster GraphQL: {last_error}")
+
+
+def fetch_dagster_definition_state(
+    client: DagsterGraphQLClient,
+) -> DagsterDefinitionState:
+    """Fetch the e2e Dagster repository, sensor, schedule, and run queue state."""
+    data = client.execute(DAGSTER_DEFINITION_STATE_QUERY)
+    instance = data.get("instance")
+    if not isinstance(instance, Mapping):
+        raise CommandError("Dagster GraphQL did not return instance state")
+    run_queue_config = instance.get("runQueueConfig")
+    if not isinstance(run_queue_config, Mapping):
+        raise CommandError("Dagster GraphQL did not return run queue config")
+    max_concurrent_runs = run_queue_config.get("maxConcurrentRuns")
+    if not isinstance(max_concurrent_runs, int):
+        raise CommandError("Dagster maxConcurrentRuns was not an integer")
+
+    repositories = require_graphql_typename(
+        data.get("repositoriesOrError"),
+        expected_typename="RepositoryConnection",
+        context="repositoriesOrError",
+    )
+    nodes = repositories.get("nodes")
+    if not isinstance(nodes, list):
+        raise CommandError("Dagster repositoriesOrError.nodes was not a list")
+    repository = select_e2e_repository(nodes)
+    selector = DagsterRepositorySelector(
+        repository_name=expect_str(repository.get("name"), "repository name"),
+        repository_location_name=expect_str(
+            expect_mapping(repository.get("location"), "repository location").get(
+                "name"
+            ),
+            "repository location name",
+        ),
+    )
+
+    return DagsterDefinitionState(
+        selector=selector,
+        max_concurrent_runs=max_concurrent_runs,
+        sensors=read_instigator_statuses(repository, key="sensors"),
+        schedules=read_instigator_statuses(repository, key="schedules"),
+    )
+
+
+def select_e2e_repository(nodes: Sequence[object]) -> Mapping[str, object]:
+    """Return the single e2e repository from a Dagster repositories payload."""
+    repositories = [node for node in nodes if isinstance(node, Mapping)]
+    matching = [
+        repository
+        for repository in repositories
+        if expect_mapping(repository.get("location"), "repository location").get("name")
+        == DAGSTER_REPOSITORY_LOCATION_NAME
+    ]
+    if len(matching) == 1:
+        return matching[0]
+    if len(repositories) == 1:
+        return repositories[0]
+    names = [
+        f"{repository_location_name(repository)}/{repository.get('name')}"
+        for repository in repositories
+    ]
+    raise CommandError(
+        "expected exactly one Dagster repository for the e2e stack, found "
+        f"{len(repositories)}: {', '.join(names)}"
+    )
+
+
+def repository_location_name(repository: Mapping[str, object]) -> object:
+    """Return a repository location name from a GraphQL repository payload."""
+    location = repository.get("location")
+    if not isinstance(location, Mapping):
+        return "<unknown>"
+    return location.get("name", "<unknown>")
+
+
+def read_instigator_statuses(
+    repository: Mapping[str, object],
+    *,
+    key: str,
+) -> dict[str, str]:
+    """Return sensor or schedule statuses from a repository payload."""
+    instigators = repository.get(key)
+    if not isinstance(instigators, list):
+        raise CommandError(f"Dagster repository {key} was not a list")
+    statuses: dict[str, str] = {}
+    for instigator in instigators:
+        if not isinstance(instigator, Mapping):
+            continue
+        state = expect_mapping(instigator.get(f"{key[:-1]}State"), f"{key} state")
+        statuses[expect_str(instigator.get("name"), f"{key} name")] = expect_str(
+            state.get("status"), f"{key} status"
+        )
+    return statuses
+
+
+def validate_dagster_max_concurrent_runs(
+    definition_state: DagsterDefinitionState,
+    *,
+    expected_max_concurrent_runs: int,
+) -> None:
+    """Fail if Dagster did not load the requested queued run concurrency."""
+    if definition_state.max_concurrent_runs != expected_max_concurrent_runs:
+        raise CommandError(
+            "Dagster max_concurrent_runs is "
+            f"{definition_state.max_concurrent_runs}, expected "
+            f"{expected_max_concurrent_runs}"
+        )
+
+
+def validate_dagster_automation_state(
+    definition_state: DagsterDefinitionState,
+    *,
+    expected_sensor_status: str = "STOPPED",
+) -> None:
+    """Validate intended and protected Dagster automation states."""
+    expected_sensors = set(EXPECTED_DATAFLOW_SENSOR_NAMES)
+    missing_sensors = sorted(expected_sensors - set(definition_state.sensors))
+    if missing_sensors:
+        raise CommandError(
+            "expected e2e dataflow sensors are missing: " + ", ".join(missing_sensors)
+        )
+
+    expected_not_ready = sorted(
+        name
+        for name in expected_sensors
+        if definition_state.sensors[name] != expected_sensor_status
+    )
+    if expected_not_ready:
+        raise CommandError(
+            "expected e2e dataflow sensors are not "
+            f"{expected_sensor_status}: "
+            + ", ".join(
+                f"{name}={definition_state.sensors[name]}"
+                for name in expected_not_ready
+            )
+        )
+
+    unexpected_running_sensors = sorted(
+        name
+        for name, status in definition_state.sensors.items()
+        if name not in expected_sensors and status == "RUNNING"
+    )
+    if unexpected_running_sensors:
+        raise CommandError(
+            "unexpected Dagster sensors are running: "
+            + ", ".join(unexpected_running_sensors)
+        )
+
+    missing_schedules = sorted(
+        set(PROTECTED_STOPPED_SCHEDULE_NAMES) - set(definition_state.schedules)
+    )
+    if missing_schedules:
+        raise CommandError(
+            "expected protected Dagster schedules are missing: "
+            + ", ".join(missing_schedules)
+        )
+
+    running_schedules = sorted(
+        name
+        for name, status in definition_state.schedules.items()
+        if status == "RUNNING"
+    )
+    if running_schedules:
+        raise CommandError(
+            "protected Dagster schedules are running: " + ", ".join(running_schedules)
+        )
+
+
+def start_expected_sensors(
+    client: DagsterGraphQLClient,
+    selector: DagsterRepositorySelector,
+) -> None:
+    """Start only the sensors required for the e2e dataflow."""
+    for sensor_name in EXPECTED_DATAFLOW_SENSOR_NAMES:
+        payload = client.execute(
+            START_SENSOR_MUTATION,
+            {
+                "selector": {
+                    **selector.to_graphql(),
+                    "sensorName": sensor_name,
+                }
+            },
+        )
+        result = require_graphql_typename(
+            payload.get("startSensor"),
+            expected_typename="Sensor",
+            context=f"startSensor({sensor_name})",
+        )
+        sensor_state = expect_mapping(
+            result.get("sensorState"),
+            f"started sensor state for {sensor_name}",
+        )
+        status = expect_str(
+            sensor_state.get("status"),
+            f"started sensor status for {sensor_name}",
+        )
+        if status != "RUNNING":
+            raise CommandError(f"{sensor_name} started with status {status}")
+
+
+def launch_bootstrap_runs(
+    client: DagsterGraphQLClient,
+    selector: DagsterRepositorySelector,
+    *,
+    run_id: str,
+) -> list[str]:
+    """Bootstrap non-sensor materializations required by the gas_model target."""
+    run_ids: list[str] = []
+    for job_name in BOOTSTRAP_JOB_NAMES:
+        run_ids.append(
+            launch_dagster_run(
+                client,
+                selector,
+                pipeline_name=job_name,
+                run_id=run_id,
+            )
+        )
+    if BOOTSTRAP_ASSET_KEYS:
+        run_ids.append(
+            launch_dagster_run(
+                client,
+                selector,
+                pipeline_name=IMPLICIT_ASSET_JOB_NAME,
+                run_id=run_id,
+                asset_keys=BOOTSTRAP_ASSET_KEYS,
+            )
+        )
+    return run_ids
+
+
+def launch_dagster_run(
+    client: DagsterGraphQLClient,
+    selector: DagsterRepositorySelector,
+    *,
+    pipeline_name: str,
+    run_id: str,
+    asset_keys: Sequence[Sequence[str]] = (),
+) -> str:
+    """Launch one Dagster run and return its run ID."""
+    graphql_selector: dict[str, object] = {
+        **selector.to_graphql(),
+        "pipelineName": pipeline_name,
+    }
+    if asset_keys:
+        graphql_selector["assetSelection"] = [
+            {"path": list(asset_key)} for asset_key in asset_keys
+        ]
+    payload = client.execute(
+        LAUNCH_RUN_MUTATION,
+        {
+            "executionParams": {
+                "selector": graphql_selector,
+                "runConfigData": {},
+                "executionMetadata": {
+                    "tags": [{"key": E2E_RUN_TAG, "value": run_id}],
+                },
+            }
+        },
+    )
+    result = require_graphql_typename(
+        payload.get("launchRun"),
+        expected_typename="LaunchRunSuccess",
+        context=f"launchRun({pipeline_name})",
+    )
+    run = expect_mapping(result.get("run"), f"launched run for {pipeline_name}")
+    return expect_str(run.get("runId"), f"run ID for {pipeline_name}")
+
+
+def monitor_dagster_dataflow(
+    client: DagsterGraphQLClient,
+    selector: DagsterRepositorySelector,
+    *,
+    started_after: float,
+    timeout_seconds: int,
+    poll_interval_seconds: int = DEFAULT_DAGSTER_POLL_INTERVAL_SECONDS,
+) -> DagsterDataflowStatus:
+    """Poll Dagster until the gas_model target succeeds, fails, or times out."""
+    deadline = time.monotonic() + timeout_seconds
+    last_summary = "Dagster dataflow has not been checked yet"
+    while time.monotonic() < deadline:
+        status = fetch_dagster_dataflow_status(
+            client,
+            selector,
+            started_after=started_after,
+        )
+        last_summary = summarize_dagster_dataflow_status(status)
+        sys.stdout.write(f"{last_summary}\n")
+        fail_fast_summary = dagster_dataflow_failure_summary(status)
+        if fail_fast_summary is not None:
+            raise CommandError(f"Dagster dataflow failed: {fail_fast_summary}")
+        if status.is_successful:
+            return status
+        time.sleep(poll_interval_seconds)
+
+    raise CommandError(f"timed out waiting for Dagster dataflow: {last_summary}")
+
+
+def fetch_dagster_dataflow_status(
+    client: DagsterGraphQLClient,
+    selector: DagsterRepositorySelector,
+    *,
+    started_after: float,
+) -> DagsterDataflowStatus:
+    """Fetch and normalize the current Dagster dataflow monitor state."""
+    data = client.execute(
+        DAGSTER_DATAFLOW_STATUS_QUERY,
+        {
+            **selector.to_graphql(),
+            "createdAfter": started_after,
+            "startedAfterMillis": str(int(started_after * 1000)),
+            "activeStatuses": list(ACTIVE_RUN_STATUSES),
+            "failedStatuses": list(FAILED_RUN_STATUSES),
+        },
+    )
+    active_runs = read_runs(data.get("activeRuns"), context="activeRuns")
+    failed_runs = read_runs(data.get("failedRuns"), context="failedRuns")
+    target_assets = data.get("targetAssets")
+    if not isinstance(target_assets, list):
+        raise CommandError("Dagster targetAssets was not a list")
+    checked_assets = data.get("checkedAssets")
+    if not isinstance(checked_assets, list):
+        raise CommandError("Dagster checkedAssets was not a list")
+    target_asset_events = read_assets_or_error(
+        data.get("targetAssetEvents"),
+        context="targetAssetEvents",
+    )
+
+    return evaluate_dagster_dataflow_status(
+        active_runs=active_runs,
+        failed_runs=failed_runs,
+        target_assets=target_assets,
+        target_asset_events=target_asset_events,
+        checked_assets=checked_assets,
+        started_after=started_after,
+    )
+
+
+def evaluate_dagster_dataflow_status(
+    *,
+    active_runs: Sequence[Mapping[str, object]],
+    failed_runs: Sequence[Mapping[str, object]],
+    target_assets: Sequence[object],
+    target_asset_events: Sequence[object],
+    checked_assets: Sequence[object],
+    started_after: float,
+) -> DagsterDataflowStatus:
+    """Evaluate raw Dagster GraphQL status payloads."""
+    materialized_target_assets: list[str] = []
+    missing_target_assets: list[str] = []
+    failed_target_assets: list[str] = []
+    missing_asset_checks: list[str] = []
+    failed_asset_checks: list[str] = []
+    target_asset_keys: set[str] = set()
+
+    for asset in target_assets:
+        if not isinstance(asset, Mapping):
+            continue
+        asset_key = read_asset_key(asset)
+        if asset.get("isMaterializable") is False:
+            continue
+        target_asset_keys.add(asset_key)
+        latest_materialization = latest_event_after(
+            asset.get("assetMaterializations"),
+            started_after=started_after,
+        )
+        if latest_materialization is None:
+            missing_target_assets.append(asset_key)
+        else:
+            materialized_target_assets.append(asset_key)
+
+        if latest_materialization is not None:
+            read_asset_check_status(
+                asset=asset,
+                asset_key=asset_key,
+                started_after=started_after,
+                latest_materialization=latest_materialization,
+                missing_asset_checks=missing_asset_checks,
+                failed_asset_checks=failed_asset_checks,
+            )
+
+    for asset in target_asset_events:
+        if not isinstance(asset, Mapping):
+            continue
+        asset_key = read_asset_key(asset, key_name="key")
+        if asset_key not in target_asset_keys:
+            continue
+        latest_failure = latest_failed_materialization_after(
+            asset.get("assetEventHistory"),
+            started_after=started_after,
+        )
+        if latest_failure is not None:
+            failed_target_assets.append(
+                f"{asset_key} ({latest_failure.get('message', 'failed')})"
+            )
+
+    for asset in checked_assets:
+        if not isinstance(asset, Mapping):
+            continue
+        read_any_failed_asset_checks_after(
+            asset=asset,
+            started_after=started_after,
+            failed_asset_checks=failed_asset_checks,
+        )
+
+    return DagsterDataflowStatus(
+        active_runs=tuple(sorted(format_run(run) for run in active_runs)),
+        failed_runs=tuple(sorted(format_run(run) for run in failed_runs)),
+        materialized_target_assets=tuple(sorted(set(materialized_target_assets))),
+        missing_target_assets=tuple(sorted(set(missing_target_assets))),
+        failed_target_assets=tuple(sorted(set(failed_target_assets))),
+        missing_asset_checks=tuple(sorted(set(missing_asset_checks))),
+        failed_asset_checks=tuple(sorted(set(failed_asset_checks))),
+    )
+
+
+def read_asset_check_status(
+    *,
+    asset: Mapping[str, object],
+    asset_key: str,
+    started_after: float,
+    latest_materialization: Mapping[str, object],
+    missing_asset_checks: list[str],
+    failed_asset_checks: list[str],
+) -> None:
+    """Read target asset check status into missing and failed lists."""
+    checks = read_asset_checks(asset, asset_key=asset_key)
+    materialization_run_id = latest_materialization.get("runId")
+    materialization_timestamp = event_timestamp_seconds(
+        latest_materialization.get("timestamp")
+    )
+    for check in checks:
+        check_name = expect_str(check.get("name"), f"check name for {asset_key}")
+        execution = check.get("executionForLatestMaterialization")
+        check_label = f"{asset_key}:{check_name}"
+        if not isinstance(execution, Mapping):
+            missing_asset_checks.append(check_label)
+            continue
+        execution_timestamp = event_timestamp_seconds(execution.get("timestamp"))
+        if execution_timestamp < started_after:
+            missing_asset_checks.append(check_label)
+            continue
+        evaluation = execution.get("evaluation")
+        if not isinstance(evaluation, Mapping):
+            failed_asset_checks.append(f"{check_label}=missing_evaluation")
+            continue
+        target_materialization = evaluation.get("targetMaterialization")
+        if isinstance(target_materialization, Mapping):
+            target_run_id = target_materialization.get("runId")
+            if target_run_id is not None and target_run_id != materialization_run_id:
+                missing_asset_checks.append(check_label)
+                continue
+            target_timestamp = event_timestamp_seconds(
+                target_materialization.get("timestamp")
+            )
+            if target_timestamp < materialization_timestamp:
+                missing_asset_checks.append(check_label)
+                continue
+        append_failed_check_if_needed(
+            failed_asset_checks,
+            check_label=check_label,
+            execution=execution,
+            evaluation=evaluation,
+        )
+
+
+def read_any_failed_asset_checks_after(
+    *,
+    asset: Mapping[str, object],
+    started_after: float,
+    failed_asset_checks: list[str],
+) -> None:
+    """Capture failed asset checks from any e2e run, including WARN checks."""
+    asset_key = read_asset_key(asset)
+    for check in read_asset_checks(asset, asset_key=asset_key):
+        execution = check.get("executionForLatestMaterialization")
+        if not isinstance(execution, Mapping):
+            continue
+        if event_timestamp_seconds(execution.get("timestamp")) < started_after:
+            continue
+        evaluation = execution.get("evaluation")
+        if not isinstance(evaluation, Mapping):
+            continue
+        append_failed_check_if_needed(
+            failed_asset_checks,
+            check_label=f"{asset_key}:{check.get('name', '<unknown>')}",
+            execution=execution,
+            evaluation=evaluation,
+        )
+
+
+def append_failed_check_if_needed(
+    failed_asset_checks: list[str],
+    *,
+    check_label: str,
+    execution: Mapping[str, object],
+    evaluation: Mapping[str, object],
+) -> None:
+    """Append a failed check label when execution or evaluation failed."""
+    status = execution.get("status")
+    success = evaluation.get("success")
+    severity = evaluation.get("severity")
+    if status in FAILED_CHECK_STATUSES or success is False:
+        failed_asset_checks.append(f"{check_label}={status}/{severity}")
+
+
+def read_asset_checks(
+    asset: Mapping[str, object],
+    *,
+    asset_key: str,
+) -> tuple[Mapping[str, object], ...]:
+    """Read asset checks from an asset node GraphQL payload."""
+    checks_or_error = asset.get("assetChecksOrError")
+    if not isinstance(checks_or_error, Mapping):
+        return ()
+    typename = checks_or_error.get("__typename")
+    if typename != "AssetChecks":
+        if typename not in {None, "AssetCheckNeedsMigrationError"}:
+            message = checks_or_error.get("message", typename)
+            raise CommandError(
+                f"could not read asset checks for {asset_key}: {message}"
+            )
+        return ()
+    checks = checks_or_error.get("checks")
+    if not isinstance(checks, list):
+        return ()
+    return tuple(check for check in checks if isinstance(check, Mapping))
+
+
+def latest_event_after(
+    events: object,
+    *,
+    started_after: float,
+) -> Mapping[str, object] | None:
+    """Return the first event if it happened after the e2e monitor start."""
+    if not isinstance(events, list) or len(events) == 0:
+        return None
+    event = events[0]
+    if not isinstance(event, Mapping):
+        return None
+    if event_timestamp_seconds(event.get("timestamp")) < started_after:
+        return None
+    return event
+
+
+def latest_failed_materialization_after(
+    event_history: object,
+    *,
+    started_after: float,
+) -> Mapping[str, object] | None:
+    """Return the latest failed materialization event after monitor start."""
+    if not isinstance(event_history, Mapping):
+        return None
+    results = event_history.get("results")
+    if not isinstance(results, list) or len(results) == 0:
+        return None
+    event = results[0]
+    if not isinstance(event, Mapping):
+        return None
+    if event.get("__typename") != "FailedToMaterializeEvent":
+        return None
+    if event_timestamp_seconds(event.get("timestamp")) < started_after:
+        return None
+    return event
+
+
+def read_runs(
+    payload: object,
+    *,
+    context: str,
+) -> tuple[Mapping[str, object], ...]:
+    """Read a Dagster RunsOrError payload."""
+    runs = require_graphql_typename(payload, expected_typename="Runs", context=context)
+    results = runs.get("results")
+    if not isinstance(results, list):
+        raise CommandError(f"Dagster {context}.results was not a list")
+    return tuple(run for run in results if isinstance(run, Mapping))
+
+
+def read_assets_or_error(
+    payload: object,
+    *,
+    context: str,
+) -> tuple[Mapping[str, object], ...]:
+    """Read a Dagster AssetsOrError payload."""
+    assets = require_graphql_typename(
+        payload,
+        expected_typename="AssetConnection",
+        context=context,
+    )
+    nodes = assets.get("nodes")
+    if not isinstance(nodes, list):
+        raise CommandError(f"Dagster {context}.nodes was not a list")
+    return tuple(node for node in nodes if isinstance(node, Mapping))
+
+
+def read_asset_key(asset: Mapping[str, object], *, key_name: str = "assetKey") -> str:
+    """Return a slash-separated asset key from an asset node payload."""
+    asset_key = expect_mapping(asset.get(key_name), "asset key")
+    path = asset_key.get("path")
+    if not isinstance(path, list) or not all(isinstance(part, str) for part in path):
+        raise CommandError("Dagster asset key path was not a string list")
+    return "/".join(path)
+
+
+def event_timestamp_seconds(value: object) -> float:
+    """Return a Dagster event timestamp as seconds since epoch."""
+    if value is None:
+        return 0.0
+    timestamp = float(value)
+    if timestamp > 10_000_000_000:
+        return timestamp / 1000
+    return timestamp
+
+
+def dagster_dataflow_failure_summary(
+    status: DagsterDataflowStatus,
+) -> str | None:
+    """Return an immediate dataflow failure summary, when one exists."""
+    if status.failed_runs:
+        return "failed runs: " + ", ".join(status.failed_runs[:10])
+    if status.failed_target_assets:
+        return "failed target materializations: " + ", ".join(
+            status.failed_target_assets[:10]
+        )
+    if status.failed_asset_checks:
+        return "failed asset checks: " + ", ".join(status.failed_asset_checks[:10])
+    return None
+
+
+def summarize_dagster_dataflow_status(status: DagsterDataflowStatus) -> str:
+    """Return a compact monitor status line."""
+    return (
+        "Dagster dataflow: "
+        f"{len(status.materialized_target_assets)}/{status.target_asset_count} "
+        "target assets materialized; "
+        f"{len(status.active_runs)} active runs; "
+        f"{len(status.missing_asset_checks)} missing target checks"
+    )
+
+
+def format_run(run: Mapping[str, object]) -> str:
+    """Return a compact run label."""
+    return (
+        f"{run.get('runId', '<unknown>')}"
+        f"({run.get('jobName', '<unknown>')}={run.get('status', '<unknown>')})"
+    )
+
+
+def require_graphql_typename(
+    value: object,
+    *,
+    expected_typename: str,
+    context: str,
+) -> Mapping[str, object]:
+    """Return a GraphQL object, failing on error union members."""
+    mapping = expect_mapping(value, context)
+    typename = mapping.get("__typename")
+    if typename == expected_typename:
+        return mapping
+    message = mapping.get("message", mapping)
+    raise CommandError(
+        f"Dagster GraphQL {context} returned {typename}, expected "
+        f"{expected_typename}: {message}"
+    )
+
+
+def expect_mapping(value: object, context: str) -> Mapping[str, object]:
+    """Return a mapping or fail with a user-actionable error."""
+    if not isinstance(value, Mapping):
+        raise CommandError(f"expected {context} to be an object")
+    return value
+
+
+def expect_str(value: object, context: str) -> str:
+    """Return a string or fail with a user-actionable error."""
+    if not isinstance(value, str):
+        raise CommandError(f"expected {context} to be a string")
+    return value
 
 
 def inspect_container_states(
@@ -990,6 +2153,7 @@ def base_manifest(
             "raw_latest_count": options.raw_latest_count,
             "zip_latest_count": options.zip_latest_count,
             "timeout_seconds": options.timeout_seconds,
+            "max_concurrent_runs": options.max_concurrent_runs,
         },
     }
 
