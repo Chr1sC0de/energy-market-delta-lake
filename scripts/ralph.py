@@ -112,6 +112,8 @@ TRIAGE_STOP_LABELS = frozenset(
 
 REQUIRED_ISSUE_SECTIONS = ("What to build", "Acceptance criteria", "Blocked by")
 AEMO_ETL_PREFIX = "backend-services/dagster-user/aemo-etl/"
+BACKEND_SERVICES_PREFIX = "backend-services/"
+AEMO_ETL_E2E_QA_NAME = "aemo-etl End-to-end test"
 ENVIRONMENT_FAILURE_PATTERNS = (
     "podman: command not found",
     "docker: command not found",
@@ -779,9 +781,13 @@ def root_prek_needed(changed_file: str) -> bool:
     )
 
 
+def has_protected_aemo_etl_change(changed_files: list[str]) -> bool:
+    return any(path.startswith(AEMO_ETL_PREFIX) for path in changed_files)
+
+
 def select_qa_commands(changed_files: list[str], repo_root: Path) -> list[QACommand]:
     commands: list[QACommand] = []
-    has_aemo_etl_change = any(path.startswith(AEMO_ETL_PREFIX) for path in changed_files)
+    has_aemo_etl_change = has_protected_aemo_etl_change(changed_files)
     if has_aemo_etl_change:
         aemo_root = repo_root / AEMO_ETL_PREFIX
         commands.extend(
@@ -813,6 +819,21 @@ def select_qa_commands(changed_files: list[str], repo_root: Path) -> list[QAComm
             deduped.append(command)
             seen.add(key)
     return deduped
+
+
+def select_promotion_gate_commands(
+    changed_files: list[str],
+    repo_root: Path,
+) -> list[QACommand]:
+    if not has_protected_aemo_etl_change(changed_files):
+        return []
+    return [
+        QACommand(
+            ("scripts/aemo-etl-e2e", "run"),
+            repo_root / BACKEND_SERVICES_PREFIX,
+            AEMO_ETL_E2E_QA_NAME,
+        )
+    ]
 
 
 def parse_git_status_paths(status_output: str) -> list[str]:
@@ -1728,6 +1749,14 @@ class RalphLoop:
                 subject="promotion",
                 manifest=manifest,
             )
+            qa_results.extend(
+                self._run_promotion_gate_commands(
+                    changed_files,
+                    self.config.repo_root,
+                    run_dir,
+                    manifest=manifest,
+                )
+            )
             integrated_issues = self._verified_integrated_issues(
                 source_branch=source_branch,
                 target_branch=target_branch,
@@ -2542,7 +2571,40 @@ class RalphLoop:
             raise IssueFailure(
                 "No QA command matched changed files: " + ", ".join(changed_files)
             )
+        return self._run_qa_command_sequence(
+            commands,
+            run_dir,
+            log_prefix=log_prefix,
+            subject=subject,
+            manifest=manifest,
+        )
 
+    def _run_promotion_gate_commands(
+        self,
+        changed_files: list[str],
+        repo_root: Path,
+        run_dir: Path,
+        *,
+        manifest: RunManifest,
+    ) -> list[QAResult]:
+        commands = select_promotion_gate_commands(changed_files, repo_root)
+        return self._run_qa_command_sequence(
+            commands,
+            run_dir,
+            log_prefix="promotion-gate",
+            subject="promotion",
+            manifest=manifest,
+        )
+
+    def _run_qa_command_sequence(
+        self,
+        commands: list[QACommand],
+        run_dir: Path,
+        *,
+        log_prefix: str,
+        subject: str,
+        manifest: RunManifest | None = None,
+    ) -> list[QAResult]:
         results: list[QAResult] = []
         for index, command in enumerate(commands, start=1):
             log_path = run_dir / f"{log_prefix}-{index}-{slugify(command.name)}.log"
