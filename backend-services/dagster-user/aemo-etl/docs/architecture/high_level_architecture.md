@@ -161,7 +161,8 @@ predicate used by normal source-table bronze ingestion.
 `defs()`, derives the full `gas_model` source-table and zip-domain seed spec
 from the Dagster asset graph, refreshes a configurable latest slice from the
 live Archive bucket into `backend-services/.e2e/aemo-etl`, and lets later
-LocalStack runs load that cache before Dagster starts.
+LocalStack runs load that cache before Dagster starts. The default slice is 10
+raw objects per required source table and 3 zip objects per required domain.
 
 The corresponding silver asset:
 

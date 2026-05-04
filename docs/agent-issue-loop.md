@@ -372,11 +372,13 @@ and, when the promoted range includes files under
 `backend-services/dagster-user/aemo-etl/`, runs the AEMO ETL **End-to-end test**
 gate before creating the Promotion worktree. The gate is recorded as
 `aemo-etl End-to-end test` in the Promotion run manifest and invokes
-`scripts/aemo-etl-e2e run` from the `backend-services` **Subproject**. Ralph then
-merges `origin/dev` into a detached `origin/main` worktree with per-issue
-commits preserved, pushes `main`, and fast-forwards `dev` to the promotion
-commit so the next Gitflow drain starts from a `dev` branch that contains
-`main`.
+`scripts/aemo-etl-e2e run` from the `backend-services` **Subproject**. Because
+the gate runs first, AEMO ETL **Subproject** changes cannot reach a Promotion
+merge, `main` push, `dev` branch sync, GitHub metadata update, or issue closure
+without passing the e2e stack. Ralph then merges `origin/dev` into a detached
+`origin/main` worktree with per-issue commits preserved, pushes `main`, and
+fast-forwards `dev` to the promotion commit so the next Gitflow drain starts
+from a `dev` branch that contains `main`.
 
 After the push succeeds, Ralph scans open `agent-integrated` issues. It closes
 only issues whose recorded Gitflow integration commit is still in the promoted
@@ -444,7 +446,8 @@ pushing `main`.
 If that Promotion range includes files under
 `backend-services/dagster-user/aemo-etl/`, Ralph also runs the AEMO ETL
 **End-to-end test** gate after the aggregate **Push check** and before any
-Promotion worktree, merge, push, or GitHub metadata side effect:
+Promotion worktree, merge, push, `dev` branch sync, GitHub metadata update, or
+issue closure:
 
 ```bash
 cd backend-services
