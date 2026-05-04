@@ -135,7 +135,8 @@ energy-market-delta-lake/
 │   ├── caddy/                        # Reverse proxy image/config
 │   ├── marimo/                       # Local notebook service
 │   ├── localstack/                   # Local AWS emulation bootstrap
-│   └── postgres/                     # Local PostgreSQL image/setup
+│   ├── postgres/                     # Local PostgreSQL image/setup
+│   └── scripts/                      # backend-services command helpers
 ├── docs/                             # Repo-level architecture and workflow docs
 ├── infrastructure/
 │   └── aws-pulumi/                   # Canonical AWS deployment definitions
@@ -166,6 +167,8 @@ Use the local stack when you need:
 - notebook experimentation through `marimo`
 
 See [backend-services/README.md](backend-services/README.md) for the local stack.
+For isolated AEMO ETL **End-to-end test** validation without the broader fixed
+developer stack, use `backend-services/scripts/aemo-etl-e2e run`.
 
 ## Documentation map
 
@@ -283,6 +286,7 @@ instead of relying on the caller's `PATH`.
 | AWS Pulumi unit/component pytest target | `cd infrastructure/aws-pulumi && uv run pytest tests/unit tests/component -x -q` |
 | AWS Pulumi deployed tests | `cd infrastructure/aws-pulumi && PULUMI_INTEGRATION_TESTS=1 uv run pytest tests/deployed -v` |
 | Local stack | `cd backend-services && source .envrc && podman-compose up --build -d` |
+| Isolated AEMO ETL **End-to-end test** stack | `backend-services/scripts/aemo-etl-e2e run` |
 | Ralph Gitflow drain | `python3 scripts/ralph.py --drain` |
 | Ralph trunk drain | `python3 scripts/ralph.py --drain --delivery-mode trunk` |
 | Ralph promotion | `python3 scripts/ralph.py --promote` |
@@ -349,6 +353,7 @@ for stack details, component breakdown, and deployed-test commands.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
+  - `backend-services/scripts/aemo-etl-e2e`
   - `backend-services/marimo/.pre-commit-config.yaml`
   - `backend-services/marimo/pyproject.toml`
   - `infrastructure/aws-pulumi/__main__.py`
