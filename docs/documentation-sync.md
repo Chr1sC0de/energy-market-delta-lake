@@ -17,6 +17,7 @@ configuration changes across the repo.
 The sync workflow applies to maintained documentation files:
 
 - `README.md`
+- `OPERATOR.md`
 - `docs/**/*.md`
 - maintained `backend-services/**/*.md`
 - `infrastructure/aws-pulumi/**/*.md`
@@ -73,8 +74,8 @@ For each doc updated because of implementation changes:
 
 ```bash
 git diff --name-only
-rg -n "<changed-file-path>" README.md docs backend-services infrastructure
-rg -n "sync.sources|sync.scope|sync.qa" README.md docs backend-services infrastructure
+rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure
+rg -n "sync.sources|sync.scope|sync.qa" OPERATOR.md README.md docs backend-services infrastructure
 ```
 
 These commands support the intended flow:
@@ -90,6 +91,7 @@ These commands support the intended flow:
 - [Repository workflow](workflow.md)
 - [Agent issue loop](agent-issue-loop.md)
 - [Repository root README](../README.md)
+- [Operator workflow](../OPERATOR.md)
 - [Agent policy](../AGENTS.md)
 
 ## Sync metadata
@@ -97,8 +99,9 @@ These commands support the intended flow:
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `AGENTS.md`
+  - `OPERATOR.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`
-  - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`
+  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
   - `verify links, diagrams, commands, paths, ports, env vars, and names`

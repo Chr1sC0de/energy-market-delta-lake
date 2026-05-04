@@ -1,7 +1,8 @@
 """Unit tests for the backend-services AEMO ETL e2e stack command."""
 
-import socket
 import runpy
+import socket
+import tempfile
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, cast
@@ -37,25 +38,32 @@ def get_exception_class(
     return value
 
 
-def test_podman_socket_is_derived_from_xdg_runtime_dir(tmp_path: Path) -> None:
+def test_podman_socket_is_derived_from_xdg_runtime_dir() -> None:
     """The command uses the current user runtime dir, not a fixed UID path."""
     module = load_e2e_command_module()
-    runtime_dir = tmp_path / "runtime"
-    socket_dir = runtime_dir / "podman"
-    socket_dir.mkdir(parents=True)
-    socket_path = socket_dir / "podman.sock"
+    with tempfile.TemporaryDirectory(
+        prefix="aemo-e2e-runtime-",
+        dir="/tmp",
+    ) as runtime_dir_name:
+        runtime_dir = Path(runtime_dir_name)
+        socket_dir = runtime_dir / "podman"
+        socket_dir.mkdir(parents=True)
+        socket_path = socket_dir / "podman.sock"
+        assert len(str(socket_path)) < 100
 
-    with socket.socket(socket.AF_UNIX) as podman_socket:
-        podman_socket.bind(str(socket_path))
+        with socket.socket(socket.AF_UNIX) as podman_socket:
+            podman_socket.bind(str(socket_path))
 
-        podman_socket_from_xdg_runtime_dir = get_callable(
-            module,
-            "podman_socket_from_xdg_runtime_dir",
-        )
-        assert (
-            podman_socket_from_xdg_runtime_dir({"XDG_RUNTIME_DIR": str(runtime_dir)})
-            == socket_path
-        )
+            podman_socket_from_xdg_runtime_dir = get_callable(
+                module,
+                "podman_socket_from_xdg_runtime_dir",
+            )
+            assert (
+                podman_socket_from_xdg_runtime_dir(
+                    {"XDG_RUNTIME_DIR": str(runtime_dir)}
+                )
+                == socket_path
+            )
 
 
 def test_podman_socket_fails_when_xdg_runtime_dir_missing() -> None:
