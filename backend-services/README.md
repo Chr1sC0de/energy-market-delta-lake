@@ -284,6 +284,17 @@ runtime files under `backend-services/.e2e/aemo-etl/runs/<run-id>/`. The
 generated stack contains Postgres, LocalStack, the cached Archive seed loader,
 the AEMO ETL gRPC service, one Dagster webserver, and the Dagster daemon. It
 does not start Caddy, authentication, Marimo, or the second developer webserver.
+The seed loader validates the cached Archive seed under
+`backend-services/.e2e/aemo-etl`; refresh that cache with
+`uv run aemo-e2e-archive-seed refresh` only when the local seed needs to change.
+
+| Option | Default | Purpose |
+|---|---:|---|
+| `--webserver-port` | `3001` | Host port for the isolated Dagster webserver |
+| `--raw-latest-count` | `10` | Cached raw source-table objects required per table |
+| `--zip-latest-count` | `3` | Cached zip objects required per domain |
+| `--timeout-seconds` | `5400` | Overall stack and dataflow timeout |
+| `--max-concurrent-runs` | `6` | Dagster queued run coordinator `max_concurrent_runs` |
 
 After the isolated stack reaches readiness, the command drives the Dagster
 dataflow through GraphQL. It starts only the unzipper sensors, event-driven raw
@@ -307,10 +318,11 @@ minutes and the default Dagster `max_concurrent_runs` is `6`; override them with
 `--timeout-seconds` and `--max-concurrent-runs`.
 
 Successful runs clean e2e containers and named volumes by default after the full
-dataflow completes. Failed runs preserve containers, volumes, service logs, the
-run manifest, and the seed-run manifest for inspection. Use `--reuse` to keep
-and reuse the e2e stack after a successful run, or `--always-clean` to clean
-containers and volumes even after failure.
+dataflow completes. Failed runs, including cached seed coverage shortfalls,
+preserve containers, volumes, service logs, the run manifest, and the
+seed-run manifest for inspection. Use `--reuse` to keep and reuse the e2e stack
+after a successful run, or `--always-clean` to clean containers and volumes even
+after failure.
 
 ______________________________________________________________________
 

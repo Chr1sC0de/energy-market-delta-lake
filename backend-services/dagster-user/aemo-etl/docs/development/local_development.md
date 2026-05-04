@@ -16,7 +16,8 @@ This guide covers the local workflow for running `aemo-etl` against LocalStack-b
 
 ## LocalStack workflow
 
-The project's local end-to-end flow expects an S3-compatible endpoint and, for integration-style Delta writes, a DynamoDB-backed lock table.
+The project's local **End-to-end test** flow expects an S3-compatible endpoint
+and, for integration-style Delta writes, a DynamoDB-backed lock table.
 
 `.localstack.env` currently provides:
 
@@ -206,16 +207,20 @@ backend-services/scripts/aemo-etl-e2e run
 That command starts Postgres, LocalStack, the cached Archive seed loader, the
 AEMO ETL gRPC service, one Dagster webserver, and the Dagster daemon with
 generated e2e Dagster config. It builds missing local images by default, supports
-`--rebuild`, derives the Podman socket from `XDG_RUNTIME_DIR`, and preserves the
-stack plus run manifests on failure unless `--always-clean` is used.
+`--rebuild`, derives the Podman socket from `XDG_RUNTIME_DIR`, and validates the
+cached seed under `backend-services/.e2e/aemo-etl` with defaults of 10 raw
+objects per required source table and 3 zip objects per required domain.
+Successful non-reuse runs clean containers and named volumes; failures preserve
+the stack plus run manifests unless `--always-clean` is used.
 After startup, it uses Dagster GraphQL to start only the intended unzipper,
 event-driven raw, and gas model automation sensors. NEMWeb discovery schedules,
 the failed-run alert sensor, the date-dimension schedule, and maintenance
 schedules remain stopped. The command bootstraps non-sensor prerequisites,
 including date dimension and table metadata materialization, then monitors until
 the full `gas_model` target succeeds, fails, or the timeout is reached. The
-default timeout is 90 minutes and the default Dagster `max_concurrent_runs` is
-`6`; override them with `--timeout-seconds` and `--max-concurrent-runs`.
+default host webserver port is `3001`, the default timeout is 90 minutes, and
+the default Dagster `max_concurrent_runs` is `6`; override them with
+`--webserver-port`, `--timeout-seconds`, and `--max-concurrent-runs`.
 
 ## Bronze archive rebuild runbook
 

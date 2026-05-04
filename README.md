@@ -111,7 +111,9 @@ append replay history remains in archive storage.
 For local **End-to-end test** setup, `aemo-e2e-archive-seed` derives the full
 `gas_model` seed spec from Dagster definitions, refreshes an ignored cached
 Archive slice under `backend-services/.e2e/aemo-etl`, and lets LocalStack runs
-reuse that cache without live AWS archive access.
+reuse that cache without live AWS archive access. Archive seed refresh is
+opt-in and defaults to 10 raw objects per required source table and 3 zip
+objects per required domain.
 
 The orchestration details come from the Dagster definitions in
 `backend-services/dagster-user/aemo-etl`, including event-driven sensors and
@@ -171,6 +173,9 @@ For isolated AEMO ETL **End-to-end test** validation without the broader fixed
 developer stack, use `backend-services/scripts/aemo-etl-e2e run`; it starts the
 isolated services, enables only the intended Dagster automation, bootstraps
 non-sensor prerequisites, and monitors the full `gas_model` dataflow.
+Defaults are host webserver port `3001`, 90 minute timeout, Dagster
+`max_concurrent_runs` `6`, 10 cached raw objects per required source table, and
+3 cached zip objects per required domain.
 
 ## Documentation map
 
@@ -303,11 +308,12 @@ plain Ralph drain uses a default budget of 10 implementation attempts; pass
 claims issues, creates worktrees, performs **Local integration**, or pushes;
 `--dry-run` remains available on a dirty root worktree, and
 `--allow-dirty-worktree` is the explicit override. Promotion runs include the
-AEMO ETL **End-to-end test** gate before merge or push when the promoted range
-includes `backend-services/dagster-user/aemo-etl/` files. During long Codex and
-QA phases, Ralph prints heartbeat lines with the active phase and log path, and
-the command logs under `.ralph/runs/...` update while the command is still
-running.
+AEMO ETL **End-to-end test** gate when the promoted range includes
+`backend-services/dagster-user/aemo-etl/` files; that gate runs before any
+Promotion merge, push, `dev` branch sync, GitHub metadata update, or issue
+closure. During long Codex and QA phases, Ralph prints heartbeat lines with the
+active phase and log path, and the command logs under `.ralph/runs/...` update
+while the command is still running.
 Each implementation and **Promotion** run also maintains
 `.ralph/runs/.../ralph-run.json` with issue, **Delivery mode**, **Integration
 target**, QA, push, commit, and GitHub metadata state for recovery. Use

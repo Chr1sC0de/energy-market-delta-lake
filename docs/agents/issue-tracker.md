@@ -28,13 +28,16 @@ drain has a default budget of 10 implementation attempts; `--max-issues 0` is
 the explicit unlimited drain mode. Live `--issue`, `--drain`, and `--promote`
 runs require a clean root worktree before issue claim, worktree creation,
 **Local integration**, or push; `--allow-dirty-worktree` is the explicit
-override and `--dry-run` remains usable on dirty worktrees. Each implementation
-and **Promotion** run keeps `.ralph/runs/.../ralph-run.json` updated with the
-issue, **Delivery mode**, **Integration target**, QA, push, commit, and GitHub
-metadata state for inspection and recovery. Use `--inspect-run <run_dir>` for a
-read-only manifest summary. Use `--recover-run <run_dir>` only after Ralph
-verifies the recorded **Local integration** commit is reachable from the
-expected **Integration target**.
+override and `--dry-run` remains usable on dirty worktrees. When a **Promotion**
+range includes AEMO ETL **Subproject** files, Ralph runs the AEMO ETL
+**End-to-end test** gate before any Promotion merge, push, branch sync, metadata
+update, or issue closure. Each implementation and **Promotion** run keeps
+`.ralph/runs/.../ralph-run.json` updated with the issue, **Delivery mode**,
+**Integration target**, QA, push, commit, and GitHub metadata state for
+inspection and recovery. Use `--inspect-run <run_dir>` for a read-only manifest
+summary. Use `--recover-run <run_dir>` only after Ralph verifies the recorded
+**Local integration** commit is reachable from the expected **Integration
+target**.
 
 ## Sync metadata
 

@@ -95,13 +95,21 @@ Local workflow notes:
 - LocalStack stands in for AWS-managed storage services during local validation.
 - `aemo-etl-seed-localstack` is a pre-Dagster no-op unless
   `AEMO_ETL_E2E_SEED_ENABLED=1`; when enabled it loads the cached Archive seed
-  into LocalStack landing storage before `aemo-etl` starts.
+  from `backend-services/.e2e/aemo-etl` into LocalStack landing storage before
+  `aemo-etl` starts. Refreshing that cache with `aemo-e2e-archive-seed refresh`
+  is opt-in and defaults to 10 raw objects per required source table and 3 zip
+  objects per required domain.
 - `backend-services/scripts/aemo-etl-e2e run` starts the isolated AEMO ETL
   **End-to-end test** stack with its own e2e Dagster config, one webserver, the
   daemon, Postgres, LocalStack, and the seed loader. After readiness it enables
   only the intended sensors through Dagster GraphQL, bootstraps non-sensor
   prerequisites, and monitors the full `gas_model` dataflow until success,
-  failure, or timeout.
+  failure, or timeout. Defaults are host webserver port `3001`, 90 minute
+  timeout, Dagster `max_concurrent_runs` `6`, 10 cached raw objects per
+  required source table, and 3 cached zip objects per required domain.
+  Successful non-reuse runs clean e2e containers and named volumes; failures
+  preserve the stack, logs, run manifest, and seed-run manifest unless
+  `--always-clean` is used.
 - Caddy is still the local front door so auth and routing behavior can be tested.
 - `marimo` is available locally for exploration, but it is not part of the Pulumi-deployed stack.
 
@@ -141,10 +149,10 @@ heartbeat lines with the active phase and log path, and command logs under
 When a **Promotion** range includes files under
 `backend-services/dagster-user/aemo-etl/`, Ralph runs the AEMO ETL
 **End-to-end test** gate after the aggregate **Push check** and before any
-Promotion merge or push side effect. Implementation and **Promotion** runs also
-keep `.ralph/runs/.../ralph-run.json` updated with **Delivery mode**,
-**Integration target**, QA, push, commit, and GitHub metadata state for
-recovery. Use
+Promotion merge, push, `dev` branch sync, GitHub metadata update, or issue
+closure. Implementation and **Promotion** runs also keep
+`.ralph/runs/.../ralph-run.json` updated with **Delivery mode**, **Integration
+target**, QA, push, commit, and GitHub metadata state for recovery. Use
 `python3 scripts/ralph.py --inspect-run <run_dir>` for a read-only manifest
 summary. Use `python3 scripts/ralph.py --recover-run <run_dir>` only after the
 recorded **Local integration** commit is verified reachable from the expected
