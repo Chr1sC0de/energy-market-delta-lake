@@ -25,7 +25,7 @@ from aemo_etl.utils import (
 )
 
 DEFAULT_ARCHIVE_SEED_BUCKET: Final = "dev-energy-market-archive"
-DEFAULT_RAW_LATEST_COUNT: Final = 10
+DEFAULT_RAW_LATEST_COUNT: Final = 3
 DEFAULT_ZIP_LATEST_COUNT: Final = 3
 SEED_ROOT_ENV_VAR: Final = "AEMO_ETL_E2E_SEED_ROOT"
 SEED_CACHE_DIR_NAME: Final = "archive-seed"

@@ -44,11 +44,13 @@ mode.
 Human operators should call Ralph through repo-local skills:
 
 ```text
-$grill-with-docs <feature idea> -> $to-prd -> $to-issues -> $ralph-triage -> $ralph-loop drain
+$grill-with-docs -> optional $to-prd -> $to-issues -> $ralph-triage -> $ralph-loop drain -> review dev -> $ralph-loop promote
 ```
 
+Use [OPERATOR.md](../OPERATOR.md) for the first-class **Operator workflow**.
 `$ralph-triage` prepares GitHub Issues for drain by setting category, state, and
-**Delivery mode** labels. `$ralph-loop` owns the backing script commands.
+**Delivery mode** labels. `$ralph-loop` owns the backing script commands,
+including `$ralph-loop drain` and `$ralph-loop promote`.
 
 ## Drain flow
 
@@ -539,11 +541,12 @@ container-backed **Integration test** dependencies.
 - `sync.sources`:
   - `scripts/ralph.py`
   - `docs/agents/triage-labels.md`
+  - `OPERATOR.md`
   - `.agents/skills/ralph-loop/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`
   - `AGENTS.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`
-  - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`
+  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
   - `verify links, headings, commands, paths, labels, and names`

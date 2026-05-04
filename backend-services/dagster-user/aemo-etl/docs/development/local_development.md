@@ -166,7 +166,7 @@ The CLI imports `aemo_etl.definitions.defs()`, selects the full `gas_model`
 target and upstream assets, and emits JSON containing the required source-table
 archive glob patterns plus zip seed domains.
 
-Refresh is opt-in. It defaults to `dev-energy-market-archive`, 10 latest raw
+Refresh is opt-in. It defaults to `dev-energy-market-archive`, 3 latest raw
 objects per required source table, and 3 latest zip objects per required domain:
 
 ```bash
@@ -208,7 +208,7 @@ That command starts Postgres, LocalStack, the cached Archive seed loader, the
 AEMO ETL gRPC service, one Dagster webserver, and the Dagster daemon with
 generated e2e Dagster config. It builds missing local images by default, supports
 `--rebuild`, derives the Podman socket from `XDG_RUNTIME_DIR`, and validates the
-cached seed under `backend-services/.e2e/aemo-etl` with defaults of 10 raw
+cached seed under `backend-services/.e2e/aemo-etl` with defaults of 3 raw
 objects per required source table and 3 zip objects per required domain.
 Successful non-reuse runs clean containers and named volumes; failures preserve
 the stack plus run manifests unless `--always-clean` is used.

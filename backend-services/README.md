@@ -229,7 +229,7 @@ them before starting the stack.
 | `DAGSTER_FAILURE_ALERT_TOPIC_ARN` | empty | Optional SNS topic ARN for failed-run alert fan-out |
 | `DAGSTER_FAILURE_ALERT_BASE_URL` | `https://localhost/dagster-webserver/admin` | Dagster UI base URL included in failed-run alerts |
 | `AEMO_ETL_E2E_SEED_ENABLED` | `0` | Set to `1` to require cached Archive seed loading before `aemo-etl` starts |
-| `AEMO_ETL_E2E_SEED_RAW_LATEST_COUNT` | `10` | Required cached raw source-table objects per table |
+| `AEMO_ETL_E2E_SEED_RAW_LATEST_COUNT` | `3` | Required cached raw source-table objects per table |
 | `AEMO_ETL_E2E_SEED_ZIP_LATEST_COUNT` | `3` | Required cached zip objects per domain |
 
 ______________________________________________________________________
@@ -266,7 +266,7 @@ cd backend-services/dagster-user/aemo-etl
 uv run aemo-e2e-archive-seed refresh
 ```
 
-The refresh path defaults to `dev-energy-market-archive`, requires 10 latest raw
+The refresh path defaults to `dev-energy-market-archive`, requires 3 latest raw
 objects for each required `gas_model` source table and 3 latest zip objects for
 each required zip domain, and fails with a manifest if coverage is short.
 
@@ -291,7 +291,7 @@ The seed loader validates the cached Archive seed under
 | Option | Default | Purpose |
 |---|---:|---|
 | `--webserver-port` | `3001` | Host port for the isolated Dagster webserver |
-| `--raw-latest-count` | `10` | Cached raw source-table objects required per table |
+| `--raw-latest-count` | `3` | Cached raw source-table objects required per table |
 | `--zip-latest-count` | `3` | Cached zip objects required per domain |
 | `--timeout-seconds` | `5400` | Overall stack and dataflow timeout |
 | `--max-concurrent-runs` | `6` | Dagster queued run coordinator `max_concurrent_runs` |

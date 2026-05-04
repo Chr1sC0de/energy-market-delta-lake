@@ -112,7 +112,7 @@ For local **End-to-end test** setup, `aemo-e2e-archive-seed` derives the full
 `gas_model` seed spec from Dagster definitions, refreshes an ignored cached
 Archive slice under `backend-services/.e2e/aemo-etl`, and lets LocalStack runs
 reuse that cache without live AWS archive access. Archive seed refresh is
-opt-in and defaults to 10 raw objects per required source table and 3 zip
+opt-in and defaults to 3 raw objects per required source table and 3 zip
 objects per required domain.
 
 The orchestration details come from the Dagster definitions in
@@ -180,6 +180,10 @@ Defaults are host webserver port `3001`, 90 minute timeout, Dagster
 ## Documentation map
 
 Follow the docs in repository order:
+
+### Root
+
+- [OPERATOR.md](OPERATOR.md)
 
 ### `docs/`
 
@@ -363,6 +367,7 @@ for stack details, component breakdown, and deployed-test commands.
   - `.pre-commit-config.yaml`
   - `CONTEXT.md`
   - `AGENTS.md`
+  - `OPERATOR.md`
   - `backend-services/.pre-commit-config.yaml`
   - `backend-services/authentication/.pre-commit-config.yaml`
   - `backend-services/authentication/pyproject.toml`
@@ -396,5 +401,5 @@ for stack details, component breakdown, and deployed-test commands.
 - `sync.scope`: `architecture, tooling`
 - `sync.qa`:
   - `git diff --name-only`
-  - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`
+  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
   - `verify links, diagrams, commands, paths, ports, env vars, and names`

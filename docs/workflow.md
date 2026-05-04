@@ -97,7 +97,7 @@ Local workflow notes:
   `AEMO_ETL_E2E_SEED_ENABLED=1`; when enabled it loads the cached Archive seed
   from `backend-services/.e2e/aemo-etl` into LocalStack landing storage before
   `aemo-etl` starts. Refreshing that cache with `aemo-e2e-archive-seed refresh`
-  is opt-in and defaults to 10 raw objects per required source table and 3 zip
+  is opt-in and defaults to 3 raw objects per required source table and 3 zip
   objects per required domain.
 - `backend-services/scripts/aemo-etl-e2e run` starts the isolated AEMO ETL
   **End-to-end test** stack with its own e2e Dagster config, one webserver, the

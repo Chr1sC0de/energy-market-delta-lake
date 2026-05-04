@@ -167,7 +167,7 @@ S3-compatible storage rather than AWS. Integration tests also create a
 materializations. For local **End-to-end test** setup,
 `aemo-e2e-archive-seed` can refresh the ignored cached Archive seed for the full
 `gas_model` target and load the cached objects into LocalStack landing storage
-before Dagster starts. The default seed slice is 10 raw objects per required
+before Dagster starts. The default seed slice is 3 raw objects per required
 source table and 3 zip objects per required domain.
 
 ## Related docs

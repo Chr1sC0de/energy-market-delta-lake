@@ -2,6 +2,7 @@
 
 import runpy
 import socket
+import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast
@@ -176,25 +177,32 @@ def test_graphql_document_validation_reports_actionable_schema_errors(
     assert "Local integration or Promotion" in message
 
 
-def test_podman_socket_is_derived_from_xdg_runtime_dir(tmp_path: Path) -> None:
+def test_podman_socket_is_derived_from_xdg_runtime_dir() -> None:
     """The command uses the current user runtime dir, not a fixed UID path."""
     module = load_e2e_command_module()
-    runtime_dir = tmp_path / "runtime"
-    socket_dir = runtime_dir / "podman"
-    socket_dir.mkdir(parents=True)
-    socket_path = socket_dir / "podman.sock"
+    with tempfile.TemporaryDirectory(
+        prefix="aemo-e2e-runtime-",
+        dir="/tmp",
+    ) as runtime_dir_name:
+        runtime_dir = Path(runtime_dir_name)
+        socket_dir = runtime_dir / "podman"
+        socket_dir.mkdir(parents=True)
+        socket_path = socket_dir / "podman.sock"
+        assert len(str(socket_path)) < 100
 
-    with socket.socket(socket.AF_UNIX) as podman_socket:
-        podman_socket.bind(str(socket_path))
+        with socket.socket(socket.AF_UNIX) as podman_socket:
+            podman_socket.bind(str(socket_path))
 
-        podman_socket_from_xdg_runtime_dir = get_callable(
-            module,
-            "podman_socket_from_xdg_runtime_dir",
-        )
-        assert (
-            podman_socket_from_xdg_runtime_dir({"XDG_RUNTIME_DIR": str(runtime_dir)})
-            == socket_path
-        )
+            podman_socket_from_xdg_runtime_dir = get_callable(
+                module,
+                "podman_socket_from_xdg_runtime_dir",
+            )
+            assert (
+                podman_socket_from_xdg_runtime_dir(
+                    {"XDG_RUNTIME_DIR": str(runtime_dir)}
+                )
+                == socket_path
+            )
 
 
 def test_podman_socket_fails_when_xdg_runtime_dir_missing() -> None:
@@ -282,8 +290,16 @@ def test_run_parser_defaults_to_full_dataflow_timeout_and_concurrency() -> None:
 
     args = build_parser().parse_args(["run"])
 
+    assert getattr(args, "raw_latest_count") == 3
+    assert getattr(args, "zip_latest_count") == 3
     assert getattr(args, "timeout_seconds") == 90 * 60
     assert getattr(args, "max_concurrent_runs") == 6
+
+    override_args = build_parser().parse_args(
+        ["run", "--raw-latest-count", "5", "--zip-latest-count", "2"]
+    )
+    assert getattr(override_args, "raw_latest_count") == 5
+    assert getattr(override_args, "zip_latest_count") == 2
 
 
 def test_generated_compose_is_isolated_e2e_stack(tmp_path: Path) -> None:
