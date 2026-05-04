@@ -112,7 +112,7 @@ For local **End-to-end test** setup, `aemo-e2e-archive-seed` derives the full
 `gas_model` seed spec from Dagster definitions, refreshes an ignored cached
 Archive slice under `backend-services/.e2e/aemo-etl`, and lets LocalStack runs
 reuse that cache without live AWS archive access. Archive seed refresh is
-opt-in and defaults to 10 raw objects per required source table and 3 zip
+opt-in and defaults to 3 raw objects per required source table and 3 zip
 objects per required domain.
 
 The orchestration details come from the Dagster definitions in

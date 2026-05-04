@@ -255,7 +255,7 @@ and later batches merge on `surrogate_key`, update only when
 from later files.
 
 `aemo-e2e-archive-seed refresh` is opt-in and defaults to the live
-`dev-energy-market-archive` bucket, 10 raw objects per required source table,
+`dev-energy-market-archive` bucket, 3 raw objects per required source table,
 and 3 zip objects per required domain. It writes cached objects and
 `seed-run-manifest.json` under `backend-services/.e2e/aemo-etl`; later
 LocalStack runs can load that cache without live archive access.

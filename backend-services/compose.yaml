@@ -99,7 +99,7 @@ services:
       ARCHIVE_BUCKET: ${ARCHIVE_BUCKET:-dev-energy-market-archive}
       AEMO_ETL_E2E_SEED_ENABLED: ${AEMO_ETL_E2E_SEED_ENABLED:-0}
       AEMO_ETL_E2E_SEED_ROOT: /var/lib/aemo-etl/e2e-seed
-      AEMO_ETL_E2E_SEED_RAW_LATEST_COUNT: ${AEMO_ETL_E2E_SEED_RAW_LATEST_COUNT:-10}
+      AEMO_ETL_E2E_SEED_RAW_LATEST_COUNT: ${AEMO_ETL_E2E_SEED_RAW_LATEST_COUNT:-3}
       AEMO_ETL_E2E_SEED_ZIP_LATEST_COUNT: ${AEMO_ETL_E2E_SEED_ZIP_LATEST_COUNT:-3}
     volumes:
       - ./.e2e/aemo-etl:/var/lib/aemo-etl/e2e-seed
@@ -115,7 +115,7 @@ services:
           --seed-root "$${AEMO_ETL_E2E_SEED_ROOT}" \
           --archive-bucket "$${ARCHIVE_BUCKET}" \
           --landing-bucket "$${LANDING_BUCKET}" \
-          --raw-latest-count "$${AEMO_ETL_E2E_SEED_RAW_LATEST_COUNT:-10}" \
+          --raw-latest-count "$${AEMO_ETL_E2E_SEED_RAW_LATEST_COUNT:-3}" \
           --zip-latest-count "$${AEMO_ETL_E2E_SEED_ZIP_LATEST_COUNT:-3}"
   # -------------------------------------------------------------------------
   # aemo-etl — Dagster gRPC code-location server

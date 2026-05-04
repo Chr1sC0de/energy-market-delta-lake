@@ -151,8 +151,16 @@ def test_run_parser_defaults_to_full_dataflow_timeout_and_concurrency() -> None:
 
     args = build_parser().parse_args(["run"])
 
+    assert getattr(args, "raw_latest_count") == 3
+    assert getattr(args, "zip_latest_count") == 3
     assert getattr(args, "timeout_seconds") == 90 * 60
     assert getattr(args, "max_concurrent_runs") == 6
+
+    override_args = build_parser().parse_args(
+        ["run", "--raw-latest-count", "5", "--zip-latest-count", "2"]
+    )
+    assert getattr(override_args, "raw_latest_count") == 5
+    assert getattr(override_args, "zip_latest_count") == 2
 
 
 def test_generated_compose_is_isolated_e2e_stack(tmp_path: Path) -> None:

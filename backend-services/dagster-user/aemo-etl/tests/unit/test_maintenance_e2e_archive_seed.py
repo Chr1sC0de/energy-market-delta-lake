@@ -60,7 +60,7 @@ def _s3_client_with_objects(objects: list[dict[str, object]]) -> MagicMock:
 
 
 def test_default_seed_latest_counts() -> None:
-    assert DEFAULT_RAW_LATEST_COUNT == 10
+    assert DEFAULT_RAW_LATEST_COUNT == 3
     assert DEFAULT_ZIP_LATEST_COUNT == 3
 
 
