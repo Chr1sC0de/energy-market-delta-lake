@@ -384,9 +384,10 @@ sequenceDiagram
 the changed files between the target branch and the fetched source-branch
 revision, creates an isolated source worktree at that source revision, and runs
 the aggregate matching **Push check** QA from that tree. When the promoted
-range includes files under `backend-services/dagster-user/aemo-etl/`, Ralph
-runs the AEMO ETL **End-to-end test** gate from the same source worktree before
-creating the target Promotion worktree. The gate is recorded as
+range includes non-doc runtime files under
+`backend-services/dagster-user/aemo-etl/`, Ralph runs the AEMO ETL
+**End-to-end test** gate from the same source worktree before creating the
+target Promotion worktree. The gate is recorded as
 `aemo-etl End-to-end test` in the Promotion run manifest and invokes
 `scripts/aemo-etl-e2e run` from the `backend-services` **Subproject**. Because
 the aggregate **Push check** and gate run first, source-branch changes cannot
@@ -431,7 +432,7 @@ stay on `delivery-gitflow`.
 
 ## QA policy
 
-For `aemo-etl` changes, Ralph runs from the owning **Subproject**:
+For runtime `aemo-etl` changes, Ralph runs from the owning **Subproject**:
 
 ```bash
 make unit-test
@@ -439,6 +440,17 @@ make component-test
 make integration-test
 make run-prek
 ```
+
+Docs-only `aemo-etl` changes are recognized by the maintained Markdown doc path
+rules in [documentation-sync.md](documentation-sync.md). They skip the runtime
+AEMO ETL **Test lanes** above and run the root doc **Commit check** surface:
+
+```bash
+prek run -a
+```
+
+Mixed docs/runtime `aemo-etl` changes run both the runtime AEMO ETL commands and
+the root doc **Commit check**.
 
 For root docs/config or cross-**Subproject** changes, Ralph runs:
 
@@ -467,7 +479,7 @@ Operators can override all or part of this behavior by exporting
 or empty variables fall back to the run-scoped `/tmp/ralph-qa-runtime/...`
 paths recorded in the run manifest.
 
-If that Promotion range includes files under
+If that Promotion range includes non-doc runtime files under
 `backend-services/dagster-user/aemo-etl/`, Ralph also runs the AEMO ETL
 **End-to-end test** gate after the aggregate **Push check** and before any
 Promotion worktree, merge, push, `dev` branch sync, GitHub metadata update, or

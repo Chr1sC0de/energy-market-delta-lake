@@ -33,10 +33,10 @@ the explicit unlimited drain mode. Live `--issue`, `--drain`, and `--promote`
 runs require a clean root worktree before issue claim, worktree creation,
 **Local integration**, or push; `--allow-dirty-worktree` is the explicit
 override and `--dry-run` remains usable on dirty worktrees. When a **Promotion**
-range includes AEMO ETL **Subproject** files, Ralph runs the aggregate
-**Push check** and AEMO ETL **End-to-end test** gate from an isolated source
-worktree fixed at the fetched source-branch revision, before any Promotion
-merge, push, branch sync, metadata update, or issue closure. Each
+range includes non-doc runtime files in the AEMO ETL **Subproject**, Ralph runs
+the aggregate **Push check** and AEMO ETL **End-to-end test** gate from an
+isolated source worktree fixed at the fetched source-branch revision, before
+any Promotion merge, push, branch sync, metadata update, or issue closure. Each
 implementation and **Promotion** run keeps `.ralph/runs/.../ralph-run.json`
 updated with the issue, **Delivery mode**, **Integration target**, Promotion
 source tree, QA, QA runtime environment, push, commit, and GitHub metadata

@@ -310,12 +310,12 @@ claims issues, creates worktrees, performs **Local integration**, or pushes;
 `--allow-dirty-worktree` is the explicit override. Promotion resolves the
 fetched source branch to a revision, creates an isolated source worktree at that
 revision, and runs the aggregate **Push check** there. Promotion runs include
-the AEMO ETL **End-to-end test** gate when the promoted range includes
-`backend-services/dagster-user/aemo-etl/` files; that gate runs from the same
-source worktree before any Promotion merge, push, `dev` branch sync, GitHub
-metadata update, or issue closure. During long Codex and QA phases, Ralph prints
-heartbeat lines with the active phase and log path, and the command logs under
-`.ralph/runs/...` update while the command is still running.
+the AEMO ETL **End-to-end test** gate when the promoted range includes non-doc
+runtime files under `backend-services/dagster-user/aemo-etl/`; that gate runs
+from the same source worktree before any Promotion merge, push, `dev` branch
+sync, GitHub metadata update, or issue closure. During long Codex and QA phases,
+Ralph prints heartbeat lines with the active phase and log path, and the command
+logs under `.ralph/runs/...` update while the command is still running.
 Each implementation and **Promotion** run also maintains
 `.ralph/runs/.../ralph-run.json` with issue, **Delivery mode**, **Integration
 target**, Promotion source tree, QA, QA runtime environment, push, commit, and

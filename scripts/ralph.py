@@ -123,6 +123,11 @@ REQUIRED_ISSUE_SECTIONS = ("What to build", "Acceptance criteria", "Blocked by")
 AEMO_ETL_PREFIX = "backend-services/dagster-user/aemo-etl/"
 BACKEND_SERVICES_PREFIX = "backend-services/"
 AEMO_ETL_E2E_QA_NAME = "aemo-etl End-to-end test"
+MAINTAINED_DOC_PREFIXES = (
+    "docs/",
+    "backend-services/",
+    "infrastructure/aws-pulumi/",
+)
 ENVIRONMENT_FAILURE_PATTERNS = (
     "podman: command not found",
     "docker: command not found",
@@ -840,9 +845,18 @@ def resolve_delivery_plan(
     )
 
 
+def is_maintained_doc_path(changed_file: str) -> bool:
+    if not changed_file.endswith(".md"):
+        return False
+    return changed_file == "README.md" or any(
+        changed_file.startswith(prefix) for prefix in MAINTAINED_DOC_PREFIXES
+    )
+
+
 def root_prek_needed(changed_file: str) -> bool:
     return (
-        changed_file in {"AGENTS.md", "README.md", ".pre-commit-config.yaml"}
+        changed_file in {"AGENTS.md", ".pre-commit-config.yaml"}
+        or is_maintained_doc_path(changed_file)
         or changed_file.startswith("docs/")
         or changed_file.startswith("infrastructure/")
         or (
@@ -853,7 +867,10 @@ def root_prek_needed(changed_file: str) -> bool:
 
 
 def has_protected_aemo_etl_change(changed_files: list[str]) -> bool:
-    return any(path.startswith(AEMO_ETL_PREFIX) for path in changed_files)
+    return any(
+        path.startswith(AEMO_ETL_PREFIX) and not is_maintained_doc_path(path)
+        for path in changed_files
+    )
 
 
 def select_qa_commands(changed_files: list[str], repo_root: Path) -> list[QACommand]:

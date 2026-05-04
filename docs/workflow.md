@@ -146,7 +146,7 @@ worktree unless the operator passes `--allow-dirty-worktree`; `--dry-run`
 remains available on a dirty root worktree. During AFK drains, Ralph prints
 heartbeat lines with the active phase and log path, and command logs under
 `.ralph/runs/...` update while Codex and QA commands are still running.
-When a **Promotion** range includes files under
+When a **Promotion** range includes non-doc runtime files under
 `backend-services/dagster-user/aemo-etl/`, Ralph runs the aggregate
 **Push check** and AEMO ETL **End-to-end test** gate from an isolated source
 worktree fixed at the fetched source-branch revision. Both run before any

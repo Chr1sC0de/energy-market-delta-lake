@@ -434,7 +434,7 @@ Build it.
         self.assertIn(ralph.AI_TRIAGE_DISCLAIMER, prompt)
         self.assertIn("Do not edit repo", prompt)
 
-    def test_select_qa_commands_for_aemo_etl_changes(self) -> None:
+    def test_select_qa_commands_for_aemo_etl_runtime_only_changes(self) -> None:
         commands = ralph.select_qa_commands(
             ["backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"],
             Path("/repo"),
@@ -450,10 +450,52 @@ Build it.
             ],
         )
 
+    def test_select_qa_commands_for_aemo_etl_docs_only_changes(self) -> None:
+        commands = ralph.select_qa_commands(
+            [
+                "backend-services/dagster-user/aemo-etl/README.md",
+                "backend-services/dagster-user/aemo-etl/docs/architecture/"
+                "high_level_architecture.md",
+            ],
+            Path("/repo"),
+        )
+        names = [command.name for command in commands]
+
+        self.assertEqual(names, ["root Commit check"])
+
+    def test_select_qa_commands_for_mixed_aemo_etl_docs_and_runtime_changes(self) -> None:
+        commands = ralph.select_qa_commands(
+            [
+                "backend-services/dagster-user/aemo-etl/docs/development/local_development.md",
+                "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py",
+            ],
+            Path("/repo"),
+        )
+        names = [command.name for command in commands]
+
+        self.assertEqual(
+            names,
+            [
+                "aemo-etl Unit test",
+                "aemo-etl Component test",
+                "aemo-etl Integration test",
+                "aemo-etl Commit check",
+                "root Commit check",
+            ],
+        )
+
     def test_protected_aemo_etl_matching_uses_whole_subproject_prefix(self) -> None:
         self.assertTrue(
             ralph.has_protected_aemo_etl_change(
                 ["backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"]
+            )
+        )
+        self.assertFalse(
+            ralph.has_protected_aemo_etl_change(
+                [
+                    "backend-services/dagster-user/aemo-etl/docs/architecture/"
+                    "high_level_architecture.md"
+                ]
             )
         )
         self.assertFalse(
@@ -466,6 +508,20 @@ Build it.
             )
         )
 
+    def test_aemo_etl_runtime_matching_includes_non_doc_subproject_paths(self) -> None:
+        runtime_paths = (
+            "backend-services/dagster-user/aemo-etl/pyproject.toml",
+            "backend-services/dagster-user/aemo-etl/.localstack.env",
+            "backend-services/dagster-user/aemo-etl/scripts/example",
+            "backend-services/dagster-user/aemo-etl/tests/unit/test_example.py",
+            "backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py",
+            "backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py",
+        )
+
+        for path in runtime_paths:
+            with self.subTest(path=path):
+                self.assertTrue(ralph.has_protected_aemo_etl_change([path]))
+
     def test_select_promotion_gate_commands_for_aemo_etl_changes(self) -> None:
         commands = ralph.select_promotion_gate_commands(
             ["backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"],
@@ -477,8 +533,23 @@ Build it.
         self.assertEqual(commands[0].args, ("scripts/aemo-etl-e2e", "run"))
         self.assertEqual(commands[0].cwd, Path("/repo/backend-services"))
 
+    def test_select_promotion_gate_commands_skips_aemo_etl_docs_only_changes(
+        self,
+    ) -> None:
+        commands = ralph.select_promotion_gate_commands(
+            [
+                "backend-services/dagster-user/aemo-etl/docs/architecture/"
+                "high_level_architecture.md"
+            ],
+            Path("/repo"),
+        )
+
+        self.assertEqual(commands, [])
+
     def test_select_qa_commands_for_docs_and_script_changes(self) -> None:
-        commands = ralph.select_qa_commands(["docs/workflow.md", "scripts/ralph.py"], Path("/repo"))
+        commands = ralph.select_qa_commands(
+            ["docs/workflow.md", "scripts/ralph.py"], Path("/repo")
+        )
         names = [command.name for command in commands]
         self.assertEqual(names, ["root Commit check", "Ralph unit tests"])
 
@@ -1417,6 +1488,58 @@ Build it.
             str(runtime_root / "uv-cache"),
         )
         self.assertEqual(manifest_payload["qa_results"][0]["status"], "passed")
+
+    def test_docs_only_aemo_etl_qa_selection_records_manifest_command(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=loop.config.delivery_mode,
+                target_branch=loop.config.target_branch,
+            )
+            branch, worktree_path, integration_path = loop._branch_and_worktrees(issue)
+            run_dir = tmp_path / "logs" / "issue-42-test"
+            manifest = ralph.RunManifest.for_implementation(
+                run_dir=run_dir,
+                issue=issue,
+                delivery_plan=delivery_plan,
+                branch=branch,
+                worktree_path=worktree_path,
+                integration_path=integration_path,
+                config=loop.config,
+            )
+
+            with patch.dict(ralph.os.environ, {"PATH": "/usr/bin"}, clear=True):
+                with redirect_stdout(io.StringIO()):
+                    loop._run_qa_commands(
+                        [
+                            "backend-services/dagster-user/aemo-etl/docs/development/"
+                            "local_development.md"
+                        ],
+                        loop.config.repo_root,
+                        run_dir,
+                        log_prefix="qa",
+                        subject="#42",
+                        manifest=manifest,
+                    )
+
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            manifest_payload["qa_results"],
+            [
+                {
+                    "name": "root Commit check",
+                    "command": ["prek", "run", "-a"],
+                    "cwd": str(loop.config.repo_root),
+                    "log_path": str(run_dir / "qa-1-root-commit-check.log"),
+                    "status": "passed",
+                }
+            ],
+        )
 
     def test_successful_implementation_squash_merges_pushes_comments_and_closes(self) -> None:
         runner = FakeRunner(
