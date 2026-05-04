@@ -13,6 +13,7 @@ architecture is defined in `infrastructure/aws-pulumi/`.
 - [Setup](#setup)
 - [Environment variables](#environment-variables)
 - [LocalStack S3 buckets](#localstack-s3-buckets)
+- [Cached Archive seed](#cached-archive-seed)
 - [Launching a job via the GraphQL API](#launching-a-job-via-the-graphql-api)
 - [Useful commands](#useful-commands)
 - [Related docs](#related-docs)
@@ -23,6 +24,7 @@ architecture is defined in `infrastructure/aws-pulumi/`.
 |---|---|---|
 | `postgres` | Dagster instance storage (run, schedule, event-log) | `5432` |
 | `localstack` | Mocked AWS services for local storage workflows | `4566` |
+| `aemo-etl-seed-localstack` | Optional cached Archive seed loader for local **End-to-end test** setup | — |
 | `aemo-etl` | Dagster gRPC code-location server | `4000` |
 | `dagster-webserver-admin` | Protected Dagster UI + GraphQL API | internal |
 | `dagster-webserver-guest` | Guest Dagster UI + GraphQL API | internal |
@@ -75,6 +77,7 @@ ______________________________________________________________________
 ```text
 backend-services/
 ├── compose.yaml                   # Podman Compose — local test/dev service stack
+├── .e2e/aemo-etl/                 # Ignored cached Archive seed and manifests
 ├── localstack/
 │   └── init-s3.sh                 # Auto-creates S3 buckets on LocalStack boot
 ├── postgres/
@@ -224,6 +227,9 @@ them before starting the stack.
 | `AWS_SECRET_ACCESS_KEY` | `test` | Dummy credential accepted by LocalStack |
 | `DAGSTER_FAILURE_ALERT_TOPIC_ARN` | empty | Optional SNS topic ARN for failed-run alert fan-out |
 | `DAGSTER_FAILURE_ALERT_BASE_URL` | `https://localhost/dagster-webserver/admin` | Dagster UI base URL included in failed-run alerts |
+| `AEMO_ETL_E2E_SEED_ENABLED` | `0` | Set to `1` to require cached Archive seed loading before `aemo-etl` starts |
+| `AEMO_ETL_E2E_SEED_RAW_LATEST_COUNT` | `10` | Required cached raw source-table objects per table |
+| `AEMO_ETL_E2E_SEED_ZIP_LATEST_COUNT` | `3` | Required cached zip objects per domain |
 
 ______________________________________________________________________
 
@@ -242,6 +248,26 @@ the DynamoDB `delta_log` table used for Delta locking:
 
 Bucket names are derived from the defaults in `aemo_etl/configs.py`
 (`DEVELOPMENT_ENVIRONMENT=dev`, `NAME_PREFIX=energy-market`).
+
+## Cached Archive seed
+
+The local stack includes a one-shot `aemo-etl-seed-localstack` service. It is a
+no-op by default. When `AEMO_ETL_E2E_SEED_ENABLED=1`, the service validates the
+cache under `backend-services/.e2e/aemo-etl`, uploads the selected cached
+Archive objects into LocalStack landing storage, writes
+`seed-run-manifest.json`, and must complete successfully before `aemo-etl`
+starts.
+
+Refresh the cache from the live dev archive bucket with the AEMO ETL CLI:
+
+```bash
+cd backend-services/dagster-user/aemo-etl
+uv run aemo-e2e-archive-seed refresh
+```
+
+The refresh path defaults to `dev-energy-market-archive`, requires 10 latest raw
+objects for each required `gas_model` source table and 3 latest zip objects for
+each required zip domain, and fails with a manifest if coverage is short.
 
 ______________________________________________________________________
 
@@ -446,9 +472,10 @@ postgres  ──(healthy)──► dagster-webserver-admin
                       ├─► dagster-webserver-guest
                       └─► dagster-daemon
 
-localstack ──(healthy)──► aemo-etl ──(started)──► dagster-webserver-admin
-                                              ├─► dagster-webserver-guest
-                                              └─► dagster-daemon
+localstack ──(healthy)──► aemo-etl-seed-localstack ──(completed)──► aemo-etl
+                                                                  ├─► dagster-webserver-admin
+                                                                  ├─► dagster-webserver-guest
+                                                                  └─► dagster-daemon
 ```
 
 ### Run execution flow
@@ -480,6 +507,8 @@ that path accordingly.
   - `backend-services/compose.yaml`
   - `backend-services/.envrc`
   - `backend-services/localstack/init-s3.sh`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
   - `backend-services/dagster-core/dagster.local.yaml`
   - `backend-services/dagster-core/dagster.aws.yaml`
 - `sync.scope`: `operations`

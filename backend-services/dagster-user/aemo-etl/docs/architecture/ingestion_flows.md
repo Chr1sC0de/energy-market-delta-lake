@@ -161,7 +161,13 @@ Trigger and output notes:
 
 ## LocalStack and S3-compatible behavior
 
-When `AWS_ENDPOINT_URL` points at LocalStack, the same flow runs against local S3-compatible storage rather than AWS. Integration tests also create a `delta_log` DynamoDB table so Delta locking works for local end-to-end materializations.
+When `AWS_ENDPOINT_URL` points at LocalStack, the same flow runs against local
+S3-compatible storage rather than AWS. Integration tests also create a
+`delta_log` DynamoDB table so Delta locking works for local end-to-end
+materializations. For local **End-to-end test** setup,
+`aemo-e2e-archive-seed` can refresh the ignored cached Archive seed for the full
+`gas_model` target and load the cached objects into LocalStack landing storage
+before Dagster starts.
 
 ## Related docs
 
@@ -186,6 +192,8 @@ When `AWS_ENDPOINT_URL` points at LocalStack, the same flow runs against local S
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_operational_meter_flow.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/unzipper/definitions.py`

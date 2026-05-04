@@ -108,6 +108,11 @@ planning and explicit `--replace` rebuilds of source-table bronze Delta tables
 from archived source files. Source-table bronze keeps bounded current state;
 append replay history remains in archive storage.
 
+For local **End-to-end test** setup, `aemo-e2e-archive-seed` derives the full
+`gas_model` seed spec from Dagster definitions, refreshes an ignored cached
+Archive slice under `backend-services/.e2e/aemo-etl`, and lets LocalStack runs
+reuse that cache without live AWS archive access.
+
 The orchestration details come from the Dagster definitions in
 `backend-services/dagster-user/aemo-etl`, including event-driven sensors and
 automation-conditioned downstream assets. The Delta maintenance schedule runs
@@ -341,7 +346,9 @@ for stack details, component breakdown, and deployed-test commands.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
   - `backend-services/marimo/.pre-commit-config.yaml`
   - `backend-services/marimo/pyproject.toml`
   - `infrastructure/aws-pulumi/__main__.py`

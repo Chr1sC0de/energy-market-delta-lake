@@ -157,6 +157,12 @@ Replace mode processes archived source files in bounded batches, writes the
 first non-empty batch as an overwrite, then applies the same current-state merge
 predicate used by normal source-table bronze ingestion.
 
+`aemo-e2e-archive-seed` is the local **End-to-end test** seed path. It imports
+`defs()`, derives the full `gas_model` source-table and zip-domain seed spec
+from the Dagster asset graph, refreshes a configurable latest slice from the
+live Archive bucket into `backend-services/.e2e/aemo-etl`, and lets later
+LocalStack runs load that cache before Dagster starts.
+
 The corresponding silver asset:
 
 - reads the bronze Delta table
@@ -296,6 +302,8 @@ flowchart TD
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/s3_pending_objects.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/unzipper/sensors.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/table_metadata.py`
