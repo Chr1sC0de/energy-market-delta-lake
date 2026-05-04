@@ -368,9 +368,15 @@ sequenceDiagram
 `python3 scripts/ralph.py --promote` promotes reviewed Gitflow work from
 `origin/dev` to `origin/main` by default. Ralph fetches both branches, computes
 the changed files between them, runs the aggregate matching **Push check** QA,
-merges `origin/dev` into a detached `origin/main` worktree with per-issue commits
-preserved, pushes `main`, and then fast-forwards `dev` to the promotion commit so
-the next Gitflow drain starts from a `dev` branch that contains `main`.
+and, when the promoted range includes files under
+`backend-services/dagster-user/aemo-etl/`, runs the AEMO ETL **End-to-end test**
+gate before creating the Promotion worktree. The gate is recorded as
+`aemo-etl End-to-end test` in the Promotion run manifest and invokes
+`scripts/aemo-etl-e2e run` from the `backend-services` **Subproject**. Ralph then
+merges `origin/dev` into a detached `origin/main` worktree with per-issue
+commits preserved, pushes `main`, and fast-forwards `dev` to the promotion
+commit so the next Gitflow drain starts from a `dev` branch that contains
+`main`.
 
 After the push succeeds, Ralph scans open `agent-integrated` issues. It closes
 only issues whose recorded Gitflow integration commit is still in the promoted
@@ -434,6 +440,16 @@ before merging.
 During **Promotion**, Ralph computes all files changed between `origin/main` and
 `origin/dev`, then runs the matching QA set as an aggregate **Push check** before
 pushing `main`.
+
+If that Promotion range includes files under
+`backend-services/dagster-user/aemo-etl/`, Ralph also runs the AEMO ETL
+**End-to-end test** gate after the aggregate **Push check** and before any
+Promotion worktree, merge, push, or GitHub metadata side effect:
+
+```bash
+cd backend-services
+scripts/aemo-etl-e2e run
+```
 
 ## Failure handling
 

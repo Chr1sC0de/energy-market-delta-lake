@@ -138,9 +138,13 @@ worktree unless the operator passes `--allow-dirty-worktree`; `--dry-run`
 remains available on a dirty root worktree. During AFK drains, Ralph prints
 heartbeat lines with the active phase and log path, and command logs under
 `.ralph/runs/...` update while Codex and QA commands are still running.
-Implementation and **Promotion** runs also keep
-`.ralph/runs/.../ralph-run.json` updated with **Delivery mode**, **Integration
-target**, QA, push, commit, and GitHub metadata state for recovery. Use
+When a **Promotion** range includes files under
+`backend-services/dagster-user/aemo-etl/`, Ralph runs the AEMO ETL
+**End-to-end test** gate after the aggregate **Push check** and before any
+Promotion merge or push side effect. Implementation and **Promotion** runs also
+keep `.ralph/runs/.../ralph-run.json` updated with **Delivery mode**,
+**Integration target**, QA, push, commit, and GitHub metadata state for
+recovery. Use
 `python3 scripts/ralph.py --inspect-run <run_dir>` for a read-only manifest
 summary. Use `python3 scripts/ralph.py --recover-run <run_dir>` only after the
 recorded **Local integration** commit is verified reachable from the expected
