@@ -301,6 +301,7 @@ instead of relying on the caller's `PATH`.
 | Ralph Gitflow drain | `python3 scripts/ralph.py --drain` |
 | Ralph trunk drain | `python3 scripts/ralph.py --drain --delivery-mode trunk` |
 | Ralph promotion | `python3 scripts/ralph.py --promote` |
+| Ralph promotion without Post-promotion review | `python3 scripts/ralph.py --promote --skip-post-promotion-review` |
 | Ralph run inspection | `python3 scripts/ralph.py --inspect-run .ralph/runs/issue-25-...` |
 | Ralph metadata recovery | `python3 scripts/ralph.py --recover-run .ralph/runs/issue-25-...` |
 
@@ -311,16 +312,24 @@ plain Ralph drain uses a default budget of 10 implementation attempts; pass
 `--drain`, and `--promote` runs require a clean root worktree before Ralph
 claims issues, creates worktrees, performs **Local integration**, or pushes;
 `--dry-run` remains available on a dirty root worktree, and
-`--allow-dirty-worktree` is the explicit override. Promotion runs include the
-AEMO ETL **End-to-end test** gate when the promoted range includes
-`backend-services/dagster-user/aemo-etl/` files; that gate runs before any
-Promotion merge, push, `dev` branch sync, GitHub metadata update, or issue
-closure. During long Codex and QA phases, Ralph prints heartbeat lines with the
-active phase and log path, and the command logs under `.ralph/runs/...` update
-while the command is still running.
+`--allow-dirty-worktree` is the explicit override. Promotion resolves the
+fetched source branch to a revision, creates an isolated source worktree at that
+revision, and runs the aggregate **Push check** there. Promotion runs include
+the AEMO ETL **End-to-end test** gate when the promoted range includes non-doc
+runtime files under `backend-services/dagster-user/aemo-etl/`; that gate runs
+from the same source worktree before any Promotion merge, push, `dev` branch
+sync, GitHub metadata update, or issue closure. During long Codex and QA phases,
+Ralph prints heartbeat lines with the active phase and log path, and the command
+logs under `.ralph/runs/...` update while the command is still running.
+Successful Promotions with changed files run a Post-promotion review agent by
+default after the `main` push, `dev` sync, and verified issue metadata updates;
+pass `--skip-post-promotion-review` to disable that review. If there are no
+Promotion changes, Ralph prints a review skip note and records
+`post_promotion_review.status` as `skipped_no_changes`.
 Each implementation and **Promotion** run also maintains
 `.ralph/runs/.../ralph-run.json` with issue, **Delivery mode**, **Integration
-target**, QA, push, commit, and GitHub metadata state for recovery. Use
+target**, Promotion source tree, QA, QA runtime environment, Post-promotion
+review, push, commit, and GitHub metadata state for recovery. Use
 `--inspect-run` for a read-only summary, then use `--recover-run` only after
 the recorded **Local integration** commit is verified reachable from the
 expected **Integration target**; recovery reconciles GitHub comments, runtime
@@ -331,6 +340,12 @@ default so they can run authenticated `gh issue` reads and writes during AFK
 drains. The sandbox receives a `GH_TOKEN` from the parent environment or local
 `gh auth`, with a wrapper that blocks broader `gh` commands; Git push auth and
 **Local integration** remain outside the sandbox.
+Ralph passes writable QA runtime paths to spawned Codex subprocesses and to
+Ralph-run QA commands. Explicit operator values for `DAGSTER_HOME`,
+`XDG_CACHE_HOME`, and `UV_CACHE_DIR` are preserved; unset or empty values fall
+back to child directories named `dagster-home`, `xdg-cache`, and `uv-cache`
+under `/tmp/ralph-qa-runtime/<repo-slug>/<run-dir-name>/`, with the effective
+values recorded in the run manifest.
 
 ## Deployment
 

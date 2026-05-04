@@ -72,10 +72,19 @@ SANDBOX_CODEX_ENV_INCLUDE_ONLY = (
     "GH_REPO",
     "GH_PROMPT_DISABLED",
     "GH_NO_UPDATE_NOTIFIER",
+    "DAGSTER_HOME",
+    "XDG_CACHE_HOME",
+    "UV_CACHE_DIR",
     "NO_COLOR",
     "CLICOLOR",
     "CLICOLOR_FORCE",
 )
+QA_RUNTIME_ROOT_DIR_NAME = "ralph-qa-runtime"
+QA_RUNTIME_ENV_DIRS = {
+    "DAGSTER_HOME": "dagster-home",
+    "XDG_CACHE_HOME": "xdg-cache",
+    "UV_CACHE_DIR": "uv-cache",
+}
 
 TRIAGE_STATE_LABELS = frozenset(
     {
@@ -114,6 +123,11 @@ REQUIRED_ISSUE_SECTIONS = ("What to build", "Acceptance criteria", "Blocked by")
 AEMO_ETL_PREFIX = "backend-services/dagster-user/aemo-etl/"
 BACKEND_SERVICES_PREFIX = "backend-services/"
 AEMO_ETL_E2E_QA_NAME = "aemo-etl End-to-end test"
+MAINTAINED_DOC_PREFIXES = (
+    "docs/",
+    "backend-services/",
+    "infrastructure/aws-pulumi/",
+)
 ENVIRONMENT_FAILURE_PATTERNS = (
     "podman: command not found",
     "docker: command not found",
@@ -208,6 +222,12 @@ class SandboxIssueAccess:
 
 
 @dataclass(frozen=True)
+class QARuntimeEnv:
+    values: dict[str, str]
+    metadata: dict[str, dict[str, str]]
+
+
+@dataclass(frozen=True)
 class Issue:
     number: int
     title: str
@@ -264,6 +284,7 @@ class LoopConfig:
     target_branch: str | None
     source_branch: str
     promote: bool
+    skip_post_promotion_review: bool
     issue: int | None
     drain: bool
     max_issues: int
@@ -332,6 +353,7 @@ class RunManifest:
             },
             "changed_files": [],
             "qa_results": [],
+            "qa_runtime_env": {"status": "not_started"},
             "codex_attempts": [],
             "sandboxed_issue_access": {"status": "not_started"},
             "commits": {},
@@ -352,6 +374,7 @@ class RunManifest:
         run_dir: Path,
         source_branch: str,
         target_branch: str,
+        source_path: Path,
         promote_path: Path,
         config: LoopConfig,
     ) -> "RunManifest":
@@ -374,12 +397,24 @@ class RunManifest:
                 "repo_root": str(config.repo_root),
                 "run_dir": str(run_dir),
                 "worktree_container": str(config.worktree_container),
+                "promotion_source_worktree": str(source_path),
                 "promotion_worktree": str(promote_path),
             },
             "changed_files": [],
             "qa_results": [],
+            "qa_runtime_env": {"status": "not_started"},
             "commits": {},
+            "source_tree": None,
             "promotion_commit": None,
+            "post_promotion_review": {
+                "enabled": not config.skip_post_promotion_review,
+                "status": (
+                    "skipped_by_operator"
+                    if config.skip_post_promotion_review
+                    else "pending"
+                ),
+                "log_path": None,
+            },
             "pushes": {},
             "github_metadata": {"status": "not_started", "issues": []},
             "failure": None,
@@ -431,6 +466,34 @@ class RunManifest:
         self.data["promotion_commit"] = {"sha": sha, "branch": branch}
         self.record_event("promotion_commit_recorded", details={"commit": sha, "branch": branch})
 
+    def record_post_promotion_review(
+        self,
+        status: str,
+        *,
+        log_path: Path | None = None,
+        reason: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        review = self.data.setdefault("post_promotion_review", {})
+        if not isinstance(review, dict):
+            raise RalphError("Manifest post_promotion_review field is not an object.")
+        review["status"] = status
+        review["log_path"] = path_text(log_path)
+        if reason is not None:
+            review["reason"] = reason
+        if error is not None:
+            review["error"] = error
+        self.record_event(f"post_promotion_review_{status}", details=dict(review))
+
+    def record_source_tree(self, *, branch: str, revision: str, worktree_path: Path) -> None:
+        source_tree = {
+            "branch": branch,
+            "revision": revision,
+            "worktree": str(worktree_path),
+        }
+        self.data["source_tree"] = source_tree
+        self.record_event("source_tree_recorded", details=source_tree)
+
     def record_codex_attempt(
         self,
         attempt: int,
@@ -474,6 +537,14 @@ class RunManifest:
             f"qa_{status}",
             details={"name": command.name, "log_path": str(log_path)},
         )
+
+    def record_qa_runtime_env(self, qa_runtime_env: QARuntimeEnv) -> None:
+        metadata = {
+            "status": "ready",
+            "variables": qa_runtime_env.metadata,
+        }
+        self.data["qa_runtime_env"] = metadata
+        self.record_event("qa_runtime_env_ready", details=metadata)
 
     def record_push(
         self,
@@ -677,6 +748,40 @@ def slugify(value: str, *, max_length: int = 56) -> str:
     return slug[:max_length].rstrip("-")
 
 
+def default_qa_runtime_root(repo: str, run_dir: Path) -> Path:
+    return Path("/tmp") / QA_RUNTIME_ROOT_DIR_NAME / slugify(repo) / run_dir.name
+
+
+def resolve_qa_runtime_env(
+    *,
+    repo: str,
+    run_dir: Path,
+    base_env: dict[str, str] | None = None,
+) -> QARuntimeEnv:
+    source_env = os.environ if base_env is None else base_env
+    runtime_root = default_qa_runtime_root(repo, run_dir)
+    values: dict[str, str] = {}
+    metadata: dict[str, dict[str, str]] = {}
+    for name, directory_name in QA_RUNTIME_ENV_DIRS.items():
+        operator_value = source_env.get(name)
+        if operator_value is not None and operator_value != "":
+            values[name] = operator_value
+            metadata[name] = {"value": operator_value, "source": "operator"}
+            continue
+
+        runtime_path = runtime_root / directory_name
+        runtime_path.mkdir(parents=True, exist_ok=True)
+        values[name] = str(runtime_path)
+        metadata[name] = {"value": str(runtime_path), "source": "ralph_default"}
+    return QARuntimeEnv(values=values, metadata=metadata)
+
+
+def env_with_qa_runtime(qa_runtime_env: QARuntimeEnv) -> dict[str, str]:
+    env = dict(os.environ)
+    env.update(qa_runtime_env.values)
+    return env
+
+
 def section_body(markdown: str, heading: str) -> str | None:
     pattern = re.compile(
         rf"(?ims)^#{{1,6}}\s+{re.escape(heading)}\s*$\n"
@@ -769,9 +874,18 @@ def resolve_delivery_plan(
     )
 
 
+def is_maintained_doc_path(changed_file: str) -> bool:
+    if not changed_file.endswith(".md"):
+        return False
+    return changed_file == "README.md" or any(
+        changed_file.startswith(prefix) for prefix in MAINTAINED_DOC_PREFIXES
+    )
+
+
 def root_prek_needed(changed_file: str) -> bool:
     return (
-        changed_file in {"AGENTS.md", "README.md", ".pre-commit-config.yaml"}
+        changed_file in {"AGENTS.md", ".pre-commit-config.yaml"}
+        or is_maintained_doc_path(changed_file)
         or changed_file.startswith("docs/")
         or changed_file.startswith("infrastructure/")
         or (
@@ -782,7 +896,10 @@ def root_prek_needed(changed_file: str) -> bool:
 
 
 def has_protected_aemo_etl_change(changed_files: list[str]) -> bool:
-    return any(path.startswith(AEMO_ETL_PREFIX) for path in changed_files)
+    return any(
+        path.startswith(AEMO_ETL_PREFIX) and not is_maintained_doc_path(path)
+        for path in changed_files
+    )
 
 
 def select_qa_commands(changed_files: list[str], repo_root: Path) -> list[QACommand]:
@@ -971,8 +1088,14 @@ def prepare_sandbox_issue_access(
     )
 
 
-def codex_env_for_sandbox_issue_access(access: SandboxIssueAccess) -> dict[str, str]:
+def codex_env_for_sandbox_issue_access(
+    access: SandboxIssueAccess,
+    *,
+    qa_runtime_env: QARuntimeEnv | None = None,
+) -> dict[str, str]:
     env = dict(os.environ)
+    if qa_runtime_env is not None:
+        env.update(qa_runtime_env.values)
     wrapper_dir = str(access.wrapper_path.parent)
     current_path = env.get("PATH", "")
     env["PATH"] = f"{wrapper_dir}{os.pathsep}{current_path}" if current_path else wrapper_dir
@@ -1639,6 +1762,14 @@ class RalphLoop:
         if missing:
             raise RalphError(f"Missing required command(s): {', '.join(missing)}")
 
+    def _validate_post_promotion_review_tool(self) -> None:
+        if self.config.skip_post_promotion_review:
+            return
+        if not isinstance(self.runner, CommandRunner):
+            return
+        if shutil.which("codex") is None:
+            raise EnvironmentFailure("Missing required command(s): codex")
+
     def _validate_labels(self) -> None:
         actual = self.github.list_labels()
         expected = {label.name for label in LABEL_SPECS}
@@ -1713,6 +1844,9 @@ class RalphLoop:
         source_branch = self.config.source_branch
         target_branch = self._promotion_target_branch()
         run_dir = self._promotion_run_dir()
+        source_path = self.config.worktree_container / (
+            f"agent-promote-source-{slugify(source_branch)}-to-{slugify(target_branch)}"
+        )
         promote_path = self.config.worktree_container / (
             f"agent-promote-{slugify(source_branch)}-to-{slugify(target_branch)}"
         )
@@ -1721,29 +1855,53 @@ class RalphLoop:
             run_dir=run_dir,
             source_branch=source_branch,
             target_branch=target_branch,
+            source_path=source_path,
             promote_path=promote_path,
             config=self.config,
         )
         pushed = False
+        source_worktree_created = False
 
         try:
             emit(f"Promoting origin/{source_branch} to origin/{target_branch}")
             manifest.record_event("fetching_branches")
             self.git.fetch_base(source_branch, run_dir=run_dir)
             self.git.fetch_base(target_branch, run_dir=run_dir)
+            source_revision = self.git.rev_parse(f"origin/{source_branch}")
+            manifest.record_source_tree(
+                branch=source_branch,
+                revision=source_revision,
+                worktree_path=source_path,
+            )
             changed_files = self.git.changed_files_between(
                 base_ref=f"origin/{target_branch}",
-                head_ref=f"origin/{source_branch}",
+                head_ref=source_revision,
             )
             manifest.record_changed_files(changed_files, stage="promotion_changes_detected")
             if not changed_files:
                 emit(f"No changes to promote from {source_branch} to {target_branch}.")
+                emit("Post-promotion review skipped: no Promotion changes.")
+                manifest.record_post_promotion_review(
+                    "skipped_no_changes",
+                    reason="No Promotion changes were detected.",
+                )
                 manifest.record_success("no_changes_to_promote")
                 return
+            self._validate_post_promotion_review_tool()
 
+            emit(f"Creating Promotion source worktree {source_path}")
+            manifest.record_event("creating_promotion_source_worktree")
+            self.git.add_detached_worktree(
+                path=source_path,
+                ref=source_revision,
+                run_dir=run_dir,
+                log_name="git-worktree-add-promotion-source.log",
+            )
+            source_worktree_created = True
+            manifest.record_event("promotion_source_worktree_created")
             qa_results = self._run_qa_commands(
                 changed_files,
-                self.config.repo_root,
+                source_path,
                 run_dir,
                 log_prefix="promotion-qa",
                 subject="promotion",
@@ -1752,13 +1910,14 @@ class RalphLoop:
             qa_results.extend(
                 self._run_promotion_gate_commands(
                     changed_files,
-                    self.config.repo_root,
+                    source_path,
                     run_dir,
                     manifest=manifest,
                 )
             )
             integrated_issues = self._verified_integrated_issues(
                 source_branch=source_branch,
+                source_ref=source_revision,
                 target_branch=target_branch,
             )
             manifest.record_promoted_issues(integrated_issues)
@@ -1770,11 +1929,14 @@ class RalphLoop:
                 ref=f"origin/{target_branch}",
                 run_dir=run_dir,
             )
-            emit(f"Merging origin/{source_branch} into promotion worktree")
+            emit(
+                f"Merging source revision {source_revision} from "
+                f"origin/{source_branch} into promotion worktree"
+            )
             manifest.record_event("merging_source_branch")
             self.git.merge_no_ff(
                 cwd=promote_path,
-                ref=f"origin/{source_branch}",
+                ref=source_revision,
                 message=f"Promote {source_branch} to {target_branch}",
                 run_dir=run_dir,
             )
@@ -1828,6 +1990,17 @@ class RalphLoop:
                 run_dir=run_dir,
                 manifest=manifest,
             )
+            self._run_post_promotion_review(
+                source_branch=source_branch,
+                target_branch=target_branch,
+                source_revision=source_revision,
+                promotion_sha=promotion_sha,
+                changed_files=changed_files,
+                integrated_issues=integrated_issues,
+                promote_path=promote_path,
+                run_dir=run_dir,
+                manifest=manifest,
+            )
             try:
                 manifest.record_event("cleaning_up_promotion_worktree")
                 self.git.remove_worktree(
@@ -1860,11 +2033,78 @@ class RalphLoop:
                 emit(str(post_push_error), err=True)
                 raise post_push_error from error
             raise
+        finally:
+            if source_worktree_created:
+                try:
+                    self.git.remove_worktree(
+                        source_path,
+                        run_dir=run_dir,
+                        log_name="git-worktree-remove-promotion-source.log",
+                    )
+                except CommandFailure as error:
+                    emit(f"Cleanup warning: {error}", err=True)
+
+    def _run_post_promotion_review(
+        self,
+        *,
+        source_branch: str,
+        target_branch: str,
+        source_revision: str,
+        promotion_sha: str,
+        changed_files: list[str],
+        integrated_issues: list[tuple[Issue, str]],
+        promote_path: Path,
+        run_dir: Path,
+        manifest: RunManifest,
+    ) -> None:
+        if self.config.skip_post_promotion_review:
+            emit("Post-promotion review skipped by --skip-post-promotion-review.")
+            manifest.record_post_promotion_review(
+                "skipped_by_operator",
+                reason="Operator passed --skip-post-promotion-review.",
+            )
+            return
+
+        log_path = run_dir / "codex-post-promotion-review.jsonl"
+        emit("Running Post-promotion review.")
+        manifest.record_post_promotion_review("running", log_path=log_path)
+        try:
+            self._run_codex(
+                post_promotion_review_prompt(
+                    repo=self.config.repo,
+                    source_branch=source_branch,
+                    target_branch=target_branch,
+                    source_revision=source_revision,
+                    promotion_sha=promotion_sha,
+                    changed_files=changed_files,
+                    integrated_issues=integrated_issues,
+                    run_dir=run_dir,
+                ),
+                promote_path,
+                log_path,
+                phase="Post-promotion review",
+                manifest=manifest,
+            )
+        except (CommandFailure, EnvironmentFailure) as error:
+            review_log_path = error.log_path or log_path
+            manifest.record_post_promotion_review(
+                "failed",
+                log_path=review_log_path,
+                error=str(error),
+            )
+            post_review_error = PostPushFailure(
+                f"Post-promotion review failed: {error}",
+                log_path=review_log_path,
+            )
+            manifest.record_failure(post_review_error, log_path=review_log_path)
+            raise post_review_error from error
+        manifest.record_post_promotion_review("completed", log_path=log_path)
 
     def _verified_integrated_issues(
         self,
         *,
         source_branch: str,
+        source_ref: str,
         target_branch: str,
     ) -> list[tuple[Issue, str]]:
         issues: list[tuple[Issue, str]] = []
@@ -1878,12 +2118,12 @@ class RalphLoop:
                 continue
             if not self._commit_is_in_promotion_range(
                 commit_sha,
-                source_branch=source_branch,
+                source_ref=source_ref,
                 target_branch=target_branch,
             ):
                 emit(
                     f"Skipping #{issue.number}: commit {commit_sha} is not in "
-                    f"origin/{target_branch}..origin/{source_branch}."
+                    f"origin/{target_branch}..{source_ref} from {source_branch}."
                 )
                 continue
             issues.append((issue, commit_sha))
@@ -1893,10 +2133,9 @@ class RalphLoop:
         self,
         commit_sha: str,
         *,
-        source_branch: str,
+        source_ref: str,
         target_branch: str,
     ) -> bool:
-        source_ref = f"origin/{source_branch}"
         target_ref = f"origin/{target_branch}"
         return self.git.is_ancestor(
             ancestor=commit_sha,
@@ -2503,8 +2742,13 @@ class RalphLoop:
             repo=self.config.repo,
             run_dir=log_path.parent,
         )
+        qa_runtime_env = resolve_qa_runtime_env(
+            repo=self.config.repo,
+            run_dir=log_path.parent,
+        )
         if manifest is not None:
             manifest.record_sandboxed_issue_access(sandbox_issue_access)
+            manifest.record_qa_runtime_env(qa_runtime_env)
         self.runner.run(
             codex_exec_command(cwd),
             cwd=cwd,
@@ -2512,7 +2756,10 @@ class RalphLoop:
             log_path=log_path,
             phase=phase,
             execute_in_dry_run=False,
-            env=codex_env_for_sandbox_issue_access(sandbox_issue_access),
+            env=codex_env_for_sandbox_issue_access(
+                sandbox_issue_access,
+                qa_runtime_env=qa_runtime_env,
+            ),
         )
 
     def _run_qa(
@@ -2606,6 +2853,10 @@ class RalphLoop:
         manifest: RunManifest | None = None,
     ) -> list[QAResult]:
         results: list[QAResult] = []
+        qa_runtime_env = resolve_qa_runtime_env(repo=self.config.repo, run_dir=run_dir)
+        qa_env = env_with_qa_runtime(qa_runtime_env)
+        if manifest is not None:
+            manifest.record_qa_runtime_env(qa_runtime_env)
         for index, command in enumerate(commands, start=1):
             log_path = run_dir / f"{log_prefix}-{index}-{slugify(command.name)}.log"
             try:
@@ -2621,6 +2872,7 @@ class RalphLoop:
                     log_path=log_path,
                     phase=f"{subject}: QA {command.name}",
                     execute_in_dry_run=False,
+                    env=qa_env,
                 )
             except CommandFailure as error:
                 if looks_like_environment_failure(error):
@@ -3244,6 +3496,64 @@ def triage_prompt(issue: Issue, repo: str) -> str:
     ).strip()
 
 
+def post_promotion_review_prompt(
+    *,
+    repo: str,
+    source_branch: str,
+    target_branch: str,
+    source_revision: str,
+    promotion_sha: str,
+    changed_files: list[str],
+    integrated_issues: list[tuple[Issue, str]],
+    run_dir: Path,
+) -> str:
+    changed_lines = "\n".join(f"- {path}" for path in changed_files)
+    if not changed_lines:
+        changed_lines = "- None"
+    issue_lines = "\n".join(
+        f"- #{issue.number} {issue.title}: integrated `{integrated_commit}`"
+        for issue, integrated_commit in integrated_issues
+    )
+    if not issue_lines:
+        issue_lines = "- None"
+    return textwrap.dedent(
+        f"""
+        Run a Post-promotion review for {repo}.
+
+        Work in this repository worktree only. Follow AGENTS.md and the repo's
+        canonical terms, especially Subproject, Test lane, Fast check, Commit
+        check, Push check, Local integration, Delivery mode, Integration
+        target, and Promotion.
+
+        Do not edit files, commit, push, or edit GitHub labels/comments. Report
+        findings in the command output only.
+
+        Review the completed Promotion for regressions, missed issue evidence,
+        surprising changed files, and obvious follow-up risks. Prioritize
+        concrete findings with file paths, commands, commits, or manifest
+        fields. If no issues are found, say that clearly and mention any
+        residual risk.
+
+        Promotion details:
+
+        - Source branch: `{source_branch}`
+        - Source revision: `{source_revision}`
+        - Integration target: `{target_branch}`
+        - Promotion commit: `{promotion_sha}`
+        - Run logs: `{run_dir}`
+        - Run manifest: `{run_dir / MANIFEST_NAME}`
+
+        Promoted files:
+
+        {changed_lines}
+
+        Verified Gitflow issues:
+
+        {issue_lines}
+        """
+    ).strip()
+
+
 def command_failure_summary(error: CommandFailure) -> str:
     pieces = [
         f"Command: {format_command(error.command)}",
@@ -3405,6 +3715,7 @@ def build_config(args: argparse.Namespace, runner: CommandRunner) -> LoopConfig:
         target_branch=target_branch,
         source_branch=args.source_branch,
         promote=args.promote,
+        skip_post_promotion_review=args.skip_post_promotion_review,
         issue=args.issue,
         drain=args.drain,
         max_issues=args.max_issues,
@@ -3440,6 +3751,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--promote",
         action="store_true",
         help="Promote the source branch to the target branch and close verified integrated issues.",
+    )
+    parser.add_argument(
+        "--skip-post-promotion-review",
+        action="store_true",
+        help="Skip the default Post-promotion review agent after --promote.",
     )
     parser.add_argument(
         "--base",

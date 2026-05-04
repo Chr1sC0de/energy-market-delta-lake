@@ -147,13 +147,20 @@ worktree unless the operator passes `--allow-dirty-worktree`; `--dry-run`
 remains available on a dirty root worktree. During AFK drains, Ralph prints
 heartbeat lines with the active phase and log path, and command logs under
 `.ralph/runs/...` update while Codex and QA commands are still running.
-When a **Promotion** range includes files under
-`backend-services/dagster-user/aemo-etl/`, Ralph runs the AEMO ETL
-**End-to-end test** gate after the aggregate **Push check** and before any
+When a **Promotion** range includes non-doc runtime files under
+`backend-services/dagster-user/aemo-etl/`, Ralph runs the aggregate
+**Push check** and AEMO ETL **End-to-end test** gate from an isolated source
+worktree fixed at the fetched source-branch revision. Both run before any
 Promotion merge, push, `dev` branch sync, GitHub metadata update, or issue
-closure. Implementation and **Promotion** runs also keep
+closure. Successful Promotions with changed files run a Post-promotion review
+agent by default after the `main` push, `dev` sync, and verified issue metadata
+updates; `--skip-post-promotion-review` disables that review. No-change
+Promotions print a review skip note and record `skipped_no_changes` in the
+Post-promotion review manifest state. Implementation and **Promotion** runs
+also keep
 `.ralph/runs/.../ralph-run.json` updated with **Delivery mode**, **Integration
-target**, QA, push, commit, and GitHub metadata state for recovery. Use
+target**, Promotion source tree, QA, QA runtime environment, Post-promotion
+review, push, commit, and GitHub metadata state for recovery. Use
 `python3 scripts/ralph.py --inspect-run <run_dir>` for a read-only manifest
 summary. Use `python3 scripts/ralph.py --recover-run <run_dir>` only after the
 recorded **Local integration** commit is verified reachable from the expected
@@ -163,6 +170,11 @@ authenticated `gh issue` reads and writes. Ralph resolves the token from the
 parent environment or local `gh auth`, injects it as `GH_TOKEN`, and wraps `gh`
 so the sandbox cannot use broader GitHub commands; Git push auth stays in
 Ralph's outer loop.
+Ralph also passes writable QA runtime path variables to spawned Codex
+subprocesses and Ralph-run QA commands. Operator-provided `DAGSTER_HOME`,
+`XDG_CACHE_HOME`, and `UV_CACHE_DIR` values are preserved; unset or empty values
+fall back under `/tmp/ralph-qa-runtime/<repo-slug>/<run-dir-name>/` and are
+recorded in the run manifest.
 
 ## Where to work
 

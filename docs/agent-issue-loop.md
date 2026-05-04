@@ -160,6 +160,12 @@ Promote reviewed Gitflow work from `dev` to `main`:
 python3 scripts/ralph.py --promote
 ```
 
+Skip the default Post-promotion review after a successful Promotion:
+
+```bash
+python3 scripts/ralph.py --promote --skip-post-promotion-review
+```
+
 Override the **Integration target** explicitly when needed:
 
 ```bash
@@ -214,6 +220,15 @@ triage-safe `gh issue` reads and writes. This does not grant Git push access;
 Git fetches, **Local integration**, **Integration target** pushes, and
 **Promotion** stay in Ralph's outer loop.
 
+Ralph also standardizes writable QA runtime paths for spawned Codex
+subprocesses and Ralph-run QA commands. If the operator exports `DAGSTER_HOME`,
+`XDG_CACHE_HOME`, or `UV_CACHE_DIR`, Ralph preserves that explicit value.
+Otherwise it sets the variable under
+`/tmp/ralph-qa-runtime/<repo-slug>/<run-dir-name>/` using `dagster-home`,
+`xdg-cache`, and `uv-cache` child directories. These defaults keep sandboxed
+**Commit check**, **Push check**, and Dagster CLI commands away from
+home-directory cache locations that may be read-only.
+
 Use `HEAD:dev` for Gitflow target validation and `HEAD:main` for trunk or
 promotion validation. Run Ralph from a local worktree that is aligned with the
 remote branch being operated on. The script fetches the **Integration target**
@@ -224,8 +239,10 @@ operator should start from a known repo state.
 
 Ralph writes command logs while subprocesses are still running. Long Codex
 implementation attempts write to `codex-implementation-N.jsonl`, triage writes
-to `codex-triage.jsonl`, QA writes to `qa-*` logs, and Git operations write to
-their named `git-*` logs under the current `.ralph/runs/...` run directory.
+to `codex-triage.jsonl`, Post-promotion review writes to
+`codex-post-promotion-review.jsonl`, QA writes to `qa-*` logs, and Git
+operations write to their named `git-*` logs under the current
+`.ralph/runs/...` run directory.
 While a command is active, the log has `exit: running`; after the command
 finishes, Ralph rewrites the same log with the final exit status while
 preserving stdout, stderr, command, and cwd.
@@ -260,11 +277,18 @@ Key fields for inspection:
 - `delivery_mode`: issue **Delivery mode**; **Promotion** records `gitflow`.
 - `integration_target`: branch Ralph is updating for the run.
 - `source_branch`: **Promotion** source branch, usually `dev`.
+- `source_tree`: **Promotion** source branch revision and source worktree used
+  for QA.
+- `post_promotion_review`: enabled state, skip reason, review status, and
+  review log path for **Promotion** runs.
 - `branches`: issue, source, and target branch names that apply to the run.
 - `paths`: repo root, run directory, worktree container, and implementation,
-  integration, or promotion worktree paths.
+  integration, Promotion source, or Promotion target worktree paths.
 - `changed_files`: current file diff used for QA and integration.
 - `qa_results`: selected QA commands, cwd, log path, and pass/fail state.
+- `qa_runtime_env`: effective `DAGSTER_HOME`, `XDG_CACHE_HOME`, and
+  `UV_CACHE_DIR` values plus whether each came from the operator environment or
+  Ralph's writable fallback.
 - `sandboxed_issue_access`: non-secret token source, wrapper path, allowed
   command set, and network access state for spawned Codex subprocesses.
 - `integration_commit`: implementation **Local integration** commit.
@@ -369,23 +393,34 @@ sequenceDiagram
 
 `python3 scripts/ralph.py --promote` promotes reviewed Gitflow work from
 `origin/dev` to `origin/main` by default. Ralph fetches both branches, computes
-the changed files between them, runs the aggregate matching **Push check** QA,
-and, when the promoted range includes files under
-`backend-services/dagster-user/aemo-etl/`, runs the AEMO ETL **End-to-end test**
-gate before creating the Promotion worktree. The gate is recorded as
+the changed files between the target branch and the fetched source-branch
+revision, creates an isolated source worktree at that source revision, and runs
+the aggregate matching **Push check** QA from that tree. When the promoted
+range includes non-doc runtime files under
+`backend-services/dagster-user/aemo-etl/`, Ralph runs the AEMO ETL
+**End-to-end test** gate from the same source worktree before creating the
+target Promotion worktree. The gate is recorded as
 `aemo-etl End-to-end test` in the Promotion run manifest and invokes
 `scripts/aemo-etl-e2e run` from the `backend-services` **Subproject**. Because
-the gate runs first, AEMO ETL **Subproject** changes cannot reach a Promotion
-merge, `main` push, `dev` branch sync, GitHub metadata update, or issue closure
-without passing the e2e stack. Ralph then merges `origin/dev` into a detached
-`origin/main` worktree with per-issue commits preserved, pushes `main`, and
-fast-forwards `dev` to the promotion commit so the next Gitflow drain starts
-from a `dev` branch that contains `main`.
+the aggregate **Push check** and gate run first, source-branch changes cannot
+reach a Promotion merge, `main` push, `dev` branch sync, GitHub metadata
+update, or issue closure without passing against the exact source revision.
+Ralph then merges that source revision into a detached `origin/main` worktree
+with per-issue commits preserved, pushes `main`, and fast-forwards `dev` to the
+promotion commit so the next Gitflow drain starts from a `dev` branch that
+contains `main`.
 
 After the push succeeds, Ralph scans open `agent-integrated` issues. It closes
 only issues whose recorded Gitflow integration commit is still in the promoted
 `origin/main..origin/dev` range, then comments promotion evidence and replaces
-`agent-integrated` with `agent-merged`.
+`agent-integrated` with `agent-merged`. Successful Promotions with changed
+files then run a Post-promotion review agent from the Promotion worktree by
+default, after the `main` push, `dev` sync, and verified issue metadata updates.
+The review is recorded in `post_promotion_review` in the Promotion run manifest.
+Operators can pass `--skip-post-promotion-review` to disable the review path.
+If there are no Promotion changes, Ralph does not create Promotion worktrees or
+run the review agent; it prints a review skip note and records
+`post_promotion_review.status` as `skipped_no_changes`.
 
 ## Triage pass
 
@@ -416,7 +451,7 @@ stay on `delivery-gitflow`.
 
 ## QA policy
 
-For `aemo-etl` changes, Ralph runs from the owning **Subproject**:
+For runtime `aemo-etl` changes, Ralph runs from the owning **Subproject**:
 
 ```bash
 make unit-test
@@ -424,6 +459,17 @@ make component-test
 make integration-test
 make run-prek
 ```
+
+Docs-only `aemo-etl` changes are recognized by the maintained Markdown doc path
+rules in [documentation-sync.md](documentation-sync.md). They skip the runtime
+AEMO ETL **Test lanes** above and run the root doc **Commit check** surface:
+
+```bash
+prek run -a
+```
+
+Mixed docs/runtime `aemo-etl` changes run both the runtime AEMO ETL commands and
+the root doc **Commit check**.
 
 For root docs/config or cross-**Subproject** changes, Ralph runs:
 
@@ -445,7 +491,14 @@ During **Promotion**, Ralph computes all files changed between `origin/main` and
 `origin/dev`, then runs the matching QA set as an aggregate **Push check** before
 pushing `main`.
 
-If that Promotion range includes files under
+Every Codex implementation attempt, implementation QA command, Promotion
+**Push check**, and Promotion gate receives writable QA runtime path variables.
+Operators can override all or part of this behavior by exporting
+`DAGSTER_HOME`, `XDG_CACHE_HOME`, or `UV_CACHE_DIR` before running Ralph; unset
+or empty variables fall back to the run-scoped `/tmp/ralph-qa-runtime/...`
+paths recorded in the run manifest.
+
+If that Promotion range includes non-doc runtime files under
 `backend-services/dagster-user/aemo-etl/`, Ralph also runs the AEMO ETL
 **End-to-end test** gate after the aggregate **Push check** and before any
 Promotion worktree, merge, push, `dev` branch sync, GitHub metadata update, or

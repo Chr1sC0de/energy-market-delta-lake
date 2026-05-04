@@ -158,6 +158,7 @@ def make_loop(
     target_branch: str | None = None,
     source_branch: str = ralph.DEFAULT_GITFLOW_BRANCH,
     promote: bool = False,
+    skip_post_promotion_review: bool = False,
     issue: int | None = None,
     drain: bool = False,
     max_issues: int = ralph.DEFAULT_DRAIN_BUDGET,
@@ -176,6 +177,7 @@ def make_loop(
         target_branch=target_branch,
         source_branch=source_branch,
         promote=promote,
+        skip_post_promotion_review=skip_post_promotion_review,
         issue=issue,
         drain=drain,
         max_issues=max_issues,
@@ -434,7 +436,7 @@ Build it.
         self.assertIn(ralph.AI_TRIAGE_DISCLAIMER, prompt)
         self.assertIn("Do not edit repo", prompt)
 
-    def test_select_qa_commands_for_aemo_etl_changes(self) -> None:
+    def test_select_qa_commands_for_aemo_etl_runtime_only_changes(self) -> None:
         commands = ralph.select_qa_commands(
             ["backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"],
             Path("/repo"),
@@ -450,10 +452,52 @@ Build it.
             ],
         )
 
+    def test_select_qa_commands_for_aemo_etl_docs_only_changes(self) -> None:
+        commands = ralph.select_qa_commands(
+            [
+                "backend-services/dagster-user/aemo-etl/README.md",
+                "backend-services/dagster-user/aemo-etl/docs/architecture/"
+                "high_level_architecture.md",
+            ],
+            Path("/repo"),
+        )
+        names = [command.name for command in commands]
+
+        self.assertEqual(names, ["root Commit check"])
+
+    def test_select_qa_commands_for_mixed_aemo_etl_docs_and_runtime_changes(self) -> None:
+        commands = ralph.select_qa_commands(
+            [
+                "backend-services/dagster-user/aemo-etl/docs/development/local_development.md",
+                "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py",
+            ],
+            Path("/repo"),
+        )
+        names = [command.name for command in commands]
+
+        self.assertEqual(
+            names,
+            [
+                "aemo-etl Unit test",
+                "aemo-etl Component test",
+                "aemo-etl Integration test",
+                "aemo-etl Commit check",
+                "root Commit check",
+            ],
+        )
+
     def test_protected_aemo_etl_matching_uses_whole_subproject_prefix(self) -> None:
         self.assertTrue(
             ralph.has_protected_aemo_etl_change(
                 ["backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"]
+            )
+        )
+        self.assertFalse(
+            ralph.has_protected_aemo_etl_change(
+                [
+                    "backend-services/dagster-user/aemo-etl/docs/architecture/"
+                    "high_level_architecture.md"
+                ]
             )
         )
         self.assertFalse(
@@ -466,6 +510,20 @@ Build it.
             )
         )
 
+    def test_aemo_etl_runtime_matching_includes_non_doc_subproject_paths(self) -> None:
+        runtime_paths = (
+            "backend-services/dagster-user/aemo-etl/pyproject.toml",
+            "backend-services/dagster-user/aemo-etl/.localstack.env",
+            "backend-services/dagster-user/aemo-etl/scripts/example",
+            "backend-services/dagster-user/aemo-etl/tests/unit/test_example.py",
+            "backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py",
+            "backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py",
+        )
+
+        for path in runtime_paths:
+            with self.subTest(path=path):
+                self.assertTrue(ralph.has_protected_aemo_etl_change([path]))
+
     def test_select_promotion_gate_commands_for_aemo_etl_changes(self) -> None:
         commands = ralph.select_promotion_gate_commands(
             ["backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"],
@@ -477,8 +535,23 @@ Build it.
         self.assertEqual(commands[0].args, ("scripts/aemo-etl-e2e", "run"))
         self.assertEqual(commands[0].cwd, Path("/repo/backend-services"))
 
+    def test_select_promotion_gate_commands_skips_aemo_etl_docs_only_changes(
+        self,
+    ) -> None:
+        commands = ralph.select_promotion_gate_commands(
+            [
+                "backend-services/dagster-user/aemo-etl/docs/architecture/"
+                "high_level_architecture.md"
+            ],
+            Path("/repo"),
+        )
+
+        self.assertEqual(commands, [])
+
     def test_select_qa_commands_for_docs_and_script_changes(self) -> None:
-        commands = ralph.select_qa_commands(["docs/workflow.md", "scripts/ralph.py"], Path("/repo"))
+        commands = ralph.select_qa_commands(
+            ["docs/workflow.md", "scripts/ralph.py"], Path("/repo")
+        )
         names = [command.name for command in commands]
         self.assertEqual(names, ["root Commit check", "Ralph unit tests"])
 
@@ -535,6 +608,53 @@ Build it.
                 "-",
             ],
         )
+
+    def test_qa_runtime_env_uses_operator_values_when_present(self) -> None:
+        operator_env = {
+            "DAGSTER_HOME": "/operator/dagster",
+            "XDG_CACHE_HOME": "/operator/cache",
+            "UV_CACHE_DIR": "/operator/uv-cache",
+        }
+
+        runtime_env = ralph.resolve_qa_runtime_env(
+            repo="example/repo",
+            run_dir=Path("/tmp/ralph-test-run"),
+            base_env=operator_env,
+        )
+
+        self.assertEqual(runtime_env.values, operator_env)
+        self.assertEqual(
+            runtime_env.metadata["DAGSTER_HOME"],
+            {"value": "/operator/dagster", "source": "operator"},
+        )
+        self.assertEqual(runtime_env.metadata["XDG_CACHE_HOME"]["source"], "operator")
+        self.assertEqual(runtime_env.metadata["UV_CACHE_DIR"]["source"], "operator")
+
+    def test_qa_runtime_env_falls_back_to_run_scoped_tmp_paths(self) -> None:
+        runtime_env = ralph.resolve_qa_runtime_env(
+            repo="example/repo",
+            run_dir=Path("/work/.ralph/runs/issue-42-20260504T010203Z"),
+            base_env={},
+        )
+        runtime_root = (
+            Path("/tmp")
+            / ralph.QA_RUNTIME_ROOT_DIR_NAME
+            / "example-repo"
+            / "issue-42-20260504T010203Z"
+        )
+
+        self.assertEqual(
+            runtime_env.values,
+            {
+                "DAGSTER_HOME": str(runtime_root / "dagster-home"),
+                "XDG_CACHE_HOME": str(runtime_root / "xdg-cache"),
+                "UV_CACHE_DIR": str(runtime_root / "uv-cache"),
+            },
+        )
+        for name, value in runtime_env.values.items():
+            with self.subTest(name=name):
+                self.assertEqual(runtime_env.metadata[name]["source"], "ralph_default")
+                self.assertTrue(Path(value).is_dir())
 
     def test_sandbox_token_uses_parent_gh_token_first(self) -> None:
         runner = FakeRunner()
@@ -657,21 +777,48 @@ Build it.
                     manifest=manifest,
                 )
 
-            codex_call = next(call for call in runner.calls if call.args[:2] == ("codex", "exec"))
+            codex_call = next(
+                call for call in runner.calls if call.args[:2] == ("codex", "exec")
+            )
             self.assertIsNotNone(codex_call.env)
             assert codex_call.env is not None
             self.assertEqual(codex_call.env["GH_TOKEN"], "fake-gh-token")
             self.assertEqual(codex_call.env["GH_REPO"], "example/repo")
+            runtime_root = ralph.default_qa_runtime_root("example/repo", run_dir)
+            self.assertEqual(
+                codex_call.env["DAGSTER_HOME"],
+                str(runtime_root / "dagster-home"),
+            )
+            self.assertEqual(
+                codex_call.env["XDG_CACHE_HOME"],
+                str(runtime_root / "xdg-cache"),
+            )
+            self.assertEqual(
+                codex_call.env["UV_CACHE_DIR"],
+                str(runtime_root / "uv-cache"),
+            )
             wrapper_path = run_dir / ralph.SANDBOX_GH_WRAPPER_DIR_NAME / "gh"
             self.assertTrue(wrapper_path.exists())
-            manifest_text = manifest.path.read_text(encoding="utf-8")
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+            manifest_text = json.dumps(manifest_payload)
             self.assertIn('"token_source": "gh-auth"', manifest_text)
             self.assertIn(str(wrapper_path), manifest_text)
             self.assertNotIn("fake-gh-token", manifest_text)
+            self.assertEqual(
+                manifest_payload["qa_runtime_env"]["variables"]["DAGSTER_HOME"]["source"],
+                "ralph_default",
+            )
+            self.assertEqual(
+                manifest_payload["qa_runtime_env"]["variables"]["UV_CACHE_DIR"]["value"],
+                str(runtime_root / "uv-cache"),
+            )
 
     def test_default_worktree_container_matches_sibling_worktree_layout(self) -> None:
         current = Path("/work/repo__worktrees/refactor")
-        self.assertEqual(ralph.default_worktree_container(current), Path("/work/repo__worktrees"))
+        self.assertEqual(
+            ralph.default_worktree_container(current),
+            Path("/work/repo__worktrees"),
+        )
         main = Path("/work/repo")
         self.assertEqual(ralph.default_worktree_container(main), Path("/work/repo__worktrees"))
 
@@ -689,6 +836,7 @@ Build it.
 
         self.assertEqual(config.delivery_mode, ralph.GITFLOW_MODE)
         self.assertIsNone(config.target_branch)
+        self.assertFalse(config.skip_post_promotion_review)
 
     def test_parse_args_help_describes_default_drain_budget(self) -> None:
         output = io.StringIO()
@@ -700,6 +848,25 @@ Build it.
         self.assertIn("Defaults to 10", help_text)
         self.assertIn("Use 0 for unlimited", help_text)
         self.assertIn("--allow-dirty-worktree", help_text)
+        self.assertIn("--skip-post-promotion-review", help_text)
+
+    def test_build_config_records_post_promotion_review_skip_flag(self) -> None:
+        runner = FakeRunner(
+            command_outputs={
+                ("git", "rev-parse", "--show-toplevel"): ["/work/repo\n"],
+                ("git", "config", "--get", "remote.origin.url"): [
+                    "git@github.com:example/repo.git\n"
+                ],
+            }
+        )
+
+        config = ralph.build_config(
+            ralph.parse_args(["--promote", "--skip-post-promotion-review"]),
+            runner,
+        )
+
+        self.assertTrue(config.promote)
+        self.assertTrue(config.skip_post_promotion_review)
 
     def test_dirty_root_worktree_message_lists_changed_paths_and_override(self) -> None:
         message = ralph.dirty_root_worktree_message(
@@ -1278,6 +1445,124 @@ Build it.
         self.assertEqual(manifest["github_metadata"]["status"], "failure_commented")
         self.assertIn("Missing required issue section", manifest["failure"]["message"])
 
+    def test_qa_commands_receive_fallback_runtime_env_and_record_manifest(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=loop.config.delivery_mode,
+                target_branch=loop.config.target_branch,
+            )
+            branch, worktree_path, integration_path = loop._branch_and_worktrees(issue)
+            run_dir = tmp_path / "logs" / "issue-42-test"
+            manifest = ralph.RunManifest.for_implementation(
+                run_dir=run_dir,
+                issue=issue,
+                delivery_plan=delivery_plan,
+                branch=branch,
+                worktree_path=worktree_path,
+                integration_path=integration_path,
+                config=loop.config,
+            )
+
+            with patch.dict(ralph.os.environ, {"PATH": "/usr/bin"}, clear=True):
+                with redirect_stdout(io.StringIO()):
+                    loop._run_qa_commands(
+                        ["scripts/ralph.py"],
+                        loop.config.repo_root,
+                        run_dir,
+                        log_prefix="qa",
+                        subject="#42",
+                        manifest=manifest,
+                    )
+
+            qa_call = next(
+                call
+                for call in runner.calls
+                if call.args == ("python3", "-m", "unittest", "discover", "-s", "tests")
+            )
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        self.assertIsNotNone(qa_call.env)
+        assert qa_call.env is not None
+        runtime_root = ralph.default_qa_runtime_root("example/repo", run_dir)
+        self.assertEqual(
+            qa_call.env["DAGSTER_HOME"],
+            str(runtime_root / "dagster-home"),
+        )
+        self.assertEqual(
+            qa_call.env["XDG_CACHE_HOME"],
+            str(runtime_root / "xdg-cache"),
+        )
+        self.assertEqual(
+            qa_call.env["UV_CACHE_DIR"],
+            str(runtime_root / "uv-cache"),
+        )
+        self.assertEqual(
+            manifest_payload["qa_runtime_env"]["variables"]["DAGSTER_HOME"]["source"],
+            "ralph_default",
+        )
+        self.assertEqual(
+            manifest_payload["qa_runtime_env"]["variables"]["UV_CACHE_DIR"]["value"],
+            str(runtime_root / "uv-cache"),
+        )
+        self.assertEqual(manifest_payload["qa_results"][0]["status"], "passed")
+
+    def test_docs_only_aemo_etl_qa_selection_records_manifest_command(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=loop.config.delivery_mode,
+                target_branch=loop.config.target_branch,
+            )
+            branch, worktree_path, integration_path = loop._branch_and_worktrees(issue)
+            run_dir = tmp_path / "logs" / "issue-42-test"
+            manifest = ralph.RunManifest.for_implementation(
+                run_dir=run_dir,
+                issue=issue,
+                delivery_plan=delivery_plan,
+                branch=branch,
+                worktree_path=worktree_path,
+                integration_path=integration_path,
+                config=loop.config,
+            )
+
+            with patch.dict(ralph.os.environ, {"PATH": "/usr/bin"}, clear=True):
+                with redirect_stdout(io.StringIO()):
+                    loop._run_qa_commands(
+                        [
+                            "backend-services/dagster-user/aemo-etl/docs/development/"
+                            "local_development.md"
+                        ],
+                        loop.config.repo_root,
+                        run_dir,
+                        log_prefix="qa",
+                        subject="#42",
+                        manifest=manifest,
+                    )
+
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            manifest_payload["qa_results"],
+            [
+                {
+                    "name": "root Commit check",
+                    "command": ["prek", "run", "-a"],
+                    "cwd": str(loop.config.repo_root),
+                    "log_path": str(run_dir / "qa-1-root-commit-check.log"),
+                    "status": "passed",
+                }
+            ],
+        )
+
     def test_successful_implementation_squash_merges_pushes_comments_and_closes(self) -> None:
         runner = FakeRunner(
             status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
@@ -1559,7 +1844,7 @@ Build it.
         }
         runner = FakeRunner(
             diff_outputs=["scripts/ralph.py\n"],
-            rev_parse_outputs=["promotion-sha\n"],
+            rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
             command_outputs={
                 issue_list_command: [json.dumps(issue_payload)],
                 issue_comments_command: [json.dumps(comments_payload)],
@@ -1577,45 +1862,73 @@ Build it.
             manifest = load_run_manifest(Path(tmp), run_glob="promote-*")
 
         commands = [call.args for call in runner.calls]
+        source_path = Path(tmp) / "worktrees" / "agent-promote-source-dev-to-main"
+        promote_path = Path(tmp) / "worktrees" / "agent-promote-dev-to-main"
+        source_worktree = (
+            "git",
+            "worktree",
+            "add",
+            "--detach",
+            str(source_path),
+            "source-sha",
+        )
+        promote_worktree = (
+            "git",
+            "worktree",
+            "add",
+            "--detach",
+            str(promote_path),
+            "origin/main",
+        )
+        qa_command = ("python3", "-m", "unittest", "discover", "-s", "tests")
+        source_worktree_index = commands.index(source_worktree)
+        qa_index = commands.index(qa_command)
+        promote_worktree_index = commands.index(promote_worktree)
+        self.assertLess(source_worktree_index, qa_index)
+        self.assertLess(qa_index, promote_worktree_index)
+        self.assertEqual(runner.calls[qa_index].cwd, source_path)
         self.assertIn(
-            ("git", "merge", "--no-ff", "origin/dev", "-m", "Promote dev to main"),
+            ("git", "merge", "--no-ff", "source-sha", "-m", "Promote dev to main"),
             commands,
         )
         self.assertIn(("git", "push", "origin", "HEAD:main"), commands)
         self.assertIn(("git", "push", "origin", "HEAD:dev"), commands)
-        self.assertIn(
-            (
-                "gh",
-                "issue",
-                "edit",
-                "42",
-                "-R",
-                "example/repo",
-                "--add-label",
-                "agent-merged",
-                "--remove-label",
-                "agent-integrated",
-                "--remove-label",
-                "agent-running",
-                "--remove-label",
-                "agent-failed",
-            ),
-            commands,
+        edit_command = (
+            "gh",
+            "issue",
+            "edit",
+            "42",
+            "-R",
+            "example/repo",
+            "--add-label",
+            "agent-merged",
+            "--remove-label",
+            "agent-integrated",
+            "--remove-label",
+            "agent-running",
+            "--remove-label",
+            "agent-failed",
         )
-        self.assertIn(
-            (
-                "gh",
-                "issue",
-                "close",
-                "42",
-                "-R",
-                "example/repo",
-                "--reason",
-                "completed",
-            ),
-            commands,
+        close_command = (
+            "gh",
+            "issue",
+            "close",
+            "42",
+            "-R",
+            "example/repo",
+            "--reason",
+            "completed",
         )
+        self.assertIn(edit_command, commands)
+        self.assertIn(close_command, commands)
         self.assertNotIn(("scripts/aemo-etl-e2e", "run"), commands)
+        review_command = tuple(ralph.codex_exec_command(promote_path))
+        review_index = commands.index(review_command)
+        cleanup_index = commands.index(("git", "worktree", "remove", str(promote_path)))
+        self.assertLess(commands.index(close_command), review_index)
+        self.assertLess(review_index, cleanup_index)
+        self.assertEqual(runner.calls[review_index].cwd, promote_path)
+        self.assertIn("Run a Post-promotion review", runner.calls[review_index].input_text)
         self.assertIn("Ralph promotion completed.", comment)
         self.assertIn("Promotion commit: `promotion-sha`", comment)
         self.assertIn("Integrated commit: `abc1234`", comment)
@@ -1624,7 +1937,24 @@ Build it.
         self.assertEqual(manifest["delivery_mode"], "gitflow")
         self.assertEqual(manifest["source_branch"], "dev")
         self.assertEqual(manifest["integration_target"], "main")
+        self.assertEqual(
+            manifest["paths"]["promotion_source_worktree"],
+            str(source_path),
+        )
+        self.assertEqual(
+            manifest["source_tree"],
+            {
+                "branch": "dev",
+                "revision": "source-sha",
+                "worktree": str(source_path),
+            },
+        )
         self.assertEqual(manifest["promotion_commit"]["sha"], "promotion-sha")
+        self.assertEqual(manifest["post_promotion_review"]["status"], "completed")
+        self.assertIn(
+            "codex-post-promotion-review.jsonl",
+            manifest["post_promotion_review"]["log_path"],
+        )
         self.assertEqual(manifest["pushes"]["promotion_target"]["status"], "pushed")
         self.assertEqual(manifest["pushes"]["source_branch_sync"]["status"], "pushed")
         self.assertEqual(manifest["github_metadata"]["issues"][0]["number"], 42)
@@ -1637,63 +1967,77 @@ Build it.
             "closed",
         )
 
-    def test_promotion_runs_aemo_etl_e2e_gate_before_worktree(self) -> None:
-        changed_file = "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"
+    def test_promotion_skip_post_promotion_review_flag_disables_review_agent(self) -> None:
         runner = FakeRunner(
-            diff_outputs=[f"{changed_file}\n"],
-            rev_parse_outputs=["promotion-sha\n"],
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                promote=True,
+                skip_post_promotion_review=True,
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        promote_path = Path(tmp) / "worktrees" / "agent-promote-dev-to-main"
+        commands = [call.args for call in runner.calls]
+        self.assertNotIn(tuple(ralph.codex_exec_command(promote_path)), commands)
+        self.assertIn(
+            "Post-promotion review skipped by --skip-post-promotion-review.",
+            output.getvalue(),
+        )
+        self.assertFalse(manifest["post_promotion_review"]["enabled"])
+        self.assertEqual(
+            manifest["post_promotion_review"]["status"],
+            "skipped_by_operator",
+        )
+
+    def test_promotion_no_changes_skips_post_promotion_review_agent(self) -> None:
+        runner = FakeRunner(
+            diff_outputs=[""],
+            rev_parse_outputs=["source-sha\n"],
         )
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             loop = make_loop(tmp_path, runner, promote=True)
-            with redirect_stdout(io.StringIO()):
+            output = io.StringIO()
+
+            with redirect_stdout(output):
                 loop._promote()
-
-            commands = [call.args for call in runner.calls]
-            e2e_index = commands.index(("scripts/aemo-etl-e2e", "run"))
-            run_prek_index = commands.index(("make", "run-prek"))
-            worktree_index = next(
-                index
-                for index, command in enumerate(commands)
-                if command[:3] == ("git", "worktree", "add")
-            )
-            merge_index = commands.index(
-                ("git", "merge", "--no-ff", "origin/dev", "-m", "Promote dev to main")
-            )
-            push_main_index = commands.index(("git", "push", "origin", "HEAD:main"))
-
-            self.assertLess(run_prek_index, e2e_index)
-            self.assertLess(e2e_index, worktree_index)
-            self.assertLess(e2e_index, merge_index)
-            self.assertLess(e2e_index, push_main_index)
-            self.assertEqual(
-                runner.calls[e2e_index].cwd,
-                tmp_path / "repo" / "backend-services",
-            )
 
             manifest = load_run_manifest(tmp_path, run_glob="promote-*")
 
-        e2e_results = [
-            result
-            for result in manifest["qa_results"]
-            if result["name"] == "aemo-etl End-to-end test"
-        ]
-        self.assertEqual(len(e2e_results), 1)
-        self.assertEqual(e2e_results[0]["command"], ["scripts/aemo-etl-e2e", "run"])
-        self.assertTrue(e2e_results[0]["cwd"].endswith("/repo/backend-services"))
-        self.assertEqual(e2e_results[0]["status"], "passed")
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(any(command[:2] == ("codex", "exec") for command in commands))
+        self.assertFalse(any(command[:3] == ("git", "worktree", "add") for command in commands))
+        self.assertIn("No changes to promote from dev to main.", output.getvalue())
         self.assertIn(
-            "promotion-gate-1-aemo-etl-end-to-end-test.log",
-            e2e_results[0]["log_path"],
+            "Post-promotion review skipped: no Promotion changes.",
+            output.getvalue(),
+        )
+        self.assertEqual(manifest["status"], "succeeded")
+        self.assertEqual(manifest["stage"], "no_changes_to_promote")
+        self.assertEqual(
+            manifest["post_promotion_review"]["status"],
+            "skipped_no_changes",
         )
 
-    def test_promotion_e2e_gate_failure_stops_before_side_effects(self) -> None:
-        changed_file = "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"
-        e2e_command = ("scripts/aemo-etl-e2e", "run")
+    def test_promotion_push_check_failure_stops_before_side_effects(self) -> None:
+        qa_command = ("python3", "-m", "unittest", "discover", "-s", "tests")
         runner = FakeRunner(
-            diff_outputs=[f"{changed_file}\n"],
-            fail_commands={e2e_command},
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["source-sha\n"],
+            fail_commands={qa_command},
         )
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -1706,9 +2050,31 @@ Build it.
             commands = [call.args for call in runner.calls]
             manifest = load_run_manifest(tmp_path, run_glob="promote-*")
 
-        self.assertIn(e2e_command, commands)
-        self.assertFalse(
-            any(command[:3] == ("git", "worktree", "add") for command in commands)
+        source_path = Path(tmp) / "worktrees" / "agent-promote-source-dev-to-main"
+        promote_path = Path(tmp) / "worktrees" / "agent-promote-dev-to-main"
+        self.assertIn(
+            (
+                "git",
+                "worktree",
+                "add",
+                "--detach",
+                str(source_path),
+                "source-sha",
+            ),
+            commands,
+        )
+        qa_index = commands.index(qa_command)
+        self.assertEqual(runner.calls[qa_index].cwd, source_path)
+        self.assertNotIn(
+            (
+                "git",
+                "worktree",
+                "add",
+                "--detach",
+                str(promote_path),
+                "origin/main",
+            ),
+            commands,
         )
         self.assertFalse(any(command[:2] == ("git", "merge") for command in commands))
         self.assertFalse(
@@ -1724,6 +2090,153 @@ Build it.
             any(command[:3] == ("gh", "issue", "close") for command in commands)
         )
         self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["source_tree"]["revision"], "source-sha")
+        self.assertIsNone(manifest["promotion_commit"])
+        self.assertEqual(manifest["pushes"], {})
+        self.assertEqual(manifest["github_metadata"]["status"], "not_started")
+        failed_push_check = [
+            result
+            for result in manifest["qa_results"]
+            if result["name"] == "Ralph unit tests"
+        ]
+        self.assertEqual(len(failed_push_check), 1)
+        self.assertEqual(failed_push_check[0]["status"], "failed")
+
+    def test_promotion_runs_aemo_etl_e2e_gate_from_source_worktree_before_side_effects(
+        self,
+    ) -> None:
+        changed_file = "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"
+        runner = FakeRunner(
+            diff_outputs=[f"{changed_file}\n"],
+            rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, promote=True)
+            with redirect_stdout(io.StringIO()):
+                loop._promote()
+
+            commands = [call.args for call in runner.calls]
+            e2e_index = commands.index(("scripts/aemo-etl-e2e", "run"))
+            run_prek_index = commands.index(("make", "run-prek"))
+            source_path = tmp_path / "worktrees" / "agent-promote-source-dev-to-main"
+            promote_path = tmp_path / "worktrees" / "agent-promote-dev-to-main"
+            source_worktree_index = commands.index(
+                (
+                    "git",
+                    "worktree",
+                    "add",
+                    "--detach",
+                    str(source_path),
+                    "source-sha",
+                )
+            )
+            promote_worktree_index = commands.index(
+                (
+                    "git",
+                    "worktree",
+                    "add",
+                    "--detach",
+                    str(promote_path),
+                    "origin/main",
+                )
+            )
+            merge_index = commands.index(
+                ("git", "merge", "--no-ff", "source-sha", "-m", "Promote dev to main")
+            )
+            push_main_index = commands.index(("git", "push", "origin", "HEAD:main"))
+
+            self.assertLess(source_worktree_index, run_prek_index)
+            self.assertLess(run_prek_index, e2e_index)
+            self.assertLess(e2e_index, promote_worktree_index)
+            self.assertLess(e2e_index, merge_index)
+            self.assertLess(e2e_index, push_main_index)
+            self.assertEqual(
+                runner.calls[run_prek_index].cwd,
+                source_path / "backend-services" / "dagster-user" / "aemo-etl",
+            )
+            self.assertEqual(
+                runner.calls[e2e_index].cwd,
+                source_path / "backend-services",
+            )
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        e2e_results = [
+            result
+            for result in manifest["qa_results"]
+            if result["name"] == "aemo-etl End-to-end test"
+        ]
+        self.assertEqual(len(e2e_results), 1)
+        self.assertEqual(e2e_results[0]["command"], ["scripts/aemo-etl-e2e", "run"])
+        self.assertTrue(e2e_results[0]["cwd"].endswith("/agent-promote-source-dev-to-main/backend-services"))
+        self.assertEqual(e2e_results[0]["status"], "passed")
+        self.assertIn(
+            "promotion-gate-1-aemo-etl-end-to-end-test.log",
+            e2e_results[0]["log_path"],
+        )
+        self.assertEqual(manifest["source_tree"]["revision"], "source-sha")
+
+    def test_promotion_e2e_gate_failure_stops_before_side_effects(self) -> None:
+        changed_file = "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"
+        e2e_command = ("scripts/aemo-etl-e2e", "run")
+        runner = FakeRunner(
+            diff_outputs=[f"{changed_file}\n"],
+            rev_parse_outputs=["source-sha\n"],
+            fail_commands={e2e_command},
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, promote=True)
+            with self.assertRaises(ralph.CommandFailure):
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    loop._promote()
+
+            commands = [call.args for call in runner.calls]
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        self.assertIn(e2e_command, commands)
+        source_path = Path(tmp) / "worktrees" / "agent-promote-source-dev-to-main"
+        promote_path = Path(tmp) / "worktrees" / "agent-promote-dev-to-main"
+        self.assertIn(
+            (
+                "git",
+                "worktree",
+                "add",
+                "--detach",
+                str(source_path),
+                "source-sha",
+            ),
+            commands,
+        )
+        self.assertNotIn(
+            (
+                "git",
+                "worktree",
+                "add",
+                "--detach",
+                str(promote_path),
+                "origin/main",
+            ),
+            commands,
+        )
+        self.assertFalse(any(command[:2] == ("git", "merge") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("git", "push", "origin") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "comment") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "close") for command in commands)
+        )
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["source_tree"]["revision"], "source-sha")
         self.assertIsNone(manifest["promotion_commit"])
         self.assertEqual(manifest["pushes"], {})
         self.assertEqual(manifest["github_metadata"]["status"], "not_started")

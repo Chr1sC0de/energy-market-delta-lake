@@ -5,9 +5,23 @@ import runpy
 import socket
 import subprocess
 import tempfile
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast
+
+import pytest
+from dagster_graphql.schema import create_schema
+from graphql import GraphQLError, GraphQLSchema, Source, parse, validate
+
+
+EMBEDDED_DAGSTER_GRAPHQL_DOCUMENTS = (
+    ("ping query", "PING_QUERY"),
+    ("definition-state query", "DAGSTER_DEFINITION_STATE_QUERY"),
+    ("sensor mutation", "START_SENSOR_MUTATION"),
+    ("launch mutation", "LAUNCH_RUN_MUTATION"),
+    ("dataflow run status query", "DAGSTER_DATAFLOW_RUN_STATUS_QUERY"),
+    ("dataflow target status query", "DAGSTER_DATAFLOW_TARGET_STATUS_QUERY"),
+)
 
 
 def load_e2e_command_module() -> dict[str, Any]:
@@ -38,6 +52,132 @@ def get_exception_class(
     assert isinstance(value, type)
     assert issubclass(value, Exception)
     return value
+
+
+@pytest.fixture(scope="module")
+def dagster_graphql_schema() -> GraphQLSchema:
+    """Return the installed Dagster GraphQL schema without a running webserver."""
+    schema = create_schema().graphql_schema
+    assert isinstance(schema, GraphQLSchema)
+    return schema
+
+
+def validate_dagster_graphql_document(
+    *,
+    schema: GraphQLSchema,
+    document_name: str,
+    document: str,
+) -> None:
+    """Validate one e2e monitor document against the installed Dagster schema."""
+    source = Source(document, name=document_name)
+
+    try:
+        parsed_document = parse(source)
+    except GraphQLError as error:
+        raise AssertionError(
+            format_dagster_graphql_validation_errors(document_name, (error,)),
+        ) from error
+
+    validation_errors = validate(schema, parsed_document)
+    if validation_errors:
+        raise AssertionError(
+            format_dagster_graphql_validation_errors(
+                document_name,
+                validation_errors,
+            ),
+        )
+
+
+def format_dagster_graphql_validation_errors(
+    document_name: str,
+    validation_errors: Sequence[GraphQLError],
+) -> str:
+    """Return actionable validation output for embedded monitor documents."""
+    details = "\n".join(
+        f"- {error.message}{format_graphql_error_locations(error)}"
+        for error in validation_errors
+    )
+    return (
+        f"{document_name} is not valid against the installed Dagster GraphQL "
+        "schema.\n"
+        "This Unit test lane check protects the AEMO ETL End-to-end test "
+        "monitor from Dagster schema drift before Local integration or "
+        "Promotion.\n"
+        f"{details}"
+    )
+
+
+def format_graphql_error_locations(error: GraphQLError) -> str:
+    """Return a compact GraphQL source location suffix for an error."""
+    if error.locations is None:
+        return ""
+    locations = ", ".join(
+        f"{location.line}:{location.column}" for location in error.locations
+    )
+    return f" at {locations}"
+
+
+@pytest.mark.parametrize(
+    ("document_name", "global_name"),
+    EMBEDDED_DAGSTER_GRAPHQL_DOCUMENTS,
+)
+def test_embedded_dagster_graphql_documents_match_installed_schema(
+    dagster_graphql_schema: GraphQLSchema,
+    document_name: str,
+    global_name: str,
+) -> None:
+    """Schema-validate e2e monitor GraphQL in the Unit test lane."""
+    module = load_e2e_command_module()
+    document = module[global_name]
+    assert isinstance(document, str)
+
+    validate_dagster_graphql_document(
+        schema=dagster_graphql_schema,
+        document_name=document_name,
+        document=document,
+    )
+
+
+@pytest.mark.parametrize(
+    ("document_name", "document", "expected_error"),
+    (
+        (
+            "invalid field fixture",
+            "query E2EBadField { definitelyMissingField }",
+            "Cannot query field 'definitelyMissingField'",
+        ),
+        (
+            "invalid type placement fixture",
+            """
+            mutation E2EBadTypePlacement($executionParams: ExecutionParams!) {
+              launchRun(executionParams: $executionParams) {
+                runId
+              }
+            }
+            """,
+            "Cannot query field 'runId' on type 'LaunchRunResult'",
+        ),
+    ),
+)
+def test_graphql_document_validation_reports_actionable_schema_errors(
+    dagster_graphql_schema: GraphQLSchema,
+    document_name: str,
+    document: str,
+    expected_error: str,
+) -> None:
+    """Invalid fields and type placement produce useful Unit test failures."""
+    with pytest.raises(AssertionError) as caught:
+        validate_dagster_graphql_document(
+            schema=dagster_graphql_schema,
+            document_name=document_name,
+            document=document,
+        )
+
+    message = str(caught.value)
+    assert document_name in message
+    assert expected_error in message
+    assert "Unit test lane" in message
+    assert "Local integration or Promotion" in message
 
 
 def test_dagster_graphql_client_wraps_connection_reset() -> None:
