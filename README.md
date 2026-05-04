@@ -174,7 +174,7 @@ developer stack, use `backend-services/scripts/aemo-etl-e2e run`; it starts the
 isolated services, enables only the intended Dagster automation, bootstraps
 non-sensor prerequisites, and monitors the full `gas_model` dataflow.
 Defaults are host webserver port `3001`, 90 minute timeout, Dagster
-`max_concurrent_runs` `6`, 10 cached raw objects per required source table, and
+`max_concurrent_runs` `6`, 3 cached raw objects per required source table, and
 3 cached zip objects per required domain.
 
 ## Documentation map

@@ -117,8 +117,9 @@ e2e stack with generated Dagster config, Postgres, LocalStack, AEMO ETL user
 code, one webserver, and the daemon. Once the stack is ready, it enables only
 the intended Dagster sensors, keeps local-only schedules and alerting stopped,
 bootstraps non-sensor prerequisites, and monitors the full `gas_model`
-dataflow through Dagster GraphQL. The isolated stack defaults to host webserver
-port `3001`, a 90 minute timeout, Dagster `max_concurrent_runs` `6`, 10 cached
+dataflow through Dagster GraphQL plus a direct Dagster event-log storage read
+for final asset-check status. The isolated stack defaults to host webserver
+port `3001`, a 90 minute timeout, Dagster `max_concurrent_runs` `6`, 3 cached
 raw objects per required source table, and 3 cached zip objects per required
 domain.
 

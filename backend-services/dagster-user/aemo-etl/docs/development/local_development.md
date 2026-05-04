@@ -210,8 +210,9 @@ generated e2e Dagster config. It builds missing local images by default, support
 `--rebuild`, derives the Podman socket from `XDG_RUNTIME_DIR`, and validates the
 cached seed under `backend-services/.e2e/aemo-etl` with defaults of 3 raw
 objects per required source table and 3 zip objects per required domain.
-Successful non-reuse runs clean containers and named volumes; failures preserve
-the stack plus run manifests unless `--always-clean` is used.
+Successful non-reuse runs clean containers, Dagster run-worker containers, named
+volumes, and the e2e network; failures preserve the stack plus run manifests
+unless `--always-clean` is used.
 After startup, it uses Dagster GraphQL to start only the intended unzipper,
 event-driven raw, and gas model automation sensors. NEMWeb discovery schedules,
 the failed-run alert sensor, the date-dimension schedule, and maintenance
