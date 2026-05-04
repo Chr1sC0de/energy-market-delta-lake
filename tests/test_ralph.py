@@ -158,6 +158,7 @@ def make_loop(
     target_branch: str | None = None,
     source_branch: str = ralph.DEFAULT_GITFLOW_BRANCH,
     promote: bool = False,
+    skip_post_promotion_review: bool = False,
     issue: int | None = None,
     drain: bool = False,
     max_issues: int = ralph.DEFAULT_DRAIN_BUDGET,
@@ -176,6 +177,7 @@ def make_loop(
         target_branch=target_branch,
         source_branch=source_branch,
         promote=promote,
+        skip_post_promotion_review=skip_post_promotion_review,
         issue=issue,
         drain=drain,
         max_issues=max_issues,
@@ -834,6 +836,7 @@ Build it.
 
         self.assertEqual(config.delivery_mode, ralph.GITFLOW_MODE)
         self.assertIsNone(config.target_branch)
+        self.assertFalse(config.skip_post_promotion_review)
 
     def test_parse_args_help_describes_default_drain_budget(self) -> None:
         output = io.StringIO()
@@ -845,6 +848,25 @@ Build it.
         self.assertIn("Defaults to 10", help_text)
         self.assertIn("Use 0 for unlimited", help_text)
         self.assertIn("--allow-dirty-worktree", help_text)
+        self.assertIn("--skip-post-promotion-review", help_text)
+
+    def test_build_config_records_post_promotion_review_skip_flag(self) -> None:
+        runner = FakeRunner(
+            command_outputs={
+                ("git", "rev-parse", "--show-toplevel"): ["/work/repo\n"],
+                ("git", "config", "--get", "remote.origin.url"): [
+                    "git@github.com:example/repo.git\n"
+                ],
+            }
+        )
+
+        config = ralph.build_config(
+            ralph.parse_args(["--promote", "--skip-post-promotion-review"]),
+            runner,
+        )
+
+        self.assertTrue(config.promote)
+        self.assertTrue(config.skip_post_promotion_review)
 
     def test_dirty_root_worktree_message_lists_changed_paths_and_override(self) -> None:
         message = ralph.dirty_root_worktree_message(
@@ -1871,39 +1893,42 @@ Build it.
         )
         self.assertIn(("git", "push", "origin", "HEAD:main"), commands)
         self.assertIn(("git", "push", "origin", "HEAD:dev"), commands)
-        self.assertIn(
-            (
-                "gh",
-                "issue",
-                "edit",
-                "42",
-                "-R",
-                "example/repo",
-                "--add-label",
-                "agent-merged",
-                "--remove-label",
-                "agent-integrated",
-                "--remove-label",
-                "agent-running",
-                "--remove-label",
-                "agent-failed",
-            ),
-            commands,
+        edit_command = (
+            "gh",
+            "issue",
+            "edit",
+            "42",
+            "-R",
+            "example/repo",
+            "--add-label",
+            "agent-merged",
+            "--remove-label",
+            "agent-integrated",
+            "--remove-label",
+            "agent-running",
+            "--remove-label",
+            "agent-failed",
         )
-        self.assertIn(
-            (
-                "gh",
-                "issue",
-                "close",
-                "42",
-                "-R",
-                "example/repo",
-                "--reason",
-                "completed",
-            ),
-            commands,
+        close_command = (
+            "gh",
+            "issue",
+            "close",
+            "42",
+            "-R",
+            "example/repo",
+            "--reason",
+            "completed",
         )
+        self.assertIn(edit_command, commands)
+        self.assertIn(close_command, commands)
         self.assertNotIn(("scripts/aemo-etl-e2e", "run"), commands)
+        review_command = tuple(ralph.codex_exec_command(promote_path))
+        review_index = commands.index(review_command)
+        cleanup_index = commands.index(("git", "worktree", "remove", str(promote_path)))
+        self.assertLess(commands.index(close_command), review_index)
+        self.assertLess(review_index, cleanup_index)
+        self.assertEqual(runner.calls[review_index].cwd, promote_path)
+        self.assertIn("Run a Post-promotion review", runner.calls[review_index].input_text)
         self.assertIn("Ralph promotion completed.", comment)
         self.assertIn("Promotion commit: `promotion-sha`", comment)
         self.assertIn("Integrated commit: `abc1234`", comment)
@@ -1925,6 +1950,11 @@ Build it.
             },
         )
         self.assertEqual(manifest["promotion_commit"]["sha"], "promotion-sha")
+        self.assertEqual(manifest["post_promotion_review"]["status"], "completed")
+        self.assertIn(
+            "codex-post-promotion-review.jsonl",
+            manifest["post_promotion_review"]["log_path"],
+        )
         self.assertEqual(manifest["pushes"]["promotion_target"]["status"], "pushed")
         self.assertEqual(manifest["pushes"]["source_branch_sync"]["status"], "pushed")
         self.assertEqual(manifest["github_metadata"]["issues"][0]["number"], 42)
@@ -1935,6 +1965,71 @@ Build it.
         self.assertEqual(
             manifest["github_metadata"]["issues"][0]["metadata_status"],
             "closed",
+        )
+
+    def test_promotion_skip_post_promotion_review_flag_disables_review_agent(self) -> None:
+        runner = FakeRunner(
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                promote=True,
+                skip_post_promotion_review=True,
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        promote_path = Path(tmp) / "worktrees" / "agent-promote-dev-to-main"
+        commands = [call.args for call in runner.calls]
+        self.assertNotIn(tuple(ralph.codex_exec_command(promote_path)), commands)
+        self.assertIn(
+            "Post-promotion review skipped by --skip-post-promotion-review.",
+            output.getvalue(),
+        )
+        self.assertFalse(manifest["post_promotion_review"]["enabled"])
+        self.assertEqual(
+            manifest["post_promotion_review"]["status"],
+            "skipped_by_operator",
+        )
+
+    def test_promotion_no_changes_skips_post_promotion_review_agent(self) -> None:
+        runner = FakeRunner(
+            diff_outputs=[""],
+            rev_parse_outputs=["source-sha\n"],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, promote=True)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(any(command[:2] == ("codex", "exec") for command in commands))
+        self.assertFalse(any(command[:3] == ("git", "worktree", "add") for command in commands))
+        self.assertIn("No changes to promote from dev to main.", output.getvalue())
+        self.assertIn(
+            "Post-promotion review skipped: no Promotion changes.",
+            output.getvalue(),
+        )
+        self.assertEqual(manifest["status"], "succeeded")
+        self.assertEqual(manifest["stage"], "no_changes_to_promote")
+        self.assertEqual(
+            manifest["post_promotion_review"]["status"],
+            "skipped_no_changes",
         )
 
     def test_promotion_push_check_failure_stops_before_side_effects(self) -> None:

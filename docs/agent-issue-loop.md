@@ -158,6 +158,12 @@ Promote reviewed Gitflow work from `dev` to `main`:
 python3 scripts/ralph.py --promote
 ```
 
+Skip the default Post-promotion review after a successful Promotion:
+
+```bash
+python3 scripts/ralph.py --promote --skip-post-promotion-review
+```
+
 Override the **Integration target** explicitly when needed:
 
 ```bash
@@ -231,8 +237,10 @@ operator should start from a known repo state.
 
 Ralph writes command logs while subprocesses are still running. Long Codex
 implementation attempts write to `codex-implementation-N.jsonl`, triage writes
-to `codex-triage.jsonl`, QA writes to `qa-*` logs, and Git operations write to
-their named `git-*` logs under the current `.ralph/runs/...` run directory.
+to `codex-triage.jsonl`, Post-promotion review writes to
+`codex-post-promotion-review.jsonl`, QA writes to `qa-*` logs, and Git
+operations write to their named `git-*` logs under the current
+`.ralph/runs/...` run directory.
 While a command is active, the log has `exit: running`; after the command
 finishes, Ralph rewrites the same log with the final exit status while
 preserving stdout, stderr, command, and cwd.
@@ -269,6 +277,8 @@ Key fields for inspection:
 - `source_branch`: **Promotion** source branch, usually `dev`.
 - `source_tree`: **Promotion** source branch revision and source worktree used
   for QA.
+- `post_promotion_review`: enabled state, skip reason, review status, and
+  review log path for **Promotion** runs.
 - `branches`: issue, source, and target branch names that apply to the run.
 - `paths`: repo root, run directory, worktree container, and implementation,
   integration, Promotion source, or Promotion target worktree paths.
@@ -401,7 +411,14 @@ contains `main`.
 After the push succeeds, Ralph scans open `agent-integrated` issues. It closes
 only issues whose recorded Gitflow integration commit is still in the promoted
 `origin/main..origin/dev` range, then comments promotion evidence and replaces
-`agent-integrated` with `agent-merged`.
+`agent-integrated` with `agent-merged`. Successful Promotions with changed
+files then run a Post-promotion review agent from the Promotion worktree by
+default, after the `main` push, `dev` sync, and verified issue metadata updates.
+The review is recorded in `post_promotion_review` in the Promotion run manifest.
+Operators can pass `--skip-post-promotion-review` to disable the review path.
+If there are no Promotion changes, Ralph does not create Promotion worktrees or
+run the review agent; it prints a review skip note and records
+`post_promotion_review.status` as `skipped_no_changes`.
 
 ## Triage pass
 

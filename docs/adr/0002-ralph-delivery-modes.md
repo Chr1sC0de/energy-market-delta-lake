@@ -26,7 +26,10 @@ When a **Promotion** range includes non-doc runtime files in the AEMO ETL
 **Subproject**, the AEMO ETL **End-to-end test** gate runs from the same
 isolated source worktree as the aggregate **Push check**, before any merge,
 push, branch sync, metadata update, or issue closure, so `main` is not updated
-before the fetched source revision passes.
+before the fetched source revision passes. Successful Promotions with changed
+files then run Post-promotion review by default; operators must pass
+`--skip-post-promotion-review` for an explicit no-review Promotion, and
+no-change Promotions record the review state as `skipped_no_changes`.
 
 ## Sync metadata
 

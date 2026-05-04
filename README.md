@@ -297,6 +297,7 @@ instead of relying on the caller's `PATH`.
 | Ralph Gitflow drain | `python3 scripts/ralph.py --drain` |
 | Ralph trunk drain | `python3 scripts/ralph.py --drain --delivery-mode trunk` |
 | Ralph promotion | `python3 scripts/ralph.py --promote` |
+| Ralph promotion without Post-promotion review | `python3 scripts/ralph.py --promote --skip-post-promotion-review` |
 | Ralph run inspection | `python3 scripts/ralph.py --inspect-run .ralph/runs/issue-25-...` |
 | Ralph metadata recovery | `python3 scripts/ralph.py --recover-run .ralph/runs/issue-25-...` |
 
@@ -316,10 +317,15 @@ from the same source worktree before any Promotion merge, push, `dev` branch
 sync, GitHub metadata update, or issue closure. During long Codex and QA phases,
 Ralph prints heartbeat lines with the active phase and log path, and the command
 logs under `.ralph/runs/...` update while the command is still running.
+Successful Promotions with changed files run a Post-promotion review agent by
+default after the `main` push, `dev` sync, and verified issue metadata updates;
+pass `--skip-post-promotion-review` to disable that review. If there are no
+Promotion changes, Ralph prints a review skip note and records
+`post_promotion_review.status` as `skipped_no_changes`.
 Each implementation and **Promotion** run also maintains
 `.ralph/runs/.../ralph-run.json` with issue, **Delivery mode**, **Integration
-target**, Promotion source tree, QA, QA runtime environment, push, commit, and
-GitHub metadata state for recovery. Use
+target**, Promotion source tree, QA, QA runtime environment, Post-promotion
+review, push, commit, and GitHub metadata state for recovery. Use
 `--inspect-run` for a read-only summary, then use `--recover-run` only after
 the recorded **Local integration** commit is verified reachable from the
 expected **Integration target**; recovery reconciles GitHub comments, runtime

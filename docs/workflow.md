@@ -151,10 +151,15 @@ When a **Promotion** range includes non-doc runtime files under
 **Push check** and AEMO ETL **End-to-end test** gate from an isolated source
 worktree fixed at the fetched source-branch revision. Both run before any
 Promotion merge, push, `dev` branch sync, GitHub metadata update, or issue
-closure. Implementation and **Promotion** runs also keep
+closure. Successful Promotions with changed files run a Post-promotion review
+agent by default after the `main` push, `dev` sync, and verified issue metadata
+updates; `--skip-post-promotion-review` disables that review. No-change
+Promotions print a review skip note and record `skipped_no_changes` in the
+Post-promotion review manifest state. Implementation and **Promotion** runs
+also keep
 `.ralph/runs/.../ralph-run.json` updated with **Delivery mode**, **Integration
-target**, Promotion source tree, QA, QA runtime environment, push, commit, and
-GitHub metadata state for recovery. Use
+target**, Promotion source tree, QA, QA runtime environment, Post-promotion
+review, push, commit, and GitHub metadata state for recovery. Use
 `python3 scripts/ralph.py --inspect-run <run_dir>` for a read-only manifest
 summary. Use `python3 scripts/ralph.py --recover-run <run_dir>` only after the
 recorded **Local integration** commit is verified reachable from the expected

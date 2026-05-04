@@ -37,12 +37,16 @@ range includes non-doc runtime files in the AEMO ETL **Subproject**, Ralph runs
 the aggregate **Push check** and AEMO ETL **End-to-end test** gate from an
 isolated source worktree fixed at the fetched source-branch revision, before
 any Promotion merge, push, branch sync, metadata update, or issue closure. Each
-implementation and **Promotion** run keeps `.ralph/runs/.../ralph-run.json`
-updated with the issue, **Delivery mode**, **Integration target**, Promotion
-source tree, QA, QA runtime environment, push, commit, and GitHub metadata
-state for inspection and recovery. Use `--inspect-run <run_dir>` for a
-read-only manifest summary. Use
-`--recover-run <run_dir>` only after Ralph verifies the recorded **Local
+successful Promotion with changed files runs a Post-promotion review agent by
+default after the `main` push, `dev` sync, and verified issue metadata updates;
+operators can pass `--skip-post-promotion-review` to disable that review.
+No-change Promotions print a review skip note and record `skipped_no_changes`
+in the Promotion manifest. Each implementation and **Promotion** run keeps
+`.ralph/runs/.../ralph-run.json` updated with the issue, **Delivery mode**,
+**Integration target**, Promotion source tree, QA, QA runtime environment,
+Post-promotion review, push, commit, and GitHub metadata state for inspection
+and recovery. Use `--inspect-run <run_dir>` for a read-only manifest summary.
+Use `--recover-run <run_dir>` only after Ralph verifies the recorded **Local
 integration** commit is reachable from the expected **Integration target**.
 
 ## Sync metadata
