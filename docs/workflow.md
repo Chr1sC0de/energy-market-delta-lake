@@ -80,16 +80,22 @@ flowchart LR
   DEV[Engineer] --> COMPOSE[podman-compose in backend-services]
   COMPOSE --> CADDY[https://localhost]
   COMPOSE --> DAGSTER[Dagster admin / guest / daemon]
+  COMPOSE --> SEED[Optional cached Archive seed loader]
   COMPOSE --> USERCODE[aemo-etl]
   COMPOSE --> LOCALSTACK[LocalStack]
   COMPOSE --> PG[(Postgres)]
   COMPOSE --> MARIMO[Marimo]
+  SEED --> LOCALSTACK
+  SEED --> USERCODE
 ```
 
 Local workflow notes:
 
 - `backend-services/compose.yaml` is a local harness, not the primary architecture.
 - LocalStack stands in for AWS-managed storage services during local validation.
+- `aemo-etl-seed-localstack` is a pre-Dagster no-op unless
+  `AEMO_ETL_E2E_SEED_ENABLED=1`; when enabled it loads the cached Archive seed
+  into LocalStack landing storage before `aemo-etl` starts.
 - Caddy is still the local front door so auth and routing behavior can be tested.
 - `marimo` is available locally for exploration, but it is not part of the Pulumi-deployed stack.
 
@@ -163,6 +169,8 @@ For the doc-sync contract, searchable `sync.sources` metadata, and the required
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/compose.yaml`
   - `.agents/skills/ralph-loop/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`

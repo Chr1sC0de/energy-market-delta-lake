@@ -8,6 +8,7 @@ This guide covers the local workflow for running `aemo-etl` against LocalStack-b
 - [Environment variables](#environment-variables)
 - [Install dependencies](#install-dependencies)
 - [Local Dagster workflow](#local-dagster-workflow)
+- [Cached Archive seed runbook](#cached-archive-seed-runbook)
 - [Bronze archive rebuild runbook](#bronze-archive-rebuild-runbook)
 - [Test assumptions](#test-assumptions)
 - [Useful commands](#useful-commands)
@@ -142,6 +143,59 @@ During that flow, `dagster.dev.yaml` configures Dagster run, schedule, and event
 - `DAGSTER_POSTGRES_PASSWORD=dagster_pass`
 - `DAGSTER_POSTGRES_DB=dagster`
 
+## Cached Archive seed runbook
+
+Use `aemo-e2e-archive-seed` to prepare local **End-to-end test** inputs for the
+full `gas_model` target without requiring every later local stack run to have
+live AWS archive access.
+
+Run commands from this Subproject:
+
+```bash
+cd backend-services/dagster-user/aemo-etl
+```
+
+Inspect the derived seed spec:
+
+```bash
+uv run aemo-e2e-archive-seed spec
+```
+
+The CLI imports `aemo_etl.definitions.defs()`, selects the full `gas_model`
+target and upstream assets, and emits JSON containing the required source-table
+archive glob patterns plus zip seed domains.
+
+Refresh is opt-in. It defaults to `dev-energy-market-archive`, 10 latest raw
+objects per required source table, and 3 latest zip objects per required domain:
+
+```bash
+uv run aemo-e2e-archive-seed refresh
+```
+
+Override the slice deliberately when a smaller local **End-to-end test** cache is
+needed:
+
+```bash
+uv run aemo-e2e-archive-seed refresh --raw-latest-count 2 --zip-latest-count 1
+```
+
+The cache and `seed-run-manifest.json` are written under
+`backend-services/.e2e/aemo-etl` by default. If any required source table or zip
+domain has fewer live archive objects than requested, refresh exits non-zero and
+records the shortfall in that manifest.
+
+To require the cached seed before the local compose `aemo-etl` service starts:
+
+```bash
+cd backend-services
+AEMO_ETL_E2E_SEED_ENABLED=1 podman-compose up --build -d
+```
+
+`aemo-etl-seed-localstack` validates the cache, uploads the selected cached
+objects into LocalStack landing storage, and completes before Dagster starts.
+This load path only needs LocalStack credentials and does not read the live
+archive bucket.
+
 ## Bronze archive rebuild runbook
 
 Use `aemo-replay-bronze-archive` when an operator needs to rebuild
@@ -254,6 +308,8 @@ generated-like raw source-table and TypedDict model definition surfaces.
   - `backend-services/dagster-user/aemo-etl/pyproject.toml`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/current_state.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`

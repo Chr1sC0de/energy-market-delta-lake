@@ -77,6 +77,47 @@ services:
       retries: 10
       start_period: 15s
   # -------------------------------------------------------------------------
+  # aemo-etl-seed-localstack — optional cached Archive seed loader
+  # -------------------------------------------------------------------------
+  aemo-etl-seed-localstack:
+    build:
+      context: ./dagster-user/aemo-etl
+      target: dagster-grpc
+    container_name: aemo-etl-seed-localstack
+    depends_on:
+      localstack:
+        condition: service_healthy
+    networks:
+      - dagster_network
+    environment:
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_ALLOW_HTTP: true
+      LANDING_BUCKET: ${LANDING_BUCKET:-dev-energy-market-landing}
+      ARCHIVE_BUCKET: ${ARCHIVE_BUCKET:-dev-energy-market-archive}
+      AEMO_ETL_E2E_SEED_ENABLED: ${AEMO_ETL_E2E_SEED_ENABLED:-0}
+      AEMO_ETL_E2E_SEED_ROOT: /var/lib/aemo-etl/e2e-seed
+      AEMO_ETL_E2E_SEED_RAW_LATEST_COUNT: ${AEMO_ETL_E2E_SEED_RAW_LATEST_COUNT:-10}
+      AEMO_ETL_E2E_SEED_ZIP_LATEST_COUNT: ${AEMO_ETL_E2E_SEED_ZIP_LATEST_COUNT:-3}
+    volumes:
+      - ./.e2e/aemo-etl:/var/lib/aemo-etl/e2e-seed
+    command:
+      - /bin/sh
+      - -c
+      - |
+        if [ "$${AEMO_ETL_E2E_SEED_ENABLED:-0}" != "1" ]; then
+          echo "AEMO ETL e2e archive seed disabled."
+          exit 0
+        fi
+        aemo-e2e-archive-seed load-localstack \
+          --seed-root "$${AEMO_ETL_E2E_SEED_ROOT}" \
+          --archive-bucket "$${ARCHIVE_BUCKET}" \
+          --landing-bucket "$${LANDING_BUCKET}" \
+          --raw-latest-count "$${AEMO_ETL_E2E_SEED_RAW_LATEST_COUNT:-10}" \
+          --zip-latest-count "$${AEMO_ETL_E2E_SEED_ZIP_LATEST_COUNT:-3}"
+  # -------------------------------------------------------------------------
   # aemo-etl — Dagster gRPC code-location server
   # workspace.yaml (aliased from workspace.local.yaml) connects to this at host aemo-etl:4000
   # -------------------------------------------------------------------------
@@ -89,6 +130,8 @@ services:
     depends_on:
       localstack:
         condition: service_healthy
+      aemo-etl-seed-localstack:
+        condition: service_completed_successfully
     networks:
       - dagster_network
     environment:

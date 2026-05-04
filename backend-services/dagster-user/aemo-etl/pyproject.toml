@@ -26,6 +26,7 @@ dependencies = [
   "types-boto3[dynamodb,s3]>=1.42.58",
   "types-requests>=2.32.4.20260107",
 ]
+scripts.aemo-e2e-archive-seed = "aemo_etl.cli.e2e_archive_seed:main"
 scripts.aemo-replay-bronze-archive = "aemo_etl.cli.replay_bronze_archive:main"
 
 [dependency-groups]

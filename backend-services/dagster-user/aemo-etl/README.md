@@ -26,6 +26,7 @@ The project materializes Dagster assets defined under `src/aemo_etl/defs` to bui
 - Silver assets overwrite source-specific parquet snapshots from the current bronze state.
 - `gas_model` assets combine GBB and VICGAS silver tables into shared dimensions and marts.
 - `delta_table_vacuum_schedule` runs `delta_table_vacuum_job` daily at 02:00 Australia/Melbourne to compact and vacuum Delta-backed assets.
+- `aemo-e2e-archive-seed` derives the full `gas_model` local **End-to-end test** seed spec from Dagster definitions and manages the ignored cached Archive seed under `backend-services/.e2e/aemo-etl`.
 
 ## High-level architecture
 
@@ -232,6 +233,8 @@ make duplicate-check
 make run-prek
 uv run dg launch --job download_vicgas_public_report_zip_files_job
 dg launch --assets "key:ops/testing/failed_run_alert_probe"
+uv run aemo-e2e-archive-seed spec
+uv run aemo-e2e-archive-seed refresh
 uv run aemo-replay-bronze-archive --domain gbb
 uv run aemo-replay-bronze-archive --table gbb.bronze_gasbb_contacts --replace
 ```
@@ -250,6 +253,12 @@ bounded batches; the first non-empty replay batch overwrites the target table,
 and later batches merge on `surrogate_key`, update only when
 `source_content_hash` changes, insert new keys, and retain target rows absent
 from later files.
+
+`aemo-e2e-archive-seed refresh` is opt-in and defaults to the live
+`dev-energy-market-archive` bucket, 10 raw objects per required source table,
+and 3 zip objects per required domain. It writes cached objects and
+`seed-run-manifest.json` under `backend-services/.e2e/aemo-etl`; later
+LocalStack runs can load that cache without live archive access.
 
 ## Project layout
 
@@ -298,6 +307,8 @@ aemo-etl/
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/s3_pending_objects.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/unzipper/sensors.py`
   - `backend-services/dagster-user/aemo-etl/Makefile`

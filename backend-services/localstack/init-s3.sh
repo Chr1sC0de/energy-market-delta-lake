@@ -15,6 +15,7 @@ REGION="${AWS_DEFAULT_REGION:-ap-southeast-4}"
 for bucket in \
 	dev-energy-market-io-manager \
 	dev-energy-market-landing \
+	dev-energy-market-archive \
 	dev-energy-market-aemo; do
 	echo "Creating bucket: $bucket"
 	awslocal s3 mb "s3://${bucket}" --region "$REGION" 2>/dev/null || echo "Bucket $bucket already exists"

@@ -83,6 +83,7 @@ flowchart LR
     ADMIN[Dagster admin]
     GUEST[Dagster guest]
     DAEMON[Dagster daemon]
+    SEED[Optional Archive seed loader]
     USERCODE[aemo-etl]
     LS[LocalStack]
     PG[(Postgres)]
@@ -94,6 +95,8 @@ flowchart LR
   CADDY --> GUEST
   CADDY --> MARIMO
   AUTH --> ADMIN
+  SEED --> LS
+  SEED --> USERCODE
   ADMIN --> USERCODE
   GUEST --> USERCODE
   DAEMON --> USERCODE
@@ -106,7 +109,9 @@ flowchart LR
 
 This local stack is intentionally broader than the deployed stack in some areas.
 For example, `marimo` is part of local compose but is not provisioned by the
-current Pulumi deployment.
+current Pulumi deployment. The optional Archive seed loader is also local-only:
+it can require a cached seed under `backend-services/.e2e/aemo-etl` before
+starting the `aemo-etl` code location for local **End-to-end test** setup.
 
 ## Repository responsibilities
 
@@ -136,6 +141,8 @@ current Pulumi deployment.
 - `sync.sources`:
   - `infrastructure/aws-pulumi/__main__.py`
   - `backend-services/compose.yaml`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/caddy/Caddyfile`
 - `sync.scope`: `architecture`
 - `sync.qa`:
