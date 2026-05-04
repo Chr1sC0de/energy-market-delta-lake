@@ -112,6 +112,9 @@ For example, `marimo` is part of local compose but is not provisioned by the
 current Pulumi deployment. The optional Archive seed loader is also local-only:
 it can require a cached seed under `backend-services/.e2e/aemo-etl` before
 starting the `aemo-etl` code location for local **End-to-end test** setup.
+`backend-services/scripts/aemo-etl-e2e run` uses that cache through an isolated
+e2e stack with generated Dagster config, Postgres, LocalStack, AEMO ETL user
+code, one webserver, and the daemon.
 
 ## Repository responsibilities
 
@@ -141,6 +144,7 @@ starting the `aemo-etl` code location for local **End-to-end test** setup.
 - `sync.sources`:
   - `infrastructure/aws-pulumi/__main__.py`
   - `backend-services/compose.yaml`
+  - `backend-services/scripts/aemo-etl-e2e`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/caddy/Caddyfile`

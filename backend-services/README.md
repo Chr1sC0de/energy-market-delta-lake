@@ -14,6 +14,7 @@ architecture is defined in `infrastructure/aws-pulumi/`.
 - [Environment variables](#environment-variables)
 - [LocalStack S3 buckets](#localstack-s3-buckets)
 - [Cached Archive seed](#cached-archive-seed)
+- [Isolated AEMO ETL e2e stack](#isolated-aemo-etl-e2e-stack)
 - [Launching a job via the GraphQL API](#launching-a-job-via-the-graphql-api)
 - [Useful commands](#useful-commands)
 - [Related docs](#related-docs)
@@ -269,6 +270,36 @@ The refresh path defaults to `dev-energy-market-archive`, requires 10 latest raw
 objects for each required `gas_model` source table and 3 latest zip objects for
 each required zip domain, and fails with a manifest if coverage is short.
 
+## Isolated AEMO ETL e2e stack
+
+Use the isolated AEMO ETL **End-to-end test** stack when the validation should
+avoid the broader fixed developer compose stack:
+
+```bash
+backend-services/scripts/aemo-etl-e2e run
+```
+
+The command uses the fixed e2e stack name `aemo-etl-e2e` and writes generated
+runtime files under `backend-services/.e2e/aemo-etl/runs/<run-id>/`. The
+generated stack contains Postgres, LocalStack, the cached Archive seed loader,
+the AEMO ETL gRPC service, one Dagster webserver, and the Dagster daemon. It
+does not start Caddy, authentication, Marimo, or the second developer webserver.
+
+Local service images are tagged for the e2e stack. Missing images are built
+automatically, existing images are reused by default, and `--rebuild` forces all
+local images to rebuild before startup.
+
+The command derives the host Podman socket from
+`$XDG_RUNTIME_DIR/podman/podman.sock` and fails before startup if the socket is
+missing. The generated e2e Dagster config uses that socket for run-worker
+containers and attaches them to the e2e network.
+
+Successful runs clean e2e containers and named volumes by default after the
+stack reaches ready state. Failed runs preserve containers, volumes, service
+logs, the run manifest, and the seed-run manifest for inspection. Use `--reuse`
+to keep and reuse the e2e stack after a successful start, or `--always-clean` to
+clean containers and volumes even after failure.
+
 ______________________________________________________________________
 
 ## Launching a job via the GraphQL API
@@ -500,6 +531,10 @@ The same socket path is hard-coded in `dagster.local.yaml` under
 (`/run/user/1000/podman/podman.sock`). If your UID is not `1000`, update
 that path accordingly.
 
+The isolated `backend-services/scripts/aemo-etl-e2e run` path does not use that
+developer-stack setting. It renders e2e Dagster config per run from the current
+`XDG_RUNTIME_DIR` socket.
+
 ## Sync metadata
 
 - `sync.owner`: `docs`
@@ -507,6 +542,7 @@ that path accordingly.
   - `backend-services/compose.yaml`
   - `backend-services/.envrc`
   - `backend-services/localstack/init-s3.sh`
+  - `backend-services/scripts/aemo-etl-e2e`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
   - `backend-services/dagster-core/dagster.local.yaml`

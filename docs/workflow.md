@@ -96,6 +96,9 @@ Local workflow notes:
 - `aemo-etl-seed-localstack` is a pre-Dagster no-op unless
   `AEMO_ETL_E2E_SEED_ENABLED=1`; when enabled it loads the cached Archive seed
   into LocalStack landing storage before `aemo-etl` starts.
+- `backend-services/scripts/aemo-etl-e2e run` starts the isolated AEMO ETL
+  **End-to-end test** stack with its own e2e Dagster config, one webserver, the
+  daemon, Postgres, LocalStack, and the seed loader.
 - Caddy is still the local front door so auth and routing behavior can be tested.
 - `marimo` is available locally for exploration, but it is not part of the Pulumi-deployed stack.
 
@@ -172,6 +175,7 @@ For the doc-sync contract, searchable `sync.sources` metadata, and the required
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/compose.yaml`
+  - `backend-services/scripts/aemo-etl-e2e`
   - `.agents/skills/ralph-loop/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`
   - `scripts/ralph.py`

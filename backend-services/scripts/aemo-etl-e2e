@@ -1,0 +1,1040 @@
+#!/usr/bin/env python3
+"""Start the isolated local AEMO ETL End-to-end Dagster stack."""
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+STACK_NAME = "aemo-etl-e2e"
+NETWORK_NAME = f"{STACK_NAME}-dagster-network"
+CONTAINER_SOCKET_PATH = "/run/podman/podman.sock"
+DEFAULT_WEBSERVER_PORT = 3001
+DEFAULT_TIMEOUT_SECONDS = 240
+DEFAULT_RAW_LATEST_COUNT = 10
+DEFAULT_ZIP_LATEST_COUNT = 3
+
+POSTGRES_CONTAINER = f"{STACK_NAME}-postgres"
+LOCALSTACK_CONTAINER = f"{STACK_NAME}-localstack"
+SEED_CONTAINER = f"{STACK_NAME}-seed-localstack"
+AEMO_ETL_CONTAINER = f"{STACK_NAME}-aemo-etl"
+DAGSTER_WEBSERVER_CONTAINER = f"{STACK_NAME}-dagster-webserver"
+DAGSTER_DAEMON_CONTAINER = f"{STACK_NAME}-dagster-daemon"
+
+SERVICE_NAMES = (
+    "postgres",
+    "localstack",
+    "aemo-etl-seed-localstack",
+    "aemo-etl",
+    "dagster-webserver",
+    "dagster-daemon",
+)
+LONG_RUNNING_CONTAINERS = {
+    POSTGRES_CONTAINER,
+    LOCALSTACK_CONTAINER,
+    AEMO_ETL_CONTAINER,
+    DAGSTER_WEBSERVER_CONTAINER,
+    DAGSTER_DAEMON_CONTAINER,
+}
+HEALTHCHECK_CONTAINERS = {
+    POSTGRES_CONTAINER,
+    LOCALSTACK_CONTAINER,
+    AEMO_ETL_CONTAINER,
+}
+
+E2E_ENVIRONMENT = {
+    "POSTGRES_USER": "postgres",
+    "POSTGRES_PASSWORD": "postgres",
+    "POSTGRES_DB": "postgres",
+    "DAGSTER_POSTGRES_HOSTNAME": "postgres",
+    "DAGSTER_POSTGRES_USER": "dagster_user",
+    "DAGSTER_POSTGRES_PASSWORD": "dagster_pass",
+    "DAGSTER_POSTGRES_DB": "dagster",
+    "AWS_ENDPOINT_URL": "http://localstack:4566",
+    "AWS_DEFAULT_REGION": "ap-southeast-2",
+    "AWS_ACCESS_KEY_ID": "test",
+    "AWS_SECRET_ACCESS_KEY": "test",
+    "AWS_ALLOW_HTTP": "true",
+    "AWS_S3_LOCKING_PROVIDER": "dynamodb",
+    "DAGSTER_FAILURE_ALERT_TOPIC_ARN": "",
+    "DAGSTER_FAILURE_ALERT_BASE_URL": "http://localhost:3000",
+    "DEVELOPMENT_ENVIRONMENT": "dev",
+    "DEVELOPMENT_LOCATION": "local",
+    "NAME_PREFIX": "energy-market",
+    "LANDING_BUCKET": "dev-energy-market-landing",
+    "ARCHIVE_BUCKET": "dev-energy-market-archive",
+}
+
+
+class CommandError(RuntimeError):
+    """Raised for user-actionable command failures."""
+
+
+@dataclass(frozen=True, slots=True)
+class ImageSpec:
+    """Local service image build specification."""
+
+    name: str
+    tag: str
+    context: Path
+    target: str | None = None
+    build_args: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class RunOptions:
+    """Options for one isolated e2e stack run."""
+
+    rebuild: bool
+    reuse: bool
+    always_clean: bool
+    webserver_port: int
+    raw_latest_count: int
+    zip_latest_count: int
+    timeout_seconds: int
+
+
+@dataclass(frozen=True, slots=True)
+class ContainerState:
+    """Small normalized view of a Podman container state."""
+
+    name: str
+    status: str
+    exit_code: int | None
+    health: str | None
+
+
+class CommandRunner:
+    """Run external commands."""
+
+    def run(
+        self,
+        args: Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: Mapping[str, str] | None = None,
+        capture_output: bool = False,
+        check: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        """Run a command with consistent text-mode subprocess settings."""
+        return subprocess.run(
+            list(args),
+            cwd=cwd,
+            env=dict(env) if env is not None else None,
+            capture_output=capture_output,
+            text=True,
+            check=check,
+        )
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run the backend-services AEMO ETL e2e command."""
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    try:
+        if args.command == "run":
+            run_stack(
+                RunOptions(
+                    rebuild=args.rebuild,
+                    reuse=args.reuse,
+                    always_clean=args.always_clean,
+                    webserver_port=args.webserver_port,
+                    raw_latest_count=args.raw_latest_count,
+                    zip_latest_count=args.zip_latest_count,
+                    timeout_seconds=args.timeout_seconds,
+                )
+            )
+            return 0
+    except CommandError as error:
+        sys.stderr.write(f"error: {error}\n")
+        return 1
+    except subprocess.CalledProcessError as error:
+        sys.stderr.write(format_called_process_error(error))
+        return error.returncode or 1
+
+    parser.error(f"unknown command: {args.command}")
+    return 2
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build the e2e stack command parser."""
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run the isolated local AEMO ETL End-to-end Dagster stack from "
+            "backend-services."
+        )
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    run_parser = subparsers.add_parser(
+        "run",
+        help="start the isolated AEMO ETL e2e Dagster stack",
+    )
+    run_parser.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="rebuild all local e2e service images before starting",
+    )
+    run_parser.add_argument(
+        "--reuse",
+        action="store_true",
+        help=(
+            "reuse the existing e2e containers and named volumes, and keep "
+            "them after a successful start"
+        ),
+    )
+    run_parser.add_argument(
+        "--always-clean",
+        action="store_true",
+        help="clean the e2e containers and named volumes even when startup fails",
+    )
+    run_parser.add_argument(
+        "--webserver-port",
+        type=positive_int,
+        default=DEFAULT_WEBSERVER_PORT,
+        help=f"host port for the e2e Dagster webserver (default: {DEFAULT_WEBSERVER_PORT})",
+    )
+    run_parser.add_argument(
+        "--raw-latest-count",
+        type=positive_int,
+        default=DEFAULT_RAW_LATEST_COUNT,
+        help=(
+            "cached raw source-table objects required per table "
+            f"(default: {DEFAULT_RAW_LATEST_COUNT})"
+        ),
+    )
+    run_parser.add_argument(
+        "--zip-latest-count",
+        type=positive_int,
+        default=DEFAULT_ZIP_LATEST_COUNT,
+        help=(
+            "cached zip objects required per domain "
+            f"(default: {DEFAULT_ZIP_LATEST_COUNT})"
+        ),
+    )
+    run_parser.add_argument(
+        "--timeout-seconds",
+        type=positive_int,
+        default=DEFAULT_TIMEOUT_SECONDS,
+        help=(
+            "seconds to wait for the e2e stack to reach ready state "
+            f"(default: {DEFAULT_TIMEOUT_SECONDS})"
+        ),
+    )
+    return parser
+
+
+def positive_int(value: str) -> int:
+    """Parse a positive integer option value."""
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be greater than zero")
+    return parsed
+
+
+def run_stack(
+    options: RunOptions,
+    *,
+    runner: CommandRunner | None = None,
+    env: Mapping[str, str] | None = None,
+) -> None:
+    """Start and validate one isolated e2e stack run."""
+    if options.reuse and options.always_clean:
+        raise CommandError("--reuse and --always-clean cannot be used together")
+
+    command_runner = runner or CommandRunner()
+    host_env = dict(os.environ if env is None else env)
+    backend_dir = backend_services_dir()
+    require_tool("podman")
+    require_tool("podman-compose")
+    podman_socket = podman_socket_from_xdg_runtime_dir(host_env)
+
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    seed_root = backend_dir / ".e2e/aemo-etl"
+    run_dir = seed_root / "runs" / run_id
+    logs_dir = run_dir / "logs"
+    run_dir.mkdir(parents=True, exist_ok=False)
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    compose_file = run_dir / "compose.yaml"
+    dagster_config_file = run_dir / "dagster.yaml"
+    workspace_file = run_dir / "workspace.yaml"
+    image_specs = build_image_specs(backend_dir)
+    compose_command = [
+        "podman-compose",
+        "--no-ansi",
+        "-f",
+        str(compose_file),
+        "-p",
+        STACK_NAME,
+    ]
+    manifest = base_manifest(
+        run_id=run_id,
+        run_dir=run_dir,
+        compose_file=compose_file,
+        dagster_config_file=dagster_config_file,
+        workspace_file=workspace_file,
+        podman_socket=podman_socket,
+        image_specs=image_specs,
+        options=options,
+    )
+    write_json(run_dir / "run-manifest.json", manifest)
+
+    try:
+        render_runtime_files(
+            compose_file=compose_file,
+            dagster_config_file=dagster_config_file,
+            workspace_file=workspace_file,
+            backend_dir=backend_dir,
+            seed_root=seed_root,
+            podman_socket=podman_socket,
+            image_specs=image_specs,
+            webserver_port=options.webserver_port,
+            raw_latest_count=options.raw_latest_count,
+            zip_latest_count=options.zip_latest_count,
+        )
+        if not options.reuse:
+            cleanup_stack(command_runner, compose_command)
+        build_required_images(
+            command_runner,
+            image_specs=image_specs,
+            rebuild=options.rebuild,
+            cwd=backend_dir,
+        )
+        up_args = [*compose_command, "up", "-d", "--no-build"]
+        if options.reuse and not options.rebuild:
+            up_args.append("--no-recreate")
+        if options.reuse and options.rebuild:
+            up_args.append("--force-recreate")
+        command_runner.run(up_args, cwd=backend_dir)
+        wait_for_ready_stack(
+            command_runner,
+            timeout_seconds=options.timeout_seconds,
+        )
+    except Exception as error:
+        collect_logs(command_runner, compose_command, logs_dir, backend_dir)
+        manifest["status"] = "failed"
+        manifest["completed_at"] = now_iso()
+        manifest["error"] = str(error)
+        manifest["logs_dir"] = str(logs_dir)
+        manifest["seed_run_manifest"] = str(seed_root / "seed-run-manifest.json")
+        write_json(run_dir / "run-manifest.json", manifest)
+        if options.always_clean:
+            cleanup_stack(command_runner, compose_command)
+            manifest["cleanup"] = "completed-after-failure"
+            write_json(run_dir / "run-manifest.json", manifest)
+        else:
+            manifest["cleanup"] = "preserved-after-failure"
+            write_json(run_dir / "run-manifest.json", manifest)
+        raise
+
+    collect_logs(command_runner, compose_command, logs_dir, backend_dir)
+    manifest["status"] = "success"
+    manifest["completed_at"] = now_iso()
+    manifest["logs_dir"] = str(logs_dir)
+    manifest["seed_run_manifest"] = str(seed_root / "seed-run-manifest.json")
+    if options.reuse:
+        manifest["cleanup"] = "preserved-for-reuse"
+        write_json(run_dir / "run-manifest.json", manifest)
+        sys.stdout.write(
+            f"{STACK_NAME} is ready at http://localhost:{options.webserver_port}\n"
+        )
+        sys.stdout.write(f"run manifest: {run_dir / 'run-manifest.json'}\n")
+        return
+
+    cleanup_stack(command_runner, compose_command)
+    manifest["cleanup"] = "completed-after-success"
+    write_json(run_dir / "run-manifest.json", manifest)
+    sys.stdout.write(f"{STACK_NAME} reached ready state and was cleaned.\n")
+    sys.stdout.write(f"run manifest: {run_dir / 'run-manifest.json'}\n")
+
+
+def backend_services_dir() -> Path:
+    """Return the backend-services directory containing this script."""
+    return Path(__file__).resolve().parents[1]
+
+
+def require_tool(name: str) -> None:
+    """Fail when a required executable is not on PATH."""
+    if shutil.which(name) is None:
+        raise CommandError(f"required tool not found on PATH: {name}")
+
+
+def podman_socket_from_xdg_runtime_dir(env: Mapping[str, str]) -> Path:
+    """Return the user Podman socket derived from XDG_RUNTIME_DIR."""
+    runtime_dir = env.get("XDG_RUNTIME_DIR")
+    if runtime_dir is None or runtime_dir == "":
+        raise CommandError(
+            "XDG_RUNTIME_DIR is not set; enable the user Podman socket and retry"
+        )
+
+    socket_path = Path(runtime_dir) / "podman/podman.sock"
+    if not socket_path.exists():
+        raise CommandError(
+            f"Podman socket does not exist at {socket_path}; run "
+            "`systemctl --user enable --now podman.socket` and retry"
+        )
+    if not socket_path.is_socket():
+        raise CommandError(f"Podman socket path is not a socket: {socket_path}")
+    return socket_path
+
+
+def build_image_specs(backend_dir: Path) -> tuple[ImageSpec, ...]:
+    """Return the local service images required by the e2e stack."""
+    return (
+        ImageSpec(
+            name="postgres",
+            tag=f"localhost/{STACK_NAME}_postgres:latest",
+            context=backend_dir / "postgres",
+        ),
+        ImageSpec(
+            name="localstack",
+            tag=f"localhost/{STACK_NAME}_localstack:latest",
+            context=backend_dir / "localstack",
+        ),
+        ImageSpec(
+            name="aemo-etl",
+            tag=f"localhost/{STACK_NAME}_aemo-etl:latest",
+            context=backend_dir / "dagster-user/aemo-etl",
+            target="dagster-grpc",
+        ),
+        ImageSpec(
+            name="dagster-core",
+            tag=f"localhost/{STACK_NAME}_dagster-core:latest",
+            context=backend_dir / "dagster-core",
+            target="deploy",
+            build_args=(("DAGSTER_DEPLOYMENT", "local"),),
+        ),
+    )
+
+
+def select_images_to_build(
+    existing_images: set[str],
+    *,
+    image_specs: Sequence[ImageSpec],
+    rebuild: bool,
+) -> tuple[ImageSpec, ...]:
+    """Return image specs that must be built for this run."""
+    if rebuild:
+        return tuple(image_specs)
+    return tuple(spec for spec in image_specs if spec.tag not in existing_images)
+
+
+def build_required_images(
+    runner: CommandRunner,
+    *,
+    image_specs: Sequence[ImageSpec],
+    rebuild: bool,
+    cwd: Path,
+) -> None:
+    """Build missing e2e service images, or all images when rebuild is set."""
+    existing_images = {
+        spec.tag
+        for spec in image_specs
+        if runner.run(
+            ["podman", "image", "exists", spec.tag],
+            cwd=cwd,
+            check=False,
+        ).returncode
+        == 0
+    }
+    for spec in select_images_to_build(
+        existing_images,
+        image_specs=image_specs,
+        rebuild=rebuild,
+    ):
+        sys.stdout.write(f"building {spec.name}: {spec.tag}\n")
+        build_args = ["podman", "build", "-t", spec.tag]
+        if spec.target is not None:
+            build_args.extend(["--target", spec.target])
+        for key, value in spec.build_args:
+            build_args.extend(["--build-arg", f"{key}={value}"])
+        build_args.append(str(spec.context))
+        runner.run(build_args, cwd=cwd)
+
+
+def render_runtime_files(
+    *,
+    compose_file: Path,
+    dagster_config_file: Path,
+    workspace_file: Path,
+    backend_dir: Path,
+    seed_root: Path,
+    podman_socket: Path,
+    image_specs: Sequence[ImageSpec],
+    webserver_port: int,
+    raw_latest_count: int,
+    zip_latest_count: int,
+) -> None:
+    """Render the compose and Dagster runtime files for this e2e run."""
+    images = {spec.name: spec.tag for spec in image_specs}
+    compose_file.write_text(
+        render_compose_yaml(
+            images=images,
+            seed_root=seed_root,
+            podman_socket=podman_socket,
+            dagster_config_file=dagster_config_file,
+            workspace_file=workspace_file,
+            webserver_port=webserver_port,
+            raw_latest_count=raw_latest_count,
+            zip_latest_count=zip_latest_count,
+        ),
+        encoding="utf-8",
+    )
+    dagster_config_file.write_text(
+        render_dagster_yaml(
+            aemo_etl_image=images["aemo-etl"],
+            podman_socket=podman_socket,
+        ),
+        encoding="utf-8",
+    )
+    workspace_file.write_text(render_workspace_yaml(), encoding="utf-8")
+    seed_root.mkdir(parents=True, exist_ok=True)
+    backend_dir.joinpath(".e2e/aemo-etl").mkdir(parents=True, exist_ok=True)
+
+
+def render_compose_yaml(
+    *,
+    images: Mapping[str, str],
+    seed_root: Path,
+    podman_socket: Path,
+    dagster_config_file: Path,
+    workspace_file: Path,
+    webserver_port: int,
+    raw_latest_count: int,
+    zip_latest_count: int,
+) -> str:
+    """Return the isolated e2e compose file."""
+    socket_volume = f"{podman_socket}:{CONTAINER_SOCKET_PATH}"
+    dagster_config_volume = (
+        f"{dagster_config_file}:/opt/dagster/dagster_home/dagster.yaml:ro"
+    )
+    workspace_volume = f"{workspace_file}:/opt/dagster/dagster_home/workspace.yaml:ro"
+    seed_volume = f"{seed_root}:/var/lib/aemo-etl/e2e-seed"
+    return f"""# Generated by backend-services/scripts/aemo-etl-e2e.
+name: {STACK_NAME}
+
+networks:
+  dagster_network:
+    name: {NETWORK_NAME}
+    driver: bridge
+
+volumes:
+  postgres_data:
+  localstack_data:
+
+services:
+  postgres:
+    image: {yaml_quote(images["postgres"])}
+    container_name: {POSTGRES_CONTAINER}
+    networks:
+      - dagster_network
+    environment:
+      POSTGRES_USER: {yaml_quote(E2E_ENVIRONMENT["POSTGRES_USER"])}
+      POSTGRES_PASSWORD: {yaml_quote(E2E_ENVIRONMENT["POSTGRES_PASSWORD"])}
+      POSTGRES_DB: {yaml_quote(E2E_ENVIRONMENT["POSTGRES_DB"])}
+      DAGSTER_POSTGRES_USER: {yaml_quote(E2E_ENVIRONMENT["DAGSTER_POSTGRES_USER"])}
+      DAGSTER_POSTGRES_PASSWORD: {yaml_quote(E2E_ENVIRONMENT["DAGSTER_POSTGRES_PASSWORD"])}
+      DAGSTER_POSTGRES_DB: {yaml_quote(E2E_ENVIRONMENT["DAGSTER_POSTGRES_DB"])}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  localstack:
+    image: {yaml_quote(images["localstack"])}
+    container_name: {LOCALSTACK_CONTAINER}
+    networks:
+      - dagster_network
+    environment:
+      SERVICES: "s3,dynamodb"
+      AWS_DEFAULT_REGION: {yaml_quote(E2E_ENVIRONMENT["AWS_DEFAULT_REGION"])}
+    volumes:
+      - localstack_data:/var/lib/localstack
+      - {yaml_quote(socket_volume)}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health | grep -q '\\\"s3\\\"' && curl -sf http://localhost:4566/_localstack/health | grep -q '\\\"dynamodb\\\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  aemo-etl-seed-localstack:
+    image: {yaml_quote(images["aemo-etl"])}
+    container_name: {SEED_CONTAINER}
+    depends_on:
+      localstack:
+        condition: service_healthy
+    networks:
+      - dagster_network
+    environment:
+      AWS_ENDPOINT_URL: {yaml_quote(E2E_ENVIRONMENT["AWS_ENDPOINT_URL"])}
+      AWS_DEFAULT_REGION: {yaml_quote(E2E_ENVIRONMENT["AWS_DEFAULT_REGION"])}
+      AWS_ACCESS_KEY_ID: {yaml_quote(E2E_ENVIRONMENT["AWS_ACCESS_KEY_ID"])}
+      AWS_SECRET_ACCESS_KEY: {yaml_quote(E2E_ENVIRONMENT["AWS_SECRET_ACCESS_KEY"])}
+      AWS_ALLOW_HTTP: {yaml_quote(E2E_ENVIRONMENT["AWS_ALLOW_HTTP"])}
+      DEVELOPMENT_ENVIRONMENT: {yaml_quote(E2E_ENVIRONMENT["DEVELOPMENT_ENVIRONMENT"])}
+      DEVELOPMENT_LOCATION: {yaml_quote(E2E_ENVIRONMENT["DEVELOPMENT_LOCATION"])}
+      NAME_PREFIX: {yaml_quote(E2E_ENVIRONMENT["NAME_PREFIX"])}
+      LANDING_BUCKET: {yaml_quote(E2E_ENVIRONMENT["LANDING_BUCKET"])}
+      ARCHIVE_BUCKET: {yaml_quote(E2E_ENVIRONMENT["ARCHIVE_BUCKET"])}
+      AEMO_ETL_E2E_SEED_ROOT: /var/lib/aemo-etl/e2e-seed
+      AEMO_ETL_E2E_SEED_RAW_LATEST_COUNT: {raw_latest_count}
+      AEMO_ETL_E2E_SEED_ZIP_LATEST_COUNT: {zip_latest_count}
+    volumes:
+      - {yaml_quote(seed_volume)}
+    command:
+      - aemo-e2e-archive-seed
+      - load-localstack
+      - --seed-root
+      - /var/lib/aemo-etl/e2e-seed
+      - --archive-bucket
+      - {yaml_quote(E2E_ENVIRONMENT["ARCHIVE_BUCKET"])}
+      - --landing-bucket
+      - {yaml_quote(E2E_ENVIRONMENT["LANDING_BUCKET"])}
+      - --raw-latest-count
+      - {yaml_quote(str(raw_latest_count))}
+      - --zip-latest-count
+      - {yaml_quote(str(zip_latest_count))}
+
+  aemo-etl:
+    image: {yaml_quote(images["aemo-etl"])}
+    container_name: {AEMO_ETL_CONTAINER}
+    depends_on:
+      localstack:
+        condition: service_healthy
+      aemo-etl-seed-localstack:
+        condition: service_completed_successfully
+    networks:
+      - dagster_network
+    environment:
+{render_common_runtime_environment(6)}
+    healthcheck:
+      test: ["CMD-SHELL", "dagster api grpc-health-check -p 4000"]
+      interval: 3s
+      timeout: 1s
+      retries: 20
+      start_period: 3s
+    command:
+      - dagster
+      - code-server
+      - start
+      - -h
+      - "0.0.0.0"
+      - -p
+      - "4000"
+      - -m
+      - aemo_etl.definitions
+
+  dagster-webserver:
+    image: {yaml_quote(images["dagster-core"])}
+    container_name: {DAGSTER_WEBSERVER_CONTAINER}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      aemo-etl:
+        condition: service_healthy
+    networks:
+      - dagster_network
+    ports:
+      - {yaml_quote(f"127.0.0.1:{webserver_port}:3000")}
+    environment:
+{render_common_runtime_environment(6, include_docker_host=True)}
+    volumes:
+      - {yaml_quote(socket_volume)}
+      - {yaml_quote(dagster_config_volume)}
+      - {yaml_quote(workspace_volume)}
+    command:
+      - dagster-webserver
+      - -h
+      - "0.0.0.0"
+      - -p
+      - "3000"
+      - -w
+      - workspace.yaml
+
+  dagster-daemon:
+    image: {yaml_quote(images["dagster-core"])}
+    container_name: {DAGSTER_DAEMON_CONTAINER}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      aemo-etl:
+        condition: service_healthy
+    networks:
+      - dagster_network
+    environment:
+{render_common_runtime_environment(6, include_docker_host=True)}
+    volumes:
+      - {yaml_quote(socket_volume)}
+      - {yaml_quote(dagster_config_volume)}
+      - {yaml_quote(workspace_volume)}
+    command:
+      - dagster-daemon
+      - run
+      - -w
+      - workspace.yaml
+"""
+
+
+def render_common_runtime_environment(
+    indent: int,
+    *,
+    include_docker_host: bool = False,
+) -> str:
+    """Render common service environment variables for compose YAML."""
+    values = {
+        "DAGSTER_HOME": "/opt/dagster/dagster_home/",
+        "DAGSTER_POSTGRES_HOSTNAME": E2E_ENVIRONMENT["DAGSTER_POSTGRES_HOSTNAME"],
+        "DAGSTER_POSTGRES_USER": E2E_ENVIRONMENT["DAGSTER_POSTGRES_USER"],
+        "DAGSTER_POSTGRES_PASSWORD": E2E_ENVIRONMENT["DAGSTER_POSTGRES_PASSWORD"],
+        "DAGSTER_POSTGRES_DB": E2E_ENVIRONMENT["DAGSTER_POSTGRES_DB"],
+        "AWS_ENDPOINT_URL": E2E_ENVIRONMENT["AWS_ENDPOINT_URL"],
+        "AWS_DEFAULT_REGION": E2E_ENVIRONMENT["AWS_DEFAULT_REGION"],
+        "AWS_ACCESS_KEY_ID": E2E_ENVIRONMENT["AWS_ACCESS_KEY_ID"],
+        "AWS_SECRET_ACCESS_KEY": E2E_ENVIRONMENT["AWS_SECRET_ACCESS_KEY"],
+        "AWS_ALLOW_HTTP": E2E_ENVIRONMENT["AWS_ALLOW_HTTP"],
+        "AWS_S3_LOCKING_PROVIDER": E2E_ENVIRONMENT["AWS_S3_LOCKING_PROVIDER"],
+        "DAGSTER_FAILURE_ALERT_TOPIC_ARN": E2E_ENVIRONMENT[
+            "DAGSTER_FAILURE_ALERT_TOPIC_ARN"
+        ],
+        "DAGSTER_FAILURE_ALERT_BASE_URL": E2E_ENVIRONMENT[
+            "DAGSTER_FAILURE_ALERT_BASE_URL"
+        ],
+        "DEVELOPMENT_ENVIRONMENT": E2E_ENVIRONMENT["DEVELOPMENT_ENVIRONMENT"],
+        "DEVELOPMENT_LOCATION": E2E_ENVIRONMENT["DEVELOPMENT_LOCATION"],
+        "NAME_PREFIX": E2E_ENVIRONMENT["NAME_PREFIX"],
+    }
+    if include_docker_host:
+        values = {"DOCKER_HOST": f"unix://{CONTAINER_SOCKET_PATH}", **values}
+
+    prefix = " " * indent
+    return "\n".join(
+        f"{prefix}{key}: {yaml_quote(value)}" for key, value in values.items()
+    )
+
+
+def render_dagster_yaml(*, aemo_etl_image: str, podman_socket: Path) -> str:
+    """Return the e2e Dagster instance config."""
+    socket_volume = f"{podman_socket}:{CONTAINER_SOCKET_PATH}"
+    return f"""# Generated by backend-services/scripts/aemo-etl-e2e.
+scheduler:
+  module: dagster.core.scheduler
+  class: DagsterDaemonScheduler
+run_coordinator:
+  module: dagster.core.run_coordinator
+  class: QueuedRunCoordinator
+  config:
+    max_concurrent_runs: 1000
+run_launcher:
+  module: dagster_docker
+  class: DockerRunLauncher
+  config:
+    image: {yaml_quote(aemo_etl_image)}
+    env_vars:
+      - DAGSTER_POSTGRES_USER
+      - DAGSTER_POSTGRES_PASSWORD
+      - DAGSTER_POSTGRES_DB
+      - DAGSTER_POSTGRES_HOSTNAME
+      - AWS_ENDPOINT_URL
+      - AWS_DEFAULT_REGION
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - AWS_ALLOW_HTTP
+      - AWS_S3_LOCKING_PROVIDER
+      - DEVELOPMENT_ENVIRONMENT
+      - DEVELOPMENT_LOCATION
+      - NAME_PREFIX
+    network: {yaml_quote(NETWORK_NAME)}
+    container_kwargs:
+      volumes:
+        - {yaml_quote(socket_volume)}
+run_storage:
+  module: dagster_postgres.run_storage
+  class: PostgresRunStorage
+  config:
+    postgres_db:
+      hostname:
+        env: DAGSTER_POSTGRES_HOSTNAME
+      username:
+        env: DAGSTER_POSTGRES_USER
+      password:
+        env: DAGSTER_POSTGRES_PASSWORD
+      db_name:
+        env: DAGSTER_POSTGRES_DB
+      port: 5432
+schedule_storage:
+  module: dagster_postgres.schedule_storage
+  class: PostgresScheduleStorage
+  config:
+    postgres_db:
+      hostname:
+        env: DAGSTER_POSTGRES_HOSTNAME
+      username:
+        env: DAGSTER_POSTGRES_USER
+      password:
+        env: DAGSTER_POSTGRES_PASSWORD
+      db_name:
+        env: DAGSTER_POSTGRES_DB
+      port: 5432
+event_log_storage:
+  module: dagster_postgres.event_log
+  class: PostgresEventLogStorage
+  config:
+    postgres_db:
+      hostname:
+        env: DAGSTER_POSTGRES_HOSTNAME
+      username:
+        env: DAGSTER_POSTGRES_USER
+      password:
+        env: DAGSTER_POSTGRES_PASSWORD
+      db_name:
+        env: DAGSTER_POSTGRES_DB
+      port: 5432
+"""
+
+
+def render_workspace_yaml() -> str:
+    """Return the e2e Dagster workspace config."""
+    return """# Generated by backend-services/scripts/aemo-etl-e2e.
+load_from:
+  - grpc_server:
+      host: aemo-etl
+      port: 4000
+      location_name: "aemo-etl"
+"""
+
+
+def wait_for_ready_stack(runner: CommandRunner, *, timeout_seconds: int) -> None:
+    """Wait until the e2e stack reaches its ready state."""
+    deadline = time.monotonic() + timeout_seconds
+    last_summary = ""
+    container_names = (
+        POSTGRES_CONTAINER,
+        LOCALSTACK_CONTAINER,
+        SEED_CONTAINER,
+        AEMO_ETL_CONTAINER,
+        DAGSTER_WEBSERVER_CONTAINER,
+        DAGSTER_DAEMON_CONTAINER,
+    )
+    while time.monotonic() < deadline:
+        states = inspect_container_states(runner, container_names)
+        last_summary = summarize_container_states(states)
+        failure = ready_failure(states)
+        if failure is not None:
+            raise CommandError(f"e2e stack failed to start: {failure}")
+        if stack_is_ready(states):
+            return
+        time.sleep(2)
+
+    raise CommandError(
+        f"timed out waiting for {STACK_NAME} to become ready: {last_summary}"
+    )
+
+
+def inspect_container_states(
+    runner: CommandRunner,
+    container_names: Sequence[str],
+) -> dict[str, ContainerState]:
+    """Inspect Podman containers and return normalized states."""
+    states: dict[str, ContainerState] = {}
+    for name in container_names:
+        result = runner.run(
+            ["podman", "inspect", name],
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            continue
+        payload = json.loads(result.stdout)
+        if len(payload) == 0:
+            continue
+        raw_state = payload[0].get("State", {})
+        health = raw_state.get("Health", {}).get("Status")
+        states[name] = ContainerState(
+            name=name,
+            status=str(raw_state.get("Status", "unknown")),
+            exit_code=raw_state.get("ExitCode"),
+            health=str(health) if health is not None else None,
+        )
+    return states
+
+
+def stack_is_ready(states: Mapping[str, ContainerState]) -> bool:
+    """Return whether every required e2e service reached ready state."""
+    if SEED_CONTAINER not in states:
+        return False
+    seed_state = states[SEED_CONTAINER]
+    if seed_state.status != "exited" or seed_state.exit_code != 0:
+        return False
+
+    for name in LONG_RUNNING_CONTAINERS:
+        if name not in states:
+            return False
+        state = states[name]
+        if state.status != "running":
+            return False
+        if name in HEALTHCHECK_CONTAINERS and state.health != "healthy":
+            return False
+    return True
+
+
+def ready_failure(states: Mapping[str, ContainerState]) -> str | None:
+    """Return a startup failure summary when a container is irrecoverably failed."""
+    seed_state = states.get(SEED_CONTAINER)
+    if (
+        seed_state is not None
+        and seed_state.status == "exited"
+        and seed_state.exit_code != 0
+    ):
+        return f"{SEED_CONTAINER} exited with {seed_state.exit_code}"
+
+    for name in LONG_RUNNING_CONTAINERS:
+        state = states.get(name)
+        if state is None:
+            continue
+        if state.status in {"dead", "exited"}:
+            return f"{name} is {state.status} with exit code {state.exit_code}"
+        if name in HEALTHCHECK_CONTAINERS and state.health == "unhealthy":
+            return f"{name} is unhealthy"
+    return None
+
+
+def summarize_container_states(states: Mapping[str, ContainerState]) -> str:
+    """Return a compact human-readable container state summary."""
+    if len(states) == 0:
+        return "no e2e containers have been created"
+    return ", ".join(
+        f"{name}={state.status}"
+        + (f"/{state.health}" if state.health is not None else "")
+        for name, state in sorted(states.items())
+    )
+
+
+def collect_logs(
+    runner: CommandRunner,
+    compose_command: Sequence[str],
+    logs_dir: Path,
+    cwd: Path,
+) -> None:
+    """Collect service logs into the run directory."""
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    for service_name in SERVICE_NAMES:
+        result = runner.run(
+            [*compose_command, "logs", service_name],
+            cwd=cwd,
+            capture_output=True,
+            check=False,
+        )
+        log_text = result.stdout
+        if result.stderr:
+            log_text = f"{log_text}\n[stderr]\n{result.stderr}"
+        (logs_dir / f"{service_name}.log").write_text(log_text, encoding="utf-8")
+
+
+def cleanup_stack(
+    runner: CommandRunner,
+    compose_command: Sequence[str],
+) -> None:
+    """Remove e2e stack containers and named volumes."""
+    runner.run(
+        [*compose_command, "down", "-v", "--remove-orphans"],
+        check=False,
+    )
+
+
+def base_manifest(
+    *,
+    run_id: str,
+    run_dir: Path,
+    compose_file: Path,
+    dagster_config_file: Path,
+    workspace_file: Path,
+    podman_socket: Path,
+    image_specs: Sequence[ImageSpec],
+    options: RunOptions,
+) -> dict[str, object]:
+    """Return the initial run manifest payload."""
+    return {
+        "run_id": run_id,
+        "stack_name": STACK_NAME,
+        "network_name": NETWORK_NAME,
+        "status": "running",
+        "started_at": now_iso(),
+        "completed_at": None,
+        "cleanup": "pending",
+        "run_dir": str(run_dir),
+        "compose_file": str(compose_file),
+        "dagster_config_file": str(dagster_config_file),
+        "workspace_file": str(workspace_file),
+        "podman_socket": str(podman_socket),
+        "images": {spec.name: spec.tag for spec in image_specs},
+        "options": {
+            "rebuild": options.rebuild,
+            "reuse": options.reuse,
+            "always_clean": options.always_clean,
+            "webserver_port": options.webserver_port,
+            "raw_latest_count": options.raw_latest_count,
+            "zip_latest_count": options.zip_latest_count,
+            "timeout_seconds": options.timeout_seconds,
+        },
+    }
+
+
+def now_iso() -> str:
+    """Return the current UTC timestamp as an ISO-8601 string."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+def write_json(path: Path, payload: Mapping[str, object]) -> None:
+    """Write a stable JSON document."""
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def yaml_quote(value: str) -> str:
+    """Return a double-quoted YAML scalar using JSON string escaping."""
+    return json.dumps(value)
+
+
+def format_called_process_error(error: subprocess.CalledProcessError) -> str:
+    """Format subprocess failure details for CLI stderr."""
+    lines = [
+        f"error: command failed with exit code {error.returncode}: "
+        f"{format_command(error.cmd)}\n"
+    ]
+    if error.stdout:
+        lines.append(error.stdout)
+        if not error.stdout.endswith("\n"):
+            lines.append("\n")
+    if error.stderr:
+        lines.append(error.stderr)
+        if not error.stderr.endswith("\n"):
+            lines.append("\n")
+    return "".join(lines)
+
+
+def format_command(command: object) -> str:
+    """Return a readable command string."""
+    if isinstance(command, list | tuple):
+        return " ".join(str(part) for part in command)
+    return str(command)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

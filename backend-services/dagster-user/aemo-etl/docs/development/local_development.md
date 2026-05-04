@@ -196,6 +196,19 @@ objects into LocalStack landing storage, and completes before Dagster starts.
 This load path only needs LocalStack credentials and does not read the live
 archive bucket.
 
+For the isolated AEMO ETL **End-to-end test** stack, run the backend-services
+command instead of the broader fixed developer compose stack:
+
+```bash
+backend-services/scripts/aemo-etl-e2e run
+```
+
+That command starts Postgres, LocalStack, the cached Archive seed loader, the
+AEMO ETL gRPC service, one Dagster webserver, and the Dagster daemon with
+generated e2e Dagster config. It builds missing local images by default, supports
+`--rebuild`, derives the Podman socket from `XDG_RUNTIME_DIR`, and preserves the
+stack plus run manifests on failure unless `--always-clean` is used.
+
 ## Bronze archive rebuild runbook
 
 Use `aemo-replay-bronze-archive` when an operator needs to rebuild
@@ -310,6 +323,7 @@ generated-like raw source-table and TypedDict model definition surfaces.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
+  - `backend-services/scripts/aemo-etl-e2e`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/current_state.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`
