@@ -98,7 +98,10 @@ Local workflow notes:
   into LocalStack landing storage before `aemo-etl` starts.
 - `backend-services/scripts/aemo-etl-e2e run` starts the isolated AEMO ETL
   **End-to-end test** stack with its own e2e Dagster config, one webserver, the
-  daemon, Postgres, LocalStack, and the seed loader.
+  daemon, Postgres, LocalStack, and the seed loader. After readiness it enables
+  only the intended sensors through Dagster GraphQL, bootstraps non-sensor
+  prerequisites, and monitors the full `gas_model` dataflow until success,
+  failure, or timeout.
 - Caddy is still the local front door so auth and routing behavior can be tested.
 - `marimo` is available locally for exploration, but it is not part of the Pulumi-deployed stack.
 

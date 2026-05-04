@@ -168,7 +168,9 @@ Use the local stack when you need:
 
 See [backend-services/README.md](backend-services/README.md) for the local stack.
 For isolated AEMO ETL **End-to-end test** validation without the broader fixed
-developer stack, use `backend-services/scripts/aemo-etl-e2e run`.
+developer stack, use `backend-services/scripts/aemo-etl-e2e run`; it starts the
+isolated services, enables only the intended Dagster automation, bootstraps
+non-sensor prerequisites, and monitors the full `gas_model` dataflow.
 
 ## Documentation map
 

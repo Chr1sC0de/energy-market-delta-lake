@@ -285,6 +285,16 @@ generated stack contains Postgres, LocalStack, the cached Archive seed loader,
 the AEMO ETL gRPC service, one Dagster webserver, and the Dagster daemon. It
 does not start Caddy, authentication, Marimo, or the second developer webserver.
 
+After the isolated stack reaches readiness, the command drives the Dagster
+dataflow through GraphQL. It starts only the unzipper sensors, event-driven raw
+sensors, and gas model automation sensors; NEMWeb discovery schedules, the
+failed-run alert sensor, the daily date-dimension schedule, and maintenance
+schedules stay stopped. The command bootstraps non-sensor prerequisites,
+including the date dimension and table-metadata prerequisite, then polls Dagster
+until no active runs remain and the full `gas_model` target has materialized.
+Failed runs, failed or missing target materializations, and failed asset checks
+fail the command, including WARN-level checks such as skipped selected S3 keys.
+
 Local service images are tagged for the e2e stack. Missing images are built
 automatically, existing images are reused by default, and `--rebuild` forces all
 local images to rebuild before startup.
@@ -292,13 +302,15 @@ local images to rebuild before startup.
 The command derives the host Podman socket from
 `$XDG_RUNTIME_DIR/podman/podman.sock` and fails before startup if the socket is
 missing. The generated e2e Dagster config uses that socket for run-worker
-containers and attaches them to the e2e network.
+containers and attaches them to the e2e network. The default timeout is 90
+minutes and the default Dagster `max_concurrent_runs` is `6`; override them with
+`--timeout-seconds` and `--max-concurrent-runs`.
 
-Successful runs clean e2e containers and named volumes by default after the
-stack reaches ready state. Failed runs preserve containers, volumes, service
-logs, the run manifest, and the seed-run manifest for inspection. Use `--reuse`
-to keep and reuse the e2e stack after a successful start, or `--always-clean` to
-clean containers and volumes even after failure.
+Successful runs clean e2e containers and named volumes by default after the full
+dataflow completes. Failed runs preserve containers, volumes, service logs, the
+run manifest, and the seed-run manifest for inspection. Use `--reuse` to keep
+and reuse the e2e stack after a successful run, or `--always-clean` to clean
+containers and volumes even after failure.
 
 ______________________________________________________________________
 

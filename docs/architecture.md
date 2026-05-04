@@ -114,7 +114,10 @@ it can require a cached seed under `backend-services/.e2e/aemo-etl` before
 starting the `aemo-etl` code location for local **End-to-end test** setup.
 `backend-services/scripts/aemo-etl-e2e run` uses that cache through an isolated
 e2e stack with generated Dagster config, Postgres, LocalStack, AEMO ETL user
-code, one webserver, and the daemon.
+code, one webserver, and the daemon. Once the stack is ready, it enables only
+the intended Dagster sensors, keeps local-only schedules and alerting stopped,
+bootstraps non-sensor prerequisites, and monitors the full `gas_model`
+dataflow through Dagster GraphQL.
 
 ## Repository responsibilities
 
