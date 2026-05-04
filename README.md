@@ -302,6 +302,11 @@ the recorded **Local integration** commit is verified reachable from the
 expected **Integration target**; recovery reconciles GitHub comments, runtime
 labels, integrated or merged labels, and issue closure according to **Delivery
 mode**.
+Ralph also grants spawned Codex subprocesses **Sandboxed issue access** by
+default so they can run authenticated `gh issue` reads and writes during AFK
+drains. The sandbox receives a `GH_TOKEN` from the parent environment or local
+`gh auth`, with a wrapper that blocks broader `gh` commands; Git push auth and
+**Local integration** remain outside the sandbox.
 
 ## Deployment
 

@@ -64,6 +64,11 @@ The Ralph action that squash-merges validated issue work onto an
 **Integration target** without a GitHub PR.
 _Avoid_: Local PR, draft PR gate
 
+**Sandboxed issue access**:
+The Ralph boundary that lets spawned Codex subprocesses use authenticated
+GitHub Issue commands without owning **Local integration** or **Promotion**.
+_Avoid_: Full GitHub sandbox auth, Git push sandbox auth
+
 **Delivery mode**:
 The Ralph branch strategy that decides where validated issue work is integrated
 and when its GitHub issue is closed.
@@ -107,6 +112,8 @@ _Avoid_: Manual dev merge
 - **Local integration** happens after Ralph implementation QA and before either
   issue closure or **Promotion**.
 - **Local integration** is not a **Test lane**.
+- **Sandboxed issue access** may update GitHub Issue metadata, but it must not
+  update an **Integration target**.
 - A **Delivery mode** selects an **Integration target**.
 - **Gitflow delivery** uses `dev` as the default **Integration target**.
 - **Trunk delivery** uses `main` as the default **Integration target**.
@@ -119,6 +126,10 @@ _Avoid_: Manual dev merge
 > **Domain expert:** "No. It uses the Dagster runtime in process, so it is a
 > **Component test**. Keep only pure transforms and mocked helpers as
 > **Unit tests**."
+>
+> **Dev:** "Can the sandboxed Codex pass close or label an issue during Ralph?"
+> **Domain expert:** "Yes, through **Sandboxed issue access**. It still cannot
+> perform **Local integration** or **Promotion**."
 
 ## Flagged ambiguities
 
@@ -134,3 +145,7 @@ _Avoid_: Manual dev merge
 - "gitflow agents" and "trunk agents" were considered for issue allocation.
   Resolved: use **Delivery mode** labels because the Ralph loop is the same
   agent workflow in both cases.
+- "gh auth in the sandbox" was used ambiguously for GitHub Issues and Git push.
+  Resolved: use **Sandboxed issue access** for issue metadata only; **Local
+  integration**, **Integration target** pushes, and **Promotion** stay outside
+  the sandbox.

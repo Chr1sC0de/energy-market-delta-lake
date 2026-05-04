@@ -133,6 +133,11 @@ target**, QA, push, commit, and GitHub metadata state for recovery. Use
 summary. Use `python3 scripts/ralph.py --recover-run <run_dir>` only after the
 recorded **Local integration** commit is verified reachable from the expected
 **Integration target**.
+Spawned Codex subprocesses receive **Sandboxed issue access** by default for
+authenticated `gh issue` reads and writes. Ralph resolves the token from the
+parent environment or local `gh auth`, injects it as `GH_TOKEN`, and wraps `gh`
+so the sandbox cannot use broader GitHub commands; Git push auth stays in
+Ralph's outer loop.
 
 ## Where to work
 

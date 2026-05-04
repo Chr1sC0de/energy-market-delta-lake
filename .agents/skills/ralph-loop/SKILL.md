@@ -62,6 +62,12 @@ worktrees, running **Local integration**, or pushing an **Integration target**.
 `--allow-dirty-worktree` only when the operator explicitly accepts
 dirty-worktree operation.
 
+Spawned Codex subprocesses get **Sandboxed issue access** by default. Refresh
+local GitHub API auth with `gh auth login -h github.com --git-protocol ssh` or
+export `GH_TOKEN`; Ralph injects `GH_TOKEN` into the sandbox and wraps `gh` so
+only issue metadata commands are available. Git push auth and **Local
+integration** remain in Ralph's outer loop.
+
 Plain `--drain` stops after 10 implementation attempts by default. Use
 `--max-issues 0` only for explicit unlimited drain mode.
 
