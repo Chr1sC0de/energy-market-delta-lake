@@ -352,6 +352,7 @@ class RunManifest:
         run_dir: Path,
         source_branch: str,
         target_branch: str,
+        source_path: Path,
         promote_path: Path,
         config: LoopConfig,
     ) -> "RunManifest":
@@ -374,11 +375,13 @@ class RunManifest:
                 "repo_root": str(config.repo_root),
                 "run_dir": str(run_dir),
                 "worktree_container": str(config.worktree_container),
+                "promotion_source_worktree": str(source_path),
                 "promotion_worktree": str(promote_path),
             },
             "changed_files": [],
             "qa_results": [],
             "commits": {},
+            "source_tree": None,
             "promotion_commit": None,
             "pushes": {},
             "github_metadata": {"status": "not_started", "issues": []},
@@ -430,6 +433,15 @@ class RunManifest:
     def record_promotion_commit(self, sha: str, *, branch: str) -> None:
         self.data["promotion_commit"] = {"sha": sha, "branch": branch}
         self.record_event("promotion_commit_recorded", details={"commit": sha, "branch": branch})
+
+    def record_source_tree(self, *, branch: str, revision: str, worktree_path: Path) -> None:
+        source_tree = {
+            "branch": branch,
+            "revision": revision,
+            "worktree": str(worktree_path),
+        }
+        self.data["source_tree"] = source_tree
+        self.record_event("source_tree_recorded", details=source_tree)
 
     def record_codex_attempt(
         self,
@@ -1713,6 +1725,9 @@ class RalphLoop:
         source_branch = self.config.source_branch
         target_branch = self._promotion_target_branch()
         run_dir = self._promotion_run_dir()
+        source_path = self.config.worktree_container / (
+            f"agent-promote-source-{slugify(source_branch)}-to-{slugify(target_branch)}"
+        )
         promote_path = self.config.worktree_container / (
             f"agent-promote-{slugify(source_branch)}-to-{slugify(target_branch)}"
         )
@@ -1721,19 +1736,27 @@ class RalphLoop:
             run_dir=run_dir,
             source_branch=source_branch,
             target_branch=target_branch,
+            source_path=source_path,
             promote_path=promote_path,
             config=self.config,
         )
         pushed = False
+        source_worktree_created = False
 
         try:
             emit(f"Promoting origin/{source_branch} to origin/{target_branch}")
             manifest.record_event("fetching_branches")
             self.git.fetch_base(source_branch, run_dir=run_dir)
             self.git.fetch_base(target_branch, run_dir=run_dir)
+            source_revision = self.git.rev_parse(f"origin/{source_branch}")
+            manifest.record_source_tree(
+                branch=source_branch,
+                revision=source_revision,
+                worktree_path=source_path,
+            )
             changed_files = self.git.changed_files_between(
                 base_ref=f"origin/{target_branch}",
-                head_ref=f"origin/{source_branch}",
+                head_ref=source_revision,
             )
             manifest.record_changed_files(changed_files, stage="promotion_changes_detected")
             if not changed_files:
@@ -1741,9 +1764,19 @@ class RalphLoop:
                 manifest.record_success("no_changes_to_promote")
                 return
 
+            emit(f"Creating Promotion source worktree {source_path}")
+            manifest.record_event("creating_promotion_source_worktree")
+            self.git.add_detached_worktree(
+                path=source_path,
+                ref=source_revision,
+                run_dir=run_dir,
+                log_name="git-worktree-add-promotion-source.log",
+            )
+            source_worktree_created = True
+            manifest.record_event("promotion_source_worktree_created")
             qa_results = self._run_qa_commands(
                 changed_files,
-                self.config.repo_root,
+                source_path,
                 run_dir,
                 log_prefix="promotion-qa",
                 subject="promotion",
@@ -1752,13 +1785,14 @@ class RalphLoop:
             qa_results.extend(
                 self._run_promotion_gate_commands(
                     changed_files,
-                    self.config.repo_root,
+                    source_path,
                     run_dir,
                     manifest=manifest,
                 )
             )
             integrated_issues = self._verified_integrated_issues(
                 source_branch=source_branch,
+                source_ref=source_revision,
                 target_branch=target_branch,
             )
             manifest.record_promoted_issues(integrated_issues)
@@ -1770,11 +1804,14 @@ class RalphLoop:
                 ref=f"origin/{target_branch}",
                 run_dir=run_dir,
             )
-            emit(f"Merging origin/{source_branch} into promotion worktree")
+            emit(
+                f"Merging source revision {source_revision} from "
+                f"origin/{source_branch} into promotion worktree"
+            )
             manifest.record_event("merging_source_branch")
             self.git.merge_no_ff(
                 cwd=promote_path,
-                ref=f"origin/{source_branch}",
+                ref=source_revision,
                 message=f"Promote {source_branch} to {target_branch}",
                 run_dir=run_dir,
             )
@@ -1860,11 +1897,22 @@ class RalphLoop:
                 emit(str(post_push_error), err=True)
                 raise post_push_error from error
             raise
+        finally:
+            if source_worktree_created:
+                try:
+                    self.git.remove_worktree(
+                        source_path,
+                        run_dir=run_dir,
+                        log_name="git-worktree-remove-promotion-source.log",
+                    )
+                except CommandFailure as error:
+                    emit(f"Cleanup warning: {error}", err=True)
 
     def _verified_integrated_issues(
         self,
         *,
         source_branch: str,
+        source_ref: str,
         target_branch: str,
     ) -> list[tuple[Issue, str]]:
         issues: list[tuple[Issue, str]] = []
@@ -1878,12 +1926,12 @@ class RalphLoop:
                 continue
             if not self._commit_is_in_promotion_range(
                 commit_sha,
-                source_branch=source_branch,
+                source_ref=source_ref,
                 target_branch=target_branch,
             ):
                 emit(
                     f"Skipping #{issue.number}: commit {commit_sha} is not in "
-                    f"origin/{target_branch}..origin/{source_branch}."
+                    f"origin/{target_branch}..{source_ref} from {source_branch}."
                 )
                 continue
             issues.append((issue, commit_sha))
@@ -1893,10 +1941,9 @@ class RalphLoop:
         self,
         commit_sha: str,
         *,
-        source_branch: str,
+        source_ref: str,
         target_branch: str,
     ) -> bool:
-        source_ref = f"origin/{source_branch}"
         target_ref = f"origin/{target_branch}"
         return self.git.is_ancestor(
             ancestor=commit_sha,

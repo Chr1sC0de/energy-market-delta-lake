@@ -307,16 +307,19 @@ plain Ralph drain uses a default budget of 10 implementation attempts; pass
 `--drain`, and `--promote` runs require a clean root worktree before Ralph
 claims issues, creates worktrees, performs **Local integration**, or pushes;
 `--dry-run` remains available on a dirty root worktree, and
-`--allow-dirty-worktree` is the explicit override. Promotion runs include the
-AEMO ETL **End-to-end test** gate when the promoted range includes
-`backend-services/dagster-user/aemo-etl/` files; that gate runs before any
-Promotion merge, push, `dev` branch sync, GitHub metadata update, or issue
-closure. During long Codex and QA phases, Ralph prints heartbeat lines with the
-active phase and log path, and the command logs under `.ralph/runs/...` update
-while the command is still running.
+`--allow-dirty-worktree` is the explicit override. Promotion resolves the
+fetched source branch to a revision, creates an isolated source worktree at that
+revision, and runs the aggregate **Push check** there. Promotion runs include
+the AEMO ETL **End-to-end test** gate when the promoted range includes
+`backend-services/dagster-user/aemo-etl/` files; that gate runs from the same
+source worktree before any Promotion merge, push, `dev` branch sync, GitHub
+metadata update, or issue closure. During long Codex and QA phases, Ralph prints
+heartbeat lines with the active phase and log path, and the command logs under
+`.ralph/runs/...` update while the command is still running.
 Each implementation and **Promotion** run also maintains
 `.ralph/runs/.../ralph-run.json` with issue, **Delivery mode**, **Integration
-target**, QA, push, commit, and GitHub metadata state for recovery. Use
+target**, Promotion source tree, QA, push, commit, and GitHub metadata state for
+recovery. Use
 `--inspect-run` for a read-only summary, then use `--recover-run` only after
 the recorded **Local integration** commit is verified reachable from the
 expected **Integration target**; recovery reconciles GitHub comments, runtime

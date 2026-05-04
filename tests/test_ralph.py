@@ -1559,7 +1559,7 @@ Build it.
         }
         runner = FakeRunner(
             diff_outputs=["scripts/ralph.py\n"],
-            rev_parse_outputs=["promotion-sha\n"],
+            rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
             command_outputs={
                 issue_list_command: [json.dumps(issue_payload)],
                 issue_comments_command: [json.dumps(comments_payload)],
@@ -1577,8 +1577,33 @@ Build it.
             manifest = load_run_manifest(Path(tmp), run_glob="promote-*")
 
         commands = [call.args for call in runner.calls]
+        source_path = Path(tmp) / "worktrees" / "agent-promote-source-dev-to-main"
+        promote_path = Path(tmp) / "worktrees" / "agent-promote-dev-to-main"
+        source_worktree = (
+            "git",
+            "worktree",
+            "add",
+            "--detach",
+            str(source_path),
+            "source-sha",
+        )
+        promote_worktree = (
+            "git",
+            "worktree",
+            "add",
+            "--detach",
+            str(promote_path),
+            "origin/main",
+        )
+        qa_command = ("python3", "-m", "unittest", "discover", "-s", "tests")
+        source_worktree_index = commands.index(source_worktree)
+        qa_index = commands.index(qa_command)
+        promote_worktree_index = commands.index(promote_worktree)
+        self.assertLess(source_worktree_index, qa_index)
+        self.assertLess(qa_index, promote_worktree_index)
+        self.assertEqual(runner.calls[qa_index].cwd, source_path)
         self.assertIn(
-            ("git", "merge", "--no-ff", "origin/dev", "-m", "Promote dev to main"),
+            ("git", "merge", "--no-ff", "source-sha", "-m", "Promote dev to main"),
             commands,
         )
         self.assertIn(("git", "push", "origin", "HEAD:main"), commands)
@@ -1624,6 +1649,18 @@ Build it.
         self.assertEqual(manifest["delivery_mode"], "gitflow")
         self.assertEqual(manifest["source_branch"], "dev")
         self.assertEqual(manifest["integration_target"], "main")
+        self.assertEqual(
+            manifest["paths"]["promotion_source_worktree"],
+            str(source_path),
+        )
+        self.assertEqual(
+            manifest["source_tree"],
+            {
+                "branch": "dev",
+                "revision": "source-sha",
+                "worktree": str(source_path),
+            },
+        )
         self.assertEqual(manifest["promotion_commit"]["sha"], "promotion-sha")
         self.assertEqual(manifest["pushes"]["promotion_target"]["status"], "pushed")
         self.assertEqual(manifest["pushes"]["source_branch_sync"]["status"], "pushed")
@@ -1637,63 +1674,12 @@ Build it.
             "closed",
         )
 
-    def test_promotion_runs_aemo_etl_e2e_gate_before_worktree(self) -> None:
-        changed_file = "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"
+    def test_promotion_push_check_failure_stops_before_side_effects(self) -> None:
+        qa_command = ("python3", "-m", "unittest", "discover", "-s", "tests")
         runner = FakeRunner(
-            diff_outputs=[f"{changed_file}\n"],
-            rev_parse_outputs=["promotion-sha\n"],
-        )
-
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            loop = make_loop(tmp_path, runner, promote=True)
-            with redirect_stdout(io.StringIO()):
-                loop._promote()
-
-            commands = [call.args for call in runner.calls]
-            e2e_index = commands.index(("scripts/aemo-etl-e2e", "run"))
-            run_prek_index = commands.index(("make", "run-prek"))
-            worktree_index = next(
-                index
-                for index, command in enumerate(commands)
-                if command[:3] == ("git", "worktree", "add")
-            )
-            merge_index = commands.index(
-                ("git", "merge", "--no-ff", "origin/dev", "-m", "Promote dev to main")
-            )
-            push_main_index = commands.index(("git", "push", "origin", "HEAD:main"))
-
-            self.assertLess(run_prek_index, e2e_index)
-            self.assertLess(e2e_index, worktree_index)
-            self.assertLess(e2e_index, merge_index)
-            self.assertLess(e2e_index, push_main_index)
-            self.assertEqual(
-                runner.calls[e2e_index].cwd,
-                tmp_path / "repo" / "backend-services",
-            )
-
-            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
-
-        e2e_results = [
-            result
-            for result in manifest["qa_results"]
-            if result["name"] == "aemo-etl End-to-end test"
-        ]
-        self.assertEqual(len(e2e_results), 1)
-        self.assertEqual(e2e_results[0]["command"], ["scripts/aemo-etl-e2e", "run"])
-        self.assertTrue(e2e_results[0]["cwd"].endswith("/repo/backend-services"))
-        self.assertEqual(e2e_results[0]["status"], "passed")
-        self.assertIn(
-            "promotion-gate-1-aemo-etl-end-to-end-test.log",
-            e2e_results[0]["log_path"],
-        )
-
-    def test_promotion_e2e_gate_failure_stops_before_side_effects(self) -> None:
-        changed_file = "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"
-        e2e_command = ("scripts/aemo-etl-e2e", "run")
-        runner = FakeRunner(
-            diff_outputs=[f"{changed_file}\n"],
-            fail_commands={e2e_command},
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["source-sha\n"],
+            fail_commands={qa_command},
         )
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -1706,9 +1692,31 @@ Build it.
             commands = [call.args for call in runner.calls]
             manifest = load_run_manifest(tmp_path, run_glob="promote-*")
 
-        self.assertIn(e2e_command, commands)
-        self.assertFalse(
-            any(command[:3] == ("git", "worktree", "add") for command in commands)
+        source_path = Path(tmp) / "worktrees" / "agent-promote-source-dev-to-main"
+        promote_path = Path(tmp) / "worktrees" / "agent-promote-dev-to-main"
+        self.assertIn(
+            (
+                "git",
+                "worktree",
+                "add",
+                "--detach",
+                str(source_path),
+                "source-sha",
+            ),
+            commands,
+        )
+        qa_index = commands.index(qa_command)
+        self.assertEqual(runner.calls[qa_index].cwd, source_path)
+        self.assertNotIn(
+            (
+                "git",
+                "worktree",
+                "add",
+                "--detach",
+                str(promote_path),
+                "origin/main",
+            ),
+            commands,
         )
         self.assertFalse(any(command[:2] == ("git", "merge") for command in commands))
         self.assertFalse(
@@ -1724,6 +1732,153 @@ Build it.
             any(command[:3] == ("gh", "issue", "close") for command in commands)
         )
         self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["source_tree"]["revision"], "source-sha")
+        self.assertIsNone(manifest["promotion_commit"])
+        self.assertEqual(manifest["pushes"], {})
+        self.assertEqual(manifest["github_metadata"]["status"], "not_started")
+        failed_push_check = [
+            result
+            for result in manifest["qa_results"]
+            if result["name"] == "Ralph unit tests"
+        ]
+        self.assertEqual(len(failed_push_check), 1)
+        self.assertEqual(failed_push_check[0]["status"], "failed")
+
+    def test_promotion_runs_aemo_etl_e2e_gate_from_source_worktree_before_side_effects(
+        self,
+    ) -> None:
+        changed_file = "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"
+        runner = FakeRunner(
+            diff_outputs=[f"{changed_file}\n"],
+            rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, promote=True)
+            with redirect_stdout(io.StringIO()):
+                loop._promote()
+
+            commands = [call.args for call in runner.calls]
+            e2e_index = commands.index(("scripts/aemo-etl-e2e", "run"))
+            run_prek_index = commands.index(("make", "run-prek"))
+            source_path = tmp_path / "worktrees" / "agent-promote-source-dev-to-main"
+            promote_path = tmp_path / "worktrees" / "agent-promote-dev-to-main"
+            source_worktree_index = commands.index(
+                (
+                    "git",
+                    "worktree",
+                    "add",
+                    "--detach",
+                    str(source_path),
+                    "source-sha",
+                )
+            )
+            promote_worktree_index = commands.index(
+                (
+                    "git",
+                    "worktree",
+                    "add",
+                    "--detach",
+                    str(promote_path),
+                    "origin/main",
+                )
+            )
+            merge_index = commands.index(
+                ("git", "merge", "--no-ff", "source-sha", "-m", "Promote dev to main")
+            )
+            push_main_index = commands.index(("git", "push", "origin", "HEAD:main"))
+
+            self.assertLess(source_worktree_index, run_prek_index)
+            self.assertLess(run_prek_index, e2e_index)
+            self.assertLess(e2e_index, promote_worktree_index)
+            self.assertLess(e2e_index, merge_index)
+            self.assertLess(e2e_index, push_main_index)
+            self.assertEqual(
+                runner.calls[run_prek_index].cwd,
+                source_path / "backend-services" / "dagster-user" / "aemo-etl",
+            )
+            self.assertEqual(
+                runner.calls[e2e_index].cwd,
+                source_path / "backend-services",
+            )
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        e2e_results = [
+            result
+            for result in manifest["qa_results"]
+            if result["name"] == "aemo-etl End-to-end test"
+        ]
+        self.assertEqual(len(e2e_results), 1)
+        self.assertEqual(e2e_results[0]["command"], ["scripts/aemo-etl-e2e", "run"])
+        self.assertTrue(e2e_results[0]["cwd"].endswith("/agent-promote-source-dev-to-main/backend-services"))
+        self.assertEqual(e2e_results[0]["status"], "passed")
+        self.assertIn(
+            "promotion-gate-1-aemo-etl-end-to-end-test.log",
+            e2e_results[0]["log_path"],
+        )
+        self.assertEqual(manifest["source_tree"]["revision"], "source-sha")
+
+    def test_promotion_e2e_gate_failure_stops_before_side_effects(self) -> None:
+        changed_file = "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"
+        e2e_command = ("scripts/aemo-etl-e2e", "run")
+        runner = FakeRunner(
+            diff_outputs=[f"{changed_file}\n"],
+            rev_parse_outputs=["source-sha\n"],
+            fail_commands={e2e_command},
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, promote=True)
+            with self.assertRaises(ralph.CommandFailure):
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    loop._promote()
+
+            commands = [call.args for call in runner.calls]
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        self.assertIn(e2e_command, commands)
+        source_path = Path(tmp) / "worktrees" / "agent-promote-source-dev-to-main"
+        promote_path = Path(tmp) / "worktrees" / "agent-promote-dev-to-main"
+        self.assertIn(
+            (
+                "git",
+                "worktree",
+                "add",
+                "--detach",
+                str(source_path),
+                "source-sha",
+            ),
+            commands,
+        )
+        self.assertNotIn(
+            (
+                "git",
+                "worktree",
+                "add",
+                "--detach",
+                str(promote_path),
+                "origin/main",
+            ),
+            commands,
+        )
+        self.assertFalse(any(command[:2] == ("git", "merge") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("git", "push", "origin") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "comment") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "close") for command in commands)
+        )
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["source_tree"]["revision"], "source-sha")
         self.assertIsNone(manifest["promotion_commit"])
         self.assertEqual(manifest["pushes"], {})
         self.assertEqual(manifest["github_metadata"]["status"], "not_started")

@@ -258,9 +258,11 @@ Key fields for inspection:
 - `delivery_mode`: issue **Delivery mode**; **Promotion** records `gitflow`.
 - `integration_target`: branch Ralph is updating for the run.
 - `source_branch`: **Promotion** source branch, usually `dev`.
+- `source_tree`: **Promotion** source branch revision and source worktree used
+  for QA.
 - `branches`: issue, source, and target branch names that apply to the run.
 - `paths`: repo root, run directory, worktree container, and implementation,
-  integration, or promotion worktree paths.
+  integration, Promotion source, or Promotion target worktree paths.
 - `changed_files`: current file diff used for QA and integration.
 - `qa_results`: selected QA commands, cwd, log path, and pass/fail state.
 - `sandboxed_issue_access`: non-secret token source, wrapper path, allowed
@@ -367,18 +369,21 @@ sequenceDiagram
 
 `python3 scripts/ralph.py --promote` promotes reviewed Gitflow work from
 `origin/dev` to `origin/main` by default. Ralph fetches both branches, computes
-the changed files between them, runs the aggregate matching **Push check** QA,
-and, when the promoted range includes files under
-`backend-services/dagster-user/aemo-etl/`, runs the AEMO ETL **End-to-end test**
-gate before creating the Promotion worktree. The gate is recorded as
+the changed files between the target branch and the fetched source-branch
+revision, creates an isolated source worktree at that source revision, and runs
+the aggregate matching **Push check** QA from that tree. When the promoted
+range includes files under `backend-services/dagster-user/aemo-etl/`, Ralph
+runs the AEMO ETL **End-to-end test** gate from the same source worktree before
+creating the target Promotion worktree. The gate is recorded as
 `aemo-etl End-to-end test` in the Promotion run manifest and invokes
 `scripts/aemo-etl-e2e run` from the `backend-services` **Subproject**. Because
-the gate runs first, AEMO ETL **Subproject** changes cannot reach a Promotion
-merge, `main` push, `dev` branch sync, GitHub metadata update, or issue closure
-without passing the e2e stack. Ralph then merges `origin/dev` into a detached
-`origin/main` worktree with per-issue commits preserved, pushes `main`, and
-fast-forwards `dev` to the promotion commit so the next Gitflow drain starts
-from a `dev` branch that contains `main`.
+the aggregate **Push check** and gate run first, source-branch changes cannot
+reach a Promotion merge, `main` push, `dev` branch sync, GitHub metadata
+update, or issue closure without passing against the exact source revision.
+Ralph then merges that source revision into a detached `origin/main` worktree
+with per-issue commits preserved, pushes `main`, and fast-forwards `dev` to the
+promotion commit so the next Gitflow drain starts from a `dev` branch that
+contains `main`.
 
 After the push succeeds, Ralph scans open `agent-integrated` issues. It closes
 only issues whose recorded Gitflow integration commit is still in the promoted
