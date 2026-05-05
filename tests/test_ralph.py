@@ -764,7 +764,7 @@ Build it.
         self.assertEqual(plan.mode, ralph.GITFLOW_MODE)
         self.assertEqual(plan.remove_labels, ("delivery-trunk",))
 
-    def test_delivery_plan_defaults_to_exploratory_review_branch(self) -> None:
+    def test_delivery_plan_defaults_to_exploratory_branch(self) -> None:
         plan = ralph.resolve_delivery_plan(
             make_issue({"ready-for-agent"}),
             default_mode=ralph.EXPLORATORY_MODE,
@@ -772,7 +772,7 @@ Build it.
         )
 
         self.assertEqual(plan.mode, ralph.EXPLORATORY_MODE)
-        self.assertEqual(plan.target_branch, "agent/review/issue-42-implement-thing")
+        self.assertEqual(plan.target_branch, "agent/exploratory/issue-42-implement-thing")
         self.assertEqual(plan.add_labels, ("delivery-exploratory",))
 
     def test_delivery_plan_exploratory_wins_conflicting_delivery_labels(self) -> None:
@@ -1592,16 +1592,16 @@ Build it.
             Path("/logs/run"),
             delivery_plan=ralph.DeliveryPlan(
                 mode=ralph.EXPLORATORY_MODE,
-                target_branch="agent/review/issue-42-implement-thing",
+                target_branch="agent/exploratory/issue-42-implement-thing",
                 label="delivery-exploratory",
                 add_labels=(),
                 remove_labels=(),
             ),
         )
 
-        self.assertIn("Ralph exploratory integration completed.", comment)
+        self.assertIn("Ralph exploratory handoff completed.", comment)
         self.assertIn("Delivery mode: `exploratory`", comment)
-        self.assertIn("Target branch: `agent/review/issue-42-implement-thing`", comment)
+        self.assertIn("Target branch: `agent/exploratory/issue-42-implement-thing`", comment)
         self.assertIn("Issue #42 is ready for review on", comment)
 
     def test_user_facing_error_includes_command_stderr(self) -> None:
@@ -2368,17 +2368,17 @@ Build it.
             self.assertIn("Target branch: `dev`", comment)
             self.assertIn("will stay open until Ralph promotes `dev`", comment)
 
-    def test_exploratory_implementation_creates_review_branch_and_marks_reviewing(
+    def test_exploratory_implementation_pushes_handoff_branch_and_marks_reviewing(
         self,
     ) -> None:
-        review_branch = "agent/review/issue-42-implement-thing"
+        handoff_branch = "agent/exploratory/issue-42-implement-thing"
         ls_remote = (
             "git",
             "ls-remote",
             "--exit-code",
             "--heads",
             "origin",
-            review_branch,
+            handoff_branch,
         )
         runner = FakeRunner(
             status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
@@ -2394,12 +2394,30 @@ Build it.
             with redirect_stdout(output):
                 loop._handle_implementation(issue)
 
+            worktree_path = (
+                Path(tmp) / "worktrees" / "agent-exploratory-issue-42-implement-thing"
+            )
             commands = [call.args for call in runner.calls]
             self.assertIn(
-                ("git", "push", "origin", f"origin/main:refs/heads/{review_branch}"),
+                (
+                    "git",
+                    "worktree",
+                    "add",
+                    "-b",
+                    handoff_branch,
+                    str(worktree_path),
+                    "origin/main",
+                ),
                 commands,
             )
-            self.assertIn(("git", "push", "origin", f"HEAD:{review_branch}"), commands)
+            self.assertNotIn(
+                ("git", "push", "origin", f"origin/main:refs/heads/{handoff_branch}"),
+                commands,
+            )
+            self.assertFalse(
+                any(command[:3] == ("git", "merge", "--squash") for command in commands)
+            )
+            self.assertIn(("git", "push", "origin", f"HEAD:{handoff_branch}"), commands)
             self.assertIn(
                 (
                     "gh",
@@ -2423,18 +2441,125 @@ Build it.
             )
             self.assertFalse(any(command[:3] == ("gh", "issue", "close") for command in commands))
             self.assertIn(
-                f"Issue #42 ready for review on {review_branch}: merge-sha",
+                f"Issue #42 ready for review on {handoff_branch}: merge-sha",
                 output.getvalue(),
             )
 
             comment_path = next((Path(tmp) / "logs").glob("issue-42-*/issue-42-comment.md"))
             comment = comment_path.read_text(encoding="utf-8")
             manifest = load_run_manifest(Path(tmp))
-            self.assertIn("Ralph exploratory integration completed.", comment)
-            self.assertIn(f"Target branch: `{review_branch}`", comment)
+            self.assertIn("Ralph exploratory handoff completed.", comment)
+            self.assertIn(f"Target branch: `{handoff_branch}`", comment)
             self.assertEqual(manifest["delivery_mode"], "exploratory")
-            self.assertEqual(manifest["integration_target"], review_branch)
+            self.assertEqual(manifest["integration_target"], handoff_branch)
+            self.assertEqual(manifest["branches"]["issue"], handoff_branch)
             self.assertEqual(manifest["github_metadata"]["status"], "marked_reviewing")
+
+    def test_exploratory_implementation_fails_if_remote_branch_exists(self) -> None:
+        handoff_branch = "agent/exploratory/issue-42-implement-thing"
+        ls_remote = (
+            "git",
+            "ls-remote",
+            "--exit-code",
+            "--heads",
+            "origin",
+            handoff_branch,
+        )
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.EXPLORATORY_MODE)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._handle_implementation(issue)
+
+            comment_path = next(tmp_path.glob("logs/issue-42-*/issue-42-comment.md"))
+            comment = comment_path.read_text(encoding="utf-8")
+            manifest = load_run_manifest(tmp_path)
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn(ls_remote, commands)
+        self.assertFalse(any(command[:2] == ("codex", "exec") for command in commands))
+        self.assertFalse(any(command[:3] == ("git", "worktree", "add") for command in commands))
+        self.assertFalse(any(command[:3] == ("git", "push", "origin") for command in commands))
+        self.assertIn(
+            f"Remote Exploratory branch already exists: origin/{handoff_branch}",
+            comment,
+        )
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["github_metadata"]["status"], "failure_commented")
+
+    def test_drain_reports_ready_issue_refresh_after_exploratory_handoff(self) -> None:
+        handoff_branch = "agent/exploratory/issue-42-implement-thing"
+        ls_remote = (
+            "git",
+            "ls-remote",
+            "--exit-code",
+            "--heads",
+            "origin",
+            handoff_branch,
+        )
+        issue_list_command = (
+            "gh",
+            "issue",
+            "list",
+            "-R",
+            "example/repo",
+            "--state",
+            "open",
+            "--limit",
+            "100",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            command_outputs={
+                issue_list_command: [json.dumps([issue_payload(43, ["ready-for-agent"])])]
+            },
+            fail_commands={ls_remote: 2},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(
+                Path(tmp),
+                runner,
+                delivery_mode=ralph.EXPLORATORY_MODE,
+                drain=True,
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                loop._handle_implementation(make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY))
+
+        commands = [call.args for call in runner.calls]
+        reviewing_command = (
+            "gh",
+            "issue",
+            "edit",
+            "42",
+            "-R",
+            "example/repo",
+            "--add-label",
+            "agent-reviewing",
+            "--remove-label",
+            "agent-running",
+            "--remove-label",
+            "agent-failed",
+            "--remove-label",
+            "agent-merged",
+            "--remove-label",
+            "agent-integrated",
+        )
+        self.assertIn(issue_list_command, commands)
+        self.assertLess(commands.index(reviewing_command), commands.index(issue_list_command))
+        self.assertIn(
+            "Ready issue refresh candidate selection found 1 candidate(s) after "
+            "Exploratory handoff of #42.",
+            output.getvalue(),
+        )
 
     def test_gitflow_implementation_syncs_dev_with_main_before_issue_branch(self) -> None:
         ancestor_command = (

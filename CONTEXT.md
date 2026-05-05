@@ -72,9 +72,10 @@ _Avoid_: Full GitHub sandbox auth, Git push sandbox auth
 
 **Ready issue refresh**:
 The Ralph queue-maintenance pass that reconciles open GitHub Issues after a
-successful **Local integration** and before the next `ready-for-agent` issue
-claim. It may refresh issue context, labels, blockers, or completed closure
-evidence so the queue reflects the latest **Integration target** state.
+successful **Local integration** or Exploratory handoff and before the next
+`ready-for-agent` issue claim. It may refresh issue context, labels, blockers,
+or completed closure evidence so the queue reflects the latest **Integration
+target** state.
 _Avoid_: Post-promotion review, triage pass
 
 **Operator workflow**:
@@ -102,9 +103,9 @@ The opt-in **Delivery mode** where Ralph integrates issue work directly to
 _Avoid_: Fast agent mode
 
 **Exploratory delivery**:
-The opt-in **Delivery mode** where Ralph integrates issue work to a durable
-review branch, marks the issue `agent-reviewing`, and leaves it open for human
-review.
+The opt-in **Delivery mode** where Ralph publishes issue work to a durable
+review branch from `origin/main`, marks the issue `agent-reviewing`, and leaves
+it open for human review.
 _Avoid_: Draft PR mode, branch-only PR
 
 **Promotion**:
@@ -136,13 +137,15 @@ _Avoid_: Promotion gate, pre-push review
   current test refactor.
 - A **Commit check** runs the **Fast check** set.
 - A **Push check** may add local **Integration tests** to the **Fast check** set.
-- **Local integration** happens after Ralph implementation QA and before either
-  issue closure or **Promotion**.
+- **Local integration** happens after Ralph implementation QA for **Trunk
+  delivery** and **Gitflow delivery**, before either issue closure or
+  **Promotion**.
 - **Local integration** is not a **Test lane**.
 - **Sandboxed issue access** may update GitHub Issue metadata when the Ralph
   phase grants write commands, but it must not update an **Integration target**.
-- **Ready issue refresh** runs after a successful **Local integration** and
-  before Ralph claims the next `ready-for-agent` issue in a drain.
+- **Ready issue refresh** runs after a successful **Local integration** or
+  **Exploratory delivery** handoff and before Ralph claims the next
+  `ready-for-agent` issue in a drain.
 - **Ready issue refresh** may mutate GitHub Issue metadata under its audit
   contract; it is not **Promotion** and is not **Post-promotion review**.
 - The **Operator workflow** is the human entrypoint; Ralph internals remain on
@@ -150,8 +153,9 @@ _Avoid_: Promotion gate, pre-push review
 - A **Delivery mode** selects an **Integration target**.
 - **Gitflow delivery** uses `dev` as the default **Integration target**.
 - **Trunk delivery** uses `main` as the default **Integration target**.
-- **Exploratory delivery** uses a per-issue `agent/review/issue-N-slug` branch
-  as the default **Integration target**.
+- **Exploratory delivery** uses a per-issue `agent/exploratory/issue-N-slug`
+  branch as the default **Integration target** and pushes that branch without a
+  **Local integration** squash merge.
 - **Promotion** closes only issues whose `dev` integration commit is verified in
   the promoted branch range.
 - **Post-promotion review** happens after **Promotion** attempts where possible;
@@ -169,7 +173,8 @@ _Avoid_: Promotion gate, pre-push review
 > **Domain expert:** "Only when that Ralph phase grants issue write commands
 > through **Sandboxed issue access**. **Ready issue refresh** may mutate issues
 > under its audit contract, but **Post-promotion review** is read-only, and no
-> sandboxed pass can perform **Local integration** or **Promotion**."
+> sandboxed pass can perform **Local integration**, Exploratory handoff, or
+> **Promotion**."
 
 ## Flagged ambiguities
 
@@ -187,8 +192,8 @@ _Avoid_: Promotion gate, pre-push review
   agent workflow in both cases.
 - "gh auth in the sandbox" was used ambiguously for GitHub Issues and Git push.
   Resolved: use **Sandboxed issue access** for issue metadata only; **Local
-  integration**, **Integration target** pushes, and **Promotion** stay outside
-  the sandbox.
+  integration**, Exploratory handoff, **Integration target** pushes, and
+  **Promotion** stay outside the sandbox.
 - "operator runbook" and "agent loop" were used together for Ralph operation.
   Resolved: use **Operator workflow** for the human entrypoint and keep Ralph
   internals on the agent-facing Ralph documentation page.
@@ -197,5 +202,5 @@ _Avoid_: Promotion gate, pre-push review
   **Promotion** attempts where possible.
 - "queue review" after each issue could be confused with
   **Post-promotion review**. Resolved: use **Ready issue refresh** for
-  post-**Local integration** queue reconciliation before the next ready issue
-  claim.
+  post-**Local integration** or Exploratory handoff queue reconciliation before
+  the next ready issue claim.

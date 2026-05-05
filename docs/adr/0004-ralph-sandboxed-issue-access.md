@@ -16,8 +16,8 @@ comment, label, close, reopen, or edit issues.
 - Expose the local `gh` credential store: works with `gh auth login`, but makes
   the sandbox depend on mutable host credential files.
 - Use **Sandboxed issue access**: keeps GitHub Issues usable inside Ralph while
-  leaving **Local integration**, Git push auth, and **Promotion** outside the
-  sandbox.
+  leaving **Local integration**, Exploratory handoff, Git push auth, and
+  **Promotion** outside the sandbox.
 
 ## Consequences
 
@@ -27,7 +27,7 @@ into sandboxed Codex command environments. Git fetch and push continue to use
 the repository remote, usually SSH, and remain part of Ralph's outer loop.
 **Ready issue refresh** may receive phase-limited write commands for comments,
 body updates, label transitions, and completed closures after **Local
-integration** and before the next ready issue claim.
+integration** or Exploratory handoff and before the next ready issue claim.
 **Post-promotion review** output stays read-only for successful, failed, and
 partial **Promotion** attempts: the review agent drafts follow-up GitHub Issues
 in `post-promotion-review.md`, and Ralph does not grant it issue mutation

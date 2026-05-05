@@ -3,7 +3,8 @@
 This page documents the repo-local Ralph loop in `scripts/ralph.py`. The loop
 uses GitHub Issues as the queue, Codex as the implementation and triage worker,
 repo **Test lane** commands as the validation boundary, and **Local
-integration** plus **Promotion** as the success path after QA.
+integration**, Exploratory handoff, plus **Promotion** as the success paths
+after QA.
 
 ## Table of contents
 
@@ -30,13 +31,15 @@ Ralph drains agent-ready GitHub issues through a guarded local loop:
 2. Resolve the issue **Delivery mode** and **Integration target**.
 3. Run `codex exec` to implement the issue.
 4. Run deterministic local QA.
-5. Squash-merge validated work onto the latest **Integration target** locally.
+5. For Gitflow or Trunk delivery, squash-merge validated work onto the latest
+   **Integration target** locally.
 6. In **Gitflow delivery**, push `dev`, comment evidence, mark
    `agent-integrated`, and leave the issue open for **Promotion**.
 7. In **Trunk delivery**, push `main`, comment evidence, mark `agent-merged`,
    and close the issue.
-8. In **Exploratory delivery**, push a durable review branch, comment evidence,
-   mark `agent-reviewing`, and leave the issue open for human review.
+8. In **Exploratory delivery**, push a durable review branch from
+   `origin/main`, comment evidence, mark `agent-reviewing`, and leave the issue
+   open for human review.
 9. Run **Ready issue refresh** before the next ready issue claim.
 10. If no ready issue exists, triage the next unblocked issue and rescan.
 
@@ -71,11 +74,13 @@ flowchart TD
   MODE --> WORKTREE[Create issue branch and worktree]
   WORKTREE --> CODEX[Run Codex implementation]
   CODEX --> QA[Run selected Test lane QA]
-  QA --> INTEGRATE[Run Local integration]
-  INTEGRATE --> DONE{Delivery mode?}
-  DONE -->|Gitflow| STAGE[Comment evidence and mark agent-integrated]
-  DONE -->|Trunk| CLOSE[Comment evidence, mark agent-merged, close issue]
-  DONE -->|Exploratory| REVIEW[Comment evidence and mark agent-reviewing]
+  QA --> DONE{Delivery mode?}
+  DONE -->|Gitflow or Trunk| INTEGRATE[Run Local integration]
+  INTEGRATE --> DONE2{Delivery mode?}
+  DONE -->|Exploratory| HANDOFF[Push Exploratory handoff branch]
+  HANDOFF --> REVIEW[Comment evidence and mark agent-reviewing]
+  DONE2 -->|Gitflow| STAGE[Comment evidence and mark agent-integrated]
+  DONE2 -->|Trunk| CLOSE[Comment evidence, mark agent-merged, close issue]
   STAGE --> REFRESH[Run Ready issue refresh]
   CLOSE --> REFRESH
   REVIEW --> REFRESH
@@ -201,8 +206,8 @@ state:
 python3 scripts/ralph.py --inspect-run .ralph/runs/issue-25-20260504T010203Z
 ```
 
-Recover missing GitHub metadata after verifying the recorded **Local
-integration** commit reached the expected **Integration target**:
+Recover missing GitHub metadata after verifying the recorded published commit
+reached the expected **Integration target**:
 
 ```bash
 python3 scripts/ralph.py --recover-run .ralph/runs/issue-25-20260504T010203Z
@@ -218,11 +223,12 @@ python3 scripts/ralph.py --drain --allow-dirty-worktree
 ## Live run preflight
 
 Live `--issue`, `--drain`, and `--promote` runs fail before GitHub issue claim,
-worktree creation, **Local integration**, or push when the root worktree has
-uncommitted changes. Commit or stash root worktree changes before live Ralph
-runs. Use `--allow-dirty-worktree` only for an explicit dirty-worktree
-operation. `--dry-run` remains available on a dirty root worktree so operators
-can inspect the next Ralph action without mutating issues or branches.
+worktree creation, **Local integration**, Exploratory handoff, or push when the
+root worktree has uncommitted changes. Commit or stash root worktree changes
+before live Ralph runs. Use `--allow-dirty-worktree` only for an explicit
+dirty-worktree operation. `--dry-run` remains available on a dirty root worktree
+so operators can inspect the next Ralph action without mutating issues or
+branches.
 
 Before a live drain, validate both GitHub API auth and Git push auth for the
 expected **Integration target**:
@@ -242,8 +248,8 @@ phase-specific `gh issue` commands. Implementation, triage, and **Ready issue
 refresh** passes may get phase-limited issue reads and writes. The
 **Post-promotion review** gets read-only issue access: `gh issue view`,
 `gh issue list`, and `gh issue status`. This does not grant Git push access; Git
-fetches, **Local integration**, **Integration target** pushes, and **Promotion**
-stay in Ralph's outer loop.
+fetches, **Local integration**, Exploratory handoff pushes, **Integration
+target** pushes, and **Promotion** stay in Ralph's outer loop.
 
 Ralph also standardizes writable QA runtime paths for spawned Codex
 subprocesses and Ralph-run QA commands. If the operator exports `DAGSTER_HOME`,
@@ -254,10 +260,11 @@ Otherwise it sets the variable under
 **Commit check**, **Push check**, and Dagster CLI commands away from
 home-directory cache locations that may be read-only.
 
-Use `HEAD:dev` for Gitflow target validation and `HEAD:main` for trunk or
-promotion validation. Run Ralph from a local worktree that is aligned with the
-remote branch being operated on. The script fetches the **Integration target**
-during implementation and rebases issue work if the target moves, but the
+Use `HEAD:dev` for Gitflow target validation, `HEAD:main` for trunk or
+promotion validation, and `HEAD:agent/exploratory/issue-N-slug` for a specific
+Exploratory handoff. Run Ralph from a local worktree that is aligned with the
+remote branch being operated on. The script fetches the implementation base
+during implementation and rebases issue work if that base moves, but the
 operator should start from a known repo state.
 
 ## AFK run monitoring
@@ -317,14 +324,17 @@ Key fields for inspection:
 - `branches`: issue, source, and target branch names that apply to the run.
 - `paths`: repo root, run directory, worktree container, and implementation,
   integration, Promotion source, or Promotion target worktree paths.
-- `changed_files`: current file diff used for QA and integration.
+- `changed_files`: current file diff used for QA, **Local integration**, or
+  Exploratory handoff.
 - `qa_results`: selected QA commands, cwd, log path, and pass/fail state.
 - `qa_runtime_env`: effective `DAGSTER_HOME`, `XDG_CACHE_HOME`, and
   `UV_CACHE_DIR` values plus whether each came from the operator environment or
   Ralph's writable fallback.
 - `sandboxed_issue_access`: non-secret token source, wrapper path, allowed
   command set, and network access state for spawned Codex subprocesses.
-- `integration_commit`: implementation **Local integration** commit.
+- `integration_commit`: published implementation commit. For Gitflow and Trunk
+  delivery this is the **Local integration** commit; for Exploratory delivery
+  this is the handoff branch commit.
 - `promotion_commit`: **Promotion** commit pushed to `main`.
 - `pushes`: per-branch push state, commit SHA, and push log path.
 - `github_metadata`: claim, completion, failure, Promotion comment, label, and
@@ -341,10 +351,11 @@ metadata status, and recommended next action. It does not call `gh`, run git
 commands, edit labels, comment, close issues, or change refs.
 
 Use `--recover-run <run_dir>` only for implementation runs whose manifest
-records an integration commit. Recovery fetches the expected target branch and
-refuses to proceed unless the recorded integration commit is reachable from
+records a published implementation commit. Recovery fetches the expected target
+branch and refuses to proceed unless the recorded commit is reachable from
 `origin/<integration-target>`. This guard keeps GitHub metadata reconciliation
-behind proof that the **Local integration** commit reached the expected branch.
+behind proof that the **Local integration** commit or Exploratory handoff commit
+reached the expected branch.
 
 After reachability is verified, recovery reconciles GitHub metadata to the
 issue's **Delivery mode**:
@@ -382,14 +393,17 @@ not exist, Ralph creates it from `origin/main`. Before creating a Gitflow issue
 branch, Ralph also syncs `origin/main` into `origin/dev` when `main` is not
 already an ancestor of `dev`, so the **Integration target** is not behind trunk.
 `delivery-trunk` defaults to `origin/main`. `delivery-exploratory` defaults to
-a per-issue `origin/agent/review/issue-N-slug` branch; if that branch does not
-exist, Ralph creates it from `origin/main`. `--target-branch` overrides the
-**Integration target** explicitly.
+a per-issue `agent/exploratory/issue-N-slug` branch. Ralph fails clearly before
+Codex implementation if that remote branch already exists; otherwise it creates
+the local handoff branch from `origin/main` and later pushes it. `--target-branch`
+overrides the **Integration target** explicitly.
 
-Ralph creates branches named `agent/issue-N-slug` from the **Integration target**
-and creates sibling worktrees under the repo worktree container. Codex is
-instructed not to commit, push, or edit GitHub issue state; Ralph owns those
-steps after QA passes.
+For Gitflow and Trunk delivery, Ralph creates branches named
+`agent/issue-N-slug` from the **Integration target** and creates sibling
+worktrees under the repo worktree container. For Exploratory delivery, Ralph
+creates `agent/exploratory/issue-N-slug` from `origin/main`. Codex is instructed
+not to commit, push, or edit GitHub issue state; Ralph owns those steps after QA
+passes.
 
 Before building the Codex implementation prompts for an issue, Ralph fetches
 issue comments for the issue being implemented. The prompt keeps the issue body
@@ -401,9 +415,9 @@ maintainer comments and automated triage comments are excluded. If comment
 fetching fails, Ralph fails the issue before starting the Codex implementation
 subprocess instead of running with incomplete refresh context.
 
-After QA passes, Ralph commits the issue branch, fetches the **Integration
-target**, and rebases the issue branch if the target moved. A rebase triggers
-the selected QA commands again before **Local integration** continues.
+After QA passes, Ralph commits the implementation branch, fetches the branch's
+base, and rebases if the base moved. A rebase triggers the selected QA commands
+again before **Local integration** or Exploratory handoff continues.
 
 For **Local integration**, Ralph creates a temporary detached integration
 worktree at latest target, runs `git merge --squash` from the issue branch,
@@ -411,9 +425,11 @@ creates one integration commit, pushes it to the target, and posts completion
 evidence with the commit SHA, changed files, QA commands, and run log path.
 Trunk integration marks the issue `agent-merged` and closes it. Gitflow
 integration marks the issue `agent-integrated` and leaves it open for
-**Promotion**. Exploratory integration marks the issue `agent-reviewing` and
-leaves it open for human review of the durable review branch. Ralph does not
-open a GitHub draft PR.
+**Promotion**. Exploratory handoff skips the detached integration worktree and
+squash merge: Ralph pushes the validated
+`agent/exploratory/issue-N-slug` branch to origin, marks the issue
+`agent-reviewing`, and leaves it open for human review. Ralph does not open a
+GitHub draft PR.
 
 ```mermaid
 sequenceDiagram
@@ -424,19 +440,25 @@ sequenceDiagram
   participant GitHubIssue as GitHub Issue
 
   Ralph->>IssueBranch: Commit validated issue work
-  Ralph->>Target: Fetch latest target
-  alt target moved
+  Ralph->>Target: Fetch latest base
+  alt base moved
     Ralph->>IssueBranch: Rebase and rerun selected QA
   end
-  Ralph->>Integration: Create detached worktree at target
-  Integration->>IssueBranch: git merge --squash
-  Integration->>Target: git push HEAD:target
-  Ralph->>GitHubIssue: Comment evidence
   alt Trunk delivery
+    Ralph->>Integration: Create detached worktree at main
+    Integration->>IssueBranch: git merge --squash
+    Integration->>Target: git push HEAD:main
+    Ralph->>GitHubIssue: Comment evidence
     Ralph->>GitHubIssue: Add agent-merged and close
   else Gitflow delivery
+    Ralph->>Integration: Create detached worktree at dev
+    Integration->>IssueBranch: git merge --squash
+    Integration->>Target: git push HEAD:dev
+    Ralph->>GitHubIssue: Comment evidence
     Ralph->>GitHubIssue: Add agent-integrated
   else Exploratory delivery
+    IssueBranch->>Target: git push HEAD:agent/exploratory/issue-N-slug
+    Ralph->>GitHubIssue: Comment evidence
     Ralph->>GitHubIssue: Add agent-reviewing
   end
 ```
@@ -548,30 +570,32 @@ stay on `delivery-gitflow` unless the issue explicitly asks for
 ## Ready issue refresh
 
 **Ready issue refresh** is the queue-maintenance pass Ralph runs after a
-successful implementation **Local integration** and before the next
-`ready-for-agent` issue claim in the drain. It reconciles open GitHub Issues
-against the updated **Integration target** so follow-on work does not keep stale
-blockers, stale acceptance criteria, or already-satisfied issues in the ready
-queue.
+successful implementation **Local integration** or Exploratory handoff and
+before the next `ready-for-agent` issue claim in the drain. It reconciles open
+GitHub Issues against the updated **Integration target** so follow-on work does
+not keep stale blockers, stale acceptance criteria, or already-satisfied issues
+in the ready queue.
 
-After each successful drain-mode **Local integration**, Ralph first computes a
-bounded candidate set from open GitHub Issues returned by the existing
-`--issue-limit` scan. Candidate selection includes `ready-for-agent` issues
-that are unblocked in queue order and excludes issues carrying implementation
-stop labels such as `agent-running`, `agent-failed`, `agent-merged`,
-`agent-integrated`, or `agent-reviewing`. It also includes `ready-for-agent`
-issues whose `## Blocked by` section names the issue that was just integrated:
-Gitflow leaves that blocker open with `agent-integrated` until **Promotion**,
-but candidate selection treats that just-integrated blocker as satisfied for
-refresh review. Trunk delivery works through the same selector after the
-just-integrated blocker has already been closed.
+After each successful drain-mode **Local integration** or Exploratory handoff,
+Ralph first computes a bounded candidate set from open GitHub Issues returned by
+the existing `--issue-limit` scan. Candidate selection includes
+`ready-for-agent` issues that are unblocked in queue order and excludes issues
+carrying implementation stop labels such as `agent-running`, `agent-failed`,
+`agent-merged`, `agent-integrated`, or `agent-reviewing`. It also includes
+`ready-for-agent` issues whose `## Blocked by` section names the issue that was
+just completed: Gitflow leaves that blocker open with `agent-integrated` until
+**Promotion**, and Exploratory delivery leaves it open with `agent-reviewing`
+for human review, but candidate selection treats that just-completed blocker as
+satisfied for refresh review. Trunk delivery works through the same selector
+after the just-completed blocker has already been closed.
 
 This bounded scan also keeps the next unblocked ready issues in queue order in
 the candidate set, even when they do not explicitly reference the just-integrated
 issue. That lets refresh review catch duplicate or obsolete ready work that
-became stale because of the latest **Local integration**. In `--dry-run`, Ralph
-reports that Ready issue refresh candidate selection would run after **Local
-integration**; it does not invoke Codex or mutate GitHub Issues.
+became stale because of the latest **Local integration** or Exploratory handoff.
+In `--dry-run`, Ralph reports that Ready issue refresh candidate selection would
+run after **Local integration** or Exploratory handoff; it does not invoke Codex
+or mutate GitHub Issues.
 
 Use the repo-local `$ralph-issue-refresh` skill as the entry point for this
 contract. The pass is allowed to mutate only GitHub Issue metadata:
@@ -604,7 +628,8 @@ state already satisfies or obsoletes the issue, refresh closes it as completed
 with evidence. Unclear issues must not be closed as completed.
 
 **Ready issue refresh** is distinct from **Post-promotion review**. Refresh
-runs during drain after **Local integration** and may update issue metadata.
+runs during drain after **Local integration** or Exploratory handoff and may
+update issue metadata.
 **Post-promotion review** runs after **Promotion**, uses read-only issue access,
 and reports follow-up issue drafts in the Promotion artifact instead of mutating
 the queue.
@@ -644,9 +669,9 @@ For Ralph script or unit-test changes, Ralph runs:
 python3 -m unittest discover -s tests
 ```
 
-If the **Integration target** changes after the implementation worktree was
+If the implementation base changes after the implementation worktree was
 created, Ralph rebases the issue branch and reruns the selected QA commands
-before merging.
+before **Local integration** or Exploratory handoff.
 
 During **Promotion**, Ralph computes all files changed between `origin/main` and
 `origin/dev`, then runs the matching QA set as an aggregate **Push check** before
@@ -684,10 +709,10 @@ Codex or QA failures get one retry in the same worktree. If retry fails, Ralph:
 - leaves a result comment with the failing command and log path
 - continues drain mode with the next actionable issue
 
-Successful issues remove the implementation worktree, integration worktree, and
-temporary issue branch after trunk closure, Gitflow integration, or exploratory
-review-branch publication. Cleanup failures are warnings; the pushed commit and
-GitHub issue metadata remain the source of truth.
+Successful issues remove the implementation worktree, any integration worktree,
+and the local temporary branch after trunk closure, Gitflow integration, or
+Exploratory review-branch publication. Cleanup failures are warnings; the
+pushed commit and GitHub issue metadata remain the source of truth.
 
 Merge or push failures before the **Integration target** is updated are issue
 failures and keep the worktrees for inspection. Failures after the target is

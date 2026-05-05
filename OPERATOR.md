@@ -39,10 +39,11 @@ exploratory change that should publish a durable review branch and remain open
 with `agent-reviewing`.
 
 Use `$ralph-loop drain` to let Ralph implement ready issues. Ralph owns
-worktrees, deterministic QA, **Local integration**, **Integration target**
-pushes, and GitHub issue metadata after validation. After a successful
-**Local integration**, **Ready issue refresh** reconciles the open issue queue
-before Ralph claims the next `ready-for-agent` issue.
+worktrees, deterministic QA, **Local integration** for Gitflow or Trunk
+delivery, Exploratory review-branch handoff, **Integration target** pushes, and
+GitHub issue metadata after validation. After a successful **Local
+integration** or Exploratory handoff, **Ready issue refresh** reconciles the
+open issue queue before Ralph claims the next `ready-for-agent` issue.
 
 ## Before Drain
 
@@ -104,8 +105,8 @@ reconciling GitHub metadata.
 
 Use `$ralph-loop inspect failure` or `python3 scripts/ralph.py --inspect-run
 .ralph/runs/...` before changing state. Use recovery only after Ralph verifies
-the recorded **Local integration** commit is reachable from the expected
-**Integration target**.
+the recorded published commit is reachable from the expected **Integration
+target**.
 
 Keep failed worktrees unless the maintainer asks for cleanup.
 

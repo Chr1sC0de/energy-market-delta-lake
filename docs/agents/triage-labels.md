@@ -34,10 +34,11 @@ Ralph owns these labels while processing the issue queue:
 
 Runtime labels are not triage state labels. `ready-for-agent` remains the queue
 selection label for implementation. **Ready issue refresh** may transition an
-issue out of `ready-for-agent` when the latest **Local integration** leaves the
-issue stale, unclear, obsolete, or already satisfied. Runtime labels including
-`agent-reviewing` block repeat implementation, **Ready issue refresh** candidate
-selection, and automated triage reconsideration.
+issue out of `ready-for-agent` when the latest **Local integration** or
+Exploratory handoff leaves the issue stale, unclear, obsolete, or already
+satisfied. Runtime labels including `agent-reviewing` block repeat
+implementation, **Ready issue refresh** candidate selection, and automated
+triage reconsideration.
 
 ## Ralph delivery labels
 

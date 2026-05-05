@@ -19,8 +19,8 @@ or local `gh auth`, and a wrapper limits `gh` to phase-specific issue metadata
 commands. Implementation, triage, and **Ready issue refresh** passes may
 receive issue reads and writes; **Post-promotion review** receives read-only
 issue commands and drafts any follow-up issues in its Markdown report. Git push
-auth is separate; **Local integration**, **Integration target** pushes, and
-**Promotion** stay outside the sandbox.
+auth is separate; **Local integration**, Exploratory handoff, **Integration
+target** pushes, and **Promotion** stay outside the sandbox.
 
 ## Queue contract
 
@@ -49,12 +49,13 @@ triage reconsideration. In particular, `agent-reviewing` means **Exploratory
 delivery** has already published a durable review branch and the issue is
 waiting for human review.
 
-After a successful drain-mode **Local integration**, Ralph computes **Ready
-issue refresh** candidates from open issues within `--issue-limit`. The
-candidate scan keeps unblocked `ready-for-agent` issues in queue order, excludes
-issues with runtime stop labels, and treats the issue that was just integrated
-as a satisfied blocker for candidate selection even when Gitflow leaves it open
-with `agent-integrated` until **Promotion**.
+After a successful drain-mode **Local integration** or Exploratory handoff,
+Ralph computes **Ready issue refresh** candidates from open issues within
+`--issue-limit`. The candidate scan keeps unblocked `ready-for-agent` issues in
+queue order, excludes issues with runtime stop labels, and treats the issue that
+was just completed as a satisfied blocker for candidate selection even when
+Gitflow leaves it open with `agent-integrated` until **Promotion** or
+Exploratory delivery leaves it open with `agent-reviewing` for human review.
 
 Use [ralph-loop.md](ralph-loop.md) for Ralph internals, including
 **Delivery mode**, **Local integration**, **Integration target**, **Promotion**,

@@ -52,7 +52,7 @@ DELIVERY_LABELS = frozenset(
 )
 DEFAULT_GITFLOW_BRANCH = "dev"
 DEFAULT_TRUNK_BRANCH = "main"
-DEFAULT_EXPLORATORY_BRANCH_PREFIX = "agent/review"
+DEFAULT_EXPLORATORY_BRANCH_PREFIX = "agent/exploratory"
 DEFAULT_DRAIN_BUDGET = 10
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30.0
 DIRTY_WORKTREE_STATUS_PREVIEW_LIMIT = 12
@@ -357,7 +357,7 @@ class RunManifest:
         delivery_plan: DeliveryPlan,
         branch: str,
         worktree_path: Path,
-        integration_path: Path,
+        integration_path: Path | None,
         config: LoopConfig,
     ) -> "RunManifest":
         data: dict[str, Any] = {
@@ -384,7 +384,7 @@ class RunManifest:
                 "run_dir": str(run_dir),
                 "worktree_container": str(config.worktree_container),
                 "implementation_worktree": str(worktree_path),
-                "integration_worktree": str(integration_path),
+                "integration_worktree": path_text(integration_path),
             },
             "changed_files": [],
             "qa_results": [],
@@ -976,6 +976,20 @@ def default_target_branch_for_mode(mode: str, *, issue: Issue) -> str:
         return DEFAULT_TRUNK_BRANCH
     if mode == EXPLORATORY_MODE:
         return default_exploratory_branch(issue)
+    raise ValueError(f"Unsupported delivery mode: {mode}")
+
+
+def implementation_base_branch_for_plan(delivery_plan: DeliveryPlan) -> str:
+    if delivery_plan.mode == EXPLORATORY_MODE:
+        return DEFAULT_TRUNK_BRANCH
+    return delivery_plan.target_branch
+
+
+def completion_event_for_mode(mode: str) -> str:
+    if mode == EXPLORATORY_MODE:
+        return "Exploratory handoff"
+    if mode in {GITFLOW_MODE, TRUNK_MODE}:
+        return "Local integration"
     raise ValueError(f"Unsupported delivery mode: {mode}")
 
 
@@ -1903,7 +1917,15 @@ class RalphLoop:
                 if self.config.dry_run:
                     emit(f"DRY RUN: would implement #{ready_issue.number}: {ready_issue.title}")
                     if self.config.drain:
-                        self._report_ready_issue_refresh_dry_run(ready_issue)
+                        delivery_plan = resolve_delivery_plan(
+                            ready_issue,
+                            default_mode=self.config.delivery_mode,
+                            target_branch=self.config.target_branch,
+                        )
+                        self._report_ready_issue_refresh_dry_run(
+                            ready_issue,
+                            delivery_mode=delivery_plan.mode,
+                        )
                     return
                 self._handle_implementation(ready_issue)
                 implemented += 1
@@ -2017,27 +2039,39 @@ class RalphLoop:
             blocker_state=self.github.issue_state,
         )
 
-    def _report_ready_issue_refresh_dry_run(self, integrated_issue: Issue) -> None:
+    def _report_ready_issue_refresh_dry_run(
+        self,
+        integrated_issue: Issue,
+        *,
+        delivery_mode: str,
+    ) -> None:
+        completion_event = completion_event_for_mode(delivery_mode)
         emit(
-            "DRY RUN: after Local integration of "
+            f"DRY RUN: after {completion_event} of "
             f"#{integrated_issue.number}, would select Ready issue refresh "
             f"candidates within --issue-limit {self.config.issue_limit}."
         )
 
-    def _report_ready_issue_refresh_candidates(self, integrated_issue: Issue) -> None:
+    def _report_ready_issue_refresh_candidates(
+        self,
+        integrated_issue: Issue,
+        *,
+        delivery_mode: str,
+    ) -> None:
+        completion_event = completion_event_for_mode(delivery_mode)
         try:
             candidates = self._ready_issue_refresh_candidates(integrated_issue)
         except CommandFailure as error:
             emit(
                 "Ready issue refresh candidate selection warning after "
-                f"Local integration of #{integrated_issue.number}: {error}",
+                f"{completion_event} of #{integrated_issue.number}: {error}",
                 err=True,
             )
             return
 
         emit(
             "Ready issue refresh candidate selection found "
-            f"{len(candidates)} candidate(s) after Local integration of "
+            f"{len(candidates)} candidate(s) after {completion_event} of "
             f"#{integrated_issue.number}."
         )
         for candidate in candidates:
@@ -2613,7 +2647,11 @@ class RalphLoop:
                 default_mode=self.config.delivery_mode,
                 target_branch=self.config.target_branch,
             )
-            branch, worktree_path, integration_path = self._branch_and_worktrees(issue)
+            branch, worktree_path, integration_path = self._branch_and_worktrees(
+                issue,
+                delivery_plan=delivery_plan,
+            )
+            base_branch = implementation_base_branch_for_plan(delivery_plan)
             manifest = RunManifest.for_implementation(
                 run_dir=run_dir,
                 issue=issue,
@@ -2656,16 +2694,16 @@ class RalphLoop:
             manifest.record_event("issue_contract_validated")
             manifest.record_event("ensuring_integration_target")
             self._ensure_integration_target(delivery_plan, run_dir)
-            emit(f"#{issue.number}: fetching origin/{delivery_plan.target_branch}")
-            manifest.record_event("fetching_integration_target")
-            self.git.fetch_base(delivery_plan.target_branch, run_dir=run_dir)
-            base_sha = self.git.rev_parse(f"origin/{delivery_plan.target_branch}")
+            emit(f"#{issue.number}: fetching origin/{base_branch}")
+            manifest.record_event("fetching_implementation_base")
+            self.git.fetch_base(base_branch, run_dir=run_dir)
+            base_sha = self.git.rev_parse(f"origin/{base_branch}")
             manifest.record_commit("base", base_sha)
             emit(f"#{issue.number}: creating implementation worktree {worktree_path}")
             manifest.record_event("creating_implementation_worktree")
             self.git.add_worktree(
                 branch=branch,
-                base=delivery_plan.target_branch,
+                base=base_branch,
                 path=worktree_path,
                 run_dir=run_dir,
             )
@@ -2686,30 +2724,30 @@ class RalphLoop:
             )
             manifest.record_event("implementation_branch_committed")
 
-            emit(f"#{issue.number}: checking for origin/{delivery_plan.target_branch} updates")
-            manifest.record_event("checking_integration_target_drift")
-            self.git.fetch_base(delivery_plan.target_branch, run_dir=run_dir)
-            latest_base_sha = self.git.rev_parse(f"origin/{delivery_plan.target_branch}")
+            emit(f"#{issue.number}: checking for origin/{base_branch} updates")
+            manifest.record_event("checking_implementation_base_drift")
+            self.git.fetch_base(base_branch, run_dir=run_dir)
+            latest_base_sha = self.git.rev_parse(f"origin/{base_branch}")
             manifest.record_commit("latest_base", latest_base_sha)
             if latest_base_sha != base_sha:
                 emit(
-                    f"#{issue.number}: origin/{delivery_plan.target_branch} moved; "
+                    f"#{issue.number}: origin/{base_branch} moved; "
                     f"rebasing {branch}"
                 )
                 manifest.record_event("rebasing_implementation_branch")
                 self.git.rebase(
                     cwd=worktree_path,
-                    upstream=f"origin/{delivery_plan.target_branch}",
+                    upstream=f"origin/{base_branch}",
                     run_dir=run_dir,
                 )
                 manifest.record_event("implementation_branch_rebased")
                 changed_files = self.git.changed_files_against(
                     cwd=worktree_path,
-                    base_ref=f"origin/{delivery_plan.target_branch}",
+                    base_ref=f"origin/{base_branch}",
                 )
                 manifest.record_changed_files(changed_files, stage="post_rebase_changes_detected")
                 if not changed_files:
-                    raise IssueFailure("Rebase left no changed files to integrate.")
+                    raise IssueFailure("Rebase left no changed files to publish.")
                 emit(f"#{issue.number}: rerunning QA after rebase")
                 qa_results.extend(
                     self._run_qa_for_files(
@@ -2735,7 +2773,7 @@ class RalphLoop:
                     )
                     changed_files = self.git.changed_files_against(
                         cwd=worktree_path,
-                        base_ref=f"origin/{delivery_plan.target_branch}",
+                        base_ref=f"origin/{base_branch}",
                     )
                     manifest.record_changed_files(
                         changed_files,
@@ -2744,35 +2782,48 @@ class RalphLoop:
             else:
                 changed_files = self.git.changed_files_against(
                     cwd=worktree_path,
-                    base_ref=f"origin/{delivery_plan.target_branch}",
+                    base_ref=f"origin/{base_branch}",
                 )
                 manifest.record_changed_files(changed_files, stage="current_base_changes_detected")
 
             if not changed_files:
                 raise IssueFailure("Implementation branch has no diff against current base.")
 
-            emit(f"#{issue.number}: creating integration worktree {integration_path}")
-            manifest.record_event("creating_integration_worktree")
-            self.git.add_detached_worktree(
-                path=integration_path,
-                ref=f"origin/{delivery_plan.target_branch}",
-                run_dir=run_dir,
-            )
-            manifest.record_event("integration_worktree_created")
-            emit(f"#{issue.number}: squash merging {branch}")
-            manifest.record_event("squash_merging")
-            self.git.squash_merge(cwd=integration_path, branch=branch, run_dir=run_dir)
-            emit(f"#{issue.number}: committing local integration")
-            manifest.record_event("committing_local_integration")
-            self.git.commit_all(
-                cwd=integration_path,
-                message=f"Implement issue #{issue.number}: {issue.title}",
-                run_dir=run_dir,
-                log_prefix="integration",
-            )
-            commit_sha = self.git.rev_parse("HEAD", cwd=integration_path)
-            manifest.record_integration_commit(commit_sha, branch=delivery_plan.target_branch)
-            emit(f"#{issue.number}: pushing {commit_sha} to {delivery_plan.target_branch}")
+            if delivery_plan.mode == EXPLORATORY_MODE:
+                commit_sha = self.git.rev_parse("HEAD", cwd=worktree_path)
+                manifest.record_integration_commit(commit_sha, branch=delivery_plan.target_branch)
+                emit(
+                    f"#{issue.number}: pushing Exploratory handoff {commit_sha} to "
+                    f"{delivery_plan.target_branch}"
+                )
+                push_cwd = worktree_path
+            else:
+                if integration_path is None:
+                    raise RalphError("Local integration path is missing.")
+                emit(f"#{issue.number}: creating integration worktree {integration_path}")
+                manifest.record_event("creating_integration_worktree")
+                self.git.add_detached_worktree(
+                    path=integration_path,
+                    ref=f"origin/{delivery_plan.target_branch}",
+                    run_dir=run_dir,
+                )
+                manifest.record_event("integration_worktree_created")
+                emit(f"#{issue.number}: squash merging {branch}")
+                manifest.record_event("squash_merging")
+                self.git.squash_merge(cwd=integration_path, branch=branch, run_dir=run_dir)
+                emit(f"#{issue.number}: committing local integration")
+                manifest.record_event("committing_local_integration")
+                self.git.commit_all(
+                    cwd=integration_path,
+                    message=f"Implement issue #{issue.number}: {issue.title}",
+                    run_dir=run_dir,
+                    log_prefix="integration",
+                )
+                commit_sha = self.git.rev_parse("HEAD", cwd=integration_path)
+                manifest.record_integration_commit(commit_sha, branch=delivery_plan.target_branch)
+                emit(f"#{issue.number}: pushing {commit_sha} to {delivery_plan.target_branch}")
+                push_cwd = integration_path
+
             push_log = run_dir / f"git-push-{slugify(delivery_plan.target_branch)}.log"
             manifest.record_push(
                 key="integration_target",
@@ -2783,7 +2834,7 @@ class RalphLoop:
             )
             try:
                 self.git.push_head(
-                    cwd=integration_path,
+                    cwd=push_cwd,
                     branch=delivery_plan.target_branch,
                     run_dir=run_dir,
                 )
@@ -2879,7 +2930,10 @@ class RalphLoop:
             )
             manifest.record_success()
             if self.config.drain:
-                self._report_ready_issue_refresh_candidates(issue)
+                self._report_ready_issue_refresh_candidates(
+                    issue,
+                    delivery_mode=delivery_plan.mode,
+                )
             emit(result_message)
         except EnvironmentFailure as error:
             if manifest is not None:
@@ -2946,18 +3000,11 @@ class RalphLoop:
         if delivery_plan.mode != EXPLORATORY_MODE:
             return
         if self.git.remote_branch_exists(delivery_plan.target_branch, run_dir=run_dir):
-            return
-
-        emit(
-            f"origin/{delivery_plan.target_branch} does not exist; creating it from "
-            f"origin/{DEFAULT_TRUNK_BRANCH}"
-        )
-        self.git.fetch_base(DEFAULT_TRUNK_BRANCH, run_dir=run_dir)
-        self.git.create_remote_branch(
-            branch=delivery_plan.target_branch,
-            from_ref=f"origin/{DEFAULT_TRUNK_BRANCH}",
-            run_dir=run_dir,
-        )
+            raise IssueFailure(
+                "Remote Exploratory branch already exists: "
+                f"origin/{delivery_plan.target_branch}. "
+                "Choose a new --target-branch or review the existing branch before rerunning."
+            )
 
     def _sync_default_gitflow_target_with_trunk(
         self,
@@ -3071,8 +3118,21 @@ class RalphLoop:
         )
         self.git.fetch_base(source_branch, run_dir=run_dir)
 
-    def _branch_and_worktrees(self, issue: Issue) -> tuple[str, Path, Path]:
+    def _branch_and_worktrees(
+        self,
+        issue: Issue,
+        *,
+        delivery_plan: DeliveryPlan | None = None,
+    ) -> tuple[str, Path, Path | None]:
         slug = slugify(issue.title)
+        if delivery_plan is not None and delivery_plan.mode == EXPLORATORY_MODE:
+            branch = delivery_plan.target_branch
+            worktree_path = (
+                self.config.worktree_container
+                / f"agent-exploratory-issue-{issue.number}-{slug}"
+            )
+            return branch, worktree_path, None
+
         branch = f"agent/issue-{issue.number}-{slug}"
         worktree_path = self.config.worktree_container / f"agent-issue-{issue.number}-{slug}"
         integration_path = self.config.worktree_container / f"agent-integrate-{issue.number}-{slug}"
@@ -3707,7 +3767,7 @@ def completion_comment_title(delivery_mode: str) -> str:
     if delivery_mode == GITFLOW_MODE:
         return "Ralph Gitflow integration completed."
     if delivery_mode == EXPLORATORY_MODE:
-        return "Ralph exploratory integration completed."
+        return "Ralph exploratory handoff completed."
     raise ValueError(f"Unsupported delivery mode: {delivery_mode}")
 
 
@@ -4459,8 +4519,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--target-branch",
         help=(
-            "Remote branch to integrate into. Defaults to dev for gitflow, "
-            "main for trunk, and agent/review/issue-N-slug for exploratory."
+            "Remote branch to update. Defaults to dev for gitflow, "
+            "main for trunk, and agent/exploratory/issue-N-slug for exploratory."
         ),
     )
     parser.add_argument(
