@@ -109,7 +109,11 @@ Local workflow notes:
   Pulumi-deployed stack.
 - The isolated AEMO ETL **End-to-end test** stack belongs to the
   `backend-services/dagster-user/aemo-etl` Subproject and is operated through
-  `backend-services/scripts/aemo-etl-e2e`.
+  `backend-services/scripts/aemo-etl-e2e`; its run manifest records timing and
+  dataflow telemetry for Promotion review. Ralph **Promotion** runs pass an
+  explicit `--seed-root` pointing at the primary repo cache so temporary
+  Promotion source worktrees do not look for ignored seed data under the
+  ephemeral worktree.
 
 Use [backend-services/README.md](../../backend-services/README.md) for local
 stack commands and
@@ -126,7 +130,7 @@ Agents use [AGENTS.md](../../AGENTS.md) for imperative policy and
 [docs/agents/README.md](../agents/README.md) for the agent workflow map.
 Ralph internals live in [docs/agents/ralph-loop.md](../agents/ralph-loop.md),
 including **Local integration**, **Delivery mode**, **Integration target**,
-**Promotion**, and **Post-promotion review** behavior.
+**Ready issue refresh**, **Promotion**, and **Post-promotion review** behavior.
 
 ## Where to work
 

@@ -29,9 +29,15 @@ Ralph owns these labels while processing the issue queue:
 - `agent-merged`: Ralph pushed **Local integration** and closed the issue.
 - `agent-integrated`: Ralph integrated Gitflow work to `dev`; the issue waits
   for **Promotion** to `main`.
+- `agent-reviewing`: Ralph published exploratory work to a durable review
+  branch; the issue waits for human review.
 
 Runtime labels are not triage state labels. `ready-for-agent` remains the queue
-selection label for implementation.
+selection label for implementation. **Ready issue refresh** may transition an
+issue out of `ready-for-agent` when the latest **Local integration** leaves the
+issue stale, unclear, obsolete, or already satisfied. Runtime labels including
+`agent-reviewing` block repeat implementation and automated triage
+reconsideration.
 
 ## Ralph delivery labels
 
@@ -41,10 +47,14 @@ Ralph and triage use these labels to choose the issue **Delivery mode**:
   **Promotion** to `main`.
 - `delivery-trunk`: opt-in for small docs, tests, tooling, or script changes
   that can integrate directly to `main`.
+- `delivery-exploratory`: opt-in for changes that need a durable review branch
+  instead of direct trunk closure or Gitflow **Promotion**.
 
-An issue should carry at most one delivery label. If both are present, Ralph
-keeps `delivery-gitflow`, removes `delivery-trunk`, and proceeds through the
-safer default path.
+An issue should carry at most one delivery label. If `delivery-exploratory`
+conflicts with Gitflow or trunk labels, Ralph keeps `delivery-exploratory` and
+removes the others. If only Gitflow and trunk conflict, Ralph keeps
+`delivery-gitflow`, removes `delivery-trunk`, and proceeds through the safer
+default path.
 
 Use [ralph-loop.md](ralph-loop.md) for the Ralph behavior behind these labels
 and [issue-tracker.md](issue-tracker.md) for the GitHub Issue queue contract.

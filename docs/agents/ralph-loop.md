@@ -35,7 +35,10 @@ Ralph drains agent-ready GitHub issues through a guarded local loop:
    `agent-integrated`, and leave the issue open for **Promotion**.
 7. In **Trunk delivery**, push `main`, comment evidence, mark `agent-merged`,
    and close the issue.
-8. If no ready issue exists, triage the next unblocked issue and rescan.
+8. In **Exploratory delivery**, push a durable review branch, comment evidence,
+   mark `agent-reviewing`, and leave the issue open for human review.
+9. Run **Ready issue refresh** before the next ready issue claim.
+10. If no ready issue exists, triage the next unblocked issue and rescan.
 
 The loop stops when the queue has no unblocked implementation or triage
 candidates, or when `--max-issues` is reached. A plain `--drain` run defaults
@@ -72,8 +75,11 @@ flowchart TD
   INTEGRATE --> DONE{Delivery mode?}
   DONE -->|Gitflow| STAGE[Comment evidence and mark agent-integrated]
   DONE -->|Trunk| CLOSE[Comment evidence, mark agent-merged, close issue]
-  STAGE --> LIMIT{Max implementation attempts reached?}
-  CLOSE --> LIMIT
+  DONE -->|Exploratory| REVIEW[Comment evidence and mark agent-reviewing]
+  STAGE --> REFRESH[Run Ready issue refresh]
+  CLOSE --> REFRESH
+  REVIEW --> REFRESH
+  REFRESH --> LIMIT{Max implementation attempts reached?}
   LIMIT -->|No| READY
   LIMIT -->|Yes| STOP[Stop drain]
   READY -->|No| TRIAGE{Unblocked triage candidate?}
@@ -104,20 +110,27 @@ Ralph runtime labels:
 - `agent-failed`
 - `agent-merged`
 - `agent-integrated`
+- `agent-reviewing`
 
 Ralph delivery labels:
 
 - `delivery-gitflow`
 - `delivery-trunk`
+- `delivery-exploratory`
 
 Use `ready-for-agent` as the queue selection signal. `needs-triage`,
 `needs-info`, `ready-for-human`, `wontfix`, `agent-running`, `agent-failed`,
-`agent-merged`, and `agent-integrated` block implementation.
+`agent-merged`, `agent-integrated`, and `agent-reviewing` block
+implementation. Runtime labels including `agent-reviewing` also block
+automated triage reconsideration.
 
 `delivery-gitflow` is the default **Delivery mode**. `delivery-trunk` is an
-opt-in label for small docs, tests, tooling, or script changes. If both delivery
-labels are present, Ralph keeps `delivery-gitflow`, removes `delivery-trunk`,
-and proceeds through the safer default.
+opt-in label for small docs, tests, tooling, or script changes.
+`delivery-exploratory` is an opt-in label for durable review-branch work. If
+`delivery-exploratory` conflicts with Gitflow or trunk labels, Ralph keeps
+`delivery-exploratory` and removes the others. If only Gitflow and trunk
+conflict, Ralph keeps `delivery-gitflow`, removes `delivery-trunk`, and
+proceeds through the safer default.
 
 Create or refresh the labels with:
 
@@ -143,6 +156,12 @@ Drain directly to trunk for small low-risk changes:
 
 ```bash
 python3 scripts/ralph.py --drain --delivery-mode trunk
+```
+
+Drain to durable review branches for exploratory changes:
+
+```bash
+python3 scripts/ralph.py --drain --delivery-mode exploratory
 ```
 
 Drain until only blocked or non-actionable issues remain:
@@ -218,10 +237,13 @@ Ralph. Do not paste token values into commands, issue comments, docs, or logs.
 Ralph also gives spawned Codex subprocesses **Sandboxed issue access** by
 default: it resolves a token from `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth
 token`, injects it as `GH_TOKEN`, enables network for the workspace-write Codex
-sandbox, and prepends a wrapper that permits only `gh auth status` plus
-triage-safe `gh issue` reads and writes. This does not grant Git push access;
-Git fetches, **Local integration**, **Integration target** pushes, and
-**Promotion** stay in Ralph's outer loop.
+sandbox, and prepends a wrapper that permits only `gh auth status` plus the
+phase-specific `gh issue` commands. Implementation, triage, and **Ready issue
+refresh** passes may get phase-limited issue reads and writes. The
+**Post-promotion review** gets read-only issue access: `gh issue view`,
+`gh issue list`, and `gh issue status`. This does not grant Git push access; Git
+fetches, **Local integration**, **Integration target** pushes, and **Promotion**
+stay in Ralph's outer loop.
 
 Ralph also standardizes writable QA runtime paths for spawned Codex
 subprocesses and Ralph-run QA commands. If the operator exports `DAGSTER_HOME`,
@@ -249,6 +271,11 @@ operations write to their named `git-*` logs under the current
 While a command is active, the log has `exit: running`; after the command
 finishes, Ralph rewrites the same log with the final exit status while
 preserving stdout, stderr, command, and cwd.
+
+After successful **Promotion** with changed files, Ralph saves the final
+**Post-promotion review** Markdown report as
+`post-promotion-review.md` beside `codex-post-promotion-review.jsonl` and
+prints the same report to the terminal.
 
 During logged long-running phases, Ralph prints a heartbeat about every 30
 seconds:
@@ -282,8 +309,11 @@ Key fields for inspection:
 - `source_branch`: **Promotion** source branch, usually `dev`.
 - `source_tree`: **Promotion** source branch revision and source worktree used
   for QA.
-- `post_promotion_review`: enabled state, skip reason, review status, and
-  review log path for **Promotion** runs.
+- `promotion_commit_inventory`: full promoted source commit range with each
+  commit SHA, subject, and whether it matched a verified Gitflow
+  **Local integration** commit or remained an unverified **Promotion** commit.
+- `post_promotion_review`: enabled state, skip reason, review status, review
+  log path, and Markdown artifact path for **Promotion** runs.
 - `branches`: issue, source, and target branch names that apply to the run.
 - `paths`: repo root, run directory, worktree container, and implementation,
   integration, Promotion source, or Promotion target worktree paths.
@@ -324,6 +354,9 @@ issue's **Delivery mode**:
 - **Gitflow delivery**: ensure the completion comment exists, remove runtime
   labels, apply `agent-integrated`, and leave the issue open for **Promotion**.
   If the issue was closed prematurely, recovery reopens it.
+- **Exploratory delivery**: ensure the completion comment exists, remove
+  runtime labels, apply `agent-reviewing`, and leave or reopen the issue for
+  human review.
 
 Recovery does not rerun Codex, rerun QA, create commits, push branches, or clean
 worktrees. Normal Ralph runs keep fail-stop behavior: if metadata operations
@@ -348,7 +381,9 @@ implementation. `delivery-gitflow` defaults to `origin/dev`; if that branch does
 not exist, Ralph creates it from `origin/main`. Before creating a Gitflow issue
 branch, Ralph also syncs `origin/main` into `origin/dev` when `main` is not
 already an ancestor of `dev`, so the **Integration target** is not behind trunk.
-`delivery-trunk` defaults to `origin/main`. `--target-branch` overrides the
+`delivery-trunk` defaults to `origin/main`. `delivery-exploratory` defaults to
+a per-issue `origin/agent/review/issue-N-slug` branch; if that branch does not
+exist, Ralph creates it from `origin/main`. `--target-branch` overrides the
 **Integration target** explicitly.
 
 Ralph creates branches named `agent/issue-N-slug` from the **Integration target**
@@ -366,7 +401,9 @@ creates one integration commit, pushes it to the target, and posts completion
 evidence with the commit SHA, changed files, QA commands, and run log path.
 Trunk integration marks the issue `agent-merged` and closes it. Gitflow
 integration marks the issue `agent-integrated` and leaves it open for
-**Promotion**. Ralph does not open a GitHub draft PR.
+**Promotion**. Exploratory integration marks the issue `agent-reviewing` and
+leaves it open for human review of the durable review branch. Ralph does not
+open a GitHub draft PR.
 
 ```mermaid
 sequenceDiagram
@@ -389,6 +426,8 @@ sequenceDiagram
     Ralph->>GitHubIssue: Add agent-merged and close
   else Gitflow delivery
     Ralph->>GitHubIssue: Add agent-integrated
+  else Exploratory delivery
+    Ralph->>GitHubIssue: Add agent-reviewing
   end
 ```
 
@@ -397,17 +436,30 @@ sequenceDiagram
 `python3 scripts/ralph.py --promote` promotes reviewed Gitflow work from
 `origin/dev` to `origin/main` by default. Ralph fetches both branches, computes
 the changed files between the target branch and the fetched source-branch
-revision, creates an isolated source worktree at that source revision, and runs
-the aggregate matching **Push check** QA from that tree. When the promoted
-range includes non-doc runtime files under
+revision, records the full source commit inventory for that promoted range, and
+creates an isolated source worktree at that source revision. The commit
+inventory records every promoted source commit with its SHA and subject. After
+verified Gitflow issues are identified, commits whose SHA matches a recorded
+`integrated_commit` are classified as verified **Local integration** commits;
+other commits remain visible as unverified **Promotion** commits in the run
+manifest and **Post-promotion review** prompt.
+
+Ralph runs the aggregate matching **Push check** QA from the source worktree.
+When the promoted range includes non-doc runtime files under
 `backend-services/dagster-user/aemo-etl/`, Ralph runs the AEMO ETL
 **End-to-end test** gate from the same source worktree before creating the
 target Promotion worktree. The gate is recorded as
 `aemo-etl End-to-end test` in the Promotion run manifest and invokes
-`scripts/aemo-etl-e2e run` from the `backend-services` **Subproject**. Because
-the aggregate **Push check** and gate run first, source-branch changes cannot
-reach a Promotion merge, `main` push, `dev` branch sync, GitHub metadata
-update, or issue closure without passing against the exact source revision.
+`scripts/aemo-etl-e2e run --max-concurrent-runs 2 --seed-root
+<primary-repo>/backend-services/.e2e/aemo-etl` from the `backend-services`
+**Subproject**, so the temporary Promotion source worktree uses the
+operator-maintained cached Archive seed instead of an empty ignored cache under
+the worktree. Promotion keeps this gate deliberately below the command default
+run queue concurrency to reduce Podman DNS pressure while worker containers
+write Dagster event-log rows back to the isolated Postgres service. Because the
+aggregate **Push check** and gate run first, source-branch changes cannot reach
+a Promotion merge, `main` push, `dev` branch sync, GitHub metadata update, or
+issue closure without passing against the exact source revision.
 Ralph then merges that source revision into a detached `origin/main` worktree
 with per-issue commits preserved, pushes `main`, and fast-forwards `dev` to the
 promotion commit so the next Gitflow drain starts from a `dev` branch that
@@ -416,11 +468,19 @@ contains `main`.
 After the push succeeds, Ralph scans open `agent-integrated` issues. It closes
 only issues whose recorded Gitflow integration commit is still in the promoted
 `origin/main..origin/dev` range, then comments promotion evidence and replaces
-`agent-integrated` with `agent-merged`. Successful Promotions with changed
-files then run a **Post-promotion review** agent from the **Promotion** worktree
-by default, after the `main` push, `dev` sync, and verified issue metadata
-updates. The review is recorded in `post_promotion_review` in the **Promotion**
-run manifest.
+`agent-integrated` with `agent-merged`. Per-issue Promotion comments describe
+promoted files as the full Promotion-range file inventory, not as files owned
+only by the issue being closed. Successful Promotions with changed files then
+run a **Post-promotion review** agent from the **Promotion** worktree by
+default, after the `main` push, `dev` sync, and verified issue metadata
+updates. The review prompt includes both verified **Local integration** commits
+and unverified **Promotion** commits so the review can separate closed issue
+evidence from other promoted work. The review agent has read-only GitHub Issue
+access and must report learnings plus follow-up GitHub Issue drafts instead of
+mutating issues. Ralph saves the final Markdown report as
+`post-promotion-review.md`, prints it in the terminal, and records both
+`post_promotion_review.log_path` and `post_promotion_review.artifact_path` in
+the **Promotion** run manifest.
 Operators can pass `--skip-post-promotion-review` to disable the review path.
 If there are no Promotion changes, Ralph does not create Promotion worktrees or
 run the review agent; it prints a review skip note and records
@@ -451,13 +511,53 @@ Automated triage also applies Ralph delivery labels. It should default to
 `delivery-gitflow` and use `delivery-trunk` only for clearly small docs, tests,
 tooling, or script changes. Runtime behavior, infrastructure, Dagster, S3,
 LocalStack, cross-**Subproject** work, broad refactors, or unclear scope should
-stay on `delivery-gitflow`.
+stay on `delivery-gitflow` unless the issue explicitly asks for
+`delivery-exploratory` review-branch handling.
 
 ## Ready issue refresh
 
-Reserved for future **Ready issue refresh** documentation from #68 through #72.
-This migration intentionally does not define that behavior before those
-implementation issues land.
+**Ready issue refresh** is the queue-maintenance pass Ralph runs after a
+successful implementation **Local integration** and before the next
+`ready-for-agent` issue claim in the drain. It reconciles open GitHub Issues
+against the updated **Integration target** so follow-on work does not keep stale
+blockers, stale acceptance criteria, or already-satisfied issues in the ready
+queue.
+
+Use the repo-local `$ralph-issue-refresh` skill as the entry point for this
+contract. The pass is allowed to mutate only GitHub Issue metadata:
+
+- comments
+- issue body updates
+- label transitions
+- completed closure for obsolete or already-satisfied issues
+
+Every refresh comment must begin with this exact audit prefix:
+
+```markdown
+> *This was generated by AI during Ready issue refresh.*
+```
+
+`## Current context` is optional issue-body context. Refresh may add or update
+that section when branch state, completed work, blocker changes, or evidence
+would help the next agent, but existing `ready-for-agent` issues do not need the
+section just to stay ready.
+
+Any refreshed issue that remains `ready-for-agent` must still contain:
+
+- `## What to build`
+- `## Acceptance criteria`
+- `## Blocked by`
+
+If an issue is stale but the correct update is unclear, refresh moves it to
+`needs-triage` and comments evidence with the audit prefix. If the latest branch
+state already satisfies or obsoletes the issue, refresh closes it as completed
+with evidence. Unclear issues must not be closed as completed.
+
+**Ready issue refresh** is distinct from **Post-promotion review**. Refresh
+runs during drain after **Local integration** and may update issue metadata.
+**Post-promotion review** runs after **Promotion**, uses read-only issue access,
+and reports follow-up issue drafts in the Promotion artifact instead of mutating
+the queue.
 
 ## QA policy
 
@@ -517,7 +617,7 @@ issue closure:
 
 ```bash
 cd backend-services
-scripts/aemo-etl-e2e run
+scripts/aemo-etl-e2e run --max-concurrent-runs 2 --seed-root <primary-repo>/backend-services/.e2e/aemo-etl
 ```
 
 ## Failure handling
@@ -531,9 +631,9 @@ Codex or QA failures get one retry in the same worktree. If retry fails, Ralph:
 - continues drain mode with the next actionable issue
 
 Successful issues remove the implementation worktree, integration worktree, and
-temporary issue branch after trunk closure or Gitflow integration. Cleanup
-failures are warnings; the pushed commit and GitHub issue metadata remain the
-source of truth.
+temporary issue branch after trunk closure, Gitflow integration, or exploratory
+review-branch publication. Cleanup failures are warnings; the pushed commit and
+GitHub issue metadata remain the source of truth.
 
 Merge or push failures before the **Integration target** is updated are issue
 failures and keep the worktrees for inspection. Failures after the target is

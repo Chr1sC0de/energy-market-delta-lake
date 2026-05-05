@@ -440,6 +440,7 @@ def test_start_stack_services_runs_compose_in_dependency_phases(tmp_path: Path) 
         rebuild=False,
         reuse=False,
         always_clean=False,
+        seed_root=None,
         webserver_port=3001,
         raw_latest_count=3,
         zip_latest_count=3,
@@ -779,6 +780,160 @@ def test_dataflow_failure_waits_for_active_runs_before_failing_checks() -> None:
     )
 
 
+def test_dataflow_telemetry_aggregates_monitor_status_samples() -> None:
+    """Monitor samples produce peak, final, target, and check telemetry."""
+    module = load_e2e_command_module()
+    status_class = get_callable(module, "DagsterDataflowStatus")
+    telemetry_class = get_callable(module, "DagsterDataflowTelemetry")
+    telemetry = telemetry_class()
+
+    telemetry.record_status_sample(
+        status_class(
+            active_runs=("queued-1(job=QUEUED)", "started-1(job=STARTED)"),
+            failed_runs=(),
+            materialized_target_assets=("silver/gas_model/a",),
+            missing_target_assets=("silver/gas_model/b", "silver/gas_model/c"),
+            failed_target_assets=(),
+            missing_asset_checks=(),
+            failed_asset_checks=(),
+            run_status_counts={"QUEUED": 2, "STARTED": 1, "SUCCESS": 1},
+            target_materialization_timestamps=(1_700_000_060.0,),
+        )
+    )
+    telemetry.record_status_sample(
+        status_class(
+            active_runs=(
+                "queued-2(job=QUEUED)",
+                "not-started(job=NOT_STARTED)",
+                "starting(job=STARTING)",
+                "started-2(job=STARTED)",
+                "started-3(job=STARTED)",
+            ),
+            failed_runs=("failed(job=FAILURE)",),
+            materialized_target_assets=("silver/gas_model/a", "silver/gas_model/b"),
+            missing_target_assets=("silver/gas_model/c",),
+            failed_target_assets=("silver/gas_model/c (failed)",),
+            missing_asset_checks=(),
+            failed_asset_checks=(
+                "silver/gas_model/b:check_required_fields=FAILED/ERROR",
+            ),
+            run_status_counts={
+                "FAILURE": 1,
+                "NOT_STARTED": 1,
+                "QUEUED": 1,
+                "STARTED": 2,
+                "STARTING": 1,
+                "SUCCESS": 4,
+            },
+            target_materialization_timestamps=(
+                1_700_000_000.0,
+                1_700_000_120.0,
+            ),
+        )
+    )
+
+    payload = telemetry.to_manifest()
+
+    assert payload["sample_count"] == 2
+    assert payload["peak_active_run_count"] == 4
+    assert payload["peak_queued_run_count"] == 2
+    assert payload["final_run_status_counts"] == {
+        "FAILURE": 1,
+        "NOT_STARTED": 1,
+        "QUEUED": 1,
+        "STARTED": 2,
+        "STARTING": 1,
+        "SUCCESS": 4,
+    }
+    assert payload["final_target_progress"] == {
+        "materialized_target_asset_count": 2,
+        "target_asset_count": 3,
+        "missing_target_asset_count": 1,
+        "failed_target_asset_count": 1,
+    }
+    assert payload["first_target_materialization_at"] == "2023-11-14T22:13:20+00:00"
+    assert payload["last_target_materialization_at"] == "2023-11-14T22:15:20+00:00"
+    assert payload["final_failed_asset_check_count"] == 1
+
+
+def test_gate_run_telemetry_manifest_records_durations() -> None:
+    """Gate telemetry reports total, stack, monitor, and cleanup durations."""
+    module = load_e2e_command_module()
+    telemetry_class = get_callable(module, "GateRunTelemetry")
+    telemetry = telemetry_class(started_monotonic=100.0)
+
+    telemetry.record_stack_startup(101.0, 103.25)
+    telemetry.record_dagster_dataflow_monitor(104.0, 109.5)
+    telemetry.record_cleanup("post-success", 109.5, 110.75)
+    telemetry.completed_monotonic = 112.0
+
+    payload = telemetry.to_manifest()
+
+    assert payload["total_gate_duration_seconds"] == 12.0
+    assert payload["stack_startup_duration_seconds"] == 2.25
+    assert payload["dagster_dataflow_monitor_duration_seconds"] == 5.5
+    assert payload["cleanup_duration_seconds"] == 1.25
+    assert payload["cleanup_phases"] == [
+        {"phase": "post-success", "duration_seconds": 1.25}
+    ]
+
+
+def test_monitor_records_telemetry_before_failed_run_error() -> None:
+    """Failed monitor samples are retained for the run manifest."""
+    module = load_e2e_command_module()
+    selector_class = get_callable(module, "DagsterRepositorySelector")
+    monitor_dagster_dataflow = get_callable(module, "monitor_dagster_dataflow")
+    telemetry_class = get_callable(module, "DagsterDataflowTelemetry")
+    command_error = get_exception_class(module, "CommandError")
+
+    class FakeClient:
+        """Return one failed Dagster run monitor sample."""
+
+        def execute(
+            self,
+            query: str,
+            variables: Mapping[str, object] | None = None,
+            *,
+            timeout_seconds: int | None = None,
+        ) -> Mapping[str, object]:
+            del variables, timeout_seconds
+            if "E2EDataflowRunStatus" in query:
+                failed_run = {
+                    "runId": "failed-run",
+                    "jobName": "gasbb_facilities_job",
+                    "status": "FAILURE",
+                }
+                return {
+                    "activeRuns": {"__typename": "Runs", "results": []},
+                    "failedRuns": {
+                        "__typename": "Runs",
+                        "results": [failed_run],
+                    },
+                    "allRuns": {"__typename": "Runs", "results": [failed_run]},
+                }
+            assert "E2EDataflowTargetStatus" in query
+            return {
+                "targetAssets": [],
+                "targetAssetEvents": {"__typename": "AssetConnection", "nodes": []},
+            }
+
+    telemetry = telemetry_class()
+
+    with pytest.raises(command_error) as caught:
+        monitor_dagster_dataflow(
+            FakeClient(),
+            selector_class("repo", "aemo-etl"),
+            started_after=100.0,
+            timeout_seconds=30,
+            poll_interval_seconds=1,
+            telemetry=telemetry,
+        )
+
+    assert "Dagster dataflow failed: failed runs" in str(caught.value)
+    assert telemetry.to_manifest()["sample_count"] == 1
+    assert telemetry.to_manifest()["final_run_status_counts"] == {"FAILURE": 1}
+
+
 def test_dataflow_status_fails_target_materialization_failure() -> None:
     """Failed target materialization events fail the End-to-end dataflow monitor."""
     module = load_e2e_command_module()
@@ -892,6 +1047,21 @@ def test_dataflow_status_reports_target_progress_while_runs_are_active() -> None
                         ],
                     },
                     "failedRuns": {"__typename": "Runs", "results": []},
+                    "allRuns": {
+                        "__typename": "Runs",
+                        "results": [
+                            {
+                                "runId": "run-active",
+                                "jobName": "gasbb_facilities_job",
+                                "status": "STARTED",
+                            },
+                            {
+                                "runId": "run-done",
+                                "jobName": "silver_gas_dim_date_job",
+                                "status": "SUCCESS",
+                            },
+                        ],
+                    },
                 }
             assert "E2EDataflowTargetStatus" in query
             return {
@@ -929,9 +1099,11 @@ def test_dataflow_status_reports_target_progress_while_runs_are_active() -> None
     )
 
     assert status.active_runs == ("run-active(gasbb_facilities_job=STARTED)",)
+    assert status.run_status_counts == {"STARTED": 1, "SUCCESS": 1}
     assert status.target_asset_count == 2
     assert status.materialized_target_assets == ("silver/gas_model/done",)
     assert status.missing_target_assets == ("silver/gas_model/missing",)
+    assert status.target_materialization_timestamps == (200.0,)
     assert ["E2EDataflowCheckStatus" in query for query in client.queries] == [
         False,
         False,
@@ -975,6 +1147,21 @@ def test_dataflow_status_reads_postgres_checks_after_target_materializes() -> No
                         ],
                     },
                     "failedRuns": {"__typename": "Runs", "results": []},
+                    "allRuns": {
+                        "__typename": "Runs",
+                        "results": [
+                            {
+                                "runId": "run-active",
+                                "jobName": "background_job",
+                                "status": "STARTED",
+                            },
+                            {
+                                "runId": "run-target",
+                                "jobName": "target_job",
+                                "status": "SUCCESS",
+                            },
+                        ],
+                    },
                 }
             assert "E2EDataflowTargetStatus" in query
             return {
@@ -1022,6 +1209,8 @@ def test_dataflow_status_reads_postgres_checks_after_target_materializes() -> No
 
     assert status.is_successful
     assert status.active_runs == ("run-active(background_job=STARTED)",)
+    assert status.run_status_counts == {"STARTED": 1, "SUCCESS": 1}
+    assert status.target_materialization_timestamps == (200.0,)
     assert ["E2EDataflowRunStatus" in query for query in client.queries] == [
         True,
         False,

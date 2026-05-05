@@ -33,15 +33,21 @@ AGENT_RUNNING_LABEL = "agent-running"
 AGENT_FAILED_LABEL = "agent-failed"
 AGENT_MERGED_LABEL = "agent-merged"
 AGENT_INTEGRATED_LABEL = "agent-integrated"
+AGENT_REVIEWING_LABEL = "agent-reviewing"
 
 GITFLOW_MODE = "gitflow"
 TRUNK_MODE = "trunk"
-DELIVERY_MODES = (GITFLOW_MODE, TRUNK_MODE)
+EXPLORATORY_MODE = "exploratory"
+DELIVERY_MODES = (GITFLOW_MODE, TRUNK_MODE, EXPLORATORY_MODE)
 DELIVERY_GITFLOW_LABEL = "delivery-gitflow"
 DELIVERY_TRUNK_LABEL = "delivery-trunk"
-DELIVERY_LABELS = frozenset({DELIVERY_GITFLOW_LABEL, DELIVERY_TRUNK_LABEL})
+DELIVERY_EXPLORATORY_LABEL = "delivery-exploratory"
+DELIVERY_LABELS = frozenset(
+    {DELIVERY_GITFLOW_LABEL, DELIVERY_TRUNK_LABEL, DELIVERY_EXPLORATORY_LABEL}
+)
 DEFAULT_GITFLOW_BRANCH = "dev"
 DEFAULT_TRUNK_BRANCH = "main"
+DEFAULT_EXPLORATORY_BRANCH_PREFIX = "agent/review"
 DEFAULT_DRAIN_BUDGET = 10
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30.0
 DIRTY_WORKTREE_STATUS_PREVIEW_LIMIT = 12
@@ -50,7 +56,12 @@ COMMIT_LINE_PATTERN = re.compile(r"(?m)^Commit: `(?P<sha>[0-9a-f]{7,40})`$")
 MANIFEST_NAME = "ralph-run.json"
 MANIFEST_SCHEMA_VERSION = 1
 SANDBOX_GH_WRAPPER_DIR_NAME = "sandbox-bin"
-SANDBOX_ALLOWED_GH_ISSUE_COMMANDS = (
+SANDBOX_READ_ONLY_GH_ISSUE_COMMANDS = (
+    "view",
+    "list",
+    "status",
+)
+SANDBOX_READ_WRITE_GH_ISSUE_COMMANDS = (
     "view",
     "list",
     "status",
@@ -59,6 +70,7 @@ SANDBOX_ALLOWED_GH_ISSUE_COMMANDS = (
     "close",
     "reopen",
 )
+SANDBOX_ALLOWED_GH_ISSUE_COMMANDS = SANDBOX_READ_WRITE_GH_ISSUE_COMMANDS
 SANDBOX_CODEX_ENV_INCLUDE_ONLY = (
     "PATH",
     "HOME",
@@ -105,6 +117,7 @@ IMPLEMENTATION_STOP_LABELS = frozenset(
         AGENT_FAILED_LABEL,
         AGENT_MERGED_LABEL,
         AGENT_INTEGRATED_LABEL,
+        AGENT_REVIEWING_LABEL,
     }
 )
 TRIAGE_STOP_LABELS = frozenset(
@@ -116,6 +129,7 @@ TRIAGE_STOP_LABELS = frozenset(
         AGENT_FAILED_LABEL,
         AGENT_MERGED_LABEL,
         AGENT_INTEGRATED_LABEL,
+        AGENT_REVIEWING_LABEL,
     }
 )
 
@@ -123,6 +137,7 @@ REQUIRED_ISSUE_SECTIONS = ("What to build", "Acceptance criteria", "Blocked by")
 AEMO_ETL_PREFIX = "backend-services/dagster-user/aemo-etl/"
 BACKEND_SERVICES_PREFIX = "backend-services/"
 AEMO_ETL_E2E_QA_NAME = "aemo-etl End-to-end test"
+AEMO_ETL_PROMOTION_E2E_MAX_CONCURRENT_RUNS = 2
 MAINTAINED_DOC_PREFIXES = (
     "docs/",
     "backend-services/",
@@ -157,8 +172,14 @@ LABEL_SPECS = (
     LabelSpec(AGENT_FAILED_LABEL, "B60205", "Agent issue loop failed."),
     LabelSpec(AGENT_MERGED_LABEL, "0E8A16", "Agent issue loop merged local integration."),
     LabelSpec(AGENT_INTEGRATED_LABEL, "0E8A16", "Agent issue loop integrated work for promotion."),
+    LabelSpec(AGENT_REVIEWING_LABEL, "C5DEF5", "Agent issue loop published a review branch."),
     LabelSpec(DELIVERY_GITFLOW_LABEL, "C5DEF5", "Issue should integrate to dev before promotion."),
     LabelSpec(DELIVERY_TRUNK_LABEL, "BFDADC", "Issue may integrate directly to trunk."),
+    LabelSpec(
+        DELIVERY_EXPLORATORY_LABEL,
+        "D4C5F9",
+        "Issue should integrate to a durable review branch.",
+    ),
 )
 
 
@@ -219,6 +240,7 @@ class SandboxIssueAccess:
     token_source: str
     wrapper_path: Path
     repo: str
+    allowed_issue_commands: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -252,6 +274,12 @@ class Issue:
             comments=parse_comment_count(payload.get("comments")),
             author=extract_login(payload.get("author")),
         )
+
+
+@dataclass(frozen=True)
+class PromotedSourceCommit:
+    sha: str
+    subject: str
 
 
 @dataclass(frozen=True)
@@ -405,6 +433,12 @@ class RunManifest:
             "qa_runtime_env": {"status": "not_started"},
             "commits": {},
             "source_tree": None,
+            "promotion_commit_inventory": {
+                "status": "not_started",
+                "base_ref": None,
+                "head_ref": None,
+                "commits": [],
+            },
             "promotion_commit": None,
             "post_promotion_review": {
                 "enabled": not config.skip_post_promotion_review,
@@ -414,6 +448,7 @@ class RunManifest:
                     else "pending"
                 ),
                 "log_path": None,
+                "artifact_path": None,
             },
             "pushes": {},
             "github_metadata": {"status": "not_started", "issues": []},
@@ -471,6 +506,7 @@ class RunManifest:
         status: str,
         *,
         log_path: Path | None = None,
+        artifact_path: Path | None = None,
         reason: str | None = None,
         error: str | None = None,
     ) -> None:
@@ -479,6 +515,8 @@ class RunManifest:
             raise RalphError("Manifest post_promotion_review field is not an object.")
         review["status"] = status
         review["log_path"] = path_text(log_path)
+        if artifact_path is not None or "artifact_path" not in review:
+            review["artifact_path"] = path_text(artifact_path)
         if reason is not None:
             review["reason"] = reason
         if error is not None:
@@ -596,7 +634,7 @@ class RunManifest:
                 "gh auth status",
                 *[
                     f"gh issue {command}"
-                    for command in SANDBOX_ALLOWED_GH_ISSUE_COMMANDS
+                    for command in access.allowed_issue_commands
                 ],
             ],
             "network_access": True,
@@ -620,6 +658,31 @@ class RunManifest:
         ]
         metadata["status"] = "verified_issues"
         self.record_event("github_metadata_verified_issues", details={"count": len(issues)})
+
+    def record_promotion_commit_inventory(
+        self,
+        *,
+        base_ref: str,
+        head_ref: str,
+        commits: list[PromotedSourceCommit],
+        integrated_issues: list[tuple[Issue, str]],
+    ) -> list[dict[str, Any]]:
+        entries = promotion_commit_inventory_entries(
+            commits,
+            integrated_issues,
+        )
+        inventory = {
+            "status": "classified",
+            "base_ref": base_ref,
+            "head_ref": head_ref,
+            "commits": entries,
+        }
+        self.data["promotion_commit_inventory"] = inventory
+        self.record_event(
+            "promotion_commit_inventory_recorded",
+            details={"count": len(commits), "base_ref": base_ref, "head_ref": head_ref},
+        )
+        return entries
 
     def record_promoted_issue_metadata(
         self,
@@ -693,6 +756,39 @@ class RunManifest:
             encoding="utf-8",
         )
         tmp_path.replace(self.path)
+
+
+def promotion_commit_inventory_entries(
+    commits: list[PromotedSourceCommit],
+    integrated_issues: list[tuple[Issue, str]],
+) -> list[dict[str, Any]]:
+    verified_by_commit: dict[str, Issue] = {}
+    for issue, integrated_commit in integrated_issues:
+        if integrated_commit not in verified_by_commit:
+            verified_by_commit[integrated_commit] = issue
+
+    entries: list[dict[str, Any]] = []
+    for commit in commits:
+        issue = verified_by_commit.get(commit.sha)
+        entry: dict[str, Any] = {
+            "sha": commit.sha,
+            "subject": commit.subject,
+            "verified_local_integration": issue is not None,
+            "classification": (
+                "verified_local_integration"
+                if issue is not None
+                else "unverified_promotion_commit"
+            ),
+        }
+        if issue is not None:
+            entry["issue"] = {
+                "number": issue.number,
+                "title": issue.title,
+                "url": issue.url,
+            }
+            entry["integrated_commit"] = commit.sha
+        entries.append(entry)
+    return entries
 
 
 def emit(message: str, *, err: bool = False) -> None:
@@ -832,14 +928,22 @@ def delivery_label_for_mode(mode: str) -> str:
         return DELIVERY_GITFLOW_LABEL
     if mode == TRUNK_MODE:
         return DELIVERY_TRUNK_LABEL
+    if mode == EXPLORATORY_MODE:
+        return DELIVERY_EXPLORATORY_LABEL
     raise ValueError(f"Unsupported delivery mode: {mode}")
 
 
-def default_target_branch_for_mode(mode: str) -> str:
+def default_exploratory_branch(issue: Issue) -> str:
+    return f"{DEFAULT_EXPLORATORY_BRANCH_PREFIX}/issue-{issue.number}-{slugify(issue.title)}"
+
+
+def default_target_branch_for_mode(mode: str, *, issue: Issue) -> str:
     if mode == GITFLOW_MODE:
         return DEFAULT_GITFLOW_BRANCH
     if mode == TRUNK_MODE:
         return DEFAULT_TRUNK_BRANCH
+    if mode == EXPLORATORY_MODE:
+        return default_exploratory_branch(issue)
     raise ValueError(f"Unsupported delivery mode: {mode}")
 
 
@@ -850,7 +954,9 @@ def resolve_delivery_plan(
     target_branch: str | None,
 ) -> DeliveryPlan:
     labels = issue.labels.intersection(DELIVERY_LABELS)
-    if DELIVERY_GITFLOW_LABEL in labels:
+    if DELIVERY_EXPLORATORY_LABEL in labels:
+        mode = EXPLORATORY_MODE
+    elif DELIVERY_GITFLOW_LABEL in labels:
         mode = GITFLOW_MODE
     elif DELIVERY_TRUNK_LABEL in labels:
         mode = TRUNK_MODE
@@ -860,14 +966,17 @@ def resolve_delivery_plan(
     label = delivery_label_for_mode(mode)
     add_labels = [] if label in issue.labels else [label]
     remove_labels: list[str] = []
-    if mode == GITFLOW_MODE and DELIVERY_TRUNK_LABEL in issue.labels:
-        remove_labels.append(DELIVERY_TRUNK_LABEL)
-    if mode == TRUNK_MODE and DELIVERY_GITFLOW_LABEL in issue.labels:
-        remove_labels.append(DELIVERY_GITFLOW_LABEL)
+    for delivery_label in (
+        DELIVERY_GITFLOW_LABEL,
+        DELIVERY_TRUNK_LABEL,
+        DELIVERY_EXPLORATORY_LABEL,
+    ):
+        if delivery_label != label and delivery_label in issue.labels:
+            remove_labels.append(delivery_label)
 
     return DeliveryPlan(
         mode=mode,
-        target_branch=target_branch or default_target_branch_for_mode(mode),
+        target_branch=target_branch or default_target_branch_for_mode(mode, issue=issue),
         label=label,
         add_labels=tuple(add_labels),
         remove_labels=tuple(remove_labels),
@@ -941,12 +1050,22 @@ def select_qa_commands(changed_files: list[str], repo_root: Path) -> list[QAComm
 def select_promotion_gate_commands(
     changed_files: list[str],
     repo_root: Path,
+    *,
+    seed_root: Path | None = None,
 ) -> list[QACommand]:
     if not has_protected_aemo_etl_change(changed_files):
         return []
+    args: tuple[str, ...] = (
+        "scripts/aemo-etl-e2e",
+        "run",
+        "--max-concurrent-runs",
+        str(AEMO_ETL_PROMOTION_E2E_MAX_CONCURRENT_RUNS),
+    )
+    if seed_root is not None:
+        args = (*args, "--seed-root", str(seed_root))
     return [
         QACommand(
-            ("scripts/aemo-etl-e2e", "run"),
+            args,
             repo_root / BACKEND_SERVICES_PREFIX,
             AEMO_ETL_E2E_QA_NAME,
         )
@@ -990,8 +1109,12 @@ def looks_like_environment_failure(error: CommandFailure) -> bool:
     return any(pattern in output for pattern in ENVIRONMENT_FAILURE_PATTERNS)
 
 
-def codex_exec_command(cwd: Path) -> list[str]:
-    return [
+def codex_exec_command(
+    cwd: Path,
+    *,
+    output_last_message: Path | None = None,
+) -> list[str]:
+    command = [
         "codex",
         "exec",
         "--cd",
@@ -1008,9 +1131,11 @@ def codex_exec_command(cwd: Path) -> list[str]:
         "shell_environment_policy.include_only="
         + json.dumps(list(SANDBOX_CODEX_ENV_INCLUDE_ONLY)),
         "--full-auto",
-        "--json",
-        "-",
     ]
+    if output_last_message is not None:
+        command.extend(["--output-last-message", str(output_last_message)])
+    command.extend(["--json", "-"])
+    return command
 
 
 def resolve_sandbox_gh_token(runner: "CommandRunner", repo_root: Path) -> tuple[str, str]:
@@ -1040,8 +1165,13 @@ def resolve_sandbox_gh_token(runner: "CommandRunner", repo_root: Path) -> tuple[
     return token, "gh-auth"
 
 
-def write_sandbox_gh_wrapper(wrapper_path: Path, real_gh_path: Path) -> None:
-    allowed_issue_cases = "|".join(SANDBOX_ALLOWED_GH_ISSUE_COMMANDS)
+def write_sandbox_gh_wrapper(
+    wrapper_path: Path,
+    real_gh_path: Path,
+    *,
+    allowed_issue_commands: tuple[str, ...] = SANDBOX_ALLOWED_GH_ISSUE_COMMANDS,
+) -> None:
+    allowed_issue_cases = "|".join(allowed_issue_commands)
     wrapper_path.parent.mkdir(parents=True, exist_ok=True)
     wrapper_path.write_text(
         textwrap.dedent(
@@ -1076,15 +1206,21 @@ def prepare_sandbox_issue_access(
     repo_root: Path,
     repo: str,
     run_dir: Path,
+    allowed_issue_commands: tuple[str, ...] = SANDBOX_ALLOWED_GH_ISSUE_COMMANDS,
 ) -> SandboxIssueAccess:
     token, token_source = resolve_sandbox_gh_token(runner, repo_root)
     wrapper_path = run_dir / SANDBOX_GH_WRAPPER_DIR_NAME / "gh"
-    write_sandbox_gh_wrapper(wrapper_path, Path(shutil.which("gh") or "gh"))
+    write_sandbox_gh_wrapper(
+        wrapper_path,
+        Path(shutil.which("gh") or "gh"),
+        allowed_issue_commands=allowed_issue_commands,
+    )
     return SandboxIssueAccess(
         token=token,
         token_source=token_source,
         wrapper_path=wrapper_path,
         repo=repo,
+        allowed_issue_commands=allowed_issue_commands,
     )
 
 
@@ -1556,6 +1692,24 @@ class GitClient:
         )
         return sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
 
+    def promoted_source_commits(
+        self,
+        *,
+        base_ref: str,
+        head_ref: str,
+    ) -> list[PromotedSourceCommit]:
+        result = self.runner.run(
+            ["git", "log", "--reverse", "--format=%H%x00%s", f"{base_ref}..{head_ref}"],
+            cwd=self.repo_root,
+        )
+        commits: list[PromotedSourceCommit] = []
+        for line in result.stdout.splitlines():
+            sha, separator, subject = line.partition("\x00")
+            if sha == "" or separator == "":
+                raise RalphError("Could not parse promoted source commit inventory.")
+            commits.append(PromotedSourceCommit(sha=sha, subject=subject))
+        return commits
+
     def has_uncommitted_changes(self, *, cwd: Path) -> bool:
         return self.status_porcelain(cwd=cwd).strip() != ""
 
@@ -1795,6 +1949,8 @@ class RalphLoop:
                 continue
             if self._has_open_blockers(issue):
                 continue
+            if issue_has_any_label(issue, TRIAGE_STOP_LABELS):
+                continue
             if is_basic_triage_candidate(issue):
                 return issue
             if NEEDS_INFO_LABEL in issue.labels:
@@ -1877,6 +2033,11 @@ class RalphLoop:
                 base_ref=f"origin/{target_branch}",
                 head_ref=source_revision,
             )
+            promotion_base_ref = f"origin/{target_branch}"
+            promoted_commits = self.git.promoted_source_commits(
+                base_ref=promotion_base_ref,
+                head_ref=source_revision,
+            )
             manifest.record_changed_files(changed_files, stage="promotion_changes_detected")
             if not changed_files:
                 emit(f"No changes to promote from {source_branch} to {target_branch}.")
@@ -1919,6 +2080,12 @@ class RalphLoop:
                 source_branch=source_branch,
                 source_ref=source_revision,
                 target_branch=target_branch,
+            )
+            promotion_commit_inventory = manifest.record_promotion_commit_inventory(
+                base_ref=promotion_base_ref,
+                head_ref=source_revision,
+                commits=promoted_commits,
+                integrated_issues=integrated_issues,
             )
             manifest.record_promoted_issues(integrated_issues)
 
@@ -1997,6 +2164,7 @@ class RalphLoop:
                 promotion_sha=promotion_sha,
                 changed_files=changed_files,
                 integrated_issues=integrated_issues,
+                promotion_commit_inventory=promotion_commit_inventory,
                 promote_path=promote_path,
                 run_dir=run_dir,
                 manifest=manifest,
@@ -2053,6 +2221,7 @@ class RalphLoop:
         promotion_sha: str,
         changed_files: list[str],
         integrated_issues: list[tuple[Issue, str]],
+        promotion_commit_inventory: list[dict[str, Any]],
         promote_path: Path,
         run_dir: Path,
         manifest: RunManifest,
@@ -2066,10 +2235,15 @@ class RalphLoop:
             return
 
         log_path = run_dir / "codex-post-promotion-review.jsonl"
+        artifact_path = run_dir / "post-promotion-review.md"
         emit("Running Post-promotion review.")
-        manifest.record_post_promotion_review("running", log_path=log_path)
+        manifest.record_post_promotion_review(
+            "running",
+            log_path=log_path,
+            artifact_path=artifact_path,
+        )
         try:
-            self._run_codex(
+            result = self._run_codex(
                 post_promotion_review_prompt(
                     repo=self.config.repo,
                     source_branch=source_branch,
@@ -2078,18 +2252,34 @@ class RalphLoop:
                     promotion_sha=promotion_sha,
                     changed_files=changed_files,
                     integrated_issues=integrated_issues,
+                    promotion_commit_inventory=promotion_commit_inventory,
                     run_dir=run_dir,
                 ),
                 promote_path,
                 log_path,
                 phase="Post-promotion review",
                 manifest=manifest,
+                allowed_issue_commands=SANDBOX_READ_ONLY_GH_ISSUE_COMMANDS,
+                output_last_message=artifact_path,
             )
+            review_markdown = post_promotion_review_markdown_from_artifact(
+                artifact_path,
+                stdout=result.stdout,
+            )
+            if review_markdown == "":
+                raise EnvironmentFailure(
+                    "Post-promotion review completed without Markdown output."
+                )
+            artifact_path.write_text(review_markdown + "\n", encoding="utf-8")
+            emit("Post-promotion review report:")
+            emit("")
+            emit(review_markdown)
         except (CommandFailure, EnvironmentFailure) as error:
             review_log_path = error.log_path or log_path
             manifest.record_post_promotion_review(
                 "failed",
                 log_path=review_log_path,
+                artifact_path=artifact_path,
                 error=str(error),
             )
             post_review_error = PostPushFailure(
@@ -2098,7 +2288,11 @@ class RalphLoop:
             )
             manifest.record_failure(post_review_error, log_path=review_log_path)
             raise post_review_error from error
-        manifest.record_post_promotion_review("completed", log_path=log_path)
+        manifest.record_post_promotion_review(
+            "completed",
+            log_path=log_path,
+            artifact_path=artifact_path,
+        )
 
     def _verified_integrated_issues(
         self,
@@ -2452,7 +2646,7 @@ class RalphLoop:
                 result_message = (
                     f"Issue #{issue.number} merged to {delivery_plan.target_branch}: {commit_sha}"
                 )
-            else:
+            elif delivery_plan.mode == GITFLOW_MODE:
                 emit(f"#{issue.number}: marking {AGENT_INTEGRATED_LABEL}")
                 manifest.record_metadata_status("marking_integrated")
                 self.github.edit_issue_labels(
@@ -2465,6 +2659,26 @@ class RalphLoop:
                     f"Issue #{issue.number} integrated to {delivery_plan.target_branch}: "
                     f"{commit_sha}"
                 )
+            elif delivery_plan.mode == EXPLORATORY_MODE:
+                emit(f"#{issue.number}: marking {AGENT_REVIEWING_LABEL}")
+                manifest.record_metadata_status("marking_reviewing")
+                self.github.edit_issue_labels(
+                    issue.number,
+                    add=[AGENT_REVIEWING_LABEL],
+                    remove=[
+                        AGENT_RUNNING_LABEL,
+                        AGENT_FAILED_LABEL,
+                        AGENT_MERGED_LABEL,
+                        AGENT_INTEGRATED_LABEL,
+                    ],
+                )
+                manifest.record_metadata_status("marked_reviewing")
+                result_message = (
+                    f"Issue #{issue.number} ready for review on "
+                    f"{delivery_plan.target_branch}: {commit_sha}"
+                )
+            else:
+                raise ValueError(f"Unsupported delivery mode: {delivery_plan.mode}")
             self._cleanup_success_artifacts(
                 issue,
                 branch=branch,
@@ -2512,6 +2726,9 @@ class RalphLoop:
             raise IssueFailure(f"Missing required issue section(s): {', '.join(missing)}")
 
     def _ensure_integration_target(self, delivery_plan: DeliveryPlan, run_dir: Path) -> None:
+        if delivery_plan.mode == EXPLORATORY_MODE:
+            self._ensure_exploratory_target(delivery_plan, run_dir)
+            return
         if delivery_plan.mode != GITFLOW_MODE:
             return
         if delivery_plan.target_branch != DEFAULT_GITFLOW_BRANCH:
@@ -2531,6 +2748,23 @@ class RalphLoop:
             run_dir=run_dir,
         )
         self._sync_default_gitflow_target_with_trunk(delivery_plan, run_dir)
+
+    def _ensure_exploratory_target(self, delivery_plan: DeliveryPlan, run_dir: Path) -> None:
+        if delivery_plan.mode != EXPLORATORY_MODE:
+            return
+        if self.git.remote_branch_exists(delivery_plan.target_branch, run_dir=run_dir):
+            return
+
+        emit(
+            f"origin/{delivery_plan.target_branch} does not exist; creating it from "
+            f"origin/{DEFAULT_TRUNK_BRANCH}"
+        )
+        self.git.fetch_base(DEFAULT_TRUNK_BRANCH, run_dir=run_dir)
+        self.git.create_remote_branch(
+            branch=delivery_plan.target_branch,
+            from_ref=f"origin/{DEFAULT_TRUNK_BRANCH}",
+            run_dir=run_dir,
+        )
 
     def _sync_default_gitflow_target_with_trunk(
         self,
@@ -2733,7 +2967,9 @@ class RalphLoop:
         *,
         phase: str,
         manifest: RunManifest | None = None,
-    ) -> None:
+        allowed_issue_commands: tuple[str, ...] = SANDBOX_ALLOWED_GH_ISSUE_COMMANDS,
+        output_last_message: Path | None = None,
+    ) -> CompletedCommand:
         if not self.runner.dry_run:
             log_path.with_suffix(".prompt.md").write_text(prompt, encoding="utf-8")
         sandbox_issue_access = prepare_sandbox_issue_access(
@@ -2741,6 +2977,7 @@ class RalphLoop:
             repo_root=self.config.repo_root,
             repo=self.config.repo,
             run_dir=log_path.parent,
+            allowed_issue_commands=allowed_issue_commands,
         )
         qa_runtime_env = resolve_qa_runtime_env(
             repo=self.config.repo,
@@ -2749,8 +2986,8 @@ class RalphLoop:
         if manifest is not None:
             manifest.record_sandboxed_issue_access(sandbox_issue_access)
             manifest.record_qa_runtime_env(qa_runtime_env)
-        self.runner.run(
-            codex_exec_command(cwd),
+        return self.runner.run(
+            codex_exec_command(cwd, output_last_message=output_last_message),
             cwd=cwd,
             input_text=prompt,
             log_path=log_path,
@@ -2834,7 +3071,11 @@ class RalphLoop:
         *,
         manifest: RunManifest,
     ) -> list[QAResult]:
-        commands = select_promotion_gate_commands(changed_files, repo_root)
+        commands = select_promotion_gate_commands(
+            changed_files,
+            repo_root,
+            seed_root=self.config.repo_root / BACKEND_SERVICES_PREFIX / ".e2e/aemo-etl",
+        )
         return self._run_qa_command_sequence(
             commands,
             run_dir,
@@ -3133,6 +3374,8 @@ def metadata_recovery_complete_status(mode: str) -> str:
         return "closed"
     if mode == GITFLOW_MODE:
         return "marked_integrated"
+    if mode == EXPLORATORY_MODE:
+        return "marked_reviewing"
     raise ValueError(f"Unsupported delivery mode: {mode}")
 
 
@@ -3238,11 +3481,7 @@ def completion_comment_exists(
     commit_sha: str,
     delivery_mode: str,
 ) -> bool:
-    title = (
-        "Ralph trunk integration completed."
-        if delivery_mode == TRUNK_MODE
-        else "Ralph Gitflow integration completed."
-    )
+    title = completion_comment_title(delivery_mode)
     for comment in comments:
         body = str(comment.get("body") or "")
         if title not in body:
@@ -3253,6 +3492,16 @@ def completion_comment_exists(
         if match is not None and match.group("sha") == commit_sha:
             return True
     return False
+
+
+def completion_comment_title(delivery_mode: str) -> str:
+    if delivery_mode == TRUNK_MODE:
+        return "Ralph trunk integration completed."
+    if delivery_mode == GITFLOW_MODE:
+        return "Ralph Gitflow integration completed."
+    if delivery_mode == EXPLORATORY_MODE:
+        return "Ralph exploratory integration completed."
+    raise ValueError(f"Unsupported delivery mode: {delivery_mode}")
 
 
 class RalphRunRecovery:
@@ -3315,9 +3564,14 @@ class RalphRunRecovery:
                     run_dir=recovery_run_dir,
                 )
                 emit(f"Recovered issue #{issue_number} trunk metadata for {commit_sha}.")
-            else:
+            elif delivery_mode == GITFLOW_MODE:
                 self._recover_gitflow_metadata(manifest, issue_number=issue_number)
                 emit(f"Recovered issue #{issue_number} Gitflow metadata for {commit_sha}.")
+            elif delivery_mode == EXPLORATORY_MODE:
+                self._recover_exploratory_metadata(manifest, issue_number=issue_number)
+                emit(f"Recovered issue #{issue_number} exploratory metadata for {commit_sha}.")
+            else:
+                raise ValueError(f"Unsupported delivery mode: {delivery_mode}")
         except CommandFailure as error:
             manifest.record_metadata_status(
                 "failed",
@@ -3426,6 +3680,27 @@ class RalphRunRecovery:
             self.github.reopen_issue(issue_number, run_dir=manifest_run_dir(manifest))
             manifest.record_metadata_status("marked_integrated")
 
+    def _recover_exploratory_metadata(self, manifest: RunManifest, *, issue_number: int) -> None:
+        emit(f"#{issue_number}: reconciling {AGENT_REVIEWING_LABEL}")
+        manifest.record_metadata_status("marking_reviewing")
+        self.github.edit_issue_labels(
+            issue_number,
+            add=[AGENT_REVIEWING_LABEL],
+            remove=[
+                AGENT_RUNNING_LABEL,
+                AGENT_FAILED_LABEL,
+                AGENT_MERGED_LABEL,
+                AGENT_INTEGRATED_LABEL,
+                READY_LABEL,
+            ],
+        )
+        manifest.record_metadata_status("marked_reviewing")
+        if self.github.issue_state(issue_number) == "CLOSED":
+            emit(f"#{issue_number}: reopening issue for exploratory review")
+            manifest.record_metadata_status("reopening_issue")
+            self.github.reopen_issue(issue_number, run_dir=manifest_run_dir(manifest))
+            manifest.record_metadata_status("marked_reviewing")
+
 
 def implementation_prompt(issue: Issue) -> str:
     return textwrap.dedent(
@@ -3496,6 +3771,30 @@ def triage_prompt(issue: Issue, repo: str) -> str:
     ).strip()
 
 
+def promotion_commit_inventory_prompt_lines(entries: list[dict[str, Any]]) -> str:
+    if not entries:
+        return "- None"
+
+    lines: list[str] = []
+    for entry in entries:
+        sha = str(entry.get("sha") or "")
+        subject = str(entry.get("subject") or "")
+        classification = str(entry.get("classification") or "unverified_promotion_commit")
+        if classification == "verified_local_integration":
+            issue_value = entry.get("issue")
+            issue_text = ""
+            if isinstance(issue_value, dict):
+                issue_number = issue_value.get("number")
+                issue_title = str(issue_value.get("title") or "")
+                issue_text = f" for #{issue_number} {issue_title}".rstrip()
+            lines.append(
+                f"- `{sha}` {subject} - verified Local integration commit{issue_text}"
+            )
+            continue
+        lines.append(f"- `{sha}` {subject} - unverified Promotion commit")
+    return "\n".join(lines)
+
+
 def post_promotion_review_prompt(
     *,
     repo: str,
@@ -3505,6 +3804,7 @@ def post_promotion_review_prompt(
     promotion_sha: str,
     changed_files: list[str],
     integrated_issues: list[tuple[Issue, str]],
+    promotion_commit_inventory: list[dict[str, Any]],
     run_dir: Path,
 ) -> str:
     changed_lines = "\n".join(f"- {path}" for path in changed_files)
@@ -3516,6 +3816,7 @@ def post_promotion_review_prompt(
     )
     if not issue_lines:
         issue_lines = "- None"
+    commit_lines = promotion_commit_inventory_prompt_lines(promotion_commit_inventory)
     return textwrap.dedent(
         f"""
         Run a Post-promotion review for {repo}.
@@ -3525,14 +3826,38 @@ def post_promotion_review_prompt(
         check, Push check, Local integration, Delivery mode, Integration
         target, and Promotion.
 
-        Do not edit files, commit, push, or edit GitHub labels/comments. Report
-        findings in the command output only.
+        Do not edit repo files, commit, push, create issues, comment, label,
+        close, reopen, or edit GitHub Issues. You may read Promotion context and
+        GitHub Issues with `gh auth status`, `gh issue view`, `gh issue list`,
+        and `gh issue status` only. Report findings in the command output only;
+        Ralph will save your final Markdown report as `post-promotion-review.md`.
 
         Review the completed Promotion for regressions, missed issue evidence,
-        surprising changed files, and obvious follow-up risks. Prioritize
-        concrete findings with file paths, commands, commits, or manifest
-        fields. If no issues are found, say that clearly and mention any
-        residual risk.
+        surprising changed files, unverified Promotion commits, and obvious
+        follow-up risks. Distinguish verified Local integration commits from
+        unverified Promotion commits; do not assume all promoted files belong
+        only to the verified issues. Prioritize concrete findings with file
+        paths, commands, commits, or manifest fields. If no issues are found,
+        say that clearly and mention any residual risk.
+
+        Your final response must be a Markdown report with these sections:
+
+        # Post-promotion Review
+
+        ## Findings
+
+        ## Learnings
+
+        ## Follow-up GitHub Issue Drafts
+
+        Each follow-up draft must include:
+
+        - Title
+        - Rationale
+        - Acceptance criteria
+        - Suggested labels
+
+        Do not create the follow-up issues. Draft them in the report only.
 
         Promotion details:
 
@@ -3543,7 +3868,11 @@ def post_promotion_review_prompt(
         - Run logs: `{run_dir}`
         - Run manifest: `{run_dir / MANIFEST_NAME}`
 
-        Promoted files:
+        Promoted source commits:
+
+        {commit_lines}
+
+        Promoted files (full Promotion range, not per-issue ownership):
 
         {changed_lines}
 
@@ -3552,6 +3881,120 @@ def post_promotion_review_prompt(
         {issue_lines}
         """
     ).strip()
+
+
+def post_promotion_review_markdown_from_stdout(stdout: str) -> str:
+    assistant_messages: list[str] = []
+    plain_lines: list[str] = []
+
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        if stripped == "":
+            if plain_lines:
+                plain_lines.append("")
+            continue
+        try:
+            event = json.loads(stripped)
+        except json.JSONDecodeError:
+            plain_lines.append(line)
+            continue
+
+        message = assistant_markdown_from_codex_event(event)
+        if message != "":
+            assistant_messages.append(message)
+
+    if assistant_messages:
+        return assistant_messages[-1].strip()
+    return "\n".join(plain_lines).strip()
+
+
+def post_promotion_review_markdown_from_artifact(
+    artifact_path: Path,
+    *,
+    stdout: str,
+) -> str:
+    if artifact_path.exists():
+        artifact_markdown = artifact_path.read_text(encoding="utf-8").strip()
+        if artifact_markdown != "":
+            return artifact_markdown
+    return post_promotion_review_markdown_from_stdout(stdout)
+
+
+def assistant_markdown_from_codex_event(event: Any) -> str:
+    if not isinstance(event, dict):
+        return ""
+
+    event_type = str(event.get("type") or "")
+    if event_type == "agent_message":
+        message = event.get("message")
+        if isinstance(message, str):
+            return message.strip()
+        return assistant_markdown_from_message(message)
+
+    for key in ("item", "message", "response"):
+        message = assistant_markdown_from_message(event.get(key))
+        if message != "":
+            return message
+
+    return assistant_markdown_from_message(event)
+
+
+def assistant_markdown_from_message(message: Any) -> str:
+    if isinstance(message, str):
+        return message.strip()
+    if not isinstance(message, dict):
+        return ""
+
+    role = message.get("role")
+    if role is not None and role != "assistant":
+        return ""
+
+    content = message.get("content")
+    if content is not None:
+        return markdown_text_from_content(content)
+
+    text = message.get("text")
+    if isinstance(text, str):
+        return text.strip()
+
+    nested_message = message.get("message")
+    if isinstance(nested_message, str):
+        return nested_message.strip()
+
+    for key in ("output", "items"):
+        items = message.get(key)
+        if not isinstance(items, list):
+            continue
+        for item in reversed(items):
+            item_message = assistant_markdown_from_message(item)
+            if item_message != "":
+                return item_message
+
+    return ""
+
+
+def markdown_text_from_content(content: Any) -> str:
+    if isinstance(content, str):
+        return content.strip()
+    if not isinstance(content, list):
+        return ""
+
+    pieces: list[str] = []
+    for item in content:
+        if isinstance(item, str):
+            pieces.append(item)
+            continue
+        if not isinstance(item, dict):
+            continue
+        text = item.get("text")
+        if isinstance(text, str):
+            pieces.append(text)
+            continue
+        nested_content = item.get("content")
+        if isinstance(nested_content, str):
+            pieces.append(nested_content)
+
+    return "".join(pieces).strip()
 
 
 def command_failure_summary(error: CommandFailure) -> str:
@@ -3594,14 +4037,22 @@ def build_completion_comment(
     ]
     changed_lines = [f"- `{path}`" for path in changed_files]
     if delivery_plan.mode == TRUNK_MODE:
-        title = "Ralph trunk integration completed."
+        title = completion_comment_title(delivery_plan.mode)
         issue_state = f"Issue #{issue.number} will be closed by the Ralph loop."
-    else:
-        title = "Ralph Gitflow integration completed."
+    elif delivery_plan.mode == GITFLOW_MODE:
+        title = completion_comment_title(delivery_plan.mode)
         issue_state = (
             f"Issue #{issue.number} will stay open until Ralph promotes "
             f"`{delivery_plan.target_branch}`."
         )
+    elif delivery_plan.mode == EXPLORATORY_MODE:
+        title = completion_comment_title(delivery_plan.mode)
+        issue_state = (
+            f"Issue #{issue.number} is ready for review on "
+            f"`{delivery_plan.target_branch}`."
+        )
+    else:
+        raise ValueError(f"Unsupported delivery mode: {delivery_plan.mode}")
     return "\n".join(
         [
             title,
@@ -3650,7 +4101,12 @@ def build_promotion_comment(
             f"Source branch: `{source_branch}`",
             f"Target branch: `{target_branch}`",
             "",
-            "## Promoted files",
+            "## Promotion file inventory",
+            "",
+            (
+                f"These files are from the full Promotion range, not only "
+                f"issue #{issue.number}."
+            ),
             "",
             *changed_lines,
             "",
@@ -3740,7 +4196,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--target-branch",
-        help="Remote branch to integrate into. Defaults to dev for gitflow and main for trunk.",
+        help=(
+            "Remote branch to integrate into. Defaults to dev for gitflow, "
+            "main for trunk, and agent/review/issue-N-slug for exploratory."
+        ),
     )
     parser.add_argument(
         "--source-branch",

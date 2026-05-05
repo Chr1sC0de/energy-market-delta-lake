@@ -285,12 +285,14 @@ generated stack contains Postgres, LocalStack, the cached Archive seed loader,
 the AEMO ETL gRPC service, one Dagster webserver, and the Dagster daemon. It
 does not start Caddy, authentication, Marimo, or the second developer webserver.
 The seed loader validates the cached Archive seed under
-`backend-services/.e2e/aemo-etl`; refresh that cache with
+`backend-services/.e2e/aemo-etl`, or under the explicit `--seed-root` path when
+the stack runs from an ephemeral worktree. Refresh that cache with
 `uv run aemo-e2e-archive-seed refresh` only when the local seed needs to change.
 
 | Option | Default | Purpose |
 |---|---:|---|
 | `--webserver-port` | `3001` | Host port for the isolated Dagster webserver |
+| `--seed-root` | `backend-services/.e2e/aemo-etl` | Cached Archive seed root mounted into the isolated stack |
 | `--raw-latest-count` | `3` | Cached raw source-table objects required per table |
 | `--zip-latest-count` | `3` | Cached zip objects required per domain |
 | `--timeout-seconds` | `5400` | Overall stack and dataflow timeout |
@@ -324,6 +326,14 @@ volumes, service logs, the run manifest, and the seed-run manifest for
 inspection. Use `--reuse` to keep and reuse the e2e stack after a successful
 run, or `--always-clean` to clean containers, volumes, and run-worker containers
 even after failure.
+
+Each `run-manifest.json` includes structured telemetry for Promotion review:
+total gate duration, stack startup duration, Dagster dataflow monitor duration,
+cumulative cleanup duration, cleanup phase timings, peak active and queued
+Dagster run counts, final run status counts, final target progress, first and
+last observed target materialization timestamps, and the final failed
+asset-check count. Failed runs include telemetry for every monitor sample
+captured before the failure.
 
 ______________________________________________________________________
 

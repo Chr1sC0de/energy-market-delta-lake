@@ -36,6 +36,27 @@ Build it.
 None
 """
 
+POST_PROMOTION_REVIEW_MARKDOWN = """# Post-promotion Review
+
+## Findings
+
+No blocking findings.
+
+## Learnings
+
+- Promotion evidence stayed consistent after `main` push and `dev` sync.
+
+## Follow-up GitHub Issue Drafts
+
+### Harden Promotion evidence checks
+
+- Title: Harden Promotion evidence checks
+- Rationale: Preserve the verified issue metadata behavior during future Ralph changes.
+- Acceptance criteria:
+  - [ ] Promotion reports continue to include verified issue evidence.
+- Suggested labels: `needs-triage`, `delivery-gitflow`
+"""
+
 
 def make_issue(labels: set[str], body: str = ""):
     return ralph.Issue(
@@ -147,6 +168,12 @@ class FakeRunner:
             return ralph.CompletedCommand(stdout=json.dumps({"comments": []}), stderr="")
         if command == ("gh", "auth", "token"):
             return ralph.CompletedCommand(stdout="fake-gh-token\n", stderr="")
+        if command[:2] == ("codex", "exec") and input_text is not None:
+            if "Run a Post-promotion review" in input_text:
+                return ralph.CompletedCommand(
+                    stdout=POST_PROMOTION_REVIEW_MARKDOWN,
+                    stderr="",
+                )
         return ralph.CompletedCommand(stdout="", stderr="")
 
 
@@ -399,6 +426,9 @@ Build it.
         self.assertFalse(
             ralph.is_ready_candidate(make_issue({"ready-for-agent", "agent-merged"}))
         )
+        self.assertFalse(
+            ralph.is_ready_candidate(make_issue({"ready-for-agent", "agent-reviewing"}))
+        )
 
     def test_basic_triage_candidate_accepts_unlabeled_and_needs_triage(self) -> None:
         self.assertTrue(ralph.is_basic_triage_candidate(make_issue(set())))
@@ -406,6 +436,44 @@ Build it.
         self.assertFalse(ralph.is_basic_triage_candidate(make_issue({"ready-for-agent"})))
         self.assertFalse(ralph.is_basic_triage_candidate(make_issue({"wontfix"})))
         self.assertFalse(ralph.is_basic_triage_candidate(make_issue({"agent-merged"})))
+        self.assertFalse(ralph.is_basic_triage_candidate(make_issue({"agent-reviewing"})))
+
+    def test_agent_reviewing_blocks_needs_info_triage_reconsideration(self) -> None:
+        issue_list_command = (
+            "gh",
+            "issue",
+            "list",
+            "-R",
+            "example/repo",
+            "--state",
+            "open",
+            "--limit",
+            "100",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        payload = [
+            {
+                "number": 42,
+                "title": "Implement thing",
+                "body": IMPLEMENTATION_BODY,
+                "labels": [{"name": "needs-info"}, {"name": "agent-reviewing"}],
+                "createdAt": "2026-04-30T00:00:00Z",
+                "updatedAt": "2026-04-30T00:00:00Z",
+                "url": "https://github.com/example/repo/issues/42",
+                "comments": [],
+                "author": {"login": "reporter"},
+            }
+        ]
+        runner = FakeRunner(command_outputs={issue_list_command: [json.dumps(payload)]})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(Path(tmp), runner)
+
+            self.assertIsNone(loop._next_triage_issue())
+
+        commands = [call.args for call in runner.calls]
+        self.assertNotIn(("gh", "api", "user", "--jq", ".login"), commands)
 
     def test_delivery_plan_defaults_to_gitflow_and_adds_label(self) -> None:
         plan = ralph.resolve_delivery_plan(
@@ -427,6 +495,40 @@ Build it.
 
         self.assertEqual(plan.mode, ralph.GITFLOW_MODE)
         self.assertEqual(plan.remove_labels, ("delivery-trunk",))
+
+    def test_delivery_plan_defaults_to_exploratory_review_branch(self) -> None:
+        plan = ralph.resolve_delivery_plan(
+            make_issue({"ready-for-agent"}),
+            default_mode=ralph.EXPLORATORY_MODE,
+            target_branch=None,
+        )
+
+        self.assertEqual(plan.mode, ralph.EXPLORATORY_MODE)
+        self.assertEqual(plan.target_branch, "agent/review/issue-42-implement-thing")
+        self.assertEqual(plan.add_labels, ("delivery-exploratory",))
+
+    def test_delivery_plan_exploratory_wins_conflicting_delivery_labels(self) -> None:
+        plan = ralph.resolve_delivery_plan(
+            make_issue(
+                {
+                    "ready-for-agent",
+                    "delivery-exploratory",
+                    "delivery-gitflow",
+                    "delivery-trunk",
+                }
+            ),
+            default_mode=ralph.GITFLOW_MODE,
+            target_branch=None,
+        )
+
+        self.assertEqual(plan.mode, ralph.EXPLORATORY_MODE)
+        self.assertEqual(plan.remove_labels, ("delivery-gitflow", "delivery-trunk"))
+
+    def test_label_specs_include_exploratory_delivery_and_reviewing_state(self) -> None:
+        label_names = {label.name for label in ralph.LABEL_SPECS}
+
+        self.assertIn("delivery-exploratory", label_names)
+        self.assertIn("agent-reviewing", label_names)
 
     def test_triage_prompt_uses_ralph_triage_skill(self) -> None:
         prompt = ralph.triage_prompt(make_issue({"needs-triage"}), "example/repo")
@@ -525,15 +627,38 @@ Build it.
                 self.assertTrue(ralph.has_protected_aemo_etl_change([path]))
 
     def test_select_promotion_gate_commands_for_aemo_etl_changes(self) -> None:
+        seed_root = Path("/seed-cache")
+        commands = ralph.select_promotion_gate_commands(
+            ["backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"],
+            Path("/repo"),
+            seed_root=seed_root,
+        )
+
+        self.assertEqual(len(commands), 1)
+        self.assertEqual(commands[0].name, "aemo-etl End-to-end test")
+        self.assertEqual(
+            commands[0].args,
+            (
+                "scripts/aemo-etl-e2e",
+                "run",
+                "--max-concurrent-runs",
+                "2",
+                "--seed-root",
+                str(seed_root),
+            ),
+        )
+        self.assertEqual(commands[0].cwd, Path("/repo/backend-services"))
+
+    def test_select_promotion_gate_commands_allows_default_seed_root(self) -> None:
         commands = ralph.select_promotion_gate_commands(
             ["backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"],
             Path("/repo"),
         )
 
-        self.assertEqual(len(commands), 1)
-        self.assertEqual(commands[0].name, "aemo-etl End-to-end test")
-        self.assertEqual(commands[0].args, ("scripts/aemo-etl-e2e", "run"))
-        self.assertEqual(commands[0].cwd, Path("/repo/backend-services"))
+        self.assertEqual(
+            commands[0].args,
+            ("scripts/aemo-etl-e2e", "run", "--max-concurrent-runs", "2"),
+        )
 
     def test_select_promotion_gate_commands_skips_aemo_etl_docs_only_changes(
         self,
@@ -684,6 +809,7 @@ Build it.
             token_source="env:GH_TOKEN",
             wrapper_path=Path("/tmp/ralph-sandbox-bin/gh"),
             repo="example/repo",
+            allowed_issue_commands=ralph.SANDBOX_ALLOWED_GH_ISSUE_COMMANDS,
         )
 
         with patch.dict(
@@ -744,6 +870,79 @@ Build it.
                 text=True,
             )
             self.assertEqual(blocked_issue.returncode, 126)
+
+    def test_sandbox_gh_wrapper_read_only_blocks_issue_mutations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            captured_args = tmp_path / "captured-args.txt"
+            real_gh = tmp_path / "real-gh"
+            real_gh.write_text(
+                "#!/usr/bin/env sh\n"
+                "printf '%s\\n' \"$@\" > "
+                f"{ralph.shlex.quote(str(captured_args))}\n",
+                encoding="utf-8",
+            )
+            real_gh.chmod(0o700)
+            wrapper = tmp_path / "bin" / "gh"
+
+            ralph.write_sandbox_gh_wrapper(
+                wrapper,
+                real_gh,
+                allowed_issue_commands=ralph.SANDBOX_READ_ONLY_GH_ISSUE_COMMANDS,
+            )
+            subprocess.run(
+                [str(wrapper), "issue", "view", "42"],
+                check=True,
+            )
+            self.assertEqual(
+                captured_args.read_text(encoding="utf-8").splitlines(),
+                ["issue", "view", "42"],
+            )
+
+            mutation_commands = [
+                ["issue", "comment", "42", "--body", "nope"],
+                ["issue", "edit", "42", "--add-label", "ready-for-agent"],
+                ["issue", "close", "42"],
+                ["issue", "reopen", "42"],
+                ["issue", "create", "--title", "nope"],
+            ]
+            for mutation_command in mutation_commands:
+                with self.subTest(command=mutation_command):
+                    blocked = subprocess.run(
+                        [str(wrapper), *mutation_command],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(blocked.returncode, 126)
+                    self.assertIn("blocked gh command", blocked.stderr)
+
+    def test_post_promotion_review_markdown_reads_codex_json_final_message(self) -> None:
+        stdout = "\n".join(
+            [
+                json.dumps({"type": "session_configured", "session_id": "test"}),
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "type": "message",
+                            "role": "assistant",
+                            "content": [
+                                {
+                                    "type": "output_text",
+                                    "text": POST_PROMOTION_REVIEW_MARKDOWN,
+                                }
+                            ],
+                        },
+                    }
+                ),
+            ]
+        )
+
+        self.assertEqual(
+            ralph.post_promotion_review_markdown_from_stdout(stdout),
+            POST_PROMOTION_REVIEW_MARKDOWN.strip(),
+        )
 
     def test_run_codex_injects_sandbox_issue_access_without_recording_token(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -849,6 +1048,7 @@ Build it.
         self.assertIn("Use 0 for unlimited", help_text)
         self.assertIn("--allow-dirty-worktree", help_text)
         self.assertIn("--skip-post-promotion-review", help_text)
+        self.assertIn("exploratory", help_text)
 
     def test_build_config_records_post_promotion_review_skip_flag(self) -> None:
         runner = FakeRunner(
@@ -929,6 +1129,24 @@ Build it.
 
         self.assertEqual(config.delivery_mode, ralph.TRUNK_MODE)
         self.assertEqual(config.target_branch, "main")
+
+    def test_build_config_accepts_exploratory_delivery_mode(self) -> None:
+        runner = FakeRunner(
+            command_outputs={
+                ("git", "rev-parse", "--show-toplevel"): ["/work/repo\n"],
+                ("git", "config", "--get", "remote.origin.url"): [
+                    "git@github.com:example/repo.git\n"
+                ],
+            }
+        )
+
+        config = ralph.build_config(
+            ralph.parse_args(["--delivery-mode", "exploratory"]),
+            runner,
+        )
+
+        self.assertEqual(config.delivery_mode, ralph.EXPLORATORY_MODE)
+        self.assertIsNone(config.target_branch)
 
     def test_dirty_root_blocks_live_issue_drain_and_promote_before_side_effects(self) -> None:
         cases = [
@@ -1048,6 +1266,39 @@ Build it.
         self.assertIn("- `scripts/ralph.py`", comment)
         self.assertIn("python3 -m unittest discover -s tests", comment)
         self.assertIn("Issue #42 will be closed by the Ralph loop.", comment)
+
+    def test_exploratory_completion_comment_records_review_branch(self) -> None:
+        issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+        qa_results = [
+            ralph.QAResult(
+                command=ralph.QACommand(
+                    ("python3", "-m", "unittest", "discover", "-s", "tests"),
+                    Path("/repo"),
+                    "Ralph unit tests",
+                ),
+                log_path=Path("/logs/qa.log"),
+            )
+        ]
+
+        comment = ralph.build_completion_comment(
+            issue,
+            "abc123",
+            ["scripts/ralph.py"],
+            qa_results,
+            Path("/logs/run"),
+            delivery_plan=ralph.DeliveryPlan(
+                mode=ralph.EXPLORATORY_MODE,
+                target_branch="agent/review/issue-42-implement-thing",
+                label="delivery-exploratory",
+                add_labels=(),
+                remove_labels=(),
+            ),
+        )
+
+        self.assertIn("Ralph exploratory integration completed.", comment)
+        self.assertIn("Delivery mode: `exploratory`", comment)
+        self.assertIn("Target branch: `agent/review/issue-42-implement-thing`", comment)
+        self.assertIn("Issue #42 is ready for review on", comment)
 
     def test_user_facing_error_includes_command_stderr(self) -> None:
         error = ralph.CommandFailure(
@@ -1668,6 +1919,74 @@ Build it.
             self.assertIn("Target branch: `dev`", comment)
             self.assertIn("will stay open until Ralph promotes `dev`", comment)
 
+    def test_exploratory_implementation_creates_review_branch_and_marks_reviewing(
+        self,
+    ) -> None:
+        review_branch = "agent/review/issue-42-implement-thing"
+        ls_remote = (
+            "git",
+            "ls-remote",
+            "--exit-code",
+            "--heads",
+            "origin",
+            review_branch,
+        )
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            fail_commands={ls_remote: 2},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(Path(tmp), runner, delivery_mode=ralph.EXPLORATORY_MODE)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                loop._handle_implementation(issue)
+
+            commands = [call.args for call in runner.calls]
+            self.assertIn(
+                ("git", "push", "origin", f"origin/main:refs/heads/{review_branch}"),
+                commands,
+            )
+            self.assertIn(("git", "push", "origin", f"HEAD:{review_branch}"), commands)
+            self.assertIn(
+                (
+                    "gh",
+                    "issue",
+                    "edit",
+                    "42",
+                    "-R",
+                    "example/repo",
+                    "--add-label",
+                    "agent-reviewing",
+                    "--remove-label",
+                    "agent-running",
+                    "--remove-label",
+                    "agent-failed",
+                    "--remove-label",
+                    "agent-merged",
+                    "--remove-label",
+                    "agent-integrated",
+                ),
+                commands,
+            )
+            self.assertFalse(any(command[:3] == ("gh", "issue", "close") for command in commands))
+            self.assertIn(
+                f"Issue #42 ready for review on {review_branch}: merge-sha",
+                output.getvalue(),
+            )
+
+            comment_path = next((Path(tmp) / "logs").glob("issue-42-*/issue-42-comment.md"))
+            comment = comment_path.read_text(encoding="utf-8")
+            manifest = load_run_manifest(Path(tmp))
+            self.assertIn("Ralph exploratory integration completed.", comment)
+            self.assertIn(f"Target branch: `{review_branch}`", comment)
+            self.assertEqual(manifest["delivery_mode"], "exploratory")
+            self.assertEqual(manifest["integration_target"], review_branch)
+            self.assertEqual(manifest["github_metadata"]["status"], "marked_reviewing")
+
     def test_gitflow_implementation_syncs_dev_with_main_before_issue_branch(self) -> None:
         ancestor_command = (
             "git",
@@ -1816,6 +2135,13 @@ Build it.
             "abc1234",
             "origin/main",
         )
+        promotion_log_command = (
+            "git",
+            "log",
+            "--reverse",
+            "--format=%H%x00%s",
+            "origin/main..source-sha",
+        )
         issue_payload = [
             {
                 "number": 42,
@@ -1848,17 +2174,26 @@ Build it.
             command_outputs={
                 issue_list_command: [json.dumps(issue_payload)],
                 issue_comments_command: [json.dumps(comments_payload)],
+                promotion_log_command: [
+                    (
+                        "abc1234\x00Ralph Local integration for issue 42\n"
+                        "def5678\x00Manual follow-up after issue integration\n"
+                    )
+                ],
             },
             fail_commands={target_ancestor_command: 1},
         )
 
         with tempfile.TemporaryDirectory() as tmp:
             loop = make_loop(Path(tmp), runner, promote=True)
-            with redirect_stdout(io.StringIO()):
+            output = io.StringIO()
+            with redirect_stdout(output):
                 loop._promote()
 
             comment_path = next((Path(tmp) / "logs").glob("promote-*/issue-42-comment.md"))
             comment = comment_path.read_text(encoding="utf-8")
+            artifact_path = next((Path(tmp) / "logs").glob("promote-*/post-promotion-review.md"))
+            artifact = artifact_path.read_text(encoding="utf-8")
             manifest = load_run_manifest(Path(tmp), run_glob="promote-*")
 
         commands = [call.args for call in runner.calls]
@@ -1922,16 +2257,59 @@ Build it.
         self.assertIn(edit_command, commands)
         self.assertIn(close_command, commands)
         self.assertNotIn(("scripts/aemo-etl-e2e", "run"), commands)
-        review_command = tuple(ralph.codex_exec_command(promote_path))
+        review_command = tuple(
+            ralph.codex_exec_command(
+                promote_path,
+                output_last_message=artifact_path,
+            )
+        )
         review_index = commands.index(review_command)
         cleanup_index = commands.index(("git", "worktree", "remove", str(promote_path)))
+        self.assertLess(
+            commands.index(("git", "push", "origin", "HEAD:main")),
+            review_index,
+        )
+        self.assertLess(
+            commands.index(("git", "push", "origin", "HEAD:dev")),
+            review_index,
+        )
+        self.assertLess(commands.index(edit_command), review_index)
         self.assertLess(commands.index(close_command), review_index)
         self.assertLess(review_index, cleanup_index)
         self.assertEqual(runner.calls[review_index].cwd, promote_path)
+        self.assertIn("--output-last-message", runner.calls[review_index].args)
         self.assertIn("Run a Post-promotion review", runner.calls[review_index].input_text)
+        self.assertIn("## Learnings", runner.calls[review_index].input_text)
+        self.assertIn("## Follow-up GitHub Issue Drafts", runner.calls[review_index].input_text)
+        self.assertIn("Do not create the follow-up issues.", runner.calls[review_index].input_text)
+        self.assertIn(
+            "`abc1234` Ralph Local integration for issue 42 - "
+            "verified Local integration commit for #42 Implement thing",
+            runner.calls[review_index].input_text,
+        )
+        self.assertIn(
+            "`def5678` Manual follow-up after issue integration - "
+            "unverified Promotion commit",
+            runner.calls[review_index].input_text,
+        )
+        self.assertIn(
+            "Promoted files (full Promotion range, not per-issue ownership):",
+            runner.calls[review_index].input_text,
+        )
+        self.assertIn(POST_PROMOTION_REVIEW_MARKDOWN.strip(), output.getvalue())
+        self.assertEqual(artifact, POST_PROMOTION_REVIEW_MARKDOWN.rstrip() + "\n")
+        self.assertIn("- Title: Harden Promotion evidence checks", artifact)
+        self.assertIn("- Rationale:", artifact)
+        self.assertIn("- Acceptance criteria:", artifact)
+        self.assertIn("- Suggested labels:", artifact)
         self.assertIn("Ralph promotion completed.", comment)
         self.assertIn("Promotion commit: `promotion-sha`", comment)
         self.assertIn("Integrated commit: `abc1234`", comment)
+        self.assertIn("## Promotion file inventory", comment)
+        self.assertIn(
+            "These files are from the full Promotion range, not only issue #42.",
+            comment,
+        )
         self.assertEqual(manifest["run_kind"], "promotion")
         self.assertEqual(manifest["status"], "succeeded")
         self.assertEqual(manifest["delivery_mode"], "gitflow")
@@ -1950,11 +2328,52 @@ Build it.
             },
         )
         self.assertEqual(manifest["promotion_commit"]["sha"], "promotion-sha")
+        self.assertEqual(
+            manifest["promotion_commit_inventory"]["base_ref"],
+            "origin/main",
+        )
+        self.assertEqual(
+            manifest["promotion_commit_inventory"]["head_ref"],
+            "source-sha",
+        )
+        self.assertEqual(manifest["promotion_commit_inventory"]["status"], "classified")
+        self.assertEqual(
+            manifest["promotion_commit_inventory"]["commits"],
+            [
+                {
+                    "sha": "abc1234",
+                    "subject": "Ralph Local integration for issue 42",
+                    "verified_local_integration": True,
+                    "classification": "verified_local_integration",
+                    "issue": {
+                        "number": 42,
+                        "title": "Implement thing",
+                        "url": "https://github.com/example/repo/issues/42",
+                    },
+                    "integrated_commit": "abc1234",
+                },
+                {
+                    "sha": "def5678",
+                    "subject": "Manual follow-up after issue integration",
+                    "verified_local_integration": False,
+                    "classification": "unverified_promotion_commit",
+                },
+            ],
+        )
         self.assertEqual(manifest["post_promotion_review"]["status"], "completed")
         self.assertIn(
             "codex-post-promotion-review.jsonl",
             manifest["post_promotion_review"]["log_path"],
         )
+        self.assertEqual(
+            manifest["post_promotion_review"]["artifact_path"],
+            str(artifact_path),
+        )
+        allowed_commands = manifest["sandboxed_issue_access"]["allowed_commands"]
+        self.assertIn("gh issue view", allowed_commands)
+        self.assertNotIn("gh issue comment", allowed_commands)
+        self.assertNotIn("gh issue edit", allowed_commands)
+        self.assertNotIn("gh issue close", allowed_commands)
         self.assertEqual(manifest["pushes"]["promotion_target"]["status"], "pushed")
         self.assertEqual(manifest["pushes"]["source_branch_sync"]["status"], "pushed")
         self.assertEqual(manifest["github_metadata"]["issues"][0]["number"], 42)
@@ -2118,7 +2537,15 @@ Build it.
                 loop._promote()
 
             commands = [call.args for call in runner.calls]
-            e2e_index = commands.index(("scripts/aemo-etl-e2e", "run"))
+            e2e_command = (
+                "scripts/aemo-etl-e2e",
+                "run",
+                "--max-concurrent-runs",
+                "2",
+                "--seed-root",
+                str(tmp_path / "repo" / "backend-services" / ".e2e/aemo-etl"),
+            )
+            e2e_index = commands.index(e2e_command)
             run_prek_index = commands.index(("make", "run-prek"))
             source_path = tmp_path / "worktrees" / "agent-promote-source-dev-to-main"
             promote_path = tmp_path / "worktrees" / "agent-promote-dev-to-main"
@@ -2169,7 +2596,17 @@ Build it.
             if result["name"] == "aemo-etl End-to-end test"
         ]
         self.assertEqual(len(e2e_results), 1)
-        self.assertEqual(e2e_results[0]["command"], ["scripts/aemo-etl-e2e", "run"])
+        self.assertEqual(
+            e2e_results[0]["command"],
+            [
+                "scripts/aemo-etl-e2e",
+                "run",
+                "--max-concurrent-runs",
+                "2",
+                "--seed-root",
+                str(tmp_path / "repo" / "backend-services" / ".e2e/aemo-etl"),
+            ],
+        )
         self.assertTrue(e2e_results[0]["cwd"].endswith("/agent-promote-source-dev-to-main/backend-services"))
         self.assertEqual(e2e_results[0]["status"], "passed")
         self.assertIn(
@@ -2180,15 +2617,22 @@ Build it.
 
     def test_promotion_e2e_gate_failure_stops_before_side_effects(self) -> None:
         changed_file = "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"
-        e2e_command = ("scripts/aemo-etl-e2e", "run")
-        runner = FakeRunner(
-            diff_outputs=[f"{changed_file}\n"],
-            rev_parse_outputs=["source-sha\n"],
-            fail_commands={e2e_command},
-        )
-
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
+            e2e_command = (
+                "scripts/aemo-etl-e2e",
+                "run",
+                "--max-concurrent-runs",
+                "2",
+                "--seed-root",
+                str(tmp_path / "repo" / "backend-services" / ".e2e/aemo-etl"),
+            )
+            runner = FakeRunner(
+                diff_outputs=[f"{changed_file}\n"],
+                rev_parse_outputs=["source-sha\n"],
+                fail_commands={e2e_command},
+            )
+
             loop = make_loop(tmp_path, runner, promote=True)
             with self.assertRaises(ralph.CommandFailure):
                 with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
