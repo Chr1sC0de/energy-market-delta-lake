@@ -9,7 +9,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.request import Request, urlopen
@@ -246,6 +246,22 @@ query E2EDataflowRunStatus(
       message
     }
   }
+  allRuns: runsOrError(
+    filter: {createdAfter: $createdAfter}
+    limit: 1000
+  ) {
+    __typename
+    ... on Runs {
+      results {
+        runId
+        jobName
+        status
+      }
+    }
+    ... on Error {
+      message
+    }
+  }
 }
 """
 
@@ -382,11 +398,27 @@ class DagsterDataflowStatus:
     failed_target_assets: tuple[str, ...]
     missing_asset_checks: tuple[str, ...]
     failed_asset_checks: tuple[str, ...]
+    run_status_counts: Mapping[str, int] = field(default_factory=dict)
+    target_materialization_timestamps: tuple[float, ...] = ()
 
     @property
     def target_asset_count(self) -> int:
         """Return the total number of target assets observed by the monitor."""
         return len(self.materialized_target_assets) + len(self.missing_target_assets)
+
+    @property
+    def active_run_count(self) -> int:
+        """Return active non-queued runs from the observed run statuses."""
+        return sum(
+            self.run_status_counts.get(status, 0)
+            for status in ACTIVE_RUN_STATUSES
+            if status != "QUEUED"
+        )
+
+    @property
+    def queued_run_count(self) -> int:
+        """Return queued runs from the observed run statuses."""
+        return self.run_status_counts.get("QUEUED", 0)
 
     @property
     def is_successful(self) -> bool:
@@ -399,6 +431,171 @@ class DagsterDataflowStatus:
             and len(self.failed_asset_checks) == 0
             and self.target_asset_count > 0
         )
+
+
+@dataclass(slots=True)
+class DagsterDataflowTelemetry:
+    """Aggregated telemetry from Dagster dataflow monitor samples."""
+
+    sample_count: int = 0
+    peak_active_run_count: int = 0
+    peak_queued_run_count: int = 0
+    final_run_status_counts: dict[str, int] = field(default_factory=dict)
+    final_target_asset_count: int = 0
+    final_materialized_target_asset_count: int = 0
+    final_missing_target_asset_count: int = 0
+    final_failed_target_asset_count: int = 0
+    first_target_materialization_timestamp: float | None = None
+    last_target_materialization_timestamp: float | None = None
+    final_failed_asset_check_count: int = 0
+
+    def record_status_sample(self, status: DagsterDataflowStatus) -> None:
+        """Record one normalized Dagster monitor status sample."""
+        self.sample_count += 1
+        self.peak_active_run_count = max(
+            self.peak_active_run_count,
+            status.active_run_count,
+        )
+        self.peak_queued_run_count = max(
+            self.peak_queued_run_count,
+            status.queued_run_count,
+        )
+        self.final_run_status_counts = dict(sorted(status.run_status_counts.items()))
+        self.final_target_asset_count = status.target_asset_count
+        self.final_materialized_target_asset_count = len(
+            status.materialized_target_assets
+        )
+        self.final_missing_target_asset_count = len(status.missing_target_assets)
+        self.final_failed_target_asset_count = len(status.failed_target_assets)
+        self.final_failed_asset_check_count = len(status.failed_asset_checks)
+        self.record_target_materialization_timestamps(
+            status.target_materialization_timestamps
+        )
+
+    def record_target_materialization_timestamps(
+        self,
+        timestamps: Sequence[float],
+    ) -> None:
+        """Record observed target materialization timestamps."""
+        for timestamp in timestamps:
+            if self.first_target_materialization_timestamp is None:
+                self.first_target_materialization_timestamp = timestamp
+            else:
+                self.first_target_materialization_timestamp = min(
+                    self.first_target_materialization_timestamp,
+                    timestamp,
+                )
+
+            if self.last_target_materialization_timestamp is None:
+                self.last_target_materialization_timestamp = timestamp
+            else:
+                self.last_target_materialization_timestamp = max(
+                    self.last_target_materialization_timestamp,
+                    timestamp,
+                )
+
+    def to_manifest(self) -> dict[str, object]:
+        """Return this telemetry in the run manifest shape."""
+        return {
+            "sample_count": self.sample_count,
+            "peak_active_run_count": self.peak_active_run_count,
+            "peak_queued_run_count": self.peak_queued_run_count,
+            "final_run_status_counts": self.final_run_status_counts,
+            "final_target_progress": {
+                "materialized_target_asset_count": (
+                    self.final_materialized_target_asset_count
+                ),
+                "target_asset_count": self.final_target_asset_count,
+                "missing_target_asset_count": self.final_missing_target_asset_count,
+                "failed_target_asset_count": self.final_failed_target_asset_count,
+            },
+            "first_target_materialization_at": timestamp_iso_or_none(
+                self.first_target_materialization_timestamp
+            ),
+            "last_target_materialization_at": timestamp_iso_or_none(
+                self.last_target_materialization_timestamp
+            ),
+            "final_failed_asset_check_count": self.final_failed_asset_check_count,
+        }
+
+
+@dataclass(slots=True)
+class GateRunTelemetry:
+    """Structured timing telemetry for one e2e gate run."""
+
+    started_monotonic: float
+    completed_monotonic: float | None = None
+    stack_startup_duration_seconds: float | None = None
+    dagster_dataflow_monitor_duration_seconds: float | None = None
+    cleanup_duration_seconds: float = 0.0
+    cleanup_phases: list[dict[str, object]] = field(default_factory=list)
+    dataflow: DagsterDataflowTelemetry | None = None
+
+    @classmethod
+    def start(cls) -> "GateRunTelemetry":
+        """Start timing one e2e gate run."""
+        return cls(started_monotonic=time.monotonic())
+
+    def ensure_dataflow(self) -> DagsterDataflowTelemetry:
+        """Return the dataflow telemetry accumulator for this gate run."""
+        if self.dataflow is None:
+            self.dataflow = DagsterDataflowTelemetry()
+        return self.dataflow
+
+    def record_stack_startup(self, started: float, completed: float) -> None:
+        """Record stack startup timing."""
+        self.stack_startup_duration_seconds = elapsed_seconds(started, completed)
+
+    def record_dagster_dataflow_monitor(
+        self,
+        started: float,
+        completed: float,
+    ) -> None:
+        """Record Dagster dataflow monitor timing."""
+        self.dagster_dataflow_monitor_duration_seconds = elapsed_seconds(
+            started,
+            completed,
+        )
+
+    def record_cleanup(self, phase: str, started: float, completed: float) -> None:
+        """Record one cleanup phase."""
+        duration = elapsed_seconds(started, completed)
+        self.cleanup_duration_seconds += duration
+        self.cleanup_phases.append(
+            {
+                "phase": phase,
+                "duration_seconds": round_duration_seconds(duration),
+            }
+        )
+
+    def complete(self) -> None:
+        """Mark the total e2e gate run timing as complete."""
+        self.completed_monotonic = time.monotonic()
+
+    def to_manifest(self) -> dict[str, object]:
+        """Return this telemetry in the run manifest shape."""
+        completed = self.completed_monotonic
+        if completed is None:
+            completed = time.monotonic()
+
+        payload: dict[str, object] = {
+            "total_gate_duration_seconds": round_duration_seconds(
+                elapsed_seconds(self.started_monotonic, completed)
+            ),
+            "stack_startup_duration_seconds": optional_duration_seconds(
+                self.stack_startup_duration_seconds
+            ),
+            "dagster_dataflow_monitor_duration_seconds": optional_duration_seconds(
+                self.dagster_dataflow_monitor_duration_seconds
+            ),
+            "cleanup_duration_seconds": round_duration_seconds(
+                self.cleanup_duration_seconds
+            ),
+            "cleanup_phases": self.cleanup_phases,
+        }
+        if self.dataflow is not None:
+            payload["dagster_dataflow"] = self.dataflow.to_manifest()
+        return payload
 
 
 class CommandRunner:
@@ -601,6 +798,7 @@ def run_stack(
     if options.reuse and options.always_clean:
         raise CommandError("--reuse and --always-clean cannot be used together")
 
+    telemetry = GateRunTelemetry.start()
     command_runner = runner or CommandRunner()
     host_env = dict(os.environ if env is None else env)
     backend_dir = backend_services_dir()
@@ -637,7 +835,8 @@ def run_stack(
         image_specs=image_specs,
         options=options,
     )
-    write_json(run_dir / "run-manifest.json", manifest)
+    manifest_path = run_dir / "run-manifest.json"
+    write_run_manifest(manifest_path, manifest, telemetry)
     deadline = time.monotonic() + options.timeout_seconds
 
     try:
@@ -655,30 +854,43 @@ def run_stack(
             max_concurrent_runs=options.max_concurrent_runs,
         )
         if not options.reuse:
-            cleanup_stack(command_runner, compose_command)
+            cleanup_stack_with_telemetry(
+                command_runner,
+                compose_command,
+                telemetry=telemetry,
+                phase="pre-run",
+            )
         build_required_images(
             command_runner,
             image_specs=image_specs,
             rebuild=options.rebuild,
             cwd=backend_dir,
         )
-        start_stack_services(
-            command_runner,
-            compose_command,
-            backend_dir=backend_dir,
-            options=options,
-            deadline=deadline,
-        )
-        wait_for_ready_stack(
-            command_runner,
-            timeout_seconds=remaining_timeout_seconds(deadline),
-        )
+        stack_startup_started = time.monotonic()
+        try:
+            start_stack_services(
+                command_runner,
+                compose_command,
+                backend_dir=backend_dir,
+                options=options,
+                deadline=deadline,
+            )
+            wait_for_ready_stack(
+                command_runner,
+                timeout_seconds=remaining_timeout_seconds(deadline),
+            )
+        finally:
+            telemetry.record_stack_startup(
+                stack_startup_started,
+                time.monotonic(),
+            )
         manifest["dataflow"] = drive_dagster_dataflow(
             webserver_port=options.webserver_port,
             timeout_seconds=remaining_timeout_seconds(deadline),
             expected_max_concurrent_runs=options.max_concurrent_runs,
             run_id=run_id,
             runner=command_runner,
+            telemetry=telemetry,
         )
     except Exception as error:
         collect_logs(command_runner, compose_command, logs_dir, backend_dir)
@@ -687,14 +899,19 @@ def run_stack(
         manifest["error"] = str(error)
         manifest["logs_dir"] = str(logs_dir)
         manifest["seed_run_manifest"] = str(seed_root / "seed-run-manifest.json")
-        write_json(run_dir / "run-manifest.json", manifest)
+        write_run_manifest(manifest_path, manifest, telemetry)
         if options.always_clean:
-            cleanup_stack(command_runner, compose_command)
+            cleanup_stack_with_telemetry(
+                command_runner,
+                compose_command,
+                telemetry=telemetry,
+                phase="post-failure",
+            )
             manifest["cleanup"] = "completed-after-failure"
-            write_json(run_dir / "run-manifest.json", manifest)
         else:
             manifest["cleanup"] = "preserved-after-failure"
-            write_json(run_dir / "run-manifest.json", manifest)
+        telemetry.complete()
+        write_run_manifest(manifest_path, manifest, telemetry)
         raise
 
     collect_logs(command_runner, compose_command, logs_dir, backend_dir)
@@ -704,7 +921,8 @@ def run_stack(
     manifest["seed_run_manifest"] = str(seed_root / "seed-run-manifest.json")
     if options.reuse:
         manifest["cleanup"] = "preserved-for-reuse"
-        write_json(run_dir / "run-manifest.json", manifest)
+        telemetry.complete()
+        write_run_manifest(manifest_path, manifest, telemetry)
         sys.stdout.write(
             f"{STACK_NAME} completed the dataflow at "
             f"http://localhost:{options.webserver_port}\n"
@@ -712,9 +930,15 @@ def run_stack(
         sys.stdout.write(f"run manifest: {run_dir / 'run-manifest.json'}\n")
         return
 
-    cleanup_stack(command_runner, compose_command)
+    cleanup_stack_with_telemetry(
+        command_runner,
+        compose_command,
+        telemetry=telemetry,
+        phase="post-success",
+    )
     manifest["cleanup"] = "completed-after-success"
-    write_json(run_dir / "run-manifest.json", manifest)
+    telemetry.complete()
+    write_run_manifest(manifest_path, manifest, telemetry)
     sys.stdout.write(f"{STACK_NAME} completed the dataflow and was cleaned.\n")
     sys.stdout.write(f"run manifest: {run_dir / 'run-manifest.json'}\n")
 
@@ -1338,10 +1562,14 @@ def drive_dagster_dataflow(
     expected_max_concurrent_runs: int,
     run_id: str,
     runner: CommandRunner | None = None,
+    telemetry: GateRunTelemetry | None = None,
 ) -> dict[str, object]:
     """Start intended Dagster automation and monitor the full e2e dataflow."""
     client = DagsterGraphQLClient(dagster_graphql_url(webserver_port))
     command_runner = runner or CommandRunner()
+    dataflow_telemetry = None
+    if telemetry is not None:
+        dataflow_telemetry = telemetry.ensure_dataflow()
     deadline = time.monotonic() + timeout_seconds
     wait_for_dagster_graphql(
         client,
@@ -1367,13 +1595,22 @@ def drive_dagster_dataflow(
         definition_state.selector,
         run_id=run_id,
     )
-    final_status = monitor_dagster_dataflow(
-        client,
-        definition_state.selector,
-        started_after=started_after,
-        timeout_seconds=remaining_timeout_seconds(deadline),
-        runner=command_runner,
-    )
+    monitor_started = time.monotonic()
+    try:
+        final_status = monitor_dagster_dataflow(
+            client,
+            definition_state.selector,
+            started_after=started_after,
+            timeout_seconds=remaining_timeout_seconds(deadline),
+            runner=command_runner,
+            telemetry=dataflow_telemetry,
+        )
+    finally:
+        if telemetry is not None:
+            telemetry.record_dagster_dataflow_monitor(
+                monitor_started,
+                time.monotonic(),
+            )
     return {
         "repository_name": definition_state.selector.repository_name,
         "repository_location_name": definition_state.selector.repository_location_name,
@@ -1724,6 +1961,7 @@ def monitor_dagster_dataflow(
     timeout_seconds: int,
     runner: CommandRunner | None = None,
     poll_interval_seconds: int = DEFAULT_DAGSTER_POLL_INTERVAL_SECONDS,
+    telemetry: DagsterDataflowTelemetry | None = None,
 ) -> DagsterDataflowStatus:
     """Poll Dagster until the gas_model target succeeds, fails, or times out."""
     deadline = time.monotonic() + timeout_seconds
@@ -1736,6 +1974,8 @@ def monitor_dagster_dataflow(
             started_after=started_after,
             runner=command_runner,
         )
+        if telemetry is not None:
+            telemetry.record_status_sample(status)
         last_summary = summarize_dagster_dataflow_status(status)
         sys.stdout.write(f"{last_summary}\n")
         sys.stdout.flush()
@@ -1770,6 +2010,7 @@ def fetch_dagster_dataflow_status(
     )
     active_runs = read_runs(run_data.get("activeRuns"), context="activeRuns")
     failed_runs = read_runs(run_data.get("failedRuns"), context="failedRuns")
+    all_runs = read_runs(run_data.get("allRuns"), context="allRuns")
 
     target_data = execute_dagster_graphql_with_retries(
         client,
@@ -1791,6 +2032,7 @@ def fetch_dagster_dataflow_status(
     status = evaluate_dagster_dataflow_status(
         active_runs=active_runs,
         failed_runs=failed_runs,
+        all_runs=all_runs,
         target_assets=target_assets,
         target_asset_events=target_asset_events,
         checked_assets=(),
@@ -1810,6 +2052,7 @@ def fetch_dagster_dataflow_status(
     return evaluate_dagster_dataflow_status(
         active_runs=active_runs,
         failed_runs=failed_runs,
+        all_runs=all_runs,
         target_assets=target_assets,
         target_asset_events=target_asset_events,
         checked_assets=(),
@@ -1822,6 +2065,7 @@ def evaluate_dagster_dataflow_status(
     *,
     active_runs: Sequence[Mapping[str, object]],
     failed_runs: Sequence[Mapping[str, object]],
+    all_runs: Sequence[Mapping[str, object]] | None = None,
     target_assets: Sequence[object],
     target_asset_events: Sequence[object],
     checked_assets: Sequence[object],
@@ -1835,6 +2079,7 @@ def evaluate_dagster_dataflow_status(
     missing_asset_checks: list[str] = []
     failed_asset_checks: list[str] = list(failed_asset_check_labels)
     target_asset_keys: set[str] = set()
+    target_materialization_timestamps: list[float] = []
 
     for asset in target_assets:
         if not isinstance(asset, Mapping):
@@ -1851,6 +2096,9 @@ def evaluate_dagster_dataflow_status(
             missing_target_assets.append(asset_key)
         else:
             materialized_target_assets.append(asset_key)
+            target_materialization_timestamps.append(
+                event_timestamp_seconds(latest_materialization.get("timestamp"))
+            )
 
         if latest_materialization is not None:
             read_asset_check_status(
@@ -1894,7 +2142,24 @@ def evaluate_dagster_dataflow_status(
         failed_target_assets=tuple(sorted(set(failed_target_assets))),
         missing_asset_checks=tuple(sorted(set(missing_asset_checks))),
         failed_asset_checks=tuple(sorted(set(failed_asset_checks))),
+        run_status_counts=count_run_statuses(
+            [*active_runs, *failed_runs] if all_runs is None else all_runs
+        ),
+        target_materialization_timestamps=tuple(
+            sorted(set(target_materialization_timestamps))
+        ),
     )
+
+
+def count_run_statuses(runs: Sequence[Mapping[str, object]]) -> dict[str, int]:
+    """Return Dagster run status counts from raw run payloads."""
+    counts: dict[str, int] = {}
+    for run in runs:
+        status = run.get("status")
+        if not isinstance(status, str):
+            continue
+        counts[status] = counts.get(status, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def read_asset_check_status(
@@ -2421,6 +2686,21 @@ def cleanup_stack(
     runner.run(["podman", "network", "rm", NETWORK_NAME], check=False)
 
 
+def cleanup_stack_with_telemetry(
+    runner: CommandRunner,
+    compose_command: Sequence[str],
+    *,
+    telemetry: GateRunTelemetry,
+    phase: str,
+) -> None:
+    """Remove e2e resources and record cleanup timing."""
+    started = time.monotonic()
+    try:
+        cleanup_stack(runner, compose_command)
+    finally:
+        telemetry.record_cleanup(phase, started, time.monotonic())
+
+
 def cleanup_dagster_run_worker_containers(runner: CommandRunner) -> None:
     """Remove Dagster run workers launched outside the compose project."""
     result = runner.run(
@@ -2496,6 +2776,40 @@ def write_json(path: Path, payload: Mapping[str, object]) -> None:
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+
+
+def write_run_manifest(
+    path: Path,
+    manifest: dict[str, object],
+    telemetry: GateRunTelemetry,
+) -> None:
+    """Write a run manifest with current e2e gate telemetry."""
+    manifest["telemetry"] = telemetry.to_manifest()
+    write_json(path, manifest)
+
+
+def timestamp_iso_or_none(timestamp: float | None) -> str | None:
+    """Return a UTC ISO-8601 timestamp for a Unix timestamp."""
+    if timestamp is None:
+        return None
+    return datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
+
+
+def elapsed_seconds(started: float, completed: float) -> float:
+    """Return a non-negative elapsed duration in seconds."""
+    return max(0.0, completed - started)
+
+
+def optional_duration_seconds(duration: float | None) -> float | None:
+    """Return a rounded optional duration for JSON telemetry."""
+    if duration is None:
+        return None
+    return round_duration_seconds(duration)
+
+
+def round_duration_seconds(duration: float) -> float:
+    """Round a duration for stable JSON telemetry."""
+    return round(max(0.0, duration), 3)
 
 
 def yaml_quote(value: str) -> str:

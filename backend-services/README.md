@@ -325,6 +325,14 @@ inspection. Use `--reuse` to keep and reuse the e2e stack after a successful
 run, or `--always-clean` to clean containers, volumes, and run-worker containers
 even after failure.
 
+Each `run-manifest.json` includes structured telemetry for Promotion review:
+total gate duration, stack startup duration, Dagster dataflow monitor duration,
+cumulative cleanup duration, cleanup phase timings, peak active and queued
+Dagster run counts, final run status counts, final target progress, first and
+last observed target materialization timestamps, and the final failed
+asset-check count. Failed runs include telemetry for every monitor sample
+captured before the failure.
+
 ______________________________________________________________________
 
 ## Launching a job via the GraphQL API

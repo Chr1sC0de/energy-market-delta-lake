@@ -109,7 +109,8 @@ Local workflow notes:
   Pulumi-deployed stack.
 - The isolated AEMO ETL **End-to-end test** stack belongs to the
   `backend-services/dagster-user/aemo-etl` Subproject and is operated through
-  `backend-services/scripts/aemo-etl-e2e`.
+  `backend-services/scripts/aemo-etl-e2e`; its run manifest records timing and
+  dataflow telemetry for Promotion review.
 
 Use [backend-services/README.md](../../backend-services/README.md) for local
 stack commands and
