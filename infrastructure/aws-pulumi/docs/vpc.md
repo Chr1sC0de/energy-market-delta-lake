@@ -162,8 +162,8 @@ The subnets are carved out of the VPC's address space:
 - [Storage](storage.md)
 - [Runtime](runtime.md)
 - [Edge and access](edge-and-access.md)
-- [Repository architecture](../../../docs/architecture.md)
-- [Repository workflow](../../../docs/workflow.md)
+- [Repository architecture](../../../docs/repository/architecture.md)
+- [Repository workflow](../../../docs/repository/workflow.md)
 
 ## Sync metadata
 

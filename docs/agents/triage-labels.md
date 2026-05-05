@@ -46,15 +46,24 @@ An issue should carry at most one delivery label. If both are present, Ralph
 keeps `delivery-gitflow`, removes `delivery-trunk`, and proceeds through the
 safer default path.
 
+Use [ralph-loop.md](ralph-loop.md) for the Ralph behavior behind these labels
+and [issue-tracker.md](issue-tracker.md) for the GitHub Issue queue contract.
+
 ## Sync metadata
 
 - `sync.owner`: `agents`
 - `sync.sources`:
   - `AGENTS.md`
+  - `OPERATOR.md`
+  - `docs/agents/README.md`
+  - `docs/agents/issue-tracker.md`
+  - `docs/agents/ralph-loop.md`
   - `scripts/ralph.py`
   - `.agents/skills/ralph-triage/SKILL.md`
+  - `.agents/skills/ralph-loop/SKILL.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`
-  - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`
+  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
+  - `python3 -m unittest discover -s tests`
   - `verify label names match script constants and GitHub labels`

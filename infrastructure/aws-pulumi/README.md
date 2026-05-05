@@ -276,8 +276,8 @@ system's services and Dagster workflows.
 ## Related docs
 
 - [Repository overview](../../README.md)
-- [Repository architecture](../../docs/architecture.md)
-- [Repository workflow](../../docs/workflow.md)
+- [Repository architecture](../../docs/repository/architecture.md)
+- [Repository workflow](../../docs/repository/workflow.md)
 - [AWS Pulumi component docs](docs/README.md)
 - [VPC architecture notes](docs/vpc.md)
 - [Local backend-services stack](../../backend-services/README.md)

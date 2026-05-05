@@ -16,7 +16,7 @@ source of truth; this skill is a compact runbook for agents.
 
 - Read `CONTEXT.md` for canonical terms: **Delivery mode**, **Integration target**,
   **Local integration**, and **Promotion**.
-- Read `docs/agent-issue-loop.md` before changing workflow behavior.
+- Read `docs/agents/ralph-loop.md` before changing workflow behavior.
 - Use GitHub Issues as the queue. Do not invent local task files.
 - Use `$ralph-triage` to prepare issues before drain; this skill runs and
   inspects the loop after issues are ready.

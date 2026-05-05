@@ -72,8 +72,8 @@ This repo uses a single root `CONTEXT.md` for canonical language. See
 - Each maintained doc ends with `## Sync metadata`
 - Required keys: `sync.owner`, `sync.sources`, `sync.scope`, `sync.qa`
 - `sync.sources` rules: repo-relative, literal path, one path per line, only files likely to force doc update
-- Changes to this file must check `docs/documentation-sync.md` because that doc
-  lists `AGENTS.md` in `sync.sources`.
+- Changes to this file must check `docs/repository/documentation-sync.md`
+  because that doc lists `AGENTS.md` in `sync.sources`.
 
 ## Flow
 

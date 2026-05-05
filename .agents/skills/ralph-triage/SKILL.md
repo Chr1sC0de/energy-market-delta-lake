@@ -17,7 +17,7 @@ the gate before `$ralph-loop drain`.
 - Read `CONTEXT.md` for canonical terms, especially **Delivery mode**,
   **Integration target**, **Local integration**, and **Promotion**.
 - Read `docs/agents/triage-labels.md` for the label vocabulary.
-- Read `docs/agent-issue-loop.md` before changing Ralph workflow behavior.
+- Read `docs/agents/ralph-loop.md` before changing Ralph workflow behavior.
 - Use `gh` for issue reads and writes.
 
 ## Goal

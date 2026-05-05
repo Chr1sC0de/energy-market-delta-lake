@@ -417,7 +417,7 @@ podman logs <container-name>
 ## Related docs
 
 - [Repository overview](../README.md)
-- [Repository architecture](../docs/architecture.md)
+- [Repository architecture](../docs/repository/architecture.md)
 - [AWS Pulumi infrastructure](../infrastructure/aws-pulumi/README.md)
 - [Authentication service](authentication/README.md)
 - [Marimo notebook service](marimo/README.md)

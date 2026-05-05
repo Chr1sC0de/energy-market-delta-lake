@@ -142,13 +142,14 @@ domain.
 
 - [Documentation sync workflow](documentation-sync.md)
 - [Repository workflow](workflow.md)
-- [AWS Pulumi infrastructure](../infrastructure/aws-pulumi/README.md)
-- [aemo-etl architecture](../backend-services/dagster-user/aemo-etl/docs/architecture/high_level_architecture.md)
+- [AWS Pulumi infrastructure](../../infrastructure/aws-pulumi/README.md)
+- [aemo-etl architecture](../../backend-services/dagster-user/aemo-etl/docs/architecture/high_level_architecture.md)
 
 ## Sync metadata
 
 - `sync.owner`: `docs`
 - `sync.sources`:
+  - `docs/README.md`
   - `infrastructure/aws-pulumi/__main__.py`
   - `backend-services/compose.yaml`
   - `backend-services/scripts/aemo-etl-e2e`
@@ -158,5 +159,6 @@ domain.
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`
-  - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`
+  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
+  - `python3 -m unittest discover -s tests`
   - `verify links, diagrams, commands, paths, ports, env vars, and names`

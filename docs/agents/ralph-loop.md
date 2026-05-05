@@ -1,4 +1,4 @@
-# Agent Issue Loop
+# Ralph Loop
 
 This page documents the repo-local Ralph loop in `scripts/ralph.py`. The loop
 uses GitHub Issues as the queue, Codex as the implementation and triage worker,
@@ -18,6 +18,7 @@ integration** plus **Promotion** as the success path after QA.
 - [Implementation pass](#implementation-pass)
 - [Promotion pass](#promotion-pass)
 - [Triage pass](#triage-pass)
+- [Ready issue refresh](#ready-issue-refresh)
 - [QA policy](#qa-policy)
 - [Failure handling](#failure-handling)
 
@@ -47,7 +48,7 @@ Human operators should call Ralph through repo-local skills:
 $grill-with-docs -> optional $to-prd -> $to-issues -> $ralph-triage -> $ralph-loop drain -> review dev -> $ralph-loop promote
 ```
 
-Use [OPERATOR.md](../OPERATOR.md) for the first-class **Operator workflow**.
+Use [OPERATOR.md](../../OPERATOR.md) for the first-class **Operator workflow**.
 `$ralph-triage` prepares GitHub Issues for drain by setting category, state, and
 **Delivery mode** labels. `$ralph-loop` owns the backing script commands,
 including `$ralph-loop drain` and `$ralph-loop promote`.
@@ -160,7 +161,7 @@ Promote reviewed Gitflow work from `dev` to `main`:
 python3 scripts/ralph.py --promote
 ```
 
-Skip the default Post-promotion review after a successful Promotion:
+Skip the default **Post-promotion review** after a successful **Promotion**:
 
 ```bash
 python3 scripts/ralph.py --promote --skip-post-promotion-review
@@ -239,7 +240,7 @@ operator should start from a known repo state.
 
 Ralph writes command logs while subprocesses are still running. Long Codex
 implementation attempts write to `codex-implementation-N.jsonl`, triage writes
-to `codex-triage.jsonl`, Post-promotion review writes to
+to `codex-triage.jsonl`, **Post-promotion review** writes to
 `codex-post-promotion-review.jsonl`, QA writes to `qa-*` logs, and Git
 operations write to their named `git-*` logs under the current
 `.ralph/runs/...` run directory.
@@ -414,9 +415,10 @@ After the push succeeds, Ralph scans open `agent-integrated` issues. It closes
 only issues whose recorded Gitflow integration commit is still in the promoted
 `origin/main..origin/dev` range, then comments promotion evidence and replaces
 `agent-integrated` with `agent-merged`. Successful Promotions with changed
-files then run a Post-promotion review agent from the Promotion worktree by
-default, after the `main` push, `dev` sync, and verified issue metadata updates.
-The review is recorded in `post_promotion_review` in the Promotion run manifest.
+files then run a **Post-promotion review** agent from the **Promotion** worktree
+by default, after the `main` push, `dev` sync, and verified issue metadata
+updates. The review is recorded in `post_promotion_review` in the **Promotion**
+run manifest.
 Operators can pass `--skip-post-promotion-review` to disable the review path.
 If there are no Promotion changes, Ralph does not create Promotion worktrees or
 run the review agent; it prints a review skip note and records
@@ -449,6 +451,12 @@ tooling, or script changes. Runtime behavior, infrastructure, Dagster, S3,
 LocalStack, cross-**Subproject** work, broad refactors, or unclear scope should
 stay on `delivery-gitflow`.
 
+## Ready issue refresh
+
+Reserved for future **Ready issue refresh** documentation from #68 through #72.
+This migration intentionally does not define that behavior before those
+implementation issues land.
+
 ## QA policy
 
 For runtime `aemo-etl` changes, Ralph runs from the owning **Subproject**:
@@ -461,8 +469,9 @@ make run-prek
 ```
 
 Docs-only `aemo-etl` changes are recognized by the maintained Markdown doc path
-rules in [documentation-sync.md](documentation-sync.md). They skip the runtime
-AEMO ETL **Test lanes** above and run the root doc **Commit check** surface:
+rules in [documentation-sync.md](../repository/documentation-sync.md). They skip
+the runtime AEMO ETL **Test lanes** above and run the root doc **Commit check**
+surface:
 
 ```bash
 prek run -a
@@ -537,16 +546,21 @@ container-backed **Integration test** dependencies.
 
 ## Sync metadata
 
-- `sync.owner`: `docs`
+- `sync.owner`: `agents`
 - `sync.sources`:
   - `scripts/ralph.py`
-  - `docs/agents/triage-labels.md`
+  - `CONTEXT.md`
   - `OPERATOR.md`
+  - `AGENTS.md`
+  - `docs/agents/README.md`
+  - `docs/agents/issue-tracker.md`
+  - `docs/agents/triage-labels.md`
+  - `docs/repository/documentation-sync.md`
   - `.agents/skills/ralph-loop/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`
-  - `AGENTS.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`
   - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
+  - `python3 -m unittest discover -s tests`
   - `verify links, headings, commands, paths, labels, and names`
