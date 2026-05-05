@@ -641,8 +641,10 @@ Build it.
             (
                 "scripts/aemo-etl-e2e",
                 "run",
+                "--timeout-seconds",
+                "7200",
                 "--max-concurrent-runs",
-                "2",
+                "3",
                 "--seed-root",
                 str(seed_root),
             ),
@@ -657,7 +659,14 @@ Build it.
 
         self.assertEqual(
             commands[0].args,
-            ("scripts/aemo-etl-e2e", "run", "--max-concurrent-runs", "2"),
+            (
+                "scripts/aemo-etl-e2e",
+                "run",
+                "--timeout-seconds",
+                "7200",
+                "--max-concurrent-runs",
+                "3",
+            ),
         )
 
     def test_select_promotion_gate_commands_skips_aemo_etl_docs_only_changes(
@@ -2540,8 +2549,10 @@ Build it.
             e2e_command = (
                 "scripts/aemo-etl-e2e",
                 "run",
+                "--timeout-seconds",
+                "7200",
                 "--max-concurrent-runs",
-                "2",
+                "3",
                 "--seed-root",
                 str(tmp_path / "repo" / "backend-services" / ".e2e/aemo-etl"),
             )
@@ -2601,8 +2612,10 @@ Build it.
             [
                 "scripts/aemo-etl-e2e",
                 "run",
+                "--timeout-seconds",
+                "7200",
                 "--max-concurrent-runs",
-                "2",
+                "3",
                 "--seed-root",
                 str(tmp_path / "repo" / "backend-services" / ".e2e/aemo-etl"),
             ],
@@ -2622,8 +2635,10 @@ Build it.
             e2e_command = (
                 "scripts/aemo-etl-e2e",
                 "run",
+                "--timeout-seconds",
+                "7200",
                 "--max-concurrent-runs",
-                "2",
+                "3",
                 "--seed-root",
                 str(tmp_path / "repo" / "backend-services" / ".e2e/aemo-etl"),
             )

@@ -450,13 +450,15 @@ When the promoted range includes non-doc runtime files under
 **End-to-end test** gate from the same source worktree before creating the
 target Promotion worktree. The gate is recorded as
 `aemo-etl End-to-end test` in the Promotion run manifest and invokes
-`scripts/aemo-etl-e2e run --max-concurrent-runs 2 --seed-root
-<primary-repo>/backend-services/.e2e/aemo-etl` from the `backend-services`
-**Subproject**, so the temporary Promotion source worktree uses the
-operator-maintained cached Archive seed instead of an empty ignored cache under
-the worktree. Promotion keeps this gate deliberately below the command default
-run queue concurrency to reduce Podman DNS pressure while worker containers
-write Dagster event-log rows back to the isolated Postgres service. Because the
+`scripts/aemo-etl-e2e run` from the `backend-services` **Subproject** with
+`--timeout-seconds 7200`, `--max-concurrent-runs 3`, and
+`--seed-root <primary-repo>/backend-services/.e2e/aemo-etl`, so the temporary
+Promotion source worktree uses the operator-maintained cached Archive seed
+instead of an empty ignored cache under the worktree. Promotion keeps this gate
+deliberately below the command default run queue concurrency to reduce Podman
+DNS pressure while worker containers write Dagster event-log rows back to the
+isolated Postgres service, and the longer Promotion timeout covers
+low-concurrency queue latency in the full `gas_model` target. Because the
 aggregate **Push check** and gate run first, source-branch changes cannot reach
 a Promotion merge, `main` push, `dev` branch sync, GitHub metadata update, or
 issue closure without passing against the exact source revision.
@@ -617,7 +619,10 @@ issue closure:
 
 ```bash
 cd backend-services
-scripts/aemo-etl-e2e run --max-concurrent-runs 2 --seed-root <primary-repo>/backend-services/.e2e/aemo-etl
+scripts/aemo-etl-e2e run \
+  --timeout-seconds 7200 \
+  --max-concurrent-runs 3 \
+  --seed-root <primary-repo>/backend-services/.e2e/aemo-etl
 ```
 
 ## Failure handling
