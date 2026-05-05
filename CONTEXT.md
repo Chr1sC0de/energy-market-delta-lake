@@ -101,6 +101,12 @@ The opt-in **Delivery mode** where Ralph integrates issue work directly to
 `main` and closes the issue after QA.
 _Avoid_: Fast agent mode
 
+**Exploratory delivery**:
+The opt-in **Delivery mode** where Ralph integrates issue work to a durable
+review branch, marks the issue `agent-reviewing`, and leaves it open for human
+review.
+_Avoid_: Draft PR mode, branch-only PR
+
 **Promotion**:
 The Ralph operation that merges reviewed `dev` work into `main` and closes the
 verified GitHub issues included in that branch range.
@@ -142,6 +148,8 @@ _Avoid_: Promotion gate, pre-push review
 - A **Delivery mode** selects an **Integration target**.
 - **Gitflow delivery** uses `dev` as the default **Integration target**.
 - **Trunk delivery** uses `main` as the default **Integration target**.
+- **Exploratory delivery** uses a per-issue `agent/review/issue-N-slug` branch
+  as the default **Integration target**.
 - **Promotion** closes only issues whose `dev` integration commit is verified in
   the promoted branch range.
 - **Post-promotion review** happens after **Promotion** succeeds; it is not a

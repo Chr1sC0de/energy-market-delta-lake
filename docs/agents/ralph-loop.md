@@ -35,8 +35,10 @@ Ralph drains agent-ready GitHub issues through a guarded local loop:
    `agent-integrated`, and leave the issue open for **Promotion**.
 7. In **Trunk delivery**, push `main`, comment evidence, mark `agent-merged`,
    and close the issue.
-8. Run **Ready issue refresh** before the next ready issue claim.
-9. If no ready issue exists, triage the next unblocked issue and rescan.
+8. In **Exploratory delivery**, push a durable review branch, comment evidence,
+   mark `agent-reviewing`, and leave the issue open for human review.
+9. Run **Ready issue refresh** before the next ready issue claim.
+10. If no ready issue exists, triage the next unblocked issue and rescan.
 
 The loop stops when the queue has no unblocked implementation or triage
 candidates, or when `--max-issues` is reached. A plain `--drain` run defaults
@@ -73,8 +75,10 @@ flowchart TD
   INTEGRATE --> DONE{Delivery mode?}
   DONE -->|Gitflow| STAGE[Comment evidence and mark agent-integrated]
   DONE -->|Trunk| CLOSE[Comment evidence, mark agent-merged, close issue]
+  DONE -->|Exploratory| REVIEW[Comment evidence and mark agent-reviewing]
   STAGE --> REFRESH[Run Ready issue refresh]
   CLOSE --> REFRESH
+  REVIEW --> REFRESH
   REFRESH --> LIMIT{Max implementation attempts reached?}
   LIMIT -->|No| READY
   LIMIT -->|Yes| STOP[Stop drain]
@@ -106,20 +110,27 @@ Ralph runtime labels:
 - `agent-failed`
 - `agent-merged`
 - `agent-integrated`
+- `agent-reviewing`
 
 Ralph delivery labels:
 
 - `delivery-gitflow`
 - `delivery-trunk`
+- `delivery-exploratory`
 
 Use `ready-for-agent` as the queue selection signal. `needs-triage`,
 `needs-info`, `ready-for-human`, `wontfix`, `agent-running`, `agent-failed`,
-`agent-merged`, and `agent-integrated` block implementation.
+`agent-merged`, `agent-integrated`, and `agent-reviewing` block
+implementation. Runtime labels including `agent-reviewing` also block
+automated triage reconsideration.
 
 `delivery-gitflow` is the default **Delivery mode**. `delivery-trunk` is an
-opt-in label for small docs, tests, tooling, or script changes. If both delivery
-labels are present, Ralph keeps `delivery-gitflow`, removes `delivery-trunk`,
-and proceeds through the safer default.
+opt-in label for small docs, tests, tooling, or script changes.
+`delivery-exploratory` is an opt-in label for durable review-branch work. If
+`delivery-exploratory` conflicts with Gitflow or trunk labels, Ralph keeps
+`delivery-exploratory` and removes the others. If only Gitflow and trunk
+conflict, Ralph keeps `delivery-gitflow`, removes `delivery-trunk`, and
+proceeds through the safer default.
 
 Create or refresh the labels with:
 
@@ -145,6 +156,12 @@ Drain directly to trunk for small low-risk changes:
 
 ```bash
 python3 scripts/ralph.py --drain --delivery-mode trunk
+```
+
+Drain to durable review branches for exploratory changes:
+
+```bash
+python3 scripts/ralph.py --drain --delivery-mode exploratory
 ```
 
 Drain until only blocked or non-actionable issues remain:
@@ -334,6 +351,9 @@ issue's **Delivery mode**:
 - **Gitflow delivery**: ensure the completion comment exists, remove runtime
   labels, apply `agent-integrated`, and leave the issue open for **Promotion**.
   If the issue was closed prematurely, recovery reopens it.
+- **Exploratory delivery**: ensure the completion comment exists, remove
+  runtime labels, apply `agent-reviewing`, and leave or reopen the issue for
+  human review.
 
 Recovery does not rerun Codex, rerun QA, create commits, push branches, or clean
 worktrees. Normal Ralph runs keep fail-stop behavior: if metadata operations
@@ -358,7 +378,9 @@ implementation. `delivery-gitflow` defaults to `origin/dev`; if that branch does
 not exist, Ralph creates it from `origin/main`. Before creating a Gitflow issue
 branch, Ralph also syncs `origin/main` into `origin/dev` when `main` is not
 already an ancestor of `dev`, so the **Integration target** is not behind trunk.
-`delivery-trunk` defaults to `origin/main`. `--target-branch` overrides the
+`delivery-trunk` defaults to `origin/main`. `delivery-exploratory` defaults to
+a per-issue `origin/agent/review/issue-N-slug` branch; if that branch does not
+exist, Ralph creates it from `origin/main`. `--target-branch` overrides the
 **Integration target** explicitly.
 
 Ralph creates branches named `agent/issue-N-slug` from the **Integration target**
@@ -376,7 +398,9 @@ creates one integration commit, pushes it to the target, and posts completion
 evidence with the commit SHA, changed files, QA commands, and run log path.
 Trunk integration marks the issue `agent-merged` and closes it. Gitflow
 integration marks the issue `agent-integrated` and leaves it open for
-**Promotion**. Ralph does not open a GitHub draft PR.
+**Promotion**. Exploratory integration marks the issue `agent-reviewing` and
+leaves it open for human review of the durable review branch. Ralph does not
+open a GitHub draft PR.
 
 ```mermaid
 sequenceDiagram
@@ -399,6 +423,8 @@ sequenceDiagram
     Ralph->>GitHubIssue: Add agent-merged and close
   else Gitflow delivery
     Ralph->>GitHubIssue: Add agent-integrated
+  else Exploratory delivery
+    Ralph->>GitHubIssue: Add agent-reviewing
   end
 ```
 
@@ -464,7 +490,8 @@ Automated triage also applies Ralph delivery labels. It should default to
 `delivery-gitflow` and use `delivery-trunk` only for clearly small docs, tests,
 tooling, or script changes. Runtime behavior, infrastructure, Dagster, S3,
 LocalStack, cross-**Subproject** work, broad refactors, or unclear scope should
-stay on `delivery-gitflow`.
+stay on `delivery-gitflow` unless the issue explicitly asks for
+`delivery-exploratory` review-branch handling.
 
 ## Ready issue refresh
 
@@ -583,9 +610,9 @@ Codex or QA failures get one retry in the same worktree. If retry fails, Ralph:
 - continues drain mode with the next actionable issue
 
 Successful issues remove the implementation worktree, integration worktree, and
-temporary issue branch after trunk closure or Gitflow integration. Cleanup
-failures are warnings; the pushed commit and GitHub issue metadata remain the
-source of truth.
+temporary issue branch after trunk closure, Gitflow integration, or exploratory
+review-branch publication. Cleanup failures are warnings; the pushed commit and
+GitHub issue metadata remain the source of truth.
 
 Merge or push failures before the **Integration target** is updated are issue
 failures and keep the worktrees for inspection. Failures after the target is

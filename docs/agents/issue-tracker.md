@@ -38,6 +38,12 @@ but existing `ready-for-agent` issues do not need that section to stay ready.
 Refreshed issues that remain `ready-for-agent` must still contain the three
 required sections above.
 
+Runtime labels such as `agent-running`, `agent-integrated`, `agent-merged`,
+`agent-failed`, and `agent-reviewing` block repeat implementation and automated
+triage reconsideration. In particular, `agent-reviewing` means **Exploratory
+delivery** has already published a durable review branch and the issue is
+waiting for human review.
+
 Use [ralph-loop.md](ralph-loop.md) for Ralph internals, including
 **Delivery mode**, **Local integration**, **Integration target**, **Promotion**,
 **Ready issue refresh**, **Post-promotion review**, run manifests, QA

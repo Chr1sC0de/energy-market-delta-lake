@@ -7,7 +7,9 @@ the whole validated path: squash-merge onto latest `origin/main`, push `main`,
 comment completion evidence, and close the issue.
 
 ADR 0002 generalizes this trunk-only path with **Delivery modes**. The
-trunk-style behavior described here remains the **Trunk delivery** path.
+trunk-style behavior described here remains the **Trunk delivery** path, while
+Gitflow and Exploratory delivery use the same post-QA **Local integration**
+mechanism against different **Integration targets** and issue metadata states.
 
 ## Considered options
 
@@ -24,9 +26,12 @@ trunk-style behavior described here remains the **Trunk delivery** path.
 Ralph must be conservative around git drift. Trunk delivery integrates against
 latest `origin/main`. Gitflow delivery keeps `origin/dev` current with
 `origin/main` before issue branches are created, then rebases and reruns selected
-QA if the **Integration target** moves before squash-merging. If a target branch
-is pushed but issue metadata cannot be updated, the drain stops because code and
-board state may no longer agree. Operators inspect that run with
+QA if the **Integration target** moves before squash-merging. Exploratory
+delivery creates a durable review branch from `origin/main` when the branch does
+not already exist, then publishes the validated **Local integration** commit
+there for human review. If a target branch is pushed but issue metadata cannot
+be updated, the drain stops because code and board state may no longer agree.
+Operators inspect that run with
 `--inspect-run` and recover metadata with `--recover-run` only after Ralph
 verifies the recorded **Local integration** commit is reachable from the
 expected **Integration target**. Ralph also blocks live implementation and

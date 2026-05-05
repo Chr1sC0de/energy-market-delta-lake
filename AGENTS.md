@@ -16,7 +16,9 @@ Issues are tracked in GitHub Issues for `Chr1sC0de/energy-market-delta-lake`.
 Ralph uses those issues as the board and queue, then performs successful code
 changes through **Local integration**. **Trunk delivery** closes issues after
 integration to `main`; **Gitflow delivery** closes them after **Promotion** from
-`dev` to `main`. See `docs/agents/issue-tracker.md`.
+`dev` to `main`; **Exploratory delivery** leaves issues open with
+`agent-reviewing` after publishing a durable review branch. See
+`docs/agents/issue-tracker.md`.
 
 ### Ralph loop
 

@@ -33,15 +33,21 @@ AGENT_RUNNING_LABEL = "agent-running"
 AGENT_FAILED_LABEL = "agent-failed"
 AGENT_MERGED_LABEL = "agent-merged"
 AGENT_INTEGRATED_LABEL = "agent-integrated"
+AGENT_REVIEWING_LABEL = "agent-reviewing"
 
 GITFLOW_MODE = "gitflow"
 TRUNK_MODE = "trunk"
-DELIVERY_MODES = (GITFLOW_MODE, TRUNK_MODE)
+EXPLORATORY_MODE = "exploratory"
+DELIVERY_MODES = (GITFLOW_MODE, TRUNK_MODE, EXPLORATORY_MODE)
 DELIVERY_GITFLOW_LABEL = "delivery-gitflow"
 DELIVERY_TRUNK_LABEL = "delivery-trunk"
-DELIVERY_LABELS = frozenset({DELIVERY_GITFLOW_LABEL, DELIVERY_TRUNK_LABEL})
+DELIVERY_EXPLORATORY_LABEL = "delivery-exploratory"
+DELIVERY_LABELS = frozenset(
+    {DELIVERY_GITFLOW_LABEL, DELIVERY_TRUNK_LABEL, DELIVERY_EXPLORATORY_LABEL}
+)
 DEFAULT_GITFLOW_BRANCH = "dev"
 DEFAULT_TRUNK_BRANCH = "main"
+DEFAULT_EXPLORATORY_BRANCH_PREFIX = "agent/review"
 DEFAULT_DRAIN_BUDGET = 10
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30.0
 DIRTY_WORKTREE_STATUS_PREVIEW_LIMIT = 12
@@ -111,6 +117,7 @@ IMPLEMENTATION_STOP_LABELS = frozenset(
         AGENT_FAILED_LABEL,
         AGENT_MERGED_LABEL,
         AGENT_INTEGRATED_LABEL,
+        AGENT_REVIEWING_LABEL,
     }
 )
 TRIAGE_STOP_LABELS = frozenset(
@@ -122,6 +129,7 @@ TRIAGE_STOP_LABELS = frozenset(
         AGENT_FAILED_LABEL,
         AGENT_MERGED_LABEL,
         AGENT_INTEGRATED_LABEL,
+        AGENT_REVIEWING_LABEL,
     }
 )
 
@@ -163,8 +171,14 @@ LABEL_SPECS = (
     LabelSpec(AGENT_FAILED_LABEL, "B60205", "Agent issue loop failed."),
     LabelSpec(AGENT_MERGED_LABEL, "0E8A16", "Agent issue loop merged local integration."),
     LabelSpec(AGENT_INTEGRATED_LABEL, "0E8A16", "Agent issue loop integrated work for promotion."),
+    LabelSpec(AGENT_REVIEWING_LABEL, "C5DEF5", "Agent issue loop published a review branch."),
     LabelSpec(DELIVERY_GITFLOW_LABEL, "C5DEF5", "Issue should integrate to dev before promotion."),
     LabelSpec(DELIVERY_TRUNK_LABEL, "BFDADC", "Issue may integrate directly to trunk."),
+    LabelSpec(
+        DELIVERY_EXPLORATORY_LABEL,
+        "D4C5F9",
+        "Issue should integrate to a durable review branch.",
+    ),
 )
 
 
@@ -843,14 +857,22 @@ def delivery_label_for_mode(mode: str) -> str:
         return DELIVERY_GITFLOW_LABEL
     if mode == TRUNK_MODE:
         return DELIVERY_TRUNK_LABEL
+    if mode == EXPLORATORY_MODE:
+        return DELIVERY_EXPLORATORY_LABEL
     raise ValueError(f"Unsupported delivery mode: {mode}")
 
 
-def default_target_branch_for_mode(mode: str) -> str:
+def default_exploratory_branch(issue: Issue) -> str:
+    return f"{DEFAULT_EXPLORATORY_BRANCH_PREFIX}/issue-{issue.number}-{slugify(issue.title)}"
+
+
+def default_target_branch_for_mode(mode: str, *, issue: Issue) -> str:
     if mode == GITFLOW_MODE:
         return DEFAULT_GITFLOW_BRANCH
     if mode == TRUNK_MODE:
         return DEFAULT_TRUNK_BRANCH
+    if mode == EXPLORATORY_MODE:
+        return default_exploratory_branch(issue)
     raise ValueError(f"Unsupported delivery mode: {mode}")
 
 
@@ -861,7 +883,9 @@ def resolve_delivery_plan(
     target_branch: str | None,
 ) -> DeliveryPlan:
     labels = issue.labels.intersection(DELIVERY_LABELS)
-    if DELIVERY_GITFLOW_LABEL in labels:
+    if DELIVERY_EXPLORATORY_LABEL in labels:
+        mode = EXPLORATORY_MODE
+    elif DELIVERY_GITFLOW_LABEL in labels:
         mode = GITFLOW_MODE
     elif DELIVERY_TRUNK_LABEL in labels:
         mode = TRUNK_MODE
@@ -871,14 +895,17 @@ def resolve_delivery_plan(
     label = delivery_label_for_mode(mode)
     add_labels = [] if label in issue.labels else [label]
     remove_labels: list[str] = []
-    if mode == GITFLOW_MODE and DELIVERY_TRUNK_LABEL in issue.labels:
-        remove_labels.append(DELIVERY_TRUNK_LABEL)
-    if mode == TRUNK_MODE and DELIVERY_GITFLOW_LABEL in issue.labels:
-        remove_labels.append(DELIVERY_GITFLOW_LABEL)
+    for delivery_label in (
+        DELIVERY_GITFLOW_LABEL,
+        DELIVERY_TRUNK_LABEL,
+        DELIVERY_EXPLORATORY_LABEL,
+    ):
+        if delivery_label != label and delivery_label in issue.labels:
+            remove_labels.append(delivery_label)
 
     return DeliveryPlan(
         mode=mode,
-        target_branch=target_branch or default_target_branch_for_mode(mode),
+        target_branch=target_branch or default_target_branch_for_mode(mode, issue=issue),
         label=label,
         add_labels=tuple(add_labels),
         remove_labels=tuple(remove_labels),
@@ -1823,6 +1850,8 @@ class RalphLoop:
                 continue
             if self._has_open_blockers(issue):
                 continue
+            if issue_has_any_label(issue, TRIAGE_STOP_LABELS):
+                continue
             if is_basic_triage_candidate(issue):
                 return issue
             if NEEDS_INFO_LABEL in issue.labels:
@@ -2504,7 +2533,7 @@ class RalphLoop:
                 result_message = (
                     f"Issue #{issue.number} merged to {delivery_plan.target_branch}: {commit_sha}"
                 )
-            else:
+            elif delivery_plan.mode == GITFLOW_MODE:
                 emit(f"#{issue.number}: marking {AGENT_INTEGRATED_LABEL}")
                 manifest.record_metadata_status("marking_integrated")
                 self.github.edit_issue_labels(
@@ -2517,6 +2546,26 @@ class RalphLoop:
                     f"Issue #{issue.number} integrated to {delivery_plan.target_branch}: "
                     f"{commit_sha}"
                 )
+            elif delivery_plan.mode == EXPLORATORY_MODE:
+                emit(f"#{issue.number}: marking {AGENT_REVIEWING_LABEL}")
+                manifest.record_metadata_status("marking_reviewing")
+                self.github.edit_issue_labels(
+                    issue.number,
+                    add=[AGENT_REVIEWING_LABEL],
+                    remove=[
+                        AGENT_RUNNING_LABEL,
+                        AGENT_FAILED_LABEL,
+                        AGENT_MERGED_LABEL,
+                        AGENT_INTEGRATED_LABEL,
+                    ],
+                )
+                manifest.record_metadata_status("marked_reviewing")
+                result_message = (
+                    f"Issue #{issue.number} ready for review on "
+                    f"{delivery_plan.target_branch}: {commit_sha}"
+                )
+            else:
+                raise ValueError(f"Unsupported delivery mode: {delivery_plan.mode}")
             self._cleanup_success_artifacts(
                 issue,
                 branch=branch,
@@ -2564,6 +2613,9 @@ class RalphLoop:
             raise IssueFailure(f"Missing required issue section(s): {', '.join(missing)}")
 
     def _ensure_integration_target(self, delivery_plan: DeliveryPlan, run_dir: Path) -> None:
+        if delivery_plan.mode == EXPLORATORY_MODE:
+            self._ensure_exploratory_target(delivery_plan, run_dir)
+            return
         if delivery_plan.mode != GITFLOW_MODE:
             return
         if delivery_plan.target_branch != DEFAULT_GITFLOW_BRANCH:
@@ -2583,6 +2635,23 @@ class RalphLoop:
             run_dir=run_dir,
         )
         self._sync_default_gitflow_target_with_trunk(delivery_plan, run_dir)
+
+    def _ensure_exploratory_target(self, delivery_plan: DeliveryPlan, run_dir: Path) -> None:
+        if delivery_plan.mode != EXPLORATORY_MODE:
+            return
+        if self.git.remote_branch_exists(delivery_plan.target_branch, run_dir=run_dir):
+            return
+
+        emit(
+            f"origin/{delivery_plan.target_branch} does not exist; creating it from "
+            f"origin/{DEFAULT_TRUNK_BRANCH}"
+        )
+        self.git.fetch_base(DEFAULT_TRUNK_BRANCH, run_dir=run_dir)
+        self.git.create_remote_branch(
+            branch=delivery_plan.target_branch,
+            from_ref=f"origin/{DEFAULT_TRUNK_BRANCH}",
+            run_dir=run_dir,
+        )
 
     def _sync_default_gitflow_target_with_trunk(
         self,
@@ -3188,6 +3257,8 @@ def metadata_recovery_complete_status(mode: str) -> str:
         return "closed"
     if mode == GITFLOW_MODE:
         return "marked_integrated"
+    if mode == EXPLORATORY_MODE:
+        return "marked_reviewing"
     raise ValueError(f"Unsupported delivery mode: {mode}")
 
 
@@ -3293,11 +3364,7 @@ def completion_comment_exists(
     commit_sha: str,
     delivery_mode: str,
 ) -> bool:
-    title = (
-        "Ralph trunk integration completed."
-        if delivery_mode == TRUNK_MODE
-        else "Ralph Gitflow integration completed."
-    )
+    title = completion_comment_title(delivery_mode)
     for comment in comments:
         body = str(comment.get("body") or "")
         if title not in body:
@@ -3308,6 +3375,16 @@ def completion_comment_exists(
         if match is not None and match.group("sha") == commit_sha:
             return True
     return False
+
+
+def completion_comment_title(delivery_mode: str) -> str:
+    if delivery_mode == TRUNK_MODE:
+        return "Ralph trunk integration completed."
+    if delivery_mode == GITFLOW_MODE:
+        return "Ralph Gitflow integration completed."
+    if delivery_mode == EXPLORATORY_MODE:
+        return "Ralph exploratory integration completed."
+    raise ValueError(f"Unsupported delivery mode: {delivery_mode}")
 
 
 class RalphRunRecovery:
@@ -3370,9 +3447,14 @@ class RalphRunRecovery:
                     run_dir=recovery_run_dir,
                 )
                 emit(f"Recovered issue #{issue_number} trunk metadata for {commit_sha}.")
-            else:
+            elif delivery_mode == GITFLOW_MODE:
                 self._recover_gitflow_metadata(manifest, issue_number=issue_number)
                 emit(f"Recovered issue #{issue_number} Gitflow metadata for {commit_sha}.")
+            elif delivery_mode == EXPLORATORY_MODE:
+                self._recover_exploratory_metadata(manifest, issue_number=issue_number)
+                emit(f"Recovered issue #{issue_number} exploratory metadata for {commit_sha}.")
+            else:
+                raise ValueError(f"Unsupported delivery mode: {delivery_mode}")
         except CommandFailure as error:
             manifest.record_metadata_status(
                 "failed",
@@ -3480,6 +3562,27 @@ class RalphRunRecovery:
             manifest.record_metadata_status("reopening_issue")
             self.github.reopen_issue(issue_number, run_dir=manifest_run_dir(manifest))
             manifest.record_metadata_status("marked_integrated")
+
+    def _recover_exploratory_metadata(self, manifest: RunManifest, *, issue_number: int) -> None:
+        emit(f"#{issue_number}: reconciling {AGENT_REVIEWING_LABEL}")
+        manifest.record_metadata_status("marking_reviewing")
+        self.github.edit_issue_labels(
+            issue_number,
+            add=[AGENT_REVIEWING_LABEL],
+            remove=[
+                AGENT_RUNNING_LABEL,
+                AGENT_FAILED_LABEL,
+                AGENT_MERGED_LABEL,
+                AGENT_INTEGRATED_LABEL,
+                READY_LABEL,
+            ],
+        )
+        manifest.record_metadata_status("marked_reviewing")
+        if self.github.issue_state(issue_number) == "CLOSED":
+            emit(f"#{issue_number}: reopening issue for exploratory review")
+            manifest.record_metadata_status("reopening_issue")
+            self.github.reopen_issue(issue_number, run_dir=manifest_run_dir(manifest))
+            manifest.record_metadata_status("marked_reviewing")
 
 
 def implementation_prompt(issue: Issue) -> str:
@@ -3785,14 +3888,22 @@ def build_completion_comment(
     ]
     changed_lines = [f"- `{path}`" for path in changed_files]
     if delivery_plan.mode == TRUNK_MODE:
-        title = "Ralph trunk integration completed."
+        title = completion_comment_title(delivery_plan.mode)
         issue_state = f"Issue #{issue.number} will be closed by the Ralph loop."
-    else:
-        title = "Ralph Gitflow integration completed."
+    elif delivery_plan.mode == GITFLOW_MODE:
+        title = completion_comment_title(delivery_plan.mode)
         issue_state = (
             f"Issue #{issue.number} will stay open until Ralph promotes "
             f"`{delivery_plan.target_branch}`."
         )
+    elif delivery_plan.mode == EXPLORATORY_MODE:
+        title = completion_comment_title(delivery_plan.mode)
+        issue_state = (
+            f"Issue #{issue.number} is ready for review on "
+            f"`{delivery_plan.target_branch}`."
+        )
+    else:
+        raise ValueError(f"Unsupported delivery mode: {delivery_plan.mode}")
     return "\n".join(
         [
             title,
@@ -3931,7 +4042,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--target-branch",
-        help="Remote branch to integrate into. Defaults to dev for gitflow and main for trunk.",
+        help=(
+            "Remote branch to integrate into. Defaults to dev for gitflow, "
+            "main for trunk, and agent/review/issue-N-slug for exploratory."
+        ),
     )
     parser.add_argument(
         "--source-branch",

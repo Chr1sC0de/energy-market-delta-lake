@@ -1,17 +1,22 @@
 # Ralph Uses Delivery Modes For Issue Integration
 
-Ralph now supports two **Delivery modes** instead of a single trunk-only success
+Ralph supports three **Delivery modes** instead of a single trunk-only success
 path. **Gitflow delivery** is the default: Ralph keeps `dev` current with
 `main`, integrates validated issue work to `dev`, leaves the issue open with
 `agent-integrated`, and later **Promotion** merges reviewed `dev` work to `main`
 while closing verified issues. **Trunk delivery** remains available for small
 low-risk docs, tests, tooling, or script changes that can integrate directly to
-`main` and close immediately.
+`main` and close immediately. **Exploratory delivery** publishes validated work
+to a durable review branch, marks the issue `agent-reviewing`, and leaves it
+open for human review.
 
 ## Consequences
 
-Ralph issue triage now owns delivery-label hygiene. If both delivery labels are
-present, Ralph normalizes to `delivery-gitflow` before implementation. Promotion
+Ralph issue triage now owns delivery-label hygiene. If `delivery-exploratory`
+conflicts with Gitflow or trunk labels, Ralph normalizes to
+`delivery-exploratory` before implementation because explicit review-branch
+selection should win over shared **Integration target** defaults. If only
+Gitflow and trunk conflict, Ralph normalizes to `delivery-gitflow`. Promotion
 must verify the recorded Gitflow integration commit before closing an
 `agent-integrated` issue, because branch promotion merges code but does not
 reliably close GitHub Issues on its own.
@@ -20,8 +25,10 @@ Gitflow branch hygiene is part of the Delivery mode contract: before default
 Gitflow integration, Ralph merges `origin/main` into `origin/dev` if `dev` is
 behind `main`; after successful Promotion, Ralph fast-forwards `dev` to the
 promotion commit. Recovery also follows the issue **Delivery mode**: Trunk
-delivery reconciles `agent-merged` and issue closure, while Gitflow delivery
-reconciles `agent-integrated` and leaves the issue open for **Promotion**.
+delivery reconciles `agent-merged` and issue closure, Gitflow delivery
+reconciles `agent-integrated` and leaves the issue open for **Promotion**, and
+Exploratory delivery reconciles `agent-reviewing` and leaves the issue open for
+review.
 After each successful issue **Local integration**, **Ready issue refresh**
 reconciles the open issue queue before the next ready issue claim; this is
 separate from the later **Post-promotion review** path.
