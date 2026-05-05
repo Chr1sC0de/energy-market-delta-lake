@@ -113,11 +113,13 @@ Keep failed worktrees unless the maintainer asks for cleanup.
   - `AGENTS.md`
   - `.agents/skills/ralph-loop/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`
-  - `docs/agent-issue-loop.md`
+  - `docs/agents/README.md`
+  - `docs/agents/ralph-loop.md`
   - `docs/agents/issue-tracker.md`
   - `docs/agents/triage-labels.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`
   - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
+  - `python3 -m unittest discover -s tests`
   - `verify commands, links, labels, and canonical Ralph terms`

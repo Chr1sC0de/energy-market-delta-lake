@@ -2,7 +2,7 @@
 
 This context defines repo-wide language for the Energy Market Delta Lake
 monorepo. It captures terms that affect project structure, test scope, and
-engineering decisions across subprojects.
+engineering decisions across **Subprojects**.
 
 ## Language
 
@@ -69,6 +69,11 @@ The Ralph boundary that lets spawned Codex subprocesses use authenticated
 GitHub Issue commands without owning **Local integration** or **Promotion**.
 _Avoid_: Full GitHub sandbox auth, Git push sandbox auth
 
+**Operator workflow**:
+The human workflow for shaping work, preparing GitHub Issues, draining Ralph,
+reviewing `dev`, and running **Promotion**.
+_Avoid_: Agent loop, Ralph internals
+
 **Delivery mode**:
 The Ralph branch strategy that decides where validated issue work is integrated
 and when its GitHub issue is closed.
@@ -93,6 +98,12 @@ The Ralph operation that merges reviewed `dev` work into `main` and closes the
 verified GitHub issues included in that branch range.
 _Avoid_: Manual dev merge
 
+**Post-promotion review**:
+The default Ralph review agent pass that runs after a successful **Promotion**
+with changed files, after `main` is pushed, `dev` is synced, and verified issue
+metadata updates complete.
+_Avoid_: Promotion gate, pre-push review
+
 ## Relationships
 
 - A **Pytest subproject** is one kind of **Subproject**.
@@ -114,11 +125,15 @@ _Avoid_: Manual dev merge
 - **Local integration** is not a **Test lane**.
 - **Sandboxed issue access** may update GitHub Issue metadata, but it must not
   update an **Integration target**.
+- The **Operator workflow** is the human entrypoint; Ralph internals remain on
+  the agent-facing Ralph documentation page.
 - A **Delivery mode** selects an **Integration target**.
 - **Gitflow delivery** uses `dev` as the default **Integration target**.
 - **Trunk delivery** uses `main` as the default **Integration target**.
 - **Promotion** closes only issues whose `dev` integration commit is verified in
   the promoted branch range.
+- **Post-promotion review** happens after **Promotion** succeeds; it is not a
+  **Push check** gate.
 
 ## Example dialogue
 
@@ -149,3 +164,9 @@ _Avoid_: Manual dev merge
   Resolved: use **Sandboxed issue access** for issue metadata only; **Local
   integration**, **Integration target** pushes, and **Promotion** stay outside
   the sandbox.
+- "operator runbook" and "agent loop" were used together for Ralph operation.
+  Resolved: use **Operator workflow** for the human entrypoint and keep Ralph
+  internals on the agent-facing Ralph documentation page.
+- "post-promotion check" could imply a pre-push gate. Resolved: use
+  **Post-promotion review** for the default review agent pass that runs only
+  after successful **Promotion**.

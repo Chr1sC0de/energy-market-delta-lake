@@ -550,7 +550,7 @@ Build it.
 
     def test_select_qa_commands_for_docs_and_script_changes(self) -> None:
         commands = ralph.select_qa_commands(
-            ["docs/workflow.md", "scripts/ralph.py"], Path("/repo")
+            ["docs/repository/workflow.md", "scripts/ralph.py"], Path("/repo")
         )
         names = [command.name for command in commands]
         self.assertEqual(names, ["root Commit check", "Ralph unit tests"])
@@ -565,12 +565,12 @@ Build it.
             [
                 " M scripts/ralph.py",
                 "?? tests/test_ralph.py",
-                "R  old-name.md -> docs/agent-issue-loop.md",
+                "R  old-name.md -> docs/agents/ralph-loop.md",
             ]
         )
         self.assertEqual(
             ralph.parse_git_status_paths(status),
-            ["docs/agent-issue-loop.md", "scripts/ralph.py", "tests/test_ralph.py"],
+            ["docs/agents/ralph-loop.md", "scripts/ralph.py", "tests/test_ralph.py"],
         )
 
     def test_environment_failure_detection_matches_container_tool_errors(self) -> None:

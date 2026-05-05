@@ -39,10 +39,11 @@ issue or branch mutation.
 - `sync.owner`: `agents`
 - `sync.sources`:
   - `scripts/ralph.py`
-  - `docs/agent-issue-loop.md`
+  - `docs/agents/ralph-loop.md`
   - `CONTEXT.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`
-  - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`
+  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
+  - `python3 -m unittest discover -s tests`
   - `verify decision text matches Ralph workflow and canonical terms`

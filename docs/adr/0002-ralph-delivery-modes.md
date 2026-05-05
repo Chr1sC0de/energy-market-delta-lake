@@ -27,7 +27,7 @@ When a **Promotion** range includes non-doc runtime files in the AEMO ETL
 isolated source worktree as the aggregate **Push check**, before any merge,
 push, branch sync, metadata update, or issue closure, so `main` is not updated
 before the fetched source revision passes. Successful Promotions with changed
-files then run Post-promotion review by default; operators must pass
+files then run **Post-promotion review** by default; operators must pass
 `--skip-post-promotion-review` for an explicit no-review Promotion, and
 no-change Promotions record the review state as `skipped_no_changes`.
 
@@ -36,10 +36,11 @@ no-change Promotions record the review state as `skipped_no_changes`.
 - `sync.owner`: `agents`
 - `sync.sources`:
   - `scripts/ralph.py`
-  - `docs/agent-issue-loop.md`
+  - `docs/agents/ralph-loop.md`
   - `CONTEXT.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`
-  - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`
+  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
+  - `python3 -m unittest discover -s tests`
   - `verify decision text matches Ralph workflow and canonical terms`

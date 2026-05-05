@@ -42,8 +42,8 @@ Detailed subsystem documentation for the deployed AWS platform defined in
 ## Related docs
 
 - [AWS Pulumi infrastructure overview](../README.md)
-- [Repository architecture](../../../docs/architecture.md)
-- [Repository workflow](../../../docs/workflow.md)
+- [Repository architecture](../../../docs/repository/architecture.md)
+- [Repository workflow](../../../docs/repository/workflow.md)
 
 ## Sync metadata
 

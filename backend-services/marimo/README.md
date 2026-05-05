@@ -37,7 +37,7 @@ server at a different notebook directory.
 
 - [Local backend-services stack](../README.md)
 - [Authentication service](../authentication/README.md)
-- [Repository workflow](../../docs/workflow.md)
+- [Repository workflow](../../docs/repository/workflow.md)
 
 ## Sync metadata
 

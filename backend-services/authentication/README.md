@@ -59,7 +59,7 @@ rather than directly.
 
 - [Local backend-services stack](../README.md)
 - [Marimo notebook service](../marimo/README.md)
-- [Repository architecture](../../docs/architecture.md)
+- [Repository architecture](../../docs/repository/architecture.md)
 - [AWS Pulumi infrastructure](../../infrastructure/aws-pulumi/README.md)
 
 ## Sync metadata
