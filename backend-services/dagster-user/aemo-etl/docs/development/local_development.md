@@ -211,11 +211,14 @@ generated e2e Dagster config. It builds missing local images by default, support
 cached seed under `backend-services/.e2e/aemo-etl`, or the explicit
 `--seed-root` path, with defaults of 3 raw objects per required source table and
 3 zip objects per required domain.
-Successful non-reuse runs clean containers, Dagster run-worker containers, named
-volumes, and the e2e network; failures preserve the stack plus run manifests
-unless `--always-clean` is used. The run manifest records total gate, stack
-startup, Dagster dataflow monitor, and cleanup durations plus final Dagster run,
-target progress, target materialization timestamp, and asset-check telemetry.
+Successful non-reuse runs attempt to clean containers, Dagster run-worker
+containers, named volumes, and the e2e network; cleanup warnings or failures
+stay visible in the run manifest as cleanup status and `cleanup_issues` without
+changing a successful dataflow result. Failures preserve the stack plus run
+manifests unless `--always-clean` is used. The run manifest records total gate,
+stack startup, Dagster dataflow monitor, and cleanup durations plus cleanup
+phase status, final Dagster run, target progress, target materialization
+timestamp, and asset-check telemetry.
 After startup, it uses Dagster GraphQL to start only the intended unzipper,
 event-driven raw, and gas model automation sensors. NEMWeb discovery schedules,
 the failed-run alert sensor, the date-dimension schedule, and maintenance

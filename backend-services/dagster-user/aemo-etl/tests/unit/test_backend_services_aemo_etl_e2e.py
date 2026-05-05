@@ -518,12 +518,196 @@ def test_cleanup_stack_removes_dagster_worker_containers() -> None:
 
     runner = FakeRunner()
 
-    cleanup_stack(runner, compose_command)
+    issues = cleanup_stack(runner, compose_command)
 
+    assert issues == []
     assert ["podman", "rm", "-f", "worker-before"] in runner.calls
     assert [*compose_command, "down", "-v", "--remove-orphans"] in runner.calls
     assert ["podman", "rm", "-f", "worker-after"] in runner.calls
-    assert ["podman", "network", "rm", "aemo-etl-e2e-dagster-network"] in runner.calls
+    assert [
+        "podman",
+        "network",
+        "rm",
+        "aemo-etl-e2e-dagster-network",
+    ] in runner.calls
+
+
+@pytest.mark.parametrize(
+    ("failing_command", "expected_command_prefix"),
+    (
+        ("compose-down", ("podman-compose", "--no-ansi", "-f", "compose.yaml")),
+        ("worker-rm", ("podman", "rm", "-f")),
+        ("network-rm", ("podman", "network", "rm")),
+    ),
+)
+def test_cleanup_stack_reports_cleanup_command_failures(
+    failing_command: str,
+    expected_command_prefix: Sequence[str],
+) -> None:
+    """Cleanup failures stay visible in the e2e run manifest evidence."""
+    module = load_e2e_command_module()
+    cleanup_stack = get_callable(module, "cleanup_stack")
+    compose_command = ("podman-compose", "--no-ansi", "-f", "compose.yaml")
+
+    class FakeRunner:
+        """Fail one cleanup command while allowing the cleanup flow to continue."""
+
+        def __init__(self) -> None:
+            self.worker_lists = iter(("worker-before\n", "worker-after\n"))
+            self.failure_reported = False
+
+        def run(
+            self,
+            args: list[str],
+            *,
+            cwd: Path | None = None,
+            env: Mapping[str, str] | None = None,
+            capture_output: bool = False,
+            check: bool = True,
+        ) -> subprocess.CompletedProcess[str]:
+            del cwd, env, capture_output, check
+            command_name = classify_cleanup_command(args)
+            if command_name == "worker-ps":
+                return subprocess.CompletedProcess(
+                    args,
+                    0,
+                    stdout=next(self.worker_lists),
+                    stderr="",
+                )
+            if command_name == failing_command and not self.failure_reported:
+                self.failure_reported = True
+                return subprocess.CompletedProcess(
+                    args,
+                    1,
+                    stdout="",
+                    stderr=f"{failing_command} failed\n",
+                )
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    issues = cleanup_stack(FakeRunner(), compose_command)
+
+    assert len(issues) == 1
+    issue = issues[0]
+    assert issue["severity"] == "error"
+    assert issue["returncode"] == 1
+    assert issue["stderr"] == f"{failing_command} failed"
+    command = tuple(cast("Sequence[str]", issue["command"]))
+    assert command[: len(expected_command_prefix)] == tuple(expected_command_prefix)
+
+
+def test_cleanup_stack_reports_cleanup_command_warnings() -> None:
+    """Successful cleanup commands with stderr are visible as warnings."""
+    module = load_e2e_command_module()
+    cleanup_stack = get_callable(module, "cleanup_stack")
+    compose_command = ("podman-compose", "--no-ansi", "-f", "compose.yaml")
+
+    class FakeRunner:
+        """Emit a Podman warning from worker cleanup."""
+
+        def __init__(self) -> None:
+            self.worker_lists = iter(("worker-before\n", ""))
+
+        def run(
+            self,
+            args: list[str],
+            *,
+            cwd: Path | None = None,
+            env: Mapping[str, str] | None = None,
+            capture_output: bool = False,
+            check: bool = True,
+        ) -> subprocess.CompletedProcess[str]:
+            del cwd, env, capture_output, check
+            command_name = classify_cleanup_command(args)
+            if command_name == "worker-ps":
+                return subprocess.CompletedProcess(
+                    args,
+                    0,
+                    stdout=next(self.worker_lists),
+                    stderr="",
+                )
+            if command_name == "worker-rm":
+                return subprocess.CompletedProcess(
+                    args,
+                    0,
+                    stdout="",
+                    stderr="StopSignal SIGTERM failed, resorting to SIGKILL\n",
+                )
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    issues = cleanup_stack(FakeRunner(), compose_command)
+
+    assert len(issues) == 1
+    assert all(issue["severity"] == "warning" for issue in issues)
+    assert {tuple(cast("Sequence[str]", issue["command"]))[:3] for issue in issues} == {
+        ("podman", "rm", "-f")
+    }
+
+
+def test_cleanup_stack_with_telemetry_records_incomplete_cleanup() -> None:
+    """Cleanup telemetry records failed cleanup phases in the run manifest."""
+    module = load_e2e_command_module()
+    cleanup_stack_with_telemetry = get_callable(
+        module,
+        "cleanup_stack_with_telemetry",
+    )
+    telemetry_class = get_callable(module, "GateRunTelemetry")
+    compose_command = ("podman-compose", "--no-ansi", "-f", "compose.yaml")
+
+    class FakeRunner:
+        """Fail network cleanup for telemetry assertions."""
+
+        def run(
+            self,
+            args: list[str],
+            *,
+            cwd: Path | None = None,
+            env: Mapping[str, str] | None = None,
+            capture_output: bool = False,
+            check: bool = True,
+        ) -> subprocess.CompletedProcess[str]:
+            del cwd, env, capture_output, check
+            if classify_cleanup_command(args) == "worker-ps":
+                return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+            if classify_cleanup_command(args) == "network-rm":
+                return subprocess.CompletedProcess(
+                    args,
+                    1,
+                    stdout="",
+                    stderr="network is being used\n",
+                )
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    telemetry = telemetry_class(started_monotonic=100.0)
+
+    issues = cleanup_stack_with_telemetry(
+        FakeRunner(),
+        compose_command,
+        telemetry=telemetry,
+        phase="post-success",
+    )
+    manifest = telemetry.to_manifest()
+    cleanup_phases = cast(
+        "Sequence[Mapping[str, object]]",
+        manifest["cleanup_phases"],
+    )
+
+    assert len(issues) == 1
+    assert cleanup_phases[0]["phase"] == "post-success"
+    assert cleanup_phases[0]["status"] == "incomplete"
+    assert cleanup_phases[0]["issues"] == issues
+
+
+def classify_cleanup_command(args: Sequence[str]) -> str:
+    """Return a compact cleanup command label for e2e unit tests."""
+    if args[:3] == ["podman", "ps", "-aq"]:
+        return "worker-ps"
+    if args[:3] == ["podman", "rm", "-f"]:
+        return "worker-rm"
+    if args[:3] == ["podman", "network", "rm"]:
+        return "network-rm"
+    if len(args) >= 3 and args[-3:] == ["down", "-v", "--remove-orphans"]:
+        return "compose-down"
+    return "other"
 
 
 def test_automation_validation_allows_only_expected_sensors() -> None:
@@ -874,7 +1058,11 @@ def test_gate_run_telemetry_manifest_records_durations() -> None:
     assert payload["dagster_dataflow_monitor_duration_seconds"] == 5.5
     assert payload["cleanup_duration_seconds"] == 1.25
     assert payload["cleanup_phases"] == [
-        {"phase": "post-success", "duration_seconds": 1.25}
+        {
+            "phase": "post-success",
+            "duration_seconds": 1.25,
+            "status": "completed",
+        }
     ]
 
 

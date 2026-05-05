@@ -121,9 +121,10 @@ dataflow through Dagster GraphQL plus a direct Dagster event-log storage read
 for final asset-check status. The isolated stack defaults to host webserver
 port `3001`, a 90 minute timeout, Dagster `max_concurrent_runs` `6`, 3 cached
 raw objects per required source table, and 3 cached zip objects per required
-domain. Its run manifest records gate timing and final dataflow telemetry so
-Promotion review can distinguish stack startup, Dagster monitor, and cleanup
-time without changing the gate decision.
+domain. Its run manifest records gate timing, final dataflow telemetry,
+cleanup duration, and incomplete cleanup evidence so Promotion review can
+distinguish dataflow success from cleanup residue without changing the dataflow
+gate decision.
 
 ## Repository responsibilities
 
