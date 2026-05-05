@@ -1049,12 +1049,17 @@ def select_qa_commands(changed_files: list[str], repo_root: Path) -> list[QAComm
 def select_promotion_gate_commands(
     changed_files: list[str],
     repo_root: Path,
+    *,
+    seed_root: Path | None = None,
 ) -> list[QACommand]:
     if not has_protected_aemo_etl_change(changed_files):
         return []
+    args: tuple[str, ...] = ("scripts/aemo-etl-e2e", "run")
+    if seed_root is not None:
+        args = (*args, "--seed-root", str(seed_root))
     return [
         QACommand(
-            ("scripts/aemo-etl-e2e", "run"),
+            args,
             repo_root / BACKEND_SERVICES_PREFIX,
             AEMO_ETL_E2E_QA_NAME,
         )
@@ -3060,7 +3065,11 @@ class RalphLoop:
         *,
         manifest: RunManifest,
     ) -> list[QAResult]:
-        commands = select_promotion_gate_commands(changed_files, repo_root)
+        commands = select_promotion_gate_commands(
+            changed_files,
+            repo_root,
+            seed_root=self.config.repo_root / BACKEND_SERVICES_PREFIX / ".e2e/aemo-etl",
+        )
         return self._run_qa_command_sequence(
             commands,
             run_dir,

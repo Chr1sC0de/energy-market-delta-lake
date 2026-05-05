@@ -450,10 +450,13 @@ When the promoted range includes non-doc runtime files under
 **End-to-end test** gate from the same source worktree before creating the
 target Promotion worktree. The gate is recorded as
 `aemo-etl End-to-end test` in the Promotion run manifest and invokes
-`scripts/aemo-etl-e2e run` from the `backend-services` **Subproject**. Because
-the aggregate **Push check** and gate run first, source-branch changes cannot
-reach a Promotion merge, `main` push, `dev` branch sync, GitHub metadata
-update, or issue closure without passing against the exact source revision.
+`scripts/aemo-etl-e2e run --seed-root <primary-repo>/backend-services/.e2e/aemo-etl`
+from the `backend-services` **Subproject**, so the temporary Promotion source
+worktree uses the operator-maintained cached Archive seed instead of an empty
+ignored cache under the worktree. Because the aggregate **Push check** and gate
+run first, source-branch changes cannot reach a Promotion merge, `main` push,
+`dev` branch sync, GitHub metadata update, or issue closure without passing
+against the exact source revision.
 Ralph then merges that source revision into a detached `origin/main` worktree
 with per-issue commits preserved, pushes `main`, and fast-forwards `dev` to the
 promotion commit so the next Gitflow drain starts from a `dev` branch that

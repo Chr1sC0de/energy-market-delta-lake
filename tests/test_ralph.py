@@ -627,15 +627,28 @@ Build it.
                 self.assertTrue(ralph.has_protected_aemo_etl_change([path]))
 
     def test_select_promotion_gate_commands_for_aemo_etl_changes(self) -> None:
+        seed_root = Path("/seed-cache")
+        commands = ralph.select_promotion_gate_commands(
+            ["backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"],
+            Path("/repo"),
+            seed_root=seed_root,
+        )
+
+        self.assertEqual(len(commands), 1)
+        self.assertEqual(commands[0].name, "aemo-etl End-to-end test")
+        self.assertEqual(
+            commands[0].args,
+            ("scripts/aemo-etl-e2e", "run", "--seed-root", str(seed_root)),
+        )
+        self.assertEqual(commands[0].cwd, Path("/repo/backend-services"))
+
+    def test_select_promotion_gate_commands_allows_default_seed_root(self) -> None:
         commands = ralph.select_promotion_gate_commands(
             ["backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"],
             Path("/repo"),
         )
 
-        self.assertEqual(len(commands), 1)
-        self.assertEqual(commands[0].name, "aemo-etl End-to-end test")
         self.assertEqual(commands[0].args, ("scripts/aemo-etl-e2e", "run"))
-        self.assertEqual(commands[0].cwd, Path("/repo/backend-services"))
 
     def test_select_promotion_gate_commands_skips_aemo_etl_docs_only_changes(
         self,
@@ -2514,7 +2527,13 @@ Build it.
                 loop._promote()
 
             commands = [call.args for call in runner.calls]
-            e2e_index = commands.index(("scripts/aemo-etl-e2e", "run"))
+            e2e_command = (
+                "scripts/aemo-etl-e2e",
+                "run",
+                "--seed-root",
+                str(tmp_path / "repo" / "backend-services" / ".e2e/aemo-etl"),
+            )
+            e2e_index = commands.index(e2e_command)
             run_prek_index = commands.index(("make", "run-prek"))
             source_path = tmp_path / "worktrees" / "agent-promote-source-dev-to-main"
             promote_path = tmp_path / "worktrees" / "agent-promote-dev-to-main"
@@ -2565,7 +2584,15 @@ Build it.
             if result["name"] == "aemo-etl End-to-end test"
         ]
         self.assertEqual(len(e2e_results), 1)
-        self.assertEqual(e2e_results[0]["command"], ["scripts/aemo-etl-e2e", "run"])
+        self.assertEqual(
+            e2e_results[0]["command"],
+            [
+                "scripts/aemo-etl-e2e",
+                "run",
+                "--seed-root",
+                str(tmp_path / "repo" / "backend-services" / ".e2e/aemo-etl"),
+            ],
+        )
         self.assertTrue(e2e_results[0]["cwd"].endswith("/agent-promote-source-dev-to-main/backend-services"))
         self.assertEqual(e2e_results[0]["status"], "passed")
         self.assertIn(
@@ -2576,15 +2603,20 @@ Build it.
 
     def test_promotion_e2e_gate_failure_stops_before_side_effects(self) -> None:
         changed_file = "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"
-        e2e_command = ("scripts/aemo-etl-e2e", "run")
-        runner = FakeRunner(
-            diff_outputs=[f"{changed_file}\n"],
-            rev_parse_outputs=["source-sha\n"],
-            fail_commands={e2e_command},
-        )
-
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
+            e2e_command = (
+                "scripts/aemo-etl-e2e",
+                "run",
+                "--seed-root",
+                str(tmp_path / "repo" / "backend-services" / ".e2e/aemo-etl"),
+            )
+            runner = FakeRunner(
+                diff_outputs=[f"{changed_file}\n"],
+                rev_parse_outputs=["source-sha\n"],
+                fail_commands={e2e_command},
+            )
+
             loop = make_loop(tmp_path, runner, promote=True)
             with self.assertRaises(ralph.CommandFailure):
                 with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):

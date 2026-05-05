@@ -440,6 +440,7 @@ def test_start_stack_services_runs_compose_in_dependency_phases(tmp_path: Path) 
         rebuild=False,
         reuse=False,
         always_clean=False,
+        seed_root=None,
         webserver_port=3001,
         raw_latest_count=3,
         zip_latest_count=3,

@@ -110,7 +110,10 @@ Local workflow notes:
 - The isolated AEMO ETL **End-to-end test** stack belongs to the
   `backend-services/dagster-user/aemo-etl` Subproject and is operated through
   `backend-services/scripts/aemo-etl-e2e`; its run manifest records timing and
-  dataflow telemetry for Promotion review.
+  dataflow telemetry for Promotion review. Ralph **Promotion** runs pass an
+  explicit `--seed-root` pointing at the primary repo cache so temporary
+  Promotion source worktrees do not look for ignored seed data under the
+  ephemeral worktree.
 
 Use [backend-services/README.md](../../backend-services/README.md) for local
 stack commands and

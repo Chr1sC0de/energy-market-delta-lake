@@ -345,6 +345,7 @@ class RunOptions:
     rebuild: bool
     reuse: bool
     always_clean: bool
+    seed_root: Path | None
     webserver_port: int
     raw_latest_count: int
     zip_latest_count: int
@@ -684,6 +685,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     rebuild=args.rebuild,
                     reuse=args.reuse,
                     always_clean=args.always_clean,
+                    seed_root=args.seed_root,
                     webserver_port=args.webserver_port,
                     raw_latest_count=args.raw_latest_count,
                     zip_latest_count=args.zip_latest_count,
@@ -734,6 +736,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--always-clean",
         action="store_true",
         help="clean the e2e containers and named volumes even when startup fails",
+    )
+    run_parser.add_argument(
+        "--seed-root",
+        type=Path,
+        default=None,
+        help=(
+            "cached Archive seed root to mount into the isolated stack "
+            "(default: backend-services/.e2e/aemo-etl)"
+        ),
     )
     run_parser.add_argument(
         "--webserver-port",
@@ -807,7 +818,7 @@ def run_stack(
     podman_socket = podman_socket_from_xdg_runtime_dir(host_env)
 
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    seed_root = backend_dir / ".e2e/aemo-etl"
+    seed_root = (options.seed_root or backend_dir / ".e2e/aemo-etl").resolve()
     run_dir = seed_root / "runs" / run_id
     logs_dir = run_dir / "logs"
     run_dir.mkdir(parents=True, exist_ok=False)
@@ -2756,6 +2767,7 @@ def base_manifest(
             "rebuild": options.rebuild,
             "reuse": options.reuse,
             "always_clean": options.always_clean,
+            "seed_root": str(options.seed_root) if options.seed_root is not None else None,
             "webserver_port": options.webserver_port,
             "raw_latest_count": options.raw_latest_count,
             "zip_latest_count": options.zip_latest_count,
