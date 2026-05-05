@@ -8,6 +8,7 @@ findings into durable repo docs before deleting this file.
 
 - [#82: Explore deeper gas-model asset shell Module](#82-explore-deeper-gas-model-asset-shell-module)
 - [Issue #83: Explore deeper NEMWeb discovery Module](#issue-83-explore-deeper-nemweb-discovery-module)
+- [Issue #84: Explore archive-source planning consolidation](#issue-84-explore-archive-source-planning-consolidation)
 
 ## #82: Explore deeper gas-model asset shell Module
 
@@ -347,15 +348,231 @@ Subproject change, finish with the Subproject **Commit check**:
 changes LocalStack, S3-compatible behavior, or the landing/Delta write
 contract.
 
+## Issue #84: Explore archive-source planning consolidation
+
+Issue #84 asks whether archive replay and local **End-to-end test** seed logic
+should share a bounded archive-source planning Module. This section records
+docs-only research. It does not change runtime behavior. Issue `#87` must
+consume any accepted findings into durable repo docs before deleting this
+temporary file.
+
+### Evidence
+
+Both paths already depend on the same source-table registry. Source-table
+definition modules call
+`backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
+to register a `DFFromS3KeysSourceTableSpec` containing `domain`,
+`name_suffix`, `glob_pattern`, schema, surrogate-key columns, and object/frame
+postprocess hooks. The registry in
+`backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`
+imports the GBB and VICGAS raw definition packages, returns stable ordered
+specs, derives `archive_prefix` as `bronze/{domain}`, derives the target bronze
+Delta URI, and supports explicit all/domain/table selection for the replay CLI.
+
+Archive replay starts from operator-selected source-table specs. The CLI in
+`backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
+requires exactly one of `--all`, `--domain`, or `--table`, defaults to dry-run,
+and only writes when `--replace` is present. The maintenance code in
+`backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
+lists S3 objects under each spec's `archive_prefix`, applies the spec
+`glob_pattern`, returns `ArchiveObject` records, groups them into
+`ArchiveReplayBatch` values bounded by bytes and file count, and reports an
+`ArchiveReplayPlan` with matching files, batch count, total bytes, and target
+Delta table URI. Replace mode remains outside object planning: it downloads
+archive bytes, parses each source object with the source-table schema and
+hooks, stages batches, collapses current state, and calls the same
+current-state Delta writer used by normal source-table bronze ingestion.
+
+The local **End-to-end test** seed path starts from the Dagster asset graph and
+then falls back to the same source-table registry. In
+`backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`,
+`build_gas_model_archive_seed_spec` resolves the upstream assets for the
+`gas_model` group, keeps only source-table bronze assets needed by that target,
+and adds zip-domain seed specs for the selected source-table domains when the
+matching unzipper asset exists. `refresh_archive_seed` builds coverage from the
+live archive bucket, downloads the de-duplicated selected objects into the
+ignored local cache, and writes a seed spec plus seed-run manifest. The
+`load_cached_seed_to_localstack` path validates the cached coverage and uploads
+the selected objects to the LocalStack landing bucket without reading live S3.
+The CLI in
+`backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
+keeps `spec`, `refresh`, and `load-localstack` as separate operator commands
+and exposes the raw and zip latest-count knobs.
+
+The prefix/glob S3 matching is already partly shared. Both archive replay and
+seed refresh call `get_s3_pagination`, `get_object_head_from_pages`, and
+`get_s3_object_keys_from_prefix_and_name_glob` from
+`backend-services/dagster-user/aemo-etl/src/aemo_etl/utils.py`. The seed cache
+path has a parallel filesystem implementation in `e2e_archive_seed.py` that
+walks cached objects under the archive prefix and uses `fnmatch` against
+`{archive_prefix}/{glob_pattern}`. The shared S3 helper does case-insensitive
+matching by default, while the cached seed path lowers both relative keys and
+normalized patterns before matching, so the matching semantics are
+intentionally similar but duplicated.
+
+The tests show the current behavioral contracts.
+`backend-services/dagster-user/aemo-etl/tests/unit/test_maintenance_archive_replay.py`
+checks source-table selector validation, archive-prefix and target-URI
+derivation, byte/file batch planning, dry-run plan reporting without object
+downloads, invalid/empty file skipping, and replace-mode current-state writes.
+`backend-services/dagster-user/aemo-etl/tests/unit/test_maintenance_e2e_archive_seed.py`
+checks default seed counts, seed-root discovery, live refresh shortfalls,
+latest-object selection, cache reload into LocalStack, and cache shortfall
+manifests.
+`backend-services/dagster-user/aemo-etl/tests/component/test_maintenance_e2e_archive_seed.py`
+verifies that the seed spec really comes from the Dagster definitions graph and
+includes both GBB and VICGAS zip domains.
+
+### Comparison
+
+| Behavior | Archive replay | Local **End-to-end test** seed | Consolidation signal |
+| --- | --- | --- | --- |
+| Source-table spec loading | Loads all registered source-table specs, then uses explicit all/domain/table operator selection. | Resolves the `gas_model` upstream Dagster asset graph, then keeps matching registered source-table specs. | Shared source-table requirement shape is useful, but the selector inputs should stay caller-owned. |
+| Prefix/glob matching | Lists S3 pages from the archive bucket and filters keys by source-table `archive_prefix` and `glob_pattern`. | Uses the same S3 list/filter path for refresh and a duplicated filesystem list/filter path for cached seed loading. | A small Module can own prefix/glob matching over supplied object heads for both S3 and cached heads. |
+| Object planning | Plans the full matching archive scope into byte/file-bounded batches for dry-run evidence and replace execution. | Selects the latest N raw objects per required source table and latest N zip objects per required domain, then de-duplicates selected objects for download or upload. | Shared object DTOs and matching are valuable; selection policy differs and should be explicit. |
+| Coverage selection | Coverage is the complete selected archive scope and reports file count, batch count, total bytes, and target table URI. | Coverage is requirement-based, reports requested count, available count, shortfall, selected objects, and manifest status. | Coverage reporting can share a common requirement/result model with replay-specific and seed-specific views. |
+| Execution boundary | Dry-run stops at planning. Replace downloads bytes, parses source rows, stages Delta batches, and writes bounded current-state bronze. | Refresh downloads live archive objects to cache. LocalStack load uploads cached objects to landing before Dagster starts. | Execution side effects should stay outside the planning Module. |
+
+### Proposed Module Interface
+
+Create a Python Module for archive-source planning, not a Dagster Component and
+not a current-state ingestion abstraction. The Interface should be bounded to
+archive object requirements, matching, selection, and batch planning:
+
+```python
+ArchiveSourceRequirement(
+    kind: Literal["source-table", "zip-domain"],
+    name: str,
+    archive_prefix: str,
+    glob_pattern: str,
+    target_table_uri: str | None = None,
+)
+
+ArchiveSourceObject(key: str, size: int)
+
+ArchiveSourceSelectionPolicy(
+    mode: Literal["all-batched", "latest-count"],
+    max_batch_bytes: int = DEFAULT_MAX_BATCH_BYTES,
+    max_batch_files: int = DEFAULT_MAX_BATCH_FILES,
+    latest_count: int | None = None,
+)
+
+ArchiveSourceCoverage(
+    requirement: ArchiveSourceRequirement,
+    requested_count: int | None,
+    available_count: int,
+    selected_objects: tuple[ArchiveSourceObject, ...],
+    shortfall: int = 0,
+)
+
+ArchiveSourceBatch(objects: tuple[ArchiveSourceObject, ...])
+
+ArchiveSourcePlan(
+    requirement: ArchiveSourceRequirement,
+    coverage: ArchiveSourceCoverage,
+    batches: tuple[ArchiveSourceBatch, ...] = (),
+)
+
+match_archive_source_objects(
+    requirement: ArchiveSourceRequirement,
+    object_heads: Mapping[str, S3ObjectHead],
+) -> tuple[ArchiveSourceObject, ...]
+
+plan_archive_sources(
+    requirements: Sequence[ArchiveSourceRequirement],
+    object_heads_by_requirement: Mapping[str, Mapping[str, S3ObjectHead]],
+    policy: ArchiveSourceSelectionPolicy,
+) -> tuple[ArchiveSourcePlan, ...]
+```
+
+The Module should own deterministic Implementation detail only:
+
+- turning source-table and zip-domain requirements into archive prefix/glob
+  matches
+- normalizing S3-listed and cached-file object heads into one object shape
+- applying case-insensitive prefix/glob matching consistently
+- selecting either the full matching scope or the latest N objects
+- producing byte/file batches only when the caller chooses the `all-batched`
+  policy
+- computing requested count, available count, selected object count, shortfall,
+  total bytes, and stable selected-key ordering
+
+The Interface should not absorb ADR 0003 current-state behavior. The existing
+current-state write helper, archive replay replace mode, source-table bronze
+asset ingestion, zero-byte handling, skipped-key warning, no-delete-on-absence
+semantics, and Delta target replacement/merge policy must remain owned by
+`factories/df_from_s3_keys` and `maintenance/archive_replay.py`. The planning
+Module may carry `target_table_uri` as replay evidence, but it must not decide
+when to overwrite or merge a Delta table.
+
+### Explicit Integration Edges
+
+Keep these edges explicit at the call sites:
+
+- S3 client construction, `AWS_ENDPOINT_URL`, bucket names, and live S3 listing.
+  The replay and seed CLIs decide whether they point at AWS or LocalStack.
+- Archive refresh downloads and LocalStack seed uploads. The LocalStack load
+  path is a concrete side effect into the landing bucket, not planning logic.
+- LocalStack service wiring. `backend-services/compose.yaml` keeps
+  `aemo-etl-seed-localstack` as a one-shot service gated by LocalStack health,
+  and `backend-services/localstack/init-s3.sh` owns local bucket and DynamoDB
+  lock-table creation.
+- Dagster graph selection. The seed path should continue resolving
+  `AssetSelection.groups("gas_model").upstream()` in the End-to-end test seed
+  module and pass explicit archive requirements to the planning Module.
+- Operator intent. The replay CLI's all/domain/table selection and `--replace`
+  switch should stay outside the Module.
+- Current-state writes. ADR 0003 limits current-state semantics to
+  source-table bronze assets and archive replay; zip-domain seed objects and
+  LocalStack landing uploads are not source-table bronze rebuilds.
+
+### Recommendation
+
+The smallest implementation slice is to extract a pure
+`maintenance/archive_source_planning.py` Module and migrate only the duplicated
+archive object matching, latest-object selection, coverage accounting, and
+byte/file batch planning from archive replay and the End-to-end test seed
+maintenance code. Keep `DFFromS3KeysSourceTableSpec`, Dagster asset selection,
+CLI parsing, S3 download/upload, LocalStack cache loading, and current-state
+Delta writes in their current modules for the first slice.
+
+Use the AEMO ETL **Unit test** lane for that slice because the extracted Module
+should be pure Python over object-head mappings and cached-file metadata. Useful
+narrowed debugging targets are:
+
+```bash
+uv run pytest tests/unit/test_maintenance_archive_replay.py \
+  tests/unit/test_maintenance_e2e_archive_seed.py \
+  tests/unit/test_utils.py
+```
+
+Before treating the slice as validated, run `make unit-test` from
+`backend-services/dagster-user/aemo-etl`, then the Subproject **Commit check**
+with `make run-prek`. Add the AEMO ETL **Component test** lane only if the
+slice changes `build_gas_model_archive_seed_spec` or any Dagster definition
+graph behavior. Do not run **Integration tests** by default unless the slice
+changes LocalStack service wiring, S3-compatible behavior, cached seed uploads,
+or the landing/Delta write contract.
+
 ## Sync metadata
 
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `CONTEXT.md`
+  - `backend-services/compose.yaml`
+  - `backend-services/localstack/init-s3.sh`
+  - `backend-services/scripts/aemo-etl-e2e`
   - `docs/repository/documentation-sync.md`
   - `docs/adr/0003-bounded-current-state-bronze-source-tables.md`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/utils.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/jobs/download_vicgas_public_report_zip_files.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/current_state.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/nemweb_public_files/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/nemweb_public_files/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/nemweb_public_files/models.py`
@@ -363,9 +580,12 @@ contract.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/nemweb_public_files/ops/nemweb_link_fetcher.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/nemweb_public_files/ops/nemweb_link_processor.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/nemweb_public_files/ops/processed_link_combiner.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/tests/component/test_factories_nemweb.py`
   - `backend-services/dagster-user/aemo-etl/tests/component/test_defs_raw_modules.py`
   - `backend-services/dagster-user/aemo-etl/tests/component/test_download_vicgas_public_report_zip_files.py`
+  - `backend-services/dagster-user/aemo-etl/tests/component/test_maintenance_e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_dim_location.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_scada_pressure.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_dim_date.py`
@@ -374,6 +594,11 @@ contract.
   - `backend-services/dagster-user/aemo-etl/tests/component/test_defs_gas_model_silver_gas_dim_location.py`
   - `backend-services/dagster-user/aemo-etl/tests/component/test_defs_gas_model_silver_gas_future_facts.py`
   - `backend-services/dagster-user/aemo-etl/tests/component/test_defs_gas_model_silver_gas_operations_facts.py`
+  - `backend-services/dagster-user/aemo-etl/tests/unit/test_cli_e2e_archive_seed.py`
+  - `backend-services/dagster-user/aemo-etl/tests/unit/test_cli_replay_bronze_archive.py`
+  - `backend-services/dagster-user/aemo-etl/tests/unit/test_maintenance_archive_replay.py`
+  - `backend-services/dagster-user/aemo-etl/tests/unit/test_maintenance_e2e_archive_seed.py`
+  - `backend-services/dagster-user/aemo-etl/tests/unit/test_utils.py`
 - `sync.scope`: `temporary architecture exploration`
 - `sync.qa`:
   - `git diff --name-only`
