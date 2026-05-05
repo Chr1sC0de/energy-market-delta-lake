@@ -2723,27 +2723,34 @@ def collect_logs(
 def cleanup_stack(
     runner: CommandRunner,
     compose_command: Sequence[str],
+    *,
+    phase: str = "cleanup",
 ) -> list[dict[str, object]]:
     """Remove e2e stack containers, worker containers, and named volumes."""
     issues: list[dict[str, object]] = []
-    issues.extend(cleanup_dagster_run_worker_containers(runner))
+    issues.extend(cleanup_dagster_run_worker_containers(runner, phase=phase))
     compose_down_command = [*compose_command, "down", "-v", "--remove-orphans"]
     compose_down_result = runner.run(
         compose_down_command,
         capture_output=True,
         check=False,
     )
-    echo_cleanup_output(compose_down_result)
-    record_cleanup_issue(issues, compose_down_command, compose_down_result)
-    issues.extend(cleanup_dagster_run_worker_containers(runner))
+    echo_cleanup_output(compose_down_result, command=compose_down_command, phase=phase)
+    record_cleanup_issue(
+        issues,
+        compose_down_command,
+        compose_down_result,
+        phase=phase,
+    )
+    issues.extend(cleanup_dagster_run_worker_containers(runner, phase=phase))
     network_rm_command = ["podman", "network", "rm", NETWORK_NAME]
     network_rm_result = runner.run(
         network_rm_command,
         capture_output=True,
         check=False,
     )
-    echo_cleanup_output(network_rm_result)
-    record_cleanup_issue(issues, network_rm_command, network_rm_result)
+    echo_cleanup_output(network_rm_result, command=network_rm_command, phase=phase)
+    record_cleanup_issue(issues, network_rm_command, network_rm_result, phase=phase)
     return issues
 
 
@@ -2758,7 +2765,7 @@ def cleanup_stack_with_telemetry(
     started = time.monotonic()
     issues: list[dict[str, object]] = []
     try:
-        issues = cleanup_stack(runner, compose_command)
+        issues = cleanup_stack(runner, compose_command, phase=phase)
         return issues
     finally:
         telemetry.record_cleanup(
@@ -2771,6 +2778,8 @@ def cleanup_stack_with_telemetry(
 
 def cleanup_dagster_run_worker_containers(
     runner: CommandRunner,
+    *,
+    phase: str,
 ) -> list[dict[str, object]]:
     """Remove Dagster run workers launched outside the compose project."""
     issues: list[dict[str, object]] = []
@@ -2789,7 +2798,7 @@ def cleanup_dagster_run_worker_containers(
         check=False,
     )
     if result.returncode != 0:
-        record_cleanup_issue(issues, ps_command, result)
+        record_cleanup_issue(issues, ps_command, result, phase=phase)
         return issues
     container_ids = tuple(
         line.strip() for line in result.stdout.splitlines() if line.strip()
@@ -2802,13 +2811,21 @@ def cleanup_dagster_run_worker_containers(
         capture_output=True,
         check=False,
     )
-    echo_cleanup_output(rm_result)
-    record_cleanup_issue(issues, rm_command, rm_result)
+    echo_cleanup_output(rm_result, command=rm_command, phase=phase)
+    record_cleanup_issue(issues, rm_command, rm_result, phase=phase)
     return issues
 
 
-def echo_cleanup_output(result: subprocess.CompletedProcess[str]) -> None:
+def echo_cleanup_output(
+    result: subprocess.CompletedProcess[str],
+    *,
+    command: Sequence[str],
+    phase: str,
+) -> None:
     """Preserve cleanup command output after capturing it for the manifest."""
+    stderr = result.stderr.strip() if result.stderr else ""
+    if is_benign_pre_run_cleanup_issue(command, result, stderr, phase=phase):
+        return
     if result.stdout:
         sys.stdout.write(result.stdout)
     if result.stderr:
@@ -2819,11 +2836,15 @@ def record_cleanup_issue(
     issues: list[dict[str, object]],
     command: Sequence[str],
     result: subprocess.CompletedProcess[str],
+    *,
+    phase: str,
 ) -> None:
     """Append a cleanup warning or failure for manifest evidence."""
     stdout = result.stdout.strip() if result.stdout else ""
     stderr = result.stderr.strip() if result.stderr else ""
     if result.returncode == 0 and len(stderr) == 0:
+        return
+    if is_benign_pre_run_cleanup_issue(command, result, stderr, phase=phase):
         return
     severity = "error" if result.returncode != 0 else "warning"
     issue: dict[str, object] = {
@@ -2840,6 +2861,34 @@ def record_cleanup_issue(
         f"{STACK_NAME} cleanup {severity}: {' '.join(command)} "
         f"returned {result.returncode}\n"
     )
+
+
+def is_benign_pre_run_cleanup_issue(
+    command: Sequence[str],
+    result: subprocess.CompletedProcess[str],
+    stderr: str,
+    *,
+    phase: str,
+) -> bool:
+    """Return whether pre-run cleanup only found already-absent resources."""
+    if phase != "pre-run":
+        return False
+    stderr_lines = tuple(line.strip() for line in stderr.splitlines() if line.strip())
+    if len(stderr_lines) == 0:
+        return False
+    if command[:3] == ["podman", "network", "rm"]:
+        return result.returncode == 1 and all(
+            "network not found" in line or "unable to find network" in line
+            for line in stderr_lines
+        )
+    if command[-3:] == ["down", "-v", "--remove-orphans"]:
+        return result.returncode == 0 and all(
+            "no container with name or ID" in line
+            or "no container with ID or name" in line
+            or "no pod with name or ID" in line
+            for line in stderr_lines
+        )
+    return False
 
 
 def cleanup_has_errors(issues: Sequence[Mapping[str, object]]) -> bool:

@@ -212,10 +212,11 @@ cached seed under `backend-services/.e2e/aemo-etl`, or the explicit
 `--seed-root` path, with defaults of 3 raw objects per required source table and
 3 zip objects per required domain.
 Successful non-reuse runs attempt to clean containers, Dagster run-worker
-containers, named volumes, and the e2e network; cleanup warnings or failures
-stay visible in the run manifest as cleanup status and `cleanup_issues` without
-changing a successful dataflow result. Failures preserve the stack plus run
-manifests unless `--always-clean` is used. The run manifest records total gate,
+containers, named volumes, and the e2e network; pre-run cleanup treats
+already-absent e2e resources as benign, while post-run cleanup warnings or
+failures stay visible in the run manifest as cleanup status and `cleanup_issues`
+without changing a successful dataflow result. Failures preserve the stack plus
+run manifests unless `--always-clean` is used. The run manifest records total gate,
 stack startup, Dagster dataflow monitor, and cleanup durations plus cleanup
 phase status, final Dagster run, target progress, target materialization
 timestamp, and asset-check telemetry.

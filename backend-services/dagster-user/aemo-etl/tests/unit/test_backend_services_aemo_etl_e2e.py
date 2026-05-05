@@ -643,6 +643,76 @@ def test_cleanup_stack_reports_cleanup_command_warnings() -> None:
     }
 
 
+def test_cleanup_stack_with_telemetry_ignores_missing_pre_run_resources() -> None:
+    """Pre-run cleanup treats already-absent e2e resources as benign."""
+    module = load_e2e_command_module()
+    cleanup_stack_with_telemetry = get_callable(
+        module,
+        "cleanup_stack_with_telemetry",
+    )
+    telemetry_class = get_callable(module, "GateRunTelemetry")
+    compose_command = ("podman-compose", "--no-ansi", "-f", "compose.yaml")
+
+    class FakeRunner:
+        """Report no prior compose stack or e2e network."""
+
+        def run(
+            self,
+            args: list[str],
+            *,
+            cwd: Path | None = None,
+            env: Mapping[str, str] | None = None,
+            capture_output: bool = False,
+            check: bool = True,
+        ) -> subprocess.CompletedProcess[str]:
+            del cwd, env, capture_output, check
+            command_name = classify_cleanup_command(args)
+            if command_name == "worker-ps":
+                return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+            if command_name == "compose-down":
+                return subprocess.CompletedProcess(
+                    args,
+                    0,
+                    stdout="",
+                    stderr=(
+                        'Error: no container with name or ID "aemo-etl-e2e" '
+                        "found: no such container\n"
+                        "Error: no pod with name or ID pod_aemo-etl-e2e "
+                        "found: no such pod\n"
+                    ),
+                )
+            if command_name == "network-rm":
+                return subprocess.CompletedProcess(
+                    args,
+                    1,
+                    stdout="",
+                    stderr=(
+                        "Error: unable to find network with name or ID "
+                        "aemo-etl-e2e-dagster-network: network not found\n"
+                    ),
+                )
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    telemetry = telemetry_class(started_monotonic=100.0)
+
+    issues = cleanup_stack_with_telemetry(
+        FakeRunner(),
+        compose_command,
+        telemetry=telemetry,
+        phase="pre-run",
+    )
+    manifest = telemetry.to_manifest()
+    cleanup_phases = cast(
+        "Sequence[Mapping[str, object]]",
+        manifest["cleanup_phases"],
+    )
+
+    assert issues == []
+    assert cleanup_phases[0]["phase"] == "pre-run"
+    assert cleanup_phases[0]["status"] == "completed"
+    assert "issues" not in cleanup_phases[0]
+
+
 def test_cleanup_stack_with_telemetry_records_incomplete_cleanup() -> None:
     """Cleanup telemetry records failed cleanup phases in the run manifest."""
     module = load_e2e_command_module()
@@ -1198,7 +1268,7 @@ def test_dataflow_status_reports_missing_target_materialization() -> None:
 
 
 def test_dataflow_status_reports_target_progress_while_runs_are_active() -> None:
-    """The monitor reports target progress without querying every asset check."""
+    """Target/check coverage can succeed while background runs remain active."""
     module = load_e2e_command_module()
     selector_class = get_callable(module, "DagsterRepositorySelector")
     fetch_dagster_dataflow_status = get_callable(

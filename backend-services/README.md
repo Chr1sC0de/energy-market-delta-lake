@@ -304,9 +304,11 @@ sensors, and gas model automation sensors; NEMWeb discovery schedules, the
 failed-run alert sensor, the daily date-dimension schedule, and maintenance
 schedules stay stopped. The command bootstraps non-sensor prerequisites,
 including the date dimension and table-metadata prerequisite, then polls Dagster
-until no active runs remain and the full `gas_model` target has materialized.
-Failed runs, failed or missing target materializations, and failed asset checks
-fail the command, including WARN-level checks such as skipped selected S3 keys.
+until the full `gas_model` target has materialized and required checks have
+reported success. Background or queued runs may still exist after target/check
+coverage is complete. Failed runs, failed or missing target materializations,
+and failed asset checks fail the command, including WARN-level checks such as
+skipped selected S3 keys.
 
 Local service images are tagged for the e2e stack. Missing images are built
 automatically, existing images are reused by default, and `--rebuild` forces all
@@ -321,9 +323,10 @@ minutes and the default Dagster `max_concurrent_runs` is `6`; override them with
 
 Successful runs attempt to clean e2e containers, Dagster run-worker
 containers, named volumes, and the e2e network by default after the full
-dataflow completes. Cleanup command warnings or failures do not change a
-successful dataflow result, but they do change the manifest cleanup status and
-are captured as `cleanup_issues`. Failed runs, including cached seed coverage
+dataflow completes. Pre-run cleanup treats already-absent e2e resources as
+benign. Post-run cleanup warnings or failures do not change a successful
+dataflow result, but they do change the manifest cleanup status and are captured
+as `cleanup_issues`. Failed runs, including cached seed coverage
 shortfalls, preserve containers, volumes, service logs, the run manifest, and
 the seed-run manifest for inspection. Use `--reuse` to keep and reuse the e2e
 stack after a successful run, or `--always-clean` to clean containers, volumes,
