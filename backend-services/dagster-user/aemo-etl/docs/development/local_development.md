@@ -219,21 +219,25 @@ run manifests unless `--always-clean` is used. The run manifest records total ga
 stack startup, Dagster dataflow monitor, and cleanup durations plus cleanup
 phase status, final Dagster run, target progress, target materialization
 timestamp, and asset-check telemetry.
-After startup, it uses Dagster GraphQL to start only the intended unzipper,
+After startup, it uses Dagster GraphQL to drive the selected scenario. The
+default `full-gas-model` scenario starts only the intended unzipper,
 event-driven raw, and gas model automation sensors. NEMWeb discovery schedules,
 the failed-run alert sensor, the date-dimension schedule, and maintenance
 schedules remain stopped. The command bootstraps non-sensor prerequisites,
 including date dimension and table metadata materialization, then monitors until
 the full `gas_model` target succeeds, fails, or the timeout is reached. The
-default `full-gas-model` scenario uses host webserver port `3001`, a 90 minute
-timeout, 3 raw objects per required source table, 3 zip objects per required
-domain, and Dagster `max_concurrent_runs` `6`. The `promotion-gas-model`
-scenario keeps the same final coverage contract while narrowing the seed
-horizon to 1 raw object and 1 zip object, with a 20 minute timeout and
-`max_concurrent_runs` `3`; Ralph **Promotion** uses that scenario from the
-isolated source worktree. Override these values with `--webserver-port`,
-`--timeout-seconds`, `--max-concurrent-runs`, `--raw-latest-count`, and
-`--zip-latest-count`.
+`full-gas-model` scenario uses host webserver port `3001`, a 90 minute timeout,
+3 raw objects per required source table, 3 zip objects per required domain, and
+Dagster `max_concurrent_runs` `6`. The `promotion-gas-model` scenario keeps
+automation stopped and launches one explicit Dagster asset run for every
+materializable `gas_model` asset plus its materializable upstream closure,
+while skipping live `bronze_nemweb_public_files_*` discovery/listing assets and
+narrowing the seed horizon to 1 raw object and 1 zip object. Promotion asset
+batches use Dagster's in-process executor inside Podman run-worker containers,
+with a 20 minute timeout and `max_concurrent_runs` `6`; Ralph **Promotion** uses
+that scenario from the isolated source worktree. Override these values with
+`--webserver-port`, `--timeout-seconds`, `--max-concurrent-runs`,
+`--raw-latest-count`, and `--zip-latest-count`.
 
 The required e2e coverage remains every materializable Dagster asset in group
 `gas_model`, plus final asset-check status for that target. Current
@@ -243,6 +247,9 @@ assets and 112 asset checks, including
 report comparing gate duration to the observed `69m58s` baseline and showing
 peak active/queued runs, final successful runs, target progress, and final
 failed asset-check count.
+The generated compose stack uses fixed service IPs for Postgres, LocalStack,
+and the AEMO ETL code server so Podman run-worker containers do not depend on
+container DNS during high-concurrency **Promotion** gates.
 
 ## Bronze archive rebuild runbook
 

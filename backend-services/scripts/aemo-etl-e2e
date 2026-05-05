@@ -17,6 +17,11 @@ from urllib.request import Request, urlopen
 
 STACK_NAME = "aemo-etl-e2e"
 NETWORK_NAME = f"{STACK_NAME}-dagster-network"
+NETWORK_SUBNET = "10.89.10.0/24"
+POSTGRES_ADDRESS = "10.89.10.10"
+LOCALSTACK_ADDRESS = "10.89.10.11"
+AEMO_ETL_ADDRESS = "10.89.10.12"
+SEED_ADDRESS = "10.89.10.13"
 CONTAINER_SOCKET_PATH = "/run/podman/podman.sock"
 DEFAULT_WEBSERVER_PORT = 3001
 DEFAULT_TIMEOUT_SECONDS = 90 * 60
@@ -26,28 +31,47 @@ DEFAULT_ZIP_LATEST_COUNT = 3
 E2E_BUDGET_BASELINE_SECONDS = 69 * 60 + 58
 FULL_GAS_MODEL_SCENARIO = "full-gas-model"
 PROMOTION_GAS_MODEL_SCENARIO = "promotion-gas-model"
+SENSOR_DRIVEN_LAUNCH_MODE = "sensor-driven"
+DIRECT_UPSTREAM_ASSET_LAUNCH_MODE = "direct-upstream-asset-launch"
 E2E_SCENARIO_DEFAULTS = {
     FULL_GAS_MODEL_SCENARIO: {
         "raw_latest_count": DEFAULT_RAW_LATEST_COUNT,
         "zip_latest_count": DEFAULT_ZIP_LATEST_COUNT,
         "timeout_seconds": DEFAULT_TIMEOUT_SECONDS,
         "max_concurrent_runs": DEFAULT_MAX_CONCURRENT_RUNS,
+        "launch_mode": SENSOR_DRIVEN_LAUNCH_MODE,
     },
     PROMOTION_GAS_MODEL_SCENARIO: {
         "raw_latest_count": 1,
         "zip_latest_count": 1,
         "timeout_seconds": 20 * 60,
-        "max_concurrent_runs": 3,
+        "max_concurrent_runs": DEFAULT_MAX_CONCURRENT_RUNS,
+        "launch_mode": DIRECT_UPSTREAM_ASSET_LAUNCH_MODE,
     },
 }
 DEFAULT_DAGSTER_GRAPHQL_TIMEOUT_SECONDS = 30
 DEFAULT_DAGSTER_POLL_INTERVAL_SECONDS = 10
 DAGSTER_GRAPHQL_READY_TIMEOUT_SECONDS = 60
 DAGSTER_DATAFLOW_STATUS_TIMEOUT_SECONDS = 120
+DAGSTER_LAUNCH_RUN_TIMEOUT_SECONDS = 120
+PROMOTION_ASSET_BATCH_SIZE = 4
+PROMOTION_ASSET_RUN_CONFIG: Mapping[str, object] = {
+    "execution": {
+        "config": {
+            "in_process": {},
+        }
+    }
+}
 DAGSTER_REPOSITORY_LOCATION_NAME = "aemo-etl"
 IMPLICIT_ASSET_JOB_NAME = "__ASSET_JOB"
 E2E_RUN_TAG = "aemo-etl/e2e-run-id"
 GAS_MODEL_GROUP_NAME = "gas_model"
+PROMOTION_LIVE_SOURCE_ASSET_KEYS = frozenset(
+    {
+        ("bronze", "gbb", "bronze_nemweb_public_files_gbb"),
+        ("bronze", "vicgas", "bronze_nemweb_public_files_vicgas"),
+    }
+)
 
 POSTGRES_CONTAINER = f"{STACK_NAME}-postgres"
 LOCALSTACK_CONTAINER = f"{STACK_NAME}-localstack"
@@ -86,11 +110,11 @@ E2E_ENVIRONMENT = {
     "POSTGRES_USER": "postgres",
     "POSTGRES_PASSWORD": "postgres",
     "POSTGRES_DB": "postgres",
-    "DAGSTER_POSTGRES_HOSTNAME": "postgres",
+    "DAGSTER_POSTGRES_HOSTNAME": POSTGRES_ADDRESS,
     "DAGSTER_POSTGRES_USER": "dagster_user",
     "DAGSTER_POSTGRES_PASSWORD": "dagster_pass",
     "DAGSTER_POSTGRES_DB": "dagster",
-    "AWS_ENDPOINT_URL": "http://localstack:4566",
+    "AWS_ENDPOINT_URL": f"http://{LOCALSTACK_ADDRESS}:4566",
     "AWS_DEFAULT_REGION": "ap-southeast-2",
     "AWS_ACCESS_KEY_ID": "test",
     "AWS_SECRET_ACCESS_KEY": "test",
@@ -282,6 +306,21 @@ query E2EDataflowRunStatus(
 }
 """
 
+DAGSTER_ASSET_GRAPH_QUERY = """
+query E2EAssetGraph {
+  assetNodes {
+    assetKey {
+      path
+    }
+    groupName
+    isMaterializable
+    dependencyKeys {
+      path
+    }
+  }
+}
+"""
+
 DAGSTER_DATAFLOW_TARGET_STATUS_QUERY = """
 query E2EDataflowTargetStatus(
   $repositoryName: String!
@@ -360,6 +399,7 @@ class RunOptions:
     """Options for one isolated e2e stack run."""
 
     scenario: str
+    launch_mode: str
     rebuild: bool
     reuse: bool
     always_clean: bool
@@ -404,6 +444,24 @@ class DagsterDefinitionState:
     max_concurrent_runs: int
     sensors: Mapping[str, str]
     schedules: Mapping[str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class DagsterAssetNode:
+    """Asset graph node fields needed for e2e scenario targeting."""
+
+    key: tuple[str, ...]
+    group_name: str
+    is_materializable: bool
+    dependency_keys: tuple[tuple[str, ...], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class DagsterAssetLaunchWave:
+    """One dependency-ready Promotion asset launch wave."""
+
+    index: int
+    asset_keys: tuple[tuple[str, ...], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -829,6 +887,7 @@ def run_options_from_args(args: argparse.Namespace) -> RunOptions:
         raise CommandError(f"unknown e2e scenario: {scenario}")
     return RunOptions(
         scenario=scenario,
+        launch_mode=expect_str(scenario_defaults["launch_mode"], "e2e launch mode"),
         rebuild=bool(args.rebuild),
         reuse=bool(args.reuse),
         always_clean=bool(args.always_clean),
@@ -953,6 +1012,7 @@ def run_stack(
             webserver_port=options.webserver_port,
             timeout_seconds=remaining_timeout_seconds(deadline),
             expected_max_concurrent_runs=options.max_concurrent_runs,
+            launch_mode=options.launch_mode,
             run_id=run_id,
             runner=command_runner,
             telemetry=telemetry,
@@ -1298,6 +1358,9 @@ networks:
   dagster_network:
     name: {NETWORK_NAME}
     driver: bridge
+    ipam:
+      config:
+        - subnet: {yaml_quote(NETWORK_SUBNET)}
 
 volumes:
   postgres_data:
@@ -1308,7 +1371,8 @@ services:
     image: {yaml_quote(images["postgres"])}
     container_name: {POSTGRES_CONTAINER}
     networks:
-      - dagster_network
+      dagster_network:
+        ipv4_address: {yaml_quote(POSTGRES_ADDRESS)}
     environment:
       POSTGRES_USER: {yaml_quote(E2E_ENVIRONMENT["POSTGRES_USER"])}
       POSTGRES_PASSWORD: {yaml_quote(E2E_ENVIRONMENT["POSTGRES_PASSWORD"])}
@@ -1329,7 +1393,8 @@ services:
     image: {yaml_quote(images["localstack"])}
     container_name: {LOCALSTACK_CONTAINER}
     networks:
-      - dagster_network
+      dagster_network:
+        ipv4_address: {yaml_quote(LOCALSTACK_ADDRESS)}
     environment:
       SERVICES: "s3,dynamodb"
       AWS_DEFAULT_REGION: {yaml_quote(E2E_ENVIRONMENT["AWS_DEFAULT_REGION"])}
@@ -1347,7 +1412,8 @@ services:
     image: {yaml_quote(images["aemo-etl"])}
     container_name: {SEED_CONTAINER}
     networks:
-      - dagster_network
+      dagster_network:
+        ipv4_address: {yaml_quote(SEED_ADDRESS)}
     environment:
       AWS_ENDPOINT_URL: {yaml_quote(E2E_ENVIRONMENT["AWS_ENDPOINT_URL"])}
       AWS_DEFAULT_REGION: {yaml_quote(E2E_ENVIRONMENT["AWS_DEFAULT_REGION"])}
@@ -1382,7 +1448,8 @@ services:
     image: {yaml_quote(images["aemo-etl"])}
     container_name: {AEMO_ETL_CONTAINER}
     networks:
-      - dagster_network
+      dagster_network:
+        ipv4_address: {yaml_quote(AEMO_ETL_ADDRESS)}
     environment:
 {render_common_runtime_environment(6)}
     healthcheck:
@@ -1567,10 +1634,10 @@ event_log_storage:
 
 def render_workspace_yaml() -> str:
     """Return the e2e Dagster workspace config."""
-    return """# Generated by backend-services/scripts/aemo-etl-e2e.
+    return f"""# Generated by backend-services/scripts/aemo-etl-e2e.
 load_from:
   - grpc_server:
-      host: aemo-etl
+      host: {AEMO_ETL_ADDRESS}
       port: 4000
       location_name: "aemo-etl"
 """
@@ -1652,6 +1719,7 @@ def drive_dagster_dataflow(
     timeout_seconds: int,
     expected_max_concurrent_runs: int,
     run_id: str,
+    launch_mode: str = SENSOR_DRIVEN_LAUNCH_MODE,
     runner: CommandRunner | None = None,
     telemetry: GateRunTelemetry | None = None,
 ) -> dict[str, object]:
@@ -1676,15 +1744,15 @@ def drive_dagster_dataflow(
         expected_max_concurrent_runs=expected_max_concurrent_runs,
     )
     validate_dagster_automation_state(definition_state)
-    start_expected_sensors(client, definition_state.selector)
-    validate_dagster_automation_state(
-        fetch_dagster_definition_state(client),
-        expected_sensor_status="RUNNING",
-    )
-    bootstrap_run_ids = launch_bootstrap_runs(
+    bootstrap_run_ids = launch_dataflow_runs(
         client,
         definition_state.selector,
+        launch_mode=launch_mode,
         run_id=run_id,
+        started_after=started_after,
+        timeout_seconds=remaining_timeout_seconds(deadline),
+        runner=command_runner,
+        telemetry=dataflow_telemetry,
     )
     monitor_started = time.monotonic()
     try:
@@ -1976,6 +2044,41 @@ def start_expected_sensors(
             raise CommandError(f"{sensor_name} started with status {status}")
 
 
+def launch_dataflow_runs(
+    client: DagsterGraphQLClient,
+    selector: DagsterRepositorySelector,
+    *,
+    launch_mode: str,
+    run_id: str,
+    started_after: float,
+    timeout_seconds: int,
+    runner: CommandRunner | None = None,
+    telemetry: DagsterDataflowTelemetry | None = None,
+) -> list[str]:
+    """Launch the selected scenario's Dagster dataflow runs."""
+    if launch_mode == SENSOR_DRIVEN_LAUNCH_MODE:
+        del started_after, timeout_seconds, runner, telemetry
+        start_expected_sensors(client, selector)
+        validate_dagster_automation_state(
+            fetch_dagster_definition_state(client),
+            expected_sensor_status="RUNNING",
+        )
+        return launch_bootstrap_runs(client, selector, run_id=run_id)
+
+    if launch_mode == DIRECT_UPSTREAM_ASSET_LAUNCH_MODE:
+        return launch_gas_model_upstream_assets(
+            client,
+            selector,
+            run_id=run_id,
+            started_after=started_after,
+            timeout_seconds=timeout_seconds,
+            runner=runner,
+            telemetry=telemetry,
+        )
+
+    raise CommandError(f"unknown e2e launch mode: {launch_mode}")
+
+
 def launch_bootstrap_runs(
     client: DagsterGraphQLClient,
     selector: DagsterRepositorySelector,
@@ -2006,6 +2109,286 @@ def launch_bootstrap_runs(
     return run_ids
 
 
+def launch_gas_model_upstream_assets(
+    client: DagsterGraphQLClient,
+    selector: DagsterRepositorySelector,
+    *,
+    run_id: str,
+    started_after: float,
+    timeout_seconds: int,
+    runner: CommandRunner | None = None,
+    telemetry: DagsterDataflowTelemetry | None = None,
+) -> list[str]:
+    """Launch explicit asset graph batches for the gas_model Promotion target."""
+    asset_nodes = fetch_dagster_asset_graph(client)
+    launch_waves = build_gas_model_upstream_asset_launch_waves(asset_nodes)
+    command_runner = runner or CommandRunner()
+    deadline = time.monotonic() + timeout_seconds
+    run_ids: list[str] = []
+
+    for wave in launch_waves:
+        batches = tuple(chunk_asset_keys(wave.asset_keys, PROMOTION_ASSET_BATCH_SIZE))
+        sys.stdout.write(
+            "Launching Promotion asset wave "
+            f"{wave.index}/{len(launch_waves)}: "
+            f"{len(wave.asset_keys)} assets in {len(batches)} run batches\n"
+        )
+        sys.stdout.flush()
+        for batch_index, batch in enumerate(batches, start=1):
+            sys.stdout.write(
+                "Launching Promotion asset batch "
+                f"{batch_index}/{len(batches)} for wave {wave.index}: "
+                f"{len(batch)} assets\n"
+            )
+            sys.stdout.flush()
+            run_ids.append(
+                launch_dagster_run(
+                    client,
+                    selector,
+                    pipeline_name=IMPLICIT_ASSET_JOB_NAME,
+                    run_id=run_id,
+                    asset_keys=batch,
+                    run_config_data=PROMOTION_ASSET_RUN_CONFIG,
+                )
+            )
+        wait_for_dagster_run_wave(
+            client,
+            started_after=started_after,
+            timeout_seconds=remaining_timeout_seconds(deadline),
+            runner=command_runner,
+            telemetry=telemetry,
+        )
+
+    return run_ids
+
+
+def fetch_dagster_asset_graph(
+    client: DagsterGraphQLClient,
+) -> tuple[DagsterAssetNode, ...]:
+    """Fetch the Dagster asset graph needed for explicit scenario targeting."""
+    payload = execute_dagster_graphql_with_retries(
+        client,
+        DAGSTER_ASSET_GRAPH_QUERY,
+        context="fetch Dagster asset graph",
+    )
+    asset_nodes = payload.get("assetNodes")
+    if not isinstance(asset_nodes, list):
+        raise CommandError("Dagster assetNodes was not a list")
+    return tuple(
+        read_dagster_asset_node(asset_node)
+        for asset_node in asset_nodes
+        if isinstance(asset_node, Mapping)
+    )
+
+
+def read_dagster_asset_node(asset_node: Mapping[str, object]) -> DagsterAssetNode:
+    """Read one Dagster asset graph node."""
+    dependency_keys = asset_node.get("dependencyKeys")
+    if not isinstance(dependency_keys, list):
+        raise CommandError("Dagster asset dependencyKeys was not a list")
+    group_name = asset_node.get("groupName")
+    if not isinstance(group_name, str):
+        group_name = ""
+    return DagsterAssetNode(
+        key=read_asset_key_path(asset_node.get("assetKey"), "asset key"),
+        group_name=group_name,
+        is_materializable=asset_node.get("isMaterializable") is True,
+        dependency_keys=tuple(
+            read_asset_key_path(dependency_key, "dependency asset key")
+            for dependency_key in dependency_keys
+        ),
+    )
+
+
+def select_gas_model_upstream_materializable_asset_keys(
+    asset_nodes: Sequence[DagsterAssetNode],
+) -> tuple[tuple[str, ...], ...]:
+    """Return materializable gas_model assets plus their materializable upstreams."""
+    nodes_by_key = {asset_node.key: asset_node for asset_node in asset_nodes}
+    target_keys = [
+        asset_node.key
+        for asset_node in asset_nodes
+        if asset_node.group_name == GAS_MODEL_GROUP_NAME
+        and asset_node.is_materializable
+    ]
+    if len(target_keys) == 0:
+        raise CommandError("no materializable gas_model assets found in Dagster")
+
+    selected: set[tuple[str, ...]] = set()
+    visited: set[tuple[str, ...]] = set()
+    pending = list(target_keys)
+    while pending:
+        asset_key = pending.pop()
+        if asset_key in visited:
+            continue
+        visited.add(asset_key)
+        asset_node = nodes_by_key.get(asset_key)
+        if asset_node is None:
+            continue
+        if (
+            asset_node.is_materializable
+            and asset_key not in PROMOTION_LIVE_SOURCE_ASSET_KEYS
+        ):
+            selected.add(asset_key)
+        pending.extend(
+            dependency_key
+            for dependency_key in asset_node.dependency_keys
+            if dependency_key not in PROMOTION_LIVE_SOURCE_ASSET_KEYS
+        )
+
+    return tuple(sorted(selected))
+
+
+def build_gas_model_upstream_asset_launch_waves(
+    asset_nodes: Sequence[DagsterAssetNode],
+) -> tuple[DagsterAssetLaunchWave, ...]:
+    """Return dependency-ordered launch waves for the gas_model asset closure."""
+    selected_keys = set(select_gas_model_upstream_materializable_asset_keys(asset_nodes))
+    nodes_by_key = {asset_node.key: asset_node for asset_node in asset_nodes}
+    level_by_key: dict[tuple[str, ...], int] = {}
+    visiting: set[tuple[str, ...]] = set()
+
+    def compute_level(asset_key: tuple[str, ...]) -> int:
+        cached_level = level_by_key.get(asset_key)
+        if cached_level is not None:
+            return cached_level
+        if asset_key in visiting:
+            raise CommandError(
+                "cycle found in selected Dagster asset graph at "
+                + "/".join(asset_key)
+            )
+        visiting.add(asset_key)
+        asset_node = nodes_by_key.get(asset_key)
+        if asset_node is None:
+            level = 0
+        else:
+            dependency_levels = [
+                compute_level(dependency_key)
+                for dependency_key in asset_node.dependency_keys
+                if dependency_key in selected_keys
+            ]
+            level = max(dependency_levels, default=-1) + 1
+        visiting.remove(asset_key)
+        level_by_key[asset_key] = level
+        return level
+
+    for asset_key in selected_keys:
+        compute_level(asset_key)
+
+    wave_keys_by_level: dict[int, list[tuple[str, ...]]] = {}
+    for asset_key, level in sorted(level_by_key.items()):
+        wave_keys_by_level.setdefault(level, []).append(asset_key)
+
+    return tuple(
+        DagsterAssetLaunchWave(
+            index=wave_index,
+            asset_keys=tuple(sorted(asset_keys)),
+        )
+        for wave_index, (_level, asset_keys) in enumerate(
+            sorted(wave_keys_by_level.items()),
+            start=1,
+        )
+    )
+
+
+def chunk_asset_keys(
+    asset_keys: Sequence[tuple[str, ...]],
+    batch_size: int,
+) -> tuple[tuple[tuple[str, ...], ...], ...]:
+    """Split asset keys into stable launch batches."""
+    if batch_size <= 0:
+        raise CommandError("asset batch size must be greater than zero")
+    return tuple(
+        tuple(asset_keys[index : index + batch_size])
+        for index in range(0, len(asset_keys), batch_size)
+    )
+
+
+def wait_for_dagster_run_wave(
+    client: DagsterGraphQLClient,
+    *,
+    started_after: float,
+    timeout_seconds: int,
+    runner: CommandRunner,
+    poll_interval_seconds: int = DEFAULT_DAGSTER_POLL_INTERVAL_SECONDS,
+    telemetry: DagsterDataflowTelemetry | None = None,
+) -> None:
+    """Wait until all currently launched e2e runs reach a terminal status."""
+    deadline = time.monotonic() + timeout_seconds
+    last_summary = "Dagster run wave has not been checked yet"
+    while time.monotonic() < deadline:
+        status = fetch_dagster_run_wave_status(
+            client,
+            started_after=started_after,
+        )
+        if telemetry is not None:
+            telemetry.record_status_sample(status)
+        last_summary = summarize_dagster_run_wave_status(status)
+        sys.stdout.write(f"{last_summary}\n")
+        sys.stdout.flush()
+        if status.failed_runs:
+            raise CommandError(
+                "Dagster run wave failed: failed runs: "
+                + ", ".join(status.failed_runs[:10])
+            )
+        if not status.active_runs:
+            failed_asset_check_labels = fetch_failed_asset_checks_from_postgres(
+                runner,
+                started_after=started_after,
+            )
+            if failed_asset_check_labels:
+                raise CommandError(
+                    "Dagster run wave failed: failed asset checks: "
+                    + ", ".join(failed_asset_check_labels[:10])
+                )
+            return
+        time.sleep(poll_interval_seconds)
+
+    raise CommandError(f"timed out waiting for Dagster run wave: {last_summary}")
+
+
+def fetch_dagster_run_wave_status(
+    client: DagsterGraphQLClient,
+    *,
+    started_after: float,
+) -> DagsterDataflowStatus:
+    """Fetch active and failed run status for dependency wave coordination."""
+    run_data = execute_dagster_graphql_with_retries(
+        client,
+        DAGSTER_DATAFLOW_RUN_STATUS_QUERY,
+        {
+            "createdAfter": started_after,
+            "activeStatuses": list(ACTIVE_RUN_STATUSES),
+            "failedStatuses": list(FAILED_RUN_STATUSES),
+        },
+        context="fetch Dagster run wave status",
+        timeout_seconds=DAGSTER_DATAFLOW_STATUS_TIMEOUT_SECONDS,
+    )
+    active_runs = read_runs(run_data.get("activeRuns"), context="activeRuns")
+    failed_runs = read_runs(run_data.get("failedRuns"), context="failedRuns")
+    all_runs = read_runs(run_data.get("allRuns"), context="allRuns")
+    return DagsterDataflowStatus(
+        active_runs=tuple(sorted(format_run(run) for run in active_runs)),
+        failed_runs=tuple(sorted(format_run(run) for run in failed_runs)),
+        materialized_target_assets=(),
+        missing_target_assets=(),
+        failed_target_assets=(),
+        missing_asset_checks=(),
+        failed_asset_checks=(),
+        run_status_counts=count_run_statuses(all_runs),
+    )
+
+
+def summarize_dagster_run_wave_status(status: DagsterDataflowStatus) -> str:
+    """Return a compact dependency-wave monitor status line."""
+    return (
+        "Dagster run wave: "
+        f"{len(status.active_runs)} active runs; "
+        f"{len(status.failed_runs)} failed runs; "
+        f"status counts {dict(status.run_status_counts)}"
+    )
+
+
 def launch_dagster_run(
     client: DagsterGraphQLClient,
     selector: DagsterRepositorySelector,
@@ -2013,6 +2396,7 @@ def launch_dagster_run(
     pipeline_name: str,
     run_id: str,
     asset_keys: Sequence[Sequence[str]] = (),
+    run_config_data: Mapping[str, object] | None = None,
 ) -> str:
     """Launch one Dagster run and return its run ID."""
     graphql_selector: dict[str, object] = {
@@ -2028,12 +2412,13 @@ def launch_dagster_run(
         {
             "executionParams": {
                 "selector": graphql_selector,
-                "runConfigData": {},
+                "runConfigData": dict(run_config_data or {}),
                 "executionMetadata": {
                     "tags": [{"key": E2E_RUN_TAG, "value": run_id}],
                 },
             }
         },
+        timeout_seconds=DAGSTER_LAUNCH_RUN_TIMEOUT_SECONDS,
     )
     result = require_graphql_typename(
         payload.get("launchRun"),
@@ -2577,11 +2962,16 @@ def read_assets_or_error(
 
 def read_asset_key(asset: Mapping[str, object], *, key_name: str = "assetKey") -> str:
     """Return a slash-separated asset key from an asset node payload."""
-    asset_key = expect_mapping(asset.get(key_name), "asset key")
+    return "/".join(read_asset_key_path(asset.get(key_name), "asset key"))
+
+
+def read_asset_key_path(value: object, context: str) -> tuple[str, ...]:
+    """Return an asset key path from a Dagster GraphQL asset-key payload."""
+    asset_key = expect_mapping(value, context)
     path = asset_key.get("path")
     if not isinstance(path, list) or not all(isinstance(part, str) for part in path):
         raise CommandError("Dagster asset key path was not a string list")
-    return "/".join(path)
+    return tuple(path)
 
 
 def event_timestamp_seconds(value: object) -> float:
@@ -2984,6 +3374,7 @@ def base_manifest(
             "reuse": options.reuse,
             "always_clean": options.always_clean,
             "scenario": options.scenario,
+            "launch_mode": options.launch_mode,
             "seed_root": str(options.seed_root) if options.seed_root is not None else None,
             "webserver_port": options.webserver_port,
             "raw_latest_count": options.raw_latest_count,

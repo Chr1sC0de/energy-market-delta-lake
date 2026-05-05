@@ -646,7 +646,7 @@ Build it.
                 "--timeout-seconds",
                 "1200",
                 "--max-concurrent-runs",
-                "3",
+                "6",
                 "--seed-root",
                 str(seed_root),
             ),
@@ -669,7 +669,7 @@ Build it.
                 "--timeout-seconds",
                 "1200",
                 "--max-concurrent-runs",
-                "3",
+                "6",
             ),
         )
 
@@ -2558,7 +2558,7 @@ Build it.
                 "--timeout-seconds",
                 "1200",
                 "--max-concurrent-runs",
-                "3",
+                "6",
                 "--seed-root",
                 str(tmp_path / "repo" / "backend-services" / ".e2e/aemo-etl"),
             )
@@ -2623,7 +2623,7 @@ Build it.
                 "--timeout-seconds",
                 "1200",
                 "--max-concurrent-runs",
-                "3",
+                "6",
                 "--seed-root",
                 str(tmp_path / "repo" / "backend-services" / ".e2e/aemo-etl"),
             ],
@@ -2648,7 +2648,7 @@ Build it.
                 "--timeout-seconds",
                 "1200",
                 "--max-concurrent-runs",
-                "3",
+                "6",
                 "--seed-root",
                 str(tmp_path / "repo" / "backend-services" / ".e2e/aemo-etl"),
             )

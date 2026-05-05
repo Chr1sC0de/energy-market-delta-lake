@@ -114,11 +114,15 @@ Local workflow notes:
   review. Ralph **Promotion** runs pass an
   explicit `--seed-root` pointing at the primary repo cache and select the
   `promotion-gas-model` scenario with `--timeout-seconds 1200` and
-  `--max-concurrent-runs 3`. The scenario narrows the raw and zip seed horizon
-  to 1 object while preserving every materializable `gas_model` asset and final
-  asset-check status as the **Promotion** gate. Temporary Promotion source
-  worktrees therefore do not look for ignored seed data under the ephemeral
-  worktree.
+  `--max-concurrent-runs 6`. The scenario narrows the raw and zip seed horizon
+  to 1 object and launches explicit Dagster asset-run batches by dependency wave
+  for every materializable `gas_model` asset plus its materializable upstream
+  closure, while skipping live `bronze_nemweb_public_files_*` discovery/listing
+  assets. Each batch runs in-process inside its Podman run-worker container,
+  and the generated stack uses fixed service IPs for Postgres, LocalStack, and
+  the AEMO ETL code server. This preserves final `gas_model` target progress and
+  asset-check status as the **Promotion** gate. Temporary Promotion source worktrees
+  therefore do not look for ignored seed data under the ephemeral worktree.
 
 Use [backend-services/README.md](../../backend-services/README.md) for local
 stack commands and

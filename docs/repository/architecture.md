@@ -114,22 +114,32 @@ it can require a cached seed under `backend-services/.e2e/aemo-etl` before
 starting the `aemo-etl` code location for local **End-to-end test** setup.
 `backend-services/scripts/aemo-etl-e2e run` uses that cache through an isolated
 e2e stack with generated Dagster config, Postgres, LocalStack, AEMO ETL user
-code, one webserver, and the daemon. Once the stack is ready, it enables only
-the intended Dagster sensors, keeps local-only schedules and alerting stopped,
-bootstraps non-sensor prerequisites, and monitors the full `gas_model`
-dataflow through Dagster GraphQL plus a direct Dagster event-log storage read
-for final asset-check status. The isolated stack defaults to host webserver
-port `3001`, a 90 minute timeout, Dagster `max_concurrent_runs` `6`, 3 cached
-raw objects per required source table, and 3 cached zip objects per required
-domain in the `full-gas-model` scenario. Ralph **Promotion** uses the
-`promotion-gas-model` scenario from the isolated source worktree with a 20
-minute timeout, Dagster `max_concurrent_runs` `3`, and a 1-object raw and zip
-seed horizon while preserving the mandatory target of every materializable
-`gas_model` asset and final asset-check status. Its run manifest records gate
-timing, final dataflow telemetry, cleanup duration, and incomplete cleanup
-evidence so Promotion review can distinguish dataflow success from cleanup
-residue without changing the dataflow gate decision. The command output also
-prints a non-failing budget report against the observed `69m58s` baseline.
+code, one webserver, and the daemon. Once the stack is ready, it keeps
+local-only schedules and alerting stopped, drives the selected Dagster dataflow
+through GraphQL, and monitors the full `gas_model` dataflow plus a direct
+Dagster event-log storage read for final asset-check status. The
+`full-gas-model` scenario enables only the intended Dagster sensors and
+bootstraps non-sensor prerequisites; it defaults to host webserver port `3001`,
+a 90 minute timeout, Dagster `max_concurrent_runs` `6`, 3 cached raw objects
+per required source table, and 3 cached zip objects per required domain. Ralph
+**Promotion** uses the `promotion-gas-model` scenario from the isolated source
+worktree with a 20 minute timeout, Dagster `max_concurrent_runs` `6`, and a
+1-object raw and zip seed horizon. That Promotion scenario launches one
+explicit Dagster asset-run batch per dependency-wave chunk for every
+materializable `gas_model` asset plus its materializable upstream closure, while
+skipping live `bronze_nemweb_public_files_*` discovery/listing assets so it
+starts from seeded LocalStack objects. This preserves the mandatory final target
+and asset-check status without the full sensor-triggered run queue. Each
+Promotion batch uses Dagster's in-process executor inside its Podman run-worker
+container to reduce LocalStack and Delta Lake DynamoDB lock-table contention.
+The generated stack uses fixed service IPs for Postgres, LocalStack, and the
+AEMO ETL code server so run-worker containers do not depend on Podman DNS during
+high-concurrency Promotion gates. Its run
+manifest records gate timing, final dataflow telemetry, cleanup duration, and
+incomplete cleanup evidence so Promotion review can distinguish dataflow
+success from cleanup residue without changing the dataflow gate decision. The
+command output also prints a non-failing budget report against the observed
+`69m58s` baseline.
 
 ## Repository responsibilities
 
