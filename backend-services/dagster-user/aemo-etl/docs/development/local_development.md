@@ -243,10 +243,16 @@ The required e2e coverage remains every materializable Dagster asset in group
 `gas_model`, plus final asset-check status for that target. Current
 `dg list defs --assets "group:gas_model" --json` discovery evidence is 29
 assets and 112 asset checks, including
-`silver/metadata/silver_table_metadata`. The command prints a non-failing budget
-report comparing gate duration to the observed `69m58s` baseline and showing
-peak active/queued runs, final successful runs, target progress, and final
-failed asset-check count.
+`silver/metadata/silver_table_metadata`. The `promotion-gas-model` scenario
+enforces Promotion guard regression budgets from the #78 targeted baseline:
+total gate duration at or below 20 minutes, peak active runs at or below `6`,
+peak queued runs at or below `6`, total Dagster runs at or below `48`, target
+progress exactly `29/29`, and missing or failed target assets and asset checks
+at `0`. Budget failures print observed values, thresholds, and the
+`run-manifest.json` path. These are Promotion guard budgets, not generic local
+development performance claims; the full scenario prints the same telemetry
+without enforcing them.
+
 The generated compose stack uses fixed service IPs for Postgres, LocalStack,
 and the AEMO ETL code server so Podman run-worker containers do not depend on
 container DNS during high-concurrency **Promotion** gates.

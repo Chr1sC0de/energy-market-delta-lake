@@ -121,8 +121,12 @@ Local workflow notes:
   assets. Each batch runs in-process inside its Podman run-worker container,
   and the generated stack uses fixed service IPs for Postgres, LocalStack, and
   the AEMO ETL code server. This preserves final `gas_model` target progress and
-  asset-check status as the **Promotion** gate. Temporary Promotion source worktrees
-  therefore do not look for ignored seed data under the ephemeral worktree.
+  asset-check status as the **Promotion** gate. The scenario also enforces
+  Promotion guard regression budgets from the approved targeted baseline:
+  20 minute total duration, `6` peak active runs, `6` peak queued runs, `48`
+  total Dagster runs, `29/29` target progress, and `0` missing or failed target
+  assets and asset checks. Temporary Promotion source worktrees therefore do
+  not look for ignored seed data under the ephemeral worktree.
 
 Use [backend-services/README.md](../../backend-services/README.md) for local
 stack commands and

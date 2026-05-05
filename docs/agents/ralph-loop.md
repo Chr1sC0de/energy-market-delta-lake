@@ -476,13 +476,15 @@ Podman run-worker container, reducing LocalStack and Delta Lake DynamoDB
 lock-table contention. The generated stack uses fixed service IPs for Postgres,
 LocalStack, and the AEMO ETL code server so run-worker containers do not depend
 on Podman DNS during high-concurrency gates. This preserves final target
-progress and final asset-check status without creating one sensor-triggered run per
-upstream source table. The gate output includes a
-non-failing budget report against the observed `69m58s` baseline so runtime
-evidence is visible without weakening the guard. Because the aggregate **Push
-check** and gate run first, source-branch changes cannot reach a Promotion
-merge, `main` push, `dev` branch sync, GitHub metadata update, or issue closure
-without passing against the exact source revision.
+progress and final asset-check status without creating one sensor-triggered run
+per upstream source table. The gate enforces Promotion guard regression budgets
+from the approved targeted baseline: 20 minute total duration, `6` peak active
+runs, `6` peak queued runs, `48` total Dagster runs, `29/29` target progress,
+and `0` missing or failed target assets and asset checks. Budget failures print
+observed values, thresholds, and the run manifest path. Because the aggregate
+**Push check** and gate run first, source-branch changes cannot reach a
+Promotion merge, `main` push, `dev` branch sync, GitHub metadata update, or
+issue closure without passing against the exact source revision.
 Ralph then merges that source revision into a detached `origin/main` worktree
 with per-issue commits preserved, pushes `main`, and fast-forwards `dev` to the
 promotion commit so the next Gitflow drain starts from a `dev` branch that
@@ -717,6 +719,7 @@ container-backed **Integration test** dependencies.
   - `.agents/skills/ralph-loop/SKILL.md`
   - `.agents/skills/ralph-issue-refresh/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`
+  - `backend-services/scripts/aemo-etl-e2e`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

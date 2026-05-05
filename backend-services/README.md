@@ -339,10 +339,15 @@ asset-check monitor.
 The `promotion-gas-model` scenario may reduce incidental automation volume by
 narrowing seed horizon, started sensors, or run-launch shape, but it must still
 end with `29/29` target progress and `0` failed asset checks before
-**Promotion** can merge to `main`. The non-failing budget report compares gate
-duration to the observed `69m58s` baseline and prints peak active/queued run
-counts, final successful run count, final target progress, and final failed
-asset-check count for review evidence.
+**Promotion** can merge to `main`. The `promotion-gas-model` scenario enforces
+Promotion guard regression budgets from the #78 targeted baseline: total gate
+duration must stay at or below 20 minutes, peak active runs at or below `6`,
+peak queued runs at or below `6`, total Dagster runs at or below `48`, target
+progress at exactly `29/29`, and missing or failed target assets and asset
+checks at `0`. These budgets protect Promotion from run explosion or missing
+coverage; they are not generic local development performance claims. The full
+scenario prints the same telemetry for review without enforcing those Promotion
+budgets.
 
 Local service images are tagged for the e2e stack. Missing images are built
 automatically, existing images are reused by default, and `--rebuild` forces all
@@ -374,10 +379,11 @@ total gate duration, stack startup duration, Dagster dataflow monitor duration,
 cumulative cleanup duration, cleanup phase status and timings, cleanup issue
 evidence, peak active and queued Dagster run counts, final run status counts,
 final target progress, first and last observed target materialization
-timestamps, and the final failed asset-check count. Failed runs include
+timestamps, and the final missing and failed asset-check counts. Failed runs include
 telemetry for every monitor sample captured before the failure. The same
-telemetry is summarized in the non-failing budget report printed to the command
-output.
+telemetry is summarized in the command output. Promotion budget failures mark
+the run manifest failed and print observed values, thresholds, and the
+`run-manifest.json` path.
 
 ______________________________________________________________________
 

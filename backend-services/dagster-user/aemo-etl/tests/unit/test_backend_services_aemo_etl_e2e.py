@@ -1421,6 +1421,7 @@ def test_dataflow_telemetry_aggregates_monitor_status_samples() -> None:
     }
     assert payload["first_target_materialization_at"] == "2023-11-14T22:13:20+00:00"
     assert payload["last_target_materialization_at"] == "2023-11-14T22:15:20+00:00"
+    assert payload["final_missing_asset_check_count"] == 0
     assert payload["final_failed_asset_check_count"] == 1
 
 
@@ -1577,74 +1578,234 @@ def test_gate_run_telemetry_manifest_records_durations() -> None:
     ]
 
 
-def test_e2e_budget_report_formats_below_baseline() -> None:
-    """The budget report is concise and explicitly non-failing below baseline."""
+def test_e2e_promotion_regression_budgets_pass_for_approved_baseline() -> None:
+    """The Promotion guard budgets pass for the approved targeted baseline."""
     module = load_e2e_command_module()
     format_e2e_budget_report = get_callable(module, "format_e2e_budget_report")
+    e2e_budget_failures = get_callable(module, "e2e_budget_failures")
+    e2e_regression_budgets_for_scenario = get_callable(
+        module,
+        "e2e_regression_budgets_for_scenario",
+    )
+    budgets = e2e_regression_budgets_for_scenario("promotion-gas-model")
 
     report = format_e2e_budget_report(
         {
-            "total_gate_duration_seconds": 20 * 60,
+            "total_gate_duration_seconds": 475.152,
             "dagster_dataflow": {
-                "peak_active_run_count": 3,
-                "peak_queued_run_count": 4,
-                "final_run_status_counts": {"SUCCESS": 29},
+                "peak_active_run_count": 6,
+                "peak_queued_run_count": 0,
+                "final_run_status_counts": {"SUCCESS": 48},
                 "final_target_progress": {
                     "materialized_target_asset_count": 29,
                     "target_asset_count": 29,
+                    "missing_target_asset_count": 0,
+                    "failed_target_asset_count": 0,
                 },
+                "final_missing_asset_check_count": 0,
                 "final_failed_asset_check_count": 0,
             },
-        }
+        },
+        manifest_path=Path("/tmp/run-manifest.json"),
+        budgets=budgets,
     )
 
-    assert "E2E budget report (non-failing):" in report
-    assert "20m00s (49m58s below 69m58s baseline)" in report
-    assert "3 active / 4 queued" in report
-    assert "final successful runs: 29" in report
-    assert "target progress: 29/29 materialized" in report
-    assert "final asset-check status: 0 failed" in report
+    assert (
+        e2e_budget_failures(
+            {
+                "total_gate_duration_seconds": 475.152,
+                "dagster_dataflow": {
+                    "peak_active_run_count": 6,
+                    "peak_queued_run_count": 0,
+                    "final_run_status_counts": {"SUCCESS": 48},
+                    "final_target_progress": {
+                        "materialized_target_asset_count": 29,
+                        "target_asset_count": 29,
+                        "missing_target_asset_count": 0,
+                        "failed_target_asset_count": 0,
+                    },
+                    "final_missing_asset_check_count": 0,
+                    "final_failed_asset_check_count": 0,
+                },
+            },
+            budgets,
+        )
+        == ()
+    )
+    assert "E2E Promotion guard regression budgets (passed):" in report
+    assert "run manifest: /tmp/run-manifest.json" in report
+    assert "7m55s; threshold <= 20m00s" in report
+    assert "total Dagster runs: observed 48; threshold <= 48" in report
+    assert "target progress: observed 29/29 materialized" in report
+    assert "failed target asset checks: observed 0; threshold <= 0" in report
 
 
-def test_e2e_budget_report_formats_above_baseline() -> None:
-    """Above-baseline telemetry remains report-only."""
+def test_e2e_promotion_regression_budgets_fail_duration_and_run_counts() -> None:
+    """Duration and run-count regressions fail the Promotion guard budgets."""
     module = load_e2e_command_module()
     format_e2e_budget_report = get_callable(module, "format_e2e_budget_report")
+    e2e_budget_failures = get_callable(module, "e2e_budget_failures")
+    e2e_regression_budgets_for_scenario = get_callable(
+        module,
+        "e2e_regression_budgets_for_scenario",
+    )
+    budgets = e2e_regression_budgets_for_scenario("promotion-gas-model")
+    telemetry = {
+        "total_gate_duration_seconds": 20 * 60 + 1,
+        "dagster_dataflow": {
+            "peak_active_run_count": 7,
+            "peak_queued_run_count": 7,
+            "final_run_status_counts": {"SUCCESS": 49},
+            "final_target_progress": {
+                "materialized_target_asset_count": 29,
+                "target_asset_count": 29,
+                "missing_target_asset_count": 0,
+                "failed_target_asset_count": 0,
+            },
+            "final_missing_asset_check_count": 0,
+            "final_failed_asset_check_count": 0,
+        },
+    }
 
     report = format_e2e_budget_report(
-        {
-            "total_gate_duration_seconds": 70 * 60,
-            "dagster_dataflow": {
-                "peak_active_run_count": 7,
-                "peak_queued_run_count": 77,
-                "final_run_status_counts": {"SUCCESS": 270},
-                "final_target_progress": {
-                    "materialized_target_asset_count": 29,
-                    "target_asset_count": 29,
-                },
-                "final_failed_asset_check_count": 2,
-            },
-        }
+        telemetry,
+        manifest_path=Path("/tmp/run-manifest.json"),
+        budgets=budgets,
+    )
+    failures = e2e_budget_failures(telemetry, budgets)
+
+    assert "E2E Promotion guard regression budgets (failed):" in report
+    assert "total gate duration observed 20m01s; threshold <= 20m00s" in failures
+    assert "peak active runs observed 7; threshold <= 6" in failures
+    assert "peak queued runs observed 7; threshold <= 6" in failures
+    assert "total Dagster runs observed 49; threshold <= 48" in failures
+    assert "total gate duration observed 20m01s; threshold <= 20m00s" in report
+    assert "total Dagster runs observed 49; threshold <= 48" in report
+
+
+def test_e2e_promotion_regression_budget_enforcement_fails_command(
+    tmp_path: Path,
+) -> None:
+    """Promotion budget failures mark the manifest failed and raise CommandError."""
+    module = load_e2e_command_module()
+    enforce_budgets = get_callable(module, "enforce_e2e_regression_budgets_for_run")
+    run_options_class = get_callable(module, "RunOptions")
+    status_class = get_callable(module, "DagsterDataflowStatus")
+    telemetry_class = get_callable(module, "GateRunTelemetry")
+    dataflow_telemetry_class = get_callable(module, "DagsterDataflowTelemetry")
+    command_error = get_exception_class(module, "CommandError")
+    manifest_path = tmp_path / "run-manifest.json"
+    telemetry = telemetry_class(started_monotonic=0.0, completed_monotonic=1201.0)
+    dataflow_telemetry = dataflow_telemetry_class()
+    dataflow_telemetry.record_status_sample(
+        status_class(
+            active_runs=(),
+            failed_runs=(),
+            materialized_target_assets=tuple(
+                f"silver/gas_model/asset_{index}" for index in range(29)
+            ),
+            missing_target_assets=(),
+            failed_target_assets=(),
+            missing_asset_checks=(),
+            failed_asset_checks=(),
+            run_status_counts={"SUCCESS": 49},
+        )
+    )
+    telemetry.dataflow = dataflow_telemetry
+    manifest: dict[str, object] = {"status": "running"}
+    options = run_options_class(
+        scenario="promotion-gas-model",
+        launch_mode="direct-upstream-asset-launch",
+        rebuild=False,
+        reuse=False,
+        always_clean=False,
+        seed_root=None,
+        webserver_port=3001,
+        raw_latest_count=1,
+        zip_latest_count=1,
+        timeout_seconds=1200,
+        max_concurrent_runs=6,
     )
 
-    assert "70m00s (2s above 69m58s baseline)" in report
-    assert "7 active / 77 queued" in report
-    assert "final successful runs: 270" in report
-    assert "final asset-check status: 2 failed" in report
+    with pytest.raises(command_error) as caught:
+        enforce_budgets(
+            telemetry=telemetry,
+            manifest=manifest,
+            manifest_path=manifest_path,
+            options=options,
+        )
+
+    assert "E2E Promotion guard regression budget failed" in str(caught.value)
+    assert str(manifest_path) in str(caught.value)
+    written_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert written_manifest["status"] == "failed"
+    assert written_manifest["budget"]["status"] == "failed"
+    assert written_manifest["budget"]["run_manifest"] == str(manifest_path)
 
 
-def test_e2e_budget_report_handles_missing_telemetry() -> None:
-    """Missing telemetry produces an actionable report without failing."""
+def test_e2e_promotion_regression_budgets_fail_coverage_contract() -> None:
+    """Target progress and final asset-check drift fail the Promotion budgets."""
+    module = load_e2e_command_module()
+    e2e_budget_failures = get_callable(module, "e2e_budget_failures")
+    e2e_regression_budgets_for_scenario = get_callable(
+        module,
+        "e2e_regression_budgets_for_scenario",
+    )
+    budgets = e2e_regression_budgets_for_scenario("promotion-gas-model")
+
+    failures = e2e_budget_failures(
+        {
+            "total_gate_duration_seconds": 600,
+            "dagster_dataflow": {
+                "peak_active_run_count": 6,
+                "peak_queued_run_count": 0,
+                "final_run_status_counts": {"SUCCESS": 48},
+                "final_target_progress": {
+                    "materialized_target_asset_count": 28,
+                    "target_asset_count": 29,
+                    "missing_target_asset_count": 1,
+                    "failed_target_asset_count": 0,
+                },
+                "final_missing_asset_check_count": 1,
+                "final_failed_asset_check_count": 1,
+            },
+        },
+        budgets,
+    )
+
+    assert (
+        "target progress observed 28/29 materialized; required 29/29 materialized"
+        in failures
+    )
+    assert "missing target assets observed 1; threshold <= 0" in failures
+    assert "missing target asset checks observed 1; threshold <= 0" in failures
+    assert "failed target asset checks observed 1; threshold <= 0" in failures
+
+
+def test_e2e_promotion_regression_budgets_fail_missing_telemetry() -> None:
+    """Missing telemetry produces actionable Promotion budget failures."""
     module = load_e2e_command_module()
     format_e2e_budget_report = get_callable(module, "format_e2e_budget_report")
+    e2e_budget_failures = get_callable(module, "e2e_budget_failures")
+    e2e_regression_budgets_for_scenario = get_callable(
+        module,
+        "e2e_regression_budgets_for_scenario",
+    )
+    budgets = e2e_regression_budgets_for_scenario("promotion-gas-model")
 
-    report = format_e2e_budget_report({})
+    report = format_e2e_budget_report(
+        {},
+        manifest_path=Path("/tmp/run-manifest.json"),
+        budgets=budgets,
+    )
+    failures = e2e_budget_failures({}, budgets)
 
-    assert "unavailable (baseline 69m58s)" in report
-    assert "peak active/queued runs: unavailable" in report
-    assert "final successful runs: unavailable" in report
-    assert "target progress: unavailable" in report
-    assert "final asset-check status: unavailable" in report
+    assert "run manifest: /tmp/run-manifest.json" in report
+    assert "total gate duration unavailable; threshold <= 20m00s" in failures
+    assert "peak active runs unavailable; threshold <= 6" in failures
+    assert "target progress unavailable; required 29/29 materialized" in failures
+    assert "failed target asset checks unavailable; threshold <= 0" in failures
+    assert "total gate duration unavailable; threshold <= 20m00s" in report
 
 
 def test_monitor_records_telemetry_before_failed_run_error() -> None:
