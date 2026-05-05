@@ -345,19 +345,61 @@ def test_run_parser_defaults_to_full_dataflow_timeout_and_concurrency() -> None:
     """The e2e run defaults match the full dataflow acceptance criteria."""
     module = load_e2e_command_module()
     build_parser = get_callable(module, "build_parser")
+    run_options_from_args = get_callable(module, "run_options_from_args")
 
-    args = build_parser().parse_args(["run"])
+    options = run_options_from_args(build_parser().parse_args(["run"]))
 
-    assert getattr(args, "raw_latest_count") == 3
-    assert getattr(args, "zip_latest_count") == 3
-    assert getattr(args, "timeout_seconds") == 90 * 60
-    assert getattr(args, "max_concurrent_runs") == 6
+    assert getattr(options, "scenario") == "full-gas-model"
+    assert getattr(options, "raw_latest_count") == 3
+    assert getattr(options, "zip_latest_count") == 3
+    assert getattr(options, "timeout_seconds") == 90 * 60
+    assert getattr(options, "max_concurrent_runs") == 6
 
-    override_args = build_parser().parse_args(
-        ["run", "--raw-latest-count", "5", "--zip-latest-count", "2"]
+    promotion_options = run_options_from_args(
+        build_parser().parse_args(["run", "--scenario", "promotion-gas-model"])
     )
-    assert getattr(override_args, "raw_latest_count") == 5
-    assert getattr(override_args, "zip_latest_count") == 2
+    assert getattr(promotion_options, "raw_latest_count") == 1
+    assert getattr(promotion_options, "zip_latest_count") == 1
+    assert getattr(promotion_options, "timeout_seconds") == 20 * 60
+    assert getattr(promotion_options, "max_concurrent_runs") == 3
+
+    override_options = run_options_from_args(
+        build_parser().parse_args(
+            [
+                "run",
+                "--scenario",
+                "promotion-gas-model",
+                "--raw-latest-count",
+                "5",
+                "--zip-latest-count",
+                "2",
+                "--timeout-seconds",
+                "1800",
+                "--max-concurrent-runs",
+                "4",
+            ]
+        )
+    )
+    assert getattr(override_options, "raw_latest_count") == 5
+    assert getattr(override_options, "zip_latest_count") == 2
+    assert getattr(override_options, "timeout_seconds") == 1800
+    assert getattr(override_options, "max_concurrent_runs") == 4
+
+
+def test_promotion_scenario_keeps_approved_sensor_and_target_contract() -> None:
+    """Promotion targeting narrows seed volume without bypassing coverage."""
+    module = load_e2e_command_module()
+    expected_sensor_names = set(module["EXPECTED_DATAFLOW_SENSOR_NAMES"])
+    target_status_query = module["DAGSTER_DATAFLOW_TARGET_STATUS_QUERY"]
+
+    assert "gbb_event_driven_assets_sensor" in expected_sensor_names
+    assert "vicgas_event_driven_assets_sensor" in expected_sensor_names
+    assert "gbb_unzipper_sensor" in expected_sensor_names
+    assert "vicgas_unzipper_sensor" in expected_sensor_names
+    assert "silver_table_metadata_sensor" in expected_sensor_names
+    assert "silver_gas_fact_operational_meter_flow_sensor" in expected_sensor_names
+    assert 'groupName: "gas_model"' in target_status_query
+    assert "isMaterializable" in target_status_query
 
 
 def test_generated_compose_is_isolated_e2e_stack(tmp_path: Path) -> None:
@@ -437,6 +479,7 @@ def test_start_stack_services_runs_compose_in_dependency_phases(tmp_path: Path) 
 
     runner = FakeRunner()
     options = run_options_class(
+        scenario="full-gas-model",
         rebuild=False,
         reuse=False,
         always_clean=False,
@@ -1134,6 +1177,76 @@ def test_gate_run_telemetry_manifest_records_durations() -> None:
             "status": "completed",
         }
     ]
+
+
+def test_e2e_budget_report_formats_below_baseline() -> None:
+    """The budget report is concise and explicitly non-failing below baseline."""
+    module = load_e2e_command_module()
+    format_e2e_budget_report = get_callable(module, "format_e2e_budget_report")
+
+    report = format_e2e_budget_report(
+        {
+            "total_gate_duration_seconds": 20 * 60,
+            "dagster_dataflow": {
+                "peak_active_run_count": 3,
+                "peak_queued_run_count": 4,
+                "final_run_status_counts": {"SUCCESS": 29},
+                "final_target_progress": {
+                    "materialized_target_asset_count": 29,
+                    "target_asset_count": 29,
+                },
+                "final_failed_asset_check_count": 0,
+            },
+        }
+    )
+
+    assert "E2E budget report (non-failing):" in report
+    assert "20m00s (49m58s below 69m58s baseline)" in report
+    assert "3 active / 4 queued" in report
+    assert "final successful runs: 29" in report
+    assert "target progress: 29/29 materialized" in report
+    assert "final asset-check status: 0 failed" in report
+
+
+def test_e2e_budget_report_formats_above_baseline() -> None:
+    """Above-baseline telemetry remains report-only."""
+    module = load_e2e_command_module()
+    format_e2e_budget_report = get_callable(module, "format_e2e_budget_report")
+
+    report = format_e2e_budget_report(
+        {
+            "total_gate_duration_seconds": 70 * 60,
+            "dagster_dataflow": {
+                "peak_active_run_count": 7,
+                "peak_queued_run_count": 77,
+                "final_run_status_counts": {"SUCCESS": 270},
+                "final_target_progress": {
+                    "materialized_target_asset_count": 29,
+                    "target_asset_count": 29,
+                },
+                "final_failed_asset_check_count": 2,
+            },
+        }
+    )
+
+    assert "70m00s (2s above 69m58s baseline)" in report
+    assert "7 active / 77 queued" in report
+    assert "final successful runs: 270" in report
+    assert "final asset-check status: 2 failed" in report
+
+
+def test_e2e_budget_report_handles_missing_telemetry() -> None:
+    """Missing telemetry produces an actionable report without failing."""
+    module = load_e2e_command_module()
+    format_e2e_budget_report = get_callable(module, "format_e2e_budget_report")
+
+    report = format_e2e_budget_report({})
+
+    assert "unavailable (baseline 69m58s)" in report
+    assert "peak active/queued runs: unavailable" in report
+    assert "final successful runs: unavailable" in report
+    assert "target progress: unavailable" in report
+    assert "final asset-check status: unavailable" in report
 
 
 def test_monitor_records_telemetry_before_failed_run_error() -> None:

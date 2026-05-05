@@ -23,6 +23,23 @@ DEFAULT_TIMEOUT_SECONDS = 90 * 60
 DEFAULT_MAX_CONCURRENT_RUNS = 6
 DEFAULT_RAW_LATEST_COUNT = 3
 DEFAULT_ZIP_LATEST_COUNT = 3
+E2E_BUDGET_BASELINE_SECONDS = 69 * 60 + 58
+FULL_GAS_MODEL_SCENARIO = "full-gas-model"
+PROMOTION_GAS_MODEL_SCENARIO = "promotion-gas-model"
+E2E_SCENARIO_DEFAULTS = {
+    FULL_GAS_MODEL_SCENARIO: {
+        "raw_latest_count": DEFAULT_RAW_LATEST_COUNT,
+        "zip_latest_count": DEFAULT_ZIP_LATEST_COUNT,
+        "timeout_seconds": DEFAULT_TIMEOUT_SECONDS,
+        "max_concurrent_runs": DEFAULT_MAX_CONCURRENT_RUNS,
+    },
+    PROMOTION_GAS_MODEL_SCENARIO: {
+        "raw_latest_count": 1,
+        "zip_latest_count": 1,
+        "timeout_seconds": 20 * 60,
+        "max_concurrent_runs": 3,
+    },
+}
 DEFAULT_DAGSTER_GRAPHQL_TIMEOUT_SECONDS = 30
 DEFAULT_DAGSTER_POLL_INTERVAL_SECONDS = 10
 DAGSTER_GRAPHQL_READY_TIMEOUT_SECONDS = 60
@@ -342,6 +359,7 @@ class ImageSpec:
 class RunOptions:
     """Options for one isolated e2e stack run."""
 
+    scenario: str
     rebuild: bool
     reuse: bool
     always_clean: bool
@@ -694,19 +712,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         if args.command == "run":
-            run_stack(
-                RunOptions(
-                    rebuild=args.rebuild,
-                    reuse=args.reuse,
-                    always_clean=args.always_clean,
-                    seed_root=args.seed_root,
-                    webserver_port=args.webserver_port,
-                    raw_latest_count=args.raw_latest_count,
-                    zip_latest_count=args.zip_latest_count,
-                    timeout_seconds=args.timeout_seconds,
-                    max_concurrent_runs=args.max_concurrent_runs,
-                )
-            )
+            run_stack(run_options_from_args(args))
             return 0
     except CommandError as error:
         sys.stderr.write(f"error: {error}\n")
@@ -732,6 +738,16 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser = subparsers.add_parser(
         "run",
         help="start the isolated AEMO ETL e2e Dagster stack",
+    )
+    run_parser.add_argument(
+        "--scenario",
+        choices=tuple(E2E_SCENARIO_DEFAULTS),
+        default=FULL_GAS_MODEL_SCENARIO,
+        help=(
+            "named e2e target profile "
+            f"(default: {FULL_GAS_MODEL_SCENARIO}; "
+            f"Promotion gate: {PROMOTION_GAS_MODEL_SCENARIO})"
+        ),
     )
     run_parser.add_argument(
         "--rebuild",
@@ -769,40 +785,64 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument(
         "--raw-latest-count",
         type=positive_int,
-        default=DEFAULT_RAW_LATEST_COUNT,
+        default=None,
         help=(
             "cached raw source-table objects required per table "
-            f"(default: {DEFAULT_RAW_LATEST_COUNT})"
+            "(default: scenario-specific)"
         ),
     )
     run_parser.add_argument(
         "--zip-latest-count",
         type=positive_int,
-        default=DEFAULT_ZIP_LATEST_COUNT,
+        default=None,
         help=(
             "cached zip objects required per domain "
-            f"(default: {DEFAULT_ZIP_LATEST_COUNT})"
+            "(default: scenario-specific)"
         ),
     )
     run_parser.add_argument(
         "--timeout-seconds",
         type=positive_int,
-        default=DEFAULT_TIMEOUT_SECONDS,
+        default=None,
         help=(
             "seconds to wait for the e2e stack and dataflow to complete "
-            f"(default: {DEFAULT_TIMEOUT_SECONDS})"
+            "(default: scenario-specific)"
         ),
     )
     run_parser.add_argument(
         "--max-concurrent-runs",
         type=positive_int,
-        default=DEFAULT_MAX_CONCURRENT_RUNS,
+        default=None,
         help=(
             "Dagster queued run coordinator max_concurrent_runs "
-            f"(default: {DEFAULT_MAX_CONCURRENT_RUNS})"
+            "(default: scenario-specific)"
         ),
     )
     return parser
+
+
+def run_options_from_args(args: argparse.Namespace) -> RunOptions:
+    """Resolve run options from CLI args and the selected e2e scenario."""
+    scenario = expect_str(getattr(args, "scenario", None), "e2e scenario")
+    scenario_defaults = E2E_SCENARIO_DEFAULTS.get(scenario)
+    if scenario_defaults is None:
+        raise CommandError(f"unknown e2e scenario: {scenario}")
+    return RunOptions(
+        scenario=scenario,
+        rebuild=bool(args.rebuild),
+        reuse=bool(args.reuse),
+        always_clean=bool(args.always_clean),
+        seed_root=args.seed_root,
+        webserver_port=args.webserver_port,
+        raw_latest_count=args.raw_latest_count
+        or scenario_defaults["raw_latest_count"],
+        zip_latest_count=args.zip_latest_count
+        or scenario_defaults["zip_latest_count"],
+        timeout_seconds=args.timeout_seconds
+        or scenario_defaults["timeout_seconds"],
+        max_concurrent_runs=args.max_concurrent_runs
+        or scenario_defaults["max_concurrent_runs"],
+    )
 
 
 def positive_int(value: str) -> int:
@@ -943,6 +983,7 @@ def run_stack(
         else:
             manifest["cleanup"] = "preserved-after-failure"
         telemetry.complete()
+        emit_e2e_budget_report(telemetry)
         write_run_manifest(manifest_path, manifest, telemetry)
         raise
 
@@ -954,6 +995,7 @@ def run_stack(
     if options.reuse:
         manifest["cleanup"] = "preserved-for-reuse"
         telemetry.complete()
+        emit_e2e_budget_report(telemetry)
         write_run_manifest(manifest_path, manifest, telemetry)
         sys.stdout.write(
             f"{STACK_NAME} completed the dataflow at "
@@ -977,6 +1019,7 @@ def run_stack(
     if len(cleanup_issues) > 0:
         manifest["cleanup_issues"] = cleanup_issues
     telemetry.complete()
+    emit_e2e_budget_report(telemetry)
     write_run_manifest(manifest_path, manifest, telemetry)
     if cleanup_has_errors(cleanup_issues):
         sys.stdout.write(
@@ -2940,6 +2983,7 @@ def base_manifest(
             "rebuild": options.rebuild,
             "reuse": options.reuse,
             "always_clean": options.always_clean,
+            "scenario": options.scenario,
             "seed_root": str(options.seed_root) if options.seed_root is not None else None,
             "webserver_port": options.webserver_port,
             "raw_latest_count": options.raw_latest_count,
@@ -2971,6 +3015,147 @@ def write_run_manifest(
     """Write a run manifest with current e2e gate telemetry."""
     manifest["telemetry"] = telemetry.to_manifest()
     write_json(path, manifest)
+
+
+def emit_e2e_budget_report(telemetry: GateRunTelemetry) -> None:
+    """Write the non-failing e2e budget report to stdout."""
+    sys.stdout.write(format_e2e_budget_report(telemetry.to_manifest()))
+
+
+def format_e2e_budget_report(telemetry_payload: Mapping[str, object]) -> str:
+    """Return a concise non-failing budget report from e2e telemetry."""
+    dataflow = optional_mapping(telemetry_payload.get("dagster_dataflow"))
+    target_progress = optional_mapping(
+        dataflow.get("final_target_progress") if dataflow is not None else None
+    )
+    run_status_counts = optional_mapping(
+        dataflow.get("final_run_status_counts") if dataflow is not None else None
+    )
+    total_duration = optional_number(
+        telemetry_payload.get("total_gate_duration_seconds")
+    )
+    peak_active = optional_int(
+        dataflow.get("peak_active_run_count") if dataflow is not None else None
+    )
+    peak_queued = optional_int(
+        dataflow.get("peak_queued_run_count") if dataflow is not None else None
+    )
+    successful_runs = optional_int(
+        run_status_counts.get("SUCCESS") if run_status_counts is not None else None
+    )
+    materialized_targets = optional_int(
+        target_progress.get("materialized_target_asset_count")
+        if target_progress is not None
+        else None
+    )
+    target_count = optional_int(
+        target_progress.get("target_asset_count") if target_progress is not None else None
+    )
+    failed_checks = optional_int(
+        dataflow.get("final_failed_asset_check_count") if dataflow is not None else None
+    )
+
+    return "\n".join(
+        (
+            "E2E budget report (non-failing):",
+            "- total gate duration: "
+            f"{format_optional_duration(total_duration)} "
+            f"({format_budget_baseline_comparison(total_duration)})",
+            "- peak active/queued runs: "
+            f"{format_peak_run_counts(peak_active, peak_queued)}",
+            "- final successful runs: " f"{format_optional_count(successful_runs)}",
+            "- target progress: "
+            f"{format_target_progress(materialized_targets, target_count)}",
+            "- final asset-check status: "
+            f"{format_failed_asset_check_count(failed_checks)}",
+            "",
+        )
+    )
+
+
+def optional_mapping(value: object) -> Mapping[str, object] | None:
+    """Return a mapping payload or None."""
+    if isinstance(value, Mapping):
+        return value
+    return None
+
+
+def optional_number(value: object) -> float | None:
+    """Return a numeric telemetry value or None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    return None
+
+
+def optional_int(value: object) -> int | None:
+    """Return an integer telemetry value or None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    return None
+
+
+def format_optional_duration(seconds: float | None) -> str:
+    """Return a duration label or unavailable marker."""
+    if seconds is None:
+        return "unavailable"
+    return format_duration(seconds)
+
+
+def format_duration(seconds: float) -> str:
+    """Return a compact minute/second duration."""
+    rounded = int(round(max(0.0, seconds)))
+    minutes, remaining_seconds = divmod(rounded, 60)
+    if minutes == 0:
+        return f"{remaining_seconds}s"
+    return f"{minutes}m{remaining_seconds:02d}s"
+
+
+def format_budget_baseline_comparison(total_duration: float | None) -> str:
+    """Return a non-failing comparison to the observed e2e baseline."""
+    baseline = format_duration(E2E_BUDGET_BASELINE_SECONDS)
+    if total_duration is None:
+        return f"baseline {baseline}"
+    delta = int(round(total_duration - E2E_BUDGET_BASELINE_SECONDS))
+    if delta < 0:
+        return f"{format_duration(abs(delta))} below {baseline} baseline"
+    if delta > 0:
+        return f"{format_duration(delta)} above {baseline} baseline"
+    return f"matches {baseline} baseline"
+
+
+def format_peak_run_counts(active_count: int | None, queued_count: int | None) -> str:
+    """Return a peak active/queued run summary."""
+    if active_count is None or queued_count is None:
+        return "unavailable"
+    return f"{active_count} active / {queued_count} queued"
+
+
+def format_optional_count(count: int | None) -> str:
+    """Return a count or unavailable marker."""
+    if count is None:
+        return "unavailable"
+    return str(count)
+
+
+def format_target_progress(
+    materialized_targets: int | None,
+    target_count: int | None,
+) -> str:
+    """Return final target materialization progress."""
+    if materialized_targets is None or target_count is None:
+        return "unavailable"
+    return f"{materialized_targets}/{target_count} materialized"
+
+
+def format_failed_asset_check_count(failed_checks: int | None) -> str:
+    """Return final failed asset-check status."""
+    if failed_checks is None:
+        return "unavailable"
+    return f"{failed_checks} failed"
 
 
 def timestamp_iso_or_none(timestamp: float | None) -> str | None:

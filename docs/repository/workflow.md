@@ -112,11 +112,13 @@ Local workflow notes:
   `backend-services/scripts/aemo-etl-e2e`; its run manifest records timing,
   dataflow telemetry, and cleanup warning or failure evidence for Promotion
   review. Ralph **Promotion** runs pass an
-  explicit `--seed-root` pointing at the primary repo cache, use
-  `--max-concurrent-runs 3` to stay below the default run queue concurrency,
-  and use `--timeout-seconds 7200` to absorb low-concurrency queue latency in
-  the full `gas_model` target. Temporary Promotion source worktrees therefore
-  do not look for ignored seed data under the ephemeral worktree.
+  explicit `--seed-root` pointing at the primary repo cache and select the
+  `promotion-gas-model` scenario with `--timeout-seconds 1200` and
+  `--max-concurrent-runs 3`. The scenario narrows the raw and zip seed horizon
+  to 1 object while preserving every materializable `gas_model` asset and final
+  asset-check status as the **Promotion** gate. Temporary Promotion source
+  worktrees therefore do not look for ignored seed data under the ephemeral
+  worktree.
 
 Use [backend-services/README.md](../../backend-services/README.md) for local
 stack commands and

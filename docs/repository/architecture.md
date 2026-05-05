@@ -121,10 +121,15 @@ dataflow through Dagster GraphQL plus a direct Dagster event-log storage read
 for final asset-check status. The isolated stack defaults to host webserver
 port `3001`, a 90 minute timeout, Dagster `max_concurrent_runs` `6`, 3 cached
 raw objects per required source table, and 3 cached zip objects per required
-domain. Its run manifest records gate timing, final dataflow telemetry,
-cleanup duration, and incomplete cleanup evidence so Promotion review can
-distinguish dataflow success from cleanup residue without changing the dataflow
-gate decision.
+domain in the `full-gas-model` scenario. Ralph **Promotion** uses the
+`promotion-gas-model` scenario from the isolated source worktree with a 20
+minute timeout, Dagster `max_concurrent_runs` `3`, and a 1-object raw and zip
+seed horizon while preserving the mandatory target of every materializable
+`gas_model` asset and final asset-check status. Its run manifest records gate
+timing, final dataflow telemetry, cleanup duration, and incomplete cleanup
+evidence so Promotion review can distinguish dataflow success from cleanup
+residue without changing the dataflow gate decision. The command output also
+prints a non-failing budget report against the observed `69m58s` baseline.
 
 ## Repository responsibilities
 

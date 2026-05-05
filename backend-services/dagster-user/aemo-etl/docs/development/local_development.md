@@ -209,8 +209,7 @@ AEMO ETL gRPC service, one Dagster webserver, and the Dagster daemon with
 generated e2e Dagster config. It builds missing local images by default, supports
 `--rebuild`, derives the Podman socket from `XDG_RUNTIME_DIR`, and validates the
 cached seed under `backend-services/.e2e/aemo-etl`, or the explicit
-`--seed-root` path, with defaults of 3 raw objects per required source table and
-3 zip objects per required domain.
+`--seed-root` path, using the selected scenario's seed horizon.
 Successful non-reuse runs attempt to clean containers, Dagster run-worker
 containers, named volumes, and the e2e network; pre-run cleanup treats
 already-absent e2e resources as benign, while post-run cleanup warnings or
@@ -226,9 +225,24 @@ the failed-run alert sensor, the date-dimension schedule, and maintenance
 schedules remain stopped. The command bootstraps non-sensor prerequisites,
 including date dimension and table metadata materialization, then monitors until
 the full `gas_model` target succeeds, fails, or the timeout is reached. The
-default host webserver port is `3001`, the default timeout is 90 minutes, and
-the default Dagster `max_concurrent_runs` is `6`; override them with
-`--webserver-port`, `--timeout-seconds`, and `--max-concurrent-runs`.
+default `full-gas-model` scenario uses host webserver port `3001`, a 90 minute
+timeout, 3 raw objects per required source table, 3 zip objects per required
+domain, and Dagster `max_concurrent_runs` `6`. The `promotion-gas-model`
+scenario keeps the same final coverage contract while narrowing the seed
+horizon to 1 raw object and 1 zip object, with a 20 minute timeout and
+`max_concurrent_runs` `3`; Ralph **Promotion** uses that scenario from the
+isolated source worktree. Override these values with `--webserver-port`,
+`--timeout-seconds`, `--max-concurrent-runs`, `--raw-latest-count`, and
+`--zip-latest-count`.
+
+The required e2e coverage remains every materializable Dagster asset in group
+`gas_model`, plus final asset-check status for that target. Current
+`dg list defs --assets "group:gas_model" --json` discovery evidence is 29
+assets and 112 asset checks, including
+`silver/metadata/silver_table_metadata`. The command prints a non-failing budget
+report comparing gate duration to the observed `69m58s` baseline and showing
+peak active/queued runs, final successful runs, target progress, and final
+failed asset-check count.
 
 ## Bronze archive rebuild runbook
 

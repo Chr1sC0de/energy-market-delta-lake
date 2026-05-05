@@ -36,8 +36,11 @@ When a **Promotion** range includes non-doc runtime files in the AEMO ETL
 **Subproject**, the AEMO ETL **End-to-end test** gate runs from the same
 isolated source worktree as the aggregate **Push check**, before any merge,
 push, branch sync, metadata update, or issue closure, so `main` is not updated
-before the fetched source revision passes. Successful Promotions with changed
-files record a full source commit inventory in the **Promotion** manifest,
+before the fetched source revision passes. Ralph selects the
+`promotion-gas-model` scenario for that gate: it may narrow incidental seed and
+automation volume, but it still requires every materializable `gas_model` asset
+and final asset-check status to pass. Successful Promotions with changed files
+record a full source commit inventory in the **Promotion** manifest,
 including each promoted commit SHA and subject. Commits matching verified issue
 `integrated_commit` values are classified as verified **Local integration**
 commits, while other commits remain visible as unverified **Promotion** commits
