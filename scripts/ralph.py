@@ -137,6 +137,7 @@ REQUIRED_ISSUE_SECTIONS = ("What to build", "Acceptance criteria", "Blocked by")
 AEMO_ETL_PREFIX = "backend-services/dagster-user/aemo-etl/"
 BACKEND_SERVICES_PREFIX = "backend-services/"
 AEMO_ETL_E2E_QA_NAME = "aemo-etl End-to-end test"
+AEMO_ETL_PROMOTION_E2E_MAX_CONCURRENT_RUNS = 2
 MAINTAINED_DOC_PREFIXES = (
     "docs/",
     "backend-services/",
@@ -1054,7 +1055,12 @@ def select_promotion_gate_commands(
 ) -> list[QACommand]:
     if not has_protected_aemo_etl_change(changed_files):
         return []
-    args: tuple[str, ...] = ("scripts/aemo-etl-e2e", "run")
+    args: tuple[str, ...] = (
+        "scripts/aemo-etl-e2e",
+        "run",
+        "--max-concurrent-runs",
+        str(AEMO_ETL_PROMOTION_E2E_MAX_CONCURRENT_RUNS),
+    )
     if seed_root is not None:
         args = (*args, "--seed-root", str(seed_root))
     return [

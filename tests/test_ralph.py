@@ -638,7 +638,14 @@ Build it.
         self.assertEqual(commands[0].name, "aemo-etl End-to-end test")
         self.assertEqual(
             commands[0].args,
-            ("scripts/aemo-etl-e2e", "run", "--seed-root", str(seed_root)),
+            (
+                "scripts/aemo-etl-e2e",
+                "run",
+                "--max-concurrent-runs",
+                "2",
+                "--seed-root",
+                str(seed_root),
+            ),
         )
         self.assertEqual(commands[0].cwd, Path("/repo/backend-services"))
 
@@ -648,7 +655,10 @@ Build it.
             Path("/repo"),
         )
 
-        self.assertEqual(commands[0].args, ("scripts/aemo-etl-e2e", "run"))
+        self.assertEqual(
+            commands[0].args,
+            ("scripts/aemo-etl-e2e", "run", "--max-concurrent-runs", "2"),
+        )
 
     def test_select_promotion_gate_commands_skips_aemo_etl_docs_only_changes(
         self,
@@ -2530,6 +2540,8 @@ Build it.
             e2e_command = (
                 "scripts/aemo-etl-e2e",
                 "run",
+                "--max-concurrent-runs",
+                "2",
                 "--seed-root",
                 str(tmp_path / "repo" / "backend-services" / ".e2e/aemo-etl"),
             )
@@ -2589,6 +2601,8 @@ Build it.
             [
                 "scripts/aemo-etl-e2e",
                 "run",
+                "--max-concurrent-runs",
+                "2",
                 "--seed-root",
                 str(tmp_path / "repo" / "backend-services" / ".e2e/aemo-etl"),
             ],
@@ -2608,6 +2622,8 @@ Build it.
             e2e_command = (
                 "scripts/aemo-etl-e2e",
                 "run",
+                "--max-concurrent-runs",
+                "2",
                 "--seed-root",
                 str(tmp_path / "repo" / "backend-services" / ".e2e/aemo-etl"),
             )
