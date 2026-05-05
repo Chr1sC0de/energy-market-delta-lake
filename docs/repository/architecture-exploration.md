@@ -10,6 +10,7 @@ findings into durable repo docs before deleting this file.
 - [Issue #83: Explore deeper NEMWeb discovery Module](#issue-83-explore-deeper-nemweb-discovery-module)
 - [Issue #84: Explore archive-source planning consolidation](#issue-84-explore-archive-source-planning-consolidation)
 - [Issue #85: Explore Ralph workflow and state separation](#issue-85-explore-ralph-workflow-and-state-separation)
+- [Issue #86: Explore Dagster ECS runtime task-definition consolidation](#issue-86-explore-dagster-ecs-runtime-task-definition-consolidation)
 
 ## #82: Explore deeper gas-model asset shell Module
 
@@ -780,6 +781,182 @@ No AEMO ETL **Unit test**, **Component test**, **Integration test**, or
 **End-to-end test** lane is needed unless a later slice changes the AEMO ETL
 **Subproject** or the Promotion gate command surface.
 
+## Issue #86: Explore Dagster ECS runtime task-definition consolidation
+
+Issue #86 asks whether the repeated Pulumi Dagster ECS runtime
+task-definition logic should become a shared runtime Module. This section
+records docs-only research. It does not change runtime behavior. Issue `#87`
+must consume any accepted findings into durable repo docs before deleting this
+temporary file.
+
+### Evidence
+
+The repeated behavior is concentrated in
+`infrastructure/aws-pulumi/components/ecs_services.py`. There are four deployed
+services but three runtime roles to compare: one `aemo-etl` user-code gRPC
+service, two webserver variants created by `DagsterWebserverServiceComponentResource`,
+and one daemon service. The existing `_task_definition` helper already owns the
+AWS task-definition shell: `requires_compatibilities=["FARGATE"]`,
+`network_mode="awsvpc"`, task CPU, task memory, execution role ARN, task role
+ARN, and JSON container definitions. The existing `_fargate_service` helper
+already owns service-level Fargate behavior: one desired task,
+`FARGATE_SPOT`, private subnet placement, no public IP, deployment circuit
+breaker with rollback, forced deployments, propagated service tags, and
+optional Cloud Map registration.
+
+The remaining duplication is inside each role's `container_defs =
+pulumi.Output.all(...).apply(lambda a: json.dumps([...]))` block. Every role
+builds a single essential container, injects PostgreSQL environment values from
+Pulumi resource outputs, attaches CloudWatch `awslogs` configuration, and
+defines a health-check object with the same timing settings.
+
+| Runtime concern | Shared behavior | Role-specific Inputs |
+| --- | --- | --- |
+| Pulumi dependency inputs | Each role combines an image URI, Postgres hostname/password, CloudWatch log group name, and AWS region before serializing container definitions. | The image URI differs by ECR repository. User code also passes failure-alert config values. |
+| Environment | All roles set `DAGSTER_POSTGRES_DB`, `DAGSTER_POSTGRES_HOSTNAME`, `DAGSTER_POSTGRES_USER`, `DAGSTER_POSTGRES_PASSWORD`, `DEVELOPMENT_ENVIRONMENT`, and `DEVELOPMENT_LOCATION`. | User code and daemon also set `AWS_S3_LOCKING_PROVIDER` and `DAGSTER_GRPC_TIMEOUT_SECONDS`. User code adds `AWS_DEFAULT_REGION`, `DAGSTER_CURRENT_IMAGE`, `DAGSTER_FAILURE_ALERT_TOPIC_ARN`, and `DAGSTER_FAILURE_ALERT_BASE_URL`. Webservers intentionally keep a smaller environment. |
+| Logging | All roles use `logDriver="awslogs"` with the shared cluster log group and region. | Stream prefixes are role-specific: `dagster-aemo-etl-user-code`, the supplied webserver stream prefix, and `dagster-daemon`. |
+| Health | All roles use interval `15`, timeout `5`, retries `4`, and start period `60`. | User code performs a socket check against localhost port `4000`. Webserver and daemon currently use `true`. |
+| Container task shape | Every role defines one essential container and serializes the container list to the ECS task definition. | Container name, entry point, and ports differ: `dagster-grpc` exposes `4000`, webserver exposes `3000` and may insert `--read-only`, and daemon has no port mapping. |
+| Task settings | Code currently gives all four deployed task definitions CPU `256` and memory `1024` through `_task_definition`. | Families and IAM role ARNs differ. User code and daemon currently use daemon execution/task roles, while webservers use webserver execution/task roles. The runtime doc currently lists webservers as CPU `512`; `#87` should reconcile that durable-doc drift while consuming this temporary section. |
+| Service Fargate settings | `_fargate_service` already centralizes `FARGATE_SPOT`, private subnet, no public IP, circuit breaker, desired count, and tag propagation. | Security group, Cloud Map namespace/name, service tags, and absence of daemon Cloud Map registration remain role-owned service Inputs rather than task-definition Inputs. |
+
+This is enough repetition to justify a shared runtime task Module, but not a
+new high-level Pulumi `ComponentResource` that receives whole ECR, Postgres,
+cluster, IAM, service-discovery, security-group, or VPC components. Passing
+whole components would hide the Pulumi resource dependencies that currently
+make task definitions readable.
+
+### Proposed Module Interface
+
+Create a small Python Module for Dagster ECS runtime task definitions inside
+the AWS Pulumi **Subproject**. Keep it code-level, not a Dagster Component and
+not a new service-level Pulumi component. The Interface should accept explicit
+Pulumi Inputs and return the same task-definition resource shape used today:
+
+```python
+DagsterRuntimeTaskSharedInputs(
+    postgres_host: pulumi.Input[str],
+    postgres_password: pulumi.Input[str],
+    log_group_name: pulumi.Input[str],
+    region: pulumi.Input[str],
+    environment: str,
+    development_location: str = "aws",
+)
+
+DagsterRuntimeTaskSpec(
+    resource_name: str,
+    family: str,
+    container_name: str,
+    image: pulumi.Input[str],
+    entry_point: Sequence[str],
+    log_stream_prefix: str,
+    execution_role_arn: pulumi.Input[str] | None,
+    task_role_arn: pulumi.Input[str],
+    cpu: str = "256",
+    memory: str = "1024",
+    port: int | None = None,
+    extra_environment: Mapping[str, pulumi.Input[str]] | None = None,
+    health_check_command: Sequence[str] = ("CMD-SHELL", "true"),
+    child_opts: pulumi.ResourceOptions | None = None,
+)
+
+build_dagster_runtime_task_definition(
+    shared: DagsterRuntimeTaskSharedInputs,
+    spec: DagsterRuntimeTaskSpec,
+) -> aws.ecs.TaskDefinition
+```
+
+The Module should own these shared defaults:
+
+- common PostgreSQL and deployment environment variables
+- one-container ECS JSON serialization
+- CloudWatch log configuration shape
+- default health-check timing
+- optional port mapping construction
+- Fargate task-definition defaults already used by `_task_definition`
+- default CPU and memory values, with explicit overrides
+
+The role components should keep these Inputs explicit at the call site:
+
+- ECR image URI outputs, because they name the deployed image dependency
+- Postgres hostname/password, log group name, and region, because they are
+  Pulumi resource/provider values
+- execution role and task role ARNs, because user code and daemon currently
+  share daemon roles while webservers use separate webserver roles
+- user-code gRPC entry point, current-image env, failure-alert env, port `4000`,
+  and socket health command
+- webserver path prefix, read-only flag, Cloud Map-derived family, stream
+  prefix, port `3000`, and smaller environment
+- daemon `dagster-daemon run` entry point, no port mapping, no Cloud Map service
+  registration, and daemon tags
+
+Keep `_fargate_service` separate for the first implementation slice. Its
+service-level defaults are already consolidated, and folding service discovery,
+security groups, subnet placement, and tags into the task-definition Module
+would blur the boundary between task runtime and ECS service wiring.
+
+### Test Strategy
+
+The current
+`infrastructure/aws-pulumi/tests/component/test_ecs_services.py` suite already
+uses Pulumi mocks and inspects resolved task definitions and services. A shared
+Module should let tests validate common behavior once and role differences
+separately:
+
+- Add one shared-runtime test that builds a minimal spec and asserts the common
+  container JSON: one essential container, common Postgres and deployment env,
+  `awslogs` log configuration, default health-check timing, optional port
+  behavior, and digest-pinned image pass-through.
+- Add one task-definition test for Fargate defaults: compatibility
+  `FARGATE`, network mode `awsvpc`, CPU, memory, execution role ARN, task role
+  ARN, and parent options.
+- Keep role-specific tests for user code, webserver admin, webserver guest, and
+  daemon. Those should assert entry points, ports, extra env, stream prefixes,
+  task-definition families, read-only webserver behavior, user-code alert env,
+  current-image env, and daemon no-port behavior.
+- Keep service-level tests around `_fargate_service`: `FARGATE_SPOT`, private
+  subnet, no public IP, circuit breaker, Cloud Map registration for inbound
+  services, and no Cloud Map registration for the daemon.
+- Keep `test_deprecation_warnings.py` as a cross-component regression guard so
+  the extraction does not reintroduce deprecated Pulumi AWS provider usage.
+
+The relevant infrastructure **Test lane** for the implementation slice is the
+AWS Pulumi **Component test** lane because Pulumi mocks validate in-process
+resource wiring without deployed cloud resources. A narrowed debug run can
+target:
+
+```bash
+uv run pytest tests/component/test_ecs_services.py \
+  tests/component/test_deprecation_warnings.py -q
+```
+
+Before treating the slice as validated, run the AWS Pulumi **Commit check** from
+`infrastructure/aws-pulumi`:
+
+```bash
+prek run -a
+```
+
+No **Deployed test** or **Push check** should be required for the no-behavior
+extraction unless the slice changes live service settings rather than only
+centralizing equivalent task-definition construction. If the slice also updates
+durable root docs, run the root documentation QA described in
+`docs/repository/documentation-sync.md`.
+
+### Recommendation
+
+Use the smallest no-behavior-change implementation slice: extract only the
+runtime task-definition and container-definition assembly behind a
+`DagsterRuntimeTaskSpec`, then migrate user code, both webserver variants, and
+daemon to that helper in one pass. Leave ECR image publishing, IAM policy
+definitions, `_fargate_service`, Cloud Map service registration, security-group
+selection, subnet placement, and Dagster run-worker configuration unchanged.
+
+That slice is small enough to prove the shared runtime defaults once while
+still preserving role-specific Inputs at the current component call sites. It
+also avoids a half-migrated state where some roles use a shared task shell and
+others keep the old inline JSON shape.
+
 ## Sync metadata
 
 - `sync.owner`: `docs`
@@ -829,6 +1006,13 @@ No AEMO ETL **Unit test**, **Component test**, **Integration test**, or
   - `docs/adr/0001-ralph-local-integration.md`
   - `docs/adr/0002-ralph-delivery-modes.md`
   - `docs/adr/0004-ralph-sandboxed-issue-access.md`
+  - `infrastructure/aws-pulumi/README.md`
+  - `infrastructure/aws-pulumi/__main__.py`
+  - `infrastructure/aws-pulumi/components/ecs_services.py`
+  - `infrastructure/aws-pulumi/components/iam_roles.py`
+  - `infrastructure/aws-pulumi/docs/runtime.md`
+  - `infrastructure/aws-pulumi/tests/component/test_deprecation_warnings.py`
+  - `infrastructure/aws-pulumi/tests/component/test_ecs_services.py`
   - `scripts/ralph.py`
   - `tests/test_ralph.py`
 - `sync.scope`: `temporary architecture exploration`
