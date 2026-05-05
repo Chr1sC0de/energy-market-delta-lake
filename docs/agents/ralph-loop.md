@@ -309,6 +309,9 @@ Key fields for inspection:
 - `source_branch`: **Promotion** source branch, usually `dev`.
 - `source_tree`: **Promotion** source branch revision and source worktree used
   for QA.
+- `promotion_commit_inventory`: full promoted source commit range with each
+  commit SHA, subject, and whether it matched a verified Gitflow
+  **Local integration** commit or remained an unverified **Promotion** commit.
 - `post_promotion_review`: enabled state, skip reason, review status, review
   log path, and Markdown artifact path for **Promotion** runs.
 - `branches`: issue, source, and target branch names that apply to the run.
@@ -433,9 +436,16 @@ sequenceDiagram
 `python3 scripts/ralph.py --promote` promotes reviewed Gitflow work from
 `origin/dev` to `origin/main` by default. Ralph fetches both branches, computes
 the changed files between the target branch and the fetched source-branch
-revision, creates an isolated source worktree at that source revision, and runs
-the aggregate matching **Push check** QA from that tree. When the promoted
-range includes non-doc runtime files under
+revision, records the full source commit inventory for that promoted range, and
+creates an isolated source worktree at that source revision. The commit
+inventory records every promoted source commit with its SHA and subject. After
+verified Gitflow issues are identified, commits whose SHA matches a recorded
+`integrated_commit` are classified as verified **Local integration** commits;
+other commits remain visible as unverified **Promotion** commits in the run
+manifest and **Post-promotion review** prompt.
+
+Ralph runs the aggregate matching **Push check** QA from the source worktree.
+When the promoted range includes non-doc runtime files under
 `backend-services/dagster-user/aemo-etl/`, Ralph runs the AEMO ETL
 **End-to-end test** gate from the same source worktree before creating the
 target Promotion worktree. The gate is recorded as
@@ -452,14 +462,19 @@ contains `main`.
 After the push succeeds, Ralph scans open `agent-integrated` issues. It closes
 only issues whose recorded Gitflow integration commit is still in the promoted
 `origin/main..origin/dev` range, then comments promotion evidence and replaces
-`agent-integrated` with `agent-merged`. Successful Promotions with changed
-files then run a **Post-promotion review** agent from the **Promotion** worktree
-by default, after the `main` push, `dev` sync, and verified issue metadata
-updates. The review agent has read-only GitHub Issue access and must report
-learnings plus follow-up GitHub Issue drafts instead of mutating issues. Ralph
-saves the final Markdown report as `post-promotion-review.md`, prints it in the
-terminal, and records both `post_promotion_review.log_path` and
-`post_promotion_review.artifact_path` in the **Promotion** run manifest.
+`agent-integrated` with `agent-merged`. Per-issue Promotion comments describe
+promoted files as the full Promotion-range file inventory, not as files owned
+only by the issue being closed. Successful Promotions with changed files then
+run a **Post-promotion review** agent from the **Promotion** worktree by
+default, after the `main` push, `dev` sync, and verified issue metadata
+updates. The review prompt includes both verified **Local integration** commits
+and unverified **Promotion** commits so the review can separate closed issue
+evidence from other promoted work. The review agent has read-only GitHub Issue
+access and must report learnings plus follow-up GitHub Issue drafts instead of
+mutating issues. Ralph saves the final Markdown report as
+`post-promotion-review.md`, prints it in the terminal, and records both
+`post_promotion_review.log_path` and `post_promotion_review.artifact_path` in
+the **Promotion** run manifest.
 Operators can pass `--skip-post-promotion-review` to disable the review path.
 If there are no Promotion changes, Ralph does not create Promotion worktrees or
 run the review agent; it prints a review skip note and records

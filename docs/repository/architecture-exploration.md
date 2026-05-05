@@ -594,12 +594,16 @@ before deleting this temporary file.
   **Delivery mode**, **Integration target**, branch paths, changed files, QA,
   sandboxed issue access, **Local integration** commit, pushes, GitHub
   metadata, events, and failure details. **Promotion** manifests additionally
-  record source branch, source tree, promoted issues, Promotion commit,
-  source-branch sync, and **Post-promotion review**. Inspection and recovery
-  helpers (`load_run_manifest`, `inspect_run`, `recommended_run_action`, and
-  `RalphRunRecovery`) read the same JSON contract. Tests assert manifest
-  content for successful implementation, failed QA, Promotion, inspection, and
-  recovery.
+  record source branch, source tree, promoted issues, the promoted source
+  commit inventory, Promotion commit, source-branch sync, and
+  **Post-promotion review**. The promoted source commit inventory records each
+  promoted commit SHA and subject, then classifies commits that match verified
+  issue `integrated_commit` values as verified **Local integration** commits
+  while leaving other entries visible as unverified **Promotion** commits.
+  Inspection and recovery helpers (`load_run_manifest`, `inspect_run`,
+  `recommended_run_action`, and `RalphRunRecovery`) read the same JSON
+  contract. Tests assert manifest content for successful implementation,
+  failed QA, Promotion, inspection, and recovery.
 - QA selection is pure policy plus command execution. `select_qa_commands`
   maps changed files to the AEMO ETL **Test lane** commands, root
   **Commit check**, and Ralph unit tests. `select_promotion_gate_commands`
@@ -654,13 +658,15 @@ before deleting this temporary file.
   post-push metadata failure.
 - **Promotion** is currently a method-level workflow inside `RalphLoop`.
   `_promote` fetches source and target, records the source revision, computes
-  changed files, creates a source worktree, runs the aggregate **Push check**
-  and any Promotion gate from that exact source revision, verifies
-  `agent-integrated` issues by parsing recorded Gitflow integration commits,
-  creates the target Promotion worktree, merges, pushes `main`, fast-forwards
-  `dev`, updates issue metadata, and then runs **Post-promotion review** when
-  enabled and changed files exist. Tests assert ordering so failed **Push check**
-  or AEMO ETL **End-to-end test** gate cannot reach merge, push, branch sync,
+  changed files, records the promoted source commit inventory, creates a
+  source worktree, runs the aggregate **Push check** and any Promotion gate
+  from that exact source revision, verifies `agent-integrated` issues by
+  parsing recorded Gitflow integration commits, classifies inventory commits
+  as verified **Local integration** or unverified **Promotion** commits, creates
+  the target Promotion worktree, merges, pushes `main`, fast-forwards `dev`,
+  updates issue metadata, and then runs **Post-promotion review** when enabled
+  and changed files exist. Tests assert ordering so failed **Push check** or
+  AEMO ETL **End-to-end test** gate cannot reach merge, push, branch sync,
   issue metadata, or closure.
 
 ### Proposed Module Structure

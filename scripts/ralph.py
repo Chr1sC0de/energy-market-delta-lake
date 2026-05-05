@@ -276,6 +276,12 @@ class Issue:
 
 
 @dataclass(frozen=True)
+class PromotedSourceCommit:
+    sha: str
+    subject: str
+
+
+@dataclass(frozen=True)
 class QACommand:
     args: tuple[str, ...]
     cwd: Path
@@ -426,6 +432,12 @@ class RunManifest:
             "qa_runtime_env": {"status": "not_started"},
             "commits": {},
             "source_tree": None,
+            "promotion_commit_inventory": {
+                "status": "not_started",
+                "base_ref": None,
+                "head_ref": None,
+                "commits": [],
+            },
             "promotion_commit": None,
             "post_promotion_review": {
                 "enabled": not config.skip_post_promotion_review,
@@ -646,6 +658,31 @@ class RunManifest:
         metadata["status"] = "verified_issues"
         self.record_event("github_metadata_verified_issues", details={"count": len(issues)})
 
+    def record_promotion_commit_inventory(
+        self,
+        *,
+        base_ref: str,
+        head_ref: str,
+        commits: list[PromotedSourceCommit],
+        integrated_issues: list[tuple[Issue, str]],
+    ) -> list[dict[str, Any]]:
+        entries = promotion_commit_inventory_entries(
+            commits,
+            integrated_issues,
+        )
+        inventory = {
+            "status": "classified",
+            "base_ref": base_ref,
+            "head_ref": head_ref,
+            "commits": entries,
+        }
+        self.data["promotion_commit_inventory"] = inventory
+        self.record_event(
+            "promotion_commit_inventory_recorded",
+            details={"count": len(commits), "base_ref": base_ref, "head_ref": head_ref},
+        )
+        return entries
+
     def record_promoted_issue_metadata(
         self,
         issue: Issue,
@@ -718,6 +755,39 @@ class RunManifest:
             encoding="utf-8",
         )
         tmp_path.replace(self.path)
+
+
+def promotion_commit_inventory_entries(
+    commits: list[PromotedSourceCommit],
+    integrated_issues: list[tuple[Issue, str]],
+) -> list[dict[str, Any]]:
+    verified_by_commit: dict[str, Issue] = {}
+    for issue, integrated_commit in integrated_issues:
+        if integrated_commit not in verified_by_commit:
+            verified_by_commit[integrated_commit] = issue
+
+    entries: list[dict[str, Any]] = []
+    for commit in commits:
+        issue = verified_by_commit.get(commit.sha)
+        entry: dict[str, Any] = {
+            "sha": commit.sha,
+            "subject": commit.subject,
+            "verified_local_integration": issue is not None,
+            "classification": (
+                "verified_local_integration"
+                if issue is not None
+                else "unverified_promotion_commit"
+            ),
+        }
+        if issue is not None:
+            entry["issue"] = {
+                "number": issue.number,
+                "title": issue.title,
+                "url": issue.url,
+            }
+            entry["integrated_commit"] = commit.sha
+        entries.append(entry)
+    return entries
 
 
 def emit(message: str, *, err: bool = False) -> None:
@@ -1611,6 +1681,24 @@ class GitClient:
         )
         return sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
 
+    def promoted_source_commits(
+        self,
+        *,
+        base_ref: str,
+        head_ref: str,
+    ) -> list[PromotedSourceCommit]:
+        result = self.runner.run(
+            ["git", "log", "--reverse", "--format=%H%x00%s", f"{base_ref}..{head_ref}"],
+            cwd=self.repo_root,
+        )
+        commits: list[PromotedSourceCommit] = []
+        for line in result.stdout.splitlines():
+            sha, separator, subject = line.partition("\x00")
+            if sha == "" or separator == "":
+                raise RalphError("Could not parse promoted source commit inventory.")
+            commits.append(PromotedSourceCommit(sha=sha, subject=subject))
+        return commits
+
     def has_uncommitted_changes(self, *, cwd: Path) -> bool:
         return self.status_porcelain(cwd=cwd).strip() != ""
 
@@ -1934,6 +2022,11 @@ class RalphLoop:
                 base_ref=f"origin/{target_branch}",
                 head_ref=source_revision,
             )
+            promotion_base_ref = f"origin/{target_branch}"
+            promoted_commits = self.git.promoted_source_commits(
+                base_ref=promotion_base_ref,
+                head_ref=source_revision,
+            )
             manifest.record_changed_files(changed_files, stage="promotion_changes_detected")
             if not changed_files:
                 emit(f"No changes to promote from {source_branch} to {target_branch}.")
@@ -1976,6 +2069,12 @@ class RalphLoop:
                 source_branch=source_branch,
                 source_ref=source_revision,
                 target_branch=target_branch,
+            )
+            promotion_commit_inventory = manifest.record_promotion_commit_inventory(
+                base_ref=promotion_base_ref,
+                head_ref=source_revision,
+                commits=promoted_commits,
+                integrated_issues=integrated_issues,
             )
             manifest.record_promoted_issues(integrated_issues)
 
@@ -2054,6 +2153,7 @@ class RalphLoop:
                 promotion_sha=promotion_sha,
                 changed_files=changed_files,
                 integrated_issues=integrated_issues,
+                promotion_commit_inventory=promotion_commit_inventory,
                 promote_path=promote_path,
                 run_dir=run_dir,
                 manifest=manifest,
@@ -2110,6 +2210,7 @@ class RalphLoop:
         promotion_sha: str,
         changed_files: list[str],
         integrated_issues: list[tuple[Issue, str]],
+        promotion_commit_inventory: list[dict[str, Any]],
         promote_path: Path,
         run_dir: Path,
         manifest: RunManifest,
@@ -2140,6 +2241,7 @@ class RalphLoop:
                     promotion_sha=promotion_sha,
                     changed_files=changed_files,
                     integrated_issues=integrated_issues,
+                    promotion_commit_inventory=promotion_commit_inventory,
                     run_dir=run_dir,
                 ),
                 promote_path,
@@ -3654,6 +3756,30 @@ def triage_prompt(issue: Issue, repo: str) -> str:
     ).strip()
 
 
+def promotion_commit_inventory_prompt_lines(entries: list[dict[str, Any]]) -> str:
+    if not entries:
+        return "- None"
+
+    lines: list[str] = []
+    for entry in entries:
+        sha = str(entry.get("sha") or "")
+        subject = str(entry.get("subject") or "")
+        classification = str(entry.get("classification") or "unverified_promotion_commit")
+        if classification == "verified_local_integration":
+            issue_value = entry.get("issue")
+            issue_text = ""
+            if isinstance(issue_value, dict):
+                issue_number = issue_value.get("number")
+                issue_title = str(issue_value.get("title") or "")
+                issue_text = f" for #{issue_number} {issue_title}".rstrip()
+            lines.append(
+                f"- `{sha}` {subject} - verified Local integration commit{issue_text}"
+            )
+            continue
+        lines.append(f"- `{sha}` {subject} - unverified Promotion commit")
+    return "\n".join(lines)
+
+
 def post_promotion_review_prompt(
     *,
     repo: str,
@@ -3663,6 +3789,7 @@ def post_promotion_review_prompt(
     promotion_sha: str,
     changed_files: list[str],
     integrated_issues: list[tuple[Issue, str]],
+    promotion_commit_inventory: list[dict[str, Any]],
     run_dir: Path,
 ) -> str:
     changed_lines = "\n".join(f"- {path}" for path in changed_files)
@@ -3674,6 +3801,7 @@ def post_promotion_review_prompt(
     )
     if not issue_lines:
         issue_lines = "- None"
+    commit_lines = promotion_commit_inventory_prompt_lines(promotion_commit_inventory)
     return textwrap.dedent(
         f"""
         Run a Post-promotion review for {repo}.
@@ -3690,10 +3818,12 @@ def post_promotion_review_prompt(
         Ralph will save your final Markdown report as `post-promotion-review.md`.
 
         Review the completed Promotion for regressions, missed issue evidence,
-        surprising changed files, and obvious follow-up risks. Prioritize
-        concrete findings with file paths, commands, commits, or manifest
-        fields. If no issues are found, say that clearly and mention any
-        residual risk.
+        surprising changed files, unverified Promotion commits, and obvious
+        follow-up risks. Distinguish verified Local integration commits from
+        unverified Promotion commits; do not assume all promoted files belong
+        only to the verified issues. Prioritize concrete findings with file
+        paths, commands, commits, or manifest fields. If no issues are found,
+        say that clearly and mention any residual risk.
 
         Your final response must be a Markdown report with these sections:
 
@@ -3723,7 +3853,11 @@ def post_promotion_review_prompt(
         - Run logs: `{run_dir}`
         - Run manifest: `{run_dir / MANIFEST_NAME}`
 
-        Promoted files:
+        Promoted source commits:
+
+        {commit_lines}
+
+        Promoted files (full Promotion range, not per-issue ownership):
 
         {changed_lines}
 
@@ -3952,7 +4086,12 @@ def build_promotion_comment(
             f"Source branch: `{source_branch}`",
             f"Target branch: `{target_branch}`",
             "",
-            "## Promoted files",
+            "## Promotion file inventory",
+            "",
+            (
+                f"These files are from the full Promotion range, not only "
+                f"issue #{issue.number}."
+            ),
             "",
             *changed_lines,
             "",

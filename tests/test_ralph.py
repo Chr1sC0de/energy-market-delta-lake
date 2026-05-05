@@ -2112,6 +2112,13 @@ Build it.
             "abc1234",
             "origin/main",
         )
+        promotion_log_command = (
+            "git",
+            "log",
+            "--reverse",
+            "--format=%H%x00%s",
+            "origin/main..source-sha",
+        )
         issue_payload = [
             {
                 "number": 42,
@@ -2144,6 +2151,12 @@ Build it.
             command_outputs={
                 issue_list_command: [json.dumps(issue_payload)],
                 issue_comments_command: [json.dumps(comments_payload)],
+                promotion_log_command: [
+                    (
+                        "abc1234\x00Ralph Local integration for issue 42\n"
+                        "def5678\x00Manual follow-up after issue integration\n"
+                    )
+                ],
             },
             fail_commands={target_ancestor_command: 1},
         )
@@ -2246,6 +2259,20 @@ Build it.
         self.assertIn("## Learnings", runner.calls[review_index].input_text)
         self.assertIn("## Follow-up GitHub Issue Drafts", runner.calls[review_index].input_text)
         self.assertIn("Do not create the follow-up issues.", runner.calls[review_index].input_text)
+        self.assertIn(
+            "`abc1234` Ralph Local integration for issue 42 - "
+            "verified Local integration commit for #42 Implement thing",
+            runner.calls[review_index].input_text,
+        )
+        self.assertIn(
+            "`def5678` Manual follow-up after issue integration - "
+            "unverified Promotion commit",
+            runner.calls[review_index].input_text,
+        )
+        self.assertIn(
+            "Promoted files (full Promotion range, not per-issue ownership):",
+            runner.calls[review_index].input_text,
+        )
         self.assertIn(POST_PROMOTION_REVIEW_MARKDOWN.strip(), output.getvalue())
         self.assertEqual(artifact, POST_PROMOTION_REVIEW_MARKDOWN.rstrip() + "\n")
         self.assertIn("- Title: Harden Promotion evidence checks", artifact)
@@ -2255,6 +2282,11 @@ Build it.
         self.assertIn("Ralph promotion completed.", comment)
         self.assertIn("Promotion commit: `promotion-sha`", comment)
         self.assertIn("Integrated commit: `abc1234`", comment)
+        self.assertIn("## Promotion file inventory", comment)
+        self.assertIn(
+            "These files are from the full Promotion range, not only issue #42.",
+            comment,
+        )
         self.assertEqual(manifest["run_kind"], "promotion")
         self.assertEqual(manifest["status"], "succeeded")
         self.assertEqual(manifest["delivery_mode"], "gitflow")
@@ -2273,6 +2305,38 @@ Build it.
             },
         )
         self.assertEqual(manifest["promotion_commit"]["sha"], "promotion-sha")
+        self.assertEqual(
+            manifest["promotion_commit_inventory"]["base_ref"],
+            "origin/main",
+        )
+        self.assertEqual(
+            manifest["promotion_commit_inventory"]["head_ref"],
+            "source-sha",
+        )
+        self.assertEqual(manifest["promotion_commit_inventory"]["status"], "classified")
+        self.assertEqual(
+            manifest["promotion_commit_inventory"]["commits"],
+            [
+                {
+                    "sha": "abc1234",
+                    "subject": "Ralph Local integration for issue 42",
+                    "verified_local_integration": True,
+                    "classification": "verified_local_integration",
+                    "issue": {
+                        "number": 42,
+                        "title": "Implement thing",
+                        "url": "https://github.com/example/repo/issues/42",
+                    },
+                    "integrated_commit": "abc1234",
+                },
+                {
+                    "sha": "def5678",
+                    "subject": "Manual follow-up after issue integration",
+                    "verified_local_integration": False,
+                    "classification": "unverified_promotion_commit",
+                },
+            ],
+        )
         self.assertEqual(manifest["post_promotion_review"]["status"], "completed")
         self.assertIn(
             "codex-post-promotion-review.jsonl",
