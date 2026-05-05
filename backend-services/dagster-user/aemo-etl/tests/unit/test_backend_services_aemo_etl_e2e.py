@@ -20,6 +20,7 @@ EMBEDDED_DAGSTER_GRAPHQL_DOCUMENTS = (
     ("sensor mutation", "START_SENSOR_MUTATION"),
     ("launch mutation", "LAUNCH_RUN_MUTATION"),
     ("dataflow run status query", "DAGSTER_DATAFLOW_RUN_STATUS_QUERY"),
+    ("asset graph query", "DAGSTER_ASSET_GRAPH_QUERY"),
     ("dataflow target status query", "DAGSTER_DATAFLOW_TARGET_STATUS_QUERY"),
 )
 
@@ -345,19 +346,66 @@ def test_run_parser_defaults_to_full_dataflow_timeout_and_concurrency() -> None:
     """The e2e run defaults match the full dataflow acceptance criteria."""
     module = load_e2e_command_module()
     build_parser = get_callable(module, "build_parser")
+    run_options_from_args = get_callable(module, "run_options_from_args")
 
-    args = build_parser().parse_args(["run"])
+    options = run_options_from_args(build_parser().parse_args(["run"]))
 
-    assert getattr(args, "raw_latest_count") == 3
-    assert getattr(args, "zip_latest_count") == 3
-    assert getattr(args, "timeout_seconds") == 90 * 60
-    assert getattr(args, "max_concurrent_runs") == 6
+    assert getattr(options, "scenario") == "full-gas-model"
+    assert getattr(options, "raw_latest_count") == 3
+    assert getattr(options, "zip_latest_count") == 3
+    assert getattr(options, "timeout_seconds") == 90 * 60
+    assert getattr(options, "max_concurrent_runs") == 6
+    assert getattr(options, "launch_mode") == "sensor-driven"
 
-    override_args = build_parser().parse_args(
-        ["run", "--raw-latest-count", "5", "--zip-latest-count", "2"]
+    promotion_options = run_options_from_args(
+        build_parser().parse_args(["run", "--scenario", "promotion-gas-model"])
     )
-    assert getattr(override_args, "raw_latest_count") == 5
-    assert getattr(override_args, "zip_latest_count") == 2
+    assert getattr(promotion_options, "raw_latest_count") == 1
+    assert getattr(promotion_options, "zip_latest_count") == 1
+    assert getattr(promotion_options, "timeout_seconds") == 20 * 60
+    assert getattr(promotion_options, "max_concurrent_runs") == 6
+    assert getattr(promotion_options, "launch_mode") == "direct-upstream-asset-launch"
+
+    override_options = run_options_from_args(
+        build_parser().parse_args(
+            [
+                "run",
+                "--scenario",
+                "promotion-gas-model",
+                "--raw-latest-count",
+                "5",
+                "--zip-latest-count",
+                "2",
+                "--timeout-seconds",
+                "1800",
+                "--max-concurrent-runs",
+                "4",
+            ]
+        )
+    )
+    assert getattr(override_options, "raw_latest_count") == 5
+    assert getattr(override_options, "zip_latest_count") == 2
+    assert getattr(override_options, "timeout_seconds") == 1800
+    assert getattr(override_options, "max_concurrent_runs") == 4
+    assert getattr(override_options, "launch_mode") == "direct-upstream-asset-launch"
+
+
+def test_promotion_scenario_keeps_approved_sensor_and_target_contract() -> None:
+    """Promotion targeting narrows seed volume without bypassing coverage."""
+    module = load_e2e_command_module()
+    expected_sensor_names = set(module["EXPECTED_DATAFLOW_SENSOR_NAMES"])
+    asset_graph_query = module["DAGSTER_ASSET_GRAPH_QUERY"]
+    target_status_query = module["DAGSTER_DATAFLOW_TARGET_STATUS_QUERY"]
+
+    assert "gbb_event_driven_assets_sensor" in expected_sensor_names
+    assert "vicgas_event_driven_assets_sensor" in expected_sensor_names
+    assert "gbb_unzipper_sensor" in expected_sensor_names
+    assert "vicgas_unzipper_sensor" in expected_sensor_names
+    assert "silver_table_metadata_sensor" in expected_sensor_names
+    assert "silver_gas_fact_operational_meter_flow_sensor" in expected_sensor_names
+    assert "dependencyKeys" in asset_graph_query
+    assert 'groupName: "gas_model"' in target_status_query
+    assert "isMaterializable" in target_status_query
 
 
 def test_generated_compose_is_isolated_e2e_stack(tmp_path: Path) -> None:
@@ -385,6 +433,10 @@ def test_generated_compose_is_isolated_e2e_stack(tmp_path: Path) -> None:
     assert isinstance(compose, str)
     assert "name: aemo-etl-e2e" in compose
     assert "container_name: aemo-etl-e2e-dagster-webserver" in compose
+    assert 'subnet: "10.89.10.0/24"' in compose
+    assert 'DAGSTER_POSTGRES_HOSTNAME: "10.89.10.10"' in compose
+    assert 'AWS_ENDPOINT_URL: "http://10.89.10.11:4566"' in compose
+    assert 'ipv4_address: "10.89.10.12"' in compose
     assert "aemo-etl-seed-localstack:" in compose
     assert "depends_on:" not in compose
     assert "dagster-webserver-admin" not in compose
@@ -392,6 +444,17 @@ def test_generated_compose_is_isolated_e2e_stack(tmp_path: Path) -> None:
     assert "authentication:" not in compose
     assert "marimo:" not in compose
     assert "caddy:" not in compose
+
+
+def test_generated_workspace_uses_static_code_server_address() -> None:
+    """Dagster workspace loading does not depend on container DNS."""
+    module = load_e2e_command_module()
+    render_workspace_yaml = get_callable(module, "render_workspace_yaml")
+
+    workspace = render_workspace_yaml()
+
+    assert "host: 10.89.10.12" in workspace
+    assert "host: aemo-etl" not in workspace
 
 
 def test_start_stack_services_runs_compose_in_dependency_phases(tmp_path: Path) -> None:
@@ -437,6 +500,8 @@ def test_start_stack_services_runs_compose_in_dependency_phases(tmp_path: Path) 
 
     runner = FakeRunner()
     options = run_options_class(
+        scenario="full-gas-model",
+        launch_mode="sensor-driven",
         rebuild=False,
         reuse=False,
         always_clean=False,
@@ -643,6 +708,76 @@ def test_cleanup_stack_reports_cleanup_command_warnings() -> None:
     }
 
 
+def test_cleanup_stack_with_telemetry_ignores_missing_pre_run_resources() -> None:
+    """Pre-run cleanup treats already-absent e2e resources as benign."""
+    module = load_e2e_command_module()
+    cleanup_stack_with_telemetry = get_callable(
+        module,
+        "cleanup_stack_with_telemetry",
+    )
+    telemetry_class = get_callable(module, "GateRunTelemetry")
+    compose_command = ("podman-compose", "--no-ansi", "-f", "compose.yaml")
+
+    class FakeRunner:
+        """Report no prior compose stack or e2e network."""
+
+        def run(
+            self,
+            args: list[str],
+            *,
+            cwd: Path | None = None,
+            env: Mapping[str, str] | None = None,
+            capture_output: bool = False,
+            check: bool = True,
+        ) -> subprocess.CompletedProcess[str]:
+            del cwd, env, capture_output, check
+            command_name = classify_cleanup_command(args)
+            if command_name == "worker-ps":
+                return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+            if command_name == "compose-down":
+                return subprocess.CompletedProcess(
+                    args,
+                    0,
+                    stdout="",
+                    stderr=(
+                        'Error: no container with name or ID "aemo-etl-e2e" '
+                        "found: no such container\n"
+                        "Error: no pod with name or ID pod_aemo-etl-e2e "
+                        "found: no such pod\n"
+                    ),
+                )
+            if command_name == "network-rm":
+                return subprocess.CompletedProcess(
+                    args,
+                    1,
+                    stdout="",
+                    stderr=(
+                        "Error: unable to find network with name or ID "
+                        "aemo-etl-e2e-dagster-network: network not found\n"
+                    ),
+                )
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    telemetry = telemetry_class(started_monotonic=100.0)
+
+    issues = cleanup_stack_with_telemetry(
+        FakeRunner(),
+        compose_command,
+        telemetry=telemetry,
+        phase="pre-run",
+    )
+    manifest = telemetry.to_manifest()
+    cleanup_phases = cast(
+        "Sequence[Mapping[str, object]]",
+        manifest["cleanup_phases"],
+    )
+
+    assert issues == []
+    assert cleanup_phases[0]["phase"] == "pre-run"
+    assert cleanup_phases[0]["status"] == "completed"
+    assert "issues" not in cleanup_phases[0]
+
+
 def test_cleanup_stack_with_telemetry_records_incomplete_cleanup() -> None:
     """Cleanup telemetry records failed cleanup phases in the run manifest."""
     module = load_e2e_command_module()
@@ -810,7 +945,10 @@ def test_bootstrap_runs_launch_date_job_and_metadata_asset() -> None:
             self,
             query: str,
             variables: Mapping[str, object] | None = None,
+            *,
+            timeout_seconds: int | None = None,
         ) -> Mapping[str, object]:
+            assert timeout_seconds == module["DAGSTER_LAUNCH_RUN_TIMEOUT_SECONDS"]
             assert "launchRun" in query
             assert variables is not None
             execution_params = variables["executionParams"]
@@ -838,6 +976,7 @@ def test_bootstrap_runs_launch_date_job_and_metadata_asset() -> None:
     for params in client.execution_params:
         selector = params["selector"]
         assert isinstance(selector, Mapping)
+        assert params["runConfigData"] == {}
         selectors.append(selector)
 
     assert run_ids == ["run-1", "run-2"]
@@ -846,6 +985,251 @@ def test_bootstrap_runs_launch_date_job_and_metadata_asset() -> None:
     assert selectors[1]["assetSelection"] == [
         {"path": ["bronze", "metadata", "bronze_table_metadata"]}
     ]
+
+
+def test_select_gas_model_upstream_materializable_asset_keys() -> None:
+    """Promotion targeting keeps the gas_model closure and skips source stubs."""
+    module = load_e2e_command_module()
+    asset_node_class = get_callable(module, "DagsterAssetNode")
+    select_asset_keys = get_callable(
+        module,
+        "select_gas_model_upstream_materializable_asset_keys",
+    )
+
+    selected = select_asset_keys(
+        [
+            asset_node_class(
+                key=("silver", "gas_model", "silver_gas_fact_flow"),
+                group_name="gas_model",
+                is_materializable=True,
+                dependency_keys=(
+                    ("silver", "gbb", "silver_gasbb_flow"),
+                    ("external", "archive"),
+                ),
+            ),
+            asset_node_class(
+                key=("silver", "gbb", "silver_gasbb_flow"),
+                group_name="gas_raw_cleansed",
+                is_materializable=True,
+                dependency_keys=(("bronze", "gbb", "bronze_gasbb_flow"),),
+            ),
+            asset_node_class(
+                key=("bronze", "gbb", "bronze_gasbb_flow"),
+                group_name="gas_raw",
+                is_materializable=True,
+                dependency_keys=(
+                    ("bronze", "gbb", "bronze_nemweb_public_files_gbb"),
+                    ("external", "archive"),
+                ),
+            ),
+            asset_node_class(
+                key=("bronze", "gbb", "bronze_nemweb_public_files_gbb"),
+                group_name="gas_raw",
+                is_materializable=True,
+                dependency_keys=(),
+            ),
+            asset_node_class(
+                key=("external", "archive"),
+                group_name="",
+                is_materializable=False,
+                dependency_keys=(),
+            ),
+            asset_node_class(
+                key=("silver", "other", "unrelated"),
+                group_name="other",
+                is_materializable=True,
+                dependency_keys=(),
+            ),
+        ]
+    )
+
+    assert selected == (
+        ("bronze", "gbb", "bronze_gasbb_flow"),
+        ("silver", "gas_model", "silver_gas_fact_flow"),
+        ("silver", "gbb", "silver_gasbb_flow"),
+    )
+
+
+def test_promotion_upstream_launch_uses_dependency_waves() -> None:
+    """The Promotion scenario launches bounded gas_model upstream waves."""
+    module = load_e2e_command_module()
+    selector_class = get_callable(module, "DagsterRepositorySelector")
+    launch_assets = get_callable(module, "launch_gas_model_upstream_assets")
+
+    class FakeClient:
+        """Return a tiny asset graph and record launch requests."""
+
+        def __init__(self) -> None:
+            self.execution_params: list[Mapping[str, object]] = []
+            self.status_checks = 0
+
+        def execute(
+            self,
+            query: str,
+            variables: Mapping[str, object] | None = None,
+            *,
+            timeout_seconds: int | None = None,
+        ) -> Mapping[str, object]:
+            if "assetNodes" in query:
+                assert timeout_seconds is None
+                return {
+                    "assetNodes": [
+                        {
+                            "assetKey": {"path": ["silver", "gas_model", "target"]},
+                            "groupName": "gas_model",
+                            "isMaterializable": True,
+                            "dependencyKeys": [{"path": ["silver", "gbb", "upstream"]}],
+                        },
+                        {
+                            "assetKey": {"path": ["silver", "gbb", "upstream"]},
+                            "groupName": "gas_raw_cleansed",
+                            "isMaterializable": True,
+                            "dependencyKeys": [{"path": ["bronze", "gbb", "raw"]}],
+                        },
+                        {
+                            "assetKey": {"path": ["bronze", "gbb", "raw"]},
+                            "groupName": "gas_raw",
+                            "isMaterializable": True,
+                            "dependencyKeys": [
+                                {
+                                    "path": [
+                                        "bronze",
+                                        "gbb",
+                                        "bronze_nemweb_public_files_gbb",
+                                    ]
+                                }
+                            ],
+                        },
+                        {
+                            "assetKey": {
+                                "path": [
+                                    "bronze",
+                                    "gbb",
+                                    "bronze_nemweb_public_files_gbb",
+                                ]
+                            },
+                            "groupName": "gas_raw",
+                            "isMaterializable": True,
+                            "dependencyKeys": [],
+                        },
+                    ]
+                }
+            if "activeRuns: runsOrError" in query:
+                self.status_checks += 1
+                return {
+                    "activeRuns": {"__typename": "Runs", "results": []},
+                    "failedRuns": {"__typename": "Runs", "results": []},
+                    "allRuns": {
+                        "__typename": "Runs",
+                        "results": [
+                            {
+                                "runId": f"run-{self.status_checks}",
+                                "jobName": "__ASSET_JOB",
+                                "status": "SUCCESS",
+                            }
+                        ],
+                    },
+                }
+            assert "launchRun" in query
+            assert timeout_seconds == module["DAGSTER_LAUNCH_RUN_TIMEOUT_SECONDS"]
+            assert variables is not None
+            execution_params = variables["executionParams"]
+            assert isinstance(execution_params, Mapping)
+            self.execution_params.append(execution_params)
+            return {
+                "launchRun": {
+                    "__typename": "LaunchRunSuccess",
+                    "run": {"runId": "run-1", "status": "QUEUED"},
+                }
+            }
+
+    class FakeRunner:
+        """Return no failed asset checks for dependency wave waits."""
+
+        def run(
+            self,
+            args: list[str],
+            *,
+            cwd: Path | None = None,
+            env: Mapping[str, str] | None = None,
+            capture_output: bool = False,
+            check: bool = True,
+        ) -> subprocess.CompletedProcess[str]:
+            del cwd, env, capture_output, check
+            assert args[:3] == ["podman", "exec", "aemo-etl-e2e-postgres"]
+            return subprocess.CompletedProcess(args, 0, stdout="[]\n", stderr="")
+
+    client = FakeClient()
+
+    run_ids = launch_assets(
+        client,
+        selector_class("repo", "aemo-etl"),
+        run_id="e2e",
+        started_after=100.0,
+        timeout_seconds=1200,
+        runner=FakeRunner(),
+    )
+
+    assert run_ids == ["run-1", "run-1", "run-1"]
+    assert client.status_checks == 3
+    selectors: list[Mapping[str, object]] = []
+    for params in client.execution_params:
+        selector = params["selector"]
+        assert isinstance(selector, Mapping)
+        assert selector["pipelineName"] == "__ASSET_JOB"
+        assert params["runConfigData"] == module["PROMOTION_ASSET_RUN_CONFIG"]
+        selectors.append(selector)
+    assert [selector["assetSelection"] for selector in selectors] == [
+        [{"path": ["bronze", "gbb", "raw"]}],
+        [{"path": ["silver", "gbb", "upstream"]}],
+        [{"path": ["silver", "gas_model", "target"]}],
+    ]
+
+
+def test_asset_launch_timeout_propagates_without_retry() -> None:
+    """A launch timeout fails without retrying the non-idempotent mutation."""
+    module = load_e2e_command_module()
+    selector_class = get_callable(module, "DagsterRepositorySelector")
+    launch_dagster_run = get_callable(module, "launch_dagster_run")
+    command_error = get_exception_class(module, "CommandError")
+
+    class FakeClient:
+        """Raise one launch transport timeout."""
+
+        def __init__(self) -> None:
+            self.launch_attempts = 0
+
+        def execute(
+            self,
+            query: str,
+            variables: Mapping[str, object] | None = None,
+            *,
+            timeout_seconds: int | None = None,
+        ) -> Mapping[str, object]:
+            assert "launchRun" in query
+            assert variables is not None
+            assert timeout_seconds == module["DAGSTER_LAUNCH_RUN_TIMEOUT_SECONDS"]
+            self.launch_attempts += 1
+            raise command_error(
+                "Dagster GraphQL request failed at http://127.0.0.1:3001/graphql: timed out"
+            )
+
+    client = FakeClient()
+
+    try:
+        launch_dagster_run(
+            client,
+            selector_class("repo", "aemo-etl"),
+            pipeline_name="__ASSET_JOB",
+            run_id="e2e",
+            asset_keys=(("silver", "gas_model", "target"),),
+        )
+    except command_error as error:
+        assert "timed out" in str(error)
+    else:
+        raise AssertionError("launch timeout did not fail")
+
+    assert client.launch_attempts == 1
 
 
 def test_dataflow_status_fails_warn_level_asset_checks() -> None:
@@ -1040,6 +1424,133 @@ def test_dataflow_telemetry_aggregates_monitor_status_samples() -> None:
     assert payload["final_failed_asset_check_count"] == 1
 
 
+def test_run_wave_wait_records_peak_run_telemetry() -> None:
+    """Dependency-wave samples contribute to the budget report telemetry."""
+    module = load_e2e_command_module()
+    wait_for_dagster_run_wave = get_callable(module, "wait_for_dagster_run_wave")
+    telemetry_class = get_callable(module, "DagsterDataflowTelemetry")
+
+    class FakeClient:
+        """Return one active wave sample and one drained wave sample."""
+
+        def __init__(self) -> None:
+            self.status_checks = 0
+
+        def execute(
+            self,
+            query: str,
+            variables: Mapping[str, object] | None = None,
+            *,
+            timeout_seconds: int | None = None,
+        ) -> Mapping[str, object]:
+            del variables
+            assert timeout_seconds == module["DAGSTER_DATAFLOW_STATUS_TIMEOUT_SECONDS"]
+            assert "activeRuns: runsOrError" in query
+            self.status_checks += 1
+            if self.status_checks == 1:
+                return {
+                    "activeRuns": {
+                        "__typename": "Runs",
+                        "results": [
+                            {
+                                "runId": "run-started",
+                                "jobName": "__ASSET_JOB",
+                                "status": "STARTED",
+                            },
+                            {
+                                "runId": "run-starting",
+                                "jobName": "__ASSET_JOB",
+                                "status": "STARTING",
+                            },
+                            {
+                                "runId": "run-queued",
+                                "jobName": "__ASSET_JOB",
+                                "status": "QUEUED",
+                            },
+                        ],
+                    },
+                    "failedRuns": {"__typename": "Runs", "results": []},
+                    "allRuns": {
+                        "__typename": "Runs",
+                        "results": [
+                            {
+                                "runId": "run-started",
+                                "jobName": "__ASSET_JOB",
+                                "status": "STARTED",
+                            },
+                            {
+                                "runId": "run-starting",
+                                "jobName": "__ASSET_JOB",
+                                "status": "STARTING",
+                            },
+                            {
+                                "runId": "run-queued-1",
+                                "jobName": "__ASSET_JOB",
+                                "status": "QUEUED",
+                            },
+                            {
+                                "runId": "run-queued-2",
+                                "jobName": "__ASSET_JOB",
+                                "status": "QUEUED",
+                            },
+                            {
+                                "runId": "run-queued-3",
+                                "jobName": "__ASSET_JOB",
+                                "status": "QUEUED",
+                            },
+                        ],
+                    },
+                }
+            return {
+                "activeRuns": {"__typename": "Runs", "results": []},
+                "failedRuns": {"__typename": "Runs", "results": []},
+                "allRuns": {
+                    "__typename": "Runs",
+                    "results": [
+                        {
+                            "runId": f"run-success-{index}",
+                            "jobName": "__ASSET_JOB",
+                            "status": "SUCCESS",
+                        }
+                        for index in range(5)
+                    ],
+                },
+            }
+
+    class FakeRunner:
+        """Return no failed asset checks after the wave drains."""
+
+        def run(
+            self,
+            args: list[str],
+            *,
+            cwd: Path | None = None,
+            env: Mapping[str, str] | None = None,
+            capture_output: bool = False,
+            check: bool = True,
+        ) -> subprocess.CompletedProcess[str]:
+            del cwd, env, capture_output, check
+            assert args[:3] == ["podman", "exec", "aemo-etl-e2e-postgres"]
+            return subprocess.CompletedProcess(args, 0, stdout="[]\n", stderr="")
+
+    telemetry = telemetry_class()
+
+    wait_for_dagster_run_wave(
+        FakeClient(),
+        started_after=100.0,
+        timeout_seconds=30,
+        runner=FakeRunner(),
+        poll_interval_seconds=0,
+        telemetry=telemetry,
+    )
+
+    payload = telemetry.to_manifest()
+    assert payload["sample_count"] == 2
+    assert payload["peak_active_run_count"] == 2
+    assert payload["peak_queued_run_count"] == 3
+    assert payload["final_run_status_counts"] == {"SUCCESS": 5}
+
+
 def test_gate_run_telemetry_manifest_records_durations() -> None:
     """Gate telemetry reports total, stack, monitor, and cleanup durations."""
     module = load_e2e_command_module()
@@ -1064,6 +1575,76 @@ def test_gate_run_telemetry_manifest_records_durations() -> None:
             "status": "completed",
         }
     ]
+
+
+def test_e2e_budget_report_formats_below_baseline() -> None:
+    """The budget report is concise and explicitly non-failing below baseline."""
+    module = load_e2e_command_module()
+    format_e2e_budget_report = get_callable(module, "format_e2e_budget_report")
+
+    report = format_e2e_budget_report(
+        {
+            "total_gate_duration_seconds": 20 * 60,
+            "dagster_dataflow": {
+                "peak_active_run_count": 3,
+                "peak_queued_run_count": 4,
+                "final_run_status_counts": {"SUCCESS": 29},
+                "final_target_progress": {
+                    "materialized_target_asset_count": 29,
+                    "target_asset_count": 29,
+                },
+                "final_failed_asset_check_count": 0,
+            },
+        }
+    )
+
+    assert "E2E budget report (non-failing):" in report
+    assert "20m00s (49m58s below 69m58s baseline)" in report
+    assert "3 active / 4 queued" in report
+    assert "final successful runs: 29" in report
+    assert "target progress: 29/29 materialized" in report
+    assert "final asset-check status: 0 failed" in report
+
+
+def test_e2e_budget_report_formats_above_baseline() -> None:
+    """Above-baseline telemetry remains report-only."""
+    module = load_e2e_command_module()
+    format_e2e_budget_report = get_callable(module, "format_e2e_budget_report")
+
+    report = format_e2e_budget_report(
+        {
+            "total_gate_duration_seconds": 70 * 60,
+            "dagster_dataflow": {
+                "peak_active_run_count": 7,
+                "peak_queued_run_count": 77,
+                "final_run_status_counts": {"SUCCESS": 270},
+                "final_target_progress": {
+                    "materialized_target_asset_count": 29,
+                    "target_asset_count": 29,
+                },
+                "final_failed_asset_check_count": 2,
+            },
+        }
+    )
+
+    assert "70m00s (2s above 69m58s baseline)" in report
+    assert "7 active / 77 queued" in report
+    assert "final successful runs: 270" in report
+    assert "final asset-check status: 2 failed" in report
+
+
+def test_e2e_budget_report_handles_missing_telemetry() -> None:
+    """Missing telemetry produces an actionable report without failing."""
+    module = load_e2e_command_module()
+    format_e2e_budget_report = get_callable(module, "format_e2e_budget_report")
+
+    report = format_e2e_budget_report({})
+
+    assert "unavailable (baseline 69m58s)" in report
+    assert "peak active/queued runs: unavailable" in report
+    assert "final successful runs: unavailable" in report
+    assert "target progress: unavailable" in report
+    assert "final asset-check status: unavailable" in report
 
 
 def test_monitor_records_telemetry_before_failed_run_error() -> None:
@@ -1198,7 +1779,7 @@ def test_dataflow_status_reports_missing_target_materialization() -> None:
 
 
 def test_dataflow_status_reports_target_progress_while_runs_are_active() -> None:
-    """The monitor reports target progress without querying every asset check."""
+    """Target/check coverage can succeed while background runs remain active."""
     module = load_e2e_command_module()
     selector_class = get_callable(module, "DagsterRepositorySelector")
     fetch_dagster_dataflow_status = get_callable(

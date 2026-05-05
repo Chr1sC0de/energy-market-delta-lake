@@ -291,22 +291,58 @@ the stack runs from an ephemeral worktree. Refresh that cache with
 
 | Option | Default | Purpose |
 |---|---:|---|
+| `--scenario` | `full-gas-model` | Named target profile; `promotion-gas-model` narrows seed volume and launches the explicit `gas_model` upstream asset graph for Ralph **Promotion** |
 | `--webserver-port` | `3001` | Host port for the isolated Dagster webserver |
 | `--seed-root` | `backend-services/.e2e/aemo-etl` | Cached Archive seed root mounted into the isolated stack |
-| `--raw-latest-count` | `3` | Cached raw source-table objects required per table |
-| `--zip-latest-count` | `3` | Cached zip objects required per domain |
-| `--timeout-seconds` | `5400` | Overall stack and dataflow timeout |
-| `--max-concurrent-runs` | `6` | Dagster queued run coordinator `max_concurrent_runs` |
+| `--raw-latest-count` | scenario-specific | Cached raw source-table objects required per table; `3` for `full-gas-model`, `1` for `promotion-gas-model` |
+| `--zip-latest-count` | scenario-specific | Cached zip objects required per domain; `3` for `full-gas-model`, `1` for `promotion-gas-model` |
+| `--timeout-seconds` | scenario-specific | Overall stack and dataflow timeout; `5400` for `full-gas-model`, `1200` for `promotion-gas-model` |
+| `--max-concurrent-runs` | scenario-specific | Dagster queued run coordinator `max_concurrent_runs`; `6` for `full-gas-model`, `6` for `promotion-gas-model` |
 
 After the isolated stack reaches readiness, the command drives the Dagster
-dataflow through GraphQL. It starts only the unzipper sensors, event-driven raw
-sensors, and gas model automation sensors; NEMWeb discovery schedules, the
-failed-run alert sensor, the daily date-dimension schedule, and maintenance
-schedules stay stopped. The command bootstraps non-sensor prerequisites,
-including the date dimension and table-metadata prerequisite, then polls Dagster
-until no active runs remain and the full `gas_model` target has materialized.
-Failed runs, failed or missing target materializations, and failed asset checks
-fail the command, including WARN-level checks such as skipped selected S3 keys.
+dataflow through GraphQL. The `full-gas-model` scenario starts only the unzipper
+sensors, event-driven raw sensors, and gas model automation sensors; NEMWeb
+discovery schedules, the failed-run alert sensor, the daily date-dimension
+schedule, and maintenance schedules stay stopped. It bootstraps non-sensor
+prerequisites, including the date dimension and table-metadata prerequisite,
+then polls Dagster until the full `gas_model` target has materialized and
+required checks have reported success. The `promotion-gas-model` scenario keeps
+automation stopped and launches explicit Dagster asset-run batches by dependency
+wave for every materializable `gas_model` asset plus its materializable upstream
+closure. It skips live `bronze_nemweb_public_files_*` discovery/listing assets
+so the gate starts from seeded LocalStack objects, matching
+`+group:gas_model` targeting without creating one sensor-triggered run per
+upstream source table. Each Promotion batch uses Dagster's in-process executor
+inside its Podman run-worker container to avoid a subprocess storm against
+LocalStack and the Delta Lake DynamoDB lock table. Background or queued runs may
+still exist after
+target/check coverage is complete. Failed runs, failed or missing target
+materializations, and failed asset checks fail the command, including
+WARN-level checks such as skipped selected S3 keys.
+
+### Coverage contract
+
+The mandatory Ralph **Promotion** gate target is every materializable Dagster
+asset in group `gas_model`, plus final asset-check status for that target. The
+current discovery evidence from
+`dg list defs --assets "group:gas_model" --json` is 29 `gas_model` assets and
+112 asset checks, including `silver/metadata/silver_table_metadata` as a group
+member.
+
+The gate must continue to exercise Dagster, LocalStack/S3, Podman run-worker
+containers, and the Dagster GraphQL monitor. The full scenario verifies the
+sensor/dependency path. The Promotion scenario verifies the same final coverage
+through an explicit graph-scoped Dagster asset launch so the **Promotion** gate
+can stay inside the 20 minute budget without bypassing the final target or
+asset-check monitor.
+
+The `promotion-gas-model` scenario may reduce incidental automation volume by
+narrowing seed horizon, started sensors, or run-launch shape, but it must still
+end with `29/29` target progress and `0` failed asset checks before
+**Promotion** can merge to `main`. The non-failing budget report compares gate
+duration to the observed `69m58s` baseline and prints peak active/queued run
+counts, final successful run count, final target progress, and final failed
+asset-check count for review evidence.
 
 Local service images are tagged for the e2e stack. Missing images are built
 automatically, existing images are reused by default, and `--rebuild` forces all
@@ -315,15 +351,19 @@ local images to rebuild before startup.
 The command derives the host Podman socket from
 `$XDG_RUNTIME_DIR/podman/podman.sock` and fails before startup if the socket is
 missing. The generated e2e Dagster config uses that socket for run-worker
-containers and attaches them to the e2e network. The default timeout is 90
-minutes and the default Dagster `max_concurrent_runs` is `6`; override them with
-`--timeout-seconds` and `--max-concurrent-runs`.
+containers and attaches them to the e2e network. The generated compose stack
+uses fixed service IPs for Postgres, LocalStack, and the AEMO ETL code server so
+run-worker containers do not depend on Podman DNS during high-concurrency
+Promotion gates. The `full-gas-model` scenario
+defaults to a 90 minute timeout and Dagster `max_concurrent_runs` `6`; override
+them with `--timeout-seconds` and `--max-concurrent-runs`.
 
 Successful runs attempt to clean e2e containers, Dagster run-worker
 containers, named volumes, and the e2e network by default after the full
-dataflow completes. Cleanup command warnings or failures do not change a
-successful dataflow result, but they do change the manifest cleanup status and
-are captured as `cleanup_issues`. Failed runs, including cached seed coverage
+dataflow completes. Pre-run cleanup treats already-absent e2e resources as
+benign. Post-run cleanup warnings or failures do not change a successful
+dataflow result, but they do change the manifest cleanup status and are captured
+as `cleanup_issues`. Failed runs, including cached seed coverage
 shortfalls, preserve containers, volumes, service logs, the run manifest, and
 the seed-run manifest for inspection. Use `--reuse` to keep and reuse the e2e
 stack after a successful run, or `--always-clean` to clean containers, volumes,
@@ -335,7 +375,9 @@ cumulative cleanup duration, cleanup phase status and timings, cleanup issue
 evidence, peak active and queued Dagster run counts, final run status counts,
 final target progress, first and last observed target materialization
 timestamps, and the final failed asset-check count. Failed runs include
-telemetry for every monitor sample captured before the failure.
+telemetry for every monitor sample captured before the failure. The same
+telemetry is summarized in the non-failing budget report printed to the command
+output.
 
 ______________________________________________________________________
 

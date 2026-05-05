@@ -450,16 +450,29 @@ When the promoted range includes non-doc runtime files under
 **End-to-end test** gate from the same source worktree before creating the
 target Promotion worktree. The gate is recorded as
 `aemo-etl End-to-end test` in the Promotion run manifest and invokes
-`scripts/aemo-etl-e2e run --max-concurrent-runs 2 --seed-root
-<primary-repo>/backend-services/.e2e/aemo-etl` from the `backend-services`
-**Subproject**, so the temporary Promotion source worktree uses the
-operator-maintained cached Archive seed instead of an empty ignored cache under
-the worktree. Promotion keeps this gate deliberately below the command default
-run queue concurrency to reduce Podman DNS pressure while worker containers
-write Dagster event-log rows back to the isolated Postgres service. Because the
-aggregate **Push check** and gate run first, source-branch changes cannot reach
-a Promotion merge, `main` push, `dev` branch sync, GitHub metadata update, or
-issue closure without passing against the exact source revision.
+`scripts/aemo-etl-e2e run` from the `backend-services` **Subproject** with
+`--scenario promotion-gas-model`, `--timeout-seconds 1200`,
+`--max-concurrent-runs 6`, and
+`--seed-root <primary-repo>/backend-services/.e2e/aemo-etl`, so the temporary
+Promotion source worktree uses the operator-maintained cached Archive seed
+instead of an empty ignored cache under the worktree. Promotion keeps this gate
+at the command default run queue concurrency and narrows the raw and zip seed
+horizon to 1 object. The `promotion-gas-model` scenario keeps Dagster automation
+stopped and launches explicit asset-run batches by dependency wave for every
+materializable `gas_model` asset plus its materializable upstream closure, while
+skipping live `bronze_nemweb_public_files_*` discovery/listing assets so the
+gate starts from seeded LocalStack objects. Each batch runs in-process inside its
+Podman run-worker container, reducing LocalStack and Delta Lake DynamoDB
+lock-table contention. The generated stack uses fixed service IPs for Postgres,
+LocalStack, and the AEMO ETL code server so run-worker containers do not depend
+on Podman DNS during high-concurrency gates. This preserves final target
+progress and final asset-check status without creating one sensor-triggered run per
+upstream source table. The gate output includes a
+non-failing budget report against the observed `69m58s` baseline so runtime
+evidence is visible without weakening the guard. Because the aggregate **Push
+check** and gate run first, source-branch changes cannot reach a Promotion
+merge, `main` push, `dev` branch sync, GitHub metadata update, or issue closure
+without passing against the exact source revision.
 Ralph then merges that source revision into a detached `origin/main` worktree
 with per-issue commits preserved, pushes `main`, and fast-forwards `dev` to the
 promotion commit so the next Gitflow drain starts from a `dev` branch that
@@ -617,7 +630,11 @@ issue closure:
 
 ```bash
 cd backend-services
-scripts/aemo-etl-e2e run --max-concurrent-runs 2 --seed-root <primary-repo>/backend-services/.e2e/aemo-etl
+scripts/aemo-etl-e2e run \
+  --scenario promotion-gas-model \
+  --timeout-seconds 1200 \
+  --max-concurrent-runs 6 \
+  --seed-root <primary-repo>/backend-services/.e2e/aemo-etl
 ```
 
 ## Failure handling
