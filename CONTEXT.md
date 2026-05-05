@@ -67,6 +67,7 @@ _Avoid_: Local PR, draft PR gate
 **Sandboxed issue access**:
 The Ralph boundary that lets spawned Codex subprocesses use authenticated
 GitHub Issue commands without owning **Local integration** or **Promotion**.
+The allowed commands can be read-only or write-limited by Ralph phase.
 _Avoid_: Full GitHub sandbox auth, Git push sandbox auth
 
 **Operator workflow**:
@@ -123,8 +124,8 @@ _Avoid_: Promotion gate, pre-push review
 - **Local integration** happens after Ralph implementation QA and before either
   issue closure or **Promotion**.
 - **Local integration** is not a **Test lane**.
-- **Sandboxed issue access** may update GitHub Issue metadata, but it must not
-  update an **Integration target**.
+- **Sandboxed issue access** may update GitHub Issue metadata when the Ralph
+  phase grants write commands, but it must not update an **Integration target**.
 - The **Operator workflow** is the human entrypoint; Ralph internals remain on
   the agent-facing Ralph documentation page.
 - A **Delivery mode** selects an **Integration target**.
@@ -133,7 +134,7 @@ _Avoid_: Promotion gate, pre-push review
 - **Promotion** closes only issues whose `dev` integration commit is verified in
   the promoted branch range.
 - **Post-promotion review** happens after **Promotion** succeeds; it is not a
-  **Push check** gate.
+  **Push check** gate, and it uses read-only GitHub Issue access.
 
 ## Example dialogue
 
@@ -143,8 +144,9 @@ _Avoid_: Promotion gate, pre-push review
 > **Unit tests**."
 >
 > **Dev:** "Can the sandboxed Codex pass close or label an issue during Ralph?"
-> **Domain expert:** "Yes, through **Sandboxed issue access**. It still cannot
-> perform **Local integration** or **Promotion**."
+> **Domain expert:** "Only when that Ralph phase grants issue write commands
+> through **Sandboxed issue access**. **Post-promotion review** is read-only,
+> and no sandboxed pass can perform **Local integration** or **Promotion**."
 
 ## Flagged ambiguities
 

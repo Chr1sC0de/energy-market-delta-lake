@@ -27,7 +27,9 @@ When a **Promotion** range includes non-doc runtime files in the AEMO ETL
 isolated source worktree as the aggregate **Push check**, before any merge,
 push, branch sync, metadata update, or issue closure, so `main` is not updated
 before the fetched source revision passes. Successful Promotions with changed
-files then run **Post-promotion review** by default; operators must pass
+files then run **Post-promotion review** by default; Ralph saves the read-only
+review report as `post-promotion-review.md`, prints it to the terminal, and
+records the artifact path in the **Promotion** manifest. Operators must pass
 `--skip-post-promotion-review` for an explicit no-review Promotion, and
 no-change Promotions record the review state as `skipped_no_changes`.
 

@@ -1,10 +1,13 @@
 # Ralph Uses Sandboxed Issue Access For GitHub Issue Metadata
 
 Ralph spawned Codex subprocesses may use **Sandboxed issue access** for
-authenticated GitHub Issue reads and writes. Ralph injects a `GH_TOKEN` sourced
-from the parent environment or local `gh auth`, enables network for the
-workspace-write Codex sandbox, and places a wrapper ahead of `gh` so the
-sandbox can use only `gh auth status` and a triage-safe `gh issue` command set.
+authenticated GitHub Issue access. Ralph injects a `GH_TOKEN` sourced from the
+parent environment or local `gh auth`, enables network for the workspace-write
+Codex sandbox, and places a wrapper ahead of `gh` so the sandbox can use only
+`gh auth status` and the phase-specific `gh issue` command set. Implementation
+and triage passes may use triage-safe issue reads and writes. The
+**Post-promotion review** pass gets read-only issue access and cannot create,
+comment, label, close, reopen, or edit issues.
 
 ## Considered options
 
@@ -22,6 +25,9 @@ Operators may refresh local auth with `gh auth login -h github.com
 --git-protocol ssh` or export `GH_TOKEN`; Ralph still injects only `GH_TOKEN`
 into sandboxed Codex command environments. Git fetch and push continue to use
 the repository remote, usually SSH, and remain part of Ralph's outer loop.
+**Post-promotion review** output stays read-only: the review agent drafts
+follow-up GitHub Issues in `post-promotion-review.md`, and Ralph does not grant
+it issue mutation commands.
 
 ## Sync metadata
 

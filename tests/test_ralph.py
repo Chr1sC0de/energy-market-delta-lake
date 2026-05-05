@@ -36,6 +36,27 @@ Build it.
 None
 """
 
+POST_PROMOTION_REVIEW_MARKDOWN = """# Post-promotion Review
+
+## Findings
+
+No blocking findings.
+
+## Learnings
+
+- Promotion evidence stayed consistent after `main` push and `dev` sync.
+
+## Follow-up GitHub Issue Drafts
+
+### Harden Promotion evidence checks
+
+- Title: Harden Promotion evidence checks
+- Rationale: Preserve the verified issue metadata behavior during future Ralph changes.
+- Acceptance criteria:
+  - [ ] Promotion reports continue to include verified issue evidence.
+- Suggested labels: `needs-triage`, `delivery-gitflow`
+"""
+
 
 def make_issue(labels: set[str], body: str = ""):
     return ralph.Issue(
@@ -147,6 +168,12 @@ class FakeRunner:
             return ralph.CompletedCommand(stdout=json.dumps({"comments": []}), stderr="")
         if command == ("gh", "auth", "token"):
             return ralph.CompletedCommand(stdout="fake-gh-token\n", stderr="")
+        if command[:2] == ("codex", "exec") and input_text is not None:
+            if "Run a Post-promotion review" in input_text:
+                return ralph.CompletedCommand(
+                    stdout=POST_PROMOTION_REVIEW_MARKDOWN,
+                    stderr="",
+                )
         return ralph.CompletedCommand(stdout="", stderr="")
 
 
@@ -684,6 +711,7 @@ Build it.
             token_source="env:GH_TOKEN",
             wrapper_path=Path("/tmp/ralph-sandbox-bin/gh"),
             repo="example/repo",
+            allowed_issue_commands=ralph.SANDBOX_ALLOWED_GH_ISSUE_COMMANDS,
         )
 
         with patch.dict(
@@ -744,6 +772,79 @@ Build it.
                 text=True,
             )
             self.assertEqual(blocked_issue.returncode, 126)
+
+    def test_sandbox_gh_wrapper_read_only_blocks_issue_mutations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            captured_args = tmp_path / "captured-args.txt"
+            real_gh = tmp_path / "real-gh"
+            real_gh.write_text(
+                "#!/usr/bin/env sh\n"
+                "printf '%s\\n' \"$@\" > "
+                f"{ralph.shlex.quote(str(captured_args))}\n",
+                encoding="utf-8",
+            )
+            real_gh.chmod(0o700)
+            wrapper = tmp_path / "bin" / "gh"
+
+            ralph.write_sandbox_gh_wrapper(
+                wrapper,
+                real_gh,
+                allowed_issue_commands=ralph.SANDBOX_READ_ONLY_GH_ISSUE_COMMANDS,
+            )
+            subprocess.run(
+                [str(wrapper), "issue", "view", "42"],
+                check=True,
+            )
+            self.assertEqual(
+                captured_args.read_text(encoding="utf-8").splitlines(),
+                ["issue", "view", "42"],
+            )
+
+            mutation_commands = [
+                ["issue", "comment", "42", "--body", "nope"],
+                ["issue", "edit", "42", "--add-label", "ready-for-agent"],
+                ["issue", "close", "42"],
+                ["issue", "reopen", "42"],
+                ["issue", "create", "--title", "nope"],
+            ]
+            for mutation_command in mutation_commands:
+                with self.subTest(command=mutation_command):
+                    blocked = subprocess.run(
+                        [str(wrapper), *mutation_command],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(blocked.returncode, 126)
+                    self.assertIn("blocked gh command", blocked.stderr)
+
+    def test_post_promotion_review_markdown_reads_codex_json_final_message(self) -> None:
+        stdout = "\n".join(
+            [
+                json.dumps({"type": "session_configured", "session_id": "test"}),
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "type": "message",
+                            "role": "assistant",
+                            "content": [
+                                {
+                                    "type": "output_text",
+                                    "text": POST_PROMOTION_REVIEW_MARKDOWN,
+                                }
+                            ],
+                        },
+                    }
+                ),
+            ]
+        )
+
+        self.assertEqual(
+            ralph.post_promotion_review_markdown_from_stdout(stdout),
+            POST_PROMOTION_REVIEW_MARKDOWN.strip(),
+        )
 
     def test_run_codex_injects_sandbox_issue_access_without_recording_token(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1854,11 +1955,14 @@ Build it.
 
         with tempfile.TemporaryDirectory() as tmp:
             loop = make_loop(Path(tmp), runner, promote=True)
-            with redirect_stdout(io.StringIO()):
+            output = io.StringIO()
+            with redirect_stdout(output):
                 loop._promote()
 
             comment_path = next((Path(tmp) / "logs").glob("promote-*/issue-42-comment.md"))
             comment = comment_path.read_text(encoding="utf-8")
+            artifact_path = next((Path(tmp) / "logs").glob("promote-*/post-promotion-review.md"))
+            artifact = artifact_path.read_text(encoding="utf-8")
             manifest = load_run_manifest(Path(tmp), run_glob="promote-*")
 
         commands = [call.args for call in runner.calls]
@@ -1922,13 +2026,37 @@ Build it.
         self.assertIn(edit_command, commands)
         self.assertIn(close_command, commands)
         self.assertNotIn(("scripts/aemo-etl-e2e", "run"), commands)
-        review_command = tuple(ralph.codex_exec_command(promote_path))
+        review_command = tuple(
+            ralph.codex_exec_command(
+                promote_path,
+                output_last_message=artifact_path,
+            )
+        )
         review_index = commands.index(review_command)
         cleanup_index = commands.index(("git", "worktree", "remove", str(promote_path)))
+        self.assertLess(
+            commands.index(("git", "push", "origin", "HEAD:main")),
+            review_index,
+        )
+        self.assertLess(
+            commands.index(("git", "push", "origin", "HEAD:dev")),
+            review_index,
+        )
+        self.assertLess(commands.index(edit_command), review_index)
         self.assertLess(commands.index(close_command), review_index)
         self.assertLess(review_index, cleanup_index)
         self.assertEqual(runner.calls[review_index].cwd, promote_path)
+        self.assertIn("--output-last-message", runner.calls[review_index].args)
         self.assertIn("Run a Post-promotion review", runner.calls[review_index].input_text)
+        self.assertIn("## Learnings", runner.calls[review_index].input_text)
+        self.assertIn("## Follow-up GitHub Issue Drafts", runner.calls[review_index].input_text)
+        self.assertIn("Do not create the follow-up issues.", runner.calls[review_index].input_text)
+        self.assertIn(POST_PROMOTION_REVIEW_MARKDOWN.strip(), output.getvalue())
+        self.assertEqual(artifact, POST_PROMOTION_REVIEW_MARKDOWN.rstrip() + "\n")
+        self.assertIn("- Title: Harden Promotion evidence checks", artifact)
+        self.assertIn("- Rationale:", artifact)
+        self.assertIn("- Acceptance criteria:", artifact)
+        self.assertIn("- Suggested labels:", artifact)
         self.assertIn("Ralph promotion completed.", comment)
         self.assertIn("Promotion commit: `promotion-sha`", comment)
         self.assertIn("Integrated commit: `abc1234`", comment)
@@ -1955,6 +2083,15 @@ Build it.
             "codex-post-promotion-review.jsonl",
             manifest["post_promotion_review"]["log_path"],
         )
+        self.assertEqual(
+            manifest["post_promotion_review"]["artifact_path"],
+            str(artifact_path),
+        )
+        allowed_commands = manifest["sandboxed_issue_access"]["allowed_commands"]
+        self.assertIn("gh issue view", allowed_commands)
+        self.assertNotIn("gh issue comment", allowed_commands)
+        self.assertNotIn("gh issue edit", allowed_commands)
+        self.assertNotIn("gh issue close", allowed_commands)
         self.assertEqual(manifest["pushes"]["promotion_target"]["status"], "pushed")
         self.assertEqual(manifest["pushes"]["source_branch_sync"]["status"], "pushed")
         self.assertEqual(manifest["github_metadata"]["issues"][0]["number"], 42)

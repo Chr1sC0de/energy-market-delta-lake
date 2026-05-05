@@ -218,10 +218,13 @@ Ralph. Do not paste token values into commands, issue comments, docs, or logs.
 Ralph also gives spawned Codex subprocesses **Sandboxed issue access** by
 default: it resolves a token from `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth
 token`, injects it as `GH_TOKEN`, enables network for the workspace-write Codex
-sandbox, and prepends a wrapper that permits only `gh auth status` plus
-triage-safe `gh issue` reads and writes. This does not grant Git push access;
-Git fetches, **Local integration**, **Integration target** pushes, and
-**Promotion** stay in Ralph's outer loop.
+sandbox, and prepends a wrapper that permits only `gh auth status` plus the
+phase-specific `gh issue` commands. Implementation and triage passes may get
+triage-safe issue reads and writes. The **Post-promotion review** gets
+read-only issue access: `gh issue view`, `gh issue list`, and
+`gh issue status`. This does not grant Git push access; Git fetches, **Local
+integration**, **Integration target** pushes, and **Promotion** stay in Ralph's
+outer loop.
 
 Ralph also standardizes writable QA runtime paths for spawned Codex
 subprocesses and Ralph-run QA commands. If the operator exports `DAGSTER_HOME`,
@@ -249,6 +252,11 @@ operations write to their named `git-*` logs under the current
 While a command is active, the log has `exit: running`; after the command
 finishes, Ralph rewrites the same log with the final exit status while
 preserving stdout, stderr, command, and cwd.
+
+After successful **Promotion** with changed files, Ralph saves the final
+**Post-promotion review** Markdown report as
+`post-promotion-review.md` beside `codex-post-promotion-review.jsonl` and
+prints the same report to the terminal.
 
 During logged long-running phases, Ralph prints a heartbeat about every 30
 seconds:
@@ -282,8 +290,8 @@ Key fields for inspection:
 - `source_branch`: **Promotion** source branch, usually `dev`.
 - `source_tree`: **Promotion** source branch revision and source worktree used
   for QA.
-- `post_promotion_review`: enabled state, skip reason, review status, and
-  review log path for **Promotion** runs.
+- `post_promotion_review`: enabled state, skip reason, review status, review
+  log path, and Markdown artifact path for **Promotion** runs.
 - `branches`: issue, source, and target branch names that apply to the run.
 - `paths`: repo root, run directory, worktree container, and implementation,
   integration, Promotion source, or Promotion target worktree paths.
@@ -419,8 +427,11 @@ only issues whose recorded Gitflow integration commit is still in the promoted
 `agent-integrated` with `agent-merged`. Successful Promotions with changed
 files then run a **Post-promotion review** agent from the **Promotion** worktree
 by default, after the `main` push, `dev` sync, and verified issue metadata
-updates. The review is recorded in `post_promotion_review` in the **Promotion**
-run manifest.
+updates. The review agent has read-only GitHub Issue access and must report
+learnings plus follow-up GitHub Issue drafts instead of mutating issues. Ralph
+saves the final Markdown report as `post-promotion-review.md`, prints it in the
+terminal, and records both `post_promotion_review.log_path` and
+`post_promotion_review.artifact_path` in the **Promotion** run manifest.
 Operators can pass `--skip-post-promotion-review` to disable the review path.
 If there are no Promotion changes, Ralph does not create Promotion worktrees or
 run the review agent; it prints a review skip note and records

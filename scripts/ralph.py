@@ -50,7 +50,12 @@ COMMIT_LINE_PATTERN = re.compile(r"(?m)^Commit: `(?P<sha>[0-9a-f]{7,40})`$")
 MANIFEST_NAME = "ralph-run.json"
 MANIFEST_SCHEMA_VERSION = 1
 SANDBOX_GH_WRAPPER_DIR_NAME = "sandbox-bin"
-SANDBOX_ALLOWED_GH_ISSUE_COMMANDS = (
+SANDBOX_READ_ONLY_GH_ISSUE_COMMANDS = (
+    "view",
+    "list",
+    "status",
+)
+SANDBOX_READ_WRITE_GH_ISSUE_COMMANDS = (
     "view",
     "list",
     "status",
@@ -59,6 +64,7 @@ SANDBOX_ALLOWED_GH_ISSUE_COMMANDS = (
     "close",
     "reopen",
 )
+SANDBOX_ALLOWED_GH_ISSUE_COMMANDS = SANDBOX_READ_WRITE_GH_ISSUE_COMMANDS
 SANDBOX_CODEX_ENV_INCLUDE_ONLY = (
     "PATH",
     "HOME",
@@ -219,6 +225,7 @@ class SandboxIssueAccess:
     token_source: str
     wrapper_path: Path
     repo: str
+    allowed_issue_commands: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -414,6 +421,7 @@ class RunManifest:
                     else "pending"
                 ),
                 "log_path": None,
+                "artifact_path": None,
             },
             "pushes": {},
             "github_metadata": {"status": "not_started", "issues": []},
@@ -471,6 +479,7 @@ class RunManifest:
         status: str,
         *,
         log_path: Path | None = None,
+        artifact_path: Path | None = None,
         reason: str | None = None,
         error: str | None = None,
     ) -> None:
@@ -479,6 +488,8 @@ class RunManifest:
             raise RalphError("Manifest post_promotion_review field is not an object.")
         review["status"] = status
         review["log_path"] = path_text(log_path)
+        if artifact_path is not None or "artifact_path" not in review:
+            review["artifact_path"] = path_text(artifact_path)
         if reason is not None:
             review["reason"] = reason
         if error is not None:
@@ -596,7 +607,7 @@ class RunManifest:
                 "gh auth status",
                 *[
                     f"gh issue {command}"
-                    for command in SANDBOX_ALLOWED_GH_ISSUE_COMMANDS
+                    for command in access.allowed_issue_commands
                 ],
             ],
             "network_access": True,
@@ -990,8 +1001,12 @@ def looks_like_environment_failure(error: CommandFailure) -> bool:
     return any(pattern in output for pattern in ENVIRONMENT_FAILURE_PATTERNS)
 
 
-def codex_exec_command(cwd: Path) -> list[str]:
-    return [
+def codex_exec_command(
+    cwd: Path,
+    *,
+    output_last_message: Path | None = None,
+) -> list[str]:
+    command = [
         "codex",
         "exec",
         "--cd",
@@ -1008,9 +1023,11 @@ def codex_exec_command(cwd: Path) -> list[str]:
         "shell_environment_policy.include_only="
         + json.dumps(list(SANDBOX_CODEX_ENV_INCLUDE_ONLY)),
         "--full-auto",
-        "--json",
-        "-",
     ]
+    if output_last_message is not None:
+        command.extend(["--output-last-message", str(output_last_message)])
+    command.extend(["--json", "-"])
+    return command
 
 
 def resolve_sandbox_gh_token(runner: "CommandRunner", repo_root: Path) -> tuple[str, str]:
@@ -1040,8 +1057,13 @@ def resolve_sandbox_gh_token(runner: "CommandRunner", repo_root: Path) -> tuple[
     return token, "gh-auth"
 
 
-def write_sandbox_gh_wrapper(wrapper_path: Path, real_gh_path: Path) -> None:
-    allowed_issue_cases = "|".join(SANDBOX_ALLOWED_GH_ISSUE_COMMANDS)
+def write_sandbox_gh_wrapper(
+    wrapper_path: Path,
+    real_gh_path: Path,
+    *,
+    allowed_issue_commands: tuple[str, ...] = SANDBOX_ALLOWED_GH_ISSUE_COMMANDS,
+) -> None:
+    allowed_issue_cases = "|".join(allowed_issue_commands)
     wrapper_path.parent.mkdir(parents=True, exist_ok=True)
     wrapper_path.write_text(
         textwrap.dedent(
@@ -1076,15 +1098,21 @@ def prepare_sandbox_issue_access(
     repo_root: Path,
     repo: str,
     run_dir: Path,
+    allowed_issue_commands: tuple[str, ...] = SANDBOX_ALLOWED_GH_ISSUE_COMMANDS,
 ) -> SandboxIssueAccess:
     token, token_source = resolve_sandbox_gh_token(runner, repo_root)
     wrapper_path = run_dir / SANDBOX_GH_WRAPPER_DIR_NAME / "gh"
-    write_sandbox_gh_wrapper(wrapper_path, Path(shutil.which("gh") or "gh"))
+    write_sandbox_gh_wrapper(
+        wrapper_path,
+        Path(shutil.which("gh") or "gh"),
+        allowed_issue_commands=allowed_issue_commands,
+    )
     return SandboxIssueAccess(
         token=token,
         token_source=token_source,
         wrapper_path=wrapper_path,
         repo=repo,
+        allowed_issue_commands=allowed_issue_commands,
     )
 
 
@@ -2066,10 +2094,15 @@ class RalphLoop:
             return
 
         log_path = run_dir / "codex-post-promotion-review.jsonl"
+        artifact_path = run_dir / "post-promotion-review.md"
         emit("Running Post-promotion review.")
-        manifest.record_post_promotion_review("running", log_path=log_path)
+        manifest.record_post_promotion_review(
+            "running",
+            log_path=log_path,
+            artifact_path=artifact_path,
+        )
         try:
-            self._run_codex(
+            result = self._run_codex(
                 post_promotion_review_prompt(
                     repo=self.config.repo,
                     source_branch=source_branch,
@@ -2084,12 +2117,27 @@ class RalphLoop:
                 log_path,
                 phase="Post-promotion review",
                 manifest=manifest,
+                allowed_issue_commands=SANDBOX_READ_ONLY_GH_ISSUE_COMMANDS,
+                output_last_message=artifact_path,
             )
+            review_markdown = post_promotion_review_markdown_from_artifact(
+                artifact_path,
+                stdout=result.stdout,
+            )
+            if review_markdown == "":
+                raise EnvironmentFailure(
+                    "Post-promotion review completed without Markdown output."
+                )
+            artifact_path.write_text(review_markdown + "\n", encoding="utf-8")
+            emit("Post-promotion review report:")
+            emit("")
+            emit(review_markdown)
         except (CommandFailure, EnvironmentFailure) as error:
             review_log_path = error.log_path or log_path
             manifest.record_post_promotion_review(
                 "failed",
                 log_path=review_log_path,
+                artifact_path=artifact_path,
                 error=str(error),
             )
             post_review_error = PostPushFailure(
@@ -2098,7 +2146,11 @@ class RalphLoop:
             )
             manifest.record_failure(post_review_error, log_path=review_log_path)
             raise post_review_error from error
-        manifest.record_post_promotion_review("completed", log_path=log_path)
+        manifest.record_post_promotion_review(
+            "completed",
+            log_path=log_path,
+            artifact_path=artifact_path,
+        )
 
     def _verified_integrated_issues(
         self,
@@ -2733,7 +2785,9 @@ class RalphLoop:
         *,
         phase: str,
         manifest: RunManifest | None = None,
-    ) -> None:
+        allowed_issue_commands: tuple[str, ...] = SANDBOX_ALLOWED_GH_ISSUE_COMMANDS,
+        output_last_message: Path | None = None,
+    ) -> CompletedCommand:
         if not self.runner.dry_run:
             log_path.with_suffix(".prompt.md").write_text(prompt, encoding="utf-8")
         sandbox_issue_access = prepare_sandbox_issue_access(
@@ -2741,6 +2795,7 @@ class RalphLoop:
             repo_root=self.config.repo_root,
             repo=self.config.repo,
             run_dir=log_path.parent,
+            allowed_issue_commands=allowed_issue_commands,
         )
         qa_runtime_env = resolve_qa_runtime_env(
             repo=self.config.repo,
@@ -2749,8 +2804,8 @@ class RalphLoop:
         if manifest is not None:
             manifest.record_sandboxed_issue_access(sandbox_issue_access)
             manifest.record_qa_runtime_env(qa_runtime_env)
-        self.runner.run(
-            codex_exec_command(cwd),
+        return self.runner.run(
+            codex_exec_command(cwd, output_last_message=output_last_message),
             cwd=cwd,
             input_text=prompt,
             log_path=log_path,
@@ -3525,14 +3580,36 @@ def post_promotion_review_prompt(
         check, Push check, Local integration, Delivery mode, Integration
         target, and Promotion.
 
-        Do not edit files, commit, push, or edit GitHub labels/comments. Report
-        findings in the command output only.
+        Do not edit repo files, commit, push, create issues, comment, label,
+        close, reopen, or edit GitHub Issues. You may read Promotion context and
+        GitHub Issues with `gh auth status`, `gh issue view`, `gh issue list`,
+        and `gh issue status` only. Report findings in the command output only;
+        Ralph will save your final Markdown report as `post-promotion-review.md`.
 
         Review the completed Promotion for regressions, missed issue evidence,
         surprising changed files, and obvious follow-up risks. Prioritize
         concrete findings with file paths, commands, commits, or manifest
         fields. If no issues are found, say that clearly and mention any
         residual risk.
+
+        Your final response must be a Markdown report with these sections:
+
+        # Post-promotion Review
+
+        ## Findings
+
+        ## Learnings
+
+        ## Follow-up GitHub Issue Drafts
+
+        Each follow-up draft must include:
+
+        - Title
+        - Rationale
+        - Acceptance criteria
+        - Suggested labels
+
+        Do not create the follow-up issues. Draft them in the report only.
 
         Promotion details:
 
@@ -3552,6 +3629,120 @@ def post_promotion_review_prompt(
         {issue_lines}
         """
     ).strip()
+
+
+def post_promotion_review_markdown_from_stdout(stdout: str) -> str:
+    assistant_messages: list[str] = []
+    plain_lines: list[str] = []
+
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        if stripped == "":
+            if plain_lines:
+                plain_lines.append("")
+            continue
+        try:
+            event = json.loads(stripped)
+        except json.JSONDecodeError:
+            plain_lines.append(line)
+            continue
+
+        message = assistant_markdown_from_codex_event(event)
+        if message != "":
+            assistant_messages.append(message)
+
+    if assistant_messages:
+        return assistant_messages[-1].strip()
+    return "\n".join(plain_lines).strip()
+
+
+def post_promotion_review_markdown_from_artifact(
+    artifact_path: Path,
+    *,
+    stdout: str,
+) -> str:
+    if artifact_path.exists():
+        artifact_markdown = artifact_path.read_text(encoding="utf-8").strip()
+        if artifact_markdown != "":
+            return artifact_markdown
+    return post_promotion_review_markdown_from_stdout(stdout)
+
+
+def assistant_markdown_from_codex_event(event: Any) -> str:
+    if not isinstance(event, dict):
+        return ""
+
+    event_type = str(event.get("type") or "")
+    if event_type == "agent_message":
+        message = event.get("message")
+        if isinstance(message, str):
+            return message.strip()
+        return assistant_markdown_from_message(message)
+
+    for key in ("item", "message", "response"):
+        message = assistant_markdown_from_message(event.get(key))
+        if message != "":
+            return message
+
+    return assistant_markdown_from_message(event)
+
+
+def assistant_markdown_from_message(message: Any) -> str:
+    if isinstance(message, str):
+        return message.strip()
+    if not isinstance(message, dict):
+        return ""
+
+    role = message.get("role")
+    if role is not None and role != "assistant":
+        return ""
+
+    content = message.get("content")
+    if content is not None:
+        return markdown_text_from_content(content)
+
+    text = message.get("text")
+    if isinstance(text, str):
+        return text.strip()
+
+    nested_message = message.get("message")
+    if isinstance(nested_message, str):
+        return nested_message.strip()
+
+    for key in ("output", "items"):
+        items = message.get(key)
+        if not isinstance(items, list):
+            continue
+        for item in reversed(items):
+            item_message = assistant_markdown_from_message(item)
+            if item_message != "":
+                return item_message
+
+    return ""
+
+
+def markdown_text_from_content(content: Any) -> str:
+    if isinstance(content, str):
+        return content.strip()
+    if not isinstance(content, list):
+        return ""
+
+    pieces: list[str] = []
+    for item in content:
+        if isinstance(item, str):
+            pieces.append(item)
+            continue
+        if not isinstance(item, dict):
+            continue
+        text = item.get("text")
+        if isinstance(text, str):
+            pieces.append(text)
+            continue
+        nested_content = item.get("content")
+        if isinstance(nested_content, str):
+            pieces.append(nested_content)
+
+    return "".join(pieces).strip()
 
 
 def command_failure_summary(error: CommandFailure) -> str:

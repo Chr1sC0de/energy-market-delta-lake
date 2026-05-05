@@ -154,7 +154,7 @@ way:
   maintained-doc scope and its own sync metadata.
 - #59: docs-only AEMO ETL changes remain aligned with Ralph QA selection by
   keeping docs-only AEMO ETL paths on the root doc **Commit check** surface.
-- #57, #58, and #61: current Ralph behavior for **Delivery mode**, **Local
+- #57, #58, #61, and #62: current Ralph behavior for **Delivery mode**, **Local
   integration**, **Promotion**, **Sandboxed issue access**, writable QA runtime
   paths, and **Post-promotion review** remains owned by
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md).

@@ -15,9 +15,12 @@ gh auth status
 
 Ralph provides **Sandboxed issue access** to spawned Codex subprocesses by
 default. The sandbox receives a `GH_TOKEN` sourced from the parent environment
-or local `gh auth`, and a wrapper limits `gh` to issue metadata commands. Git
-push auth is separate; **Local integration**, **Integration target** pushes,
-and **Promotion** stay outside the sandbox.
+or local `gh auth`, and a wrapper limits `gh` to phase-specific issue metadata
+commands. Implementation and triage passes may receive issue reads and writes;
+**Post-promotion review** receives read-only issue commands and drafts any
+follow-up issues in its Markdown report. Git push auth is separate; **Local
+integration**, **Integration target** pushes, and **Promotion** stay outside
+the sandbox.
 
 ## Queue contract
 
