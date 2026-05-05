@@ -33,10 +33,16 @@ these sections:
 - `## Acceptance criteria`
 - `## Blocked by`
 
+Ready `delivery-exploratory` issues must also include `## Review focus`, which
+states the human judgment the durable review branch needs. Missing
+`## Review focus` is a malformed Exploratory delivery contract; Ralph marks the
+issue `agent-failed` with evidence before creating an implementation worktree
+or publishing an Exploratory handoff.
+
 `## Current context` is optional. **Ready issue refresh** may add or update it,
 but existing `ready-for-agent` issues do not need that section to stay ready.
 Refreshed issues that remain `ready-for-agent` must still contain the three
-required sections above.
+required sections above, plus `## Review focus` for `delivery-exploratory`.
 
 Ralph implementation prompts treat the issue body as the primary contract. When
 recent Ready issue refresh comments exist, Ralph appends only the latest five

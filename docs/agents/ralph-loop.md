@@ -131,7 +131,8 @@ automated triage reconsideration.
 
 `delivery-gitflow` is the default **Delivery mode**. `delivery-trunk` is an
 opt-in label for small docs, tests, tooling, or script changes.
-`delivery-exploratory` is an opt-in label for durable review-branch work. If
+`delivery-exploratory` is an opt-in label for durable review-branch work that
+needs explicit human judgment before it can become normal delivery work. If
 `delivery-exploratory` conflicts with Gitflow or trunk labels, Ralph keeps
 `delivery-exploratory` and removes the others. If only Gitflow and trunk
 conflict, Ralph keeps `delivery-gitflow`, removes `delivery-trunk`, and
@@ -382,6 +383,11 @@ An implementation issue must have these sections:
 - `## Acceptance criteria`
 - `## Blocked by`
 
+An Exploratory delivery issue must also have `## Review focus`, stating the
+human judgment the durable review branch needs. Missing `## Review focus` marks
+the issue `agent-failed` before Ralph creates an implementation worktree,
+invokes Codex, or publishes an Exploratory handoff.
+
 If any referenced blocker in `Blocked by` is still open, Ralph skips the issue.
 If the issue contract is malformed, Ralph marks the issue `agent-failed` and
 leaves a result comment with the run log path.
@@ -621,6 +627,9 @@ Any refreshed issue that remains `ready-for-agent` must still contain:
 - `## What to build`
 - `## Acceptance criteria`
 - `## Blocked by`
+
+If the refreshed issue carries `delivery-exploratory`, it must also still
+contain `## Review focus`.
 
 If an issue is stale but the correct update is unclear, refresh moves it to
 `needs-triage` and comments evidence with the audit prefix. If the latest branch

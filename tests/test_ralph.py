@@ -36,6 +36,19 @@ Build it.
 None
 """
 
+EXPLORATORY_IMPLEMENTATION_BODY = """## What to build
+Build it.
+
+## Acceptance criteria
+- [ ] It works.
+
+## Blocked by
+None
+
+## Review focus
+Review whether this branch should become the production workflow.
+"""
+
 
 def implementation_body_with_blockers(*blockers: int) -> str:
     blocked_by = "\n".join(f"- #{blocker}" for blocker in blockers) if blockers else "None"
@@ -553,6 +566,26 @@ Build it.
             ["Acceptance criteria", "Blocked by"],
         )
 
+    def test_exploratory_required_issue_sections_include_review_focus(self) -> None:
+        required_sections = ralph.required_issue_sections_for_delivery_mode(
+            ralph.EXPLORATORY_MODE
+        )
+
+        self.assertEqual(
+            ralph.missing_required_sections(
+                IMPLEMENTATION_BODY,
+                required_sections=required_sections,
+            ),
+            ["Review focus"],
+        )
+        self.assertEqual(
+            ralph.missing_required_sections(
+                EXPLORATORY_IMPLEMENTATION_BODY,
+                required_sections=required_sections,
+            ),
+            [],
+        )
+
     def test_parse_blockers_reads_issue_references_from_blocked_by_section(self) -> None:
         body = """## What to build
 Build it.
@@ -805,6 +838,8 @@ Build it.
         self.assertNotIn("Use the $triage skill", prompt)
         self.assertIn(ralph.AI_TRIAGE_DISCLAIMER, prompt)
         self.assertIn("Do not edit repo", prompt)
+        self.assertIn("Apply `delivery-exploratory` only when", prompt)
+        self.assertIn("## Review focus", prompt)
 
     def test_select_qa_commands_for_aemo_etl_runtime_only_changes(self) -> None:
         commands = ralph.select_qa_commands(
@@ -2000,6 +2035,37 @@ Build it.
         self.assertEqual(manifest["github_metadata"]["status"], "failure_commented")
         self.assertIn("Missing required issue section", manifest["failure"]["message"])
 
+    def test_exploratory_issue_without_review_focus_fails_before_handoff(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            issue = make_issue(
+                {"ready-for-agent", "delivery-exploratory"},
+                IMPLEMENTATION_BODY,
+            )
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._handle_implementation(issue)
+
+            comment_path = next(tmp_path.glob("logs/issue-42-*/issue-42-comment.md"))
+            comment = comment_path.read_text(encoding="utf-8")
+            manifest = load_run_manifest(tmp_path)
+
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(any(command[:2] == ("codex", "exec") for command in commands))
+        self.assertFalse(any(command[:3] == ("git", "worktree", "add") for command in commands))
+        self.assertFalse(any(command[:3] == ("git", "push", "origin") for command in commands))
+        self.assertIn("Missing required issue section(s): Review focus", comment)
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["delivery_mode"], "exploratory")
+        self.assertEqual(
+            manifest["integration_target"],
+            "agent/exploratory/issue-42-implement-thing",
+        )
+        self.assertEqual(manifest["github_metadata"]["status"], "failure_commented")
+        self.assertIn("Review focus", manifest["failure"]["message"])
+
     def test_qa_commands_receive_fallback_runtime_env_and_record_manifest(self) -> None:
         runner = FakeRunner()
         with tempfile.TemporaryDirectory() as tmp:
@@ -2388,7 +2454,7 @@ Build it.
         )
         with tempfile.TemporaryDirectory() as tmp:
             loop = make_loop(Path(tmp), runner, delivery_mode=ralph.EXPLORATORY_MODE)
-            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            issue = make_issue({"ready-for-agent"}, EXPLORATORY_IMPLEMENTATION_BODY)
             output = io.StringIO()
 
             with redirect_stdout(output):
@@ -2469,7 +2535,7 @@ Build it.
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             loop = make_loop(tmp_path, runner, delivery_mode=ralph.EXPLORATORY_MODE)
-            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            issue = make_issue({"ready-for-agent"}, EXPLORATORY_IMPLEMENTATION_BODY)
 
             with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
                 loop._handle_implementation(issue)
@@ -2532,7 +2598,9 @@ Build it.
             output = io.StringIO()
 
             with redirect_stdout(output):
-                loop._handle_implementation(make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY))
+                loop._handle_implementation(
+                    make_issue({"ready-for-agent"}, EXPLORATORY_IMPLEMENTATION_BODY)
+                )
 
         commands = [call.args for call in runner.calls]
         reviewing_command = (

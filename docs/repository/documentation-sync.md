@@ -168,6 +168,11 @@ way:
   the existing `--issue-limit` scan, with Gitflow, trunk, and Exploratory
   blocker satisfaction described in
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
+- #90: Exploratory-ready issues require `## Review focus` before Ralph can
+  publish an Exploratory handoff. The contract and triage expectations live in
+  [docs/agents/issue-tracker.md](../agents/issue-tracker.md),
+  [docs/agents/ralph-loop.md](../agents/ralph-loop.md), and
+  [docs/agents/triage-labels.md](../agents/triage-labels.md).
 - #70 and #71: keep future **Ready issue refresh** implementation behavior
   aligned with the #68 contract before extending scripts, labels, or issue
   metadata flows.

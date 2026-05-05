@@ -8,16 +8,19 @@ while closing verified issues. **Trunk delivery** remains available for small
 low-risk docs, tests, tooling, or script changes that can integrate directly to
 `main` and close immediately. **Exploratory delivery** publishes validated work
 to a durable review branch, marks the issue `agent-reviewing`, and leaves it
-open for human review.
+open for human review; ready Exploratory issues must state that review need in
+`## Review focus`.
 
 ## Consequences
 
 Ralph issue triage now owns delivery-label hygiene. If `delivery-exploratory`
 conflicts with Gitflow or trunk labels, Ralph normalizes to
 `delivery-exploratory` before implementation because explicit review-branch
-selection should win over shared **Integration target** defaults. If only
-Gitflow and trunk conflict, Ralph normalizes to `delivery-gitflow`. Promotion
-must verify the recorded Gitflow integration commit before closing an
+selection should win over shared **Integration target** defaults. Exploratory
+selection must be backed by an explicit `## Review focus`; otherwise Ralph marks
+the issue failed before creating a worktree or publishing a handoff branch. If
+only Gitflow and trunk conflict, Ralph normalizes to `delivery-gitflow`.
+Promotion must verify the recorded Gitflow integration commit before closing an
 `agent-integrated` issue, because branch promotion merges code but does not
 reliably close GitHub Issues on its own.
 

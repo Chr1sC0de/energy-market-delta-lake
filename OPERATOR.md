@@ -29,14 +29,16 @@ straight from shaped plan to GitHub Issues.
 
 Use `$to-issues` to create independently grabbable GitHub Issues. Each issue
 must include `## What to build`, `## Acceptance criteria`, and `## Blocked by`
-before it can become `ready-for-agent`.
+before it can become `ready-for-agent`. Exploratory delivery issues must also
+include `## Review focus` stating the human judgment the durable review branch
+needs.
 
 Use `$ralph-triage` to prepare issues for drain. Triage sets exactly one
 category label, exactly one state label, and at most one **Delivery mode** label.
 Default to **Gitflow delivery** unless the work is a small, low-risk docs,
 tests, tooling, or script change that fits **Trunk delivery**, or an explicitly
-exploratory change that should publish a durable review branch and remain open
-with `agent-reviewing`.
+exploratory change whose `## Review focus` says why it should publish a durable
+review branch and remain open with `agent-reviewing`.
 
 Use `$ralph-loop drain` to let Ralph implement ready issues. Ralph owns
 worktrees, deterministic QA, **Local integration** for Gitflow or Trunk

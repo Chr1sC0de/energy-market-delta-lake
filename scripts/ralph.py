@@ -139,6 +139,7 @@ TRIAGE_STOP_LABELS = frozenset(
 )
 
 REQUIRED_ISSUE_SECTIONS = ("What to build", "Acceptance criteria", "Blocked by")
+EXPLORATORY_REQUIRED_ISSUE_SECTIONS = ("Review focus",)
 AEMO_ETL_PREFIX = "backend-services/dagster-user/aemo-etl/"
 BACKEND_SERVICES_PREFIX = "backend-services/"
 AEMO_ETL_E2E_QA_NAME = "aemo-etl End-to-end test"
@@ -896,9 +897,21 @@ def section_body(markdown: str, heading: str) -> str | None:
     return match.group("body").strip()
 
 
-def missing_required_sections(markdown: str) -> list[str]:
+def required_issue_sections_for_delivery_mode(mode: str) -> tuple[str, ...]:
+    if mode == EXPLORATORY_MODE:
+        return (*REQUIRED_ISSUE_SECTIONS, *EXPLORATORY_REQUIRED_ISSUE_SECTIONS)
+    if mode in {GITFLOW_MODE, TRUNK_MODE}:
+        return REQUIRED_ISSUE_SECTIONS
+    raise ValueError(f"Unsupported delivery mode: {mode}")
+
+
+def missing_required_sections(
+    markdown: str,
+    *,
+    required_sections: tuple[str, ...] = REQUIRED_ISSUE_SECTIONS,
+) -> list[str]:
     missing: list[str] = []
-    for heading in REQUIRED_ISSUE_SECTIONS:
+    for heading in required_sections:
         body = section_body(markdown, heading)
         if body is None or body.strip() == "":
             missing.append(heading)
@@ -2690,7 +2703,7 @@ class RalphLoop:
             manifest.record_metadata_status("claimed")
             emit(f"#{issue.number}: validating issue contract")
             manifest.record_event("validating_issue_contract")
-            self._validate_issue_contract(issue)
+            self._validate_issue_contract(issue, delivery_plan=delivery_plan)
             manifest.record_event("issue_contract_validated")
             manifest.record_event("ensuring_integration_target")
             self._ensure_integration_target(delivery_plan, run_dir)
@@ -2967,8 +2980,17 @@ class RalphLoop:
                 self._mark_issue_failed(issue, issue_error, run_dir, manifest=manifest)
             emit(f"Issue #{issue.number} failed: {error}", err=True)
 
-    def _validate_issue_contract(self, issue: Issue) -> None:
-        missing = missing_required_sections(issue.body)
+    def _validate_issue_contract(
+        self,
+        issue: Issue,
+        *,
+        delivery_plan: DeliveryPlan,
+    ) -> None:
+        required_sections = required_issue_sections_for_delivery_mode(delivery_plan.mode)
+        missing = missing_required_sections(
+            issue.body,
+            required_sections=required_sections,
+        )
         if missing:
             raise IssueFailure(f"Missing required issue section(s): {', '.join(missing)}")
 
@@ -4072,6 +4094,11 @@ def triage_prompt(issue: Issue, repo: str) -> str:
         If an enhancement looks like wontfix and would require creating or
         updating .out-of-scope/, mark it ready-for-human instead and explain
         that v1 automated triage does not write repo files.
+
+        Apply `delivery-exploratory` only when the issue explicitly asks for a
+        durable review branch and includes `## Review focus` describing the
+        human judgment the branch needs. Vague exploratory intent should stay
+        Gitflow or move to needs-info instead of being labeled exploratory.
 
         Issue URL: {issue.url}
 
