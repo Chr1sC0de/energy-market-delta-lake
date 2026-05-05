@@ -59,6 +59,7 @@ and [issue-tracker.md](issue-tracker.md) for the GitHub Issue queue contract.
   - `docs/agents/issue-tracker.md`
   - `docs/agents/ralph-loop.md`
   - `scripts/ralph.py`
+  - `.agents/skills/ralph-curate/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`
   - `.agents/skills/ralph-loop/SKILL.md`
 - `sync.scope`: `operations`
