@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ralph Curate"
+  short_description: "Reconcile Ralph issues against branch state"
+  default_prompt: "Use $ralph-curate to review open issues against the current branch and propose updates."

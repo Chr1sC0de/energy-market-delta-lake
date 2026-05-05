@@ -34,6 +34,8 @@ Use [ralph-loop.md](ralph-loop.md) for Ralph internals, including
 **Delivery mode**, **Local integration**, **Integration target**, **Promotion**,
 **Post-promotion review**, run manifests, QA selection, and recovery behavior.
 Use [OPERATOR.md](../../OPERATOR.md) for the human **Operator workflow**.
+Use `$ralph-curate` when existing open issues need to be compared with the
+current branch before changing bodies, labels, blockers, or closure state.
 
 ## Sync metadata
 
@@ -41,6 +43,7 @@ Use [OPERATOR.md](../../OPERATOR.md) for the human **Operator workflow**.
 - `sync.sources`:
   - `AGENTS.md`
   - `OPERATOR.md`
+  - `.agents/skills/ralph-curate/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`
   - `.agents/skills/ralph-loop/SKILL.md`
   - `docs/agents/README.md`

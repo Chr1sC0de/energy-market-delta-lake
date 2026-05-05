@@ -52,6 +52,8 @@ Use [OPERATOR.md](../../OPERATOR.md) for the first-class **Operator workflow**.
 `$ralph-triage` prepares GitHub Issues for drain by setting category, state, and
 **Delivery mode** labels. `$ralph-loop` owns the backing script commands,
 including `$ralph-loop drain` and `$ralph-loop promote`.
+Use `$ralph-curate` before triage or drain when the open issue queue needs to
+be reconciled against current branch state.
 
 ## Drain flow
 
@@ -556,6 +558,7 @@ container-backed **Integration test** dependencies.
   - `docs/agents/issue-tracker.md`
   - `docs/agents/triage-labels.md`
   - `docs/repository/documentation-sync.md`
+  - `.agents/skills/ralph-curate/SKILL.md`
   - `.agents/skills/ralph-loop/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`
 - `sync.scope`: `operations`

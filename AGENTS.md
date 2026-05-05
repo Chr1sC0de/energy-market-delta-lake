@@ -27,6 +27,10 @@ Use the repo-local `ralph-triage` skill to prepare GitHub Issues for Ralph
 drain. Triage sets category, state, and **Delivery mode** labels before
 `ralph-loop` drains ready work.
 
+Use the repo-local `ralph-curate` skill to review open GitHub Issues against the
+current branch, identify stale or satisfied work, and propose queue updates
+before applying issue metadata changes.
+
 ### Triage labels
 
 Use the default triage label vocabulary plus Ralph runtime labels. See
