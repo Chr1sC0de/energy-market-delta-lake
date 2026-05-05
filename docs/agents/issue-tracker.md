@@ -44,6 +44,13 @@ triage reconsideration. In particular, `agent-reviewing` means **Exploratory
 delivery** has already published a durable review branch and the issue is
 waiting for human review.
 
+After a successful drain-mode **Local integration**, Ralph computes **Ready
+issue refresh** candidates from open issues within `--issue-limit`. The
+candidate scan keeps unblocked `ready-for-agent` issues in queue order, excludes
+issues with runtime stop labels, and treats the issue that was just integrated
+as a satisfied blocker for candidate selection even when Gitflow leaves it open
+with `agent-integrated` until **Promotion**.
+
 Use [ralph-loop.md](ralph-loop.md) for Ralph internals, including
 **Delivery mode**, **Local integration**, **Integration target**, **Promotion**,
 **Ready issue refresh**, **Post-promotion review**, run manifests, QA
@@ -61,6 +68,7 @@ current branch before changing bodies, labels, blockers, or closure state.
   - `.agents/skills/ralph-curate/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`
   - `.agents/skills/ralph-loop/SKILL.md`
+  - `.agents/skills/ralph-issue-refresh/SKILL.md`
   - `docs/agents/README.md`
   - `docs/agents/ralph-loop.md`
   - `docs/agents/triage-labels.md`

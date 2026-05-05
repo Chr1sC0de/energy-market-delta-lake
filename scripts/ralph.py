@@ -15,6 +15,7 @@ import subprocess
 import sys
 import textwrap
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -916,6 +917,31 @@ def is_ready_candidate(issue: Issue) -> bool:
     if READY_LABEL not in issue.labels:
         return False
     return not issue_has_any_label(issue, IMPLEMENTATION_STOP_LABELS)
+
+
+def select_ready_issue_refresh_candidates(
+    issues: list[Issue],
+    *,
+    just_integrated_issue_number: int,
+    blocker_state: Callable[[int], str],
+) -> list[Issue]:
+    blocker_state_cache: dict[int, str] = {}
+
+    def blocker_is_satisfied(blocker: int) -> bool:
+        if blocker == just_integrated_issue_number:
+            return True
+        if blocker not in blocker_state_cache:
+            blocker_state_cache[blocker] = blocker_state(blocker)
+        return blocker_state_cache[blocker] == "CLOSED"
+
+    candidates: list[Issue] = []
+    for issue in issues:
+        if not is_ready_candidate(issue):
+            continue
+        blockers = parse_blockers(issue.body)
+        if all(blocker_is_satisfied(blocker) for blocker in blockers):
+            candidates.append(issue)
+    return candidates
 
 
 def is_basic_triage_candidate(issue: Issue) -> bool:
@@ -1872,6 +1898,8 @@ class RalphLoop:
             if ready_issue is not None:
                 if self.config.dry_run:
                     emit(f"DRY RUN: would implement #{ready_issue.number}: {ready_issue.title}")
+                    if self.config.drain:
+                        self._report_ready_issue_refresh_dry_run(ready_issue)
                     return
                 self._handle_implementation(ready_issue)
                 implemented += 1
@@ -1976,6 +2004,40 @@ class RalphLoop:
             if self.github.issue_state(blocker) != "CLOSED":
                 return True
         return False
+
+    def _ready_issue_refresh_candidates(self, integrated_issue: Issue) -> list[Issue]:
+        issues = self.github.list_open_issues(limit=self.config.issue_limit)
+        return select_ready_issue_refresh_candidates(
+            issues,
+            just_integrated_issue_number=integrated_issue.number,
+            blocker_state=self.github.issue_state,
+        )
+
+    def _report_ready_issue_refresh_dry_run(self, integrated_issue: Issue) -> None:
+        emit(
+            "DRY RUN: after Local integration of "
+            f"#{integrated_issue.number}, would select Ready issue refresh "
+            f"candidates within --issue-limit {self.config.issue_limit}."
+        )
+
+    def _report_ready_issue_refresh_candidates(self, integrated_issue: Issue) -> None:
+        try:
+            candidates = self._ready_issue_refresh_candidates(integrated_issue)
+        except CommandFailure as error:
+            emit(
+                "Ready issue refresh candidate selection warning after "
+                f"Local integration of #{integrated_issue.number}: {error}",
+                err=True,
+            )
+            return
+
+        emit(
+            "Ready issue refresh candidate selection found "
+            f"{len(candidates)} candidate(s) after Local integration of "
+            f"#{integrated_issue.number}."
+        )
+        for candidate in candidates:
+            emit(f"- #{candidate.number}: {candidate.title}")
 
     def _needs_info_has_reporter_activity(self, issue: Issue, *, current_user: str) -> bool:
         if issue.author is None:
@@ -2812,6 +2874,8 @@ class RalphLoop:
                 run_dir=run_dir,
             )
             manifest.record_success()
+            if self.config.drain:
+                self._report_ready_issue_refresh_candidates(issue)
             emit(result_message)
         except EnvironmentFailure as error:
             if manifest is not None:

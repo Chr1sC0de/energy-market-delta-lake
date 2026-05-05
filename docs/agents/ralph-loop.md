@@ -542,6 +542,25 @@ against the updated **Integration target** so follow-on work does not keep stale
 blockers, stale acceptance criteria, or already-satisfied issues in the ready
 queue.
 
+After each successful drain-mode **Local integration**, Ralph first computes a
+bounded candidate set from open GitHub Issues returned by the existing
+`--issue-limit` scan. Candidate selection includes `ready-for-agent` issues
+that are unblocked in queue order and excludes issues carrying implementation
+stop labels such as `agent-running`, `agent-failed`, `agent-merged`,
+`agent-integrated`, or `agent-reviewing`. It also includes `ready-for-agent`
+issues whose `## Blocked by` section names the issue that was just integrated:
+Gitflow leaves that blocker open with `agent-integrated` until **Promotion**,
+but candidate selection treats that just-integrated blocker as satisfied for
+refresh review. Trunk delivery works through the same selector after the
+just-integrated blocker has already been closed.
+
+This bounded scan also keeps the next unblocked ready issues in queue order in
+the candidate set, even when they do not explicitly reference the just-integrated
+issue. That lets refresh review catch duplicate or obsolete ready work that
+became stale because of the latest **Local integration**. In `--dry-run`, Ralph
+reports that Ready issue refresh candidate selection would run after **Local
+integration**; it does not invoke Codex or mutate GitHub Issues.
+
 Use the repo-local `$ralph-issue-refresh` skill as the entry point for this
 contract. The pass is allowed to mutate only GitHub Issue metadata:
 

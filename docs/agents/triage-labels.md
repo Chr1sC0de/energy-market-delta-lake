@@ -36,8 +36,8 @@ Runtime labels are not triage state labels. `ready-for-agent` remains the queue
 selection label for implementation. **Ready issue refresh** may transition an
 issue out of `ready-for-agent` when the latest **Local integration** leaves the
 issue stale, unclear, obsolete, or already satisfied. Runtime labels including
-`agent-reviewing` block repeat implementation and automated triage
-reconsideration.
+`agent-reviewing` block repeat implementation, **Ready issue refresh** candidate
+selection, and automated triage reconsideration.
 
 ## Ralph delivery labels
 
@@ -72,6 +72,7 @@ and [issue-tracker.md](issue-tracker.md) for the GitHub Issue queue contract.
   - `.agents/skills/ralph-curate/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`
   - `.agents/skills/ralph-loop/SKILL.md`
+  - `.agents/skills/ralph-issue-refresh/SKILL.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

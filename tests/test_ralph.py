@@ -36,6 +36,19 @@ Build it.
 None
 """
 
+
+def implementation_body_with_blockers(*blockers: int) -> str:
+    blocked_by = "\n".join(f"- #{blocker}" for blocker in blockers) if blockers else "None"
+    return f"""## What to build
+Build it.
+
+## Acceptance criteria
+- [ ] It works.
+
+## Blocked by
+{blocked_by}
+"""
+
 POST_PROMOTION_REVIEW_MARKDOWN = """# Post-promotion Review
 
 ## Findings
@@ -62,15 +75,21 @@ No blocking findings.
 """
 
 
-def make_issue(labels: set[str], body: str = ""):
+def make_issue(
+    labels: set[str],
+    body: str = "",
+    *,
+    number: int = 42,
+    title: str = "Implement thing",
+):
     return ralph.Issue(
-        number=42,
-        title="Implement thing",
+        number=number,
+        title=title,
         body=body,
         labels=frozenset(labels),
         created_at=datetime(2026, 4, 30, tzinfo=UTC),
         updated_at=datetime(2026, 4, 30, tzinfo=UTC),
-        url="https://github.com/example/repo/issues/42",
+        url=f"https://github.com/example/repo/issues/{number}",
         comments=0,
         author="reporter",
     )
@@ -206,6 +225,7 @@ def make_loop(
     max_issues: int = ralph.DEFAULT_DRAIN_BUDGET,
     dry_run: bool = False,
     allow_dirty_worktree: bool = False,
+    issue_limit: int = 100,
 ) -> ralph.RalphLoop:
     repo_root = tmp_path / "repo"
     worktree_container = tmp_path / "worktrees"
@@ -226,7 +246,7 @@ def make_loop(
         dry_run=dry_run,
         allow_dirty_worktree=allow_dirty_worktree,
         bootstrap_labels=False,
-        issue_limit=100,
+        issue_limit=issue_limit,
         log_root=log_root,
         worktree_container=worktree_container,
     )
@@ -303,6 +323,24 @@ def issue_view_output(*, labels: list[str] | None = None) -> str:
             "author": {"login": "reporter"},
         }
     )
+
+
+def issue_payload(
+    number: int,
+    labels: list[str],
+    body: str = IMPLEMENTATION_BODY,
+) -> dict[str, Any]:
+    return {
+        "number": number,
+        "title": f"Issue {number}",
+        "body": body,
+        "labels": [{"name": label} for label in labels],
+        "createdAt": "2026-04-30T00:00:00Z",
+        "updatedAt": "2026-04-30T00:00:00Z",
+        "url": f"https://github.com/example/repo/issues/{number}",
+        "comments": [],
+        "author": {"login": "reporter"},
+    }
 
 
 class CountingRalphLoop(ralph.RalphLoop):
@@ -444,6 +482,124 @@ Build it.
         self.assertFalse(
             ralph.is_ready_candidate(make_issue({"ready-for-agent", "agent-reviewing"}))
         )
+
+    def test_ready_issue_refresh_candidates_include_gitflow_dependents(self) -> None:
+        issues = [
+            make_issue(
+                {"ready-for-agent"},
+                implementation_body_with_blockers(42),
+                number=43,
+                title="Follow-on work",
+            ),
+            make_issue(
+                {"ready-for-agent"},
+                implementation_body_with_blockers(99),
+                number=44,
+                title="Still blocked follow-on work",
+            ),
+        ]
+
+        candidates = ralph.select_ready_issue_refresh_candidates(
+            issues,
+            just_integrated_issue_number=42,
+            blocker_state=lambda _number: "OPEN",
+        )
+
+        self.assertEqual([issue.number for issue in candidates], [43])
+
+    def test_ready_issue_refresh_candidates_include_trunk_closed_blocker_dependents(
+        self,
+    ) -> None:
+        issues = [
+            make_issue(
+                {"ready-for-agent"},
+                implementation_body_with_blockers(42),
+                number=43,
+                title="Trunk follow-on work",
+            )
+        ]
+
+        candidates = ralph.select_ready_issue_refresh_candidates(
+            issues,
+            just_integrated_issue_number=42,
+            blocker_state=lambda _number: "CLOSED",
+        )
+
+        self.assertEqual([issue.number for issue in candidates], [43])
+
+    def test_ready_issue_refresh_candidates_include_next_ready_issues_in_queue_order(
+        self,
+    ) -> None:
+        issues = [
+            make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=43),
+            make_issue({"needs-triage"}, IMPLEMENTATION_BODY, number=44),
+            make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=45),
+        ]
+
+        candidates = ralph.select_ready_issue_refresh_candidates(
+            issues,
+            just_integrated_issue_number=42,
+            blocker_state=lambda _number: "CLOSED",
+        )
+
+        self.assertEqual([issue.number for issue in candidates], [43, 45])
+
+    def test_ready_issue_refresh_candidates_exclude_stop_labels(self) -> None:
+        stop_labels = [
+            "agent-running",
+            "agent-failed",
+            "agent-merged",
+            "agent-integrated",
+            "agent-reviewing",
+        ]
+        issues = [
+            make_issue({"ready-for-agent", stop_label}, IMPLEMENTATION_BODY, number=number)
+            for number, stop_label in enumerate(stop_labels, start=43)
+        ]
+
+        candidates = ralph.select_ready_issue_refresh_candidates(
+            issues,
+            just_integrated_issue_number=42,
+            blocker_state=lambda _number: "CLOSED",
+        )
+
+        self.assertEqual(candidates, [])
+
+    def test_ready_issue_refresh_candidates_respect_issue_limit_scan_bound(self) -> None:
+        issue_list_command = (
+            "gh",
+            "issue",
+            "list",
+            "-R",
+            "example/repo",
+            "--state",
+            "open",
+            "--limit",
+            "2",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        runner = FakeRunner(
+            command_outputs={
+                issue_list_command: [
+                    json.dumps(
+                        [
+                            issue_payload(43, ["ready-for-agent"]),
+                            issue_payload(44, ["ready-for-agent"]),
+                        ]
+                    )
+                ]
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(Path(tmp), runner, issue_limit=2)
+            candidates = loop._ready_issue_refresh_candidates(
+                make_issue({"agent-merged"}, number=42)
+            )
+
+        self.assertEqual([issue.number for issue in candidates], [43, 44])
+        self.assertIn(issue_list_command, [call.args for call in runner.calls])
 
     def test_basic_triage_candidate_accepts_unlabeled_and_needs_triage(self) -> None:
         self.assertTrue(ralph.is_basic_triage_candidate(make_issue(set())))
@@ -1260,6 +1416,29 @@ Build it.
         commands = [call.args for call in runner.calls]
         self.assertNotIn(("git", "status", "--porcelain"), commands)
 
+    def test_dry_run_reports_ready_issue_refresh_candidate_selection(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(Path(tmp), runner, drain=True, dry_run=True)
+            probe = PreflightProbeLoop(loop.config, runner)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                probe.run()
+
+        text = output.getvalue()
+        self.assertIn("DRY RUN: would implement #42: Implement thing", text)
+        self.assertIn(
+            "DRY RUN: after Local integration of #42, would select Ready issue "
+            "refresh candidates within --issue-limit 100.",
+            text,
+        )
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(any(command[:2] == ("codex", "exec") for command in commands))
+        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+        self.assertFalse(any(command[:3] == ("gh", "issue", "comment") for command in commands))
+        self.assertFalse(any(command[:3] == ("gh", "issue", "close") for command in commands))
+
     def test_completion_comment_records_local_integration_evidence(self) -> None:
         issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
         qa_results = [
@@ -1899,6 +2078,57 @@ Build it.
             self.assertEqual(manifest["pushes"]["integration_target"]["status"], "pushed")
             self.assertEqual(manifest["github_metadata"]["status"], "closed")
             self.assertEqual(manifest["qa_results"][0]["status"], "passed")
+
+    def test_drain_selects_ready_issue_refresh_candidates_after_local_integration(
+        self,
+    ) -> None:
+        issue_list_command = (
+            "gh",
+            "issue",
+            "list",
+            "-R",
+            "example/repo",
+            "--state",
+            "open",
+            "--limit",
+            "100",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            command_outputs={
+                issue_list_command: [json.dumps([issue_payload(43, ["ready-for-agent"])])]
+            },
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(Path(tmp), runner, drain=True)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                loop._handle_implementation(make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY))
+
+        commands = [call.args for call in runner.calls]
+        close_command = (
+            "gh",
+            "issue",
+            "close",
+            "42",
+            "-R",
+            "example/repo",
+            "--reason",
+            "completed",
+        )
+        self.assertIn(issue_list_command, commands)
+        self.assertLess(commands.index(close_command), commands.index(issue_list_command))
+        self.assertIn(
+            "Ready issue refresh candidate selection found 1 candidate(s) after "
+            "Local integration of #42.",
+            output.getvalue(),
+        )
+        self.assertIn("- #43: Issue 43", output.getvalue())
 
     def test_gitflow_implementation_creates_dev_integrates_and_leaves_issue_open(self) -> None:
         ls_remote = ("git", "ls-remote", "--exit-code", "--heads", "origin", "dev")
