@@ -182,7 +182,7 @@ Promote reviewed Gitflow work from `dev` to `main`:
 python3 scripts/ralph.py --promote
 ```
 
-Skip the default **Post-promotion review** after a successful **Promotion**:
+Skip the default **Post-promotion review** during **Promotion**:
 
 ```bash
 python3 scripts/ralph.py --promote --skip-post-promotion-review
@@ -272,10 +272,10 @@ While a command is active, the log has `exit: running`; after the command
 finishes, Ralph rewrites the same log with the final exit status while
 preserving stdout, stderr, command, and cwd.
 
-After successful **Promotion** with changed files, Ralph saves the final
-**Post-promotion review** Markdown report as
-`post-promotion-review.md` beside `codex-post-promotion-review.jsonl` and
-prints the same report to the terminal.
+After a successful, failed, or partial **Promotion** with changed files and an
+available review worktree, Ralph tries to save the final
+**Post-promotion review** Markdown report as `post-promotion-review.md` beside
+`codex-post-promotion-review.jsonl` and prints the same report to the terminal.
 
 During logged long-running phases, Ralph prints a heartbeat about every 30
 seconds:
@@ -312,8 +312,8 @@ Key fields for inspection:
 - `promotion_commit_inventory`: full promoted source commit range with each
   commit SHA, subject, and whether it matched a verified Gitflow
   **Local integration** commit or remained an unverified **Promotion** commit.
-- `post_promotion_review`: enabled state, skip reason, review status, review
-  log path, and Markdown artifact path for **Promotion** runs.
+- `post_promotion_review`: enabled state, skip reason, warning-only review
+  status, review log path, and Markdown artifact path for **Promotion** runs.
 - `branches`: issue, source, and target branch names that apply to the run.
 - `paths`: repo root, run directory, worktree container, and implementation,
   integration, Promotion source, or Promotion target worktree paths.
@@ -486,14 +486,20 @@ promoted files as the full Promotion-range file inventory, not as files owned
 only by the issue being closed. Successful Promotions with changed files then
 run a **Post-promotion review** agent from the **Promotion** worktree by
 default, after the `main` push, `dev` sync, and verified issue metadata
-updates. The review prompt includes both verified **Local integration** commits
-and unverified **Promotion** commits so the review can separate closed issue
-evidence from other promoted work. The review agent has read-only GitHub Issue
-access and must report learnings plus follow-up GitHub Issue drafts instead of
-mutating issues. Ralph saves the final Markdown report as
+updates. Failed or partial Promotion attempts with changed files also try a
+**Post-promotion review** where a source or target Promotion worktree is
+available. The review prompt includes both verified **Local integration**
+commits and unverified **Promotion** commits when available so the review can
+separate closed issue evidence from other promoted work. For failed or partial
+attempts, the report must put recovery and consistency guidance before
+follow-up issue recommendations. The review agent has read-only GitHub Issue
+access and must report learnings, recovery guidance, and follow-up GitHub Issue
+drafts instead of mutating issues. Ralph saves the final Markdown report as
 `post-promotion-review.md`, prints it in the terminal, and records both
 `post_promotion_review.log_path` and `post_promotion_review.artifact_path` in
-the **Promotion** run manifest.
+the **Promotion** run manifest. Review failures are warnings recorded under
+`post_promotion_review`; they do not change the original Promotion success or
+failure status.
 Operators can pass `--skip-post-promotion-review` to disable the review path.
 If there are no Promotion changes, Ralph does not create Promotion worktrees or
 run the review agent; it prints a review skip note and records
@@ -657,7 +663,10 @@ failures and keep the worktrees for inspection. Failures after the target is
 pushed stop the drain because the code may already be published while GitHub
 issue metadata may be inconsistent. Promotion failures before `main` is pushed
 leave issues open with `agent-integrated`; failures after `main` is pushed stop
-the run for the same metadata consistency reason.
+the run for the same metadata consistency reason. Failed or partial Promotion
+attempts still try warning-only **Post-promotion review** when a review worktree
+is available; the original Promotion exception, manifest `status`, and failure
+state remain the source of truth.
 
 Environment failures stop the run. Examples include invalid `gh` auth, missing
 labels, unavailable tools, failing Git operations before claim, or unavailable

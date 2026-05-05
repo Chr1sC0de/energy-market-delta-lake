@@ -113,9 +113,11 @@ verified GitHub issues included in that branch range.
 _Avoid_: Manual dev merge
 
 **Post-promotion review**:
-The default Ralph review agent pass that runs after a successful **Promotion**
-with changed files, after `main` is pushed, `dev` is synced, and verified issue
-metadata updates complete.
+The default Ralph review agent pass that runs after a **Promotion** attempt with
+changed files where a review worktree is available. Successful Promotions run it
+after `main` is pushed, `dev` is synced, and verified issue metadata updates
+complete; failed or partial Promotion attempts try it as warning-only recovery
+review without changing the original Promotion outcome.
 _Avoid_: Promotion gate, pre-push review
 
 ## Relationships
@@ -152,9 +154,9 @@ _Avoid_: Promotion gate, pre-push review
   as the default **Integration target**.
 - **Promotion** closes only issues whose `dev` integration commit is verified in
   the promoted branch range.
-- **Post-promotion review** happens after **Promotion** succeeds; it is not a
-  **Push check** gate, it is not **Ready issue refresh**, and it uses read-only
-  GitHub Issue access.
+- **Post-promotion review** happens after **Promotion** attempts where possible;
+  it is not a **Push check** gate, it is not **Ready issue refresh**, and it
+  uses read-only GitHub Issue access.
 
 ## Example dialogue
 
@@ -191,8 +193,8 @@ _Avoid_: Promotion gate, pre-push review
   Resolved: use **Operator workflow** for the human entrypoint and keep Ralph
   internals on the agent-facing Ralph documentation page.
 - "post-promotion check" could imply a pre-push gate. Resolved: use
-  **Post-promotion review** for the default review agent pass that runs only
-  after successful **Promotion**.
+  **Post-promotion review** for the default review agent pass that runs after
+  **Promotion** attempts where possible.
 - "queue review" after each issue could be confused with
   **Post-promotion review**. Resolved: use **Ready issue refresh** for
   post-**Local integration** queue reconciliation before the next ready issue

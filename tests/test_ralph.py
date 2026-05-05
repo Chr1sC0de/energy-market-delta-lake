@@ -46,6 +46,10 @@ No blocking findings.
 
 - Promotion evidence stayed consistent after `main` push and `dev` sync.
 
+## Recovery and Consistency Guidance
+
+- No recovery needed for this Promotion.
+
 ## Follow-up GitHub Issue Drafts
 
 ### Harden Promotion evidence checks
@@ -97,6 +101,7 @@ class FakeRunner:
         rev_parse_outputs: list[str] | None = None,
         command_outputs: dict[tuple[str, ...], list[str]] | None = None,
         fail_commands: set[tuple[str, ...]] | dict[tuple[str, ...], int] | None = None,
+        fail_post_promotion_review: bool = False,
     ) -> None:
         self.dry_run = False
         self.calls: list[FakeCall] = []
@@ -104,6 +109,7 @@ class FakeRunner:
         self.diff_outputs = diff_outputs or []
         self.rev_parse_outputs = rev_parse_outputs or []
         self.command_outputs = command_outputs or {}
+        self.fail_post_promotion_review = fail_post_promotion_review
         if isinstance(fail_commands, dict):
             self.fail_commands = fail_commands
         else:
@@ -170,6 +176,15 @@ class FakeRunner:
             return ralph.CompletedCommand(stdout="fake-gh-token\n", stderr="")
         if command[:2] == ("codex", "exec") and input_text is not None:
             if "Run a Post-promotion review" in input_text:
+                if self.fail_post_promotion_review:
+                    raise ralph.CommandFailure(
+                        args,
+                        cwd,
+                        1,
+                        "",
+                        "fake review failure",
+                        log_path,
+                    )
                 return ralph.CompletedCommand(
                     stdout=POST_PROMOTION_REVIEW_MARKDOWN,
                     stderr="",
@@ -2293,8 +2308,21 @@ Build it.
         self.assertIn("--output-last-message", runner.calls[review_index].args)
         self.assertIn("Run a Post-promotion review", runner.calls[review_index].input_text)
         self.assertIn("## Learnings", runner.calls[review_index].input_text)
+        self.assertIn(
+            "## Recovery and Consistency Guidance",
+            runner.calls[review_index].input_text,
+        )
         self.assertIn("## Follow-up GitHub Issue Drafts", runner.calls[review_index].input_text)
         self.assertIn("Do not create the follow-up issues.", runner.calls[review_index].input_text)
+        self.assertLess(
+            runner.calls[review_index].input_text.index("## Recovery and Consistency Guidance"),
+            runner.calls[review_index].input_text.index("## Follow-up GitHub Issue Drafts"),
+        )
+        self.assertIn(
+            "Promotion outcome: `succeeded`",
+            runner.calls[review_index].input_text,
+        )
+        self.assertIn("Promotion error: `None`", runner.calls[review_index].input_text)
         self.assertIn(
             "`abc1234` Ralph Local integration for issue 42 - "
             "verified Local integration commit for #42 Implement thing",
@@ -2464,7 +2492,34 @@ Build it.
             "skipped_no_changes",
         )
 
-    def test_promotion_push_check_failure_stops_before_side_effects(self) -> None:
+    def test_post_promotion_review_failure_is_warning_only(self) -> None:
+        runner = FakeRunner(
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+            fail_post_promotion_review=True,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, promote=True)
+            stderr = io.StringIO()
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(stderr):
+                loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn(("git", "push", "origin", "HEAD:main"), commands)
+        self.assertIn(("git", "push", "origin", "HEAD:dev"), commands)
+        self.assertTrue(any(command[:2] == ("codex", "exec") for command in commands))
+        self.assertIn("Post-promotion review warning:", stderr.getvalue())
+        self.assertEqual(manifest["status"], "succeeded")
+        self.assertIsNone(manifest["failure"])
+        self.assertEqual(manifest["post_promotion_review"]["status"], "failed")
+        self.assertIn("Command failed", manifest["post_promotion_review"]["error"])
+
+    def test_failed_promotion_push_check_runs_review_without_side_effects(self) -> None:
         qa_command = ("python3", "-m", "unittest", "discover", "-s", "tests")
         runner = FakeRunner(
             diff_outputs=["scripts/ralph.py\n"],
@@ -2475,15 +2530,24 @@ Build it.
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             loop = make_loop(tmp_path, runner, promote=True)
+            output = io.StringIO()
             with self.assertRaises(ralph.CommandFailure):
-                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                with redirect_stdout(output), redirect_stderr(io.StringIO()):
                     loop._promote()
 
             commands = [call.args for call in runner.calls]
             manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+            artifact_path = next(tmp_path.glob("logs/promote-*/post-promotion-review.md"))
+            artifact = artifact_path.read_text(encoding="utf-8")
 
         source_path = Path(tmp) / "worktrees" / "agent-promote-source-dev-to-main"
         promote_path = Path(tmp) / "worktrees" / "agent-promote-dev-to-main"
+        review_command = tuple(
+            ralph.codex_exec_command(
+                source_path,
+                output_last_message=artifact_path,
+            )
+        )
         self.assertIn(
             (
                 "git",
@@ -2497,6 +2561,22 @@ Build it.
         )
         qa_index = commands.index(qa_command)
         self.assertEqual(runner.calls[qa_index].cwd, source_path)
+        review_index = commands.index(review_command)
+        self.assertLess(qa_index, review_index)
+        self.assertEqual(runner.calls[review_index].cwd, source_path)
+        self.assertIn(
+            "Promotion outcome: `failed`",
+            runner.calls[review_index].input_text,
+        )
+        self.assertIn("Command failed", runner.calls[review_index].input_text)
+        self.assertIn(
+            "## Recovery and Consistency Guidance",
+            runner.calls[review_index].input_text,
+        )
+        self.assertLess(
+            runner.calls[review_index].input_text.index("## Recovery and Consistency Guidance"),
+            runner.calls[review_index].input_text.index("## Follow-up GitHub Issue Drafts"),
+        )
         self.assertNotIn(
             (
                 "git",
@@ -2526,6 +2606,13 @@ Build it.
         self.assertIsNone(manifest["promotion_commit"])
         self.assertEqual(manifest["pushes"], {})
         self.assertEqual(manifest["github_metadata"]["status"], "not_started")
+        self.assertEqual(manifest["post_promotion_review"]["status"], "completed")
+        self.assertEqual(
+            manifest["post_promotion_review"]["artifact_path"],
+            str(artifact_path),
+        )
+        self.assertEqual(artifact, POST_PROMOTION_REVIEW_MARKDOWN.rstrip() + "\n")
+        self.assertIn(POST_PROMOTION_REVIEW_MARKDOWN.strip(), output.getvalue())
         failed_push_check = [
             result
             for result in manifest["qa_results"]
@@ -2533,6 +2620,155 @@ Build it.
         ]
         self.assertEqual(len(failed_push_check), 1)
         self.assertEqual(failed_push_check[0]["status"], "failed")
+
+    def test_partial_promotion_metadata_failure_runs_review_preserving_failure(
+        self,
+    ) -> None:
+        issue_list_command = (
+            "gh",
+            "issue",
+            "list",
+            "-R",
+            "example/repo",
+            "--state",
+            "open",
+            "--limit",
+            "100",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        issue_comments_command = (
+            "gh",
+            "issue",
+            "view",
+            "42",
+            "-R",
+            "example/repo",
+            "--comments",
+            "--json",
+            "comments",
+        )
+        target_ancestor_command = (
+            "git",
+            "merge-base",
+            "--is-ancestor",
+            "abc1234",
+            "origin/main",
+        )
+        promotion_log_command = (
+            "git",
+            "log",
+            "--reverse",
+            "--format=%H%x00%s",
+            "origin/main..source-sha",
+        )
+        close_command = (
+            "gh",
+            "issue",
+            "close",
+            "42",
+            "-R",
+            "example/repo",
+            "--reason",
+            "completed",
+        )
+        issue_payload = [
+            {
+                "number": 42,
+                "title": "Implement thing",
+                "body": IMPLEMENTATION_BODY,
+                "labels": [{"name": "agent-integrated"}],
+                "createdAt": "2026-04-30T00:00:00Z",
+                "updatedAt": "2026-04-30T00:00:00Z",
+                "url": "https://github.com/example/repo/issues/42",
+                "comments": [],
+                "author": {"login": "reporter"},
+            }
+        ]
+        comments_payload = {
+            "comments": [
+                {
+                    "body": "\n".join(
+                        [
+                            "Ralph Gitflow integration completed.",
+                            "",
+                            "Commit: `abc1234`",
+                        ]
+                    )
+                }
+            ]
+        }
+        runner = FakeRunner(
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+            command_outputs={
+                issue_list_command: [json.dumps(issue_payload)],
+                issue_comments_command: [json.dumps(comments_payload)],
+                promotion_log_command: ["abc1234\x00Ralph Local integration for issue 42\n"],
+            },
+            fail_commands={
+                target_ancestor_command: 1,
+                close_command: 1,
+            },
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, promote=True)
+            stderr = io.StringIO()
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(stderr):
+                with self.assertRaises(ralph.PostPushFailure) as error_context:
+                    loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+            artifact_path = next(tmp_path.glob("logs/promote-*/post-promotion-review.md"))
+            artifact = artifact_path.read_text(encoding="utf-8")
+
+        promote_path = Path(tmp) / "worktrees" / "agent-promote-dev-to-main"
+        review_command = tuple(
+            ralph.codex_exec_command(
+                promote_path,
+                output_last_message=artifact_path,
+            )
+        )
+        commands = [call.args for call in runner.calls]
+        close_index = commands.index(close_command)
+        review_index = commands.index(review_command)
+        self.assertLess(close_index, review_index)
+        self.assertEqual(runner.calls[review_index].cwd, promote_path)
+        self.assertIn(
+            "Promotion outcome: `partial`",
+            runner.calls[review_index].input_text,
+        )
+        self.assertIn("Command failed", runner.calls[review_index].input_text)
+        self.assertIn(
+            "## Recovery and Consistency Guidance",
+            runner.calls[review_index].input_text,
+        )
+        self.assertLess(
+            runner.calls[review_index].input_text.index("## Recovery and Consistency Guidance"),
+            runner.calls[review_index].input_text.index("## Follow-up GitHub Issue Drafts"),
+        )
+        self.assertIn("Post-push promotion metadata failed:", str(error_context.exception))
+        self.assertIn("Post-push promotion metadata failed:", stderr.getvalue())
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["stage"], "failed")
+        self.assertIn("Command failed", manifest["failure"]["message"])
+        self.assertEqual(manifest["post_promotion_review"]["status"], "completed")
+        self.assertEqual(
+            manifest["post_promotion_review"]["artifact_path"],
+            str(artifact_path),
+        )
+        self.assertEqual(artifact, POST_PROMOTION_REVIEW_MARKDOWN.rstrip() + "\n")
+        self.assertEqual(manifest["github_metadata"]["status"], "failed")
+        self.assertEqual(
+            manifest["github_metadata"]["issues"][0]["metadata_status"],
+            "closing",
+        )
+        self.assertEqual(manifest["pushes"]["promotion_target"]["status"], "pushed")
+        self.assertEqual(manifest["pushes"]["source_branch_sync"]["status"], "pushed")
+        self.assertNotIn(("git", "worktree", "remove", str(promote_path)), commands)
 
     def test_promotion_runs_aemo_etl_e2e_gate_from_source_worktree_before_side_effects(
         self,

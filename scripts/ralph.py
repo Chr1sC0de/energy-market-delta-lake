@@ -2023,6 +2023,12 @@ class RalphLoop:
         )
         pushed = False
         source_worktree_created = False
+        promote_worktree_created = False
+        source_revision: str | None = None
+        changed_files: list[str] = []
+        integrated_issues: list[tuple[Issue, str]] = []
+        promotion_commit_inventory: list[dict[str, Any]] = []
+        promotion_sha: str | None = None
 
         try:
             emit(f"Promoting origin/{source_branch} to origin/{target_branch}")
@@ -2054,8 +2060,6 @@ class RalphLoop:
                 )
                 manifest.record_success("no_changes_to_promote")
                 return
-            self._validate_post_promotion_review_tool()
-
             emit(f"Creating Promotion source worktree {source_path}")
             manifest.record_event("creating_promotion_source_worktree")
             self.git.add_detached_worktree(
@@ -2102,6 +2106,7 @@ class RalphLoop:
                 ref=f"origin/{target_branch}",
                 run_dir=run_dir,
             )
+            promote_worktree_created = True
             emit(
                 f"Merging source revision {source_revision} from "
                 f"origin/{source_branch} into promotion worktree"
@@ -2171,9 +2176,11 @@ class RalphLoop:
                 changed_files=changed_files,
                 integrated_issues=integrated_issues,
                 promotion_commit_inventory=promotion_commit_inventory,
-                promote_path=promote_path,
+                review_path=promote_path,
                 run_dir=run_dir,
                 manifest=manifest,
+                promotion_outcome="succeeded",
+                promotion_error=None,
             )
             try:
                 manifest.record_event("cleaning_up_promotion_worktree")
@@ -2190,6 +2197,23 @@ class RalphLoop:
             )
             manifest.record_success()
         except IssueFailure as error:
+            self._run_failed_or_partial_post_promotion_review(
+                source_branch=source_branch,
+                target_branch=target_branch,
+                source_revision=source_revision,
+                promotion_sha=promotion_sha,
+                changed_files=changed_files,
+                integrated_issues=integrated_issues,
+                promotion_commit_inventory=promotion_commit_inventory,
+                source_path=source_path,
+                promote_path=promote_path,
+                source_worktree_created=source_worktree_created,
+                promote_worktree_created=promote_worktree_created,
+                run_dir=run_dir,
+                manifest=manifest,
+                promotion_outcome="failed",
+                promotion_error=error,
+            )
             manifest.record_failure(error, log_path=error.log_path)
             raise RalphError(str(error)) from error
         except CommandFailure as error:
@@ -2198,6 +2222,23 @@ class RalphLoop:
                     "failed",
                     details={"error": str(error), "log_path": path_text(error.log_path)},
                 )
+            self._run_failed_or_partial_post_promotion_review(
+                source_branch=source_branch,
+                target_branch=target_branch,
+                source_revision=source_revision,
+                promotion_sha=promotion_sha,
+                changed_files=changed_files,
+                integrated_issues=integrated_issues,
+                promotion_commit_inventory=promotion_commit_inventory,
+                source_path=source_path,
+                promote_path=promote_path,
+                source_worktree_created=source_worktree_created,
+                promote_worktree_created=promote_worktree_created,
+                run_dir=run_dir,
+                manifest=manifest,
+                promotion_outcome="partial" if pushed else "failed",
+                promotion_error=error,
+            )
             manifest.record_failure(error, log_path=error.log_path)
             if pushed:
                 post_push_error = PostPushFailure(
@@ -2218,19 +2259,95 @@ class RalphLoop:
                 except CommandFailure as error:
                     emit(f"Cleanup warning: {error}", err=True)
 
+    def _run_failed_or_partial_post_promotion_review(
+        self,
+        *,
+        source_branch: str,
+        target_branch: str,
+        source_revision: str | None,
+        promotion_sha: str | None,
+        changed_files: list[str],
+        integrated_issues: list[tuple[Issue, str]],
+        promotion_commit_inventory: list[dict[str, Any]],
+        source_path: Path,
+        promote_path: Path,
+        source_worktree_created: bool,
+        promote_worktree_created: bool,
+        run_dir: Path,
+        manifest: RunManifest,
+        promotion_outcome: str,
+        promotion_error: Exception,
+    ) -> None:
+        if self.config.skip_post_promotion_review:
+            self._run_post_promotion_review(
+                source_branch=source_branch,
+                target_branch=target_branch,
+                source_revision=source_revision or "unknown",
+                promotion_sha=promotion_sha,
+                changed_files=changed_files,
+                integrated_issues=integrated_issues,
+                promotion_commit_inventory=promotion_commit_inventory,
+                review_path=promote_path if promote_worktree_created else source_path,
+                run_dir=run_dir,
+                manifest=manifest,
+                promotion_outcome=promotion_outcome,
+                promotion_error=str(promotion_error),
+            )
+            return
+
+        if source_revision is None:
+            manifest.record_post_promotion_review(
+                "skipped_unavailable",
+                reason="Promotion source revision was not recorded before the failure.",
+            )
+            return
+        if not changed_files:
+            manifest.record_post_promotion_review(
+                "skipped_unavailable",
+                reason="Promotion changed files were not recorded before the failure.",
+            )
+            return
+        if promote_worktree_created:
+            review_path = promote_path
+        elif source_worktree_created:
+            review_path = source_path
+        else:
+            manifest.record_post_promotion_review(
+                "skipped_unavailable",
+                reason="No Promotion worktree was available after the failed Promotion attempt.",
+            )
+            return
+
+        self._run_post_promotion_review(
+            source_branch=source_branch,
+            target_branch=target_branch,
+            source_revision=source_revision,
+            promotion_sha=promotion_sha,
+            changed_files=changed_files,
+            integrated_issues=integrated_issues,
+            promotion_commit_inventory=promotion_commit_inventory,
+            review_path=review_path,
+            run_dir=run_dir,
+            manifest=manifest,
+            promotion_outcome=promotion_outcome,
+            promotion_error=str(promotion_error),
+        )
+
     def _run_post_promotion_review(
         self,
         *,
         source_branch: str,
         target_branch: str,
         source_revision: str,
-        promotion_sha: str,
+        promotion_sha: str | None,
         changed_files: list[str],
         integrated_issues: list[tuple[Issue, str]],
         promotion_commit_inventory: list[dict[str, Any]],
-        promote_path: Path,
+        review_path: Path,
         run_dir: Path,
         manifest: RunManifest,
+        promotion_outcome: str,
+        promotion_error: str | None,
     ) -> None:
         if self.config.skip_post_promotion_review:
             emit("Post-promotion review skipped by --skip-post-promotion-review.")
@@ -2249,6 +2366,7 @@ class RalphLoop:
             artifact_path=artifact_path,
         )
         try:
+            self._validate_post_promotion_review_tool()
             result = self._run_codex(
                 post_promotion_review_prompt(
                     repo=self.config.repo,
@@ -2260,8 +2378,10 @@ class RalphLoop:
                     integrated_issues=integrated_issues,
                     promotion_commit_inventory=promotion_commit_inventory,
                     run_dir=run_dir,
+                    promotion_outcome=promotion_outcome,
+                    promotion_error=promotion_error,
                 ),
-                promote_path,
+                review_path,
                 log_path,
                 phase="Post-promotion review",
                 manifest=manifest,
@@ -2280,20 +2400,19 @@ class RalphLoop:
             emit("Post-promotion review report:")
             emit("")
             emit(review_markdown)
-        except (CommandFailure, EnvironmentFailure) as error:
-            review_log_path = error.log_path or log_path
+        except (CommandFailure, EnvironmentFailure, OSError) as error:
+            if isinstance(error, (CommandFailure, EnvironmentFailure)):
+                review_log_path = error.log_path or log_path
+            else:
+                review_log_path = log_path
             manifest.record_post_promotion_review(
                 "failed",
                 log_path=review_log_path,
                 artifact_path=artifact_path,
                 error=str(error),
             )
-            post_review_error = PostPushFailure(
-                f"Post-promotion review failed: {error}",
-                log_path=review_log_path,
-            )
-            manifest.record_failure(post_review_error, log_path=review_log_path)
-            raise post_review_error from error
+            emit(f"Post-promotion review warning: {error}", err=True)
+            return
         manifest.record_post_promotion_review(
             "completed",
             log_path=log_path,
@@ -3807,11 +3926,13 @@ def post_promotion_review_prompt(
     source_branch: str,
     target_branch: str,
     source_revision: str,
-    promotion_sha: str,
+    promotion_sha: str | None,
     changed_files: list[str],
     integrated_issues: list[tuple[Issue, str]],
     promotion_commit_inventory: list[dict[str, Any]],
     run_dir: Path,
+    promotion_outcome: str,
+    promotion_error: str | None,
 ) -> str:
     changed_lines = "\n".join(f"- {path}" for path in changed_files)
     if not changed_lines:
@@ -3823,6 +3944,8 @@ def post_promotion_review_prompt(
     if not issue_lines:
         issue_lines = "- None"
     commit_lines = promotion_commit_inventory_prompt_lines(promotion_commit_inventory)
+    promotion_sha_text = promotion_sha or "not recorded"
+    promotion_error_text = promotion_error or "None"
     return textwrap.dedent(
         f"""
         Run a Post-promotion review for {repo}.
@@ -3838,13 +3961,16 @@ def post_promotion_review_prompt(
         and `gh issue status` only. Report findings in the command output only;
         Ralph will save your final Markdown report as `post-promotion-review.md`.
 
-        Review the completed Promotion for regressions, missed issue evidence,
-        surprising changed files, unverified Promotion commits, and obvious
+        Review the Promotion attempt for regressions, missed issue evidence,
+        surprising changed files, unverified Promotion commits, recovery or
+        consistency needs, and obvious
         follow-up risks. Distinguish verified Local integration commits from
         unverified Promotion commits; do not assume all promoted files belong
         only to the verified issues. Prioritize concrete findings with file
         paths, commands, commits, or manifest fields. If no issues are found,
         say that clearly and mention any residual risk.
+        When the Promotion outcome is failed or partial, put immediate recovery
+        and consistency guidance before follow-up issue recommendations.
 
         Your final response must be a Markdown report with these sections:
 
@@ -3853,6 +3979,8 @@ def post_promotion_review_prompt(
         ## Findings
 
         ## Learnings
+
+        ## Recovery and Consistency Guidance
 
         ## Follow-up GitHub Issue Drafts
 
@@ -3867,10 +3995,12 @@ def post_promotion_review_prompt(
 
         Promotion details:
 
+        - Promotion outcome: `{promotion_outcome}`
+        - Promotion error: `{promotion_error_text}`
         - Source branch: `{source_branch}`
         - Source revision: `{source_revision}`
         - Integration target: `{target_branch}`
-        - Promotion commit: `{promotion_sha}`
+        - Promotion commit: `{promotion_sha_text}`
         - Run logs: `{run_dir}`
         - Run manifest: `{run_dir / MANIFEST_NAME}`
 

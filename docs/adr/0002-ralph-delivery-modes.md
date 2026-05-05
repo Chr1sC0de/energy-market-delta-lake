@@ -52,9 +52,15 @@ including each promoted commit SHA and subject. Commits matching verified issue
 `integrated_commit` values are classified as verified **Local integration**
 commits, while other commits remain visible as unverified **Promotion** commits
 in the manifest and **Post-promotion review** prompt. Successful Promotions
-with changed files then run **Post-promotion review** by default; Ralph saves
-the read-only review report as `post-promotion-review.md`, prints it to the
-terminal, and records the artifact path in the **Promotion** manifest.
+with changed files run **Post-promotion review** by default after the `main`
+push, `dev` sync, and verified issue metadata updates. Failed or partial
+Promotion attempts with changed files also try **Post-promotion review** where a
+source or target Promotion worktree is available. The read-only review report
+puts recovery and consistency guidance before follow-up issue recommendations;
+review failures are warning-only and do not change the original Promotion
+success or failure status. Ralph saves successful review output as
+`post-promotion-review.md`, prints it to the terminal, and records the artifact
+path in the **Promotion** manifest.
 Operators must pass `--skip-post-promotion-review` for an explicit no-review
 Promotion, and no-change Promotions record the review state as
 `skipped_no_changes`.
