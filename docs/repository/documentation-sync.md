@@ -166,9 +166,12 @@ way:
   drain-mode **Local integration** using open issues from the existing
   `--issue-limit` scan, with Gitflow and trunk blocker satisfaction described in
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
-- #70 through #72: keep future **Ready issue refresh** implementation behavior
+- #70 and #71: keep future **Ready issue refresh** implementation behavior
   aligned with the #68 contract before extending scripts, labels, or issue
   metadata flows.
+- #72: Ralph implementation prompts include bounded recent **Ready issue
+  refresh** notes after the issue body while keeping the issue body as the
+  primary implementation contract.
 
 ## Search commands
 

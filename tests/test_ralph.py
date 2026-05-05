@@ -49,6 +49,11 @@ Build it.
 {blocked_by}
 """
 
+
+def ready_issue_refresh_body(text: str) -> str:
+    return f"{ralph.AI_READY_ISSUE_REFRESH_DISCLAIMER}\n\n{text}"
+
+
 POST_PROMOTION_REVIEW_MARKDOWN = """# Post-promotion Review
 
 ## Findings
@@ -424,6 +429,98 @@ class RalphHelperTests(unittest.TestCase):
         )
 
         self.assertEqual(issue.comments, 2)
+
+    def test_ready_issue_refresh_notes_filter_limit_and_order_by_created_at(self) -> None:
+        comments = [
+            {
+                "body": ready_issue_refresh_body("refresh 4"),
+                "createdAt": "2026-05-04T00:00:00Z",
+            },
+            {
+                "body": "Normal maintainer comment.",
+                "createdAt": "2026-05-08T00:00:00Z",
+            },
+            {
+                "body": f"{ralph.AI_TRIAGE_DISCLAIMER}\n\nTriage comment.",
+                "createdAt": "2026-05-09T00:00:00Z",
+            },
+            {
+                "body": ready_issue_refresh_body("refresh 2"),
+                "createdAt": "2026-05-02T00:00:00Z",
+            },
+            {
+                "body": ready_issue_refresh_body("refresh 7"),
+                "createdAt": "2026-05-07T00:00:00Z",
+            },
+            {
+                "body": ready_issue_refresh_body("refresh 1"),
+                "createdAt": "2026-05-01T00:00:00Z",
+            },
+            {
+                "body": ready_issue_refresh_body("refresh 5"),
+                "createdAt": "2026-05-05T00:00:00Z",
+            },
+            {
+                "body": ready_issue_refresh_body("refresh 3"),
+                "createdAt": "2026-05-03T00:00:00Z",
+            },
+            {
+                "body": ready_issue_refresh_body("refresh 6"),
+                "createdAt": "2026-05-06T00:00:00Z",
+            },
+        ]
+
+        notes = ralph.ready_issue_refresh_notes(comments)
+
+        self.assertEqual(
+            notes,
+            [
+                ready_issue_refresh_body("refresh 3"),
+                ready_issue_refresh_body("refresh 4"),
+                ready_issue_refresh_body("refresh 5"),
+                ready_issue_refresh_body("refresh 6"),
+                ready_issue_refresh_body("refresh 7"),
+            ],
+        )
+
+    def test_ready_issue_refresh_notes_preserve_input_order_without_timestamps(self) -> None:
+        comments = [
+            {"body": ready_issue_refresh_body(f"refresh {index}")} for index in range(1, 7)
+        ]
+
+        notes = ralph.ready_issue_refresh_notes(comments)
+
+        self.assertEqual(
+            notes,
+            [
+                ready_issue_refresh_body("refresh 2"),
+                ready_issue_refresh_body("refresh 3"),
+                ready_issue_refresh_body("refresh 4"),
+                ready_issue_refresh_body("refresh 5"),
+                ready_issue_refresh_body("refresh 6"),
+            ],
+        )
+
+    def test_implementation_prompt_places_refresh_notes_after_issue_body(self) -> None:
+        issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+        note = ready_issue_refresh_body("Blocker #68 was satisfied on main.")
+
+        prompt = ralph.implementation_prompt(issue, ready_issue_refresh_notes=[note])
+
+        body_index = prompt.index(IMPLEMENTATION_BODY.strip())
+        section_index = prompt.index("Recent Ready issue refresh notes:")
+        note_index = prompt.index(note)
+        self.assertLess(body_index, section_index)
+        self.assertLess(section_index, note_index)
+        self.assertIn("## What to build", prompt[:section_index])
+        self.assertIn("Treat the issue body above as the primary implementation contract.", prompt)
+
+    def test_implementation_prompt_omits_refresh_section_when_no_notes(self) -> None:
+        issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+
+        prompt = ralph.implementation_prompt(issue, ready_issue_refresh_notes=[])
+
+        self.assertNotIn("Recent Ready issue refresh notes:", prompt)
 
     def test_slugify_limits_and_normalizes_titles(self) -> None:
         self.assertEqual(
@@ -2078,6 +2175,100 @@ Build it.
             self.assertEqual(manifest["pushes"]["integration_target"]["status"], "pushed")
             self.assertEqual(manifest["github_metadata"]["status"], "closed")
             self.assertEqual(manifest["qa_results"][0]["status"], "passed")
+
+    def test_implementation_fetches_refresh_notes_before_codex_prompt(self) -> None:
+        issue_comments_command = (
+            "gh",
+            "issue",
+            "view",
+            "42",
+            "-R",
+            "example/repo",
+            "--comments",
+            "--json",
+            "comments",
+        )
+        included_note = ready_issue_refresh_body("Issue body blockers changed after #68.")
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            command_outputs={
+                issue_comments_command: [
+                    json.dumps(
+                        {
+                            "comments": [
+                                {
+                                    "body": "Maintainer discussion.",
+                                    "createdAt": "2026-05-01T00:00:00Z",
+                                },
+                                {
+                                    "body": f"{ralph.AI_TRIAGE_DISCLAIMER}\n\nTriage note.",
+                                    "createdAt": "2026-05-02T00:00:00Z",
+                                },
+                                {
+                                    "body": included_note,
+                                    "createdAt": "2026-05-03T00:00:00Z",
+                                },
+                            ]
+                        }
+                    )
+                ]
+            },
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(Path(tmp), runner)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+
+            with redirect_stdout(io.StringIO()):
+                loop._handle_implementation(issue)
+
+        commands = [call.args for call in runner.calls]
+        codex_call = next(call for call in runner.calls if call.args[:2] == ("codex", "exec"))
+        codex_index = runner.calls.index(codex_call)
+        self.assertLess(commands.index(issue_comments_command), codex_index)
+        self.assertIsNotNone(codex_call.input_text)
+        assert codex_call.input_text is not None
+        self.assertIn("Recent Ready issue refresh notes:", codex_call.input_text)
+        self.assertIn(included_note, codex_call.input_text)
+        self.assertNotIn("Maintainer discussion.", codex_call.input_text)
+        self.assertNotIn("Triage note.", codex_call.input_text)
+
+    def test_implementation_comment_fetch_failure_stops_before_codex(self) -> None:
+        issue_comments_command = (
+            "gh",
+            "issue",
+            "view",
+            "42",
+            "-R",
+            "example/repo",
+            "--comments",
+            "--json",
+            "comments",
+        )
+        runner = FakeRunner(
+            rev_parse_outputs=["base-sha\n"],
+            fail_commands={issue_comments_command: 1},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._handle_implementation(issue)
+
+            manifest = load_run_manifest(tmp_path)
+            comment_path = next(tmp_path.glob("logs/issue-42-*/issue-42-comment.md"))
+            comment = comment_path.read_text(encoding="utf-8")
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn(issue_comments_command, commands)
+        self.assertFalse(any(command[:2] == ("codex", "exec") for command in commands))
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["github_metadata"]["status"], "failure_commented")
+        self.assertIn("Command failed", manifest["failure"]["message"])
+        self.assertIn("Command failed", comment)
 
     def test_drain_selects_ready_issue_refresh_candidates_after_local_integration(
         self,

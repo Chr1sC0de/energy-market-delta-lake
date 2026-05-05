@@ -38,6 +38,11 @@ but existing `ready-for-agent` issues do not need that section to stay ready.
 Refreshed issues that remain `ready-for-agent` must still contain the three
 required sections above.
 
+Ralph implementation prompts treat the issue body as the primary contract. When
+recent Ready issue refresh comments exist, Ralph appends only the latest five
+comments with the Ready issue refresh audit prefix in a separate prompt section
+after the body; normal comments and triage comments are not included.
+
 Runtime labels such as `agent-running`, `agent-integrated`, `agent-merged`,
 `agent-failed`, and `agent-reviewing` block repeat implementation and automated
 triage reconsideration. In particular, `agent-reviewing` means **Exploratory

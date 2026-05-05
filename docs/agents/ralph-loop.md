@@ -391,6 +391,16 @@ and creates sibling worktrees under the repo worktree container. Codex is
 instructed not to commit, push, or edit GitHub issue state; Ralph owns those
 steps after QA passes.
 
+Before building the Codex implementation prompts for an issue, Ralph fetches
+issue comments for the issue being implemented. The prompt keeps the issue body
+as the primary contract, then appends a separate
+`Recent Ready issue refresh notes` section when matching context exists. That
+section includes only the latest five comments whose body starts with the Ready
+issue refresh audit prefix, preserving their chronological order. Normal
+maintainer comments and automated triage comments are excluded. If comment
+fetching fails, Ralph fails the issue before starting the Codex implementation
+subprocess instead of running with incomplete refresh context.
+
 After QA passes, Ralph commits the issue branch, fetches the **Integration
 target**, and rebases the issue branch if the target moved. A rebase triggers
 the selected QA commands again before **Local integration** continues.
