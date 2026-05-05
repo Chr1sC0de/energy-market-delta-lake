@@ -109,8 +109,9 @@ Local workflow notes:
   Pulumi-deployed stack.
 - The isolated AEMO ETL **End-to-end test** stack belongs to the
   `backend-services/dagster-user/aemo-etl` Subproject and is operated through
-  `backend-services/scripts/aemo-etl-e2e`; its run manifest records timing and
-  dataflow telemetry for Promotion review. Ralph **Promotion** runs pass an
+  `backend-services/scripts/aemo-etl-e2e`; its run manifest records timing,
+  dataflow telemetry, and cleanup warning or failure evidence for Promotion
+  review. Ralph **Promotion** runs pass an
   explicit `--seed-root` pointing at the primary repo cache so temporary
   Promotion source worktrees do not look for ignored seed data under the
   ephemeral worktree.

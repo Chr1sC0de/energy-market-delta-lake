@@ -558,16 +558,30 @@ class GateRunTelemetry:
             completed,
         )
 
-    def record_cleanup(self, phase: str, started: float, completed: float) -> None:
+    def record_cleanup(
+        self,
+        phase: str,
+        started: float,
+        completed: float,
+        *,
+        issues: Sequence[Mapping[str, object]] = (),
+    ) -> None:
         """Record one cleanup phase."""
         duration = elapsed_seconds(started, completed)
+        status = "completed"
+        if any(issue.get("severity") == "error" for issue in issues):
+            status = "incomplete"
+        elif len(issues) > 0:
+            status = "completed-with-warnings"
+        phase_payload: dict[str, object] = {
+            "phase": phase,
+            "duration_seconds": round_duration_seconds(duration),
+            "status": status,
+        }
+        if len(issues) > 0:
+            phase_payload["issues"] = [dict(issue) for issue in issues]
         self.cleanup_duration_seconds += duration
-        self.cleanup_phases.append(
-            {
-                "phase": phase,
-                "duration_seconds": round_duration_seconds(duration),
-            }
-        )
+        self.cleanup_phases.append(phase_payload)
 
     def complete(self) -> None:
         """Mark the total e2e gate run timing as complete."""
@@ -912,13 +926,20 @@ def run_stack(
         manifest["seed_run_manifest"] = str(seed_root / "seed-run-manifest.json")
         write_run_manifest(manifest_path, manifest, telemetry)
         if options.always_clean:
-            cleanup_stack_with_telemetry(
+            cleanup_issues = cleanup_stack_with_telemetry(
                 command_runner,
                 compose_command,
                 telemetry=telemetry,
                 phase="post-failure",
             )
-            manifest["cleanup"] = "completed-after-failure"
+            manifest["cleanup"] = cleanup_manifest_status(
+                base_status="completed-after-failure",
+                warning_status="completed-with-warnings-after-failure",
+                error_status="incomplete-after-failure",
+                issues=cleanup_issues,
+            )
+            if len(cleanup_issues) > 0:
+                manifest["cleanup_issues"] = cleanup_issues
         else:
             manifest["cleanup"] = "preserved-after-failure"
         telemetry.complete()
@@ -941,16 +962,32 @@ def run_stack(
         sys.stdout.write(f"run manifest: {run_dir / 'run-manifest.json'}\n")
         return
 
-    cleanup_stack_with_telemetry(
+    cleanup_issues = cleanup_stack_with_telemetry(
         command_runner,
         compose_command,
         telemetry=telemetry,
         phase="post-success",
     )
-    manifest["cleanup"] = "completed-after-success"
+    manifest["cleanup"] = cleanup_manifest_status(
+        base_status="completed-after-success",
+        warning_status="completed-with-warnings-after-success",
+        error_status="incomplete-after-success",
+        issues=cleanup_issues,
+    )
+    if len(cleanup_issues) > 0:
+        manifest["cleanup_issues"] = cleanup_issues
     telemetry.complete()
     write_run_manifest(manifest_path, manifest, telemetry)
-    sys.stdout.write(f"{STACK_NAME} completed the dataflow and was cleaned.\n")
+    if cleanup_has_errors(cleanup_issues):
+        sys.stdout.write(
+            f"{STACK_NAME} completed the dataflow with incomplete cleanup.\n"
+        )
+    elif len(cleanup_issues) > 0:
+        sys.stdout.write(
+            f"{STACK_NAME} completed the dataflow with cleanup warnings.\n"
+        )
+    else:
+        sys.stdout.write(f"{STACK_NAME} completed the dataflow and was cleaned.\n")
     sys.stdout.write(f"run manifest: {run_dir / 'run-manifest.json'}\n")
 
 
@@ -2686,15 +2723,28 @@ def collect_logs(
 def cleanup_stack(
     runner: CommandRunner,
     compose_command: Sequence[str],
-) -> None:
+) -> list[dict[str, object]]:
     """Remove e2e stack containers, worker containers, and named volumes."""
-    cleanup_dagster_run_worker_containers(runner)
-    runner.run(
-        [*compose_command, "down", "-v", "--remove-orphans"],
+    issues: list[dict[str, object]] = []
+    issues.extend(cleanup_dagster_run_worker_containers(runner))
+    compose_down_command = [*compose_command, "down", "-v", "--remove-orphans"]
+    compose_down_result = runner.run(
+        compose_down_command,
+        capture_output=True,
         check=False,
     )
-    cleanup_dagster_run_worker_containers(runner)
-    runner.run(["podman", "network", "rm", NETWORK_NAME], check=False)
+    echo_cleanup_output(compose_down_result)
+    record_cleanup_issue(issues, compose_down_command, compose_down_result)
+    issues.extend(cleanup_dagster_run_worker_containers(runner))
+    network_rm_command = ["podman", "network", "rm", NETWORK_NAME]
+    network_rm_result = runner.run(
+        network_rm_command,
+        capture_output=True,
+        check=False,
+    )
+    echo_cleanup_output(network_rm_result)
+    record_cleanup_issue(issues, network_rm_command, network_rm_result)
+    return issues
 
 
 def cleanup_stack_with_telemetry(
@@ -2703,39 +2753,113 @@ def cleanup_stack_with_telemetry(
     *,
     telemetry: GateRunTelemetry,
     phase: str,
-) -> None:
+) -> list[dict[str, object]]:
     """Remove e2e resources and record cleanup timing."""
     started = time.monotonic()
+    issues: list[dict[str, object]] = []
     try:
-        cleanup_stack(runner, compose_command)
+        issues = cleanup_stack(runner, compose_command)
+        return issues
     finally:
-        telemetry.record_cleanup(phase, started, time.monotonic())
+        telemetry.record_cleanup(
+            phase,
+            started,
+            time.monotonic(),
+            issues=issues,
+        )
 
 
-def cleanup_dagster_run_worker_containers(runner: CommandRunner) -> None:
+def cleanup_dagster_run_worker_containers(
+    runner: CommandRunner,
+) -> list[dict[str, object]]:
     """Remove Dagster run workers launched outside the compose project."""
+    issues: list[dict[str, object]] = []
+    ps_command = [
+        "podman",
+        "ps",
+        "-aq",
+        "--filter",
+        f"network={NETWORK_NAME}",
+        "--filter",
+        "label=dagster/run_id",
+    ]
     result = runner.run(
-        [
-            "podman",
-            "ps",
-            "-aq",
-            "--filter",
-            f"network={NETWORK_NAME}",
-            "--filter",
-            "label=dagster/run_id",
-        ],
+        ps_command,
         capture_output=True,
         check=False,
     )
     if result.returncode != 0:
-        return
+        record_cleanup_issue(issues, ps_command, result)
+        return issues
     container_ids = tuple(
         line.strip() for line in result.stdout.splitlines() if line.strip()
     )
     if len(container_ids) == 0:
-        return
-    runner.run(["podman", "rm", "-f", *container_ids], check=False)
+        return issues
+    rm_command = ["podman", "rm", "-f", *container_ids]
+    rm_result = runner.run(
+        rm_command,
+        capture_output=True,
+        check=False,
+    )
+    echo_cleanup_output(rm_result)
+    record_cleanup_issue(issues, rm_command, rm_result)
+    return issues
 
+
+def echo_cleanup_output(result: subprocess.CompletedProcess[str]) -> None:
+    """Preserve cleanup command output after capturing it for the manifest."""
+    if result.stdout:
+        sys.stdout.write(result.stdout)
+    if result.stderr:
+        sys.stderr.write(result.stderr)
+
+
+def record_cleanup_issue(
+    issues: list[dict[str, object]],
+    command: Sequence[str],
+    result: subprocess.CompletedProcess[str],
+) -> None:
+    """Append a cleanup warning or failure for manifest evidence."""
+    stdout = result.stdout.strip() if result.stdout else ""
+    stderr = result.stderr.strip() if result.stderr else ""
+    if result.returncode == 0 and len(stderr) == 0:
+        return
+    severity = "error" if result.returncode != 0 else "warning"
+    issue: dict[str, object] = {
+        "severity": severity,
+        "command": list(command),
+        "returncode": result.returncode,
+    }
+    if len(stdout) > 0:
+        issue["stdout"] = stdout
+    if len(stderr) > 0:
+        issue["stderr"] = stderr
+    issues.append(issue)
+    sys.stderr.write(
+        f"{STACK_NAME} cleanup {severity}: {' '.join(command)} "
+        f"returned {result.returncode}\n"
+    )
+
+
+def cleanup_has_errors(issues: Sequence[Mapping[str, object]]) -> bool:
+    """Return whether cleanup captured at least one failed command."""
+    return any(issue.get("severity") == "error" for issue in issues)
+
+
+def cleanup_manifest_status(
+    *,
+    base_status: str,
+    warning_status: str,
+    error_status: str,
+    issues: Sequence[Mapping[str, object]],
+) -> str:
+    """Return the manifest cleanup status for captured cleanup issues."""
+    if cleanup_has_errors(issues):
+        return error_status
+    if len(issues) > 0:
+        return warning_status
+    return base_status
 
 def base_manifest(
     *,

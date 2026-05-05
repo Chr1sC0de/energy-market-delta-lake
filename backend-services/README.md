@@ -319,21 +319,23 @@ containers and attaches them to the e2e network. The default timeout is 90
 minutes and the default Dagster `max_concurrent_runs` is `6`; override them with
 `--timeout-seconds` and `--max-concurrent-runs`.
 
-Successful runs clean e2e containers, Dagster run-worker containers, named
-volumes, and the e2e network by default after the full dataflow completes.
-Failed runs, including cached seed coverage shortfalls, preserve containers,
-volumes, service logs, the run manifest, and the seed-run manifest for
-inspection. Use `--reuse` to keep and reuse the e2e stack after a successful
-run, or `--always-clean` to clean containers, volumes, and run-worker containers
-even after failure.
+Successful runs attempt to clean e2e containers, Dagster run-worker
+containers, named volumes, and the e2e network by default after the full
+dataflow completes. Cleanup command warnings or failures do not change a
+successful dataflow result, but they do change the manifest cleanup status and
+are captured as `cleanup_issues`. Failed runs, including cached seed coverage
+shortfalls, preserve containers, volumes, service logs, the run manifest, and
+the seed-run manifest for inspection. Use `--reuse` to keep and reuse the e2e
+stack after a successful run, or `--always-clean` to clean containers, volumes,
+and run-worker containers even after failure.
 
 Each `run-manifest.json` includes structured telemetry for Promotion review:
 total gate duration, stack startup duration, Dagster dataflow monitor duration,
-cumulative cleanup duration, cleanup phase timings, peak active and queued
-Dagster run counts, final run status counts, final target progress, first and
-last observed target materialization timestamps, and the final failed
-asset-check count. Failed runs include telemetry for every monitor sample
-captured before the failure.
+cumulative cleanup duration, cleanup phase status and timings, cleanup issue
+evidence, peak active and queued Dagster run counts, final run status counts,
+final target progress, first and last observed target materialization
+timestamps, and the final failed asset-check count. Failed runs include
+telemetry for every monitor sample captured before the failure.
 
 ______________________________________________________________________
 

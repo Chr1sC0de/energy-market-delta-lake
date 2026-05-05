@@ -660,6 +660,7 @@ container-backed **Integration test** dependencies.
   - `docs/repository/documentation-sync.md`
   - `.agents/skills/ralph-curate/SKILL.md`
   - `.agents/skills/ralph-loop/SKILL.md`
+  - `.agents/skills/ralph-issue-refresh/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`
 - `sync.scope`: `operations`
 - `sync.qa`:

@@ -48,6 +48,7 @@ Use this page as the agent documentation map. The imperative policy lives in
   - `CONTEXT.md`
   - `.agents/skills/ralph-curate/SKILL.md`
   - `.agents/skills/ralph-loop/SKILL.md`
+  - `.agents/skills/ralph-issue-refresh/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`
   - `docs/agents/ralph-loop.md`
   - `docs/agents/issue-tracker.md`
