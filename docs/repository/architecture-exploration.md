@@ -7,6 +7,7 @@ findings into durable repo docs before deleting this file.
 ## Table of contents
 
 - [#82: Explore deeper gas-model asset shell Module](#82-explore-deeper-gas-model-asset-shell-module)
+- [Issue #83: Explore deeper NEMWeb discovery Module](#issue-83-explore-deeper-nemweb-discovery-module)
 
 ## #82: Explore deeper gas-model asset shell Module
 
@@ -140,12 +141,231 @@ test plus `test_defs_sensors.py`, but validation should finish with
 slice extracts pure required-field or metadata helpers, add focused
 **Unit tests**, then run the Subproject **Commit check** with `make run-prek`.
 
+## Issue #83: Explore deeper NEMWeb discovery Module
+
+Issue #83 asks which current NEMWeb public-file discovery seams should remain
+external Adapters and which should become internal Implementation detail. This
+section records docs-only research. It does not change runtime behavior.
+Issue `#87` must consume any accepted findings into durable repo docs before
+deleting this temporary file.
+
+### Current Flow
+
+The runtime entrypoint is
+`backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`.
+That definition module merges two scheduled discovery/listing assets:
+`bronze_nemweb_public_files_vicgas` for `REPORTS/CURRENT/VicGas` and
+`bronze_nemweb_public_files_gbb` for `REPORTS/CURRENT/GBB`. Both pass
+`cron_schedule="*/30 * * * *"`, `n_executors=10`, `group_name="integration"`,
+the configured default schedule status, and ECS CPU and memory tags into
+`nemweb_public_files_definitions_factory`.
+
+The definition module owns the domain-specific filters. `vicgas_file_filter`
+excludes `CurrentDay.zip` and `PublicRptsNN.zip` bundles so the ad hoc
+`download_vicgas_public_report_zip_files_job` remains the bootstrap/backfill
+path for public report bundles. `gbb_folder_filter` excludes
+`[To Parent Directory]` and `DUPLICATE`, while otherwise using the default file
+filter.
+
+`nemweb_public_files_definitions_factory` builds the Dagster shell and concrete
+runtime Adapters. It creates the bronze key prefix, AEMO Delta table path,
+asset metadata, retrying HTTP getter, graph asset, duplicate-row check,
+asset job, and schedule. It also wires the concrete discovery pieces:
+
+- `HTTPNEMWebLinkFetcher` for recursive NEMWeb folder discovery.
+- `FilteredDynamicNEMWebLinksFetcher` with `InMemoryCachedLinkFilter` for
+  skipping links already present in the discovery/listing Delta table.
+- `S3NemwebLinkProcessor` with `ParquetProcessor` for download, best-effort
+  CSV-to-Parquet conversion, and landing upload.
+- `S3ProcessedLinkCombiner` for producing the typed metadata `LazyFrame`.
+
+`nemweb_public_files_asset_factory` turns those pieces into one Dagster
+`graph_asset`. The graph runs in this order:
+
+1. `build_nemweb_link_fetcher_op` calls `fetcher.fetch(context, href)`.
+   `HTTPNEMWebLinkFetcher` walks folder pages breadth-first from
+   `https://www.nemweb.com.au/{relative_href}`, parses `<a>` tags with
+   BeautifulSoup, applies the folder and file filters, derives upload datetime
+   from the preceding NEMWeb text, and returns `Link` records.
+2. `build_dynamic_nemweb_links_fetcher_op` filters and batches discovered
+   links. `InMemoryCachedLinkFilter` scans the existing output Delta table and
+   rejects links with the same `source_absolute_href` and
+   `source_upload_datetime`; missing tables accept every link. The dynamic
+   fetcher then emits Dagster `DynamicOutput` batches for parallel mapping.
+3. `build_nemweb_link_processor_op` maps each batch. `ParquetProcessor`
+   downloads each source URL, lowercases the source filename, adds a timestamp
+   suffix, converts CSV responses to Parquet when parsing succeeds, and falls
+   back to the original bytes and extension when conversion fails.
+   `S3NemwebLinkProcessor` uploads the resulting buffer to
+   `LANDING_BUCKET/{bronze/<domain>}` and returns `ProcessedLink` records with
+   source, target S3, and ingestion timestamps.
+4. `build_process_link_combiner_op` collects mapped batch outputs.
+   `S3ProcessedLinkCombiner` drops `None` batches, flattens processed records,
+   casts timestamps to UTC, and creates the `surrogate_key` from
+   `source_absolute_href`, `source_upload_datetime`, `target_s3_name`, and
+   `target_ingested_datetime`.
+5. The graph asset returns that `LazyFrame` through
+   `aemo_deltalake_append_io_manager`, appending the discovery/listing table
+   under the AEMO bucket. The factory adds one duplicate-row asset check over
+   `surrogate_key`.
+
+The resulting discovery/listing assets are distinct from downstream ingestion.
+They record observed NEMWeb files and write landing objects. The unzipper
+assets expand zip payloads from landing storage, and source-table bronze assets
+consume selected landing objects into bounded current-state Delta tables.
+ADR 0003 deliberately scopes current-state semantics to source-table bronze
+assets, not to `bronze_nemweb_public_files_*` discovery/listing assets.
+
+### Seam Assessment
+
+The current package has useful external variation, but exposes more seams than
+the callers need.
+
+Keep these as explicit external Adapters or caller-visible configuration:
+
+- Domain identity: `domain`, `table_name`, `nemweb_relative_href`, and the
+  derived bronze key prefix and table path.
+- Domain filters: `folder_filter` and `file_filter` are real variation between
+  GBB and VICGAS, and tests are clearer when those rules stay visible.
+- Schedule and operator knobs: cron schedule, default schedule status,
+  `group_name`, run tags, `n_executors`, and retry timing belong at the Module
+  Interface because operators and Dagster deployment policy can vary them.
+- Dagster storage seams: the S3 resource, landing bucket, AEMO bucket URI, and
+  Delta IO manager are real external integration points. The Interface can keep
+  defaults, but should not hide the fact that discovery writes landing objects
+  and appends a discovery/listing Delta table.
+
+Move these toward internal Implementation detail:
+
+- The four public op-builder seams:
+  `build_nemweb_link_fetcher_op`,
+  `build_dynamic_nemweb_links_fetcher_op`,
+  `build_nemweb_link_processor_op`, and
+  `build_process_link_combiner_op`. They mostly wrap one injected object's
+  method and force tests to inspect decorated closures instead of testing the
+  full discovery Module Interface.
+- Link DTOs: `Link` and `ProcessedLink` are useful data contracts because they
+  name the facts crossing discovery, processing, and combining. They should stay
+  inside the Module rather than appear in caller-owned configuration.
+- One-Adapter ABCs:
+  `NEMWebLinkFetcher`, `DynamicNEMWebLinksFetcher`, `NEMWebLinkProcessor`,
+  `BufferProcessor`, and `ProcessedLinkedCombiner`. Each currently has one
+  production Adapter in this package. The deletion test suggests that deleting
+  the public seam would not scatter domain complexity across callers; the
+  existing behavior would stay concentrated inside the NEMWeb discovery Module.
+- `InMemoryCachedLinkFilter` as public configuration. Skipping already-seen
+  links is core discovery behavior because the output table is the discovery
+  memory. The cache TTL may stay configurable, but callers should not need to
+  assemble the filter Adapter.
+- `ParquetProcessor` as public configuration. Best-effort CSV conversion,
+  original-byte fallback, target filename stamping, and download retries are
+  part of the landing policy for this Module, not caller-specific orchestration.
+- `S3ProcessedLinkCombiner` as a public Adapter. Combining processed records
+  into the fixed output schema and surrogate key is the discovery table write
+  contract, so tests should exercise it through the Module Interface.
+
+The shallowest seams reduce Locality in tests. `test_factories_nemweb.py`
+currently tests many pass-through op builders with mocks, then reaches into
+Dagster closure cells to confirm factory wiring. Those tests prove the seams are
+wired, but they do not make the fetch-filter-process-combine behavior easier to
+understand as one Module.
+
+### Proposed Module Interface
+
+Keep the existing top-level factory callable as the public compatibility layer,
+but make it delegate to one spec-shaped Module Interface:
+
+```python
+NEMWebPublicFilesSpec(
+    domain: str,
+    table_name: str,
+    nemweb_relative_href: str,
+    cron_schedule: str,
+    folder_filter: TagFilter = default_folder_filter,
+    file_filter: TagFilter = default_file_filter,
+    n_executors: int = 1,
+    cache_ttl_seconds: int = 900,
+    process_retry: int = 3,
+    initial: int = 10,
+    exp_base: int = 3,
+    max_retry_time: int = 100,
+    group_name: str = "gas_raw",
+    tags: Mapping[str, str] | None = None,
+    default_status: DefaultScheduleStatus = DefaultScheduleStatus.STOPPED,
+    landing_bucket: str = LANDING_BUCKET,
+    aemo_bucket: str = AEMO_BUCKET,
+    io_manager_key: str = "aemo_deltalake_append_io_manager",
+)
+
+build_nemweb_public_files_definitions(spec: NEMWebPublicFilesSpec) -> Definitions
+```
+
+That Interface keeps real variation explicit: domain, path, filters,
+schedule/status, concurrency, retry policy, resource tags, bucket defaults, and
+IO-manager choice. It hides incidental orchestration: op-builder objects,
+concrete fetcher/processor/combiner classes, the cached link filter assembly,
+fixed output schema, surrogate-key sources, duplicate-row check wiring, asset
+job naming, and schedule assembly.
+
+Internally, the Module can still use private seams for focused tests. For
+example, pure HTML link extraction, cached-link filtering, filename generation,
+CSV conversion fallback, S3 upload record creation, and processed-link
+combining can remain small Implementation helpers. They do not need to be
+caller-owned Adapters unless a second production Adapter appears.
+
+### Recommendation
+
+The smallest implementation slice is to introduce the spec and
+`build_nemweb_public_files_definitions`, then keep
+`nemweb_public_files_definitions_factory` as a thin compatibility wrapper. Move
+the one-Adapter strategy classes and op builders behind the new Module
+Interface without changing `defs/raw/nemweb_public_files.py`, asset keys, graph
+node names, output metadata, duplicate-row check, job names, schedules, or
+landing paths.
+
+The proof slice should migrate only the NEMWeb discovery factory. Do not fold in
+the ad hoc VicGas public report job, unzipper assets, source-table bronze
+assets, or ADR 0003 current-state ingestion behavior. Those are separate
+ingestion roles.
+
+Use the AEMO ETL **Component test** lane for the implementation slice because
+the change composes Dagster `Definitions`, graph assets, dynamic mapping,
+schedules, IO-manager metadata, and asset checks in process. Add focused
+**Unit tests** only for pure helpers extracted inside the Module. Useful
+narrowed debugging targets are:
+
+```bash
+uv run pytest tests/component/test_factories_nemweb.py \
+  tests/component/test_defs_raw_modules.py \
+  tests/component/test_download_vicgas_public_report_zip_files.py
+```
+
+Before treating the slice as validated, run `make component-test` from
+`backend-services/dagster-user/aemo-etl`. Because this is an isolated AEMO ETL
+Subproject change, finish with the Subproject **Commit check**:
+`make run-prek`. Do not run **Integration tests** by default unless the slice
+changes LocalStack, S3-compatible behavior, or the landing/Delta write
+contract.
+
 ## Sync metadata
 
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `CONTEXT.md`
   - `docs/repository/documentation-sync.md`
+  - `docs/adr/0003-bounded-current-state-bronze-source-tables.md`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/jobs/download_vicgas_public_report_zip_files.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/nemweb_public_files/assets.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/nemweb_public_files/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/nemweb_public_files/models.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/nemweb_public_files/ops/dynamic_nemweb_links_fetcher.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/nemweb_public_files/ops/nemweb_link_fetcher.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/nemweb_public_files/ops/nemweb_link_processor.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/nemweb_public_files/ops/processed_link_combiner.py`
+  - `backend-services/dagster-user/aemo-etl/tests/component/test_factories_nemweb.py`
+  - `backend-services/dagster-user/aemo-etl/tests/component/test_defs_raw_modules.py`
+  - `backend-services/dagster-user/aemo-etl/tests/component/test_download_vicgas_public_report_zip_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_dim_location.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_scada_pressure.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_dim_date.py`
