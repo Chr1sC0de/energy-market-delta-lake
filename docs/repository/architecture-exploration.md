@@ -9,6 +9,7 @@ findings into durable repo docs before deleting this file.
 - [#82: Explore deeper gas-model asset shell Module](#82-explore-deeper-gas-model-asset-shell-module)
 - [Issue #83: Explore deeper NEMWeb discovery Module](#issue-83-explore-deeper-nemweb-discovery-module)
 - [Issue #84: Explore archive-source planning consolidation](#issue-84-explore-archive-source-planning-consolidation)
+- [Issue #85: Explore Ralph workflow and state separation](#issue-85-explore-ralph-workflow-and-state-separation)
 
 ## #82: Explore deeper gas-model asset shell Module
 
@@ -554,6 +555,231 @@ graph behavior. Do not run **Integration tests** by default unless the slice
 changes LocalStack service wiring, S3-compatible behavior, cached seed uploads,
 or the landing/Delta write contract.
 
+## Issue #85: Explore Ralph workflow and state separation
+
+Issue #85 asks how Ralph's workflow and state handling can be separated without
+changing runtime behavior. This section records docs-only research. It does not
+change runtime behavior, git operations, GitHub issue metadata, or Ralph
+labels. Issue `#87` must consume any accepted findings into durable repo docs
+before deleting this temporary file.
+
+### Current Responsibility Map
+
+- Queue selection and issue eligibility currently mix pure policy and GitHub
+  reads. `RalphLoop.run`, `_next_ready_issue`, `_next_triage_issue`,
+  `_issue_pool`, and `_has_open_blockers` decide whether Ralph implements,
+  triages, or stops. The pure predicates `is_ready_candidate`,
+  `is_basic_triage_candidate`, `parse_blockers`, and
+  `missing_required_sections` hold the reusable workflow rules. Tests cover
+  label blocking, triage candidacy, drain budgets, and dirty-root preflight in
+  `tests/test_ralph.py`; `docs/agents/ralph-loop.md` documents the same drain
+  flow and implementation stop labels.
+- **Delivery mode** and **Integration target** resolution are already mostly
+  pure. Constants such as `GITFLOW_MODE`, `TRUNK_MODE`,
+  `DEFAULT_GITFLOW_BRANCH`, `DEFAULT_TRUNK_BRANCH`, and the delivery labels
+  define the vocabulary. `resolve_delivery_plan`,
+  `delivery_label_for_mode`, and `default_target_branch_for_mode` decide the
+  mode, target, labels to add, and conflicting labels to remove. `build_config`
+  adds CLI defaults and the deprecated `--base` compatibility path. Tests
+  assert Gitflow defaults, conflict normalization to Gitflow, and trunk
+  compatibility. `docs/adr/0002-ralph-delivery-modes.md` records why Gitflow
+  is the default and why conflicting delivery labels normalize to
+  `delivery-gitflow`.
+- Run state is centralized in `RunManifest`, but the manifest writes are
+  called directly from workflow steps. Implementation manifests record issue,
+  **Delivery mode**, **Integration target**, branch paths, changed files, QA,
+  sandboxed issue access, **Local integration** commit, pushes, GitHub
+  metadata, events, and failure details. **Promotion** manifests additionally
+  record source branch, source tree, promoted issues, Promotion commit,
+  source-branch sync, and **Post-promotion review**. Inspection and recovery
+  helpers (`load_run_manifest`, `inspect_run`, `recommended_run_action`, and
+  `RalphRunRecovery`) read the same JSON contract. Tests assert manifest
+  content for successful implementation, failed QA, Promotion, inspection, and
+  recovery.
+- QA selection is pure policy plus command execution. `select_qa_commands`
+  maps changed files to the AEMO ETL **Test lane** commands, root
+  **Commit check**, and Ralph unit tests. `select_promotion_gate_commands`
+  adds the AEMO ETL **End-to-end test** gate for non-doc runtime AEMO ETL
+  changes during **Promotion**. `_run_qa_command_sequence` owns execution,
+  logs, run-scoped QA runtime environment, failure classification, and manifest
+  mutation. Tests cover runtime AEMO ETL changes, docs-only AEMO ETL changes,
+  mixed changes, root docs plus Ralph script changes, Promotion gates, and
+  manifest-recorded QA runtime variables. `docs/agents/ralph-loop.md` mirrors
+  this policy in the QA policy section.
+- Codex implementation and sandbox setup are workflow-adjacent side effects.
+  `_implement_with_retry` decides the two-attempt behavior and when to rerun QA
+  after a retry. `_run_codex`, `prepare_sandbox_issue_access`,
+  `write_sandbox_gh_wrapper`, and `codex_env_for_sandbox_issue_access` set up
+  **Sandboxed issue access** and writable QA runtime paths before command
+  execution. Tests assert that the sandbox receives `GH_TOKEN`, `GH_REPO`, and
+  runtime paths without recording the token in the manifest.
+  `docs/adr/0004-ralph-sandboxed-issue-access.md` records the boundary:
+  sandboxed Codex may update GitHub issue metadata, but **Local integration**,
+  Git push, and **Promotion** stay in Ralph's outer loop.
+- Git operations are concentrated in `GitClient`, but workflow ordering still
+  lives in `_handle_implementation`, `_ensure_integration_target`,
+  `_sync_default_gitflow_target_with_trunk`, `_promote`, and
+  `_sync_source_branch_after_promotion`. `GitClient` performs fetch, branch
+  creation, worktree creation, diff detection, commit, rebase, squash merge,
+  no-ff merge, push, ancestor checks, and cleanup. Tests assert trunk squash
+  merge and push, Gitflow `dev` creation, Gitflow `main` to `dev` sync before
+  issue branch creation, target-drift rebase plus QA rerun, Promotion merge,
+  and `dev` fast-forward after Promotion. `docs/adr/0001-ralph-local-integration.md`
+  records why Ralph uses **Local integration** instead of GitHub PRs.
+- GitHub issue metadata is concentrated in `GitHubClient`, but metadata policy
+  is spread through `_handle_implementation`, `_mark_issue_failed`,
+  `_close_promoted_issues`, `RalphRunRecovery`, `build_completion_comment`,
+  and `build_promotion_comment`. The current semantics are: claim by adding
+  `agent-running`, add or normalize the delivery label, remove stale terminal
+  labels, remove `ready-for-agent`, comment completion evidence after a
+  successful push, mark trunk work `agent-merged` and close it, mark Gitflow
+  work `agent-integrated` and leave it open, mark failures `agent-failed`, and
+  close only verified `agent-integrated` issues during **Promotion**. Tests
+  cover completion comments, failure comments, trunk closure, Gitflow
+  non-closure, Promotion comments, recovery metadata, and post-push metadata
+  failure.
+- Recovery and fail-stop behavior are state-driven but adapter-backed.
+  `inspect_run` is read-only. `RalphRunRecovery.recover` fetches the expected
+  **Integration target** and refuses metadata recovery unless the recorded
+  **Local integration** commit is reachable from `origin/<target>`. After a
+  post-push metadata failure, Ralph raises `PostPushFailure`, records the
+  failure in the manifest, and does not clean up successful worktrees. Tests
+  assert that recovery refuses unreachable commits, reconciles trunk metadata
+  with closure, reconciles Gitflow metadata without closure, and stops after
+  post-push metadata failure.
+- **Promotion** is currently a method-level workflow inside `RalphLoop`.
+  `_promote` fetches source and target, records the source revision, computes
+  changed files, creates a source worktree, runs the aggregate **Push check**
+  and any Promotion gate from that exact source revision, verifies
+  `agent-integrated` issues by parsing recorded Gitflow integration commits,
+  creates the target Promotion worktree, merges, pushes `main`, fast-forwards
+  `dev`, updates issue metadata, and then runs **Post-promotion review** when
+  enabled and changed files exist. Tests assert ordering so failed **Push check**
+  or AEMO ETL **End-to-end test** gate cannot reach merge, push, branch sync,
+  issue metadata, or closure.
+
+### Proposed Module Structure
+
+Keep `scripts/ralph.py` as the CLI entrypoint and controller, but move policy
+and state into Modules that can be tested without git or GitHub:
+
+```text
+scripts/ralph.py
+  CLI parsing, command wiring, and high-level controller.
+
+scripts/ralph_workflow.py
+  Pure workflow policy: label sets, Issue snapshot, issue eligibility,
+  required-section validation, blocker parsing, DeliveryPlan resolution,
+  Integration target defaults, branch/worktree naming, QA command selection,
+  recovery action recommendation, and comment body builders.
+
+scripts/ralph_state.py
+  RunManifest and manifest readers/writers. This Module owns the JSON schema,
+  state transitions, event names, status values, QA result serialization,
+  push metadata, GitHub metadata status, and recovery preconditions that can be
+  checked without calling git or gh.
+
+scripts/ralph_adapters.py
+  Side-effect Adapters: CommandRunner, GitAdapter, GitHubIssueAdapter, and
+  CodexAdapter or sandbox preparation helpers. These classes translate method
+  calls into shell commands, file writes, gh calls, and command logs. They do
+  not choose **Delivery mode**, decide issue terminal state, or mutate
+  manifests except through explicit controller calls.
+```
+
+The controller can then read as: compute a workflow decision, record the state
+transition, call the relevant Adapter, record the Adapter result, and continue.
+That shape keeps the behavior observable in the same `ralph-run.json` files
+while making decision code testable without fake git or fake gh command
+fixtures.
+
+The useful boundaries are:
+
+- Workflow policy owns "what should happen next": issue eligibility, **Delivery
+  mode**, **Integration target**, selected QA commands, failure classifications,
+  expected metadata transition, and recovery recommendation.
+- Run state owns "what has happened": manifest schema, status/stage/events,
+  changed files, QA results, sandbox and runtime environment evidence, commits,
+  pushes, GitHub metadata state, and failure details.
+- Git Adapter owns "how refs are changed": fetch, branch creation, worktree
+  creation, commit, rebase, squash merge, no-ff merge, push, ancestor checks,
+  worktree removal, and branch deletion.
+- GitHub Issue Adapter owns "how issue metadata is changed": list/view issue,
+  issue state, comments, label edits, closure, reopen, auth status, and label
+  bootstrap.
+- Codex/command Adapter owns "how commands run": command logs, heartbeat,
+  stdin prompt handling, sandbox wrapper creation, environment injection, and
+  environment-failure detection.
+
+### Semantics To Preserve
+
+- **Local integration** must remain after implementation QA and before issue
+  completion metadata. It must still fetch the current **Integration target**,
+  rebase and rerun selected QA if the target moved, create a detached
+  integration worktree from the target, squash-merge the issue branch, create
+  one integration commit, and push that commit to the target. Ralph must still
+  avoid opening a GitHub PR.
+- **Delivery mode** semantics must stay identical. Missing delivery labels use
+  the CLI default, default CLI behavior is Gitflow, Gitflow defaults to `dev`,
+  Trunk defaults to `main`, `--target-branch` overrides the target, and
+  conflicting delivery labels normalize to `delivery-gitflow`. Gitflow must
+  still create `dev` from `main` when missing and keep default `dev` current
+  with `main` before issue work begins.
+- GitHub issue metadata must remain ordered behind git pushes. Trunk completion
+  still comments evidence, marks `agent-merged`, and closes the issue. Gitflow
+  completion still comments evidence, marks `agent-integrated`, and leaves the
+  issue open for **Promotion**. Failure still records `agent-failed` with run
+  evidence. Post-push metadata failures must still stop loudly and keep enough
+  state for recovery.
+- **Promotion** must still run the aggregate **Push check** from an isolated
+  source worktree at the fetched source revision before creating the target
+  Promotion worktree. The AEMO ETL **End-to-end test** gate must still run for
+  non-doc runtime AEMO ETL changes before any Promotion merge, push,
+  source-branch sync, GitHub metadata update, or issue closure. **Promotion**
+  must close only `agent-integrated` issues whose recorded Gitflow integration
+  commit is verified in the promoted range.
+- Recovery must remain manifest-gated. `--inspect-run` stays read-only, and
+  `--recover-run` must refuse to mutate GitHub issue metadata until the
+  recorded **Local integration** commit is reachable from the expected
+  **Integration target**.
+- **Sandboxed issue access** must remain limited to GitHub issue metadata for
+  spawned Codex subprocesses. Git fetch, **Local integration**, pushes, and
+  **Promotion** stay outside the sandbox.
+
+### Smallest Implementation Slice
+
+Start with a no-behavior-change extraction of pure workflow and state objects,
+not a full controller rewrite:
+
+1. Create `scripts/ralph_workflow.py` and move label constants, issue
+   eligibility helpers, blocker parsing, required-section validation,
+   `DeliveryPlan`, delivery resolution, target defaults, QA command selection,
+   recovery action recommendation, and completion/promotion comment builders
+   into it.
+2. Create `scripts/ralph_state.py` and move `RunManifest`, manifest loading,
+   manifest summary helpers, and recovery precondition readers into it.
+3. Leave `GitClient`, `GitHubClient`, `CommandRunner`, Codex sandbox setup,
+   `RalphLoop`, and `RalphRunRecovery` in `scripts/ralph.py` for the first
+   slice, importing the extracted policy/state code. This keeps the git and
+   GitHub Adapter behavior stable while making the workflow/state boundary
+   explicit.
+4. Move or add focused unit tests for the extracted Modules, but keep the
+   existing end-to-end fake-runner tests in `tests/test_ralph.py` as regression
+   coverage for current **Local integration**, **Promotion**, recovery, and
+   issue metadata semantics.
+
+That slice should run Ralph's script-level **Test lane** plus the root
+**Commit check** because it changes `scripts/`, `tests/`, and maintained docs:
+
+```bash
+python3 -m unittest discover -s tests
+prek run -a
+```
+
+No AEMO ETL **Unit test**, **Component test**, **Integration test**, or
+**End-to-end test** lane is needed unless a later slice changes the AEMO ETL
+**Subproject** or the Promotion gate command surface.
+
 ## Sync metadata
 
 - `sync.owner`: `docs`
@@ -599,6 +825,12 @@ or the landing/Delta write contract.
   - `backend-services/dagster-user/aemo-etl/tests/unit/test_maintenance_archive_replay.py`
   - `backend-services/dagster-user/aemo-etl/tests/unit/test_maintenance_e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/tests/unit/test_utils.py`
+  - `docs/agents/ralph-loop.md`
+  - `docs/adr/0001-ralph-local-integration.md`
+  - `docs/adr/0002-ralph-delivery-modes.md`
+  - `docs/adr/0004-ralph-sandboxed-issue-access.md`
+  - `scripts/ralph.py`
+  - `tests/test_ralph.py`
 - `sync.scope`: `temporary architecture exploration`
 - `sync.qa`:
   - `git diff --name-only`
