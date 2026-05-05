@@ -31,6 +31,11 @@ Use the repo-local `ralph-curate` skill to review open GitHub Issues against the
 current branch, identify stale or satisfied work, and propose queue updates
 before applying issue metadata changes.
 
+Use the repo-local `ralph-issue-refresh` skill for **Ready issue refresh** after
+successful **Local integration** and before the next `ready-for-agent` issue
+claim. Refresh may update issue context, labels, evidence comments, or completed
+closure according to its audit contract.
+
 ### Triage labels
 
 Use the default triage label vocabulary plus Ralph runtime labels. See

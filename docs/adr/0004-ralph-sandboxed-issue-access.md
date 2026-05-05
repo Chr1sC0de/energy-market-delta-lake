@@ -25,6 +25,9 @@ Operators may refresh local auth with `gh auth login -h github.com
 --git-protocol ssh` or export `GH_TOKEN`; Ralph still injects only `GH_TOKEN`
 into sandboxed Codex command environments. Git fetch and push continue to use
 the repository remote, usually SSH, and remain part of Ralph's outer loop.
+**Ready issue refresh** may receive phase-limited write commands for comments,
+body updates, label transitions, and completed closures after **Local
+integration** and before the next ready issue claim.
 **Post-promotion review** output stays read-only: the review agent drafts
 follow-up GitHub Issues in `post-promotion-review.md`, and Ralph does not grant
 it issue mutation commands.

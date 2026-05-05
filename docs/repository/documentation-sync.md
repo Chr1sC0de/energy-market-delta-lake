@@ -158,9 +158,14 @@ way:
   integration**, **Promotion**, **Sandboxed issue access**, writable QA runtime
   paths, and **Post-promotion review** remains owned by
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
-- #68 through #72: [docs/agents/ralph-loop.md](../agents/ralph-loop.md)
-  reserves space for future **Ready issue refresh** documentation without
-  defining the concept before those implementation issues land.
+- #68: [docs/agents/ralph-loop.md](../agents/ralph-loop.md) defines the
+  **Ready issue refresh** contract. Follow-up implementation issues can wire the
+  pass into Ralph after the shared language, audit prefix, optional
+  `## Current context`, stale issue handling, and completed closure rules are
+  stable.
+- #69 through #72: keep future **Ready issue refresh** implementation behavior
+  aligned with the #68 contract before extending scripts, labels, or issue
+  metadata flows.
 
 ## Search commands
 

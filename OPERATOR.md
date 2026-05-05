@@ -6,7 +6,7 @@ GitHub Issues, draining Ralph, reviewing `dev`, and running **Promotion**.
 Use repo canonical terms from [CONTEXT.md](CONTEXT.md), especially
 **Subproject**, **Test lane**, **Fast check**, **Commit check**, **Push check**,
 **Local integration**, **Delivery mode**, **Integration target**,
-**Sandboxed issue access**, and **Promotion**.
+**Sandboxed issue access**, **Ready issue refresh**, and **Promotion**.
 
 ## Canonical Path
 
@@ -38,7 +38,9 @@ tests, tooling, or script change that fits **Trunk delivery**.
 
 Use `$ralph-loop drain` to let Ralph implement ready issues. Ralph owns
 worktrees, deterministic QA, **Local integration**, **Integration target**
-pushes, and GitHub issue metadata after validation.
+pushes, and GitHub issue metadata after validation. After a successful
+**Local integration**, **Ready issue refresh** reconciles the open issue queue
+before Ralph claims the next `ready-for-agent` issue.
 
 ## Before Drain
 

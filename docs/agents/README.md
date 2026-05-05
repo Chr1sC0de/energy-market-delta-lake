@@ -17,7 +17,8 @@ Use this page as the agent documentation map. The imperative policy lives in
 ## Ralph and issue work
 
 - Ralph internals, **Local integration**, **Delivery mode**, **Integration
-  target**, **Promotion**, and **Post-promotion review**:
+  target**, **Ready issue refresh**, **Promotion**, and
+  **Post-promotion review**:
   [ralph-loop.md](ralph-loop.md)
 - GitHub Issue queue rules:
   [issue-tracker.md](issue-tracker.md)
@@ -30,6 +31,8 @@ Use this page as the agent documentation map. The imperative policy lives in
 
 - Use `$ralph-curate` to review open GitHub Issues against the current branch
   and propose stale, satisfied, blocked, or mislabeled issue updates.
+- Use `$ralph-issue-refresh` to reconcile ready issues after **Local
+  integration** and before the next ready issue claim.
 - Use `$ralph-triage` to prepare GitHub Issues for drain.
 - Use `$ralph-loop` to drain ready issues, inspect failures, and run
   **Promotion**.

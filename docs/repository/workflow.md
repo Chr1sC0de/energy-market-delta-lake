@@ -126,7 +126,7 @@ Agents use [AGENTS.md](../../AGENTS.md) for imperative policy and
 [docs/agents/README.md](../agents/README.md) for the agent workflow map.
 Ralph internals live in [docs/agents/ralph-loop.md](../agents/ralph-loop.md),
 including **Local integration**, **Delivery mode**, **Integration target**,
-**Promotion**, and **Post-promotion review** behavior.
+**Ready issue refresh**, **Promotion**, and **Post-promotion review** behavior.
 
 ## Where to work
 

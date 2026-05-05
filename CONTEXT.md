@@ -70,6 +70,13 @@ GitHub Issue commands without owning **Local integration** or **Promotion**.
 The allowed commands can be read-only or write-limited by Ralph phase.
 _Avoid_: Full GitHub sandbox auth, Git push sandbox auth
 
+**Ready issue refresh**:
+The Ralph queue-maintenance pass that reconciles open GitHub Issues after a
+successful **Local integration** and before the next `ready-for-agent` issue
+claim. It may refresh issue context, labels, blockers, or completed closure
+evidence so the queue reflects the latest **Integration target** state.
+_Avoid_: Post-promotion review, triage pass
+
 **Operator workflow**:
 The human workflow for shaping work, preparing GitHub Issues, draining Ralph,
 reviewing `dev`, and running **Promotion**.
@@ -126,6 +133,10 @@ _Avoid_: Promotion gate, pre-push review
 - **Local integration** is not a **Test lane**.
 - **Sandboxed issue access** may update GitHub Issue metadata when the Ralph
   phase grants write commands, but it must not update an **Integration target**.
+- **Ready issue refresh** runs after a successful **Local integration** and
+  before Ralph claims the next `ready-for-agent` issue in a drain.
+- **Ready issue refresh** may mutate GitHub Issue metadata under its audit
+  contract; it is not **Promotion** and is not **Post-promotion review**.
 - The **Operator workflow** is the human entrypoint; Ralph internals remain on
   the agent-facing Ralph documentation page.
 - A **Delivery mode** selects an **Integration target**.
@@ -134,7 +145,8 @@ _Avoid_: Promotion gate, pre-push review
 - **Promotion** closes only issues whose `dev` integration commit is verified in
   the promoted branch range.
 - **Post-promotion review** happens after **Promotion** succeeds; it is not a
-  **Push check** gate, and it uses read-only GitHub Issue access.
+  **Push check** gate, it is not **Ready issue refresh**, and it uses read-only
+  GitHub Issue access.
 
 ## Example dialogue
 
@@ -145,8 +157,9 @@ _Avoid_: Promotion gate, pre-push review
 >
 > **Dev:** "Can the sandboxed Codex pass close or label an issue during Ralph?"
 > **Domain expert:** "Only when that Ralph phase grants issue write commands
-> through **Sandboxed issue access**. **Post-promotion review** is read-only,
-> and no sandboxed pass can perform **Local integration** or **Promotion**."
+> through **Sandboxed issue access**. **Ready issue refresh** may mutate issues
+> under its audit contract, but **Post-promotion review** is read-only, and no
+> sandboxed pass can perform **Local integration** or **Promotion**."
 
 ## Flagged ambiguities
 
@@ -172,3 +185,7 @@ _Avoid_: Promotion gate, pre-push review
 - "post-promotion check" could imply a pre-push gate. Resolved: use
   **Post-promotion review** for the default review agent pass that runs only
   after successful **Promotion**.
+- "queue review" after each issue could be confused with
+  **Post-promotion review**. Resolved: use **Ready issue refresh** for
+  post-**Local integration** queue reconciliation before the next ready issue
+  claim.

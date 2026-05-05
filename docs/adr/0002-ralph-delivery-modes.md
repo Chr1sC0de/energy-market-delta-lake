@@ -22,6 +22,9 @@ behind `main`; after successful Promotion, Ralph fast-forwards `dev` to the
 promotion commit. Recovery also follows the issue **Delivery mode**: Trunk
 delivery reconciles `agent-merged` and issue closure, while Gitflow delivery
 reconciles `agent-integrated` and leaves the issue open for **Promotion**.
+After each successful issue **Local integration**, **Ready issue refresh**
+reconciles the open issue queue before the next ready issue claim; this is
+separate from the later **Post-promotion review** path.
 When a **Promotion** range includes non-doc runtime files in the AEMO ETL
 **Subproject**, the AEMO ETL **End-to-end test** gate runs from the same
 isolated source worktree as the aggregate **Push check**, before any merge,

@@ -32,7 +32,9 @@ verifies the recorded **Local integration** commit is reachable from the
 expected **Integration target**. Ralph also blocks live implementation and
 **Promotion** runs on a dirty root worktree unless the operator passes
 `--allow-dirty-worktree`; dry-run remains available for queue inspection without
-issue or branch mutation.
+issue or branch mutation. After a successful issue **Local integration**,
+**Ready issue refresh** reconciles follow-on GitHub Issues before the next ready
+issue claim so the queue reflects the updated **Integration target**.
 
 ## Sync metadata
 

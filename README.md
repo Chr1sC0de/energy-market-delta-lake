@@ -32,7 +32,8 @@ Subproject docs for detailed commands, defaults, diagrams, and behavior.
   maintained-doc contract, sync metadata, and doc QA ratchets.
 - [docs/agents/ralph-loop.md](docs/agents/ralph-loop.md): Ralph internals,
   **Local integration**, **Delivery mode**, **Integration target**,
-  **Promotion**, and **Post-promotion review** behavior.
+  **Ready issue refresh**, **Promotion**, and **Post-promotion review**
+  behavior.
 
 ## Sync metadata
 
