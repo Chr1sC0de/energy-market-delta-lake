@@ -112,6 +112,13 @@ If Promotion fails before `main` is pushed, leave issues open and inspect the
 run manifest. If it fails after `main` is pushed, stop and inspect before
 reconciling GitHub metadata.
 
+When the AEMO ETL **End-to-end test** gate runs, treat its budget report as a
+**Promotion** contract, not a local development benchmark. Duration or run-count
+failures point to run explosion, queue contention, or environment slowdown;
+target-progress, asset-check, or missing-telemetry failures mean the source
+revision has not proven the required coverage. Use the printed
+`run-manifest.json` path before retrying or reconciling issue state.
+
 ## Recovery
 
 Use `$ralph-loop inspect failure` or `python3 scripts/ralph.py --inspect-run
@@ -131,6 +138,7 @@ Keep failed worktrees unless the maintainer asks for cleanup.
   - `.agents/skills/ralph-triage/SKILL.md`
   - `docs/agents/README.md`
   - `docs/agents/ralph-loop.md`
+  - `backend-services/scripts/aemo-etl-e2e`
   - `docs/agents/issue-tracker.md`
   - `docs/agents/triage-labels.md`
 - `sync.scope`: `operations`

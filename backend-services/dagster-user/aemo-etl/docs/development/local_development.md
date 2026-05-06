@@ -250,19 +250,42 @@ these values with
 `--webserver-port`, `--timeout-seconds`, `--max-concurrent-runs`,
 `--raw-latest-count`, and `--zip-latest-count`.
 
-The required e2e coverage remains every materializable Dagster asset in group
-`gas_model`, plus final asset-check status for that target. Current
+The required **End-to-end test** coverage remains the approved #77 contract:
+exercise Dagster, LocalStack/S3, Podman run-worker containers, and the Dagster
+GraphQL monitor; materialize every materializable Dagster asset in group
+`gas_model`; and preserve final asset-check status for that target. Current
 `dg list defs --assets "group:gas_model" --json` discovery evidence is 29
 assets and 112 asset checks, including
-`silver/metadata/silver_table_metadata`. The `promotion-gas-model` scenario
-enforces Promotion guard regression budgets from the #78 targeted baseline:
-total gate duration at or below 20 minutes, peak active runs at or below `6`,
-peak queued runs at or below `6`, total Dagster runs at or below `48`, target
-progress exactly `29/29`, and missing or failed target assets and asset checks
-at `0`. Budget failures print observed values, thresholds, and the
-`run-manifest.json` path. These are Promotion guard budgets, not generic local
-development performance claims; the full scenario prints the same telemetry
-without enforcing them.
+`silver/metadata/silver_table_metadata`. Ralph runs this as a **Promotion**
+gate after the aggregate **Push check** for the source revision and before
+`main` is merged, pushed, or issue metadata is updated. It protects work that
+has already reached `dev` through **Local integration** in Gitflow
+**Delivery mode**; it is not a separate **Test lane** and it is not a local
+development benchmark.
+
+Each `run-manifest.json` records the #75 telemetry fields: total gate, stack
+startup, Dagster dataflow monitor, and cleanup durations; cleanup phase status
+and issues; peak active and queued Dagster run counts; final run status counts;
+target progress; target materialization timestamps; and final missing or failed
+asset-check counts. For `promotion-gas-model`, `dataflow.scenario_evidence`
+also records the selected scenario, launch mode, target group, target asset
+count, selected upstream closure count, skipped live source asset keys,
+dependency-wave count, run-batch count, and asset batch size. The #76 budget
+report prints those values in command output before #79 enforcement is applied.
+
+The `promotion-gas-model` scenario enforces #79 Promotion guard regression
+budgets from the approved #78 targeted baseline: total gate duration at or
+below 20 minutes, peak active runs at or below `6`, peak queued runs at or below
+`6`, total Dagster runs at or below `48`, target progress exactly `29/29`, and
+missing or failed target assets and asset checks at `0`. Budget failures print
+observed values, thresholds, and the `run-manifest.json` path. Duration or run
+count failures point to run explosion, queue contention, or local environment
+slowdown that needs evidence before rerun or launch-shape changes. Target
+progress and asset-check failures mean the coverage contract was not satisfied
+and the source revision must not be promoted until the dataflow regression is
+fixed. Missing telemetry is also a Promotion gate failure because Ralph cannot
+prove the source revision satisfied the contract. The full scenario prints the
+same telemetry without enforcing these Promotion budgets.
 
 The generated compose stack uses fixed service IPs for Postgres, LocalStack,
 and the AEMO ETL code server so Podman run-worker containers do not depend on
