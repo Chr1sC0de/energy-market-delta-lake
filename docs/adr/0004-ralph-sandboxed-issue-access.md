@@ -31,8 +31,11 @@ After **Local integration** or Exploratory handoff and before the next ready
 issue claim, Ralph's current **Ready issue refresh** analysis subprocess gets
 the same read-only issue command boundary as **Post-promotion review**:
 `gh issue view`, `gh issue list`, and `gh issue status`. It writes planned issue
-updates to `ready-issue-refresh-analysis.md` and cannot comment, edit labels,
-edit bodies, close, reopen, or create GitHub Issues. **Post-promotion review**
+updates and a structured mutation plan to `ready-issue-refresh-analysis.md` and
+cannot comment, edit labels, edit bodies, close, reopen, or create GitHub
+Issues. Ralph's outer loop validates and applies that plan with GitHub Issue
+metadata commands only; it does not grant the analysis subprocess code, commit,
+ref, push, or **Integration target** mutation authority. **Post-promotion review**
 agent access stays read-only for successful, failed, and partial **Promotion**
 attempts: the review agent drafts structured
 actionable follow-up GitHub Issues in `post-promotion-review.md` only when it

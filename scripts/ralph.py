@@ -40,6 +40,16 @@ AGENT_FAILED_LABEL = "agent-failed"
 AGENT_MERGED_LABEL = "agent-merged"
 AGENT_INTEGRATED_LABEL = "agent-integrated"
 AGENT_REVIEWING_LABEL = "agent-reviewing"
+READY_ISSUE_REFRESH_QUEUE_LABELS = frozenset(
+    {
+        READY_LABEL,
+        AGENT_RUNNING_LABEL,
+        AGENT_FAILED_LABEL,
+        AGENT_MERGED_LABEL,
+        AGENT_INTEGRATED_LABEL,
+        AGENT_REVIEWING_LABEL,
+    }
+)
 
 GITFLOW_MODE = "gitflow"
 TRUNK_MODE = "trunk"
@@ -250,7 +260,7 @@ class PostPushFailure(RalphError):
 
 
 class ReadyIssueRefreshFailure(RalphError):
-    """A read-only Ready issue refresh analysis failed after integration."""
+    """Ready issue refresh failed after integration."""
 
     def __init__(self, message: str, log_path: Path | None = None) -> None:
         super().__init__(message)
@@ -353,6 +363,17 @@ class PostPromotionFollowupContext:
 
 
 @dataclass(frozen=True)
+class ReadyIssueRefreshMutation:
+    issue_number: int
+    action: str
+    comment: str | None
+    body: str | None
+    add_labels: tuple[str, ...]
+    remove_labels: tuple[str, ...]
+    close_as_completed: bool
+
+
+@dataclass(frozen=True)
 class QACommand:
     args: tuple[str, ...]
     cwd: Path
@@ -384,6 +405,8 @@ class LoopConfig:
     promote: bool
     skip_post_promotion_review: bool
     skip_post_promotion_followups: bool
+    ready_issue_refresh_enabled: bool
+    skip_ready_issue_refresh: bool
     issue: int | None
     drain: bool
     max_issues: int
@@ -456,11 +479,14 @@ class RunManifest:
             "codex_attempts": [],
             "sandboxed_issue_access": {"status": "not_started"},
             "ready_issue_refresh": {
+                "enabled": config.ready_issue_refresh_enabled,
                 "status": "not_started",
                 "candidate_issue_numbers": [],
                 "candidate_issues": [],
                 "log_path": None,
                 "artifact_path": None,
+                "mutation_results": [],
+                "recovery_guidance": None,
                 "failure": None,
             },
             "commits": {},
@@ -775,14 +801,19 @@ class RunManifest:
         self,
         status: str,
         *,
+        enabled: bool | None = None,
         candidates: list[Issue] | None = None,
         log_path: Path | None = None,
         artifact_path: Path | None = None,
         error: str | None = None,
+        recovery_guidance: str | None = None,
+        reason: str | None = None,
     ) -> None:
         refresh = self.data.setdefault("ready_issue_refresh", {})
         if not isinstance(refresh, dict):
             raise RalphError("Manifest ready_issue_refresh field is not an object.")
+        if enabled is not None:
+            refresh["enabled"] = enabled
         refresh["status"] = status
         if candidates is not None:
             refresh["candidate_issue_numbers"] = [issue.number for issue in candidates]
@@ -805,7 +836,49 @@ class RunManifest:
             }
         elif status != "failed":
             refresh["failure"] = None
+        if recovery_guidance is not None:
+            refresh["recovery_guidance"] = recovery_guidance
+        if reason is not None:
+            refresh["reason"] = reason
         self.record_event(f"ready_issue_refresh_{status}", details=dict(refresh))
+
+    def record_ready_issue_refresh_mutation(
+        self,
+        *,
+        issue_number: int,
+        status: str,
+        action: str,
+        issue: Issue | None = None,
+        operations: dict[str, Any] | None = None,
+        error: str | None = None,
+        log_path: Path | None = None,
+    ) -> None:
+        refresh = self.data.setdefault("ready_issue_refresh", {})
+        if not isinstance(refresh, dict):
+            raise RalphError("Manifest ready_issue_refresh field is not an object.")
+        results = refresh.setdefault("mutation_results", [])
+        if not isinstance(results, list):
+            raise RalphError("Manifest ready_issue_refresh.mutation_results is not a list.")
+        entry: dict[str, Any] = {
+            "issue_number": issue_number,
+            "status": status,
+            "action": action,
+            "operations": operations or {},
+            "error": error,
+            "log_path": path_text(log_path),
+        }
+        if issue is not None:
+            entry["title"] = issue.title
+            entry["url"] = issue.url
+        replaced = False
+        for index, existing in enumerate(results):
+            if isinstance(existing, dict) and existing.get("issue_number") == issue_number:
+                results[index] = {**existing, **entry}
+                replaced = True
+                break
+        if not replaced:
+            results.append(entry)
+        self.record_event(f"ready_issue_refresh_mutation_{status}", details=entry)
 
     def record_promoted_issues(
         self,
@@ -1273,6 +1346,226 @@ def post_promotion_followup_issue_body(
         ]
     )
     return "\n".join(lines)
+
+
+def json_payloads_from_ready_issue_refresh_markdown(markdown: str) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    for block in markdown_json_code_blocks(markdown):
+        try:
+            value = json.loads(block)
+        except json.JSONDecodeError:
+            continue
+        payloads.extend(ready_issue_refresh_mutation_payloads_from_json(value))
+    return payloads
+
+
+def ready_issue_refresh_mutation_payloads_from_json(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, dict):
+        for key in (
+            "ready_issue_refresh_mutations",
+            "mutations",
+            "issue_updates",
+            "updates",
+        ):
+            nested = value.get(key)
+            if isinstance(nested, list):
+                return [item for item in nested if isinstance(item, dict)]
+        if "issue_number" in value or "number" in value:
+            return [value]
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    return []
+
+
+def parse_bool_value(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def normalize_ready_issue_refresh_action(value: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+    aliases = {
+        "": "update",
+        "none": "no_change",
+        "no_change": "no_change",
+        "noop": "no_change",
+        "no_op": "no_change",
+        "update": "update",
+        "refresh": "update",
+        "needs_triage": "needs_triage",
+        "stale_unclear": "needs_triage",
+        "unclear": "needs_triage",
+        "completed": "completed",
+        "close": "completed",
+        "close_completed": "completed",
+        "already_satisfied": "completed",
+        "satisfied": "completed",
+        "obsolete": "completed",
+    }
+    if normalized not in aliases:
+        raise ValueError(f"Unsupported Ready issue refresh action: {value}")
+    return aliases[normalized]
+
+
+def ready_issue_refresh_comment_body(text: str) -> str:
+    body = text.strip()
+    if body.startswith(AI_READY_ISSUE_REFRESH_DISCLAIMER):
+        return body
+    return f"{AI_READY_ISSUE_REFRESH_DISCLAIMER}\n\n{body}"
+
+
+def ready_issue_refresh_default_comment(action: str) -> str:
+    if action == "needs_triage":
+        return (
+            "Ready issue refresh found this issue may be stale after the latest "
+            "Local integration, but the correct contract update is unclear. "
+            "Maintainer review is needed before another agent claims it."
+        )
+    if action == "completed":
+        return (
+            "Ready issue refresh found this issue is already satisfied or obsolete "
+            "on the current Integration target."
+        )
+    return ""
+
+
+def ready_issue_refresh_mutation_from_payload(
+    payload: dict[str, Any],
+) -> ReadyIssueRefreshMutation:
+    number_value = payload.get("issue_number", payload.get("number"))
+    if number_value is None:
+        raise ValueError("Ready issue refresh mutation is missing issue_number.")
+    action = normalize_ready_issue_refresh_action(
+        str(payload.get("action") or payload.get("status") or payload.get("planned_action") or "")
+    )
+    comment_value = (
+        payload.get("comment")
+        if payload.get("comment") is not None
+        else payload.get("evidence_comment", payload.get("evidence"))
+    )
+    body_value = payload.get("body", payload.get("updated_body"))
+    comment = str(comment_value).strip() if comment_value is not None else None
+    body = str(body_value).strip() if body_value is not None else None
+    add_labels = parse_label_values(payload.get("add_labels", payload.get("labels_to_add")))
+    remove_labels = parse_label_values(
+        payload.get("remove_labels", payload.get("labels_to_remove"))
+    )
+    close_as_completed = parse_bool_value(payload.get("close_as_completed")) or action == "completed"
+
+    protected_removals: set[str] = set()
+    if action == "needs_triage":
+        add_labels = tuple(sorted(({*add_labels} - {READY_LABEL}) | {NEEDS_TRIAGE_LABEL}))
+        remove_labels = tuple(sorted({*remove_labels, READY_LABEL}))
+        protected_removals = {READY_LABEL}
+    elif action == "completed":
+        add_labels = tuple(
+            label for label in add_labels if label not in READY_ISSUE_REFRESH_QUEUE_LABELS
+        )
+        remove_labels = tuple(sorted({*remove_labels, *READY_ISSUE_REFRESH_QUEUE_LABELS}))
+        protected_removals = set(READY_ISSUE_REFRESH_QUEUE_LABELS)
+    if action in {"needs_triage", "completed"} and not comment:
+        comment = ready_issue_refresh_default_comment(action)
+    if comment:
+        comment = ready_issue_refresh_comment_body(comment)
+
+    add_set = set(add_labels)
+    remove_labels = tuple(
+        label for label in remove_labels if label not in add_set or label in protected_removals
+    )
+    return ReadyIssueRefreshMutation(
+        issue_number=int(number_value),
+        action=action,
+        comment=comment,
+        body=body,
+        add_labels=add_labels,
+        remove_labels=remove_labels,
+        close_as_completed=close_as_completed,
+    )
+
+
+def ready_issue_refresh_mutations_from_markdown(
+    markdown: str,
+    *,
+    candidates: list[Issue],
+) -> list[ReadyIssueRefreshMutation]:
+    payloads = json_payloads_from_ready_issue_refresh_markdown(markdown)
+    candidate_numbers = {issue.number for issue in candidates}
+    mutations: list[ReadyIssueRefreshMutation] = []
+    seen: set[int] = set()
+    for payload in payloads:
+        mutation = ready_issue_refresh_mutation_from_payload(payload)
+        if mutation.issue_number not in candidate_numbers:
+            raise ValueError(
+                "Ready issue refresh mutation references issue "
+                f"#{mutation.issue_number}, which is not in the candidate set."
+            )
+        if mutation.issue_number in seen:
+            raise ValueError(
+                f"Ready issue refresh mutation includes duplicate issue #{mutation.issue_number}."
+            )
+        seen.add(mutation.issue_number)
+        mutations.append(mutation)
+    return mutations
+
+
+def labels_after_ready_issue_refresh_mutation(
+    issue: Issue,
+    mutation: ReadyIssueRefreshMutation,
+) -> frozenset[str]:
+    labels = set(issue.labels)
+    labels.difference_update(mutation.remove_labels)
+    labels.update(mutation.add_labels)
+    return frozenset(labels)
+
+
+def validate_ready_issue_refresh_ready_contract(
+    *,
+    issue_number: int,
+    labels: frozenset[str],
+    body: str,
+) -> None:
+    if READY_LABEL not in labels:
+        return
+    required_sections = (
+        required_issue_sections_for_delivery_mode(EXPLORATORY_MODE)
+        if DELIVERY_EXPLORATORY_LABEL in labels
+        else REQUIRED_ISSUE_SECTIONS
+    )
+    missing = missing_required_sections(body, required_sections=required_sections)
+    if missing:
+        formatted = ", ".join(f"## {heading}" for heading in missing)
+        raise ValueError(
+            f"Ready issue refresh would leave issue #{issue_number} ready without {formatted}."
+        )
+
+
+def ready_issue_refresh_comment_already_exists(
+    comments: list[dict[str, Any]],
+    comment_body: str,
+) -> bool:
+    target = comment_body.strip()
+    for comment in comments:
+        if str(comment.get("body") or "").strip() == target:
+            return True
+    return False
+
+
+def ready_issue_refresh_recovery_guidance(
+    *,
+    run_dir: Path,
+    issue_number: int | None = None,
+) -> str:
+    issue_text = f" for candidate #{issue_number}" if issue_number is not None else ""
+    return (
+        f"Ready issue refresh metadata mutation failed{issue_text} after Local integration. "
+        "Do not roll back the integrated commit or rewrite the Integration target. "
+        f"Inspect `{run_dir / MANIFEST_NAME}` under `ready_issue_refresh.mutation_results`, "
+        "finish or correct only the failed GitHub Issue metadata changes, then rerun "
+        "Ralph drain when the queue metadata is consistent."
+    )
 
 
 def parse_issue_reference_from_create_stdout(
@@ -2049,6 +2342,25 @@ class GitHubClient:
             args.extend(["--remove-label", label])
         self.runner.run(args, cwd=self.repo_root, execute_in_dry_run=False)
 
+    def edit_issue_body(self, number: int, body: str, *, run_dir: Path) -> None:
+        body_path = run_dir / f"issue-{number}-body.md"
+        if not self.runner.dry_run:
+            body_path.write_text(body, encoding="utf-8")
+        self.runner.run(
+            [
+                "gh",
+                "issue",
+                "edit",
+                str(number),
+                "-R",
+                self.repo,
+                "--body-file",
+                str(body_path),
+            ],
+            cwd=self.repo_root,
+            execute_in_dry_run=False,
+        )
+
     def comment_issue(self, number: int, body: str, *, run_dir: Path) -> None:
         comment_path = run_dir / f"issue-{number}-comment.md"
         if not self.runner.dry_run:
@@ -2398,7 +2710,7 @@ class RalphLoop:
             if ready_issue is not None:
                 if self.config.dry_run:
                     emit(f"DRY RUN: would implement #{ready_issue.number}: {ready_issue.title}")
-                    if self.config.drain:
+                    if self.config.ready_issue_refresh_enabled:
                         delivery_plan = resolve_delivery_plan(
                             ready_issue,
                             default_mode=self.config.delivery_mode,
@@ -2589,9 +2901,11 @@ class RalphLoop:
         log_path = run_dir / "codex-ready-issue-refresh-analysis.jsonl"
         artifact_path = run_dir / READY_ISSUE_REFRESH_ANALYSIS_ARTIFACT_NAME
         candidates: list[Issue] = []
+        analysis_markdown = ""
         try:
             manifest.record_ready_issue_refresh(
                 "selecting_candidates",
+                enabled=True,
                 log_path=log_path,
                 artifact_path=artifact_path,
             )
@@ -2665,6 +2979,39 @@ class RalphLoop:
             emit(str(failure), err=True)
             raise failure from error
 
+        try:
+            self._apply_ready_issue_refresh_mutations(
+                analysis_markdown=analysis_markdown,
+                candidates=candidates,
+                run_dir=run_dir,
+                manifest=manifest,
+            )
+        except (CommandFailure, OSError, json.JSONDecodeError, ValueError) as error:
+            refresh_log_path = error.log_path if isinstance(error, CommandFailure) else log_path
+            failed_issue = getattr(error, "issue_number", None)
+            issue_number = failed_issue if isinstance(failed_issue, int) else None
+            guidance = ready_issue_refresh_recovery_guidance(
+                run_dir=run_dir,
+                issue_number=issue_number,
+            )
+            failure = ReadyIssueRefreshFailure(
+                "Ready issue refresh mutation failed after "
+                f"{completion_event} of #{integrated_issue.number}: {error}\n"
+                f"Recovery guidance: {guidance}",
+                log_path=refresh_log_path,
+            )
+            manifest.record_ready_issue_refresh(
+                "failed",
+                candidates=candidates,
+                log_path=refresh_log_path,
+                artifact_path=artifact_path,
+                error=str(error),
+                recovery_guidance=guidance,
+            )
+            manifest.record_failure(failure, log_path=refresh_log_path)
+            emit(str(failure), err=True)
+            raise failure from error
+
         manifest.record_ready_issue_refresh(
             "completed",
             candidates=candidates,
@@ -2672,6 +3019,146 @@ class RalphLoop:
             artifact_path=artifact_path,
         )
         emit(f"Ready issue refresh analysis written to {artifact_path}")
+
+    def _apply_ready_issue_refresh_mutations(
+        self,
+        *,
+        analysis_markdown: str,
+        candidates: list[Issue],
+        run_dir: Path,
+        manifest: RunManifest,
+    ) -> None:
+        mutations = ready_issue_refresh_mutations_from_markdown(
+            analysis_markdown,
+            candidates=candidates,
+        )
+        mutations_by_issue = {mutation.issue_number: mutation for mutation in mutations}
+        if not mutations_by_issue:
+            for candidate in candidates:
+                manifest.record_ready_issue_refresh_mutation(
+                    issue_number=candidate.number,
+                    issue=candidate,
+                    status="skipped_no_plan",
+                    action="no_change",
+                )
+            return
+
+        emit(f"Applying Ready issue refresh metadata mutations: {len(mutations)} plan item(s).")
+        for candidate in candidates:
+            mutation = mutations_by_issue.get(candidate.number)
+            if mutation is None:
+                manifest.record_ready_issue_refresh_mutation(
+                    issue_number=candidate.number,
+                    issue=candidate,
+                    status="skipped_no_plan",
+                    action="no_change",
+                )
+                continue
+            if mutation.action == "no_change" and not (
+                mutation.comment
+                or mutation.body is not None
+                or mutation.add_labels
+                or mutation.remove_labels
+                or mutation.close_as_completed
+            ):
+                validate_ready_issue_refresh_ready_contract(
+                    issue_number=candidate.number,
+                    labels=candidate.labels,
+                    body=candidate.body,
+                )
+                manifest.record_ready_issue_refresh_mutation(
+                    issue_number=candidate.number,
+                    issue=candidate,
+                    status="skipped_no_change",
+                    action=mutation.action,
+                )
+                continue
+
+            try:
+                current_issue = self.github.view_issue(candidate.number)
+                operations = self._apply_ready_issue_refresh_mutation(
+                    current_issue,
+                    mutation,
+                    run_dir=run_dir,
+                )
+            except (CommandFailure, OSError, json.JSONDecodeError, ValueError) as error:
+                setattr(error, "issue_number", candidate.number)
+                log_path = error.log_path if isinstance(error, CommandFailure) else None
+                manifest.record_ready_issue_refresh_mutation(
+                    issue_number=candidate.number,
+                    issue=candidate,
+                    status="failed",
+                    action=mutation.action,
+                    error=str(error),
+                    log_path=log_path,
+                )
+                raise
+
+            manifest.record_ready_issue_refresh_mutation(
+                issue_number=candidate.number,
+                issue=current_issue,
+                status="completed",
+                action=mutation.action,
+                operations=operations,
+            )
+
+    def _apply_ready_issue_refresh_mutation(
+        self,
+        issue: Issue,
+        mutation: ReadyIssueRefreshMutation,
+        *,
+        run_dir: Path,
+    ) -> dict[str, Any]:
+        final_labels = labels_after_ready_issue_refresh_mutation(issue, mutation)
+        final_body = mutation.body if mutation.body is not None else issue.body
+        validate_ready_issue_refresh_ready_contract(
+            issue_number=issue.number,
+            labels=final_labels,
+            body=final_body,
+        )
+
+        operations: dict[str, Any] = {
+            "body": "unchanged",
+            "labels": "unchanged",
+            "comment": "skipped",
+            "closure": "skipped",
+        }
+        if mutation.body is not None:
+            if mutation.body.strip() != issue.body.strip():
+                self.github.edit_issue_body(issue.number, mutation.body, run_dir=run_dir)
+                operations["body"] = "updated"
+            else:
+                operations["body"] = "already_current"
+
+        add_labels = [label for label in mutation.add_labels if label not in issue.labels]
+        remove_labels = [
+            label
+            for label in mutation.remove_labels
+            if label in issue.labels and label not in add_labels
+        ]
+        if add_labels or remove_labels:
+            self.github.edit_issue_labels(issue.number, add=add_labels, remove=remove_labels)
+            operations["labels"] = {
+                "added": add_labels,
+                "removed": remove_labels,
+            }
+
+        if mutation.comment is not None:
+            comments = self.github.issue_comments(issue.number)
+            if ready_issue_refresh_comment_already_exists(comments, mutation.comment):
+                operations["comment"] = "already_present"
+            else:
+                self.github.comment_issue(issue.number, mutation.comment, run_dir=run_dir)
+                operations["comment"] = "created"
+
+        if mutation.close_as_completed:
+            state = self.github.issue_state(issue.number)
+            if state == "CLOSED":
+                operations["closure"] = "already_closed"
+            else:
+                self.github.close_issue(issue.number, run_dir=run_dir)
+                operations["closure"] = "closed_completed"
+        return operations
 
     def _needs_info_has_reporter_activity(self, issue: Issue, *, current_user: str) -> bool:
         if issue.author is None:
@@ -3738,7 +4225,7 @@ class RalphLoop:
                 )
             else:
                 raise ValueError(f"Unsupported delivery mode: {delivery_plan.mode}")
-            if self.config.drain:
+            if self.config.ready_issue_refresh_enabled:
                 self._run_ready_issue_refresh_analysis(
                     issue,
                     delivery_plan=delivery_plan,
@@ -4507,8 +4994,9 @@ def recommended_run_action(manifest: RunManifest) -> str:
     ready_refresh_status = ready_issue_refresh_status_value(manifest)
     if metadata_status == complete_status and ready_refresh_status == "failed":
         return (
-            "No GitHub metadata recovery is needed; inspect the Ready issue refresh "
-            "analysis failure, then rerun Ralph drain when the analysis issue is fixed."
+            "No GitHub metadata recovery is needed for the integrated issue; inspect "
+            "the Ready issue refresh failure and its mutation_results, then reconcile "
+            "only the affected GitHub Issue metadata before rerunning Ralph drain."
         )
     if (
         metadata_status == complete_status
@@ -4928,6 +5416,8 @@ def ready_issue_refresh_analysis_prompt(
 
         ## Candidate Issue Update Plan
 
+        ## Candidate Issue Mutation Plan
+
         ## Evidence
 
         ## Open Questions
@@ -4937,6 +5427,33 @@ def ready_issue_refresh_analysis_prompt(
         to `needs-triage`, receive a body/comment/label update, or close as
         completed in a later Ralph-owned metadata phase. If no update is
         needed, say `no change planned`.
+
+        Also include one fenced `json` block under `## Candidate Issue Mutation Plan`
+        using this shape:
+
+        ```json
+        {{
+          "ready_issue_refresh_mutations": [
+            {{
+              "issue_number": 123,
+              "action": "no_change",
+              "comment": null,
+              "body": null,
+              "add_labels": [],
+              "remove_labels": [],
+              "close_as_completed": false
+            }}
+          ]
+        }}
+        ```
+
+        Use action `needs_triage` for stale-but-unclear issues and include an
+        evidence comment. Use action `completed` for already-satisfied issues
+        and include an evidence comment; Ralph will remove queue/runtime labels
+        and close the issue as completed. Use action `update` only for safe
+        body, label, or comment refreshes that keep the issue contract valid.
+        Comments may omit the Ready issue refresh audit prefix because Ralph
+        will add it before applying metadata.
 
         Integrated issue:
 
@@ -5545,6 +6062,10 @@ def build_config(args: argparse.Namespace, runner: CommandRunner) -> LoopConfig:
         promote=args.promote,
         skip_post_promotion_review=args.skip_post_promotion_review,
         skip_post_promotion_followups=args.skip_post_promotion_followups,
+        ready_issue_refresh_enabled=(
+            args.ready_issue_refresh or (args.drain and not args.skip_ready_issue_refresh)
+        ),
+        skip_ready_issue_refresh=args.skip_ready_issue_refresh,
         issue=args.issue,
         drain=args.drain,
         max_issues=args.max_issues,
@@ -5603,6 +6124,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("--issue", type=int, help="Implement one specific issue number.")
     parser.add_argument(
+        "--ready-issue-refresh",
+        action="store_true",
+        help="Run Ready issue refresh after a targeted --issue implementation.",
+    )
+    parser.add_argument(
+        "--skip-ready-issue-refresh",
+        action="store_true",
+        help="Skip the default Ready issue refresh pass during --drain.",
+    )
+    parser.add_argument(
         "--inspect-run",
         help=(
             "Read a Ralph run directory manifest and report recovery state without "
@@ -5657,6 +6188,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.inspect_run is not None and args.recover_run is not None:
         parser.error("Use only one of --inspect-run or --recover-run.")
+    if args.ready_issue_refresh and args.skip_ready_issue_refresh:
+        parser.error("Use only one of --ready-issue-refresh or --skip-ready-issue-refresh.")
     return args
 
 

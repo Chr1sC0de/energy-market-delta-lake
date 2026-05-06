@@ -185,9 +185,12 @@ way:
   plans issue updates without mutating GitHub Issues, and
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md) owns the manifest,
   prompt, and failure-stop contract.
-- #71: keep future **Ready issue refresh** metadata-application behavior
-  aligned with the #68 and #70 contracts before extending scripts, labels, or
-  issue metadata flows.
+- #71: Ralph applies validated **Ready issue refresh** metadata mutations after
+  the read-only analysis artifact. Drain mode refreshes by default,
+  `--skip-ready-issue-refresh` disables that default, and targeted `--issue`
+  runs require `--ready-issue-refresh`. Mutation uses only GitHub Issue metadata
+  commands, records per-candidate manifest status, and stops the drain with
+  recovery guidance on partial post-**Local integration** metadata failures.
 - #72: Ralph implementation prompts include bounded recent **Ready issue
   refresh** notes after the issue body while keeping the issue body as the
   primary implementation contract.

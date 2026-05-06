@@ -137,6 +137,11 @@ Use `$ralph-loop inspect failure` or `python3 scripts/ralph.py --inspect-run
 the recorded published commit is reachable from the expected **Integration
 target**.
 
+If **Ready issue refresh** fails after **Local integration**, do not roll back
+the integrated commit. Inspect `ready_issue_refresh.mutation_results` in the run
+manifest, reconcile only the failed GitHub Issue metadata, then restart the
+drain once the queue is consistent.
+
 Keep failed worktrees unless the maintainer asks for cleanup.
 
 ## Sync metadata

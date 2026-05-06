@@ -42,9 +42,11 @@ operator passes `--allow-dirty-worktree`; dry-run remains available for queue
 inspection without issue or branch mutation. After a successful issue **Local
 integration** or Exploratory handoff, **Ready issue refresh** reconciles
 follow-on GitHub Issues before the next ready issue claim so the queue reflects
-the updated **Integration target**. The current Ralph drain records the first
-step as a read-only analysis artifact that plans issue metadata updates without
-mutating GitHub Issues.
+the updated **Integration target**. Ralph records the first step as a read-only
+analysis artifact, then its outer loop applies validated GitHub Issue metadata
+updates only. Refresh mutation failures stop the drain with per-candidate
+manifest evidence and recovery guidance, without rolling back the integrated
+commit or rewriting the **Integration target**.
 
 ## Sync metadata
 

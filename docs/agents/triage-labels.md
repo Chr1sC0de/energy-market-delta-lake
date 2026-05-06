@@ -39,9 +39,10 @@ issue out of `ready-for-agent` when the latest **Local integration** or
 Exploratory handoff leaves the issue stale, unclear, obsolete, or already
 satisfied. Ralph's current drain first records a read-only **Ready issue
 refresh** analysis artifact with planned transitions; that subprocess is not
-allowed to mutate labels or issue state. Runtime labels including
-`agent-reviewing` block repeat implementation, **Ready issue refresh** candidate
-selection, and automated triage reconsideration.
+allowed to mutate labels or issue state. Ralph's outer loop then applies
+validated label transitions with GitHub Issue metadata commands only. Runtime
+labels including `agent-reviewing` block repeat implementation, **Ready issue
+refresh** candidate selection, and automated triage reconsideration.
 
 ## Ralph delivery labels
 
