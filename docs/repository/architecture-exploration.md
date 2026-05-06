@@ -596,10 +596,11 @@ before deleting this temporary file.
   metadata, events, and failure details. **Promotion** manifests additionally
   record source branch, source tree, promoted issues, the promoted source
   commit inventory, Promotion commit, source-branch sync, and
-  **Post-promotion review**. The promoted source commit inventory records each
-  promoted commit SHA and subject, then classifies commits that match verified
-  issue `integrated_commit` values as verified **Local integration** commits
-  while leaving other entries visible as unverified **Promotion** commits.
+  **Post-promotion review** plus validated follow-up issue creation state. The
+  promoted source commit inventory records each promoted commit SHA and subject,
+  then classifies commits that match verified issue `integrated_commit` values
+  as verified **Local integration** commits while leaving other entries visible
+  as unverified **Promotion** commits.
   Inspection and recovery helpers (`load_run_manifest`, `inspect_run`,
   `recommended_run_action`, and `RalphRunRecovery`) read the same JSON
   contract. Tests assert manifest content for successful implementation,
@@ -665,9 +666,11 @@ before deleting this temporary file.
   as verified **Local integration** or unverified **Promotion** commits, creates
   the target Promotion worktree, merges, pushes `main`, fast-forwards `dev`,
   updates issue metadata, and then runs **Post-promotion review** when enabled
-  and changed files exist. Unverified **Promotion** commits are review context
-  only, not **Promotion** blockers or automatic issue-association work. Tests
-  assert ordering so failed **Push check** or AEMO ETL **End-to-end test** gate
+  and changed files exist. Successful review artifacts may then feed Ralph's
+  validated create-only helper for follow-up issues. Unverified **Promotion**
+  commits are review context only, not **Promotion** blockers or automatic
+  issue-association work. Tests assert ordering so failed **Push check** or
+  AEMO ETL **End-to-end test** gate
   cannot reach merge, push, branch sync, issue metadata, or closure.
 
 ### Proposed Module Structure
@@ -756,7 +759,9 @@ The useful boundaries are:
   must close only `agent-integrated` issues whose recorded Gitflow integration
   commit is verified in the promoted range. Unverified **Promotion** commits
   must remain **Post-promotion review** context, without blocking **Promotion**
-  or automatically creating GitHub Issues.
+  or automatically creating GitHub Issues by themselves. Follow-up issue
+  creation must come only from structured review drafts and Ralph's validated
+  create-only helper.
 - Recovery must remain manifest-gated. `--inspect-run` stays read-only, and
   `--recover-run` must refuse to mutate GitHub issue metadata until the
   recorded **Local integration** or Exploratory handoff commit is reachable

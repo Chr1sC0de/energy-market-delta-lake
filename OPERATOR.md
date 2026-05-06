@@ -102,7 +102,11 @@ verified in the promoted branch range.
 Unverified **Promotion** commits in the range are mandatory
 **Post-promotion review** context only. They do not require explicit issue
 association before **Promotion**, do not block **Promotion** by themselves, and
-do not automatically create GitHub Issues.
+do not automatically create GitHub Issues by themselves. Successful
+**Promotion** runs may create validated follow-up issues only from structured
+actionable **Post-promotion review** drafts; pass
+`--skip-post-promotion-followups` to keep review while skipping that creation,
+or `--skip-post-promotion-review` to skip both.
 
 If Promotion fails before `main` is pushed, leave issues open and inspect the
 run manifest. If it fails after `main` is pushed, stop and inspect before

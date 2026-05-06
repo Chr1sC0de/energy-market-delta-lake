@@ -83,13 +83,16 @@ No blocking findings.
 
 ## Follow-up GitHub Issue Drafts
 
-### Harden Promotion evidence checks
-
-- Title: Harden Promotion evidence checks
-- Rationale: Preserve the verified issue metadata behavior during future Ralph changes.
-- Acceptance criteria:
-  - [ ] Promotion reports continue to include verified issue evidence.
-- Suggested labels: `needs-triage`, `delivery-gitflow`
+```json
+[
+  {
+    "finding_id": "harden-promotion-evidence-checks",
+    "title": "Harden Promotion evidence checks",
+    "body": "## What to build\\nHarden Promotion evidence checks so future Ralph changes preserve verified issue metadata behavior.\\n\\n## Acceptance criteria\\n- [ ] Promotion reports continue to include verified issue evidence.\\n\\n## Blocked by\\nNone\\n",
+    "labels": ["enhancement", "delivery-gitflow"]
+  }
+]
+```
 """
 
 
@@ -139,6 +142,7 @@ class FakeRunner:
         command_outputs: dict[tuple[str, ...], list[str]] | None = None,
         fail_commands: set[tuple[str, ...]] | dict[tuple[str, ...], int] | None = None,
         fail_post_promotion_review: bool = False,
+        fail_issue_create: bool = False,
     ) -> None:
         self.dry_run = False
         self.calls: list[FakeCall] = []
@@ -147,6 +151,8 @@ class FakeRunner:
         self.rev_parse_outputs = rev_parse_outputs or []
         self.command_outputs = command_outputs or {}
         self.fail_post_promotion_review = fail_post_promotion_review
+        self.fail_issue_create = fail_issue_create
+        self.created_issue_number = 99
         if isinstance(fail_commands, dict):
             self.fail_commands = fail_commands
         else:
@@ -207,6 +213,22 @@ class FakeRunner:
             )
         if command[:3] == ("gh", "issue", "list"):
             return ralph.CompletedCommand(stdout="[]", stderr="")
+        if command[:3] == ("gh", "issue", "create"):
+            if self.fail_issue_create:
+                raise ralph.CommandFailure(
+                    args,
+                    cwd,
+                    1,
+                    "",
+                    "fake issue create failure",
+                    log_path,
+                )
+            number = self.created_issue_number
+            self.created_issue_number += 1
+            return ralph.CompletedCommand(
+                stdout=f"https://github.com/example/repo/issues/{number}\n",
+                stderr="",
+            )
         if command[:3] == ("gh", "issue", "view") and "comments" in command:
             return ralph.CompletedCommand(stdout=json.dumps({"comments": []}), stderr="")
         if command == ("gh", "auth", "token"):
@@ -238,6 +260,7 @@ def make_loop(
     source_branch: str = ralph.DEFAULT_GITFLOW_BRANCH,
     promote: bool = False,
     skip_post_promotion_review: bool = False,
+    skip_post_promotion_followups: bool = False,
     issue: int | None = None,
     drain: bool = False,
     max_issues: int = ralph.DEFAULT_DRAIN_BUDGET,
@@ -258,6 +281,7 @@ def make_loop(
         source_branch=source_branch,
         promote=promote,
         skip_post_promotion_review=skip_post_promotion_review,
+        skip_post_promotion_followups=skip_post_promotion_followups,
         issue=issue,
         drain=drain,
         max_issues=max_issues,
@@ -585,6 +609,48 @@ Build it.
             ),
             [],
         )
+
+    def test_post_promotion_followup_validation_requires_ready_contract(self) -> None:
+        valid = ralph.PostPromotionFollowupDraft(
+            title="Create follow-up",
+            body=IMPLEMENTATION_BODY,
+            labels=("enhancement", "delivery-gitflow"),
+            finding_id="create-follow-up",
+        )
+        invalid = ralph.PostPromotionFollowupDraft(
+            title="Incomplete follow-up",
+            body="## What to build\nBuild it.\n",
+            labels=("delivery-gitflow",),
+            finding_id="incomplete-follow-up",
+        )
+
+        valid_result = ralph.validate_post_promotion_followup_draft(valid)
+        invalid_result = ralph.validate_post_promotion_followup_draft(invalid)
+
+        self.assertTrue(valid_result.ready)
+        self.assertEqual(
+            valid_result.labels,
+            ("delivery-gitflow", "enhancement", "ready-for-agent"),
+        )
+        self.assertFalse(invalid_result.ready)
+        self.assertEqual(invalid_result.labels, ("needs-triage",))
+        self.assertTrue(
+            any("Missing required issue section" in reason for reason in invalid_result.reasons)
+        )
+        self.assertTrue(
+            any("category label" in reason for reason in invalid_result.reasons)
+        )
+
+    def test_post_promotion_followup_drafts_parse_structured_json_section(self) -> None:
+        drafts = ralph.post_promotion_followup_drafts_from_markdown(
+            POST_PROMOTION_REVIEW_MARKDOWN
+        )
+
+        self.assertEqual(len(drafts), 1)
+        self.assertEqual(drafts[0].finding_id, "harden-promotion-evidence-checks")
+        self.assertEqual(drafts[0].title, "Harden Promotion evidence checks")
+        self.assertIn("## What to build", drafts[0].body)
+        self.assertEqual(drafts[0].labels, ("delivery-gitflow", "enhancement"))
 
     def test_parse_blockers_reads_issue_references_from_blocked_by_section(self) -> None:
         body = """## What to build
@@ -1352,6 +1418,7 @@ Build it.
         self.assertEqual(config.delivery_mode, ralph.GITFLOW_MODE)
         self.assertIsNone(config.target_branch)
         self.assertFalse(config.skip_post_promotion_review)
+        self.assertFalse(config.skip_post_promotion_followups)
 
     def test_parse_args_help_describes_default_drain_budget(self) -> None:
         output = io.StringIO()
@@ -1364,6 +1431,7 @@ Build it.
         self.assertIn("Use 0 for unlimited", help_text)
         self.assertIn("--allow-dirty-worktree", help_text)
         self.assertIn("--skip-post-promotion-review", help_text)
+        self.assertIn("--skip-post-promotion-followups", help_text)
         self.assertIn("exploratory", help_text)
 
     def test_build_config_records_post_promotion_review_skip_flag(self) -> None:
@@ -1383,6 +1451,24 @@ Build it.
 
         self.assertTrue(config.promote)
         self.assertTrue(config.skip_post_promotion_review)
+
+    def test_build_config_records_post_promotion_followup_skip_flag(self) -> None:
+        runner = FakeRunner(
+            command_outputs={
+                ("git", "rev-parse", "--show-toplevel"): ["/work/repo\n"],
+                ("git", "config", "--get", "remote.origin.url"): [
+                    "git@github.com:example/repo.git\n"
+                ],
+            }
+        )
+
+        config = ralph.build_config(
+            ralph.parse_args(["--promote", "--skip-post-promotion-followups"]),
+            runner,
+        )
+
+        self.assertTrue(config.promote)
+        self.assertTrue(config.skip_post_promotion_followups)
 
     def test_dirty_root_worktree_message_lists_changed_paths_and_override(self) -> None:
         message = ralph.dirty_root_worktree_message(
@@ -2836,6 +2922,12 @@ Build it.
             comment = comment_path.read_text(encoding="utf-8")
             artifact_path = next((Path(tmp) / "logs").glob("promote-*/post-promotion-review.md"))
             artifact = artifact_path.read_text(encoding="utf-8")
+            followup_body_path = next(
+                (Path(tmp) / "logs").glob(
+                    "promote-*/post-promotion-followup-ralph-post-promotion-followup-*.md"
+                )
+            )
+            followup_body = followup_body_path.read_text(encoding="utf-8")
             manifest = load_run_manifest(Path(tmp), run_glob="promote-*")
 
         commands = [call.args for call in runner.calls]
@@ -2927,7 +3019,8 @@ Build it.
             runner.calls[review_index].input_text,
         )
         self.assertIn("## Follow-up GitHub Issue Drafts", runner.calls[review_index].input_text)
-        self.assertIn("Do not create the follow-up issues.", runner.calls[review_index].input_text)
+        self.assertIn("Do not create the follow-up issues yourself.", runner.calls[review_index].input_text)
+        self.assertIn("Automatic validated follow-up issue creation is enabled.", runner.calls[review_index].input_text)
         self.assertLess(
             runner.calls[review_index].input_text.index("## Recovery and Consistency Guidance"),
             runner.calls[review_index].input_text.index("## Follow-up GitHub Issue Drafts"),
@@ -2953,10 +3046,15 @@ Build it.
         )
         self.assertIn(POST_PROMOTION_REVIEW_MARKDOWN.strip(), output.getvalue())
         self.assertEqual(artifact, POST_PROMOTION_REVIEW_MARKDOWN.rstrip() + "\n")
-        self.assertIn("- Title: Harden Promotion evidence checks", artifact)
-        self.assertIn("- Rationale:", artifact)
-        self.assertIn("- Acceptance criteria:", artifact)
-        self.assertIn("- Suggested labels:", artifact)
+        self.assertIn('"finding_id": "harden-promotion-evidence-checks"', artifact)
+        self.assertIn('"title": "Harden Promotion evidence checks"', artifact)
+        self.assertIn("## Acceptance criteria", artifact)
+        self.assertIn('"labels": ["enhancement", "delivery-gitflow"]', artifact)
+        self.assertIn("## Ralph source", followup_body)
+        self.assertIn(
+            "Source marker: `ralph-post-promotion-followup:promotion-sha:harden-promotion-evidence-checks`",
+            followup_body,
+        )
         self.assertIn("Ralph promotion completed.", comment)
         self.assertIn("Promotion commit: `promotion-sha`", comment)
         self.assertIn("Integrated commit: `abc1234`", comment)
@@ -3029,6 +3127,30 @@ Build it.
         self.assertNotIn("gh issue comment", allowed_commands)
         self.assertNotIn("gh issue edit", allowed_commands)
         self.assertNotIn("gh issue close", allowed_commands)
+        self.assertNotIn("gh issue create", allowed_commands)
+        create_commands = [
+            command for command in commands if command[:3] == ("gh", "issue", "create")
+        ]
+        self.assertEqual(len(create_commands), 1)
+        create_index = commands.index(create_commands[0])
+        self.assertLess(review_index, create_index)
+        self.assertLess(create_index, cleanup_index)
+        self.assertIn("--label", create_commands[0])
+        self.assertIn("ready-for-agent", create_commands[0])
+        self.assertIn("enhancement", create_commands[0])
+        self.assertIn("delivery-gitflow", create_commands[0])
+        self.assertEqual(manifest["post_promotion_followups"]["status"], "completed")
+        self.assertEqual(
+            manifest["post_promotion_followups"]["created"][0]["url"],
+            "https://github.com/example/repo/issues/99",
+        )
+        self.assertEqual(
+            manifest["post_promotion_followups"]["created"][0]["source_marker"],
+            "ralph-post-promotion-followup:promotion-sha:harden-promotion-evidence-checks",
+        )
+        self.assertEqual(manifest["post_promotion_followups"]["duplicates"], [])
+        self.assertEqual(manifest["post_promotion_followups"]["validation_downgrades"], [])
+        self.assertEqual(manifest["post_promotion_followups"]["failures"], [])
         self.assertEqual(manifest["pushes"]["promotion_target"]["status"], "pushed")
         self.assertEqual(manifest["pushes"]["source_branch_sync"]["status"], "pushed")
         self.assertEqual(manifest["github_metadata"]["issues"][0]["number"], 42)
@@ -3065,6 +3187,7 @@ Build it.
         promote_path = Path(tmp) / "worktrees" / "agent-promote-dev-to-main"
         commands = [call.args for call in runner.calls]
         self.assertNotIn(tuple(ralph.codex_exec_command(promote_path)), commands)
+        self.assertFalse(any(command[:3] == ("gh", "issue", "create") for command in commands))
         self.assertIn(
             "Post-promotion review skipped by --skip-post-promotion-review.",
             output.getvalue(),
@@ -3074,6 +3197,215 @@ Build it.
             manifest["post_promotion_review"]["status"],
             "skipped_by_operator",
         )
+        self.assertFalse(manifest["post_promotion_followups"]["enabled"])
+        self.assertEqual(
+            manifest["post_promotion_followups"]["status"],
+            "skipped_review_disabled",
+        )
+
+    def test_promotion_skip_post_promotion_followups_keeps_review_but_disables_create(
+        self,
+    ) -> None:
+        runner = FakeRunner(
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                promote=True,
+                skip_post_promotion_followups=True,
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+            artifact_path = next(tmp_path.glob("logs/promote-*/post-promotion-review.md"))
+
+        commands = [call.args for call in runner.calls]
+        promote_path = Path(tmp) / "worktrees" / "agent-promote-dev-to-main"
+        review_command = tuple(
+            ralph.codex_exec_command(
+                promote_path,
+                output_last_message=artifact_path,
+            )
+        )
+        self.assertIn(review_command, commands)
+        self.assertFalse(any(command[:3] == ("gh", "issue", "create") for command in commands))
+        review_index = commands.index(review_command)
+        self.assertIn(
+            "Automatic validated follow-up issue creation is disabled for this Promotion attempt.",
+            runner.calls[review_index].input_text,
+        )
+        self.assertIn(
+            "Post-promotion follow-up issue creation skipped by operator.",
+            output.getvalue(),
+        )
+        self.assertFalse(manifest["post_promotion_followups"]["enabled"])
+        self.assertEqual(
+            manifest["post_promotion_followups"]["status"],
+            "skipped_by_operator",
+        )
+
+    def test_post_promotion_followup_invalid_draft_creates_needs_triage_with_evidence(
+        self,
+    ) -> None:
+        review_markdown = """# Post-promotion Review
+
+## Findings
+
+Actionable follow-up found.
+
+## Learnings
+
+None.
+
+## Recovery and Consistency Guidance
+
+None.
+
+## Follow-up GitHub Issue Drafts
+
+```json
+[
+  {
+    "finding_id": "incomplete-follow-up",
+    "title": "Incomplete follow-up",
+    "body": "## What to build\\nBuild it.\\n",
+    "labels": ["delivery-gitflow"]
+  }
+]
+```
+"""
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, promote=True)
+            run_dir = tmp_path / "logs" / "promote-test"
+            run_dir.mkdir(parents=True)
+            artifact_path = run_dir / "post-promotion-review.md"
+            artifact_path.write_text(review_markdown, encoding="utf-8")
+            manifest = ralph.RunManifest.for_promotion(
+                run_dir=run_dir,
+                source_branch="dev",
+                target_branch="main",
+                source_path=tmp_path / "worktrees" / "source",
+                promote_path=tmp_path / "worktrees" / "promote",
+                config=loop.config,
+            )
+
+            with redirect_stdout(io.StringIO()):
+                loop._run_post_promotion_followups(
+                    source_branch="dev",
+                    target_branch="main",
+                    source_revision="source-sha",
+                    promotion_sha="promotion-sha",
+                    artifact_path=artifact_path,
+                    run_dir=run_dir,
+                    manifest=manifest,
+                )
+
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+            body_path = next(run_dir.glob("post-promotion-followup-*.md"))
+            body = body_path.read_text(encoding="utf-8")
+
+        create_command = next(
+            call.args for call in runner.calls if call.args[:3] == ("gh", "issue", "create")
+        )
+        self.assertIn("needs-triage", create_command)
+        self.assertNotIn("ready-for-agent", create_command)
+        self.assertNotIn("delivery-gitflow", create_command)
+        self.assertIn("## Ralph validation evidence", body)
+        self.assertIn("Missing required issue section", body)
+        self.assertIn("Expected exactly one category label", body)
+        self.assertEqual(manifest_payload["post_promotion_followups"]["status"], "completed")
+        self.assertEqual(
+            manifest_payload["post_promotion_followups"]["created"][0]["validation_status"],
+            "needs_triage",
+        )
+        self.assertEqual(
+            manifest_payload["post_promotion_followups"]["validation_downgrades"][0]["labels"],
+            ["needs-triage"],
+        )
+
+    def test_post_promotion_followup_dedupe_skips_existing_source_marker(self) -> None:
+        marker = (
+            "ralph-post-promotion-followup:"
+            "promotion-sha:harden-promotion-evidence-checks"
+        )
+        list_command = (
+            "gh",
+            "issue",
+            "list",
+            "-R",
+            "example/repo",
+            "--state",
+            "all",
+            "--limit",
+            "1",
+            "--search",
+            f'"{marker}" in:body',
+            "--json",
+            "number,title,url",
+        )
+        runner = FakeRunner(
+            command_outputs={
+                list_command: [
+                    json.dumps(
+                        [
+                            {
+                                "number": 77,
+                                "title": "Existing follow-up",
+                                "url": "https://github.com/example/repo/issues/77",
+                            }
+                        ]
+                    )
+                ]
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, promote=True)
+            run_dir = tmp_path / "logs" / "promote-test"
+            run_dir.mkdir(parents=True)
+            artifact_path = run_dir / "post-promotion-review.md"
+            artifact_path.write_text(POST_PROMOTION_REVIEW_MARKDOWN, encoding="utf-8")
+            manifest = ralph.RunManifest.for_promotion(
+                run_dir=run_dir,
+                source_branch="dev",
+                target_branch="main",
+                source_path=tmp_path / "worktrees" / "source",
+                promote_path=tmp_path / "worktrees" / "promote",
+                config=loop.config,
+            )
+
+            with redirect_stdout(io.StringIO()):
+                loop._run_post_promotion_followups(
+                    source_branch="dev",
+                    target_branch="main",
+                    source_revision="source-sha",
+                    promotion_sha="promotion-sha",
+                    artifact_path=artifact_path,
+                    run_dir=run_dir,
+                    manifest=manifest,
+                )
+
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn(list_command, commands)
+        self.assertFalse(any(command[:3] == ("gh", "issue", "create") for command in commands))
+        self.assertEqual(manifest_payload["post_promotion_followups"]["status"], "completed")
+        self.assertEqual(
+            manifest_payload["post_promotion_followups"]["duplicates"][0]["url"],
+            "https://github.com/example/repo/issues/77",
+        )
+        self.assertEqual(manifest_payload["post_promotion_followups"]["created"], [])
 
     def test_promotion_no_changes_skips_post_promotion_review_agent(self) -> None:
         runner = FakeRunner(
@@ -3105,6 +3437,10 @@ Build it.
             manifest["post_promotion_review"]["status"],
             "skipped_no_changes",
         )
+        self.assertEqual(
+            manifest["post_promotion_followups"]["status"],
+            "skipped_no_changes",
+        )
 
     def test_post_promotion_review_failure_is_warning_only(self) -> None:
         runner = FakeRunner(
@@ -3132,6 +3468,56 @@ Build it.
         self.assertIsNone(manifest["failure"])
         self.assertEqual(manifest["post_promotion_review"]["status"], "failed")
         self.assertIn("Command failed", manifest["post_promotion_review"]["error"])
+        self.assertEqual(
+            manifest["post_promotion_followups"]["status"],
+            "skipped_review_unavailable",
+        )
+
+    def test_post_promotion_followup_creation_failure_is_warning_only_after_push(
+        self,
+    ) -> None:
+        runner = FakeRunner(
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+            fail_issue_create=True,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, promote=True)
+            stderr = io.StringIO()
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(stderr):
+                loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+            artifact_path = next(tmp_path.glob("logs/promote-*/post-promotion-review.md"))
+            artifact = artifact_path.read_text(encoding="utf-8")
+
+        commands = [call.args for call in runner.calls]
+        push_index = commands.index(("git", "push", "origin", "HEAD:main"))
+        create_command = next(
+            command for command in commands if command[:3] == ("gh", "issue", "create")
+        )
+        create_index = commands.index(create_command)
+        self.assertLess(push_index, create_index)
+        self.assertIn("Post-promotion follow-up creation warning", stderr.getvalue())
+        self.assertEqual(manifest["status"], "succeeded")
+        self.assertIsNone(manifest["failure"])
+        self.assertEqual(
+            manifest["post_promotion_followups"]["status"],
+            "completed_with_warnings",
+        )
+        self.assertIn(
+            "Command failed",
+            manifest["post_promotion_followups"]["failures"][0]["error"],
+        )
+        self.assertIn(
+            "Promotion remains succeeded",
+            manifest["post_promotion_followups"]["recovery_guidance"],
+        )
+        self.assertIn("## Follow-up Creation Recovery Guidance", artifact)
+        self.assertIn("Promotion remains succeeded", artifact)
 
     def test_failed_promotion_push_check_runs_review_without_side_effects(self) -> None:
         qa_command = ("python3", "-m", "unittest", "discover", "-s", "tests")

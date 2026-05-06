@@ -194,6 +194,13 @@ Skip the default **Post-promotion review** during **Promotion**:
 python3 scripts/ralph.py --promote --skip-post-promotion-review
 ```
 
+Run **Post-promotion review** but skip automatic validated follow-up issue
+creation:
+
+```bash
+python3 scripts/ralph.py --promote --skip-post-promotion-followups
+```
+
 Override the **Integration target** explicitly when needed:
 
 ```bash
@@ -248,9 +255,13 @@ sandbox, and prepends a wrapper that permits only `gh auth status` plus the
 phase-specific `gh issue` commands. Implementation, triage, and **Ready issue
 refresh** passes may get phase-limited issue reads and writes. The
 **Post-promotion review** gets read-only issue access: `gh issue view`,
-`gh issue list`, and `gh issue status`. This does not grant Git push access; Git
-fetches, **Local integration**, Exploratory handoff pushes, **Integration
-target** pushes, and **Promotion** stay in Ralph's outer loop.
+`gh issue list`, and `gh issue status`. The review agent cannot call
+`gh issue create`, `comment`, `edit`, `close`, or `reopen`. After a successful
+**Promotion**, Ralph may create structured follow-up issues itself through a
+validated create-only helper that calls only issue search and issue create. This
+does not grant Git push access; Git fetches, **Local integration**, Exploratory
+handoff pushes, **Integration target** pushes, and **Promotion** stay in
+Ralph's outer loop.
 
 Ralph also standardizes writable QA runtime paths for spawned Codex
 subprocesses and Ralph-run QA commands. If the operator exports `DAGSTER_HOME`,
@@ -322,6 +333,9 @@ Key fields for inspection:
   **Local integration** commit or remained an unverified **Promotion** commit.
 - `post_promotion_review`: enabled state, skip reason, warning-only review
   status, review log path, and Markdown artifact path for **Promotion** runs.
+- `post_promotion_followups`: enabled state, created issue URLs, duplicate
+  source-marker skips, validation downgrades to `needs-triage`, warning-only
+  creation failures, and recovery guidance for **Promotion** follow-ups.
 - `branches`: issue, source, and target branch names that apply to the run.
 - `paths`: repo root, run directory, worktree container, and implementation,
   integration, Promotion source, or Promotion target worktree paths.
@@ -483,9 +497,10 @@ other commits remain visible as unverified **Promotion** commits in the run
 manifest and **Post-promotion review** prompt.
 Unverified **Promotion** commits are mandatory **Post-promotion review**
 context only. They do not block **Promotion**, do not require explicit issue
-association before **Promotion**, and do not automatically create GitHub Issues.
-Follow-up GitHub Issue drafts belong in the **Post-promotion review** artifact
-only when the review finds actionable work.
+association before **Promotion**, and do not create follow-up issues by
+themselves. Follow-up GitHub Issue drafts belong in the
+**Post-promotion review** artifact only when the review finds concrete
+actionable work.
 
 Ralph runs the aggregate matching **Push check** QA from the source worktree.
 When the promoted range includes non-doc runtime files under
@@ -538,18 +553,34 @@ commits and unverified **Promotion** commits when available so the review can
 separate closed issue evidence from other promoted work. For failed or partial
 attempts, the report must put recovery and consistency guidance before
 follow-up issue recommendations. The review agent has read-only GitHub Issue
-access and must report learnings, recovery guidance, and actionable follow-up
-GitHub Issue drafts instead of mutating issues. Ralph saves the final Markdown
-report as
-`post-promotion-review.md`, prints it in the terminal, and records both
-`post_promotion_review.log_path` and `post_promotion_review.artifact_path` in
-the **Promotion** run manifest. Review failures are warnings recorded under
-`post_promotion_review`; they do not change the original Promotion success or
-failure status.
-Operators can pass `--skip-post-promotion-review` to disable the review path.
+access and must report learnings, recovery guidance, and structured actionable
+follow-up GitHub Issue drafts instead of mutating issues. Ralph saves the final
+Markdown report as `post-promotion-review.md`, prints it in the terminal, and
+records both `post_promotion_review.log_path` and
+`post_promotion_review.artifact_path` in the **Promotion** run manifest.
+
+Successful Promotions create validated follow-up GitHub Issues by default after
+the review completes. The structured JSON draft must include `title`, `body`,
+`finding_id`, and `labels`; the body must include `## What to build`,
+`## Acceptance criteria`, and `## Blocked by`, and labels must include exactly
+one category label plus exactly one **Delivery mode** label. Ralph adds a
+deterministic source marker based on the **Promotion** commit and finding ID,
+searches for the marker before creating, and records duplicate skips in the
+manifest. Valid drafts are created as `ready-for-agent`; invalid or incomplete
+drafts are created as `needs-triage` with validation evidence so they are not
+drainable work. Follow-up creation failures after `main` is pushed are
+warning-only: **Promotion** remains succeeded, the manifest records the
+failure, and `post-promotion-review.md` receives recovery guidance.
+
+Operators can pass `--skip-post-promotion-followups` to run the review while
+skipping automatic follow-up issue creation. Operators can pass
+`--skip-post-promotion-review` to disable both review and follow-up creation.
+Review failures are warnings recorded under `post_promotion_review`; they do
+not change the original Promotion success or failure status.
 If there are no Promotion changes, Ralph does not create Promotion worktrees or
 run the review agent; it prints a review skip note and records
-`post_promotion_review.status` as `skipped_no_changes`.
+`post_promotion_review.status` and `post_promotion_followups.status` as
+`skipped_no_changes`.
 
 ## Triage pass
 
@@ -646,8 +677,9 @@ with evidence. Unclear issues must not be closed as completed.
 runs during drain after **Local integration** or Exploratory handoff and may
 update issue metadata.
 **Post-promotion review** runs after **Promotion**, uses read-only issue access,
-and reports follow-up issue drafts in the Promotion artifact instead of mutating
-the queue.
+and reports structured follow-up issue drafts in the Promotion artifact. Only
+Ralph's validated create-only helper may turn those drafts into GitHub Issues
+after a successful **Promotion**.
 
 ## QA policy
 

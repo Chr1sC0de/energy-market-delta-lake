@@ -66,9 +66,15 @@ review failures are warning-only and do not change the original Promotion
 success or failure status. Ralph saves successful review output as
 `post-promotion-review.md`, prints it to the terminal, and records the artifact
 path in the **Promotion** manifest.
-Operators must pass `--skip-post-promotion-review` for an explicit no-review
-Promotion, and no-change Promotions record the review state as
-`skipped_no_changes`.
+After a successful **Promotion**, Ralph validates structured follow-up drafts
+from the review artifact and creates GitHub Issues by default. Valid drafts
+become `ready-for-agent`; invalid drafts become `needs-triage` with validation
+evidence; duplicate source markers are skipped; and helper failures after
+`main` is pushed are warning-only recovery items in the **Promotion** manifest.
+Operators must pass `--skip-post-promotion-followups` to keep review but skip
+automatic follow-up creation, or `--skip-post-promotion-review` for an explicit
+no-review Promotion that also disables follow-up creation. No-change
+Promotions record the review and follow-up states as `skipped_no_changes`.
 
 Unverified **Promotion** commits are review context, not Promotion blockers.
 This policy favors review context because **Promotion** has already validated
@@ -80,8 +86,9 @@ a pre-promotion gate and could delay already-reviewed `dev` work without
 improving the **Integration target** safety checks. Ralph therefore surfaces
 unverified commits in the **Promotion** manifest and **Post-promotion review**
 prompt, but it does not require issue association before **Promotion**, does not
-automatically create GitHub Issues for those commits, and expects follow-up
-issues only when **Post-promotion review** finds actionable work.
+automatically create GitHub Issues for those commits by themselves, and expects
+follow-up issues only when **Post-promotion review** finds actionable work that
+satisfies the validated follow-up contract or needs triage evidence.
 
 ## Sync metadata
 

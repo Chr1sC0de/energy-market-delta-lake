@@ -76,6 +76,7 @@ SANDBOX_READ_WRITE_GH_ISSUE_COMMANDS = (
     "reopen",
 )
 SANDBOX_ALLOWED_GH_ISSUE_COMMANDS = SANDBOX_READ_WRITE_GH_ISSUE_COMMANDS
+POST_PROMOTION_FOLLOWUP_MARKER_PREFIX = "ralph-post-promotion-followup"
 SANDBOX_CODEX_ENV_INCLUDE_ONLY = (
     "PATH",
     "HOME",
@@ -112,6 +113,7 @@ TRIAGE_STATE_LABELS = frozenset(
         WONTFIX_LABEL,
     }
 )
+CATEGORY_LABELS = frozenset({"bug", "enhancement"})
 IMPLEMENTATION_STOP_LABELS = frozenset(
     {
         NEEDS_TRIAGE_LABEL,
@@ -252,6 +254,13 @@ class SandboxIssueAccess:
 
 
 @dataclass(frozen=True)
+class IssueReference:
+    number: int | None
+    title: str
+    url: str
+
+
+@dataclass(frozen=True)
 class QARuntimeEnv:
     values: dict[str, str]
     metadata: dict[str, dict[str, str]]
@@ -291,6 +300,32 @@ class PromotedSourceCommit:
 
 
 @dataclass(frozen=True)
+class PostPromotionFollowupDraft:
+    title: str
+    body: str
+    labels: tuple[str, ...]
+    finding_id: str
+
+
+@dataclass(frozen=True)
+class PostPromotionFollowupValidation:
+    ready: bool
+    labels: tuple[str, ...]
+    reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class PostPromotionFollowupContext:
+    repo: str
+    source_branch: str
+    target_branch: str
+    source_revision: str
+    promotion_sha: str
+    run_dir: Path
+    artifact_path: Path
+
+
+@dataclass(frozen=True)
 class QACommand:
     args: tuple[str, ...]
     cwd: Path
@@ -321,6 +356,7 @@ class LoopConfig:
     source_branch: str
     promote: bool
     skip_post_promotion_review: bool
+    skip_post_promotion_followups: bool
     issue: int | None
     drain: bool
     max_issues: int
@@ -414,6 +450,10 @@ class RunManifest:
         promote_path: Path,
         config: LoopConfig,
     ) -> "RunManifest":
+        followups_enabled = (
+            not config.skip_post_promotion_review
+            and not config.skip_post_promotion_followups
+        )
         data: dict[str, Any] = {
             "schema_version": MANIFEST_SCHEMA_VERSION,
             "run_kind": "promotion",
@@ -457,6 +497,23 @@ class RunManifest:
                 ),
                 "log_path": None,
                 "artifact_path": None,
+            },
+            "post_promotion_followups": {
+                "enabled": followups_enabled,
+                "status": (
+                    "pending"
+                    if followups_enabled
+                    else (
+                        "skipped_review_disabled"
+                        if config.skip_post_promotion_review
+                        else "skipped_by_operator"
+                    )
+                ),
+                "created": [],
+                "duplicates": [],
+                "validation_downgrades": [],
+                "failures": [],
+                "recovery_guidance": None,
             },
             "pushes": {},
             "github_metadata": {"status": "not_started", "issues": []},
@@ -530,6 +587,35 @@ class RunManifest:
         if error is not None:
             review["error"] = error
         self.record_event(f"post_promotion_review_{status}", details=dict(review))
+
+    def record_post_promotion_followups(
+        self,
+        status: str,
+        *,
+        created: list[dict[str, Any]] | None = None,
+        duplicates: list[dict[str, Any]] | None = None,
+        validation_downgrades: list[dict[str, Any]] | None = None,
+        failures: list[dict[str, Any]] | None = None,
+        reason: str | None = None,
+        recovery_guidance: str | None = None,
+    ) -> None:
+        followups = self.data.setdefault("post_promotion_followups", {})
+        if not isinstance(followups, dict):
+            raise RalphError("Manifest post_promotion_followups field is not an object.")
+        followups["status"] = status
+        if created is not None:
+            followups["created"] = created
+        if duplicates is not None:
+            followups["duplicates"] = duplicates
+        if validation_downgrades is not None:
+            followups["validation_downgrades"] = validation_downgrades
+        if failures is not None:
+            followups["failures"] = failures
+        if reason is not None:
+            followups["reason"] = reason
+        if recovery_guidance is not None:
+            followups["recovery_guidance"] = recovery_guidance
+        self.record_event(f"post_promotion_followups_{status}", details=dict(followups))
 
     def record_source_tree(self, *, branch: str, revision: str, worktree_path: Path) -> None:
         source_tree = {
@@ -916,6 +1002,232 @@ def missing_required_sections(
         if body is None or body.strip() == "":
             missing.append(heading)
     return missing
+
+
+def parse_label_values(value: Any) -> tuple[str, ...]:
+    if isinstance(value, str):
+        raw_labels = re.split(r"[,|\n]", value)
+    elif isinstance(value, list):
+        raw_labels = [str(item) for item in value]
+    else:
+        raw_labels = []
+    labels = sorted({label.strip().strip("`") for label in raw_labels if label.strip()})
+    return tuple(labels)
+
+
+def followup_payloads_from_json(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, dict) and isinstance(value.get("followups"), list):
+        return [item for item in value["followups"] if isinstance(item, dict)]
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    if isinstance(value, dict):
+        return [value]
+    return []
+
+
+def markdown_json_code_blocks(markdown: str) -> list[str]:
+    pattern = re.compile(r"(?ims)^```(?:json)?[^\n]*\n(?P<body>.*?)^```\s*$")
+    return [match.group("body").strip() for match in pattern.finditer(markdown)]
+
+
+def post_promotion_followup_draft_from_payload(
+    payload: dict[str, Any],
+    *,
+    index: int,
+) -> PostPromotionFollowupDraft:
+    title = str(payload.get("title") or "").strip()
+    body = str(payload.get("body") or "").strip()
+    finding_id = str(
+        payload.get("finding_id") or payload.get("id") or slugify(title) or f"draft-{index}"
+    ).strip()
+    if finding_id == "":
+        finding_id = f"draft-{index}"
+    return PostPromotionFollowupDraft(
+        title=title,
+        body=body,
+        labels=parse_label_values(payload.get("labels")),
+        finding_id=finding_id,
+    )
+
+
+def post_promotion_followup_drafts_from_markdown(
+    markdown: str,
+) -> list[PostPromotionFollowupDraft]:
+    section = section_body(markdown, "Follow-up GitHub Issue Drafts")
+    if section is None or section.strip() == "":
+        return []
+
+    payloads: list[dict[str, Any]] = []
+    json_blocks = markdown_json_code_blocks(section)
+    if not json_blocks:
+        json_blocks = [section.strip()]
+    for block in json_blocks:
+        try:
+            payload = json.loads(block)
+        except json.JSONDecodeError:
+            continue
+        payloads.extend(followup_payloads_from_json(payload))
+
+    return [
+        post_promotion_followup_draft_from_payload(payload, index=index)
+        for index, payload in enumerate(payloads, start=1)
+    ]
+
+
+def validate_post_promotion_followup_draft(
+    draft: PostPromotionFollowupDraft,
+) -> PostPromotionFollowupValidation:
+    reasons: list[str] = []
+    if draft.title == "":
+        reasons.append("Title is missing.")
+    if draft.body == "":
+        reasons.append("Body is missing.")
+
+    missing = missing_required_sections(draft.body)
+    if missing:
+        reasons.append(f"Missing required issue section(s): {', '.join(missing)}.")
+
+    label_set = frozenset(draft.labels)
+    category_labels = sorted(label_set.intersection(CATEGORY_LABELS))
+    delivery_labels = sorted(label_set.intersection(DELIVERY_LABELS))
+    if len(category_labels) != 1:
+        reasons.append(
+            "Expected exactly one category label "
+            f"({', '.join(sorted(CATEGORY_LABELS))}); found "
+            f"{', '.join(category_labels) if category_labels else 'none'}."
+        )
+    if len(delivery_labels) != 1:
+        reasons.append(
+            "Expected exactly one Delivery mode label "
+            f"({', '.join(sorted(DELIVERY_LABELS))}); found "
+            f"{', '.join(delivery_labels) if delivery_labels else 'none'}."
+        )
+
+    allowed_labels = CATEGORY_LABELS.union(DELIVERY_LABELS, {READY_LABEL})
+    unsupported_labels = sorted(label_set - allowed_labels)
+    if unsupported_labels:
+        reasons.append(f"Unsupported label(s): {', '.join(unsupported_labels)}.")
+
+    if reasons:
+        return PostPromotionFollowupValidation(
+            ready=False,
+            labels=(NEEDS_TRIAGE_LABEL,),
+            reasons=tuple(reasons),
+        )
+
+    labels = tuple(sorted({READY_LABEL, category_labels[0], delivery_labels[0]}))
+    return PostPromotionFollowupValidation(ready=True, labels=labels, reasons=())
+
+
+def post_promotion_followup_source_marker(
+    context: PostPromotionFollowupContext,
+    draft: PostPromotionFollowupDraft,
+    *,
+    index: int,
+) -> str:
+    finding_key = slugify(draft.finding_id or draft.title or f"draft-{index}")
+    return f"{POST_PROMOTION_FOLLOWUP_MARKER_PREFIX}:{context.promotion_sha}:{finding_key}"
+
+
+def post_promotion_followup_issue_title(
+    draft: PostPromotionFollowupDraft,
+    *,
+    index: int,
+) -> str:
+    if draft.title != "":
+        return draft.title
+    return f"Post-promotion follow-up needs triage: {draft.finding_id or f'draft-{index}'}"
+
+
+def post_promotion_followup_issue_body(
+    draft: PostPromotionFollowupDraft,
+    validation: PostPromotionFollowupValidation,
+    *,
+    context: PostPromotionFollowupContext,
+    marker: str,
+) -> str:
+    body = draft.body.strip() or "_No structured draft body was provided._"
+    lines = [body, ""]
+    if not validation.ready:
+        lines.extend(
+            [
+                "## Ralph validation evidence",
+                "",
+                (
+                    "Ralph created this Post-promotion review follow-up as "
+                    f"`{NEEDS_TRIAGE_LABEL}` because the draft did not satisfy "
+                    "the ready issue contract."
+                ),
+                "",
+                *[f"- {reason}" for reason in validation.reasons],
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
+            "## Ralph source",
+            "",
+            f"- Source marker: `{marker}`",
+            f"- Source branch: `{context.source_branch}`",
+            f"- Source revision: `{context.source_revision}`",
+            f"- Integration target: `{context.target_branch}`",
+            f"- Promotion commit: `{context.promotion_sha}`",
+            f"- Promotion run: `{context.run_dir}`",
+            f"- Review artifact: `{context.artifact_path}`",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def parse_issue_reference_from_create_stdout(
+    stdout: str,
+    *,
+    title: str,
+) -> IssueReference:
+    match = re.search(r"https://github\.com/[^/\s]+/[^/\s]+/issues/(?P<number>\d+)", stdout)
+    if match is None:
+        url = stdout.strip().splitlines()[-1] if stdout.strip() else ""
+        return IssueReference(number=None, title=title, url=url)
+    return IssueReference(number=int(match.group("number")), title=title, url=match.group(0))
+
+
+def post_promotion_followup_recovery_guidance(
+    failures: list[dict[str, Any]],
+    *,
+    run_dir: Path,
+) -> str:
+    count = len(failures)
+    plural = "s" if count != 1 else ""
+    return (
+        f"Ralph could not create {count} Post-promotion review follow-up issue{plural} "
+        "after `main` was pushed. Promotion remains succeeded. Inspect "
+        f"`{run_dir / MANIFEST_NAME}` under `post_promotion_followups.failures`, "
+        "then create or triage the missing issue manually using the recorded source "
+        "marker to avoid duplicates."
+    )
+
+
+def append_post_promotion_followup_recovery_guidance(
+    artifact_path: Path,
+    *,
+    guidance: str,
+    failures: list[dict[str, Any]],
+) -> None:
+    lines = [
+        "",
+        "## Follow-up Creation Recovery Guidance",
+        "",
+        guidance,
+        "",
+    ]
+    for failure in failures:
+        marker = str(failure.get("source_marker") or "unknown")
+        error = str(failure.get("error") or "unknown failure")
+        lines.append(f"- `{marker}`: {error}")
+    existing = artifact_path.read_text(encoding="utf-8") if artifact_path.exists() else ""
+    artifact_path.write_text(existing.rstrip() + "\n" + "\n".join(lines) + "\n", encoding="utf-8")
 
 
 def parse_blockers(markdown: str) -> list[int]:
@@ -1592,6 +1904,35 @@ class GitHubClient:
         )
         return list(payload.get("comments", []))
 
+    def find_issue_by_source_marker(self, marker: str) -> IssueReference | None:
+        payload = self._json(
+            [
+                "gh",
+                "issue",
+                "list",
+                "-R",
+                self.repo,
+                "--state",
+                "all",
+                "--limit",
+                "1",
+                "--search",
+                f'"{marker}" in:body',
+                "--json",
+                "number,title,url",
+            ]
+        )
+        if not isinstance(payload, list) or not payload:
+            return None
+        item = payload[0]
+        if not isinstance(item, dict):
+            return None
+        return IssueReference(
+            number=int(item["number"]) if item.get("number") is not None else None,
+            title=str(item.get("title") or ""),
+            url=str(item.get("url") or ""),
+        )
+
     def current_user(self) -> str:
         result = self.runner.run(["gh", "api", "user", "--jq", ".login"], cwd=self.repo_root)
         return result.stdout.strip()
@@ -1632,6 +1973,40 @@ class GitHubClient:
             cwd=self.repo_root,
             execute_in_dry_run=False,
         )
+
+    def create_issue(
+        self,
+        *,
+        title: str,
+        body: str,
+        labels: tuple[str, ...],
+        run_dir: Path,
+        source_marker: str,
+    ) -> IssueReference:
+        slug = slugify(source_marker)
+        body_path = run_dir / f"post-promotion-followup-{slug}.md"
+        if not self.runner.dry_run:
+            body_path.write_text(body, encoding="utf-8")
+        args = [
+            "gh",
+            "issue",
+            "create",
+            "-R",
+            self.repo,
+            "--title",
+            title,
+            "--body-file",
+            str(body_path),
+        ]
+        for label in labels:
+            args.extend(["--label", label])
+        result = self.runner.run(
+            args,
+            cwd=self.repo_root,
+            log_path=run_dir / f"gh-issue-create-followup-{slug}.log",
+            execute_in_dry_run=False,
+        )
+        return parse_issue_reference_from_create_stdout(result.stdout, title=title)
 
     def close_issue(self, number: int, *, run_dir: Path) -> None:
         self.runner.run(
@@ -2171,6 +2546,10 @@ class RalphLoop:
                     "skipped_no_changes",
                     reason="No Promotion changes were detected.",
                 )
+                manifest.record_post_promotion_followups(
+                    "skipped_no_changes",
+                    reason="No Promotion changes were detected.",
+                )
                 manifest.record_success("no_changes_to_promote")
                 return
             emit(f"Creating Promotion source worktree {source_path}")
@@ -2281,7 +2660,7 @@ class RalphLoop:
                 run_dir=run_dir,
                 manifest=manifest,
             )
-            self._run_post_promotion_review(
+            review_artifact_path = self._run_post_promotion_review(
                 source_branch=source_branch,
                 target_branch=target_branch,
                 source_revision=source_revision,
@@ -2294,6 +2673,15 @@ class RalphLoop:
                 manifest=manifest,
                 promotion_outcome="succeeded",
                 promotion_error=None,
+            )
+            self._run_post_promotion_followups(
+                source_branch=source_branch,
+                target_branch=target_branch,
+                source_revision=source_revision,
+                promotion_sha=promotion_sha,
+                artifact_path=review_artifact_path,
+                run_dir=run_dir,
+                manifest=manifest,
             )
             try:
                 manifest.record_event("cleaning_up_promotion_worktree")
@@ -2391,6 +2779,10 @@ class RalphLoop:
         promotion_outcome: str,
         promotion_error: Exception,
     ) -> None:
+        manifest.record_post_promotion_followups(
+            "skipped_promotion_not_succeeded",
+            reason=f"Promotion outcome was {promotion_outcome}.",
+        )
         if self.config.skip_post_promotion_review:
             self._run_post_promotion_review(
                 source_branch=source_branch,
@@ -2461,14 +2853,14 @@ class RalphLoop:
         manifest: RunManifest,
         promotion_outcome: str,
         promotion_error: str | None,
-    ) -> None:
+    ) -> Path | None:
         if self.config.skip_post_promotion_review:
             emit("Post-promotion review skipped by --skip-post-promotion-review.")
             manifest.record_post_promotion_review(
                 "skipped_by_operator",
                 reason="Operator passed --skip-post-promotion-review.",
             )
-            return
+            return None
 
         log_path = run_dir / "codex-post-promotion-review.jsonl"
         artifact_path = run_dir / "post-promotion-review.md"
@@ -2493,6 +2885,10 @@ class RalphLoop:
                     run_dir=run_dir,
                     promotion_outcome=promotion_outcome,
                     promotion_error=promotion_error,
+                    automatic_followups_enabled=(
+                        promotion_outcome == "succeeded"
+                        and not self.config.skip_post_promotion_followups
+                    ),
                 ),
                 review_path,
                 log_path,
@@ -2525,11 +2921,189 @@ class RalphLoop:
                 error=str(error),
             )
             emit(f"Post-promotion review warning: {error}", err=True)
-            return
+            return None
         manifest.record_post_promotion_review(
             "completed",
             log_path=log_path,
             artifact_path=artifact_path,
+        )
+        return artifact_path
+
+    def _run_post_promotion_followups(
+        self,
+        *,
+        source_branch: str,
+        target_branch: str,
+        source_revision: str,
+        promotion_sha: str | None,
+        artifact_path: Path | None,
+        run_dir: Path,
+        manifest: RunManifest,
+    ) -> None:
+        if self.config.skip_post_promotion_review:
+            manifest.record_post_promotion_followups(
+                "skipped_review_disabled",
+                reason="Operator passed --skip-post-promotion-review.",
+            )
+            return
+        if self.config.skip_post_promotion_followups:
+            emit("Post-promotion follow-up issue creation skipped by operator.")
+            manifest.record_post_promotion_followups(
+                "skipped_by_operator",
+                reason="Operator passed --skip-post-promotion-followups.",
+            )
+            return
+        if artifact_path is None or not artifact_path.exists():
+            manifest.record_post_promotion_followups(
+                "skipped_review_unavailable",
+                reason="Post-promotion review artifact was not available.",
+            )
+            return
+        if promotion_sha is None:
+            manifest.record_post_promotion_followups(
+                "skipped_unavailable",
+                reason="Promotion commit was not recorded.",
+            )
+            return
+
+        review_markdown = artifact_path.read_text(encoding="utf-8")
+        drafts = post_promotion_followup_drafts_from_markdown(review_markdown)
+        if not drafts:
+            manifest.record_post_promotion_followups(
+                "completed_no_drafts",
+                created=[],
+                duplicates=[],
+                validation_downgrades=[],
+                failures=[],
+                reason="Post-promotion review did not include structured follow-up drafts.",
+            )
+            return
+
+        context = PostPromotionFollowupContext(
+            repo=self.config.repo,
+            source_branch=source_branch,
+            target_branch=target_branch,
+            source_revision=source_revision,
+            promotion_sha=promotion_sha,
+            run_dir=run_dir,
+            artifact_path=artifact_path,
+        )
+        created: list[dict[str, Any]] = []
+        duplicates: list[dict[str, Any]] = []
+        validation_downgrades: list[dict[str, Any]] = []
+        failures: list[dict[str, Any]] = []
+
+        emit(f"Creating validated Post-promotion follow-up issues: {len(drafts)} draft(s).")
+        for index, draft in enumerate(drafts, start=1):
+            marker = post_promotion_followup_source_marker(context, draft, index=index)
+            title = post_promotion_followup_issue_title(draft, index=index)
+            try:
+                duplicate = self.github.find_issue_by_source_marker(marker)
+                if duplicate is not None:
+                    duplicates.append(
+                        {
+                            "title": title,
+                            "source_marker": marker,
+                            "number": duplicate.number,
+                            "url": duplicate.url,
+                        }
+                    )
+                    emit(
+                        "Post-promotion follow-up duplicate skipped: "
+                        f"{marker} -> {duplicate.url or duplicate.number}"
+                    )
+                    continue
+
+                validation = validate_post_promotion_followup_draft(draft)
+                body = post_promotion_followup_issue_body(
+                    draft,
+                    validation,
+                    context=context,
+                    marker=marker,
+                )
+                created_issue = self.github.create_issue(
+                    title=title,
+                    body=body,
+                    labels=validation.labels,
+                    run_dir=run_dir,
+                    source_marker=marker,
+                )
+            except (CommandFailure, OSError, json.JSONDecodeError, ValueError) as error:
+                log_path = path_text(error.log_path) if isinstance(error, CommandFailure) else None
+                failures.append(
+                    {
+                        "title": title,
+                        "source_marker": marker,
+                        "error": str(error),
+                        "log_path": log_path,
+                    }
+                )
+                emit(
+                    f"Post-promotion follow-up creation warning for {marker}: {error}",
+                    err=True,
+                )
+                continue
+
+            entry = {
+                "title": title,
+                "source_marker": marker,
+                "number": created_issue.number,
+                "url": created_issue.url,
+                "labels": list(validation.labels),
+                "validation_status": "ready" if validation.ready else "needs_triage",
+            }
+            created.append(entry)
+            if validation.ready:
+                emit(f"Created ready Post-promotion follow-up issue: {created_issue.url}")
+            else:
+                downgrade = {
+                    "title": title,
+                    "source_marker": marker,
+                    "number": created_issue.number,
+                    "url": created_issue.url,
+                    "reasons": list(validation.reasons),
+                    "labels": list(validation.labels),
+                }
+                validation_downgrades.append(downgrade)
+                emit(
+                    "Created needs-triage Post-promotion follow-up issue after "
+                    f"validation downgrade: {created_issue.url}"
+                )
+
+        if failures:
+            guidance = post_promotion_followup_recovery_guidance(failures, run_dir=run_dir)
+            try:
+                append_post_promotion_followup_recovery_guidance(
+                    artifact_path,
+                    guidance=guidance,
+                    failures=failures,
+                )
+            except OSError as error:
+                failures.append(
+                    {
+                        "title": "Post-promotion review artifact update",
+                        "source_marker": "artifact",
+                        "error": str(error),
+                        "log_path": None,
+                    }
+                )
+            manifest.record_post_promotion_followups(
+                "completed_with_warnings",
+                created=created,
+                duplicates=duplicates,
+                validation_downgrades=validation_downgrades,
+                failures=failures,
+                recovery_guidance=guidance,
+            )
+            emit(f"Post-promotion follow-up recovery guidance: {guidance}", err=True)
+            return
+
+        manifest.record_post_promotion_followups(
+            "completed",
+            created=created,
+            duplicates=duplicates,
+            validation_downgrades=validation_downgrades,
+            failures=[],
         )
 
     def _verified_integrated_issues(
@@ -4146,6 +4720,7 @@ def post_promotion_review_prompt(
     run_dir: Path,
     promotion_outcome: str,
     promotion_error: str | None,
+    automatic_followups_enabled: bool,
 ) -> str:
     changed_lines = "\n".join(f"- {path}" for path in changed_files)
     if not changed_lines:
@@ -4159,6 +4734,11 @@ def post_promotion_review_prompt(
     commit_lines = promotion_commit_inventory_prompt_lines(promotion_commit_inventory)
     promotion_sha_text = promotion_sha or "not recorded"
     promotion_error_text = promotion_error or "None"
+    automatic_followups_text = (
+        "enabled"
+        if automatic_followups_enabled
+        else "disabled for this Promotion attempt"
+    )
     return textwrap.dedent(
         f"""
         Run a Post-promotion review for {repo}.
@@ -4168,11 +4748,12 @@ def post_promotion_review_prompt(
         check, Push check, Local integration, Delivery mode, Integration
         target, and Promotion.
 
-        Do not edit repo files, commit, push, create issues, comment, label,
+        Do not edit repo files, commit, push, create issues directly, comment, label,
         close, reopen, or edit GitHub Issues. You may read Promotion context and
         GitHub Issues with `gh auth status`, `gh issue view`, `gh issue list`,
         and `gh issue status` only. Report findings in the command output only;
         Ralph will save your final Markdown report as `post-promotion-review.md`.
+        Automatic validated follow-up issue creation is {automatic_followups_text}.
 
         Review the Promotion attempt for regressions, missed issue evidence,
         surprising changed files, unverified Promotion commits, recovery or
@@ -4182,6 +4763,9 @@ def post_promotion_review_prompt(
         only to the verified issues. Prioritize concrete findings with file
         paths, commands, commits, or manifest fields. If no issues are found,
         say that clearly and mention any residual risk.
+        Unverified Promotion commits are review context only. Do not recommend
+        or draft a follow-up solely because a commit is unverified; draft
+        follow-ups only for concrete actionable findings.
         When the Promotion outcome is failed or partial, put immediate recovery
         and consistency guidance before follow-up issue recommendations.
 
@@ -4197,14 +4781,24 @@ def post_promotion_review_prompt(
 
         ## Follow-up GitHub Issue Drafts
 
-        Each follow-up draft must include:
+        If there are actionable follow-ups, put a single fenced JSON array in
+        this section. If there are no actionable follow-ups, write `None`.
+        Ralph will validate each JSON draft before any issue creation. Drafts
+        that satisfy the ready issue contract are created with `ready-for-agent`;
+        invalid or incomplete drafts are created with `needs-triage` evidence.
 
-        - Title
-        - Rationale
-        - Acceptance criteria
-        - Suggested labels
+        Each JSON draft object must include:
 
-        Do not create the follow-up issues. Draft them in the report only.
+        - `finding_id`: stable kebab-case identifier for dedupe.
+        - `title`: GitHub Issue title.
+        - `body`: complete Markdown issue body with `## What to build`,
+          `## Acceptance criteria`, and `## Blocked by`.
+        - `labels`: exactly one category label (`bug` or `enhancement`) and
+          exactly one Delivery mode label (`delivery-gitflow`,
+          `delivery-trunk`, or `delivery-exploratory`).
+
+        Do not create the follow-up issues yourself. Draft them in the report
+        only; Ralph owns validated creation after review.
 
         Promotion details:
 
@@ -4521,6 +5115,7 @@ def build_config(args: argparse.Namespace, runner: CommandRunner) -> LoopConfig:
         source_branch=args.source_branch,
         promote=args.promote,
         skip_post_promotion_review=args.skip_post_promotion_review,
+        skip_post_promotion_followups=args.skip_post_promotion_followups,
         issue=args.issue,
         drain=args.drain,
         max_issues=args.max_issues,
@@ -4564,6 +5159,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--skip-post-promotion-review",
         action="store_true",
         help="Skip the default Post-promotion review agent after --promote.",
+    )
+    parser.add_argument(
+        "--skip-post-promotion-followups",
+        action="store_true",
+        help=(
+            "Skip automatic validated follow-up GitHub Issue creation after "
+            "Post-promotion review."
+        ),
     )
     parser.add_argument(
         "--base",
