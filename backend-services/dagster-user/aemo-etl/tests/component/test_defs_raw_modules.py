@@ -39,6 +39,16 @@ STTM_CORE_REPORT_SUFFIXES = (
     "int667_v1_market_parameters_rpt_1",
     "int668_v1_schedule_log_rpt_1",
     "int669_v1_settlement_version_rpt_1",
+    "int670_v1_registered_participants_rpt_1",
+    "int671_v1_hub_facility_definition_rpt_1",
+    "int672_v1_cumulative_price_rpt_1",
+    "int673_v1_total_contingency_bid_offer_rpt_1",
+    "int674_v1_total_contingency_gas_schedules_rpt_1",
+    "int675_v1_default_allocation_notice_rpt_1",
+    "int676_v1_rolling_average_price_rpt_1",
+    "int677_v1_contingency_gas_price_rpt_1",
+    "int678_v1_net_market_balance_daily_amounts_rpt_1",
+    "int679_v1_net_market_balance_settlement_amounts_rpt_1",
 )
 
 
@@ -126,6 +136,52 @@ def test_sttm_core_source_table_specs_registered_for_archive_replay() -> None:
     )
     assert int669_spec.surrogate_key_sources == ("settlement_run_identifier",)
     assert int669_spec.schema["settlement_run_desc"] == String
+
+    (int670_spec,) = select_source_table_specs(
+        specs,
+        table="sttm.bronze_int670_v1_registered_participants_rpt_1",
+    )
+    assert int670_spec.surrogate_key_sources == (
+        "hub_identifier",
+        "company_identifier",
+        "organisation_registration_type",
+        "registered_capacity",
+    )
+    assert int670_spec.schema["registration_status"] == String
+
+    (int674_spec,) = select_source_table_specs(
+        specs,
+        table="bronze/sttm/bronze_int674_v1_total_contingency_gas_schedules_rpt_1",
+    )
+    assert int674_spec.surrogate_key_sources == (
+        "gas_date",
+        "hub_identifier",
+        "facility_identifier",
+        "flow_direction",
+        "contingency_gas_bid_offer_type",
+    )
+    assert int674_spec.schema["contingency_gas_bid_offer_called_quantity"] == String
+
+    (int678_spec,) = select_source_table_specs(
+        specs,
+        table="int678_v1_net_market_balance_daily_amounts_rpt_1",
+    )
+    assert int678_spec.surrogate_key_sources == (
+        "period_start_date",
+        "period_end_date",
+        "hub_identifier",
+    )
+    assert int678_spec.schema["net_market_balance"] == String
+
+    (int679_spec,) = select_source_table_specs(
+        specs,
+        table="sttm.bronze_int679_v1_net_market_balance_settlement_amounts_rpt_1",
+    )
+    assert int679_spec.surrogate_key_sources == (
+        "settlement_run_identifier",
+        "hub_identifier",
+    )
+    assert int679_spec.schema["total_withdrawals"] == String
 
 
 def test_sttm_event_driven_selection_includes_core_market_bronze_assets() -> None:
