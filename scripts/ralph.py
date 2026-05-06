@@ -28,6 +28,8 @@ AI_READY_ISSUE_REFRESH_DISCLAIMER = (
 )
 READY_ISSUE_REFRESH_PROMPT_COMMENT_LIMIT = 5
 READY_ISSUE_REFRESH_ANALYSIS_ARTIFACT_NAME = "ready-issue-refresh-analysis.md"
+READY_ISSUE_REFRESH_MUTATION_PLAN_HEADING = "Candidate Issue Mutation Plan"
+READY_ISSUE_REFRESH_MUTATIONS_KEY = "ready_issue_refresh_mutations"
 
 READY_LABEL = "ready-for-agent"
 NEEDS_TRIAGE_LABEL = "needs-triage"
@@ -1197,6 +1199,11 @@ def markdown_json_code_blocks(markdown: str) -> list[str]:
     return [match.group("body").strip() for match in pattern.finditer(markdown)]
 
 
+def markdown_fenced_json_code_blocks(markdown: str) -> list[str]:
+    pattern = re.compile(r"(?ims)^```\s*json[^\n]*\n(?P<body>.*?)^```\s*$")
+    return [match.group("body").strip() for match in pattern.finditer(markdown)]
+
+
 def post_promotion_followup_draft_from_payload(
     payload: dict[str, Any],
     *,
@@ -1348,33 +1355,78 @@ def post_promotion_followup_issue_body(
     return "\n".join(lines)
 
 
-def json_payloads_from_ready_issue_refresh_markdown(markdown: str) -> list[dict[str, Any]]:
+def ready_issue_refresh_required_mutation_payloads_from_json(
+    value: Any,
+) -> list[dict[str, Any]]:
+    if not isinstance(value, dict):
+        raise ValueError(
+            "Ready issue refresh mutation plan must be a JSON object containing "
+            f"{READY_ISSUE_REFRESH_MUTATIONS_KEY}."
+        )
+    nested = value.get(READY_ISSUE_REFRESH_MUTATIONS_KEY)
+    if not isinstance(nested, list):
+        raise ValueError(
+            "Ready issue refresh mutation plan must contain a "
+            f"{READY_ISSUE_REFRESH_MUTATIONS_KEY} list."
+        )
+
     payloads: list[dict[str, Any]] = []
-    for block in markdown_json_code_blocks(markdown):
-        try:
-            value = json.loads(block)
-        except json.JSONDecodeError:
-            continue
-        payloads.extend(ready_issue_refresh_mutation_payloads_from_json(value))
+    for index, item in enumerate(nested, start=1):
+        if not isinstance(item, dict):
+            raise ValueError(
+                "Ready issue refresh mutation plan entry "
+                f"{index} in {READY_ISSUE_REFRESH_MUTATIONS_KEY} is not an object."
+            )
+        payloads.append(item)
     return payloads
 
 
-def ready_issue_refresh_mutation_payloads_from_json(value: Any) -> list[dict[str, Any]]:
-    if isinstance(value, dict):
-        for key in (
-            "ready_issue_refresh_mutations",
-            "mutations",
-            "issue_updates",
-            "updates",
-        ):
-            nested = value.get(key)
-            if isinstance(nested, list):
-                return [item for item in nested if isinstance(item, dict)]
-        if "issue_number" in value or "number" in value:
-            return [value]
-    if isinstance(value, list):
-        return [item for item in value if isinstance(item, dict)]
-    return []
+def ready_issue_refresh_mutation_json_blocks(
+    markdown: str,
+    *,
+    require_plan: bool,
+) -> list[str]:
+    section = section_body(markdown, READY_ISSUE_REFRESH_MUTATION_PLAN_HEADING)
+    if section is None or section.strip() == "":
+        if require_plan:
+            raise ValueError(
+                "Ready issue refresh mutation plan is required when candidate issues exist."
+            )
+        return []
+
+    json_blocks = markdown_fenced_json_code_blocks(section)
+    if not json_blocks and require_plan:
+        raise ValueError(
+            "Ready issue refresh mutation plan must include a fenced json block."
+        )
+    return json_blocks
+
+
+def json_payloads_from_ready_issue_refresh_markdown(
+    markdown: str,
+    *,
+    require_plan: bool = False,
+) -> list[dict[str, Any]]:
+    json_blocks = ready_issue_refresh_mutation_json_blocks(
+        markdown,
+        require_plan=require_plan,
+    )
+    payloads: list[dict[str, Any]] = []
+    for block in json_blocks:
+        try:
+            value = json.loads(block)
+        except json.JSONDecodeError as error:
+            raise ValueError(
+                "Ready issue refresh mutation plan contains malformed JSON "
+                f"at line {error.lineno}, column {error.colno}: {error.msg}."
+            ) from error
+        payloads.extend(ready_issue_refresh_required_mutation_payloads_from_json(value))
+    if require_plan and not payloads:
+        raise ValueError(
+            "Ready issue refresh mutation plan must include at least one mutation "
+            "object when candidate issues exist."
+        )
+    return payloads
 
 
 def parse_bool_value(value: Any) -> bool:
@@ -1491,7 +1543,13 @@ def ready_issue_refresh_mutations_from_markdown(
     *,
     candidates: list[Issue],
 ) -> list[ReadyIssueRefreshMutation]:
-    payloads = json_payloads_from_ready_issue_refresh_markdown(markdown)
+    if not candidates:
+        return []
+
+    payloads = json_payloads_from_ready_issue_refresh_markdown(
+        markdown,
+        require_plan=True,
+    )
     candidate_numbers = {issue.number for issue in candidates}
     mutations: list[ReadyIssueRefreshMutation] = []
     seen: set[int] = set()
@@ -1508,6 +1566,13 @@ def ready_issue_refresh_mutations_from_markdown(
             )
         seen.add(mutation.issue_number)
         mutations.append(mutation)
+    missing_numbers = sorted(candidate_numbers - seen)
+    if missing_numbers:
+        missing_text = ", ".join(f"#{number}" for number in missing_numbers)
+        raise ValueError(
+            "Ready issue refresh mutation plan is missing candidate issue "
+            f"mutation(s): {missing_text}."
+        )
     return mutations
 
 
@@ -5416,7 +5481,7 @@ def ready_issue_refresh_analysis_prompt(
 
         ## Candidate Issue Update Plan
 
-        ## Candidate Issue Mutation Plan
+        ## {READY_ISSUE_REFRESH_MUTATION_PLAN_HEADING}
 
         ## Evidence
 
@@ -5428,12 +5493,12 @@ def ready_issue_refresh_analysis_prompt(
         completed in a later Ralph-owned metadata phase. If no update is
         needed, say `no change planned`.
 
-        Also include one fenced `json` block under `## Candidate Issue Mutation Plan`
-        using this shape:
+        If candidate issues were selected, include one fenced `json` block under
+        `## {READY_ISSUE_REFRESH_MUTATION_PLAN_HEADING}` using this shape:
 
         ```json
         {{
-          "ready_issue_refresh_mutations": [
+          "{READY_ISSUE_REFRESH_MUTATIONS_KEY}": [
             {{
               "issue_number": 123,
               "action": "no_change",
@@ -5446,6 +5511,8 @@ def ready_issue_refresh_analysis_prompt(
           ]
         }}
         ```
+
+        If no candidate issues were selected, no mutation JSON is required.
 
         Use action `needs_triage` for stale-but-unclear issues and include an
         evidence comment. Use action `completed` for already-satisfied issues

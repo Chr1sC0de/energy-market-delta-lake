@@ -109,6 +109,83 @@ One candidate issue was reviewed without mutating GitHub Issues.
 
 - #43: no change planned.
 
+## Candidate Issue Mutation Plan
+
+```json
+{
+  "ready_issue_refresh_mutations": [
+    {
+      "issue_number": 43,
+      "action": "no_change",
+      "comment": null,
+      "body": null,
+      "add_labels": [],
+      "remove_labels": [],
+      "close_as_completed": false
+    }
+  ]
+}
+```
+
+## Evidence
+
+- Candidate issue body remained actionable.
+
+## Open Questions
+
+None.
+"""
+
+READY_ISSUE_REFRESH_MISSING_PLAN_MARKDOWN = """# Ready Issue Refresh Analysis
+
+## Summary
+
+One candidate issue was reviewed without mutating GitHub Issues.
+
+## Integrated Work
+
+- Integrated issue #42 published `merge-sha`.
+
+## Candidate Issue Update Plan
+
+- #43: no change planned.
+
+## Evidence
+
+- Candidate issue body remained actionable.
+
+## Open Questions
+
+None.
+"""
+
+READY_ISSUE_REFRESH_MALFORMED_MUTATION_MARKDOWN = """# Ready Issue Refresh Analysis
+
+## Summary
+
+One candidate issue was reviewed without mutating GitHub Issues.
+
+## Integrated Work
+
+- Integrated issue #42 published `merge-sha`.
+
+## Candidate Issue Update Plan
+
+- #43: no change planned.
+
+## Candidate Issue Mutation Plan
+
+```json
+{
+  "ready_issue_refresh_mutations": [
+    {
+      "issue_number": 43,
+      "action": "no_change",
+    }
+  ]
+}
+```
+
 ## Evidence
 
 - Candidate issue body remained actionable.
@@ -1022,6 +1099,34 @@ Build it.
         self.assertIn(ralph.READY_LABEL, mutations[0].remove_labels)
         assert mutations[0].comment is not None
         self.assertTrue(mutations[0].comment.startswith(ralph.AI_READY_ISSUE_REFRESH_DISCLAIMER))
+
+    def test_ready_issue_refresh_mutation_parser_rejects_malformed_json(self) -> None:
+        candidate = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=43)
+
+        with self.assertRaisesRegex(ValueError, "malformed JSON"):
+            ralph.ready_issue_refresh_mutations_from_markdown(
+                READY_ISSUE_REFRESH_MALFORMED_MUTATION_MARKDOWN,
+                candidates=[candidate],
+            )
+
+    def test_ready_issue_refresh_mutation_parser_requires_plan_for_candidates(self) -> None:
+        candidate = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=43)
+
+        with self.assertRaisesRegex(ValueError, "required when candidate issues exist"):
+            ralph.ready_issue_refresh_mutations_from_markdown(
+                READY_ISSUE_REFRESH_MISSING_PLAN_MARKDOWN,
+                candidates=[candidate],
+            )
+
+    def test_ready_issue_refresh_mutation_parser_allows_no_plan_without_candidates(
+        self,
+    ) -> None:
+        mutations = ralph.ready_issue_refresh_mutations_from_markdown(
+            READY_ISSUE_REFRESH_MISSING_PLAN_MARKDOWN,
+            candidates=[],
+        )
+
+        self.assertEqual(mutations, [])
 
     def test_ready_issue_refresh_ready_contract_rejects_missing_sections(self) -> None:
         with self.assertRaises(ValueError) as caught:
@@ -2785,6 +2890,10 @@ Build it.
             str(artifact_path),
         )
         self.assertIsNone(manifest["ready_issue_refresh"]["failure"])
+        mutation = manifest["ready_issue_refresh"]["mutation_results"][0]
+        self.assertEqual(mutation["issue_number"], 43)
+        self.assertEqual(mutation["status"], "skipped_no_change")
+        self.assertEqual(mutation["action"], "no_change")
         self.assertIn("--output-last-message", analysis_call.args)
         self.assertIn(str(artifact_path), analysis_call.args)
         self.assertIn("### Candidate issue #43: Issue 43", analysis_call.input_text)
@@ -2809,6 +2918,28 @@ Build it.
                 for command in after_analysis_commands
             )
         )
+
+    def test_ready_issue_refresh_no_candidates_allows_report_without_mutation_plan(
+        self,
+    ) -> None:
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            ready_issue_refresh_analysis_markdown=READY_ISSUE_REFRESH_MISSING_PLAN_MARKDOWN,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+
+            with redirect_stdout(io.StringIO()):
+                loop._handle_implementation(make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY))
+
+            manifest = load_run_manifest(tmp_path)
+
+        self.assertEqual(manifest["ready_issue_refresh"]["status"], "completed")
+        self.assertEqual(manifest["ready_issue_refresh"]["candidate_issue_numbers"], [])
+        self.assertEqual(manifest["ready_issue_refresh"]["mutation_results"], [])
 
     def test_drain_applies_ready_issue_refresh_completed_mutation_by_default(
         self,
@@ -3251,6 +3382,59 @@ Build it.
         mutation = payload["ready_issue_refresh"]["mutation_results"][0]
         self.assertEqual(mutation["operations"]["labels"], "unchanged")
         self.assertEqual(mutation["operations"]["comment"], "already_present")
+
+    def test_ready_issue_refresh_malformed_mutation_json_fails_and_stops_drain(
+        self,
+    ) -> None:
+        issue_list_command = (
+            "gh",
+            "issue",
+            "list",
+            "-R",
+            "example/repo",
+            "--state",
+            "open",
+            "--limit",
+            "100",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            ready_issue_refresh_analysis_markdown=READY_ISSUE_REFRESH_MALFORMED_MUTATION_MARKDOWN,
+            command_outputs={
+                issue_list_command: [json.dumps([issue_payload(43, ["ready-for-agent"])])]
+            },
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            base_loop = make_loop(tmp_path, runner, drain=True)
+            loop = TwoReadyIssueLoop(base_loop.config, runner)
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                with self.assertRaises(ralph.ReadyIssueRefreshFailure):
+                    loop.run()
+
+            manifest = load_run_manifest(tmp_path)
+
+        commands = [call.args for call in runner.calls]
+        self.assertEqual(loop.ready_calls, 1)
+        self.assertFalse(
+            any(command[:4] == ("gh", "issue", "view", "43") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:4] == ("gh", "issue", "edit", "43") for command in commands)
+        )
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["integration_commit"]["sha"], "merge-sha")
+        self.assertEqual(manifest["pushes"]["integration_target"]["status"], "pushed")
+        self.assertEqual(manifest["ready_issue_refresh"]["status"], "failed")
+        self.assertIn(
+            "malformed JSON",
+            manifest["ready_issue_refresh"]["failure"]["message"],
+        )
+        self.assertEqual(manifest["ready_issue_refresh"]["mutation_results"], [])
 
     def test_ready_issue_refresh_partial_mutation_failure_records_candidate_status_and_stops(
         self,
