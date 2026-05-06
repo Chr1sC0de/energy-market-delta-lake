@@ -110,8 +110,8 @@ Local workflow notes:
 - The isolated AEMO ETL **End-to-end test** stack belongs to the
   `backend-services/dagster-user/aemo-etl` Subproject and is operated through
   `backend-services/scripts/aemo-etl-e2e`; its run manifest records timing,
-  dataflow telemetry, and cleanup warning or failure evidence for Promotion
-  review. Ralph **Promotion** runs pass an
+  dataflow telemetry, and non-benign cleanup warning or failure evidence for
+  Promotion review. Ralph **Promotion** runs pass an
   explicit `--seed-root` pointing at the primary repo cache and select the
   `promotion-gas-model` scenario with `--timeout-seconds 1200` and
   `--max-concurrent-runs 6`. The scenario narrows the raw and zip seed horizon

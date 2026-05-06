@@ -366,13 +366,15 @@ them with `--timeout-seconds` and `--max-concurrent-runs`.
 Successful runs attempt to clean e2e containers, Dagster run-worker
 containers, named volumes, and the e2e network by default after the full
 dataflow completes. Pre-run cleanup treats already-absent e2e resources as
-benign. Post-run cleanup warnings or failures do not change a successful
-dataflow result, but they do change the manifest cleanup status and are captured
-as `cleanup_issues`. Failed runs, including cached seed coverage
-shortfalls, preserve containers, volumes, service logs, the run manifest, and
-the seed-run manifest for inspection. Use `--reuse` to keep and reuse the e2e
-stack after a successful run, or `--always-clean` to clean containers, volumes,
-and run-worker containers even after failure.
+benign. Post-success cleanup also treats an already-absent e2e network as
+benign when compose has already removed the stack. Other post-run cleanup
+warnings or failures do not change a successful dataflow result, but they do
+change the manifest cleanup status and are captured as `cleanup_issues`. Failed
+runs, including cached seed coverage shortfalls, preserve containers, volumes,
+service logs, the run manifest, and the seed-run manifest for inspection. Use
+`--reuse` to keep and reuse the e2e stack after a successful run, or
+`--always-clean` to clean containers, volumes, and run-worker containers even
+after failure.
 
 Each `run-manifest.json` includes structured telemetry for Promotion review:
 total gate duration, stack startup duration, Dagster dataflow monitor duration,

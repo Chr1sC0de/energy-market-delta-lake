@@ -778,6 +778,76 @@ def test_cleanup_stack_with_telemetry_ignores_missing_pre_run_resources() -> Non
     assert "issues" not in cleanup_phases[0]
 
 
+def test_cleanup_stack_with_telemetry_ignores_post_success_missing_network() -> None:
+    """Post-success cleanup treats a compose-removed e2e network as benign."""
+    module = load_e2e_command_module()
+    cleanup_stack_with_telemetry = get_callable(
+        module,
+        "cleanup_stack_with_telemetry",
+    )
+    cleanup_manifest_status = get_callable(module, "cleanup_manifest_status")
+    telemetry_class = get_callable(module, "GateRunTelemetry")
+    compose_command = ("podman-compose", "--no-ansi", "-f", "compose.yaml")
+
+    class FakeRunner:
+        """Report compose cleanup success followed by an absent e2e network."""
+
+        def run(
+            self,
+            args: list[str],
+            *,
+            cwd: Path | None = None,
+            env: Mapping[str, str] | None = None,
+            capture_output: bool = False,
+            check: bool = True,
+        ) -> subprocess.CompletedProcess[str]:
+            del cwd, env, capture_output, check
+            command_name = classify_cleanup_command(args)
+            if command_name == "worker-ps":
+                return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+            if command_name == "network-rm":
+                return subprocess.CompletedProcess(
+                    args,
+                    1,
+                    stdout="",
+                    stderr=(
+                        "Error: unable to find network with name or ID "
+                        "aemo-etl-e2e-dagster-network: network not found\n"
+                    ),
+                )
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    telemetry = telemetry_class(started_monotonic=100.0)
+
+    issues = cleanup_stack_with_telemetry(
+        FakeRunner(),
+        compose_command,
+        telemetry=telemetry,
+        phase="post-success",
+    )
+    manifest = telemetry.to_manifest()
+    cleanup_phases = cast(
+        "Sequence[Mapping[str, object]]",
+        manifest["cleanup_phases"],
+    )
+    run_manifest: dict[str, object] = {
+        "cleanup": cleanup_manifest_status(
+            base_status="completed-after-success",
+            warning_status="completed-with-warnings-after-success",
+            error_status="incomplete-after-success",
+            issues=issues,
+        )
+    }
+    if len(issues) > 0:
+        run_manifest["cleanup_issues"] = issues
+
+    assert issues == []
+    assert cleanup_phases[0]["phase"] == "post-success"
+    assert cleanup_phases[0]["status"] == "completed"
+    assert "issues" not in cleanup_phases[0]
+    assert run_manifest == {"cleanup": "completed-after-success"}
+
+
 def test_cleanup_stack_with_telemetry_records_incomplete_cleanup() -> None:
     """Cleanup telemetry records failed cleanup phases in the run manifest."""
     module = load_e2e_command_module()
@@ -785,6 +855,7 @@ def test_cleanup_stack_with_telemetry_records_incomplete_cleanup() -> None:
         module,
         "cleanup_stack_with_telemetry",
     )
+    cleanup_manifest_status = get_callable(module, "cleanup_manifest_status")
     telemetry_class = get_callable(module, "GateRunTelemetry")
     compose_command = ("podman-compose", "--no-ansi", "-f", "compose.yaml")
 
@@ -825,11 +896,23 @@ def test_cleanup_stack_with_telemetry_records_incomplete_cleanup() -> None:
         "Sequence[Mapping[str, object]]",
         manifest["cleanup_phases"],
     )
+    run_manifest: dict[str, object] = {
+        "cleanup": cleanup_manifest_status(
+            base_status="completed-after-success",
+            warning_status="completed-with-warnings-after-success",
+            error_status="incomplete-after-success",
+            issues=issues,
+        )
+    }
+    if len(issues) > 0:
+        run_manifest["cleanup_issues"] = issues
 
     assert len(issues) == 1
     assert cleanup_phases[0]["phase"] == "post-success"
     assert cleanup_phases[0]["status"] == "incomplete"
     assert cleanup_phases[0]["issues"] == issues
+    assert run_manifest["cleanup"] == "incomplete-after-success"
+    assert run_manifest["cleanup_issues"] == issues
 
 
 def classify_cleanup_command(args: Sequence[str]) -> str:

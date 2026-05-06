@@ -136,8 +136,8 @@ The generated stack uses fixed service IPs for Postgres, LocalStack, and the
 AEMO ETL code server so run-worker containers do not depend on Podman DNS during
 high-concurrency Promotion gates. Its run
 manifest records gate timing, final dataflow telemetry, cleanup duration, and
-incomplete cleanup evidence so Promotion review can distinguish dataflow
-success from cleanup residue without changing the dataflow gate decision. The
+non-benign cleanup evidence so Promotion review can distinguish dataflow success
+from cleanup residue without changing the dataflow gate decision. The
 Promotion scenario enforces regression budgets from the approved targeted
 baseline: total gate duration at or below 20 minutes, peak active and queued
 runs at or below `6`, total Dagster runs at or below `48`, target progress

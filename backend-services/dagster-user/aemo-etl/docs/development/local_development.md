@@ -212,13 +212,15 @@ cached seed under `backend-services/.e2e/aemo-etl`, or the explicit
 `--seed-root` path, using the selected scenario's seed horizon.
 Successful non-reuse runs attempt to clean containers, Dagster run-worker
 containers, named volumes, and the e2e network; pre-run cleanup treats
-already-absent e2e resources as benign, while post-run cleanup warnings or
-failures stay visible in the run manifest as cleanup status and `cleanup_issues`
-without changing a successful dataflow result. Failures preserve the stack plus
-run manifests unless `--always-clean` is used. The run manifest records total gate,
-stack startup, Dagster dataflow monitor, and cleanup durations plus cleanup
-phase status, final Dagster run, target progress, target materialization
-timestamp, and asset-check telemetry.
+already-absent e2e resources as benign. Post-success cleanup also treats an
+already-absent e2e network as benign when compose has already removed the stack,
+while other post-run cleanup warnings or failures stay visible in the run
+manifest as cleanup status and `cleanup_issues` without changing a successful
+dataflow result. Failures preserve the stack plus run manifests unless
+`--always-clean` is used. The run manifest records total gate, stack startup,
+Dagster dataflow monitor, and cleanup durations plus cleanup phase status, final
+Dagster run, target progress, target materialization timestamp, and asset-check
+telemetry.
 After startup, it uses Dagster GraphQL to drive the selected scenario. The
 default `full-gas-model` scenario starts only the intended unzipper,
 event-driven raw, and gas model automation sensors. NEMWeb discovery schedules,

@@ -3207,6 +3207,7 @@ def cleanup_stack(
         compose_down_result,
         phase=phase,
     )
+    compose_down_succeeded = compose_down_result.returncode == 0
     issues.extend(cleanup_dagster_run_worker_containers(runner, phase=phase))
     network_rm_command = ["podman", "network", "rm", NETWORK_NAME]
     network_rm_result = runner.run(
@@ -3214,8 +3215,19 @@ def cleanup_stack(
         capture_output=True,
         check=False,
     )
-    echo_cleanup_output(network_rm_result, command=network_rm_command, phase=phase)
-    record_cleanup_issue(issues, network_rm_command, network_rm_result, phase=phase)
+    echo_cleanup_output(
+        network_rm_result,
+        command=network_rm_command,
+        phase=phase,
+        compose_down_succeeded=compose_down_succeeded,
+    )
+    record_cleanup_issue(
+        issues,
+        network_rm_command,
+        network_rm_result,
+        phase=phase,
+        compose_down_succeeded=compose_down_succeeded,
+    )
     return issues
 
 
@@ -3286,10 +3298,17 @@ def echo_cleanup_output(
     *,
     command: Sequence[str],
     phase: str,
+    compose_down_succeeded: bool = False,
 ) -> None:
     """Preserve cleanup command output after capturing it for the manifest."""
     stderr = result.stderr.strip() if result.stderr else ""
-    if is_benign_pre_run_cleanup_issue(command, result, stderr, phase=phase):
+    if is_benign_cleanup_issue(
+        command,
+        result,
+        stderr,
+        phase=phase,
+        compose_down_succeeded=compose_down_succeeded,
+    ):
         return
     if result.stdout:
         sys.stdout.write(result.stdout)
@@ -3303,13 +3322,20 @@ def record_cleanup_issue(
     result: subprocess.CompletedProcess[str],
     *,
     phase: str,
+    compose_down_succeeded: bool = False,
 ) -> None:
     """Append a cleanup warning or failure for manifest evidence."""
     stdout = result.stdout.strip() if result.stdout else ""
     stderr = result.stderr.strip() if result.stderr else ""
     if result.returncode == 0 and len(stderr) == 0:
         return
-    if is_benign_pre_run_cleanup_issue(command, result, stderr, phase=phase):
+    if is_benign_cleanup_issue(
+        command,
+        result,
+        stderr,
+        phase=phase,
+        compose_down_succeeded=compose_down_succeeded,
+    ):
         return
     severity = "error" if result.returncode != 0 else "warning"
     issue: dict[str, object] = {
@@ -3328,24 +3354,29 @@ def record_cleanup_issue(
     )
 
 
-def is_benign_pre_run_cleanup_issue(
+def is_benign_cleanup_issue(
     command: Sequence[str],
     result: subprocess.CompletedProcess[str],
     stderr: str,
     *,
     phase: str,
+    compose_down_succeeded: bool = False,
 ) -> bool:
-    """Return whether pre-run cleanup only found already-absent resources."""
-    if phase != "pre-run":
-        return False
+    """Return whether cleanup only found expected already-absent resources."""
     stderr_lines = tuple(line.strip() for line in stderr.splitlines() if line.strip())
     if len(stderr_lines) == 0:
         return False
     if command[:3] == ["podman", "network", "rm"]:
-        return result.returncode == 1 and all(
+        network_is_absent = result.returncode == 1 and all(
             "network not found" in line or "unable to find network" in line
             for line in stderr_lines
         )
+        return network_is_absent and (
+            phase == "pre-run"
+            or (phase == "post-success" and compose_down_succeeded)
+        )
+    if phase != "pre-run":
+        return False
     if command[-3:] == ["down", "-v", "--remove-orphans"]:
         return result.returncode == 0 and all(
             "no container with name or ID" in line
