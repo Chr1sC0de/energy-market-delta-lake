@@ -433,6 +433,10 @@ Key fields for inspection:
 - `branch_sync`: Gitflow `main`-into-`dev` sync status, sync worktree path,
   merge or push log path, conflicted files, failure type, and recovery guidance
   when Ralph must stop before issue implementation.
+- `formatter_recovery`: implementation commit formatter-rewrite recovery
+  status, formatter-modified tracked files, staged files, original and retry
+  commit log paths, rerun **Commit check** results, failure type, and recovery
+  guidance.
 - `branches`: issue, source, and target branch names that apply to the run.
 - `paths`: repo root, run directory, worktree container, and implementation,
   branch-sync, integration, Promotion source, or Promotion target worktree
@@ -564,8 +568,19 @@ maintainer comments and automated triage comments are excluded. If comment
 fetching fails, Ralph fails the issue before starting the Codex implementation
 subprocess instead of running with incomplete refresh context.
 
-After QA passes, Ralph commits the implementation branch, fetches the branch's
-base, and rebases if the base moved. A rebase triggers the selected QA commands
+After QA passes, Ralph commits the implementation branch. If the implementation
+commit hook attempt rewrites tracked files, Ralph records
+`formatter_recovery`, stages the formatter-modified paths, reruns the selected
+**Commit check** command or commands once, and retries the implementation
+commit. A successful recovery keeps the rerun **Commit check** evidence in
+`qa_results` and continues normally. If the recovery **Commit check** or retry
+commit fails, Ralph fails the issue as
+`formatter_rewrite_recovery_failure`, preserving the implementation worktree,
+commit logs, rerun **Commit check** logs, modified file list, and recovery
+guidance.
+
+After the implementation branch commit succeeds, Ralph fetches the branch's
+base and rebases if the base moved. A rebase triggers the selected QA commands
 again before **Local integration** or Exploratory handoff continues.
 
 For **Local integration**, Ralph creates a temporary detached integration
@@ -1000,6 +1015,13 @@ the run manifest. Operators should inspect that worktree, either finish and
 push the sync to the Gitflow **Integration target** or remove the stale worktree,
 then rerun Ralph. Ralph does not continue claiming ready issues while that
 branch-sync state is unresolved.
+
+Implementation commit formatter recovery failures are issue failures and keep
+the implementation worktree for inspection. Operators should inspect
+`formatter_recovery` in the run manifest, review the recorded commit and
+**Commit check** logs, keep the staged formatter updates if they are correct,
+rerun the recorded **Commit check** from the owning **Subproject**, then rerun
+Ralph for the issue.
 
 Environment failures stop the run. Examples include invalid `gh` auth, missing
 labels, unavailable tools, failing Git operations before claim, or unavailable

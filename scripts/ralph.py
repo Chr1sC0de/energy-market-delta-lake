@@ -196,6 +196,12 @@ ENVIRONMENT_FAILURE_PATTERNS = (
     "podman.sock",
     "permission denied while trying to connect",
 )
+FORMATTER_REWRITE_RECOVERY_FAILURE_TYPE = "formatter_rewrite_recovery_failure"
+FORMATTER_REWRITE_RECOVERY_GUIDANCE = (
+    "Inspect the recorded implementation worktree and formatter recovery logs. "
+    "Keep the staged formatter changes if they are correct, rerun the recorded "
+    "Commit check from the owning Subproject, then rerun Ralph for the issue."
+)
 
 
 @dataclass(frozen=True)
@@ -256,9 +262,68 @@ class CommandFailure(RalphError):
 class IssueFailure(RalphError):
     """An issue-specific failure that should not stop the whole drain."""
 
-    def __init__(self, message: str, log_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        log_path: Path | None = None,
+        *,
+        failure_type: str | None = None,
+        recovery_guidance: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.log_path = log_path
+        self.failure_type = failure_type
+        self.recovery_guidance = recovery_guidance
+
+
+class FormatterRewriteRecoveryFailure(IssueFailure):
+    """Formatter-modified files were detected, but recovery did not complete."""
+
+    def __init__(
+        self,
+        *,
+        reason: str,
+        modified_files: list[str],
+        initial_commit_log_path: Path | None,
+        commit_check_log_paths: list[Path],
+        retry_commit_log_path: Path | None,
+    ) -> None:
+        self.modified_files = list(modified_files)
+        self.initial_commit_log_path = initial_commit_log_path
+        self.commit_check_log_paths = list(commit_check_log_paths)
+        self.retry_commit_log_path = retry_commit_log_path
+        modified_lines = "\n".join(f"- {path}" for path in self.modified_files)
+        commit_check_lines = "\n".join(
+            f"- {log_path}" for log_path in self.commit_check_log_paths
+        )
+        if not commit_check_lines:
+            commit_check_lines = "- <not recorded>"
+        message = "\n".join(
+            [
+                f"Formatter-rewrite recovery failure: {reason}",
+                "",
+                "Formatter-modified files:",
+                modified_lines,
+                "",
+                f"Initial commit log: {initial_commit_log_path or '<not recorded>'}",
+                "Commit check logs:",
+                commit_check_lines,
+                f"Retry commit log: {retry_commit_log_path or '<not recorded>'}",
+                "",
+                f"Recovery guidance: {FORMATTER_REWRITE_RECOVERY_GUIDANCE}",
+            ]
+        )
+        log_path = retry_commit_log_path
+        if log_path is None and commit_check_log_paths:
+            log_path = commit_check_log_paths[-1]
+        if log_path is None:
+            log_path = initial_commit_log_path
+        super().__init__(
+            message,
+            log_path=log_path,
+            failure_type=FORMATTER_REWRITE_RECOVERY_FAILURE_TYPE,
+            recovery_guidance=FORMATTER_REWRITE_RECOVERY_GUIDANCE,
+        )
 
 
 class EnvironmentFailure(IssueFailure):
@@ -529,6 +594,17 @@ class RunManifest:
             "changed_files": [],
             "qa_results": [],
             "qa_runtime_env": {"status": "not_started"},
+            "formatter_recovery": {
+                "status": "not_started",
+                "modified_files": [],
+                "staged_files": [],
+                "initial_commit_log_path": None,
+                "commit_check_results": [],
+                "retry_commit_log_path": None,
+                "recovery_guidance": None,
+                "failure_type": None,
+                "error": None,
+            },
             "codex_attempts": [],
             "sandboxed_issue_access": {"status": "not_started"},
             "ready_issue_refresh": {
@@ -791,6 +867,52 @@ class RunManifest:
         }
         self.data["qa_runtime_env"] = metadata
         self.record_event("qa_runtime_env_ready", details=metadata)
+
+    def record_formatter_recovery(
+        self,
+        status: str,
+        *,
+        modified_files: list[str] | None = None,
+        staged_files: list[str] | None = None,
+        initial_commit_log_path: Path | None = None,
+        commit_check_results: list[QAResult] | None = None,
+        retry_commit_log_path: Path | None = None,
+        recovery_guidance: str | None = None,
+        failure_type: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        recovery = self.data.setdefault("formatter_recovery", {})
+        if not isinstance(recovery, dict):
+            raise RalphError("Manifest formatter_recovery field is not an object.")
+        recovery["status"] = status
+        if modified_files is not None:
+            recovery["modified_files"] = list(modified_files)
+        if staged_files is not None:
+            recovery["staged_files"] = list(staged_files)
+        if initial_commit_log_path is not None or "initial_commit_log_path" not in recovery:
+            recovery["initial_commit_log_path"] = path_text(initial_commit_log_path)
+        if commit_check_results is not None:
+            recovery["commit_check_results"] = [
+                {
+                    "name": result.command.name,
+                    "command": list(result.command.args),
+                    "cwd": str(result.command.cwd),
+                    "log_path": path_text(result.log_path),
+                    "status": "passed",
+                }
+                for result in commit_check_results
+            ]
+        if retry_commit_log_path is not None or "retry_commit_log_path" not in recovery:
+            recovery["retry_commit_log_path"] = path_text(retry_commit_log_path)
+        if recovery_guidance is not None:
+            recovery["recovery_guidance"] = recovery_guidance
+        if failure_type is not None:
+            recovery["failure_type"] = failure_type
+        if error is not None:
+            recovery["error"] = error
+        elif status != "failed":
+            recovery["error"] = None
+        self.record_event(f"formatter_recovery_{status}", details=dict(recovery))
 
     def record_push(
         self,
@@ -1069,6 +1191,18 @@ class RunManifest:
             "message": str(error),
             "log_path": path_text(log_path),
         }
+        if isinstance(error, IssueFailure):
+            if error.failure_type is not None:
+                failure["type"] = error.failure_type
+            if error.recovery_guidance is not None:
+                failure["recovery_guidance"] = error.recovery_guidance
+        if isinstance(error, FormatterRewriteRecoveryFailure):
+            failure["modified_files"] = list(error.modified_files)
+            failure["initial_commit_log_path"] = path_text(error.initial_commit_log_path)
+            failure["commit_check_log_paths"] = [
+                str(log_path) for log_path in error.commit_check_log_paths
+            ]
+            failure["retry_commit_log_path"] = path_text(error.retry_commit_log_path)
         self.data["failure"] = failure
         self.record_event("failed", status="failed", details=failure)
 
@@ -2260,6 +2394,25 @@ def select_qa_commands(changed_files: list[str], repo_root: Path) -> list[QAComm
     return deduped
 
 
+def is_commit_check_command(command: QACommand) -> bool:
+    return command.name.endswith("Commit check")
+
+
+def commit_check_commands_from_results(qa_results: list[QAResult]) -> list[QACommand]:
+    commands: list[QACommand] = []
+    seen: set[tuple[tuple[str, ...], Path]] = set()
+    for result in qa_results:
+        command = result.command
+        if not is_commit_check_command(command):
+            continue
+        key = (command.args, command.cwd)
+        if key in seen:
+            continue
+        commands.append(command)
+        seen.add(key)
+    return commands
+
+
 def select_promotion_gate_commands(
     changed_files: list[str],
     repo_root: Path,
@@ -2293,6 +2446,22 @@ def parse_git_status_paths(status_output: str) -> list[str]:
     paths: list[str] = []
     for line in status_output.splitlines():
         if len(line) < 4:
+            continue
+        path = line[3:].strip()
+        if " -> " in path:
+            path = path.rsplit(" -> ", 1)[1]
+        paths.append(path.strip('"'))
+    return sorted(set(paths))
+
+
+def parse_git_status_tracked_unstaged_paths(status_output: str) -> list[str]:
+    paths: list[str] = []
+    for line in status_output.splitlines():
+        if len(line) < 4:
+            continue
+        if line.startswith("??"):
+            continue
+        if line[1] == " ":
             continue
         path = line[3:].strip()
         if " -> " in path:
@@ -2977,6 +3146,9 @@ class GitClient:
     def changed_files(self, *, cwd: Path) -> list[str]:
         return parse_git_status_paths(self.status_porcelain(cwd=cwd))
 
+    def tracked_unstaged_files(self, *, cwd: Path) -> list[str]:
+        return parse_git_status_tracked_unstaged_paths(self.status_porcelain(cwd=cwd))
+
     def changed_files_against(self, *, cwd: Path, base_ref: str) -> list[str]:
         result = self.runner.run(
             ["git", "diff", "--name-only", f"{base_ref}...HEAD"],
@@ -3022,6 +3194,38 @@ class GitClient:
     def status_porcelain(self, *, cwd: Path) -> str:
         result = self.runner.run(["git", "status", "--porcelain"], cwd=cwd)
         return result.stdout
+
+    def add_paths(
+        self,
+        *,
+        cwd: Path,
+        paths: list[str],
+        run_dir: Path,
+        log_name: str,
+    ) -> None:
+        if not paths:
+            return
+        self.runner.run(
+            ["git", "add", "--", *paths],
+            cwd=cwd,
+            log_path=run_dir / log_name,
+            execute_in_dry_run=False,
+        )
+
+    def commit_staged(
+        self,
+        *,
+        cwd: Path,
+        message: str,
+        run_dir: Path,
+        log_name: str,
+    ) -> None:
+        self.runner.run(
+            ["git", "commit", "-m", message],
+            cwd=cwd,
+            log_path=run_dir / log_name,
+            execute_in_dry_run=False,
+        )
 
     def commit_all(
         self,
@@ -4490,11 +4694,12 @@ class RalphLoop:
 
             emit(f"#{issue.number}: committing implementation branch {branch}")
             manifest.record_event("committing_implementation_branch")
-            self.git.commit_all(
-                cwd=worktree_path,
-                message=f"Implement issue #{issue.number}: {issue.title}",
-                run_dir=run_dir,
-                log_prefix="issue",
+            qa_results = self._commit_implementation_branch(
+                issue,
+                worktree_path,
+                run_dir,
+                manifest,
+                qa_results=qa_results,
             )
             manifest.record_event("implementation_branch_committed")
 
@@ -5068,6 +5273,185 @@ class RalphLoop:
         worktree_path = self.config.worktree_container / f"agent-issue-{issue.number}-{slug}"
         integration_path = self.config.worktree_container / f"agent-integrate-{issue.number}-{slug}"
         return branch, worktree_path, integration_path
+
+    def _commit_implementation_branch(
+        self,
+        issue: Issue,
+        worktree_path: Path,
+        run_dir: Path,
+        manifest: RunManifest,
+        *,
+        qa_results: list[QAResult],
+    ) -> list[QAResult]:
+        message = f"Implement issue #{issue.number}: {issue.title}"
+        try:
+            self.git.commit_all(
+                cwd=worktree_path,
+                message=message,
+                run_dir=run_dir,
+                log_prefix="issue",
+            )
+        except CommandFailure as error:
+            modified_files = self.git.tracked_unstaged_files(cwd=worktree_path)
+            if not modified_files:
+                raise
+            recovery_results = self._recover_formatter_rewritten_commit(
+                issue,
+                worktree_path,
+                run_dir,
+                manifest,
+                message=message,
+                modified_files=modified_files,
+                initial_error=error,
+                qa_results=qa_results,
+            )
+            return [*qa_results, *recovery_results]
+        return qa_results
+
+    def _recover_formatter_rewritten_commit(
+        self,
+        issue: Issue,
+        worktree_path: Path,
+        run_dir: Path,
+        manifest: RunManifest,
+        *,
+        message: str,
+        modified_files: list[str],
+        initial_error: CommandFailure,
+        qa_results: list[QAResult],
+    ) -> list[QAResult]:
+        initial_commit_log_path = initial_error.log_path or run_dir / "issue-git-commit.log"
+        commit_check_commands = commit_check_commands_from_results(qa_results)
+        manifest.record_formatter_recovery(
+            "detected",
+            modified_files=modified_files,
+            initial_commit_log_path=initial_commit_log_path,
+            recovery_guidance=FORMATTER_REWRITE_RECOVERY_GUIDANCE,
+        )
+        if not commit_check_commands:
+            failure = FormatterRewriteRecoveryFailure(
+                reason="no selected Commit check was available after hooks modified tracked files",
+                modified_files=modified_files,
+                initial_commit_log_path=initial_commit_log_path,
+                commit_check_log_paths=[],
+                retry_commit_log_path=None,
+            )
+            manifest.record_formatter_recovery(
+                "failed",
+                modified_files=modified_files,
+                initial_commit_log_path=initial_commit_log_path,
+                recovery_guidance=FORMATTER_REWRITE_RECOVERY_GUIDANCE,
+                failure_type=FORMATTER_REWRITE_RECOVERY_FAILURE_TYPE,
+                error=str(failure),
+            )
+            raise failure from initial_error
+
+        emit(
+            f"#{issue.number}: commit hooks modified tracked files; "
+            "staging formatter changes and rerunning Commit check"
+        )
+        self.git.add_paths(
+            cwd=worktree_path,
+            paths=modified_files,
+            run_dir=run_dir,
+            log_name="issue-formatter-recovery-git-add.log",
+        )
+        staged_files = list(modified_files)
+        manifest.record_formatter_recovery(
+            "staged",
+            modified_files=modified_files,
+            staged_files=staged_files,
+            initial_commit_log_path=initial_commit_log_path,
+            recovery_guidance=FORMATTER_REWRITE_RECOVERY_GUIDANCE,
+        )
+
+        try:
+            recovery_results = self._run_qa_command_sequence(
+                commit_check_commands,
+                run_dir,
+                log_prefix="formatter-recovery-commit-check",
+                subject=f"#{issue.number}: formatter recovery",
+                manifest=manifest,
+            )
+        except CommandFailure as error:
+            failure = FormatterRewriteRecoveryFailure(
+                reason="Commit check failed during formatter recovery",
+                modified_files=modified_files,
+                initial_commit_log_path=initial_commit_log_path,
+                commit_check_log_paths=[error.log_path] if error.log_path is not None else [],
+                retry_commit_log_path=None,
+            )
+            manifest.record_formatter_recovery(
+                "failed",
+                modified_files=modified_files,
+                staged_files=staged_files,
+                initial_commit_log_path=initial_commit_log_path,
+                recovery_guidance=FORMATTER_REWRITE_RECOVERY_GUIDANCE,
+                failure_type=FORMATTER_REWRITE_RECOVERY_FAILURE_TYPE,
+                error=str(failure),
+            )
+            raise failure from error
+
+        post_check_files = self.git.tracked_unstaged_files(cwd=worktree_path)
+        if post_check_files:
+            staged_files = sorted({*staged_files, *post_check_files})
+            self.git.add_paths(
+                cwd=worktree_path,
+                paths=post_check_files,
+                run_dir=run_dir,
+                log_name="issue-formatter-recovery-post-check-git-add.log",
+            )
+
+        retry_commit_log_path = run_dir / "issue-formatter-recovery-git-commit.log"
+        manifest.record_formatter_recovery(
+            "retrying_commit",
+            modified_files=modified_files,
+            staged_files=staged_files,
+            initial_commit_log_path=initial_commit_log_path,
+            commit_check_results=recovery_results,
+            retry_commit_log_path=retry_commit_log_path,
+            recovery_guidance=FORMATTER_REWRITE_RECOVERY_GUIDANCE,
+        )
+        try:
+            self.git.commit_staged(
+                cwd=worktree_path,
+                message=message,
+                run_dir=run_dir,
+                log_name=retry_commit_log_path.name,
+            )
+        except CommandFailure as error:
+            failure = FormatterRewriteRecoveryFailure(
+                reason="retrying the implementation commit failed",
+                modified_files=modified_files,
+                initial_commit_log_path=initial_commit_log_path,
+                commit_check_log_paths=[
+                    result.log_path for result in recovery_results if result.log_path is not None
+                ],
+                retry_commit_log_path=error.log_path or retry_commit_log_path,
+            )
+            manifest.record_formatter_recovery(
+                "failed",
+                modified_files=modified_files,
+                staged_files=staged_files,
+                initial_commit_log_path=initial_commit_log_path,
+                commit_check_results=recovery_results,
+                retry_commit_log_path=error.log_path or retry_commit_log_path,
+                recovery_guidance=FORMATTER_REWRITE_RECOVERY_GUIDANCE,
+                failure_type=FORMATTER_REWRITE_RECOVERY_FAILURE_TYPE,
+                error=str(failure),
+            )
+            raise failure from error
+
+        manifest.record_formatter_recovery(
+            "recovered",
+            modified_files=modified_files,
+            staged_files=staged_files,
+            initial_commit_log_path=initial_commit_log_path,
+            commit_check_results=recovery_results,
+            retry_commit_log_path=retry_commit_log_path,
+            recovery_guidance=FORMATTER_REWRITE_RECOVERY_GUIDANCE,
+        )
+        return recovery_results
 
     def _implement_with_retry(
         self,
