@@ -157,9 +157,11 @@ deleting this temporary file.
 
 The runtime entrypoint is
 `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`.
-That definition module merges two scheduled discovery/listing assets:
+That definition module merges three scheduled discovery/listing assets:
 `bronze_nemweb_public_files_vicgas` for `REPORTS/CURRENT/VicGas` and
-`bronze_nemweb_public_files_gbb` for `REPORTS/CURRENT/GBB`. Both pass
+`bronze_nemweb_public_files_gbb` for `REPORTS/CURRENT/GBB`, plus
+`bronze_nemweb_public_files_sttm` for root CSV reports under
+`REPORTS/CURRENT/STTM`. All three pass
 `cron_schedule="*/30 * * * *"`, `n_executors=10`, `group_name="integration"`,
 the configured default schedule status, and ECS CPU and memory tags into
 `nemweb_public_files_definitions_factory`.
@@ -167,9 +169,12 @@ the configured default schedule status, and ECS CPU and memory tags into
 The definition module owns the domain-specific filters. `vicgas_file_filter`
 excludes `CurrentDay.zip` and `PublicRptsNN.zip` bundles so the ad hoc
 `download_vicgas_public_report_zip_files_job` remains the bootstrap/backfill
-path for public report bundles. `gbb_folder_filter` excludes
-`[To Parent Directory]` and `DUPLICATE`, while otherwise using the default file
-filter.
+path for VicGas public report bundles. STTM uses a root-only folder filter and
+a CSV-only file filter that excludes `CURRENTDAY.*`, `DAYNN.ZIP`, subfolders,
+and helper file formats; the ad hoc `download_sttm_day_zip_files_job` owns
+STTM DAYNN.ZIP bootstrap/backfill outside scheduled discovery.
+`gbb_folder_filter` excludes `[To Parent Directory]` and `DUPLICATE`, while
+otherwise using the default file filter.
 
 `nemweb_public_files_definitions_factory` builds the Dagster shell and concrete
 runtime Adapters. It creates the bronze key prefix, AEMO Delta table path,
@@ -368,7 +373,7 @@ to register a `DFFromS3KeysSourceTableSpec` containing `domain`,
 `name_suffix`, `glob_pattern`, schema, surrogate-key columns, and object/frame
 postprocess hooks. The registry in
 `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`
-imports the GBB and VICGAS raw definition packages, returns stable ordered
+imports the GBB, STTM, and VICGAS raw definition packages, returns stable ordered
 specs, derives `archive_prefix` as `bronze/{domain}`, derives the target bronze
 Delta URI, and supports explicit all/domain/table selection for the replay CLI.
 
@@ -592,14 +597,15 @@ before deleting this temporary file.
 - Run state is centralized in `RunManifest`, but the manifest writes are
   called directly from workflow steps. Implementation manifests record issue,
   **Delivery mode**, **Integration target**, branch paths, changed files, QA,
-  sandboxed issue access, **Local integration** commit, pushes, GitHub
+  sandboxed issue access, published implementation commit, pushes, GitHub
   metadata, events, and failure details. **Promotion** manifests additionally
   record source branch, source tree, promoted issues, the promoted source
   commit inventory, Promotion commit, source-branch sync, and
-  **Post-promotion review**. The promoted source commit inventory records each
-  promoted commit SHA and subject, then classifies commits that match verified
-  issue `integrated_commit` values as verified **Local integration** commits
-  while leaving other entries visible as unverified **Promotion** commits.
+  **Post-promotion review** plus validated follow-up issue creation state. The
+  promoted source commit inventory records each promoted commit SHA and subject,
+  then classifies commits that match verified issue `integrated_commit` values
+  as verified **Local integration** commits while leaving other entries visible
+  as unverified **Promotion** commits.
   Inspection and recovery helpers (`load_run_manifest`, `inspect_run`,
   `recommended_run_action`, and `RalphRunRecovery`) read the same JSON
   contract. Tests assert manifest content for successful implementation,
@@ -665,9 +671,11 @@ before deleting this temporary file.
   as verified **Local integration** or unverified **Promotion** commits, creates
   the target Promotion worktree, merges, pushes `main`, fast-forwards `dev`,
   updates issue metadata, and then runs **Post-promotion review** when enabled
-  and changed files exist. Unverified **Promotion** commits are review context
-  only, not **Promotion** blockers or automatic issue-association work. Tests
-  assert ordering so failed **Push check** or AEMO ETL **End-to-end test** gate
+  and changed files exist. Successful review artifacts may then feed Ralph's
+  validated create-only helper for follow-up issues. Unverified **Promotion**
+  commits are review context only, not **Promotion** blockers or automatic
+  issue-association work. Tests assert ordering so failed **Push check** or
+  AEMO ETL **End-to-end test** gate
   cannot reach merge, push, branch sync, issue metadata, or closure.
 
 ### Proposed Module Structure
@@ -726,19 +734,21 @@ The useful boundaries are:
 ### Semantics To Preserve
 
 - **Local integration** must remain after implementation QA and before issue
-  completion metadata. It must still fetch the current **Integration target**,
-  rebase and rerun selected QA if the target moved, create a detached
-  integration worktree from the target, squash-merge the issue branch, create
-  one integration commit, and push that commit to the target. Ralph must still
-  avoid opening a GitHub PR.
+  completion metadata for Gitflow and Trunk delivery. It must still fetch the
+  current **Integration target**, rebase and rerun selected QA if the target
+  moved, create a detached integration worktree from the target, squash-merge
+  the issue branch, create one integration commit, and push that commit to the
+  target. Exploratory delivery must instead push a durable handoff branch from
+  `origin/main` without opening a GitHub PR.
 - **Delivery mode** semantics must stay identical. Missing delivery labels use
   the CLI default, default CLI behavior is Gitflow, Gitflow defaults to `dev`,
   Trunk defaults to `main`, Exploratory defaults to
-  `agent/review/issue-N-slug`, `--target-branch` overrides the target, and
+  `agent/exploratory/issue-N-slug`, `--target-branch` overrides the target, and
   conflicting delivery labels normalize to `delivery-exploratory` when present
   or `delivery-gitflow` for Gitflow/trunk conflicts. Gitflow must still create
   `dev` from `main` when missing and keep default `dev` current with `main`
-  before issue work begins.
+  before issue work begins. Exploratory must still fail clearly if the remote
+  handoff branch already exists.
 - GitHub issue metadata must remain ordered behind git pushes. Trunk completion
   still comments evidence, marks `agent-merged`, and closes the issue. Gitflow
   completion still comments evidence, marks `agent-integrated`, and leaves the
@@ -754,14 +764,16 @@ The useful boundaries are:
   must close only `agent-integrated` issues whose recorded Gitflow integration
   commit is verified in the promoted range. Unverified **Promotion** commits
   must remain **Post-promotion review** context, without blocking **Promotion**
-  or automatically creating GitHub Issues.
+  or automatically creating GitHub Issues by themselves. Follow-up issue
+  creation must come only from structured review drafts and Ralph's validated
+  create-only helper.
 - Recovery must remain manifest-gated. `--inspect-run` stays read-only, and
   `--recover-run` must refuse to mutate GitHub issue metadata until the
-  recorded **Local integration** commit is reachable from the expected
-  **Integration target**.
+  recorded **Local integration** or Exploratory handoff commit is reachable
+  from the expected **Integration target**.
 - **Sandboxed issue access** must remain limited to GitHub issue metadata for
-  spawned Codex subprocesses. Git fetch, **Local integration**, pushes, and
-  **Promotion** stay outside the sandbox.
+  spawned Codex subprocesses. Git fetch, **Local integration**, Exploratory
+  handoff pushes, and **Promotion** stay outside the sandbox.
 
 ### Smallest Implementation Slice
 
@@ -983,20 +995,20 @@ known doc drift into maintained repo docs before deleting this file.
 | Candidate | Evidence consumed | Depth gain | Coupling removed | Affected **Subproject** | Likely Interface shape | Risk | **Test lane** or **Commit check** | Maintained doc sync impact | Smallest implementation slice |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Gas-model asset shell | #82 found 28 `silver_*.py` gas-model assets under `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model` with repeated Dagster asset metadata, retry policy, checks, sensors, and `Definitions` assembly. The same section cites `silver_gas_dim_date.py` as the schedule-shaped exception and tests such as `test_defs_sensors.py` and gas-model component tests as current behavior evidence. | High. The current asset files mostly repeat shell code around domain transforms, so a Module would deepen the gas-model asset boundary while keeping transform logic local. | Removes repeated Dagster decoration, metadata, standard checks, retry policy, `MaterializeResult` wrapping, and default sensor assembly from each asset file. | `backend-services/dagster-user/aemo-etl` AEMO ETL **Subproject**. | Python Module with `GasModelAssetSpec` plus `build_gas_model_asset_definitions(spec) -> Definitions`. Keep `AssetIn`, `AssetKey`, lineage, schedules, and Polars transforms explicit at each asset. | Medium. Over-generalizing scheduled assets such as `silver_gas_dim_date` would hide real graph variation; asset metadata and sensor names are regression-prone. | AEMO ETL **Component test** lane with narrowed asset tests and `test_defs_sensors.py`; finish with `make component-test` and the Subproject **Commit check** `make run-prek`. Add **Unit tests** only for pure helper extraction. | Likely `backend-services/dagster-user/aemo-etl/README.md`, `backend-services/dagster-user/aemo-etl/docs/architecture/high_level_architecture.md`, and `backend-services/dagster-user/aemo-etl/docs/gas_model/README.md`; individual gas-model ERD docs only if public table contracts or column metadata change. | Add a private gas-model shell Module and migrate one ordinary dependency-updated asset such as `silver_gas_dim_location` or `silver_gas_fact_scada_pressure`; leave `silver_gas_dim_date` explicit. |
-| NEMWeb discovery | #83 traced `defs/raw/nemweb_public_files.py`, `nemweb_public_files_definitions_factory`, the four op-builder seams, `HTTPNEMWebLinkFetcher`, `FilteredDynamicNEMWebLinksFetcher`, `S3NemwebLinkProcessor`, `S3ProcessedLinkCombiner`, and tests such as `test_factories_nemweb.py`, `test_defs_raw_modules.py`, and `test_download_vicgas_public_report_zip_files.py`. It also cites ADR 0003 as evidence that current-state semantics belong to source-table bronze assets, not discovery/listing assets. | High. The discovery/listing asset is one cohesive fetch-filter-process-combine Module with too much caller-visible orchestration. | Removes one-Adapter strategy classes, op-builder pass-throughs, cached-link filter assembly, fixed output schema wiring, surrogate-key construction, duplicate-row check wiring, job naming, and schedule assembly from caller-owned configuration. | `backend-services/dagster-user/aemo-etl` AEMO ETL **Subproject**. | Compatibility wrapper around `NEMWebPublicFilesSpec` plus `build_nemweb_public_files_definitions(spec) -> Definitions`. Keep domain identity, filters, schedule/status, concurrency, retry knobs, buckets, and IO manager explicit. | Medium. Dynamic mapping, landing object writes, schedule names, and duplicate suppression must remain byte-for-byte equivalent from the caller perspective. | AEMO ETL **Component test** lane; narrowed debug targets are `test_factories_nemweb.py`, `test_defs_raw_modules.py`, and `test_download_vicgas_public_report_zip_files.py`; finish with `make component-test` and `make run-prek`. Run **Integration tests** only if LocalStack, S3-compatible behavior, or landing/Delta contracts change. | Likely `backend-services/dagster-user/aemo-etl/README.md`, `backend-services/dagster-user/aemo-etl/docs/architecture/ingestion_flows.md`, and `backend-services/dagster-user/aemo-etl/docs/architecture/high_level_architecture.md`; ADR 0003 only if current-state boundary language changes. | Introduce the spec-shaped builder, keep `nemweb_public_files_definitions_factory` as a thin wrapper, and migrate only the NEMWeb discovery factory. Do not fold in VicGas public report download, unzipper assets, or source-table bronze ingestion. |
+| NEMWeb discovery | #83 traced `defs/raw/nemweb_public_files.py`, `nemweb_public_files_definitions_factory`, the four op-builder seams, `HTTPNEMWebLinkFetcher`, `FilteredDynamicNEMWebLinksFetcher`, `S3NemwebLinkProcessor`, `S3ProcessedLinkCombiner`, and tests such as `test_factories_nemweb.py`, `test_defs_raw_modules.py`, and `test_download_vicgas_public_report_zip_files.py`. It also cites ADR 0003 as evidence that current-state semantics belong to source-table bronze assets, not discovery/listing assets. | High. The discovery/listing asset is one cohesive fetch-filter-process-combine Module with too much caller-visible orchestration. | Removes one-Adapter strategy classes, op-builder pass-throughs, cached-link filter assembly, fixed output schema wiring, surrogate-key construction, duplicate-row check wiring, job naming, and schedule assembly from caller-owned configuration. | `backend-services/dagster-user/aemo-etl` AEMO ETL **Subproject**. | Compatibility wrapper around `NEMWebPublicFilesSpec` plus `build_nemweb_public_files_definitions(spec) -> Definitions`. Keep domain identity, filters, schedule/status, concurrency, retry knobs, buckets, and IO manager explicit. | Medium. Dynamic mapping, landing object writes, schedule names, and duplicate suppression must remain byte-for-byte equivalent from the caller perspective. | AEMO ETL **Component test** lane; narrowed debug targets are `test_factories_nemweb.py`, `test_defs_raw_modules.py`, and `test_download_vicgas_public_report_zip_files.py`; finish with `make component-test` and `make run-prek`. Run **Integration tests** only if LocalStack, S3-compatible behavior, or landing/Delta contracts change. | Likely `backend-services/dagster-user/aemo-etl/README.md`, `backend-services/dagster-user/aemo-etl/docs/architecture/ingestion_flows.md`, and `backend-services/dagster-user/aemo-etl/docs/architecture/high_level_architecture.md`; ADR 0003 only if current-state boundary language changes. | Introduce the spec-shaped builder, keep `nemweb_public_files_definitions_factory` as a thin wrapper, and migrate only the NEMWeb discovery factory. Do not fold in manual ZIP bootstrap downloads, unzipper assets, or source-table bronze ingestion. |
 | Archive-source planning | #84 compared archive replay and local **End-to-end test** seed logic. Evidence came from source-table registry files, `maintenance/archive_replay.py`, `maintenance/e2e_archive_seed.py`, both CLIs, shared S3 helpers in `utils.py`, LocalStack/compose wiring, ADR 0003, and unit/component tests for archive replay and seed refresh/load behavior. | Medium-high. The repeated archive object matching and coverage planning are deep enough for a pure planning Module, but execution side effects should stay outside it. | Removes duplicated prefix/glob matching, object-head normalization, latest-object selection, coverage accounting, and byte/file batch planning from replay and seed paths. | `backend-services/dagster-user/aemo-etl` AEMO ETL **Subproject** plus local development wiring in `backend-services` when seed behavior is documented. | Pure Python Module such as `maintenance/archive_source_planning.py` with `ArchiveSourceRequirement`, `ArchiveSourceObject`, `ArchiveSourceSelectionPolicy`, `ArchiveSourceCoverage`, `ArchiveSourcePlan`, `match_archive_source_objects`, and `plan_archive_sources`. | Medium. Mixing planning with ADR 0003 current-state writes, LocalStack upload side effects, or Dagster graph selection would create the wrong abstraction. | AEMO ETL **Unit test** lane; finish with `make unit-test` and `make run-prek`. Add AEMO ETL **Component test** lane only if `build_gas_model_archive_seed_spec` or Dagster definition graph behavior changes. Run **Integration tests** only if LocalStack, S3-compatible behavior, cache uploads, or landing/Delta contracts change. | Likely `backend-services/dagster-user/aemo-etl/README.md`, `backend-services/dagster-user/aemo-etl/docs/development/local_development.md`, `backend-services/dagster-user/aemo-etl/docs/architecture/ingestion_flows.md`, `backend-services/README.md`, and ADR 0003 if current-state scope wording changes. | Extract pure archive-source planning and migrate only duplicated matching, latest-object selection, coverage accounting, and batch planning. Keep source-table specs, DAG selection, CLI parsing, S3 download/upload, LocalStack loading, and current-state Delta writes in their current modules. |
-| Ralph workflow/state separation | #85 mapped `scripts/ralph.py`, `tests/test_ralph.py`, `docs/agents/ralph-loop.md`, ADR 0001, ADR 0002, and ADR 0004. Evidence covered issue eligibility, **Delivery mode** resolution, **Integration target** defaults, `RunManifest`, QA selection, **Local integration**, GitHub metadata ordering, recovery, and **Promotion** gates. #88 adds Exploratory delivery labels, review-branch defaults, and `agent-reviewing` blocking to the same policy surface. | High. Pure workflow and state rules can become testable Modules while the CLI controller keeps side effects in one place. | Removes pure label policy, blocker parsing, required-section validation, delivery planning, QA command selection, manifest schema, comment builders, and recovery recommendation from the side-effect-heavy controller. | Repository root scripts/docs **Subproject** surface: `scripts/`, `tests/`, `docs/agents`, and ADRs. | `scripts/ralph_workflow.py` for pure policy and `scripts/ralph_state.py` for manifest/state. Keep Git, GitHub, command, and Codex adapters in `scripts/ralph.py` for the first slice. | High. Ordering is critical: QA must precede **Local integration**, git pushes must precede issue metadata, Gitflow work must remain open until **Promotion**, trunk work must close after integration to `main`, Exploratory work must remain open with `agent-reviewing`, and recovery must stay manifest-gated by reachability from the expected **Integration target**. | Ralph script-level **Test lane** with `python3 -m unittest discover -s tests`; finish with root **Commit check** `prek run -a`. No AEMO ETL lane is needed unless Promotion gate command selection changes. | Likely `docs/agents/ralph-loop.md`; ADR 0001, ADR 0002, and ADR 0004 if **Local integration**, **Delivery mode**, **Integration target**, sandboxed issue access, or **Promotion** semantics are touched. `docs/repository/documentation-sync.md` only if root doc QA policy changes. | Extract pure workflow helpers to `scripts/ralph_workflow.py` and manifest/state helpers to `scripts/ralph_state.py`, then import them from `scripts/ralph.py` while keeping `GitClient`, `GitHubClient`, `CommandRunner`, `RalphLoop`, and `RalphRunRecovery` in place. |
+| Ralph workflow/state separation | #85 mapped `scripts/ralph.py`, `tests/test_ralph.py`, `docs/agents/ralph-loop.md`, ADR 0001, ADR 0002, and ADR 0004. Evidence covered issue eligibility, **Delivery mode** resolution, **Integration target** defaults, `RunManifest`, QA selection, **Local integration**, GitHub metadata ordering, recovery, and **Promotion** gates. #88 adds Exploratory delivery labels, review-branch defaults, and `agent-reviewing` blocking; #89 moves Exploratory delivery to a durable `agent/exploratory/issue-N-slug` handoff branch from `origin/main` without **Local integration**; #90 requires `## Review focus` before Exploratory handoff. | High. Pure workflow and state rules can become testable Modules while the CLI controller keeps side effects in one place. | Removes pure label policy, blocker parsing, required-section validation, delivery planning, QA command selection, manifest schema, comment builders, and recovery recommendation from the side-effect-heavy controller. | Repository root scripts/docs **Subproject** surface: `scripts/`, `tests/`, `docs/agents`, and ADRs. | `scripts/ralph_workflow.py` for pure policy and `scripts/ralph_state.py` for manifest/state. Keep Git, GitHub, command, and Codex adapters in `scripts/ralph.py` for the first slice. | High. Ordering is critical: QA must precede **Local integration** or Exploratory handoff, git pushes must precede issue metadata, Gitflow work must remain open until **Promotion**, trunk work must close after integration to `main`, Exploratory work must fail if the Review focus is missing or the remote handoff branch already exists and otherwise remain open with `agent-reviewing`, and recovery must stay manifest-gated by reachability from the expected **Integration target**. | Ralph script-level **Test lane** with `python3 -m unittest discover -s tests`; finish with root **Commit check** `prek run -a`. No AEMO ETL lane is needed unless Promotion gate command selection changes. | Likely `docs/agents/ralph-loop.md`; ADR 0001, ADR 0002, and ADR 0004 if **Local integration**, **Delivery mode**, **Integration target**, sandboxed issue access, or **Promotion** semantics are touched. `docs/repository/documentation-sync.md` only if root doc QA policy changes. | Extract pure workflow helpers to `scripts/ralph_workflow.py` and manifest/state helpers to `scripts/ralph_state.py`, then import them from `scripts/ralph.py` while keeping `GitClient`, `GitHubClient`, `CommandRunner`, `RalphLoop`, and `RalphRunRecovery` in place. |
 | Dagster ECS runtime task definitions | #86 found repeated container JSON assembly in `infrastructure/aws-pulumi/components/ecs_services.py` across the AEMO ETL user-code service, two webserver variants, and the daemon. Evidence also came from `_task_definition`, `_fargate_service`, `test_ecs_services.py`, `test_deprecation_warnings.py`, and `infrastructure/aws-pulumi/docs/runtime.md`, including the noted CPU documentation drift for webservers. | Medium-high. Task-definition and container-definition defaults can become one runtime Module without hiding service-level Pulumi wiring. | Removes repeated PostgreSQL/deployment environment variables, one-container ECS JSON serialization, CloudWatch log config, health-check timing, optional port mapping, and Fargate task-definition defaults from role components. | `infrastructure/aws-pulumi` AWS Pulumi **Subproject**. | Python Module with `DagsterRuntimeTaskSharedInputs`, `DagsterRuntimeTaskSpec`, and `build_dagster_runtime_task_definition(shared, spec) -> aws.ecs.TaskDefinition`. Keep ECR image outputs, roles, entry points, ports, role-specific env, Cloud Map, security groups, and `_fargate_service` explicit. | Medium. Pulumi `Input`/`Output` ordering, role-specific IAM ARNs, read-only webserver flags, daemon no-port behavior, and runtime doc drift make equivalence testing important. | AWS Pulumi **Component test** lane with `tests/component/test_ecs_services.py` and `tests/component/test_deprecation_warnings.py`; finish with the AWS Pulumi **Commit check** `prek run -a` from `infrastructure/aws-pulumi`. No **Push check** or deployed validation unless live service settings change. | Likely `infrastructure/aws-pulumi/README.md` and `infrastructure/aws-pulumi/docs/runtime.md`; root `docs/repository/architecture.md` only if repository-level AWS runtime structure changes. #87 should reconcile the webserver CPU doc drift while making durable updates. | Extract only runtime task-definition and container-definition assembly behind `DagsterRuntimeTaskSpec`, then migrate user code, both webservers, and daemon together. Leave ECR publishing, IAM policy definitions, `_fargate_service`, Cloud Map, security groups, subnet placement, and Dagster run-worker configuration unchanged. |
 
 The matrix points to no runtime behavior change by itself. Later implementation
 issues should treat these as independent slices, run the listed local **Test
 lane** and **Commit check** surfaces, treat those **Commit check** commands as
 the relevant local **Fast check** path for their **Subproject**, and let Ralph
-perform the configured **Local integration** for the selected **Delivery mode**
-and **Integration target**. Gitflow slices remain open after integration to
-`dev` until **Promotion** moves them to `main`; trunk slices can close after
-integration to `main`; exploratory slices stay open with `agent-reviewing`
-after publishing their durable review branch.
+perform the configured **Local integration** or Exploratory handoff for the
+selected **Delivery mode** and **Integration target**. Gitflow slices remain
+open after integration to `dev` until **Promotion** moves them to `main`; trunk
+slices can close after integration to `main`; exploratory slices stay open with
+`agent-reviewing` after publishing their durable review branch.
 
 ## Sync metadata
 
@@ -1012,6 +1024,37 @@ after publishing their durable review branch.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/_manifest.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/source_tables.json`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int651_v1_ex_ante_market_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int652_v1_ex_ante_schedule_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int653_v3_ex_ante_pipeline_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int654_v1_provisional_market_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int655_v1_provisional_schedule_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int656_v2_provisional_pipeline_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int657_v2_ex_post_market_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int658_v1_latest_allocation_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int659_v1_bid_offer_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int660_v1_contingency_gas_bids_and_offers_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int661_v1_contingency_gas_called_scheduled_bid_offer_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int662_v1_provisional_deviation_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int663_v1_provisional_variation_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int664_v1_daily_provisional_mos_allocation_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int665_v1_mos_stack_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int666_v1_market_notice_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int667_v1_market_parameters_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int668_v1_schedule_log_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int669_v1_settlement_version_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int670_v1_registered_participants_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int671_v1_hub_facility_definition_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int672_v1_cumulative_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int673_v1_total_contingency_bid_offer_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int674_v1_total_contingency_gas_schedules_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int675_v1_default_allocation_notice_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int676_v1_rolling_average_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int677_v1_contingency_gas_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int678_v1_net_market_balance_daily_amounts_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int679_v1_net_market_balance_settlement_amounts_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/jobs/download_vicgas_public_report_zip_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/current_state.py`

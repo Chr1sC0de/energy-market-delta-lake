@@ -137,6 +137,58 @@ def test_vicgas_file_filter_keeps_csv(mocker: MockerFixture) -> None:
     assert vicgas_file_filter(ctx, tag) is True  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "CurrentDay.zip",
+        "CURRENTDAY.CSV",
+        "Day01.zip",
+        "DAY31.ZIP",
+        "int685_sttm_prices.htm",
+        "int685b_sttm_prices.xml",
+    ],
+)
+def test_sttm_file_filter_excludes_non_root_csv_landing_targets(
+    mocker: MockerFixture, filename: str
+) -> None:
+    from aemo_etl.defs.raw.nemweb_public_files import sttm_file_filter
+
+    ctx = mocker.MagicMock()
+    tag = bs4.BeautifulSoup(f"<a>{filename}</a>", "html.parser").find("a")
+    assert sttm_file_filter(ctx, tag) is False  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "int651_v1_ex_ante_market_price_rpt_1.csv",
+        "INT685_V1_STTM_PRICES_RPT_13.CSV",
+        "INT685B_V1_STTM_PRICES_RPT_13.CSV",
+    ],
+)
+def test_sttm_file_filter_keeps_root_csv_reports(
+    mocker: MockerFixture, filename: str
+) -> None:
+    from aemo_etl.defs.raw.nemweb_public_files import sttm_file_filter
+
+    ctx = mocker.MagicMock()
+    tag = bs4.BeautifulSoup(f"<a>{filename}</a>", "html.parser").find("a")
+    assert sttm_file_filter(ctx, tag) is True  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "folder", ["[To Parent Directory]", "Contingency_Gas", "MOS Estimates"]
+)
+def test_sttm_folder_filter_blocks_subfolder_traversal(
+    mocker: MockerFixture, folder: str
+) -> None:
+    from aemo_etl.defs.raw.nemweb_public_files import sttm_folder_filter
+
+    ctx = mocker.MagicMock()
+    tag = bs4.BeautifulSoup(f"<a>{folder}</a>", "html.parser").find("a")
+    assert sttm_folder_filter(ctx, tag) is False  # type: ignore[arg-type]
+
+
 def test_soup_getter() -> None:
     soup = soup_getter("<html><body><a>link</a></body></html>")
     assert soup.find("a") is not None

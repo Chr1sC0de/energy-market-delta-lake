@@ -14,4 +14,8 @@ def defs() -> Definitions:
             domain="gbb",
             name="unzipper_gbb",
         ),
+        unzipper_definitions_factory(
+            domain="sttm",
+            name="unzipper_sttm",
+        ),
     )

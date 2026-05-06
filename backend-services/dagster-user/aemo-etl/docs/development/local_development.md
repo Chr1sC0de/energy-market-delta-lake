@@ -114,16 +114,19 @@ testing.`. In a live AWS Dagster deployment, the failed run should trigger
 `aemo_etl_failed_run_alert_sensor` and publish to the configured SNS topic. A
 local `dg launch` run only validates local Dagster behavior.
 
-To bootstrap or backfill VicGas public report bundles into the landing bucket,
-run the manual job:
+To bootstrap or backfill VicGas or STTM public report bundles into the landing
+bucket, run the manual jobs:
 
 ```bash
 uv run dg launch --job download_vicgas_public_report_zip_files_job
+uv run dg launch --job download_sttm_day_zip_files_job
 ```
 
 When `AWS_ENDPOINT_URL` is set, this writes to LocalStack-backed landing
 storage. Without that override, the job writes to the configured AWS landing
-bucket.
+bucket. Both jobs preserve the source basename in landing keys, and their
+`target_files` config can narrow a run to basename-only targets such as
+`PublicRpts01.zip` or `DAY01.ZIP`.
 
 For the debugger-driven local stack, use:
 
@@ -212,13 +215,18 @@ cached seed under `backend-services/.e2e/aemo-etl`, or the explicit
 `--seed-root` path, using the selected scenario's seed horizon.
 Successful non-reuse runs attempt to clean containers, Dagster run-worker
 containers, named volumes, and the e2e network; pre-run cleanup treats
-already-absent e2e resources as benign, while post-run cleanup warnings or
-failures stay visible in the run manifest as cleanup status and `cleanup_issues`
-without changing a successful dataflow result. Failures preserve the stack plus
-run manifests unless `--always-clean` is used. The run manifest records total gate,
-stack startup, Dagster dataflow monitor, and cleanup durations plus cleanup
-phase status, final Dagster run, target progress, target materialization
-timestamp, and asset-check telemetry.
+already-absent e2e resources as benign. Post-success cleanup also treats an
+already-absent e2e network as benign when compose has already removed the stack,
+while other post-run cleanup warnings or failures stay visible in the run
+manifest as cleanup status and `cleanup_issues` without changing a successful
+dataflow result. Failures preserve the stack plus run manifests unless
+`--always-clean` is used. The run manifest records total gate, stack startup,
+Dagster dataflow monitor, and cleanup durations plus cleanup phase status, final
+Dagster run, target progress, target materialization timestamp, and asset-check
+telemetry. For the `promotion-gas-model` direct launch path, the dataflow
+manifest also records scenario evidence: selected scenario, launch mode, target
+group, target asset count, selected upstream closure count, skipped live source
+asset keys, dependency-wave count, run-batch count, and asset batch size.
 After startup, it uses Dagster GraphQL to drive the selected scenario. The
 default `full-gas-model` scenario starts only the intended unzipper,
 event-driven raw, and gas model automation sensors. NEMWeb discovery schedules,
@@ -235,7 +243,10 @@ while skipping live `bronze_nemweb_public_files_*` discovery/listing assets and
 narrowing the seed horizon to 1 raw object and 1 zip object. Promotion asset
 batches use Dagster's in-process executor inside Podman run-worker containers,
 with a 20 minute timeout and `max_concurrent_runs` `6`; Ralph **Promotion** uses
-that scenario from the isolated source worktree. Override these values with
+that scenario from the isolated source worktree. Direct Promotion launches pace
+asset-run batch submission against `max_concurrent_runs` before starting more
+batches in a dependency wave so the queued-run guard remains bounded. Override
+these values with
 `--webserver-port`, `--timeout-seconds`, `--max-concurrent-runs`,
 `--raw-latest-count`, and `--zip-latest-count`.
 
@@ -243,10 +254,16 @@ The required e2e coverage remains every materializable Dagster asset in group
 `gas_model`, plus final asset-check status for that target. Current
 `dg list defs --assets "group:gas_model" --json` discovery evidence is 29
 assets and 112 asset checks, including
-`silver/metadata/silver_table_metadata`. The command prints a non-failing budget
-report comparing gate duration to the observed `69m58s` baseline and showing
-peak active/queued runs, final successful runs, target progress, and final
-failed asset-check count.
+`silver/metadata/silver_table_metadata`. The `promotion-gas-model` scenario
+enforces Promotion guard regression budgets from the #78 targeted baseline:
+total gate duration at or below 20 minutes, peak active runs at or below `6`,
+peak queued runs at or below `6`, total Dagster runs at or below `48`, target
+progress exactly `29/29`, and missing or failed target assets and asset checks
+at `0`. Budget failures print observed values, thresholds, and the
+`run-manifest.json` path. These are Promotion guard budgets, not generic local
+development performance claims; the full scenario prints the same telemetry
+without enforcing them.
+
 The generated compose stack uses fixed service IPs for Postgres, LocalStack,
 and the AEMO ETL code server so Podman run-worker containers do not depend on
 container DNS during high-concurrency **Promotion** gates.
@@ -272,13 +289,15 @@ AWS, leave `AWS_ENDPOINT_URL` unset and use the intended AWS credentials.
 Choose exactly one target scope:
 
 - `--all` rebuilds every registered source-table bronze asset
-- `--domain gbb` or `--domain vicgas` rebuilds one source-table domain
+- `--domain gbb`, `--domain sttm`, or `--domain vicgas` rebuilds one
+  source-table domain
 - `--table gbb.bronze_gasbb_contacts` rebuilds one source table
 
 Dry-run is the default. Use it first and keep the output as rebuild evidence:
 
 ```bash
 uv run aemo-replay-bronze-archive --domain gbb
+uv run aemo-replay-bronze-archive --domain sttm
 uv run aemo-replay-bronze-archive --table gbb.bronze_gasbb_contacts --json
 ```
 
@@ -305,6 +324,14 @@ Treat `--replace` as explicit operator intent to rebuild the selected table from
 the selected archive scope. If the dry-run archive file list or target Delta URI
 does not match the intended rebuild, stop and correct the target selection,
 bucket options, or credentials before writing.
+
+For STTM, the current source-table replay surface covers complete v19.1
+spec-backed public reports: `INT651` through `INT684` and `INT687` through
+`INT691`. Valid replay targets run from
+`sttm.bronze_int651_v1_ex_ante_market_price_rpt_1` through
+`sttm.bronze_int691_v1_sttm_ctp_register_rpt_1`, excluding `INT685` and
+`INT685B` because those live root CSV reports are landing-only gaps absent from
+the v19.1 STTM report specification manifest.
 
 ## Test assumptions
 
@@ -335,6 +362,7 @@ make integration-test-testmon
 make duplicate-check
 make run-prek
 uv run aemo-replay-bronze-archive --domain gbb
+uv run aemo-replay-bronze-archive --domain sttm
 uv run aemo-replay-bronze-archive --table gbb.bronze_gasbb_contacts --replace
 ```
 
@@ -342,7 +370,9 @@ uv run aemo-replay-bronze-archive --table gbb.bronze_gasbb_contacts --replace
 shell script header documentation alongside the existing shell formatting,
 shell linting, Python, pytest, and Dagster validation hooks. Ruff enforces
 Google-style docstrings for public production ETL APIs while excluding tests and
-generated-like raw source-table and TypedDict model definition surfaces.
+generated-like raw source-table and TypedDict model definition surfaces from the
+docstring ratchet. It also applies the default `C901` complexity threshold
+across the Subproject.
 
 ## Related docs
 
@@ -369,6 +399,47 @@ generated-like raw source-table and TypedDict model definition surfaces.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/current_state.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/_manifest.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/source_tables.json`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int651_v1_ex_ante_market_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int652_v1_ex_ante_schedule_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int653_v3_ex_ante_pipeline_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int654_v1_provisional_market_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int655_v1_provisional_schedule_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int656_v2_provisional_pipeline_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int657_v2_ex_post_market_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int658_v1_latest_allocation_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int659_v1_bid_offer_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int660_v1_contingency_gas_bids_and_offers_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int661_v1_contingency_gas_called_scheduled_bid_offer_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int662_v1_provisional_deviation_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int663_v1_provisional_variation_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int664_v1_daily_provisional_mos_allocation_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int665_v1_mos_stack_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int666_v1_market_notice_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int667_v1_market_parameters_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int668_v1_schedule_log_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int669_v1_settlement_version_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int670_v1_registered_participants_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int671_v1_hub_facility_definition_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int672_v1_cumulative_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int673_v1_total_contingency_bid_offer_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int674_v1_total_contingency_gas_schedules_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int675_v1_default_allocation_notice_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int676_v1_rolling_average_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int677_v1_contingency_gas_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int678_v1_net_market_balance_daily_amounts_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int679_v1_net_market_balance_settlement_amounts_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int680_v1_dp_flag_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int681_v1_daily_provisional_capacity_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int682_v1_settlement_mos_and_capacity_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int683_v1_provisional_used_mos_steps_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int684_v1_settlement_used_mos_steps_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int687_v1_facility_hub_capacity_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int688_v1_allocation_warning_limit_thresholds_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int689_v1_expost_allocation_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int690_v1_deviation_price_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int691_v1_sttm_ctp_register_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
   - `backend-services/dagster-user/aemo-etl/tests/integration/conftest.py`
   - `backend-services/dagster-user/aemo-etl/.localstack.env`

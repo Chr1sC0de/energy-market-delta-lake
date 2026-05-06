@@ -11,6 +11,7 @@ from dagster_aws.s3 import S3Resource
 from pytest_mock import MockerFixture
 from types_boto3_s3 import S3Client
 
+from aemo_etl.defs.raw.sttm._manifest import get_sttm_report_manifest
 from aemo_etl.factories.unzipper.assets import (
     UnzipperConfiguration,
     unzipper_asset_factory,
@@ -18,6 +19,7 @@ from aemo_etl.factories.unzipper.assets import (
 from aemo_etl.factories.unzipper.definitions import unzipper_definitions_factory
 from aemo_etl.factories.unzipper.file_unzipper import S3FileUnzipper
 from aemo_etl.factories.unzipper.sensors import unzipper_sensor
+from aemo_etl.utils import get_s3_object_keys_from_prefix_and_name_glob
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -343,6 +345,40 @@ def test_unzipper_csv_member_success(mocker: MockerFixture) -> None:
     # Source zip should be copied to archive then deleted
     mock_s3_client.copy_object.assert_called_once()
     mock_s3_client.delete_object.assert_called_once()
+
+
+def test_sttm_day_zip_member_matches_raw_source_table_glob(
+    mocker: MockerFixture,
+) -> None:
+    """Representative STTM DAYNN.ZIP extraction matches the INT651 raw glob."""
+    mocker.patch(
+        "aemo_etl.factories.unzipper.file_unzipper.scan_csv",
+        return_value=mocker.MagicMock(),
+    )
+    sttm_zip = _create_zip(
+        {
+            "INT651_V1_EX_ANTE_MARKET_PRICE_RPT_1.CSV": (
+                b"gas_date,hub_identifier\n2024-01-01,SYD\n"
+            )
+        }
+    )
+    _, _, mock_s3_client, kwargs = _build_unzip_args(
+        mocker,
+        sttm_zip,
+        s3_source_keys=["bronze/sttm/DAY01.ZIP"],
+    )
+    kwargs["s3_landing_prefix"] = "bronze/sttm"
+
+    unzipper = S3FileUnzipper()
+    unzipper.unzip(**kwargs)
+
+    uploaded_key = mock_s3_client.upload_fileobj.call_args.args[2]
+    report = get_sttm_report_manifest("INT651")
+    assert get_s3_object_keys_from_prefix_and_name_glob(
+        s3_prefix="bronze/sttm",
+        s3_file_glob=report["glob_pattern"],
+        original_keys=[uploaded_key],
+    ) == [uploaded_key]
 
 
 def test_unzipper_non_csv_member(mocker: MockerFixture) -> None:

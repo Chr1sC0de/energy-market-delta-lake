@@ -1,0 +1,2893 @@
+{
+  "manifest_version": 1,
+  "source": {
+    "title": "AEMO STTM Reports Specifications v19.1",
+    "section": "5.4 Public reports",
+    "original_pdf_url": "https://www.aemo.com.au/-/media/files/stakeholder_consultation/consultations/gas_consultations/2024/amendments-to-sttm-and-retail-market-procedures/decision/sttm-reports-specifications-v191.pdf?rev=30dbf1c556a7486b8c80e244b8690226&sc_lang=en"
+  },
+  "reports": [
+    {
+      "report_id": "INT651",
+      "report_name": "Ex Ante Market Price",
+      "name_suffix": "int651_v1_ex_ante_market_price_rpt_1",
+      "glob_pattern": "int651_v1_ex_ante_market_price_rpt_1*",
+      "description": "STTM public Ex Ante Market Price report. Contains ex ante market price at STTM hubs for a gas day and is issued after approval of an ex ante market schedule.",
+      "surrogate_key_sources": ["gas_date", "hub_identifier"],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date, for example 30 Jun 2009."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "schedule_identifier",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The unique identifier of the schedule that the ex ante market price relates to, except where administered_price_period is Y."
+        },
+        {
+          "name": "ex_ante_market_price",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The ex ante market price for the gas date. This is either the market price determined by the scheduling and pricing engine or the administered price during an administered price period."
+        },
+        {
+          "name": "administered_price_period",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Whether the gas date falls within an administered price period. Valid values are Y and N. This is not Y when an administered state is determined after the ex ante schedule is published."
+        },
+        {
+          "name": "cap_applied",
+          "not_null": false,
+          "primary_key": false,
+          "description": "If the gas date is within an administered price period, whether the administered price was capped. Valid values are Y and N."
+        },
+        {
+          "name": "administered_price_cap",
+          "not_null": false,
+          "primary_key": false,
+          "description": "If an administered price was capped, the Administered Price Cap value. If the administered price was not capped, this field is null."
+        },
+        {
+          "name": "schedule_price",
+          "not_null": false,
+          "primary_key": false,
+          "description": "If the administered price was capped at the Administered Price Cap, the market schedule price derived from bids and offers before the cap was applied. Otherwise null."
+        },
+        {
+          "name": "approval_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time when the schedule that the ex ante market price relates to was approved."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT652",
+      "report_name": "Ex Ante Schedule Quantity",
+      "name_suffix": "int652_v1_ex_ante_schedule_quantity_rpt_1",
+      "glob_pattern": "int652_v1_ex_ante_schedule_quantity_rpt_1*",
+      "description": "STTM public Ex Ante Schedule Quantity report. Contains the total ex ante market schedule quantity for each STTM facility for a gas day.",
+      "surrogate_key_sources": ["gas_date", "facility_identifier", "flow_direction"],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "schedule_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the schedule from which the schedule quantity is produced."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the facility."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the facility."
+        },
+        {
+          "name": "scheduled_qty",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total scheduled quantity for the facility. If the facility is of type network, this excludes the total price taker bid quantity."
+        },
+        {
+          "name": "firm_gas_scheduled_qty",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The total firm gas scheduled in the ex ante market on the pipeline for the gas day, i.e. total ex ante scheduled quantities of all Trading Rights associated with priority 1 Registered Services. This field is null for a facility of type network."
+        },
+        {
+          "name": "as_available_scheduled_qty",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The total as available gas scheduled in the ex ante market on the pipeline for the gas day, i.e. total ex ante scheduled quantities of all Trading Rights associated with Registered Services of priority other than 1. This field is null for a facility of type network."
+        },
+        {
+          "name": "flow_direction",
+          "not_null": true,
+          "primary_key": true,
+          "description": "Whether the scheduled quantity is for supply to the hub or withdrawal from the hub. Valid values are T and F."
+        },
+        {
+          "name": "price_taker_bid_qty",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The total scheduled price taker bid quantity for the facility. This field is null if the facility is of a type other than network."
+        },
+        {
+          "name": "price_taker_bid_not_sched_qty",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The price taker bid quantity not scheduled. This field is null if the facility is of a type other than network."
+        },
+        {
+          "name": "approval_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the schedule was approved."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT653",
+      "report_name": "Ex Ante Pipeline Data",
+      "name_suffix": "int653_v3_ex_ante_pipeline_price_rpt_1",
+      "glob_pattern": "int653_v3_ex_ante_pipeline_price_rpt_1*",
+      "description": "STTM public Ex Ante Pipeline Data report. Contains ex ante capacity price, flow constraint price, capacity quantity, facility hub capacity data quality, and the timestamp the hub capacity data was received for each facility of type pipeline.",
+      "surrogate_key_sources": ["gas_date", "facility_identifier"],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The relevant gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "schedule_identifier",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The unique identifier of the schedule from which the prices were produced."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the facility."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the facility."
+        },
+        {
+          "name": "capacity_qty",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total pipeline capacity quantity (GJ) that is available to the STTM, and the quantity used by AEMO to run the last approved ex ante market schedule for the relevant gas date."
+        },
+        {
+          "name": "capacity_qty_quality_type",
+          "not_null": false,
+          "primary_key": false,
+          "description": "Flag indicating whether the submitted capacity quantity is valid, warning, confirmed warning, or registered default capacity. Valid values are V, WH, WL, CH, CL, and D."
+        },
+        {
+          "name": "capacity_qty_datetime",
+          "not_null": false,
+          "primary_key": false,
+          "description": "Date and time the capacity quantity was received. This field is null if no capacity data was received and registered default capacity is applied."
+        },
+        {
+          "name": "ex_ante_capacity_price",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The capacity price of the pipeline for the gas date. This price is either the capacity price determined by the scheduling and pricing engine or the administered price during an administered price period."
+        },
+        {
+          "name": "ex_ante_flow_direction_constraint_price",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The pipeline flow direction constraint price of the pipeline determined in the relevant market schedule. Pipeline flow direction constraint price is not capped during an administered cap price state."
+        },
+        {
+          "name": "schedule_capacity_price",
+          "not_null": false,
+          "primary_key": false,
+          "description": "If the capacity price was capped at APC, the capacity price derived from bids and offers before the cap was applied. If the capacity price was not capped, this field is null."
+        },
+        {
+          "name": "approval_datetime",
+          "not_null": false,
+          "primary_key": false,
+          "description": "Date and time the schedule was approved."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT654",
+      "report_name": "Provisional Market Price",
+      "name_suffix": "int654_v1_provisional_market_price_rpt_1",
+      "glob_pattern": "int654_v1_provisional_market_price_rpt_1*",
+      "description": "STTM public Provisional Market Price report. Contains provisional prices for D-3 and D-2 for all STTM hubs.",
+      "surrogate_key_sources": [
+        "gas_date",
+        "hub_identifier",
+        "provisional_schedule_type"
+      ],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the hub which the price relates to."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub which the price relates to."
+        },
+        {
+          "name": "schedule_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the schedule which the price relates to."
+        },
+        {
+          "name": "provisional_price",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The provisional price."
+        },
+        {
+          "name": "provisional_schedule_type",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The type of the provisional schedule. Valid values are D-2 and D-3."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT655",
+      "report_name": "Provisional Schedule Quantity",
+      "name_suffix": "int655_v1_provisional_schedule_quantity_rpt_1",
+      "glob_pattern": "int655_v1_provisional_schedule_quantity_rpt_1*",
+      "description": "STTM public Provisional Schedule Quantity report. Contains the total provisional schedule quantity for each STTM facility for D-2 and D-3.",
+      "surrogate_key_sources": [
+        "gas_date",
+        "facility_identifier",
+        "flow_direction",
+        "provisional_schedule_type"
+      ],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "schedule_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the schedule from which the schedule quantity is produced."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the facility."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the facility."
+        },
+        {
+          "name": "provisional_qty",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The provisional quantity for the facility. If the facility is of type network, this excludes the total provisional price taker bid quantity."
+        },
+        {
+          "name": "provisional_firm_gas_scheduled",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The total provisional firm gas quantity on the pipeline for the gas day, i.e. total provisional scheduled quantities of all Trading Rights associated with priority 1 Registered Services. This field is null if the facility is of type network."
+        },
+        {
+          "name": "provisional_as_available_scheduled",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The total provisional as available gas quantity on the pipeline for the gas day, i.e. total provisional scheduled quantities of all Trading Rights associated with Registered Services of priority other than 1. This field is null if the facility is of type network."
+        },
+        {
+          "name": "flow_direction",
+          "not_null": true,
+          "primary_key": true,
+          "description": "Whether the forecast quantity is for supply to the hub or withdrawal from the hub. Valid values are T and F."
+        },
+        {
+          "name": "price_taker_bid_provisional_not_sched_qty",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The price taker bid quantity not scheduled in the provisional schedule. This field is null if the facility is of a type other than network."
+        },
+        {
+          "name": "price_taker_bid_provisional_qty",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The total provisional price taker bid quantity for the facility. This field is null if the facility is of a type other than network."
+        },
+        {
+          "name": "provisional_schedule_type",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The type of the provisional schedule. Valid values are D-2 and D-3."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT656",
+      "report_name": "Provisional Pipeline Data",
+      "name_suffix": "int656_v2_provisional_pipeline_data_rpt_1",
+      "glob_pattern": "int656_v2_provisional_pipeline_data_rpt_1*",
+      "description": "STTM public Provisional Pipeline Data report. Contains provisional capacity price, provisional flow constraint price, provisional capacity quantity, and facility hub capacity data quality for each facility of type pipeline for D-2 and D-3.",
+      "surrogate_key_sources": [
+        "gas_date",
+        "facility_identifier",
+        "provisional_schedule_type"
+      ],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "schedule_identifier",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The unique identifier of the schedule from which the provisional prices were produced."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the facility."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the facility."
+        },
+        {
+          "name": "provisional_capacity_qty",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The provisional pipeline capacity quantity (GJ) that is available to the STTM, and the quantity used by AEMO to run the provisional schedule for the relevant gas date."
+        },
+        {
+          "name": "prov_cap_qty_quality_type",
+          "not_null": false,
+          "primary_key": false,
+          "description": "Flag indicating whether the submitted capacity quantity is valid, warning, confirmed warning, or registered default capacity. Valid values are V, WH, WL, CH, CL, and D."
+        },
+        {
+          "name": "provisional_capacity_price",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The provisional capacity price of the pipeline determined in the relevant provisional schedule."
+        },
+        {
+          "name": "provisional_flow_constraint_price",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The provisional flow constraint price of the pipeline determined in the relevant provisional schedule."
+        },
+        {
+          "name": "provisional_schedule_type",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The type of the provisional schedule. Valid values are D-2, D-3, and NA for non-schedule data."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT657",
+      "report_name": "Ex Post Market Data",
+      "name_suffix": "int657_v2_ex_post_market_data_rpt_1",
+      "glob_pattern": "int657_v2_ex_post_market_data_rpt_1*",
+      "description": "STTM public Ex Post Market Data report. Contains ex post, provisional ex-post, and delayed ex-post details for the STTM hubs for a gas date.",
+      "surrogate_key_sources": [
+        "gas_date",
+        "hub_identifier",
+        "schedule_type_code"
+      ],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "schedule_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the schedule from which the imbalance price was produced."
+        },
+        {
+          "name": "imbalance_qty",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The quantity of the bid/offer used to determine the imbalance price. If the quantity is negative or zero then the market was long and an offer has been placed. If the quantity is positive then the market was short and a bid has been placed."
+        },
+        {
+          "name": "ex_post_imbalance_price",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The ex post imbalance price or provisional ex post imbalance price at the hub for the gas date. This price is either the ex post price determined by the scheduling and pricing engine or the administered ex post price during an administered price period. If a provisional ex post imbalance price is published, then a delayed ex post price will be published later in the gas day as per the STTM rules and procedures."
+        },
+        {
+          "name": "schedule_type_code",
+          "not_null": true,
+          "primary_key": true,
+          "description": "XPOST - ex-post/delayed ex-post price. PPOST - provisional ex-post price."
+        },
+        {
+          "name": "imbalance_type",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Indicates whether the market was long (L) or short (S). If the market was short then a bid has been placed for the imbalance quantity. If the market was long then an offer has been placed."
+        },
+        {
+          "name": "schedule_imbalance_price",
+          "not_null": false,
+          "primary_key": false,
+          "description": "If the ex post imbalance price was subject to the APC, irrespective of whether the APC was breached, this field contains the ex post price derived from bids and offers regardless of the cap. If the ex post imbalance price was not subject to the cap, this field is null."
+        },
+        {
+          "name": "approval_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the schedule was approved."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT658",
+      "report_name": "Latest Allocation Quantity",
+      "name_suffix": "int658_v1_latest_allocation_quantity_rpt_1",
+      "glob_pattern": "int658_v1_latest_allocation_quantity_rpt_1*",
+      "description": "STTM public Latest Allocation Quantity report. Contains the total allocation quantity for each STTM facility.",
+      "surrogate_key_sources": ["gas_date", "facility_identifier", "flow_direction"],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the relevant facility."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the relevant facility."
+        },
+        {
+          "name": "allocation_qty_inc_mos",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total allocated quantity for the facility of deemed actual flow by direction, e.g. total allocated quantity to the hub or total allocated quantity from the hub. This quantity is inclusive of any MOS gas."
+        },
+        {
+          "name": "flow_direction",
+          "not_null": true,
+          "primary_key": true,
+          "description": "Whether the allocated quantity is for supply to the hub or withdrawal from the hub. Valid values are T and F."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT659",
+      "report_name": "Bid & Offer Report",
+      "name_suffix": "int659_v1_bid_offer_rpt_1",
+      "glob_pattern": "int659_v1_bid_offer_rpt_1*",
+      "description": "STTM public Bid & Offer Report. Contains all bids and offers used in ex ante and D-2, D-3 provisional schedules for all STTM hubs. Price taker bids are not included.",
+      "surrogate_key_sources": [
+        "gas_date",
+        "schedule_identifier",
+        "bid_offer_identifier",
+        "bid_offer_step_number"
+      ],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "company_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the company that submitted the bid/offer."
+        },
+        {
+          "name": "company_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the company that submitted the bid/offer."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "schedule_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the schedule in which the bids/offers were used."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the facility."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the facility."
+        },
+        {
+          "name": "bid_offer_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the bid or offer."
+        },
+        {
+          "name": "bid_offer_step_number",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The number of the bid/offer step (1 - 10) on the bid/offer stack."
+        },
+        {
+          "name": "step_price",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Dollar price per GJ for bid/offer."
+        },
+        {
+          "name": "step_capped_cumulative_qty",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Cumulative quantity for the relevant bid or offer step submitted to the schedule. If the capacity of the Trading Right corresponding to the bid/offer is lowered after bid/offer submission and is lower than the submitted cumulative quantity, then the bid/offer quantity is capped at the capacity of the Trading Right. For bids, this is less any price taker bid quantity associated with the Trading Right."
+        },
+        {
+          "name": "bid_offer_type",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Whether this is an offer (O) to supply gas to the hub or a bid (B) to flow gas from the hub for consumption at the hub or flow away from the hub. Valid values are B and O."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was generated."
+        }
+      ]
+    },
+    {
+      "report_id": "INT660",
+      "report_name": "Contingency Gas Bid & Offer",
+      "name_suffix": "int660_v1_contingency_gas_bids_and_offers_rpt_1",
+      "glob_pattern": "int660_v1_contingency_gas_bids_and_offers_rpt_1*",
+      "description": "STTM public Contingency Gas Bid & Offer report. Contains received contingency gas bids and offers for each STTM facility.",
+      "surrogate_key_sources": ["gas_date", "contingency_gas_bid_offer_identifier", "contingency_gas_bid_offer_step_number"],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the relevant facility."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the relevant facility."
+        },
+        {
+          "name": "flow_direction",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Whether the contingency gas bid or offer is made based on a contract to supply gas to the hub or withdraw gas from the hub. Valid values are T and F. Contingency gas bids and offers based on a distribution contract to withdraw gas at the hub are displayed as F."
+        },
+        {
+          "name": "contingency_gas_bid_offer_type",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Whether this is an offer (O) to increase gas at the hub or a bid (B) to decrease gas at the hub. Valid values are B and O."
+        },
+        {
+          "name": "company_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the company that submitted the bid/offer."
+        },
+        {
+          "name": "company_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the company that submitted the bid/offer."
+        },
+        {
+          "name": "contingency_gas_bid_offer_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the contingency gas bid/offer."
+        },
+        {
+          "name": "contingency_gas_bid_offer_step_number",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The number of the contingency gas bid/offer step (1 - 10) on the bid/offer stack."
+        },
+        {
+          "name": "contingency_gas_bid_offer_step_price",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The price at which the contingency bid or offer is made."
+        },
+        {
+          "name": "contingency_gas_bid_offer_step_quantity",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Cumulative quantity of contingency gas offered or bid on a contingency gas bid/offer step."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT661",
+      "report_name": "Contingency Gas Called Scheduled Bid Offer",
+      "name_suffix": "int661_v1_contingency_gas_called_scheduled_bid_offer_rpt_1",
+      "glob_pattern": "int661_v1_contingency_gas_called_scheduled_bid_offer_rpt_1*",
+      "description": "STTM public Contingency Gas Called Scheduled Bid Offer report. Contains received contingency gas bids and offers, confirmed quantities, and called quantities for each STTM facility.",
+      "surrogate_key_sources": ["gas_date", "contingency_gas_bid_offer_identifier", "contingency_gas_bid_offer_step_number"],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the relevant facility."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the relevant facility."
+        },
+        {
+          "name": "contingency_gas_called_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the contingency gas called schedule."
+        },
+        {
+          "name": "flow_direction",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Whether the contingency gas bid or offer is made based on a contract to supply gas to the hub or withdraw gas from the hub. Valid values are T and F. Contingency gas bids and offers based on a distribution contract to withdraw gas at the hub are displayed as F."
+        },
+        {
+          "name": "contingency_gas_bid_offer_type",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Whether this is an offer (O) to increase gas at the hub or a bid (B) to decrease gas at the hub. Valid values are B and O."
+        },
+        {
+          "name": "company_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the company that submitted the bid/offer."
+        },
+        {
+          "name": "company_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the company that submitted the bid/offer."
+        },
+        {
+          "name": "contingency_gas_bid_offer_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "Unique identifier for the contingency gas bid/offer."
+        },
+        {
+          "name": "contingency_gas_bid_offer_step_number",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The number of the contingency gas bid/offer step (1 - 10) on the bid/offer stack."
+        },
+        {
+          "name": "contingency_gas_bid_offer_step_price",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The price of the contingency gas bid or offer step."
+        },
+        {
+          "name": "contingency_gas_bid_offer_step_quantity",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The cumulative quantity of gas offered or bid on a contingency gas offer or bid step."
+        },
+        {
+          "name": "contingency_gas_bid_offer_confirmed_step_quantity",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The quantity of gas in each contingency gas bid or offer step that the provider has confirmed as available."
+        },
+        {
+          "name": "contingency_gas_bid_offer_called_step_quantity",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The quantity of gas in each contingency gas bid or offer step that the provider has been called to provide."
+        },
+        {
+          "name": "approval_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time that the contingency gas called schedule was approved."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT662",
+      "report_name": "Provisional Deviation Market Settlement",
+      "name_suffix": "int662_v1_provisional_deviation_rpt_1",
+      "glob_pattern": "int662_v1_provisional_deviation_rpt_1*",
+      "description": "STTM public Provisional Deviation Market Settlement report. Contains daily total deviation quantity, deviation charges, and deviation payments by facility.",
+      "surrogate_key_sources": ["gas_date", "hub_identifier", "facility_identifier"],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the relevant facility."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the relevant facility."
+        },
+        {
+          "name": "total_deviation_qty",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total absolute deviation quantities across both directions that comprise the deviations on a facility for a gas day."
+        },
+        {
+          "name": "net_deviation_qty",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total net deviation quantities across both directions that comprise the deviations on a facility for a gas day."
+        },
+        {
+          "name": "deviation_charge",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total of all deviation charges to all Trading Participants on the facility for the gas date."
+        },
+        {
+          "name": "deviation_payment",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total of all deviation payments to all Trading Participants on the facility."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT663",
+      "report_name": "Provisional Variation and MOS Service Market Settlement",
+      "name_suffix": "int663_v1_provisional_variation_rpt_1",
+      "glob_pattern": "int663_v1_provisional_variation_rpt_1*",
+      "description": "STTM public Provisional Variation and MOS Service Market Settlement report. Contains daily variation quantities, variation charges, and MOS settlement amounts by hub.",
+      "surrogate_key_sources": ["gas_date", "hub_identifier"],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "variation_qty",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total variation quantity at the hub."
+        },
+        {
+          "name": "variation_charge",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total of all variation charges to all Trading Participants at the hub."
+        },
+        {
+          "name": "mos_capacity_payment",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The total payment for MOS service provision, not MOS cash-out, for each hub."
+        },
+        {
+          "name": "mos_cashout_payment",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The total MOS cash-out payment made by AEMO to MOS providers at the hub."
+        },
+        {
+          "name": "mos_cashout_charge",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The total MOS cash-out amount charged to MOS providers at the hub."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT664",
+      "report_name": "Daily Provisional MOS Allocation Data",
+      "name_suffix": "int664_v1_daily_provisional_mos_allocation_rpt_1",
+      "glob_pattern": "int664_v1_daily_provisional_mos_allocation_rpt_1*",
+      "description": "STTM public Daily Provisional MOS Allocation Data report. Contains daily provisional MOS allocation data.",
+      "surrogate_key_sources": ["gas_date", "facility_identifier"],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the relevant facility."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the relevant facility."
+        },
+        {
+          "name": "mos_allocated_qty",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total allocated quantity for the facility for contracted MOS. A positive quantity indicates an increase in flow to the hub; a negative quantity indicates an increase in flow from the hub."
+        },
+        {
+          "name": "mos_overrun_qty",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total allocated quantity for the facility for MOS overrun. A positive quantity indicates an increase in flow to the hub; a negative quantity indicates an increase in flow from the hub."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT665",
+      "report_name": "MOS Stack Data",
+      "name_suffix": "int665_v1_mos_stack_data_rpt_1",
+      "glob_pattern": "int665_v1_mos_stack_data_rpt_1*",
+      "description": "STTM public MOS Stack Data report. Contains quantity and price data for each MOS stack step, contract standing payment rate data, and MOS provider data for each STTM pipeline facility.",
+      "surrogate_key_sources": ["stack_identifier", "stack_step_identifier"],
+      "source_columns": [
+        {
+          "name": "effective_from_date",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The first gas date the stack applies to."
+        },
+        {
+          "name": "effective_to_date",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The last gas date the stack applies to."
+        },
+        {
+          "name": "stack_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The identifier that uniquely identifies the MOS stack."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the relevant facility."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the relevant facility."
+        },
+        {
+          "name": "stack_type",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Whether each MOS stack is Increase (I) or Decrease (D). Valid values are I and D."
+        },
+        {
+          "name": "estimated_maximum_quantity",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The estimated maximum MOS quantity expected for the MOS period, populated for both increase stacks and decrease stacks."
+        },
+        {
+          "name": "stack_step_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The identifier that uniquely identifies a step within a MOS stack."
+        },
+        {
+          "name": "trading_participant_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The identifier for the trading participant."
+        },
+        {
+          "name": "trading_participant_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The trading participant's organisation name."
+        },
+        {
+          "name": "step_quantity",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The quantity of gas associated with this MOS stack step as submitted by the MOS provider. This is the maximum quantity the pipeline operator can allocate to this MOS stack step."
+        },
+        {
+          "name": "step_price",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The price in $/GJ associated with each stack step as submitted by the MOS provider."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Timestamp of report generated."
+        }
+      ]
+    },
+    {
+      "report_id": "INT666",
+      "report_name": "Market Notices",
+      "name_suffix": "int666_v1_market_notice_rpt_1",
+      "glob_pattern": "int666_v1_market_notice_rpt_1*",
+      "description": "STTM public Market Notices report. Contains details of all current market notices.",
+      "surrogate_key_sources": ["market_notice_identifier"],
+      "source_columns": [
+        {
+          "name": "market_notice_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the market notice."
+        },
+        {
+          "name": "critical_notice_flag",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Indicator whether or not the notice is critical. Valid values are Y and N."
+        },
+        {
+          "name": "market_message",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Short message."
+        },
+        {
+          "name": "notice_start_date",
+          "not_null": true,
+          "primary_key": false,
+          "description": "First date the notice applies to."
+        },
+        {
+          "name": "notice_end_date",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Last date the notice applied to."
+        },
+        {
+          "name": "url_path",
+          "not_null": false,
+          "primary_key": false,
+          "description": "Path to any attachment included in the notice."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT667",
+      "report_name": "Market Parameters",
+      "name_suffix": "int667_v1_market_parameters_rpt_1",
+      "glob_pattern": "int667_v1_market_parameters_rpt_1*",
+      "description": "STTM public Market Parameters report. Contains market parameters whose effective-to date is greater than or equal to the report date.",
+      "surrogate_key_sources": ["effective_from_date", "effective_to_date", "parameter_code"],
+      "source_columns": [
+        {
+          "name": "effective_from_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The first gas date the record is effective on."
+        },
+        {
+          "name": "effective_to_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The last gas date the record is effective to."
+        },
+        {
+          "name": "parameter_code",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The parameter code. Valid values are APC, MPC, MMP, MOSCC, and CPT."
+        },
+        {
+          "name": "parameter_description",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The description of the parameter. Valid values are Administered Price Cap, Market Price Cap, Minimum Market Price, Market Operator Service Cost Cap, and Cumulative Price Threshold."
+        },
+        {
+          "name": "parameter_value",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The value of the parameter."
+        },
+        {
+          "name": "last_update_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the records within the report were last updated."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT668",
+      "report_name": "Schedule Log",
+      "name_suffix": "int668_v1_schedule_log_rpt_1",
+      "glob_pattern": "int668_v1_schedule_log_rpt_1*",
+      "description": "STTM public Schedule Log report. Contains details of published schedule runs.",
+      "surrogate_key_sources": ["schedule_identifier"],
+      "source_columns": [
+        {
+          "name": "schedule_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "Unique identity for each schedule."
+        },
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The gas date the schedule relates to."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The identifier of the hub the schedule header relates to."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "schedule_type",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The type of the schedule. Valid types include ex ante, provisional, ex post, and PPOST."
+        },
+        {
+          "name": "schedule_day",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The day the schedule is produced relative to the gas date. Valid days include D-1, D-2, D-3, and D+1."
+        },
+        {
+          "name": "creation_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "When schedule is created."
+        },
+        {
+          "name": "bid_offer_cut_off_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The bid/offer cut-off date and time."
+        },
+        {
+          "name": "facility_hub_capacity_cut_off_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The facility hub capacity cut-off date and time."
+        },
+        {
+          "name": "pipeline_allocation_cut_off_datetime",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The pipeline allocation cut-off date and time (D+1 only)."
+        },
+        {
+          "name": "approval_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Date and time of approval of the schedule."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report is produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT669",
+      "report_name": "Settlement Version",
+      "name_suffix": "int669_v1_settlement_version_rpt_1",
+      "glob_pattern": "int669_v1_settlement_version_rpt_1*",
+      "description": "STTM public Settlement Version report. Displays details of settlement runs where the due date has not passed.",
+      "surrogate_key_sources": ["settlement_run_identifier"],
+      "source_columns": [
+        {
+          "name": "settlement_run_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": ""
+        },
+        {
+          "name": "settlement_cat_type",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The category of the settlement run. Valid categories include Preliminary, Final, and Revision."
+        },
+        {
+          "name": "version_from_date",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Effective start date."
+        },
+        {
+          "name": "version_to_date",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Effective end date."
+        },
+        {
+          "name": "interest_rate",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The interest rate if the settlement category is of type revision."
+        },
+        {
+          "name": "issued_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the settlement statements are issued."
+        },
+        {
+          "name": "settlement_run_desc",
+          "not_null": false,
+          "primary_key": false,
+          "description": "Description of the settlement run."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Date and time report produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT670",
+      "report_name": "Participant Register",
+      "name_suffix": "int670_v1_registered_participants_rpt_1",
+      "glob_pattern": "int670_v1_registered_participants_rpt_1*",
+      "description": "STTM public Participant Register report. Contains details of all STTM registered participants, including trading participants and head office address details.",
+      "surrogate_key_sources": ["hub_identifier", "company_identifier", "organisation_registration_type", "registered_capacity"],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": false,
+          "description": "This field contains the gas date which the report is valid for."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "company_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the company."
+        },
+        {
+          "name": "company_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The registered company name."
+        },
+        {
+          "name": "abn",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The Australian Business Number of the company."
+        },
+        {
+          "name": "acn",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The Australian Company Number of the company."
+        },
+        {
+          "name": "organisation_registration_type",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The type of organisation registration. Valid types include Participant and Trading Participant."
+        },
+        {
+          "name": "registered_capacity",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The Registered capacities (roles) of the Trading Participant. Valid values are Shipper, STTM user, and Other. This field is null for participants."
+        },
+        {
+          "name": "registered_capacity_status",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The status of the registered capacity. Valid values are Active, Suspended, and De-activated."
+        },
+        {
+          "name": "line_1",
+          "not_null": false,
+          "primary_key": false,
+          "description": "Address line 1."
+        },
+        {
+          "name": "line_2",
+          "not_null": false,
+          "primary_key": false,
+          "description": "Address line 2."
+        },
+        {
+          "name": "line_3",
+          "not_null": false,
+          "primary_key": false,
+          "description": "Address line 3."
+        },
+        {
+          "name": "state_id",
+          "not_null": false,
+          "primary_key": false,
+          "description": "State code."
+        },
+        {
+          "name": "city",
+          "not_null": false,
+          "primary_key": false,
+          "description": "City / suburb / town."
+        },
+        {
+          "name": "postal_code",
+          "not_null": false,
+          "primary_key": false,
+          "description": "Postcode."
+        },
+        {
+          "name": "phone",
+          "not_null": false,
+          "primary_key": false,
+          "description": "Phone."
+        },
+        {
+          "name": "fax",
+          "not_null": false,
+          "primary_key": false,
+          "description": "Fax."
+        },
+        {
+          "name": "last_update_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The latest date and time data within the report was updated."
+        },
+        {
+          "name": "registration_status",
+          "not_null": true,
+          "primary_key": false,
+          "description": "This field indicates the registration status of the organisation. Valid statuses include Intending, Registered, Suspended, and Deregistered."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report is produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT671",
+      "report_name": "Hub and Facility Definitions",
+      "name_suffix": "int671_v1_hub_facility_definition_rpt_1",
+      "glob_pattern": "int671_v1_hub_facility_definition_rpt_1*",
+      "description": "STTM public Hub and Facility Definitions report. Contains details of all hubs and facilities in the STTM as effective on the report date.",
+      "surrogate_key_sources": ["hub_identifier", "facility_identifier"],
+      "source_columns": [
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the facility."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the facility associated with the hub."
+        },
+        {
+          "name": "facility_type",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The type of the facility. Valid types are PIPE, NETW, PROD, SNMF, AGGF, NETX, and NETY."
+        },
+        {
+          "name": "last_update_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The latest date and time data within the report was updated."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT672",
+      "report_name": "Cumulative Price & Threshold",
+      "name_suffix": "int672_v1_cumulative_price_rpt_1",
+      "glob_pattern": "int672_v1_cumulative_price_rpt_1*",
+      "description": "STTM public Cumulative Price & Threshold report. Contains the calculated cumulative price for each STTM hub.",
+      "surrogate_key_sources": ["gas_date", "hub_identifier"],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "cumulative_price",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The cumulative price for gas date."
+        },
+        {
+          "name": "cumulative_price_threshold",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The cumulative price threshold for gas date."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT673",
+      "report_name": "Total Contingency Bid & Offer",
+      "name_suffix": "int673_v1_total_contingency_bid_offer_rpt_1",
+      "glob_pattern": "int673_v1_total_contingency_bid_offer_rpt_1*",
+      "description": "STTM public Total Contingency Bid & Offer report. Contains total contingency bid and offer quantities for each hub.",
+      "surrogate_key_sources": ["gas_date", "hub_identifier"],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "total_contingency_gas_bid_qty",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The total quantity of all contingency gas bids on all facilities associated with the hub."
+        },
+        {
+          "name": "total_contingency_gas_offer_qty",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The total quantity of all contingency gas offers on all facilities associated with the hub."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report is produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT674",
+      "report_name": "Total Contingency Gas Schedules",
+      "name_suffix": "int674_v1_total_contingency_gas_schedules_rpt_1",
+      "glob_pattern": "int674_v1_total_contingency_gas_schedules_rpt_1*",
+      "description": "STTM public Total Contingency Gas Schedules report. Contains aggregated information on contingency gas bids and offers that have been called.",
+      "surrogate_key_sources": ["gas_date", "hub_identifier", "facility_identifier", "flow_direction", "contingency_gas_bid_offer_type"],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "Unique identifier for the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the relevant facility. Where deemed STTM distribution systems exist for a hub, scheduled Contingency Gas bids and offers for the distribution systems are aggregated and reported against the associated NETW facility for that hub."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the relevant facility."
+        },
+        {
+          "name": "contingency_gas_called_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the contingency gas called schedule."
+        },
+        {
+          "name": "flow_direction",
+          "not_null": true,
+          "primary_key": true,
+          "description": "This field indicates whether the contingency gas bid or offer is made based on a contract to supply gas to the hub or withdraw gas from the hub. Valid values are T and F. CG bids and offers based on a Distribution contract to withdraw gas at the hub are displayed as F."
+        },
+        {
+          "name": "contingency_gas_bid_offer_type",
+          "not_null": true,
+          "primary_key": true,
+          "description": "This field is a flag to indicate whether this is an offer to increase gas at the hub or a bid to decrease gas at the hub. Valid values are O and B."
+        },
+        {
+          "name": "contingency_gas_bid_offer_called_quantity",
+          "not_null": true,
+          "primary_key": false,
+          "description": "This is the total quantity of contingency gas that the contingency gas providers have been called to provide."
+        },
+        {
+          "name": "approval_datetime",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The date and time that the contingency gas called was approved."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT675",
+      "report_name": "Default Allocation Notice",
+      "name_suffix": "int675_v1_default_allocation_notice_rpt_1",
+      "glob_pattern": "int675_v1_default_allocation_notice_rpt_1*",
+      "description": "STTM public Default Allocation Notice report. Informs the market when default facility allocation is applied.",
+      "surrogate_key_sources": ["notice_identifier"],
+      "source_columns": [
+        {
+          "name": "notice_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the notice."
+        },
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The gas date for which the default allocation was applied."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the facility."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the facility."
+        },
+        {
+          "name": "notice_message",
+          "not_null": false,
+          "primary_key": false,
+          "description": "This field contains the comments of the notice."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date & time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT676",
+      "report_name": "Rolling Ex-ante Price Average",
+      "name_suffix": "int676_v1_rolling_average_price_rpt_1",
+      "glob_pattern": "int676_v1_rolling_average_price_rpt_1*",
+      "description": "STTM public Rolling Ex-ante Price Average report. Contains the rolling average for previous 30 gas days of the ex-ante hub price.",
+      "surrogate_key_sources": ["gas_date", "hub_identifier"],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "rolling_average",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The rolling average of the ex-ante hub price for the gas date."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT677",
+      "report_name": "Contingency Gas Price",
+      "name_suffix": "int677_v1_contingency_gas_price_rpt_1",
+      "glob_pattern": "int677_v1_contingency_gas_price_rpt_1*",
+      "description": "STTM public Contingency Gas Price report. Contains high and low contingency gas prices if contingency gas was called for the gas date.",
+      "surrogate_key_sources": ["contingency_gas_called_identifier"],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "contingency_gas_called_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the contingency gas called schedule."
+        },
+        {
+          "name": "high_contingency_gas_price",
+          "not_null": false,
+          "primary_key": false,
+          "description": "If contingency gas has been called upon to increase supply to the hub, then this field is populated with the high contingency gas price. Stored in $ / GJ. This field will be null if no contingency gas was called for the gas day. If high contingency gas price was administered, this field contains the administered high contingency gas price."
+        },
+        {
+          "name": "low_contingency_gas_price",
+          "not_null": false,
+          "primary_key": false,
+          "description": "If contingency gas has been called upon to decrease supply to the hub, then this field is populated with the low contingency gas price. Stored in $ / GJ. This field will be null if no contingency gas was called for the gas day. If low contingency gas price was administered, this field contains the administered low contingency gas price."
+        },
+        {
+          "name": "schedule_high_contingency_gas_price",
+          "not_null": false,
+          "primary_key": false,
+          "description": "If the high contingency gas price was administered, this field contains the high contingency gas price determined from the contingency gas offers."
+        },
+        {
+          "name": "schedule_low_contingency_gas_price",
+          "not_null": false,
+          "primary_key": false,
+          "description": "If the low contingency gas price was administered, this field contains the low contingency gas price determined from the contingency gas bids."
+        },
+        {
+          "name": "approval_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the schedule was approved."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT678",
+      "report_name": "Net Market Balance Daily Amounts",
+      "name_suffix": "int678_v1_net_market_balance_daily_amounts_rpt_1",
+      "glob_pattern": "int678_v1_net_market_balance_daily_amounts_rpt_1*",
+      "description": "STTM public Net Market Balance Daily Amounts report. Provides Net Market Balance components per hub for the billing period covered by a settlement or prudential run.",
+      "surrogate_key_sources": ["period_start_date", "period_end_date", "hub_identifier"],
+      "source_columns": [
+        {
+          "name": "period_start_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "Start date of calculation period."
+        },
+        {
+          "name": "period_end_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "End date of calculation period."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "net_market_balance",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The net market balance calculated for the period and hub."
+        },
+        {
+          "name": "total_deviation_qty",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total deviation quantity for the period and hub."
+        },
+        {
+          "name": "total_withdrawals",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total registered service allocations for registered services of the type \"From the hub\" or \"At the hub\" summed for the period and hub."
+        },
+        {
+          "name": "total_variation_charges",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The latest total variation charges for the period and hub."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was generated."
+        }
+      ]
+    },
+    {
+      "report_id": "INT679",
+      "report_name": "Net Market Balance Settlement Amounts",
+      "name_suffix": "int679_v1_net_market_balance_settlement_amounts_rpt_1",
+      "glob_pattern": "int679_v1_net_market_balance_settlement_amounts_rpt_1*",
+      "description": "STTM public Net Market Balance Settlement Amounts report. Provides Net Market Balance components per hub for the billing period covered by a settlement run.",
+      "surrogate_key_sources": ["settlement_run_identifier", "hub_identifier"],
+      "source_columns": [
+        {
+          "name": "settlement_run_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "STTM identifier for the settlement run."
+        },
+        {
+          "name": "period_start_date",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Start date of calculation period."
+        },
+        {
+          "name": "period_end_date",
+          "not_null": true,
+          "primary_key": false,
+          "description": "End date of calculation period."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "net_market_balance",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The net market balance calculated for the settlement period and hubs covered by the settlement run identified by the settlement_run_identifier."
+        },
+        {
+          "name": "total_deviation_qty",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total deviation quantity used to allocate surplus/short fall for the settlement period and hubs covered by the settlement run identified by the settlement_run_identifier."
+        },
+        {
+          "name": "total_withdrawals",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total registered service allocations for registered services of the type \"From the hub\" or \"At the hub\" summed for the billing period and hubs covered by the settlement run identified by the settlement_run_identifier."
+        },
+        {
+          "name": "total_variation_charges",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Total variation charges for the settlement run for the hub."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was generated."
+        }
+      ]
+    },
+    {
+      "report_id": "INT680",
+      "report_name": "DP Flag Data",
+      "name_suffix": "int680_v1_dp_flag_data_rpt_1",
+      "glob_pattern": "int680_v1_dp_flag_data_rpt_1*",
+      "description": "STTM public DP Flag Data report. Provides DP Flag settings where the effective to date is NULL or greater than or equal to report date - 31 days.",
+      "surrogate_key_sources": [
+        "hub_identifier",
+        "effective_from_date"
+      ],
+      "source_columns": [
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "effective_from_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date from which the DP flag setting applies."
+        },
+        {
+          "name": "effective_to_date",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The gas date to which the DP flag setting applies. If this is NULL it implies ongoing effectiveness."
+        },
+        {
+          "name": "dp_flag",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The dp_flag setting: When the DP flag has been set for a given hub and gas date in SBS, this value is 1 else 0."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was generated."
+        }
+      ]
+    },
+    {
+      "report_id": "INT681",
+      "report_name": "Daily Provisional Capacity Data",
+      "name_suffix": "int681_v1_daily_provisional_capacity_data_rpt_1",
+      "glob_pattern": "int681_v1_daily_provisional_capacity_data_rpt_1*",
+      "description": "STTM public Daily Provisional Capacity Data report. Contains daily provisional capacity data used in the calculation of Capacity Payments and Capacity Charges in the STTM.",
+      "surrogate_key_sources": [
+        "gas_date",
+        "hub_identifier",
+        "facility_identifier"
+      ],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the relevant facility."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the relevant facility."
+        },
+        {
+          "name": "firm_not_flowed",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total quantity of gas offered on firm trading rights \"to the hub\" but not flowed (based on the effective allocated quantity of gas flowed) for the gas day on the facility. Defined in the STTM settlement equations as TFGNQ(d,k)."
+        },
+        {
+          "name": "as_available_flowed",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total effective quantity of gas flowed via \"as available\" trading rights to the hub for the gas day on the facility. Defined in the STTM settlement equations as TAFGQ(d,k)."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT682",
+      "report_name": "Settlement MOS and Capacity Data",
+      "name_suffix": "int682_v1_settlement_mos_and_capacity_data_rpt_1",
+      "glob_pattern": "int682_v1_settlement_mos_and_capacity_data_rpt_1*",
+      "description": "STTM public Settlement MOS and Capacity Data report. Contains settlement MOS allocation and Capacity data for each facility for each day in the billing period covered by the settlement run.",
+      "surrogate_key_sources": [
+        "settlement_run_identifier",
+        "gas_date",
+        "hub_identifier",
+        "facility_identifier"
+      ],
+      "source_columns": [
+        {
+          "name": "settlement_run_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier for the settlement run."
+        },
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the relevant facility."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the relevant facility."
+        },
+        {
+          "name": "mos_allocated_qty",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total allocated quantity - for the facility - for contractedMOS. A positive quantity indicates an increase in flow to the hub; a negative quantity indicates an increase in flow from the hub."
+        },
+        {
+          "name": "mos_overrun_qty",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total allocated quantity - for the facility - for MOSoverrun. A positive quantity indicates an increase in flow to the hub; a negative quantity indicates an increase in flow from the hub."
+        },
+        {
+          "name": "firm_not_flowed",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total quantity of gas offered on firm trading rights \"to the hub\" but not flowed (based on the effective allocated quantity of gas flowed) for the gas day on the facility. Defined in the STTM settlement equations as TFGNQ(d,k)."
+        },
+        {
+          "name": "as_available_flowed",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total effective quantity of gas flowed via \"as available\" trading rights to the hub for the gas day on the facility. Defined in the STTM settlement equations as TAFGQ(d,k)."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT683",
+      "report_name": "Provisional Used MOS Steps",
+      "name_suffix": "int683_v1_provisional_used_mos_steps_rpt_1",
+      "glob_pattern": "int683_v1_provisional_used_mos_steps_rpt_1*",
+      "description": "STTM public Provisional Used MOS Steps report. Contains provisional data on used MOS Stack Steps for a facility for a gas day.",
+      "surrogate_key_sources": [
+        "gas_date",
+        "stack_identifier",
+        "stack_step_identifier"
+      ],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "Gas date on which the MOS step was used."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the relevant facility."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the relevant facility."
+        },
+        {
+          "name": "stack_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The identifier that uniquely identifies the MOS stack."
+        },
+        {
+          "name": "stack_type",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Each MOS stack refers to either an (I) Increase or (D) Decrease. Valid values are I and D."
+        },
+        {
+          "name": "stack_step_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The identifier that uniquely identifies a step within a MOS stack."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "timestamp of report generated"
+        }
+      ]
+    },
+    {
+      "report_id": "INT684",
+      "report_name": "Settlement Used MOS Steps",
+      "name_suffix": "int684_v1_settlement_used_mos_steps_rpt_1",
+      "glob_pattern": "int684_v1_settlement_used_mos_steps_rpt_1*",
+      "description": "STTM public Settlement Used MOS Steps report. Contains settlement data on used MOS Stack Steps for a facility for a gas day.",
+      "surrogate_key_sources": [
+        "settlement_run_identifier",
+        "gas_date",
+        "stack_identifier",
+        "stack_step_identifier"
+      ],
+      "source_columns": [
+        {
+          "name": "settlement_run_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier for the settlement run."
+        },
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "Gas date on which the MOS step was used."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the relevant facility."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the relevant facility."
+        },
+        {
+          "name": "stack_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The identifier that uniquely identifies the MOS stack."
+        },
+        {
+          "name": "stack_type",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Each MOS stack refers to either an (I) Increase or (D) Decrease. Valid values are I and D."
+        },
+        {
+          "name": "stack_step_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The identifier that uniquely identifies a step within a MOS stack."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "timestamp of report generated"
+        }
+      ]
+    },
+    {
+      "report_id": "INT687",
+      "report_name": "Facility Hub Capacity Data",
+      "name_suffix": "int687_v1_facility_hub_capacity_data_rpt_1",
+      "glob_pattern": "int687_v1_facility_hub_capacity_data_rpt_1*",
+      "description": "STTM public Facility Hub Capacity Data report. Contains facility hub capacity and capacity thresholds registered for a facility.",
+      "surrogate_key_sources": [
+        "effective_from_date",
+        "facility_identifier"
+      ],
+      "source_columns": [
+        {
+          "name": "effective_from_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The first gas date the record is effective on."
+        },
+        {
+          "name": "effective_to_date",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The last gas date the record is effective to."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the hub"
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub"
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the facility"
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the facility"
+        },
+        {
+          "name": "default_capacity",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The default registered capacity of the facility"
+        },
+        {
+          "name": "maximum_capacity",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The maximum registered capacity of the facility"
+        },
+        {
+          "name": "high_capacity_threshold",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The registered high capacity threshold of the facility"
+        },
+        {
+          "name": "low_capacity_threshold",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The registered low capacity threshold of the facility"
+        },
+        {
+          "name": "last_update_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date & time the records within the report were last updated"
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced"
+        }
+      ]
+    },
+    {
+      "report_id": "INT688",
+      "report_name": "Allocation Warning Limit Thresholds",
+      "name_suffix": "int688_v1_allocation_warning_limit_thresholds_rpt_1",
+      "glob_pattern": "int688_v1_allocation_warning_limit_thresholds_rpt_1*",
+      "description": "STTM public Allocation Warning Limit Thresholds report. Contains upper and lower allocation warning limits for a gas day on a facility.",
+      "surrogate_key_sources": [
+        "gas_date",
+        "facility_identifier"
+      ],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date"
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the hub"
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub"
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the facility"
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the facility"
+        },
+        {
+          "name": "upper_warning_limit",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The upper allocation warning limit of the facility"
+        },
+        {
+          "name": "lower_warning_limit",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The lower allocation warning limit of the facility"
+        },
+        {
+          "name": "last_update_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date & time the records within the report were last updated"
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT689",
+      "report_name": "Ex Post Allocation Quantity",
+      "name_suffix": "int689_v1_expost_allocation_quantity_rpt_1",
+      "glob_pattern": "int689_v1_expost_allocation_quantity_rpt_1*",
+      "description": "STTM public Ex Post Allocation Quantity report. Contains total facility allocation quantity and total facility allocation quantity data quality for each STTM facility.",
+      "surrogate_key_sources": [
+        "gas_date",
+        "facility_identifier",
+        "flow_direction"
+      ],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date"
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the hub"
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub"
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the relevant facility"
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the relevant facility"
+        },
+        {
+          "name": "allocation_qty_inc_mos",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total allocated quantity - for the facility - of deemed actual flow by direction e.g. total allocated quantity to the hub or total allocated quantity from the hub. This quantity is inclusive of any MOS gas."
+        },
+        {
+          "name": "allocation_qty_quality_type",
+          "not_null": true,
+          "primary_key": false,
+          "description": "This field is a flag to indicate if the total allocation quantity is V - Valid data, WH - Warning: total allocation quantity exceeds the upper allocation warning limit, WL - Warning: total allocation quantity is below the lower allocation warning limit, CH - Confirmed: total allocation quantity exceeds the upper allocation warning limit but the warning is confirmed, CL - Confirmed: total allocation quantity is below the lower allocation warning limit but the warning is confirmed, or DN - Default allocation is applied (no data is received)."
+        },
+        {
+          "name": "flow_direction",
+          "not_null": true,
+          "primary_key": true,
+          "description": "This field indicates whether the allocated quantity is for (T) supply to the hub or (F) withdrawal from the hub. Valid values are T and F."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT690",
+      "report_name": "Deviation Price Data",
+      "name_suffix": "int690_v1_deviation_price_data_rpt_1",
+      "glob_pattern": "int690_v1_deviation_price_data_rpt_1*",
+      "description": "STTM public Deviation Price Data report. Contains deviation price and the data used to determine the deviation price for each STTM hub for a gas day.",
+      "surrogate_key_sources": [
+        "gas_date",
+        "hub_identifier"
+      ],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date"
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the hub"
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub"
+        },
+        {
+          "name": "positive_deviation_price",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The positive deviation price at the hub for the gas date"
+        },
+        {
+          "name": "negative_deviation_price",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The negative deviation price at the hub for the gas date"
+        },
+        {
+          "name": "ex_ante_market_price",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The ex ante market price used to determine the positive and negative deviation price"
+        },
+        {
+          "name": "ex_post_imbalance_price",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The ex post imbalance price used to determine the positive and negative deviation price"
+        },
+        {
+          "name": "low_contingency_gas_price",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The low contingency gas price used to determine the positive deviation price"
+        },
+        {
+          "name": "high_contingency_gas_price",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The high contingency gas price used to determine the negative deviation price"
+        },
+        {
+          "name": "mos_increase_cost",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The MOS increase cost used to determine the negative deviation price"
+        },
+        {
+          "name": "mos_decrease_cost",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The MOS decrease cost used to determine the positive deviation price"
+        },
+        {
+          "name": "last_update_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the records within the report were last updated"
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced"
+        }
+      ]
+    },
+    {
+      "report_id": "INT691",
+      "report_name": "STTM Custody Transfer Point Register",
+      "name_suffix": "int691_v1_sttm_ctp_register_rpt_1",
+      "glob_pattern": "int691_v1_sttm_ctp_register_rpt_1*",
+      "description": "STTM public STTM Custody Transfer Point Register report. Contains the STTM Custody Transfer Point Register for each STTM hub.",
+      "surrogate_key_sources": [
+        "hub_identifier",
+        "facility_identifier"
+      ],
+      "source_columns": [
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the facility."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the facility associated with the hub."
+        },
+        {
+          "name": "facility_type",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The type of the facility, excluding distribution networks. The valid types are PIPE - pipeline, PROD - STTM injection facility, SNMF - STTM net metered facility, and AGGF - STTM aggregation facility."
+        },
+        {
+          "name": "ctp_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the facility."
+        },
+        {
+          "name": "ctp_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The description of the CTP."
+        },
+        {
+          "name": "effective_from_date",
+          "not_null": true,
+          "primary_key": false,
+          "description": "CTP effective from date"
+        },
+        {
+          "name": "effective_to_date",
+          "not_null": true,
+          "primary_key": false,
+          "description": "CTP effective to date"
+        },
+        {
+          "name": "last_update_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the records within the report were last updated"
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    }
+  ],
+  "landing_only_gaps": [
+    {
+      "report_id": "INT685",
+      "reason": "Present in the live NEMWeb STTM root but absent from STTM Reports Specifications v19.1, so discovery lands root CSV files without generating a source-table bronze asset."
+    },
+    {
+      "report_id": "INT685B",
+      "reason": "Present in the live NEMWeb STTM root but absent from STTM Reports Specifications v19.1, so discovery lands root CSV files without generating a source-table bronze asset."
+    }
+  ]
+}

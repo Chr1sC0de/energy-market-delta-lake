@@ -778,6 +778,76 @@ def test_cleanup_stack_with_telemetry_ignores_missing_pre_run_resources() -> Non
     assert "issues" not in cleanup_phases[0]
 
 
+def test_cleanup_stack_with_telemetry_ignores_post_success_missing_network() -> None:
+    """Post-success cleanup treats a compose-removed e2e network as benign."""
+    module = load_e2e_command_module()
+    cleanup_stack_with_telemetry = get_callable(
+        module,
+        "cleanup_stack_with_telemetry",
+    )
+    cleanup_manifest_status = get_callable(module, "cleanup_manifest_status")
+    telemetry_class = get_callable(module, "GateRunTelemetry")
+    compose_command = ("podman-compose", "--no-ansi", "-f", "compose.yaml")
+
+    class FakeRunner:
+        """Report compose cleanup success followed by an absent e2e network."""
+
+        def run(
+            self,
+            args: list[str],
+            *,
+            cwd: Path | None = None,
+            env: Mapping[str, str] | None = None,
+            capture_output: bool = False,
+            check: bool = True,
+        ) -> subprocess.CompletedProcess[str]:
+            del cwd, env, capture_output, check
+            command_name = classify_cleanup_command(args)
+            if command_name == "worker-ps":
+                return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+            if command_name == "network-rm":
+                return subprocess.CompletedProcess(
+                    args,
+                    1,
+                    stdout="",
+                    stderr=(
+                        "Error: unable to find network with name or ID "
+                        "aemo-etl-e2e-dagster-network: network not found\n"
+                    ),
+                )
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    telemetry = telemetry_class(started_monotonic=100.0)
+
+    issues = cleanup_stack_with_telemetry(
+        FakeRunner(),
+        compose_command,
+        telemetry=telemetry,
+        phase="post-success",
+    )
+    manifest = telemetry.to_manifest()
+    cleanup_phases = cast(
+        "Sequence[Mapping[str, object]]",
+        manifest["cleanup_phases"],
+    )
+    run_manifest: dict[str, object] = {
+        "cleanup": cleanup_manifest_status(
+            base_status="completed-after-success",
+            warning_status="completed-with-warnings-after-success",
+            error_status="incomplete-after-success",
+            issues=issues,
+        )
+    }
+    if len(issues) > 0:
+        run_manifest["cleanup_issues"] = issues
+
+    assert issues == []
+    assert cleanup_phases[0]["phase"] == "post-success"
+    assert cleanup_phases[0]["status"] == "completed"
+    assert "issues" not in cleanup_phases[0]
+    assert run_manifest == {"cleanup": "completed-after-success"}
+
+
 def test_cleanup_stack_with_telemetry_records_incomplete_cleanup() -> None:
     """Cleanup telemetry records failed cleanup phases in the run manifest."""
     module = load_e2e_command_module()
@@ -785,6 +855,7 @@ def test_cleanup_stack_with_telemetry_records_incomplete_cleanup() -> None:
         module,
         "cleanup_stack_with_telemetry",
     )
+    cleanup_manifest_status = get_callable(module, "cleanup_manifest_status")
     telemetry_class = get_callable(module, "GateRunTelemetry")
     compose_command = ("podman-compose", "--no-ansi", "-f", "compose.yaml")
 
@@ -825,11 +896,23 @@ def test_cleanup_stack_with_telemetry_records_incomplete_cleanup() -> None:
         "Sequence[Mapping[str, object]]",
         manifest["cleanup_phases"],
     )
+    run_manifest: dict[str, object] = {
+        "cleanup": cleanup_manifest_status(
+            base_status="completed-after-success",
+            warning_status="completed-with-warnings-after-success",
+            error_status="incomplete-after-success",
+            issues=issues,
+        )
+    }
+    if len(issues) > 0:
+        run_manifest["cleanup_issues"] = issues
 
     assert len(issues) == 1
     assert cleanup_phases[0]["phase"] == "post-success"
     assert cleanup_phases[0]["status"] == "incomplete"
     assert cleanup_phases[0]["issues"] == issues
+    assert run_manifest["cleanup"] == "incomplete-after-success"
+    assert run_manifest["cleanup_issues"] == issues
 
 
 def classify_cleanup_command(args: Sequence[str]) -> str:
@@ -1051,7 +1134,7 @@ def test_select_gas_model_upstream_materializable_asset_keys() -> None:
 
 
 def test_promotion_upstream_launch_uses_dependency_waves() -> None:
-    """The Promotion scenario launches bounded gas_model upstream waves."""
+    """Promotion launch evidence records dependency-wave coverage."""
     module = load_e2e_command_module()
     selector_class = get_callable(module, "DagsterRepositorySelector")
     launch_assets = get_callable(module, "launch_gas_model_upstream_assets")
@@ -1078,24 +1161,53 @@ def test_promotion_upstream_launch_uses_dependency_waves() -> None:
                             "assetKey": {"path": ["silver", "gas_model", "target"]},
                             "groupName": "gas_model",
                             "isMaterializable": True,
-                            "dependencyKeys": [{"path": ["silver", "gbb", "upstream"]}],
+                            "dependencyKeys": [
+                                {"path": ["silver", "gbb", "upstream"]},
+                                {"path": ["silver", "vicgas", "upstream"]},
+                            ],
                         },
                         {
                             "assetKey": {"path": ["silver", "gbb", "upstream"]},
                             "groupName": "gas_raw_cleansed",
                             "isMaterializable": True,
-                            "dependencyKeys": [{"path": ["bronze", "gbb", "raw"]}],
+                            "dependencyKeys": [
+                                {"path": ["bronze", "gbb", f"raw_{index}"]}
+                                for index in range(5)
+                            ],
                         },
                         {
-                            "assetKey": {"path": ["bronze", "gbb", "raw"]},
+                            "assetKey": {"path": ["silver", "vicgas", "upstream"]},
+                            "groupName": "gas_raw_cleansed",
+                            "isMaterializable": True,
+                            "dependencyKeys": [{"path": ["bronze", "vicgas", "raw"]}],
+                        },
+                        *[
+                            {
+                                "assetKey": {"path": ["bronze", "gbb", f"raw_{index}"]},
+                                "groupName": "gas_raw",
+                                "isMaterializable": True,
+                                "dependencyKeys": [
+                                    {
+                                        "path": [
+                                            "bronze",
+                                            "gbb",
+                                            "bronze_nemweb_public_files_gbb",
+                                        ]
+                                    }
+                                ],
+                            }
+                            for index in range(5)
+                        ],
+                        {
+                            "assetKey": {"path": ["bronze", "vicgas", "raw"]},
                             "groupName": "gas_raw",
                             "isMaterializable": True,
                             "dependencyKeys": [
                                 {
                                     "path": [
                                         "bronze",
-                                        "gbb",
-                                        "bronze_nemweb_public_files_gbb",
+                                        "vicgas",
+                                        "bronze_nemweb_public_files_vicgas",
                                     ]
                                 }
                             ],
@@ -1106,6 +1218,18 @@ def test_promotion_upstream_launch_uses_dependency_waves() -> None:
                                     "bronze",
                                     "gbb",
                                     "bronze_nemweb_public_files_gbb",
+                                ]
+                            },
+                            "groupName": "gas_raw",
+                            "isMaterializable": True,
+                            "dependencyKeys": [],
+                        },
+                        {
+                            "assetKey": {
+                                "path": [
+                                    "bronze",
+                                    "vicgas",
+                                    "bronze_nemweb_public_files_vicgas",
                                 ]
                             },
                             "groupName": "gas_raw",
@@ -1161,7 +1285,7 @@ def test_promotion_upstream_launch_uses_dependency_waves() -> None:
 
     client = FakeClient()
 
-    run_ids = launch_assets(
+    launch_result = launch_assets(
         client,
         selector_class("repo", "aemo-etl"),
         run_id="e2e",
@@ -1170,7 +1294,7 @@ def test_promotion_upstream_launch_uses_dependency_waves() -> None:
         runner=FakeRunner(),
     )
 
-    assert run_ids == ["run-1", "run-1", "run-1"]
+    assert getattr(launch_result, "run_ids") == ("run-1", "run-1", "run-1", "run-1")
     assert client.status_checks == 3
     selectors: list[Mapping[str, object]] = []
     for params in client.execution_params:
@@ -1180,10 +1304,153 @@ def test_promotion_upstream_launch_uses_dependency_waves() -> None:
         assert params["runConfigData"] == module["PROMOTION_ASSET_RUN_CONFIG"]
         selectors.append(selector)
     assert [selector["assetSelection"] for selector in selectors] == [
-        [{"path": ["bronze", "gbb", "raw"]}],
-        [{"path": ["silver", "gbb", "upstream"]}],
+        [
+            {"path": ["bronze", "gbb", "raw_0"]},
+            {"path": ["bronze", "gbb", "raw_1"]},
+            {"path": ["bronze", "gbb", "raw_2"]},
+            {"path": ["bronze", "gbb", "raw_3"]},
+        ],
+        [
+            {"path": ["bronze", "gbb", "raw_4"]},
+            {"path": ["bronze", "vicgas", "raw"]},
+        ],
+        [
+            {"path": ["silver", "gbb", "upstream"]},
+            {"path": ["silver", "vicgas", "upstream"]},
+        ],
         [{"path": ["silver", "gas_model", "target"]}],
     ]
+    assert getattr(launch_result, "scenario_evidence") == {
+        "scenario": "promotion-gas-model",
+        "launch_mode": "direct-upstream-asset-launch",
+        "target_group": "gas_model",
+        "target_asset_count": 1,
+        "selected_upstream_closure_count": 9,
+        "skipped_live_source_asset_keys": [
+            "bronze/gbb/bronze_nemweb_public_files_gbb",
+            "bronze/vicgas/bronze_nemweb_public_files_vicgas",
+        ],
+        "wave_count": 3,
+        "batch_count": 4,
+        "asset_batch_size": 4,
+    }
+
+
+def test_promotion_upstream_launch_paces_batches_to_run_capacity() -> None:
+    """Promotion direct launches do not burst past Dagster run capacity."""
+    module = load_e2e_command_module()
+    selector_class = get_callable(module, "DagsterRepositorySelector")
+    launch_assets = get_callable(module, "launch_gas_model_upstream_assets")
+
+    class FakeClient:
+        """Return a wide wave and fail if launches are not paced."""
+
+        def __init__(self) -> None:
+            self.execution_params: list[Mapping[str, object]] = []
+            self.launches_since_status = 0
+            self.status_checks = 0
+
+        def execute(
+            self,
+            query: str,
+            variables: Mapping[str, object] | None = None,
+            *,
+            timeout_seconds: int | None = None,
+        ) -> Mapping[str, object]:
+            if "assetNodes" in query:
+                assert timeout_seconds is None
+                return {
+                    "assetNodes": [
+                        {
+                            "assetKey": {"path": ["silver", "gas_model", "target"]},
+                            "groupName": "gas_model",
+                            "isMaterializable": True,
+                            "dependencyKeys": [
+                                {"path": ["bronze", "gbb", f"raw_{index}"]}
+                                for index in range(9)
+                            ],
+                        },
+                        *[
+                            {
+                                "assetKey": {"path": ["bronze", "gbb", f"raw_{index}"]},
+                                "groupName": "gas_raw",
+                                "isMaterializable": True,
+                                "dependencyKeys": [
+                                    {
+                                        "path": [
+                                            "bronze",
+                                            "gbb",
+                                            "bronze_nemweb_public_files_gbb",
+                                        ]
+                                    }
+                                ],
+                            }
+                            for index in range(9)
+                        ],
+                    ]
+                }
+            if "activeRuns: runsOrError" in query:
+                self.status_checks += 1
+                self.launches_since_status = 0
+                return {
+                    "activeRuns": {"__typename": "Runs", "results": []},
+                    "failedRuns": {"__typename": "Runs", "results": []},
+                    "allRuns": {"__typename": "Runs", "results": []},
+                }
+
+            assert "launchRun" in query
+            assert variables is not None
+            assert self.launches_since_status < 2
+            self.launches_since_status += 1
+            execution_params = variables["executionParams"]
+            assert isinstance(execution_params, Mapping)
+            self.execution_params.append(execution_params)
+            return {
+                "launchRun": {
+                    "__typename": "LaunchRunSuccess",
+                    "run": {
+                        "runId": f"run-{len(self.execution_params)}",
+                        "status": "QUEUED",
+                    },
+                }
+            }
+
+    class FakeRunner:
+        """Return no failed asset checks after capacity and wave waits."""
+
+        def run(
+            self,
+            args: list[str],
+            *,
+            cwd: Path | None = None,
+            env: Mapping[str, str] | None = None,
+            capture_output: bool = False,
+            check: bool = True,
+        ) -> subprocess.CompletedProcess[str]:
+            del cwd, env, capture_output, check
+            assert args[:3] == ["podman", "exec", "aemo-etl-e2e-postgres"]
+            return subprocess.CompletedProcess(args, 0, stdout="[]\n", stderr="")
+
+    client = FakeClient()
+
+    launch_result = launch_assets(
+        client,
+        selector_class("repo", "aemo-etl"),
+        run_id="e2e",
+        started_after=100.0,
+        timeout_seconds=1200,
+        max_active_runs=2,
+        runner=FakeRunner(),
+    )
+
+    assert getattr(launch_result, "run_ids") == (
+        "run-1",
+        "run-2",
+        "run-3",
+        "run-4",
+    )
+    assert client.status_checks == 3
+    assert getattr(launch_result, "scenario_evidence")["batch_count"] == 4
 
 
 def test_asset_launch_timeout_propagates_without_retry() -> None:
@@ -1421,6 +1688,7 @@ def test_dataflow_telemetry_aggregates_monitor_status_samples() -> None:
     }
     assert payload["first_target_materialization_at"] == "2023-11-14T22:13:20+00:00"
     assert payload["last_target_materialization_at"] == "2023-11-14T22:15:20+00:00"
+    assert payload["final_missing_asset_check_count"] == 0
     assert payload["final_failed_asset_check_count"] == 1
 
 
@@ -1577,74 +1845,234 @@ def test_gate_run_telemetry_manifest_records_durations() -> None:
     ]
 
 
-def test_e2e_budget_report_formats_below_baseline() -> None:
-    """The budget report is concise and explicitly non-failing below baseline."""
+def test_e2e_promotion_regression_budgets_pass_for_approved_baseline() -> None:
+    """The Promotion guard budgets pass for the approved targeted baseline."""
     module = load_e2e_command_module()
     format_e2e_budget_report = get_callable(module, "format_e2e_budget_report")
+    e2e_budget_failures = get_callable(module, "e2e_budget_failures")
+    e2e_regression_budgets_for_scenario = get_callable(
+        module,
+        "e2e_regression_budgets_for_scenario",
+    )
+    budgets = e2e_regression_budgets_for_scenario("promotion-gas-model")
 
     report = format_e2e_budget_report(
         {
-            "total_gate_duration_seconds": 20 * 60,
+            "total_gate_duration_seconds": 475.152,
             "dagster_dataflow": {
-                "peak_active_run_count": 3,
-                "peak_queued_run_count": 4,
-                "final_run_status_counts": {"SUCCESS": 29},
+                "peak_active_run_count": 6,
+                "peak_queued_run_count": 0,
+                "final_run_status_counts": {"SUCCESS": 48},
                 "final_target_progress": {
                     "materialized_target_asset_count": 29,
                     "target_asset_count": 29,
+                    "missing_target_asset_count": 0,
+                    "failed_target_asset_count": 0,
                 },
+                "final_missing_asset_check_count": 0,
                 "final_failed_asset_check_count": 0,
             },
-        }
+        },
+        manifest_path=Path("/tmp/run-manifest.json"),
+        budgets=budgets,
     )
 
-    assert "E2E budget report (non-failing):" in report
-    assert "20m00s (49m58s below 69m58s baseline)" in report
-    assert "3 active / 4 queued" in report
-    assert "final successful runs: 29" in report
-    assert "target progress: 29/29 materialized" in report
-    assert "final asset-check status: 0 failed" in report
+    assert (
+        e2e_budget_failures(
+            {
+                "total_gate_duration_seconds": 475.152,
+                "dagster_dataflow": {
+                    "peak_active_run_count": 6,
+                    "peak_queued_run_count": 0,
+                    "final_run_status_counts": {"SUCCESS": 48},
+                    "final_target_progress": {
+                        "materialized_target_asset_count": 29,
+                        "target_asset_count": 29,
+                        "missing_target_asset_count": 0,
+                        "failed_target_asset_count": 0,
+                    },
+                    "final_missing_asset_check_count": 0,
+                    "final_failed_asset_check_count": 0,
+                },
+            },
+            budgets,
+        )
+        == ()
+    )
+    assert "E2E Promotion guard regression budgets (passed):" in report
+    assert "run manifest: /tmp/run-manifest.json" in report
+    assert "7m55s; threshold <= 20m00s" in report
+    assert "total Dagster runs: observed 48; threshold <= 48" in report
+    assert "target progress: observed 29/29 materialized" in report
+    assert "failed target asset checks: observed 0; threshold <= 0" in report
 
 
-def test_e2e_budget_report_formats_above_baseline() -> None:
-    """Above-baseline telemetry remains report-only."""
+def test_e2e_promotion_regression_budgets_fail_duration_and_run_counts() -> None:
+    """Duration and run-count regressions fail the Promotion guard budgets."""
     module = load_e2e_command_module()
     format_e2e_budget_report = get_callable(module, "format_e2e_budget_report")
+    e2e_budget_failures = get_callable(module, "e2e_budget_failures")
+    e2e_regression_budgets_for_scenario = get_callable(
+        module,
+        "e2e_regression_budgets_for_scenario",
+    )
+    budgets = e2e_regression_budgets_for_scenario("promotion-gas-model")
+    telemetry = {
+        "total_gate_duration_seconds": 20 * 60 + 1,
+        "dagster_dataflow": {
+            "peak_active_run_count": 7,
+            "peak_queued_run_count": 7,
+            "final_run_status_counts": {"SUCCESS": 49},
+            "final_target_progress": {
+                "materialized_target_asset_count": 29,
+                "target_asset_count": 29,
+                "missing_target_asset_count": 0,
+                "failed_target_asset_count": 0,
+            },
+            "final_missing_asset_check_count": 0,
+            "final_failed_asset_check_count": 0,
+        },
+    }
 
     report = format_e2e_budget_report(
-        {
-            "total_gate_duration_seconds": 70 * 60,
-            "dagster_dataflow": {
-                "peak_active_run_count": 7,
-                "peak_queued_run_count": 77,
-                "final_run_status_counts": {"SUCCESS": 270},
-                "final_target_progress": {
-                    "materialized_target_asset_count": 29,
-                    "target_asset_count": 29,
-                },
-                "final_failed_asset_check_count": 2,
-            },
-        }
+        telemetry,
+        manifest_path=Path("/tmp/run-manifest.json"),
+        budgets=budgets,
+    )
+    failures = e2e_budget_failures(telemetry, budgets)
+
+    assert "E2E Promotion guard regression budgets (failed):" in report
+    assert "total gate duration observed 20m01s; threshold <= 20m00s" in failures
+    assert "peak active runs observed 7; threshold <= 6" in failures
+    assert "peak queued runs observed 7; threshold <= 6" in failures
+    assert "total Dagster runs observed 49; threshold <= 48" in failures
+    assert "total gate duration observed 20m01s; threshold <= 20m00s" in report
+    assert "total Dagster runs observed 49; threshold <= 48" in report
+
+
+def test_e2e_promotion_regression_budget_enforcement_fails_command(
+    tmp_path: Path,
+) -> None:
+    """Promotion budget failures mark the manifest failed and raise CommandError."""
+    module = load_e2e_command_module()
+    enforce_budgets = get_callable(module, "enforce_e2e_regression_budgets_for_run")
+    run_options_class = get_callable(module, "RunOptions")
+    status_class = get_callable(module, "DagsterDataflowStatus")
+    telemetry_class = get_callable(module, "GateRunTelemetry")
+    dataflow_telemetry_class = get_callable(module, "DagsterDataflowTelemetry")
+    command_error = get_exception_class(module, "CommandError")
+    manifest_path = tmp_path / "run-manifest.json"
+    telemetry = telemetry_class(started_monotonic=0.0, completed_monotonic=1201.0)
+    dataflow_telemetry = dataflow_telemetry_class()
+    dataflow_telemetry.record_status_sample(
+        status_class(
+            active_runs=(),
+            failed_runs=(),
+            materialized_target_assets=tuple(
+                f"silver/gas_model/asset_{index}" for index in range(29)
+            ),
+            missing_target_assets=(),
+            failed_target_assets=(),
+            missing_asset_checks=(),
+            failed_asset_checks=(),
+            run_status_counts={"SUCCESS": 49},
+        )
+    )
+    telemetry.dataflow = dataflow_telemetry
+    manifest: dict[str, object] = {"status": "running"}
+    options = run_options_class(
+        scenario="promotion-gas-model",
+        launch_mode="direct-upstream-asset-launch",
+        rebuild=False,
+        reuse=False,
+        always_clean=False,
+        seed_root=None,
+        webserver_port=3001,
+        raw_latest_count=1,
+        zip_latest_count=1,
+        timeout_seconds=1200,
+        max_concurrent_runs=6,
     )
 
-    assert "70m00s (2s above 69m58s baseline)" in report
-    assert "7 active / 77 queued" in report
-    assert "final successful runs: 270" in report
-    assert "final asset-check status: 2 failed" in report
+    with pytest.raises(command_error) as caught:
+        enforce_budgets(
+            telemetry=telemetry,
+            manifest=manifest,
+            manifest_path=manifest_path,
+            options=options,
+        )
+
+    assert "E2E Promotion guard regression budget failed" in str(caught.value)
+    assert str(manifest_path) in str(caught.value)
+    written_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert written_manifest["status"] == "failed"
+    assert written_manifest["budget"]["status"] == "failed"
+    assert written_manifest["budget"]["run_manifest"] == str(manifest_path)
 
 
-def test_e2e_budget_report_handles_missing_telemetry() -> None:
-    """Missing telemetry produces an actionable report without failing."""
+def test_e2e_promotion_regression_budgets_fail_coverage_contract() -> None:
+    """Target progress and final asset-check drift fail the Promotion budgets."""
+    module = load_e2e_command_module()
+    e2e_budget_failures = get_callable(module, "e2e_budget_failures")
+    e2e_regression_budgets_for_scenario = get_callable(
+        module,
+        "e2e_regression_budgets_for_scenario",
+    )
+    budgets = e2e_regression_budgets_for_scenario("promotion-gas-model")
+
+    failures = e2e_budget_failures(
+        {
+            "total_gate_duration_seconds": 600,
+            "dagster_dataflow": {
+                "peak_active_run_count": 6,
+                "peak_queued_run_count": 0,
+                "final_run_status_counts": {"SUCCESS": 48},
+                "final_target_progress": {
+                    "materialized_target_asset_count": 28,
+                    "target_asset_count": 29,
+                    "missing_target_asset_count": 1,
+                    "failed_target_asset_count": 0,
+                },
+                "final_missing_asset_check_count": 1,
+                "final_failed_asset_check_count": 1,
+            },
+        },
+        budgets,
+    )
+
+    assert (
+        "target progress observed 28/29 materialized; required 29/29 materialized"
+        in failures
+    )
+    assert "missing target assets observed 1; threshold <= 0" in failures
+    assert "missing target asset checks observed 1; threshold <= 0" in failures
+    assert "failed target asset checks observed 1; threshold <= 0" in failures
+
+
+def test_e2e_promotion_regression_budgets_fail_missing_telemetry() -> None:
+    """Missing telemetry produces actionable Promotion budget failures."""
     module = load_e2e_command_module()
     format_e2e_budget_report = get_callable(module, "format_e2e_budget_report")
+    e2e_budget_failures = get_callable(module, "e2e_budget_failures")
+    e2e_regression_budgets_for_scenario = get_callable(
+        module,
+        "e2e_regression_budgets_for_scenario",
+    )
+    budgets = e2e_regression_budgets_for_scenario("promotion-gas-model")
 
-    report = format_e2e_budget_report({})
+    report = format_e2e_budget_report(
+        {},
+        manifest_path=Path("/tmp/run-manifest.json"),
+        budgets=budgets,
+    )
+    failures = e2e_budget_failures({}, budgets)
 
-    assert "unavailable (baseline 69m58s)" in report
-    assert "peak active/queued runs: unavailable" in report
-    assert "final successful runs: unavailable" in report
-    assert "target progress: unavailable" in report
-    assert "final asset-check status: unavailable" in report
+    assert "run manifest: /tmp/run-manifest.json" in report
+    assert "total gate duration unavailable; threshold <= 20m00s" in failures
+    assert "peak active runs unavailable; threshold <= 6" in failures
+    assert "target progress unavailable; required 29/29 materialized" in failures
+    assert "failed target asset checks unavailable; threshold <= 0" in failures
+    assert "total gate duration unavailable; threshold <= 20m00s" in report
 
 
 def test_monitor_records_telemetry_before_failed_run_error() -> None:

@@ -127,7 +127,8 @@ the same `prek` command surfaces as code QA:
   `backend-services/authentication`, `backend-services/marimo`,
   `backend-services/dagster-user/aemo-etl`, and
   `infrastructure/aws-pulumi`, with each Subproject's pyproject defining its
-  test, generated, schema-heavy, or entrypoint exclusions.
+  test, generated, schema-heavy, or entrypoint exclusions. AEMO ETL and AWS
+  Pulumi also select Ruff `C901` with Ruff's default complexity threshold.
   `backend-services/dagster-core` is not currently on this ratchet.
 - `shfmt` formats shell scripts.
 - `shellcheck` checks shell correctness.
@@ -158,19 +159,32 @@ way:
   maintained-doc scope and its own sync metadata.
 - #59: docs-only AEMO ETL changes remain aligned with Ralph QA selection by
   keeping docs-only AEMO ETL paths on the root doc **Commit check** surface.
-- #57, #58, #61, #62, #88, and #94: current Ralph behavior for **Delivery
-  mode**, **Local integration**, **Promotion**, **Sandboxed issue access**,
-  writable QA runtime paths, unverified **Promotion** commit review context, and
-  **Post-promotion review** remains owned by
+- #57, #58, #61, #62, #88, #89, #94, and #95: current Ralph behavior for
+  **Delivery mode**, **Local integration**, Exploratory handoff, **Promotion**,
+  **Sandboxed issue access**, writable QA runtime paths, unverified
+  **Promotion** commit review context, **Post-promotion review**, and validated
+  follow-up creation remain owned by
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
 - #68: [docs/agents/ralph-loop.md](../agents/ralph-loop.md) defines the
-  **Ready issue refresh** contract. Follow-up implementation issues can wire the
-  pass into Ralph after the shared language, audit prefix, optional
-  `## Current context`, stale issue handling, and completed closure rules are
-  stable.
-- #69 through #72: keep future **Ready issue refresh** implementation behavior
+  **Ready issue refresh** contract, including the shared language, audit prefix,
+  optional `## Current context`, stale issue handling, and completed closure
+  rules.
+- #69: Ralph computes bounded **Ready issue refresh** candidates after
+  drain-mode **Local integration** or Exploratory handoff using open issues from
+  the existing `--issue-limit` scan, with Gitflow, trunk, and Exploratory
+  blocker satisfaction described in
+  [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
+- #90: Exploratory-ready issues require `## Review focus` before Ralph can
+  publish an Exploratory handoff. The contract and triage expectations live in
+  [docs/agents/issue-tracker.md](../agents/issue-tracker.md),
+  [docs/agents/ralph-loop.md](../agents/ralph-loop.md), and
+  [docs/agents/triage-labels.md](../agents/triage-labels.md).
+- #70 and #71: keep future **Ready issue refresh** implementation behavior
   aligned with the #68 contract before extending scripts, labels, or issue
   metadata flows.
+- #72: Ralph implementation prompts include bounded recent **Ready issue
+  refresh** notes after the issue body while keeping the issue body as the
+  primary implementation contract.
 
 ## Search commands
 

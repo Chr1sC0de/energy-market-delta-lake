@@ -334,15 +334,22 @@ containers, and the Dagster GraphQL monitor. The full scenario verifies the
 sensor/dependency path. The Promotion scenario verifies the same final coverage
 through an explicit graph-scoped Dagster asset launch so the **Promotion** gate
 can stay inside the 20 minute budget without bypassing the final target or
-asset-check monitor.
+asset-check monitor. Direct Promotion launches pace asset-run batch submission
+against Dagster `max_concurrent_runs` so the queued-run budget remains bounded
+while dependency-wave ordering is preserved.
 
 The `promotion-gas-model` scenario may reduce incidental automation volume by
 narrowing seed horizon, started sensors, or run-launch shape, but it must still
 end with `29/29` target progress and `0` failed asset checks before
-**Promotion** can merge to `main`. The non-failing budget report compares gate
-duration to the observed `69m58s` baseline and prints peak active/queued run
-counts, final successful run count, final target progress, and final failed
-asset-check count for review evidence.
+**Promotion** can merge to `main`. The `promotion-gas-model` scenario enforces
+Promotion guard regression budgets from the #78 targeted baseline: total gate
+duration must stay at or below 20 minutes, peak active runs at or below `6`,
+peak queued runs at or below `6`, total Dagster runs at or below `48`, target
+progress at exactly `29/29`, and missing or failed target assets and asset
+checks at `0`. These budgets protect Promotion from run explosion or missing
+coverage; they are not generic local development performance claims. The full
+scenario prints the same telemetry for review without enforcing those Promotion
+budgets.
 
 Local service images are tagged for the e2e stack. Missing images are built
 automatically, existing images are reused by default, and `--rebuild` forces all
@@ -361,23 +368,29 @@ them with `--timeout-seconds` and `--max-concurrent-runs`.
 Successful runs attempt to clean e2e containers, Dagster run-worker
 containers, named volumes, and the e2e network by default after the full
 dataflow completes. Pre-run cleanup treats already-absent e2e resources as
-benign. Post-run cleanup warnings or failures do not change a successful
-dataflow result, but they do change the manifest cleanup status and are captured
-as `cleanup_issues`. Failed runs, including cached seed coverage
-shortfalls, preserve containers, volumes, service logs, the run manifest, and
-the seed-run manifest for inspection. Use `--reuse` to keep and reuse the e2e
-stack after a successful run, or `--always-clean` to clean containers, volumes,
-and run-worker containers even after failure.
+benign. Post-success cleanup also treats an already-absent e2e network as
+benign when compose has already removed the stack. Other post-run cleanup
+warnings or failures do not change a successful dataflow result, but they do
+change the manifest cleanup status and are captured as `cleanup_issues`. Failed
+runs, including cached seed coverage shortfalls, preserve containers, volumes,
+service logs, the run manifest, and the seed-run manifest for inspection. Use
+`--reuse` to keep and reuse the e2e stack after a successful run, or
+`--always-clean` to clean containers, volumes, and run-worker containers even
+after failure.
 
 Each `run-manifest.json` includes structured telemetry for Promotion review:
 total gate duration, stack startup duration, Dagster dataflow monitor duration,
 cumulative cleanup duration, cleanup phase status and timings, cleanup issue
 evidence, peak active and queued Dagster run counts, final run status counts,
 final target progress, first and last observed target materialization
-timestamps, and the final failed asset-check count. Failed runs include
-telemetry for every monitor sample captured before the failure. The same
-telemetry is summarized in the non-failing budget report printed to the command
-output.
+timestamps, and the final missing and failed asset-check counts. For
+`promotion-gas-model` direct launches, `dataflow.scenario_evidence` also
+records the selected scenario, launch mode, target group, target asset count,
+selected upstream closure count, skipped live source asset keys, wave count,
+batch count, and asset batch size. Failed runs include telemetry for every
+monitor sample captured before the failure. The same telemetry is summarized in
+the command output. Promotion budget failures mark the run manifest failed and
+print observed values, thresholds, and the `run-manifest.json` path.
 
 ______________________________________________________________________
 

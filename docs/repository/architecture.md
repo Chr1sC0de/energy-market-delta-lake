@@ -131,15 +131,25 @@ skipping live `bronze_nemweb_public_files_*` discovery/listing assets so it
 starts from seeded LocalStack objects. This preserves the mandatory final target
 and asset-check status without the full sensor-triggered run queue. Each
 Promotion batch uses Dagster's in-process executor inside its Podman run-worker
-container to reduce LocalStack and Delta Lake DynamoDB lock-table contention.
+container to reduce LocalStack and Delta Lake DynamoDB lock-table contention,
+and direct launch paces batch submission against `max_concurrent_runs` so
+queued runs remain within the Promotion guard budget.
 The generated stack uses fixed service IPs for Postgres, LocalStack, and the
 AEMO ETL code server so run-worker containers do not depend on Podman DNS during
 high-concurrency Promotion gates. Its run
-manifest records gate timing, final dataflow telemetry, cleanup duration, and
-incomplete cleanup evidence so Promotion review can distinguish dataflow
-success from cleanup residue without changing the dataflow gate decision. The
-command output also prints a non-failing budget report against the observed
-`69m58s` baseline.
+manifest records gate timing, final dataflow telemetry, direct-launch scenario
+evidence, cleanup duration, and non-benign cleanup evidence so Promotion review
+can distinguish dataflow success from cleanup residue without changing the
+dataflow gate decision. The direct-launch evidence records the scenario, launch
+mode, target group, target asset count, selected upstream closure count, skipped
+live source asset keys, dependency-wave count, run-batch count, and asset batch
+size. The Promotion scenario enforces regression budgets from the approved
+targeted baseline: total gate duration at or below 20 minutes, peak active and
+queued runs at or below `6`, total Dagster runs at or below `48`, target
+progress exactly `29/29`, and missing or failed target assets and asset checks
+at `0`. Budget failures print the observed values, thresholds, and run manifest
+path. The full scenario prints the same telemetry without making local
+development performance claims.
 
 ## Repository responsibilities
 

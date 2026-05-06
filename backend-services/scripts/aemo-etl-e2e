@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,11 +28,15 @@ DEFAULT_TIMEOUT_SECONDS = 90 * 60
 DEFAULT_MAX_CONCURRENT_RUNS = 6
 DEFAULT_RAW_LATEST_COUNT = 3
 DEFAULT_ZIP_LATEST_COUNT = 3
-E2E_BUDGET_BASELINE_SECONDS = 69 * 60 + 58
 FULL_GAS_MODEL_SCENARIO = "full-gas-model"
 PROMOTION_GAS_MODEL_SCENARIO = "promotion-gas-model"
 SENSOR_DRIVEN_LAUNCH_MODE = "sensor-driven"
 DIRECT_UPSTREAM_ASSET_LAUNCH_MODE = "direct-upstream-asset-launch"
+PROMOTION_E2E_REQUIRED_TARGET_ASSET_COUNT = 29
+PROMOTION_E2E_MAX_TOTAL_GATE_DURATION_SECONDS = 20 * 60
+PROMOTION_E2E_MAX_PEAK_ACTIVE_RUN_COUNT = DEFAULT_MAX_CONCURRENT_RUNS
+PROMOTION_E2E_MAX_PEAK_QUEUED_RUN_COUNT = DEFAULT_MAX_CONCURRENT_RUNS
+PROMOTION_E2E_MAX_TOTAL_RUN_COUNT = 48
 E2E_SCENARIO_DEFAULTS = {
     FULL_GAS_MODEL_SCENARIO: {
         "raw_latest_count": DEFAULT_RAW_LATEST_COUNT,
@@ -379,6 +383,7 @@ query E2EDataflowTargetStatus(
 }
 """
 
+
 class CommandError(RuntimeError):
     """Raised for user-actionable command failures."""
 
@@ -409,6 +414,22 @@ class RunOptions:
     zip_latest_count: int
     timeout_seconds: int
     max_concurrent_runs: int
+
+
+@dataclass(frozen=True, slots=True)
+class E2ERegressionBudgets:
+    """Promotion guard regression budgets for one e2e scenario."""
+
+    scenario: str
+    required_target_asset_count: int
+    max_total_gate_duration_seconds: int
+    max_peak_active_run_count: int
+    max_peak_queued_run_count: int
+    max_total_run_count: int
+    max_missing_target_asset_count: int = 0
+    max_failed_target_asset_count: int = 0
+    max_missing_asset_check_count: int = 0
+    max_failed_asset_check_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -462,6 +483,55 @@ class DagsterAssetLaunchWave:
 
     index: int
     asset_keys: tuple[tuple[str, ...], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class DagsterAssetClosureSelection:
+    """Selected Promotion asset closure and intentionally skipped source assets."""
+
+    target_asset_keys: tuple[tuple[str, ...], ...]
+    selected_asset_keys: tuple[tuple[str, ...], ...]
+    skipped_live_source_asset_keys: tuple[tuple[str, ...], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class DagsterAssetLaunchPlan:
+    """Structured Promotion scenario launch plan evidence."""
+
+    scenario: str
+    launch_mode: str
+    target_group: str
+    target_asset_keys: tuple[tuple[str, ...], ...]
+    selected_asset_keys: tuple[tuple[str, ...], ...]
+    skipped_live_source_asset_keys: tuple[tuple[str, ...], ...]
+    waves: tuple[DagsterAssetLaunchWave, ...]
+    batch_count: int
+    asset_batch_size: int
+
+    def to_manifest(self) -> dict[str, object]:
+        """Return this launch plan in the e2e run manifest shape."""
+        return {
+            "scenario": self.scenario,
+            "launch_mode": self.launch_mode,
+            "target_group": self.target_group,
+            "target_asset_count": len(self.target_asset_keys),
+            "selected_upstream_closure_count": len(self.selected_asset_keys),
+            "skipped_live_source_asset_keys": [
+                format_asset_key_path(asset_key)
+                for asset_key in self.skipped_live_source_asset_keys
+            ],
+            "wave_count": len(self.waves),
+            "batch_count": self.batch_count,
+            "asset_batch_size": self.asset_batch_size,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class DagsterDataflowLaunchResult:
+    """Run IDs and optional scenario evidence from dataflow launch selection."""
+
+    run_ids: tuple[str, ...]
+    scenario_evidence: dict[str, object] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -524,6 +594,7 @@ class DagsterDataflowTelemetry:
     final_failed_target_asset_count: int = 0
     first_target_materialization_timestamp: float | None = None
     last_target_materialization_timestamp: float | None = None
+    final_missing_asset_check_count: int = 0
     final_failed_asset_check_count: int = 0
 
     def record_status_sample(self, status: DagsterDataflowStatus) -> None:
@@ -544,6 +615,7 @@ class DagsterDataflowTelemetry:
         )
         self.final_missing_target_asset_count = len(status.missing_target_assets)
         self.final_failed_target_asset_count = len(status.failed_target_assets)
+        self.final_missing_asset_check_count = len(status.missing_asset_checks)
         self.final_failed_asset_check_count = len(status.failed_asset_checks)
         self.record_target_materialization_timestamps(
             status.target_materialization_timestamps
@@ -592,6 +664,7 @@ class DagsterDataflowTelemetry:
             "last_target_materialization_at": timestamp_iso_or_none(
                 self.last_target_materialization_timestamp
             ),
+            "final_missing_asset_check_count": self.final_missing_asset_check_count,
             "final_failed_asset_check_count": self.final_failed_asset_check_count,
         }
 
@@ -853,10 +926,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--zip-latest-count",
         type=positive_int,
         default=None,
-        help=(
-            "cached zip objects required per domain "
-            "(default: scenario-specific)"
-        ),
+        help=("cached zip objects required per domain (default: scenario-specific)"),
     )
     run_parser.add_argument(
         "--timeout-seconds",
@@ -893,12 +963,9 @@ def run_options_from_args(args: argparse.Namespace) -> RunOptions:
         always_clean=bool(args.always_clean),
         seed_root=args.seed_root,
         webserver_port=args.webserver_port,
-        raw_latest_count=args.raw_latest_count
-        or scenario_defaults["raw_latest_count"],
-        zip_latest_count=args.zip_latest_count
-        or scenario_defaults["zip_latest_count"],
-        timeout_seconds=args.timeout_seconds
-        or scenario_defaults["timeout_seconds"],
+        raw_latest_count=args.raw_latest_count or scenario_defaults["raw_latest_count"],
+        zip_latest_count=args.zip_latest_count or scenario_defaults["zip_latest_count"],
+        timeout_seconds=args.timeout_seconds or scenario_defaults["timeout_seconds"],
         max_concurrent_runs=args.max_concurrent_runs
         or scenario_defaults["max_concurrent_runs"],
     )
@@ -1012,6 +1079,7 @@ def run_stack(
             webserver_port=options.webserver_port,
             timeout_seconds=remaining_timeout_seconds(deadline),
             expected_max_concurrent_runs=options.max_concurrent_runs,
+            scenario=options.scenario,
             launch_mode=options.launch_mode,
             run_id=run_id,
             runner=command_runner,
@@ -1043,19 +1111,24 @@ def run_stack(
         else:
             manifest["cleanup"] = "preserved-after-failure"
         telemetry.complete()
-        emit_e2e_budget_report(telemetry)
+        emit_e2e_budget_report(telemetry, manifest_path=manifest_path)
         write_run_manifest(manifest_path, manifest, telemetry)
         raise
 
     collect_logs(command_runner, compose_command, logs_dir, backend_dir)
-    manifest["status"] = "success"
     manifest["completed_at"] = now_iso()
     manifest["logs_dir"] = str(logs_dir)
     manifest["seed_run_manifest"] = str(seed_root / "seed-run-manifest.json")
     if options.reuse:
         manifest["cleanup"] = "preserved-for-reuse"
         telemetry.complete()
-        emit_e2e_budget_report(telemetry)
+        enforce_e2e_regression_budgets_for_run(
+            telemetry=telemetry,
+            manifest=manifest,
+            manifest_path=manifest_path,
+            options=options,
+        )
+        manifest["status"] = "success"
         write_run_manifest(manifest_path, manifest, telemetry)
         sys.stdout.write(
             f"{STACK_NAME} completed the dataflow at "
@@ -1079,7 +1152,13 @@ def run_stack(
     if len(cleanup_issues) > 0:
         manifest["cleanup_issues"] = cleanup_issues
     telemetry.complete()
-    emit_e2e_budget_report(telemetry)
+    enforce_e2e_regression_budgets_for_run(
+        telemetry=telemetry,
+        manifest=manifest,
+        manifest_path=manifest_path,
+        options=options,
+    )
+    manifest["status"] = "success"
     write_run_manifest(manifest_path, manifest, telemetry)
     if cleanup_has_errors(cleanup_issues):
         sys.stdout.write(
@@ -1719,6 +1798,7 @@ def drive_dagster_dataflow(
     timeout_seconds: int,
     expected_max_concurrent_runs: int,
     run_id: str,
+    scenario: str = FULL_GAS_MODEL_SCENARIO,
     launch_mode: str = SENSOR_DRIVEN_LAUNCH_MODE,
     runner: CommandRunner | None = None,
     telemetry: GateRunTelemetry | None = None,
@@ -1744,13 +1824,15 @@ def drive_dagster_dataflow(
         expected_max_concurrent_runs=expected_max_concurrent_runs,
     )
     validate_dagster_automation_state(definition_state)
-    bootstrap_run_ids = launch_dataflow_runs(
+    launch_result = launch_dataflow_runs(
         client,
         definition_state.selector,
+        scenario=scenario,
         launch_mode=launch_mode,
         run_id=run_id,
         started_after=started_after,
         timeout_seconds=remaining_timeout_seconds(deadline),
+        max_concurrent_runs=expected_max_concurrent_runs,
         runner=command_runner,
         telemetry=dataflow_telemetry,
     )
@@ -1770,17 +1852,20 @@ def drive_dagster_dataflow(
                 monitor_started,
                 time.monotonic(),
             )
-    return {
+    payload: dict[str, object] = {
         "repository_name": definition_state.selector.repository_name,
         "repository_location_name": definition_state.selector.repository_location_name,
         "started_at": datetime.fromtimestamp(
             started_after,
             timezone.utc,
         ).isoformat(),
-        "bootstrap_run_ids": bootstrap_run_ids,
+        "bootstrap_run_ids": list(launch_result.run_ids),
         "target_asset_count": final_status.target_asset_count,
         "materialized_target_assets": list(final_status.materialized_target_assets),
     }
+    if launch_result.scenario_evidence is not None:
+        payload["scenario_evidence"] = dict(launch_result.scenario_evidence)
+    return payload
 
 
 def dagster_graphql_url(webserver_port: int) -> str:
@@ -2048,30 +2133,37 @@ def launch_dataflow_runs(
     client: DagsterGraphQLClient,
     selector: DagsterRepositorySelector,
     *,
+    scenario: str,
     launch_mode: str,
     run_id: str,
     started_after: float,
     timeout_seconds: int,
+    max_concurrent_runs: int,
     runner: CommandRunner | None = None,
     telemetry: DagsterDataflowTelemetry | None = None,
-) -> list[str]:
+) -> DagsterDataflowLaunchResult:
     """Launch the selected scenario's Dagster dataflow runs."""
     if launch_mode == SENSOR_DRIVEN_LAUNCH_MODE:
-        del started_after, timeout_seconds, runner, telemetry
+        del started_after, timeout_seconds, max_concurrent_runs, runner, telemetry
         start_expected_sensors(client, selector)
         validate_dagster_automation_state(
             fetch_dagster_definition_state(client),
             expected_sensor_status="RUNNING",
         )
-        return launch_bootstrap_runs(client, selector, run_id=run_id)
+        return DagsterDataflowLaunchResult(
+            run_ids=tuple(launch_bootstrap_runs(client, selector, run_id=run_id))
+        )
 
     if launch_mode == DIRECT_UPSTREAM_ASSET_LAUNCH_MODE:
         return launch_gas_model_upstream_assets(
             client,
             selector,
+            scenario=scenario,
+            launch_mode=launch_mode,
             run_id=run_id,
             started_after=started_after,
             timeout_seconds=timeout_seconds,
+            max_active_runs=max_concurrent_runs,
             runner=runner,
             telemetry=telemetry,
         )
@@ -2113,28 +2205,49 @@ def launch_gas_model_upstream_assets(
     client: DagsterGraphQLClient,
     selector: DagsterRepositorySelector,
     *,
+    scenario: str = PROMOTION_GAS_MODEL_SCENARIO,
+    launch_mode: str = DIRECT_UPSTREAM_ASSET_LAUNCH_MODE,
     run_id: str,
     started_after: float,
     timeout_seconds: int,
+    max_active_runs: int = DEFAULT_MAX_CONCURRENT_RUNS,
     runner: CommandRunner | None = None,
     telemetry: DagsterDataflowTelemetry | None = None,
-) -> list[str]:
+) -> DagsterDataflowLaunchResult:
     """Launch explicit asset graph batches for the gas_model Promotion target."""
+    if max_active_runs <= 0:
+        raise CommandError("max active Promotion asset runs must be greater than zero")
+
     asset_nodes = fetch_dagster_asset_graph(client)
-    launch_waves = build_gas_model_upstream_asset_launch_waves(asset_nodes)
+    launch_plan = build_gas_model_upstream_asset_launch_plan(
+        asset_nodes,
+        scenario=scenario,
+        launch_mode=launch_mode,
+    )
+    launch_waves = launch_plan.waves
     command_runner = runner or CommandRunner()
     deadline = time.monotonic() + timeout_seconds
     run_ids: list[str] = []
 
     for wave in launch_waves:
-        batches = tuple(chunk_asset_keys(wave.asset_keys, PROMOTION_ASSET_BATCH_SIZE))
+        batches = tuple(chunk_asset_keys(wave.asset_keys, launch_plan.asset_batch_size))
         sys.stdout.write(
             "Launching Promotion asset wave "
             f"{wave.index}/{len(launch_waves)}: "
             f"{len(wave.asset_keys)} assets in {len(batches)} run batches\n"
         )
         sys.stdout.flush()
+        active_run_count = 0
         for batch_index, batch in enumerate(batches, start=1):
+            if active_run_count >= max_active_runs:
+                status = wait_for_dagster_run_launch_slot(
+                    client,
+                    started_after=started_after,
+                    timeout_seconds=remaining_timeout_seconds(deadline),
+                    max_active_runs=max_active_runs,
+                    telemetry=telemetry,
+                )
+                active_run_count = len(status.active_runs)
             sys.stdout.write(
                 "Launching Promotion asset batch "
                 f"{batch_index}/{len(batches)} for wave {wave.index}: "
@@ -2151,6 +2264,7 @@ def launch_gas_model_upstream_assets(
                     run_config_data=PROMOTION_ASSET_RUN_CONFIG,
                 )
             )
+            active_run_count += 1
         wait_for_dagster_run_wave(
             client,
             started_after=started_after,
@@ -2159,7 +2273,49 @@ def launch_gas_model_upstream_assets(
             telemetry=telemetry,
         )
 
-    return run_ids
+    return DagsterDataflowLaunchResult(
+        run_ids=tuple(run_ids),
+        scenario_evidence=launch_plan.to_manifest(),
+    )
+
+
+def wait_for_dagster_run_launch_slot(
+    client: DagsterGraphQLClient,
+    *,
+    started_after: float,
+    timeout_seconds: int,
+    max_active_runs: int,
+    poll_interval_seconds: int = DEFAULT_DAGSTER_POLL_INTERVAL_SECONDS,
+    telemetry: DagsterDataflowTelemetry | None = None,
+) -> DagsterDataflowStatus:
+    """Wait until one Promotion asset batch launch slot is available."""
+    if max_active_runs <= 0:
+        raise CommandError("max active Promotion asset runs must be greater than zero")
+
+    deadline = time.monotonic() + timeout_seconds
+    last_summary = "Dagster run capacity has not been checked yet"
+    while time.monotonic() < deadline:
+        status = fetch_dagster_run_wave_status(
+            client,
+            started_after=started_after,
+        )
+        if telemetry is not None:
+            telemetry.record_status_sample(status)
+        last_summary = summarize_dagster_run_wave_status(status)
+        sys.stdout.write(f"{last_summary}\n")
+        sys.stdout.flush()
+        if status.failed_runs:
+            raise CommandError(
+                "Dagster run wave failed: failed runs: "
+                + ", ".join(status.failed_runs[:10])
+            )
+        if len(status.active_runs) < max_active_runs:
+            return status
+        time.sleep(poll_interval_seconds)
+
+    raise CommandError(
+        f"timed out waiting for Dagster run launch slot: {last_summary}"
+    )
 
 
 def fetch_dagster_asset_graph(
@@ -2200,21 +2356,54 @@ def read_dagster_asset_node(asset_node: Mapping[str, object]) -> DagsterAssetNod
     )
 
 
-def select_gas_model_upstream_materializable_asset_keys(
+def build_gas_model_upstream_asset_launch_plan(
     asset_nodes: Sequence[DagsterAssetNode],
-) -> tuple[tuple[str, ...], ...]:
-    """Return materializable gas_model assets plus their materializable upstreams."""
+    *,
+    scenario: str,
+    launch_mode: str,
+    asset_batch_size: int = PROMOTION_ASSET_BATCH_SIZE,
+) -> DagsterAssetLaunchPlan:
+    """Return the structured direct-launch plan for the Promotion scenario."""
+    selection = select_gas_model_upstream_materializable_asset_closure(asset_nodes)
+    launch_waves = build_gas_model_upstream_asset_launch_waves(
+        asset_nodes,
+        selected_asset_keys=selection.selected_asset_keys,
+    )
+    batch_count = sum(
+        len(chunk_asset_keys(wave.asset_keys, asset_batch_size))
+        for wave in launch_waves
+    )
+    return DagsterAssetLaunchPlan(
+        scenario=scenario,
+        launch_mode=launch_mode,
+        target_group=GAS_MODEL_GROUP_NAME,
+        target_asset_keys=selection.target_asset_keys,
+        selected_asset_keys=selection.selected_asset_keys,
+        skipped_live_source_asset_keys=selection.skipped_live_source_asset_keys,
+        waves=launch_waves,
+        batch_count=batch_count,
+        asset_batch_size=asset_batch_size,
+    )
+
+
+def select_gas_model_upstream_materializable_asset_closure(
+    asset_nodes: Sequence[DagsterAssetNode],
+) -> DagsterAssetClosureSelection:
+    """Return materializable gas_model assets, upstreams, and skipped live roots."""
     nodes_by_key = {asset_node.key: asset_node for asset_node in asset_nodes}
-    target_keys = [
-        asset_node.key
-        for asset_node in asset_nodes
-        if asset_node.group_name == GAS_MODEL_GROUP_NAME
-        and asset_node.is_materializable
-    ]
+    target_keys = tuple(
+        sorted(
+            asset_node.key
+            for asset_node in asset_nodes
+            if asset_node.group_name == GAS_MODEL_GROUP_NAME
+            and asset_node.is_materializable
+        )
+    )
     if len(target_keys) == 0:
         raise CommandError("no materializable gas_model assets found in Dagster")
 
     selected: set[tuple[str, ...]] = set()
+    skipped_live_source_asset_keys: set[tuple[str, ...]] = set()
     visited: set[tuple[str, ...]] = set()
     pending = list(target_keys)
     while pending:
@@ -2222,28 +2411,47 @@ def select_gas_model_upstream_materializable_asset_keys(
         if asset_key in visited:
             continue
         visited.add(asset_key)
+        if asset_key in PROMOTION_LIVE_SOURCE_ASSET_KEYS:
+            skipped_live_source_asset_keys.add(asset_key)
+            continue
         asset_node = nodes_by_key.get(asset_key)
         if asset_node is None:
             continue
-        if (
-            asset_node.is_materializable
-            and asset_key not in PROMOTION_LIVE_SOURCE_ASSET_KEYS
-        ):
+        if asset_node.is_materializable:
             selected.add(asset_key)
-        pending.extend(
-            dependency_key
-            for dependency_key in asset_node.dependency_keys
-            if dependency_key not in PROMOTION_LIVE_SOURCE_ASSET_KEYS
-        )
+        for dependency_key in asset_node.dependency_keys:
+            if dependency_key in PROMOTION_LIVE_SOURCE_ASSET_KEYS:
+                skipped_live_source_asset_keys.add(dependency_key)
+            else:
+                pending.append(dependency_key)
 
-    return tuple(sorted(selected))
+    return DagsterAssetClosureSelection(
+        target_asset_keys=target_keys,
+        selected_asset_keys=tuple(sorted(selected)),
+        skipped_live_source_asset_keys=tuple(sorted(skipped_live_source_asset_keys)),
+    )
+
+
+def select_gas_model_upstream_materializable_asset_keys(
+    asset_nodes: Sequence[DagsterAssetNode],
+) -> tuple[tuple[str, ...], ...]:
+    """Return materializable gas_model assets plus their materializable upstreams."""
+    return select_gas_model_upstream_materializable_asset_closure(
+        asset_nodes
+    ).selected_asset_keys
 
 
 def build_gas_model_upstream_asset_launch_waves(
     asset_nodes: Sequence[DagsterAssetNode],
+    *,
+    selected_asset_keys: Sequence[tuple[str, ...]] | None = None,
 ) -> tuple[DagsterAssetLaunchWave, ...]:
     """Return dependency-ordered launch waves for the gas_model asset closure."""
-    selected_keys = set(select_gas_model_upstream_materializable_asset_keys(asset_nodes))
+    if selected_asset_keys is None:
+        selected_asset_keys = select_gas_model_upstream_materializable_asset_keys(
+            asset_nodes
+        )
+    selected_keys = set(selected_asset_keys)
     nodes_by_key = {asset_node.key: asset_node for asset_node in asset_nodes}
     level_by_key: dict[tuple[str, ...], int] = {}
     visiting: set[tuple[str, ...]] = set()
@@ -2254,8 +2462,7 @@ def build_gas_model_upstream_asset_launch_waves(
             return cached_level
         if asset_key in visiting:
             raise CommandError(
-                "cycle found in selected Dagster asset graph at "
-                + "/".join(asset_key)
+                "cycle found in selected Dagster asset graph at " + "/".join(asset_key)
             )
         visiting.add(asset_key)
         asset_node = nodes_by_key.get(asset_key)
@@ -2759,7 +2966,9 @@ def fetch_failed_asset_checks_from_postgres(
         )
     except subprocess.CalledProcessError as error:
         detail = (error.stderr or error.stdout or str(error)).strip()
-        raise CommandError(f"fetch Dagster asset check status failed: {detail}") from error
+        raise CommandError(
+            f"fetch Dagster asset check status failed: {detail}"
+        ) from error
 
     payload_text = result.stdout.strip()
     if payload_text == "":
@@ -2962,7 +3171,12 @@ def read_assets_or_error(
 
 def read_asset_key(asset: Mapping[str, object], *, key_name: str = "assetKey") -> str:
     """Return a slash-separated asset key from an asset node payload."""
-    return "/".join(read_asset_key_path(asset.get(key_name), "asset key"))
+    return format_asset_key_path(read_asset_key_path(asset.get(key_name), "asset key"))
+
+
+def format_asset_key_path(asset_key: Sequence[str]) -> str:
+    """Return a slash-separated asset key path."""
+    return "/".join(asset_key)
 
 
 def read_asset_key_path(value: object, context: str) -> tuple[str, ...]:
@@ -3175,6 +3389,7 @@ def cleanup_stack(
         compose_down_result,
         phase=phase,
     )
+    compose_down_succeeded = compose_down_result.returncode == 0
     issues.extend(cleanup_dagster_run_worker_containers(runner, phase=phase))
     network_rm_command = ["podman", "network", "rm", NETWORK_NAME]
     network_rm_result = runner.run(
@@ -3182,8 +3397,19 @@ def cleanup_stack(
         capture_output=True,
         check=False,
     )
-    echo_cleanup_output(network_rm_result, command=network_rm_command, phase=phase)
-    record_cleanup_issue(issues, network_rm_command, network_rm_result, phase=phase)
+    echo_cleanup_output(
+        network_rm_result,
+        command=network_rm_command,
+        phase=phase,
+        compose_down_succeeded=compose_down_succeeded,
+    )
+    record_cleanup_issue(
+        issues,
+        network_rm_command,
+        network_rm_result,
+        phase=phase,
+        compose_down_succeeded=compose_down_succeeded,
+    )
     return issues
 
 
@@ -3254,10 +3480,17 @@ def echo_cleanup_output(
     *,
     command: Sequence[str],
     phase: str,
+    compose_down_succeeded: bool = False,
 ) -> None:
     """Preserve cleanup command output after capturing it for the manifest."""
     stderr = result.stderr.strip() if result.stderr else ""
-    if is_benign_pre_run_cleanup_issue(command, result, stderr, phase=phase):
+    if is_benign_cleanup_issue(
+        command,
+        result,
+        stderr,
+        phase=phase,
+        compose_down_succeeded=compose_down_succeeded,
+    ):
         return
     if result.stdout:
         sys.stdout.write(result.stdout)
@@ -3271,13 +3504,20 @@ def record_cleanup_issue(
     result: subprocess.CompletedProcess[str],
     *,
     phase: str,
+    compose_down_succeeded: bool = False,
 ) -> None:
     """Append a cleanup warning or failure for manifest evidence."""
     stdout = result.stdout.strip() if result.stdout else ""
     stderr = result.stderr.strip() if result.stderr else ""
     if result.returncode == 0 and len(stderr) == 0:
         return
-    if is_benign_pre_run_cleanup_issue(command, result, stderr, phase=phase):
+    if is_benign_cleanup_issue(
+        command,
+        result,
+        stderr,
+        phase=phase,
+        compose_down_succeeded=compose_down_succeeded,
+    ):
         return
     severity = "error" if result.returncode != 0 else "warning"
     issue: dict[str, object] = {
@@ -3296,24 +3536,29 @@ def record_cleanup_issue(
     )
 
 
-def is_benign_pre_run_cleanup_issue(
+def is_benign_cleanup_issue(
     command: Sequence[str],
     result: subprocess.CompletedProcess[str],
     stderr: str,
     *,
     phase: str,
+    compose_down_succeeded: bool = False,
 ) -> bool:
-    """Return whether pre-run cleanup only found already-absent resources."""
-    if phase != "pre-run":
-        return False
+    """Return whether cleanup only found expected already-absent resources."""
     stderr_lines = tuple(line.strip() for line in stderr.splitlines() if line.strip())
     if len(stderr_lines) == 0:
         return False
     if command[:3] == ["podman", "network", "rm"]:
-        return result.returncode == 1 and all(
+        network_is_absent = result.returncode == 1 and all(
             "network not found" in line or "unable to find network" in line
             for line in stderr_lines
         )
+        return network_is_absent and (
+            phase == "pre-run"
+            or (phase == "post-success" and compose_down_succeeded)
+        )
+    if phase != "pre-run":
+        return False
     if command[-3:] == ["down", "-v", "--remove-orphans"]:
         return result.returncode == 0 and all(
             "no container with name or ID" in line
@@ -3342,6 +3587,7 @@ def cleanup_manifest_status(
     if len(issues) > 0:
         return warning_status
     return base_status
+
 
 def base_manifest(
     *,
@@ -3375,7 +3621,9 @@ def base_manifest(
             "always_clean": options.always_clean,
             "scenario": options.scenario,
             "launch_mode": options.launch_mode,
-            "seed_root": str(options.seed_root) if options.seed_root is not None else None,
+            "seed_root": str(options.seed_root)
+            if options.seed_root is not None
+            else None,
             "webserver_port": options.webserver_port,
             "raw_latest_count": options.raw_latest_count,
             "zip_latest_count": options.zip_latest_count,
@@ -3408,13 +3656,208 @@ def write_run_manifest(
     write_json(path, manifest)
 
 
-def emit_e2e_budget_report(telemetry: GateRunTelemetry) -> None:
-    """Write the non-failing e2e budget report to stdout."""
-    sys.stdout.write(format_e2e_budget_report(telemetry.to_manifest()))
+def enforce_e2e_regression_budgets_for_run(
+    *,
+    telemetry: GateRunTelemetry,
+    manifest: dict[str, object],
+    manifest_path: Path,
+    options: RunOptions,
+) -> None:
+    """Record and enforce e2e regression budgets for the completed run."""
+    budgets = e2e_regression_budgets_for_scenario(options.scenario)
+    telemetry_payload = telemetry.to_manifest()
+    manifest["budget"] = e2e_budget_manifest(
+        telemetry_payload,
+        manifest_path=manifest_path,
+        budgets=budgets,
+    )
+    sys.stdout.write(
+        format_e2e_budget_report(
+            telemetry_payload,
+            manifest_path=manifest_path,
+            budgets=budgets,
+        )
+    )
+    if budgets is None:
+        return
+
+    failures = e2e_budget_failures(telemetry_payload, budgets)
+    if failures:
+        error = format_e2e_budget_failure_message(
+            failures,
+            manifest_path=manifest_path,
+        )
+        manifest["status"] = "failed"
+        manifest["error"] = error
+        write_run_manifest(manifest_path, manifest, telemetry)
+        raise CommandError(error)
 
 
-def format_e2e_budget_report(telemetry_payload: Mapping[str, object]) -> str:
-    """Return a concise non-failing budget report from e2e telemetry."""
+def emit_e2e_budget_report(
+    telemetry: GateRunTelemetry,
+    *,
+    manifest_path: Path,
+) -> None:
+    """Write the informational e2e budget report to stdout."""
+    sys.stdout.write(
+        format_e2e_budget_report(telemetry.to_manifest(), manifest_path=manifest_path)
+    )
+
+
+def e2e_regression_budgets_for_scenario(
+    scenario: str,
+) -> E2ERegressionBudgets | None:
+    """Return enforced regression budgets for a scenario, if any."""
+    if scenario != PROMOTION_GAS_MODEL_SCENARIO:
+        return None
+    return E2ERegressionBudgets(
+        scenario=scenario,
+        required_target_asset_count=PROMOTION_E2E_REQUIRED_TARGET_ASSET_COUNT,
+        max_total_gate_duration_seconds=(PROMOTION_E2E_MAX_TOTAL_GATE_DURATION_SECONDS),
+        max_peak_active_run_count=PROMOTION_E2E_MAX_PEAK_ACTIVE_RUN_COUNT,
+        max_peak_queued_run_count=PROMOTION_E2E_MAX_PEAK_QUEUED_RUN_COUNT,
+        max_total_run_count=PROMOTION_E2E_MAX_TOTAL_RUN_COUNT,
+    )
+
+
+def e2e_budget_manifest(
+    telemetry_payload: Mapping[str, object],
+    *,
+    manifest_path: Path,
+    budgets: E2ERegressionBudgets | None,
+) -> dict[str, object]:
+    """Return the budget section stored in the e2e run manifest."""
+    payload: dict[str, object] = {"run_manifest": str(manifest_path)}
+    if budgets is None:
+        payload["status"] = "not-enforced"
+        return payload
+
+    failures = e2e_budget_failures(telemetry_payload, budgets)
+    payload.update(
+        {
+            "status": "failed" if failures else "passed",
+            "scenario": budgets.scenario,
+            "thresholds": e2e_budget_thresholds(budgets),
+            "failures": list(failures),
+        }
+    )
+    return payload
+
+
+def e2e_budget_thresholds(budgets: E2ERegressionBudgets) -> dict[str, object]:
+    """Return the configured budget thresholds in manifest shape."""
+    return {
+        "required_target_asset_count": budgets.required_target_asset_count,
+        "max_total_gate_duration_seconds": budgets.max_total_gate_duration_seconds,
+        "max_peak_active_run_count": budgets.max_peak_active_run_count,
+        "max_peak_queued_run_count": budgets.max_peak_queued_run_count,
+        "max_total_run_count": budgets.max_total_run_count,
+        "max_missing_target_asset_count": budgets.max_missing_target_asset_count,
+        "max_failed_target_asset_count": budgets.max_failed_target_asset_count,
+        "max_missing_asset_check_count": budgets.max_missing_asset_check_count,
+        "max_failed_asset_check_count": budgets.max_failed_asset_check_count,
+    }
+
+
+def format_e2e_budget_report(
+    telemetry_payload: Mapping[str, object],
+    *,
+    manifest_path: Path | None = None,
+    budgets: E2ERegressionBudgets | None = None,
+) -> str:
+    """Return a concise budget report from e2e telemetry."""
+    observations = e2e_budget_observations(telemetry_payload)
+    if budgets is not None:
+        return format_enforced_e2e_budget_report(
+            observations,
+            budgets=budgets,
+            manifest_path=manifest_path,
+            failures=e2e_budget_failures(telemetry_payload, budgets),
+        )
+
+    manifest_line = ()
+    if manifest_path is not None:
+        manifest_line = (f"- run manifest: {manifest_path}",)
+    return "\n".join(
+        (
+            "E2E budget report (informational):",
+            *manifest_line,
+            "- total gate duration: "
+            f"{format_optional_duration(observations['total_gate_duration_seconds'])}",
+            "- peak active/queued runs: "
+            f"{format_peak_run_counts(observations['peak_active_run_count'], observations['peak_queued_run_count'])}",
+            "- final successful runs: "
+            f"{format_optional_count(observations['successful_run_count'])}",
+            "- total Dagster runs: "
+            f"{format_optional_count(observations['total_run_count'])}",
+            "- target progress: "
+            f"{format_target_progress(observations['materialized_target_asset_count'], observations['target_asset_count'])}",
+            "- final asset-check status: "
+            f"{format_asset_check_status(observations['missing_asset_check_count'], observations['failed_asset_check_count'])}",
+            "- regression budgets: not enforced for this scenario",
+            "",
+        )
+    )
+
+
+def format_enforced_e2e_budget_report(
+    observations: Mapping[str, int | float | None],
+    *,
+    budgets: E2ERegressionBudgets,
+    manifest_path: Path | None,
+    failures: Sequence[str],
+) -> str:
+    """Return the Promotion guard budget report."""
+    status = "failed" if failures else "passed"
+    manifest_line = ()
+    if manifest_path is not None:
+        manifest_line = (f"- run manifest: {manifest_path}",)
+    failure_lines: tuple[str, ...] = ()
+    if failures:
+        failure_lines = ("- failures:", *(f"  - {failure}" for failure in failures))
+
+    return "\n".join(
+        (
+            f"E2E Promotion guard regression budgets ({status}):",
+            *manifest_line,
+            "- total gate duration: observed "
+            f"{format_optional_duration(observations['total_gate_duration_seconds'])}; "
+            f"threshold <= {format_duration(budgets.max_total_gate_duration_seconds)}",
+            "- peak active runs: observed "
+            f"{format_optional_count(observations['peak_active_run_count'])}; "
+            f"threshold <= {budgets.max_peak_active_run_count}",
+            "- peak queued runs: observed "
+            f"{format_optional_count(observations['peak_queued_run_count'])}; "
+            f"threshold <= {budgets.max_peak_queued_run_count}",
+            "- total Dagster runs: observed "
+            f"{format_optional_count(observations['total_run_count'])}; "
+            f"threshold <= {budgets.max_total_run_count}",
+            "- target progress: observed "
+            f"{format_target_progress(observations['materialized_target_asset_count'], observations['target_asset_count'])}; "
+            f"required {budgets.required_target_asset_count}/"
+            f"{budgets.required_target_asset_count} materialized",
+            "- missing target assets: observed "
+            f"{format_optional_count(observations['missing_target_asset_count'])}; "
+            f"threshold <= {budgets.max_missing_target_asset_count}",
+            "- failed target assets: observed "
+            f"{format_optional_count(observations['failed_target_asset_count'])}; "
+            f"threshold <= {budgets.max_failed_target_asset_count}",
+            "- missing target asset checks: observed "
+            f"{format_optional_count(observations['missing_asset_check_count'])}; "
+            f"threshold <= {budgets.max_missing_asset_check_count}",
+            "- failed target asset checks: observed "
+            f"{format_optional_count(observations['failed_asset_check_count'])}; "
+            f"threshold <= {budgets.max_failed_asset_check_count}",
+            *failure_lines,
+            "",
+        )
+    )
+
+
+def e2e_budget_observations(
+    telemetry_payload: Mapping[str, object],
+) -> dict[str, int | float | None]:
+    """Extract normalized budget observations from telemetry."""
     dataflow = optional_mapping(telemetry_payload.get("dagster_dataflow"))
     target_progress = optional_mapping(
         dataflow.get("final_target_progress") if dataflow is not None else None
@@ -3434,34 +3877,195 @@ def format_e2e_budget_report(telemetry_payload: Mapping[str, object]) -> str:
     successful_runs = optional_int(
         run_status_counts.get("SUCCESS") if run_status_counts is not None else None
     )
+    total_runs = total_run_count(run_status_counts)
     materialized_targets = optional_int(
         target_progress.get("materialized_target_asset_count")
         if target_progress is not None
         else None
     )
     target_count = optional_int(
-        target_progress.get("target_asset_count") if target_progress is not None else None
+        target_progress.get("target_asset_count")
+        if target_progress is not None
+        else None
+    )
+    missing_targets = optional_int(
+        target_progress.get("missing_target_asset_count")
+        if target_progress is not None
+        else None
+    )
+    failed_targets = optional_int(
+        target_progress.get("failed_target_asset_count")
+        if target_progress is not None
+        else None
+    )
+    missing_checks = optional_int(
+        dataflow.get("final_missing_asset_check_count")
+        if dataflow is not None
+        else None
     )
     failed_checks = optional_int(
         dataflow.get("final_failed_asset_check_count") if dataflow is not None else None
     )
 
+    return {
+        "total_gate_duration_seconds": total_duration,
+        "peak_active_run_count": peak_active,
+        "peak_queued_run_count": peak_queued,
+        "successful_run_count": successful_runs,
+        "total_run_count": total_runs,
+        "materialized_target_asset_count": materialized_targets,
+        "target_asset_count": target_count,
+        "missing_target_asset_count": missing_targets,
+        "failed_target_asset_count": failed_targets,
+        "missing_asset_check_count": missing_checks,
+        "failed_asset_check_count": failed_checks,
+    }
+
+
+def e2e_budget_failures(
+    telemetry_payload: Mapping[str, object],
+    budgets: E2ERegressionBudgets,
+) -> tuple[str, ...]:
+    """Return actionable Promotion guard budget failure lines."""
+    observations = e2e_budget_observations(telemetry_payload)
+    failures: list[str] = []
+    append_max_budget_failure(
+        failures,
+        observations,
+        key="total_gate_duration_seconds",
+        label="total gate duration",
+        threshold=budgets.max_total_gate_duration_seconds,
+        formatter=format_optional_duration,
+    )
+    append_max_budget_failure(
+        failures,
+        observations,
+        key="peak_active_run_count",
+        label="peak active runs",
+        threshold=budgets.max_peak_active_run_count,
+    )
+    append_max_budget_failure(
+        failures,
+        observations,
+        key="peak_queued_run_count",
+        label="peak queued runs",
+        threshold=budgets.max_peak_queued_run_count,
+    )
+    append_max_budget_failure(
+        failures,
+        observations,
+        key="total_run_count",
+        label="total Dagster runs",
+        threshold=budgets.max_total_run_count,
+    )
+    append_target_progress_failure(failures, observations, budgets)
+    append_max_budget_failure(
+        failures,
+        observations,
+        key="missing_target_asset_count",
+        label="missing target assets",
+        threshold=budgets.max_missing_target_asset_count,
+    )
+    append_max_budget_failure(
+        failures,
+        observations,
+        key="failed_target_asset_count",
+        label="failed target assets",
+        threshold=budgets.max_failed_target_asset_count,
+    )
+    append_max_budget_failure(
+        failures,
+        observations,
+        key="missing_asset_check_count",
+        label="missing target asset checks",
+        threshold=budgets.max_missing_asset_check_count,
+    )
+    append_max_budget_failure(
+        failures,
+        observations,
+        key="failed_asset_check_count",
+        label="failed target asset checks",
+        threshold=budgets.max_failed_asset_check_count,
+    )
+    return tuple(failures)
+
+
+def append_max_budget_failure(
+    failures: list[str],
+    observations: Mapping[str, int | float | None],
+    *,
+    key: str,
+    label: str,
+    threshold: int | float,
+    formatter: Callable[[float | None], str] | None = None,
+) -> None:
+    """Append a max-threshold budget failure when telemetry is missing or high."""
+    observed = observations[key]
+    if observed is None:
+        failures.append(
+            f"{label} unavailable; threshold <= {format_budget_threshold(threshold, formatter)}"
+        )
+        return
+    if observed > threshold:
+        failures.append(
+            f"{label} observed {format_budget_value(observed, formatter)}; "
+            f"threshold <= {format_budget_threshold(threshold, formatter)}"
+        )
+
+
+def append_target_progress_failure(
+    failures: list[str],
+    observations: Mapping[str, int | float | None],
+    budgets: E2ERegressionBudgets,
+) -> None:
+    """Append target-progress contract failures."""
+    materialized_targets = observations["materialized_target_asset_count"]
+    target_count = observations["target_asset_count"]
+    if materialized_targets is None or target_count is None:
+        failures.append(
+            "target progress unavailable; required "
+            f"{budgets.required_target_asset_count}/"
+            f"{budgets.required_target_asset_count} materialized"
+        )
+        return
+    if (
+        materialized_targets != budgets.required_target_asset_count
+        or target_count != budgets.required_target_asset_count
+    ):
+        failures.append(
+            "target progress observed "
+            f"{format_target_progress(materialized_targets, target_count)}; "
+            f"required {budgets.required_target_asset_count}/"
+            f"{budgets.required_target_asset_count} materialized"
+        )
+
+
+def format_e2e_budget_failure_message(
+    failures: Sequence[str],
+    *,
+    manifest_path: Path,
+) -> str:
+    """Return the CLI error message for failed regression budgets."""
     return "\n".join(
         (
-            "E2E budget report (non-failing):",
-            "- total gate duration: "
-            f"{format_optional_duration(total_duration)} "
-            f"({format_budget_baseline_comparison(total_duration)})",
-            "- peak active/queued runs: "
-            f"{format_peak_run_counts(peak_active, peak_queued)}",
-            "- final successful runs: " f"{format_optional_count(successful_runs)}",
-            "- target progress: "
-            f"{format_target_progress(materialized_targets, target_count)}",
-            "- final asset-check status: "
-            f"{format_failed_asset_check_count(failed_checks)}",
-            "",
+            "E2E Promotion guard regression budget failed.",
+            f"run manifest: {manifest_path}",
+            "failures:",
+            *(f"- {failure}" for failure in failures),
         )
     )
+
+
+def total_run_count(run_status_counts: Mapping[str, object] | None) -> int | None:
+    """Return the total Dagster run count from final run status counts."""
+    if run_status_counts is None:
+        return None
+    total = 0
+    for count in run_status_counts.values():
+        if isinstance(count, bool) or not isinstance(count, int):
+            return None
+        total += count
+    return total
 
 
 def optional_mapping(value: object) -> Mapping[str, object] | None:
@@ -3505,17 +4109,24 @@ def format_duration(seconds: float) -> str:
     return f"{minutes}m{remaining_seconds:02d}s"
 
 
-def format_budget_baseline_comparison(total_duration: float | None) -> str:
-    """Return a non-failing comparison to the observed e2e baseline."""
-    baseline = format_duration(E2E_BUDGET_BASELINE_SECONDS)
-    if total_duration is None:
-        return f"baseline {baseline}"
-    delta = int(round(total_duration - E2E_BUDGET_BASELINE_SECONDS))
-    if delta < 0:
-        return f"{format_duration(abs(delta))} below {baseline} baseline"
-    if delta > 0:
-        return f"{format_duration(delta)} above {baseline} baseline"
-    return f"matches {baseline} baseline"
+def format_budget_value(
+    value: int | float,
+    formatter: Callable[[float | None], str] | None,
+) -> str:
+    """Return a numeric budget value using an optional formatter."""
+    if formatter is not None:
+        return formatter(float(value))
+    if isinstance(value, float) and not value.is_integer():
+        return str(value)
+    return str(int(value))
+
+
+def format_budget_threshold(
+    threshold: int | float,
+    formatter: Callable[[float | None], str] | None,
+) -> str:
+    """Return a threshold value using the same formatter as observations."""
+    return format_budget_value(threshold, formatter)
 
 
 def format_peak_run_counts(active_count: int | None, queued_count: int | None) -> str:
@@ -3547,6 +4158,16 @@ def format_failed_asset_check_count(failed_checks: int | None) -> str:
     if failed_checks is None:
         return "unavailable"
     return f"{failed_checks} failed"
+
+
+def format_asset_check_status(
+    missing_checks: int | None,
+    failed_checks: int | None,
+) -> str:
+    """Return final missing and failed asset-check status."""
+    if missing_checks is None or failed_checks is None:
+        return "unavailable"
+    return f"{failed_checks} failed / {missing_checks} missing"
 
 
 def timestamp_iso_or_none(timestamp: float | None) -> str | None:

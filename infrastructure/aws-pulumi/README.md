@@ -229,8 +229,9 @@ The shell formatting and linting hooks run through this **Subproject**'s uv dev
 environment, so `shfmt` and `shellcheck` are provided by `pyproject.toml` and
 `uv.lock` rather than the caller's `PATH`.
 
-Ruff enforces Google-style docstrings for production component APIs; unit,
-component, and deployed tests are outside that first docstring ratchet.
+Ruff enforces Google-style docstrings for production component APIs and the
+default `C901` complexity threshold across this **Subproject**; unit, component,
+and deployed tests are outside that first docstring ratchet.
 
 Preview infrastructure changes:
 

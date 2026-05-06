@@ -18,9 +18,11 @@ default. The sandbox receives a `GH_TOKEN` sourced from the parent environment
 or local `gh auth`, and a wrapper limits `gh` to phase-specific issue metadata
 commands. Implementation, triage, and **Ready issue refresh** passes may
 receive issue reads and writes; **Post-promotion review** receives read-only
-issue commands and drafts only actionable follow-up issues in its Markdown
-report without creating them automatically. Git push auth is separate; **Local
-integration**, **Integration target** pushes, and
+issue commands. After successful **Promotion**, Ralph may create structured
+actionable follow-up issues from the review artifact through its validated
+create-only helper; the review agent still cannot directly create, comment,
+edit, close, or reopen arbitrary GitHub Issues. Git push auth is separate;
+**Local integration**, Exploratory handoff, **Integration target** pushes, and
 **Promotion** stay outside the sandbox.
 
 ## Queue contract
@@ -34,16 +36,35 @@ these sections:
 - `## Acceptance criteria`
 - `## Blocked by`
 
+Ready `delivery-exploratory` issues must also include `## Review focus`, which
+states the human judgment the durable review branch needs. Missing
+`## Review focus` is a malformed Exploratory delivery contract; Ralph marks the
+issue `agent-failed` with evidence before creating an implementation worktree
+or publishing an Exploratory handoff.
+
 `## Current context` is optional. **Ready issue refresh** may add or update it,
 but existing `ready-for-agent` issues do not need that section to stay ready.
 Refreshed issues that remain `ready-for-agent` must still contain the three
-required sections above.
+required sections above, plus `## Review focus` for `delivery-exploratory`.
+
+Ralph implementation prompts treat the issue body as the primary contract. When
+recent Ready issue refresh comments exist, Ralph appends only the latest five
+comments with the Ready issue refresh audit prefix in a separate prompt section
+after the body; normal comments and triage comments are not included.
 
 Runtime labels such as `agent-running`, `agent-integrated`, `agent-merged`,
 `agent-failed`, and `agent-reviewing` block repeat implementation and automated
 triage reconsideration. In particular, `agent-reviewing` means **Exploratory
 delivery** has already published a durable review branch and the issue is
 waiting for human review.
+
+After a successful drain-mode **Local integration** or Exploratory handoff,
+Ralph computes **Ready issue refresh** candidates from open issues within
+`--issue-limit`. The candidate scan keeps unblocked `ready-for-agent` issues in
+queue order, excludes issues with runtime stop labels, and treats the issue that
+was just completed as a satisfied blocker for candidate selection even when
+Gitflow leaves it open with `agent-integrated` until **Promotion** or
+Exploratory delivery leaves it open with `agent-reviewing` for human review.
 
 Use [ralph-loop.md](ralph-loop.md) for Ralph internals, including
 **Delivery mode**, **Local integration**, **Integration target**, **Promotion**,
@@ -62,6 +83,7 @@ current branch before changing bodies, labels, blockers, or closure state.
   - `.agents/skills/ralph-curate/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`
   - `.agents/skills/ralph-loop/SKILL.md`
+  - `.agents/skills/ralph-issue-refresh/SKILL.md`
   - `docs/agents/README.md`
   - `docs/agents/ralph-loop.md`
   - `docs/agents/triage-labels.md`

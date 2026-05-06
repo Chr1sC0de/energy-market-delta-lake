@@ -29,20 +29,23 @@ straight from shaped plan to GitHub Issues.
 
 Use `$to-issues` to create independently grabbable GitHub Issues. Each issue
 must include `## What to build`, `## Acceptance criteria`, and `## Blocked by`
-before it can become `ready-for-agent`.
+before it can become `ready-for-agent`. Exploratory delivery issues must also
+include `## Review focus` stating the human judgment the durable review branch
+needs.
 
 Use `$ralph-triage` to prepare issues for drain. Triage sets exactly one
 category label, exactly one state label, and at most one **Delivery mode** label.
 Default to **Gitflow delivery** unless the work is a small, low-risk docs,
 tests, tooling, or script change that fits **Trunk delivery**, or an explicitly
-exploratory change that should publish a durable review branch and remain open
-with `agent-reviewing`.
+exploratory change whose `## Review focus` says why it should publish a durable
+review branch and remain open with `agent-reviewing`.
 
 Use `$ralph-loop drain` to let Ralph implement ready issues. Ralph owns
-worktrees, deterministic QA, **Local integration**, **Integration target**
-pushes, and GitHub issue metadata after validation. After a successful
-**Local integration**, **Ready issue refresh** reconciles the open issue queue
-before Ralph claims the next `ready-for-agent` issue.
+worktrees, deterministic QA, **Local integration** for Gitflow or Trunk
+delivery, Exploratory review-branch handoff, **Integration target** pushes, and
+GitHub issue metadata after validation. After a successful **Local
+integration** or Exploratory handoff, **Ready issue refresh** reconciles the
+open issue queue before Ralph claims the next `ready-for-agent` issue.
 
 ## Before Drain
 
@@ -99,7 +102,11 @@ verified in the promoted branch range.
 Unverified **Promotion** commits in the range are mandatory
 **Post-promotion review** context only. They do not require explicit issue
 association before **Promotion**, do not block **Promotion** by themselves, and
-do not automatically create GitHub Issues.
+do not automatically create GitHub Issues by themselves. Successful
+**Promotion** runs may create validated follow-up issues only from structured
+actionable **Post-promotion review** drafts; pass
+`--skip-post-promotion-followups` to keep review while skipping that creation,
+or `--skip-post-promotion-review` to skip both.
 
 If Promotion fails before `main` is pushed, leave issues open and inspect the
 run manifest. If it fails after `main` is pushed, stop and inspect before
@@ -109,8 +116,8 @@ reconciling GitHub metadata.
 
 Use `$ralph-loop inspect failure` or `python3 scripts/ralph.py --inspect-run
 .ralph/runs/...` before changing state. Use recovery only after Ralph verifies
-the recorded **Local integration** commit is reachable from the expected
-**Integration target**.
+the recorded published commit is reachable from the expected **Integration
+target**.
 
 Keep failed worktrees unless the maintainer asks for cleanup.
 

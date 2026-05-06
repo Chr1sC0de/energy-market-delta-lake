@@ -25,3 +25,4 @@ def test_root_defs_registers_manual_vicgas_report_job() -> None:
     job_names = {job.name for job in result.jobs or []}
 
     assert "download_vicgas_public_report_zip_files_job" in job_names
+    assert "download_sttm_day_zip_files_job" in job_names

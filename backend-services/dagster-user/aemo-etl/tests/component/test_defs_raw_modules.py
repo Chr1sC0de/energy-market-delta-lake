@@ -7,16 +7,60 @@ Importing the module executes that statement and covers all lines in the file.
 """
 
 import importlib
+import importlib.util
 import pkgutil
 from typing import cast
 
 import bs4
-from dagster import Definitions
+from dagster import AssetKey, AssetsDefinition, Definitions
 from dagster._core.definitions.unresolved_asset_job_definition import (
     UnresolvedAssetJobDefinition,
 )
+from polars import String
 
 from aemo_etl.defs.raw.gbb._ecs import rebuild_sized_spot_ecs_tags
+
+STTM_CORE_REPORT_SUFFIXES = (
+    "int651_v1_ex_ante_market_price_rpt_1",
+    "int652_v1_ex_ante_schedule_quantity_rpt_1",
+    "int653_v3_ex_ante_pipeline_price_rpt_1",
+    "int654_v1_provisional_market_price_rpt_1",
+    "int655_v1_provisional_schedule_quantity_rpt_1",
+    "int656_v2_provisional_pipeline_data_rpt_1",
+    "int657_v2_ex_post_market_data_rpt_1",
+    "int658_v1_latest_allocation_quantity_rpt_1",
+    "int659_v1_bid_offer_rpt_1",
+    "int660_v1_contingency_gas_bids_and_offers_rpt_1",
+    "int661_v1_contingency_gas_called_scheduled_bid_offer_rpt_1",
+    "int662_v1_provisional_deviation_rpt_1",
+    "int663_v1_provisional_variation_rpt_1",
+    "int664_v1_daily_provisional_mos_allocation_rpt_1",
+    "int665_v1_mos_stack_data_rpt_1",
+    "int666_v1_market_notice_rpt_1",
+    "int667_v1_market_parameters_rpt_1",
+    "int668_v1_schedule_log_rpt_1",
+    "int669_v1_settlement_version_rpt_1",
+    "int670_v1_registered_participants_rpt_1",
+    "int671_v1_hub_facility_definition_rpt_1",
+    "int672_v1_cumulative_price_rpt_1",
+    "int673_v1_total_contingency_bid_offer_rpt_1",
+    "int674_v1_total_contingency_gas_schedules_rpt_1",
+    "int675_v1_default_allocation_notice_rpt_1",
+    "int676_v1_rolling_average_price_rpt_1",
+    "int677_v1_contingency_gas_price_rpt_1",
+    "int678_v1_net_market_balance_daily_amounts_rpt_1",
+    "int679_v1_net_market_balance_settlement_amounts_rpt_1",
+    "int680_v1_dp_flag_data_rpt_1",
+    "int681_v1_daily_provisional_capacity_data_rpt_1",
+    "int682_v1_settlement_mos_and_capacity_data_rpt_1",
+    "int683_v1_provisional_used_mos_steps_rpt_1",
+    "int684_v1_settlement_used_mos_steps_rpt_1",
+    "int687_v1_facility_hub_capacity_data_rpt_1",
+    "int688_v1_allocation_warning_limit_thresholds_rpt_1",
+    "int689_v1_expost_allocation_quantity_rpt_1",
+    "int690_v1_deviation_price_data_rpt_1",
+    "int691_v1_sttm_ctp_register_rpt_1",
+)
 
 
 def _import_all_under(package: str) -> None:
@@ -35,6 +79,175 @@ def test_import_all_gbb_table_modules() -> None:
 
 def test_import_all_vicgas_table_modules() -> None:
     _import_all_under("aemo_etl.defs.raw.vicgas")
+
+
+def test_import_all_sttm_table_modules() -> None:
+    _import_all_under("aemo_etl.defs.raw.sttm")
+
+
+def test_sttm_core_source_table_specs_registered_for_archive_replay() -> None:
+    from aemo_etl.factories.df_from_s3_keys.source_tables import (
+        load_source_table_specs,
+        select_source_table_specs,
+    )
+
+    specs = select_source_table_specs(
+        load_source_table_specs(),
+        domain="sttm",
+    )
+
+    assert tuple(spec.name_suffix for spec in specs) == STTM_CORE_REPORT_SUFFIXES
+    for spec in specs:
+        assert spec.domain == "sttm"
+        assert spec.glob_pattern == f"{spec.name_suffix}*"
+        assert spec.archive_prefix == "bronze/sttm"
+        assert spec.target_table_uri("aemo") == (
+            f"s3://aemo/bronze/sttm/bronze_{spec.name_suffix}"
+        )
+        if "gas_date" in spec.schema:
+            assert spec.schema["gas_date"] == String
+
+    (int659_spec,) = select_source_table_specs(
+        specs,
+        table="bronze/sttm/bronze_int659_v1_bid_offer_rpt_1",
+    )
+    assert int659_spec.surrogate_key_sources == (
+        "gas_date",
+        "schedule_identifier",
+        "bid_offer_identifier",
+        "bid_offer_step_number",
+    )
+    assert int659_spec.schema["step_capped_cumulative_qty"] == String
+
+    (int660_spec,) = select_source_table_specs(
+        specs,
+        table="bronze/sttm/bronze_int660_v1_contingency_gas_bids_and_offers_rpt_1",
+    )
+    assert int660_spec.surrogate_key_sources == (
+        "gas_date",
+        "contingency_gas_bid_offer_identifier",
+        "contingency_gas_bid_offer_step_number",
+    )
+    assert int660_spec.schema["contingency_gas_bid_offer_step_quantity"] == String
+
+    (int667_spec,) = select_source_table_specs(
+        specs,
+        table="sttm.bronze_int667_v1_market_parameters_rpt_1",
+    )
+    assert int667_spec.surrogate_key_sources == (
+        "effective_from_date",
+        "effective_to_date",
+        "parameter_code",
+    )
+    assert int667_spec.schema["parameter_value"] == String
+
+    (int669_spec,) = select_source_table_specs(
+        specs,
+        table="int669_v1_settlement_version_rpt_1",
+    )
+    assert int669_spec.surrogate_key_sources == ("settlement_run_identifier",)
+    assert int669_spec.schema["settlement_run_desc"] == String
+
+    (int670_spec,) = select_source_table_specs(
+        specs,
+        table="sttm.bronze_int670_v1_registered_participants_rpt_1",
+    )
+    assert int670_spec.surrogate_key_sources == (
+        "hub_identifier",
+        "company_identifier",
+        "organisation_registration_type",
+        "registered_capacity",
+    )
+    assert int670_spec.schema["registration_status"] == String
+
+    (int674_spec,) = select_source_table_specs(
+        specs,
+        table="bronze/sttm/bronze_int674_v1_total_contingency_gas_schedules_rpt_1",
+    )
+    assert int674_spec.surrogate_key_sources == (
+        "gas_date",
+        "hub_identifier",
+        "facility_identifier",
+        "flow_direction",
+        "contingency_gas_bid_offer_type",
+    )
+    assert int674_spec.schema["contingency_gas_bid_offer_called_quantity"] == String
+
+    (int678_spec,) = select_source_table_specs(
+        specs,
+        table="int678_v1_net_market_balance_daily_amounts_rpt_1",
+    )
+    assert int678_spec.surrogate_key_sources == (
+        "period_start_date",
+        "period_end_date",
+        "hub_identifier",
+    )
+    assert int678_spec.schema["net_market_balance"] == String
+
+    (int679_spec,) = select_source_table_specs(
+        specs,
+        table="sttm.bronze_int679_v1_net_market_balance_settlement_amounts_rpt_1",
+    )
+    assert int679_spec.surrogate_key_sources == (
+        "settlement_run_identifier",
+        "hub_identifier",
+    )
+    assert int679_spec.schema["total_withdrawals"] == String
+
+    (int682_spec,) = select_source_table_specs(
+        specs,
+        table="sttm.bronze_int682_v1_settlement_mos_and_capacity_data_rpt_1",
+    )
+    assert int682_spec.surrogate_key_sources == (
+        "settlement_run_identifier",
+        "gas_date",
+        "hub_identifier",
+        "facility_identifier",
+    )
+    assert int682_spec.schema["mos_allocated_qty"] == String
+
+    (int689_spec,) = select_source_table_specs(
+        specs,
+        table="int689_v1_expost_allocation_quantity_rpt_1",
+    )
+    assert int689_spec.surrogate_key_sources == (
+        "gas_date",
+        "facility_identifier",
+        "flow_direction",
+    )
+    assert int689_spec.schema["allocation_qty_quality_type"] == String
+
+    (int690_spec,) = select_source_table_specs(
+        specs,
+        table="bronze/sttm/bronze_int690_v1_deviation_price_data_rpt_1",
+    )
+    assert int690_spec.surrogate_key_sources == ("gas_date", "hub_identifier")
+    assert int690_spec.schema["positive_deviation_price"] == String
+
+
+def test_sttm_event_driven_selection_includes_core_market_bronze_assets() -> None:
+    from aemo_etl.definitions import STTM_ASSET_SELECTION
+
+    asset_defs: list[AssetsDefinition] = []
+    for suffix in STTM_CORE_REPORT_SUFFIXES:
+        module = importlib.import_module(f"aemo_etl.defs.raw.sttm.{suffix}")
+        asset_defs.extend(module.defs.assets or [])
+
+    assert STTM_ASSET_SELECTION.resolve(asset_defs) == frozenset(
+        AssetKey(["bronze", "sttm", f"bronze_{suffix}"])
+        for suffix in STTM_CORE_REPORT_SUFFIXES
+    )
+
+
+def test_sttm_landing_only_gap_modules_are_not_typed_source_tables() -> None:
+    assert (
+        importlib.util.find_spec("aemo_etl.defs.raw.sttm.int685_v1_sttm_prices_rpt_13")
+        is None
+    )
+    assert (
+        importlib.util.find_spec("aemo_etl.defs.raw.sttm.int685b_v1_sttm_prices_rpt_13")
+        is None
+    )
 
 
 def test_gbb_pipeline_connection_flow_v1_job_uses_rebuild_sized_ecs_task() -> None:

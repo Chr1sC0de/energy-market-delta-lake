@@ -6,6 +6,7 @@ These diagrams show the main ingestion paths implemented by the current factorie
 
 - [GBB ingestion flow](#gbb-ingestion-flow)
 - [VICGAS ingestion flow](#vicgas-ingestion-flow)
+- [STTM ingestion flow](#sttm-ingestion-flow)
 - [Raw-to-silver transformation flow](#raw-to-silver-transformation-flow)
 - [LocalStack and S3-compatible behavior](#localstack-and-s3-compatible-behavior)
 - [Related docs](#related-docs)
@@ -27,7 +28,7 @@ sequenceDiagram
     participant Silver as silver_gasbb_*
     participant GasModel as silver/gas_model/*
 
-    Schedule->>Discover: Run every 15 minutes
+    Schedule->>Discover: Run every 30 minutes
     Discover->>NEMWeb: List and fetch links from REPORTS/CURRENT/GBB
     Discover->>Landing: Write discovered files and converted parquet outputs
     Discover->>Bronze: Record file metadata in `bronze_nemweb_public_files_gbb`
@@ -78,7 +79,7 @@ sequenceDiagram
     ManualJob->>NEMWeb: List and fetch PublicRptsNN.zip bundles
     ManualJob->>Landing: Write zip objects for unzipper processing
 
-    Schedule->>Discover: Run every 15 minutes
+    Schedule->>Discover: Run every 30 minutes
     Discover->>NEMWeb: List and fetch links from REPORTS/CURRENT/VicGas
     Discover->>Landing: Write discovered zip/csv/parquet files
     Discover->>Bronze: Record file metadata in `bronze_nemweb_public_files_vicgas`
@@ -99,12 +100,77 @@ sequenceDiagram
 Trigger and output notes:
 
 - This follows the same factory pattern as GBB, but the downstream assets are the `int*` VICGAS report assets under `src/aemo_etl/defs/raw/vicgas`.
-- `download_vicgas_public_report_zip_files_job` is ad hoc only. It is used for bootstrap or backfill of `PublicRptsNN.zip` bundles into `LANDING_BUCKET/bronze/vicgas`; the existing unzipper and raw sensors handle downstream processing.
+- `download_vicgas_public_report_zip_files_job` is ad hoc only. It is used for
+  bootstrap or backfill of `PublicRptsNN.zip` bundles into
+  `LANDING_BUCKET/bronze/vicgas/<filename>`; the existing unzipper and raw
+  sensors handle downstream processing. Its `target_files` config is
+  basename-only, case-insensitive, and defaults to all matching bundles.
 - The bronze assets merge current-state Delta rows by `surrogate_key` after
   collapsing each micro-batch to the maximum `source_file` per key, archive
   processed source files only after a table write, delete zero-byte landing
   objects, and warn on skipped selected keys; the silver assets overwrite the
   current parquet snapshot.
+
+## STTM ingestion flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant NEMWeb as NEMWeb STTM root
+    participant Operator as Manual launch
+    participant ManualJob as download_sttm_day_zip_files_job
+    participant Schedule as bronze_nemweb_public_files_sttm_job_schedule
+    participant Discover as bronze_nemweb_public_files_sttm
+    participant Landing as LANDING_BUCKET/bronze/sttm
+    participant UnzipSensor as sttm_unzipper_sensor
+    participant UnzipAsset as unzipper_sttm
+    participant RawSensor as sttm_event_driven_assets_sensor
+    participant Bronze as STTM bronze report asset
+    participant Archive as ARCHIVE_BUCKET/bronze/sttm
+    participant Silver as STTM silver report asset
+
+    Operator->>ManualJob: Optional DAYNN.ZIP bootstrap/backfill launch
+    ManualJob->>NEMWeb: List and fetch DAY01.ZIP through DAY31.ZIP bundles
+    ManualJob->>Landing: Write zip objects with preserved filenames
+
+    Schedule->>Discover: Run every 30 minutes
+    Discover->>NEMWeb: List root CSV links from REPORTS/CURRENT/STTM
+    Discover->>Landing: Write discovered CSV or converted parquet outputs
+    Discover->>Bronze: Record file metadata in `bronze_nemweb_public_files_sttm`
+
+    Landing->>UnzipSensor: Detect *.zip
+    UnzipSensor->>UnzipAsset: Launch with selected zip keys
+    UnzipAsset->>Landing: Extract STTM members, convert CSV members to parquet when possible
+    UnzipAsset->>Archive: Archive successful zip inputs
+
+    Landing->>RawSensor: Detect files matching INT651-INT684 and INT687-INT691 glob_patterns
+    RawSensor->>Bronze: Launch matching STTM source-table job with s3_keys
+    Bronze->>Landing: Read selected csv/parquet objects
+    Bronze->>Archive: Copy then delete processed source files after table write
+    Bronze->>Silver: Trigger silver current-snapshot asset
+```
+
+Trigger and output notes:
+
+- STTM is a source-table bronze domain inside the AEMO ETL Subproject. It is
+  not a Subproject.
+- Discovery is root-only for public STTM CSV reports. It excludes
+  `CURRENTDAY.*`, `DAYNN.ZIP`, `Contingency_Gas/`, `MOS Estimates/`, and other
+  subfolder content. `download_sttm_day_zip_files_job` owns DAYNN.ZIP
+  bootstrap/backfill separately and writes bundles to
+  `LANDING_BUCKET/bronze/sttm/<filename>` so `sttm_unzipper_sensor` can launch
+  `unzipper_sttm`.
+- STTM DAYNN.ZIP target selection uses basename regex matching for `DAY01.ZIP`
+  through `DAY31.ZIP`, de-duplicates listing entries, processes deterministically,
+  skips current-day aliases, and fails fast for invalid or missing
+  `target_files` config.
+- `INT651` through `INT684` and `INT687` through `INT691` are the complete
+  v19.1 spec-backed STTM source-table assets. Their compact manifest lives
+  under `src/aemo_etl/defs/raw/sttm`, declares every source report column as
+  `String`, and keeps the standard ingestion metadata columns.
+- `INT685` and `INT685B` appear as live root CSV reports but are absent from
+  the v19.1 STTM report specification manifest. Discovery may land those files,
+  but they are landing-only gaps until a spec-backed source-table entry exists.
 
 ## Raw-to-silver transformation flow
 
@@ -182,7 +248,49 @@ source table and 3 zip objects per required domain.
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/_manifest.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/source_tables.json`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int651_v1_ex_ante_market_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int652_v1_ex_ante_schedule_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int653_v3_ex_ante_pipeline_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int654_v1_provisional_market_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int655_v1_provisional_schedule_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int656_v2_provisional_pipeline_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int657_v2_ex_post_market_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int658_v1_latest_allocation_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int659_v1_bid_offer_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int660_v1_contingency_gas_bids_and_offers_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int661_v1_contingency_gas_called_scheduled_bid_offer_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int662_v1_provisional_deviation_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int663_v1_provisional_variation_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int664_v1_daily_provisional_mos_allocation_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int665_v1_mos_stack_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int666_v1_market_notice_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int667_v1_market_parameters_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int668_v1_schedule_log_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int669_v1_settlement_version_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int670_v1_registered_participants_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int671_v1_hub_facility_definition_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int672_v1_cumulative_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int673_v1_total_contingency_bid_offer_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int674_v1_total_contingency_gas_schedules_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int675_v1_default_allocation_notice_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int676_v1_rolling_average_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int677_v1_contingency_gas_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int678_v1_net_market_balance_daily_amounts_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int679_v1_net_market_balance_settlement_amounts_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int680_v1_dp_flag_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int681_v1_daily_provisional_capacity_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int682_v1_settlement_mos_and_capacity_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int683_v1_provisional_used_mos_steps_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int684_v1_settlement_used_mos_steps_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int687_v1_facility_hub_capacity_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int688_v1_allocation_warning_limit_thresholds_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int689_v1_expost_allocation_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int690_v1_deviation_price_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int691_v1_sttm_ctp_register_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/jobs/download_vicgas_public_report_zip_files.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/unzipper.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/alerts.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/current_state.py`

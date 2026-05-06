@@ -34,10 +34,11 @@ Ralph owns these labels while processing the issue queue:
 
 Runtime labels are not triage state labels. `ready-for-agent` remains the queue
 selection label for implementation. **Ready issue refresh** may transition an
-issue out of `ready-for-agent` when the latest **Local integration** leaves the
-issue stale, unclear, obsolete, or already satisfied. Runtime labels including
-`agent-reviewing` block repeat implementation and automated triage
-reconsideration.
+issue out of `ready-for-agent` when the latest **Local integration** or
+Exploratory handoff leaves the issue stale, unclear, obsolete, or already
+satisfied. Runtime labels including `agent-reviewing` block repeat
+implementation, **Ready issue refresh** candidate selection, and automated
+triage reconsideration.
 
 ## Ralph delivery labels
 
@@ -48,7 +49,9 @@ Ralph and triage use these labels to choose the issue **Delivery mode**:
 - `delivery-trunk`: opt-in for small docs, tests, tooling, or script changes
   that can integrate directly to `main`.
 - `delivery-exploratory`: opt-in for changes that need a durable review branch
-  instead of direct trunk closure or Gitflow **Promotion**.
+  instead of direct trunk closure or Gitflow **Promotion**. Use it only when
+  the issue intent is explicit and the issue body includes `## Review focus`
+  describing the human judgment the branch needs.
 
 An issue should carry at most one delivery label. If `delivery-exploratory`
 conflicts with Gitflow or trunk labels, Ralph keeps `delivery-exploratory` and
@@ -72,6 +75,7 @@ and [issue-tracker.md](issue-tracker.md) for the GitHub Issue queue contract.
   - `.agents/skills/ralph-curate/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`
   - `.agents/skills/ralph-loop/SKILL.md`
+  - `.agents/skills/ralph-issue-refresh/SKILL.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

@@ -65,7 +65,8 @@ flowchart LR
 
 Production orchestration behavior:
 
-1. Discovery assets poll public source locations and register landed files.
+1. Discovery assets poll public source locations, including NEMWeb GBB, STTM,
+   and VicGas report paths, and register landed files.
 2. Unzipper sensors detect zip payloads, expand their members, and archive the
    original zip files after success.
 3. Event-driven bronze assets ingest matching landed files into Delta tables,
@@ -110,8 +111,8 @@ Local workflow notes:
 - The isolated AEMO ETL **End-to-end test** stack belongs to the
   `backend-services/dagster-user/aemo-etl` Subproject and is operated through
   `backend-services/scripts/aemo-etl-e2e`; its run manifest records timing,
-  dataflow telemetry, and cleanup warning or failure evidence for Promotion
-  review. Ralph **Promotion** runs pass an
+  dataflow telemetry, direct-launch scenario evidence, and non-benign cleanup
+  warning or failure evidence for Promotion review. Ralph **Promotion** runs pass an
   explicit `--seed-root` pointing at the primary repo cache and select the
   `promotion-gas-model` scenario with `--timeout-seconds 1200` and
   `--max-concurrent-runs 6`. The scenario narrows the raw and zip seed horizon
@@ -121,8 +122,18 @@ Local workflow notes:
   assets. Each batch runs in-process inside its Podman run-worker container,
   and the generated stack uses fixed service IPs for Postgres, LocalStack, and
   the AEMO ETL code server. This preserves final `gas_model` target progress and
-  asset-check status as the **Promotion** gate. Temporary Promotion source worktrees
-  therefore do not look for ignored seed data under the ephemeral worktree.
+  asset-check status as the **Promotion** gate. Direct launches pace batch
+  submission against `max_concurrent_runs` before starting more work in a
+  dependency wave, keeping the queued-run budget bounded. For direct launches,
+  the dataflow manifest records the scenario, launch mode, target group, target
+  asset count, selected upstream closure count, skipped live source asset keys,
+  dependency-wave count, run-batch count, and asset batch size. The scenario
+  also enforces
+  Promotion guard regression budgets from the approved targeted baseline:
+  20 minute total duration, `6` peak active runs, `6` peak queued runs, `48`
+  total Dagster runs, `29/29` target progress, and `0` missing or failed target
+  assets and asset checks. Temporary Promotion source worktrees therefore do
+  not look for ignored seed data under the ephemeral worktree.
 
 Use [backend-services/README.md](../../backend-services/README.md) for local
 stack commands and
