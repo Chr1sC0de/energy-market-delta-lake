@@ -9,7 +9,8 @@ low-risk docs, tests, tooling, or script changes that can integrate directly to
 `main` and close immediately. **Exploratory delivery** publishes validated work
 to a durable review branch, marks the issue `agent-reviewing`, and leaves it
 open for human review; ready Exploratory issues must state that review need in
-`## Review focus`.
+`## Review focus`. Accepted Exploratory work can then be merged to `dev`, marked
+`agent-integrated` with acceptance evidence, and closed by later **Promotion**.
 
 ## Consequences
 
@@ -20,7 +21,8 @@ selection should win over shared **Integration target** defaults. Exploratory
 selection must be backed by an explicit `## Review focus`; otherwise Ralph marks
 the issue failed before creating a worktree or publishing a handoff branch. If
 only Gitflow and trunk conflict, Ralph normalizes to `delivery-gitflow`.
-Promotion must verify the recorded Gitflow integration commit before closing an
+Promotion must verify the recorded Gitflow integration commit, documented
+manual Gitflow recovery commit, or accepted Exploratory commit before closing an
 `agent-integrated` issue, because branch promotion merges code but does not
 reliably close GitHub Issues on its own.
 
@@ -36,7 +38,9 @@ reconciles `agent-merged` and issue closure, Gitflow delivery reconciles
 delivery reconciles `agent-reviewing` and leaves the issue open for review.
 After each successful issue **Local integration** or Exploratory handoff,
 **Ready issue refresh** reconciles the open issue queue before the next ready
-issue claim; this is separate from the later **Post-promotion review** path.
+issue claim; the current drain records a read-only analysis artifact with
+planned issue updates before any later metadata mutation. This is separate from
+the later **Post-promotion review** path.
 When a **Promotion** range includes non-doc runtime files in the AEMO ETL
 **Subproject**, the AEMO ETL **End-to-end test** gate runs from the same
 isolated source worktree as the aggregate **Push check**, before any merge,
@@ -61,16 +65,20 @@ reconstructing it from logs.
 Successful Promotions with changed files record a full source
 commit inventory in the **Promotion** manifest,
 including each promoted commit SHA and subject. Commits matching verified issue
-`integrated_commit` values are classified as verified **Local integration**
-commits, while other commits remain visible as unverified **Promotion** commits
-in the manifest and **Post-promotion review** prompt. Successful Promotions
-with changed files run **Post-promotion review** by default after the `main`
-push, `dev` sync, and verified issue metadata updates. Failed or partial
-Promotion attempts with changed files also try **Post-promotion review** where a
-source or target Promotion worktree is available. The read-only review report
-puts recovery and consistency guidance before follow-up issue recommendations;
-review failures are warning-only and do not change the original Promotion
-success or failure status. Ralph saves successful review output as
+`integrated_commit` values are treated as verified issue evidence commits, while
+other commits remain visible as unverified **Promotion** commits in the manifest
+and **Post-promotion review** prompt. Manual Gitflow recovery comments are
+verified only when they use the documented title plus `Commit:` line; otherwise
+Promotion warns and records the issue as
+`manual_recovery_commit_unparseable` without silently closing or forgetting it.
+Successful Promotions with changed files run **Post-promotion review** by
+default after the `main` push, `dev` sync, and verified issue metadata updates.
+Failed or partial Promotion attempts with changed files also try
+**Post-promotion review** where a source or target Promotion worktree is
+available. The read-only review report puts recovery and consistency guidance
+before follow-up issue recommendations; review failures are warning-only and do
+not change the original Promotion success or failure status. Ralph saves
+successful review output as
 `post-promotion-review.md`, prints it to the terminal, and records the artifact
 path in the **Promotion** manifest.
 After a successful **Promotion**, Ralph validates structured follow-up drafts
@@ -87,15 +95,16 @@ Unverified **Promotion** commits are review context, not Promotion blockers.
 This policy favors review context because **Promotion** has already validated
 the full promoted source revision with the aggregate **Push check** and any
 required Promotion gate, while issue closure remains limited to verified
-Gitflow **Local integration** commits. Requiring explicit issue association for
-every unverified commit before **Promotion** would turn review attribution into
-a pre-promotion gate and could delay already-reviewed `dev` work without
-improving the **Integration target** safety checks. Ralph therefore surfaces
-unverified commits in the **Promotion** manifest and **Post-promotion review**
-prompt, but it does not require issue association before **Promotion**, does not
-automatically create GitHub Issues for those commits by themselves, and expects
-follow-up issues only when **Post-promotion review** finds actionable work that
-satisfies the validated follow-up contract or needs triage evidence.
+Gitflow **Local integration** commits or accepted Exploratory commits. Requiring
+explicit issue association for every unverified commit before **Promotion**
+would turn review attribution into a pre-promotion gate and could delay
+already-reviewed `dev` work without improving the **Integration target** safety
+checks. Ralph therefore surfaces unverified commits in the **Promotion**
+manifest and **Post-promotion review** prompt, but it does not require issue
+association before **Promotion**, does not automatically create GitHub Issues
+for those commits by themselves, and expects follow-up issues only when
+**Post-promotion review** finds actionable work that satisfies the validated
+follow-up contract or needs triage evidence.
 
 ## Sync metadata
 

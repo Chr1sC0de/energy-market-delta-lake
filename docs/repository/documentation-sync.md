@@ -159,11 +159,12 @@ way:
   maintained-doc scope and its own sync metadata.
 - #59: docs-only AEMO ETL changes remain aligned with Ralph QA selection by
   keeping docs-only AEMO ETL paths on the root doc **Commit check** surface.
-- #57, #58, #61, #62, #88, #89, #94, and #95: current Ralph behavior for
-  **Delivery mode**, **Local integration**, Exploratory handoff, **Promotion**,
-  **Sandboxed issue access**, writable QA runtime paths, unverified
-  **Promotion** commit review context, **Post-promotion review**, and validated
-  follow-up creation remain owned by
+- #57, #58, #61, #62, #88, #89, #91, #94, #95, and #108: current Ralph
+  behavior for **Delivery mode**, **Local integration**, Exploratory handoff,
+  **Promotion**, accepted Exploratory evidence closure, manual Gitflow recovery
+  Promotion closure evidence, **Sandboxed issue access**, writable QA runtime
+  paths, unverified **Promotion** commit review context,
+  **Post-promotion review**, and validated follow-up creation remain owned by
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
 - #68: [docs/agents/ralph-loop.md](../agents/ralph-loop.md) defines the
   **Ready issue refresh** contract, including the shared language, audit prefix,
@@ -179,9 +180,14 @@ way:
   [docs/agents/issue-tracker.md](../agents/issue-tracker.md),
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md), and
   [docs/agents/triage-labels.md](../agents/triage-labels.md).
-- #70 and #71: keep future **Ready issue refresh** implementation behavior
-  aligned with the #68 contract before extending scripts, labels, or issue
-  metadata flows.
+- #70: Ralph now records a read-only **Ready issue refresh** analysis artifact
+  after drain-mode **Local integration** or Exploratory handoff. The artifact
+  plans issue updates without mutating GitHub Issues, and
+  [docs/agents/ralph-loop.md](../agents/ralph-loop.md) owns the manifest,
+  prompt, and failure-stop contract.
+- #71: keep future **Ready issue refresh** metadata-application behavior
+  aligned with the #68 and #70 contracts before extending scripts, labels, or
+  issue metadata flows.
 - #72: Ralph implementation prompts include bounded recent **Ready issue
   refresh** notes after the issue body while keeping the issue body as the
   primary implementation contract.

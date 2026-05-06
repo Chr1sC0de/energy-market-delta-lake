@@ -17,11 +17,12 @@ Ralph provides **Sandboxed issue access** to spawned Codex subprocesses by
 default. The sandbox receives a `GH_TOKEN` sourced from the parent environment
 or local `gh auth`, and a wrapper limits `gh` to phase-specific issue metadata
 commands. Implementation, triage, and **Ready issue refresh** passes may
-receive issue reads and writes; **Post-promotion review** receives read-only
-issue commands. After successful **Promotion**, Ralph may create structured
-actionable follow-up issues from the review artifact through its validated
-create-only helper; the review agent still cannot directly create, comment,
-edit, close, or reopen arbitrary GitHub Issues. Git push auth is separate;
+receive phase-scoped issue access; the current **Ready issue refresh** analysis
+subprocess and **Post-promotion review** receive read-only issue commands. After
+successful **Promotion**, Ralph may create structured actionable follow-up
+issues from the review artifact through its validated create-only helper; the
+review agent still cannot directly create, comment, edit, close, or reopen
+arbitrary GitHub Issues. Git push auth is separate;
 **Local integration**, Exploratory handoff, **Integration target** pushes, and
 **Promotion** stay outside the sandbox.
 
@@ -56,7 +57,13 @@ Runtime labels such as `agent-running`, `agent-integrated`, `agent-merged`,
 `agent-failed`, and `agent-reviewing` block repeat implementation and automated
 triage reconsideration. In particular, `agent-reviewing` means **Exploratory
 delivery** has already published a durable review branch and the issue is
-waiting for human review.
+waiting for human review. Accepted review moves the issue from
+`agent-reviewing` to `agent-integrated` after the work is merged to `dev` and
+acceptance evidence is commented. Rejected review removes `agent-reviewing`,
+adds `ready-for-human`, comments the review result, and leaves the issue open.
+Manual Gitflow recovery must add the parseable recovery evidence documented in
+[ralph-loop.md](ralph-loop.md) before leaving or applying `agent-integrated`, so
+later **Promotion** can verify the recovered `dev` commit before closure.
 
 After a successful drain-mode **Local integration** or Exploratory handoff,
 Ralph computes **Ready issue refresh** candidates from open issues within
@@ -65,6 +72,13 @@ queue order, excludes issues with runtime stop labels, and treats the issue that
 was just completed as a satisfied blocker for candidate selection even when
 Gitflow leaves it open with `agent-integrated` until **Promotion** or
 Exploratory delivery leaves it open with `agent-reviewing` for human review.
+Ralph then runs a read-only analysis subprocess using `$ralph-issue-refresh`.
+That subprocess receives the integrated issue, **Delivery mode**,
+**Integration target**, integration commit, changed files, QA evidence, run log
+path, and candidate issue bodies, then writes
+`ready-issue-refresh-analysis.md` under the current `.ralph/runs/issue-.../`
+directory. It records planned issue updates only and is not allowed to mutate
+GitHub Issues.
 
 Use [ralph-loop.md](ralph-loop.md) for Ralph internals, including
 **Delivery mode**, **Local integration**, **Integration target**, **Promotion**,

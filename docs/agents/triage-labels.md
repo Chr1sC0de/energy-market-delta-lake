@@ -27,8 +27,9 @@ Ralph owns these labels while processing the issue queue:
 - `agent-running`: Ralph has claimed an implementation issue.
 - `agent-failed`: Ralph failed after retry and left logs for inspection.
 - `agent-merged`: Ralph pushed **Local integration** and closed the issue.
-- `agent-integrated`: Ralph integrated Gitflow work to `dev`; the issue waits
-  for **Promotion** to `main`.
+- `agent-integrated`: Ralph integrated Gitflow work to `dev`, manual Gitflow
+  recovery evidence records a recovered `dev` commit, or accepted Exploratory
+  work was merged to `dev`; the issue waits for **Promotion** to `main`.
 - `agent-reviewing`: Ralph published exploratory work to a durable review
   branch; the issue waits for human review.
 
@@ -36,9 +37,11 @@ Runtime labels are not triage state labels. `ready-for-agent` remains the queue
 selection label for implementation. **Ready issue refresh** may transition an
 issue out of `ready-for-agent` when the latest **Local integration** or
 Exploratory handoff leaves the issue stale, unclear, obsolete, or already
-satisfied. Runtime labels including `agent-reviewing` block repeat
-implementation, **Ready issue refresh** candidate selection, and automated
-triage reconsideration.
+satisfied. Ralph's current drain first records a read-only **Ready issue
+refresh** analysis artifact with planned transitions; that subprocess is not
+allowed to mutate labels or issue state. Runtime labels including
+`agent-reviewing` block repeat implementation, **Ready issue refresh** candidate
+selection, and automated triage reconsideration.
 
 ## Ralph delivery labels
 

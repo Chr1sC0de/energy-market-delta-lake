@@ -283,7 +283,8 @@ operator should start from a known repo state.
 
 Ralph writes command logs while subprocesses are still running. Long Codex
 implementation attempts write to `codex-implementation-N.jsonl`, triage writes
-to `codex-triage.jsonl`, **Post-promotion review** writes to
+to `codex-triage.jsonl`, read-only **Ready issue refresh** analysis writes to
+`codex-ready-issue-refresh-analysis.jsonl`, **Post-promotion review** writes to
 `codex-post-promotion-review.jsonl`, QA writes to `qa-*` logs, and Git
 operations write to their named `git-*` logs under the current
 `.ralph/runs/...` run directory.
@@ -321,21 +322,25 @@ Key fields for inspection:
 - `status` and `stage`: current run outcome and latest milestone.
 - `events`: timestamped milestone history.
 - `issue`: implementation issue number, title, and URL.
-- `github_metadata.issues`: promoted issue numbers and their recorded Gitflow
-  integration commits during **Promotion**.
+- `github_metadata.issues`: promoted issue numbers, recorded issue evidence
+  commits, and manual recovery evidence warnings during **Promotion**.
 - `delivery_mode`: issue **Delivery mode**; **Promotion** records `gitflow`.
 - `integration_target`: branch Ralph is updating for the run.
 - `source_branch`: **Promotion** source branch, usually `dev`.
 - `source_tree`: **Promotion** source branch revision and source worktree used
   for QA.
 - `promotion_commit_inventory`: full promoted source commit range with each
-  commit SHA, subject, and whether it matched a verified Gitflow
-  **Local integration** commit or remained an unverified **Promotion** commit.
+  commit SHA, subject, and whether it matched verified issue evidence or
+  remained an unverified **Promotion** commit.
 - `post_promotion_review`: enabled state, skip reason, warning-only review
   status, review log path, and Markdown artifact path for **Promotion** runs.
 - `post_promotion_followups`: enabled state, created issue URLs, duplicate
   source-marker skips, validation downgrades to `needs-triage`, warning-only
   creation failures, and recovery guidance for **Promotion** follow-ups.
+- `ready_issue_refresh`: read-only analysis status, candidate issue numbers,
+  candidate issue metadata, analysis log path, Markdown artifact path, and
+  failure state for drain-mode implementation runs after successful **Local
+  integration** or Exploratory handoff.
 - `branches`: issue, source, and target branch names that apply to the run.
 - `paths`: repo root, run directory, worktree container, and implementation,
   integration, Promotion source, or Promotion target worktree paths.
@@ -388,6 +393,32 @@ Recovery does not rerun Codex, rerun QA, create commits, push branches, or clean
 worktrees. Normal Ralph runs keep fail-stop behavior: if metadata operations
 fail after a push, Ralph stops loudly so an operator can inspect the run and
 recover deliberately.
+
+If a failed Gitflow run passed issue QA but failed before recording
+`integration_commit`, and an operator manually creates or pushes the recovered
+commit to `dev`, preserve **Promotion** closure evidence before applying or
+leaving `agent-integrated`. Verify the recovered commit is reachable from
+`origin/dev` and is not already on `origin/main`, then add an issue comment that
+starts with this exact contract:
+
+```markdown
+Ralph Gitflow manual recovery completed.
+
+Commit: `<dev-commit-sha>`
+Delivery mode: `gitflow`
+Target branch: `dev`
+Recovered from run: `<run-dir>`
+```
+
+The `Commit:` line must name the `dev` commit that made the recovered issue
+work reachable from the Gitflow source branch. Keep the issue open with
+`agent-integrated` so the next **Promotion** can verify the commit in the
+promoted range, comment Promotion evidence, replace `agent-integrated` with
+`agent-merged`, and close the issue. If **Promotion** sees manual recovery
+evidence on an open `agent-integrated` issue but cannot parse a commit from the
+documented contract, it emits a warning with the recovery action and records
+`manual_recovery_commit_unparseable` in the Promotion manifest instead of
+leaving the issue silently unreconciled.
 
 ## Implementation pass
 
@@ -451,6 +482,23 @@ squash merge: Ralph pushes the validated
 `agent-reviewing`, and leaves it open for human review. Ralph does not open a
 GitHub draft PR.
 
+Human review owns the next Exploratory state transition. For accepted
+Exploratory work, merge the reviewed branch to `dev`, add acceptance evidence to
+the issue, remove `agent-reviewing`, and add `agent-integrated` so the issue can
+close through the existing **Promotion** path. The acceptance comment must start
+with:
+
+```markdown
+Ralph exploratory acceptance completed.
+
+Commit: `<dev-commit-sha>`
+```
+
+The commit is the `dev` commit that made the accepted work reachable from the
+source branch. For rejected Exploratory work, leave the issue open, remove
+`agent-reviewing`, add `ready-for-human`, and comment the review result and
+next action. Rejected review must not add `agent-integrated`.
+
 ```mermaid
 sequenceDiagram
   participant Ralph
@@ -485,16 +533,17 @@ sequenceDiagram
 
 ## Promotion pass
 
-`python3 scripts/ralph.py --promote` promotes reviewed Gitflow work from
-`origin/dev` to `origin/main` by default. Ralph fetches both branches, computes
-the changed files between the target branch and the fetched source-branch
-revision, records the full source commit inventory for that promoted range, and
-creates an isolated source worktree at that source revision. The commit
-inventory records every promoted source commit with its SHA and subject. After
-verified Gitflow issues are identified, commits whose SHA matches a recorded
-`integrated_commit` are classified as verified **Local integration** commits;
-other commits remain visible as unverified **Promotion** commits in the run
-manifest and **Post-promotion review** prompt.
+`python3 scripts/ralph.py --promote` promotes reviewed Gitflow work and accepted
+Exploratory work from `origin/dev` to `origin/main` by default. Ralph fetches
+both branches, computes the changed files between the target branch and the
+fetched source-branch revision, records the full source commit inventory for
+that promoted range, and creates an isolated source worktree at that source
+revision. The commit inventory records every promoted source commit with its
+SHA and subject. After verified issues are identified, commits whose SHA matches
+a recorded Gitflow **Local integration** commit, a documented manual Gitflow
+recovery commit, or an accepted Exploratory commit are treated as verified issue
+evidence; other commits remain visible as unverified **Promotion** commits in
+the run manifest and **Post-promotion review** prompt.
 Unverified **Promotion** commits are mandatory **Post-promotion review**
 context only. They do not block **Promotion**, do not require explicit issue
 association before **Promotion**, and do not create follow-up issues by
@@ -555,19 +604,24 @@ promotion commit so the next Gitflow drain starts from a `dev` branch that
 contains `main`.
 
 After the push succeeds, Ralph scans open `agent-integrated` issues. It closes
-only issues whose recorded Gitflow integration commit is still in the promoted
-`origin/main..origin/dev` range, then comments promotion evidence and replaces
-`agent-integrated` with `agent-merged`. Per-issue Promotion comments describe
-promoted files as the full Promotion-range file inventory, not as files owned
-only by the issue being closed. Successful Promotions with changed files then
-run a **Post-promotion review** agent from the **Promotion** worktree by
-default, after the `main` push, `dev` sync, and verified issue metadata
-updates. Failed or partial Promotion attempts with changed files also try a
-**Post-promotion review** where a source or target Promotion worktree is
-available. The review prompt includes both verified **Local integration**
-commits and unverified **Promotion** commits when available so the review can
-separate closed issue evidence from other promoted work. For failed or partial
-attempts, the report must put recovery and consistency guidance before
+only issues whose recorded Gitflow integration commit, documented manual
+Gitflow recovery commit, or accepted Exploratory commit is still in the
+promoted `origin/main..origin/dev` range, then comments Promotion evidence and
+replaces `agent-integrated` with `agent-merged`. If an open `agent-integrated`
+issue has manual recovery evidence but no parseable commit, Ralph warns with
+the exact recovery action and records the issue under `github_metadata.issues`
+with `metadata_status: manual_recovery_commit_unparseable`.
+Per-issue Promotion comments describe promoted files as the full
+Promotion-range file inventory, not as files owned only by the issue being
+closed. Successful Promotions with changed files then run a **Post-promotion
+review** agent from the **Promotion** worktree by default, after the `main`
+push, `dev` sync, and verified issue metadata updates. Failed or partial
+Promotion attempts with changed files also try a **Post-promotion review** where
+a source or target Promotion worktree is available. The review prompt includes
+both verified issue evidence commits and unverified **Promotion** commits when
+available so the review can separate closed issue evidence from other promoted
+work. For failed or partial attempts, the report must put recovery and
+consistency guidance before
 follow-up issue recommendations. The review agent has read-only GitHub Issue
 access and must report learnings, recovery guidance, and structured actionable
 follow-up GitHub Issue drafts instead of mutating issues. Ralph saves the final
@@ -652,12 +706,33 @@ This bounded scan also keeps the next unblocked ready issues in queue order in
 the candidate set, even when they do not explicitly reference the just-integrated
 issue. That lets refresh review catch duplicate or obsolete ready work that
 became stale because of the latest **Local integration** or Exploratory handoff.
+After candidate selection, Ralph invokes a read-only spawned Codex subprocess
+using the repo-local `$ralph-issue-refresh` skill. The analysis prompt includes
+the integrated issue, **Delivery mode**, **Integration target**, **Local
+integration** or Exploratory handoff commit, changed files, QA evidence, run log
+path, and candidate issue bodies. The subprocess is granted only read-only
+GitHub Issue commands and is instructed not to comment, edit labels, edit
+bodies, close, reopen, create issues, commit, push, fetch, merge, rebase, reset,
+or update refs. It records planned issue updates only; Ralph does not apply
+those updates during this read-only analysis phase.
+
+The read-only analysis report is saved as
+`ready-issue-refresh-analysis.md` in the current `.ralph/runs/issue-.../`
+directory beside `codex-ready-issue-refresh-analysis.jsonl`. The implementation
+run manifest records `ready_issue_refresh.status`, candidate issue numbers,
+candidate issue metadata, the analysis log path, the artifact path, and any
+failure. If analysis fails after a successful **Local integration** or
+Exploratory handoff, Ralph stops the drain before claiming another issue. It
+does not roll back the pushed **Integration target** commit or revert the
+already-completed issue metadata.
+
 In `--dry-run`, Ralph reports that Ready issue refresh candidate selection would
 run after **Local integration** or Exploratory handoff; it does not invoke Codex
 or mutate GitHub Issues.
 
 Use the repo-local `$ralph-issue-refresh` skill as the entry point for this
-contract. The pass is allowed to mutate only GitHub Issue metadata:
+contract. The full metadata-refresh contract is allowed to mutate only GitHub
+Issue metadata:
 
 - comments
 - issue body updates
@@ -786,6 +861,12 @@ the run for the same metadata consistency reason. Failed or partial Promotion
 attempts still try warning-only **Post-promotion review** when a review worktree
 is available; the original Promotion exception, manifest `status`, and failure
 state remain the source of truth.
+
+Read-only **Ready issue refresh** analysis failures also stop the drain, but
+they do not imply the integrated issue metadata needs recovery. The manifest
+records the pushed **Integration target** commit and completed issue metadata
+alongside `ready_issue_refresh.status: failed`, so operators can inspect the
+analysis log or artifact path before restarting the drain.
 
 Environment failures stop the run. Examples include invalid `gh` auth, missing
 labels, unavailable tools, failing Git operations before claim, or unavailable

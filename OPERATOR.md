@@ -81,6 +81,9 @@ Use this checklist:
 - Inspect changed files with `git diff --stat origin/main..origin/dev` and `git diff --name-only origin/main..origin/dev`.
 - Match each included issue to its Ralph evidence and verify it is marked
   `agent-integrated`.
+- For manually recovered Gitflow work, verify the issue has a parseable
+  `Ralph Gitflow manual recovery completed.` comment with the recovered `dev`
+  commit before Promotion.
 - Review the diff for accidental secrets, generated artifacts, unrelated
   refactors, or mismatched docs.
 - Check whether changed **Subprojects** require operator attention beyond
@@ -90,13 +93,21 @@ Use this checklist:
 - Confirm no open blocker or manual follow-up should stop the range from
   reaching `main`.
 
+For accepted Exploratory review, merge the durable review branch to `dev`, add
+an issue comment that starts with `Ralph exploratory acceptance completed.` and
+includes a `Commit: ...` line for the accepted `dev` commit SHA, remove
+`agent-reviewing`, and add `agent-integrated`. For rejected Exploratory review,
+leave the issue open, remove `agent-reviewing`, add `ready-for-human`, and
+comment the review result and next action.
+
 ## Promotion
 
 Run `$ralph-loop promote` only after the `dev` review is complete.
 
 Ralph computes the aggregate **Push check**, merges reviewed `dev` work into
 `main`, fast-forwards `dev` to the promotion commit, and closes only
-`agent-integrated` issues whose recorded Gitflow **Local integration** commit is
+`agent-integrated` issues whose recorded Gitflow **Local integration** commit or
+documented manual Gitflow recovery commit, or accepted Exploratory commit is
 verified in the promoted branch range.
 
 Unverified **Promotion** commits in the range are mandatory
