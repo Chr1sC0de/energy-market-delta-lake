@@ -100,7 +100,8 @@ Run the automated doc QA with:
 python3 -m unittest discover -s tests
 ```
 
-The repository **Commit check** also runs Markdown and link tooling through:
+The repository **Commit check** also runs Markdown, link, and staged
+secret-scan tooling through:
 
 ```bash
 prek run -a
@@ -117,6 +118,9 @@ the same `prek` command surfaces as code QA:
   `infrastructure/aws-pulumi`. These **Commit check** surfaces are the local
   **Fast check** path: static checks plus **Unit tests** and **Component tests**,
   without containers, live network, or deployed cloud resources.
+- The root **Commit check** includes the official Gitleaks `gitleaks` hook. It
+  runs in staged pre-commit mode so newly staged secrets are blocked without
+  requiring Docker or a preinstalled `gitleaks` binary.
 - Ruff owns Python linting and formatting. A Python **Subproject** is under the
   Google-style docstring ratchet only when its `pyproject.toml` selects Ruff `D`
   rules and its hook config runs `ruff check`. The current ratchet covers
