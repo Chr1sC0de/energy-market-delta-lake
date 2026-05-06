@@ -6,6 +6,7 @@ These diagrams show the main ingestion paths implemented by the current factorie
 
 - [GBB ingestion flow](#gbb-ingestion-flow)
 - [VICGAS ingestion flow](#vicgas-ingestion-flow)
+- [STTM ingestion flow](#sttm-ingestion-flow)
 - [Raw-to-silver transformation flow](#raw-to-silver-transformation-flow)
 - [LocalStack and S3-compatible behavior](#localstack-and-s3-compatible-behavior)
 - [Related docs](#related-docs)
@@ -27,7 +28,7 @@ sequenceDiagram
     participant Silver as silver_gasbb_*
     participant GasModel as silver/gas_model/*
 
-    Schedule->>Discover: Run every 15 minutes
+    Schedule->>Discover: Run every 30 minutes
     Discover->>NEMWeb: List and fetch links from REPORTS/CURRENT/GBB
     Discover->>Landing: Write discovered files and converted parquet outputs
     Discover->>Bronze: Record file metadata in `bronze_nemweb_public_files_gbb`
@@ -78,7 +79,7 @@ sequenceDiagram
     ManualJob->>NEMWeb: List and fetch PublicRptsNN.zip bundles
     ManualJob->>Landing: Write zip objects for unzipper processing
 
-    Schedule->>Discover: Run every 15 minutes
+    Schedule->>Discover: Run every 30 minutes
     Discover->>NEMWeb: List and fetch links from REPORTS/CURRENT/VicGas
     Discover->>Landing: Write discovered zip/csv/parquet files
     Discover->>Bronze: Record file metadata in `bronze_nemweb_public_files_vicgas`
@@ -105,6 +106,46 @@ Trigger and output notes:
   processed source files only after a table write, delete zero-byte landing
   objects, and warn on skipped selected keys; the silver assets overwrite the
   current parquet snapshot.
+
+## STTM ingestion flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant NEMWeb as NEMWeb STTM root
+    participant Schedule as bronze_nemweb_public_files_sttm_job_schedule
+    participant Discover as bronze_nemweb_public_files_sttm
+    participant Landing as LANDING_BUCKET/bronze/sttm
+    participant RawSensor as sttm_event_driven_assets_sensor
+    participant Bronze as bronze_int651_v1_ex_ante_market_price_rpt_1
+    participant Archive as ARCHIVE_BUCKET/bronze/sttm
+    participant Silver as silver_int651_v1_ex_ante_market_price_rpt_1
+
+    Schedule->>Discover: Run every 30 minutes
+    Discover->>NEMWeb: List root CSV links from REPORTS/CURRENT/STTM
+    Discover->>Landing: Write discovered CSV or converted parquet outputs
+    Discover->>Bronze: Record file metadata in `bronze_nemweb_public_files_sttm`
+
+    Landing->>RawSensor: Detect files matching INT651 glob_pattern
+    RawSensor->>Bronze: Launch int651_v1_ex_ante_market_price_rpt_1_job with s3_keys
+    Bronze->>Landing: Read selected csv/parquet objects
+    Bronze->>Archive: Copy then delete processed source files after table write
+    Bronze->>Silver: Trigger silver current-snapshot asset
+```
+
+Trigger and output notes:
+
+- STTM is a source-table bronze domain inside the AEMO ETL Subproject. It is
+  not a Subproject and does not use the unzipper path.
+- Discovery is root-only for public STTM CSV reports. It excludes
+  `CURRENTDAY.*`, `DAYNN.ZIP`, `Contingency_Gas/`, `MOS Estimates/`, and other
+  subfolder content.
+- `INT651` is the first spec-backed STTM source-table asset. Its compact
+  manifest lives under `src/aemo_etl/defs/raw/sttm`, declares every source
+  report column as `String`, and keeps the standard ingestion metadata columns.
+- `INT685` and `INT685B` appear as live root CSV reports but are absent from
+  the v19.1 STTM report specification manifest. Discovery may land those files,
+  but they are landing-only gaps until a spec-backed source-table entry exists.
 
 ## Raw-to-silver transformation flow
 
@@ -182,6 +223,9 @@ source table and 3 zip objects per required domain.
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/_manifest.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/source_tables.json`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int651_v1_ex_ante_market_price_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/jobs/download_vicgas_public_report_zip_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/alerts.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`

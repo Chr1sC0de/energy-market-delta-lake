@@ -15,6 +15,7 @@ from dagster import Definitions
 from dagster._core.definitions.unresolved_asset_job_definition import (
     UnresolvedAssetJobDefinition,
 )
+from polars import String
 
 from aemo_etl.defs.raw.gbb._ecs import rebuild_sized_spot_ecs_tags
 
@@ -35,6 +36,33 @@ def test_import_all_gbb_table_modules() -> None:
 
 def test_import_all_vicgas_table_modules() -> None:
     _import_all_under("aemo_etl.defs.raw.vicgas")
+
+
+def test_import_all_sttm_table_modules() -> None:
+    _import_all_under("aemo_etl.defs.raw.sttm")
+
+
+def test_sttm_int651_source_table_spec_registered_for_archive_replay() -> None:
+    from aemo_etl.factories.df_from_s3_keys.source_tables import (
+        load_source_table_specs,
+        select_source_table_specs,
+    )
+
+    (spec,) = select_source_table_specs(
+        load_source_table_specs(),
+        table="sttm.bronze_int651_v1_ex_ante_market_price_rpt_1",
+    )
+
+    assert spec.domain == "sttm"
+    assert spec.name_suffix == "int651_v1_ex_ante_market_price_rpt_1"
+    assert spec.glob_pattern == "int651_v1_ex_ante_market_price_rpt_1*"
+    assert spec.archive_prefix == "bronze/sttm"
+    assert spec.target_table_uri("aemo") == (
+        "s3://aemo/bronze/sttm/bronze_int651_v1_ex_ante_market_price_rpt_1"
+    )
+    assert spec.surrogate_key_sources == ("gas_date", "hub_identifier")
+    assert spec.schema["gas_date"] == String
+    assert spec.schema["ex_ante_market_price"] == String
 
 
 def test_gbb_pipeline_connection_flow_v1_job_uses_rebuild_sized_ecs_task() -> None:

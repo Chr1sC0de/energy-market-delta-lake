@@ -157,9 +157,11 @@ deleting this temporary file.
 
 The runtime entrypoint is
 `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`.
-That definition module merges two scheduled discovery/listing assets:
+That definition module merges three scheduled discovery/listing assets:
 `bronze_nemweb_public_files_vicgas` for `REPORTS/CURRENT/VicGas` and
-`bronze_nemweb_public_files_gbb` for `REPORTS/CURRENT/GBB`. Both pass
+`bronze_nemweb_public_files_gbb` for `REPORTS/CURRENT/GBB`, plus
+`bronze_nemweb_public_files_sttm` for root CSV reports under
+`REPORTS/CURRENT/STTM`. All three pass
 `cron_schedule="*/30 * * * *"`, `n_executors=10`, `group_name="integration"`,
 the configured default schedule status, and ECS CPU and memory tags into
 `nemweb_public_files_definitions_factory`.
@@ -169,7 +171,8 @@ excludes `CurrentDay.zip` and `PublicRptsNN.zip` bundles so the ad hoc
 `download_vicgas_public_report_zip_files_job` remains the bootstrap/backfill
 path for public report bundles. `gbb_folder_filter` excludes
 `[To Parent Directory]` and `DUPLICATE`, while otherwise using the default file
-filter.
+filter. STTM uses a root-only folder filter and a CSV-only file filter that
+excludes `CURRENTDAY.*`, `DAYNN.ZIP`, subfolders, and helper file formats.
 
 `nemweb_public_files_definitions_factory` builds the Dagster shell and concrete
 runtime Adapters. It creates the bronze key prefix, AEMO Delta table path,
@@ -368,7 +371,7 @@ to register a `DFFromS3KeysSourceTableSpec` containing `domain`,
 `name_suffix`, `glob_pattern`, schema, surrogate-key columns, and object/frame
 postprocess hooks. The registry in
 `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`
-imports the GBB and VICGAS raw definition packages, returns stable ordered
+imports the GBB, STTM, and VICGAS raw definition packages, returns stable ordered
 specs, derives `archive_prefix` as `bronze/{domain}`, derives the target bronze
 Delta URI, and supports explicit all/domain/table selection for the replay CLI.
 
@@ -1019,6 +1022,9 @@ slices can close after integration to `main`; exploratory slices stay open with
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/_manifest.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/source_tables.json`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int651_v1_ex_ante_market_price_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/jobs/download_vicgas_public_report_zip_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/current_state.py`

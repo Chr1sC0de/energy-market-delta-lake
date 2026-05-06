@@ -124,6 +124,7 @@ def test_event_driven_raw_sensor_batch_caps(mocker: MockerFixture) -> None:
         in {
             "vicgas_event_driven_assets_sensor",
             "gbb_event_driven_assets_sensor",
+            "sttm_event_driven_assets_sensor",
         }
     }
     assert (
@@ -135,8 +136,13 @@ def test_event_driven_raw_sensor_batch_caps(mocker: MockerFixture) -> None:
         raw_sensor_calls["gbb_event_driven_assets_sensor"]["bytes_cap"] == 128_000_000
     )
     assert raw_sensor_calls["gbb_event_driven_assets_sensor"]["files_cap"] == 25
+    assert (
+        raw_sensor_calls["sttm_event_driven_assets_sensor"]["bytes_cap"] == 128_000_000
+    )
+    assert raw_sensor_calls["sttm_event_driven_assets_sensor"]["files_cap"] == 25
     assert raw_sensor_calls["vicgas_event_driven_assets_sensor"]["jobs"] == tuple(jobs)
     assert raw_sensor_calls["gbb_event_driven_assets_sensor"]["jobs"] == tuple(jobs)
+    assert raw_sensor_calls["sttm_event_driven_assets_sensor"]["jobs"] == tuple(jobs)
     assert unzipper_calls
     for call in unzipper_calls:
         assert "bytes_cap" not in call

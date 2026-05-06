@@ -65,7 +65,8 @@ flowchart LR
 
 Production orchestration behavior:
 
-1. Discovery assets poll public source locations and register landed files.
+1. Discovery assets poll public source locations, including NEMWeb GBB, STTM,
+   and VicGas report paths, and register landed files.
 2. Unzipper sensors detect zip payloads, expand their members, and archive the
    original zip files after success.
 3. Event-driven bronze assets ingest matching landed files into Delta tables,

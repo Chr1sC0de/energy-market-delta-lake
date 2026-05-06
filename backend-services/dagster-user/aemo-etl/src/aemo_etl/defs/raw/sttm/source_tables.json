@@ -1,0 +1,96 @@
+{
+  "manifest_version": 1,
+  "source": {
+    "title": "AEMO STTM Reports Specifications v19.1",
+    "section": "5.4 Public reports",
+    "original_pdf_url": "https://www.aemo.com.au/-/media/files/stakeholder_consultation/consultations/gas_consultations/2024/amendments-to-sttm-and-retail-market-procedures/decision/sttm-reports-specifications-v191.pdf?rev=30dbf1c556a7486b8c80e244b8690226&sc_lang=en"
+  },
+  "reports": [
+    {
+      "report_id": "INT651",
+      "report_name": "Ex Ante Market Price",
+      "name_suffix": "int651_v1_ex_ante_market_price_rpt_1",
+      "glob_pattern": "int651_v1_ex_ante_market_price_rpt_1*",
+      "description": "STTM public Ex Ante Market Price report. Contains ex ante market price at STTM hubs for a gas day and is issued after approval of an ex ante market schedule.",
+      "surrogate_key_sources": ["gas_date", "hub_identifier"],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date, for example 30 Jun 2009."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "schedule_identifier",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The unique identifier of the schedule that the ex ante market price relates to, except where administered_price_period is Y."
+        },
+        {
+          "name": "ex_ante_market_price",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The ex ante market price for the gas date. This is either the market price determined by the scheduling and pricing engine or the administered price during an administered price period."
+        },
+        {
+          "name": "administered_price_period",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Whether the gas date falls within an administered price period. Valid values are Y and N. This is not Y when an administered state is determined after the ex ante schedule is published."
+        },
+        {
+          "name": "cap_applied",
+          "not_null": false,
+          "primary_key": false,
+          "description": "If the gas date is within an administered price period, whether the administered price was capped. Valid values are Y and N."
+        },
+        {
+          "name": "administered_price_cap",
+          "not_null": false,
+          "primary_key": false,
+          "description": "If an administered price was capped, the Administered Price Cap value. If the administered price was not capped, this field is null."
+        },
+        {
+          "name": "schedule_price",
+          "not_null": false,
+          "primary_key": false,
+          "description": "If the administered price was capped at the Administered Price Cap, the market schedule price derived from bids and offers before the cap was applied. Otherwise null."
+        },
+        {
+          "name": "approval_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time when the schedule that the ex ante market price relates to was approved."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    }
+  ],
+  "landing_only_gaps": [
+    {
+      "report_id": "INT685",
+      "reason": "Present in the live NEMWeb STTM root but absent from STTM Reports Specifications v19.1, so discovery lands root CSV files without generating a source-table bronze asset."
+    },
+    {
+      "report_id": "INT685B",
+      "reason": "Present in the live NEMWeb STTM root but absent from STTM Reports Specifications v19.1, so discovery lands root CSV files without generating a source-table bronze asset."
+    }
+  ]
+}

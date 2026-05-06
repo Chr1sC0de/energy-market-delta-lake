@@ -283,13 +283,15 @@ AWS, leave `AWS_ENDPOINT_URL` unset and use the intended AWS credentials.
 Choose exactly one target scope:
 
 - `--all` rebuilds every registered source-table bronze asset
-- `--domain gbb` or `--domain vicgas` rebuilds one source-table domain
+- `--domain gbb`, `--domain sttm`, or `--domain vicgas` rebuilds one
+  source-table domain
 - `--table gbb.bronze_gasbb_contacts` rebuilds one source table
 
 Dry-run is the default. Use it first and keep the output as rebuild evidence:
 
 ```bash
 uv run aemo-replay-bronze-archive --domain gbb
+uv run aemo-replay-bronze-archive --domain sttm
 uv run aemo-replay-bronze-archive --table gbb.bronze_gasbb_contacts --json
 ```
 
@@ -316,6 +318,12 @@ Treat `--replace` as explicit operator intent to rebuild the selected table from
 the selected archive scope. If the dry-run archive file list or target Delta URI
 does not match the intended rebuild, stop and correct the target selection,
 bucket options, or credentials before writing.
+
+For STTM, the current source-table replay surface starts with `INT651`
+(`sttm.bronze_int651_v1_ex_ante_market_price_rpt_1`). `INT685` and `INT685B`
+are landing-only gaps because the live root CSV reports are absent from the
+v19.1 STTM report specification manifest, so they are not valid replay table
+targets.
 
 ## Test assumptions
 
@@ -346,6 +354,7 @@ make integration-test-testmon
 make duplicate-check
 make run-prek
 uv run aemo-replay-bronze-archive --domain gbb
+uv run aemo-replay-bronze-archive --domain sttm
 uv run aemo-replay-bronze-archive --table gbb.bronze_gasbb_contacts --replace
 ```
 
@@ -382,6 +391,9 @@ across the Subproject.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/current_state.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/_manifest.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/source_tables.json`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int651_v1_ex_ante_market_price_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
   - `backend-services/dagster-user/aemo-etl/tests/integration/conftest.py`
   - `backend-services/dagster-user/aemo-etl/.localstack.env`

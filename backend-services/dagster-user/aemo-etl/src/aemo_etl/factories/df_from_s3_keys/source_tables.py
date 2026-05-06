@@ -14,6 +14,7 @@ from aemo_etl.factories.df_from_s3_keys.hooks import Hook
 
 RAW_SOURCE_TABLE_PACKAGES: Final = (
     "aemo_etl.defs.raw.gbb",
+    "aemo_etl.defs.raw.sttm",
     "aemo_etl.defs.raw.vicgas",
 )
 

@@ -19,7 +19,9 @@
 
 The project materializes Dagster assets defined under `src/aemo_etl/defs` to build a gas-market lakehouse on Delta tables.
 
-- Scheduled NEMWeb discovery/listing assets poll `REPORTS/CURRENT/VicGas` and `REPORTS/CURRENT/GBB` every 15 minutes and copy source files into landing storage.
+- Scheduled NEMWeb discovery/listing assets poll `REPORTS/CURRENT/VicGas`,
+  `REPORTS/CURRENT/GBB`, and the root CSV reports in `REPORTS/CURRENT/STTM`
+  every 30 minutes and copy source files into landing storage.
 - `download_vicgas_public_report_zip_files_job` can be launched manually to bootstrap or backfill VicGas `PublicRptsNN.zip` bundles into landing storage.
 - Unzipper assets expand zipped source payloads in landing storage and archive the original zip files after successful extraction.
 - Event-driven source-table bronze assets read matching landing files, collapse each micro-batch to the latest `source_file` row per `surrogate_key`, explicitly merge current-state Delta rows by `surrogate_key`, archive processed files only after a table write, delete zero-byte landing objects, and warn on skipped selected keys.
@@ -138,13 +140,18 @@ sequenceDiagram
     Silver->>GasModel: Trigger dimensions and marts
 ```
 
-Detailed sequence diagrams for GBB, VICGAS, and raw-to-silver behavior live in [docs/architecture/ingestion_flows.md](docs/architecture/ingestion_flows.md).
+Detailed sequence diagrams for GBB, VICGAS, STTM, and raw-to-silver behavior live in [docs/architecture/ingestion_flows.md](docs/architecture/ingestion_flows.md).
 
 ## Data domains and asset layers
 
 - `raw`: scheduled discovery/listing assets plus source-table bronze ingestion assets that capture current source-table state from landing storage into Delta tables. Source-table bronze stores bounded current state; append replay history remains in archive storage.
 - `gbb`: source-specific silver assets for Gas Bulletin Board datasets such as flows, capacity, locations, linepack, and nomination data.
 - `vicgas`: source-specific silver assets for Victorian gas reports such as operational meter readings, allocations, prices, linepack, heating values, and settlements.
+- `sttm`: source-specific silver assets for Short Term Trading Market reports.
+  STTM source-table bronze starts with `INT651` from a compact checked-in
+  manifest under `src/aemo_etl/defs/raw/sttm`; `INT685` and `INT685B` are live
+  STTM root CSV reports but are landing-only gaps until a v19.1
+  specification-backed source-table entry exists.
 - `gas_model`: shared dimensions and marts that reconcile GBB and VICGAS source data into reporting-friendly tables.
 
 Detailed gas-model ERDs remain under `docs/gas_model/`:
@@ -236,6 +243,7 @@ dg launch --assets "key:ops/testing/failed_run_alert_probe"
 uv run aemo-e2e-archive-seed spec
 uv run aemo-e2e-archive-seed refresh
 uv run aemo-replay-bronze-archive --domain gbb
+uv run aemo-replay-bronze-archive --domain sttm
 uv run aemo-replay-bronze-archive --table gbb.bronze_gasbb_contacts --replace
 ```
 
@@ -301,6 +309,9 @@ aemo-etl/
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/jobs/download_vicgas_public_report_zip_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/testing.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/_manifest.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/source_tables.json`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int651_v1_ex_ante_market_price_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/current_state.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
