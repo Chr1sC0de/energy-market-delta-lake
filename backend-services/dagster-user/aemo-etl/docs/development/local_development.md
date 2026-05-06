@@ -220,7 +220,10 @@ dataflow result. Failures preserve the stack plus run manifests unless
 `--always-clean` is used. The run manifest records total gate, stack startup,
 Dagster dataflow monitor, and cleanup durations plus cleanup phase status, final
 Dagster run, target progress, target materialization timestamp, and asset-check
-telemetry.
+telemetry. For the `promotion-gas-model` direct launch path, the dataflow
+manifest also records scenario evidence: selected scenario, launch mode, target
+group, target asset count, selected upstream closure count, skipped live source
+asset keys, dependency-wave count, run-batch count, and asset batch size.
 After startup, it uses Dagster GraphQL to drive the selected scenario. The
 default `full-gas-model` scenario starts only the intended unzipper,
 event-driven raw, and gas model automation sensors. NEMWeb discovery schedules,

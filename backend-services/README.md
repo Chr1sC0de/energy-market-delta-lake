@@ -381,11 +381,14 @@ total gate duration, stack startup duration, Dagster dataflow monitor duration,
 cumulative cleanup duration, cleanup phase status and timings, cleanup issue
 evidence, peak active and queued Dagster run counts, final run status counts,
 final target progress, first and last observed target materialization
-timestamps, and the final missing and failed asset-check counts. Failed runs include
-telemetry for every monitor sample captured before the failure. The same
-telemetry is summarized in the command output. Promotion budget failures mark
-the run manifest failed and print observed values, thresholds, and the
-`run-manifest.json` path.
+timestamps, and the final missing and failed asset-check counts. For
+`promotion-gas-model` direct launches, `dataflow.scenario_evidence` also
+records the selected scenario, launch mode, target group, target asset count,
+selected upstream closure count, skipped live source asset keys, wave count,
+batch count, and asset batch size. Failed runs include telemetry for every
+monitor sample captured before the failure. The same telemetry is summarized in
+the command output. Promotion budget failures mark the run manifest failed and
+print observed values, thresholds, and the `run-manifest.json` path.
 
 ______________________________________________________________________
 

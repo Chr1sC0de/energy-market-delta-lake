@@ -486,6 +486,55 @@ class DagsterAssetLaunchWave:
 
 
 @dataclass(frozen=True, slots=True)
+class DagsterAssetClosureSelection:
+    """Selected Promotion asset closure and intentionally skipped source assets."""
+
+    target_asset_keys: tuple[tuple[str, ...], ...]
+    selected_asset_keys: tuple[tuple[str, ...], ...]
+    skipped_live_source_asset_keys: tuple[tuple[str, ...], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class DagsterAssetLaunchPlan:
+    """Structured Promotion scenario launch plan evidence."""
+
+    scenario: str
+    launch_mode: str
+    target_group: str
+    target_asset_keys: tuple[tuple[str, ...], ...]
+    selected_asset_keys: tuple[tuple[str, ...], ...]
+    skipped_live_source_asset_keys: tuple[tuple[str, ...], ...]
+    waves: tuple[DagsterAssetLaunchWave, ...]
+    batch_count: int
+    asset_batch_size: int
+
+    def to_manifest(self) -> dict[str, object]:
+        """Return this launch plan in the e2e run manifest shape."""
+        return {
+            "scenario": self.scenario,
+            "launch_mode": self.launch_mode,
+            "target_group": self.target_group,
+            "target_asset_count": len(self.target_asset_keys),
+            "selected_upstream_closure_count": len(self.selected_asset_keys),
+            "skipped_live_source_asset_keys": [
+                format_asset_key_path(asset_key)
+                for asset_key in self.skipped_live_source_asset_keys
+            ],
+            "wave_count": len(self.waves),
+            "batch_count": self.batch_count,
+            "asset_batch_size": self.asset_batch_size,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class DagsterDataflowLaunchResult:
+    """Run IDs and optional scenario evidence from dataflow launch selection."""
+
+    run_ids: tuple[str, ...]
+    scenario_evidence: dict[str, object] | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class DagsterDataflowStatus:
     """Normalized monitor state for the e2e Dagster dataflow."""
 
@@ -1030,6 +1079,7 @@ def run_stack(
             webserver_port=options.webserver_port,
             timeout_seconds=remaining_timeout_seconds(deadline),
             expected_max_concurrent_runs=options.max_concurrent_runs,
+            scenario=options.scenario,
             launch_mode=options.launch_mode,
             run_id=run_id,
             runner=command_runner,
@@ -1748,6 +1798,7 @@ def drive_dagster_dataflow(
     timeout_seconds: int,
     expected_max_concurrent_runs: int,
     run_id: str,
+    scenario: str = FULL_GAS_MODEL_SCENARIO,
     launch_mode: str = SENSOR_DRIVEN_LAUNCH_MODE,
     runner: CommandRunner | None = None,
     telemetry: GateRunTelemetry | None = None,
@@ -1773,9 +1824,10 @@ def drive_dagster_dataflow(
         expected_max_concurrent_runs=expected_max_concurrent_runs,
     )
     validate_dagster_automation_state(definition_state)
-    bootstrap_run_ids = launch_dataflow_runs(
+    launch_result = launch_dataflow_runs(
         client,
         definition_state.selector,
+        scenario=scenario,
         launch_mode=launch_mode,
         run_id=run_id,
         started_after=started_after,
@@ -1799,17 +1851,20 @@ def drive_dagster_dataflow(
                 monitor_started,
                 time.monotonic(),
             )
-    return {
+    payload: dict[str, object] = {
         "repository_name": definition_state.selector.repository_name,
         "repository_location_name": definition_state.selector.repository_location_name,
         "started_at": datetime.fromtimestamp(
             started_after,
             timezone.utc,
         ).isoformat(),
-        "bootstrap_run_ids": bootstrap_run_ids,
+        "bootstrap_run_ids": list(launch_result.run_ids),
         "target_asset_count": final_status.target_asset_count,
         "materialized_target_assets": list(final_status.materialized_target_assets),
     }
+    if launch_result.scenario_evidence is not None:
+        payload["scenario_evidence"] = dict(launch_result.scenario_evidence)
+    return payload
 
 
 def dagster_graphql_url(webserver_port: int) -> str:
@@ -2077,13 +2132,14 @@ def launch_dataflow_runs(
     client: DagsterGraphQLClient,
     selector: DagsterRepositorySelector,
     *,
+    scenario: str,
     launch_mode: str,
     run_id: str,
     started_after: float,
     timeout_seconds: int,
     runner: CommandRunner | None = None,
     telemetry: DagsterDataflowTelemetry | None = None,
-) -> list[str]:
+) -> DagsterDataflowLaunchResult:
     """Launch the selected scenario's Dagster dataflow runs."""
     if launch_mode == SENSOR_DRIVEN_LAUNCH_MODE:
         del started_after, timeout_seconds, runner, telemetry
@@ -2092,12 +2148,16 @@ def launch_dataflow_runs(
             fetch_dagster_definition_state(client),
             expected_sensor_status="RUNNING",
         )
-        return launch_bootstrap_runs(client, selector, run_id=run_id)
+        return DagsterDataflowLaunchResult(
+            run_ids=tuple(launch_bootstrap_runs(client, selector, run_id=run_id))
+        )
 
     if launch_mode == DIRECT_UPSTREAM_ASSET_LAUNCH_MODE:
         return launch_gas_model_upstream_assets(
             client,
             selector,
+            scenario=scenario,
+            launch_mode=launch_mode,
             run_id=run_id,
             started_after=started_after,
             timeout_seconds=timeout_seconds,
@@ -2142,21 +2202,28 @@ def launch_gas_model_upstream_assets(
     client: DagsterGraphQLClient,
     selector: DagsterRepositorySelector,
     *,
+    scenario: str = PROMOTION_GAS_MODEL_SCENARIO,
+    launch_mode: str = DIRECT_UPSTREAM_ASSET_LAUNCH_MODE,
     run_id: str,
     started_after: float,
     timeout_seconds: int,
     runner: CommandRunner | None = None,
     telemetry: DagsterDataflowTelemetry | None = None,
-) -> list[str]:
+) -> DagsterDataflowLaunchResult:
     """Launch explicit asset graph batches for the gas_model Promotion target."""
     asset_nodes = fetch_dagster_asset_graph(client)
-    launch_waves = build_gas_model_upstream_asset_launch_waves(asset_nodes)
+    launch_plan = build_gas_model_upstream_asset_launch_plan(
+        asset_nodes,
+        scenario=scenario,
+        launch_mode=launch_mode,
+    )
+    launch_waves = launch_plan.waves
     command_runner = runner or CommandRunner()
     deadline = time.monotonic() + timeout_seconds
     run_ids: list[str] = []
 
     for wave in launch_waves:
-        batches = tuple(chunk_asset_keys(wave.asset_keys, PROMOTION_ASSET_BATCH_SIZE))
+        batches = tuple(chunk_asset_keys(wave.asset_keys, launch_plan.asset_batch_size))
         sys.stdout.write(
             "Launching Promotion asset wave "
             f"{wave.index}/{len(launch_waves)}: "
@@ -2188,7 +2255,10 @@ def launch_gas_model_upstream_assets(
             telemetry=telemetry,
         )
 
-    return run_ids
+    return DagsterDataflowLaunchResult(
+        run_ids=tuple(run_ids),
+        scenario_evidence=launch_plan.to_manifest(),
+    )
 
 
 def fetch_dagster_asset_graph(
@@ -2229,21 +2299,54 @@ def read_dagster_asset_node(asset_node: Mapping[str, object]) -> DagsterAssetNod
     )
 
 
-def select_gas_model_upstream_materializable_asset_keys(
+def build_gas_model_upstream_asset_launch_plan(
     asset_nodes: Sequence[DagsterAssetNode],
-) -> tuple[tuple[str, ...], ...]:
-    """Return materializable gas_model assets plus their materializable upstreams."""
+    *,
+    scenario: str,
+    launch_mode: str,
+    asset_batch_size: int = PROMOTION_ASSET_BATCH_SIZE,
+) -> DagsterAssetLaunchPlan:
+    """Return the structured direct-launch plan for the Promotion scenario."""
+    selection = select_gas_model_upstream_materializable_asset_closure(asset_nodes)
+    launch_waves = build_gas_model_upstream_asset_launch_waves(
+        asset_nodes,
+        selected_asset_keys=selection.selected_asset_keys,
+    )
+    batch_count = sum(
+        len(chunk_asset_keys(wave.asset_keys, asset_batch_size))
+        for wave in launch_waves
+    )
+    return DagsterAssetLaunchPlan(
+        scenario=scenario,
+        launch_mode=launch_mode,
+        target_group=GAS_MODEL_GROUP_NAME,
+        target_asset_keys=selection.target_asset_keys,
+        selected_asset_keys=selection.selected_asset_keys,
+        skipped_live_source_asset_keys=selection.skipped_live_source_asset_keys,
+        waves=launch_waves,
+        batch_count=batch_count,
+        asset_batch_size=asset_batch_size,
+    )
+
+
+def select_gas_model_upstream_materializable_asset_closure(
+    asset_nodes: Sequence[DagsterAssetNode],
+) -> DagsterAssetClosureSelection:
+    """Return materializable gas_model assets, upstreams, and skipped live roots."""
     nodes_by_key = {asset_node.key: asset_node for asset_node in asset_nodes}
-    target_keys = [
-        asset_node.key
-        for asset_node in asset_nodes
-        if asset_node.group_name == GAS_MODEL_GROUP_NAME
-        and asset_node.is_materializable
-    ]
+    target_keys = tuple(
+        sorted(
+            asset_node.key
+            for asset_node in asset_nodes
+            if asset_node.group_name == GAS_MODEL_GROUP_NAME
+            and asset_node.is_materializable
+        )
+    )
     if len(target_keys) == 0:
         raise CommandError("no materializable gas_model assets found in Dagster")
 
     selected: set[tuple[str, ...]] = set()
+    skipped_live_source_asset_keys: set[tuple[str, ...]] = set()
     visited: set[tuple[str, ...]] = set()
     pending = list(target_keys)
     while pending:
@@ -2251,30 +2354,47 @@ def select_gas_model_upstream_materializable_asset_keys(
         if asset_key in visited:
             continue
         visited.add(asset_key)
+        if asset_key in PROMOTION_LIVE_SOURCE_ASSET_KEYS:
+            skipped_live_source_asset_keys.add(asset_key)
+            continue
         asset_node = nodes_by_key.get(asset_key)
         if asset_node is None:
             continue
-        if (
-            asset_node.is_materializable
-            and asset_key not in PROMOTION_LIVE_SOURCE_ASSET_KEYS
-        ):
+        if asset_node.is_materializable:
             selected.add(asset_key)
-        pending.extend(
-            dependency_key
-            for dependency_key in asset_node.dependency_keys
-            if dependency_key not in PROMOTION_LIVE_SOURCE_ASSET_KEYS
-        )
+        for dependency_key in asset_node.dependency_keys:
+            if dependency_key in PROMOTION_LIVE_SOURCE_ASSET_KEYS:
+                skipped_live_source_asset_keys.add(dependency_key)
+            else:
+                pending.append(dependency_key)
 
-    return tuple(sorted(selected))
+    return DagsterAssetClosureSelection(
+        target_asset_keys=target_keys,
+        selected_asset_keys=tuple(sorted(selected)),
+        skipped_live_source_asset_keys=tuple(sorted(skipped_live_source_asset_keys)),
+    )
+
+
+def select_gas_model_upstream_materializable_asset_keys(
+    asset_nodes: Sequence[DagsterAssetNode],
+) -> tuple[tuple[str, ...], ...]:
+    """Return materializable gas_model assets plus their materializable upstreams."""
+    return select_gas_model_upstream_materializable_asset_closure(
+        asset_nodes
+    ).selected_asset_keys
 
 
 def build_gas_model_upstream_asset_launch_waves(
     asset_nodes: Sequence[DagsterAssetNode],
+    *,
+    selected_asset_keys: Sequence[tuple[str, ...]] | None = None,
 ) -> tuple[DagsterAssetLaunchWave, ...]:
     """Return dependency-ordered launch waves for the gas_model asset closure."""
-    selected_keys = set(
-        select_gas_model_upstream_materializable_asset_keys(asset_nodes)
-    )
+    if selected_asset_keys is None:
+        selected_asset_keys = select_gas_model_upstream_materializable_asset_keys(
+            asset_nodes
+        )
+    selected_keys = set(selected_asset_keys)
     nodes_by_key = {asset_node.key: asset_node for asset_node in asset_nodes}
     level_by_key: dict[tuple[str, ...], int] = {}
     visiting: set[tuple[str, ...]] = set()
@@ -2994,7 +3114,12 @@ def read_assets_or_error(
 
 def read_asset_key(asset: Mapping[str, object], *, key_name: str = "assetKey") -> str:
     """Return a slash-separated asset key from an asset node payload."""
-    return "/".join(read_asset_key_path(asset.get(key_name), "asset key"))
+    return format_asset_key_path(read_asset_key_path(asset.get(key_name), "asset key"))
+
+
+def format_asset_key_path(asset_key: Sequence[str]) -> str:
+    """Return a slash-separated asset key path."""
+    return "/".join(asset_key)
 
 
 def read_asset_key_path(value: object, context: str) -> tuple[str, ...]:

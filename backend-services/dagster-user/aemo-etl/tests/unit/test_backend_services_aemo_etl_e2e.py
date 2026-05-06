@@ -1134,7 +1134,7 @@ def test_select_gas_model_upstream_materializable_asset_keys() -> None:
 
 
 def test_promotion_upstream_launch_uses_dependency_waves() -> None:
-    """The Promotion scenario launches bounded gas_model upstream waves."""
+    """Promotion launch evidence records dependency-wave coverage."""
     module = load_e2e_command_module()
     selector_class = get_callable(module, "DagsterRepositorySelector")
     launch_assets = get_callable(module, "launch_gas_model_upstream_assets")
@@ -1161,24 +1161,53 @@ def test_promotion_upstream_launch_uses_dependency_waves() -> None:
                             "assetKey": {"path": ["silver", "gas_model", "target"]},
                             "groupName": "gas_model",
                             "isMaterializable": True,
-                            "dependencyKeys": [{"path": ["silver", "gbb", "upstream"]}],
+                            "dependencyKeys": [
+                                {"path": ["silver", "gbb", "upstream"]},
+                                {"path": ["silver", "vicgas", "upstream"]},
+                            ],
                         },
                         {
                             "assetKey": {"path": ["silver", "gbb", "upstream"]},
                             "groupName": "gas_raw_cleansed",
                             "isMaterializable": True,
-                            "dependencyKeys": [{"path": ["bronze", "gbb", "raw"]}],
+                            "dependencyKeys": [
+                                {"path": ["bronze", "gbb", f"raw_{index}"]}
+                                for index in range(5)
+                            ],
                         },
                         {
-                            "assetKey": {"path": ["bronze", "gbb", "raw"]},
+                            "assetKey": {"path": ["silver", "vicgas", "upstream"]},
+                            "groupName": "gas_raw_cleansed",
+                            "isMaterializable": True,
+                            "dependencyKeys": [{"path": ["bronze", "vicgas", "raw"]}],
+                        },
+                        *[
+                            {
+                                "assetKey": {"path": ["bronze", "gbb", f"raw_{index}"]},
+                                "groupName": "gas_raw",
+                                "isMaterializable": True,
+                                "dependencyKeys": [
+                                    {
+                                        "path": [
+                                            "bronze",
+                                            "gbb",
+                                            "bronze_nemweb_public_files_gbb",
+                                        ]
+                                    }
+                                ],
+                            }
+                            for index in range(5)
+                        ],
+                        {
+                            "assetKey": {"path": ["bronze", "vicgas", "raw"]},
                             "groupName": "gas_raw",
                             "isMaterializable": True,
                             "dependencyKeys": [
                                 {
                                     "path": [
                                         "bronze",
-                                        "gbb",
-                                        "bronze_nemweb_public_files_gbb",
+                                        "vicgas",
+                                        "bronze_nemweb_public_files_vicgas",
                                     ]
                                 }
                             ],
@@ -1189,6 +1218,18 @@ def test_promotion_upstream_launch_uses_dependency_waves() -> None:
                                     "bronze",
                                     "gbb",
                                     "bronze_nemweb_public_files_gbb",
+                                ]
+                            },
+                            "groupName": "gas_raw",
+                            "isMaterializable": True,
+                            "dependencyKeys": [],
+                        },
+                        {
+                            "assetKey": {
+                                "path": [
+                                    "bronze",
+                                    "vicgas",
+                                    "bronze_nemweb_public_files_vicgas",
                                 ]
                             },
                             "groupName": "gas_raw",
@@ -1244,7 +1285,7 @@ def test_promotion_upstream_launch_uses_dependency_waves() -> None:
 
     client = FakeClient()
 
-    run_ids = launch_assets(
+    launch_result = launch_assets(
         client,
         selector_class("repo", "aemo-etl"),
         run_id="e2e",
@@ -1253,7 +1294,7 @@ def test_promotion_upstream_launch_uses_dependency_waves() -> None:
         runner=FakeRunner(),
     )
 
-    assert run_ids == ["run-1", "run-1", "run-1"]
+    assert getattr(launch_result, "run_ids") == ("run-1", "run-1", "run-1", "run-1")
     assert client.status_checks == 3
     selectors: list[Mapping[str, object]] = []
     for params in client.execution_params:
@@ -1263,10 +1304,36 @@ def test_promotion_upstream_launch_uses_dependency_waves() -> None:
         assert params["runConfigData"] == module["PROMOTION_ASSET_RUN_CONFIG"]
         selectors.append(selector)
     assert [selector["assetSelection"] for selector in selectors] == [
-        [{"path": ["bronze", "gbb", "raw"]}],
-        [{"path": ["silver", "gbb", "upstream"]}],
+        [
+            {"path": ["bronze", "gbb", "raw_0"]},
+            {"path": ["bronze", "gbb", "raw_1"]},
+            {"path": ["bronze", "gbb", "raw_2"]},
+            {"path": ["bronze", "gbb", "raw_3"]},
+        ],
+        [
+            {"path": ["bronze", "gbb", "raw_4"]},
+            {"path": ["bronze", "vicgas", "raw"]},
+        ],
+        [
+            {"path": ["silver", "gbb", "upstream"]},
+            {"path": ["silver", "vicgas", "upstream"]},
+        ],
         [{"path": ["silver", "gas_model", "target"]}],
     ]
+    assert getattr(launch_result, "scenario_evidence") == {
+        "scenario": "promotion-gas-model",
+        "launch_mode": "direct-upstream-asset-launch",
+        "target_group": "gas_model",
+        "target_asset_count": 1,
+        "selected_upstream_closure_count": 9,
+        "skipped_live_source_asset_keys": [
+            "bronze/gbb/bronze_nemweb_public_files_gbb",
+            "bronze/vicgas/bronze_nemweb_public_files_vicgas",
+        ],
+        "wave_count": 3,
+        "batch_count": 4,
+        "asset_batch_size": 4,
+    }
 
 
 def test_asset_launch_timeout_propagates_without_retry() -> None:

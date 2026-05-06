@@ -525,14 +525,18 @@ lock-table contention. The generated stack uses fixed service IPs for Postgres,
 LocalStack, and the AEMO ETL code server so run-worker containers do not depend
 on Podman DNS during high-concurrency gates. This preserves final target
 progress and final asset-check status without creating one sensor-triggered run
-per upstream source table. The gate enforces Promotion guard regression budgets
-from the approved targeted baseline: 20 minute total duration, `6` peak active
-runs, `6` peak queued runs, `48` total Dagster runs, `29/29` target progress,
-and `0` missing or failed target assets and asset checks. Budget failures print
-observed values, thresholds, and the run manifest path. Because the aggregate
-**Push check** and gate run first, source-branch changes cannot reach a
-Promotion merge, `main` push, `dev` branch sync, GitHub metadata update, or
-issue closure without passing against the exact source revision.
+per upstream source table. The e2e `run-manifest.json` dataflow section records
+structured direct-launch scenario evidence: selected scenario, launch mode,
+target group, target asset count, selected upstream closure count, skipped live
+source asset keys, dependency-wave count, run-batch count, and asset batch size.
+The gate enforces Promotion guard regression budgets from the approved targeted
+baseline: 20 minute total duration, `6` peak active runs, `6` peak queued runs,
+`48` total Dagster runs, `29/29` target progress, and `0` missing or failed
+target assets and asset checks. Budget failures print observed values,
+thresholds, and the run manifest path. Because the aggregate **Push check** and
+gate run first, source-branch changes cannot reach a Promotion merge, `main`
+push, `dev` branch sync, GitHub metadata update, or issue closure without
+passing against the exact source revision.
 Ralph then merges that source revision into a detached `origin/main` worktree
 with per-issue commits preserved, pushes `main`, and fast-forwards `dev` to the
 promotion commit so the next Gitflow drain starts from a `dev` branch that

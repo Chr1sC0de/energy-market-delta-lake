@@ -50,7 +50,12 @@ in-process inside Podman run-worker containers to reduce LocalStack and Delta
 Lake DynamoDB lock-table contention, and the generated stack uses fixed service
 IPs for Postgres, LocalStack, and the AEMO ETL code server to avoid relying on
 Podman DNS during the gate. The gate still requires every
-materializable `gas_model` asset and final asset-check status to pass.
+materializable `gas_model` asset and final asset-check status to pass. Its e2e
+run manifest records the selected scenario, launch mode, target group, target
+asset count, selected upstream closure count, skipped live source asset keys,
+dependency-wave count, run-batch count, and asset batch size so
+**Post-promotion review** can verify the direct-launch coverage without
+reconstructing it from logs.
 Successful Promotions with changed files record a full source
 commit inventory in the **Promotion** manifest,
 including each promoted commit SHA and subject. Commits matching verified issue
