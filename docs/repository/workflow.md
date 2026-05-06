@@ -150,13 +150,15 @@ for ETL local development.
 
 Human operators use [OPERATOR.md](../../OPERATOR.md) as the **Operator
 workflow** entrypoint for shaping work, preparing GitHub Issues, draining Ralph,
-reviewing `dev`, and running **Promotion**.
+reviewing `dev`, running **Promotion**, and using checkpointed Operator runs
+when Codex should launch detached and inspect status only at issue boundaries.
 
 Agents use [AGENTS.md](../../AGENTS.md) for imperative policy and
 [docs/agents/README.md](../agents/README.md) for the agent workflow map.
 Ralph internals live in [docs/agents/ralph-loop.md](../agents/ralph-loop.md),
 including **Local integration**, **Delivery mode**, **Integration target**,
-**Ready issue refresh**, **Promotion**, and **Post-promotion review** behavior.
+**Ready issue refresh**, checkpointed Operator runs, **Promotion**, and
+**Post-promotion review** behavior.
 
 ## Where to work
 

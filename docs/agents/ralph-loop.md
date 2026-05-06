@@ -13,6 +13,7 @@ after QA.
 - [Labels](#labels)
 - [Run modes](#run-modes)
 - [Live run preflight](#live-run-preflight)
+- [Operator run](#operator-run)
 - [AFK run monitoring](#afk-run-monitoring)
 - [Run manifest](#run-manifest)
 - [Run inspection and recovery](#run-inspection-and-recovery)
@@ -47,6 +48,13 @@ The loop stops when the queue has no unblocked implementation or triage
 candidates, or when `--max-issues` is reached. A plain `--drain` run defaults
 to 10 implementation attempts; `--max-issues 0` is the explicit unlimited drain
 mode.
+
+The checkpointed Operator run path wraps the issue and **Promotion** commands
+for unattended cleanup. It implements one ready issue at a time, checkpoints the
+issue result, runs **Promotion** when reviewed Gitflow work remains, checkpoints
+**Post-promotion review** follow-up creation, and repeats until the Operator
+queue is clean or a guard or failure condition stops the run with recovery
+guidance.
 
 Human operators should call Ralph through repo-local skills:
 
@@ -201,6 +209,24 @@ Promote reviewed Gitflow work from `dev` to `main`:
 python3 scripts/ralph.py --promote
 ```
 
+Run repeated drain and **Promotion** cycles in a foreground terminal:
+
+```bash
+python3 scripts/ralph.py --drain-promote-all --max-cycles 10
+```
+
+Launch the checkpointed Operator run in Codex-safe detached mode:
+
+```bash
+python3 scripts/ralph.py --drain-promote-all --detach
+```
+
+Inspect the latest Operator run without following child logs:
+
+```bash
+python3 scripts/ralph.py --operator-run-status latest
+```
+
 Skip the default **Post-promotion review** during **Promotion**:
 
 ```bash
@@ -291,6 +317,56 @@ Exploratory handoff. Run Ralph from a local worktree that is aligned with the
 remote branch being operated on. The script fetches the implementation base
 during implementation and rebases issue work if that base moves, but the
 operator should start from a known repo state.
+
+## Operator run
+
+`python3 scripts/ralph.py --drain-promote-all` runs the Operator orchestration
+loop. Each cycle records a compact checkpoint under
+`.ralph/operator-runs/.../operator-run.json` and links to the detailed child
+`.ralph/runs/.../ralph-run.json` manifest for the issue or **Promotion** that
+just crossed a boundary.
+
+The Operator run checks the open GitHub Issue queue for these runtime states:
+
+- `ready-for-agent`
+- `agent-integrated`
+- `agent-running`
+- `agent-failed`
+
+It stops cleanly only when none of those open issues remain. It stops with
+recovery guidance when `agent-running` or `agent-failed` issues remain, when
+ready issues remain but none are unblocked, when an issue or **Promotion** child
+manifest fails, or when `--max-cycles` is reached. The default cycle guard is
+10; use `--max-cycles 0` only for explicit unlimited Operator runs.
+
+Checkpoints are recorded for:
+
+- issue success or failure
+- before **Promotion**
+- **Promotion** success or failure
+- **Post-promotion review** follow-up creation
+- queue clean
+- stopped-by-guard
+
+Detached mode is the Codex-safe path:
+
+```bash
+python3 scripts/ralph.py --drain-promote-all --detach
+```
+
+The launcher prints the Operator run directory and a status command, then exits
+without tailing child Codex JSONL or rich command logs. Codex should stop
+polling after launch and inspect status only at issue boundaries:
+
+```bash
+python3 scripts/ralph.py --operator-run-status latest
+python3 scripts/ralph.py --operator-run-status .ralph/operator-runs/operator-20260506T010203Z
+```
+
+Status reports the current state, last checkpoint, current issue or
+**Promotion**, child manifest paths, queue counts, and recommended next action.
+Open the child `ralph-run.json` or command logs only when the status guidance
+points to a failed issue, failed **Promotion**, or manual recovery condition.
 
 ## AFK run monitoring
 

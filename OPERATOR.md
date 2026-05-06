@@ -47,6 +47,35 @@ GitHub issue metadata after validation. After a successful **Local
 integration** or Exploratory handoff, **Ready issue refresh** reconciles the
 open issue queue before Ralph claims the next `ready-for-agent` issue.
 
+For unattended queue cleanup after `dev` review, prefer the checkpointed
+Operator run path. It drains one ready issue boundary at a time, runs
+**Promotion** when `agent-integrated` issues remain, lets successful
+**Post-promotion review** create validated follow-up GitHub Issues, and repeats
+until no open `ready-for-agent`, `agent-integrated`, `agent-running`, or
+`agent-failed` issues remain.
+
+Codex should launch Operator runs detached, then stop polling child logs:
+
+```bash
+python3 scripts/ralph.py --drain-promote-all --detach
+```
+
+Use the compact status command at issue boundaries:
+
+```bash
+python3 scripts/ralph.py --operator-run-status latest
+```
+
+The detached launcher prints the Operator run directory and status command, then
+exits. Status reads `.ralph/operator-runs/.../operator-run.json` and reports the
+current state, last checkpoint, current issue or **Promotion**, child
+`.ralph/runs/.../ralph-run.json` paths, queue counts, and recommended next
+action. A foreground run is also available for human terminals:
+
+```bash
+python3 scripts/ralph.py --drain-promote-all --max-cycles 10
+```
+
 ## Before Drain
 
 Start from a clean root worktree for live Ralph operations:
@@ -145,6 +174,17 @@ the integrated commit. Inspect `ready_issue_refresh.mutation_results` in the run
 manifest, reconcile only the failed GitHub Issue metadata, then restart the
 drain once the queue is consistent.
 
+For a checkpointed Operator run, inspect status before opening child logs:
+
+```bash
+python3 scripts/ralph.py --operator-run-status latest
+```
+
+Follow the recommended next action. Issue failures point to the child
+implementation manifest; **Promotion** failures point to the child Promotion
+manifest; stopped-by-guard means review progress before rerunning with a larger
+`--max-cycles` value.
+
 Keep failed worktrees unless the maintainer asks for cleanup.
 
 ## Sync metadata
@@ -153,6 +193,7 @@ Keep failed worktrees unless the maintainer asks for cleanup.
 - `sync.sources`:
   - `CONTEXT.md`
   - `AGENTS.md`
+  - `scripts/ralph.py`
   - `.agents/skills/ralph-loop/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`
   - `docs/agents/README.md`

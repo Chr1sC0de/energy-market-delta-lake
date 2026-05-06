@@ -203,6 +203,12 @@ way:
   live in [docs/agents/ralph-loop.md](../agents/ralph-loop.md), with the
   Delivery mode decision summarized in ADR
   [0002](../adr/0002-ralph-delivery-modes.md).
+- #111: Ralph provides a checkpointed Operator run for repeated drain and
+  **Promotion** cycles. The Codex-safe detached launch, compact
+  `--operator-run-status` inspection, child manifest links, checkpoint names,
+  cycle guard, and recovery guidance live in
+  [OPERATOR.md](../../OPERATOR.md) and
+  [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
 
 ## Search commands
 

@@ -6,7 +6,8 @@ and behavior belong on the owning Subproject or repository page.
 
 ## By task
 
-- Shape, drain, review `dev`, or run **Promotion**:
+- Shape, drain, review `dev`, run **Promotion**, or inspect a checkpointed
+  Operator run:
   [OPERATOR.md](../OPERATOR.md)
 - Return to the root router:
   [README.md](../README.md)

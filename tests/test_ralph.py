@@ -674,6 +674,140 @@ class NoValidationRalphLoop(ralph.RalphLoop):
         pass
 
 
+def operator_snapshot(
+    *,
+    ready: list[ralph.Issue] | None = None,
+    integrated: list[ralph.Issue] | None = None,
+    running: list[ralph.Issue] | None = None,
+    failed: list[ralph.Issue] | None = None,
+) -> ralph.OperatorQueueSnapshot:
+    return ralph.OperatorQueueSnapshot(
+        ready=tuple(ready or []),
+        integrated=tuple(integrated or []),
+        running=tuple(running or []),
+        failed=tuple(failed or []),
+    )
+
+
+def write_child_manifest(
+    log_root: Path,
+    *,
+    name: str,
+    run_kind: str,
+    status: str,
+    issue: ralph.Issue | None = None,
+    followups_status: str | None = None,
+    created_followups: int = 0,
+) -> Path:
+    run_dir = log_root / name
+    run_dir.mkdir(parents=True, exist_ok=True)
+    payload: dict[str, Any] = {
+        "schema_version": ralph.MANIFEST_SCHEMA_VERSION,
+        "run_kind": run_kind,
+        "status": status,
+        "stage": status,
+        "paths": {"run_dir": str(run_dir)},
+        "events": [],
+    }
+    if issue is not None:
+        payload["issue"] = {
+            "number": issue.number,
+            "title": issue.title,
+            "url": issue.url,
+        }
+    if followups_status is not None:
+        payload["post_promotion_followups"] = {
+            "status": followups_status,
+            "created": [
+                {"number": 100 + index, "url": f"https://example.test/{index}"}
+                for index in range(created_followups)
+            ],
+            "duplicates": [],
+            "validation_downgrades": [],
+            "failures": [],
+        }
+    manifest_path = run_dir / ralph.MANIFEST_NAME
+    manifest_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return manifest_path
+
+
+class ScriptedOperatorRun(ralph.RalphOperatorRun):
+    def __init__(
+        self,
+        config: ralph.LoopConfig,
+        runner: FakeRunner,
+        *,
+        run_dir: Path,
+        max_cycles: int,
+        snapshots: list[ralph.OperatorQueueSnapshot],
+    ) -> None:
+        super().__init__(config, runner, run_dir=run_dir, max_cycles=max_cycles)
+        self.snapshots = snapshots
+        self.current_snapshot: ralph.OperatorQueueSnapshot | None = None
+        self.issue_runs = 0
+        self.promotion_runs = 0
+
+    def _validate_operator_preflight(self) -> None:
+        pass
+
+    def _queue_snapshot(self) -> ralph.OperatorQueueSnapshot:
+        if not self.snapshots:
+            return operator_snapshot()
+        self.current_snapshot = self.snapshots.pop(0)
+        return self.current_snapshot
+
+    def _next_ready_issue(self) -> ralph.Issue | None:
+        if self.current_snapshot is None or not self.current_snapshot.ready:
+            return None
+        return self.current_snapshot.ready[0]
+
+    def _run_issue_checkpoint(self, issue: ralph.Issue) -> None:
+        self.issue_runs += 1
+        self.manifest.record_current_issue(issue)
+        manifest_path = write_child_manifest(
+            self.config.log_root,
+            name=f"issue-{issue.number}-scripted-{self.issue_runs}",
+            run_kind="implementation",
+            status="succeeded",
+            issue=issue,
+        )
+        self.manifest.record_checkpoint(
+            "issue_succeeded",
+            message=f"Issue #{issue.number} completed.",
+            child_manifest_path=manifest_path,
+            issue=issue,
+        )
+        self.manifest.clear_current()
+
+    def _run_promotion_checkpoint(self) -> None:
+        self.promotion_runs += 1
+        source_branch = self.config.source_branch
+        target_branch = ralph.DEFAULT_TRUNK_BRANCH
+        self.manifest.record_current_promotion(
+            source_branch=source_branch,
+            target_branch=target_branch,
+        )
+        self.manifest.record_checkpoint(
+            "before_promotion",
+            message=f"Starting Promotion from {source_branch} to {target_branch}.",
+        )
+        manifest_path = write_child_manifest(
+            self.config.log_root,
+            name=f"promote-scripted-{self.promotion_runs}",
+            run_kind="promotion",
+            status="succeeded",
+            followups_status="completed",
+            created_followups=1 if self.promotion_runs == 1 else 0,
+        )
+        self.manifest.record_checkpoint(
+            "promotion_succeeded",
+            message="Promotion completed.",
+            child_manifest_path=manifest_path,
+        )
+        self._record_post_promotion_followup_checkpoint(manifest_path)
+        self.manifest.clear_current()
+
+
 class RalphHelperTests(unittest.TestCase):
     def test_parse_repo_slug_accepts_common_github_remote_forms(self) -> None:
         cases = {
@@ -2201,6 +2335,190 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
         self.assertIn("Branch sync status: failed", text)
         self.assertIn(guidance, text)
         self.assertNotIn("--recover-run", text)
+
+
+class RalphOperatorRunTests(unittest.TestCase):
+    def test_operator_foreground_repeats_drain_promotion_until_queue_clean(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True, delivery_mode=ralph.GITFLOW_MODE)
+            initial_issue = make_issue(
+                {ralph.READY_LABEL},
+                IMPLEMENTATION_BODY,
+                number=42,
+                title="Initial work",
+            )
+            followup_issue = make_issue(
+                {ralph.READY_LABEL},
+                IMPLEMENTATION_BODY,
+                number=99,
+                title="Post-promotion follow-up",
+            )
+            snapshots = [
+                operator_snapshot(ready=[initial_issue]),
+                operator_snapshot(
+                    integrated=[
+                        make_issue(
+                            {ralph.AGENT_INTEGRATED_LABEL},
+                            IMPLEMENTATION_BODY,
+                            number=42,
+                            title="Initial work",
+                        )
+                    ]
+                ),
+                operator_snapshot(ready=[followup_issue]),
+                operator_snapshot(
+                    integrated=[
+                        make_issue(
+                            {ralph.AGENT_INTEGRATED_LABEL},
+                            IMPLEMENTATION_BODY,
+                            number=99,
+                            title="Post-promotion follow-up",
+                        )
+                    ]
+                ),
+                operator_snapshot(),
+            ]
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = ScriptedOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=6,
+                snapshots=snapshots,
+            )
+
+            with redirect_stdout(io.StringIO()):
+                operator.run()
+
+            manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+
+        checkpoints = [entry["checkpoint"] for entry in manifest["checkpoints"]]
+        self.assertEqual(manifest["status"], "succeeded")
+        self.assertEqual(manifest["state"], "queue_clean")
+        self.assertEqual(checkpoints.count("issue_succeeded"), 2)
+        self.assertEqual(checkpoints.count("before_promotion"), 2)
+        self.assertEqual(checkpoints.count("promotion_succeeded"), 2)
+        self.assertEqual(checkpoints.count("post_promotion_followup_creation"), 2)
+        self.assertEqual(checkpoints[-1], "queue_clean")
+        self.assertEqual(len(manifest["child_run_manifests"]), 4)
+        self.assertTrue(
+            any(
+                child["kind"] == "promotion" and child["status"] == "succeeded"
+                for child in manifest["child_run_manifests"]
+            )
+        )
+
+    def test_operator_status_reports_compact_issue_boundary_state(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            issue = make_issue(
+                {ralph.READY_LABEL},
+                IMPLEMENTATION_BODY,
+                number=42,
+                title="Boundary work",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            child_manifest_path = write_child_manifest(
+                loop.config.log_root,
+                name="issue-42-status-test",
+                run_kind="implementation",
+                status="succeeded",
+                issue=issue,
+            )
+            manifest = ralph.OperatorRunManifest.start(
+                run_dir=run_dir,
+                config=loop.config,
+                max_cycles=3,
+            )
+            manifest.record_queue(operator_snapshot(integrated=[issue]))
+            manifest.record_checkpoint(
+                "issue_succeeded",
+                message="Issue #42 completed.",
+                child_manifest_path=child_manifest_path,
+                issue=issue,
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.inspect_operator_run_status(str(run_dir), runner)
+
+        text = output.getvalue()
+        self.assertIn("Ralph Operator run status", text)
+        self.assertIn(f"Operator run directory: {run_dir}", text)
+        self.assertIn("Last checkpoint: issue_succeeded: Issue #42 completed.", text)
+        self.assertIn("Queue: ready=0, integrated=1, running=0, failed=0", text)
+        self.assertIn(f"- implementation #42 succeeded: {child_manifest_path}", text)
+        self.assertIn("Recommended next action:", text)
+
+    def test_detached_operator_launch_prints_status_command_without_waiting(self) -> None:
+        runner = FakeRunner(
+            command_outputs={
+                ("git", "rev-parse", "--show-toplevel"): [],
+                ("git", "config", "--get", "remote.origin.url"): [
+                    "git@github.com:example/repo.git\n"
+                ],
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp) / "repo"
+            repo_root.mkdir()
+            runner.command_outputs[("git", "rev-parse", "--show-toplevel")] = [
+                f"{repo_root}\n"
+            ]
+            parsed = ralph.parse_args(
+                [
+                    "--drain-promote-all",
+                    "--detach",
+                    "--max-cycles",
+                    "3",
+                    "--skip-post-promotion-followups",
+                ]
+            )
+            process = type("DummyProcess", (), {"pid": 321})()
+            output = io.StringIO()
+
+            with patch.object(ralph.subprocess, "Popen", return_value=process) as popen:
+                with redirect_stdout(output):
+                    ralph.launch_detached_operator_run(parsed, runner)
+
+            manifest_path = next(
+                repo_root.glob(".ralph/operator-runs/operator-*/operator-run.json")
+            )
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+        text = output.getvalue()
+        child_command = popen.call_args.args[0]
+        self.assertIn("Operator run directory:", text)
+        self.assertIn("Status command: python3 scripts/ralph.py --operator-run-status", text)
+        self.assertIn("--operator-run-dir", child_command)
+        self.assertIn("--max-cycles", child_command)
+        self.assertIn("3", child_command)
+        self.assertIn("--skip-post-promotion-followups", child_command)
+        self.assertEqual(manifest["last_checkpoint"]["checkpoint"], "detached_launched")
+        self.assertEqual(manifest["detached"]["pid"], 321)
+
+    def test_operator_docs_include_codex_safe_command_strings(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        docs = [
+            repo_root / "OPERATOR.md",
+            repo_root / "docs" / "agents" / "ralph-loop.md",
+        ]
+
+        for doc_path in docs:
+            with self.subTest(path=doc_path):
+                text = doc_path.read_text(encoding="utf-8")
+                self.assertIn(
+                    "python3 scripts/ralph.py --drain-promote-all --detach",
+                    text,
+                )
+                self.assertIn(
+                    "python3 scripts/ralph.py --operator-run-status latest",
+                    text,
+                )
 
     def test_recover_run_refuses_when_commit_not_reachable_from_target(self) -> None:
         ancestor_command = (
