@@ -457,6 +457,13 @@ class ReadyIssueRefreshMutation:
 
 
 @dataclass(frozen=True)
+class GitWorktree:
+    path: Path
+    head: str | None
+    branch: str | None
+
+
+@dataclass(frozen=True)
 class OperatorQueueSnapshot:
     ready: tuple[Issue, ...]
     integrated: tuple[Issue, ...]
@@ -678,6 +685,30 @@ class RunManifest:
                 "commits": [],
             },
             "promotion_commit": None,
+            "local_branch_fast_forwards": {
+                "source_branch": {
+                    "branch": source_branch,
+                    "status": "not_started",
+                    "worktree_path": None,
+                    "current_commit": None,
+                    "target_commit": None,
+                    "log_path": None,
+                    "reason": None,
+                    "recovery_command": None,
+                    "error": None,
+                },
+                "integration_target": {
+                    "branch": target_branch,
+                    "status": "not_started",
+                    "worktree_path": None,
+                    "current_commit": None,
+                    "target_commit": None,
+                    "log_path": None,
+                    "reason": None,
+                    "recovery_command": None,
+                    "error": None,
+                },
+            },
             "post_promotion_review": {
                 "enabled": not config.skip_post_promotion_review,
                 "status": (
@@ -755,6 +786,40 @@ class RunManifest:
     def record_promotion_commit(self, sha: str, *, branch: str) -> None:
         self.data["promotion_commit"] = {"sha": sha, "branch": branch}
         self.record_event("promotion_commit_recorded", details={"commit": sha, "branch": branch})
+
+    def record_local_branch_fast_forward(
+        self,
+        role: str,
+        *,
+        branch: str,
+        status: str,
+        target_commit: str,
+        worktree_path: Path | None = None,
+        current_commit: str | None = None,
+        log_path: Path | None = None,
+        reason: str | None = None,
+        recovery_command: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        fast_forwards = self.data.setdefault("local_branch_fast_forwards", {})
+        if not isinstance(fast_forwards, dict):
+            raise RalphError("Manifest local_branch_fast_forwards field is not an object.")
+        entry = {
+            "branch": branch,
+            "status": status,
+            "worktree_path": path_text(worktree_path),
+            "current_commit": current_commit,
+            "target_commit": target_commit,
+            "log_path": path_text(log_path),
+            "reason": reason,
+            "recovery_command": recovery_command,
+            "error": error,
+        }
+        fast_forwards[role] = entry
+        self.record_event(
+            f"local_branch_fast_forward_{role}_{status}",
+            details=entry,
+        )
 
     def record_post_promotion_review(
         self,
@@ -2470,6 +2535,64 @@ def parse_git_status_tracked_unstaged_paths(status_output: str) -> list[str]:
     return sorted(set(paths))
 
 
+def parse_git_worktree_list_porcelain(output: str) -> list[GitWorktree]:
+    worktrees: list[GitWorktree] = []
+    path: Path | None = None
+    head: str | None = None
+    branch: str | None = None
+
+    def append_current() -> None:
+        if path is None:
+            return
+        worktrees.append(GitWorktree(path=path, head=head, branch=branch))
+
+    for line in output.splitlines():
+        if line == "":
+            append_current()
+            path = None
+            head = None
+            branch = None
+            continue
+        key, separator, value = line.partition(" ")
+        if separator == "":
+            continue
+        if key == "worktree":
+            append_current()
+            path = Path(value)
+            head = None
+            branch = None
+        elif key == "HEAD":
+            head = value
+        elif key == "branch":
+            prefix = "refs/heads/"
+            branch = value.removeprefix(prefix)
+        elif key == "detached":
+            branch = None
+
+    append_current()
+    return worktrees
+
+
+def checked_out_worktree_for_branch(
+    worktrees: list[GitWorktree],
+    branch: str,
+) -> GitWorktree | None:
+    for worktree in worktrees:
+        if worktree.branch == branch:
+            return worktree
+    return None
+
+
+def local_branch_fast_forward_recovery_command(
+    *,
+    worktree_path: Path,
+    branch: str,
+) -> str:
+    return format_command(
+        ["git", "-C", str(worktree_path), "pull", "--ff-only", "origin", branch]
+    )
+
+
 def dirty_root_worktree_message(repo_root: Path, status_output: str) -> str:
     paths = parse_git_status_paths(status_output)
     lines = [
@@ -3195,6 +3318,13 @@ class GitClient:
         result = self.runner.run(["git", "status", "--porcelain"], cwd=cwd)
         return result.stdout
 
+    def worktrees(self) -> list[GitWorktree]:
+        result = self.runner.run(
+            ["git", "worktree", "list", "--porcelain"],
+            cwd=self.repo_root,
+        )
+        return parse_git_worktree_list_porcelain(result.stdout)
+
     def add_paths(
         self,
         *,
@@ -3280,6 +3410,21 @@ class GitClient:
             execute_in_dry_run=False,
         )
 
+    def merge_ff_only(
+        self,
+        *,
+        cwd: Path,
+        ref: str,
+        run_dir: Path,
+        log_name: str,
+    ) -> None:
+        self.runner.run(
+            ["git", "merge", "--ff-only", ref],
+            cwd=cwd,
+            log_path=run_dir / log_name,
+            execute_in_dry_run=False,
+        )
+
     def push_head(
         self,
         *,
@@ -3295,11 +3440,17 @@ class GitClient:
             execute_in_dry_run=False,
         )
 
-    def is_ancestor(self, *, ancestor: str, descendant: str) -> bool:
+    def is_ancestor(
+        self,
+        *,
+        ancestor: str,
+        descendant: str,
+        cwd: Path | None = None,
+    ) -> bool:
         try:
             self.runner.run(
                 ["git", "merge-base", "--is-ancestor", ancestor, descendant],
-                cwd=self.repo_root,
+                cwd=self.repo_root if cwd is None else cwd,
             )
         except CommandFailure as error:
             if error.returncode == 1:
@@ -3878,6 +4029,7 @@ class RalphLoop:
         integrated_issues: list[tuple[Issue, str]] = []
         promotion_commit_inventory: list[dict[str, Any]] = []
         promotion_sha: str | None = None
+        source_branch_synced = False
 
         try:
             emit(f"Promoting origin/{source_branch} to origin/{target_branch}")
@@ -4005,7 +4157,7 @@ class RalphLoop:
                 log_path=target_push_log,
             )
             pushed = True
-            self._sync_source_branch_after_promotion(
+            source_branch_synced = self._sync_source_branch_after_promotion(
                 source_branch=source_branch,
                 target_branch=target_branch,
                 promotion_sha=promotion_sha,
@@ -4044,6 +4196,14 @@ class RalphLoop:
                 source_revision=source_revision,
                 promotion_sha=promotion_sha,
                 artifact_path=review_artifact_path,
+                run_dir=run_dir,
+                manifest=manifest,
+            )
+            self._fast_forward_checked_out_local_branches_after_promotion(
+                source_branch=source_branch,
+                target_branch=target_branch,
+                promotion_sha=promotion_sha,
+                source_branch_synced=source_branch_synced,
                 run_dir=run_dir,
                 manifest=manifest,
             )
@@ -5211,13 +5371,13 @@ class RalphLoop:
         promote_path: Path,
         run_dir: Path,
         manifest: RunManifest,
-    ) -> None:
+    ) -> bool:
         if source_branch != DEFAULT_GITFLOW_BRANCH:
             manifest.record_event("source_branch_sync_skipped")
-            return
+            return False
         if target_branch != DEFAULT_TRUNK_BRANCH:
             manifest.record_event("source_branch_sync_skipped")
-            return
+            return False
 
         emit(f"Fast-forwarding {source_branch} to promotion {promotion_sha}")
         source_push_log = run_dir / f"git-push-{slugify(source_branch)}-after-promotion.log"
@@ -5253,6 +5413,221 @@ class RalphLoop:
             log_path=source_push_log,
         )
         self.git.fetch_base(source_branch, run_dir=run_dir)
+        return True
+
+    def _fast_forward_checked_out_local_branches_after_promotion(
+        self,
+        *,
+        source_branch: str,
+        target_branch: str,
+        promotion_sha: str,
+        source_branch_synced: bool,
+        run_dir: Path,
+        manifest: RunManifest,
+    ) -> None:
+        manifest.record_event("checking_local_branch_fast_forwards")
+        try:
+            worktrees = self.git.worktrees()
+        except CommandFailure as error:
+            reason = "Could not inspect checked-out local worktrees."
+            emit(f"Local branch fast-forward warning: {reason} {error}", err=True)
+            for role, branch in (
+                ("source_branch", source_branch),
+                ("integration_target", target_branch),
+            ):
+                manifest.record_local_branch_fast_forward(
+                    role,
+                    branch=branch,
+                    status="failed",
+                    target_commit=promotion_sha,
+                    reason=reason,
+                    error=str(error),
+                )
+            return
+
+        source_worktree = checked_out_worktree_for_branch(worktrees, source_branch)
+        if source_branch_synced:
+            self._fast_forward_checked_out_local_branch(
+                role="source_branch",
+                branch=source_branch,
+                target_commit=promotion_sha,
+                worktree=source_worktree,
+                run_dir=run_dir,
+                manifest=manifest,
+            )
+        else:
+            manifest.record_local_branch_fast_forward(
+                "source_branch",
+                branch=source_branch,
+                status="skipped_source_branch_not_pushed",
+                target_commit=promotion_sha,
+                worktree_path=source_worktree.path if source_worktree is not None else None,
+                current_commit=source_worktree.head if source_worktree is not None else None,
+                reason="Promotion did not push the source branch to the Promotion commit.",
+            )
+
+        self._fast_forward_checked_out_local_branch(
+            role="integration_target",
+            branch=target_branch,
+            target_commit=promotion_sha,
+            worktree=checked_out_worktree_for_branch(worktrees, target_branch),
+            run_dir=run_dir,
+            manifest=manifest,
+        )
+
+    def _fast_forward_checked_out_local_branch(
+        self,
+        *,
+        role: str,
+        branch: str,
+        target_commit: str,
+        worktree: GitWorktree | None,
+        run_dir: Path,
+        manifest: RunManifest,
+    ) -> None:
+        if worktree is None:
+            manifest.record_local_branch_fast_forward(
+                role,
+                branch=branch,
+                status="skipped_not_checked_out",
+                target_commit=target_commit,
+                reason=f"No checked-out local {branch} branch worktree was found.",
+            )
+            return
+
+        recovery_command = local_branch_fast_forward_recovery_command(
+            worktree_path=worktree.path,
+            branch=branch,
+        )
+        try:
+            current_commit = worktree.head or self.git.rev_parse("HEAD", cwd=worktree.path)
+            status_output = self.git.status_porcelain(cwd=worktree.path)
+        except CommandFailure as error:
+            reason = f"Could not inspect local {branch} worktree before fast-forward."
+            manifest.record_local_branch_fast_forward(
+                role,
+                branch=branch,
+                status="failed",
+                target_commit=target_commit,
+                worktree_path=worktree.path,
+                current_commit=worktree.head,
+                reason=reason,
+                recovery_command=recovery_command,
+                error=str(error),
+            )
+            emit(f"Local branch fast-forward warning: {reason} {error}", err=True)
+            return
+
+        if status_output.strip() != "":
+            reason = f"Local {branch} worktree has uncommitted changes."
+            manifest.record_local_branch_fast_forward(
+                role,
+                branch=branch,
+                status="skipped_dirty_worktree",
+                target_commit=target_commit,
+                worktree_path=worktree.path,
+                current_commit=current_commit,
+                reason=reason,
+                recovery_command=recovery_command,
+            )
+            emit(f"Local branch fast-forward skipped: {reason}", err=True)
+            return
+
+        if current_commit == target_commit:
+            manifest.record_local_branch_fast_forward(
+                role,
+                branch=branch,
+                status="already_current",
+                target_commit=target_commit,
+                worktree_path=worktree.path,
+                current_commit=current_commit,
+            )
+            return
+
+        try:
+            can_fast_forward = self.git.is_ancestor(
+                ancestor=current_commit,
+                descendant=target_commit,
+                cwd=worktree.path,
+            )
+        except CommandFailure as error:
+            reason = f"Could not verify whether local {branch} can fast-forward safely."
+            manifest.record_local_branch_fast_forward(
+                role,
+                branch=branch,
+                status="failed",
+                target_commit=target_commit,
+                worktree_path=worktree.path,
+                current_commit=current_commit,
+                reason=reason,
+                recovery_command=recovery_command,
+                error=str(error),
+            )
+            emit(f"Local branch fast-forward warning: {reason} {error}", err=True)
+            return
+        if not can_fast_forward:
+            reason = (
+                f"Local {branch} commit {current_commit} is not an ancestor of "
+                f"Promotion commit {target_commit}."
+            )
+            manifest.record_local_branch_fast_forward(
+                role,
+                branch=branch,
+                status="skipped_not_fast_forward",
+                target_commit=target_commit,
+                worktree_path=worktree.path,
+                current_commit=current_commit,
+                reason=reason,
+                recovery_command=recovery_command,
+            )
+            emit(f"Local branch fast-forward skipped: {reason}", err=True)
+            return
+
+        log_name = f"git-ff-local-{slugify(role)}-{slugify(branch)}.log"
+        log_path = run_dir / log_name
+        manifest.record_local_branch_fast_forward(
+            role,
+            branch=branch,
+            status="running",
+            target_commit=target_commit,
+            worktree_path=worktree.path,
+            current_commit=current_commit,
+            log_path=log_path,
+            recovery_command=recovery_command,
+        )
+        try:
+            self.git.merge_ff_only(
+                cwd=worktree.path,
+                ref=target_commit,
+                run_dir=run_dir,
+                log_name=log_name,
+            )
+        except CommandFailure as error:
+            reason = f"Local {branch} fast-forward command failed."
+            manifest.record_local_branch_fast_forward(
+                role,
+                branch=branch,
+                status="failed",
+                target_commit=target_commit,
+                worktree_path=worktree.path,
+                current_commit=current_commit,
+                log_path=error.log_path or log_path,
+                reason=reason,
+                recovery_command=recovery_command,
+                error=str(error),
+            )
+            emit(f"Local branch fast-forward warning: {reason} {error}", err=True)
+            return
+
+        manifest.record_local_branch_fast_forward(
+            role,
+            branch=branch,
+            status="fast_forwarded",
+            target_commit=target_commit,
+            worktree_path=worktree.path,
+            current_commit=current_commit,
+            log_path=log_path,
+        )
 
     def _branch_and_worktrees(
         self,

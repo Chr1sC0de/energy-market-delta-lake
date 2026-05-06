@@ -137,10 +137,13 @@ records why **Exploratory branches** stay outside automatic **Promotion**.
 Run `$ralph-loop promote` only after the `dev` review is complete.
 
 Ralph computes the aggregate **Push check**, merges reviewed `dev` work into
-`main`, fast-forwards `dev` to the promotion commit, and closes only
-`agent-integrated` issues whose recorded Gitflow **Local integration** commit or
-documented manual Gitflow recovery commit, or accepted Exploratory commit is
-verified in the promoted branch range.
+`main`, fast-forwards remote `dev` to the promotion commit, and closes only
+`agent-integrated` issues whose recorded Gitflow **Local integration** commit
+or documented manual Gitflow recovery commit, or accepted Exploratory commit is
+verified in the promoted branch range. After successful **Promotion**, Ralph
+also fast-forwards clean checked-out local `dev` or `main` worktrees when the
+local branch can safely move to the Promotion commit; dirty or diverged local
+worktrees are left untouched with recovery guidance in the run manifest.
 
 Unverified **Promotion** commits in the range are mandatory
 **Post-promotion review** context only. They do not require explicit issue

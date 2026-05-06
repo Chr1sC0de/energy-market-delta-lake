@@ -1595,6 +1595,33 @@ Build it.
             ],
         )
 
+    def test_parse_git_worktree_list_porcelain_reads_checked_out_branches(self) -> None:
+        output = "\n".join(
+            [
+                "worktree /repo",
+                "HEAD dev-old",
+                "branch refs/heads/dev",
+                "",
+                "worktree /repo-main",
+                "HEAD main-old",
+                "branch refs/heads/main",
+                "",
+                "worktree /repo-detached",
+                "HEAD detached-sha",
+                "detached",
+                "",
+            ]
+        )
+
+        self.assertEqual(
+            ralph.parse_git_worktree_list_porcelain(output),
+            [
+                ralph.GitWorktree(Path("/repo"), "dev-old", "dev"),
+                ralph.GitWorktree(Path("/repo-main"), "main-old", "main"),
+                ralph.GitWorktree(Path("/repo-detached"), "detached-sha", None),
+            ],
+        )
+
     def test_environment_failure_detection_matches_container_tool_errors(self) -> None:
         error = ralph.CommandFailure(
             ["make", "integration-test"],
@@ -4980,6 +5007,174 @@ Build it.
         self.assertEqual(
             manifest["github_metadata"]["issues"][0]["metadata_status"],
             "closed",
+        )
+
+    def test_promotion_fast_forwards_clean_checked_out_local_branches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo_path = tmp_path / "repo"
+            main_path = tmp_path / "main-worktree"
+            runner = FakeRunner(
+                diff_outputs=["scripts/ralph.py\n"],
+                rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+                status_outputs=["", ""],
+                command_outputs={
+                    ("git", "worktree", "list", "--porcelain"): [
+                        "\n".join(
+                            [
+                                f"worktree {repo_path}",
+                                "HEAD dev-old",
+                                "branch refs/heads/dev",
+                                "",
+                                f"worktree {main_path}",
+                                "HEAD main-old",
+                                "branch refs/heads/main",
+                                "",
+                            ]
+                        )
+                    ],
+                },
+            )
+            loop = make_loop(
+                tmp_path,
+                runner,
+                promote=True,
+                skip_post_promotion_review=True,
+            )
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        fast_forward_calls = [
+            call
+            for call in runner.calls
+            if call.args == ("git", "merge", "--ff-only", "promotion-sha")
+        ]
+        self.assertEqual(
+            [call.cwd for call in fast_forward_calls],
+            [repo_path, main_path],
+        )
+        local_fast_forwards = manifest["local_branch_fast_forwards"]
+        self.assertEqual(
+            local_fast_forwards["source_branch"]["status"],
+            "fast_forwarded",
+        )
+        self.assertEqual(
+            local_fast_forwards["source_branch"]["worktree_path"],
+            str(repo_path),
+        )
+        self.assertEqual(
+            local_fast_forwards["integration_target"]["status"],
+            "fast_forwarded",
+        )
+        self.assertEqual(
+            local_fast_forwards["integration_target"]["worktree_path"],
+            str(main_path),
+        )
+
+    def test_promotion_records_recovery_for_dirty_checked_out_local_branch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            main_path = tmp_path / "main-worktree"
+            runner = FakeRunner(
+                diff_outputs=["scripts/ralph.py\n"],
+                rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+                status_outputs=[" M README.md\n"],
+                command_outputs={
+                    ("git", "worktree", "list", "--porcelain"): [
+                        "\n".join(
+                            [
+                                f"worktree {main_path}",
+                                "HEAD main-old",
+                                "branch refs/heads/main",
+                                "",
+                            ]
+                        )
+                    ],
+                },
+            )
+            loop = make_loop(
+                tmp_path,
+                runner,
+                promote=True,
+                skip_post_promotion_review=True,
+            )
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        self.assertFalse(
+            any(
+                call.args == ("git", "merge", "--ff-only", "promotion-sha")
+                for call in runner.calls
+            )
+        )
+        target_fast_forward = manifest["local_branch_fast_forwards"]["integration_target"]
+        self.assertEqual(target_fast_forward["status"], "skipped_dirty_worktree")
+        self.assertEqual(target_fast_forward["worktree_path"], str(main_path))
+        self.assertIn("uncommitted changes", target_fast_forward["reason"])
+        self.assertEqual(
+            target_fast_forward["recovery_command"],
+            ralph.format_command(
+                ["git", "-C", str(main_path), "pull", "--ff-only", "origin", "main"]
+            ),
+        )
+
+    def test_promotion_from_unrelated_worktree_updates_checked_out_target_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo_path = tmp_path / "repo"
+            main_path = tmp_path / "main-worktree"
+            runner = FakeRunner(
+                diff_outputs=["scripts/ralph.py\n"],
+                rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+                status_outputs=[""],
+                command_outputs={
+                    ("git", "worktree", "list", "--porcelain"): [
+                        "\n".join(
+                            [
+                                f"worktree {repo_path}",
+                                "HEAD feature-old",
+                                "branch refs/heads/agent/issue-114",
+                                "",
+                                f"worktree {main_path}",
+                                "HEAD main-old",
+                                "branch refs/heads/main",
+                                "",
+                            ]
+                        )
+                    ],
+                },
+            )
+            loop = make_loop(
+                tmp_path,
+                runner,
+                promote=True,
+                skip_post_promotion_review=True,
+            )
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        fast_forward_calls = [
+            call
+            for call in runner.calls
+            if call.args == ("git", "merge", "--ff-only", "promotion-sha")
+        ]
+        self.assertEqual([call.cwd for call in fast_forward_calls], [main_path])
+        self.assertEqual(
+            manifest["local_branch_fast_forwards"]["source_branch"]["status"],
+            "skipped_not_checked_out",
+        )
+        self.assertEqual(
+            manifest["local_branch_fast_forwards"]["integration_target"]["status"],
+            "fast_forwarded",
         )
 
     def test_promotion_closes_manually_recovered_gitflow_issue_with_parseable_evidence(

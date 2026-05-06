@@ -453,6 +453,10 @@ Key fields for inspection:
   delivery this is the **Local integration** commit; for Exploratory delivery
   this is the **Exploratory branch** commit.
 - `promotion_commit`: **Promotion** commit pushed to `main`.
+- `local_branch_fast_forwards`: checked-out local source branch and
+  **Integration target** branch fast-forward status, worktree path,
+  current and target commits, and recovery command plus reason when a local
+  branch is not safe to update.
 - `pushes`: per-branch push state, commit SHA, and push log path.
 - `github_metadata`: claim, completion, failure, Promotion comment, label, and
   close state.
@@ -714,9 +718,9 @@ source-branch changes cannot reach a Promotion merge, `main` push, `dev` branch
 sync, GitHub metadata update, or issue closure without passing against the exact
 source revision.
 Ralph then merges that source revision into a detached `origin/main` worktree
-with per-issue commits preserved, pushes `main`, and fast-forwards `dev` to the
-promotion commit so the next Gitflow drain starts from a `dev` branch that
-contains `main`.
+with per-issue commits preserved, pushes `main`, and fast-forwards remote
+`dev` to the promotion commit so the next Gitflow drain starts from a `dev`
+branch that contains `main`.
 
 After the push succeeds, Ralph scans open `agent-integrated` issues. It closes
 only issues whose recorded Gitflow integration commit, documented manual
@@ -756,6 +760,13 @@ drafts are created as `needs-triage` with validation evidence so they are not
 drainable work. Follow-up creation failures after `main` is pushed are
 warning-only: **Promotion** remains succeeded, the manifest records the
 failure, and `post-promotion-review.md` receives recovery guidance.
+
+After a successful **Promotion**, Ralph inspects checked-out local worktrees for
+the source branch and **Integration target** branch. Clean local worktrees whose
+current commits are ancestors of the Promotion commit are fast-forwarded to that
+commit. Dirty, diverged, missing, or otherwise unsafe local worktrees are left
+untouched; the **Promotion** manifest records the status, concise reason, and
+recovery command under `local_branch_fast_forwards`.
 
 Operators can pass `--skip-post-promotion-followups` to run the review while
 skipping automatic follow-up issue creation. Operators can pass
