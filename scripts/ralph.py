@@ -67,6 +67,7 @@ DEFAULT_GITFLOW_BRANCH = "dev"
 DEFAULT_TRUNK_BRANCH = "main"
 DEFAULT_EXPLORATORY_BRANCH_PREFIX = "agent/exploratory"
 DEFAULT_DRAIN_BUDGET = 10
+DEFAULT_OPERATOR_MAX_CYCLES = 10
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30.0
 DIRTY_WORKTREE_STATUS_PREVIEW_LIMIT = 12
 COMMAND_READ_CHUNK_SIZE = 65536
@@ -83,6 +84,17 @@ GITFLOW_RECOVERY_CONTEXT_PATTERN = re.compile(
 )
 MANIFEST_NAME = "ralph-run.json"
 MANIFEST_SCHEMA_VERSION = 1
+OPERATOR_MANIFEST_NAME = "operator-run.json"
+OPERATOR_RUN_ROOT_NAME = "operator-runs"
+OPERATOR_RUN_PREFIX = "operator"
+OPERATOR_QUEUE_LABELS = frozenset(
+    {
+        READY_LABEL,
+        AGENT_INTEGRATED_LABEL,
+        AGENT_RUNNING_LABEL,
+        AGENT_FAILED_LABEL,
+    }
+)
 SANDBOX_GH_WRAPPER_DIR_NAME = "sandbox-bin"
 SANDBOX_READ_ONLY_GH_ISSUE_COMMANDS = (
     "view",
@@ -184,6 +196,12 @@ ENVIRONMENT_FAILURE_PATTERNS = (
     "podman.sock",
     "permission denied while trying to connect",
 )
+FORMATTER_REWRITE_RECOVERY_FAILURE_TYPE = "formatter_rewrite_recovery_failure"
+FORMATTER_REWRITE_RECOVERY_GUIDANCE = (
+    "Inspect the recorded implementation worktree and formatter recovery logs. "
+    "Keep the staged formatter changes if they are correct, rerun the recorded "
+    "Commit check from the owning Subproject, then rerun Ralph for the issue."
+)
 
 
 @dataclass(frozen=True)
@@ -244,13 +262,76 @@ class CommandFailure(RalphError):
 class IssueFailure(RalphError):
     """An issue-specific failure that should not stop the whole drain."""
 
-    def __init__(self, message: str, log_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        log_path: Path | None = None,
+        *,
+        failure_type: str | None = None,
+        recovery_guidance: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.log_path = log_path
+        self.failure_type = failure_type
+        self.recovery_guidance = recovery_guidance
+
+
+class FormatterRewriteRecoveryFailure(IssueFailure):
+    """Formatter-modified files were detected, but recovery did not complete."""
+
+    def __init__(
+        self,
+        *,
+        reason: str,
+        modified_files: list[str],
+        initial_commit_log_path: Path | None,
+        commit_check_log_paths: list[Path],
+        retry_commit_log_path: Path | None,
+    ) -> None:
+        self.modified_files = list(modified_files)
+        self.initial_commit_log_path = initial_commit_log_path
+        self.commit_check_log_paths = list(commit_check_log_paths)
+        self.retry_commit_log_path = retry_commit_log_path
+        modified_lines = "\n".join(f"- {path}" for path in self.modified_files)
+        commit_check_lines = "\n".join(
+            f"- {log_path}" for log_path in self.commit_check_log_paths
+        )
+        if not commit_check_lines:
+            commit_check_lines = "- <not recorded>"
+        message = "\n".join(
+            [
+                f"Formatter-rewrite recovery failure: {reason}",
+                "",
+                "Formatter-modified files:",
+                modified_lines,
+                "",
+                f"Initial commit log: {initial_commit_log_path or '<not recorded>'}",
+                "Commit check logs:",
+                commit_check_lines,
+                f"Retry commit log: {retry_commit_log_path or '<not recorded>'}",
+                "",
+                f"Recovery guidance: {FORMATTER_REWRITE_RECOVERY_GUIDANCE}",
+            ]
+        )
+        log_path = retry_commit_log_path
+        if log_path is None and commit_check_log_paths:
+            log_path = commit_check_log_paths[-1]
+        if log_path is None:
+            log_path = initial_commit_log_path
+        super().__init__(
+            message,
+            log_path=log_path,
+            failure_type=FORMATTER_REWRITE_RECOVERY_FAILURE_TYPE,
+            recovery_guidance=FORMATTER_REWRITE_RECOVERY_GUIDANCE,
+        )
 
 
 class EnvironmentFailure(IssueFailure):
     """A local environment failure that should stop the drain."""
+
+
+class BranchSyncFailure(EnvironmentFailure):
+    """A source-to-target branch sync failure that should stop the drain."""
 
 
 class PostPushFailure(RalphError):
@@ -376,6 +457,25 @@ class ReadyIssueRefreshMutation:
 
 
 @dataclass(frozen=True)
+class GitWorktree:
+    path: Path
+    head: str | None
+    branch: str | None
+
+
+@dataclass(frozen=True)
+class OperatorQueueSnapshot:
+    ready: tuple[Issue, ...]
+    integrated: tuple[Issue, ...]
+    running: tuple[Issue, ...]
+    failed: tuple[Issue, ...]
+
+    @property
+    def queue_issue_count(self) -> int:
+        return len(self.ready) + len(self.integrated) + len(self.running) + len(self.failed)
+
+
+@dataclass(frozen=True)
 class QACommand:
     args: tuple[str, ...]
     cwd: Path
@@ -430,6 +530,17 @@ def path_text(path: Path | None) -> str | None:
     return str(path)
 
 
+def branch_sync_worktree_path(
+    *,
+    worktree_container: Path,
+    source_branch: str,
+    target_branch: str,
+) -> Path:
+    return worktree_container / (
+        f"agent-sync-{slugify(source_branch)}-into-{slugify(target_branch)}"
+    )
+
+
 class RunManifest:
     """Machine-readable recovery state for a single Ralph run."""
 
@@ -474,10 +585,33 @@ class RunManifest:
                 "worktree_container": str(config.worktree_container),
                 "implementation_worktree": str(worktree_path),
                 "integration_worktree": path_text(integration_path),
+                "branch_sync_worktree": None,
+            },
+            "branch_sync": {
+                "status": "not_started",
+                "source_branch": None,
+                "target_branch": None,
+                "worktree_path": None,
+                "log_path": None,
+                "conflicted_files": [],
+                "recovery_guidance": None,
+                "failure_type": None,
+                "error": None,
             },
             "changed_files": [],
             "qa_results": [],
             "qa_runtime_env": {"status": "not_started"},
+            "formatter_recovery": {
+                "status": "not_started",
+                "modified_files": [],
+                "staged_files": [],
+                "initial_commit_log_path": None,
+                "commit_check_results": [],
+                "retry_commit_log_path": None,
+                "recovery_guidance": None,
+                "failure_type": None,
+                "error": None,
+            },
             "codex_attempts": [],
             "sandboxed_issue_access": {"status": "not_started"},
             "ready_issue_refresh": {
@@ -551,6 +685,30 @@ class RunManifest:
                 "commits": [],
             },
             "promotion_commit": None,
+            "local_branch_fast_forwards": {
+                "source_branch": {
+                    "branch": source_branch,
+                    "status": "not_started",
+                    "worktree_path": None,
+                    "current_commit": None,
+                    "target_commit": None,
+                    "log_path": None,
+                    "reason": None,
+                    "recovery_command": None,
+                    "error": None,
+                },
+                "integration_target": {
+                    "branch": target_branch,
+                    "status": "not_started",
+                    "worktree_path": None,
+                    "current_commit": None,
+                    "target_commit": None,
+                    "log_path": None,
+                    "reason": None,
+                    "recovery_command": None,
+                    "error": None,
+                },
+            },
             "post_promotion_review": {
                 "enabled": not config.skip_post_promotion_review,
                 "status": (
@@ -628,6 +786,40 @@ class RunManifest:
     def record_promotion_commit(self, sha: str, *, branch: str) -> None:
         self.data["promotion_commit"] = {"sha": sha, "branch": branch}
         self.record_event("promotion_commit_recorded", details={"commit": sha, "branch": branch})
+
+    def record_local_branch_fast_forward(
+        self,
+        role: str,
+        *,
+        branch: str,
+        status: str,
+        target_commit: str,
+        worktree_path: Path | None = None,
+        current_commit: str | None = None,
+        log_path: Path | None = None,
+        reason: str | None = None,
+        recovery_command: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        fast_forwards = self.data.setdefault("local_branch_fast_forwards", {})
+        if not isinstance(fast_forwards, dict):
+            raise RalphError("Manifest local_branch_fast_forwards field is not an object.")
+        entry = {
+            "branch": branch,
+            "status": status,
+            "worktree_path": path_text(worktree_path),
+            "current_commit": current_commit,
+            "target_commit": target_commit,
+            "log_path": path_text(log_path),
+            "reason": reason,
+            "recovery_command": recovery_command,
+            "error": error,
+        }
+        fast_forwards[role] = entry
+        self.record_event(
+            f"local_branch_fast_forward_{role}_{status}",
+            details=entry,
+        )
 
     def record_post_promotion_review(
         self,
@@ -741,6 +933,52 @@ class RunManifest:
         self.data["qa_runtime_env"] = metadata
         self.record_event("qa_runtime_env_ready", details=metadata)
 
+    def record_formatter_recovery(
+        self,
+        status: str,
+        *,
+        modified_files: list[str] | None = None,
+        staged_files: list[str] | None = None,
+        initial_commit_log_path: Path | None = None,
+        commit_check_results: list[QAResult] | None = None,
+        retry_commit_log_path: Path | None = None,
+        recovery_guidance: str | None = None,
+        failure_type: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        recovery = self.data.setdefault("formatter_recovery", {})
+        if not isinstance(recovery, dict):
+            raise RalphError("Manifest formatter_recovery field is not an object.")
+        recovery["status"] = status
+        if modified_files is not None:
+            recovery["modified_files"] = list(modified_files)
+        if staged_files is not None:
+            recovery["staged_files"] = list(staged_files)
+        if initial_commit_log_path is not None or "initial_commit_log_path" not in recovery:
+            recovery["initial_commit_log_path"] = path_text(initial_commit_log_path)
+        if commit_check_results is not None:
+            recovery["commit_check_results"] = [
+                {
+                    "name": result.command.name,
+                    "command": list(result.command.args),
+                    "cwd": str(result.command.cwd),
+                    "log_path": path_text(result.log_path),
+                    "status": "passed",
+                }
+                for result in commit_check_results
+            ]
+        if retry_commit_log_path is not None or "retry_commit_log_path" not in recovery:
+            recovery["retry_commit_log_path"] = path_text(retry_commit_log_path)
+        if recovery_guidance is not None:
+            recovery["recovery_guidance"] = recovery_guidance
+        if failure_type is not None:
+            recovery["failure_type"] = failure_type
+        if error is not None:
+            recovery["error"] = error
+        elif status != "failed":
+            recovery["error"] = None
+        self.record_event(f"formatter_recovery_{status}", details=dict(recovery))
+
     def record_push(
         self,
         *,
@@ -767,6 +1005,37 @@ class RunManifest:
             f"push_{key}_{status}",
             details={"branch": branch, "commit": commit_sha, "log_path": path_text(log_path)},
         )
+
+    def record_branch_sync(
+        self,
+        *,
+        status: str,
+        source_branch: str,
+        target_branch: str,
+        worktree_path: Path,
+        log_path: Path | None = None,
+        conflicted_files: list[str] | None = None,
+        recovery_guidance: str | None = None,
+        failure_type: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        entry: dict[str, Any] = {
+            "status": status,
+            "source_branch": source_branch,
+            "target_branch": target_branch,
+            "worktree_path": str(worktree_path),
+            "log_path": path_text(log_path),
+            "conflicted_files": list(conflicted_files or []),
+            "recovery_guidance": recovery_guidance,
+            "failure_type": failure_type,
+            "error": error,
+        }
+        self.data["branch_sync"] = entry
+        paths = self.data.setdefault("paths", {})
+        if not isinstance(paths, dict):
+            raise RalphError("Manifest paths field is not an object.")
+        paths["branch_sync_worktree"] = str(worktree_path)
+        self.record_event(f"branch_sync_{status}", details=entry)
 
     def record_metadata_status(
         self,
@@ -987,6 +1256,18 @@ class RunManifest:
             "message": str(error),
             "log_path": path_text(log_path),
         }
+        if isinstance(error, IssueFailure):
+            if error.failure_type is not None:
+                failure["type"] = error.failure_type
+            if error.recovery_guidance is not None:
+                failure["recovery_guidance"] = error.recovery_guidance
+        if isinstance(error, FormatterRewriteRecoveryFailure):
+            failure["modified_files"] = list(error.modified_files)
+            failure["initial_commit_log_path"] = path_text(error.initial_commit_log_path)
+            failure["commit_check_log_paths"] = [
+                str(log_path) for log_path in error.commit_check_log_paths
+            ]
+            failure["retry_commit_log_path"] = path_text(error.retry_commit_log_path)
         self.data["failure"] = failure
         self.record_event("failed", status="failed", details=failure)
 
@@ -1019,6 +1300,286 @@ class RunManifest:
             encoding="utf-8",
         )
         tmp_path.replace(self.path)
+
+
+class OperatorRunManifest:
+    """Machine-readable checkpoint state for a drain-and-Promotion Operator run."""
+
+    def __init__(self, path: Path, data: dict[str, Any]) -> None:
+        self.path = path
+        self.data = data
+
+    @classmethod
+    def start(
+        cls,
+        *,
+        run_dir: Path,
+        config: LoopConfig,
+        max_cycles: int,
+    ) -> "OperatorRunManifest":
+        path = run_dir / OPERATOR_MANIFEST_NAME
+        if path.exists():
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as error:
+                raise RalphError(f"Operator run manifest is invalid JSON: {path}: {error}") from error
+            if not isinstance(data, dict):
+                raise RalphError(f"Operator run manifest is not a JSON object: {path}")
+        else:
+            data = {
+                "schema_version": MANIFEST_SCHEMA_VERSION,
+                "run_kind": "operator",
+                "status": "running",
+                "state": "created",
+                "started_at": utc_now_text(),
+                "updated_at": utc_now_text(),
+                "repo": config.repo,
+                "max_cycles": max_cycles,
+                "cycle": 0,
+                "current": None,
+                "last_checkpoint": None,
+                "checkpoints": [],
+                "child_run_manifests": [],
+                "queue": operator_queue_payload(OperatorQueueSnapshot((), (), (), ())),
+                "recovery_guidance": None,
+                "failure": None,
+                "events": [],
+            }
+        data["repo"] = config.repo
+        data["max_cycles"] = max_cycles
+        paths = data.setdefault("paths", {})
+        if not isinstance(paths, dict):
+            paths = {}
+            data["paths"] = paths
+        paths["repo_root"] = str(config.repo_root)
+        paths["run_dir"] = str(run_dir)
+        paths["child_run_root"] = str(config.log_root)
+        manifest = cls(path, data)
+        manifest.record_event("started", status="running")
+        return manifest
+
+    @classmethod
+    def for_detached_launch(
+        cls,
+        *,
+        run_dir: Path,
+        config: LoopConfig,
+        max_cycles: int,
+        command: list[str],
+        stdout_log: Path,
+        stderr_log: Path,
+        pid: int,
+    ) -> "OperatorRunManifest":
+        manifest = cls.start(run_dir=run_dir, config=config, max_cycles=max_cycles)
+        manifest.data["detached"] = {
+            "pid": pid,
+            "command": list(command),
+            "stdout_log": str(stdout_log),
+            "stderr_log": str(stderr_log),
+        }
+        manifest.record_checkpoint(
+            "detached_launched",
+            message="Detached Operator run launched.",
+            details={"pid": pid, "stdout_log": str(stdout_log), "stderr_log": str(stderr_log)},
+            status="running",
+        )
+        return manifest
+
+    def record_event(
+        self,
+        state: str,
+        *,
+        status: str | None = None,
+        current: dict[str, Any] | None = None,
+        recovery_guidance: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        if status is not None:
+            self.data["status"] = status
+        self.data["state"] = state
+        if current is not None:
+            self.data["current"] = current
+        if recovery_guidance is not None:
+            self.data["recovery_guidance"] = recovery_guidance
+        event: dict[str, Any] = {
+            "timestamp": utc_now_text(),
+            "state": state,
+            "status": self.data.get("status") or "unknown",
+        }
+        if current is not None:
+            event["current"] = current
+        if details is not None:
+            event["details"] = details
+        events = self.data.setdefault("events", [])
+        if not isinstance(events, list):
+            raise RalphError("Operator manifest events field is not a list.")
+        events.append(event)
+        self._write()
+
+    def record_queue(self, snapshot: OperatorQueueSnapshot) -> None:
+        self.data["queue"] = operator_queue_payload(snapshot)
+        self.record_event(
+            "checking_queue",
+            details={
+                "ready": len(snapshot.ready),
+                "integrated": len(snapshot.integrated),
+                "running": len(snapshot.running),
+                "failed": len(snapshot.failed),
+            },
+        )
+
+    def record_cycle(self, cycle: int) -> None:
+        self.data["cycle"] = cycle
+        self.record_event("cycle_started", details={"cycle": cycle})
+
+    def record_current_issue(self, issue: Issue) -> None:
+        self.record_event(
+            "running_issue",
+            current={"kind": "issue", "issue": issue_payload_for_operator(issue)},
+        )
+
+    def record_current_promotion(self, *, source_branch: str, target_branch: str) -> None:
+        self.record_event(
+            "running_promotion",
+            current={
+                "kind": "promotion",
+                "source_branch": source_branch,
+                "target_branch": target_branch,
+            },
+        )
+
+    def clear_current(self) -> None:
+        self.data["current"] = None
+        self._write()
+
+    def record_checkpoint(
+        self,
+        checkpoint: str,
+        *,
+        message: str,
+        child_manifest_path: Path | None = None,
+        issue: Issue | None = None,
+        details: dict[str, Any] | None = None,
+        status: str | None = None,
+        recovery_guidance: str | None = None,
+    ) -> None:
+        entry: dict[str, Any] = {
+            "timestamp": utc_now_text(),
+            "checkpoint": checkpoint,
+            "message": message,
+        }
+        if child_manifest_path is not None:
+            entry["child_manifest_path"] = str(child_manifest_path)
+            self.record_child_run(child_manifest_path)
+        if issue is not None:
+            entry["issue"] = issue_payload_for_operator(issue)
+        if details is not None:
+            entry["details"] = details
+        self.data["last_checkpoint"] = entry
+        checkpoints = self.data.setdefault("checkpoints", [])
+        if not isinstance(checkpoints, list):
+            raise RalphError("Operator manifest checkpoints field is not a list.")
+        checkpoints.append(entry)
+        if recovery_guidance is not None:
+            self.data["recovery_guidance"] = recovery_guidance
+        self.record_event(
+            checkpoint,
+            status=status,
+            recovery_guidance=recovery_guidance,
+            details=entry,
+        )
+
+    def record_child_run(self, child_manifest_path: Path) -> None:
+        child_runs = self.data.setdefault("child_run_manifests", [])
+        if not isinstance(child_runs, list):
+            raise RalphError("Operator manifest child_run_manifests field is not a list.")
+        entry = child_manifest_entry(child_manifest_path)
+        for index, existing in enumerate(child_runs):
+            if isinstance(existing, dict) and existing.get("path") == str(child_manifest_path):
+                child_runs[index] = {**existing, **entry}
+                self._write()
+                return
+        child_runs.append(entry)
+        self._write()
+
+    def record_failure(
+        self,
+        error: Exception,
+        *,
+        recovery_guidance: str,
+        child_manifest_path: Path | None = None,
+    ) -> None:
+        self.data["failure"] = {
+            "message": str(error),
+            "child_manifest_path": path_text(child_manifest_path),
+        }
+        self.data["recovery_guidance"] = recovery_guidance
+        if child_manifest_path is not None:
+            self.record_child_run(child_manifest_path)
+        self.record_event(
+            "failed",
+            status="failed",
+            recovery_guidance=recovery_guidance,
+            details=self.data["failure"],
+        )
+
+    def _write(self) -> None:
+        self.data["updated_at"] = utc_now_text()
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = self.path.with_name(f"{self.path.name}.tmp")
+        tmp_path.write_text(
+            json.dumps(self.data, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        tmp_path.replace(self.path)
+
+
+def issue_payload_for_operator(issue: Issue) -> dict[str, Any]:
+    return {
+        "number": issue.number,
+        "title": issue.title,
+        "url": issue.url,
+        "labels": sorted(issue.labels),
+    }
+
+
+def operator_queue_payload(snapshot: OperatorQueueSnapshot) -> dict[str, Any]:
+    return {
+        "ready": [issue_payload_for_operator(issue) for issue in snapshot.ready],
+        "integrated": [issue_payload_for_operator(issue) for issue in snapshot.integrated],
+        "running": [issue_payload_for_operator(issue) for issue in snapshot.running],
+        "failed": [issue_payload_for_operator(issue) for issue in snapshot.failed],
+    }
+
+
+def child_manifest_entry(child_manifest_path: Path) -> dict[str, Any]:
+    entry: dict[str, Any] = {"path": str(child_manifest_path)}
+    if not child_manifest_path.exists():
+        entry["status"] = "missing"
+        return entry
+    try:
+        data = json.loads(child_manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        entry["status"] = "invalid"
+        entry["error"] = str(error)
+        return entry
+    if not isinstance(data, dict):
+        entry["status"] = "invalid"
+        entry["error"] = "manifest root is not an object"
+        return entry
+    entry["kind"] = str(data.get("run_kind") or "unknown")
+    entry["status"] = str(data.get("status") or "unknown")
+    entry["stage"] = str(data.get("stage") or "unknown")
+    issue = data.get("issue")
+    if isinstance(issue, dict):
+        entry["issue"] = {
+            "number": issue.get("number"),
+            "title": issue.get("title"),
+            "url": issue.get("url"),
+        }
+    if isinstance(data.get("promotion_commit"), dict):
+        entry["promotion_commit"] = data["promotion_commit"]
+    return entry
 
 
 def promotion_commit_inventory_entries(
@@ -1618,6 +2179,34 @@ def ready_issue_refresh_comment_already_exists(
     return False
 
 
+def branch_sync_recovery_guidance(
+    *,
+    source_branch: str,
+    target_branch: str,
+    worktree_path: Path,
+    conflicted_files: list[str],
+    stale_worktree: bool,
+) -> str:
+    conflict_text = ""
+    if conflicted_files:
+        formatted_files = ", ".join(conflicted_files)
+        conflict_text = f" Conflicted files: {formatted_files}."
+    stale_text = (
+        "An existing branch-sync worktree is blocking Ralph. "
+        if stale_worktree
+        else "The branch sync stopped before the Integration target was updated. "
+    )
+    return (
+        stale_text
+        + f"Inspect `{worktree_path}` and finish syncing `origin/{source_branch}` into "
+        f"`origin/{target_branch}` before restarting Ralph.{conflict_text} "
+        "If the worktree contains the intended resolution, commit it there and run "
+        f"`git push origin HEAD:{target_branch}`. If it is stale and no work needs to be "
+        f"preserved, remove it with `git worktree remove --force {worktree_path}`. "
+        "Do not mark unrelated ready issues failed for this branch-sync problem."
+    )
+
+
 def ready_issue_refresh_recovery_guidance(
     *,
     run_dir: Path,
@@ -1870,6 +2459,25 @@ def select_qa_commands(changed_files: list[str], repo_root: Path) -> list[QAComm
     return deduped
 
 
+def is_commit_check_command(command: QACommand) -> bool:
+    return command.name.endswith("Commit check")
+
+
+def commit_check_commands_from_results(qa_results: list[QAResult]) -> list[QACommand]:
+    commands: list[QACommand] = []
+    seen: set[tuple[tuple[str, ...], Path]] = set()
+    for result in qa_results:
+        command = result.command
+        if not is_commit_check_command(command):
+            continue
+        key = (command.args, command.cwd)
+        if key in seen:
+            continue
+        commands.append(command)
+        seen.add(key)
+    return commands
+
+
 def select_promotion_gate_commands(
     changed_files: list[str],
     repo_root: Path,
@@ -1909,6 +2517,80 @@ def parse_git_status_paths(status_output: str) -> list[str]:
             path = path.rsplit(" -> ", 1)[1]
         paths.append(path.strip('"'))
     return sorted(set(paths))
+
+
+def parse_git_status_tracked_unstaged_paths(status_output: str) -> list[str]:
+    paths: list[str] = []
+    for line in status_output.splitlines():
+        if len(line) < 4:
+            continue
+        if line.startswith("??"):
+            continue
+        if line[1] == " ":
+            continue
+        path = line[3:].strip()
+        if " -> " in path:
+            path = path.rsplit(" -> ", 1)[1]
+        paths.append(path.strip('"'))
+    return sorted(set(paths))
+
+
+def parse_git_worktree_list_porcelain(output: str) -> list[GitWorktree]:
+    worktrees: list[GitWorktree] = []
+    path: Path | None = None
+    head: str | None = None
+    branch: str | None = None
+
+    def append_current() -> None:
+        if path is None:
+            return
+        worktrees.append(GitWorktree(path=path, head=head, branch=branch))
+
+    for line in output.splitlines():
+        if line == "":
+            append_current()
+            path = None
+            head = None
+            branch = None
+            continue
+        key, separator, value = line.partition(" ")
+        if separator == "":
+            continue
+        if key == "worktree":
+            append_current()
+            path = Path(value)
+            head = None
+            branch = None
+        elif key == "HEAD":
+            head = value
+        elif key == "branch":
+            prefix = "refs/heads/"
+            branch = value.removeprefix(prefix)
+        elif key == "detached":
+            branch = None
+
+    append_current()
+    return worktrees
+
+
+def checked_out_worktree_for_branch(
+    worktrees: list[GitWorktree],
+    branch: str,
+) -> GitWorktree | None:
+    for worktree in worktrees:
+        if worktree.branch == branch:
+            return worktree
+    return None
+
+
+def local_branch_fast_forward_recovery_command(
+    *,
+    worktree_path: Path,
+    branch: str,
+) -> str:
+    return format_command(
+        ["git", "-C", str(worktree_path), "pull", "--ff-only", "origin", branch]
+    )
 
 
 def dirty_root_worktree_message(repo_root: Path, status_output: str) -> str:
@@ -2587,9 +3269,19 @@ class GitClient:
     def changed_files(self, *, cwd: Path) -> list[str]:
         return parse_git_status_paths(self.status_porcelain(cwd=cwd))
 
+    def tracked_unstaged_files(self, *, cwd: Path) -> list[str]:
+        return parse_git_status_tracked_unstaged_paths(self.status_porcelain(cwd=cwd))
+
     def changed_files_against(self, *, cwd: Path, base_ref: str) -> list[str]:
         result = self.runner.run(
             ["git", "diff", "--name-only", f"{base_ref}...HEAD"],
+            cwd=cwd,
+        )
+        return sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
+
+    def unmerged_files(self, *, cwd: Path) -> list[str]:
+        result = self.runner.run(
+            ["git", "diff", "--name-only", "--diff-filter=U"],
             cwd=cwd,
         )
         return sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
@@ -2625,6 +3317,45 @@ class GitClient:
     def status_porcelain(self, *, cwd: Path) -> str:
         result = self.runner.run(["git", "status", "--porcelain"], cwd=cwd)
         return result.stdout
+
+    def worktrees(self) -> list[GitWorktree]:
+        result = self.runner.run(
+            ["git", "worktree", "list", "--porcelain"],
+            cwd=self.repo_root,
+        )
+        return parse_git_worktree_list_porcelain(result.stdout)
+
+    def add_paths(
+        self,
+        *,
+        cwd: Path,
+        paths: list[str],
+        run_dir: Path,
+        log_name: str,
+    ) -> None:
+        if not paths:
+            return
+        self.runner.run(
+            ["git", "add", "--", *paths],
+            cwd=cwd,
+            log_path=run_dir / log_name,
+            execute_in_dry_run=False,
+        )
+
+    def commit_staged(
+        self,
+        *,
+        cwd: Path,
+        message: str,
+        run_dir: Path,
+        log_name: str,
+    ) -> None:
+        self.runner.run(
+            ["git", "commit", "-m", message],
+            cwd=cwd,
+            log_path=run_dir / log_name,
+            execute_in_dry_run=False,
+        )
 
     def commit_all(
         self,
@@ -2679,6 +3410,21 @@ class GitClient:
             execute_in_dry_run=False,
         )
 
+    def merge_ff_only(
+        self,
+        *,
+        cwd: Path,
+        ref: str,
+        run_dir: Path,
+        log_name: str,
+    ) -> None:
+        self.runner.run(
+            ["git", "merge", "--ff-only", ref],
+            cwd=cwd,
+            log_path=run_dir / log_name,
+            execute_in_dry_run=False,
+        )
+
     def push_head(
         self,
         *,
@@ -2694,11 +3440,17 @@ class GitClient:
             execute_in_dry_run=False,
         )
 
-    def is_ancestor(self, *, ancestor: str, descendant: str) -> bool:
+    def is_ancestor(
+        self,
+        *,
+        ancestor: str,
+        descendant: str,
+        cwd: Path | None = None,
+    ) -> bool:
         try:
             self.runner.run(
                 ["git", "merge-base", "--is-ancestor", ancestor, descendant],
-                cwd=self.repo_root,
+                cwd=self.repo_root if cwd is None else cwd,
             )
         except CommandFailure as error:
             if error.returncode == 1:
@@ -3250,7 +4002,7 @@ class RalphLoop:
     def _promotion_target_branch(self) -> str:
         return self.config.target_branch or DEFAULT_TRUNK_BRANCH
 
-    def _promote(self) -> None:
+    def _promote(self) -> RunManifest:
         source_branch = self.config.source_branch
         target_branch = self._promotion_target_branch()
         run_dir = self._promotion_run_dir()
@@ -3277,6 +4029,7 @@ class RalphLoop:
         integrated_issues: list[tuple[Issue, str]] = []
         promotion_commit_inventory: list[dict[str, Any]] = []
         promotion_sha: str | None = None
+        source_branch_synced = False
 
         try:
             emit(f"Promoting origin/{source_branch} to origin/{target_branch}")
@@ -3311,7 +4064,7 @@ class RalphLoop:
                     reason="No Promotion changes were detected.",
                 )
                 manifest.record_success("no_changes_to_promote")
-                return
+                return manifest
             emit(f"Creating Promotion source worktree {source_path}")
             manifest.record_event("creating_promotion_source_worktree")
             self.git.add_detached_worktree(
@@ -3404,7 +4157,7 @@ class RalphLoop:
                 log_path=target_push_log,
             )
             pushed = True
-            self._sync_source_branch_after_promotion(
+            source_branch_synced = self._sync_source_branch_after_promotion(
                 source_branch=source_branch,
                 target_branch=target_branch,
                 promotion_sha=promotion_sha,
@@ -3446,6 +4199,14 @@ class RalphLoop:
                 run_dir=run_dir,
                 manifest=manifest,
             )
+            self._fast_forward_checked_out_local_branches_after_promotion(
+                source_branch=source_branch,
+                target_branch=target_branch,
+                promotion_sha=promotion_sha,
+                source_branch_synced=source_branch_synced,
+                run_dir=run_dir,
+                manifest=manifest,
+            )
             try:
                 manifest.record_event("cleaning_up_promotion_worktree")
                 self.git.remove_worktree(
@@ -3460,6 +4221,7 @@ class RalphLoop:
                 f"closed {len(integrated_issues)} issue(s)."
             )
             manifest.record_success()
+            return manifest
         except IssueFailure as error:
             self._run_failed_or_partial_post_promotion_review(
                 source_branch=source_branch,
@@ -4000,7 +4762,7 @@ class RalphLoop:
                 status="closed",
             )
 
-    def _handle_implementation(self, issue: Issue) -> None:
+    def _handle_implementation(self, issue: Issue) -> RunManifest | None:
         run_dir = self._run_dir(issue)
         run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -4030,6 +4792,10 @@ class RalphLoop:
                 integration_path=integration_path,
                 config=self.config,
             )
+            preclaim_branch_sync = self._uses_preclaim_branch_sync(delivery_plan)
+            if preclaim_branch_sync:
+                manifest.record_event("preclaim_branch_sync_check")
+                self._ensure_preclaim_branch_sync(delivery_plan, run_dir, manifest)
             emit(f"#{issue.number}: claiming issue with {AGENT_RUNNING_LABEL}")
             manifest.record_metadata_status(
                 "claiming",
@@ -4061,8 +4827,11 @@ class RalphLoop:
             manifest.record_event("validating_issue_contract")
             self._validate_issue_contract(issue, delivery_plan=delivery_plan)
             manifest.record_event("issue_contract_validated")
-            manifest.record_event("ensuring_integration_target")
-            self._ensure_integration_target(delivery_plan, run_dir)
+            if preclaim_branch_sync:
+                manifest.record_event("integration_target_preclaim_verified")
+            else:
+                manifest.record_event("ensuring_integration_target")
+                self._ensure_integration_target(delivery_plan, run_dir, manifest=manifest)
             emit(f"#{issue.number}: fetching origin/{base_branch}")
             manifest.record_event("fetching_implementation_base")
             self.git.fetch_base(base_branch, run_dir=run_dir)
@@ -4085,11 +4854,12 @@ class RalphLoop:
 
             emit(f"#{issue.number}: committing implementation branch {branch}")
             manifest.record_event("committing_implementation_branch")
-            self.git.commit_all(
-                cwd=worktree_path,
-                message=f"Implement issue #{issue.number}: {issue.title}",
-                run_dir=run_dir,
-                log_prefix="issue",
+            qa_results = self._commit_implementation_branch(
+                issue,
+                worktree_path,
+                run_dir,
+                manifest,
+                qa_results=qa_results,
             )
             manifest.record_event("implementation_branch_committed")
 
@@ -4310,6 +5080,7 @@ class RalphLoop:
             )
             manifest.record_success()
             emit(result_message)
+            return manifest
         except EnvironmentFailure as error:
             if manifest is not None:
                 manifest.record_failure(error, log_path=error.log_path)
@@ -4322,6 +5093,7 @@ class RalphLoop:
             if claimed:
                 self._mark_issue_failed(issue, error, run_dir, manifest=manifest)
             emit(f"Issue #{issue.number} failed: {error}", err=True)
+            return manifest
         except CommandFailure as error:
             if manifest is not None:
                 if pushed:
@@ -4341,6 +5113,7 @@ class RalphLoop:
             if claimed:
                 self._mark_issue_failed(issue, issue_error, run_dir, manifest=manifest)
             emit(f"Issue #{issue.number} failed: {error}", err=True)
+            return manifest
 
     def _validate_issue_contract(
         self,
@@ -4356,7 +5129,31 @@ class RalphLoop:
         if missing:
             raise IssueFailure(f"Missing required issue section(s): {', '.join(missing)}")
 
-    def _ensure_integration_target(self, delivery_plan: DeliveryPlan, run_dir: Path) -> None:
+    def _uses_preclaim_branch_sync(self, delivery_plan: DeliveryPlan) -> bool:
+        return (
+            delivery_plan.mode == GITFLOW_MODE
+            and delivery_plan.target_branch == DEFAULT_GITFLOW_BRANCH
+        )
+
+    def _ensure_preclaim_branch_sync(
+        self,
+        delivery_plan: DeliveryPlan,
+        run_dir: Path,
+        manifest: RunManifest,
+    ) -> None:
+        if delivery_plan.mode != GITFLOW_MODE:
+            return
+        if delivery_plan.target_branch != DEFAULT_GITFLOW_BRANCH:
+            return
+        self._ensure_integration_target(delivery_plan, run_dir, manifest=manifest)
+
+    def _ensure_integration_target(
+        self,
+        delivery_plan: DeliveryPlan,
+        run_dir: Path,
+        *,
+        manifest: RunManifest | None = None,
+    ) -> None:
         if delivery_plan.mode == EXPLORATORY_MODE:
             self._ensure_exploratory_target(delivery_plan, run_dir)
             return
@@ -4365,7 +5162,11 @@ class RalphLoop:
         if delivery_plan.target_branch != DEFAULT_GITFLOW_BRANCH:
             return
         if self.git.remote_branch_exists(delivery_plan.target_branch, run_dir=run_dir):
-            self._sync_default_gitflow_target_with_trunk(delivery_plan, run_dir)
+            self._sync_default_gitflow_target_with_trunk(
+                delivery_plan,
+                run_dir,
+                manifest=manifest,
+            )
             return
 
         emit(
@@ -4378,7 +5179,11 @@ class RalphLoop:
             from_ref=f"origin/{DEFAULT_TRUNK_BRANCH}",
             run_dir=run_dir,
         )
-        self._sync_default_gitflow_target_with_trunk(delivery_plan, run_dir)
+        self._sync_default_gitflow_target_with_trunk(
+            delivery_plan,
+            run_dir,
+            manifest=manifest,
+        )
 
     def _ensure_exploratory_target(self, delivery_plan: DeliveryPlan, run_dir: Path) -> None:
         if delivery_plan.mode != EXPLORATORY_MODE:
@@ -4394,6 +5199,8 @@ class RalphLoop:
         self,
         delivery_plan: DeliveryPlan,
         run_dir: Path,
+        *,
+        manifest: RunManifest | None = None,
     ) -> None:
         if delivery_plan.mode != GITFLOW_MODE:
             return
@@ -4410,11 +5217,48 @@ class RalphLoop:
         ):
             return
 
-        sync_path = self.config.worktree_container / (
-            f"agent-sync-{slugify(source_branch)}-into-{slugify(target_branch)}"
+        sync_path = branch_sync_worktree_path(
+            worktree_container=self.config.worktree_container,
+            source_branch=source_branch,
+            target_branch=target_branch,
         )
+        merge_log_path = run_dir / (
+            f"git-merge-{slugify(source_branch)}-into-{slugify(target_branch)}.log"
+        )
+        if sync_path.exists():
+            guidance = branch_sync_recovery_guidance(
+                source_branch=source_branch,
+                target_branch=target_branch,
+                worktree_path=sync_path,
+                conflicted_files=[],
+                stale_worktree=True,
+            )
+            message = (
+                f"Stale branch-sync worktree blocks syncing origin/{source_branch} into "
+                f"origin/{target_branch}: {sync_path}. {guidance}"
+            )
+            if manifest is not None:
+                manifest.record_branch_sync(
+                    status="failed",
+                    source_branch=source_branch,
+                    target_branch=target_branch,
+                    worktree_path=sync_path,
+                    recovery_guidance=guidance,
+                    failure_type="stale_worktree",
+                    error=message,
+                )
+            raise BranchSyncFailure(message)
+
         emit(f"Syncing origin/{source_branch} into origin/{target_branch}")
         sync_pushed = False
+        if manifest is not None:
+            manifest.record_branch_sync(
+                status="running",
+                source_branch=source_branch,
+                target_branch=target_branch,
+                worktree_path=sync_path,
+                log_path=merge_log_path,
+            )
         self.git.add_detached_worktree(
             path=sync_path,
             ref=f"origin/{target_branch}",
@@ -4427,8 +5271,36 @@ class RalphLoop:
                 ref=f"origin/{source_branch}",
                 message=f"Sync {source_branch} into {target_branch}",
                 run_dir=run_dir,
-                log_name=f"git-merge-{slugify(source_branch)}-into-{slugify(target_branch)}.log",
+                log_name=merge_log_path.name,
             )
+        except CommandFailure as error:
+            conflicted_files = self._branch_sync_conflicted_files(sync_path)
+            guidance = branch_sync_recovery_guidance(
+                source_branch=source_branch,
+                target_branch=target_branch,
+                worktree_path=sync_path,
+                conflicted_files=conflicted_files,
+                stale_worktree=False,
+            )
+            failure_log_path = error.log_path or merge_log_path
+            message = (
+                f"Sync {source_branch} into {target_branch} failed before updating the "
+                f"Integration target. {guidance}"
+            )
+            if manifest is not None:
+                manifest.record_branch_sync(
+                    status="failed",
+                    source_branch=source_branch,
+                    target_branch=target_branch,
+                    worktree_path=sync_path,
+                    log_path=failure_log_path,
+                    conflicted_files=conflicted_files,
+                    recovery_guidance=guidance,
+                    failure_type="merge_conflict",
+                    error=str(error),
+                )
+            raise BranchSyncFailure(message, log_path=failure_log_path) from error
+        try:
             sync_sha = self.git.rev_parse("HEAD", cwd=sync_path)
             emit(f"Pushing sync {sync_sha} to {target_branch}")
             self.git.push_head(
@@ -4439,6 +5311,39 @@ class RalphLoop:
             )
             sync_pushed = True
             self.git.fetch_base(target_branch, run_dir=run_dir)
+            if manifest is not None:
+                manifest.record_branch_sync(
+                    status="pushed",
+                    source_branch=source_branch,
+                    target_branch=target_branch,
+                    worktree_path=sync_path,
+                    log_path=run_dir / f"git-push-{slugify(target_branch)}-branch-sync.log",
+                )
+        except CommandFailure as error:
+            guidance = branch_sync_recovery_guidance(
+                source_branch=source_branch,
+                target_branch=target_branch,
+                worktree_path=sync_path,
+                conflicted_files=[],
+                stale_worktree=False,
+            )
+            failure_log_path = error.log_path
+            message = (
+                f"Branch sync from {source_branch} into {target_branch} failed. "
+                f"{guidance}"
+            )
+            if manifest is not None:
+                manifest.record_branch_sync(
+                    status="failed",
+                    source_branch=source_branch,
+                    target_branch=target_branch,
+                    worktree_path=sync_path,
+                    log_path=failure_log_path,
+                    recovery_guidance=guidance,
+                    failure_type="sync_command_failed",
+                    error=str(error),
+                )
+            raise BranchSyncFailure(message, log_path=failure_log_path) from error
         finally:
             if sync_pushed:
                 try:
@@ -4450,6 +5355,13 @@ class RalphLoop:
                 except CommandFailure as error:
                     emit(f"Cleanup warning: {error}", err=True)
 
+    def _branch_sync_conflicted_files(self, sync_path: Path) -> list[str]:
+        try:
+            return self.git.unmerged_files(cwd=sync_path)
+        except CommandFailure as error:
+            emit(f"Branch sync conflict file detection warning: {error}", err=True)
+            return []
+
     def _sync_source_branch_after_promotion(
         self,
         *,
@@ -4459,13 +5371,13 @@ class RalphLoop:
         promote_path: Path,
         run_dir: Path,
         manifest: RunManifest,
-    ) -> None:
+    ) -> bool:
         if source_branch != DEFAULT_GITFLOW_BRANCH:
             manifest.record_event("source_branch_sync_skipped")
-            return
+            return False
         if target_branch != DEFAULT_TRUNK_BRANCH:
             manifest.record_event("source_branch_sync_skipped")
-            return
+            return False
 
         emit(f"Fast-forwarding {source_branch} to promotion {promotion_sha}")
         source_push_log = run_dir / f"git-push-{slugify(source_branch)}-after-promotion.log"
@@ -4501,6 +5413,221 @@ class RalphLoop:
             log_path=source_push_log,
         )
         self.git.fetch_base(source_branch, run_dir=run_dir)
+        return True
+
+    def _fast_forward_checked_out_local_branches_after_promotion(
+        self,
+        *,
+        source_branch: str,
+        target_branch: str,
+        promotion_sha: str,
+        source_branch_synced: bool,
+        run_dir: Path,
+        manifest: RunManifest,
+    ) -> None:
+        manifest.record_event("checking_local_branch_fast_forwards")
+        try:
+            worktrees = self.git.worktrees()
+        except CommandFailure as error:
+            reason = "Could not inspect checked-out local worktrees."
+            emit(f"Local branch fast-forward warning: {reason} {error}", err=True)
+            for role, branch in (
+                ("source_branch", source_branch),
+                ("integration_target", target_branch),
+            ):
+                manifest.record_local_branch_fast_forward(
+                    role,
+                    branch=branch,
+                    status="failed",
+                    target_commit=promotion_sha,
+                    reason=reason,
+                    error=str(error),
+                )
+            return
+
+        source_worktree = checked_out_worktree_for_branch(worktrees, source_branch)
+        if source_branch_synced:
+            self._fast_forward_checked_out_local_branch(
+                role="source_branch",
+                branch=source_branch,
+                target_commit=promotion_sha,
+                worktree=source_worktree,
+                run_dir=run_dir,
+                manifest=manifest,
+            )
+        else:
+            manifest.record_local_branch_fast_forward(
+                "source_branch",
+                branch=source_branch,
+                status="skipped_source_branch_not_pushed",
+                target_commit=promotion_sha,
+                worktree_path=source_worktree.path if source_worktree is not None else None,
+                current_commit=source_worktree.head if source_worktree is not None else None,
+                reason="Promotion did not push the source branch to the Promotion commit.",
+            )
+
+        self._fast_forward_checked_out_local_branch(
+            role="integration_target",
+            branch=target_branch,
+            target_commit=promotion_sha,
+            worktree=checked_out_worktree_for_branch(worktrees, target_branch),
+            run_dir=run_dir,
+            manifest=manifest,
+        )
+
+    def _fast_forward_checked_out_local_branch(
+        self,
+        *,
+        role: str,
+        branch: str,
+        target_commit: str,
+        worktree: GitWorktree | None,
+        run_dir: Path,
+        manifest: RunManifest,
+    ) -> None:
+        if worktree is None:
+            manifest.record_local_branch_fast_forward(
+                role,
+                branch=branch,
+                status="skipped_not_checked_out",
+                target_commit=target_commit,
+                reason=f"No checked-out local {branch} branch worktree was found.",
+            )
+            return
+
+        recovery_command = local_branch_fast_forward_recovery_command(
+            worktree_path=worktree.path,
+            branch=branch,
+        )
+        try:
+            current_commit = worktree.head or self.git.rev_parse("HEAD", cwd=worktree.path)
+            status_output = self.git.status_porcelain(cwd=worktree.path)
+        except CommandFailure as error:
+            reason = f"Could not inspect local {branch} worktree before fast-forward."
+            manifest.record_local_branch_fast_forward(
+                role,
+                branch=branch,
+                status="failed",
+                target_commit=target_commit,
+                worktree_path=worktree.path,
+                current_commit=worktree.head,
+                reason=reason,
+                recovery_command=recovery_command,
+                error=str(error),
+            )
+            emit(f"Local branch fast-forward warning: {reason} {error}", err=True)
+            return
+
+        if status_output.strip() != "":
+            reason = f"Local {branch} worktree has uncommitted changes."
+            manifest.record_local_branch_fast_forward(
+                role,
+                branch=branch,
+                status="skipped_dirty_worktree",
+                target_commit=target_commit,
+                worktree_path=worktree.path,
+                current_commit=current_commit,
+                reason=reason,
+                recovery_command=recovery_command,
+            )
+            emit(f"Local branch fast-forward skipped: {reason}", err=True)
+            return
+
+        if current_commit == target_commit:
+            manifest.record_local_branch_fast_forward(
+                role,
+                branch=branch,
+                status="already_current",
+                target_commit=target_commit,
+                worktree_path=worktree.path,
+                current_commit=current_commit,
+            )
+            return
+
+        try:
+            can_fast_forward = self.git.is_ancestor(
+                ancestor=current_commit,
+                descendant=target_commit,
+                cwd=worktree.path,
+            )
+        except CommandFailure as error:
+            reason = f"Could not verify whether local {branch} can fast-forward safely."
+            manifest.record_local_branch_fast_forward(
+                role,
+                branch=branch,
+                status="failed",
+                target_commit=target_commit,
+                worktree_path=worktree.path,
+                current_commit=current_commit,
+                reason=reason,
+                recovery_command=recovery_command,
+                error=str(error),
+            )
+            emit(f"Local branch fast-forward warning: {reason} {error}", err=True)
+            return
+        if not can_fast_forward:
+            reason = (
+                f"Local {branch} commit {current_commit} is not an ancestor of "
+                f"Promotion commit {target_commit}."
+            )
+            manifest.record_local_branch_fast_forward(
+                role,
+                branch=branch,
+                status="skipped_not_fast_forward",
+                target_commit=target_commit,
+                worktree_path=worktree.path,
+                current_commit=current_commit,
+                reason=reason,
+                recovery_command=recovery_command,
+            )
+            emit(f"Local branch fast-forward skipped: {reason}", err=True)
+            return
+
+        log_name = f"git-ff-local-{slugify(role)}-{slugify(branch)}.log"
+        log_path = run_dir / log_name
+        manifest.record_local_branch_fast_forward(
+            role,
+            branch=branch,
+            status="running",
+            target_commit=target_commit,
+            worktree_path=worktree.path,
+            current_commit=current_commit,
+            log_path=log_path,
+            recovery_command=recovery_command,
+        )
+        try:
+            self.git.merge_ff_only(
+                cwd=worktree.path,
+                ref=target_commit,
+                run_dir=run_dir,
+                log_name=log_name,
+            )
+        except CommandFailure as error:
+            reason = f"Local {branch} fast-forward command failed."
+            manifest.record_local_branch_fast_forward(
+                role,
+                branch=branch,
+                status="failed",
+                target_commit=target_commit,
+                worktree_path=worktree.path,
+                current_commit=current_commit,
+                log_path=error.log_path or log_path,
+                reason=reason,
+                recovery_command=recovery_command,
+                error=str(error),
+            )
+            emit(f"Local branch fast-forward warning: {reason} {error}", err=True)
+            return
+
+        manifest.record_local_branch_fast_forward(
+            role,
+            branch=branch,
+            status="fast_forwarded",
+            target_commit=target_commit,
+            worktree_path=worktree.path,
+            current_commit=current_commit,
+            log_path=log_path,
+        )
 
     def _branch_and_worktrees(
         self,
@@ -4521,6 +5648,185 @@ class RalphLoop:
         worktree_path = self.config.worktree_container / f"agent-issue-{issue.number}-{slug}"
         integration_path = self.config.worktree_container / f"agent-integrate-{issue.number}-{slug}"
         return branch, worktree_path, integration_path
+
+    def _commit_implementation_branch(
+        self,
+        issue: Issue,
+        worktree_path: Path,
+        run_dir: Path,
+        manifest: RunManifest,
+        *,
+        qa_results: list[QAResult],
+    ) -> list[QAResult]:
+        message = f"Implement issue #{issue.number}: {issue.title}"
+        try:
+            self.git.commit_all(
+                cwd=worktree_path,
+                message=message,
+                run_dir=run_dir,
+                log_prefix="issue",
+            )
+        except CommandFailure as error:
+            modified_files = self.git.tracked_unstaged_files(cwd=worktree_path)
+            if not modified_files:
+                raise
+            recovery_results = self._recover_formatter_rewritten_commit(
+                issue,
+                worktree_path,
+                run_dir,
+                manifest,
+                message=message,
+                modified_files=modified_files,
+                initial_error=error,
+                qa_results=qa_results,
+            )
+            return [*qa_results, *recovery_results]
+        return qa_results
+
+    def _recover_formatter_rewritten_commit(
+        self,
+        issue: Issue,
+        worktree_path: Path,
+        run_dir: Path,
+        manifest: RunManifest,
+        *,
+        message: str,
+        modified_files: list[str],
+        initial_error: CommandFailure,
+        qa_results: list[QAResult],
+    ) -> list[QAResult]:
+        initial_commit_log_path = initial_error.log_path or run_dir / "issue-git-commit.log"
+        commit_check_commands = commit_check_commands_from_results(qa_results)
+        manifest.record_formatter_recovery(
+            "detected",
+            modified_files=modified_files,
+            initial_commit_log_path=initial_commit_log_path,
+            recovery_guidance=FORMATTER_REWRITE_RECOVERY_GUIDANCE,
+        )
+        if not commit_check_commands:
+            failure = FormatterRewriteRecoveryFailure(
+                reason="no selected Commit check was available after hooks modified tracked files",
+                modified_files=modified_files,
+                initial_commit_log_path=initial_commit_log_path,
+                commit_check_log_paths=[],
+                retry_commit_log_path=None,
+            )
+            manifest.record_formatter_recovery(
+                "failed",
+                modified_files=modified_files,
+                initial_commit_log_path=initial_commit_log_path,
+                recovery_guidance=FORMATTER_REWRITE_RECOVERY_GUIDANCE,
+                failure_type=FORMATTER_REWRITE_RECOVERY_FAILURE_TYPE,
+                error=str(failure),
+            )
+            raise failure from initial_error
+
+        emit(
+            f"#{issue.number}: commit hooks modified tracked files; "
+            "staging formatter changes and rerunning Commit check"
+        )
+        self.git.add_paths(
+            cwd=worktree_path,
+            paths=modified_files,
+            run_dir=run_dir,
+            log_name="issue-formatter-recovery-git-add.log",
+        )
+        staged_files = list(modified_files)
+        manifest.record_formatter_recovery(
+            "staged",
+            modified_files=modified_files,
+            staged_files=staged_files,
+            initial_commit_log_path=initial_commit_log_path,
+            recovery_guidance=FORMATTER_REWRITE_RECOVERY_GUIDANCE,
+        )
+
+        try:
+            recovery_results = self._run_qa_command_sequence(
+                commit_check_commands,
+                run_dir,
+                log_prefix="formatter-recovery-commit-check",
+                subject=f"#{issue.number}: formatter recovery",
+                manifest=manifest,
+            )
+        except CommandFailure as error:
+            failure = FormatterRewriteRecoveryFailure(
+                reason="Commit check failed during formatter recovery",
+                modified_files=modified_files,
+                initial_commit_log_path=initial_commit_log_path,
+                commit_check_log_paths=[error.log_path] if error.log_path is not None else [],
+                retry_commit_log_path=None,
+            )
+            manifest.record_formatter_recovery(
+                "failed",
+                modified_files=modified_files,
+                staged_files=staged_files,
+                initial_commit_log_path=initial_commit_log_path,
+                recovery_guidance=FORMATTER_REWRITE_RECOVERY_GUIDANCE,
+                failure_type=FORMATTER_REWRITE_RECOVERY_FAILURE_TYPE,
+                error=str(failure),
+            )
+            raise failure from error
+
+        post_check_files = self.git.tracked_unstaged_files(cwd=worktree_path)
+        if post_check_files:
+            staged_files = sorted({*staged_files, *post_check_files})
+            self.git.add_paths(
+                cwd=worktree_path,
+                paths=post_check_files,
+                run_dir=run_dir,
+                log_name="issue-formatter-recovery-post-check-git-add.log",
+            )
+
+        retry_commit_log_path = run_dir / "issue-formatter-recovery-git-commit.log"
+        manifest.record_formatter_recovery(
+            "retrying_commit",
+            modified_files=modified_files,
+            staged_files=staged_files,
+            initial_commit_log_path=initial_commit_log_path,
+            commit_check_results=recovery_results,
+            retry_commit_log_path=retry_commit_log_path,
+            recovery_guidance=FORMATTER_REWRITE_RECOVERY_GUIDANCE,
+        )
+        try:
+            self.git.commit_staged(
+                cwd=worktree_path,
+                message=message,
+                run_dir=run_dir,
+                log_name=retry_commit_log_path.name,
+            )
+        except CommandFailure as error:
+            failure = FormatterRewriteRecoveryFailure(
+                reason="retrying the implementation commit failed",
+                modified_files=modified_files,
+                initial_commit_log_path=initial_commit_log_path,
+                commit_check_log_paths=[
+                    result.log_path for result in recovery_results if result.log_path is not None
+                ],
+                retry_commit_log_path=error.log_path or retry_commit_log_path,
+            )
+            manifest.record_formatter_recovery(
+                "failed",
+                modified_files=modified_files,
+                staged_files=staged_files,
+                initial_commit_log_path=initial_commit_log_path,
+                commit_check_results=recovery_results,
+                retry_commit_log_path=error.log_path or retry_commit_log_path,
+                recovery_guidance=FORMATTER_REWRITE_RECOVERY_GUIDANCE,
+                failure_type=FORMATTER_REWRITE_RECOVERY_FAILURE_TYPE,
+                error=str(failure),
+            )
+            raise failure from error
+
+        manifest.record_formatter_recovery(
+            "recovered",
+            modified_files=modified_files,
+            staged_files=staged_files,
+            initial_commit_log_path=initial_commit_log_path,
+            commit_check_results=recovery_results,
+            retry_commit_log_path=retry_commit_log_path,
+            recovery_guidance=FORMATTER_REWRITE_RECOVERY_GUIDANCE,
+        )
+        return recovery_results
 
     def _implement_with_retry(
         self,
@@ -4889,6 +6195,387 @@ class RalphLoop:
         return self.config.log_root / f"promote-{timestamp}"
 
 
+class RalphOperatorRun:
+    """Checkpointed foreground orchestration for repeated drain and Promotion cycles."""
+
+    def __init__(
+        self,
+        config: LoopConfig,
+        runner: CommandRunner,
+        *,
+        run_dir: Path,
+        max_cycles: int,
+    ) -> None:
+        self.config = config
+        self.runner = runner
+        self.run_dir = run_dir
+        self.max_cycles = max_cycles
+        self.loop = RalphLoop(config, runner)
+        self.github = self.loop.github
+        self.manifest = OperatorRunManifest.start(
+            run_dir=run_dir,
+            config=config,
+            max_cycles=max_cycles,
+        )
+
+    def run(self) -> None:
+        try:
+            self._validate_operator_preflight()
+        except RalphError as error:
+            guidance = (
+                "Resolve the Operator run preflight failure, then rerun the "
+                "Operator command from a clean root worktree."
+            )
+            self.manifest.record_failure(error, recovery_guidance=guidance)
+            raise
+        cycle = 0
+        while True:
+            snapshot = self._queue_snapshot()
+            self.manifest.record_queue(snapshot)
+            if snapshot.running:
+                self._stop_for_queue_condition(
+                    "agent-running issue(s) remain from another Ralph run.",
+                    snapshot=snapshot,
+                )
+                return
+            if snapshot.failed:
+                self._stop_for_queue_condition(
+                    "agent-failed issue(s) remain and need operator recovery.",
+                    snapshot=snapshot,
+                )
+                return
+            if snapshot.queue_issue_count == 0:
+                self.manifest.clear_current()
+                self.manifest.record_checkpoint(
+                    "queue_clean",
+                    message=(
+                        "No open ready-for-agent, agent-integrated, agent-running, "
+                        "or agent-failed issues remain."
+                    ),
+                    status="succeeded",
+                )
+                emit("Operator run queue clean.")
+                return
+            if self.max_cycles > 0 and cycle >= self.max_cycles:
+                guidance = (
+                    f"Operator run stopped after --max-cycles {self.max_cycles}. "
+                    "Inspect the latest checkpoint, then rerun with a higher guard "
+                    "only after confirming the queue is progressing."
+                )
+                self.manifest.clear_current()
+                self.manifest.record_checkpoint(
+                    "stopped_by_guard",
+                    message=f"Reached --max-cycles {self.max_cycles}.",
+                    status="failed",
+                    recovery_guidance=guidance,
+                )
+                emit(guidance, err=True)
+                raise RalphError(guidance)
+
+            cycle += 1
+            self.manifest.record_cycle(cycle)
+            ready_issue = self._next_ready_issue()
+            if ready_issue is not None:
+                self._run_issue_checkpoint(ready_issue)
+                continue
+            if snapshot.ready:
+                self._stop_for_queue_condition(
+                    "ready-for-agent issue(s) remain, but none are currently unblocked.",
+                    snapshot=snapshot,
+                )
+                return
+            if snapshot.integrated:
+                self._run_promotion_checkpoint()
+                continue
+
+            self._stop_for_queue_condition(
+                "Operator queue contained an unsupported issue state combination.",
+                snapshot=snapshot,
+            )
+            return
+
+    def _validate_operator_preflight(self) -> None:
+        self.loop._validate_tools()
+        self.loop._validate_clean_root_worktree_for_live_run()
+        self.github.auth_status()
+        self.loop._validate_labels()
+
+    def _queue_snapshot(self) -> OperatorQueueSnapshot:
+        ready: list[Issue] = []
+        integrated: list[Issue] = []
+        running: list[Issue] = []
+        failed: list[Issue] = []
+        for issue in self.github.list_open_issues(limit=self.config.issue_limit):
+            if issue.labels.isdisjoint(OPERATOR_QUEUE_LABELS):
+                continue
+            if AGENT_RUNNING_LABEL in issue.labels:
+                running.append(issue)
+            if AGENT_FAILED_LABEL in issue.labels:
+                failed.append(issue)
+            if AGENT_INTEGRATED_LABEL in issue.labels:
+                integrated.append(issue)
+            if READY_LABEL in issue.labels:
+                ready.append(issue)
+        return OperatorQueueSnapshot(
+            ready=tuple(ready),
+            integrated=tuple(integrated),
+            running=tuple(running),
+            failed=tuple(failed),
+        )
+
+    def _next_ready_issue(self) -> Issue | None:
+        return self.loop._next_ready_issue()
+
+    def _run_issue_checkpoint(self, issue: Issue) -> None:
+        self.manifest.record_current_issue(issue)
+        emit(f"Operator cycle: implementing #{issue.number}: {issue.title}")
+        manifest_path: Path | None = None
+        try:
+            child_manifest = self.loop._handle_implementation(issue)
+            if child_manifest is not None:
+                manifest_path = child_manifest.path
+        except RalphError as error:
+            manifest_path = latest_child_manifest_path(
+                self.config.log_root,
+                prefix=f"issue-{issue.number}-",
+            )
+            guidance = operator_issue_failure_guidance(issue, manifest_path)
+            self.manifest.record_checkpoint(
+                "issue_failed",
+                message=f"Issue #{issue.number} failed.",
+                child_manifest_path=manifest_path,
+                issue=issue,
+                status="failed",
+                recovery_guidance=guidance,
+            )
+            self.manifest.record_failure(
+                error,
+                recovery_guidance=guidance,
+                child_manifest_path=manifest_path,
+            )
+            raise
+        if manifest_path is None:
+            manifest_path = latest_child_manifest_path(
+                self.config.log_root,
+                prefix=f"issue-{issue.number}-",
+            )
+        status = child_manifest_status(manifest_path)
+        if status == "succeeded":
+            self.manifest.record_checkpoint(
+                "issue_succeeded",
+                message=f"Issue #{issue.number} completed.",
+                child_manifest_path=manifest_path,
+                issue=issue,
+            )
+            self.manifest.clear_current()
+            return
+
+        guidance = operator_issue_failure_guidance(issue, manifest_path)
+        self.manifest.record_checkpoint(
+            "issue_failed",
+            message=f"Issue #{issue.number} did not complete successfully.",
+            child_manifest_path=manifest_path,
+            issue=issue,
+            status="failed",
+            recovery_guidance=guidance,
+        )
+        self.manifest.record_failure(
+            RalphError(f"Issue #{issue.number} status was {status}."),
+            recovery_guidance=guidance,
+            child_manifest_path=manifest_path,
+        )
+        raise RalphError(guidance)
+
+    def _run_promotion_checkpoint(self) -> None:
+        source_branch = self.config.source_branch
+        target_branch = self.loop._promotion_target_branch()
+        self.manifest.record_current_promotion(
+            source_branch=source_branch,
+            target_branch=target_branch,
+        )
+        self.manifest.record_checkpoint(
+            "before_promotion",
+            message=f"Starting Promotion from {source_branch} to {target_branch}.",
+            details={"source_branch": source_branch, "target_branch": target_branch},
+        )
+        emit(f"Operator cycle: promoting {source_branch} to {target_branch}")
+        manifest_path: Path | None = None
+        try:
+            child_manifest = self.loop._promote()
+            manifest_path = child_manifest.path
+        except RalphError as error:
+            manifest_path = latest_child_manifest_path(self.config.log_root, prefix="promote-")
+            guidance = operator_promotion_failure_guidance(manifest_path)
+            self.manifest.record_checkpoint(
+                "promotion_failed",
+                message="Promotion failed.",
+                child_manifest_path=manifest_path,
+                status="failed",
+                recovery_guidance=guidance,
+            )
+            self.manifest.record_failure(
+                error,
+                recovery_guidance=guidance,
+                child_manifest_path=manifest_path,
+            )
+            raise
+
+        status = child_manifest_status(manifest_path)
+        if status != "succeeded":
+            guidance = operator_promotion_failure_guidance(manifest_path)
+            self.manifest.record_checkpoint(
+                "promotion_failed",
+                message=f"Promotion status was {status}.",
+                child_manifest_path=manifest_path,
+                status="failed",
+                recovery_guidance=guidance,
+            )
+            self.manifest.record_failure(
+                RalphError(f"Promotion status was {status}."),
+                recovery_guidance=guidance,
+                child_manifest_path=manifest_path,
+            )
+            raise RalphError(guidance)
+
+        self.manifest.record_checkpoint(
+            "promotion_succeeded",
+            message="Promotion completed.",
+            child_manifest_path=manifest_path,
+        )
+        self._record_post_promotion_followup_checkpoint(manifest_path)
+        self.manifest.clear_current()
+
+    def _record_post_promotion_followup_checkpoint(self, manifest_path: Path) -> None:
+        details = post_promotion_followup_checkpoint_details(manifest_path)
+        if not details:
+            return
+        self.manifest.record_checkpoint(
+            "post_promotion_followup_creation",
+            message=(
+                "Post-promotion follow-up creation phase completed with "
+                f"status {details['status']}."
+            ),
+            child_manifest_path=manifest_path,
+            details=details,
+        )
+
+    def _stop_for_queue_condition(
+        self,
+        message: str,
+        *,
+        snapshot: OperatorQueueSnapshot,
+    ) -> None:
+        guidance = operator_queue_recovery_guidance(snapshot=snapshot, message=message)
+        self.manifest.clear_current()
+        self.manifest.record_checkpoint(
+            "queue_blocked",
+            message=message,
+            status="failed",
+            recovery_guidance=guidance,
+            details={
+                "ready": [issue.number for issue in snapshot.ready],
+                "integrated": [issue.number for issue in snapshot.integrated],
+                "running": [issue.number for issue in snapshot.running],
+                "failed": [issue.number for issue in snapshot.failed],
+            },
+        )
+        self.manifest.record_failure(
+            RalphError(message),
+            recovery_guidance=guidance,
+        )
+        emit(guidance, err=True)
+        raise RalphError(guidance)
+
+
+def operator_issue_failure_guidance(issue: Issue, manifest_path: Path | None) -> str:
+    manifest_text = f" `{manifest_path}`" if manifest_path is not None else ""
+    return (
+        f"Inspect issue #{issue.number} and child run manifest{manifest_text}. "
+        "Resolve the failure or issue labels before restarting the Operator run."
+    )
+
+
+def operator_promotion_failure_guidance(manifest_path: Path | None) -> str:
+    manifest_text = f" `{manifest_path}`" if manifest_path is not None else ""
+    return (
+        f"Inspect the Promotion child run manifest{manifest_text}. Reconcile any "
+        "post-push metadata state before restarting the Operator run."
+    )
+
+
+def operator_queue_recovery_guidance(
+    *,
+    snapshot: OperatorQueueSnapshot,
+    message: str,
+) -> str:
+    parts = [message]
+    if snapshot.running:
+        parts.append(
+            "Open agent-running issue(s): "
+            + ", ".join(f"#{issue.number}" for issue in snapshot.running)
+        )
+    if snapshot.failed:
+        parts.append(
+            "Open agent-failed issue(s): "
+            + ", ".join(f"#{issue.number}" for issue in snapshot.failed)
+        )
+    if snapshot.ready:
+        parts.append(
+            "Open ready-for-agent issue(s): "
+            + ", ".join(f"#{issue.number}" for issue in snapshot.ready)
+        )
+    if snapshot.integrated:
+        parts.append(
+            "Open agent-integrated issue(s): "
+            + ", ".join(f"#{issue.number}" for issue in snapshot.integrated)
+        )
+    parts.append("Inspect the issue state and rerun the Operator run after recovery.")
+    return " ".join(parts)
+
+
+def latest_child_manifest_path(log_root: Path, *, prefix: str) -> Path | None:
+    candidates = sorted(log_root.glob(f"{prefix}*/{MANIFEST_NAME}"))
+    if not candidates:
+        return None
+    return candidates[-1]
+
+
+def child_manifest_status(manifest_path: Path | None) -> str:
+    if manifest_path is None or not manifest_path.exists():
+        return "missing"
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return "invalid"
+    if not isinstance(data, dict):
+        return "invalid"
+    return str(data.get("status") or "unknown")
+
+
+def post_promotion_followup_checkpoint_details(manifest_path: Path) -> dict[str, Any] | None:
+    if not manifest_path.exists():
+        return None
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    followups = data.get("post_promotion_followups")
+    if not isinstance(followups, dict):
+        return None
+    status = str(followups.get("status") or "")
+    if status == "" or status.startswith("skipped_"):
+        return None
+    return {
+        "status": status,
+        "created": len(followups.get("created") or []),
+        "duplicates": len(followups.get("duplicates") or []),
+        "validation_downgrades": len(followups.get("validation_downgrades") or []),
+        "failures": len(followups.get("failures") or []),
+    }
+
+
 def manifest_path_for_run(run_dir: Path) -> Path:
     if run_dir.name == MANIFEST_NAME:
         return run_dir
@@ -5027,6 +6714,13 @@ def ready_issue_refresh_status_value(manifest: RunManifest) -> str:
     return str(refresh.get("status") or "not_started")
 
 
+def branch_sync_status_value(manifest: RunManifest) -> str:
+    sync = manifest.data.get("branch_sync")
+    if not isinstance(sync, dict):
+        return "not_started"
+    return str(sync.get("status") or "not_started")
+
+
 def metadata_recovery_complete_status(mode: str) -> str:
     if mode == TRUNK_MODE:
         return "closed"
@@ -5041,6 +6735,16 @@ def recommended_run_action(manifest: RunManifest) -> str:
     run_kind = str(manifest.data.get("run_kind") or "")
     if run_kind != "implementation":
         return "Inspect the Promotion manifest manually; --recover-run is for implementation runs."
+
+    branch_sync = manifest.data.get("branch_sync")
+    if isinstance(branch_sync, dict) and branch_sync.get("status") == "failed":
+        guidance = branch_sync.get("recovery_guidance")
+        if isinstance(guidance, str) and guidance != "":
+            return guidance
+        return (
+            "Resolve the failed branch sync on the recorded branch-sync worktree "
+            "before rerunning Ralph drain."
+        )
 
     try:
         mode = manifest_delivery_mode(manifest)
@@ -5096,10 +6800,151 @@ def inspect_run(run_dir: Path) -> None:
     emit(f"Delivery mode: {manifest.data.get('delivery_mode') or 'unknown'}")
     emit(f"Integration target: {manifest.data.get('integration_target') or 'unknown'}")
     emit(f"QA status: {qa_status_summary(manifest)}")
+    emit(f"Branch sync status: {branch_sync_status_value(manifest)}")
     emit(f"Push status: {push_status_summary(manifest)}")
     emit(f"Metadata status: {metadata_status_value(manifest)}")
     emit(f"Ready issue refresh status: {ready_issue_refresh_status_value(manifest)}")
     emit(f"Recommended next action: {recommended_run_action(manifest)}")
+
+
+def operator_run_root(log_root: Path) -> Path:
+    return log_root.parent / OPERATOR_RUN_ROOT_NAME
+
+
+def new_operator_run_dir(log_root: Path) -> Path:
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    root = operator_run_root(log_root)
+    candidate = root / f"{OPERATOR_RUN_PREFIX}-{timestamp}"
+    if not candidate.exists():
+        return candidate
+    for suffix in range(2, 100):
+        candidate = root / f"{OPERATOR_RUN_PREFIX}-{timestamp}-{suffix}"
+        if not candidate.exists():
+            return candidate
+    raise RalphError(f"Could not allocate unique Operator run directory under {root}")
+
+
+def operator_manifest_path_for_run(run_dir: Path) -> Path:
+    if run_dir.name == OPERATOR_MANIFEST_NAME:
+        return run_dir
+    return run_dir / OPERATOR_MANIFEST_NAME
+
+
+def load_operator_run_manifest(run_dir: Path) -> OperatorRunManifest:
+    manifest_path = operator_manifest_path_for_run(run_dir)
+    if not manifest_path.exists():
+        raise RalphError(f"Operator run manifest not found: {manifest_path}")
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise RalphError(f"Operator run manifest is invalid JSON: {manifest_path}: {error}") from error
+    if not isinstance(data, dict):
+        raise RalphError(f"Operator run manifest is not a JSON object: {manifest_path}")
+    return OperatorRunManifest(manifest_path, data)
+
+
+def latest_operator_run_dir(repo_root: Path) -> Path:
+    root = operator_run_root(repo_root / ".ralph" / "runs")
+    candidates = sorted(root.glob(f"{OPERATOR_RUN_PREFIX}-*/{OPERATOR_MANIFEST_NAME}"))
+    if not candidates:
+        raise RalphError(f"No Operator run manifests found under {root}")
+    return candidates[-1].parent
+
+
+def operator_status_path(value: str, runner: CommandRunner) -> Path:
+    if value == "latest":
+        repo_root = discover_repo_root(runner).resolve()
+        return latest_operator_run_dir(repo_root)
+    return Path(value).expanduser()
+
+
+def operator_current_summary(data: dict[str, Any]) -> str:
+    current = data.get("current")
+    if not isinstance(current, dict):
+        return "none"
+    kind = str(current.get("kind") or "")
+    if kind == "issue":
+        issue = current.get("issue")
+        if isinstance(issue, dict):
+            number = issue.get("number")
+            title = str(issue.get("title") or "")
+            return f"issue #{number} {title}".strip()
+    if kind == "promotion":
+        source_branch = str(current.get("source_branch") or "unknown")
+        target_branch = str(current.get("target_branch") or "unknown")
+        return f"Promotion {source_branch} -> {target_branch}"
+    return kind or "unknown"
+
+
+def operator_last_checkpoint_summary(data: dict[str, Any]) -> str:
+    checkpoint = data.get("last_checkpoint")
+    if not isinstance(checkpoint, dict):
+        return "none"
+    name = str(checkpoint.get("checkpoint") or "unknown")
+    message = str(checkpoint.get("message") or "")
+    if message == "":
+        return name
+    return f"{name}: {message}"
+
+
+def operator_queue_summary(data: dict[str, Any]) -> str:
+    queue = data.get("queue")
+    if not isinstance(queue, dict):
+        return "unknown"
+    parts = []
+    for key in ("ready", "integrated", "running", "failed"):
+        value = queue.get(key)
+        count = len(value) if isinstance(value, list) else 0
+        parts.append(f"{key}={count}")
+    return ", ".join(parts)
+
+
+def operator_recommended_action(data: dict[str, Any]) -> str:
+    guidance = data.get("recovery_guidance")
+    if isinstance(guidance, str) and guidance != "":
+        return guidance
+    status = str(data.get("status") or "")
+    state = str(data.get("state") or "")
+    if status == "succeeded" or state == "queue_clean":
+        return "No action needed; the Operator queue is clean."
+    if status == "running":
+        return (
+            "Wait for the next issue-boundary checkpoint, then run the Operator "
+            "status command again."
+        )
+    if state == "detached_launched":
+        return "Run the Operator status command again after the detached child starts."
+    return "Inspect the Operator manifest and child run manifests before rerunning."
+
+
+def inspect_operator_run_status(value: str, runner: CommandRunner) -> None:
+    run_dir = operator_status_path(value, runner)
+    manifest = load_operator_run_manifest(run_dir)
+    data = manifest.data
+    emit("Ralph Operator run status")
+    emit(f"Operator run directory: {manifest.path.parent}")
+    emit(f"Current state: {data.get('status') or 'unknown'} / {data.get('state') or 'unknown'}")
+    emit(f"Cycle: {data.get('cycle') or 0} / {data.get('max_cycles') or 'unknown'}")
+    emit(f"Last checkpoint: {operator_last_checkpoint_summary(data)}")
+    emit(f"Current: {operator_current_summary(data)}")
+    emit(f"Queue: {operator_queue_summary(data)}")
+    child_runs = data.get("child_run_manifests")
+    emit("Child run manifests:")
+    if isinstance(child_runs, list) and child_runs:
+        for child in child_runs:
+            if not isinstance(child, dict):
+                continue
+            kind = str(child.get("kind") or "unknown")
+            status = str(child.get("status") or "unknown")
+            path = str(child.get("path") or "")
+            issue = child.get("issue")
+            if isinstance(issue, dict) and issue.get("number") is not None:
+                emit(f"- {kind} #{issue.get('number')} {status}: {path}")
+            else:
+                emit(f"- {kind} {status}: {path}")
+    else:
+        emit("- none")
+    emit(f"Recommended next action: {operator_recommended_action(data)}")
 
 
 def qa_results_from_manifest(manifest: RunManifest) -> list[QAResult]:
@@ -6130,11 +7975,15 @@ def build_config(args: argparse.Namespace, runner: CommandRunner) -> LoopConfig:
         skip_post_promotion_review=args.skip_post_promotion_review,
         skip_post_promotion_followups=args.skip_post_promotion_followups,
         ready_issue_refresh_enabled=(
-            args.ready_issue_refresh or (args.drain and not args.skip_ready_issue_refresh)
+            args.ready_issue_refresh
+            or (
+                (args.drain or args.drain_promote_all)
+                and not args.skip_ready_issue_refresh
+            )
         ),
         skip_ready_issue_refresh=args.skip_ready_issue_refresh,
         issue=args.issue,
-        drain=args.drain,
+        drain=args.drain or args.drain_promote_all,
         max_issues=args.max_issues,
         dry_run=args.dry_run,
         allow_dirty_worktree=args.allow_dirty_worktree,
@@ -6143,6 +7992,78 @@ def build_config(args: argparse.Namespace, runner: CommandRunner) -> LoopConfig:
         log_root=log_root,
         worktree_container=worktree_container,
     )
+
+
+def operator_child_command(args: argparse.Namespace, run_dir: Path) -> list[str]:
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "--drain-promote-all",
+        "--operator-run-dir",
+        str(run_dir),
+        "--max-cycles",
+        str(args.max_cycles),
+        "--source-branch",
+        args.source_branch,
+        "--max-issues",
+        str(args.max_issues),
+        "--issue-limit",
+        str(args.issue_limit),
+    ]
+    optional_values = {
+        "--repo": args.repo,
+        "--delivery-mode": args.delivery_mode,
+        "--target-branch": args.target_branch,
+        "--base": args.base,
+        "--worktree-container": args.worktree_container,
+    }
+    for flag, value in optional_values.items():
+        if value is not None:
+            command.extend([flag, str(value)])
+    if args.skip_post_promotion_review:
+        command.append("--skip-post-promotion-review")
+    if args.skip_post_promotion_followups:
+        command.append("--skip-post-promotion-followups")
+    if args.ready_issue_refresh:
+        command.append("--ready-issue-refresh")
+    if args.skip_ready_issue_refresh:
+        command.append("--skip-ready-issue-refresh")
+    if args.allow_dirty_worktree:
+        command.append("--allow-dirty-worktree")
+    return command
+
+
+def operator_status_command(run_dir: Path) -> str:
+    return f"python3 scripts/ralph.py --operator-run-status {shlex.quote(str(run_dir))}"
+
+
+def launch_detached_operator_run(args: argparse.Namespace, runner: CommandRunner) -> None:
+    config = build_config(args, runner)
+    run_dir = new_operator_run_dir(config.log_root)
+    run_dir.mkdir(parents=True, exist_ok=False)
+    stdout_log = run_dir / "operator-stdout.log"
+    stderr_log = run_dir / "operator-stderr.log"
+    child_command = operator_child_command(args, run_dir)
+    with stdout_log.open("ab") as stdout_handle, stderr_log.open("ab") as stderr_handle:
+        process = subprocess.Popen(
+            child_command,
+            cwd=config.repo_root,
+            stdin=subprocess.DEVNULL,
+            stdout=stdout_handle,
+            stderr=stderr_handle,
+            start_new_session=True,
+        )
+    OperatorRunManifest.for_detached_launch(
+        run_dir=run_dir,
+        config=config,
+        max_cycles=args.max_cycles,
+        command=child_command,
+        stdout_log=stdout_log,
+        stderr_log=stderr_log,
+        pid=process.pid,
+    )
+    emit(f"Operator run directory: {run_dir}")
+    emit(f"Status command: {operator_status_command(run_dir)}")
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -6171,6 +8092,39 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--promote",
         action="store_true",
         help="Promote the source branch to the target branch and close verified integrated issues.",
+    )
+    parser.add_argument(
+        "--drain-promote-all",
+        action="store_true",
+        help=(
+            "Run checkpointed Operator cycles that drain ready work, run Promotion, "
+            "and repeat until the queue is clean."
+        ),
+    )
+    parser.add_argument(
+        "--max-cycles",
+        type=int,
+        default=DEFAULT_OPERATOR_MAX_CYCLES,
+        help=(
+            "Maximum drain-and-Promotion Operator cycles. "
+            f"Defaults to {DEFAULT_OPERATOR_MAX_CYCLES}. Use 0 for unlimited."
+        ),
+    )
+    parser.add_argument(
+        "--detach",
+        action="store_true",
+        help=(
+            "Launch --drain-promote-all in the background, print the Operator run "
+            "directory and status command, then exit."
+        ),
+    )
+    parser.add_argument(
+        "--operator-run-status",
+        help="Report compact Operator run status for latest or a run directory.",
+    )
+    parser.add_argument(
+        "--operator-run-dir",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--skip-post-promotion-review",
@@ -6253,10 +8207,32 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Directory where per-issue worktrees should be created.",
     )
     args = parser.parse_args(argv)
-    if args.inspect_run is not None and args.recover_run is not None:
-        parser.error("Use only one of --inspect-run or --recover-run.")
+    exclusive_modes = [
+        args.inspect_run is not None,
+        args.recover_run is not None,
+        args.operator_run_status is not None,
+        args.drain_promote_all,
+    ]
+    if sum(1 for enabled in exclusive_modes if enabled) > 1:
+        parser.error(
+            "Use only one of --inspect-run, --recover-run, --operator-run-status, "
+            "or --drain-promote-all."
+        )
     if args.ready_issue_refresh and args.skip_ready_issue_refresh:
         parser.error("Use only one of --ready-issue-refresh or --skip-ready-issue-refresh.")
+    if args.drain_promote_all and (
+        args.promote or args.drain or args.issue is not None or args.bootstrap_labels
+    ):
+        parser.error(
+            "--drain-promote-all cannot be combined with --promote, --drain, "
+            "--issue, or --bootstrap-labels."
+        )
+    if args.detach and not args.drain_promote_all:
+        parser.error("--detach is only supported with --drain-promote-all.")
+    if args.operator_run_dir is not None and (not args.drain_promote_all or args.detach):
+        parser.error("--operator-run-dir is reserved for foreground Operator child runs.")
+    if args.max_cycles < 0:
+        parser.error("--max-cycles must be 0 or greater.")
     return args
 
 
@@ -6267,13 +8243,32 @@ def main(argv: list[str] | None = None) -> int:
         if parsed_args.inspect_run is not None:
             inspect_run(Path(parsed_args.inspect_run))
             return 0
+        if parsed_args.operator_run_status is not None:
+            inspect_operator_run_status(parsed_args.operator_run_status, runner)
+            return 0
         if parsed_args.recover_run is not None and parsed_args.dry_run:
             raise RalphError("--recover-run does not support --dry-run; use --inspect-run first.")
+        if parsed_args.detach:
+            launch_detached_operator_run(parsed_args, runner)
+            return 0
         config = build_config(parsed_args, runner)
         if parsed_args.recover_run is not None:
             recovery = RalphRunRecovery(config, runner)
             recovery.validate_tools()
             recovery.recover(Path(parsed_args.recover_run))
+            return 0
+        if parsed_args.drain_promote_all:
+            run_dir = (
+                Path(parsed_args.operator_run_dir).resolve()
+                if parsed_args.operator_run_dir is not None
+                else new_operator_run_dir(config.log_root)
+            )
+            RalphOperatorRun(
+                config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=parsed_args.max_cycles,
+            ).run()
             return 0
         RalphLoop(config, runner).run()
     except RalphError as error:

@@ -90,8 +90,8 @@ for selected candidates stops the drain before the next ready issue claim.
 
 Use [ralph-loop.md](ralph-loop.md) for Ralph internals, including
 **Delivery mode**, **Local integration**, **Integration target**, **Promotion**,
-**Ready issue refresh**, **Post-promotion review**, run manifests, QA
-selection, and recovery behavior.
+**Ready issue refresh**, checkpointed Operator runs, **Post-promotion review**,
+run manifests, QA selection, and recovery behavior.
 Use [OPERATOR.md](../../OPERATOR.md) for the human **Operator workflow**.
 Use `$ralph-curate` when existing open issues need to be compared with the
 current branch before changing bodies, labels, blockers, or closure state.

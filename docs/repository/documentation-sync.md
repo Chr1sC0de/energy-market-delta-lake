@@ -197,6 +197,24 @@ way:
 - #72: Ralph implementation prompts include bounded recent **Ready issue
   refresh** notes after the issue body while keeping the issue body as the
   primary implementation contract.
+- #112: Ralph treats default Gitflow branch-sync conflicts and stale
+  `agent-sync-main-into-dev` worktrees as drain-stopping pre-claim failures.
+  The recovery contract, `branch_sync` manifest fields, and operator guidance
+  live in [docs/agents/ralph-loop.md](../agents/ralph-loop.md), with the
+  Delivery mode decision summarized in ADR
+  [0002](../adr/0002-ralph-delivery-modes.md).
+- #113: Ralph recovers implementation commit hooks that rewrite tracked files
+  by staging the formatter-modified paths, rerunning the selected
+  **Commit check** once, retrying the implementation commit, and recording
+  `formatter_recovery` manifest evidence. Retry failures are classified as
+  `formatter_rewrite_recovery_failure` with log paths and operator recovery
+  guidance in [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
+- #111: Ralph provides a checkpointed Operator run for repeated drain and
+  **Promotion** cycles. The Codex-safe detached launch, compact
+  `--operator-run-status` inspection, child manifest links, checkpoint names,
+  cycle guard, and recovery guidance live in
+  [OPERATOR.md](../../OPERATOR.md) and
+  [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
 
 ## Search commands
 

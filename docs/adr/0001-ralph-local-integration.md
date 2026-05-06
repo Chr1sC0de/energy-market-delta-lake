@@ -26,8 +26,11 @@ a **Local integration** squash merge.
 
 Ralph must be conservative around git drift. Trunk delivery integrates against
 latest `origin/main`. Gitflow delivery keeps `origin/dev` current with
-`origin/main` before issue branches are created, then rebases and reruns selected
-QA if the **Integration target** moves before squash-merging. Exploratory
+`origin/main` before issue branches are created. That branch sync is a
+pre-claim drain precondition: merge conflicts or stale branch-sync worktrees
+stop the drain with manifest recovery guidance instead of cascading unrelated
+issue failures. Ralph then rebases and reruns selected QA if the **Integration
+target** moves before squash-merging. Exploratory
 delivery fails clearly if the durable **Exploratory branch** already exists,
 otherwise creates `agent/exploratory/issue-N-slug` from `origin/main` and
 pushes that validated branch for human review without running **Local

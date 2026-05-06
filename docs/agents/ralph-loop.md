@@ -13,6 +13,7 @@ after QA.
 - [Labels](#labels)
 - [Run modes](#run-modes)
 - [Live run preflight](#live-run-preflight)
+- [Operator run](#operator-run)
 - [AFK run monitoring](#afk-run-monitoring)
 - [Run manifest](#run-manifest)
 - [Run inspection and recovery](#run-inspection-and-recovery)
@@ -47,6 +48,13 @@ The loop stops when the queue has no unblocked implementation or triage
 candidates, or when `--max-issues` is reached. A plain `--drain` run defaults
 to 10 implementation attempts; `--max-issues 0` is the explicit unlimited drain
 mode.
+
+The checkpointed Operator run path wraps the issue and **Promotion** commands
+for unattended cleanup. It implements one ready issue at a time, checkpoints the
+issue result, runs **Promotion** when reviewed Gitflow work remains, checkpoints
+**Post-promotion review** follow-up creation, and repeats until the Operator
+queue is clean or a guard or failure condition stops the run with recovery
+guidance.
 
 Human operators should call Ralph through repo-local skills:
 
@@ -201,6 +209,24 @@ Promote reviewed Gitflow work from `dev` to `main`:
 python3 scripts/ralph.py --promote
 ```
 
+Run repeated drain and **Promotion** cycles in a foreground terminal:
+
+```bash
+python3 scripts/ralph.py --drain-promote-all --max-cycles 10
+```
+
+Launch the checkpointed Operator run in Codex-safe detached mode:
+
+```bash
+python3 scripts/ralph.py --drain-promote-all --detach
+```
+
+Inspect the latest Operator run without following child logs:
+
+```bash
+python3 scripts/ralph.py --operator-run-status latest
+```
+
 Skip the default **Post-promotion review** during **Promotion**:
 
 ```bash
@@ -292,6 +318,56 @@ remote branch being operated on. The script fetches the implementation base
 during implementation and rebases issue work if that base moves, but the
 operator should start from a known repo state.
 
+## Operator run
+
+`python3 scripts/ralph.py --drain-promote-all` runs the Operator orchestration
+loop. Each cycle records a compact checkpoint under
+`.ralph/operator-runs/.../operator-run.json` and links to the detailed child
+`.ralph/runs/.../ralph-run.json` manifest for the issue or **Promotion** that
+just crossed a boundary.
+
+The Operator run checks the open GitHub Issue queue for these runtime states:
+
+- `ready-for-agent`
+- `agent-integrated`
+- `agent-running`
+- `agent-failed`
+
+It stops cleanly only when none of those open issues remain. It stops with
+recovery guidance when `agent-running` or `agent-failed` issues remain, when
+ready issues remain but none are unblocked, when an issue or **Promotion** child
+manifest fails, or when `--max-cycles` is reached. The default cycle guard is
+10; use `--max-cycles 0` only for explicit unlimited Operator runs.
+
+Checkpoints are recorded for:
+
+- issue success or failure
+- before **Promotion**
+- **Promotion** success or failure
+- **Post-promotion review** follow-up creation
+- queue clean
+- stopped-by-guard
+
+Detached mode is the Codex-safe path:
+
+```bash
+python3 scripts/ralph.py --drain-promote-all --detach
+```
+
+The launcher prints the Operator run directory and a status command, then exits
+without tailing child Codex JSONL or rich command logs. Codex should stop
+polling after launch and inspect status only at issue boundaries:
+
+```bash
+python3 scripts/ralph.py --operator-run-status latest
+python3 scripts/ralph.py --operator-run-status .ralph/operator-runs/operator-20260506T010203Z
+```
+
+Status reports the current state, last checkpoint, current issue or
+**Promotion**, child manifest paths, queue counts, and recommended next action.
+Open the child `ralph-run.json` or command logs only when the status guidance
+points to a failed issue, failed **Promotion**, or manual recovery condition.
+
 ## AFK run monitoring
 
 Ralph writes command logs while subprocesses are still running. Long Codex
@@ -354,9 +430,17 @@ Key fields for inspection:
   candidate issue metadata, analysis log path, Markdown artifact path, and
   failure state for drain-mode implementation runs after successful **Local
   integration** or Exploratory handoff.
+- `branch_sync`: Gitflow `main`-into-`dev` sync status, sync worktree path,
+  merge or push log path, conflicted files, failure type, and recovery guidance
+  when Ralph must stop before issue implementation.
+- `formatter_recovery`: implementation commit formatter-rewrite recovery
+  status, formatter-modified tracked files, staged files, original and retry
+  commit log paths, rerun **Commit check** results, failure type, and recovery
+  guidance.
 - `branches`: issue, source, and target branch names that apply to the run.
 - `paths`: repo root, run directory, worktree container, and implementation,
-  integration, Promotion source, or Promotion target worktree paths.
+  branch-sync, integration, Promotion source, or Promotion target worktree
+  paths.
 - `changed_files`: current file diff used for QA, **Local integration**, or
   Exploratory handoff.
 - `qa_results`: selected QA commands, cwd, log path, and pass/fail state.
@@ -369,6 +453,10 @@ Key fields for inspection:
   delivery this is the **Local integration** commit; for Exploratory delivery
   this is the **Exploratory branch** commit.
 - `promotion_commit`: **Promotion** commit pushed to `main`.
+- `local_branch_fast_forwards`: checked-out local source branch and
+  **Integration target** branch fast-forward status, worktree path,
+  current and target commits, and recovery command plus reason when a local
+  branch is not safe to update.
 - `pushes`: per-branch push state, commit SHA, and push log path.
 - `github_metadata`: claim, completion, failure, Promotion comment, label, and
   close state.
@@ -456,6 +544,10 @@ implementation. `delivery-gitflow` defaults to `origin/dev`; if that branch does
 not exist, Ralph creates it from `origin/main`. Before creating a Gitflow issue
 branch, Ralph also syncs `origin/main` into `origin/dev` when `main` is not
 already an ancestor of `dev`, so the **Integration target** is not behind trunk.
+This branch sync runs before Ralph claims the issue. If the merge conflicts or
+an existing `agent-sync-main-into-dev` worktree indicates stale sync state,
+Ralph records `branch_sync` recovery guidance in the run manifest and stops the
+drain without marking unrelated `ready-for-agent` issues failed.
 `delivery-trunk` defaults to `origin/main`. `delivery-exploratory` defaults to
 a per-issue **Exploratory branch** named `agent/exploratory/issue-N-slug`.
 Ralph fails clearly before Codex implementation if that remote branch already
@@ -480,8 +572,19 @@ maintainer comments and automated triage comments are excluded. If comment
 fetching fails, Ralph fails the issue before starting the Codex implementation
 subprocess instead of running with incomplete refresh context.
 
-After QA passes, Ralph commits the implementation branch, fetches the branch's
-base, and rebases if the base moved. A rebase triggers the selected QA commands
+After QA passes, Ralph commits the implementation branch. If the implementation
+commit hook attempt rewrites tracked files, Ralph records
+`formatter_recovery`, stages the formatter-modified paths, reruns the selected
+**Commit check** command or commands once, and retries the implementation
+commit. A successful recovery keeps the rerun **Commit check** evidence in
+`qa_results` and continues normally. If the recovery **Commit check** or retry
+commit fails, Ralph fails the issue as
+`formatter_rewrite_recovery_failure`, preserving the implementation worktree,
+commit logs, rerun **Commit check** logs, modified file list, and recovery
+guidance.
+
+After the implementation branch commit succeeds, Ralph fetches the branch's
+base and rebases if the base moved. A rebase triggers the selected QA commands
 again before **Local integration** or Exploratory handoff continues.
 
 For **Local integration**, Ralph creates a temporary detached integration
@@ -615,9 +718,9 @@ source-branch changes cannot reach a Promotion merge, `main` push, `dev` branch
 sync, GitHub metadata update, or issue closure without passing against the exact
 source revision.
 Ralph then merges that source revision into a detached `origin/main` worktree
-with per-issue commits preserved, pushes `main`, and fast-forwards `dev` to the
-promotion commit so the next Gitflow drain starts from a `dev` branch that
-contains `main`.
+with per-issue commits preserved, pushes `main`, and fast-forwards remote
+`dev` to the promotion commit so the next Gitflow drain starts from a `dev`
+branch that contains `main`.
 
 After the push succeeds, Ralph scans open `agent-integrated` issues. It closes
 only issues whose recorded Gitflow integration commit, documented manual
@@ -657,6 +760,13 @@ drafts are created as `needs-triage` with validation evidence so they are not
 drainable work. Follow-up creation failures after `main` is pushed are
 warning-only: **Promotion** remains succeeded, the manifest records the
 failure, and `post-promotion-review.md` receives recovery guidance.
+
+After a successful **Promotion**, Ralph inspects checked-out local worktrees for
+the source branch and **Integration target** branch. Clean local worktrees whose
+current commits are ancestors of the Promotion commit are fast-forwarded to that
+commit. Dirty, diverged, missing, or otherwise unsafe local worktrees are left
+untouched; the **Promotion** manifest records the status, concise reason, and
+recovery command under `local_branch_fast_forwards`.
 
 Operators can pass `--skip-post-promotion-followups` to run the review while
 skipping automatic follow-up issue creation. Operators can pass
@@ -908,6 +1018,21 @@ issue metadata, `ready_issue_refresh.status: failed`, and any candidate-level
 `ready_issue_refresh.mutation_results`. Operators inspect the analysis log,
 artifact path, and mutation results, then reconcile only failed GitHub Issue
 metadata before restarting the drain.
+
+Gitflow branch-sync conflicts and stale `agent-sync-main-into-dev` worktrees
+also stop the drain. Ralph records the sync worktree path, relevant log path,
+conflicted files when available, and recovery guidance under `branch_sync` in
+the run manifest. Operators should inspect that worktree, either finish and
+push the sync to the Gitflow **Integration target** or remove the stale worktree,
+then rerun Ralph. Ralph does not continue claiming ready issues while that
+branch-sync state is unresolved.
+
+Implementation commit formatter recovery failures are issue failures and keep
+the implementation worktree for inspection. Operators should inspect
+`formatter_recovery` in the run manifest, review the recorded commit and
+**Commit check** logs, keep the staged formatter updates if they are correct,
+rerun the recorded **Commit check** from the owning **Subproject**, then rerun
+Ralph for the issue.
 
 Environment failures stop the run. Examples include invalid `gh` auth, missing
 labels, unavailable tools, failing Git operations before claim, or unavailable

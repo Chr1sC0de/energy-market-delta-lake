@@ -597,9 +597,9 @@ before deleting this temporary file.
 - Run state is centralized in `RunManifest`, but the manifest writes are
   called directly from workflow steps. Implementation manifests record issue,
   **Delivery mode**, **Integration target**, branch paths, changed files, QA,
-  sandboxed issue access, published implementation commit, pushes, GitHub
-  metadata, events, and failure details. **Promotion** manifests additionally
-  record source branch, source tree, promoted issues, the promoted source
+  branch-sync state, sandboxed issue access, published implementation commit,
+  pushes, GitHub metadata, events, and failure details. **Promotion** manifests
+  additionally record source branch, source tree, promoted issues, the promoted source
   commit inventory, Promotion commit, source-branch sync, and
   **Post-promotion review** plus validated follow-up issue creation state. The
   promoted source commit inventory records each promoted commit SHA and subject,
@@ -637,8 +637,9 @@ before deleting this temporary file.
   creation, worktree creation, diff detection, commit, rebase, squash merge,
   no-ff merge, push, ancestor checks, and cleanup. Tests assert trunk squash
   merge and push, Gitflow `dev` creation, Gitflow `main` to `dev` sync before
-  issue branch creation, target-drift rebase plus QA rerun, Promotion merge,
-  and `dev` fast-forward after Promotion. `docs/adr/0001-ralph-local-integration.md`
+  issue branch creation, Gitflow branch-sync conflict and stale-worktree
+  fail-stop behavior, target-drift rebase plus QA rerun, Promotion merge, and
+  `dev` fast-forward after Promotion. `docs/adr/0001-ralph-local-integration.md`
   records why Ralph uses **Local integration** instead of GitHub PRs.
 - GitHub issue metadata is concentrated in `GitHubClient`, but metadata policy
   is spread through `_handle_implementation`, `_mark_issue_failed`,
@@ -657,11 +658,13 @@ before deleting this temporary file.
   `inspect_run` is read-only. `RalphRunRecovery.recover` fetches the expected
   **Integration target** and refuses metadata recovery unless the recorded
   **Local integration** commit is reachable from `origin/<target>`. After a
-  post-push metadata failure, Ralph raises `PostPushFailure`, records the
-  failure in the manifest, and does not clean up successful worktrees. Tests
-  assert that recovery refuses unreachable commits, reconciles trunk metadata
-  with closure, reconciles Gitflow metadata without closure, and stops after
-  post-push metadata failure.
+  branch-sync conflict or stale branch-sync worktree, Ralph raises
+  `BranchSyncFailure`, records `branch_sync` recovery guidance, and stops
+  before issue claim. After a post-push metadata failure, Ralph raises
+  `PostPushFailure`, records the failure in the manifest, and does not clean up
+  successful worktrees. Tests assert that recovery refuses unreachable commits,
+  reconciles trunk metadata with closure, reconciles Gitflow metadata without
+  closure, and stops after branch-sync or post-push metadata failure.
 - **Promotion** is currently a method-level workflow inside `RalphLoop`.
   `_promote` fetches source and target, records the source revision, computes
   changed files, records the promoted source commit inventory, creates a

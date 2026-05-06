@@ -319,6 +319,7 @@ class FakeRunner:
         rev_parse_outputs: list[str] | None = None,
         command_outputs: dict[tuple[str, ...], list[str]] | None = None,
         fail_commands: set[tuple[str, ...]] | dict[tuple[str, ...], int] | None = None,
+        fail_command_attempts: dict[tuple[str, ...], list[tuple[int, str]]] | None = None,
         fail_post_promotion_review: bool = False,
         fail_ready_issue_refresh_analysis: bool = False,
         ready_issue_refresh_analysis_markdown: str = READY_ISSUE_REFRESH_ANALYSIS_MARKDOWN,
@@ -330,6 +331,7 @@ class FakeRunner:
         self.diff_outputs = diff_outputs or []
         self.rev_parse_outputs = rev_parse_outputs or []
         self.command_outputs = command_outputs or {}
+        self.fail_command_attempts = fail_command_attempts or {}
         self.fail_post_promotion_review = fail_post_promotion_review
         self.fail_ready_issue_refresh_analysis = fail_ready_issue_refresh_analysis
         self.ready_issue_refresh_analysis_markdown = ready_issue_refresh_analysis_markdown
@@ -366,6 +368,16 @@ class FakeRunner:
         if log_path is not None:
             log_path.parent.mkdir(parents=True, exist_ok=True)
             log_path.write_text("fake log", encoding="utf-8")
+        if command in self.fail_command_attempts and self.fail_command_attempts[command]:
+            returncode, stderr = self.fail_command_attempts[command].pop(0)
+            raise ralph.CommandFailure(
+                args,
+                cwd,
+                returncode,
+                "",
+                stderr,
+                log_path,
+            )
         if command in self.fail_commands:
             raise ralph.CommandFailure(
                 args,
@@ -664,6 +676,148 @@ class TwoReadyIssueLoop(ralph.RalphLoop):
 
     def _next_triage_issue(self) -> ralph.Issue | None:
         return None
+
+
+class NoValidationRalphLoop(ralph.RalphLoop):
+    def _validate_tools(self) -> None:
+        pass
+
+    def _validate_labels(self) -> None:
+        pass
+
+
+def operator_snapshot(
+    *,
+    ready: list[ralph.Issue] | None = None,
+    integrated: list[ralph.Issue] | None = None,
+    running: list[ralph.Issue] | None = None,
+    failed: list[ralph.Issue] | None = None,
+) -> ralph.OperatorQueueSnapshot:
+    return ralph.OperatorQueueSnapshot(
+        ready=tuple(ready or []),
+        integrated=tuple(integrated or []),
+        running=tuple(running or []),
+        failed=tuple(failed or []),
+    )
+
+
+def write_child_manifest(
+    log_root: Path,
+    *,
+    name: str,
+    run_kind: str,
+    status: str,
+    issue: ralph.Issue | None = None,
+    followups_status: str | None = None,
+    created_followups: int = 0,
+) -> Path:
+    run_dir = log_root / name
+    run_dir.mkdir(parents=True, exist_ok=True)
+    payload: dict[str, Any] = {
+        "schema_version": ralph.MANIFEST_SCHEMA_VERSION,
+        "run_kind": run_kind,
+        "status": status,
+        "stage": status,
+        "paths": {"run_dir": str(run_dir)},
+        "events": [],
+    }
+    if issue is not None:
+        payload["issue"] = {
+            "number": issue.number,
+            "title": issue.title,
+            "url": issue.url,
+        }
+    if followups_status is not None:
+        payload["post_promotion_followups"] = {
+            "status": followups_status,
+            "created": [
+                {"number": 100 + index, "url": f"https://example.test/{index}"}
+                for index in range(created_followups)
+            ],
+            "duplicates": [],
+            "validation_downgrades": [],
+            "failures": [],
+        }
+    manifest_path = run_dir / ralph.MANIFEST_NAME
+    manifest_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return manifest_path
+
+
+class ScriptedOperatorRun(ralph.RalphOperatorRun):
+    def __init__(
+        self,
+        config: ralph.LoopConfig,
+        runner: FakeRunner,
+        *,
+        run_dir: Path,
+        max_cycles: int,
+        snapshots: list[ralph.OperatorQueueSnapshot],
+    ) -> None:
+        super().__init__(config, runner, run_dir=run_dir, max_cycles=max_cycles)
+        self.snapshots = snapshots
+        self.current_snapshot: ralph.OperatorQueueSnapshot | None = None
+        self.issue_runs = 0
+        self.promotion_runs = 0
+
+    def _validate_operator_preflight(self) -> None:
+        pass
+
+    def _queue_snapshot(self) -> ralph.OperatorQueueSnapshot:
+        if not self.snapshots:
+            return operator_snapshot()
+        self.current_snapshot = self.snapshots.pop(0)
+        return self.current_snapshot
+
+    def _next_ready_issue(self) -> ralph.Issue | None:
+        if self.current_snapshot is None or not self.current_snapshot.ready:
+            return None
+        return self.current_snapshot.ready[0]
+
+    def _run_issue_checkpoint(self, issue: ralph.Issue) -> None:
+        self.issue_runs += 1
+        self.manifest.record_current_issue(issue)
+        manifest_path = write_child_manifest(
+            self.config.log_root,
+            name=f"issue-{issue.number}-scripted-{self.issue_runs}",
+            run_kind="implementation",
+            status="succeeded",
+            issue=issue,
+        )
+        self.manifest.record_checkpoint(
+            "issue_succeeded",
+            message=f"Issue #{issue.number} completed.",
+            child_manifest_path=manifest_path,
+            issue=issue,
+        )
+        self.manifest.clear_current()
+
+    def _run_promotion_checkpoint(self) -> None:
+        self.promotion_runs += 1
+        source_branch = self.config.source_branch
+        target_branch = ralph.DEFAULT_TRUNK_BRANCH
+        self.manifest.record_current_promotion(
+            source_branch=source_branch,
+            target_branch=target_branch,
+        )
+        self.manifest.record_checkpoint(
+            "before_promotion",
+            message=f"Starting Promotion from {source_branch} to {target_branch}.",
+        )
+        manifest_path = write_child_manifest(
+            self.config.log_root,
+            name=f"promote-scripted-{self.promotion_runs}",
+            run_kind="promotion",
+            status="succeeded",
+            followups_status="completed",
+            created_followups=1 if self.promotion_runs == 1 else 0,
+        )
+        self.manifest.record_checkpoint(
+            "promotion_succeeded",
+            message="Promotion completed.",
+            child_manifest_path=manifest_path,
+        )
+        self._record_post_promotion_followup_checkpoint(manifest_path)
+        self.manifest.clear_current()
 
 
 class RalphHelperTests(unittest.TestCase):
@@ -1422,6 +1576,52 @@ Build it.
             ["docs/agents/ralph-loop.md", "scripts/ralph.py", "tests/test_ralph.py"],
         )
 
+    def test_parse_git_status_tracked_unstaged_paths_excludes_untracked_files(self) -> None:
+        status = "\n".join(
+            [
+                "M  README.md",
+                "MM docs/agents/ralph-loop.md",
+                "AM backend-services/dagster-user/aemo-etl/src/new_asset.py",
+                "?? scratch.txt",
+                "RM old-name.md -> docs/agents/renamed.md",
+            ]
+        )
+        self.assertEqual(
+            ralph.parse_git_status_tracked_unstaged_paths(status),
+            [
+                "backend-services/dagster-user/aemo-etl/src/new_asset.py",
+                "docs/agents/ralph-loop.md",
+                "docs/agents/renamed.md",
+            ],
+        )
+
+    def test_parse_git_worktree_list_porcelain_reads_checked_out_branches(self) -> None:
+        output = "\n".join(
+            [
+                "worktree /repo",
+                "HEAD dev-old",
+                "branch refs/heads/dev",
+                "",
+                "worktree /repo-main",
+                "HEAD main-old",
+                "branch refs/heads/main",
+                "",
+                "worktree /repo-detached",
+                "HEAD detached-sha",
+                "detached",
+                "",
+            ]
+        )
+
+        self.assertEqual(
+            ralph.parse_git_worktree_list_porcelain(output),
+            [
+                ralph.GitWorktree(Path("/repo"), "dev-old", "dev"),
+                ralph.GitWorktree(Path("/repo-main"), "main-old", "main"),
+                ralph.GitWorktree(Path("/repo-detached"), "detached-sha", None),
+            ],
+        )
+
     def test_environment_failure_detection_matches_container_tool_errors(self) -> None:
         error = ralph.CommandFailure(
             ["make", "integration-test"],
@@ -2159,6 +2359,225 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
         self.assertIn("Metadata status: completion_commented", text)
         self.assertIn("--recover-run", text)
 
+    def test_inspect_run_reports_branch_sync_recovery_guidance(self) -> None:
+        guidance = (
+            "Inspect `/worktrees/agent-sync-main-into-dev` before rerunning Ralph drain."
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = write_recovery_manifest(Path(tmp))
+            manifest_path = run_dir / "ralph-run.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["integration_commit"] = None
+            manifest["pushes"] = {}
+            manifest["branch_sync"] = {
+                "status": "failed",
+                "source_branch": "main",
+                "target_branch": "dev",
+                "worktree_path": "/worktrees/agent-sync-main-into-dev",
+                "log_path": str(run_dir / "git-merge-main-into-dev.log"),
+                "conflicted_files": ["scripts/ralph.py"],
+                "recovery_guidance": guidance,
+                "failure_type": "merge_conflict",
+                "error": "merge conflict",
+            }
+            manifest_path.write_text(
+                json.dumps(manifest, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.inspect_run(run_dir)
+
+        text = output.getvalue()
+        self.assertIn("Branch sync status: failed", text)
+        self.assertIn(guidance, text)
+        self.assertNotIn("--recover-run", text)
+
+
+class RalphOperatorRunTests(unittest.TestCase):
+    def test_operator_foreground_repeats_drain_promotion_until_queue_clean(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True, delivery_mode=ralph.GITFLOW_MODE)
+            initial_issue = make_issue(
+                {ralph.READY_LABEL},
+                IMPLEMENTATION_BODY,
+                number=42,
+                title="Initial work",
+            )
+            followup_issue = make_issue(
+                {ralph.READY_LABEL},
+                IMPLEMENTATION_BODY,
+                number=99,
+                title="Post-promotion follow-up",
+            )
+            snapshots = [
+                operator_snapshot(ready=[initial_issue]),
+                operator_snapshot(
+                    integrated=[
+                        make_issue(
+                            {ralph.AGENT_INTEGRATED_LABEL},
+                            IMPLEMENTATION_BODY,
+                            number=42,
+                            title="Initial work",
+                        )
+                    ]
+                ),
+                operator_snapshot(ready=[followup_issue]),
+                operator_snapshot(
+                    integrated=[
+                        make_issue(
+                            {ralph.AGENT_INTEGRATED_LABEL},
+                            IMPLEMENTATION_BODY,
+                            number=99,
+                            title="Post-promotion follow-up",
+                        )
+                    ]
+                ),
+                operator_snapshot(),
+            ]
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = ScriptedOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=6,
+                snapshots=snapshots,
+            )
+
+            with redirect_stdout(io.StringIO()):
+                operator.run()
+
+            manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+
+        checkpoints = [entry["checkpoint"] for entry in manifest["checkpoints"]]
+        self.assertEqual(manifest["status"], "succeeded")
+        self.assertEqual(manifest["state"], "queue_clean")
+        self.assertEqual(checkpoints.count("issue_succeeded"), 2)
+        self.assertEqual(checkpoints.count("before_promotion"), 2)
+        self.assertEqual(checkpoints.count("promotion_succeeded"), 2)
+        self.assertEqual(checkpoints.count("post_promotion_followup_creation"), 2)
+        self.assertEqual(checkpoints[-1], "queue_clean")
+        self.assertEqual(len(manifest["child_run_manifests"]), 4)
+        self.assertTrue(
+            any(
+                child["kind"] == "promotion" and child["status"] == "succeeded"
+                for child in manifest["child_run_manifests"]
+            )
+        )
+
+    def test_operator_status_reports_compact_issue_boundary_state(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            issue = make_issue(
+                {ralph.READY_LABEL},
+                IMPLEMENTATION_BODY,
+                number=42,
+                title="Boundary work",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            child_manifest_path = write_child_manifest(
+                loop.config.log_root,
+                name="issue-42-status-test",
+                run_kind="implementation",
+                status="succeeded",
+                issue=issue,
+            )
+            manifest = ralph.OperatorRunManifest.start(
+                run_dir=run_dir,
+                config=loop.config,
+                max_cycles=3,
+            )
+            manifest.record_queue(operator_snapshot(integrated=[issue]))
+            manifest.record_checkpoint(
+                "issue_succeeded",
+                message="Issue #42 completed.",
+                child_manifest_path=child_manifest_path,
+                issue=issue,
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.inspect_operator_run_status(str(run_dir), runner)
+
+        text = output.getvalue()
+        self.assertIn("Ralph Operator run status", text)
+        self.assertIn(f"Operator run directory: {run_dir}", text)
+        self.assertIn("Last checkpoint: issue_succeeded: Issue #42 completed.", text)
+        self.assertIn("Queue: ready=0, integrated=1, running=0, failed=0", text)
+        self.assertIn(f"- implementation #42 succeeded: {child_manifest_path}", text)
+        self.assertIn("Recommended next action:", text)
+
+    def test_detached_operator_launch_prints_status_command_without_waiting(self) -> None:
+        runner = FakeRunner(
+            command_outputs={
+                ("git", "rev-parse", "--show-toplevel"): [],
+                ("git", "config", "--get", "remote.origin.url"): [
+                    "git@github.com:example/repo.git\n"
+                ],
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp) / "repo"
+            repo_root.mkdir()
+            runner.command_outputs[("git", "rev-parse", "--show-toplevel")] = [
+                f"{repo_root}\n"
+            ]
+            parsed = ralph.parse_args(
+                [
+                    "--drain-promote-all",
+                    "--detach",
+                    "--max-cycles",
+                    "3",
+                    "--skip-post-promotion-followups",
+                ]
+            )
+            process = type("DummyProcess", (), {"pid": 321})()
+            output = io.StringIO()
+
+            with patch.object(ralph.subprocess, "Popen", return_value=process) as popen:
+                with redirect_stdout(output):
+                    ralph.launch_detached_operator_run(parsed, runner)
+
+            manifest_path = next(
+                repo_root.glob(".ralph/operator-runs/operator-*/operator-run.json")
+            )
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+        text = output.getvalue()
+        child_command = popen.call_args.args[0]
+        self.assertIn("Operator run directory:", text)
+        self.assertIn("Status command: python3 scripts/ralph.py --operator-run-status", text)
+        self.assertIn("--operator-run-dir", child_command)
+        self.assertIn("--max-cycles", child_command)
+        self.assertIn("3", child_command)
+        self.assertIn("--skip-post-promotion-followups", child_command)
+        self.assertEqual(manifest["last_checkpoint"]["checkpoint"], "detached_launched")
+        self.assertEqual(manifest["detached"]["pid"], 321)
+
+    def test_operator_docs_include_codex_safe_command_strings(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        docs = [
+            repo_root / "OPERATOR.md",
+            repo_root / "docs" / "agents" / "ralph-loop.md",
+        ]
+
+        for doc_path in docs:
+            with self.subTest(path=doc_path):
+                text = doc_path.read_text(encoding="utf-8")
+                self.assertIn(
+                    "python3 scripts/ralph.py --drain-promote-all --detach",
+                    text,
+                )
+                self.assertIn(
+                    "python3 scripts/ralph.py --operator-run-status latest",
+                    text,
+                )
+
     def test_recover_run_refuses_when_commit_not_reachable_from_target(self) -> None:
         ancestor_command = (
             "git",
@@ -2723,6 +3142,138 @@ Build it.
             self.assertEqual(manifest["pushes"]["integration_target"]["status"], "pushed")
             self.assertEqual(manifest["github_metadata"]["status"], "closed")
             self.assertEqual(manifest["qa_results"][0]["status"], "passed")
+
+    def test_end_of_file_fixer_commit_recovery_stages_reruns_commit_check_and_retries(
+        self,
+    ) -> None:
+        doc_path = "docs/agents/ralph-loop.md"
+        commit_command = ("git", "commit", "-m", "Implement issue #42: Implement thing")
+        runner = FakeRunner(
+            status_outputs=[
+                f" M {doc_path}\n",
+                f" M {doc_path}\n",
+                f"MM {doc_path}\n",
+                f"M  {doc_path}\n",
+            ],
+            diff_outputs=[f"{doc_path}\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            fail_command_attempts={
+                commit_command: [
+                    (
+                        1,
+                        "end-of-file-fixer...........................................Failed\n"
+                        "- hook id: end-of-file-fixer\n"
+                        "- files were modified by this hook\n",
+                    )
+                ]
+            },
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+
+            with redirect_stdout(io.StringIO()):
+                loop._handle_implementation(make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY))
+
+            manifest = load_run_manifest(tmp_path)
+
+        commands = [call.args for call in runner.calls]
+        commit_log_names = [
+            call.log_path.name
+            for call in runner.calls
+            if call.args == commit_command and call.log_path is not None
+        ]
+        self.assertEqual(
+            commit_log_names,
+            [
+                "issue-git-commit.log",
+                "issue-formatter-recovery-git-commit.log",
+                "integration-git-commit.log",
+            ],
+        )
+        recovery_add_index = commands.index(("git", "add", "--", doc_path))
+        recovery_check_index = commands.index(("prek", "run", "-a"), recovery_add_index)
+        retry_commit_index = next(
+            index
+            for index, call in enumerate(runner.calls)
+            if call.args == commit_command
+            and call.log_path is not None
+            and call.log_path.name == "issue-formatter-recovery-git-commit.log"
+        )
+        self.assertLess(recovery_add_index, recovery_check_index)
+        self.assertLess(recovery_check_index, retry_commit_index)
+        self.assertEqual(manifest["status"], "succeeded")
+        self.assertEqual(manifest["formatter_recovery"]["status"], "recovered")
+        self.assertEqual(manifest["formatter_recovery"]["modified_files"], [doc_path])
+        self.assertEqual(manifest["formatter_recovery"]["staged_files"], [doc_path])
+        self.assertEqual(
+            manifest["formatter_recovery"]["commit_check_results"][0]["name"],
+            "root Commit check",
+        )
+        self.assertEqual(manifest["qa_results"][-1]["name"], "root Commit check")
+
+    def test_ruff_format_commit_recovery_failure_is_classified(self) -> None:
+        aemo_path = "backend-services/dagster-user/aemo-etl/src/aemo_etl/assets/foo.py"
+        commit_command = ("git", "commit", "-m", "Implement issue #42: Implement thing")
+        runner = FakeRunner(
+            status_outputs=[
+                f" M {aemo_path}\n",
+                f" M {aemo_path}\n",
+                f"MM {aemo_path}\n",
+                f"M  {aemo_path}\n",
+            ],
+            rev_parse_outputs=["base-sha\n"],
+            fail_command_attempts={
+                commit_command: [
+                    (
+                        1,
+                        "ruff format.................................................Failed\n"
+                        "- hook id: ruff-format\n"
+                        "- files were modified by this hook\n",
+                    ),
+                    (1, "git commit failed again after formatter recovery\n"),
+                ]
+            },
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._handle_implementation(make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY))
+
+            manifest = load_run_manifest(tmp_path)
+            comment = next(tmp_path.glob("logs/issue-42-*/issue-42-comment.md")).read_text(
+                encoding="utf-8"
+            )
+
+        commands = [call.args for call in runner.calls]
+        run_prek_command = ("make", "run-prek")
+        self.assertEqual(commands.count(run_prek_command), 2)
+        self.assertNotIn(("git", "merge", "--squash", "agent/issue-42-implement-thing"), commands)
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["formatter_recovery"]["status"], "failed")
+        self.assertEqual(
+            manifest["formatter_recovery"]["failure_type"],
+            ralph.FORMATTER_REWRITE_RECOVERY_FAILURE_TYPE,
+        )
+        self.assertEqual(
+            manifest["failure"]["type"],
+            ralph.FORMATTER_REWRITE_RECOVERY_FAILURE_TYPE,
+        )
+        self.assertEqual(manifest["failure"]["modified_files"], [aemo_path])
+        self.assertIn("issue-git-commit.log", manifest["failure"]["initial_commit_log_path"])
+        self.assertIn(
+            "formatter-recovery-commit-check-1-aemo-etl-commit-check.log",
+            manifest["failure"]["commit_check_log_paths"][0],
+        )
+        self.assertIn(
+            "issue-formatter-recovery-git-commit.log",
+            manifest["failure"]["retry_commit_log_path"],
+        )
+        self.assertIn("Formatter-rewrite recovery failure", comment)
+        self.assertIn("Commit check logs", comment)
+        self.assertIn("Recovery guidance", comment)
 
     def test_implementation_fetches_refresh_notes_before_codex_prompt(self) -> None:
         issue_comments_command = (
@@ -3896,6 +4447,170 @@ Build it.
         )
         self.assertIn("Syncing origin/main into origin/dev", output.getvalue())
 
+    def test_gitflow_branch_sync_conflict_records_manifest_and_stops_before_claim(
+        self,
+    ) -> None:
+        ancestor_command = (
+            "git",
+            "merge-base",
+            "--is-ancestor",
+            "origin/main",
+            "origin/dev",
+        )
+        merge_command = (
+            "git",
+            "merge",
+            "--no-ff",
+            "origin/main",
+            "-m",
+            "Sync main into dev",
+        )
+        runner = FakeRunner(
+            diff_outputs=["docs/conflicted.md\nscripts/ralph.py\n"],
+            fail_commands={
+                ancestor_command: 1,
+                merge_command: 1,
+            },
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.GITFLOW_MODE)
+            sync_path = tmp_path / "worktrees" / "agent-sync-main-into-dev"
+            output = io.StringIO()
+
+            with self.assertRaises(ralph.BranchSyncFailure):
+                with redirect_stdout(output), redirect_stderr(io.StringIO()):
+                    loop._handle_implementation(
+                        make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+                    )
+
+            manifest = load_run_manifest(tmp_path)
+            merge_log = next((tmp_path / "logs").glob("issue-42-*/git-merge-main-into-dev.log"))
+
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+        self.assertEqual(manifest["github_metadata"]["status"], "not_started")
+        self.assertEqual(manifest["branch_sync"]["status"], "failed")
+        self.assertEqual(manifest["branch_sync"]["failure_type"], "merge_conflict")
+        self.assertEqual(
+            manifest["branch_sync"]["conflicted_files"],
+            ["docs/conflicted.md", "scripts/ralph.py"],
+        )
+        self.assertEqual(manifest["branch_sync"]["worktree_path"], str(sync_path))
+        self.assertEqual(manifest["paths"]["branch_sync_worktree"], str(sync_path))
+        self.assertEqual(manifest["branch_sync"]["log_path"], str(merge_log))
+        self.assertEqual(manifest["failure"]["log_path"], str(merge_log))
+        self.assertIn("git worktree remove --force", manifest["branch_sync"]["recovery_guidance"])
+        self.assertIn("Syncing origin/main into origin/dev", output.getvalue())
+
+    def test_stale_branch_sync_worktree_stops_before_claim_with_guidance(self) -> None:
+        ancestor_command = (
+            "git",
+            "merge-base",
+            "--is-ancestor",
+            "origin/main",
+            "origin/dev",
+        )
+        runner = FakeRunner(fail_commands={ancestor_command: 1})
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.GITFLOW_MODE)
+            sync_path = tmp_path / "worktrees" / "agent-sync-main-into-dev"
+            sync_path.mkdir(parents=True)
+
+            with self.assertRaises(ralph.BranchSyncFailure):
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    loop._handle_implementation(
+                        make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+                    )
+
+            manifest = load_run_manifest(tmp_path)
+
+        commands = [call.args for call in runner.calls]
+        self.assertNotIn(
+            ("git", "worktree", "add", "--detach", str(sync_path), "origin/dev"),
+            commands,
+        )
+        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+        self.assertEqual(manifest["github_metadata"]["status"], "not_started")
+        self.assertEqual(manifest["branch_sync"]["status"], "failed")
+        self.assertEqual(manifest["branch_sync"]["failure_type"], "stale_worktree")
+        self.assertEqual(manifest["branch_sync"]["worktree_path"], str(sync_path))
+        self.assertIn("existing branch-sync worktree", manifest["branch_sync"]["recovery_guidance"])
+
+    def test_branch_sync_conflict_stops_drain_without_repeated_ready_issue_failures(
+        self,
+    ) -> None:
+        issue_list_command = (
+            "gh",
+            "issue",
+            "list",
+            "-R",
+            "example/repo",
+            "--state",
+            "open",
+            "--limit",
+            "100",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        ancestor_command = (
+            "git",
+            "merge-base",
+            "--is-ancestor",
+            "origin/main",
+            "origin/dev",
+        )
+        merge_command = (
+            "git",
+            "merge",
+            "--no-ff",
+            "origin/main",
+            "-m",
+            "Sync main into dev",
+        )
+        runner = FakeRunner(
+            diff_outputs=["docs/conflicted.md\n"],
+            command_outputs={
+                issue_list_command: [
+                    json.dumps(
+                        [
+                            issue_payload(42, ["ready-for-agent"]),
+                            issue_payload(43, ["ready-for-agent"]),
+                        ]
+                    )
+                ]
+            },
+            fail_commands={
+                ancestor_command: 1,
+                merge_command: 1,
+            },
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            base_loop = make_loop(
+                tmp_path,
+                runner,
+                delivery_mode=ralph.GITFLOW_MODE,
+                drain=True,
+                max_issues=0,
+            )
+            loop = NoValidationRalphLoop(base_loop.config, runner)
+
+            with self.assertRaises(ralph.BranchSyncFailure):
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    loop.run()
+
+            manifest = load_run_manifest(tmp_path)
+            issue_43_runs = list((tmp_path / "logs").glob("issue-43-*"))
+
+        commands = [call.args for call in runner.calls]
+        issue_edits = [command for command in commands if command[:3] == ("gh", "issue", "edit")]
+        self.assertEqual(issue_edits, [])
+        self.assertEqual(commands.count(issue_list_command), 1)
+        self.assertEqual(issue_43_runs, [])
+        self.assertEqual(manifest["branch_sync"]["failure_type"], "merge_conflict")
+
     def test_base_drift_rebases_and_reruns_qa_before_squash_merge(self) -> None:
         runner = FakeRunner(
             status_outputs=[
@@ -4292,6 +5007,174 @@ Build it.
         self.assertEqual(
             manifest["github_metadata"]["issues"][0]["metadata_status"],
             "closed",
+        )
+
+    def test_promotion_fast_forwards_clean_checked_out_local_branches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo_path = tmp_path / "repo"
+            main_path = tmp_path / "main-worktree"
+            runner = FakeRunner(
+                diff_outputs=["scripts/ralph.py\n"],
+                rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+                status_outputs=["", ""],
+                command_outputs={
+                    ("git", "worktree", "list", "--porcelain"): [
+                        "\n".join(
+                            [
+                                f"worktree {repo_path}",
+                                "HEAD dev-old",
+                                "branch refs/heads/dev",
+                                "",
+                                f"worktree {main_path}",
+                                "HEAD main-old",
+                                "branch refs/heads/main",
+                                "",
+                            ]
+                        )
+                    ],
+                },
+            )
+            loop = make_loop(
+                tmp_path,
+                runner,
+                promote=True,
+                skip_post_promotion_review=True,
+            )
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        fast_forward_calls = [
+            call
+            for call in runner.calls
+            if call.args == ("git", "merge", "--ff-only", "promotion-sha")
+        ]
+        self.assertEqual(
+            [call.cwd for call in fast_forward_calls],
+            [repo_path, main_path],
+        )
+        local_fast_forwards = manifest["local_branch_fast_forwards"]
+        self.assertEqual(
+            local_fast_forwards["source_branch"]["status"],
+            "fast_forwarded",
+        )
+        self.assertEqual(
+            local_fast_forwards["source_branch"]["worktree_path"],
+            str(repo_path),
+        )
+        self.assertEqual(
+            local_fast_forwards["integration_target"]["status"],
+            "fast_forwarded",
+        )
+        self.assertEqual(
+            local_fast_forwards["integration_target"]["worktree_path"],
+            str(main_path),
+        )
+
+    def test_promotion_records_recovery_for_dirty_checked_out_local_branch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            main_path = tmp_path / "main-worktree"
+            runner = FakeRunner(
+                diff_outputs=["scripts/ralph.py\n"],
+                rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+                status_outputs=[" M README.md\n"],
+                command_outputs={
+                    ("git", "worktree", "list", "--porcelain"): [
+                        "\n".join(
+                            [
+                                f"worktree {main_path}",
+                                "HEAD main-old",
+                                "branch refs/heads/main",
+                                "",
+                            ]
+                        )
+                    ],
+                },
+            )
+            loop = make_loop(
+                tmp_path,
+                runner,
+                promote=True,
+                skip_post_promotion_review=True,
+            )
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        self.assertFalse(
+            any(
+                call.args == ("git", "merge", "--ff-only", "promotion-sha")
+                for call in runner.calls
+            )
+        )
+        target_fast_forward = manifest["local_branch_fast_forwards"]["integration_target"]
+        self.assertEqual(target_fast_forward["status"], "skipped_dirty_worktree")
+        self.assertEqual(target_fast_forward["worktree_path"], str(main_path))
+        self.assertIn("uncommitted changes", target_fast_forward["reason"])
+        self.assertEqual(
+            target_fast_forward["recovery_command"],
+            ralph.format_command(
+                ["git", "-C", str(main_path), "pull", "--ff-only", "origin", "main"]
+            ),
+        )
+
+    def test_promotion_from_unrelated_worktree_updates_checked_out_target_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo_path = tmp_path / "repo"
+            main_path = tmp_path / "main-worktree"
+            runner = FakeRunner(
+                diff_outputs=["scripts/ralph.py\n"],
+                rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+                status_outputs=[""],
+                command_outputs={
+                    ("git", "worktree", "list", "--porcelain"): [
+                        "\n".join(
+                            [
+                                f"worktree {repo_path}",
+                                "HEAD feature-old",
+                                "branch refs/heads/agent/issue-114",
+                                "",
+                                f"worktree {main_path}",
+                                "HEAD main-old",
+                                "branch refs/heads/main",
+                                "",
+                            ]
+                        )
+                    ],
+                },
+            )
+            loop = make_loop(
+                tmp_path,
+                runner,
+                promote=True,
+                skip_post_promotion_review=True,
+            )
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        fast_forward_calls = [
+            call
+            for call in runner.calls
+            if call.args == ("git", "merge", "--ff-only", "promotion-sha")
+        ]
+        self.assertEqual([call.cwd for call in fast_forward_calls], [main_path])
+        self.assertEqual(
+            manifest["local_branch_fast_forwards"]["source_branch"]["status"],
+            "skipped_not_checked_out",
+        )
+        self.assertEqual(
+            manifest["local_branch_fast_forwards"]["integration_target"]["status"],
+            "fast_forwarded",
         )
 
     def test_promotion_closes_manually_recovered_gitflow_issue_with_parseable_evidence(

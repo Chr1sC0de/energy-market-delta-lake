@@ -18,7 +18,7 @@ Use this page as the agent documentation map. The imperative policy lives in
 
 - Ralph internals, **Local integration**, **Delivery mode**, **Integration
   target**, **Ready issue refresh**, **Promotion**, and
-  **Post-promotion review**:
+  **Post-promotion review**, including checkpointed Operator runs:
   [ralph-loop.md](ralph-loop.md)
 - GitHub Issue queue rules:
   [issue-tracker.md](issue-tracker.md)
@@ -37,10 +37,10 @@ Use this page as the agent documentation map. The imperative policy lives in
 - Use `$ralph-triage` to prepare GitHub Issues for drain with category, state,
   and **Delivery mode** labels, including `delivery-exploratory` only when
   `## Review focus` explains the needed **Exploratory branch** review.
-- Use `$ralph-loop` to drain ready issues, publish **Exploratory branches** for
-  Exploratory handoff, inspect failures, and run **Promotion**. Human review
-  accepts Exploratory work by moving it to `agent-integrated`, or rejects it by
-  moving it to `ready-for-human`.
+- Use `$ralph-loop` to drain ready issues, launch checkpointed Operator runs,
+  publish **Exploratory branches** for Exploratory handoff, inspect failures,
+  and run **Promotion**. Human review accepts Exploratory work by moving it to
+  `agent-integrated`, or rejects it by moving it to `ready-for-human`.
 - Use `$grill-with-docs`, `$to-prd`, and `$to-issues` before Ralph when the
   work needs shaping or issue creation.
 
