@@ -734,6 +734,10 @@ GitHub Issue commands and is instructed not to comment, edit labels, edit
 bodies, close, reopen, create issues, commit, push, fetch, merge, rebase, reset,
 or update refs. It records planned issue updates and a structured mutation plan
 only; Ralph's outer loop applies validated metadata mutations afterwards.
+When candidates were selected, that mutation plan must include a parseable
+fenced `json` block with a `ready_issue_refresh_mutations` list, including
+explicit `no_change` entries for candidates that need no metadata mutation.
+Reports with no selected candidates may omit mutation JSON.
 
 The read-only analysis report is saved as
 `ready-issue-refresh-analysis.md` in the current `.ralph/runs/issue-.../`
@@ -757,6 +761,9 @@ does not roll back the pushed **Integration target** commit or revert the
 already-completed issue metadata; operators inspect the manifest mutation
 results and reconcile only the failed GitHub Issue metadata before rerunning
 the drain.
+Malformed or missing mutation JSON for selected candidates is a mutation failure:
+Ralph records `ready_issue_refresh.status: failed` and stops before another
+ready issue claim.
 
 In `--dry-run`, Ralph reports that Ready issue refresh candidate selection would
 run after **Local integration** or Exploratory handoff; it does not invoke Codex

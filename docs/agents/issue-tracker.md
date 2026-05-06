@@ -80,8 +80,13 @@ path, and candidate issue bodies, then writes
 directory. It records planned issue updates and a structured mutation plan, but
 is not allowed to mutate GitHub Issues itself. Ralph's outer loop applies
 validated refresh comments, body edits, label transitions, and completed
-closures with GitHub Issue metadata commands only. The run manifest records
-per-candidate mutation status and recovery guidance for partial failures.
+closures with GitHub Issue metadata commands only. When candidates were
+selected, the analysis must include a parseable fenced `json` plan with
+`ready_issue_refresh_mutations`; candidates with no metadata update use an
+explicit `no_change` entry. Reports with no selected candidates may omit
+mutation JSON. The run manifest records per-candidate mutation status and
+recovery guidance for partial failures, and malformed or missing mutation JSON
+for selected candidates stops the drain before the next ready issue claim.
 
 Use [ralph-loop.md](ralph-loop.md) for Ralph internals, including
 **Delivery mode**, **Local integration**, **Integration target**, **Promotion**,
