@@ -143,7 +143,12 @@ def test_event_driven_raw_sensor_batch_caps(mocker: MockerFixture) -> None:
     assert raw_sensor_calls["vicgas_event_driven_assets_sensor"]["jobs"] == tuple(jobs)
     assert raw_sensor_calls["gbb_event_driven_assets_sensor"]["jobs"] == tuple(jobs)
     assert raw_sensor_calls["sttm_event_driven_assets_sensor"]["jobs"] == tuple(jobs)
-    assert unzipper_calls
+    unzipper_sensor_names = {str(call["name"]) for call in unzipper_calls}
+    assert unzipper_sensor_names == {
+        "vicgas_unzipper_sensor",
+        "gbb_unzipper_sensor",
+        "sttm_unzipper_sensor",
+    }
     for call in unzipper_calls:
         assert "bytes_cap" not in call
         assert "files_cap" not in call

@@ -22,7 +22,10 @@ The project materializes Dagster assets defined under `src/aemo_etl/defs` to bui
 - Scheduled NEMWeb discovery/listing assets poll `REPORTS/CURRENT/VicGas`,
   `REPORTS/CURRENT/GBB`, and the root CSV reports in `REPORTS/CURRENT/STTM`
   every 30 minutes and copy source files into landing storage.
-- `download_vicgas_public_report_zip_files_job` can be launched manually to bootstrap or backfill VicGas `PublicRptsNN.zip` bundles into landing storage.
+- `download_vicgas_public_report_zip_files_job` and
+  `download_sttm_day_zip_files_job` can be launched manually to bootstrap or
+  backfill VicGas `PublicRptsNN.zip` and STTM `DAYNN.ZIP` bundles into landing
+  storage with filename-preserving keys.
 - Unzipper assets expand zipped source payloads in landing storage and archive the original zip files after successful extraction.
 - Event-driven source-table bronze assets read matching landing files, collapse each micro-batch to the latest `source_file` row per `surrogate_key`, explicitly merge current-state Delta rows by `surrogate_key`, archive processed files only after a table write, delete zero-byte landing objects, and warn on skipped selected keys.
 - Silver assets overwrite source-specific parquet snapshots from the current bronze state.
@@ -151,7 +154,9 @@ Detailed sequence diagrams for GBB, VICGAS, STTM, and raw-to-silver behavior liv
   STTM source-table bronze starts with `INT651` from a compact checked-in
   manifest under `src/aemo_etl/defs/raw/sttm`; `INT685` and `INT685B` are live
   STTM root CSV reports but are landing-only gaps until a v19.1
-  specification-backed source-table entry exists.
+  specification-backed source-table entry exists. Manual STTM `DAYNN.ZIP`
+  bootstrap writes bundles under `bronze/sttm/<filename>` for the STTM unzipper
+  path; `CURRENTDAY.*` aliases stay out of the bootstrap/backfill path.
 - `gas_model`: shared dimensions and marts that reconcile GBB and VICGAS source data into reporting-friendly tables.
 
 Detailed gas-model ERDs remain under `docs/gas_model/`:
@@ -239,6 +244,7 @@ make integration-test-testmon
 make duplicate-check
 make run-prek
 uv run dg launch --job download_vicgas_public_report_zip_files_job
+uv run dg launch --job download_sttm_day_zip_files_job
 dg launch --assets "key:ops/testing/failed_run_alert_probe"
 uv run aemo-e2e-archive-seed spec
 uv run aemo-e2e-archive-seed refresh
@@ -309,6 +315,7 @@ aemo-etl/
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/jobs/download_vicgas_public_report_zip_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/testing.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/unzipper.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/_manifest.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/source_tables.json`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int651_v1_ex_ante_market_price_rpt_1.py`

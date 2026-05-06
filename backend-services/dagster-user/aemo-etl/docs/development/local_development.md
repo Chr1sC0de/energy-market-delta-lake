@@ -114,16 +114,19 @@ testing.`. In a live AWS Dagster deployment, the failed run should trigger
 `aemo_etl_failed_run_alert_sensor` and publish to the configured SNS topic. A
 local `dg launch` run only validates local Dagster behavior.
 
-To bootstrap or backfill VicGas public report bundles into the landing bucket,
-run the manual job:
+To bootstrap or backfill VicGas or STTM public report bundles into the landing
+bucket, run the manual jobs:
 
 ```bash
 uv run dg launch --job download_vicgas_public_report_zip_files_job
+uv run dg launch --job download_sttm_day_zip_files_job
 ```
 
 When `AWS_ENDPOINT_URL` is set, this writes to LocalStack-backed landing
 storage. Without that override, the job writes to the configured AWS landing
-bucket.
+bucket. Both jobs preserve the source basename in landing keys, and their
+`target_files` config can narrow a run to basename-only targets such as
+`PublicRpts01.zip` or `DAY01.ZIP`.
 
 For the debugger-driven local stack, use:
 

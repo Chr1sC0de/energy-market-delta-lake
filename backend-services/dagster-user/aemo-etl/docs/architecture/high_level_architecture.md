@@ -96,7 +96,9 @@ STTM discovery is intentionally root-only for public CSV reports under
 such as `Contingency_Gas/` and `MOS Estimates/`, and non-CSV helper files.
 `INT685` and `INT685B` are still landed when their root CSV reports appear, but
 they are landing-only gaps because they are absent from the v19.1 STTM report
-manifest.
+manifest. The ad hoc `download_sttm_day_zip_files_job` handles DAYNN.ZIP
+bootstrap/backfill separately and lands bundles under `bronze/sttm/<filename>`
+for the STTM unzipper path.
 
 ### Unzipper assets
 
@@ -104,6 +106,7 @@ manifest.
 
 - `unzipper_vicgas`
 - `unzipper_gbb`
+- `unzipper_sttm`
 
 Those assets are sensor-driven, look for `*.zip` objects in landing storage, expand members in place, convert CSV members to Parquet when possible, and archive the original zip only after all members succeed.
 
@@ -209,7 +212,7 @@ Per-asset overrides use flat metadata keys: `delta_maintenance/enabled`, `delta_
 
 `src/aemo_etl/definitions.py` wires three orchestration patterns:
 
-- `vicgas_unzipper_sensor` and `gbb_unzipper_sensor`
+- `vicgas_unzipper_sensor`, `gbb_unzipper_sensor`, and `sttm_unzipper_sensor`
   - watch landing storage for `*.zip`
   - launch unzipper assets with matching S3 keys
 - `vicgas_event_driven_assets_sensor`, `gbb_event_driven_assets_sensor`, and
@@ -313,7 +316,9 @@ flowchart TD
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/alerts.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/testing.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/jobs/download_vicgas_public_report_zip_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/unzipper.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/_manifest.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/source_tables.json`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int651_v1_ex_ante_market_price_rpt_1.py`

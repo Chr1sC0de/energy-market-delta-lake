@@ -100,7 +100,11 @@ sequenceDiagram
 Trigger and output notes:
 
 - This follows the same factory pattern as GBB, but the downstream assets are the `int*` VICGAS report assets under `src/aemo_etl/defs/raw/vicgas`.
-- `download_vicgas_public_report_zip_files_job` is ad hoc only. It is used for bootstrap or backfill of `PublicRptsNN.zip` bundles into `LANDING_BUCKET/bronze/vicgas`; the existing unzipper and raw sensors handle downstream processing.
+- `download_vicgas_public_report_zip_files_job` is ad hoc only. It is used for
+  bootstrap or backfill of `PublicRptsNN.zip` bundles into
+  `LANDING_BUCKET/bronze/vicgas/<filename>`; the existing unzipper and raw
+  sensors handle downstream processing. Its `target_files` config is
+  basename-only, case-insensitive, and defaults to all matching bundles.
 - The bronze assets merge current-state Delta rows by `surrogate_key` after
   collapsing each micro-batch to the maximum `source_file` per key, archive
   processed source files only after a table write, delete zero-byte landing
@@ -113,18 +117,31 @@ Trigger and output notes:
 sequenceDiagram
     autonumber
     participant NEMWeb as NEMWeb STTM root
+    participant Operator as Manual launch
+    participant ManualJob as download_sttm_day_zip_files_job
     participant Schedule as bronze_nemweb_public_files_sttm_job_schedule
     participant Discover as bronze_nemweb_public_files_sttm
     participant Landing as LANDING_BUCKET/bronze/sttm
+    participant UnzipSensor as sttm_unzipper_sensor
+    participant UnzipAsset as unzipper_sttm
     participant RawSensor as sttm_event_driven_assets_sensor
     participant Bronze as bronze_int651_v1_ex_ante_market_price_rpt_1
     participant Archive as ARCHIVE_BUCKET/bronze/sttm
     participant Silver as silver_int651_v1_ex_ante_market_price_rpt_1
 
+    Operator->>ManualJob: Optional DAYNN.ZIP bootstrap/backfill launch
+    ManualJob->>NEMWeb: List and fetch DAY01.ZIP through DAY31.ZIP bundles
+    ManualJob->>Landing: Write zip objects with preserved filenames
+
     Schedule->>Discover: Run every 30 minutes
     Discover->>NEMWeb: List root CSV links from REPORTS/CURRENT/STTM
     Discover->>Landing: Write discovered CSV or converted parquet outputs
     Discover->>Bronze: Record file metadata in `bronze_nemweb_public_files_sttm`
+
+    Landing->>UnzipSensor: Detect *.zip
+    UnzipSensor->>UnzipAsset: Launch with selected zip keys
+    UnzipAsset->>Landing: Extract STTM members, convert CSV members to parquet when possible
+    UnzipAsset->>Archive: Archive successful zip inputs
 
     Landing->>RawSensor: Detect files matching INT651 glob_pattern
     RawSensor->>Bronze: Launch int651_v1_ex_ante_market_price_rpt_1_job with s3_keys
@@ -136,10 +153,17 @@ sequenceDiagram
 Trigger and output notes:
 
 - STTM is a source-table bronze domain inside the AEMO ETL Subproject. It is
-  not a Subproject and does not use the unzipper path.
+  not a Subproject.
 - Discovery is root-only for public STTM CSV reports. It excludes
   `CURRENTDAY.*`, `DAYNN.ZIP`, `Contingency_Gas/`, `MOS Estimates/`, and other
-  subfolder content.
+  subfolder content. `download_sttm_day_zip_files_job` owns DAYNN.ZIP
+  bootstrap/backfill separately and writes bundles to
+  `LANDING_BUCKET/bronze/sttm/<filename>` so `sttm_unzipper_sensor` can launch
+  `unzipper_sttm`.
+- STTM DAYNN.ZIP target selection uses basename regex matching for `DAY01.ZIP`
+  through `DAY31.ZIP`, de-duplicates listing entries, processes deterministically,
+  skips current-day aliases, and fails fast for invalid or missing
+  `target_files` config.
 - `INT651` is the first spec-backed STTM source-table asset. Its compact
   manifest lives under `src/aemo_etl/defs/raw/sttm`, declares every source
   report column as `String`, and keeps the standard ingestion metadata columns.
@@ -227,6 +251,7 @@ source table and 3 zip objects per required domain.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/source_tables.json`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int651_v1_ex_ante_market_price_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/jobs/download_vicgas_public_report_zip_files.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/unzipper.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/alerts.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/current_state.py`
