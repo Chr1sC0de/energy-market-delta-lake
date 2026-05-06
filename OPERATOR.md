@@ -90,14 +90,21 @@ Use this checklist:
 - Confirm no open blocker or manual follow-up should stop the range from
   reaching `main`.
 
+For accepted Exploratory review, merge the durable review branch to `dev`, add
+an issue comment that starts with `Ralph exploratory acceptance completed.` and
+includes a `Commit: ...` line for the accepted `dev` commit SHA, remove
+`agent-reviewing`, and add `agent-integrated`. For rejected Exploratory review,
+leave the issue open, remove `agent-reviewing`, add `ready-for-human`, and
+comment the review result and next action.
+
 ## Promotion
 
 Run `$ralph-loop promote` only after the `dev` review is complete.
 
 Ralph computes the aggregate **Push check**, merges reviewed `dev` work into
 `main`, fast-forwards `dev` to the promotion commit, and closes only
-`agent-integrated` issues whose recorded Gitflow **Local integration** commit is
-verified in the promoted branch range.
+`agent-integrated` issues whose recorded Gitflow **Local integration** commit or
+accepted Exploratory commit is verified in the promoted branch range.
 
 Unverified **Promotion** commits in the range are mandatory
 **Post-promotion review** context only. They do not require explicit issue

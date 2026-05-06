@@ -107,12 +107,14 @@ _Avoid_: Fast agent mode
 **Exploratory delivery**:
 The opt-in **Delivery mode** where Ralph publishes issue work to a durable
 review branch from `origin/main`, marks the issue `agent-reviewing`, and leaves
-it open for human review.
+it open for human review. Accepted review work can later be merged to `dev` and
+enter **Promotion** through explicit acceptance evidence.
 _Avoid_: Draft PR mode, branch-only PR
 
 **Promotion**:
-The Ralph operation that merges reviewed `dev` work into `main` and closes the
-verified GitHub issues included in that branch range.
+The Ralph operation that merges reviewed `dev` work into `main` and closes
+verified GitHub issues included in that branch range, including Gitflow
+**Local integration** commits and accepted Exploratory commits.
 _Avoid_: Manual dev merge
 
 **Post-promotion review**:
@@ -160,8 +162,8 @@ _Avoid_: Promotion gate, pre-push review
 - **Exploratory delivery** uses a per-issue `agent/exploratory/issue-N-slug`
   branch as the default **Integration target** and pushes that branch without a
   **Local integration** squash merge.
-- **Promotion** closes only issues whose `dev` integration commit is verified in
-  the promoted branch range.
+- **Promotion** closes only issues whose Gitflow `dev` integration commit or
+  accepted Exploratory commit is verified in the promoted branch range.
 - **Post-promotion review** happens after **Promotion** attempts where possible;
   it is not a **Push check** gate and it is not **Ready issue refresh**. The
   review agent uses read-only GitHub Issue access. After successful

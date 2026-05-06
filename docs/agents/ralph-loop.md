@@ -322,16 +322,16 @@ Key fields for inspection:
 - `status` and `stage`: current run outcome and latest milestone.
 - `events`: timestamped milestone history.
 - `issue`: implementation issue number, title, and URL.
-- `github_metadata.issues`: promoted issue numbers and their recorded Gitflow
-  integration commits during **Promotion**.
+- `github_metadata.issues`: promoted issue numbers and their recorded issue
+  evidence commits during **Promotion**.
 - `delivery_mode`: issue **Delivery mode**; **Promotion** records `gitflow`.
 - `integration_target`: branch Ralph is updating for the run.
 - `source_branch`: **Promotion** source branch, usually `dev`.
 - `source_tree`: **Promotion** source branch revision and source worktree used
   for QA.
 - `promotion_commit_inventory`: full promoted source commit range with each
-  commit SHA, subject, and whether it matched a verified Gitflow
-  **Local integration** commit or remained an unverified **Promotion** commit.
+  commit SHA, subject, and whether it matched verified issue evidence or
+  remained an unverified **Promotion** commit.
 - `post_promotion_review`: enabled state, skip reason, warning-only review
   status, review log path, and Markdown artifact path for **Promotion** runs.
 - `post_promotion_followups`: enabled state, created issue URLs, duplicate
@@ -456,6 +456,23 @@ squash merge: Ralph pushes the validated
 `agent-reviewing`, and leaves it open for human review. Ralph does not open a
 GitHub draft PR.
 
+Human review owns the next Exploratory state transition. For accepted
+Exploratory work, merge the reviewed branch to `dev`, add acceptance evidence to
+the issue, remove `agent-reviewing`, and add `agent-integrated` so the issue can
+close through the existing **Promotion** path. The acceptance comment must start
+with:
+
+```markdown
+Ralph exploratory acceptance completed.
+
+Commit: `<dev-commit-sha>`
+```
+
+The commit is the `dev` commit that made the accepted work reachable from the
+source branch. For rejected Exploratory work, leave the issue open, remove
+`agent-reviewing`, add `ready-for-human`, and comment the review result and
+next action. Rejected review must not add `agent-integrated`.
+
 ```mermaid
 sequenceDiagram
   participant Ralph
@@ -490,16 +507,17 @@ sequenceDiagram
 
 ## Promotion pass
 
-`python3 scripts/ralph.py --promote` promotes reviewed Gitflow work from
-`origin/dev` to `origin/main` by default. Ralph fetches both branches, computes
-the changed files between the target branch and the fetched source-branch
-revision, records the full source commit inventory for that promoted range, and
-creates an isolated source worktree at that source revision. The commit
-inventory records every promoted source commit with its SHA and subject. After
-verified Gitflow issues are identified, commits whose SHA matches a recorded
-`integrated_commit` are classified as verified **Local integration** commits;
-other commits remain visible as unverified **Promotion** commits in the run
-manifest and **Post-promotion review** prompt.
+`python3 scripts/ralph.py --promote` promotes reviewed Gitflow work and accepted
+Exploratory work from `origin/dev` to `origin/main` by default. Ralph fetches
+both branches, computes the changed files between the target branch and the
+fetched source-branch revision, records the full source commit inventory for
+that promoted range, and creates an isolated source worktree at that source
+revision. The commit inventory records every promoted source commit with its
+SHA and subject. After verified issues are identified, commits whose SHA matches
+a recorded Gitflow **Local integration** commit or accepted Exploratory commit
+are treated as verified issue evidence; other commits remain visible as
+unverified **Promotion** commits in the run manifest and **Post-promotion
+review** prompt.
 Unverified **Promotion** commits are mandatory **Post-promotion review**
 context only. They do not block **Promotion**, do not require explicit issue
 association before **Promotion**, and do not create follow-up issues by
@@ -560,19 +578,20 @@ promotion commit so the next Gitflow drain starts from a `dev` branch that
 contains `main`.
 
 After the push succeeds, Ralph scans open `agent-integrated` issues. It closes
-only issues whose recorded Gitflow integration commit is still in the promoted
-`origin/main..origin/dev` range, then comments promotion evidence and replaces
-`agent-integrated` with `agent-merged`. Per-issue Promotion comments describe
-promoted files as the full Promotion-range file inventory, not as files owned
-only by the issue being closed. Successful Promotions with changed files then
-run a **Post-promotion review** agent from the **Promotion** worktree by
-default, after the `main` push, `dev` sync, and verified issue metadata
-updates. Failed or partial Promotion attempts with changed files also try a
-**Post-promotion review** where a source or target Promotion worktree is
-available. The review prompt includes both verified **Local integration**
-commits and unverified **Promotion** commits when available so the review can
-separate closed issue evidence from other promoted work. For failed or partial
-attempts, the report must put recovery and consistency guidance before
+only issues whose recorded Gitflow integration commit or accepted Exploratory
+commit is still in the promoted `origin/main..origin/dev` range, then comments
+Promotion evidence and replaces `agent-integrated` with `agent-merged`.
+Per-issue Promotion comments describe promoted files as the full
+Promotion-range file inventory, not as files owned only by the issue being
+closed. Successful Promotions with changed files then run a **Post-promotion
+review** agent from the **Promotion** worktree by default, after the `main`
+push, `dev` sync, and verified issue metadata updates. Failed or partial
+Promotion attempts with changed files also try a **Post-promotion review** where
+a source or target Promotion worktree is available. The review prompt includes
+both verified issue evidence commits and unverified **Promotion** commits when
+available so the review can separate closed issue evidence from other promoted
+work. For failed or partial attempts, the report must put recovery and
+consistency guidance before
 follow-up issue recommendations. The review agent has read-only GitHub Issue
 access and must report learnings, recovery guidance, and structured actionable
 follow-up GitHub Issue drafts instead of mutating issues. Ralph saves the final

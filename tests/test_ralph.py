@@ -3196,6 +3196,8 @@ Build it.
             "--remove-label",
             "agent-integrated",
             "--remove-label",
+            "agent-reviewing",
+            "--remove-label",
             "agent-running",
             "--remove-label",
             "agent-failed",
@@ -3254,7 +3256,7 @@ Build it.
         self.assertIn("Promotion error: `None`", runner.calls[review_index].input_text)
         self.assertIn(
             "`abc1234` Ralph Local integration for issue 42 - "
-            "verified Local integration commit for #42 Implement thing",
+            "verified issue evidence commit for #42 Implement thing",
             runner.calls[review_index].input_text,
         )
         self.assertIn(
@@ -3383,6 +3385,153 @@ Build it.
         self.assertEqual(
             manifest["github_metadata"]["issues"][0]["metadata_status"],
             "closed",
+        )
+
+    def test_promotion_closes_accepted_exploratory_issue(self) -> None:
+        issue_list_command = (
+            "gh",
+            "issue",
+            "list",
+            "-R",
+            "example/repo",
+            "--state",
+            "open",
+            "--limit",
+            "100",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        issue_comments_command = (
+            "gh",
+            "issue",
+            "view",
+            "42",
+            "-R",
+            "example/repo",
+            "--comments",
+            "--json",
+            "comments",
+        )
+        target_ancestor_command = (
+            "git",
+            "merge-base",
+            "--is-ancestor",
+            "abc1234",
+            "origin/main",
+        )
+        promotion_log_command = (
+            "git",
+            "log",
+            "--reverse",
+            "--format=%H%x00%s",
+            "origin/main..source-sha",
+        )
+        issue_payload = [
+            {
+                "number": 42,
+                "title": "Try exploratory workflow",
+                "body": EXPLORATORY_IMPLEMENTATION_BODY,
+                "labels": [
+                    {"name": "agent-integrated"},
+                    {"name": "delivery-exploratory"},
+                ],
+                "createdAt": "2026-04-30T00:00:00Z",
+                "updatedAt": "2026-04-30T00:00:00Z",
+                "url": "https://github.com/example/repo/issues/42",
+                "comments": [],
+                "author": {"login": "reporter"},
+            }
+        ]
+        comments_payload = {
+            "comments": [
+                {
+                    "body": "\n".join(
+                        [
+                            "Ralph exploratory handoff completed.",
+                            "",
+                            "Commit: `aaaaaaa`",
+                        ]
+                    )
+                },
+                {
+                    "body": "\n".join(
+                        [
+                            "Ralph exploratory acceptance completed.",
+                            "",
+                            "Commit: `abc1234`",
+                        ]
+                    )
+                },
+            ]
+        }
+        runner = FakeRunner(
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+            command_outputs={
+                issue_list_command: [json.dumps(issue_payload)],
+                issue_comments_command: [json.dumps(comments_payload)],
+                promotion_log_command: [
+                    "abc1234\x00Merge accepted Exploratory issue 42\n",
+                ],
+            },
+            fail_commands={target_ancestor_command: 1},
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                promote=True,
+                skip_post_promotion_review=True,
+            )
+            with redirect_stdout(io.StringIO()):
+                loop._promote()
+
+            comment_path = next(tmp_path.glob("logs/promote-*/issue-42-comment.md"))
+            comment = comment_path.read_text(encoding="utf-8")
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "edit",
+                "42",
+                "-R",
+                "example/repo",
+                "--add-label",
+                "agent-merged",
+                "--remove-label",
+                "agent-integrated",
+                "--remove-label",
+                "agent-reviewing",
+                "--remove-label",
+                "agent-running",
+                "--remove-label",
+                "agent-failed",
+            ),
+            commands,
+        )
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "close",
+                "42",
+                "-R",
+                "example/repo",
+                "--reason",
+                "completed",
+            ),
+            commands,
+        )
+        self.assertIn("Integrated commit: `abc1234`", comment)
+        self.assertEqual(manifest["github_metadata"]["issues"][0]["number"], 42)
+        self.assertEqual(
+            manifest["github_metadata"]["issues"][0]["integrated_commit"],
+            "abc1234",
         )
 
     def test_promotion_skip_post_promotion_review_flag_disables_review_agent(self) -> None:

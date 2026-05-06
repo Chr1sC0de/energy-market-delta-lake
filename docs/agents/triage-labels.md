@@ -27,8 +27,9 @@ Ralph owns these labels while processing the issue queue:
 - `agent-running`: Ralph has claimed an implementation issue.
 - `agent-failed`: Ralph failed after retry and left logs for inspection.
 - `agent-merged`: Ralph pushed **Local integration** and closed the issue.
-- `agent-integrated`: Ralph integrated Gitflow work to `dev`; the issue waits
-  for **Promotion** to `main`.
+- `agent-integrated`: Ralph integrated Gitflow work to `dev`, or accepted
+  Exploratory work was merged to `dev`; the issue waits for **Promotion** to
+  `main`.
 - `agent-reviewing`: Ralph published exploratory work to a durable review
   branch; the issue waits for human review.
 

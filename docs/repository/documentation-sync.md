@@ -159,11 +159,11 @@ way:
   maintained-doc scope and its own sync metadata.
 - #59: docs-only AEMO ETL changes remain aligned with Ralph QA selection by
   keeping docs-only AEMO ETL paths on the root doc **Commit check** surface.
-- #57, #58, #61, #62, #88, #89, #94, and #95: current Ralph behavior for
+- #57, #58, #61, #62, #88, #89, #91, #94, and #95: current Ralph behavior for
   **Delivery mode**, **Local integration**, Exploratory handoff, **Promotion**,
-  **Sandboxed issue access**, writable QA runtime paths, unverified
-  **Promotion** commit review context, **Post-promotion review**, and validated
-  follow-up creation remain owned by
+  accepted Exploratory evidence closure, **Sandboxed issue access**, writable
+  QA runtime paths, unverified **Promotion** commit review context,
+  **Post-promotion review**, and validated follow-up creation remain owned by
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
 - #68: [docs/agents/ralph-loop.md](../agents/ralph-loop.md) defines the
   **Ready issue refresh** contract, including the shared language, audit prefix,

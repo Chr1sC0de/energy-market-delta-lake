@@ -57,7 +57,10 @@ Runtime labels such as `agent-running`, `agent-integrated`, `agent-merged`,
 `agent-failed`, and `agent-reviewing` block repeat implementation and automated
 triage reconsideration. In particular, `agent-reviewing` means **Exploratory
 delivery** has already published a durable review branch and the issue is
-waiting for human review.
+waiting for human review. Accepted review moves the issue from
+`agent-reviewing` to `agent-integrated` after the work is merged to `dev` and
+acceptance evidence is commented. Rejected review removes `agent-reviewing`,
+adds `ready-for-human`, comments the review result, and leaves the issue open.
 
 After a successful drain-mode **Local integration** or Exploratory handoff,
 Ralph computes **Ready issue refresh** candidates from open issues within

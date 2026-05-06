@@ -59,6 +59,7 @@ DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30.0
 DIRTY_WORKTREE_STATUS_PREVIEW_LIMIT = 12
 COMMAND_READ_CHUNK_SIZE = 65536
 COMMIT_LINE_PATTERN = re.compile(r"(?m)^Commit: `(?P<sha>[0-9a-f]{7,40})`$")
+EXPLORATORY_ACCEPTANCE_COMMENT_TITLE = "Ralph exploratory acceptance completed."
 MANIFEST_NAME = "ralph-run.json"
 MANIFEST_SCHEMA_VERSION = 1
 SANDBOX_GH_WRAPPER_DIR_NAME = "sandbox-bin"
@@ -3287,7 +3288,10 @@ class RalphLoop:
             comments = self.github.issue_comments(issue.number)
             commit_sha = integrated_commit_from_comments(comments)
             if commit_sha is None:
-                emit(f"Skipping #{issue.number}: no recorded Gitflow integration commit.")
+                emit(
+                    f"Skipping #{issue.number}: no recorded Gitflow integration or "
+                    "Exploratory acceptance commit."
+                )
                 continue
             if not self._commit_is_in_promotion_range(
                 commit_sha,
@@ -3365,7 +3369,12 @@ class RalphLoop:
             self.github.edit_issue_labels(
                 issue.number,
                 add=[AGENT_MERGED_LABEL],
-                remove=[AGENT_INTEGRATED_LABEL, AGENT_RUNNING_LABEL, AGENT_FAILED_LABEL],
+                remove=[
+                    AGENT_INTEGRATED_LABEL,
+                    AGENT_REVIEWING_LABEL,
+                    AGENT_RUNNING_LABEL,
+                    AGENT_FAILED_LABEL,
+                ],
             )
             manifest.record_promoted_issue_metadata(
                 issue,
@@ -5011,9 +5020,7 @@ def promotion_commit_inventory_prompt_lines(entries: list[dict[str, Any]]) -> st
                 issue_number = issue_value.get("number")
                 issue_title = str(issue_value.get("title") or "")
                 issue_text = f" for #{issue_number} {issue_title}".rstrip()
-            lines.append(
-                f"- `{sha}` {subject} - verified Local integration commit{issue_text}"
-            )
+            lines.append(f"- `{sha}` {subject} - verified issue evidence commit{issue_text}")
             continue
         lines.append(f"- `{sha}` {subject} - unverified Promotion commit")
     return "\n".join(lines)
@@ -5070,9 +5077,11 @@ def post_promotion_review_prompt(
         Review the Promotion attempt for regressions, missed issue evidence,
         surprising changed files, unverified Promotion commits, recovery or
         consistency needs, and obvious
-        follow-up risks. Distinguish verified Local integration commits from
+        follow-up risks. Distinguish verified issue evidence commits from
         unverified Promotion commits; do not assume all promoted files belong
-        only to the verified issues. Prioritize concrete findings with file
+        only to the verified issues. Verified issue evidence can be a Gitflow
+        **Local integration** commit or an accepted Exploratory commit that
+        reached the source branch. Prioritize concrete findings with file
         paths, commands, commits, or manifest fields. If no issues are found,
         say that clearly and mention any residual risk.
         Unverified Promotion commits are review context only. Do not recommend
@@ -5131,7 +5140,7 @@ def post_promotion_review_prompt(
 
         {changed_lines}
 
-        Verified Gitflow issues:
+        Verified promoted issues:
 
         {issue_lines}
         """
@@ -5386,9 +5395,13 @@ def build_promotion_comment(
 
 
 def integrated_commit_from_comments(comments: list[dict[str, Any]]) -> str | None:
+    evidence_titles = (
+        "Ralph Gitflow integration completed.",
+        EXPLORATORY_ACCEPTANCE_COMMENT_TITLE,
+    )
     for comment in reversed(comments):
         body = str(comment.get("body") or "")
-        if "Ralph Gitflow integration completed." not in body:
+        if not any(title in body for title in evidence_titles):
             continue
         match = COMMIT_LINE_PATTERN.search(body)
         if match is not None:
