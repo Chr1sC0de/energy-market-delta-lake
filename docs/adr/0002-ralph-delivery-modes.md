@@ -33,8 +33,11 @@ reliably close GitHub Issues on its own.
 
 Gitflow branch hygiene is part of the Delivery mode contract: before default
 Gitflow integration, Ralph merges `origin/main` into `origin/dev` if `dev` is
-behind `main`; after successful Promotion, Ralph fast-forwards `dev` to the
-promotion commit. Exploratory branch hygiene is also part of the contract:
+behind `main`. That branch sync runs before issue claim; merge conflicts and
+stale `agent-sync-main-into-dev` worktrees stop the drain with `branch_sync`
+manifest guidance so Ralph does not claim and fail unrelated ready issues.
+After successful Promotion, Ralph fast-forwards `dev` to the promotion commit.
+Exploratory branch hygiene is also part of the contract:
 Ralph creates `agent/exploratory/issue-N-slug` from `origin/main`, refuses to
 overwrite an existing remote **Exploratory branch**, and skips the **Local
 integration** squash-merge path. Recovery follows the issue **Delivery mode**:

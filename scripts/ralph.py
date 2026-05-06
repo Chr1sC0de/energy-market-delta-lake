@@ -253,6 +253,10 @@ class EnvironmentFailure(IssueFailure):
     """A local environment failure that should stop the drain."""
 
 
+class BranchSyncFailure(EnvironmentFailure):
+    """A source-to-target branch sync failure that should stop the drain."""
+
+
 class PostPushFailure(RalphError):
     """A failure after main was pushed, where issue state may be inconsistent."""
 
@@ -430,6 +434,17 @@ def path_text(path: Path | None) -> str | None:
     return str(path)
 
 
+def branch_sync_worktree_path(
+    *,
+    worktree_container: Path,
+    source_branch: str,
+    target_branch: str,
+) -> Path:
+    return worktree_container / (
+        f"agent-sync-{slugify(source_branch)}-into-{slugify(target_branch)}"
+    )
+
+
 class RunManifest:
     """Machine-readable recovery state for a single Ralph run."""
 
@@ -474,6 +489,18 @@ class RunManifest:
                 "worktree_container": str(config.worktree_container),
                 "implementation_worktree": str(worktree_path),
                 "integration_worktree": path_text(integration_path),
+                "branch_sync_worktree": None,
+            },
+            "branch_sync": {
+                "status": "not_started",
+                "source_branch": None,
+                "target_branch": None,
+                "worktree_path": None,
+                "log_path": None,
+                "conflicted_files": [],
+                "recovery_guidance": None,
+                "failure_type": None,
+                "error": None,
             },
             "changed_files": [],
             "qa_results": [],
@@ -767,6 +794,37 @@ class RunManifest:
             f"push_{key}_{status}",
             details={"branch": branch, "commit": commit_sha, "log_path": path_text(log_path)},
         )
+
+    def record_branch_sync(
+        self,
+        *,
+        status: str,
+        source_branch: str,
+        target_branch: str,
+        worktree_path: Path,
+        log_path: Path | None = None,
+        conflicted_files: list[str] | None = None,
+        recovery_guidance: str | None = None,
+        failure_type: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        entry: dict[str, Any] = {
+            "status": status,
+            "source_branch": source_branch,
+            "target_branch": target_branch,
+            "worktree_path": str(worktree_path),
+            "log_path": path_text(log_path),
+            "conflicted_files": list(conflicted_files or []),
+            "recovery_guidance": recovery_guidance,
+            "failure_type": failure_type,
+            "error": error,
+        }
+        self.data["branch_sync"] = entry
+        paths = self.data.setdefault("paths", {})
+        if not isinstance(paths, dict):
+            raise RalphError("Manifest paths field is not an object.")
+        paths["branch_sync_worktree"] = str(worktree_path)
+        self.record_event(f"branch_sync_{status}", details=entry)
 
     def record_metadata_status(
         self,
@@ -1616,6 +1674,34 @@ def ready_issue_refresh_comment_already_exists(
         if str(comment.get("body") or "").strip() == target:
             return True
     return False
+
+
+def branch_sync_recovery_guidance(
+    *,
+    source_branch: str,
+    target_branch: str,
+    worktree_path: Path,
+    conflicted_files: list[str],
+    stale_worktree: bool,
+) -> str:
+    conflict_text = ""
+    if conflicted_files:
+        formatted_files = ", ".join(conflicted_files)
+        conflict_text = f" Conflicted files: {formatted_files}."
+    stale_text = (
+        "An existing branch-sync worktree is blocking Ralph. "
+        if stale_worktree
+        else "The branch sync stopped before the Integration target was updated. "
+    )
+    return (
+        stale_text
+        + f"Inspect `{worktree_path}` and finish syncing `origin/{source_branch}` into "
+        f"`origin/{target_branch}` before restarting Ralph.{conflict_text} "
+        "If the worktree contains the intended resolution, commit it there and run "
+        f"`git push origin HEAD:{target_branch}`. If it is stale and no work needs to be "
+        f"preserved, remove it with `git worktree remove --force {worktree_path}`. "
+        "Do not mark unrelated ready issues failed for this branch-sync problem."
+    )
 
 
 def ready_issue_refresh_recovery_guidance(
@@ -2590,6 +2676,13 @@ class GitClient:
     def changed_files_against(self, *, cwd: Path, base_ref: str) -> list[str]:
         result = self.runner.run(
             ["git", "diff", "--name-only", f"{base_ref}...HEAD"],
+            cwd=cwd,
+        )
+        return sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
+
+    def unmerged_files(self, *, cwd: Path) -> list[str]:
+        result = self.runner.run(
+            ["git", "diff", "--name-only", "--diff-filter=U"],
             cwd=cwd,
         )
         return sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
@@ -4030,6 +4123,10 @@ class RalphLoop:
                 integration_path=integration_path,
                 config=self.config,
             )
+            preclaim_branch_sync = self._uses_preclaim_branch_sync(delivery_plan)
+            if preclaim_branch_sync:
+                manifest.record_event("preclaim_branch_sync_check")
+                self._ensure_preclaim_branch_sync(delivery_plan, run_dir, manifest)
             emit(f"#{issue.number}: claiming issue with {AGENT_RUNNING_LABEL}")
             manifest.record_metadata_status(
                 "claiming",
@@ -4061,8 +4158,11 @@ class RalphLoop:
             manifest.record_event("validating_issue_contract")
             self._validate_issue_contract(issue, delivery_plan=delivery_plan)
             manifest.record_event("issue_contract_validated")
-            manifest.record_event("ensuring_integration_target")
-            self._ensure_integration_target(delivery_plan, run_dir)
+            if preclaim_branch_sync:
+                manifest.record_event("integration_target_preclaim_verified")
+            else:
+                manifest.record_event("ensuring_integration_target")
+                self._ensure_integration_target(delivery_plan, run_dir, manifest=manifest)
             emit(f"#{issue.number}: fetching origin/{base_branch}")
             manifest.record_event("fetching_implementation_base")
             self.git.fetch_base(base_branch, run_dir=run_dir)
@@ -4356,7 +4456,31 @@ class RalphLoop:
         if missing:
             raise IssueFailure(f"Missing required issue section(s): {', '.join(missing)}")
 
-    def _ensure_integration_target(self, delivery_plan: DeliveryPlan, run_dir: Path) -> None:
+    def _uses_preclaim_branch_sync(self, delivery_plan: DeliveryPlan) -> bool:
+        return (
+            delivery_plan.mode == GITFLOW_MODE
+            and delivery_plan.target_branch == DEFAULT_GITFLOW_BRANCH
+        )
+
+    def _ensure_preclaim_branch_sync(
+        self,
+        delivery_plan: DeliveryPlan,
+        run_dir: Path,
+        manifest: RunManifest,
+    ) -> None:
+        if delivery_plan.mode != GITFLOW_MODE:
+            return
+        if delivery_plan.target_branch != DEFAULT_GITFLOW_BRANCH:
+            return
+        self._ensure_integration_target(delivery_plan, run_dir, manifest=manifest)
+
+    def _ensure_integration_target(
+        self,
+        delivery_plan: DeliveryPlan,
+        run_dir: Path,
+        *,
+        manifest: RunManifest | None = None,
+    ) -> None:
         if delivery_plan.mode == EXPLORATORY_MODE:
             self._ensure_exploratory_target(delivery_plan, run_dir)
             return
@@ -4365,7 +4489,11 @@ class RalphLoop:
         if delivery_plan.target_branch != DEFAULT_GITFLOW_BRANCH:
             return
         if self.git.remote_branch_exists(delivery_plan.target_branch, run_dir=run_dir):
-            self._sync_default_gitflow_target_with_trunk(delivery_plan, run_dir)
+            self._sync_default_gitflow_target_with_trunk(
+                delivery_plan,
+                run_dir,
+                manifest=manifest,
+            )
             return
 
         emit(
@@ -4378,7 +4506,11 @@ class RalphLoop:
             from_ref=f"origin/{DEFAULT_TRUNK_BRANCH}",
             run_dir=run_dir,
         )
-        self._sync_default_gitflow_target_with_trunk(delivery_plan, run_dir)
+        self._sync_default_gitflow_target_with_trunk(
+            delivery_plan,
+            run_dir,
+            manifest=manifest,
+        )
 
     def _ensure_exploratory_target(self, delivery_plan: DeliveryPlan, run_dir: Path) -> None:
         if delivery_plan.mode != EXPLORATORY_MODE:
@@ -4394,6 +4526,8 @@ class RalphLoop:
         self,
         delivery_plan: DeliveryPlan,
         run_dir: Path,
+        *,
+        manifest: RunManifest | None = None,
     ) -> None:
         if delivery_plan.mode != GITFLOW_MODE:
             return
@@ -4410,11 +4544,48 @@ class RalphLoop:
         ):
             return
 
-        sync_path = self.config.worktree_container / (
-            f"agent-sync-{slugify(source_branch)}-into-{slugify(target_branch)}"
+        sync_path = branch_sync_worktree_path(
+            worktree_container=self.config.worktree_container,
+            source_branch=source_branch,
+            target_branch=target_branch,
         )
+        merge_log_path = run_dir / (
+            f"git-merge-{slugify(source_branch)}-into-{slugify(target_branch)}.log"
+        )
+        if sync_path.exists():
+            guidance = branch_sync_recovery_guidance(
+                source_branch=source_branch,
+                target_branch=target_branch,
+                worktree_path=sync_path,
+                conflicted_files=[],
+                stale_worktree=True,
+            )
+            message = (
+                f"Stale branch-sync worktree blocks syncing origin/{source_branch} into "
+                f"origin/{target_branch}: {sync_path}. {guidance}"
+            )
+            if manifest is not None:
+                manifest.record_branch_sync(
+                    status="failed",
+                    source_branch=source_branch,
+                    target_branch=target_branch,
+                    worktree_path=sync_path,
+                    recovery_guidance=guidance,
+                    failure_type="stale_worktree",
+                    error=message,
+                )
+            raise BranchSyncFailure(message)
+
         emit(f"Syncing origin/{source_branch} into origin/{target_branch}")
         sync_pushed = False
+        if manifest is not None:
+            manifest.record_branch_sync(
+                status="running",
+                source_branch=source_branch,
+                target_branch=target_branch,
+                worktree_path=sync_path,
+                log_path=merge_log_path,
+            )
         self.git.add_detached_worktree(
             path=sync_path,
             ref=f"origin/{target_branch}",
@@ -4427,8 +4598,36 @@ class RalphLoop:
                 ref=f"origin/{source_branch}",
                 message=f"Sync {source_branch} into {target_branch}",
                 run_dir=run_dir,
-                log_name=f"git-merge-{slugify(source_branch)}-into-{slugify(target_branch)}.log",
+                log_name=merge_log_path.name,
             )
+        except CommandFailure as error:
+            conflicted_files = self._branch_sync_conflicted_files(sync_path)
+            guidance = branch_sync_recovery_guidance(
+                source_branch=source_branch,
+                target_branch=target_branch,
+                worktree_path=sync_path,
+                conflicted_files=conflicted_files,
+                stale_worktree=False,
+            )
+            failure_log_path = error.log_path or merge_log_path
+            message = (
+                f"Sync {source_branch} into {target_branch} failed before updating the "
+                f"Integration target. {guidance}"
+            )
+            if manifest is not None:
+                manifest.record_branch_sync(
+                    status="failed",
+                    source_branch=source_branch,
+                    target_branch=target_branch,
+                    worktree_path=sync_path,
+                    log_path=failure_log_path,
+                    conflicted_files=conflicted_files,
+                    recovery_guidance=guidance,
+                    failure_type="merge_conflict",
+                    error=str(error),
+                )
+            raise BranchSyncFailure(message, log_path=failure_log_path) from error
+        try:
             sync_sha = self.git.rev_parse("HEAD", cwd=sync_path)
             emit(f"Pushing sync {sync_sha} to {target_branch}")
             self.git.push_head(
@@ -4439,6 +4638,39 @@ class RalphLoop:
             )
             sync_pushed = True
             self.git.fetch_base(target_branch, run_dir=run_dir)
+            if manifest is not None:
+                manifest.record_branch_sync(
+                    status="pushed",
+                    source_branch=source_branch,
+                    target_branch=target_branch,
+                    worktree_path=sync_path,
+                    log_path=run_dir / f"git-push-{slugify(target_branch)}-branch-sync.log",
+                )
+        except CommandFailure as error:
+            guidance = branch_sync_recovery_guidance(
+                source_branch=source_branch,
+                target_branch=target_branch,
+                worktree_path=sync_path,
+                conflicted_files=[],
+                stale_worktree=False,
+            )
+            failure_log_path = error.log_path
+            message = (
+                f"Branch sync from {source_branch} into {target_branch} failed. "
+                f"{guidance}"
+            )
+            if manifest is not None:
+                manifest.record_branch_sync(
+                    status="failed",
+                    source_branch=source_branch,
+                    target_branch=target_branch,
+                    worktree_path=sync_path,
+                    log_path=failure_log_path,
+                    recovery_guidance=guidance,
+                    failure_type="sync_command_failed",
+                    error=str(error),
+                )
+            raise BranchSyncFailure(message, log_path=failure_log_path) from error
         finally:
             if sync_pushed:
                 try:
@@ -4449,6 +4681,13 @@ class RalphLoop:
                     )
                 except CommandFailure as error:
                     emit(f"Cleanup warning: {error}", err=True)
+
+    def _branch_sync_conflicted_files(self, sync_path: Path) -> list[str]:
+        try:
+            return self.git.unmerged_files(cwd=sync_path)
+        except CommandFailure as error:
+            emit(f"Branch sync conflict file detection warning: {error}", err=True)
+            return []
 
     def _sync_source_branch_after_promotion(
         self,
@@ -5027,6 +5266,13 @@ def ready_issue_refresh_status_value(manifest: RunManifest) -> str:
     return str(refresh.get("status") or "not_started")
 
 
+def branch_sync_status_value(manifest: RunManifest) -> str:
+    sync = manifest.data.get("branch_sync")
+    if not isinstance(sync, dict):
+        return "not_started"
+    return str(sync.get("status") or "not_started")
+
+
 def metadata_recovery_complete_status(mode: str) -> str:
     if mode == TRUNK_MODE:
         return "closed"
@@ -5041,6 +5287,16 @@ def recommended_run_action(manifest: RunManifest) -> str:
     run_kind = str(manifest.data.get("run_kind") or "")
     if run_kind != "implementation":
         return "Inspect the Promotion manifest manually; --recover-run is for implementation runs."
+
+    branch_sync = manifest.data.get("branch_sync")
+    if isinstance(branch_sync, dict) and branch_sync.get("status") == "failed":
+        guidance = branch_sync.get("recovery_guidance")
+        if isinstance(guidance, str) and guidance != "":
+            return guidance
+        return (
+            "Resolve the failed branch sync on the recorded branch-sync worktree "
+            "before rerunning Ralph drain."
+        )
 
     try:
         mode = manifest_delivery_mode(manifest)
@@ -5096,6 +5352,7 @@ def inspect_run(run_dir: Path) -> None:
     emit(f"Delivery mode: {manifest.data.get('delivery_mode') or 'unknown'}")
     emit(f"Integration target: {manifest.data.get('integration_target') or 'unknown'}")
     emit(f"QA status: {qa_status_summary(manifest)}")
+    emit(f"Branch sync status: {branch_sync_status_value(manifest)}")
     emit(f"Push status: {push_status_summary(manifest)}")
     emit(f"Metadata status: {metadata_status_value(manifest)}")
     emit(f"Ready issue refresh status: {ready_issue_refresh_status_value(manifest)}")

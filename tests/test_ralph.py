@@ -666,6 +666,14 @@ class TwoReadyIssueLoop(ralph.RalphLoop):
         return None
 
 
+class NoValidationRalphLoop(ralph.RalphLoop):
+    def _validate_tools(self) -> None:
+        pass
+
+    def _validate_labels(self) -> None:
+        pass
+
+
 class RalphHelperTests(unittest.TestCase):
     def test_parse_repo_slug_accepts_common_github_remote_forms(self) -> None:
         cases = {
@@ -2158,6 +2166,41 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
         self.assertIn("Push status: pushed (main @ abc1234)", text)
         self.assertIn("Metadata status: completion_commented", text)
         self.assertIn("--recover-run", text)
+
+    def test_inspect_run_reports_branch_sync_recovery_guidance(self) -> None:
+        guidance = (
+            "Inspect `/worktrees/agent-sync-main-into-dev` before rerunning Ralph drain."
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = write_recovery_manifest(Path(tmp))
+            manifest_path = run_dir / "ralph-run.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["integration_commit"] = None
+            manifest["pushes"] = {}
+            manifest["branch_sync"] = {
+                "status": "failed",
+                "source_branch": "main",
+                "target_branch": "dev",
+                "worktree_path": "/worktrees/agent-sync-main-into-dev",
+                "log_path": str(run_dir / "git-merge-main-into-dev.log"),
+                "conflicted_files": ["scripts/ralph.py"],
+                "recovery_guidance": guidance,
+                "failure_type": "merge_conflict",
+                "error": "merge conflict",
+            }
+            manifest_path.write_text(
+                json.dumps(manifest, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.inspect_run(run_dir)
+
+        text = output.getvalue()
+        self.assertIn("Branch sync status: failed", text)
+        self.assertIn(guidance, text)
+        self.assertNotIn("--recover-run", text)
 
     def test_recover_run_refuses_when_commit_not_reachable_from_target(self) -> None:
         ancestor_command = (
@@ -3895,6 +3938,170 @@ Build it.
             commands,
         )
         self.assertIn("Syncing origin/main into origin/dev", output.getvalue())
+
+    def test_gitflow_branch_sync_conflict_records_manifest_and_stops_before_claim(
+        self,
+    ) -> None:
+        ancestor_command = (
+            "git",
+            "merge-base",
+            "--is-ancestor",
+            "origin/main",
+            "origin/dev",
+        )
+        merge_command = (
+            "git",
+            "merge",
+            "--no-ff",
+            "origin/main",
+            "-m",
+            "Sync main into dev",
+        )
+        runner = FakeRunner(
+            diff_outputs=["docs/conflicted.md\nscripts/ralph.py\n"],
+            fail_commands={
+                ancestor_command: 1,
+                merge_command: 1,
+            },
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.GITFLOW_MODE)
+            sync_path = tmp_path / "worktrees" / "agent-sync-main-into-dev"
+            output = io.StringIO()
+
+            with self.assertRaises(ralph.BranchSyncFailure):
+                with redirect_stdout(output), redirect_stderr(io.StringIO()):
+                    loop._handle_implementation(
+                        make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+                    )
+
+            manifest = load_run_manifest(tmp_path)
+            merge_log = next((tmp_path / "logs").glob("issue-42-*/git-merge-main-into-dev.log"))
+
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+        self.assertEqual(manifest["github_metadata"]["status"], "not_started")
+        self.assertEqual(manifest["branch_sync"]["status"], "failed")
+        self.assertEqual(manifest["branch_sync"]["failure_type"], "merge_conflict")
+        self.assertEqual(
+            manifest["branch_sync"]["conflicted_files"],
+            ["docs/conflicted.md", "scripts/ralph.py"],
+        )
+        self.assertEqual(manifest["branch_sync"]["worktree_path"], str(sync_path))
+        self.assertEqual(manifest["paths"]["branch_sync_worktree"], str(sync_path))
+        self.assertEqual(manifest["branch_sync"]["log_path"], str(merge_log))
+        self.assertEqual(manifest["failure"]["log_path"], str(merge_log))
+        self.assertIn("git worktree remove --force", manifest["branch_sync"]["recovery_guidance"])
+        self.assertIn("Syncing origin/main into origin/dev", output.getvalue())
+
+    def test_stale_branch_sync_worktree_stops_before_claim_with_guidance(self) -> None:
+        ancestor_command = (
+            "git",
+            "merge-base",
+            "--is-ancestor",
+            "origin/main",
+            "origin/dev",
+        )
+        runner = FakeRunner(fail_commands={ancestor_command: 1})
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.GITFLOW_MODE)
+            sync_path = tmp_path / "worktrees" / "agent-sync-main-into-dev"
+            sync_path.mkdir(parents=True)
+
+            with self.assertRaises(ralph.BranchSyncFailure):
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    loop._handle_implementation(
+                        make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+                    )
+
+            manifest = load_run_manifest(tmp_path)
+
+        commands = [call.args for call in runner.calls]
+        self.assertNotIn(
+            ("git", "worktree", "add", "--detach", str(sync_path), "origin/dev"),
+            commands,
+        )
+        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+        self.assertEqual(manifest["github_metadata"]["status"], "not_started")
+        self.assertEqual(manifest["branch_sync"]["status"], "failed")
+        self.assertEqual(manifest["branch_sync"]["failure_type"], "stale_worktree")
+        self.assertEqual(manifest["branch_sync"]["worktree_path"], str(sync_path))
+        self.assertIn("existing branch-sync worktree", manifest["branch_sync"]["recovery_guidance"])
+
+    def test_branch_sync_conflict_stops_drain_without_repeated_ready_issue_failures(
+        self,
+    ) -> None:
+        issue_list_command = (
+            "gh",
+            "issue",
+            "list",
+            "-R",
+            "example/repo",
+            "--state",
+            "open",
+            "--limit",
+            "100",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        ancestor_command = (
+            "git",
+            "merge-base",
+            "--is-ancestor",
+            "origin/main",
+            "origin/dev",
+        )
+        merge_command = (
+            "git",
+            "merge",
+            "--no-ff",
+            "origin/main",
+            "-m",
+            "Sync main into dev",
+        )
+        runner = FakeRunner(
+            diff_outputs=["docs/conflicted.md\n"],
+            command_outputs={
+                issue_list_command: [
+                    json.dumps(
+                        [
+                            issue_payload(42, ["ready-for-agent"]),
+                            issue_payload(43, ["ready-for-agent"]),
+                        ]
+                    )
+                ]
+            },
+            fail_commands={
+                ancestor_command: 1,
+                merge_command: 1,
+            },
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            base_loop = make_loop(
+                tmp_path,
+                runner,
+                delivery_mode=ralph.GITFLOW_MODE,
+                drain=True,
+                max_issues=0,
+            )
+            loop = NoValidationRalphLoop(base_loop.config, runner)
+
+            with self.assertRaises(ralph.BranchSyncFailure):
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    loop.run()
+
+            manifest = load_run_manifest(tmp_path)
+            issue_43_runs = list((tmp_path / "logs").glob("issue-43-*"))
+
+        commands = [call.args for call in runner.calls]
+        issue_edits = [command for command in commands if command[:3] == ("gh", "issue", "edit")]
+        self.assertEqual(issue_edits, [])
+        self.assertEqual(commands.count(issue_list_command), 1)
+        self.assertEqual(issue_43_runs, [])
+        self.assertEqual(manifest["branch_sync"]["failure_type"], "merge_conflict")
 
     def test_base_drift_rebases_and_reruns_qa_before_squash_merge(self) -> None:
         runner = FakeRunner(

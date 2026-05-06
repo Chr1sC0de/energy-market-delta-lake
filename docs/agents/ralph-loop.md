@@ -354,9 +354,13 @@ Key fields for inspection:
   candidate issue metadata, analysis log path, Markdown artifact path, and
   failure state for drain-mode implementation runs after successful **Local
   integration** or Exploratory handoff.
+- `branch_sync`: Gitflow `main`-into-`dev` sync status, sync worktree path,
+  merge or push log path, conflicted files, failure type, and recovery guidance
+  when Ralph must stop before issue implementation.
 - `branches`: issue, source, and target branch names that apply to the run.
 - `paths`: repo root, run directory, worktree container, and implementation,
-  integration, Promotion source, or Promotion target worktree paths.
+  branch-sync, integration, Promotion source, or Promotion target worktree
+  paths.
 - `changed_files`: current file diff used for QA, **Local integration**, or
   Exploratory handoff.
 - `qa_results`: selected QA commands, cwd, log path, and pass/fail state.
@@ -456,6 +460,10 @@ implementation. `delivery-gitflow` defaults to `origin/dev`; if that branch does
 not exist, Ralph creates it from `origin/main`. Before creating a Gitflow issue
 branch, Ralph also syncs `origin/main` into `origin/dev` when `main` is not
 already an ancestor of `dev`, so the **Integration target** is not behind trunk.
+This branch sync runs before Ralph claims the issue. If the merge conflicts or
+an existing `agent-sync-main-into-dev` worktree indicates stale sync state,
+Ralph records `branch_sync` recovery guidance in the run manifest and stops the
+drain without marking unrelated `ready-for-agent` issues failed.
 `delivery-trunk` defaults to `origin/main`. `delivery-exploratory` defaults to
 a per-issue **Exploratory branch** named `agent/exploratory/issue-N-slug`.
 Ralph fails clearly before Codex implementation if that remote branch already
@@ -908,6 +916,14 @@ issue metadata, `ready_issue_refresh.status: failed`, and any candidate-level
 `ready_issue_refresh.mutation_results`. Operators inspect the analysis log,
 artifact path, and mutation results, then reconcile only failed GitHub Issue
 metadata before restarting the drain.
+
+Gitflow branch-sync conflicts and stale `agent-sync-main-into-dev` worktrees
+also stop the drain. Ralph records the sync worktree path, relevant log path,
+conflicted files when available, and recovery guidance under `branch_sync` in
+the run manifest. Operators should inspect that worktree, either finish and
+push the sync to the Gitflow **Integration target** or remove the stale worktree,
+then rerun Ralph. Ralph does not continue claiming ready issues while that
+branch-sync state is unresolved.
 
 Environment failures stop the run. Examples include invalid `gh` auth, missing
 labels, unavailable tools, failing Git operations before claim, or unavailable
