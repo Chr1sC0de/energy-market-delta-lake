@@ -127,8 +127,8 @@ the same `prek` command surfaces as code QA:
   `backend-services/authentication`, `backend-services/marimo`,
   `backend-services/dagster-user/aemo-etl`, and
   `infrastructure/aws-pulumi`, with each Subproject's pyproject defining its
-  test, generated, schema-heavy, or entrypoint exclusions. AEMO ETL also selects
-  Ruff `C901` with Ruff's default complexity threshold.
+  test, generated, schema-heavy, or entrypoint exclusions. AEMO ETL and AWS
+  Pulumi also select Ruff `C901` with Ruff's default complexity threshold.
   `backend-services/dagster-core` is not currently on this ratchet.
 - `shfmt` formats shell scripts.
 - `shellcheck` checks shell correctness.

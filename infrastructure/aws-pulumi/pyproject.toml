@@ -31,7 +31,7 @@ dev = [
 [tool.ruff]
 line-length = 88
 format.docstring-code-format = true
-lint.select = [ "ANN", "D", "E", "F", "I" ]
+lint.select = [ "ANN", "C901", "D", "E", "F", "I" ]
 lint.per-file-ignores."__init__.py" = [ "I" ]
 lint.per-file-ignores."__main__.py" = [ "D" ]
 lint.per-file-ignores."configs.py" = [ "D" ]

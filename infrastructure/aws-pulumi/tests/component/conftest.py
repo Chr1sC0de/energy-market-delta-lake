@@ -10,6 +10,7 @@ as a side effect of importing any component.
 
 import asyncio
 import os
+from collections.abc import Callable
 
 import pulumi
 import pulumi.runtime
@@ -28,6 +29,150 @@ os.environ.setdefault("ADMINISTRATOR_IPS", "10.0.0.1")
 os.environ.setdefault("ENVIRONMENT", "test")
 # Prevent configs.py from hitting ipify.org
 os.environ["DEVELOPMENT_LOCATION"] = "aws"
+
+
+MockOutputs = dict[str, object]
+ResourceOutputAugmenter = Callable[[pulumi.runtime.MockResourceArgs, MockOutputs], None]
+
+
+def _augment_vpc_outputs(
+    args: pulumi.runtime.MockResourceArgs,
+    outputs: MockOutputs,
+) -> None:
+    outputs.setdefault("defaultRouteTableId", f"{args.name}-default-rt-mock-id")
+
+
+def _augment_ec2_instance_outputs(
+    args: pulumi.runtime.MockResourceArgs,
+    outputs: MockOutputs,
+) -> None:
+    outputs.setdefault("privateDns", f"{args.name}.internal.test")
+    outputs.setdefault("privateIp", "10.0.1.42")
+    outputs.setdefault("publicIp", "1.2.3.4")
+    outputs.setdefault("publicDns", f"{args.name}.compute.test")
+
+
+def _augment_eip_outputs(
+    args: pulumi.runtime.MockResourceArgs,
+    outputs: MockOutputs,
+) -> None:
+    outputs.setdefault("publicIp", "54.1.2.3")
+
+
+def _augment_ecr_repository_outputs(
+    args: pulumi.runtime.MockResourceArgs,
+    outputs: MockOutputs,
+) -> None:
+    outputs.setdefault(
+        "repositoryUrl",
+        f"123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/{args.name}",
+    )
+
+
+def _augment_docker_image_outputs(
+    args: pulumi.runtime.MockResourceArgs,
+    outputs: MockOutputs,
+) -> None:
+    image_name = outputs.get("imageName") or outputs.get("image_name")
+    outputs.setdefault("repoDigest", f"{image_name}@sha256:testdigest")
+
+
+def _augment_s3_bucket_outputs(
+    args: pulumi.runtime.MockResourceArgs,
+    outputs: MockOutputs,
+) -> None:
+    outputs.setdefault("bucket", args.name)
+    outputs.setdefault("bucketDomainName", f"{args.name}.s3.amazonaws.com")
+
+
+def _augment_ecs_cluster_outputs(
+    args: pulumi.runtime.MockResourceArgs,
+    outputs: MockOutputs,
+) -> None:
+    outputs.setdefault(
+        "clusterArn",
+        f"arn:aws:ecs:ap-southeast-2:123456789012:cluster/{args.name}",
+    )
+
+
+def _augment_ecs_service_outputs(
+    args: pulumi.runtime.MockResourceArgs,
+    outputs: MockOutputs,
+) -> None:
+    outputs.setdefault(
+        "clusterArn",
+        "arn:aws:ecs:ap-southeast-2:123456789012:cluster/test-cluster",
+    )
+
+
+def _augment_cloudwatch_log_group_outputs(
+    args: pulumi.runtime.MockResourceArgs,
+    outputs: MockOutputs,
+) -> None:
+    outputs.setdefault("retentionInDays", 1)
+
+
+def _augment_random_password_outputs(
+    args: pulumi.runtime.MockResourceArgs,
+    outputs: MockOutputs,
+) -> None:
+    outputs.setdefault("result", "MockPassword123!")
+
+
+def _augment_tls_private_key_outputs(
+    args: pulumi.runtime.MockResourceArgs,
+    outputs: MockOutputs,
+) -> None:
+    outputs.setdefault("privateKeyOpenssh", "mock-private-key")
+    outputs.setdefault("publicKeyOpenssh", "mock-public-key")
+
+
+def _augment_service_discovery_namespace_outputs(
+    args: pulumi.runtime.MockResourceArgs,
+    outputs: MockOutputs,
+) -> None:
+    outputs.setdefault(
+        "arn",
+        "arn:aws:servicediscovery:ap-southeast-2:123456789012:namespace/ns-mock",
+    )
+    outputs.setdefault("hostedZone", "ZTEST123")
+
+
+def _augment_dynamodb_table_outputs(
+    args: pulumi.runtime.MockResourceArgs,
+    outputs: MockOutputs,
+) -> None:
+    outputs.setdefault("tableName", args.inputs.get("name", "delta_log"))
+
+
+RESOURCE_OUTPUT_AUGMENTERS: tuple[tuple[str, ResourceOutputAugmenter], ...] = (
+    ("ec2/vpc:Vpc", _augment_vpc_outputs),
+    ("ec2/instance:Instance", _augment_ec2_instance_outputs),
+    ("ec2/eip:Eip", _augment_eip_outputs),
+    ("ecr/repository:Repository", _augment_ecr_repository_outputs),
+    ("docker:index/image:Image", _augment_docker_image_outputs),
+    ("s3/bucket:Bucket", _augment_s3_bucket_outputs),
+    ("ecs/cluster:Cluster", _augment_ecs_cluster_outputs),
+    ("ecs/service:Service", _augment_ecs_service_outputs),
+    ("cloudwatch/logGroup:LogGroup", _augment_cloudwatch_log_group_outputs),
+    ("random/randomPassword:RandomPassword", _augment_random_password_outputs),
+    ("tls/privateKey:PrivateKey", _augment_tls_private_key_outputs),
+    (
+        "servicediscovery/privateDnsNamespace:PrivateDnsNamespace",
+        _augment_service_discovery_namespace_outputs,
+    ),
+    ("dynamodb/table:Table", _augment_dynamodb_table_outputs),
+)
+
+
+def _augment_resource_outputs(
+    args: pulumi.runtime.MockResourceArgs,
+    outputs: MockOutputs,
+) -> None:
+    resource_type = args.typ or ""
+    for resource_type_fragment, augment_outputs in RESOURCE_OUTPUT_AUGMENTERS:
+        if resource_type_fragment in resource_type:
+            augment_outputs(args, outputs)
 
 
 # ---------------------------------------------------------------------------
@@ -143,66 +288,7 @@ class InfrastructureMocks(pulumi.runtime.Mocks):
         if "name" not in outputs:
             outputs["name"] = args.name
 
-        # Resource-type-specific output augmentation
-        typ = args.typ or ""
-
-        if "ec2/vpc:Vpc" in typ:
-            outputs.setdefault("defaultRouteTableId", f"{args.name}-default-rt-mock-id")
-
-        if "ec2/instance:Instance" in typ:
-            outputs.setdefault("privateDns", f"{args.name}.internal.test")
-            outputs.setdefault("privateIp", "10.0.1.42")
-            outputs.setdefault("publicIp", "1.2.3.4")
-            outputs.setdefault("publicDns", f"{args.name}.compute.test")
-
-        if "ec2/eip:Eip" in typ:
-            outputs.setdefault("publicIp", "54.1.2.3")
-
-        if "ecr/repository:Repository" in typ:
-            outputs.setdefault(
-                "repositoryUrl",
-                f"123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/{args.name}",
-            )
-
-        if "docker:index/image:Image" in typ:
-            image_name = outputs.get("imageName") or outputs.get("image_name")
-            outputs.setdefault("repoDigest", f"{image_name}@sha256:testdigest")
-
-        if "s3/bucket:Bucket" in typ:
-            outputs.setdefault("bucket", args.name)
-            outputs.setdefault("bucketDomainName", f"{args.name}.s3.amazonaws.com")
-
-        if "ecs/cluster:Cluster" in typ:
-            outputs.setdefault(
-                "clusterArn",
-                f"arn:aws:ecs:ap-southeast-2:123456789012:cluster/{args.name}",
-            )
-
-        if "ecs/service:Service" in typ:
-            outputs.setdefault(
-                "clusterArn",
-                "arn:aws:ecs:ap-southeast-2:123456789012:cluster/test-cluster",
-            )
-
-        if "cloudwatch/logGroup:LogGroup" in typ:
-            outputs.setdefault("retentionInDays", 1)
-
-        if "random/randomPassword:RandomPassword" in typ:
-            outputs.setdefault("result", "MockPassword123!")
-
-        if "tls/privateKey:PrivateKey" in typ:
-            outputs.setdefault("privateKeyOpenssh", "mock-private-key")
-            outputs.setdefault("publicKeyOpenssh", "mock-public-key")
-
-        if "servicediscovery/privateDnsNamespace:PrivateDnsNamespace" in typ:
-            outputs.setdefault(
-                "arn",
-                "arn:aws:servicediscovery:ap-southeast-2:123456789012:namespace/ns-mock",
-            )
-            outputs.setdefault("hostedZone", "ZTEST123")
-
-        if "dynamodb/table:Table" in typ:
-            outputs.setdefault("tableName", args.inputs.get("name", "delta_log"))
+        _augment_resource_outputs(args, outputs)
 
         return resource_id, outputs
 
