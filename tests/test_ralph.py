@@ -118,6 +118,84 @@ One candidate issue was reviewed without mutating GitHub Issues.
 None.
 """
 
+READY_ISSUE_REFRESH_COMPLETED_MARKDOWN = """# Ready Issue Refresh Analysis
+
+## Summary
+
+One candidate issue is already satisfied.
+
+## Integrated Work
+
+- Integrated issue #42 published `merge-sha`.
+
+## Candidate Issue Update Plan
+
+- #43: close as completed with evidence.
+
+## Candidate Issue Mutation Plan
+
+```json
+{
+  "ready_issue_refresh_mutations": [
+    {
+      "issue_number": 43,
+      "action": "completed",
+      "comment": "Issue #43 is already satisfied by merge-sha.",
+      "body": null,
+      "add_labels": [],
+      "remove_labels": [],
+      "close_as_completed": true
+    }
+  ]
+}
+```
+
+## Evidence
+
+- Candidate acceptance criteria are satisfied by the integrated change.
+
+## Open Questions
+
+None.
+"""
+
+READY_ISSUE_REFRESH_NEEDS_TRIAGE_MARKDOWN = """# Ready Issue Refresh Analysis
+
+## Summary
+
+One candidate issue needs maintainer review.
+
+## Integrated Work
+
+- Integrated issue #42 published `merge-sha`.
+
+## Candidate Issue Update Plan
+
+- #43: stale but unclear, needs triage.
+
+## Candidate Issue Mutation Plan
+
+```json
+{
+  "ready_issue_refresh_mutations": [
+    {
+      "issue_number": 43,
+      "action": "needs_triage",
+      "comment": "The issue contract may be stale after merge-sha, but the correct update is unclear."
+    }
+  ]
+}
+```
+
+## Evidence
+
+- The blocker changed after Local integration.
+
+## Open Questions
+
+None.
+"""
+
 
 def make_issue(
     labels: set[str],
@@ -166,6 +244,7 @@ class FakeRunner:
         fail_commands: set[tuple[str, ...]] | dict[tuple[str, ...], int] | None = None,
         fail_post_promotion_review: bool = False,
         fail_ready_issue_refresh_analysis: bool = False,
+        ready_issue_refresh_analysis_markdown: str = READY_ISSUE_REFRESH_ANALYSIS_MARKDOWN,
         fail_issue_create: bool = False,
     ) -> None:
         self.dry_run = False
@@ -176,6 +255,7 @@ class FakeRunner:
         self.command_outputs = command_outputs or {}
         self.fail_post_promotion_review = fail_post_promotion_review
         self.fail_ready_issue_refresh_analysis = fail_ready_issue_refresh_analysis
+        self.ready_issue_refresh_analysis_markdown = ready_issue_refresh_analysis_markdown
         self.fail_issue_create = fail_issue_create
         self.created_issue_number = 99
         if isinstance(fail_commands, dict):
@@ -284,7 +364,7 @@ class FakeRunner:
                         log_path,
                     )
                 return ralph.CompletedCommand(
-                    stdout=READY_ISSUE_REFRESH_ANALYSIS_MARKDOWN,
+                    stdout=self.ready_issue_refresh_analysis_markdown,
                     stderr="",
                 )
         return ralph.CompletedCommand(stdout="", stderr="")
@@ -300,6 +380,8 @@ def make_loop(
     promote: bool = False,
     skip_post_promotion_review: bool = False,
     skip_post_promotion_followups: bool = False,
+    ready_issue_refresh_enabled: bool | None = None,
+    skip_ready_issue_refresh: bool = False,
     issue: int | None = None,
     drain: bool = False,
     max_issues: int = ralph.DEFAULT_DRAIN_BUDGET,
@@ -321,6 +403,10 @@ def make_loop(
         promote=promote,
         skip_post_promotion_review=skip_post_promotion_review,
         skip_post_promotion_followups=skip_post_promotion_followups,
+        ready_issue_refresh_enabled=(
+            drain if ready_issue_refresh_enabled is None else ready_issue_refresh_enabled
+        ),
+        skip_ready_issue_refresh=skip_ready_issue_refresh,
         issue=issue,
         drain=drain,
         max_issues=max_issues,
@@ -919,6 +1005,34 @@ Build it.
         self.assertIn("- #42", prompt)
         self.assertIn("# Ready Issue Refresh Analysis", prompt)
         self.assertIn("## Candidate Issue Update Plan", prompt)
+        self.assertIn("## Candidate Issue Mutation Plan", prompt)
+        self.assertIn("ready_issue_refresh_mutations", prompt)
+
+    def test_ready_issue_refresh_mutation_parser_enforces_comment_prefix(self) -> None:
+        candidate = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=43)
+
+        mutations = ralph.ready_issue_refresh_mutations_from_markdown(
+            READY_ISSUE_REFRESH_NEEDS_TRIAGE_MARKDOWN,
+            candidates=[candidate],
+        )
+
+        self.assertEqual(len(mutations), 1)
+        self.assertEqual(mutations[0].action, "needs_triage")
+        self.assertEqual(mutations[0].add_labels, (ralph.NEEDS_TRIAGE_LABEL,))
+        self.assertIn(ralph.READY_LABEL, mutations[0].remove_labels)
+        assert mutations[0].comment is not None
+        self.assertTrue(mutations[0].comment.startswith(ralph.AI_READY_ISSUE_REFRESH_DISCLAIMER))
+
+    def test_ready_issue_refresh_ready_contract_rejects_missing_sections(self) -> None:
+        with self.assertRaises(ValueError) as caught:
+            ralph.validate_ready_issue_refresh_ready_contract(
+                issue_number=43,
+                labels=frozenset({ralph.READY_LABEL}),
+                body="## What to build\nBuild it.\n",
+            )
+
+        self.assertIn("## Acceptance criteria", str(caught.exception))
+        self.assertIn("## Blocked by", str(caught.exception))
 
     def test_basic_triage_candidate_accepts_unlabeled_and_needs_triage(self) -> None:
         self.assertTrue(ralph.is_basic_triage_candidate(make_issue(set())))
@@ -1542,6 +1656,8 @@ Build it.
         self.assertIsNone(config.target_branch)
         self.assertFalse(config.skip_post_promotion_review)
         self.assertFalse(config.skip_post_promotion_followups)
+        self.assertFalse(config.ready_issue_refresh_enabled)
+        self.assertFalse(config.skip_ready_issue_refresh)
 
     def test_parse_args_help_describes_default_drain_budget(self) -> None:
         output = io.StringIO()
@@ -1555,7 +1671,59 @@ Build it.
         self.assertIn("--allow-dirty-worktree", help_text)
         self.assertIn("--skip-post-promotion-review", help_text)
         self.assertIn("--skip-post-promotion-followups", help_text)
+        self.assertIn("--ready-issue-refresh", help_text)
+        self.assertIn("--skip-ready-issue-refresh", help_text)
         self.assertIn("exploratory", help_text)
+
+    def test_build_config_enables_ready_issue_refresh_for_drain_by_default(self) -> None:
+        runner = FakeRunner(
+            command_outputs={
+                ("git", "rev-parse", "--show-toplevel"): ["/work/repo\n"],
+                ("git", "config", "--get", "remote.origin.url"): [
+                    "git@github.com:example/repo.git\n"
+                ],
+            }
+        )
+
+        config = ralph.build_config(ralph.parse_args(["--drain"]), runner)
+
+        self.assertTrue(config.ready_issue_refresh_enabled)
+        self.assertFalse(config.skip_ready_issue_refresh)
+
+    def test_build_config_skips_default_ready_issue_refresh_for_drain(self) -> None:
+        runner = FakeRunner(
+            command_outputs={
+                ("git", "rev-parse", "--show-toplevel"): ["/work/repo\n"],
+                ("git", "config", "--get", "remote.origin.url"): [
+                    "git@github.com:example/repo.git\n"
+                ],
+            }
+        )
+
+        config = ralph.build_config(
+            ralph.parse_args(["--drain", "--skip-ready-issue-refresh"]),
+            runner,
+        )
+
+        self.assertFalse(config.ready_issue_refresh_enabled)
+        self.assertTrue(config.skip_ready_issue_refresh)
+
+    def test_build_config_enables_ready_issue_refresh_for_targeted_issue(self) -> None:
+        runner = FakeRunner(
+            command_outputs={
+                ("git", "rev-parse", "--show-toplevel"): ["/work/repo\n"],
+                ("git", "config", "--get", "remote.origin.url"): [
+                    "git@github.com:example/repo.git\n"
+                ],
+            }
+        )
+
+        config = ralph.build_config(
+            ralph.parse_args(["--issue", "42", "--ready-issue-refresh"]),
+            runner,
+        )
+
+        self.assertTrue(config.ready_issue_refresh_enabled)
 
     def test_build_config_records_post_promotion_review_skip_flag(self) -> None:
         runner = FakeRunner(
@@ -2641,6 +2809,561 @@ Build it.
                 for command in after_analysis_commands
             )
         )
+
+    def test_drain_applies_ready_issue_refresh_completed_mutation_by_default(
+        self,
+    ) -> None:
+        issue_list_command = (
+            "gh",
+            "issue",
+            "list",
+            "-R",
+            "example/repo",
+            "--state",
+            "open",
+            "--limit",
+            "100",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        candidate_view_command = (
+            "gh",
+            "issue",
+            "view",
+            "43",
+            "-R",
+            "example/repo",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        candidate_state_command = (
+            "gh",
+            "issue",
+            "view",
+            "43",
+            "-R",
+            "example/repo",
+            "--json",
+            "state",
+        )
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            ready_issue_refresh_analysis_markdown=READY_ISSUE_REFRESH_COMPLETED_MARKDOWN,
+            command_outputs={
+                issue_list_command: [json.dumps([issue_payload(43, ["ready-for-agent"])])],
+                candidate_view_command: [json.dumps(issue_payload(43, ["ready-for-agent"]))],
+                candidate_state_command: [json.dumps({"state": "OPEN"})],
+            },
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                loop._handle_implementation(make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY))
+
+            comment = next(tmp_path.glob("logs/issue-42-*/issue-43-comment.md")).read_text(
+                encoding="utf-8"
+            )
+            manifest = load_run_manifest(tmp_path)
+
+        commands = [call.args for call in runner.calls]
+        analysis_call = next(
+            call
+            for call in runner.calls
+            if call.input_text is not None
+            and "Run a read-only Ready issue refresh analysis" in call.input_text
+        )
+        analysis_index = runner.calls.index(analysis_call)
+        self.assertTrue(comment.startswith(ralph.AI_READY_ISSUE_REFRESH_DISCLAIMER))
+        self.assertIn("Issue #43 is already satisfied by merge-sha.", comment)
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "edit",
+                "43",
+                "-R",
+                "example/repo",
+                "--remove-label",
+                "ready-for-agent",
+            ),
+            commands,
+        )
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "close",
+                "43",
+                "-R",
+                "example/repo",
+                "--reason",
+                "completed",
+            ),
+            commands,
+        )
+        close_43 = (
+            "gh",
+            "issue",
+            "close",
+            "43",
+            "-R",
+            "example/repo",
+            "--reason",
+            "completed",
+        )
+        mutation_commands = [
+            call.args
+            for call in runner.calls[
+                analysis_index + 1 : commands.index(close_43) + 1
+            ]
+        ]
+        self.assertFalse(any(command[:1] == ("git",) for command in mutation_commands))
+        self.assertFalse(any(command[:2] == ("codex", "exec") for command in mutation_commands))
+        self.assertIn("Applying Ready issue refresh metadata mutations", output.getvalue())
+        mutation = manifest["ready_issue_refresh"]["mutation_results"][0]
+        self.assertEqual(mutation["issue_number"], 43)
+        self.assertEqual(mutation["status"], "completed")
+        self.assertEqual(mutation["action"], "completed")
+        self.assertEqual(mutation["operations"]["comment"], "created")
+        self.assertEqual(mutation["operations"]["closure"], "closed_completed")
+
+    def test_skip_ready_issue_refresh_disables_default_drain_refresh(self) -> None:
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                drain=True,
+                ready_issue_refresh_enabled=False,
+                skip_ready_issue_refresh=True,
+            )
+
+            with redirect_stdout(io.StringIO()):
+                loop._handle_implementation(make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY))
+
+            manifest = load_run_manifest(tmp_path)
+
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(any(command[:3] == ("gh", "issue", "list") for command in commands))
+        self.assertFalse(
+            any(
+                call.input_text is not None
+                and "Run a read-only Ready issue refresh analysis" in call.input_text
+                for call in runner.calls
+            )
+        )
+        self.assertFalse(manifest["ready_issue_refresh"]["enabled"])
+        self.assertEqual(manifest["ready_issue_refresh"]["status"], "not_started")
+
+    def test_targeted_issue_opt_in_runs_ready_issue_refresh_after_integration(
+        self,
+    ) -> None:
+        issue_list_command = (
+            "gh",
+            "issue",
+            "list",
+            "-R",
+            "example/repo",
+            "--state",
+            "open",
+            "--limit",
+            "100",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            command_outputs={
+                issue_list_command: [json.dumps([issue_payload(43, ["ready-for-agent"])])]
+            },
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                issue=42,
+                ready_issue_refresh_enabled=True,
+            )
+
+            with redirect_stdout(io.StringIO()):
+                loop._handle_implementation(make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY))
+
+            manifest = load_run_manifest(tmp_path)
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn(issue_list_command, commands)
+        self.assertEqual(manifest["ready_issue_refresh"]["status"], "completed")
+        self.assertEqual(manifest["ready_issue_refresh"]["candidate_issue_numbers"], [43])
+
+    def test_ready_issue_refresh_needs_triage_mutation_transitions_labels_and_comments(
+        self,
+    ) -> None:
+        candidate_view_command = (
+            "gh",
+            "issue",
+            "view",
+            "43",
+            "-R",
+            "example/repo",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        runner = FakeRunner(
+            command_outputs={
+                candidate_view_command: [json.dumps(issue_payload(43, ["ready-for-agent"]))]
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            run_dir = tmp_path / "logs" / "issue-42-test"
+            manifest = ralph.RunManifest.for_implementation(
+                run_dir=run_dir,
+                issue=make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY),
+                delivery_plan=ralph.DeliveryPlan(
+                    mode=ralph.TRUNK_MODE,
+                    target_branch="main",
+                    label=ralph.DELIVERY_TRUNK_LABEL,
+                    add_labels=(),
+                    remove_labels=(),
+                ),
+                branch="agent/issue-42-implement-thing",
+                worktree_path=tmp_path / "worktrees" / "issue",
+                integration_path=tmp_path / "worktrees" / "integration",
+                config=loop.config,
+            )
+
+            with redirect_stdout(io.StringIO()):
+                loop._apply_ready_issue_refresh_mutations(
+                    analysis_markdown=READY_ISSUE_REFRESH_NEEDS_TRIAGE_MARKDOWN,
+                    candidates=[make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=43)],
+                    run_dir=run_dir,
+                    manifest=manifest,
+                )
+
+            comment = (run_dir / "issue-43-comment.md").read_text(encoding="utf-8")
+            payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        commands = [call.args for call in runner.calls]
+        self.assertTrue(comment.startswith(ralph.AI_READY_ISSUE_REFRESH_DISCLAIMER))
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "edit",
+                "43",
+                "-R",
+                "example/repo",
+                "--add-label",
+                "needs-triage",
+                "--remove-label",
+                "ready-for-agent",
+            ),
+            commands,
+        )
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "comment",
+                "43",
+                "-R",
+                "example/repo",
+                "--body-file",
+                str(run_dir / "issue-43-comment.md"),
+            ),
+            commands,
+        )
+        mutation = payload["ready_issue_refresh"]["mutation_results"][0]
+        self.assertEqual(mutation["status"], "completed")
+        self.assertEqual(mutation["operations"]["labels"]["added"], ["needs-triage"])
+        self.assertEqual(mutation["operations"]["labels"]["removed"], ["ready-for-agent"])
+
+    def test_ready_issue_refresh_body_update_preserves_ready_contract(self) -> None:
+        candidate_view_command = (
+            "gh",
+            "issue",
+            "view",
+            "43",
+            "-R",
+            "example/repo",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        updated_body = (
+            "## What to build\n"
+            "Build it with refreshed context.\n\n"
+            "## Acceptance criteria\n"
+            "- [ ] It works.\n\n"
+            "## Blocked by\n"
+            "None\n\n"
+            "## Current context\n"
+            "Blocker #42 is satisfied on the Integration target.\n"
+        )
+        mutation_markdown = f"""# Ready Issue Refresh Analysis
+
+## Candidate Issue Mutation Plan
+
+```json
+{{
+  "ready_issue_refresh_mutations": [
+    {{
+      "issue_number": 43,
+      "action": "update",
+      "body": {json.dumps(updated_body)}
+    }}
+  ]
+}}
+```
+"""
+        runner = FakeRunner(
+            command_outputs={
+                candidate_view_command: [json.dumps(issue_payload(43, ["ready-for-agent"]))]
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            run_dir = tmp_path / "logs" / "issue-42-test"
+            manifest = ralph.RunManifest.for_implementation(
+                run_dir=run_dir,
+                issue=make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY),
+                delivery_plan=ralph.DeliveryPlan(
+                    mode=ralph.TRUNK_MODE,
+                    target_branch="main",
+                    label=ralph.DELIVERY_TRUNK_LABEL,
+                    add_labels=(),
+                    remove_labels=(),
+                ),
+                branch="agent/issue-42-implement-thing",
+                worktree_path=tmp_path / "worktrees" / "issue",
+                integration_path=tmp_path / "worktrees" / "integration",
+                config=loop.config,
+            )
+
+            with redirect_stdout(io.StringIO()):
+                loop._apply_ready_issue_refresh_mutations(
+                    analysis_markdown=mutation_markdown,
+                    candidates=[make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=43)],
+                    run_dir=run_dir,
+                    manifest=manifest,
+                )
+
+            body = (run_dir / "issue-43-body.md").read_text(encoding="utf-8")
+            payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        commands = [call.args for call in runner.calls]
+        self.assertEqual(body, updated_body.strip())
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "edit",
+                "43",
+                "-R",
+                "example/repo",
+                "--body-file",
+                str(run_dir / "issue-43-body.md"),
+            ),
+            commands,
+        )
+        mutation = payload["ready_issue_refresh"]["mutation_results"][0]
+        self.assertEqual(mutation["operations"]["body"], "updated")
+
+    def test_ready_issue_refresh_mutation_rerun_is_idempotent(self) -> None:
+        candidate_view_command = (
+            "gh",
+            "issue",
+            "view",
+            "43",
+            "-R",
+            "example/repo",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        candidate_comments_command = (
+            "gh",
+            "issue",
+            "view",
+            "43",
+            "-R",
+            "example/repo",
+            "--comments",
+            "--json",
+            "comments",
+        )
+        existing_comment = ready_issue_refresh_body(
+            "The issue contract may be stale after merge-sha, but the correct update is unclear."
+        )
+        runner = FakeRunner(
+            command_outputs={
+                candidate_view_command: [json.dumps(issue_payload(43, ["needs-triage"]))],
+                candidate_comments_command: [json.dumps({"comments": [{"body": existing_comment}]})],
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            run_dir = tmp_path / "logs" / "issue-42-test"
+            manifest = ralph.RunManifest.for_implementation(
+                run_dir=run_dir,
+                issue=make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY),
+                delivery_plan=ralph.DeliveryPlan(
+                    mode=ralph.TRUNK_MODE,
+                    target_branch="main",
+                    label=ralph.DELIVERY_TRUNK_LABEL,
+                    add_labels=(),
+                    remove_labels=(),
+                ),
+                branch="agent/issue-42-implement-thing",
+                worktree_path=tmp_path / "worktrees" / "issue",
+                integration_path=tmp_path / "worktrees" / "integration",
+                config=loop.config,
+            )
+
+            with redirect_stdout(io.StringIO()):
+                loop._apply_ready_issue_refresh_mutations(
+                    analysis_markdown=READY_ISSUE_REFRESH_NEEDS_TRIAGE_MARKDOWN,
+                    candidates=[make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=43)],
+                    run_dir=run_dir,
+                    manifest=manifest,
+                )
+
+            payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+        self.assertFalse(any(command[:3] == ("gh", "issue", "comment") for command in commands))
+        self.assertFalse(any(command[:3] == ("gh", "issue", "close") for command in commands))
+        mutation = payload["ready_issue_refresh"]["mutation_results"][0]
+        self.assertEqual(mutation["operations"]["labels"], "unchanged")
+        self.assertEqual(mutation["operations"]["comment"], "already_present")
+
+    def test_ready_issue_refresh_partial_mutation_failure_records_candidate_status_and_stops(
+        self,
+    ) -> None:
+        issue_list_command = (
+            "gh",
+            "issue",
+            "list",
+            "-R",
+            "example/repo",
+            "--state",
+            "open",
+            "--limit",
+            "100",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        view_43 = (
+            "gh",
+            "issue",
+            "view",
+            "43",
+            "-R",
+            "example/repo",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        view_44 = (
+            "gh",
+            "issue",
+            "view",
+            "44",
+            "-R",
+            "example/repo",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        state_43 = (
+            "gh",
+            "issue",
+            "view",
+            "43",
+            "-R",
+            "example/repo",
+            "--json",
+            "state",
+        )
+        fail_edit_44 = (
+            "gh",
+            "issue",
+            "edit",
+            "44",
+            "-R",
+            "example/repo",
+            "--add-label",
+            "needs-triage",
+            "--remove-label",
+            "ready-for-agent",
+        )
+        mutation_markdown = READY_ISSUE_REFRESH_COMPLETED_MARKDOWN.replace(
+            "    }\n  ]",
+            "    },\n"
+            "    {\n"
+            "      \"issue_number\": 44,\n"
+            "      \"action\": \"needs_triage\",\n"
+            "      \"comment\": \"Issue #44 needs maintainer review after merge-sha.\"\n"
+            "    }\n"
+            "  ]",
+        )
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            ready_issue_refresh_analysis_markdown=mutation_markdown,
+            command_outputs={
+                issue_list_command: [
+                    json.dumps(
+                        [
+                            issue_payload(43, ["ready-for-agent"]),
+                            issue_payload(44, ["ready-for-agent"]),
+                        ]
+                    )
+                ],
+                view_43: [json.dumps(issue_payload(43, ["ready-for-agent"]))],
+                view_44: [json.dumps(issue_payload(44, ["ready-for-agent"]))],
+                state_43: [json.dumps({"state": "OPEN"})],
+            },
+            fail_commands={fail_edit_44: 1},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            base_loop = make_loop(tmp_path, runner, drain=True)
+            loop = TwoReadyIssueLoop(base_loop.config, runner)
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                with self.assertRaises(ralph.ReadyIssueRefreshFailure) as caught:
+                    loop.run()
+
+            manifest = load_run_manifest(tmp_path)
+
+        self.assertEqual(loop.ready_calls, 1)
+        self.assertIn("Recovery guidance", str(caught.exception))
+        self.assertIn("Do not roll back the integrated commit", str(caught.exception))
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["integration_commit"]["sha"], "merge-sha")
+        self.assertEqual(manifest["pushes"]["integration_target"]["status"], "pushed")
+        self.assertEqual(manifest["ready_issue_refresh"]["status"], "failed")
+        self.assertIn("recovery_guidance", manifest["ready_issue_refresh"])
+        results = {
+            item["issue_number"]: item
+            for item in manifest["ready_issue_refresh"]["mutation_results"]
+        }
+        self.assertEqual(results[43]["status"], "completed")
+        self.assertEqual(results[44]["status"], "failed")
 
     def test_ready_issue_refresh_analysis_failure_stops_drain_after_integration(
         self,

@@ -159,6 +159,12 @@ Drain up to 10 implementation attempts:
 python3 scripts/ralph.py --drain
 ```
 
+Drain without applying **Ready issue refresh** metadata updates:
+
+```bash
+python3 scripts/ralph.py --drain --skip-ready-issue-refresh
+```
+
 Drain directly to trunk for small low-risk changes:
 
 ```bash
@@ -181,6 +187,12 @@ Implement one specific issue:
 
 ```bash
 python3 scripts/ralph.py --issue 25
+```
+
+Implement one specific issue and then run **Ready issue refresh**:
+
+```bash
+python3 scripts/ralph.py --issue 25 --ready-issue-refresh
 ```
 
 Promote reviewed Gitflow work from `dev` to `main`:
@@ -694,6 +706,9 @@ not keep stale blockers, stale acceptance criteria, or already-satisfied issues
 in the ready queue.
 
 After each successful drain-mode **Local integration** or Exploratory handoff,
+Ralph computes and applies **Ready issue refresh** by default. Operators can
+disable the drain refresh with `--skip-ready-issue-refresh`; targeted
+`--issue` runs do not refresh unless the operator passes `--ready-issue-refresh`.
 Ralph first computes a bounded candidate set from open GitHub Issues returned by
 the existing `--issue-limit` scan. Candidate selection includes
 `ready-for-agent` issues that are unblocked in queue order and excludes issues
@@ -717,18 +732,31 @@ integration** or Exploratory handoff commit, changed files, QA evidence, run log
 path, and candidate issue bodies. The subprocess is granted only read-only
 GitHub Issue commands and is instructed not to comment, edit labels, edit
 bodies, close, reopen, create issues, commit, push, fetch, merge, rebase, reset,
-or update refs. It records planned issue updates only; Ralph does not apply
-those updates during this read-only analysis phase.
+or update refs. It records planned issue updates and a structured mutation plan
+only; Ralph's outer loop applies validated metadata mutations afterwards.
 
 The read-only analysis report is saved as
 `ready-issue-refresh-analysis.md` in the current `.ralph/runs/issue-.../`
 directory beside `codex-ready-issue-refresh-analysis.jsonl`. The implementation
 run manifest records `ready_issue_refresh.status`, candidate issue numbers,
-candidate issue metadata, the analysis log path, the artifact path, and any
-failure. If analysis fails after a successful **Local integration** or
-Exploratory handoff, Ralph stops the drain before claiming another issue. It
+candidate issue metadata, the analysis log path, the artifact path,
+`ready_issue_refresh.mutation_results`, recovery guidance, and any failure.
+Each candidate mutation result records the issue number, action, status,
+operations applied, error text, and log path when available, so operators can
+inspect partial post-**Local integration** metadata failures.
+
+Ralph applies only GitHub Issue metadata commands during mutation: `gh issue
+view`, `gh issue edit`, `gh issue comment`, and `gh issue close`. It does not
+run code edits, commits, pushes, fetches, merges, rebases, ref updates, or
+**Integration target** updates as part of refresh metadata application. Reruns
+are idempotent: Ralph skips already-current body text, already-applied label
+transitions, duplicate refresh comments, and already-closed completed issues.
+If analysis or metadata mutation fails after a successful **Local integration**
+or Exploratory handoff, Ralph stops the drain before claiming another issue. It
 does not roll back the pushed **Integration target** commit or revert the
-already-completed issue metadata.
+already-completed issue metadata; operators inspect the manifest mutation
+results and reconcile only the failed GitHub Issue metadata before rerunning
+the drain.
 
 In `--dry-run`, Ralph reports that Ready issue refresh candidate selection would
 run after **Local integration** or Exploratory handoff; it does not invoke Codex
@@ -866,11 +894,13 @@ attempts still try warning-only **Post-promotion review** when a review worktree
 is available; the original Promotion exception, manifest `status`, and failure
 state remain the source of truth.
 
-Read-only **Ready issue refresh** analysis failures also stop the drain, but
-they do not imply the integrated issue metadata needs recovery. The manifest
-records the pushed **Integration target** commit and completed issue metadata
-alongside `ready_issue_refresh.status: failed`, so operators can inspect the
-analysis log or artifact path before restarting the drain.
+**Ready issue refresh** analysis or metadata mutation failures also stop the
+drain, but they do not imply the integrated issue metadata needs recovery. The
+manifest records the pushed **Integration target** commit, completed integrated
+issue metadata, `ready_issue_refresh.status: failed`, and any candidate-level
+`ready_issue_refresh.mutation_results`. Operators inspect the analysis log,
+artifact path, and mutation results, then reconcile only failed GitHub Issue
+metadata before restarting the drain.
 
 Environment failures stop the run. Examples include invalid `gh` auth, missing
 labels, unavailable tools, failing Git operations before claim, or unavailable

@@ -77,8 +77,11 @@ That subprocess receives the integrated issue, **Delivery mode**,
 **Integration target**, integration commit, changed files, QA evidence, run log
 path, and candidate issue bodies, then writes
 `ready-issue-refresh-analysis.md` under the current `.ralph/runs/issue-.../`
-directory. It records planned issue updates only and is not allowed to mutate
-GitHub Issues.
+directory. It records planned issue updates and a structured mutation plan, but
+is not allowed to mutate GitHub Issues itself. Ralph's outer loop applies
+validated refresh comments, body edits, label transitions, and completed
+closures with GitHub Issue metadata commands only. The run manifest records
+per-candidate mutation status and recovery guidance for partial failures.
 
 Use [ralph-loop.md](ralph-loop.md) for Ralph internals, including
 **Delivery mode**, **Local integration**, **Integration target**, **Promotion**,
