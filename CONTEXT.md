@@ -106,10 +106,18 @@ _Avoid_: Fast agent mode
 
 **Exploratory delivery**:
 The opt-in **Delivery mode** where Ralph publishes issue work to a durable
-review branch from `origin/main`, marks the issue `agent-reviewing`, and leaves
-it open for human review. Accepted review work can later be merged to `dev` and
-enter **Promotion** through explicit acceptance evidence.
+**Exploratory branch** from `origin/main`, marks the issue `agent-reviewing`,
+and leaves it open for human review. Accepted review work can later be merged
+to `dev` and enter **Promotion** through explicit acceptance evidence.
 _Avoid_: Draft PR mode, branch-only PR
+
+**Exploratory branch**:
+The durable per-issue branch Ralph publishes for **Exploratory delivery**.
+The default branch name is `agent/exploratory/issue-N-slug`; Ralph creates it
+from `origin/main`, refuses to overwrite an existing remote branch, and never
+includes it in automatic **Promotion** unless a human accepts the work by
+merging it to `dev` with explicit issue evidence.
+_Avoid_: Draft PR branch, temporary review worktree
 
 **Promotion**:
 The Ralph operation that merges reviewed `dev` work into `main` and closes
@@ -159,9 +167,12 @@ _Avoid_: Promotion gate, pre-push review
 - A **Delivery mode** selects an **Integration target**.
 - **Gitflow delivery** uses `dev` as the default **Integration target**.
 - **Trunk delivery** uses `main` as the default **Integration target**.
-- **Exploratory delivery** uses a per-issue `agent/exploratory/issue-N-slug`
-  branch as the default **Integration target** and pushes that branch without a
-  **Local integration** squash merge.
+- **Exploratory delivery** uses an **Exploratory branch** as the default
+  **Integration target** and pushes that branch without a **Local integration**
+  squash merge.
+- An **Exploratory branch** stays outside automatic **Promotion** until accepted
+  review evidence records the `dev` commit that made the work reachable from
+  the Gitflow source branch.
 - **Promotion** closes only issues whose Gitflow `dev` integration commit or
   accepted Exploratory commit is verified in the promoted branch range.
 - **Post-promotion review** happens after **Promotion** attempts where possible;
@@ -215,3 +226,6 @@ _Avoid_: Promotion gate, pre-push review
   **Post-promotion review**. Resolved: use **Ready issue refresh** for
   post-**Local integration** or Exploratory handoff queue reconciliation before
   the next ready issue claim.
+- "review branch" could imply a GitHub PR branch or a temporary worktree.
+  Resolved: use **Exploratory branch** for the durable branch Ralph publishes
+  during **Exploratory delivery**.

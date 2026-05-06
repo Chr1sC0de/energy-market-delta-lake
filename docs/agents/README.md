@@ -32,10 +32,15 @@ Use this page as the agent documentation map. The imperative policy lives in
 - Use `$ralph-curate` to review open GitHub Issues against the current branch
   and propose stale, satisfied, blocked, or mislabeled issue updates.
 - Use `$ralph-issue-refresh` to reconcile ready issues after **Local
-  integration** and before the next ready issue claim.
-- Use `$ralph-triage` to prepare GitHub Issues for drain.
-- Use `$ralph-loop` to drain ready issues, inspect failures, and run
-  **Promotion**.
+  integration** or Exploratory handoff and before the next ready issue claim;
+  it must not accept or reject `agent-reviewing` work.
+- Use `$ralph-triage` to prepare GitHub Issues for drain with category, state,
+  and **Delivery mode** labels, including `delivery-exploratory` only when
+  `## Review focus` explains the needed **Exploratory branch** review.
+- Use `$ralph-loop` to drain ready issues, publish **Exploratory branches** for
+  Exploratory handoff, inspect failures, and run **Promotion**. Human review
+  accepts Exploratory work by moving it to `agent-integrated`, or rejects it by
+  moving it to `ready-for-human`.
 - Use `$grill-with-docs`, `$to-prd`, and `$to-issues` before Ralph when the
   work needs shaping or issue creation.
 

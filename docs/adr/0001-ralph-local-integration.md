@@ -9,8 +9,8 @@ comment completion evidence, and close the issue.
 ADR 0002 generalizes this trunk-only path with **Delivery modes**. The
 trunk-style behavior described here remains the **Trunk delivery** path.
 Gitflow delivery uses the same post-QA **Local integration** mechanism against
-`dev`; Exploratory delivery publishes a durable handoff branch without a
-**Local integration** squash merge.
+`dev`; Exploratory delivery publishes a durable **Exploratory branch** without
+a **Local integration** squash merge.
 
 ## Considered options
 
@@ -28,9 +28,10 @@ Ralph must be conservative around git drift. Trunk delivery integrates against
 latest `origin/main`. Gitflow delivery keeps `origin/dev` current with
 `origin/main` before issue branches are created, then rebases and reruns selected
 QA if the **Integration target** moves before squash-merging. Exploratory
-delivery fails clearly if the durable review branch already exists, otherwise
-creates `agent/exploratory/issue-N-slug` from `origin/main` and pushes that
-validated branch for human review without running **Local integration**. If a
+delivery fails clearly if the durable **Exploratory branch** already exists,
+otherwise creates `agent/exploratory/issue-N-slug` from `origin/main` and
+pushes that validated branch for human review without running **Local
+integration**. If a
 target branch is pushed but issue metadata cannot be updated, the drain stops
 because code and board state may no longer agree.
 Operators inspect that run with

@@ -37,7 +37,7 @@ Ralph drains agent-ready GitHub issues through a guarded local loop:
    `agent-integrated`, and leave the issue open for **Promotion**.
 7. In **Trunk delivery**, push `main`, comment evidence, mark `agent-merged`,
    and close the issue.
-8. In **Exploratory delivery**, push a durable review branch from
+8. In **Exploratory delivery**, push a durable **Exploratory branch** from
    `origin/main`, comment evidence, mark `agent-reviewing`, and leave the issue
    open for human review.
 9. Run **Ready issue refresh** before the next ready issue claim.
@@ -77,7 +77,7 @@ flowchart TD
   QA --> DONE{Delivery mode?}
   DONE -->|Gitflow or Trunk| INTEGRATE[Run Local integration]
   INTEGRATE --> DONE2{Delivery mode?}
-  DONE -->|Exploratory| HANDOFF[Push Exploratory handoff branch]
+  DONE -->|Exploratory| HANDOFF[Push Exploratory branch]
   HANDOFF --> REVIEW[Comment evidence and mark agent-reviewing]
   DONE2 -->|Gitflow| STAGE[Comment evidence and mark agent-integrated]
   DONE2 -->|Trunk| CLOSE[Comment evidence, mark agent-merged, close issue]
@@ -131,8 +131,9 @@ automated triage reconsideration.
 
 `delivery-gitflow` is the default **Delivery mode**. `delivery-trunk` is an
 opt-in label for small docs, tests, tooling, or script changes.
-`delivery-exploratory` is an opt-in label for durable review-branch work that
-needs explicit human judgment before it can become normal delivery work. If
+`delivery-exploratory` is an opt-in label for durable **Exploratory branch**
+work that needs explicit human judgment before it can become normal delivery
+work. If
 `delivery-exploratory` conflicts with Gitflow or trunk labels, Ralph keeps
 `delivery-exploratory` and removes the others. If only Gitflow and trunk
 conflict, Ralph keeps `delivery-gitflow`, removes `delivery-trunk`, and
@@ -164,7 +165,7 @@ Drain directly to trunk for small low-risk changes:
 python3 scripts/ralph.py --drain --delivery-mode trunk
 ```
 
-Drain to durable review branches for exploratory changes:
+Drain to durable **Exploratory branches** for exploratory changes:
 
 ```bash
 python3 scripts/ralph.py --drain --delivery-mode exploratory
@@ -354,7 +355,7 @@ Key fields for inspection:
   command set, and network access state for spawned Codex subprocesses.
 - `integration_commit`: published implementation commit. For Gitflow and Trunk
   delivery this is the **Local integration** commit; for Exploratory delivery
-  this is the handoff branch commit.
+  this is the **Exploratory branch** commit.
 - `promotion_commit`: **Promotion** commit pushed to `main`.
 - `pushes`: per-branch push state, commit SHA, and push log path.
 - `github_metadata`: claim, completion, failure, Promotion comment, label, and
@@ -429,9 +430,9 @@ An implementation issue must have these sections:
 - `## Blocked by`
 
 An Exploratory delivery issue must also have `## Review focus`, stating the
-human judgment the durable review branch needs. Missing `## Review focus` marks
-the issue `agent-failed` before Ralph creates an implementation worktree,
-invokes Codex, or publishes an Exploratory handoff.
+human judgment the durable **Exploratory branch** needs. Missing
+`## Review focus` marks the issue `agent-failed` before Ralph creates an
+implementation worktree, invokes Codex, or publishes an Exploratory handoff.
 
 If any referenced blocker in `Blocked by` is still open, Ralph skips the issue.
 If the issue contract is malformed, Ralph marks the issue `agent-failed` and
@@ -444,16 +445,17 @@ not exist, Ralph creates it from `origin/main`. Before creating a Gitflow issue
 branch, Ralph also syncs `origin/main` into `origin/dev` when `main` is not
 already an ancestor of `dev`, so the **Integration target** is not behind trunk.
 `delivery-trunk` defaults to `origin/main`. `delivery-exploratory` defaults to
-a per-issue `agent/exploratory/issue-N-slug` branch. Ralph fails clearly before
-Codex implementation if that remote branch already exists; otherwise it creates
-the local handoff branch from `origin/main` and later pushes it. `--target-branch`
-overrides the **Integration target** explicitly.
+a per-issue **Exploratory branch** named `agent/exploratory/issue-N-slug`.
+Ralph fails clearly before Codex implementation if that remote branch already
+exists; otherwise it creates the local **Exploratory branch** from
+`origin/main` and later pushes it. `--target-branch` overrides the
+**Integration target** explicitly.
 
 For Gitflow and Trunk delivery, Ralph creates branches named
 `agent/issue-N-slug` from the **Integration target** and creates sibling
 worktrees under the repo worktree container. For Exploratory delivery, Ralph
-creates `agent/exploratory/issue-N-slug` from `origin/main`. Codex is instructed
-not to commit, push, or edit GitHub issue state; Ralph owns those steps after QA
+creates the **Exploratory branch** from `origin/main`. Codex is instructed not
+to commit, push, or edit GitHub issue state; Ralph owns those steps after QA
 passes.
 
 Before building the Codex implementation prompts for an issue, Ralph fetches
@@ -477,16 +479,15 @@ evidence with the commit SHA, changed files, QA commands, and run log path.
 Trunk integration marks the issue `agent-merged` and closes it. Gitflow
 integration marks the issue `agent-integrated` and leaves it open for
 **Promotion**. Exploratory handoff skips the detached integration worktree and
-squash merge: Ralph pushes the validated
-`agent/exploratory/issue-N-slug` branch to origin, marks the issue
-`agent-reviewing`, and leaves it open for human review. Ralph does not open a
-GitHub draft PR.
+squash merge: Ralph pushes the validated **Exploratory branch** to origin,
+marks the issue `agent-reviewing`, and leaves it open for human review. Ralph
+does not open a GitHub draft PR.
 
 Human review owns the next Exploratory state transition. For accepted
-Exploratory work, merge the reviewed branch to `dev`, add acceptance evidence to
-the issue, remove `agent-reviewing`, and add `agent-integrated` so the issue can
-close through the existing **Promotion** path. The acceptance comment must start
-with:
+Exploratory work, merge the reviewed **Exploratory branch** to `dev`, add
+acceptance evidence to the issue, remove `agent-reviewing`, and add
+`agent-integrated` so the issue can close through the existing **Promotion**
+path. The acceptance comment must start with:
 
 ```markdown
 Ralph exploratory acceptance completed.
@@ -497,7 +498,10 @@ Commit: `<dev-commit-sha>`
 The commit is the `dev` commit that made the accepted work reachable from the
 source branch. For rejected Exploratory work, leave the issue open, remove
 `agent-reviewing`, add `ready-for-human`, and comment the review result and
-next action. Rejected review must not add `agent-integrated`.
+next action. Rejected review must not add `agent-integrated`. ADR
+[0005](../adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md)
+records why **Exploratory branches** stay outside automatic **Promotion** until
+human acceptance evidence reaches `dev`.
 
 ```mermaid
 sequenceDiagram
@@ -678,7 +682,7 @@ Automated triage also applies Ralph delivery labels. It should default to
 tooling, or script changes. Runtime behavior, infrastructure, Dagster, S3,
 LocalStack, cross-**Subproject** work, broad refactors, or unclear scope should
 stay on `delivery-gitflow` unless the issue explicitly asks for
-`delivery-exploratory` review-branch handling.
+`delivery-exploratory` **Exploratory branch** handling.
 
 ## Ready issue refresh
 
@@ -849,8 +853,8 @@ Codex or QA failures get one retry in the same worktree. If retry fails, Ralph:
 
 Successful issues remove the implementation worktree, any integration worktree,
 and the local temporary branch after trunk closure, Gitflow integration, or
-Exploratory review-branch publication. Cleanup failures are warnings; the
-pushed commit and GitHub issue metadata remain the source of truth.
+Exploratory branch publication. Cleanup failures are warnings; the pushed
+commit and GitHub issue metadata remain the source of truth.
 
 Merge or push failures before the **Integration target** is updated are issue
 failures and keep the worktrees for inspection. Failures after the target is
@@ -884,6 +888,7 @@ container-backed **Integration test** dependencies.
   - `docs/agents/issue-tracker.md`
   - `docs/agents/triage-labels.md`
   - `docs/repository/documentation-sync.md`
+  - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
   - `.agents/skills/ralph-curate/SKILL.md`
   - `.agents/skills/ralph-loop/SKILL.md`
   - `.agents/skills/ralph-issue-refresh/SKILL.md`

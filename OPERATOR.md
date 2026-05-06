@@ -30,19 +30,19 @@ straight from shaped plan to GitHub Issues.
 Use `$to-issues` to create independently grabbable GitHub Issues. Each issue
 must include `## What to build`, `## Acceptance criteria`, and `## Blocked by`
 before it can become `ready-for-agent`. Exploratory delivery issues must also
-include `## Review focus` stating the human judgment the durable review branch
-needs.
+include `## Review focus` stating the human judgment the durable
+**Exploratory branch** needs.
 
 Use `$ralph-triage` to prepare issues for drain. Triage sets exactly one
 category label, exactly one state label, and at most one **Delivery mode** label.
 Default to **Gitflow delivery** unless the work is a small, low-risk docs,
 tests, tooling, or script change that fits **Trunk delivery**, or an explicitly
 exploratory change whose `## Review focus` says why it should publish a durable
-review branch and remain open with `agent-reviewing`.
+**Exploratory branch** and remain open with `agent-reviewing`.
 
 Use `$ralph-loop drain` to let Ralph implement ready issues. Ralph owns
 worktrees, deterministic QA, **Local integration** for Gitflow or Trunk
-delivery, Exploratory review-branch handoff, **Integration target** pushes, and
+delivery, Exploratory branch handoff, **Integration target** pushes, and
 GitHub issue metadata after validation. After a successful **Local
 integration** or Exploratory handoff, **Ready issue refresh** reconciles the
 open issue queue before Ralph claims the next `ready-for-agent` issue.
@@ -93,12 +93,15 @@ Use this checklist:
 - Confirm no open blocker or manual follow-up should stop the range from
   reaching `main`.
 
-For accepted Exploratory review, merge the durable review branch to `dev`, add
-an issue comment that starts with `Ralph exploratory acceptance completed.` and
-includes a `Commit: ...` line for the accepted `dev` commit SHA, remove
-`agent-reviewing`, and add `agent-integrated`. For rejected Exploratory review,
-leave the issue open, remove `agent-reviewing`, add `ready-for-human`, and
-comment the review result and next action.
+For accepted Exploratory review, merge the durable **Exploratory branch** to
+`dev`, add an issue comment that starts with
+`Ralph exploratory acceptance completed.` and includes a `Commit: ...` line for
+the accepted `dev` commit SHA, remove `agent-reviewing`, and add
+`agent-integrated`. For rejected Exploratory review, leave the issue open,
+remove `agent-reviewing`, add `ready-for-human`, and comment the review result
+and next action. ADR
+[0005](docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md)
+records why **Exploratory branches** stay outside automatic **Promotion**.
 
 ## Promotion
 
@@ -152,6 +155,7 @@ Keep failed worktrees unless the maintainer asks for cleanup.
   - `backend-services/scripts/aemo-etl-e2e`
   - `docs/agents/issue-tracker.md`
   - `docs/agents/triage-labels.md`
+  - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

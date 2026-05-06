@@ -38,7 +38,7 @@ these sections:
 - `## Blocked by`
 
 Ready `delivery-exploratory` issues must also include `## Review focus`, which
-states the human judgment the durable review branch needs. Missing
+states the human judgment the durable **Exploratory branch** needs. Missing
 `## Review focus` is a malformed Exploratory delivery contract; Ralph marks the
 issue `agent-failed` with evidence before creating an implementation worktree
 or publishing an Exploratory handoff.
@@ -55,9 +55,9 @@ after the body; normal comments and triage comments are not included.
 
 Runtime labels such as `agent-running`, `agent-integrated`, `agent-merged`,
 `agent-failed`, and `agent-reviewing` block repeat implementation and automated
-triage reconsideration. In particular, `agent-reviewing` means **Exploratory
-delivery** has already published a durable review branch and the issue is
-waiting for human review. Accepted review moves the issue from
+triage reconsideration. In particular, `agent-reviewing` means
+**Exploratory delivery** has already published a durable **Exploratory branch**
+and the issue is waiting for human review. Accepted review moves the issue from
 `agent-reviewing` to `agent-integrated` after the work is merged to `dev` and
 acceptance evidence is commented. Rejected review removes `agent-reviewing`,
 adds `ready-for-human`, comments the review result, and leaves the issue open.
@@ -87,6 +87,10 @@ selection, and recovery behavior.
 Use [OPERATOR.md](../../OPERATOR.md) for the human **Operator workflow**.
 Use `$ralph-curate` when existing open issues need to be compared with the
 current branch before changing bodies, labels, blockers, or closure state.
+Use ADR
+[0005](../adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md)
+for the decision that keeps **Exploratory branches** outside automatic
+**Promotion** until human acceptance evidence reaches `dev`.
 
 ## Sync metadata
 
@@ -101,6 +105,7 @@ current branch before changing bodies, labels, blockers, or closure state.
   - `docs/agents/README.md`
   - `docs/agents/ralph-loop.md`
   - `docs/agents/triage-labels.md`
+  - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
   - `scripts/ralph.py`
 - `sync.scope`: `operations`
 - `sync.qa`:

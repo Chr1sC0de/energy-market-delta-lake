@@ -7,20 +7,25 @@ path. **Gitflow delivery** is the default: Ralph keeps `dev` current with
 while closing verified issues. **Trunk delivery** remains available for small
 low-risk docs, tests, tooling, or script changes that can integrate directly to
 `main` and close immediately. **Exploratory delivery** publishes validated work
-to a durable review branch, marks the issue `agent-reviewing`, and leaves it
-open for human review; ready Exploratory issues must state that review need in
-`## Review focus`. Accepted Exploratory work can then be merged to `dev`, marked
-`agent-integrated` with acceptance evidence, and closed by later **Promotion**.
+to a durable **Exploratory branch**, marks the issue `agent-reviewing`, and
+leaves it open for human review; ready Exploratory issues must state that
+review need in `## Review focus`. Accepted Exploratory work can then be merged
+to `dev`, marked `agent-integrated` with acceptance evidence, and closed by
+later **Promotion**. ADR
+[0005](0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md)
+records why **Exploratory branches** stay outside automatic **Promotion** until
+human acceptance evidence reaches `dev`.
 
 ## Consequences
 
 Ralph issue triage now owns delivery-label hygiene. If `delivery-exploratory`
 conflicts with Gitflow or trunk labels, Ralph normalizes to
-`delivery-exploratory` before implementation because explicit review-branch
-selection should win over shared **Integration target** defaults. Exploratory
-selection must be backed by an explicit `## Review focus`; otherwise Ralph marks
-the issue failed before creating a worktree or publishing a handoff branch. If
-only Gitflow and trunk conflict, Ralph normalizes to `delivery-gitflow`.
+`delivery-exploratory` before implementation because explicit
+**Exploratory branch** selection should win over shared **Integration target**
+defaults. Exploratory selection must be backed by an explicit
+`## Review focus`; otherwise Ralph marks the issue failed before creating a
+worktree or publishing an **Exploratory branch**. If only Gitflow and trunk
+conflict, Ralph normalizes to `delivery-gitflow`.
 Promotion must verify the recorded Gitflow integration commit, documented
 manual Gitflow recovery commit, or accepted Exploratory commit before closing an
 `agent-integrated` issue, because branch promotion merges code but does not
@@ -31,8 +36,9 @@ Gitflow integration, Ralph merges `origin/main` into `origin/dev` if `dev` is
 behind `main`; after successful Promotion, Ralph fast-forwards `dev` to the
 promotion commit. Exploratory branch hygiene is also part of the contract:
 Ralph creates `agent/exploratory/issue-N-slug` from `origin/main`, refuses to
-overwrite an existing remote handoff branch, and skips the **Local integration**
-squash-merge path. Recovery follows the issue **Delivery mode**: Trunk delivery
+overwrite an existing remote **Exploratory branch**, and skips the **Local
+integration** squash-merge path. Recovery follows the issue **Delivery mode**:
+Trunk delivery
 reconciles `agent-merged` and issue closure, Gitflow delivery reconciles
 `agent-integrated` and leaves the issue open for **Promotion**, and Exploratory
 delivery reconciles `agent-reviewing` and leaves the issue open for review.
@@ -113,6 +119,7 @@ follow-up contract or needs triage evidence.
   - `scripts/ralph.py`
   - `docs/agents/ralph-loop.md`
   - `CONTEXT.md`
+  - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`
