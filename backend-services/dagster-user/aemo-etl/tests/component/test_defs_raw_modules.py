@@ -29,6 +29,16 @@ STTM_CORE_REPORT_SUFFIXES = (
     "int657_v2_ex_post_market_data_rpt_1",
     "int658_v1_latest_allocation_quantity_rpt_1",
     "int659_v1_bid_offer_rpt_1",
+    "int660_v1_contingency_gas_bids_and_offers_rpt_1",
+    "int661_v1_contingency_gas_called_scheduled_bid_offer_rpt_1",
+    "int662_v1_provisional_deviation_rpt_1",
+    "int663_v1_provisional_variation_rpt_1",
+    "int664_v1_daily_provisional_mos_allocation_rpt_1",
+    "int665_v1_mos_stack_data_rpt_1",
+    "int666_v1_market_notice_rpt_1",
+    "int667_v1_market_parameters_rpt_1",
+    "int668_v1_schedule_log_rpt_1",
+    "int669_v1_settlement_version_rpt_1",
 )
 
 
@@ -73,7 +83,8 @@ def test_sttm_core_source_table_specs_registered_for_archive_replay() -> None:
         assert spec.target_table_uri("aemo") == (
             f"s3://aemo/bronze/sttm/bronze_{spec.name_suffix}"
         )
-        assert spec.schema["gas_date"] == String
+        if "gas_date" in spec.schema:
+            assert spec.schema["gas_date"] == String
 
     (int659_spec,) = select_source_table_specs(
         specs,
@@ -86,6 +97,35 @@ def test_sttm_core_source_table_specs_registered_for_archive_replay() -> None:
         "bid_offer_step_number",
     )
     assert int659_spec.schema["step_capped_cumulative_qty"] == String
+
+    (int660_spec,) = select_source_table_specs(
+        specs,
+        table="bronze/sttm/bronze_int660_v1_contingency_gas_bids_and_offers_rpt_1",
+    )
+    assert int660_spec.surrogate_key_sources == (
+        "gas_date",
+        "contingency_gas_bid_offer_identifier",
+        "contingency_gas_bid_offer_step_number",
+    )
+    assert int660_spec.schema["contingency_gas_bid_offer_step_quantity"] == String
+
+    (int667_spec,) = select_source_table_specs(
+        specs,
+        table="sttm.bronze_int667_v1_market_parameters_rpt_1",
+    )
+    assert int667_spec.surrogate_key_sources == (
+        "effective_from_date",
+        "effective_to_date",
+        "parameter_code",
+    )
+    assert int667_spec.schema["parameter_value"] == String
+
+    (int669_spec,) = select_source_table_specs(
+        specs,
+        table="int669_v1_settlement_version_rpt_1",
+    )
+    assert int669_spec.surrogate_key_sources == ("settlement_run_identifier",)
+    assert int669_spec.schema["settlement_run_desc"] == String
 
 
 def test_sttm_event_driven_selection_includes_core_market_bronze_assets() -> None:
