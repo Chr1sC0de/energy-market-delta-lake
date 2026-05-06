@@ -7,6 +7,7 @@ Importing the module executes that statement and covers all lines in the file.
 """
 
 import importlib
+import importlib.util
 import pkgutil
 from typing import cast
 
@@ -49,6 +50,16 @@ STTM_CORE_REPORT_SUFFIXES = (
     "int677_v1_contingency_gas_price_rpt_1",
     "int678_v1_net_market_balance_daily_amounts_rpt_1",
     "int679_v1_net_market_balance_settlement_amounts_rpt_1",
+    "int680_v1_dp_flag_data_rpt_1",
+    "int681_v1_daily_provisional_capacity_data_rpt_1",
+    "int682_v1_settlement_mos_and_capacity_data_rpt_1",
+    "int683_v1_provisional_used_mos_steps_rpt_1",
+    "int684_v1_settlement_used_mos_steps_rpt_1",
+    "int687_v1_facility_hub_capacity_data_rpt_1",
+    "int688_v1_allocation_warning_limit_thresholds_rpt_1",
+    "int689_v1_expost_allocation_quantity_rpt_1",
+    "int690_v1_deviation_price_data_rpt_1",
+    "int691_v1_sttm_ctp_register_rpt_1",
 )
 
 
@@ -183,6 +194,36 @@ def test_sttm_core_source_table_specs_registered_for_archive_replay() -> None:
     )
     assert int679_spec.schema["total_withdrawals"] == String
 
+    (int682_spec,) = select_source_table_specs(
+        specs,
+        table="sttm.bronze_int682_v1_settlement_mos_and_capacity_data_rpt_1",
+    )
+    assert int682_spec.surrogate_key_sources == (
+        "settlement_run_identifier",
+        "gas_date",
+        "hub_identifier",
+        "facility_identifier",
+    )
+    assert int682_spec.schema["mos_allocated_qty"] == String
+
+    (int689_spec,) = select_source_table_specs(
+        specs,
+        table="int689_v1_expost_allocation_quantity_rpt_1",
+    )
+    assert int689_spec.surrogate_key_sources == (
+        "gas_date",
+        "facility_identifier",
+        "flow_direction",
+    )
+    assert int689_spec.schema["allocation_qty_quality_type"] == String
+
+    (int690_spec,) = select_source_table_specs(
+        specs,
+        table="bronze/sttm/bronze_int690_v1_deviation_price_data_rpt_1",
+    )
+    assert int690_spec.surrogate_key_sources == ("gas_date", "hub_identifier")
+    assert int690_spec.schema["positive_deviation_price"] == String
+
 
 def test_sttm_event_driven_selection_includes_core_market_bronze_assets() -> None:
     from aemo_etl.definitions import STTM_ASSET_SELECTION
@@ -195,6 +236,17 @@ def test_sttm_event_driven_selection_includes_core_market_bronze_assets() -> Non
     assert STTM_ASSET_SELECTION.resolve(asset_defs) == frozenset(
         AssetKey(["bronze", "sttm", f"bronze_{suffix}"])
         for suffix in STTM_CORE_REPORT_SUFFIXES
+    )
+
+
+def test_sttm_landing_only_gap_modules_are_not_typed_source_tables() -> None:
+    assert (
+        importlib.util.find_spec("aemo_etl.defs.raw.sttm.int685_v1_sttm_prices_rpt_13")
+        is None
+    )
+    assert (
+        importlib.util.find_spec("aemo_etl.defs.raw.sttm.int685b_v1_sttm_prices_rpt_13")
+        is None
     )
 
 

@@ -143,7 +143,7 @@ sequenceDiagram
     UnzipAsset->>Landing: Extract STTM members, convert CSV members to parquet when possible
     UnzipAsset->>Archive: Archive successful zip inputs
 
-    Landing->>RawSensor: Detect files matching INT651-INT679 glob_patterns
+    Landing->>RawSensor: Detect files matching INT651-INT684 and INT687-INT691 glob_patterns
     RawSensor->>Bronze: Launch matching STTM source-table job with s3_keys
     Bronze->>Landing: Read selected csv/parquet objects
     Bronze->>Archive: Copy then delete processed source files after table write
@@ -164,10 +164,10 @@ Trigger and output notes:
   through `DAY31.ZIP`, de-duplicates listing entries, processes deterministically,
   skips current-day aliases, and fails fast for invalid or missing
   `target_files` config.
-- `INT651` through `INT679` are spec-backed STTM source-table assets. Their
-  compact manifest lives under `src/aemo_etl/defs/raw/sttm`, declares every
-  source report column as `String`, and keeps the standard ingestion metadata
-  columns.
+- `INT651` through `INT684` and `INT687` through `INT691` are the complete
+  v19.1 spec-backed STTM source-table assets. Their compact manifest lives
+  under `src/aemo_etl/defs/raw/sttm`, declares every source report column as
+  `String`, and keeps the standard ingestion metadata columns.
 - `INT685` and `INT685B` appear as live root CSV reports but are absent from
   the v19.1 STTM report specification manifest. Discovery may land those files,
   but they are landing-only gaps until a spec-backed source-table entry exists.
@@ -279,6 +279,16 @@ source table and 3 zip objects per required domain.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int677_v1_contingency_gas_price_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int678_v1_net_market_balance_daily_amounts_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int679_v1_net_market_balance_settlement_amounts_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int680_v1_dp_flag_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int681_v1_daily_provisional_capacity_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int682_v1_settlement_mos_and_capacity_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int683_v1_provisional_used_mos_steps_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int684_v1_settlement_used_mos_steps_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int687_v1_facility_hub_capacity_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int688_v1_allocation_warning_limit_thresholds_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int689_v1_expost_allocation_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int690_v1_deviation_price_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int691_v1_sttm_ctp_register_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/jobs/download_vicgas_public_report_zip_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/unzipper.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/alerts.py`

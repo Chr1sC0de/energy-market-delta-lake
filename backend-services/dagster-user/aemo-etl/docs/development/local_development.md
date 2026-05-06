@@ -322,12 +322,13 @@ the selected archive scope. If the dry-run archive file list or target Delta URI
 does not match the intended rebuild, stop and correct the target selection,
 bucket options, or credentials before writing.
 
-For STTM, the current source-table replay surface covers `INT651` through
-`INT679`, from `sttm.bronze_int651_v1_ex_ante_market_price_rpt_1` through
-`sttm.bronze_int679_v1_net_market_balance_settlement_amounts_rpt_1`. `INT685`
-and `INT685B` are landing-only gaps because the live root CSV reports are
-absent from the v19.1 STTM report specification manifest, so they are not valid
-replay table targets.
+For STTM, the current source-table replay surface covers complete v19.1
+spec-backed public reports: `INT651` through `INT684` and `INT687` through
+`INT691`. Valid replay targets run from
+`sttm.bronze_int651_v1_ex_ante_market_price_rpt_1` through
+`sttm.bronze_int691_v1_sttm_ctp_register_rpt_1`, excluding `INT685` and
+`INT685B` because those live root CSV reports are landing-only gaps absent from
+the v19.1 STTM report specification manifest.
 
 ## Test assumptions
 
@@ -426,6 +427,16 @@ across the Subproject.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int677_v1_contingency_gas_price_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int678_v1_net_market_balance_daily_amounts_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int679_v1_net_market_balance_settlement_amounts_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int680_v1_dp_flag_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int681_v1_daily_provisional_capacity_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int682_v1_settlement_mos_and_capacity_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int683_v1_provisional_used_mos_steps_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int684_v1_settlement_used_mos_steps_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int687_v1_facility_hub_capacity_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int688_v1_allocation_warning_limit_thresholds_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int689_v1_expost_allocation_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int690_v1_deviation_price_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int691_v1_sttm_ctp_register_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
   - `backend-services/dagster-user/aemo-etl/tests/integration/conftest.py`
   - `backend-services/dagster-user/aemo-etl/.localstack.env`
