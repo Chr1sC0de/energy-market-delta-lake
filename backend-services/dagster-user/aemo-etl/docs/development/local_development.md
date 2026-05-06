@@ -353,7 +353,9 @@ uv run aemo-replay-bronze-archive --table gbb.bronze_gasbb_contacts --replace
 shell script header documentation alongside the existing shell formatting,
 shell linting, Python, pytest, and Dagster validation hooks. Ruff enforces
 Google-style docstrings for public production ETL APIs while excluding tests and
-generated-like raw source-table and TypedDict model definition surfaces.
+generated-like raw source-table and TypedDict model definition surfaces from the
+docstring ratchet. It also applies the default `C901` complexity threshold
+across the Subproject.
 
 ## Related docs
 

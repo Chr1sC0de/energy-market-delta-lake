@@ -2,8 +2,10 @@
 
 import tempfile
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Final, Mapping, Unpack
+from logging import Logger
+from typing import Final, Literal, Mapping, Unpack
 
 import polars_hash as plh
 from dagster import (
@@ -25,6 +27,7 @@ from types_boto3_s3 import S3Client
 
 from aemo_etl.configs import ARCHIVE_BUCKET, LANDING_BUCKET
 from aemo_etl.factories.df_from_s3_keys.current_state import (
+    SourceTableBronzeWriteResult,
     collapse_current_state_batch,
     source_table_bronze_materialization_metadata,
     write_source_table_current_state_batch,
@@ -54,12 +57,43 @@ SOURCE_CONTENT_HASH_EXCLUDED_COLUMNS: Final = frozenset(
         SOURCE_CONTENT_HASH_COLUMN,
     }
 )
+type _SelectedS3KeyOutcomeKind = Literal[
+    "processed", "zero_byte", "missing", "unsupported"
+]
 
 
 class DFFromS3KeysConfiguration(Config):
     """Runtime config containing S3 keys selected by a sensor."""
 
     s3_keys: list[str] = []
+
+
+@dataclass(frozen=True, slots=True)
+class _SelectedS3KeyOutcome:
+    """Outcome from attempting to stage one selected S3 key."""
+
+    kind: _SelectedS3KeyOutcomeKind
+    s3_key: str
+
+
+@dataclass(frozen=True, slots=True)
+class _StagedBronzeBatch:
+    """Selected-key staging result for one bronze materialization."""
+
+    current_state_batch: LazyFrame
+    processed_keys: list[str]
+    zero_byte_keys: list[str]
+    missing_keys: list[str]
+    unsupported_keys: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class _LandingObjectFinalization:
+    """Landing/archive object mutations after the current-state write."""
+
+    archived_keys: list[str]
+    deleted_zero_byte_keys: list[str]
+    deferred_processed_keys: list[str]
 
 
 def _asset_key_from_kwargs(
@@ -128,6 +162,253 @@ def _file_outcome_metadata(
         "unsupported_key_count": len(unsupported_keys),
         "deferred_processed_file_count": len(deferred_processed_keys),
     }
+
+
+def _stage_selected_s3_key(
+    *,
+    s3_client: S3Client,
+    s3_landing_bucket: str,
+    s3_archive_bucket: str,
+    s3_key: str,
+    tmp_uri: str,
+    schema: Mapping[str, PolarsDataType],
+    surrogate_key_sources: list[str],
+    current_time: datetime,
+    postprocess_object_hooks: Iterable[Hook[bytes]],
+    postprocess_lazyframe_hooks: Iterable[Hook[LazyFrame]],
+    logger: Logger,
+) -> _SelectedS3KeyOutcome:
+    """Stage one selected S3 object into the local Delta batch."""
+    filetype = s3_key.rsplit(".")[-1].lower()
+    if filetype not in BYTES_TO_LAZYFRAME_REGISTER:
+        reason = f"{s3_key} filetype {filetype} not supported"
+        logger.warning(reason)
+        return _SelectedS3KeyOutcome(kind="unsupported", s3_key=s3_key)
+
+    bytes_ = get_from_s3(s3_client, s3_landing_bucket, s3_key, logger=logger)
+    if bytes_ is None:
+        reason = f"skipping {s3_key}, no such key"
+        logger.warning(reason)
+        return _SelectedS3KeyOutcome(kind="missing", s3_key=s3_key)
+
+    if len(bytes_) == 0:
+        logger.info(f"skipping {s3_key}, 0 bytes")
+        return _SelectedS3KeyOutcome(kind="zero_byte", s3_key=s3_key)
+
+    df = source_table_bronze_frame_from_bytes(
+        s3_bucket=s3_landing_bucket,
+        s3_key=s3_key,
+        object_bytes=bytes_,
+        schema=schema,
+        surrogate_key_sources=surrogate_key_sources,
+        current_time=current_time,
+        postprocess_object_hooks=postprocess_object_hooks,
+        postprocess_lazyframe_hooks=postprocess_lazyframe_hooks,
+        source_file_bucket=s3_archive_bucket,
+    )
+
+    # Sink this file immediately to the local staging table so bytes_ and df
+    # can be freed before loading the next file.
+    df.sink_delta(tmp_uri, mode="append")
+    return _SelectedS3KeyOutcome(kind="processed", s3_key=s3_key)
+
+
+def _current_state_batch_from_staging(
+    *,
+    tmp_uri: str,
+    has_data: bool,
+    schema: Mapping[str, PolarsDataType],
+    logger: Logger,
+) -> LazyFrame:
+    """Return a current-state batch from staged rows or an empty schema."""
+    if not has_data:
+        logger.info("no valid dataframes found returning empty dataframe")
+        return LazyFrame(schema=schema)
+
+    batch = scan_delta(tmp_uri)
+    return collapse_current_state_batch(batch)
+
+
+def _stage_selected_s3_keys(
+    *,
+    s3_client: S3Client,
+    s3_landing_bucket: str,
+    s3_archive_bucket: str,
+    s3_keys: Iterable[str],
+    schema: Mapping[str, PolarsDataType],
+    surrogate_key_sources: list[str],
+    current_time: datetime,
+    postprocess_object_hooks: Iterable[Hook[bytes]],
+    postprocess_lazyframe_hooks: Iterable[Hook[LazyFrame]],
+    logger: Logger,
+) -> _StagedBronzeBatch:
+    """Stage selected S3 keys into a local Delta batch and classify outcomes."""
+    processed_keys: list[str] = []
+    zero_byte_keys: list[str] = []
+    missing_keys: list[str] = []
+    unsupported_keys: list[str] = []
+    has_data = False
+
+    tmp_dir = tempfile.mkdtemp()
+    tmp_uri = f"{tmp_dir}/bronze_staging"
+
+    for s3_key in dict.fromkeys(s3_keys):
+        outcome = _stage_selected_s3_key(
+            s3_client=s3_client,
+            s3_landing_bucket=s3_landing_bucket,
+            s3_archive_bucket=s3_archive_bucket,
+            s3_key=s3_key,
+            tmp_uri=tmp_uri,
+            schema=schema,
+            surrogate_key_sources=surrogate_key_sources,
+            current_time=current_time,
+            postprocess_object_hooks=postprocess_object_hooks,
+            postprocess_lazyframe_hooks=postprocess_lazyframe_hooks,
+            logger=logger,
+        )
+        if outcome.kind == "processed":
+            has_data = True
+            processed_keys.append(outcome.s3_key)
+        elif outcome.kind == "zero_byte":
+            zero_byte_keys.append(outcome.s3_key)
+        elif outcome.kind == "missing":
+            missing_keys.append(outcome.s3_key)
+        else:
+            unsupported_keys.append(outcome.s3_key)
+
+    return _StagedBronzeBatch(
+        current_state_batch=_current_state_batch_from_staging(
+            tmp_uri=tmp_uri,
+            has_data=has_data,
+            schema=schema,
+            logger=logger,
+        ),
+        processed_keys=processed_keys,
+        zero_byte_keys=zero_byte_keys,
+        missing_keys=missing_keys,
+        unsupported_keys=unsupported_keys,
+    )
+
+
+def _archive_processed_keys(
+    *,
+    s3_client: S3Client,
+    s3_landing_bucket: str,
+    s3_archive_bucket: str,
+    processed_keys: Iterable[str],
+) -> list[str]:
+    """Move processed landing objects into archive storage."""
+    archived_keys: list[str] = []
+    for s3_key in processed_keys:
+        s3_client.copy_object(
+            CopySource={"Bucket": s3_landing_bucket, "Key": s3_key},
+            Bucket=s3_archive_bucket,
+            Key=s3_key,
+        )
+        s3_client.delete_object(Bucket=s3_landing_bucket, Key=s3_key)
+        archived_keys.append(s3_key)
+    return archived_keys
+
+
+def _defer_processed_keys(
+    *,
+    processed_keys: Iterable[str],
+    logger: Logger,
+) -> list[str]:
+    """Leave processed keys in landing when no Delta table write occurred."""
+    deferred_processed_keys = list(processed_keys)
+    for s3_key in deferred_processed_keys:
+        logger.warning(
+            "leaving processed source-table bronze file in landing "
+            f"because no Delta table write occurred: {s3_key}"
+        )
+    return deferred_processed_keys
+
+
+def _delete_zero_byte_keys(
+    *,
+    s3_client: S3Client,
+    s3_landing_bucket: str,
+    zero_byte_keys: Iterable[str],
+    logger: Logger,
+) -> list[str]:
+    """Delete zero-byte landing objects after the current-state write path."""
+    deleted_zero_byte_keys: list[str] = []
+    for s3_key in zero_byte_keys:
+        s3_client.delete_object(Bucket=s3_landing_bucket, Key=s3_key)
+        deleted_zero_byte_keys.append(s3_key)
+        logger.info(f"deleted zero-byte landing object {s3_key}")
+    return deleted_zero_byte_keys
+
+
+def _finalize_landing_objects(
+    *,
+    s3_client: S3Client,
+    s3_landing_bucket: str,
+    s3_archive_bucket: str,
+    processed_keys: list[str],
+    zero_byte_keys: list[str],
+    wrote_table: bool,
+    logger: Logger,
+) -> _LandingObjectFinalization:
+    """Archive/defer processed keys and clean up zero-byte landing objects."""
+    if wrote_table:
+        archived_keys = _archive_processed_keys(
+            s3_client=s3_client,
+            s3_landing_bucket=s3_landing_bucket,
+            s3_archive_bucket=s3_archive_bucket,
+            processed_keys=processed_keys,
+        )
+        deferred_processed_keys: list[str] = []
+    else:
+        archived_keys = []
+        deferred_processed_keys = _defer_processed_keys(
+            processed_keys=processed_keys,
+            logger=logger,
+        )
+
+    deleted_zero_byte_keys = _delete_zero_byte_keys(
+        s3_client=s3_client,
+        s3_landing_bucket=s3_landing_bucket,
+        zero_byte_keys=zero_byte_keys,
+        logger=logger,
+    )
+
+    return _LandingObjectFinalization(
+        archived_keys=archived_keys,
+        deleted_zero_byte_keys=deleted_zero_byte_keys,
+        deferred_processed_keys=deferred_processed_keys,
+    )
+
+
+def _bronze_materialize_result(
+    *,
+    staged_batch: _StagedBronzeBatch,
+    finalization: _LandingObjectFinalization,
+    write_result: SourceTableBronzeWriteResult,
+) -> MaterializeResult[None]:
+    """Build the source-table bronze materialization and asset-check result."""
+    return MaterializeResult(
+        metadata={
+            **source_table_bronze_materialization_metadata(write_result),
+            **_file_outcome_metadata(
+                processed_keys=staged_batch.processed_keys,
+                archived_keys=finalization.archived_keys,
+                zero_byte_keys=staged_batch.zero_byte_keys,
+                deleted_zero_byte_keys=finalization.deleted_zero_byte_keys,
+                missing_keys=staged_batch.missing_keys,
+                unsupported_keys=staged_batch.unsupported_keys,
+                deferred_processed_keys=finalization.deferred_processed_keys,
+            ),
+        },
+        check_results=[
+            _skipped_s3_keys_check_result(
+                missing_keys=staged_batch.missing_keys,
+                unsupported_keys=staged_batch.unsupported_keys,
+                deferred_processed_keys=finalization.deferred_processed_keys,
+            )
+        ],
+    )
 
 
 def with_source_content_hash_schema(
@@ -260,123 +541,40 @@ def bronze_df_from_s3_keys_asset_factory(
         s3: S3Resource,
         config: DFFromS3KeysConfiguration,
     ) -> MaterializeResult:  # type: ignore[type-arg]
-
         s3_client: S3Client = s3.get_client()
 
-        processed_keys: list[str] = []
-        zero_byte_keys: list[str] = []
-        missing_keys: list[str] = []
-        unsupported_keys: list[str] = []
-
-        current_time = datetime.now(AEST)
-
-        # Use a local temp directory as a staging Delta table so that each
-        # file's bytes and LazyFrame are freed from memory immediately after
-        # sinking, rather than accumulating all frames before writing.
-        tmp_dir = tempfile.mkdtemp()
-        tmp_uri = f"{tmp_dir}/bronze_staging"
-        has_data = False
-
-        for s3_key in dict.fromkeys(config.s3_keys):
-            filetype = s3_key.rsplit(".")[-1].lower()
-            if filetype in BYTES_TO_LAZYFRAME_REGISTER:
-                # since we don't know the state of the file we unfortunately can't just lazy
-                # load the file. There are cases where we will have to pre-process the dataframe
-                # and it might actually be easier.
-                bytes_ = get_from_s3(
-                    s3_client, s3_landing_bucket, s3_key, logger=context.log
-                )
-                if bytes_ is not None:
-                    if len(bytes_) > 0:
-                        df = source_table_bronze_frame_from_bytes(
-                            s3_bucket=s3_landing_bucket,
-                            s3_key=s3_key,
-                            object_bytes=bytes_,
-                            schema=schema,
-                            surrogate_key_sources=surrogate_key_sources,
-                            current_time=current_time,
-                            postprocess_object_hooks=postprocess_object_hooks,
-                            postprocess_lazyframe_hooks=postprocess_lazyframe_hooks,
-                            source_file_bucket=s3_archive_bucket,
-                        )
-
-                        # Sink this file immediately to the local staging table
-                        # so bytes_ and df can be freed before loading the next
-                        # file. schema alignment is enforced via the empty
-                        # template frame.
-                        df.sink_delta(tmp_uri, mode="append")
-                        has_data = True
-                        processed_keys.append(s3_key)
-                    else:
-                        context.log.info(f"skipping {s3_key}, 0 bytes")
-                        zero_byte_keys.append(s3_key)
-                else:
-                    reason = f"skipping {s3_key}, no such key"
-                    context.log.warning(reason)
-                    missing_keys.append(s3_key)
-            else:
-                reason = f"{s3_key} filetype {filetype} not supported"
-                context.log.warning(reason)
-                unsupported_keys.append(s3_key)
-
-        if not has_data:
-            context.log.info("no valid dataframes found returning empty dataframe")
-            current_state_batch = LazyFrame(schema=schema)
-        else:
-            batch = scan_delta(tmp_uri)
-            current_state_batch = collapse_current_state_batch(batch)
+        staged_batch = _stage_selected_s3_keys(
+            s3_client=s3_client,
+            s3_landing_bucket=s3_landing_bucket,
+            s3_archive_bucket=s3_archive_bucket,
+            s3_keys=config.s3_keys,
+            schema=schema,
+            surrogate_key_sources=surrogate_key_sources,
+            current_time=datetime.now(AEST),
+            postprocess_object_hooks=postprocess_object_hooks,
+            postprocess_lazyframe_hooks=postprocess_lazyframe_hooks,
+            logger=context.log,
+        )
 
         write_result = write_source_table_current_state_batch(
-            current_state_batch,
+            staged_batch.current_state_batch,
             target_table_uri=uri,
             logger=context.log,
         )
 
-        archived_keys: list[str] = []
-        deferred_processed_keys: list[str] = []
-        if write_result.wrote_table:
-            for s3_key in processed_keys:
-                s3_client.copy_object(
-                    CopySource={"Bucket": s3_landing_bucket, "Key": s3_key},
-                    Bucket=s3_archive_bucket,
-                    Key=s3_key,
-                )
-                s3_client.delete_object(Bucket=s3_landing_bucket, Key=s3_key)
-                archived_keys.append(s3_key)
-        else:
-            deferred_processed_keys = processed_keys.copy()
-            for s3_key in deferred_processed_keys:
-                context.log.warning(
-                    "leaving processed source-table bronze file in landing "
-                    f"because no Delta table write occurred: {s3_key}"
-                )
-
-        deleted_zero_byte_keys: list[str] = []
-        for s3_key in zero_byte_keys:
-            s3_client.delete_object(Bucket=s3_landing_bucket, Key=s3_key)
-            deleted_zero_byte_keys.append(s3_key)
-            context.log.info(f"deleted zero-byte landing object {s3_key}")
-
-        return MaterializeResult(
-            metadata={
-                **source_table_bronze_materialization_metadata(write_result),
-                **_file_outcome_metadata(
-                    processed_keys=processed_keys,
-                    archived_keys=archived_keys,
-                    zero_byte_keys=zero_byte_keys,
-                    deleted_zero_byte_keys=deleted_zero_byte_keys,
-                    missing_keys=missing_keys,
-                    unsupported_keys=unsupported_keys,
-                    deferred_processed_keys=deferred_processed_keys,
-                ),
-            },
-            check_results=[
-                _skipped_s3_keys_check_result(
-                    missing_keys=missing_keys,
-                    unsupported_keys=unsupported_keys,
-                    deferred_processed_keys=deferred_processed_keys,
-                )
-            ],
+        finalization = _finalize_landing_objects(
+            s3_client=s3_client,
+            s3_landing_bucket=s3_landing_bucket,
+            s3_archive_bucket=s3_archive_bucket,
+            processed_keys=staged_batch.processed_keys,
+            zero_byte_keys=staged_batch.zero_byte_keys,
+            wrote_table=write_result.wrote_table,
+            logger=context.log,
+        )
+        return _bronze_materialize_result(
+            staged_batch=staged_batch,
+            finalization=finalization,
+            write_result=write_result,
         )
 
     return _asset

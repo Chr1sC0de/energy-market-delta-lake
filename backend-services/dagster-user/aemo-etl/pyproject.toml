@@ -54,7 +54,7 @@ build.targets.wheel.force-include = { "pyproject.toml" = "pyproject.toml" }
 [tool.ruff]
 line-length = 88
 format.docstring-code-format = true
-lint.select = [ "ANN", "D", "E", "F" ]
+lint.select = [ "ANN", "C901", "D", "E", "F" ]
 lint.per-file-ignores."__init__.py" = [ "I" ]
 # Raw source-table modules are generated-like data definition files. TypedDict
 # model specs are schema-heavy surfaces where required docstrings would mostly

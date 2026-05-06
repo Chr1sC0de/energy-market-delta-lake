@@ -241,9 +241,10 @@ uv run aemo-replay-bronze-archive --table gbb.bronze_gasbb_contacts --replace
 
 `make run-prek` is this Subproject's **Commit check**. It runs the configured
 hooks, including executable shell script header documentation for scripts.
-Ruff enforces Google-style docstrings for public production ETL APIs. Tests,
+Ruff enforces Google-style docstrings for public production ETL APIs and applies
+the default `C901` complexity threshold across the Subproject. Tests,
 generated-like raw source-table definitions, and TypedDict model specs are
-outside this docstring ratchet.
+outside the docstring ratchet.
 
 `aemo-replay-bronze-archive` is dry-run unless `--replace` is present. Dry-run
 reports matching archive files, planned batch count, total bytes, and target
