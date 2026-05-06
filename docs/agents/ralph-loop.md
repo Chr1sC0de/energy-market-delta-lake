@@ -443,6 +443,11 @@ verified Gitflow issues are identified, commits whose SHA matches a recorded
 `integrated_commit` are classified as verified **Local integration** commits;
 other commits remain visible as unverified **Promotion** commits in the run
 manifest and **Post-promotion review** prompt.
+Unverified **Promotion** commits are mandatory **Post-promotion review**
+context only. They do not block **Promotion**, do not require explicit issue
+association before **Promotion**, and do not automatically create GitHub Issues.
+Follow-up GitHub Issue drafts belong in the **Post-promotion review** artifact
+only when the review finds actionable work.
 
 Ralph runs the aggregate matching **Push check** QA from the source worktree.
 When the promoted range includes non-doc runtime files under
@@ -489,8 +494,8 @@ default, after the `main` push, `dev` sync, and verified issue metadata
 updates. The review prompt includes both verified **Local integration** commits
 and unverified **Promotion** commits so the review can separate closed issue
 evidence from other promoted work. The review agent has read-only GitHub Issue
-access and must report learnings plus follow-up GitHub Issue drafts instead of
-mutating issues. Ralph saves the final Markdown report as
+access and must report learnings plus actionable follow-up GitHub Issue drafts
+instead of mutating issues. Ralph saves the final Markdown report as
 `post-promotion-review.md`, prints it in the terminal, and records both
 `post_promotion_review.log_path` and `post_promotion_review.artifact_path` in
 the **Promotion** run manifest.

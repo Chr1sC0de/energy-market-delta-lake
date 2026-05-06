@@ -665,9 +665,10 @@ before deleting this temporary file.
   as verified **Local integration** or unverified **Promotion** commits, creates
   the target Promotion worktree, merges, pushes `main`, fast-forwards `dev`,
   updates issue metadata, and then runs **Post-promotion review** when enabled
-  and changed files exist. Tests assert ordering so failed **Push check** or
-  AEMO ETL **End-to-end test** gate cannot reach merge, push, branch sync,
-  issue metadata, or closure.
+  and changed files exist. Unverified **Promotion** commits are review context
+  only, not **Promotion** blockers or automatic issue-association work. Tests
+  assert ordering so failed **Push check** or AEMO ETL **End-to-end test** gate
+  cannot reach merge, push, branch sync, issue metadata, or closure.
 
 ### Proposed Module Structure
 
@@ -751,7 +752,9 @@ The useful boundaries are:
   non-doc runtime AEMO ETL changes before any Promotion merge, push,
   source-branch sync, GitHub metadata update, or issue closure. **Promotion**
   must close only `agent-integrated` issues whose recorded Gitflow integration
-  commit is verified in the promoted range.
+  commit is verified in the promoted range. Unverified **Promotion** commits
+  must remain **Post-promotion review** context, without blocking **Promotion**
+  or automatically creating GitHub Issues.
 - Recovery must remain manifest-gated. `--inspect-run` stays read-only, and
   `--recover-run` must refuse to mutate GitHub issue metadata until the
   recorded **Local integration** commit is reachable from the expected

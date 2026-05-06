@@ -96,6 +96,11 @@ Ralph computes the aggregate **Push check**, merges reviewed `dev` work into
 `agent-integrated` issues whose recorded Gitflow **Local integration** commit is
 verified in the promoted branch range.
 
+Unverified **Promotion** commits in the range are mandatory
+**Post-promotion review** context only. They do not require explicit issue
+association before **Promotion**, do not block **Promotion** by themselves, and
+do not automatically create GitHub Issues.
+
 If Promotion fails before `main` is pushed, leave issues open and inspect the
 run manifest. If it fails after `main` is pushed, stop and inspect before
 reconciling GitHub metadata.

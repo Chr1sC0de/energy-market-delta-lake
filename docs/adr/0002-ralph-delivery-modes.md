@@ -59,6 +59,19 @@ Operators must pass `--skip-post-promotion-review` for an explicit no-review
 Promotion, and no-change Promotions record the review state as
 `skipped_no_changes`.
 
+Unverified **Promotion** commits are review context, not Promotion blockers.
+This policy favors review context because **Promotion** has already validated
+the full promoted source revision with the aggregate **Push check** and any
+required Promotion gate, while issue closure remains limited to verified
+Gitflow **Local integration** commits. Requiring explicit issue association for
+every unverified commit before **Promotion** would turn review attribution into
+a pre-promotion gate and could delay already-reviewed `dev` work without
+improving the **Integration target** safety checks. Ralph therefore surfaces
+unverified commits in the **Promotion** manifest and **Post-promotion review**
+prompt, but it does not require issue association before **Promotion**, does not
+automatically create GitHub Issues for those commits, and expects follow-up
+issues only when **Post-promotion review** finds actionable work.
+
 ## Sync metadata
 
 - `sync.owner`: `agents`

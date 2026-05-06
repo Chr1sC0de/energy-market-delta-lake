@@ -29,8 +29,8 @@ the repository remote, usually SSH, and remain part of Ralph's outer loop.
 body updates, label transitions, and completed closures after **Local
 integration** and before the next ready issue claim.
 **Post-promotion review** output stays read-only: the review agent drafts
-follow-up GitHub Issues in `post-promotion-review.md`, and Ralph does not grant
-it issue mutation commands.
+actionable follow-up GitHub Issues in `post-promotion-review.md` only when it
+finds actionable work, and Ralph does not grant it issue mutation commands.
 
 ## Sync metadata
 
