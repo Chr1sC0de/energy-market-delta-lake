@@ -18,9 +18,10 @@ default. The sandbox receives a `GH_TOKEN` sourced from the parent environment
 or local `gh auth`, and a wrapper limits `gh` to phase-specific issue metadata
 commands. Implementation, triage, and **Ready issue refresh** passes may
 receive issue reads and writes; **Post-promotion review** receives read-only
-issue commands and drafts any follow-up issues in its Markdown report. Git push
-auth is separate; **Local integration**, Exploratory handoff, **Integration
-target** pushes, and **Promotion** stay outside the sandbox.
+issue commands and drafts only actionable follow-up issues in its Markdown
+report without creating them automatically. Git push auth is separate; **Local
+integration**, Exploratory handoff, **Integration target** pushes, and
+**Promotion** stay outside the sandbox.
 
 ## Queue contract
 
