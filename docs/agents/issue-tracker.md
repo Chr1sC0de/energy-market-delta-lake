@@ -61,6 +61,9 @@ waiting for human review. Accepted review moves the issue from
 `agent-reviewing` to `agent-integrated` after the work is merged to `dev` and
 acceptance evidence is commented. Rejected review removes `agent-reviewing`,
 adds `ready-for-human`, comments the review result, and leaves the issue open.
+Manual Gitflow recovery must add the parseable recovery evidence documented in
+[ralph-loop.md](ralph-loop.md) before leaving or applying `agent-integrated`, so
+later **Promotion** can verify the recovered `dev` commit before closure.
 
 After a successful drain-mode **Local integration** or Exploratory handoff,
 Ralph computes **Ready issue refresh** candidates from open issues within

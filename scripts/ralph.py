@@ -59,7 +59,16 @@ DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30.0
 DIRTY_WORKTREE_STATUS_PREVIEW_LIMIT = 12
 COMMAND_READ_CHUNK_SIZE = 65536
 COMMIT_LINE_PATTERN = re.compile(r"(?m)^Commit: `(?P<sha>[0-9a-f]{7,40})`$")
+GITFLOW_INTEGRATION_COMMENT_TITLE = "Ralph Gitflow integration completed."
+MANUAL_GITFLOW_RECOVERY_COMMENT_TITLE = "Ralph Gitflow manual recovery completed."
 EXPLORATORY_ACCEPTANCE_COMMENT_TITLE = "Ralph exploratory acceptance completed."
+MANUAL_GITFLOW_RECOVERY_HINT_PATTERN = re.compile(
+    r"(?is)\bmanual(?:ly)?\b.{0,120}\brecover(?:y|ed|ing)?\b"
+    r"|\brecover(?:y|ed|ing)?\b.{0,120}\bmanual(?:ly)?\b"
+)
+GITFLOW_RECOVERY_CONTEXT_PATTERN = re.compile(
+    r"(?is)\b(gitflow|agent-integrated|integrat(?:e|ed|ion)|origin/dev)\b|`dev`"
+)
 MANIFEST_NAME = "ralph-run.json"
 MANIFEST_SCHEMA_VERSION = 1
 SANDBOX_GH_WRAPPER_DIR_NAME = "sandbox-bin"
@@ -307,6 +316,14 @@ class Issue:
 class PromotedSourceCommit:
     sha: str
     subject: str
+
+
+@dataclass(frozen=True)
+class PromotionIssueWarning:
+    issue: Issue
+    metadata_status: str
+    reason: str
+    recovery_action: str
 
 
 @dataclass(frozen=True)
@@ -790,11 +807,16 @@ class RunManifest:
             refresh["failure"] = None
         self.record_event(f"ready_issue_refresh_{status}", details=dict(refresh))
 
-    def record_promoted_issues(self, issues: list[tuple[Issue, str]]) -> None:
+    def record_promoted_issues(
+        self,
+        issues: list[tuple[Issue, str]],
+        *,
+        issue_warnings: list[PromotionIssueWarning] | None = None,
+    ) -> None:
         metadata = self.data.setdefault("github_metadata", {})
         if not isinstance(metadata, dict):
             raise RalphError("Manifest github_metadata field is not an object.")
-        metadata["issues"] = [
+        verified_entries = [
             {
                 "number": issue.number,
                 "title": issue.title,
@@ -804,8 +826,26 @@ class RunManifest:
             }
             for issue, integrated_commit in issues
         ]
-        metadata["status"] = "verified_issues"
-        self.record_event("github_metadata_verified_issues", details={"count": len(issues)})
+        warning_entries = [
+            {
+                "number": warning.issue.number,
+                "title": warning.issue.title,
+                "url": warning.issue.url,
+                "integrated_commit": None,
+                "metadata_status": warning.metadata_status,
+                "warning": warning.reason,
+                "recovery_action": warning.recovery_action,
+            }
+            for warning in issue_warnings or []
+        ]
+        metadata["issues"] = [*verified_entries, *warning_entries]
+        metadata["status"] = (
+            "verified_issues_with_warnings" if warning_entries else "verified_issues"
+        )
+        self.record_event(
+            "github_metadata_verified_issues",
+            details={"count": len(issues), "warnings": len(warning_entries)},
+        )
 
     def record_promotion_commit_inventory(
         self,
@@ -2746,7 +2786,7 @@ class RalphLoop:
                     manifest=manifest,
                 )
             )
-            integrated_issues = self._verified_integrated_issues(
+            integrated_issues, issue_warnings = self._verified_integrated_issues(
                 source_branch=source_branch,
                 source_ref=source_revision,
                 target_branch=target_branch,
@@ -2757,7 +2797,10 @@ class RalphLoop:
                 commits=promoted_commits,
                 integrated_issues=integrated_issues,
             )
-            manifest.record_promoted_issues(integrated_issues)
+            manifest.record_promoted_issues(
+                integrated_issues,
+                issue_warnings=issue_warnings,
+            )
 
             emit(f"Creating promotion worktree {promote_path}")
             manifest.record_event("creating_promotion_worktree")
@@ -3280,14 +3323,25 @@ class RalphLoop:
         source_branch: str,
         source_ref: str,
         target_branch: str,
-    ) -> list[tuple[Issue, str]]:
+    ) -> tuple[list[tuple[Issue, str]], list[PromotionIssueWarning]]:
         issues: list[tuple[Issue, str]] = []
+        warnings: list[PromotionIssueWarning] = []
         for issue in self.github.list_open_issues(limit=self.config.issue_limit):
             if AGENT_INTEGRATED_LABEL not in issue.labels:
                 continue
             comments = self.github.issue_comments(issue.number)
             commit_sha = integrated_commit_from_comments(comments)
             if commit_sha is None:
+                if has_manual_gitflow_recovery_evidence(comments):
+                    warning = manual_gitflow_recovery_commit_warning(
+                        issue,
+                        source_branch=source_branch,
+                        target_branch=target_branch,
+                    )
+                    warnings.append(warning)
+                    emit(f"Promotion warning: {warning.reason}", err=True)
+                    emit(f"Recovery action: {warning.recovery_action}", err=True)
+                    continue
                 emit(
                     f"Skipping #{issue.number}: no recorded Gitflow integration or "
                     "Exploratory acceptance commit."
@@ -3304,7 +3358,7 @@ class RalphLoop:
                 )
                 continue
             issues.append((issue, commit_sha))
-        return issues
+        return issues, warnings
 
     def _commit_is_in_promotion_range(
         self,
@@ -4557,7 +4611,7 @@ def completion_comment_title(delivery_mode: str) -> str:
     if delivery_mode == TRUNK_MODE:
         return "Ralph trunk integration completed."
     if delivery_mode == GITFLOW_MODE:
-        return "Ralph Gitflow integration completed."
+        return GITFLOW_INTEGRATION_COMMENT_TITLE
     if delivery_mode == EXPLORATORY_MODE:
         return "Ralph exploratory handoff completed."
     raise ValueError(f"Unsupported delivery mode: {delivery_mode}")
@@ -5396,7 +5450,8 @@ def build_promotion_comment(
 
 def integrated_commit_from_comments(comments: list[dict[str, Any]]) -> str | None:
     evidence_titles = (
-        "Ralph Gitflow integration completed.",
+        GITFLOW_INTEGRATION_COMMENT_TITLE,
+        MANUAL_GITFLOW_RECOVERY_COMMENT_TITLE,
         EXPLORATORY_ACCEPTANCE_COMMENT_TITLE,
     )
     for comment in reversed(comments):
@@ -5407,6 +5462,47 @@ def integrated_commit_from_comments(comments: list[dict[str, Any]]) -> str | Non
         if match is not None:
             return match.group("sha")
     return None
+
+
+def has_manual_gitflow_recovery_evidence(comments: list[dict[str, Any]]) -> bool:
+    return any(
+        is_manual_gitflow_recovery_evidence_body(str(comment.get("body") or ""))
+        for comment in comments
+    )
+
+
+def is_manual_gitflow_recovery_evidence_body(body: str) -> bool:
+    if MANUAL_GITFLOW_RECOVERY_COMMENT_TITLE in body:
+        return True
+    if MANUAL_GITFLOW_RECOVERY_HINT_PATTERN.search(body) is None:
+        return False
+    return GITFLOW_RECOVERY_CONTEXT_PATTERN.search(body) is not None
+
+
+def manual_gitflow_recovery_commit_warning(
+    issue: Issue,
+    *,
+    source_branch: str,
+    target_branch: str,
+) -> PromotionIssueWarning:
+    reason = (
+        f"#{issue.number} has manual Gitflow recovery evidence but no parseable "
+        "integrated commit for Promotion closure."
+    )
+    recovery_action = (
+        "Verify the recovered commit is reachable from "
+        f"`origin/{source_branch}` and not already on `origin/{target_branch}`, then "
+        f"add an issue comment that starts with `{MANUAL_GITFLOW_RECOVERY_COMMENT_TITLE}` "
+        "and includes a `Commit:` line with the dev commit SHA in backticks "
+        "before rerunning Promotion, "
+        "or reconcile the issue manually."
+    )
+    return PromotionIssueWarning(
+        issue=issue,
+        metadata_status="manual_recovery_commit_unparseable",
+        reason=reason,
+        recovery_action=recovery_action,
+    )
 
 
 def discover_repo_root(runner: CommandRunner) -> Path:

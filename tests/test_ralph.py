@@ -3387,6 +3387,328 @@ Build it.
             "closed",
         )
 
+    def test_promotion_closes_manually_recovered_gitflow_issue_with_parseable_evidence(
+        self,
+    ) -> None:
+        recovered_sha = "7c4599f152ca03b125d9ef4c93fdd1900af2195c"
+        issue_list_command = (
+            "gh",
+            "issue",
+            "list",
+            "-R",
+            "example/repo",
+            "--state",
+            "open",
+            "--limit",
+            "100",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        issue_comments_command = (
+            "gh",
+            "issue",
+            "view",
+            "102",
+            "-R",
+            "example/repo",
+            "--comments",
+            "--json",
+            "comments",
+        )
+        target_ancestor_command = (
+            "git",
+            "merge-base",
+            "--is-ancestor",
+            recovered_sha,
+            "origin/main",
+        )
+        promotion_log_command = (
+            "git",
+            "log",
+            "--reverse",
+            "--format=%H%x00%s",
+            "origin/main..source-sha",
+        )
+        issue_payload = [
+            {
+                "number": 102,
+                "title": "Recover issue integration",
+                "body": IMPLEMENTATION_BODY,
+                "labels": [{"name": "agent-integrated"}],
+                "createdAt": "2026-04-30T00:00:00Z",
+                "updatedAt": "2026-04-30T00:00:00Z",
+                "url": "https://github.com/example/repo/issues/102",
+                "comments": [],
+                "author": {"login": "reporter"},
+            }
+        ]
+        comments_payload = {
+            "comments": [
+                {
+                    "body": "\n".join(
+                        [
+                            "Ralph implementation failed after issue QA passed.",
+                            "",
+                            "Manifest integration_commit: `null`",
+                        ]
+                    )
+                },
+                {
+                    "body": "\n".join(
+                        [
+                            ralph.MANUAL_GITFLOW_RECOVERY_COMMENT_TITLE,
+                            "",
+                            f"Commit: `{recovered_sha}`",
+                            "Delivery mode: `gitflow`",
+                            "Target branch: `dev`",
+                            "Recovered from run: `.ralph/runs/issue-102-failed`",
+                        ]
+                    )
+                },
+            ]
+        }
+        runner = FakeRunner(
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+            command_outputs={
+                issue_list_command: [json.dumps(issue_payload)],
+                issue_comments_command: [json.dumps(comments_payload)],
+                promotion_log_command: [
+                    f"{recovered_sha}\x00Manual Gitflow recovery for issue 102\n"
+                ],
+            },
+            fail_commands={target_ancestor_command: 1},
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                promote=True,
+                skip_post_promotion_review=True,
+            )
+            stderr = io.StringIO()
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(stderr):
+                loop._promote()
+
+            comment_path = next(tmp_path.glob("logs/promote-*/issue-102-comment.md"))
+            comment = comment_path.read_text(encoding="utf-8")
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        commands = [call.args for call in runner.calls]
+        edit_command = (
+            "gh",
+            "issue",
+            "edit",
+            "102",
+            "-R",
+            "example/repo",
+            "--add-label",
+            "agent-merged",
+            "--remove-label",
+            "agent-integrated",
+            "--remove-label",
+            "agent-reviewing",
+            "--remove-label",
+            "agent-running",
+            "--remove-label",
+            "agent-failed",
+        )
+        close_command = (
+            "gh",
+            "issue",
+            "close",
+            "102",
+            "-R",
+            "example/repo",
+            "--reason",
+            "completed",
+        )
+        self.assertEqual(stderr.getvalue(), "")
+        self.assertIn(edit_command, commands)
+        self.assertIn(close_command, commands)
+        self.assertIn(
+            "Integrated commit: `7c4599f152ca03b125d9ef4c93fdd1900af2195c`",
+            comment,
+        )
+        self.assertEqual(
+            manifest["promotion_commit_inventory"]["commits"],
+            [
+                {
+                    "sha": recovered_sha,
+                    "subject": "Manual Gitflow recovery for issue 102",
+                    "verified_local_integration": True,
+                    "classification": "verified_local_integration",
+                    "issue": {
+                        "number": 102,
+                        "title": "Recover issue integration",
+                        "url": "https://github.com/example/repo/issues/102",
+                    },
+                    "integrated_commit": recovered_sha,
+                },
+            ],
+        )
+        self.assertEqual(manifest["github_metadata"]["status"], "closed")
+        self.assertEqual(manifest["github_metadata"]["issues"][0]["number"], 102)
+        self.assertEqual(
+            manifest["github_metadata"]["issues"][0]["integrated_commit"],
+            recovered_sha,
+        )
+        self.assertEqual(
+            manifest["github_metadata"]["issues"][0]["metadata_status"],
+            "closed",
+        )
+
+    def test_promotion_warns_on_unparseable_manual_recovery_evidence(self) -> None:
+        recovered_sha = "7c4599f152ca03b125d9ef4c93fdd1900af2195c"
+        issue_list_command = (
+            "gh",
+            "issue",
+            "list",
+            "-R",
+            "example/repo",
+            "--state",
+            "open",
+            "--limit",
+            "100",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        issue_comments_command = (
+            "gh",
+            "issue",
+            "view",
+            "102",
+            "-R",
+            "example/repo",
+            "--comments",
+            "--json",
+            "comments",
+        )
+        promotion_log_command = (
+            "git",
+            "log",
+            "--reverse",
+            "--format=%H%x00%s",
+            "origin/main..source-sha",
+        )
+        issue_payload = [
+            {
+                "number": 102,
+                "title": "Recover issue integration",
+                "body": IMPLEMENTATION_BODY,
+                "labels": [{"name": "agent-integrated"}],
+                "createdAt": "2026-04-30T00:00:00Z",
+                "updatedAt": "2026-04-30T00:00:00Z",
+                "url": "https://github.com/example/repo/issues/102",
+                "comments": [],
+                "author": {"login": "reporter"},
+            }
+        ]
+        comments_payload = {
+            "comments": [
+                {
+                    "body": "\n".join(
+                        [
+                            "Ralph implementation failed after issue QA passed.",
+                            "",
+                            "Manifest integration_commit: `null`",
+                        ]
+                    )
+                },
+                {
+                    "body": (
+                        "Manual recovery: manually recovered the Gitflow integration "
+                        f"to dev with {recovered_sha}, then added agent-integrated."
+                    )
+                },
+            ]
+        }
+        runner = FakeRunner(
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+            command_outputs={
+                issue_list_command: [json.dumps(issue_payload)],
+                issue_comments_command: [json.dumps(comments_payload)],
+                promotion_log_command: [
+                    f"{recovered_sha}\x00Manual Gitflow recovery for issue 102\n"
+                ],
+            },
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                promote=True,
+                skip_post_promotion_review=True,
+            )
+            stderr = io.StringIO()
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(stderr):
+                loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "comment") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "close") for command in commands)
+        )
+        self.assertIn(
+            "Promotion warning: #102 has manual Gitflow recovery evidence but no "
+            "parseable integrated commit for Promotion closure.",
+            stderr.getvalue(),
+        )
+        self.assertIn(ralph.MANUAL_GITFLOW_RECOVERY_COMMENT_TITLE, stderr.getvalue())
+        self.assertEqual(
+            manifest["promotion_commit_inventory"]["commits"],
+            [
+                {
+                    "sha": recovered_sha,
+                    "subject": "Manual Gitflow recovery for issue 102",
+                    "verified_local_integration": False,
+                    "classification": "unverified_promotion_commit",
+                },
+            ],
+        )
+        self.assertEqual(
+            manifest["github_metadata"]["status"],
+            "verified_issues_with_warnings",
+        )
+        self.assertEqual(
+            manifest["github_metadata"]["issues"],
+            [
+                {
+                    "number": 102,
+                    "title": "Recover issue integration",
+                    "url": "https://github.com/example/repo/issues/102",
+                    "integrated_commit": None,
+                    "metadata_status": "manual_recovery_commit_unparseable",
+                    "warning": (
+                        "#102 has manual Gitflow recovery evidence but no parseable "
+                        "integrated commit for Promotion closure."
+                    ),
+                    "recovery_action": (
+                        "Verify the recovered commit is reachable from `origin/dev` "
+                        "and not already on `origin/main`, then add an issue comment "
+                        "that starts with `Ralph Gitflow manual recovery completed.` "
+                        "and includes a `Commit:` line with the dev commit SHA in "
+                        "backticks before rerunning Promotion, or reconcile the issue "
+                        "manually."
+                    ),
+                },
+            ],
+        )
+
     def test_promotion_closes_accepted_exploratory_issue(self) -> None:
         issue_list_command = (
             "gh",

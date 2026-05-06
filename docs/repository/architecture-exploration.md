@@ -667,9 +667,10 @@ before deleting this temporary file.
   changed files, records the promoted source commit inventory, creates a
   source worktree, runs the aggregate **Push check** and any Promotion gate
   from that exact source revision, verifies `agent-integrated` issues by
-  parsing recorded Gitflow integration or accepted Exploratory commits,
-  classifies inventory commits as verified issue evidence or unverified
-  **Promotion** commits, creates
+  parsing recorded Gitflow integration, documented manual Gitflow recovery, or
+  accepted Exploratory commits, warns when manual recovery evidence is not
+  parseable, classifies inventory commits as verified issue evidence or
+  unverified **Promotion** commits, creates
   the target Promotion worktree, merges, pushes `main`, fast-forwards `dev`,
   updates issue metadata, and then runs **Post-promotion review** when enabled
   and changed files exist. Successful review artifacts may then feed Ralph's

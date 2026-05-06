@@ -21,9 +21,10 @@ selection should win over shared **Integration target** defaults. Exploratory
 selection must be backed by an explicit `## Review focus`; otherwise Ralph marks
 the issue failed before creating a worktree or publishing a handoff branch. If
 only Gitflow and trunk conflict, Ralph normalizes to `delivery-gitflow`.
-Promotion must verify the recorded Gitflow integration commit or accepted
-Exploratory commit before closing an `agent-integrated` issue, because branch
-promotion merges code but does not reliably close GitHub Issues on its own.
+Promotion must verify the recorded Gitflow integration commit, documented
+manual Gitflow recovery commit, or accepted Exploratory commit before closing an
+`agent-integrated` issue, because branch promotion merges code but does not
+reliably close GitHub Issues on its own.
 
 Gitflow branch hygiene is part of the Delivery mode contract: before default
 Gitflow integration, Ralph merges `origin/main` into `origin/dev` if `dev` is
@@ -66,14 +67,18 @@ commit inventory in the **Promotion** manifest,
 including each promoted commit SHA and subject. Commits matching verified issue
 `integrated_commit` values are treated as verified issue evidence commits, while
 other commits remain visible as unverified **Promotion** commits in the manifest
-and **Post-promotion review** prompt. Successful Promotions with changed files
-run **Post-promotion review** by default after the `main` push, `dev` sync, and
-verified issue metadata updates. Failed or partial Promotion attempts with
-changed files also try **Post-promotion review** where a source or target
-Promotion worktree is available. The read-only review report puts recovery and
-consistency guidance before follow-up issue recommendations; review failures
-are warning-only and do not change the original Promotion success or failure
-status. Ralph saves successful review output as
+and **Post-promotion review** prompt. Manual Gitflow recovery comments are
+verified only when they use the documented title plus `Commit:` line; otherwise
+Promotion warns and records the issue as
+`manual_recovery_commit_unparseable` without silently closing or forgetting it.
+Successful Promotions with changed files run **Post-promotion review** by
+default after the `main` push, `dev` sync, and verified issue metadata updates.
+Failed or partial Promotion attempts with changed files also try
+**Post-promotion review** where a source or target Promotion worktree is
+available. The read-only review report puts recovery and consistency guidance
+before follow-up issue recommendations; review failures are warning-only and do
+not change the original Promotion success or failure status. Ralph saves
+successful review output as
 `post-promotion-review.md`, prints it to the terminal, and records the artifact
 path in the **Promotion** manifest.
 After a successful **Promotion**, Ralph validates structured follow-up drafts

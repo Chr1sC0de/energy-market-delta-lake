@@ -322,8 +322,8 @@ Key fields for inspection:
 - `status` and `stage`: current run outcome and latest milestone.
 - `events`: timestamped milestone history.
 - `issue`: implementation issue number, title, and URL.
-- `github_metadata.issues`: promoted issue numbers and their recorded issue
-  evidence commits during **Promotion**.
+- `github_metadata.issues`: promoted issue numbers, recorded issue evidence
+  commits, and manual recovery evidence warnings during **Promotion**.
 - `delivery_mode`: issue **Delivery mode**; **Promotion** records `gitflow`.
 - `integration_target`: branch Ralph is updating for the run.
 - `source_branch`: **Promotion** source branch, usually `dev`.
@@ -393,6 +393,32 @@ Recovery does not rerun Codex, rerun QA, create commits, push branches, or clean
 worktrees. Normal Ralph runs keep fail-stop behavior: if metadata operations
 fail after a push, Ralph stops loudly so an operator can inspect the run and
 recover deliberately.
+
+If a failed Gitflow run passed issue QA but failed before recording
+`integration_commit`, and an operator manually creates or pushes the recovered
+commit to `dev`, preserve **Promotion** closure evidence before applying or
+leaving `agent-integrated`. Verify the recovered commit is reachable from
+`origin/dev` and is not already on `origin/main`, then add an issue comment that
+starts with this exact contract:
+
+```markdown
+Ralph Gitflow manual recovery completed.
+
+Commit: `<dev-commit-sha>`
+Delivery mode: `gitflow`
+Target branch: `dev`
+Recovered from run: `<run-dir>`
+```
+
+The `Commit:` line must name the `dev` commit that made the recovered issue
+work reachable from the Gitflow source branch. Keep the issue open with
+`agent-integrated` so the next **Promotion** can verify the commit in the
+promoted range, comment Promotion evidence, replace `agent-integrated` with
+`agent-merged`, and close the issue. If **Promotion** sees manual recovery
+evidence on an open `agent-integrated` issue but cannot parse a commit from the
+documented contract, it emits a warning with the recovery action and records
+`manual_recovery_commit_unparseable` in the Promotion manifest instead of
+leaving the issue silently unreconciled.
 
 ## Implementation pass
 
@@ -514,10 +540,10 @@ fetched source-branch revision, records the full source commit inventory for
 that promoted range, and creates an isolated source worktree at that source
 revision. The commit inventory records every promoted source commit with its
 SHA and subject. After verified issues are identified, commits whose SHA matches
-a recorded Gitflow **Local integration** commit or accepted Exploratory commit
-are treated as verified issue evidence; other commits remain visible as
-unverified **Promotion** commits in the run manifest and **Post-promotion
-review** prompt.
+a recorded Gitflow **Local integration** commit, a documented manual Gitflow
+recovery commit, or an accepted Exploratory commit are treated as verified issue
+evidence; other commits remain visible as unverified **Promotion** commits in
+the run manifest and **Post-promotion review** prompt.
 Unverified **Promotion** commits are mandatory **Post-promotion review**
 context only. They do not block **Promotion**, do not require explicit issue
 association before **Promotion**, and do not create follow-up issues by
@@ -578,9 +604,13 @@ promotion commit so the next Gitflow drain starts from a `dev` branch that
 contains `main`.
 
 After the push succeeds, Ralph scans open `agent-integrated` issues. It closes
-only issues whose recorded Gitflow integration commit or accepted Exploratory
-commit is still in the promoted `origin/main..origin/dev` range, then comments
-Promotion evidence and replaces `agent-integrated` with `agent-merged`.
+only issues whose recorded Gitflow integration commit, documented manual
+Gitflow recovery commit, or accepted Exploratory commit is still in the
+promoted `origin/main..origin/dev` range, then comments Promotion evidence and
+replaces `agent-integrated` with `agent-merged`. If an open `agent-integrated`
+issue has manual recovery evidence but no parseable commit, Ralph warns with
+the exact recovery action and records the issue under `github_metadata.issues`
+with `metadata_status: manual_recovery_commit_unparseable`.
 Per-issue Promotion comments describe promoted files as the full
 Promotion-range file inventory, not as files owned only by the issue being
 closed. Successful Promotions with changed files then run a **Post-promotion
