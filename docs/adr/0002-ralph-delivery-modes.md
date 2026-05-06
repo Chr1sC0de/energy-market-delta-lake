@@ -36,7 +36,9 @@ reconciles `agent-merged` and issue closure, Gitflow delivery reconciles
 delivery reconciles `agent-reviewing` and leaves the issue open for review.
 After each successful issue **Local integration** or Exploratory handoff,
 **Ready issue refresh** reconciles the open issue queue before the next ready
-issue claim; this is separate from the later **Post-promotion review** path.
+issue claim; the current drain records a read-only analysis artifact with
+planned issue updates before any later metadata mutation. This is separate from
+the later **Post-promotion review** path.
 When a **Promotion** range includes non-doc runtime files in the AEMO ETL
 **Subproject**, the AEMO ETL **End-to-end test** gate runs from the same
 isolated source worktree as the aggregate **Push check**, before any merge,

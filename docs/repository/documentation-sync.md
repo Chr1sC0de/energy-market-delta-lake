@@ -179,9 +179,14 @@ way:
   [docs/agents/issue-tracker.md](../agents/issue-tracker.md),
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md), and
   [docs/agents/triage-labels.md](../agents/triage-labels.md).
-- #70 and #71: keep future **Ready issue refresh** implementation behavior
-  aligned with the #68 contract before extending scripts, labels, or issue
-  metadata flows.
+- #70: Ralph now records a read-only **Ready issue refresh** analysis artifact
+  after drain-mode **Local integration** or Exploratory handoff. The artifact
+  plans issue updates without mutating GitHub Issues, and
+  [docs/agents/ralph-loop.md](../agents/ralph-loop.md) owns the manifest,
+  prompt, and failure-stop contract.
+- #71: keep future **Ready issue refresh** metadata-application behavior
+  aligned with the #68 and #70 contracts before extending scripts, labels, or
+  issue metadata flows.
 - #72: Ralph implementation prompts include bounded recent **Ready issue
   refresh** notes after the issue body while keeping the issue body as the
   primary implementation contract.

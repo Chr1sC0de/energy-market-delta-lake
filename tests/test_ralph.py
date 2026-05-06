@@ -95,6 +95,29 @@ No blocking findings.
 ```
 """
 
+READY_ISSUE_REFRESH_ANALYSIS_MARKDOWN = """# Ready Issue Refresh Analysis
+
+## Summary
+
+One candidate issue was reviewed without mutating GitHub Issues.
+
+## Integrated Work
+
+- Integrated issue #42 published `merge-sha`.
+
+## Candidate Issue Update Plan
+
+- #43: no change planned.
+
+## Evidence
+
+- Candidate issue body remained actionable.
+
+## Open Questions
+
+None.
+"""
+
 
 def make_issue(
     labels: set[str],
@@ -142,6 +165,7 @@ class FakeRunner:
         command_outputs: dict[tuple[str, ...], list[str]] | None = None,
         fail_commands: set[tuple[str, ...]] | dict[tuple[str, ...], int] | None = None,
         fail_post_promotion_review: bool = False,
+        fail_ready_issue_refresh_analysis: bool = False,
         fail_issue_create: bool = False,
     ) -> None:
         self.dry_run = False
@@ -151,6 +175,7 @@ class FakeRunner:
         self.rev_parse_outputs = rev_parse_outputs or []
         self.command_outputs = command_outputs or {}
         self.fail_post_promotion_review = fail_post_promotion_review
+        self.fail_ready_issue_refresh_analysis = fail_ready_issue_refresh_analysis
         self.fail_issue_create = fail_issue_create
         self.created_issue_number = 99
         if isinstance(fail_commands, dict):
@@ -246,6 +271,20 @@ class FakeRunner:
                     )
                 return ralph.CompletedCommand(
                     stdout=POST_PROMOTION_REVIEW_MARKDOWN,
+                    stderr="",
+                )
+            if "Run a read-only Ready issue refresh analysis" in input_text:
+                if self.fail_ready_issue_refresh_analysis:
+                    raise ralph.CommandFailure(
+                        args,
+                        cwd,
+                        1,
+                        "",
+                        "fake Ready issue refresh analysis failure",
+                        log_path,
+                    )
+                return ralph.CompletedCommand(
+                    stdout=READY_ISSUE_REFRESH_ANALYSIS_MARKDOWN,
                     stderr="",
                 )
         return ralph.CompletedCommand(stdout="", stderr="")
@@ -436,6 +475,32 @@ class PreflightProbeLoop(ralph.RalphLoop):
 
     def _promote(self) -> None:
         self.promoted = True
+
+
+class TwoReadyIssueLoop(ralph.RalphLoop):
+    def __init__(self, config: ralph.LoopConfig, runner: FakeRunner) -> None:
+        super().__init__(config, runner)
+        self.ready_calls = 0
+
+    def _validate_tools(self) -> None:
+        pass
+
+    def _validate_labels(self) -> None:
+        pass
+
+    def _validate_clean_root_worktree_for_live_run(self) -> None:
+        pass
+
+    def _next_ready_issue(self) -> ralph.Issue | None:
+        self.ready_calls += 1
+        if self.ready_calls == 1:
+            return make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=42)
+        if self.ready_calls == 2:
+            return make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=43)
+        return None
+
+    def _next_triage_issue(self) -> ralph.Issue | None:
+        return None
 
 
 class RalphHelperTests(unittest.TestCase):
@@ -796,6 +861,64 @@ Build it.
 
         self.assertEqual([issue.number for issue in candidates], [43, 44])
         self.assertIn(issue_list_command, [call.args for call in runner.calls])
+
+    def test_ready_issue_refresh_analysis_prompt_is_read_only_and_contains_context(
+        self,
+    ) -> None:
+        integrated_issue = make_issue(
+            {"agent-merged"},
+            IMPLEMENTATION_BODY,
+            number=42,
+            title="Integrated work",
+        )
+        candidate = make_issue(
+            {"ready-for-agent"},
+            implementation_body_with_blockers(42),
+            number=43,
+            title="Refresh candidate",
+        )
+        delivery_plan = ralph.DeliveryPlan(
+            mode=ralph.TRUNK_MODE,
+            target_branch="main",
+            label=ralph.DELIVERY_TRUNK_LABEL,
+            add_labels=(),
+            remove_labels=(),
+        )
+        qa_result = ralph.QAResult(
+            command=ralph.QACommand(
+                ("python3", "-m", "unittest", "discover", "-s", "tests"),
+                Path("/repo"),
+                "Ralph unit tests",
+            ),
+            log_path=Path("/logs/qa.log"),
+        )
+
+        prompt = ralph.ready_issue_refresh_analysis_prompt(
+            repo="example/repo",
+            integrated_issue=integrated_issue,
+            delivery_plan=delivery_plan,
+            commit_sha="merge-sha",
+            changed_files=["scripts/ralph.py"],
+            qa_results=[qa_result],
+            run_dir=Path("/logs/issue-42-test"),
+            candidates=[candidate],
+        )
+
+        self.assertIn("Use the repo-local $ralph-issue-refresh skill", prompt)
+        self.assertIn("Do not comment, edit labels, edit issue bodies, close issues", prompt)
+        self.assertIn("Do not run `gh issue comment`, `gh issue edit`, `gh issue close`", prompt)
+        self.assertIn("commit, push, pull, fetch, merge, rebase, reset", prompt)
+        self.assertIn("Delivery mode: `trunk`", prompt)
+        self.assertIn("Integration target: `main`", prompt)
+        self.assertIn("Local integration commit: `merge-sha`", prompt)
+        self.assertIn("- `scripts/ralph.py`", prompt)
+        self.assertIn("`python3 -m unittest discover -s tests` from `/repo`", prompt)
+        self.assertIn("Run logs: `/logs/issue-42-test`", prompt)
+        self.assertIn("## What to build", prompt)
+        self.assertIn("### Candidate issue #43: Refresh candidate", prompt)
+        self.assertIn("- #42", prompt)
+        self.assertIn("# Ready Issue Refresh Analysis", prompt)
+        self.assertIn("## Candidate Issue Update Plan", prompt)
 
     def test_basic_triage_candidate_accepts_unlabeled_and_needs_triage(self) -> None:
         self.assertTrue(ralph.is_basic_triage_candidate(make_issue(set())))
@@ -2447,13 +2570,25 @@ Build it.
             },
         )
         with tempfile.TemporaryDirectory() as tmp:
-            loop = make_loop(Path(tmp), runner, drain=True)
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
             output = io.StringIO()
 
             with redirect_stdout(output):
                 loop._handle_implementation(make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY))
 
+            manifest = load_run_manifest(tmp_path)
+            artifact_path = next(tmp_path.glob("logs/issue-42-*/ready-issue-refresh-analysis.md"))
+            artifact = artifact_path.read_text(encoding="utf-8")
+
         commands = [call.args for call in runner.calls]
+        analysis_call = next(
+            call
+            for call in runner.calls
+            if call.input_text is not None
+            and "Run a read-only Ready issue refresh analysis" in call.input_text
+        )
+        analysis_index = runner.calls.index(analysis_call)
         close_command = (
             "gh",
             "issue",
@@ -2466,12 +2601,99 @@ Build it.
         )
         self.assertIn(issue_list_command, commands)
         self.assertLess(commands.index(close_command), commands.index(issue_list_command))
+        self.assertLess(commands.index(issue_list_command), analysis_index)
         self.assertIn(
             "Ready issue refresh candidate selection found 1 candidate(s) after "
             "Local integration of #42.",
             output.getvalue(),
         )
         self.assertIn("- #43: Issue 43", output.getvalue())
+        self.assertIn("Running read-only Ready issue refresh analysis for #42.", output.getvalue())
+        self.assertEqual(artifact, READY_ISSUE_REFRESH_ANALYSIS_MARKDOWN.rstrip() + "\n")
+        self.assertEqual(manifest["ready_issue_refresh"]["status"], "completed")
+        self.assertEqual(manifest["ready_issue_refresh"]["candidate_issue_numbers"], [43])
+        self.assertEqual(
+            manifest["ready_issue_refresh"]["artifact_path"],
+            str(artifact_path),
+        )
+        self.assertIsNone(manifest["ready_issue_refresh"]["failure"])
+        self.assertIn("--output-last-message", analysis_call.args)
+        self.assertIn(str(artifact_path), analysis_call.args)
+        self.assertIn("### Candidate issue #43: Issue 43", analysis_call.input_text)
+        self.assertIn("Local integration commit: `merge-sha`", analysis_call.input_text)
+        allowed_commands = manifest["sandboxed_issue_access"]["allowed_commands"]
+        self.assertIn("gh issue view", allowed_commands)
+        self.assertNotIn("gh issue comment", allowed_commands)
+        self.assertNotIn("gh issue edit", allowed_commands)
+        self.assertNotIn("gh issue close", allowed_commands)
+        self.assertNotIn("gh issue create", allowed_commands)
+        after_analysis_commands = [call.args for call in runner.calls[analysis_index + 1 :]]
+        self.assertFalse(
+            any(
+                command[:3]
+                in {
+                    ("gh", "issue", "comment"),
+                    ("gh", "issue", "edit"),
+                    ("gh", "issue", "close"),
+                    ("gh", "issue", "create"),
+                    ("gh", "issue", "reopen"),
+                }
+                for command in after_analysis_commands
+            )
+        )
+
+    def test_ready_issue_refresh_analysis_failure_stops_drain_after_integration(
+        self,
+    ) -> None:
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            fail_ready_issue_refresh_analysis=True,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            base_loop = make_loop(tmp_path, runner, drain=True)
+            loop = TwoReadyIssueLoop(base_loop.config, runner)
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                with self.assertRaises(ralph.ReadyIssueRefreshFailure):
+                    loop.run()
+
+            manifest = load_run_manifest(tmp_path)
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn(("git", "push", "origin", "HEAD:main"), commands)
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "close",
+                "42",
+                "-R",
+                "example/repo",
+                "--reason",
+                "completed",
+            ),
+            commands,
+        )
+        self.assertEqual(loop.ready_calls, 1)
+        self.assertFalse(
+            any(command[:4] == ("gh", "issue", "edit", "43") for command in commands)
+        )
+        self.assertFalse(any(command[:2] == ("git", "reset") for command in commands))
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["integration_commit"]["sha"], "merge-sha")
+        self.assertEqual(manifest["pushes"]["integration_target"]["status"], "pushed")
+        self.assertEqual(manifest["github_metadata"]["status"], "closed")
+        self.assertEqual(manifest["ready_issue_refresh"]["status"], "failed")
+        self.assertIn(
+            "Command failed",
+            manifest["ready_issue_refresh"]["failure"]["message"],
+        )
+        self.assertIn(
+            "Ready issue refresh analysis failed after Local integration of #42",
+            manifest["failure"]["message"],
+        )
 
     def test_gitflow_implementation_creates_dev_integrates_and_leaves_issue_open(self) -> None:
         ls_remote = ("git", "ls-remote", "--exit-code", "--heads", "origin", "dev")

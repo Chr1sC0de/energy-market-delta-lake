@@ -283,7 +283,8 @@ operator should start from a known repo state.
 
 Ralph writes command logs while subprocesses are still running. Long Codex
 implementation attempts write to `codex-implementation-N.jsonl`, triage writes
-to `codex-triage.jsonl`, **Post-promotion review** writes to
+to `codex-triage.jsonl`, read-only **Ready issue refresh** analysis writes to
+`codex-ready-issue-refresh-analysis.jsonl`, **Post-promotion review** writes to
 `codex-post-promotion-review.jsonl`, QA writes to `qa-*` logs, and Git
 operations write to their named `git-*` logs under the current
 `.ralph/runs/...` run directory.
@@ -336,6 +337,10 @@ Key fields for inspection:
 - `post_promotion_followups`: enabled state, created issue URLs, duplicate
   source-marker skips, validation downgrades to `needs-triage`, warning-only
   creation failures, and recovery guidance for **Promotion** follow-ups.
+- `ready_issue_refresh`: read-only analysis status, candidate issue numbers,
+  candidate issue metadata, analysis log path, Markdown artifact path, and
+  failure state for drain-mode implementation runs after successful **Local
+  integration** or Exploratory handoff.
 - `branches`: issue, source, and target branch names that apply to the run.
 - `paths`: repo root, run directory, worktree container, and implementation,
   integration, Promotion source, or Promotion target worktree paths.
@@ -642,12 +647,33 @@ This bounded scan also keeps the next unblocked ready issues in queue order in
 the candidate set, even when they do not explicitly reference the just-integrated
 issue. That lets refresh review catch duplicate or obsolete ready work that
 became stale because of the latest **Local integration** or Exploratory handoff.
+After candidate selection, Ralph invokes a read-only spawned Codex subprocess
+using the repo-local `$ralph-issue-refresh` skill. The analysis prompt includes
+the integrated issue, **Delivery mode**, **Integration target**, **Local
+integration** or Exploratory handoff commit, changed files, QA evidence, run log
+path, and candidate issue bodies. The subprocess is granted only read-only
+GitHub Issue commands and is instructed not to comment, edit labels, edit
+bodies, close, reopen, create issues, commit, push, fetch, merge, rebase, reset,
+or update refs. It records planned issue updates only; Ralph does not apply
+those updates during this read-only analysis phase.
+
+The read-only analysis report is saved as
+`ready-issue-refresh-analysis.md` in the current `.ralph/runs/issue-.../`
+directory beside `codex-ready-issue-refresh-analysis.jsonl`. The implementation
+run manifest records `ready_issue_refresh.status`, candidate issue numbers,
+candidate issue metadata, the analysis log path, the artifact path, and any
+failure. If analysis fails after a successful **Local integration** or
+Exploratory handoff, Ralph stops the drain before claiming another issue. It
+does not roll back the pushed **Integration target** commit or revert the
+already-completed issue metadata.
+
 In `--dry-run`, Ralph reports that Ready issue refresh candidate selection would
 run after **Local integration** or Exploratory handoff; it does not invoke Codex
 or mutate GitHub Issues.
 
 Use the repo-local `$ralph-issue-refresh` skill as the entry point for this
-contract. The pass is allowed to mutate only GitHub Issue metadata:
+contract. The full metadata-refresh contract is allowed to mutate only GitHub
+Issue metadata:
 
 - comments
 - issue body updates
@@ -776,6 +802,12 @@ the run for the same metadata consistency reason. Failed or partial Promotion
 attempts still try warning-only **Post-promotion review** when a review worktree
 is available; the original Promotion exception, manifest `status`, and failure
 state remain the source of truth.
+
+Read-only **Ready issue refresh** analysis failures also stop the drain, but
+they do not imply the integrated issue metadata needs recovery. The manifest
+records the pushed **Integration target** commit and completed issue metadata
+alongside `ready_issue_refresh.status: failed`, so operators can inspect the
+analysis log or artifact path before restarting the drain.
 
 Environment failures stop the run. Examples include invalid `gh` auth, missing
 labels, unavailable tools, failing Git operations before claim, or unavailable
