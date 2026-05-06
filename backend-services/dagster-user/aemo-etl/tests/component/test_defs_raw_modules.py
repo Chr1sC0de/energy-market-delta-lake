@@ -11,13 +11,25 @@ import pkgutil
 from typing import cast
 
 import bs4
-from dagster import Definitions
+from dagster import AssetKey, AssetsDefinition, Definitions
 from dagster._core.definitions.unresolved_asset_job_definition import (
     UnresolvedAssetJobDefinition,
 )
 from polars import String
 
 from aemo_etl.defs.raw.gbb._ecs import rebuild_sized_spot_ecs_tags
+
+STTM_CORE_REPORT_SUFFIXES = (
+    "int651_v1_ex_ante_market_price_rpt_1",
+    "int652_v1_ex_ante_schedule_quantity_rpt_1",
+    "int653_v3_ex_ante_pipeline_price_rpt_1",
+    "int654_v1_provisional_market_price_rpt_1",
+    "int655_v1_provisional_schedule_quantity_rpt_1",
+    "int656_v2_provisional_pipeline_data_rpt_1",
+    "int657_v2_ex_post_market_data_rpt_1",
+    "int658_v1_latest_allocation_quantity_rpt_1",
+    "int659_v1_bid_offer_rpt_1",
+)
 
 
 def _import_all_under(package: str) -> None:
@@ -42,27 +54,52 @@ def test_import_all_sttm_table_modules() -> None:
     _import_all_under("aemo_etl.defs.raw.sttm")
 
 
-def test_sttm_int651_source_table_spec_registered_for_archive_replay() -> None:
+def test_sttm_core_source_table_specs_registered_for_archive_replay() -> None:
     from aemo_etl.factories.df_from_s3_keys.source_tables import (
         load_source_table_specs,
         select_source_table_specs,
     )
 
-    (spec,) = select_source_table_specs(
+    specs = select_source_table_specs(
         load_source_table_specs(),
-        table="sttm.bronze_int651_v1_ex_ante_market_price_rpt_1",
+        domain="sttm",
     )
 
-    assert spec.domain == "sttm"
-    assert spec.name_suffix == "int651_v1_ex_ante_market_price_rpt_1"
-    assert spec.glob_pattern == "int651_v1_ex_ante_market_price_rpt_1*"
-    assert spec.archive_prefix == "bronze/sttm"
-    assert spec.target_table_uri("aemo") == (
-        "s3://aemo/bronze/sttm/bronze_int651_v1_ex_ante_market_price_rpt_1"
+    assert tuple(spec.name_suffix for spec in specs) == STTM_CORE_REPORT_SUFFIXES
+    for spec in specs:
+        assert spec.domain == "sttm"
+        assert spec.glob_pattern == f"{spec.name_suffix}*"
+        assert spec.archive_prefix == "bronze/sttm"
+        assert spec.target_table_uri("aemo") == (
+            f"s3://aemo/bronze/sttm/bronze_{spec.name_suffix}"
+        )
+        assert spec.schema["gas_date"] == String
+
+    (int659_spec,) = select_source_table_specs(
+        specs,
+        table="bronze/sttm/bronze_int659_v1_bid_offer_rpt_1",
     )
-    assert spec.surrogate_key_sources == ("gas_date", "hub_identifier")
-    assert spec.schema["gas_date"] == String
-    assert spec.schema["ex_ante_market_price"] == String
+    assert int659_spec.surrogate_key_sources == (
+        "gas_date",
+        "schedule_identifier",
+        "bid_offer_identifier",
+        "bid_offer_step_number",
+    )
+    assert int659_spec.schema["step_capped_cumulative_qty"] == String
+
+
+def test_sttm_event_driven_selection_includes_core_market_bronze_assets() -> None:
+    from aemo_etl.definitions import STTM_ASSET_SELECTION
+
+    asset_defs: list[AssetsDefinition] = []
+    for suffix in STTM_CORE_REPORT_SUFFIXES:
+        module = importlib.import_module(f"aemo_etl.defs.raw.sttm.{suffix}")
+        asset_defs.extend(module.defs.assets or [])
+
+    assert STTM_ASSET_SELECTION.resolve(asset_defs) == frozenset(
+        AssetKey(["bronze", "sttm", f"bronze_{suffix}"])
+        for suffix in STTM_CORE_REPORT_SUFFIXES
+    )
 
 
 def test_gbb_pipeline_connection_flow_v1_job_uses_rebuild_sized_ecs_task() -> None:

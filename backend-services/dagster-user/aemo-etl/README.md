@@ -151,10 +151,10 @@ Detailed sequence diagrams for GBB, VICGAS, STTM, and raw-to-silver behavior liv
 - `gbb`: source-specific silver assets for Gas Bulletin Board datasets such as flows, capacity, locations, linepack, and nomination data.
 - `vicgas`: source-specific silver assets for Victorian gas reports such as operational meter readings, allocations, prices, linepack, heating values, and settlements.
 - `sttm`: source-specific silver assets for Short Term Trading Market reports.
-  STTM source-table bronze starts with `INT651` from a compact checked-in
-  manifest under `src/aemo_etl/defs/raw/sttm`; `INT685` and `INT685B` are live
-  STTM root CSV reports but are landing-only gaps until a v19.1
-  specification-backed source-table entry exists. Manual STTM `DAYNN.ZIP`
+  STTM source-table bronze covers `INT651` through `INT659` from a compact
+  checked-in manifest under `src/aemo_etl/defs/raw/sttm`; `INT685` and
+  `INT685B` are live STTM root CSV reports but are landing-only gaps until a
+  v19.1 specification-backed source-table entry exists. Manual STTM `DAYNN.ZIP`
   bootstrap writes bundles under `bronze/sttm/<filename>` for the STTM unzipper
   path; `CURRENTDAY.*` aliases stay out of the bootstrap/backfill path.
 - `gas_model`: shared dimensions and marts that reconcile GBB and VICGAS source data into reporting-friendly tables.
@@ -319,6 +319,14 @@ aemo-etl/
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/_manifest.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/source_tables.json`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int651_v1_ex_ante_market_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int652_v1_ex_ante_schedule_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int653_v3_ex_ante_pipeline_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int654_v1_provisional_market_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int655_v1_provisional_schedule_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int656_v2_provisional_pipeline_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int657_v2_ex_post_market_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int658_v1_latest_allocation_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int659_v1_bid_offer_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/current_state.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`

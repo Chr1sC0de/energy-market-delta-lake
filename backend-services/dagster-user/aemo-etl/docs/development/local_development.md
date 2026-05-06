@@ -322,11 +322,11 @@ the selected archive scope. If the dry-run archive file list or target Delta URI
 does not match the intended rebuild, stop and correct the target selection,
 bucket options, or credentials before writing.
 
-For STTM, the current source-table replay surface starts with `INT651`
-(`sttm.bronze_int651_v1_ex_ante_market_price_rpt_1`). `INT685` and `INT685B`
-are landing-only gaps because the live root CSV reports are absent from the
-v19.1 STTM report specification manifest, so they are not valid replay table
-targets.
+For STTM, the current source-table replay surface covers `INT651` through
+`INT659`, from `sttm.bronze_int651_v1_ex_ante_market_price_rpt_1` through
+`sttm.bronze_int659_v1_bid_offer_rpt_1`. `INT685` and `INT685B` are
+landing-only gaps because the live root CSV reports are absent from the v19.1
+STTM report specification manifest, so they are not valid replay table targets.
 
 ## Test assumptions
 
@@ -397,6 +397,14 @@ across the Subproject.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/_manifest.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/source_tables.json`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int651_v1_ex_ante_market_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int652_v1_ex_ante_schedule_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int653_v3_ex_ante_pipeline_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int654_v1_provisional_market_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int655_v1_provisional_schedule_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int656_v2_provisional_pipeline_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int657_v2_ex_post_market_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int658_v1_latest_allocation_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int659_v1_bid_offer_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
   - `backend-services/dagster-user/aemo-etl/tests/integration/conftest.py`
   - `backend-services/dagster-user/aemo-etl/.localstack.env`

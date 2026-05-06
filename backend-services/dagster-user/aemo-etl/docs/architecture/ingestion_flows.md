@@ -125,9 +125,9 @@ sequenceDiagram
     participant UnzipSensor as sttm_unzipper_sensor
     participant UnzipAsset as unzipper_sttm
     participant RawSensor as sttm_event_driven_assets_sensor
-    participant Bronze as bronze_int651_v1_ex_ante_market_price_rpt_1
+    participant Bronze as STTM bronze report asset
     participant Archive as ARCHIVE_BUCKET/bronze/sttm
-    participant Silver as silver_int651_v1_ex_ante_market_price_rpt_1
+    participant Silver as STTM silver report asset
 
     Operator->>ManualJob: Optional DAYNN.ZIP bootstrap/backfill launch
     ManualJob->>NEMWeb: List and fetch DAY01.ZIP through DAY31.ZIP bundles
@@ -143,8 +143,8 @@ sequenceDiagram
     UnzipAsset->>Landing: Extract STTM members, convert CSV members to parquet when possible
     UnzipAsset->>Archive: Archive successful zip inputs
 
-    Landing->>RawSensor: Detect files matching INT651 glob_pattern
-    RawSensor->>Bronze: Launch int651_v1_ex_ante_market_price_rpt_1_job with s3_keys
+    Landing->>RawSensor: Detect files matching INT651-INT659 glob_patterns
+    RawSensor->>Bronze: Launch matching int65x source-table job with s3_keys
     Bronze->>Landing: Read selected csv/parquet objects
     Bronze->>Archive: Copy then delete processed source files after table write
     Bronze->>Silver: Trigger silver current-snapshot asset
@@ -164,9 +164,10 @@ Trigger and output notes:
   through `DAY31.ZIP`, de-duplicates listing entries, processes deterministically,
   skips current-day aliases, and fails fast for invalid or missing
   `target_files` config.
-- `INT651` is the first spec-backed STTM source-table asset. Its compact
-  manifest lives under `src/aemo_etl/defs/raw/sttm`, declares every source
-  report column as `String`, and keeps the standard ingestion metadata columns.
+- `INT651` through `INT659` are spec-backed STTM source-table assets. Their
+  compact manifest lives under `src/aemo_etl/defs/raw/sttm`, declares every
+  source report column as `String`, and keeps the standard ingestion metadata
+  columns.
 - `INT685` and `INT685B` appear as live root CSV reports but are absent from
   the v19.1 STTM report specification manifest. Discovery may land those files,
   but they are landing-only gaps until a spec-backed source-table entry exists.
@@ -250,6 +251,14 @@ source table and 3 zip objects per required domain.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/_manifest.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/source_tables.json`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int651_v1_ex_ante_market_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int652_v1_ex_ante_schedule_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int653_v3_ex_ante_pipeline_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int654_v1_provisional_market_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int655_v1_provisional_schedule_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int656_v2_provisional_pipeline_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int657_v2_ex_post_market_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int658_v1_latest_allocation_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int659_v1_bid_offer_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/jobs/download_vicgas_public_report_zip_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/unzipper.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/alerts.py`

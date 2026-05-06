@@ -65,13 +65,13 @@ comes from archived source files and Delta table history, not from duplicated
 append-history rows inside source-table bronze tables.
 
 STTM source-table bronze starts from compact checked-in report manifests rather
-than the large Docling Markdown source. The first STTM source-table asset is
-`INT651` (`bronze/sttm/bronze_int651_v1_ex_ante_market_price_rpt_1`), with
-every report column declared as `String` while the standard ingestion metadata
-columns keep the existing source-table bronze types. `INT685` and `INT685B`
-are live STTM root CSV reports but are absent from the v19.1 specification
-manifest, so discovery may land them and archive replay does not expose them as
-source-table bronze targets until a spec-backed manifest entry exists.
+than the large Docling Markdown source. The manifest-backed STTM source-table
+coverage currently spans `INT651` through `INT659`, with every report column
+declared as `String` while the standard ingestion metadata columns keep the
+existing source-table bronze types. `INT685` and `INT685B` are live STTM root
+CSV reports but are absent from the v19.1 specification manifest, so discovery
+may land them and archive replay does not expose them as source-table bronze
+targets until a spec-backed manifest entry exists.
 
 The archive bucket contains only source files whose source-table bronze run
 reached an actual table write. Operators should inspect the skipped-key WARN
@@ -98,6 +98,14 @@ the intended rebuild.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/_manifest.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/source_tables.json`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int651_v1_ex_ante_market_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int652_v1_ex_ante_schedule_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int653_v3_ex_ante_pipeline_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int654_v1_provisional_market_price_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int655_v1_provisional_schedule_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int656_v2_provisional_pipeline_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int657_v2_ex_post_market_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int658_v1_latest_allocation_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int659_v1_bid_offer_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`

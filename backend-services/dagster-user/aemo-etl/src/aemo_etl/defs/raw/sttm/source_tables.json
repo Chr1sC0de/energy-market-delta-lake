@@ -81,6 +81,672 @@
           "description": "The date and time the report was produced."
         }
       ]
+    },
+    {
+      "report_id": "INT652",
+      "report_name": "Ex Ante Schedule Quantity",
+      "name_suffix": "int652_v1_ex_ante_schedule_quantity_rpt_1",
+      "glob_pattern": "int652_v1_ex_ante_schedule_quantity_rpt_1*",
+      "description": "STTM public Ex Ante Schedule Quantity report. Contains the total ex ante market schedule quantity for each STTM facility for a gas day.",
+      "surrogate_key_sources": ["gas_date", "facility_identifier", "flow_direction"],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "schedule_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the schedule from which the schedule quantity is produced."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the facility."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the facility."
+        },
+        {
+          "name": "scheduled_qty",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total scheduled quantity for the facility. If the facility is of type network, this excludes the total price taker bid quantity."
+        },
+        {
+          "name": "firm_gas_scheduled_qty",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The total firm gas scheduled in the ex ante market on the pipeline for the gas day, i.e. total ex ante scheduled quantities of all Trading Rights associated with priority 1 Registered Services. This field is null for a facility of type network."
+        },
+        {
+          "name": "as_available_scheduled_qty",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The total as available gas scheduled in the ex ante market on the pipeline for the gas day, i.e. total ex ante scheduled quantities of all Trading Rights associated with Registered Services of priority other than 1. This field is null for a facility of type network."
+        },
+        {
+          "name": "flow_direction",
+          "not_null": true,
+          "primary_key": true,
+          "description": "Whether the scheduled quantity is for supply to the hub or withdrawal from the hub. Valid values are T and F."
+        },
+        {
+          "name": "price_taker_bid_qty",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The total scheduled price taker bid quantity for the facility. This field is null if the facility is of a type other than network."
+        },
+        {
+          "name": "price_taker_bid_not_sched_qty",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The price taker bid quantity not scheduled. This field is null if the facility is of a type other than network."
+        },
+        {
+          "name": "approval_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the schedule was approved."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT653",
+      "report_name": "Ex Ante Pipeline Data",
+      "name_suffix": "int653_v3_ex_ante_pipeline_price_rpt_1",
+      "glob_pattern": "int653_v3_ex_ante_pipeline_price_rpt_1*",
+      "description": "STTM public Ex Ante Pipeline Data report. Contains ex ante capacity price, flow constraint price, capacity quantity, facility hub capacity data quality, and the timestamp the hub capacity data was received for each facility of type pipeline.",
+      "surrogate_key_sources": ["gas_date", "facility_identifier"],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The relevant gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "schedule_identifier",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The unique identifier of the schedule from which the prices were produced."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the facility."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the facility."
+        },
+        {
+          "name": "capacity_qty",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total pipeline capacity quantity (GJ) that is available to the STTM, and the quantity used by AEMO to run the last approved ex ante market schedule for the relevant gas date."
+        },
+        {
+          "name": "capacity_qty_quality_type",
+          "not_null": false,
+          "primary_key": false,
+          "description": "Flag indicating whether the submitted capacity quantity is valid, warning, confirmed warning, or registered default capacity. Valid values are V, WH, WL, CH, CL, and D."
+        },
+        {
+          "name": "capacity_qty_datetime",
+          "not_null": false,
+          "primary_key": false,
+          "description": "Date and time the capacity quantity was received. This field is null if no capacity data was received and registered default capacity is applied."
+        },
+        {
+          "name": "ex_ante_capacity_price",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The capacity price of the pipeline for the gas date. This price is either the capacity price determined by the scheduling and pricing engine or the administered price during an administered price period."
+        },
+        {
+          "name": "ex_ante_flow_direction_constraint_price",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The pipeline flow direction constraint price of the pipeline determined in the relevant market schedule. Pipeline flow direction constraint price is not capped during an administered cap price state."
+        },
+        {
+          "name": "schedule_capacity_price",
+          "not_null": false,
+          "primary_key": false,
+          "description": "If the capacity price was capped at APC, the capacity price derived from bids and offers before the cap was applied. If the capacity price was not capped, this field is null."
+        },
+        {
+          "name": "approval_datetime",
+          "not_null": false,
+          "primary_key": false,
+          "description": "Date and time the schedule was approved."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT654",
+      "report_name": "Provisional Market Price",
+      "name_suffix": "int654_v1_provisional_market_price_rpt_1",
+      "glob_pattern": "int654_v1_provisional_market_price_rpt_1*",
+      "description": "STTM public Provisional Market Price report. Contains provisional prices for D-3 and D-2 for all STTM hubs.",
+      "surrogate_key_sources": [
+        "gas_date",
+        "hub_identifier",
+        "provisional_schedule_type"
+      ],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the hub which the price relates to."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub which the price relates to."
+        },
+        {
+          "name": "schedule_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the schedule which the price relates to."
+        },
+        {
+          "name": "provisional_price",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The provisional price."
+        },
+        {
+          "name": "provisional_schedule_type",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The type of the provisional schedule. Valid values are D-2 and D-3."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT655",
+      "report_name": "Provisional Schedule Quantity",
+      "name_suffix": "int655_v1_provisional_schedule_quantity_rpt_1",
+      "glob_pattern": "int655_v1_provisional_schedule_quantity_rpt_1*",
+      "description": "STTM public Provisional Schedule Quantity report. Contains the total provisional schedule quantity for each STTM facility for D-2 and D-3.",
+      "surrogate_key_sources": [
+        "gas_date",
+        "facility_identifier",
+        "flow_direction",
+        "provisional_schedule_type"
+      ],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "schedule_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the schedule from which the schedule quantity is produced."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the facility."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the facility."
+        },
+        {
+          "name": "provisional_qty",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The provisional quantity for the facility. If the facility is of type network, this excludes the total provisional price taker bid quantity."
+        },
+        {
+          "name": "provisional_firm_gas_scheduled",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The total provisional firm gas quantity on the pipeline for the gas day, i.e. total provisional scheduled quantities of all Trading Rights associated with priority 1 Registered Services. This field is null if the facility is of type network."
+        },
+        {
+          "name": "provisional_as_available_scheduled",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The total provisional as available gas quantity on the pipeline for the gas day, i.e. total provisional scheduled quantities of all Trading Rights associated with Registered Services of priority other than 1. This field is null if the facility is of type network."
+        },
+        {
+          "name": "flow_direction",
+          "not_null": true,
+          "primary_key": true,
+          "description": "Whether the forecast quantity is for supply to the hub or withdrawal from the hub. Valid values are T and F."
+        },
+        {
+          "name": "price_taker_bid_provisional_not_sched_qty",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The price taker bid quantity not scheduled in the provisional schedule. This field is null if the facility is of a type other than network."
+        },
+        {
+          "name": "price_taker_bid_provisional_qty",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The total provisional price taker bid quantity for the facility. This field is null if the facility is of a type other than network."
+        },
+        {
+          "name": "provisional_schedule_type",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The type of the provisional schedule. Valid values are D-2 and D-3."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT656",
+      "report_name": "Provisional Pipeline Data",
+      "name_suffix": "int656_v2_provisional_pipeline_data_rpt_1",
+      "glob_pattern": "int656_v2_provisional_pipeline_data_rpt_1*",
+      "description": "STTM public Provisional Pipeline Data report. Contains provisional capacity price, provisional flow constraint price, provisional capacity quantity, and facility hub capacity data quality for each facility of type pipeline for D-2 and D-3.",
+      "surrogate_key_sources": [
+        "gas_date",
+        "facility_identifier",
+        "provisional_schedule_type"
+      ],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "schedule_identifier",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The unique identifier of the schedule from which the provisional prices were produced."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the facility."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the facility."
+        },
+        {
+          "name": "provisional_capacity_qty",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The provisional pipeline capacity quantity (GJ) that is available to the STTM, and the quantity used by AEMO to run the provisional schedule for the relevant gas date."
+        },
+        {
+          "name": "prov_cap_qty_quality_type",
+          "not_null": false,
+          "primary_key": false,
+          "description": "Flag indicating whether the submitted capacity quantity is valid, warning, confirmed warning, or registered default capacity. Valid values are V, WH, WL, CH, CL, and D."
+        },
+        {
+          "name": "provisional_capacity_price",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The provisional capacity price of the pipeline determined in the relevant provisional schedule."
+        },
+        {
+          "name": "provisional_flow_constraint_price",
+          "not_null": false,
+          "primary_key": false,
+          "description": "The provisional flow constraint price of the pipeline determined in the relevant provisional schedule."
+        },
+        {
+          "name": "provisional_schedule_type",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The type of the provisional schedule. Valid values are D-2, D-3, and NA for non-schedule data."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT657",
+      "report_name": "Ex Post Market Data",
+      "name_suffix": "int657_v2_ex_post_market_data_rpt_1",
+      "glob_pattern": "int657_v2_ex_post_market_data_rpt_1*",
+      "description": "STTM public Ex Post Market Data report. Contains ex post, provisional ex-post, and delayed ex-post details for the STTM hubs for a gas date.",
+      "surrogate_key_sources": [
+        "gas_date",
+        "hub_identifier",
+        "schedule_type_code"
+      ],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "schedule_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the schedule from which the imbalance price was produced."
+        },
+        {
+          "name": "imbalance_qty",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The quantity of the bid/offer used to determine the imbalance price. If the quantity is negative or zero then the market was long and an offer has been placed. If the quantity is positive then the market was short and a bid has been placed."
+        },
+        {
+          "name": "ex_post_imbalance_price",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The ex post imbalance price or provisional ex post imbalance price at the hub for the gas date. This price is either the ex post price determined by the scheduling and pricing engine or the administered ex post price during an administered price period. If a provisional ex post imbalance price is published, then a delayed ex post price will be published later in the gas day as per the STTM rules and procedures."
+        },
+        {
+          "name": "schedule_type_code",
+          "not_null": true,
+          "primary_key": true,
+          "description": "XPOST - ex-post/delayed ex-post price. PPOST - provisional ex-post price."
+        },
+        {
+          "name": "imbalance_type",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Indicates whether the market was long (L) or short (S). If the market was short then a bid has been placed for the imbalance quantity. If the market was long then an offer has been placed."
+        },
+        {
+          "name": "schedule_imbalance_price",
+          "not_null": false,
+          "primary_key": false,
+          "description": "If the ex post imbalance price was subject to the APC, irrespective of whether the APC was breached, this field contains the ex post price derived from bids and offers regardless of the cap. If the ex post imbalance price was not subject to the cap, this field is null."
+        },
+        {
+          "name": "approval_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the schedule was approved."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT658",
+      "report_name": "Latest Allocation Quantity",
+      "name_suffix": "int658_v1_latest_allocation_quantity_rpt_1",
+      "glob_pattern": "int658_v1_latest_allocation_quantity_rpt_1*",
+      "description": "STTM public Latest Allocation Quantity report. Contains the total allocation quantity for each STTM facility.",
+      "surrogate_key_sources": ["gas_date", "facility_identifier", "flow_direction"],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the relevant facility."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the relevant facility."
+        },
+        {
+          "name": "allocation_qty_inc_mos",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The total allocated quantity for the facility of deemed actual flow by direction, e.g. total allocated quantity to the hub or total allocated quantity from the hub. This quantity is inclusive of any MOS gas."
+        },
+        {
+          "name": "flow_direction",
+          "not_null": true,
+          "primary_key": true,
+          "description": "Whether the allocated quantity is for supply to the hub or withdrawal from the hub. Valid values are T and F."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was produced."
+        }
+      ]
+    },
+    {
+      "report_id": "INT659",
+      "report_name": "Bid & Offer Report",
+      "name_suffix": "int659_v1_bid_offer_rpt_1",
+      "glob_pattern": "int659_v1_bid_offer_rpt_1*",
+      "description": "STTM public Bid & Offer Report. Contains all bids and offers used in ex ante and D-2, D-3 provisional schedules for all STTM hubs. Price taker bids are not included.",
+      "surrogate_key_sources": [
+        "gas_date",
+        "schedule_identifier",
+        "bid_offer_identifier",
+        "bid_offer_step_number"
+      ],
+      "source_columns": [
+        {
+          "name": "gas_date",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The gas date."
+        },
+        {
+          "name": "company_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the company that submitted the bid/offer."
+        },
+        {
+          "name": "company_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the company that submitted the bid/offer."
+        },
+        {
+          "name": "hub_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the hub."
+        },
+        {
+          "name": "hub_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the hub."
+        },
+        {
+          "name": "schedule_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the schedule in which the bids/offers were used."
+        },
+        {
+          "name": "facility_identifier",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The unique identifier of the facility."
+        },
+        {
+          "name": "facility_name",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The name of the facility."
+        },
+        {
+          "name": "bid_offer_identifier",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The unique identifier of the bid or offer."
+        },
+        {
+          "name": "bid_offer_step_number",
+          "not_null": true,
+          "primary_key": true,
+          "description": "The number of the bid/offer step (1 - 10) on the bid/offer stack."
+        },
+        {
+          "name": "step_price",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Dollar price per GJ for bid/offer."
+        },
+        {
+          "name": "step_capped_cumulative_qty",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Cumulative quantity for the relevant bid or offer step submitted to the schedule. If the capacity of the Trading Right corresponding to the bid/offer is lowered after bid/offer submission and is lower than the submitted cumulative quantity, then the bid/offer quantity is capped at the capacity of the Trading Right. For bids, this is less any price taker bid quantity associated with the Trading Right."
+        },
+        {
+          "name": "bid_offer_type",
+          "not_null": true,
+          "primary_key": false,
+          "description": "Whether this is an offer (O) to supply gas to the hub or a bid (B) to flow gas from the hub for consumption at the hub or flow away from the hub. Valid values are B and O."
+        },
+        {
+          "name": "report_datetime",
+          "not_null": true,
+          "primary_key": false,
+          "description": "The date and time the report was generated."
+        }
+      ]
     }
   ],
   "landing_only_gaps": [
