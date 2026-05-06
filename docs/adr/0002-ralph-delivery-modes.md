@@ -49,7 +49,9 @@ automation volume and launch explicit dependency-wave asset batches for the
 in-process inside Podman run-worker containers to reduce LocalStack and Delta
 Lake DynamoDB lock-table contention, and the generated stack uses fixed service
 IPs for Postgres, LocalStack, and the AEMO ETL code server to avoid relying on
-Podman DNS during the gate. The gate still requires every
+Podman DNS during the gate. Direct launch paces batch submission against
+`max_concurrent_runs` so queued runs remain within the Promotion guard budget.
+The gate still requires every
 materializable `gas_model` asset and final asset-check status to pass. Its e2e
 run manifest records the selected scenario, launch mode, target group, target
 asset count, selected upstream closure count, skipped live source asset keys,

@@ -131,7 +131,9 @@ skipping live `bronze_nemweb_public_files_*` discovery/listing assets so it
 starts from seeded LocalStack objects. This preserves the mandatory final target
 and asset-check status without the full sensor-triggered run queue. Each
 Promotion batch uses Dagster's in-process executor inside its Podman run-worker
-container to reduce LocalStack and Delta Lake DynamoDB lock-table contention.
+container to reduce LocalStack and Delta Lake DynamoDB lock-table contention,
+and direct launch paces batch submission against `max_concurrent_runs` so
+queued runs remain within the Promotion guard budget.
 The generated stack uses fixed service IPs for Postgres, LocalStack, and the
 AEMO ETL code server so run-worker containers do not depend on Podman DNS during
 high-concurrency Promotion gates. Its run

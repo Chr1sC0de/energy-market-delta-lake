@@ -122,8 +122,10 @@ Local workflow notes:
   assets. Each batch runs in-process inside its Podman run-worker container,
   and the generated stack uses fixed service IPs for Postgres, LocalStack, and
   the AEMO ETL code server. This preserves final `gas_model` target progress and
-  asset-check status as the **Promotion** gate. For direct launches, the
-  dataflow manifest records the scenario, launch mode, target group, target
+  asset-check status as the **Promotion** gate. Direct launches pace batch
+  submission against `max_concurrent_runs` before starting more work in a
+  dependency wave, keeping the queued-run budget bounded. For direct launches,
+  the dataflow manifest records the scenario, launch mode, target group, target
   asset count, selected upstream closure count, skipped live source asset keys,
   dependency-wave count, run-batch count, and asset batch size. The scenario
   also enforces

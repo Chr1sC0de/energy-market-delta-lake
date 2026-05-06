@@ -1336,6 +1336,123 @@ def test_promotion_upstream_launch_uses_dependency_waves() -> None:
     }
 
 
+def test_promotion_upstream_launch_paces_batches_to_run_capacity() -> None:
+    """Promotion direct launches do not burst past Dagster run capacity."""
+    module = load_e2e_command_module()
+    selector_class = get_callable(module, "DagsterRepositorySelector")
+    launch_assets = get_callable(module, "launch_gas_model_upstream_assets")
+
+    class FakeClient:
+        """Return a wide wave and fail if launches are not paced."""
+
+        def __init__(self) -> None:
+            self.execution_params: list[Mapping[str, object]] = []
+            self.launches_since_status = 0
+            self.status_checks = 0
+
+        def execute(
+            self,
+            query: str,
+            variables: Mapping[str, object] | None = None,
+            *,
+            timeout_seconds: int | None = None,
+        ) -> Mapping[str, object]:
+            if "assetNodes" in query:
+                assert timeout_seconds is None
+                return {
+                    "assetNodes": [
+                        {
+                            "assetKey": {"path": ["silver", "gas_model", "target"]},
+                            "groupName": "gas_model",
+                            "isMaterializable": True,
+                            "dependencyKeys": [
+                                {"path": ["bronze", "gbb", f"raw_{index}"]}
+                                for index in range(9)
+                            ],
+                        },
+                        *[
+                            {
+                                "assetKey": {"path": ["bronze", "gbb", f"raw_{index}"]},
+                                "groupName": "gas_raw",
+                                "isMaterializable": True,
+                                "dependencyKeys": [
+                                    {
+                                        "path": [
+                                            "bronze",
+                                            "gbb",
+                                            "bronze_nemweb_public_files_gbb",
+                                        ]
+                                    }
+                                ],
+                            }
+                            for index in range(9)
+                        ],
+                    ]
+                }
+            if "activeRuns: runsOrError" in query:
+                self.status_checks += 1
+                self.launches_since_status = 0
+                return {
+                    "activeRuns": {"__typename": "Runs", "results": []},
+                    "failedRuns": {"__typename": "Runs", "results": []},
+                    "allRuns": {"__typename": "Runs", "results": []},
+                }
+
+            assert "launchRun" in query
+            assert variables is not None
+            assert self.launches_since_status < 2
+            self.launches_since_status += 1
+            execution_params = variables["executionParams"]
+            assert isinstance(execution_params, Mapping)
+            self.execution_params.append(execution_params)
+            return {
+                "launchRun": {
+                    "__typename": "LaunchRunSuccess",
+                    "run": {
+                        "runId": f"run-{len(self.execution_params)}",
+                        "status": "QUEUED",
+                    },
+                }
+            }
+
+    class FakeRunner:
+        """Return no failed asset checks after capacity and wave waits."""
+
+        def run(
+            self,
+            args: list[str],
+            *,
+            cwd: Path | None = None,
+            env: Mapping[str, str] | None = None,
+            capture_output: bool = False,
+            check: bool = True,
+        ) -> subprocess.CompletedProcess[str]:
+            del cwd, env, capture_output, check
+            assert args[:3] == ["podman", "exec", "aemo-etl-e2e-postgres"]
+            return subprocess.CompletedProcess(args, 0, stdout="[]\n", stderr="")
+
+    client = FakeClient()
+
+    launch_result = launch_assets(
+        client,
+        selector_class("repo", "aemo-etl"),
+        run_id="e2e",
+        started_after=100.0,
+        timeout_seconds=1200,
+        max_active_runs=2,
+        runner=FakeRunner(),
+    )
+
+    assert getattr(launch_result, "run_ids") == (
+        "run-1",
+        "run-2",
+        "run-3",
+        "run-4",
+    )
+    assert client.status_checks == 3
+    assert getattr(launch_result, "scenario_evidence")["batch_count"] == 4
+
+
 def test_asset_launch_timeout_propagates_without_retry() -> None:
     """A launch timeout fails without retrying the non-idempotent mutation."""
     module = load_e2e_command_module()

@@ -1832,6 +1832,7 @@ def drive_dagster_dataflow(
         run_id=run_id,
         started_after=started_after,
         timeout_seconds=remaining_timeout_seconds(deadline),
+        max_concurrent_runs=expected_max_concurrent_runs,
         runner=command_runner,
         telemetry=dataflow_telemetry,
     )
@@ -2137,12 +2138,13 @@ def launch_dataflow_runs(
     run_id: str,
     started_after: float,
     timeout_seconds: int,
+    max_concurrent_runs: int,
     runner: CommandRunner | None = None,
     telemetry: DagsterDataflowTelemetry | None = None,
 ) -> DagsterDataflowLaunchResult:
     """Launch the selected scenario's Dagster dataflow runs."""
     if launch_mode == SENSOR_DRIVEN_LAUNCH_MODE:
-        del started_after, timeout_seconds, runner, telemetry
+        del started_after, timeout_seconds, max_concurrent_runs, runner, telemetry
         start_expected_sensors(client, selector)
         validate_dagster_automation_state(
             fetch_dagster_definition_state(client),
@@ -2161,6 +2163,7 @@ def launch_dataflow_runs(
             run_id=run_id,
             started_after=started_after,
             timeout_seconds=timeout_seconds,
+            max_active_runs=max_concurrent_runs,
             runner=runner,
             telemetry=telemetry,
         )
@@ -2207,10 +2210,14 @@ def launch_gas_model_upstream_assets(
     run_id: str,
     started_after: float,
     timeout_seconds: int,
+    max_active_runs: int = DEFAULT_MAX_CONCURRENT_RUNS,
     runner: CommandRunner | None = None,
     telemetry: DagsterDataflowTelemetry | None = None,
 ) -> DagsterDataflowLaunchResult:
     """Launch explicit asset graph batches for the gas_model Promotion target."""
+    if max_active_runs <= 0:
+        raise CommandError("max active Promotion asset runs must be greater than zero")
+
     asset_nodes = fetch_dagster_asset_graph(client)
     launch_plan = build_gas_model_upstream_asset_launch_plan(
         asset_nodes,
@@ -2230,7 +2237,17 @@ def launch_gas_model_upstream_assets(
             f"{len(wave.asset_keys)} assets in {len(batches)} run batches\n"
         )
         sys.stdout.flush()
+        active_run_count = 0
         for batch_index, batch in enumerate(batches, start=1):
+            if active_run_count >= max_active_runs:
+                status = wait_for_dagster_run_launch_slot(
+                    client,
+                    started_after=started_after,
+                    timeout_seconds=remaining_timeout_seconds(deadline),
+                    max_active_runs=max_active_runs,
+                    telemetry=telemetry,
+                )
+                active_run_count = len(status.active_runs)
             sys.stdout.write(
                 "Launching Promotion asset batch "
                 f"{batch_index}/{len(batches)} for wave {wave.index}: "
@@ -2247,6 +2264,7 @@ def launch_gas_model_upstream_assets(
                     run_config_data=PROMOTION_ASSET_RUN_CONFIG,
                 )
             )
+            active_run_count += 1
         wait_for_dagster_run_wave(
             client,
             started_after=started_after,
@@ -2258,6 +2276,45 @@ def launch_gas_model_upstream_assets(
     return DagsterDataflowLaunchResult(
         run_ids=tuple(run_ids),
         scenario_evidence=launch_plan.to_manifest(),
+    )
+
+
+def wait_for_dagster_run_launch_slot(
+    client: DagsterGraphQLClient,
+    *,
+    started_after: float,
+    timeout_seconds: int,
+    max_active_runs: int,
+    poll_interval_seconds: int = DEFAULT_DAGSTER_POLL_INTERVAL_SECONDS,
+    telemetry: DagsterDataflowTelemetry | None = None,
+) -> DagsterDataflowStatus:
+    """Wait until one Promotion asset batch launch slot is available."""
+    if max_active_runs <= 0:
+        raise CommandError("max active Promotion asset runs must be greater than zero")
+
+    deadline = time.monotonic() + timeout_seconds
+    last_summary = "Dagster run capacity has not been checked yet"
+    while time.monotonic() < deadline:
+        status = fetch_dagster_run_wave_status(
+            client,
+            started_after=started_after,
+        )
+        if telemetry is not None:
+            telemetry.record_status_sample(status)
+        last_summary = summarize_dagster_run_wave_status(status)
+        sys.stdout.write(f"{last_summary}\n")
+        sys.stdout.flush()
+        if status.failed_runs:
+            raise CommandError(
+                "Dagster run wave failed: failed runs: "
+                + ", ".join(status.failed_runs[:10])
+            )
+        if len(status.active_runs) < max_active_runs:
+            return status
+        time.sleep(poll_interval_seconds)
+
+    raise CommandError(
+        f"timed out waiting for Dagster run launch slot: {last_summary}"
     )
 
 

@@ -243,7 +243,10 @@ while skipping live `bronze_nemweb_public_files_*` discovery/listing assets and
 narrowing the seed horizon to 1 raw object and 1 zip object. Promotion asset
 batches use Dagster's in-process executor inside Podman run-worker containers,
 with a 20 minute timeout and `max_concurrent_runs` `6`; Ralph **Promotion** uses
-that scenario from the isolated source worktree. Override these values with
+that scenario from the isolated source worktree. Direct Promotion launches pace
+asset-run batch submission against `max_concurrent_runs` before starting more
+batches in a dependency wave so the queued-run guard remains bounded. Override
+these values with
 `--webserver-port`, `--timeout-seconds`, `--max-concurrent-runs`,
 `--raw-latest-count`, and `--zip-latest-count`.
 

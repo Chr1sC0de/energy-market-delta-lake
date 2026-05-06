@@ -334,7 +334,9 @@ containers, and the Dagster GraphQL monitor. The full scenario verifies the
 sensor/dependency path. The Promotion scenario verifies the same final coverage
 through an explicit graph-scoped Dagster asset launch so the **Promotion** gate
 can stay inside the 20 minute budget without bypassing the final target or
-asset-check monitor.
+asset-check monitor. Direct Promotion launches pace asset-run batch submission
+against Dagster `max_concurrent_runs` so the queued-run budget remains bounded
+while dependency-wave ordering is preserved.
 
 The `promotion-gas-model` scenario may reduce incidental automation volume by
 narrowing seed horizon, started sensors, or run-launch shape, but it must still

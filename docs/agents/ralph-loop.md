@@ -532,7 +532,9 @@ source asset keys, dependency-wave count, run-batch count, and asset batch size.
 The gate enforces Promotion guard regression budgets from the approved targeted
 baseline: 20 minute total duration, `6` peak active runs, `6` peak queued runs,
 `48` total Dagster runs, `29/29` target progress, and `0` missing or failed
-target assets and asset checks. Budget failures print observed values,
+target assets and asset checks. Direct Promotion launches pace batch submission
+against `max_concurrent_runs` before starting more work in a dependency wave so
+the queued-run budget remains bounded. Budget failures print observed values,
 thresholds, and the run manifest path. Because the aggregate **Push check** and
 gate run first, source-branch changes cannot reach a Promotion merge, `main`
 push, `dev` branch sync, GitHub metadata update, or issue closure without
