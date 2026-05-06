@@ -326,6 +326,16 @@ loop. Each cycle records a compact checkpoint under
 `.ralph/runs/.../ralph-run.json` manifest for the issue or **Promotion** that
 just crossed a boundary.
 
+Completed or stopped Operator runs also write
+`.ralph/operator-runs/.../operator-run-rollup.md` and
+`.ralph/operator-runs/.../operator-run-rollup.json`. The Markdown rollup is the
+first review surface for the full drain-and-**Promotion** run; the JSON rollup
+is the stable tooling surface for issue outcomes, manual recoveries, **Local
+integration** commits, **Promotion** commits, QA surfaces,
+**Post-promotion review** follow-ups, final queue state, and stop or failure
+reasons. Both rollups record the underlying child `.ralph/runs/.../ralph-run.json`
+paths without tailing child Codex JSONL or rich command logs.
+
 The Operator run checks the open GitHub Issue queue for these runtime states:
 
 - `ready-for-agent`
@@ -364,9 +374,11 @@ python3 scripts/ralph.py --operator-run-status .ralph/operator-runs/operator-202
 ```
 
 Status reports the current state, last checkpoint, current issue or
-**Promotion**, child manifest paths, queue counts, and recommended next action.
-Open the child `ralph-run.json` or command logs only when the status guidance
-points to a failed issue, failed **Promotion**, or manual recovery condition.
+**Promotion**, child manifest paths, rollup artifact paths, queue counts, and
+recommended next action. Read `operator-run-rollup.md` first for completed or
+stopped runs. Open the child `ralph-run.json` or command logs only when the
+status guidance or rollup points to a failed issue, failed **Promotion**, or
+manual recovery condition.
 
 ## AFK run monitoring
 

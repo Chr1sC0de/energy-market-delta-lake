@@ -85,6 +85,9 @@ GITFLOW_RECOVERY_CONTEXT_PATTERN = re.compile(
 MANIFEST_NAME = "ralph-run.json"
 MANIFEST_SCHEMA_VERSION = 1
 OPERATOR_MANIFEST_NAME = "operator-run.json"
+OPERATOR_ROLLUP_JSON_NAME = "operator-run-rollup.json"
+OPERATOR_ROLLUP_MARKDOWN_NAME = "operator-run-rollup.md"
+OPERATOR_ROLLUP_SCHEMA_VERSION = 1
 OPERATOR_RUN_ROOT_NAME = "operator-runs"
 OPERATOR_RUN_PREFIX = "operator"
 OPERATOR_QUEUE_LABELS = frozenset(
@@ -1341,6 +1344,7 @@ class OperatorRunManifest:
                 "checkpoints": [],
                 "child_run_manifests": [],
                 "queue": operator_queue_payload(OperatorQueueSnapshot((), (), (), ())),
+                "rollup_artifacts": operator_rollup_artifact_payload(run_dir),
                 "recovery_guidance": None,
                 "failure": None,
                 "events": [],
@@ -1525,6 +1529,7 @@ class OperatorRunManifest:
 
     def _write(self) -> None:
         self.data["updated_at"] = utc_now_text()
+        self.data["rollup_artifacts"] = operator_rollup_artifact_payload(self.path.parent)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = self.path.with_name(f"{self.path.name}.tmp")
         tmp_path.write_text(
@@ -1532,6 +1537,8 @@ class OperatorRunManifest:
             encoding="utf-8",
         )
         tmp_path.replace(self.path)
+        if operator_run_has_terminal_status(self.data):
+            write_operator_rollup_artifacts(self.path, self.data)
 
 
 def issue_payload_for_operator(issue: Issue) -> dict[str, Any]:
@@ -1550,6 +1557,768 @@ def operator_queue_payload(snapshot: OperatorQueueSnapshot) -> dict[str, Any]:
         "running": [issue_payload_for_operator(issue) for issue in snapshot.running],
         "failed": [issue_payload_for_operator(issue) for issue in snapshot.failed],
     }
+
+
+def operator_rollup_artifact_payload(run_dir: Path) -> dict[str, str]:
+    return {
+        "markdown": str(run_dir / OPERATOR_ROLLUP_MARKDOWN_NAME),
+        "json": str(run_dir / OPERATOR_ROLLUP_JSON_NAME),
+    }
+
+
+def operator_run_has_terminal_status(data: dict[str, Any]) -> bool:
+    return str(data.get("status") or "") in {"succeeded", "failed"}
+
+
+def write_operator_rollup_artifacts(
+    operator_manifest_path: Path,
+    data: dict[str, Any],
+) -> None:
+    rollup = build_operator_run_rollup(operator_manifest_path, data)
+    run_dir = operator_manifest_path.parent
+    json_path = run_dir / OPERATOR_ROLLUP_JSON_NAME
+    markdown_path = run_dir / OPERATOR_ROLLUP_MARKDOWN_NAME
+    write_json_artifact(json_path, rollup)
+    write_text_artifact(markdown_path, render_operator_run_rollup_markdown(rollup))
+
+
+def write_json_artifact(path: Path, payload: dict[str, Any]) -> None:
+    write_text_artifact(path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+
+def write_text_artifact(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f"{path.name}.tmp")
+    tmp_path.write_text(text, encoding="utf-8")
+    tmp_path.replace(path)
+
+
+def build_operator_run_rollup(
+    operator_manifest_path: Path,
+    data: dict[str, Any],
+) -> dict[str, Any]:
+    child_sources = operator_child_manifest_sources(data)
+    issue_entries = operator_rollup_issue_entries(data, child_sources)
+    promotion_entries = operator_rollup_promotion_entries(data, child_sources)
+    local_integrations = operator_rollup_local_integrations(issue_entries)
+    qa_surfaces = [
+        surface
+        for source in child_sources
+        for surface in operator_rollup_qa_surfaces(source)
+    ]
+    post_promotion_followups = [
+        operator_rollup_followup_entry(promotion)
+        for promotion in promotion_entries
+        if promotion.get("post_promotion_followups") is not None
+    ]
+    manual_recoveries = [
+        recovery
+        for promotion in promotion_entries
+        for recovery in promotion.get("manual_recoveries", [])
+        if isinstance(recovery, dict)
+    ]
+    final_queue = operator_rollup_final_queue(data)
+    stop_reason = operator_rollup_stop_reason(data)
+    failed_attempts = [
+        *issue_entries["failed"],
+        *[
+            promotion
+            for promotion in promotion_entries
+            if promotion.get("status") not in {"succeeded"}
+        ],
+    ]
+
+    return {
+        "schema_version": OPERATOR_ROLLUP_SCHEMA_VERSION,
+        "run_kind": "operator_rollup",
+        "operator_run": {
+            "repo": data.get("repo"),
+            "status": data.get("status"),
+            "state": data.get("state"),
+            "started_at": data.get("started_at"),
+            "updated_at": data.get("updated_at"),
+            "cycle": data.get("cycle"),
+            "max_cycles": data.get("max_cycles"),
+            "run_dir": str(operator_manifest_path.parent),
+            "manifest_path": str(operator_manifest_path),
+            "recovery_guidance": data.get("recovery_guidance"),
+            "failure": data.get("failure"),
+        },
+        "artifacts": {
+            "operator_manifest": str(operator_manifest_path),
+            "markdown_rollup": str(
+                operator_manifest_path.parent / OPERATOR_ROLLUP_MARKDOWN_NAME
+            ),
+            "json_rollup": str(operator_manifest_path.parent / OPERATOR_ROLLUP_JSON_NAME),
+            "child_run_root": operator_child_run_root(data),
+        },
+        "summary": {
+            "succeeded_issues": len(issue_entries["succeeded"]),
+            "failed_issues": len(issue_entries["failed"]),
+            "failed_attempts": len(failed_attempts),
+            "local_integrations": len(local_integrations),
+            "promotions": len(promotion_entries),
+            "manual_recoveries": len(manual_recoveries),
+            "qa_surfaces": len(qa_surfaces),
+            "post_promotion_followups": len(post_promotion_followups),
+            "final_queue_clean": final_queue["clean"],
+        },
+        "issues": issue_entries,
+        "failed_attempts": failed_attempts,
+        "manual_recoveries": manual_recoveries,
+        "local_integrations": local_integrations,
+        "promotions": promotion_entries,
+        "qa_surfaces": qa_surfaces,
+        "post_promotion_followups": post_promotion_followups,
+        "final_queue": final_queue,
+        "stop_reason": stop_reason,
+    }
+
+
+def operator_child_run_root(data: dict[str, Any]) -> str | None:
+    paths = data.get("paths")
+    if not isinstance(paths, dict):
+        return None
+    child_run_root = paths.get("child_run_root")
+    return str(child_run_root) if child_run_root else None
+
+
+def operator_child_manifest_sources(data: dict[str, Any]) -> list[dict[str, Any]]:
+    child_runs = data.get("child_run_manifests")
+    if not isinstance(child_runs, list):
+        return []
+
+    sources: list[dict[str, Any]] = []
+    for child in child_runs:
+        if not isinstance(child, dict):
+            continue
+        manifest_path = str(child.get("path") or "")
+        child_data, read_status, error = read_rollup_child_manifest(manifest_path)
+        kind = child_data.get("run_kind") if child_data is not None else child.get("kind")
+        status = child_data.get("status") if child_data is not None else child.get("status")
+        stage = child_data.get("stage") if child_data is not None else child.get("stage")
+        source: dict[str, Any] = {
+            "manifest_path": manifest_path,
+            "manifest_read_status": read_status,
+            "manifest_error": error,
+            "child_entry": child,
+            "data": child_data,
+            "kind": str(kind or "unknown"),
+            "status": str(status or "unknown"),
+            "stage": str(stage or "unknown"),
+        }
+        issue = operator_issue_payload_from_values(
+            child.get("issue"),
+            child_data.get("issue") if child_data is not None else None,
+        )
+        if issue is not None:
+            source["issue"] = issue
+        sources.append(source)
+    return sources
+
+
+def read_rollup_child_manifest(
+    manifest_path: str,
+) -> tuple[dict[str, Any] | None, str, str | None]:
+    if manifest_path == "":
+        return None, "missing_path", None
+    path = Path(manifest_path)
+    if not path.exists():
+        return None, "missing", None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        return None, "invalid", str(error)
+    if not isinstance(data, dict):
+        return None, "invalid", "manifest root is not an object"
+    return data, "loaded", None
+
+
+def operator_issue_payload_from_values(*values: Any) -> dict[str, Any] | None:
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        number = value.get("number")
+        if number is None:
+            continue
+        return {
+            "number": number,
+            "title": value.get("title"),
+            "url": value.get("url"),
+        }
+    return None
+
+
+def operator_rollup_issue_entries(
+    data: dict[str, Any],
+    child_sources: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    child_by_path = {
+        str(source.get("manifest_path") or ""): source
+        for source in child_sources
+        if source.get("kind") == "implementation"
+    }
+    entries: dict[str, list[dict[str, Any]]] = {"succeeded": [], "failed": []}
+    seen_paths: set[str] = set()
+    checkpoints = data.get("checkpoints")
+    if isinstance(checkpoints, list):
+        for checkpoint in checkpoints:
+            if not isinstance(checkpoint, dict):
+                continue
+            checkpoint_name = str(checkpoint.get("checkpoint") or "")
+            if checkpoint_name not in {"issue_succeeded", "issue_failed"}:
+                continue
+            manifest_path = str(checkpoint.get("child_manifest_path") or "")
+            child_source = child_by_path.get(manifest_path)
+            issue = operator_issue_payload_from_values(
+                checkpoint.get("issue"),
+                child_source.get("issue") if child_source is not None else None,
+            )
+            entry = operator_issue_rollup_entry(
+                issue=issue,
+                child_source=child_source,
+                checkpoint=checkpoint,
+            )
+            status_key = "succeeded" if checkpoint_name == "issue_succeeded" else "failed"
+            entries[status_key].append(entry)
+            if manifest_path:
+                seen_paths.add(manifest_path)
+
+    for source in child_sources:
+        if source.get("kind") != "implementation":
+            continue
+        manifest_path = str(source.get("manifest_path") or "")
+        if manifest_path in seen_paths:
+            continue
+        entry = operator_issue_rollup_entry(
+            issue=source.get("issue") if isinstance(source.get("issue"), dict) else None,
+            child_source=source,
+            checkpoint=None,
+        )
+        status_key = "succeeded" if source.get("status") == "succeeded" else "failed"
+        entries[status_key].append(entry)
+    return entries
+
+
+def operator_issue_rollup_entry(
+    *,
+    issue: dict[str, Any] | None,
+    child_source: dict[str, Any] | None,
+    checkpoint: dict[str, Any] | None,
+) -> dict[str, Any]:
+    child_data = child_source.get("data") if child_source is not None else None
+    child_data = child_data if isinstance(child_data, dict) else {}
+    manifest_path = (
+        str(child_source.get("manifest_path") or "") if child_source is not None else ""
+    )
+    entry: dict[str, Any] = {
+        "issue": issue,
+        "status": (
+            str(child_source.get("status") or "unknown")
+            if child_source is not None
+            else "unknown"
+        ),
+        "checkpoint": checkpoint.get("checkpoint") if checkpoint is not None else None,
+        "message": checkpoint.get("message") if checkpoint is not None else None,
+        "manifest_path": manifest_path,
+        "manifest_read_status": (
+            child_source.get("manifest_read_status") if child_source is not None else None
+        ),
+        "delivery_mode": child_data.get("delivery_mode"),
+        "integration_target": child_data.get("integration_target"),
+        "local_integration_commit": normalized_commit_payload(
+            child_data.get("integration_commit")
+        ),
+        "qa": operator_rollup_qa_summary(child_data),
+        "ready_issue_refresh_status": operator_rollup_nested_status(
+            child_data, "ready_issue_refresh"
+        ),
+        "failure": child_data.get("failure"),
+    }
+    if child_source is not None and child_source.get("manifest_error") is not None:
+        entry["manifest_error"] = child_source.get("manifest_error")
+    return entry
+
+
+def normalized_commit_payload(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    sha = value.get("sha")
+    if not sha:
+        return None
+    return {"sha": sha, "branch": value.get("branch")}
+
+
+def operator_rollup_nested_status(data: dict[str, Any], key: str) -> str | None:
+    value = data.get(key)
+    if not isinstance(value, dict):
+        return None
+    status = value.get("status")
+    return str(status) if status is not None else None
+
+
+def operator_rollup_qa_summary(data: dict[str, Any]) -> dict[str, Any]:
+    results = data.get("qa_results")
+    if not isinstance(results, list) or not results:
+        return {"status": "not_started", "surfaces": [], "counts": {}}
+    surfaces = [
+        operator_rollup_qa_result(result)
+        for result in results
+        if isinstance(result, dict)
+    ]
+    counts: dict[str, int] = {}
+    for surface in surfaces:
+        status = str(surface.get("status") or "unknown")
+        counts[status] = counts.get(status, 0) + 1
+    if counts.get("failed", 0) > 0:
+        status = "failed"
+    elif counts.get("running", 0) > 0:
+        status = "running"
+    elif surfaces and counts.get("passed", 0) == len(surfaces):
+        status = "passed"
+    else:
+        status = "mixed"
+    return {"status": status, "surfaces": surfaces, "counts": counts}
+
+
+def operator_rollup_qa_result(result: dict[str, Any]) -> dict[str, Any]:
+    command_value = result.get("command")
+    command = (
+        [str(part) for part in command_value]
+        if isinstance(command_value, list)
+        else []
+    )
+    return {
+        "name": result.get("name") or format_command(command),
+        "status": result.get("status") or "unknown",
+        "command": command,
+        "command_text": format_command(command),
+        "cwd": result.get("cwd"),
+        "log_path": result.get("log_path"),
+    }
+
+
+def operator_rollup_qa_surfaces(source: dict[str, Any]) -> list[dict[str, Any]]:
+    data = source.get("data")
+    if not isinstance(data, dict):
+        return []
+    qa = operator_rollup_qa_summary(data)
+    surfaces = qa.get("surfaces")
+    if not isinstance(surfaces, list):
+        return []
+    context = {
+        "run_kind": source.get("kind"),
+        "status": source.get("status"),
+        "manifest_path": source.get("manifest_path"),
+    }
+    if isinstance(source.get("issue"), dict):
+        context["issue"] = source["issue"]
+    promotion_commit = normalized_commit_payload(data.get("promotion_commit"))
+    if promotion_commit is not None:
+        context["promotion_commit"] = promotion_commit
+    return [{**context, **surface} for surface in surfaces if isinstance(surface, dict)]
+
+
+def operator_rollup_local_integrations(
+    issue_entries: dict[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    integrations: list[dict[str, Any]] = []
+    for entry in [*issue_entries["succeeded"], *issue_entries["failed"]]:
+        commit = entry.get("local_integration_commit")
+        if not isinstance(commit, dict):
+            continue
+        if entry.get("delivery_mode") == EXPLORATORY_MODE:
+            continue
+        integrations.append(
+            {
+                "issue": entry.get("issue"),
+                "status": entry.get("status"),
+                "delivery_mode": entry.get("delivery_mode"),
+                "integration_target": entry.get("integration_target"),
+                "commit": commit,
+                "manifest_path": entry.get("manifest_path"),
+            }
+        )
+    return integrations
+
+
+def operator_rollup_promotion_entries(
+    data: dict[str, Any],
+    child_sources: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    child_by_path = {
+        str(source.get("manifest_path") or ""): source
+        for source in child_sources
+        if source.get("kind") == "promotion"
+    }
+    entries: list[dict[str, Any]] = []
+    seen_paths: set[str] = set()
+    checkpoints = data.get("checkpoints")
+    if isinstance(checkpoints, list):
+        for checkpoint in checkpoints:
+            if not isinstance(checkpoint, dict):
+                continue
+            checkpoint_name = str(checkpoint.get("checkpoint") or "")
+            if checkpoint_name not in {"promotion_succeeded", "promotion_failed"}:
+                continue
+            manifest_path = str(checkpoint.get("child_manifest_path") or "")
+            source = child_by_path.get(manifest_path)
+            entries.append(operator_promotion_rollup_entry(source, checkpoint=checkpoint))
+            if manifest_path:
+                seen_paths.add(manifest_path)
+
+    for source in child_sources:
+        if source.get("kind") != "promotion":
+            continue
+        manifest_path = str(source.get("manifest_path") or "")
+        if manifest_path in seen_paths:
+            continue
+        entries.append(operator_promotion_rollup_entry(source, checkpoint=None))
+    return entries
+
+
+def operator_promotion_rollup_entry(
+    source: dict[str, Any] | None,
+    *,
+    checkpoint: dict[str, Any] | None,
+) -> dict[str, Any]:
+    child_data = source.get("data") if source is not None else None
+    child_data = child_data if isinstance(child_data, dict) else {}
+    manifest_path = str(source.get("manifest_path") or "") if source is not None else ""
+    followups = child_data.get("post_promotion_followups")
+    followups = followups if isinstance(followups, dict) else None
+    review = child_data.get("post_promotion_review")
+    review = review if isinstance(review, dict) else None
+    metadata = child_data.get("github_metadata")
+    metadata = metadata if isinstance(metadata, dict) else {}
+    inventory = child_data.get("promotion_commit_inventory")
+    inventory = inventory if isinstance(inventory, dict) else {}
+    changed_files = child_data.get("changed_files")
+    changed_files = changed_files if isinstance(changed_files, list) else []
+    issues = metadata.get("issues")
+    issues = issues if isinstance(issues, list) else []
+    manual_recoveries = operator_rollup_manual_recoveries(issues, manifest_path)
+    return {
+        "status": (
+            str(source.get("status") or "unknown") if source is not None else "unknown"
+        ),
+        "checkpoint": checkpoint.get("checkpoint") if checkpoint is not None else None,
+        "message": checkpoint.get("message") if checkpoint is not None else None,
+        "manifest_path": manifest_path,
+        "manifest_read_status": (
+            source.get("manifest_read_status") if source is not None else None
+        ),
+        "source_branch": child_data.get("source_branch"),
+        "target_branch": child_data.get("integration_target"),
+        "promotion_commit": normalized_commit_payload(child_data.get("promotion_commit")),
+        "qa": operator_rollup_qa_summary(child_data),
+        "changed_files_count": len(changed_files),
+        "verified_issues": [
+            operator_rollup_metadata_issue(issue)
+            for issue in issues
+            if isinstance(issue, dict) and issue.get("integrated_commit")
+        ],
+        "manual_recoveries": manual_recoveries,
+        "unverified_commits": operator_rollup_unverified_commits(inventory),
+        "post_promotion_review": review,
+        "post_promotion_followups": followups,
+        "failure": child_data.get("failure"),
+    }
+
+
+def operator_rollup_metadata_issue(issue: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "number": issue.get("number"),
+        "title": issue.get("title"),
+        "url": issue.get("url"),
+        "integrated_commit": issue.get("integrated_commit"),
+        "metadata_status": issue.get("metadata_status"),
+    }
+
+
+def operator_rollup_manual_recoveries(
+    issues: list[Any],
+    manifest_path: str,
+) -> list[dict[str, Any]]:
+    recoveries: list[dict[str, Any]] = []
+    for issue in issues:
+        if not isinstance(issue, dict):
+            continue
+        metadata_status = str(issue.get("metadata_status") or "")
+        warning = str(issue.get("warning") or "")
+        recovery_action = str(issue.get("recovery_action") or "")
+        if (
+            "manual" not in metadata_status
+            and "manual" not in warning.lower()
+            and "manual" not in recovery_action.lower()
+        ):
+            continue
+        recoveries.append(
+            {
+                "issue": operator_rollup_metadata_issue(issue),
+                "metadata_status": metadata_status,
+                "warning": warning or None,
+                "recovery_action": recovery_action or None,
+                "manifest_path": manifest_path,
+            }
+        )
+    return recoveries
+
+
+def operator_rollup_unverified_commits(inventory: dict[str, Any]) -> list[dict[str, Any]]:
+    commits = inventory.get("commits")
+    if not isinstance(commits, list):
+        return []
+    return [
+        {
+            "sha": commit.get("sha"),
+            "subject": commit.get("subject"),
+            "classification": commit.get("classification"),
+        }
+        for commit in commits
+        if isinstance(commit, dict)
+        and commit.get("classification") == "unverified_promotion_commit"
+    ]
+
+
+def operator_rollup_followup_entry(promotion: dict[str, Any]) -> dict[str, Any]:
+    followups = promotion.get("post_promotion_followups")
+    followups = followups if isinstance(followups, dict) else {}
+    return {
+        "status": followups.get("status"),
+        "enabled": followups.get("enabled"),
+        "created": followups.get("created") if isinstance(followups.get("created"), list) else [],
+        "duplicates": (
+            followups.get("duplicates") if isinstance(followups.get("duplicates"), list) else []
+        ),
+        "validation_downgrades": (
+            followups.get("validation_downgrades")
+            if isinstance(followups.get("validation_downgrades"), list)
+            else []
+        ),
+        "failures": (
+            followups.get("failures") if isinstance(followups.get("failures"), list) else []
+        ),
+        "recovery_guidance": followups.get("recovery_guidance"),
+        "manifest_path": promotion.get("manifest_path"),
+        "review_artifact_path": (
+            promotion.get("post_promotion_review", {}).get("artifact_path")
+            if isinstance(promotion.get("post_promotion_review"), dict)
+            else None
+        ),
+    }
+
+
+def operator_rollup_final_queue(data: dict[str, Any]) -> dict[str, Any]:
+    queue = data.get("queue")
+    queue = queue if isinstance(queue, dict) else {}
+    counts = {
+        key: len(queue.get(key)) if isinstance(queue.get(key), list) else 0
+        for key in ("ready", "integrated", "running", "failed")
+    }
+    clean = all(count == 0 for count in counts.values())
+    return {
+        "clean": clean,
+        "counts": counts,
+        "issues": {
+            key: queue.get(key) if isinstance(queue.get(key), list) else []
+            for key in ("ready", "integrated", "running", "failed")
+        },
+    }
+
+
+def operator_rollup_stop_reason(data: dict[str, Any]) -> dict[str, Any] | None:
+    last_checkpoint = data.get("last_checkpoint")
+    last_checkpoint = last_checkpoint if isinstance(last_checkpoint, dict) else {}
+    checkpoint_name = str(last_checkpoint.get("checkpoint") or "")
+    failure = data.get("failure")
+    status = str(data.get("status") or "")
+    if status == "succeeded" and checkpoint_name == "queue_clean":
+        return None
+    if checkpoint_name == "" and not isinstance(failure, dict):
+        return None
+    return {
+        "checkpoint": checkpoint_name or None,
+        "message": last_checkpoint.get("message"),
+        "recovery_guidance": data.get("recovery_guidance"),
+        "failure": failure if isinstance(failure, dict) else None,
+        "stopped_by_guard": checkpoint_name == "stopped_by_guard",
+    }
+
+
+def render_operator_run_rollup_markdown(rollup: dict[str, Any]) -> str:
+    operator_run = rollup["operator_run"]
+    summary = rollup["summary"]
+    lines = [
+        "# Ralph Operator Run Rollup",
+        "",
+        f"- Status: `{operator_run.get('status')}` / `{operator_run.get('state')}`",
+        f"- Run directory: `{operator_run.get('run_dir')}`",
+        f"- Cycle: `{operator_run.get('cycle')}` / `{operator_run.get('max_cycles')}`",
+        f"- Issues: {summary['succeeded_issues']} succeeded, {summary['failed_issues']} failed",
+        f"- Promotions: {summary['promotions']}",
+        f"- Final queue clean: {'yes' if summary['final_queue_clean'] else 'no'}",
+        "",
+        "## Issues",
+        "",
+        *operator_rollup_issue_markdown_lines("Succeeded", rollup["issues"]["succeeded"]),
+        "",
+        *operator_rollup_issue_markdown_lines("Failed", rollup["issues"]["failed"]),
+        "",
+        "## Local Integration",
+        "",
+        *operator_rollup_local_integration_markdown_lines(rollup["local_integrations"]),
+        "",
+        "## Promotion",
+        "",
+        *operator_rollup_promotion_markdown_lines(rollup["promotions"]),
+        "",
+        "## QA Surfaces",
+        "",
+        *operator_rollup_qa_markdown_lines(rollup["qa_surfaces"]),
+        "",
+        "## Final Queue",
+        "",
+        *operator_rollup_final_queue_markdown_lines(rollup["final_queue"]),
+        "",
+        "## Stop Or Failure",
+        "",
+        *operator_rollup_stop_markdown_lines(rollup.get("stop_reason")),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def operator_rollup_issue_markdown_lines(
+    heading: str,
+    entries: list[dict[str, Any]],
+) -> list[str]:
+    lines = [f"### {heading}"]
+    if not entries:
+        return [*lines, "- None"]
+    for entry in entries:
+        issue = entry.get("issue") if isinstance(entry.get("issue"), dict) else {}
+        commit = entry.get("local_integration_commit")
+        commit_text = ""
+        if isinstance(commit, dict) and commit.get("sha"):
+            commit_text = f"; Local integration `{commit['sha']}` to `{commit.get('branch')}`"
+        lines.append(
+            "- "
+            + operator_issue_title(issue)
+            + f" - `{entry.get('status')}`"
+            + commit_text
+            + f"; QA `{entry.get('qa', {}).get('status')}`"
+            + f"; manifest {markdown_path_link(entry.get('manifest_path'))}"
+        )
+    return lines
+
+
+def operator_rollup_local_integration_markdown_lines(
+    entries: list[dict[str, Any]],
+) -> list[str]:
+    if not entries:
+        return ["- None"]
+    lines: list[str] = []
+    for entry in entries:
+        commit = entry.get("commit") if isinstance(entry.get("commit"), dict) else {}
+        issue = entry.get("issue") if isinstance(entry.get("issue"), dict) else {}
+        lines.append(
+            "- "
+            + operator_issue_title(issue)
+            + f" - `{commit.get('sha')}` to `{commit.get('branch')}`"
+            + f"; manifest {markdown_path_link(entry.get('manifest_path'))}"
+        )
+    return lines
+
+
+def operator_rollup_promotion_markdown_lines(entries: list[dict[str, Any]]) -> list[str]:
+    if not entries:
+        return ["- None"]
+    lines: list[str] = []
+    for entry in entries:
+        commit = entry.get("promotion_commit")
+        commit_text = commit.get("sha") if isinstance(commit, dict) else "none"
+        followups = entry.get("post_promotion_followups")
+        followups = followups if isinstance(followups, dict) else {}
+        created = followups.get("created") if isinstance(followups.get("created"), list) else []
+        failures = followups.get("failures") if isinstance(followups.get("failures"), list) else []
+        lines.append(
+            "- "
+            + f"`{entry.get('source_branch')}` -> `{entry.get('target_branch')}`"
+            + f" - `{entry.get('status')}`; Promotion commit `{commit_text}`"
+            + f"; QA `{entry.get('qa', {}).get('status')}`"
+            + f"; Post-promotion follow-ups `{followups.get('status')}` "
+            + f"(created={len(created)}, failures={len(failures)})"
+            + f"; manifest {markdown_path_link(entry.get('manifest_path'))}"
+        )
+        for recovery in entry.get("manual_recoveries", []):
+            if not isinstance(recovery, dict):
+                continue
+            issue = recovery.get("issue") if isinstance(recovery.get("issue"), dict) else {}
+            lines.append(
+                "  - Manual recovery: "
+                + operator_issue_title(issue)
+                + f" - `{recovery.get('metadata_status')}`"
+            )
+    return lines
+
+
+def operator_rollup_qa_markdown_lines(entries: list[dict[str, Any]]) -> list[str]:
+    if not entries:
+        return ["- None"]
+    lines: list[str] = []
+    for entry in entries:
+        context = str(entry.get("run_kind") or "unknown")
+        issue = entry.get("issue")
+        if isinstance(issue, dict) and issue.get("number") is not None:
+            context = f"{context} #{issue.get('number')}"
+        lines.append(
+            f"- {context}: `{entry.get('name')}` `{entry.get('status')}`; "
+            f"manifest {markdown_path_link(entry.get('manifest_path'))}"
+        )
+    return lines
+
+
+def operator_rollup_final_queue_markdown_lines(queue: dict[str, Any]) -> list[str]:
+    counts = queue.get("counts") if isinstance(queue.get("counts"), dict) else {}
+    return [
+        f"- ready={counts.get('ready', 0)}",
+        f"- integrated={counts.get('integrated', 0)}",
+        f"- running={counts.get('running', 0)}",
+        f"- failed={counts.get('failed', 0)}",
+        f"- clean={'yes' if queue.get('clean') else 'no'}",
+    ]
+
+
+def operator_rollup_stop_markdown_lines(stop_reason: Any) -> list[str]:
+    if not isinstance(stop_reason, dict):
+        return ["- None"]
+    lines = [
+        f"- Checkpoint: `{stop_reason.get('checkpoint')}`",
+        f"- Message: {stop_reason.get('message')}",
+    ]
+    guidance = stop_reason.get("recovery_guidance")
+    if guidance:
+        lines.append(f"- Recovery guidance: {guidance}")
+    failure = stop_reason.get("failure")
+    if isinstance(failure, dict) and failure.get("message"):
+        lines.append(f"- Failure: {failure.get('message')}")
+    return lines
+
+
+def operator_issue_title(issue: dict[str, Any]) -> str:
+    number = issue.get("number")
+    title = str(issue.get("title") or "")
+    if number is None:
+        return title or "unknown issue"
+    return f"#{number} {title}".strip()
+
+
+def markdown_path_link(value: Any) -> str:
+    path = str(value or "")
+    if path == "":
+        return "`missing`"
+    return f"[`ralph-run.json`](<{path}>)"
 
 
 def child_manifest_entry(child_manifest_path: Path) -> dict[str, Any]:
@@ -6944,6 +7713,11 @@ def inspect_operator_run_status(value: str, runner: CommandRunner) -> None:
                 emit(f"- {kind} {status}: {path}")
     else:
         emit("- none")
+    rollup_artifacts = data.get("rollup_artifacts")
+    if isinstance(rollup_artifacts, dict):
+        emit("Rollup artifacts:")
+        emit(f"- Markdown: {rollup_artifacts.get('markdown') or 'not_started'}")
+        emit(f"- JSON: {rollup_artifacts.get('json') or 'not_started'}")
     emit(f"Recommended next action: {operator_recommended_action(data)}")
 
 

@@ -183,6 +183,14 @@ For a checkpointed Operator run, inspect status before opening child logs:
 python3 scripts/ralph.py --operator-run-status latest
 ```
 
+Completed or stopped runs write `operator-run-rollup.md` and
+`operator-run-rollup.json` beside `operator-run.json`. Read the Markdown rollup
+first for the full drain-and-**Promotion** summary: succeeded and failed issues,
+manual recoveries, **Local integration** commits, **Promotion** commits, QA
+surfaces, **Post-promotion review** follow-ups, final queue state, and the stop
+or failure reason. Use the JSON rollup for tooling or status-oriented review
+without tailing child Codex JSONL or rich command logs.
+
 Follow the recommended next action. Issue failures point to the child
 implementation manifest; **Promotion** failures point to the child Promotion
 manifest; stopped-by-guard means review progress before rerunning with a larger
