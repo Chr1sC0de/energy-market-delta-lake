@@ -320,36 +320,88 @@ target/check coverage is complete. Failed runs, failed or missing target
 materializations, and failed asset checks fail the command, including
 WARN-level checks such as skipped selected S3 keys.
 
-### Coverage contract
+### Promotion gate contract
 
-The mandatory Ralph **Promotion** gate target is every materializable Dagster
-asset in group `gas_model`, plus final asset-check status for that target. The
-current discovery evidence from
-`dg list defs --assets "group:gas_model" --json` is 29 `gas_model` assets and
-112 asset checks, including `silver/metadata/silver_table_metadata` as a group
-member.
+Ralph uses the `promotion-gas-model` scenario as the AEMO ETL
+**End-to-end test** gate during **Promotion** when a Gitflow **Delivery mode**
+range changes non-doc runtime files under
+`backend-services/dagster-user/aemo-etl/`. The gate runs from the same source
+worktree as the aggregate **Push check**, after that **Push check** and before
+the Promotion worktree, merge to `main`, push, `dev` branch sync, GitHub
+metadata update, or issue closure. It protects work already accepted through
+**Local integration** to `dev`; it is not a standalone **Test lane**, and it is
+not part of the local **Fast check** or **Commit check**.
 
-The gate must continue to exercise Dagster, LocalStack/S3, Podman run-worker
-containers, and the Dagster GraphQL monitor. The full scenario verifies the
-sensor/dependency path. The Promotion scenario verifies the same final coverage
-through an explicit graph-scoped Dagster asset launch so the **Promotion** gate
-can stay inside the 20 minute budget without bypassing the final target or
-asset-check monitor. Direct Promotion launches pace asset-run batch submission
-against Dagster `max_concurrent_runs` so the queued-run budget remains bounded
-while dependency-wave ordering is preserved.
+The gate exists because AEMO ETL runtime changes can pass narrowed unit,
+component, static, or script checks while still breaking the complete local
+Dagster dataflow. The approved #77 coverage invariants are:
 
-The `promotion-gas-model` scenario may reduce incidental automation volume by
-narrowing seed horizon, started sensors, or run-launch shape, but it must still
-end with `29/29` target progress and `0` failed asset checks before
-**Promotion** can merge to `main`. The `promotion-gas-model` scenario enforces
-Promotion guard regression budgets from the #78 targeted baseline: total gate
-duration must stay at or below 20 minutes, peak active runs at or below `6`,
-peak queued runs at or below `6`, total Dagster runs at or below `48`, target
-progress at exactly `29/29`, and missing or failed target assets and asset
-checks at `0`. These budgets protect Promotion from run explosion or missing
-coverage; they are not generic local development performance claims. The full
-scenario prints the same telemetry for review without enforcing those Promotion
-budgets.
+- exercise Dagster orchestration, LocalStack/S3 storage, Podman run-worker
+  containers, and the Dagster GraphQL monitor
+- materialize every materializable Dagster asset in group `gas_model`
+- preserve final asset-check status for that target as part of the
+  **Promotion** decision
+- keep current discovery evidence visible:
+  `dg list defs --assets "group:gas_model" --json` reports 29 `gas_model`
+  assets and 112 asset checks, including
+  `silver/metadata/silver_table_metadata` as a group member
+
+The full scenario remains the sensor/dependency-path reference. The
+`promotion-gas-model` scenario uses the #78 targeted launch shape to preserve
+the same final coverage inside the guard budget: it narrows the raw and zip seed
+horizon to 1 object, keeps automation stopped, launches explicit
+dependency-wave asset batches for the `gas_model` upstream asset graph, and
+skips live `bronze_nemweb_public_files_*` discovery/listing assets so the gate
+starts from seeded LocalStack objects. Each batch still runs inside a Podman
+run-worker container, and direct launches pace submission against Dagster
+`max_concurrent_runs` so dependency-wave ordering is preserved and queued runs
+remain bounded.
+
+### Promotion telemetry and budgets
+
+Each `run-manifest.json` includes the structured telemetry added in #75 and the
+budget report fields added in #76. The command output prints either an
+informational `E2E budget report` for non-enforced scenarios or
+`E2E Promotion guard regression budgets` for `promotion-gas-model`.
+Successful and failed runs write whatever telemetry is available; if the
+failure occurs after Dagster monitoring starts, samples captured before the
+failure remain in the manifest.
+
+| Field | Meaning |
+|---|---|
+| `telemetry.total_gate_duration_seconds` | Whole gate runtime, including stack startup, dataflow monitoring, and cleanup |
+| `telemetry.stack_startup_duration_seconds` | Time spent rendering config, starting the isolated stack, and reaching readiness |
+| `telemetry.dagster_dataflow_monitor_duration_seconds` | Time spent driving and polling the Dagster dataflow through GraphQL |
+| `telemetry.cleanup_duration_seconds`, `telemetry.cleanup_phases`, `cleanup`, `cleanup_issues` | Cleanup time, per-phase cleanup status, and non-benign cleanup evidence |
+| `telemetry.dagster_dataflow.peak_active_run_count` | Highest non-queued Dagster run count observed by the monitor |
+| `telemetry.dagster_dataflow.peak_queued_run_count` | Highest queued Dagster run count observed by the monitor |
+| `telemetry.dagster_dataflow.final_run_status_counts` | Final Dagster run counts by status; the budget report also derives total and successful run counts from this map |
+| `telemetry.dagster_dataflow.final_target_progress` | Materialized, missing, failed, and total target asset counts for the `gas_model` gate target |
+| `telemetry.dagster_dataflow.first_target_materialization_at`, `last_target_materialization_at` | First and last observed target materialization timestamps |
+| `telemetry.dagster_dataflow.final_missing_asset_check_count`, `final_failed_asset_check_count` | Final asset-check drift for the gate target |
+| `dataflow.scenario_evidence` | Direct-launch coverage evidence: scenario, launch mode, target group, target asset count, selected upstream closure count, skipped live source keys, wave count, batch count, and asset batch size |
+| `budget.status`, `budget.thresholds`, `budget.failures`, `budget.run_manifest` | Enforced Promotion budget result, threshold values, actionable failure lines, and the manifest path operators should inspect |
+
+The `promotion-gas-model` scenario enforces #79 Promotion guard regression
+budgets from the approved #78 targeted baseline: total gate duration at or
+below 20 minutes, peak active runs at or below `6`, peak queued runs at or
+below `6`, total Dagster runs at or below `48`, target progress exactly
+`29/29`, and missing or failed target assets and asset checks at `0`. These
+budgets protect **Promotion** from run explosion and missing coverage; they are
+not generic local development performance claims. The full scenario prints the
+same telemetry for review without enforcing those Promotion budgets.
+
+Interpret failures by the failed field. Duration, peak-run, queued-run, or
+total-run failures usually mean run explosion, run queue contention, or a local
+environment slowdown that needs evidence before retrying or changing the launch
+shape. Target progress, missing target asset, failed target asset, missing
+asset-check, or failed asset-check failures mean the approved #77 coverage
+contract was not met and the source revision must not be promoted until the
+dataflow or check regression is fixed. Missing telemetry is also a gate failure
+because Ralph cannot prove the **Promotion** source revision satisfied the
+contract. Budget failures mark the run manifest failed and print observed
+values, thresholds, and the `run-manifest.json` path; keep that manifest and
+logs as the first inspection target instead of weakening the guard.
 
 Local service images are tagged for the e2e stack. Missing images are built
 automatically, existing images are reused by default, and `--rebuild` forces all
@@ -377,20 +429,6 @@ service logs, the run manifest, and the seed-run manifest for inspection. Use
 `--reuse` to keep and reuse the e2e stack after a successful run, or
 `--always-clean` to clean containers, volumes, and run-worker containers even
 after failure.
-
-Each `run-manifest.json` includes structured telemetry for Promotion review:
-total gate duration, stack startup duration, Dagster dataflow monitor duration,
-cumulative cleanup duration, cleanup phase status and timings, cleanup issue
-evidence, peak active and queued Dagster run counts, final run status counts,
-final target progress, first and last observed target materialization
-timestamps, and the final missing and failed asset-check counts. For
-`promotion-gas-model` direct launches, `dataflow.scenario_evidence` also
-records the selected scenario, launch mode, target group, target asset count,
-selected upstream closure count, skipped live source asset keys, wave count,
-batch count, and asset batch size. Failed runs include telemetry for every
-monitor sample captured before the failure. The same telemetry is summarized in
-the command output. Promotion budget failures mark the run manifest failed and
-print observed values, thresholds, and the `run-manifest.json` path.
 
 ______________________________________________________________________
 
