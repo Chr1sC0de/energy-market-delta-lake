@@ -1,6 +1,6 @@
 # aemo-etl
 
-`aemo-etl` is a Dagster-based AEMO gas ETL project for discovering and ingesting AEMO/NEMWeb source files, staging raw datasets into Delta tables on S3-compatible storage, transforming source-specific silver and `gas_model` marts into parquet snapshot datasets, and supporting both LocalStack-backed local development and AWS execution.
+`aemo-etl` is a Dagster-based AEMO gas ETL project for discovering and ingesting AEMO/NEMWeb source files and public AEMO gas document sources, staging raw datasets into Delta tables on S3-compatible storage, transforming source-specific silver and `gas_model` marts into parquet snapshot datasets, and supporting both LocalStack-backed local development and AWS execution.
 
 ## Table of contents
 
@@ -22,6 +22,11 @@ The project materializes Dagster assets defined under `src/aemo_etl/defs` to bui
 - Scheduled NEMWeb discovery/listing assets poll `REPORTS/CURRENT/VicGas`,
   `REPORTS/CURRENT/GBB`, and the root CSV reports in `REPORTS/CURRENT/STTM`
   every 30 minutes and copy source files into landing storage.
+- `bronze_aemo_gas_document_sources` inventories the scoped public AEMO gas PDF
+  source pages, records included, excluded, and `needs_human_review`
+  observations, lands included PDF bytes under
+  `LANDING_BUCKET/bronze/aemo_gas_documents`, and archives those bytes under
+  `ARCHIVE_BUCKET/bronze/aemo_gas_documents` after the metadata table write.
 - `download_vicgas_public_report_zip_files_job` and
   `download_sttm_day_zip_files_job` can be launched manually to bootstrap or
   backfill VicGas `PublicRptsNN.zip` and STTM `DAYNN.ZIP` bundles into landing
@@ -39,6 +44,7 @@ The project materializes Dagster assets defined under `src/aemo_etl/defs` to bui
 flowchart LR
     subgraph Sources
         NEMWeb["AEMO / NEMWeb public files"]
+        AEMODocs["AEMO gas PDF pages"]
     end
 
     subgraph Dagster
@@ -59,6 +65,7 @@ flowchart LR
     end
 
     NEMWeb --> Schedules
+    AEMODocs --> Schedules
     Schedules --> Landing
     Landing --> UnzipSensors
     UnzipSensors --> Landing
@@ -103,7 +110,7 @@ flowchart TD
     Docs --> GasDocs["gas_model/"]
 ```
 
-- Raw ingestion: `factories/nemweb_public_files`, `factories/unzipper`, and `factories/df_from_s3_keys` define three separate roles: discovery/listing bronze assets, unzipper extraction assets, and source-table bronze/silver ingestion assets. Source-table bronze writes current-state Delta tables through explicit ingestion logic, archives processed files only after a table write, deletes zero-byte landing objects, and reports skipped selected keys with a non-blocking WARN asset check; downstream silver assets and checks load bronze tables through a read-only Delta IO manager.
+- Raw ingestion: `factories/nemweb_public_files`, `factories/aemo_gas_documents`, `factories/unzipper`, and `factories/df_from_s3_keys` define separate roles: NEMWeb discovery/listing bronze assets, AEMO gas document source metadata, unzipper extraction assets, and source-table bronze/silver ingestion assets. Source-table bronze writes current-state Delta tables through explicit ingestion logic, archives processed files only after a table write, deletes zero-byte landing objects, and reports skipped selected keys with a non-blocking WARN asset check; downstream silver assets and checks load bronze tables through a read-only Delta IO manager. The AEMO gas document asset also writes through explicit ingestion logic so included PDFs are archived only after `bronze_aemo_gas_document_sources` is written.
 - Source-specific silver assets: `silver.gbb.*` and `silver.vicgas.*` assets deduplicate current source rows and expose consistent parquet snapshot datasets for downstream use.
 - Gas-model marts: `src/aemo_etl/defs/gas_model` builds cross-source dimensions and fact tables from the source-specific silver layer.
 - Storage: landing and archive buckets hold files; the AEMO bucket holds bronze Delta tables plus parquet snapshot datasets for source silver and `gas_model`; the IO manager bucket stores Dagster-managed intermediates.
@@ -125,6 +132,7 @@ Delta maintenance metadata is optional and flat:
 sequenceDiagram
     participant Source as AEMO / NEMWeb
     participant Discover as Discovery asset
+    participant Docs as AEMO gas document asset
     participant Landing as Landing bucket
     participant Unzip as Unzipper asset
     participant Raw as Bronze/raw asset
@@ -134,6 +142,9 @@ sequenceDiagram
 
     Source->>Discover: Publish files
     Discover->>Landing: Save discovered files
+    Source->>Docs: Publish gas PDF source pages
+    Docs->>Landing: Save included PDF bytes
+    Docs->>Archive: Move included PDF bytes after metadata write
     Landing->>Unzip: Zip files detected by unzipper sensor
     Unzip->>Landing: Write extracted csv/parquet members
     Unzip->>Archive: Archive successful zip inputs
@@ -147,7 +158,7 @@ Detailed sequence diagrams for GBB, VICGAS, STTM, and raw-to-silver behavior liv
 
 ## Data domains and asset layers
 
-- `raw`: scheduled discovery/listing assets plus source-table bronze ingestion assets that capture current source-table state from landing storage into Delta tables. Source-table bronze stores bounded current state; append replay history remains in archive storage.
+- `raw`: scheduled discovery/listing assets plus source-table bronze ingestion assets that capture current source-table state from landing storage into Delta tables. `bronze_aemo_gas_document_sources` is also a raw bronze metadata table for the scoped AEMO gas PDF source-page corpus. Source-table bronze stores bounded current state; append replay history remains in archive storage.
 - `gbb`: source-specific silver assets for Gas Bulletin Board datasets such as flows, capacity, locations, linepack, and nomination data.
 - `vicgas`: source-specific silver assets for Victorian gas reports such as operational meter readings, allocations, prices, linepack, heating values, and settlements.
 - `sttm`: source-specific silver assets for Short Term Trading Market reports.
@@ -323,6 +334,7 @@ aemo-etl/
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/jobs/download_vicgas_public_report_zip_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/testing.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/aemo_gas_documents.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/unzipper.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/_manifest.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/source_tables.json`
@@ -369,6 +381,10 @@ aemo-etl/
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/assets.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/models.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/scraper.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`

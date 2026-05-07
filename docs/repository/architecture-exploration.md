@@ -1308,7 +1308,14 @@ landing/archive pattern, not a wiki or vector database:
 - bronze metadata table:
   `bronze_aemo_gas_document_sources`
 
-The smallest follow-on implementation issue should be: implement the AEMO gas
+Issue #129 implements this first storage target in the AEMO ETL Subproject. The
+implementation records the #125 source-page scope in
+`bronze_aemo_gas_document_sources`, lands only included PDF byte versions under
+the landing prefix, archives those byte versions only after the metadata Delta
+write, and deliberately stops before PDF text extraction, wiki output, embedding
+generation, or vector storage.
+
+The smallest follow-on implementation issue was: implement the AEMO gas
 PDF landing scraper and `bronze_aemo_gas_document_sources` metadata table for
 included PDF source pages, with excluded and `needs_human_review` observations
 captured but no text extraction, wiki, or vector database output.
@@ -1374,6 +1381,7 @@ slices can close after integration to `main`; exploratory slices stay open with
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/aemo_gas_documents.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/_manifest.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/source_tables.json`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int651_v1_ex_ante_market_price_rpt_1.py`
@@ -1446,6 +1454,10 @@ slices can close after integration to `main`; exploratory slices stay open with
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/nemweb_public_files/ops/nemweb_link_fetcher.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/nemweb_public_files/ops/nemweb_link_processor.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/nemweb_public_files/ops/processed_link_combiner.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/assets.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/models.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/scraper.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/tests/component/test_factories_nemweb.py`
