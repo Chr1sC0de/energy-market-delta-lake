@@ -1,8 +1,11 @@
 # Architecture Exploration
 
 This temporary repository page captures issue-scoped architecture research.
-It is not durable architecture guidance. Issue #87 must consume any accepted
-findings into durable repo docs before deleting this file.
+It is not durable architecture guidance. Issue #87 must consume accepted
+findings from issues #82 through #86 into durable repo docs before deleting this
+file. Issue #117 must record the accepted issue #116 modeling decision, and
+issue #125 names its own follow-on implementation issue before wiki or vector
+database work begins.
 
 ## Table of contents
 
@@ -11,6 +14,8 @@ findings into durable repo docs before deleting this file.
 - [Issue #84: Explore archive-source planning consolidation](#issue-84-explore-archive-source-planning-consolidation)
 - [Issue #85: Explore Ralph workflow and state separation](#issue-85-explore-ralph-workflow-and-state-separation)
 - [Issue #86: Explore Dagster ECS runtime task-definition consolidation](#issue-86-explore-dagster-ecs-runtime-task-definition-consolidation)
+- [Issue #116: STTM report-to-gas-model mapping](#issue-116-sttm-report-to-gas-model-mapping)
+- [Issue #125: Scope AEMO gas PDF scraper and corpus rules](#issue-125-scope-aemo-gas-pdf-scraper-and-corpus-rules)
 - [Issue #81: Final architecture decision matrix](#issue-81-final-architecture-decision-matrix)
 
 ## #82: Explore deeper gas-model asset shell Module
@@ -990,6 +995,344 @@ still preserving role-specific Inputs at the current component call sites. It
 also avoids a half-migrated state where some roles use a shared task shell and
 others keep the old inline JSON shape.
 
+## Issue #116: STTM report-to-gas-model mapping
+
+Issue #116 asks for exploratory mapping of every manifest-backed STTM public
+report into the intended `silver.gas_model` destination. This section records
+research only. It does not change runtime behavior, git operations, GitHub
+Issue metadata, or Ralph labels. The Review focus is whether the proposed
+STTM report grouping, grains, and destination assets are the right gas-market
+domain model before the follow-on implementation issues run.
+
+### Evidence And Mapping Rules
+
+The checked-in STTM manifest at
+`backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/source_tables.json`
+contains 39 report definitions: `INT651` through `INT684` and `INT687`
+through `INT691`. `load_sttm_source_tables_manifest` and the generated raw
+definition modules expose each report as a source-table bronze and silver pair,
+with source columns as `String` and standard ingestion metadata columns. A
+`dg list defs --assets "key:*silver_int6*" --json` check from the AEMO ETL
+**Subproject** confirmed the registered `silver/sttm/silver_<name_suffix>`
+assets and their bronze dependencies.
+
+The destination mapping uses fit-plus-extend:
+
+- Existing `gas_model` facts and dimensions receive STTM rows where the report
+  grain matches the current asset meaning.
+- New `gas_model` facts are proposed where forcing the report into an existing
+  fact would hide a real STTM grain or drop domain fields.
+- Every destination row should preserve source lineage: `source_system`,
+  `source_tables`, `source_table`, `source_surrogate_key`, `source_file`, and
+  `ingested_timestamp`. The implementation can also expose a derived
+  `source_report_id` when the accepted schema wants report-id filtering without
+  parsing `source_table`.
+- STTM date and numeric report fields are still strings at the source silver
+  layer. Implementation slices should parse them inside `gas_model` transforms
+  and keep the source string in `source_last_updated`-style fields where the
+  current asset convention already does that.
+
+`INT685` and `INT685B` are not part of this `gas_model` coverage. They are live
+NEMWeb STTM root CSV files but are absent from the v19.1 report specification
+manifest, so they remain landing-only gaps until AEMO text or PDF discovery
+finds usable source definitions. Follow-on issue #125 owns the separate
+exploratory document-corpus path for those gaps.
+
+### Existing Destination Fits
+
+| Candidate destination asset | Covered reports | Fit rationale | Follow-on issue |
+| --- | --- | --- | --- |
+| `silver.gas_model.silver_gas_fact_market_price` | `INT651`, `INT654`, `INT672`, `INT676`, `INT677`, `INT690`; price measures from `INT657` need review | These reports are source-specific hub price observations or price-derived measures by gas date, hub, schedule, or call id. Represent each report measure as a `price_type` row rather than creating STTM-only price tables. | #119 |
+| `silver.gas_model.silver_gas_fact_scheduled_quantity` | `INT652`, `INT655` | These reports publish scheduled or provisional scheduled quantities by gas date, facility, flow direction, and schedule type. The current fact already models source-specific scheduled quantity observations. | #119 |
+| `silver.gas_model.silver_gas_fact_schedule_run` | `INT668` | The schedule log is one source schedule run with creation, cutoff, and approval timestamps, matching the current schedule-run fact shape. | #119 |
+| `silver.gas_model.silver_gas_fact_bid_stack` | `INT659`, `INT660` | Bid/offer and contingency bid/offer rows have participant, facility, bid id, step number, price, quantity, and bid/offer type fields that match the current bid-stack fact grain. | #120 |
+| `silver.gas_model.silver_gas_fact_system_notice` | `INT666` | Market notices fit the existing source-specific system-notice fact. Current follow-on issue text does not explicitly name `INT666`, so #121 needs a scope update or a narrow notice issue before implementation. | #121 needs scope update |
+| `silver.gas_model.silver_gas_dim_participant` and `silver.gas_model.silver_gas_participant_market_membership` | `INT670` | Participant register rows can add STTM participant identities and hub/registration memberships using company id, ABN, ACN, participant name, registration type, and status. | #118 |
+| `silver.gas_model.silver_gas_dim_zone` and `silver.gas_model.silver_gas_dim_facility` | `INT671` | Hub identifiers fit source-qualified zone rows with `zone_type = sttm_hub`; facility identifiers and types fit source-qualified facility rows. | #118 |
+| `silver.gas_model.silver_gas_dim_facility` | `INT687` | Facility hub capacity data can enrich STTM facility context, but the effective-date and threshold fields make this a review point before deciding whether they stay dimensional or become a fact. | #118, human review |
+| `silver.gas_model.silver_gas_dim_connection_point` | `INT691` | Custody transfer points are source-qualified connection points under a hub/facility, but the current dimension grain includes `flow_direction` and the STTM manifest key does not. This should be accepted explicitly before implementation. | #118, human review |
+
+### New Destination Assets
+
+| Proposed new destination asset | Covered reports | Proposed grain | Follow-on issue |
+| --- | --- | --- | --- |
+| `silver.gas_model.silver_gas_fact_sttm_pipeline_capacity` | `INT653`, `INT656` | One row per STTM gas date, facility, schedule or provisional schedule type, and capacity or price measure. | #121 needs context-anchor update |
+| `silver.gas_model.silver_gas_fact_sttm_market_imbalance` | `INT657` | One row per STTM gas date, hub, schedule type, and imbalance measure when reviewers prefer not to split `imbalance_qty` into the price fact. | #119, human review |
+| `silver.gas_model.silver_gas_fact_sttm_allocation_quantity` | `INT658`, `INT689` | One row per STTM gas date, facility, flow direction, allocation version, and data-quality type. | #121 |
+| `silver.gas_model.silver_gas_fact_sttm_contingency_gas_call` | `INT661`, `INT673`, `INT674` | One row per contingency call, hub/facility, bid/offer type, and total or called quantity measure. | #120 |
+| `silver.gas_model.silver_gas_fact_sttm_market_settlement` | `INT662`, `INT663`, `INT678`, `INT679` | One row per STTM settlement or prudential period, hub/facility, and settlement component. | #121 |
+| `silver.gas_model.silver_gas_fact_sttm_capacity_settlement` | `INT664`, `INT681`, `INT682` | One row per STTM gas date, settlement run where present, hub, facility, and MOS or capacity settlement component. | #121 |
+| `silver.gas_model.silver_gas_fact_sttm_mos_stack` | `INT665`, `INT683`, `INT684` | One row per STTM MOS stack, stack step, effective or settlement context, and used/provided status. | #121 |
+| `silver.gas_model.silver_gas_fact_sttm_market_parameter` | `INT667`, `INT680` | One row per effective market parameter or hub flag period. | #121 needs `INT667` context-anchor update |
+| `silver.gas_model.silver_gas_fact_sttm_default_allocation_notice` | `INT675` | One row per default allocation notice, gas date, hub, and facility. | #121 |
+| `silver.gas_model.silver_gas_fact_sttm_allocation_limit` | `INT688` | One row per STTM gas date and facility allocation warning-limit set. | #121 |
+
+### Full Manifest Coverage Matrix
+
+Each row below lists the report id, report name, candidate destination asset,
+grain, key fields from the compact manifest, and row-specific source lineage
+fields. The common lineage fields are `source_system = STTM`, `source_tables`,
+`source_table`, `source_surrogate_key`, `source_file`, and
+`ingested_timestamp`.
+
+| Report | Report name | Classification | Candidate destination asset | Candidate grain | Key fields | Source lineage fields | Follow-on |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `INT651` | Ex Ante Market Price | Existing fact fit | `silver.gas_model.silver_gas_fact_market_price` | One row per STTM gas date, hub, and price measure. | `gas_date`, `hub_identifier` | `source_table = silver.sttm.silver_int651_v1_ex_ante_market_price_rpt_1`; `source_report_id = INT651`; update fields `approval_datetime`, `report_datetime`. | #119 |
+| `INT652` | Ex Ante Schedule Quantity | Existing fact fit | `silver.gas_model.silver_gas_fact_scheduled_quantity` | One row per STTM gas date, facility, flow direction, and scheduled quantity measure. | `gas_date`, `facility_identifier`, `flow_direction` | `source_table = silver.sttm.silver_int652_v1_ex_ante_schedule_quantity_rpt_1`; `source_report_id = INT652`; update fields `approval_datetime`, `report_datetime`. | #119 |
+| `INT653` | Ex Ante Pipeline Data | New fact | `silver.gas_model.silver_gas_fact_sttm_pipeline_capacity` | One row per STTM gas date, facility, and ex-ante capacity or price measure. | `gas_date`, `facility_identifier` | `source_table = silver.sttm.silver_int653_v3_ex_ante_pipeline_price_rpt_1`; `source_report_id = INT653`; update fields `capacity_qty_datetime`, `approval_datetime`, `report_datetime`. | #121 needs anchor update |
+| `INT654` | Provisional Market Price | Existing fact fit | `silver.gas_model.silver_gas_fact_market_price` | One row per STTM gas date, hub, provisional schedule type, and price measure. | `gas_date`, `hub_identifier`, `provisional_schedule_type` | `source_table = silver.sttm.silver_int654_v1_provisional_market_price_rpt_1`; `source_report_id = INT654`; update field `report_datetime`. | #119 |
+| `INT655` | Provisional Schedule Quantity | Existing fact fit | `silver.gas_model.silver_gas_fact_scheduled_quantity` | One row per STTM gas date, facility, flow direction, provisional schedule type, and quantity measure. | `gas_date`, `facility_identifier`, `flow_direction`, `provisional_schedule_type` | `source_table = silver.sttm.silver_int655_v1_provisional_schedule_quantity_rpt_1`; `source_report_id = INT655`; update field `report_datetime`. | #119 |
+| `INT656` | Provisional Pipeline Data | New fact | `silver.gas_model.silver_gas_fact_sttm_pipeline_capacity` | One row per STTM gas date, facility, provisional schedule type, and capacity or price measure. | `gas_date`, `facility_identifier`, `provisional_schedule_type` | `source_table = silver.sttm.silver_int656_v2_provisional_pipeline_data_rpt_1`; `source_report_id = INT656`; update field `report_datetime`. | #121 needs anchor update |
+| `INT657` | Ex Post Market Data | New fact, with price fields reviewed for existing fit | `silver.gas_model.silver_gas_fact_sttm_market_imbalance` and reviewed price rows in `silver.gas_model.silver_gas_fact_market_price` | One row per STTM gas date, hub, schedule type, and imbalance measure. | `gas_date`, `hub_identifier`, `schedule_type_code` | `source_table = silver.sttm.silver_int657_v2_ex_post_market_data_rpt_1`; `source_report_id = INT657`; update fields `approval_datetime`, `report_datetime`. | #119, human review |
+| `INT658` | Latest Allocation Quantity | New fact | `silver.gas_model.silver_gas_fact_sttm_allocation_quantity` | One row per STTM gas date, facility, and flow direction allocation quantity. | `gas_date`, `facility_identifier`, `flow_direction` | `source_table = silver.sttm.silver_int658_v1_latest_allocation_quantity_rpt_1`; `source_report_id = INT658`; update field `report_datetime`. | #121 |
+| `INT659` | Bid & Offer Report | Existing fact fit | `silver.gas_model.silver_gas_fact_bid_stack` | One row per STTM gas date, schedule, bid/offer id, and bid/offer step. | `gas_date`, `schedule_identifier`, `bid_offer_identifier`, `bid_offer_step_number` | `source_table = silver.sttm.silver_int659_v1_bid_offer_rpt_1`; `source_report_id = INT659`; update field `report_datetime`. | #120 |
+| `INT660` | Contingency Gas Bid & Offer | Existing fact fit | `silver.gas_model.silver_gas_fact_bid_stack` | One row per STTM gas date, contingency bid/offer id, and contingency step. | `gas_date`, `contingency_gas_bid_offer_identifier`, `contingency_gas_bid_offer_step_number` | `source_table = silver.sttm.silver_int660_v1_contingency_gas_bids_and_offers_rpt_1`; `source_report_id = INT660`; update field `report_datetime`. | #120 |
+| `INT661` | Contingency Gas Called Scheduled Bid Offer | New fact | `silver.gas_model.silver_gas_fact_sttm_contingency_gas_call` | One row per STTM gas date, contingency bid/offer id, step, confirmed quantity, and called quantity. | `gas_date`, `contingency_gas_bid_offer_identifier`, `contingency_gas_bid_offer_step_number` | `source_table = silver.sttm.silver_int661_v1_contingency_gas_called_scheduled_bid_offer_rpt_1`; `source_report_id = INT661`; update fields `approval_datetime`, `report_datetime`. | #120 |
+| `INT662` | Provisional Deviation Market Settlement | New fact | `silver.gas_model.silver_gas_fact_sttm_market_settlement` | One row per STTM gas date, hub, facility, and deviation settlement component. | `gas_date`, `hub_identifier`, `facility_identifier` | `source_table = silver.sttm.silver_int662_v1_provisional_deviation_rpt_1`; `source_report_id = INT662`; update field `report_datetime`. | #121 |
+| `INT663` | Provisional Variation and MOS Service Market Settlement | New fact | `silver.gas_model.silver_gas_fact_sttm_market_settlement` | One row per STTM gas date, hub, and variation or MOS settlement component. | `gas_date`, `hub_identifier` | `source_table = silver.sttm.silver_int663_v1_provisional_variation_rpt_1`; `source_report_id = INT663`; update field `report_datetime`. | #121 |
+| `INT664` | Daily Provisional MOS Allocation Data | New fact | `silver.gas_model.silver_gas_fact_sttm_capacity_settlement` | One row per STTM gas date, facility, and provisional MOS allocation component. | `gas_date`, `facility_identifier` | `source_table = silver.sttm.silver_int664_v1_daily_provisional_mos_allocation_rpt_1`; `source_report_id = INT664`; update field `report_datetime`. | #121 |
+| `INT665` | MOS Stack Data | New fact | `silver.gas_model.silver_gas_fact_sttm_mos_stack` | One row per STTM MOS stack and stack step over an effective period. | `stack_identifier`, `stack_step_identifier` | `source_table = silver.sttm.silver_int665_v1_mos_stack_data_rpt_1`; `source_report_id = INT665`; update fields `effective_from_date`, `effective_to_date`, `report_datetime`. | #121 |
+| `INT666` | Market Notices | Existing fact fit | `silver.gas_model.silver_gas_fact_system_notice` | One row per STTM market notice. | `market_notice_identifier` | `source_table = silver.sttm.silver_int666_v1_market_notice_rpt_1`; `source_report_id = INT666`; update field `report_datetime`. | #121 needs scope update |
+| `INT667` | Market Parameters | New fact | `silver.gas_model.silver_gas_fact_sttm_market_parameter` | One row per effective STTM market parameter period and parameter code. | `effective_from_date`, `effective_to_date`, `parameter_code` | `source_table = silver.sttm.silver_int667_v1_market_parameters_rpt_1`; `source_report_id = INT667`; update fields `last_update_datetime`, `report_datetime`. | #121 needs anchor update |
+| `INT668` | Schedule Log | Existing fact fit | `silver.gas_model.silver_gas_fact_schedule_run` | One row per STTM schedule run. | `schedule_identifier` | `source_table = silver.sttm.silver_int668_v1_schedule_log_rpt_1`; `source_report_id = INT668`; update fields `creation_datetime`, `bid_offer_cut_off_datetime`, `facility_hub_capacity_cut_off_datetime`, `pipeline_allocation_cut_off_datetime`, `approval_datetime`, `report_datetime`. | #119 |
+| `INT669` | Settlement Version | New fact | `silver.gas_model.silver_gas_fact_sttm_market_settlement` | One row per STTM settlement run/version. | `settlement_run_identifier` | `source_table = silver.sttm.silver_int669_v1_settlement_version_rpt_1`; `source_report_id = INT669`; update fields `version_from_date`, `version_to_date`, `issued_datetime`, `report_datetime`. | #121 |
+| `INT670` | Participant Register | Existing dimension fit | `silver.gas_model.silver_gas_dim_participant` and `silver.gas_model.silver_gas_participant_market_membership` | One row per STTM participant identity and one row per participant, hub, and registration type membership. | `hub_identifier`, `company_identifier`, `organisation_registration_type`, `registered_capacity` | `source_table = silver.sttm.silver_int670_v1_registered_participants_rpt_1`; `source_report_id = INT670`; update fields `last_update_datetime`, `report_datetime`. | #118 |
+| `INT671` | Hub and Facility Definitions | Existing dimension fit | `silver.gas_model.silver_gas_dim_zone` and `silver.gas_model.silver_gas_dim_facility` | One row per STTM hub and one current row per STTM facility under a hub. | `hub_identifier`, `facility_identifier` | `source_table = silver.sttm.silver_int671_v1_hub_facility_definition_rpt_1`; `source_report_id = INT671`; update fields `last_update_datetime`, `report_datetime`. | #118 |
+| `INT672` | Cumulative Price & Threshold | Existing fact fit | `silver.gas_model.silver_gas_fact_market_price` | One row per STTM gas date, hub, and cumulative price or threshold measure. | `gas_date`, `hub_identifier` | `source_table = silver.sttm.silver_int672_v1_cumulative_price_rpt_1`; `source_report_id = INT672`; update field `report_datetime`. | #119 |
+| `INT673` | Total Contingency Bid & Offer | New fact | `silver.gas_model.silver_gas_fact_sttm_contingency_gas_call` | One row per STTM gas date, hub, and total contingency bid or offer quantity. | `gas_date`, `hub_identifier` | `source_table = silver.sttm.silver_int673_v1_total_contingency_bid_offer_rpt_1`; `source_report_id = INT673`; update field `report_datetime`. | #120 |
+| `INT674` | Total Contingency Gas Schedules | New fact | `silver.gas_model.silver_gas_fact_sttm_contingency_gas_call` | One row per STTM gas date, hub, facility, flow direction, bid/offer type, and called quantity. | `gas_date`, `hub_identifier`, `facility_identifier`, `flow_direction`, `contingency_gas_bid_offer_type` | `source_table = silver.sttm.silver_int674_v1_total_contingency_gas_schedules_rpt_1`; `source_report_id = INT674`; update fields `approval_datetime`, `report_datetime`. | #120 |
+| `INT675` | Default Allocation Notice | New fact | `silver.gas_model.silver_gas_fact_sttm_default_allocation_notice` | One row per STTM default allocation notice, gas date, hub, and facility. | `notice_identifier` | `source_table = silver.sttm.silver_int675_v1_default_allocation_notice_rpt_1`; `source_report_id = INT675`; update field `report_datetime`. | #121 |
+| `INT676` | Rolling Ex-ante Price Average | Existing fact fit | `silver.gas_model.silver_gas_fact_market_price` | One row per STTM gas date, hub, and rolling average price measure. | `gas_date`, `hub_identifier` | `source_table = silver.sttm.silver_int676_v1_rolling_average_price_rpt_1`; `source_report_id = INT676`; update field `report_datetime`. | #119 |
+| `INT677` | Contingency Gas Price | Existing fact fit | `silver.gas_model.silver_gas_fact_market_price` | One row per STTM contingency call id and high, low, schedule high, or schedule low price measure. | `contingency_gas_called_identifier` | `source_table = silver.sttm.silver_int677_v1_contingency_gas_price_rpt_1`; `source_report_id = INT677`; update fields `approval_datetime`, `report_datetime`. | #119 |
+| `INT678` | Net Market Balance Daily Amounts | New fact | `silver.gas_model.silver_gas_fact_sttm_market_settlement` | One row per STTM billing period, hub, and net-market-balance component. | `period_start_date`, `period_end_date`, `hub_identifier` | `source_table = silver.sttm.silver_int678_v1_net_market_balance_daily_amounts_rpt_1`; `source_report_id = INT678`; update field `report_datetime`. | #121 |
+| `INT679` | Net Market Balance Settlement Amounts | New fact | `silver.gas_model.silver_gas_fact_sttm_market_settlement` | One row per STTM settlement run, hub, billing period, and net-market-balance component. | `settlement_run_identifier`, `hub_identifier` | `source_table = silver.sttm.silver_int679_v1_net_market_balance_settlement_amounts_rpt_1`; `source_report_id = INT679`; update field `report_datetime`. | #121 |
+| `INT680` | DP Flag Data | New fact | `silver.gas_model.silver_gas_fact_sttm_market_parameter` | One row per STTM hub and effective DP flag period. | `hub_identifier`, `effective_from_date` | `source_table = silver.sttm.silver_int680_v1_dp_flag_data_rpt_1`; `source_report_id = INT680`; update field `report_datetime`. | #121 |
+| `INT681` | Daily Provisional Capacity Data | New fact | `silver.gas_model.silver_gas_fact_sttm_capacity_settlement` | One row per STTM gas date, hub, facility, and provisional capacity component. | `gas_date`, `hub_identifier`, `facility_identifier` | `source_table = silver.sttm.silver_int681_v1_daily_provisional_capacity_data_rpt_1`; `source_report_id = INT681`; update field `report_datetime`. | #121 |
+| `INT682` | Settlement MOS and Capacity Data | New fact | `silver.gas_model.silver_gas_fact_sttm_capacity_settlement` | One row per STTM settlement run, gas date, hub, facility, and MOS or capacity component. | `settlement_run_identifier`, `gas_date`, `hub_identifier`, `facility_identifier` | `source_table = silver.sttm.silver_int682_v1_settlement_mos_and_capacity_data_rpt_1`; `source_report_id = INT682`; update field `report_datetime`. | #121 |
+| `INT683` | Provisional Used MOS Steps | New fact | `silver.gas_model.silver_gas_fact_sttm_mos_stack` | One row per STTM gas date, MOS stack, and used stack step. | `gas_date`, `stack_identifier`, `stack_step_identifier` | `source_table = silver.sttm.silver_int683_v1_provisional_used_mos_steps_rpt_1`; `source_report_id = INT683`; update field `report_datetime`. | #121 |
+| `INT684` | Settlement Used MOS Steps | New fact | `silver.gas_model.silver_gas_fact_sttm_mos_stack` | One row per STTM settlement run, gas date, MOS stack, and used stack step. | `settlement_run_identifier`, `gas_date`, `stack_identifier`, `stack_step_identifier` | `source_table = silver.sttm.silver_int684_v1_settlement_used_mos_steps_rpt_1`; `source_report_id = INT684`; update field `report_datetime`. | #121 |
+| `INT687` | Facility Hub Capacity Data | Existing dimension fit, human review | `silver.gas_model.silver_gas_dim_facility` | One row per effective STTM facility capacity context, with review needed for threshold fields. | `effective_from_date`, `facility_identifier` | `source_table = silver.sttm.silver_int687_v1_facility_hub_capacity_data_rpt_1`; `source_report_id = INT687`; update fields `effective_from_date`, `effective_to_date`, `last_update_datetime`, `report_datetime`. | #118, human review |
+| `INT688` | Allocation Warning Limit Thresholds | New fact | `silver.gas_model.silver_gas_fact_sttm_allocation_limit` | One row per STTM gas date and facility warning-limit set. | `gas_date`, `facility_identifier` | `source_table = silver.sttm.silver_int688_v1_allocation_warning_limit_thresholds_rpt_1`; `source_report_id = INT688`; update fields `last_update_datetime`, `report_datetime`. | #121 |
+| `INT689` | Ex Post Allocation Quantity | New fact | `silver.gas_model.silver_gas_fact_sttm_allocation_quantity` | One row per STTM gas date, facility, flow direction, and ex-post allocation data-quality type. | `gas_date`, `facility_identifier`, `flow_direction` | `source_table = silver.sttm.silver_int689_v1_expost_allocation_quantity_rpt_1`; `source_report_id = INT689`; update field `report_datetime`. | #121 |
+| `INT690` | Deviation Price Data | Existing fact fit | `silver.gas_model.silver_gas_fact_market_price` | One row per STTM gas date, hub, and deviation price, input price, or MOS cost measure. | `gas_date`, `hub_identifier` | `source_table = silver.sttm.silver_int690_v1_deviation_price_data_rpt_1`; `source_report_id = INT690`; update fields `last_update_datetime`, `report_datetime`. | #119 |
+| `INT691` | STTM Custody Transfer Point Register | Existing dimension fit, human review | `silver.gas_model.silver_gas_dim_connection_point` | One row per source-qualified STTM custody transfer point under a hub and facility, pending accepted flow-direction policy. | `hub_identifier`, `facility_identifier` | `source_table = silver.sttm.silver_int691_v1_sttm_ctp_register_rpt_1`; `source_report_id = INT691`; update fields `effective_from_date`, `effective_to_date`, `last_update_datetime`, `report_datetime`. | #118, human review |
+
+### Source-Spec Gaps
+
+| Report | Coverage decision | Reason | Follow-on |
+| --- | --- | --- | --- |
+| `INT685` | Out of scope for `gas_model` coverage | Present in the live NEMWeb STTM root but absent from the STTM Reports Specifications v19.1 manifest, so discovery can land root CSV files but no source-table bronze or silver asset exists. | #125 |
+| `INT685B` | Out of scope for `gas_model` coverage | Present in the live NEMWeb STTM root but absent from the STTM Reports Specifications v19.1 manifest, so discovery can land root CSV files but no source-table bronze or silver asset exists. | #125 |
+
+### Handoff Comment Draft
+
+Use this as the issue #116 handoff comment content after the local validation
+run. It intentionally does not mutate GitHub from this exploratory worktree.
+
+```markdown
+Ralph exploratory handoff for #116:
+
+- Mapping artifact: `docs/repository/architecture-exploration.md`, section
+  `Issue #116: STTM report-to-gas-model mapping`.
+- Ready follow-on slices after human review accepts the mapping:
+  - #117 records the fit-plus-extend modeling decision.
+  - #118 implements STTM participant, hub, facility, and CTP dimensions.
+  - #119 implements market price, schedule run, and scheduled quantity facts.
+  - #120 implements bid, offer, and contingency gas facts.
+  - #121 implements allocation, MOS, capacity, settlement, NMB, market
+    parameter, and notice outputs.
+  - #122 expands the full-gas-model End-to-end test proof after #118-#121.
+- Human review points before draining implementation:
+  - Accept or revise the fit-plus-extend policy in #117.
+  - Decide whether `INT657` splits price rows into the existing market-price
+    fact or stays in a new market-imbalance fact.
+  - Decide whether `INT687` is dimension enrichment or a time-effective fact.
+  - Decide how `INT691` maps to `silver_gas_dim_connection_point` when the
+    STTM manifest key lacks `flow_direction`.
+  - Update #121 or create a narrow follow-on for explicit `INT653`, `INT656`,
+    `INT666`, and `INT667` coverage before implementation, because the current
+    issue body does not list all four as context anchors.
+- `INT685` and `INT685B` remain landing-only source-spec gaps and belong to
+  the separate exploratory document-corpus path in #125.
+```
+
+## Issue #125: Scope AEMO gas PDF scraper and corpus rules
+
+Issue #125 asks for scraper and document-corpus rules before any wiki or vector
+database implementation begins. This section records exploratory research only.
+It does not add a crawler, storage table, text extractor, wiki, vector database,
+or source-table manifest change.
+
+The live AEMO source-page evidence below was sampled on 2026-05-07. The scope is
+public AEMO gas PDFs reachable without authentication from `www.aemo.com.au`
+gas and gas-market IT pages. The existing AEMO ETL Subproject remains centered
+on NEMWeb data ingestion; these PDFs are documentation and source-spec evidence,
+not source payloads.
+
+### Candidate Source Inventory
+
+Use the gas root page as the starting sitemap seed because it enumerates the
+main AEMO gas sections: GBB, Gas Approved Process, WA GBB, DWGM, ECGS, STTM,
+GSH, PCT, Gas Retail Markets, gas emergency management, and gas forecasting and
+planning.
+
+| Source page | Classification | Candidate PDF families | Boundary |
+| --- | --- | --- | --- |
+| `https://www.aemo.com.au/energy-systems/gas` | include | None directly. It routes the scraper to AEMO gas sections. | Seed page only. Do not ingest the root HTML as a document. Use it to discover candidate section roots and to detect new gas sections. |
+| `https://www.aemo.com.au/energy-systems/gas/gas-approved-process` | include | Approved Process plus Gas Market Issue and Proposed Procedure Change templates when they resolve to PDF. | These are cross-gas procedure-change rules. Keep them in a `gas_approved_process` corpus source. |
+| `https://www.aemo.com.au/energy-systems/gas/gas-bulletin-board-gbb/procedures-policies-and-guides/procedures-and-guides` | include | GBB Procedures, BB Aggregation Methodology, BB Data Submission Guide, Guide to Gas Bulletin Board Reports, BB Pipeline Flow and Capacity Business Rules, Reporting of Iona Storage Volumes, and mapping reference guides. | Exclude spreadsheets such as field-interest templates and old-to-new connection point mapping from the PDF corpus. Record them as excluded links with content type and source page. |
+| `https://www.aemo.com.au/energy-systems/gas/gas-bulletin-board-gbb/procedures-policies-and-guides/faq` | needs-human-review | Gas Transparency Measures FAQ PDF. | Useful but partly FAQ-oriented. Include only after the operator confirms FAQ documents belong in the first corpus, not just formal procedures and technical guides. |
+| `https://www.aemo.com.au/energy-systems/gas/east-coast-gas-system/procedures-and-guidelines` | include | East Coast Gas System Procedures, ECGS Guidelines, Guidance on Gas Compensation Determinations, conference competition-law protocol, and Gas Compensation Confidentiality Deed. | Exclude linked NEMWeb linepack-zone and mapping data because they are non-PDF data/source files. The page also links back to the GBB data submission guide, which duplicate handling should collapse. |
+| `https://www.aemo.com.au/energy-systems/gas/short-term-trading-market-sttm/about-the-short-term-trading-market-sttm` | include | Technical Guide to the STTM and Guide to STTM Contact Types. | Treat as STTM guide documents, not market data. |
+| `https://www.aemo.com.au/energy-systems/gas/short-term-trading-market-sttm/procedures-policies-and-guides` | include | STTM Procedures current and previous versions. | Preserve current and previous versions as separate document versions under one document family. |
+| STTM data, archived daily files, set price data, and gas market notices pages | exclude | None for first PDF corpus. | Current STTM data is CSV/ZIP/HTML market data and already belongs to NEMWeb discovery, landing, unzipper, and source-table bronze paths. Market notices are event streams, not source-spec PDFs. |
+| `https://www.aemo.com.au/energy-systems/gas/declared-wholesale-gas-market-dwgm/procedures-policies-and-guides` | include | DWGM wholesale market procedures, previous versions, technical documents, User Guide to MIBB Reports, and applicable guides. | Keep `dwgm` separate from `vicgas` source-table data. Do not scrape authenticated MIBB or WEX portals. |
+| `https://www.aemo.com.au/energy-systems/gas/gas-supply-hub-gsh/exchange-agreement-and-guides` | include | GSH exchange agreement, membership agreement, benchmark price methodology, exchange fees, interface protocol, industry guide, end-to-end example, and trading timetable. | These are market contract and guide documents. They belong in `gsh`, not PCT, even when PCT links to the GSH agreement. |
+| `https://www.aemo.com.au/energy-systems/gas/pipeline-capacity-trading-pct/procedures-policies-and-guides` | include | PCT overview, PCT industry guide, GSH-linked agreements, Capacity Transfer and Auction Procedures, interface protocol, capacity transfer guides, GSH report guide, and contract-information notices. | Exclude authenticated `portal.prod.nemnet.net.au` guide links unless a later issue explicitly scopes portal help extraction. |
+| `https://www.aemo.com.au/energy-systems/gas/gas-retail-markets/procedures-policies-and-guides` and jurisdiction child pages | include | East-coast gas retail change process, jurisdictional retail market procedures, technical protocols, WA Retail Market Procedures, AEMO Specification Pack, FRC Hub terms, connectivity certification, and user guides when they resolve to PDF. | Store under `retail_gas`. Do not use retail corpus text to infer STTM, DWGM, GBB, or source-table schemas without an explicit human review step. |
+| `https://www.aemo.com.au/energy-systems/gas/wa-gas-bulletin-board-wa-gbb/procedures-policies-and-guides` | include | GSI registration/deregistration/exemption/transfer procedures, GSI operation of the GBB and EMF, and submission forms when PDF. | Keep WA GBB separate from east-coast GBB because rules and publication paths differ. |
+| `https://www.aemo.com.au/energy-systems/market-it-systems/gas-systems-guides` | needs-human-review | Gas systems user access request, self-service password guide, Data Model reports, FRC Hub terms, FRC Hub user guides, certification guides, and related PDFs. | This page mixes PDF forms, online help, external docs, and downloadable software. A first scraper may inventory PDF/static links, but text ingestion should wait for a sample extraction review. |
+| AEMO gas forecasting and planning pages, GSOO/VGPR/QED major publications, and gas emergency management pages | needs-human-review | Annual planning and operational publications when PDF. | These are gas-relevant but not market operation/source-spec documents. Include only if the intended wiki corpus is broader than operational procedures, report specifications, and participant IT guides. |
+| AEMO consultation pages and historical stakeholder-consultation PDFs | needs-human-review | Procedure-change consultation papers, final reports, marked-up procedures, and report specifications. | The checked-in STTM manifest currently cites a consultation decision PDF through `original_pdf_url`. Future scraper work should allow explicit manual seed URLs from such pages, but must not crawl all consultations by default. |
+| AEMC, legislation, ASX, NEMWeb data, authenticated portals, Markets Portal Help, DI Help, API portals, software bundles, CSV, ZIP, XLS/XLSX, DOC/DOCX, and executable downloads | exclude | None. | Keep external or non-PDF assets as link metadata only. A later non-PDF corpus issue can deliberately scope online help or spreadsheet ingestion. |
+
+### URL Patterns
+
+Source pages use stable AEMO content paths:
+
+- `https://www.aemo.com.au/energy-systems/gas/<section>/...`
+- `https://www.aemo.com.au/energy-systems/market-it-systems/gas-systems-guides`
+- `https://www.aemo.com.au/energy-systems/gas/gas-approved-process`
+
+Document links usually resolve to media-library URLs under:
+
+- `https://www.aemo.com.au/-/media/files/...`
+- `https://www.aemo.com.au/-/media/Files/...`
+- `https://www.aemo.com.au/energy-systems/.../-/media/Files/...`
+
+AEMO media URLs may carry query parameters such as `rev`, `la`, or `sc_lang`.
+The exact source URL, including query string, must be retained because
+`source_tables.json` already relies on an `original_pdf_url` with a `rev`
+parameter for the STTM v19.1 report specification. The normalized URL is only a
+dedupe aid; it must not replace the retained source URL.
+
+### Document Identity And Metadata
+
+The future ingestion schema should record document identity separately from
+document version and source-link observations:
+
+- `corpus_source`: one of `gas_approved_process`, `gbb`, `wa_gbb`, `ecgs`,
+  `sttm`, `dwgm`, `gsh`, `pct`, `retail_gas`, `gas_systems_guides`,
+  `gas_forecasting_planning`, `gas_emergency_management`, or `manual_seed`.
+- `source_page_url`: exact AEMO page where the link was observed.
+- `source_page_title` and `source_page_section`: page heading and local section
+  such as `Procedures`, `Technical documents`, `Guides`, or
+  `Previous versions`.
+- `source_page_observed_at`: UTC timestamp for the scraper observation.
+- `source_link_text`: full visible link text, including leading date, version,
+  effective-date prose, and size text when present.
+- `source_url`: exact href from the page after absolutizing relative paths.
+- `resolved_url`: final URL after redirects.
+- `normalized_source_url`: lowercased host plus normalized media path, with
+  query parameters retained separately for comparison.
+- `document_family_id`: stable slug from `corpus_source` plus normalized title
+  after removing leading publication date, trailing size, version token, and
+  current/previous marker.
+- `document_title`: cleaned title visible to readers.
+- `document_kind`: `procedure`, `technical_document`, `guide`, `agreement`,
+  `methodology`, `template`, `form`, `report_specification`, `market_notice`,
+  `publication`, or `unknown`.
+- `include_decision`: `include`, `exclude`, or `needs_human_review`.
+- `include_reason` and `exclude_reason`: short audit text so later issues do
+  not need to rediscover the boundary.
+- `content_type`, `content_length`, `etag`, and `last_modified`: response
+  metadata from `HEAD` or `GET` when AEMO provides it.
+- `content_sha256`: hash of the downloaded bytes; this is the authoritative
+  duplicate and change detector.
+- `storage_uri`: first landing or archive object URI after bytes are fetched.
+- `pdf_title`, `pdf_author`, `pdf_created_at`, and `pdf_modified_at`: optional
+  PDF metadata captured during text extraction, not required for first landing.
+
+### Versioning And Duplicate Handling
+
+The version model should prefer content evidence over URL or filename evidence:
+
+- Parse `document_version` from visible text such as `v15.0`, `v2.1`,
+  `version 5.3`, or `V16.4`.
+- Parse `published_date` from the leading page date when present.
+- Parse `effective_date` from visible text such as `Effective date 3 March
+  2025` when present.
+- Preserve `media_revision` from the `rev` query parameter when present.
+- Use `content_sha256` as the authoritative `document_version_id` fallback when
+  no explicit version exists.
+- Treat the same `document_family_id` plus explicit version as one logical
+  version only if the `content_sha256` matches. If the hash differs, keep both
+  byte versions and mark the family as `needs_human_review`.
+- Treat the same `content_sha256` reached from multiple source pages as one
+  stored blob with multiple source-link observations. This handles GSH
+  agreements linked from both GSH and PCT pages, and GBB documents linked from
+  ECGS pages.
+- Treat URL-only changes, query-only changes, and filename case changes as
+  metadata changes unless `content_sha256` changes.
+- Keep previous versions. Do not overwrite a prior PDF when the source page
+  moves it under a `Previous versions` heading.
+- Keep source-page snapshots or at least link-observation rows so removals from
+  a source page can be audited without deleting stored PDFs.
+
+### Refresh Cadence
+
+This corpus does not need the 30-minute cadence used by current NEMWeb market
+data discovery. Procedure and guide pages are low-churn but audit-relevant:
+
+- Run source-page discovery daily in the AEMO ETL Subproject, preferably outside
+  the high-frequency market-data schedules.
+- Re-fetch a document only when the source page observation changes, a `HEAD`
+  response changes `etag`, `last_modified`, or `content_length`, or a periodic
+  monthly hash refresh is due.
+- Run a weekly sitemap cross-check from the gas root page and Library procedure
+  or guide indexes to detect new gas sections or moved pages.
+- Keep `needs_human_review` rows in the metadata table rather than silently
+  dropping them, so the operator can promote or exclude classes without code
+  archaeology.
+- Do not refresh authenticated portal links, NEMWeb data links, software
+  bundles, or non-PDF files in the PDF job.
+
+### Storage Target And Follow-On Issue
+
+The first ingestion storage target should be the existing S3-compatible AEMO ETL
+landing/archive pattern, not a wiki or vector database:
+
+- landing prefix: `LANDING_BUCKET/bronze/aemo_gas_documents/`
+- archive prefix after successful metadata write:
+  `ARCHIVE_BUCKET/bronze/aemo_gas_documents/`
+- bronze metadata table:
+  `bronze_aemo_gas_document_sources`
+
+The smallest follow-on implementation issue should be: implement the AEMO gas
+PDF landing scraper and `bronze_aemo_gas_document_sources` metadata table for
+included PDF source pages, with excluded and `needs_human_review` observations
+captured but no text extraction, wiki, or vector database output.
+
+A later, separate issue should add PDF text extraction and review a sample of
+scraped text before creating any wiki or vector database. That text-inspection
+issue is the first place where chunking, embeddings, wiki pages, and vector
+storage should be designed.
+
+### STTM Source-Spec Boundary
+
+Do not use the scraper scope to resolve the `INT685` and `INT685B` source-table
+gap. The existing STTM source-table manifest is derived from the STTM Reports
+Specifications v19.1 PDF recorded in `source_tables.json` through
+`original_pdf_url`, while `sttm_landing_only_gap_report_ids()` intentionally
+reports `INT685` and `INT685B` as live root CSV reports absent from that
+manifest.
+
+`INT685` and `INT685B` source-spec resolution stays deferred until scraped AEMO
+text can be inspected. After the PDF scraper and text extraction exist, a
+separate source-spec issue can search the corpus for those report IDs, inspect
+the source text around any matches, and then decide whether a spec-backed
+source-table manifest entry is justified.
+
 ## Issue #81: Final architecture decision matrix
 
 This is the aggregate decision matrix for issues #82, #83, #84, #85, and #86.
@@ -1025,6 +1368,7 @@ slices can close after integration to `main`; exploratory slices stay open with
   - `backend-services/scripts/aemo-etl-e2e`
   - `docs/repository/documentation-sync.md`
   - `docs/adr/0003-bounded-current-state-bronze-source-tables.md`
+  - `backend-services/dagster-user/aemo-etl/docs/architecture/ingestion_flows.md`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/utils.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
@@ -1060,6 +1404,34 @@ slices can close after integration to `main`; exploratory slices stay open with
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int677_v1_contingency_gas_price_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int678_v1_net_market_balance_daily_amounts_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int679_v1_net_market_balance_settlement_amounts_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int680_v1_dp_flag_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int681_v1_daily_provisional_capacity_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int682_v1_settlement_mos_and_capacity_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int683_v1_provisional_used_mos_steps_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int684_v1_settlement_used_mos_steps_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int687_v1_facility_hub_capacity_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int688_v1_allocation_warning_limit_thresholds_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int689_v1_expost_allocation_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int690_v1_deviation_price_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int691_v1_sttm_ctp_register_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_market_price.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_scheduled_quantity.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_schedule_run.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_bid_stack.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_system_notice.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_settlement_activity.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_capacity_transaction.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_capacity_outlook.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_dim_participant.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_participant_market_membership.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_dim_zone.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_dim_facility.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_dim_connection_point.py`
+  - `backend-services/dagster-user/aemo-etl/docs/gas_model/README.md`
+  - `backend-services/dagster-user/aemo-etl/docs/gas_model/gas_dim_erd.md`
+  - `backend-services/dagster-user/aemo-etl/docs/gas_model/gas_market_mart_erd.md`
+  - `backend-services/dagster-user/aemo-etl/docs/gas_model/gas_capacity_settlement_mart_erd.md`
+  - `backend-services/dagster-user/aemo-etl/docs/gas_model/gas_quality_status_mart_erd.md`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/jobs/download_vicgas_public_report_zip_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/current_state.py`
@@ -1111,4 +1483,4 @@ slices can close after integration to `main`; exploratory slices stay open with
   - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
   - `python3 -m unittest discover -s tests`
   - `prek run -a`
-  - `verify #87 consumption and deletion note remains visible`
+  - `verify #87 consumption, #117 decision handoff, and #125 follow-on notes remain visible`
