@@ -13,7 +13,7 @@ Use repo canonical terms from [CONTEXT.md](CONTEXT.md), especially
 Run the Ralph skill cycle in this order:
 
 ```text
-$grill-with-docs -> optional $to-prd -> $to-issues -> $ralph-triage -> $ralph-loop drain -> review dev -> $ralph-loop promote
+$grill-with-docs -> optional $to-prd -> $shape-issues -> $ralph-triage -> $ralph-loop drain -> review dev -> $ralph-loop promote
 ```
 
 Use `$grill-with-docs` as the default shaping step. It challenges the plan
@@ -27,11 +27,15 @@ Use `$to-prd` only for large, durable, or spec-heavy work where future issues
 need a stable product-level reference. Skip it for small changes that can move
 straight from shaped plan to GitHub Issues.
 
-Use `$to-issues` to create independently grabbable GitHub Issues. Each issue
-must include `## What to build`, `## Acceptance criteria`, and `## Blocked by`
-before it can become `ready-for-agent`. Exploratory delivery issues must also
-include `## Review focus` stating the human judgment the durable
-**Exploratory branch** needs.
+Use `$shape-issues` to draft independently grabbable GitHub Issues with context
+anchors, QA plans, embedding-based context coverage, and stiffness scoring. It
+is non-mutating: it writes `.shape-issues/runs/.../report.md` and
+`report.json`, then the Operator reviews the drafts before GitHub Issue
+creation or triage. Each issue must include `## What to build`,
+`## Acceptance criteria`, and `## Blocked by` before it can become
+`ready-for-agent`. Exploratory delivery issues must also include
+`## Review focus` stating the human judgment the durable **Exploratory branch**
+needs.
 
 Use `$ralph-triage` to prepare issues for drain. Triage sets exactly one
 category label, exactly one state label, and at most one **Delivery mode** label.
@@ -204,6 +208,7 @@ Keep failed worktrees unless the maintainer asks for cleanup.
 - `sync.sources`:
   - `CONTEXT.md`
   - `AGENTS.md`
+  - `.agents/skills/shape-issues/SKILL.md`
   - `scripts/ralph.py`
   - `.agents/skills/ralph-loop/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`

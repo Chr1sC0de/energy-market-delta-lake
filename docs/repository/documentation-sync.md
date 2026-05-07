@@ -35,6 +35,7 @@ Maintained-doc discovery intentionally excludes generated, vendored, cached, and
 runtime-only paths:
 
 - `.ralph/`
+- `.shape-issues/`
 - `.venv/`
 - `.git/`
 - `.mypy_cache/`

@@ -29,6 +29,9 @@ Use this page as the agent documentation map. The imperative policy lives in
 
 ## Skills
 
+- Use `$shape-issues` before `$ralph-triage` to turn shaped plans into
+  non-mutating Ralph-ready issue drafts with context anchors, QA plans,
+  embedding-based context coverage, and stiffness scoring.
 - Use `$ralph-curate` to review open GitHub Issues against the current branch
   and propose stale, satisfied, blocked, or mislabeled issue updates.
 - Use `$ralph-issue-refresh` to reconcile ready issues after **Local
@@ -41,7 +44,7 @@ Use this page as the agent documentation map. The imperative policy lives in
   publish **Exploratory branches** for Exploratory handoff, inspect failures,
   and run **Promotion**. Human review accepts Exploratory work by moving it to
   `agent-integrated`, or rejects it by moving it to `ready-for-human`.
-- Use `$grill-with-docs`, `$to-prd`, and `$to-issues` before Ralph when the
+- Use `$grill-with-docs`, `$to-prd`, and `$shape-issues` before Ralph when the
   work needs shaping or issue creation.
 
 ## Sync metadata
@@ -51,6 +54,7 @@ Use this page as the agent documentation map. The imperative policy lives in
   - `AGENTS.md`
   - `OPERATOR.md`
   - `CONTEXT.md`
+  - `.agents/skills/shape-issues/SKILL.md`
   - `.agents/skills/ralph-curate/SKILL.md`
   - `.agents/skills/ralph-loop/SKILL.md`
   - `.agents/skills/ralph-issue-refresh/SKILL.md`

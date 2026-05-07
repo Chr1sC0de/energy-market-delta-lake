@@ -37,6 +37,7 @@ IGNORED_DISCOVERY_DIRS = frozenset(
         ".pytest_cache",
         ".ralph",
         ".ruff_cache",
+        ".shape-issues",
         ".venv",
         "__pycache__",
         "generated",
@@ -48,6 +49,7 @@ SUBPROJECT_PARENT_DIRS = frozenset({"backend-services", "infrastructure"})
 DOC_DISCOVERY_REQUIRED_EXCLUSIONS = frozenset(
     {
         ".ralph",
+        ".shape-issues",
         ".venv",
         ".mypy_cache",
         ".pytest_cache",

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Shape Issues"
+  short_description: "Score Ralph-ready issue drafts"
+  default_prompt: "Use $shape-issues to turn this plan into Ralph-ready issue drafts with context anchors and stiffness scoring."
