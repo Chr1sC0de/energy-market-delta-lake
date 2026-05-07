@@ -137,14 +137,24 @@ erDiagram
   `silver.vicgas.silver_int199_v4_cumulative_price_1`,
   `silver.vicgas.silver_int310_v1_price_and_withdrawals_rpt_1`,
   `silver.vicgas.silver_int310_v4_price_and_withdrawals_1`,
-  `silver.vicgas.silver_int235_v4_sched_system_total_1`
+  `silver.vicgas.silver_int235_v4_sched_system_total_1`,
+  `silver.sttm.silver_int651_v1_ex_ante_market_price_rpt_1`,
+  `silver.sttm.silver_int654_v1_provisional_market_price_rpt_1`,
+  `silver.sttm.silver_int657_v2_ex_post_market_data_rpt_1`,
+  `silver.sttm.silver_int672_v1_cumulative_price_rpt_1`,
+  `silver.sttm.silver_int676_v1_rolling_average_price_rpt_1`,
+  `silver.sttm.silver_int677_v1_contingency_gas_price_rpt_1`,
+  `silver.sttm.silver_int690_v1_deviation_price_data_rpt_1`
 - `silver_gas_fact_schedule_run`:
-  `silver.vicgas.silver_int108_v4_scheduled_run_log_7_1`
+  `silver.vicgas.silver_int108_v4_scheduled_run_log_7_1`,
+  `silver.sttm.silver_int668_v1_schedule_log_rpt_1`
 - `silver_gas_fact_scheduled_quantity`:
   `silver.vicgas.silver_int050_v4_sched_withdrawals_1`,
   `silver.vicgas.silver_int235_v4_sched_system_total_1`,
   `silver.vicgas.silver_int291_v4_out_of_merit_order_gas_1`,
-  `silver.vicgas.silver_int316_v4_operational_gas_1`
+  `silver.vicgas.silver_int316_v4_operational_gas_1`,
+  `silver.sttm.silver_int652_v1_ex_ante_schedule_quantity_rpt_1`,
+  `silver.sttm.silver_int655_v1_provisional_schedule_quantity_rpt_1`
 - `silver_gas_fact_bid_stack`:
   `silver.vicgas.silver_int131_v4_bids_at_bid_cutoff_times_prev_2_1`,
   `silver.vicgas.silver_int314_v4_bid_stack_1`
@@ -157,6 +167,21 @@ erDiagram
 - `silver_gas_fact_market_price` and `silver_gas_fact_scheduled_quantity` use
   source-qualified location, node, and transmission identifiers rather than
   conformed dimension foreign keys.
+- STTM market-price rows use `source_system = STTM` and keep each manifest
+  table in `source_table`. Multi-measure STTM reports emit one row per non-null
+  price measure: `INT651`, `INT654`, and `INT657` populate
+  `price_value_gst_ex`; `INT672` populates `cumulative_price`; `INT676`
+  populates `weighted_average_price_gst_ex`; `INT677` and `INT690` populate
+  one contingency, deviation, input price, or MOS-cost row per source measure.
+- STTM schedule-run rows from `INT668` use one row per `schedule_identifier`;
+  the schedule identifier is preserved in the transmission identifier fields
+  because the existing shared fact uses those source-run columns for schedule
+  identity.
+- STTM scheduled-quantity rows from `INT652` and `INT655` use one row per
+  non-null quantity measure at gas date, facility, flow direction, and schedule
+  type grain. The STTM source row surrogate key preserves flow direction and
+  provisional schedule type lineage where those fields are part of the source
+  manifest key.
 
 ## Related docs
 

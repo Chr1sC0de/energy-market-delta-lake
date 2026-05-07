@@ -167,13 +167,106 @@ def test_market_price_transform_and_required_check() -> None:
                 value=9.0,
                 current_date="01 Jan 2024 02:00:00",
             ),
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                schedule_identifier="EA-1",
+                ex_ante_market_price=10.0,
+                administered_price_period="N",
+                cap_applied=None,
+                administered_price_cap=400.0,
+                schedule_price=11.0,
+                approval_datetime="01 Jan 2024 01:00:00",
+                report_datetime="01 Jan 2024 02:00:00",
+            ),
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                schedule_identifier="P-1",
+                provisional_price=12.0,
+                provisional_schedule_type="D-2",
+                report_datetime="01 Jan 2024 02:00:00",
+            ),
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                schedule_identifier="XP-1",
+                imbalance_qty=1.0,
+                ex_post_imbalance_price=13.0,
+                schedule_type_code="XPOST",
+                imbalance_type="S",
+                schedule_imbalance_price=14.0,
+                approval_datetime="01 Jan 2024 01:00:00",
+                report_datetime="01 Jan 2024 02:00:00",
+            ),
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                cumulative_price=15.0,
+                cumulative_price_threshold=16.0,
+                report_datetime="01 Jan 2024 02:00:00",
+            ),
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                rolling_average=17.0,
+                report_datetime="01 Jan 2024 02:00:00",
+            ),
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                contingency_gas_called_identifier="CG-1",
+                high_contingency_gas_price=18.0,
+                low_contingency_gas_price=19.0,
+                schedule_high_contingency_gas_price=20.0,
+                schedule_low_contingency_gas_price=21.0,
+                approval_datetime="01 Jan 2024 01:00:00",
+                report_datetime="01 Jan 2024 02:00:00",
+            ),
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                positive_deviation_price=22.0,
+                negative_deviation_price=23.0,
+                ex_ante_market_price=24.0,
+                ex_post_imbalance_price=25.0,
+                low_contingency_gas_price=26.0,
+                high_contingency_gas_price=27.0,
+                mos_increase_cost=28.0,
+                mos_decrease_cost=29.0,
+                last_update_datetime="01 Jan 2024 01:30:00",
+                report_datetime="01 Jan 2024 02:00:00",
+            ),
         ),
     )
     collected = _collect(result)
+    sttm_rows = collected.filter(pl.col("source_system") == "STTM")
 
-    assert collected.height == 9
+    assert collected.height == 29
+    assert sttm_rows.height == 20
+    assert sttm_rows["surrogate_key"].n_unique() == sttm_rows.height
+    assert set(sttm_rows["source_table"]) == set(market_price.SOURCE_TABLES[9:])
+    assert {
+        "sttm_ex_ante_market_price",
+        "sttm_provisional_price",
+        "sttm_ex_post_imbalance_price",
+        "sttm_cumulative_price",
+        "sttm_rolling_average_price",
+        "sttm_high_contingency_gas_price",
+        "sttm_positive_deviation_price",
+    }.issubset(set(sttm_rows["price_type"]))
     assert _check_passed(
         market_price.silver_gas_fact_market_price_required_fields, result.value
+    )
+    assert _check_passed(
+        market_price.silver_gas_fact_market_price_duplicate_row_check, result.value
     )
 
 
@@ -197,7 +290,21 @@ def test_scheduling_transforms() -> None:
                 demand_type_id=0,
                 objective_function_value=1.5,
                 current_date="01 Jan 2024 07:00:00",
-            )
+            ),
+            _source(
+                schedule_identifier="STTM-SCHED-1",
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                schedule_type="ex ante",
+                schedule_day="D-1",
+                creation_datetime="01 Jan 2024 04:00:00",
+                bid_offer_cut_off_datetime="01 Jan 2024 05:00:00",
+                facility_hub_capacity_cut_off_datetime="01 Jan 2024 05:30:00",
+                pipeline_allocation_cut_off_datetime="01 Jan 2024 05:45:00",
+                approval_datetime="01 Jan 2024 06:30:00",
+                report_datetime="01 Jan 2024 07:00:00",
+            ),
         ),
     )
     quantity_result = cast(
@@ -236,6 +343,38 @@ def test_scheduling_transforms() -> None:
                 energy_gj=14.0,
                 volume_kscm=15.0,
                 current_date="01 Jan 2024 07:00:00",
+            ),
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                schedule_identifier="EA-1",
+                facility_identifier="FAC-1",
+                facility_name="Facility",
+                scheduled_qty=16.0,
+                firm_gas_scheduled_qty=17.0,
+                as_available_scheduled_qty=18.0,
+                flow_direction="T",
+                price_taker_bid_qty=19.0,
+                price_taker_bid_not_sched_qty=20.0,
+                approval_datetime="01 Jan 2024 06:30:00",
+                report_datetime="01 Jan 2024 07:00:00",
+            ),
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                schedule_identifier="P-1",
+                facility_identifier="FAC-1",
+                facility_name="Facility",
+                provisional_qty=21.0,
+                provisional_firm_gas_scheduled=22.0,
+                provisional_as_available_scheduled=23.0,
+                flow_direction="T",
+                price_taker_bid_provisional_not_sched_qty=24.0,
+                price_taker_bid_provisional_qty=25.0,
+                provisional_schedule_type="D-2",
+                report_datetime="01 Jan 2024 07:00:00",
             ),
         ),
     )
@@ -284,14 +423,36 @@ def test_scheduling_transforms() -> None:
         ),
     )
 
-    assert _collect(schedule_result).height == 1
-    assert _collect(quantity_result).height == 4
+    schedule_df = _collect(schedule_result)
+    quantity_df = _collect(quantity_result)
+    sttm_schedule_rows = schedule_df.filter(pl.col("source_system") == "STTM")
+    sttm_quantity_rows = quantity_df.filter(pl.col("source_system") == "STTM")
+
+    assert schedule_df.height == 2
+    assert sttm_schedule_rows["source_table"].to_list() == [
+        schedule_run.SOURCE_TABLES[1]
+    ]
+    assert sttm_schedule_rows["transmission_document_id"].to_list() == ["STTM-SCHED-1"]
+    assert quantity_df.height == 14
+    assert sttm_quantity_rows.height == 10
+    assert sttm_quantity_rows["surrogate_key"].n_unique() == sttm_quantity_rows.height
+    assert set(sttm_quantity_rows["source_table"]) == set(
+        scheduled_quantity.SOURCE_TABLES[4:]
+    )
     assert _collect(bid_result).height == 2
     assert _check_passed(
         schedule_run.silver_gas_fact_schedule_run_required_fields, schedule_result.value
     )
     assert _check_passed(
+        schedule_run.silver_gas_fact_schedule_run_duplicate_row_check,
+        schedule_result.value,
+    )
+    assert _check_passed(
         scheduled_quantity.silver_gas_fact_scheduled_quantity_required_fields,
+        quantity_result.value,
+    )
+    assert _check_passed(
+        scheduled_quantity.silver_gas_fact_scheduled_quantity_duplicate_row_check,
         quantity_result.value,
     )
     assert _check_passed(
