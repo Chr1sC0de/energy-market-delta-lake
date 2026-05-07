@@ -273,6 +273,58 @@ One candidate issue needs maintainer review.
 None.
 """
 
+POST_PROMOTION_READY_ISSUE_REFRESH_MARKDOWN = """# Ready Issue Refresh Analysis
+
+## Summary
+
+Two candidate issues were reviewed after Promotion closed #42.
+
+## Integrated Work
+
+- Promotion closed #42 after `promotion-sha`.
+
+## Candidate Issue Update Plan
+
+- #117: move back to ready-for-agent because its only blocker was closed by Promotion.
+- #122: no change planned.
+
+## Candidate Issue Mutation Plan
+
+```json
+{
+  "ready_issue_refresh_mutations": [
+    {
+      "issue_number": 117,
+      "action": "update",
+      "comment": "Promotion closed #42, the only blocker for this issue. Move it back to ready-for-agent before the next claim.",
+      "body": null,
+      "add_labels": ["ready-for-agent"],
+      "remove_labels": ["needs-triage"],
+      "close_as_completed": false
+    },
+    {
+      "issue_number": 122,
+      "action": "no_change",
+      "comment": null,
+      "body": null,
+      "add_labels": [],
+      "remove_labels": [],
+      "close_as_completed": false
+    }
+  ]
+}
+```
+
+## Evidence
+
+- #117 only named #42 in `## Blocked by`.
+- #122 remains ready but does not need a scope update.
+
+## Open Questions
+
+None.
+"""
+
 
 def make_issue(
     labels: set[str],
@@ -1221,6 +1273,44 @@ Build it.
         )
 
         self.assertEqual(candidates, [])
+
+    def test_post_promotion_ready_issue_refresh_candidates_include_retriage_blockers(
+        self,
+    ) -> None:
+        issues = [
+            make_issue(
+                {"needs-triage"},
+                implementation_body_with_blockers(42),
+                number=117,
+                title="Blocked only by promoted issue",
+            ),
+            make_issue(
+                {"needs-triage"},
+                implementation_body_with_blockers(42, 99),
+                number=118,
+                title="Still has an open blocker",
+            ),
+            make_issue(
+                {"ready-for-agent"},
+                IMPLEMENTATION_BODY,
+                number=122,
+                title="Existing ready issue",
+            ),
+            make_issue(
+                {"needs-triage", "agent-running"},
+                implementation_body_with_blockers(42),
+                number=123,
+                title="Runtime labels still block refresh",
+            ),
+        ]
+
+        candidates = ralph.select_post_promotion_ready_issue_refresh_candidates(
+            issues,
+            promoted_issue_numbers={42},
+            blocker_state=lambda number: "OPEN" if number == 99 else "CLOSED",
+        )
+
+        self.assertEqual([issue.number for issue in candidates], [117, 122])
 
     def test_ready_issue_refresh_candidates_respect_issue_limit_scan_bound(self) -> None:
         issue_list_command = (
@@ -5222,6 +5312,181 @@ Build it.
             manifest["github_metadata"]["issues"][0]["metadata_status"],
             "closed",
         )
+        self.assertFalse(manifest["ready_issue_refresh"]["enabled"])
+        self.assertEqual(manifest["ready_issue_refresh"]["status"], "skipped_disabled")
+
+    def test_promotion_runs_ready_issue_refresh_after_verified_closures(self) -> None:
+        issue_list_command = (
+            "gh",
+            "issue",
+            "list",
+            "-R",
+            "example/repo",
+            "--state",
+            "open",
+            "--limit",
+            "100",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        issue_comments_command = (
+            "gh",
+            "issue",
+            "view",
+            "42",
+            "-R",
+            "example/repo",
+            "--comments",
+            "--json",
+            "comments",
+        )
+        candidate_view_command = (
+            "gh",
+            "issue",
+            "view",
+            "117",
+            "-R",
+            "example/repo",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        target_ancestor_command = (
+            "git",
+            "merge-base",
+            "--is-ancestor",
+            "abc1234",
+            "origin/main",
+        )
+        promotion_log_command = (
+            "git",
+            "log",
+            "--reverse",
+            "--format=%H%x00%s",
+            "origin/main..source-sha",
+        )
+        promoted_issue = issue_payload(42, ["agent-integrated"])
+        retriage_candidate = issue_payload(
+            117,
+            ["needs-triage"],
+            implementation_body_with_blockers(42),
+        )
+        ready_candidate = issue_payload(122, ["ready-for-agent"])
+        comments_payload = {
+            "comments": [
+                {
+                    "body": "\n".join(
+                        [
+                            "Ralph Gitflow integration completed.",
+                            "",
+                            "Commit: `abc1234`",
+                        ]
+                    )
+                }
+            ]
+        }
+        runner = FakeRunner(
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+            ready_issue_refresh_analysis_markdown=POST_PROMOTION_READY_ISSUE_REFRESH_MARKDOWN,
+            command_outputs={
+                issue_list_command: [
+                    json.dumps([promoted_issue]),
+                    json.dumps([retriage_candidate, ready_candidate]),
+                ],
+                issue_comments_command: [json.dumps(comments_payload)],
+                candidate_view_command: [json.dumps(retriage_candidate)],
+                promotion_log_command: ["abc1234\x00Ralph Local integration for issue 42\n"],
+            },
+            fail_commands={target_ancestor_command: 1},
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                promote=True,
+                ready_issue_refresh_enabled=True,
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+            artifact_path = next(tmp_path.glob("logs/promote-*/ready-issue-refresh-analysis.md"))
+            artifact = artifact_path.read_text(encoding="utf-8")
+            comment = next(tmp_path.glob("logs/promote-*/issue-117-comment.md")).read_text(
+                encoding="utf-8"
+            )
+
+        commands = [call.args for call in runner.calls]
+        issue_list_indexes = [
+            index for index, command in enumerate(commands) if command == issue_list_command
+        ]
+        close_command = (
+            "gh",
+            "issue",
+            "close",
+            "42",
+            "-R",
+            "example/repo",
+            "--reason",
+            "completed",
+        )
+        label_command = (
+            "gh",
+            "issue",
+            "edit",
+            "117",
+            "-R",
+            "example/repo",
+            "--add-label",
+            "ready-for-agent",
+            "--remove-label",
+            "needs-triage",
+        )
+        review_call = next(
+            call
+            for call in runner.calls
+            if call.input_text is not None and "Run a Post-promotion review" in call.input_text
+        )
+        refresh_call = next(
+            call
+            for call in runner.calls
+            if call.input_text is not None
+            and "after successful Promotion closed verified" in call.input_text
+        )
+        self.assertEqual(len(issue_list_indexes), 2)
+        self.assertLess(commands.index(close_command), issue_list_indexes[1])
+        self.assertLess(runner.calls.index(review_call), runner.calls.index(refresh_call))
+        self.assertIn(label_command, commands)
+        self.assertTrue(comment.startswith(ralph.AI_READY_ISSUE_REFRESH_DISCLAIMER))
+        self.assertIn("Promotion closed #42", comment)
+        self.assertIn(
+            "Ready issue refresh candidate selection found 2 candidate(s) after "
+            "Promotion closure of #42.",
+            output.getvalue(),
+        )
+        self.assertEqual(artifact, POST_PROMOTION_READY_ISSUE_REFRESH_MARKDOWN.rstrip() + "\n")
+        self.assertIn("Post-promotion review notes:", refresh_call.input_text)
+        self.assertIn('"title": "Harden Promotion evidence checks"', refresh_call.input_text)
+        self.assertIn("### Candidate issue #117: Issue 117", refresh_call.input_text)
+        self.assertEqual(manifest["status"], "succeeded")
+        self.assertIsNone(manifest["failure"])
+        self.assertEqual(manifest["ready_issue_refresh"]["status"], "completed")
+        self.assertEqual(
+            manifest["ready_issue_refresh"]["candidate_issue_numbers"],
+            [117, 122],
+        )
+        results = {
+            item["issue_number"]: item
+            for item in manifest["ready_issue_refresh"]["mutation_results"]
+        }
+        self.assertEqual(results[117]["status"], "completed")
+        self.assertEqual(results[117]["operations"]["labels"]["added"], ["ready-for-agent"])
+        self.assertEqual(results[117]["operations"]["labels"]["removed"], ["needs-triage"])
+        self.assertEqual(results[122]["status"], "skipped_no_change")
 
     def test_promotion_fast_forwards_clean_checked_out_local_branches(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -6138,6 +6403,10 @@ None.
             manifest["post_promotion_followups"]["status"],
             "skipped_no_changes",
         )
+        self.assertEqual(
+            manifest["ready_issue_refresh"]["status"],
+            "skipped_no_changes",
+        )
 
     def test_post_promotion_review_failure_is_warning_only(self) -> None:
         runner = FakeRunner(
@@ -6168,6 +6437,105 @@ None.
         self.assertEqual(
             manifest["post_promotion_followups"]["status"],
             "skipped_review_unavailable",
+        )
+
+    def test_post_promotion_ready_issue_refresh_failure_is_warning_only(self) -> None:
+        issue_list_command = (
+            "gh",
+            "issue",
+            "list",
+            "-R",
+            "example/repo",
+            "--state",
+            "open",
+            "--limit",
+            "100",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        issue_comments_command = (
+            "gh",
+            "issue",
+            "view",
+            "42",
+            "-R",
+            "example/repo",
+            "--comments",
+            "--json",
+            "comments",
+        )
+        target_ancestor_command = (
+            "git",
+            "merge-base",
+            "--is-ancestor",
+            "abc1234",
+            "origin/main",
+        )
+        promotion_log_command = (
+            "git",
+            "log",
+            "--reverse",
+            "--format=%H%x00%s",
+            "origin/main..source-sha",
+        )
+        comments_payload = {
+            "comments": [
+                {
+                    "body": "\n".join(
+                        [
+                            "Ralph Gitflow integration completed.",
+                            "",
+                            "Commit: `abc1234`",
+                        ]
+                    )
+                }
+            ]
+        }
+        runner = FakeRunner(
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+            fail_ready_issue_refresh_analysis=True,
+            command_outputs={
+                issue_list_command: [
+                    json.dumps([issue_payload(42, ["agent-integrated"])]),
+                    json.dumps([issue_payload(43, ["ready-for-agent"])]),
+                ],
+                issue_comments_command: [json.dumps(comments_payload)],
+                promotion_log_command: ["abc1234\x00Ralph Local integration for issue 42\n"],
+            },
+            fail_commands={target_ancestor_command: 1},
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                promote=True,
+                skip_post_promotion_review=True,
+                ready_issue_refresh_enabled=True,
+            )
+            stderr = io.StringIO()
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(stderr):
+                loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        self.assertIn("Ready issue refresh warning after Promotion", stderr.getvalue())
+        self.assertEqual(manifest["status"], "succeeded")
+        self.assertIsNone(manifest["failure"])
+        self.assertEqual(
+            manifest["ready_issue_refresh"]["status"],
+            "failed_warning_only",
+        )
+        self.assertIn(
+            "Command failed",
+            manifest["ready_issue_refresh"]["failure"]["message"],
+        )
+        self.assertIn(
+            "Promotion remains succeeded",
+            manifest["ready_issue_refresh"]["recovery_guidance"],
         )
 
     def test_post_promotion_followup_creation_failure_is_warning_only_after_push(

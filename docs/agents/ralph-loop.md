@@ -170,7 +170,8 @@ Drain up to 10 implementation attempts:
 python3 scripts/ralph.py --drain
 ```
 
-Drain without applying **Ready issue refresh** metadata updates:
+Drain or run the Operator loop without applying **Ready issue refresh** metadata
+updates:
 
 ```bash
 python3 scripts/ralph.py --drain --skip-ready-issue-refresh
@@ -210,6 +211,13 @@ Promote reviewed Gitflow work from `dev` to `main`:
 
 ```bash
 python3 scripts/ralph.py --promote
+```
+
+Promote and opt into post-Promotion **Ready issue refresh** for a direct
+Promotion command:
+
+```bash
+python3 scripts/ralph.py --promote --ready-issue-refresh
 ```
 
 Run repeated drain and **Promotion** cycles in a foreground terminal:
@@ -441,10 +449,11 @@ Key fields for inspection:
 - `post_promotion_followups`: enabled state, created issue URLs, duplicate
   source-marker skips, validation downgrades to `needs-triage`, warning-only
   creation failures, and recovery guidance for **Promotion** follow-ups.
-- `ready_issue_refresh`: read-only analysis status, candidate issue numbers,
-  candidate issue metadata, analysis log path, Markdown artifact path, and
-  failure state for drain-mode implementation runs after successful **Local
-  integration** or Exploratory handoff.
+- `ready_issue_refresh`: enabled state, skip reason, read-only analysis status,
+  candidate issue numbers, candidate issue metadata, analysis log path, Markdown
+  artifact path, mutation results, recovery guidance, and failure state for
+  implementation runs after successful **Local integration** or Exploratory
+  handoff and for **Promotion** runs after verified issue closures.
 - `branch_sync`: Gitflow `main`-into-`dev` sync status, sync worktree path,
   merge or push log path, conflicted files, failure type, and recovery guidance
   when Ralph must stop before issue implementation.
@@ -776,6 +785,28 @@ drainable work. Follow-up creation failures after `main` is pushed are
 warning-only: **Promotion** remains succeeded, the manifest records the
 failure, and `post-promotion-review.md` receives recovery guidance.
 
+After successful **Promotion** metadata closes verified issues, Ralph may run
+**Ready issue refresh** before the next ready issue claim. The checkpointed
+Operator loop enables this refresh by default; direct `--promote` runs require
+`--ready-issue-refresh`, and operators can disable the Operator refresh with
+`--skip-ready-issue-refresh`. This post-Promotion refresh runs after
+**Post-promotion review** and follow-up issue creation so the read-only analysis
+can see promoted issue closures, the review report, and follow-up creation
+metadata. Candidate selection includes existing unblocked `ready-for-agent`
+issues plus stale triage candidates whose blockers are all satisfied and whose
+`## Blocked by` section names at least one newly closed promoted issue. That
+lets Ralph move work back toward the correct triage state when a blocker closed
+through **Promotion**, and lets the analysis surface existing ready issues whose
+scope should be refreshed from promoted review notes before claim.
+
+Post-Promotion refresh mutation failures are warning-only because `main` has
+already been pushed and verified issues have already been closed. The
+**Promotion** run remains succeeded, `ready_issue_refresh.status` records
+`failed_warning_only`, and the manifest stores recovery guidance for reconciling
+only the affected GitHub Issue metadata. If no Promotion changes exist, no
+verified issues closed, or refresh is disabled, the manifest records a skipped
+Ready issue refresh status with the reason.
+
 After a successful **Promotion**, Ralph inspects checked-out local worktrees for
 the source branch and **Integration target** branch. Clean local worktrees whose
 current commits are ancestors of the Promotion commit are fast-forwarded to that
@@ -828,16 +859,19 @@ stay on `delivery-gitflow` unless the issue explicitly asks for
 ## Ready issue refresh
 
 **Ready issue refresh** is the queue-maintenance pass Ralph runs after a
-successful implementation **Local integration** or Exploratory handoff and
-before the next `ready-for-agent` issue claim in the drain. It reconciles open
-GitHub Issues against the updated **Integration target** so follow-on work does
-not keep stale blockers, stale acceptance criteria, or already-satisfied issues
-in the ready queue.
+successful implementation **Local integration**, Exploratory handoff, or
+successful **Promotion** verified issue closure before the next
+`ready-for-agent` issue claim. It reconciles open GitHub Issues against the
+updated **Integration target** so follow-on work does not keep stale blockers,
+stale acceptance criteria, or already-satisfied issues in the ready queue.
 
 After each successful drain-mode **Local integration** or Exploratory handoff,
-Ralph computes and applies **Ready issue refresh** by default. Operators can
-disable the drain refresh with `--skip-ready-issue-refresh`; targeted
-`--issue` runs do not refresh unless the operator passes `--ready-issue-refresh`.
+Ralph computes and applies **Ready issue refresh** by default. The checkpointed
+Operator loop also computes and applies **Ready issue refresh** after a
+successful **Promotion** that closes verified issues. Operators can disable the
+drain or Operator refresh with `--skip-ready-issue-refresh`; targeted `--issue`
+runs and direct `--promote` runs do not refresh unless the operator passes
+`--ready-issue-refresh`.
 Ralph first computes a bounded candidate set from open GitHub Issues returned by
 the existing `--issue-limit` scan. Candidate selection includes
 `ready-for-agent` issues that are unblocked in queue order and excludes issues
@@ -850,10 +884,20 @@ for human review, but candidate selection treats that just-completed blocker as
 satisfied for refresh review. Trunk delivery works through the same selector
 after the just-completed blocker has already been closed.
 
+Post-Promotion candidate selection also includes stale `needs-triage` or
+unlabeled triage candidates when their blockers are all satisfied and at least
+one blocker is a newly closed promoted issue. Issues with runtime, terminal, or
+human-waiting labels still stay out of the refresh candidate set. The
+post-Promotion analysis prompt includes the closed promoted issue bodies,
+Promotion commit, full Promotion changed-file inventory, QA evidence,
+**Post-promotion review** Markdown, follow-up creation metadata, and candidate
+issue bodies.
+
 This bounded scan also keeps the next unblocked ready issues in queue order in
 the candidate set, even when they do not explicitly reference the just-integrated
 issue. That lets refresh review catch duplicate or obsolete ready work that
-became stale because of the latest **Local integration** or Exploratory handoff.
+became stale because of the latest **Local integration**, Exploratory handoff,
+or **Promotion**.
 After candidate selection, Ralph invokes a read-only spawned Codex subprocess
 using the repo-local `$ralph-issue-refresh` skill. The analysis prompt includes
 the integrated issue, **Delivery mode**, **Integration target**, **Local
@@ -869,14 +913,15 @@ explicit `no_change` entries for candidates that need no metadata mutation.
 Reports with no selected candidates may omit mutation JSON.
 
 The read-only analysis report is saved as
-`ready-issue-refresh-analysis.md` in the current `.ralph/runs/issue-.../`
-directory beside `codex-ready-issue-refresh-analysis.jsonl`. The implementation
-run manifest records `ready_issue_refresh.status`, candidate issue numbers,
-candidate issue metadata, the analysis log path, the artifact path,
+`ready-issue-refresh-analysis.md` in the current `.ralph/runs/issue-.../` or
+`.ralph/runs/promote-.../` directory beside
+`codex-ready-issue-refresh-analysis.jsonl`. The run manifest records
+`ready_issue_refresh.status`, candidate issue numbers, candidate issue
+metadata, the analysis log path, the artifact path,
 `ready_issue_refresh.mutation_results`, recovery guidance, and any failure.
 Each candidate mutation result records the issue number, action, status,
 operations applied, error text, and log path when available, so operators can
-inspect partial post-**Local integration** metadata failures.
+inspect partial metadata failures.
 
 Ralph applies only GitHub Issue metadata commands during mutation: `gh issue
 view`, `gh issue edit`, `gh issue comment`, and `gh issue close`. It does not
@@ -893,6 +938,10 @@ the drain.
 Malformed or missing mutation JSON for selected candidates is a mutation failure:
 Ralph records `ready_issue_refresh.status: failed` and stops before another
 ready issue claim.
+If post-Promotion analysis or metadata mutation fails, Ralph records
+`ready_issue_refresh.status: failed_warning_only`, keeps **Promotion**
+succeeded, and continues cleanup. Operators inspect the Promotion manifest and
+reconcile only the failed GitHub Issue metadata before rerunning the drain.
 
 In `--dry-run`, Ralph reports that Ready issue refresh candidate selection would
 run after **Local integration** or Exploratory handoff; it does not invoke Codex
@@ -933,8 +982,8 @@ state already satisfies or obsoletes the issue, refresh closes it as completed
 with evidence. Unclear issues must not be closed as completed.
 
 **Ready issue refresh** is distinct from **Post-promotion review**. Refresh
-runs during drain after **Local integration** or Exploratory handoff and may
-update issue metadata.
+runs after **Local integration**, Exploratory handoff, or successful
+**Promotion** closure and may update issue metadata.
 **Post-promotion review** runs after **Promotion**, uses read-only issue access,
 and reports structured follow-up issue drafts in the Promotion artifact. Only
 Ralph's validated create-only helper may turn those drafts into GitHub Issues
@@ -1030,13 +1079,18 @@ attempts still try warning-only **Post-promotion review** when a review worktree
 is available; the original Promotion exception, manifest `status`, and failure
 state remain the source of truth.
 
-**Ready issue refresh** analysis or metadata mutation failures also stop the
-drain, but they do not imply the integrated issue metadata needs recovery. The
-manifest records the pushed **Integration target** commit, completed integrated
-issue metadata, `ready_issue_refresh.status: failed`, and any candidate-level
-`ready_issue_refresh.mutation_results`. Operators inspect the analysis log,
-artifact path, and mutation results, then reconcile only failed GitHub Issue
-metadata before restarting the drain.
+Implementation **Ready issue refresh** analysis or metadata mutation failures
+also stop the drain, but they do not imply the integrated issue metadata needs
+recovery. The manifest records the pushed **Integration target** commit,
+completed integrated issue metadata, `ready_issue_refresh.status: failed`, and
+any candidate-level `ready_issue_refresh.mutation_results`. Operators inspect
+the analysis log, artifact path, and mutation results, then reconcile only
+failed GitHub Issue metadata before restarting the drain. Post-Promotion
+**Ready issue refresh** failures are warning-only: **Promotion** remains
+succeeded, the manifest records
+`ready_issue_refresh.status: failed_warning_only`, and operators reconcile only
+the affected GitHub Issue
+metadata before rerunning the drain.
 
 Gitflow branch-sync conflicts and stale `agent-sync-main-into-dev` worktrees
 also stop the drain. Ralph records the sync worktree path, relevant log path,

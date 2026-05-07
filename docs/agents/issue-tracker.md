@@ -72,28 +72,33 @@ Manual Gitflow recovery must add the parseable recovery evidence documented in
 [ralph-loop.md](ralph-loop.md) before leaving or applying `agent-integrated`, so
 later **Promotion** can verify the recovered `dev` commit before closure.
 
-After a successful drain-mode **Local integration** or Exploratory handoff,
-Ralph computes **Ready issue refresh** candidates from open issues within
-`--issue-limit`. The candidate scan keeps unblocked `ready-for-agent` issues in
-queue order, excludes issues with runtime stop labels, and treats the issue that
-was just completed as a satisfied blocker for candidate selection even when
-Gitflow leaves it open with `agent-integrated` until **Promotion** or
-Exploratory delivery leaves it open with `agent-reviewing` for human review.
-Ralph then runs a read-only analysis subprocess using `$ralph-issue-refresh`.
-That subprocess receives the integrated issue, **Delivery mode**,
-**Integration target**, integration commit, changed files, QA evidence, run log
-path, and candidate issue bodies, then writes
+After a successful drain-mode **Local integration**, Exploratory handoff, or
+successful **Promotion** verified issue closure, Ralph computes **Ready issue
+refresh** candidates from open issues within `--issue-limit`. The candidate scan
+keeps unblocked `ready-for-agent` issues in queue order, excludes issues with
+runtime stop labels, and treats the issue that was just completed as a
+satisfied blocker for candidate selection even when Gitflow leaves it open with
+`agent-integrated` until **Promotion** or Exploratory delivery leaves it open
+with `agent-reviewing` for human review. Post-Promotion candidate selection
+also includes stale `needs-triage` or unlabeled issues whose blockers are all
+satisfied and whose `## Blocked by` section names at least one newly closed
+promoted issue. Ralph then runs a read-only analysis subprocess using
+`$ralph-issue-refresh`. That subprocess receives the integrated or promoted
+issue context, **Delivery mode**, **Integration target**, relevant commit,
+changed files, QA evidence, run log path, and candidate issue bodies, then writes
 `ready-issue-refresh-analysis.md` under the current `.ralph/runs/issue-.../`
-directory. It records planned issue updates and a structured mutation plan, but
-is not allowed to mutate GitHub Issues itself. Ralph's outer loop applies
-validated refresh comments, body edits, label transitions, and completed
-closures with GitHub Issue metadata commands only. When candidates were
-selected, the analysis must include a parseable fenced `json` plan with
-`ready_issue_refresh_mutations`; candidates with no metadata update use an
-explicit `no_change` entry. Reports with no selected candidates may omit
-mutation JSON. The run manifest records per-candidate mutation status and
-recovery guidance for partial failures, and malformed or missing mutation JSON
-for selected candidates stops the drain before the next ready issue claim.
+or `.ralph/runs/promote-.../` directory. It records planned issue updates and a
+structured mutation plan, but is not allowed to mutate GitHub Issues itself.
+Ralph's outer loop applies validated refresh comments, body edits, label
+transitions, and completed closures with GitHub Issue metadata commands only.
+When candidates were selected, the analysis must include a parseable fenced
+`json` plan with `ready_issue_refresh_mutations`; candidates with no metadata
+update use an explicit `no_change` entry. Reports with no selected candidates
+may omit mutation JSON. The run manifest records per-candidate mutation status
+and recovery guidance for partial failures. Malformed or missing mutation JSON
+for selected implementation candidates stops the drain before the next ready
+issue claim; post-Promotion refresh failures are warning-only after successful
+**Promotion**.
 
 Use [ralph-loop.md](ralph-loop.md) for Ralph internals, including
 **Delivery mode**, **Local integration**, **Integration target**, **Promotion**,
