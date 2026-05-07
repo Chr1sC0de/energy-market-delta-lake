@@ -72,7 +72,11 @@ declared as `String` while the standard ingestion metadata columns keep the
 existing source-table bronze types. `INT685` and `INT685B` are live STTM root
 CSV reports but are absent from the v19.1 specification manifest, so discovery
 may land them while archive replay leaves them out of source-table bronze
-targets.
+targets. ADR
+[0006](0006-sttm-gas-model-uses-fit-plus-extend-modeling.md) records the target
+`gas_model` modeling policy for manifest-backed STTM coverage and keeps
+`INT685` and `INT685B` as explicit **Source-spec gaps** until AEMO document
+discovery provides usable source definitions.
 
 The archive bucket contains only source files whose source-table bronze run
 reached an actual table write. Operators should inspect the skipped-key WARN
@@ -140,6 +144,7 @@ the intended rebuild.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
+  - `docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md`
 - `sync.scope`: `architecture, operations`
 - `sync.qa`:
   - `git diff --name-only`

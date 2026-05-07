@@ -128,6 +128,7 @@ sequenceDiagram
     participant Bronze as STTM bronze report asset
     participant Archive as ARCHIVE_BUCKET/bronze/sttm
     participant Silver as STTM silver report asset
+    participant GasModel as silver/gas_model/*
 
     Operator->>ManualJob: Optional DAYNN.ZIP bootstrap/backfill launch
     ManualJob->>NEMWeb: List and fetch DAY01.ZIP through DAY31.ZIP bundles
@@ -148,6 +149,7 @@ sequenceDiagram
     Bronze->>Landing: Read selected csv/parquet objects
     Bronze->>Archive: Copy then delete processed source files after table write
     Bronze->>Silver: Trigger silver current-snapshot asset
+    Silver->>GasModel: Feed shared dimensions or fact assets by fit-plus-extend policy
 ```
 
 Trigger and output notes:
@@ -171,6 +173,10 @@ Trigger and output notes:
 - `INT685` and `INT685B` appear as live root CSV reports but are absent from
   the v19.1 STTM report specification manifest. Discovery may land those files,
   but they are landing-only gaps until a spec-backed source-table entry exists.
+- Manifest-backed STTM coverage uses the fit-plus-extend modeling policy in ADR
+  [0006](../../../../../docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md):
+  matching STTM grains enrich existing `gas_model` assets, and distinct STTM
+  grains become new `gas_model` facts.
 
 ## Raw-to-silver transformation flow
 
@@ -241,6 +247,7 @@ source table and 3 zip objects per required domain.
 - [High-level architecture](high_level_architecture.md)
 - [Local development guide](../development/local_development.md)
 - [ADR 0003: bounded current-state bronze source tables](../../../../../docs/adr/0003-bounded-current-state-bronze-source-tables.md)
+- [ADR 0006: STTM gas_model fit-plus-extend modeling](../../../../../docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md)
 - [Gas-model ERDs](../gas_model/)
 
 ## Sync metadata
@@ -308,6 +315,7 @@ source table and 3 zip objects per required domain.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/unzipper/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/unzipper/sensors.py`
   - `docs/adr/0003-bounded-current-state-bronze-source-tables.md`
+  - `docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md`
 - `sync.scope`: `behavior`
 - `sync.qa`:
   - `git diff --name-only`

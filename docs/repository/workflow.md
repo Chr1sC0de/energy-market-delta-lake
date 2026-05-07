@@ -73,7 +73,11 @@ Production orchestration behavior:
    archive processed source files only after a table write, delete zero-byte
    landing objects, and warn on skipped selected keys.
 4. Downstream silver and `gas_model` assets materialize through Dagster
-   automation based on dependency updates.
+   automation based on dependency updates. Manifest-backed STTM coverage uses
+   the fit-plus-extend modeling policy in ADR
+   [0006](../adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md):
+   matching STTM grains enrich existing `gas_model` assets, and distinct STTM
+   grains become new `gas_model` facts.
 5. `delta_table_vacuum_schedule` runs daily at 02:00 Australia/Melbourne and
    launches `delta_table_vacuum_job` to compact and vacuum Delta-backed assets.
 6. Dagster metadata and orchestration state are stored in PostgreSQL.
@@ -195,6 +199,7 @@ For the doc-sync contract, searchable `sync.sources` metadata, and the required
   - `backend-services/compose.yaml`
   - `backend-services/scripts/aemo-etl-e2e`
   - `infrastructure/aws-pulumi/__main__.py`
+  - `docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md`
 - `sync.scope`: `behavior`
 - `sync.qa`:
   - `git diff --name-only`
