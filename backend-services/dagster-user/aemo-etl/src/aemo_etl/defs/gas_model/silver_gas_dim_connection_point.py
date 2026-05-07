@@ -32,23 +32,29 @@ DOMAIN = "gas_model"
 TABLE_NAME = "silver_gas_dim_connection_point"
 KEY_PREFIX = ["silver", DOMAIN]
 GROUP_NAME = "gas_model"
-GRAIN = "one current row per source-qualified facility, connection point, and flow direction"
+GRAIN = "one current row per source-qualified facility, connection point, flow direction, and optional hub"
 SURROGATE_KEY_SOURCES = [
     "source_system",
     "source_facility_id",
     "source_connection_point_id",
     "flow_direction",
+    "source_hub_id",
 ]
 SOURCE_TABLES = [
     "silver.gbb.silver_gasbb_nodes_connection_points",
     "silver.gbb.silver_gasbb_demand_zones_and_pipeline_connectionpoint_mapping",
+    "silver.sttm.silver_int691_v1_sttm_ctp_register_rpt_1",
 ]
 SOURCE_SYSTEM = "GBB"
+STTM_CTP_FLOW_DIRECTION = "not_applicable"
 GBB_NODES_CONNECTION_POINTS_KEY = AssetKey(
     ["silver", "gbb", "silver_gasbb_nodes_connection_points"]
 )
 GBB_DEMAND_ZONE_MAPPING_KEY = AssetKey(
     ["silver", "gbb", "silver_gasbb_demand_zones_and_pipeline_connectionpoint_mapping"]
+)
+STTM_CTP_REGISTER_KEY = AssetKey(
+    ["silver", "sttm", "silver_int691_v1_sttm_ctp_register_rpt_1"]
 )
 FACILITIES_KEY = AssetKey(["silver", "gas_model", "silver_gas_dim_facility"])
 LOCATIONS_KEY = AssetKey(["silver", "gas_model", "silver_gas_dim_location"])
@@ -62,6 +68,9 @@ _SURROGATE_KEY_DEPS = [
     TableColumnDep(
         asset_key=GBB_NODES_CONNECTION_POINTS_KEY, column_name="FlowDirection"
     ),
+    TableColumnDep(asset_key=STTM_CTP_REGISTER_KEY, column_name="hub_identifier"),
+    TableColumnDep(asset_key=STTM_CTP_REGISTER_KEY, column_name="facility_identifier"),
+    TableColumnDep(asset_key=STTM_CTP_REGISTER_KEY, column_name="ctp_identifier"),
 ]
 
 COLUMN_LINEAGE = TableColumnLineage(
@@ -70,6 +79,9 @@ COLUMN_LINEAGE = TableColumnLineage(
         "facility_key": [
             TableColumnDep(
                 asset_key=GBB_NODES_CONNECTION_POINTS_KEY, column_name="FacilityId"
+            ),
+            TableColumnDep(
+                asset_key=STTM_CTP_REGISTER_KEY, column_name="facility_identifier"
             ),
             TableColumnDep(asset_key=FACILITIES_KEY, column_name="surrogate_key"),
         ],
@@ -83,18 +95,35 @@ COLUMN_LINEAGE = TableColumnLineage(
             TableColumnDep(
                 asset_key=GBB_DEMAND_ZONE_MAPPING_KEY, column_name="DemandZone"
             ),
+            TableColumnDep(
+                asset_key=STTM_CTP_REGISTER_KEY, column_name="hub_identifier"
+            ),
             TableColumnDep(asset_key=ZONES_KEY, column_name="surrogate_key"),
+        ],
+        "source_hub_id": [
+            TableColumnDep(
+                asset_key=STTM_CTP_REGISTER_KEY, column_name="hub_identifier"
+            )
+        ],
+        "source_hub_name": [
+            TableColumnDep(asset_key=STTM_CTP_REGISTER_KEY, column_name="hub_name")
         ],
         "source_facility_id": [
             TableColumnDep(
                 asset_key=GBB_NODES_CONNECTION_POINTS_KEY, column_name="FacilityId"
-            )
+            ),
+            TableColumnDep(
+                asset_key=STTM_CTP_REGISTER_KEY, column_name="facility_identifier"
+            ),
         ],
         "source_connection_point_id": [
             TableColumnDep(
                 asset_key=GBB_NODES_CONNECTION_POINTS_KEY,
                 column_name="ConnectionPointId",
-            )
+            ),
+            TableColumnDep(
+                asset_key=STTM_CTP_REGISTER_KEY, column_name="ctp_identifier"
+            ),
         ],
         "source_node_id": [
             TableColumnDep(
@@ -110,7 +139,8 @@ COLUMN_LINEAGE = TableColumnLineage(
             TableColumnDep(
                 asset_key=GBB_NODES_CONNECTION_POINTS_KEY,
                 column_name="ConnectionPointName",
-            )
+            ),
+            TableColumnDep(asset_key=STTM_CTP_REGISTER_KEY, column_name="ctp_name"),
         ],
         "flow_direction": [
             TableColumnDep(
@@ -121,7 +151,10 @@ COLUMN_LINEAGE = TableColumnLineage(
         "facility_name": [
             TableColumnDep(
                 asset_key=GBB_NODES_CONNECTION_POINTS_KEY, column_name="FacilityName"
-            )
+            ),
+            TableColumnDep(
+                asset_key=STTM_CTP_REGISTER_KEY, column_name="facility_name"
+            ),
         ],
         "location_name": [
             TableColumnDep(
@@ -147,33 +180,54 @@ COLUMN_LINEAGE = TableColumnLineage(
         "effective_date": [
             TableColumnDep(
                 asset_key=GBB_NODES_CONNECTION_POINTS_KEY, column_name="EffectiveDate"
+            ),
+            TableColumnDep(
+                asset_key=STTM_CTP_REGISTER_KEY, column_name="effective_from_date"
+            ),
+        ],
+        "effective_to_date": [
+            TableColumnDep(
+                asset_key=STTM_CTP_REGISTER_KEY, column_name="effective_to_date"
             )
         ],
         "source_last_updated": [
             TableColumnDep(
                 asset_key=GBB_NODES_CONNECTION_POINTS_KEY, column_name="LastUpdated"
-            )
+            ),
+            TableColumnDep(
+                asset_key=STTM_CTP_REGISTER_KEY, column_name="last_update_datetime"
+            ),
         ],
         "source_last_updated_timestamp": [
             TableColumnDep(
                 asset_key=GBB_NODES_CONNECTION_POINTS_KEY, column_name="LastUpdated"
-            )
+            ),
+            TableColumnDep(
+                asset_key=STTM_CTP_REGISTER_KEY, column_name="last_update_datetime"
+            ),
         ],
         "source_surrogate_key": [
             TableColumnDep(
                 asset_key=GBB_NODES_CONNECTION_POINTS_KEY, column_name="surrogate_key"
-            )
+            ),
+            TableColumnDep(
+                asset_key=STTM_CTP_REGISTER_KEY, column_name="surrogate_key"
+            ),
         ],
         "source_file": [
             TableColumnDep(
                 asset_key=GBB_NODES_CONNECTION_POINTS_KEY, column_name="source_file"
-            )
+            ),
+            TableColumnDep(asset_key=STTM_CTP_REGISTER_KEY, column_name="source_file"),
         ],
         "ingested_timestamp": [
             TableColumnDep(
                 asset_key=GBB_NODES_CONNECTION_POINTS_KEY,
                 column_name="ingested_timestamp",
-            )
+            ),
+            TableColumnDep(
+                asset_key=STTM_CTP_REGISTER_KEY, column_name="ingested_timestamp"
+            ),
         ],
     }
 )
@@ -185,6 +239,8 @@ SCHEMA = {
     "zone_key": pl.String,
     "source_system": pl.String,
     "source_tables": pl.List(pl.String),
+    "source_hub_id": pl.String,
+    "source_hub_name": pl.String,
     "source_facility_id": pl.String,
     "source_connection_point_id": pl.String,
     "source_node_id": pl.String,
@@ -197,6 +253,7 @@ SCHEMA = {
     "exempt": pl.Boolean,
     "exemption_description": pl.String,
     "effective_date": pl.Date,
+    "effective_to_date": pl.Date,
     "source_last_updated": pl.String,
     "source_last_updated_timestamp": pl.Datetime("us"),
     "source_surrogate_key": pl.String,
@@ -211,6 +268,8 @@ DESCRIPTIONS = {
     "zone_key": "Parent silver_gas_dim_zone surrogate_key when mapped.",
     "source_system": "Source system identifier.",
     "source_tables": "Silver source tables used to construct the gas model row.",
+    "source_hub_id": "Source-system hub identifier where the connection point is hub-scoped.",
+    "source_hub_name": "Source-system hub name where the connection point is hub-scoped.",
     "source_facility_id": "Source-system facility identifier.",
     "source_connection_point_id": "Source-system connection point identifier.",
     "source_node_id": "Source-system node identifier.",
@@ -223,6 +282,7 @@ DESCRIPTIONS = {
     "exempt": "Flag indicating whether the connection point has a data exemption.",
     "exemption_description": "Source exemption description.",
     "effective_date": "Parsed effective date.",
+    "effective_to_date": "Parsed effective-to date where supplied by the source.",
     "source_last_updated": "Raw source update value.",
     "source_last_updated_timestamp": "Parsed source update timestamp.",
     "source_surrogate_key": "Source row surrogate key for lineage.",
@@ -245,6 +305,8 @@ def _parse_datetime(column: str) -> pl.Expr:
         source.str.strptime(pl.Datetime("us"), "%Y/%m/%d %H:%M:%S", strict=False),
         source.str.strptime(pl.Datetime("us"), "%Y/%m/%d", strict=False),
         source.str.strptime(pl.Datetime("us"), "%d %b %Y %H:%M:%S", strict=False),
+        source.str.strptime(pl.Datetime("us"), "%Y-%m-%d %H:%M:%S", strict=False),
+        source.str.strptime(pl.Datetime("us"), "%Y-%m-%d", strict=False),
     )
 
 
@@ -275,75 +337,143 @@ def _demand_zone_mapping(df: LazyFrame) -> LazyFrame:
     )
 
 
+def _gbb_connection_points(
+    gbb_nodes_connection_points: LazyFrame,
+    gbb_demand_zone_mapping: LazyFrame,
+) -> LazyFrame:
+    return gbb_nodes_connection_points.with_columns(
+        source_system=pl.lit(SOURCE_SYSTEM),
+        source_tables=pl.lit(
+            [
+                "silver.gbb.silver_gasbb_nodes_connection_points",
+                "silver.gbb.silver_gasbb_demand_zones_and_pipeline_connectionpoint_mapping",
+            ]
+        ).cast(pl.List(pl.String)),
+        source_hub_id=pl.lit(None).cast(pl.String),
+        source_hub_name=pl.lit(None).cast(pl.String),
+        source_facility_id=pl.col("FacilityId").cast(pl.String),
+        source_connection_point_id=pl.col("ConnectionPointId").cast(pl.String),
+        source_node_id=pl.col("NodeId").cast(pl.String),
+        source_location_id=pl.col("LocationId").cast(pl.String),
+        connection_point_name=pl.col("ConnectionPointName").cast(pl.String),
+        flow_direction=pl.col("FlowDirection").cast(pl.String),
+        facility_name=pl.col("FacilityName").cast(pl.String),
+        location_name=pl.col("LocationName").cast(pl.String),
+        state=pl.col("StateName").cast(pl.String),
+        exempt=pl.col("Exempt").cast(pl.Boolean),
+        exemption_description=pl.col("ExemptionDescription").cast(pl.String),
+        effective_date=_parse_date("EffectiveDate"),
+        effective_to_date=pl.lit(None).cast(pl.Date),
+        source_last_updated=pl.col("LastUpdated").cast(pl.String),
+        source_last_updated_timestamp=_parse_datetime("LastUpdated"),
+        source_surrogate_key=pl.col("surrogate_key").cast(pl.String),
+    ).join(
+        _demand_zone_mapping(gbb_demand_zone_mapping),
+        on=[
+            "source_system",
+            "source_facility_id",
+            "source_connection_point_id",
+            "flow_direction",
+        ],
+        how="left",
+    )
+
+
+def _sttm_ctps(df: LazyFrame) -> LazyFrame:
+    return df.select(
+        source_system=pl.lit("STTM"),
+        source_tables=pl.lit(
+            ["silver.sttm.silver_int691_v1_sttm_ctp_register_rpt_1"]
+        ).cast(pl.List(pl.String)),
+        source_hub_id=pl.col("hub_identifier").cast(pl.String),
+        source_hub_name=pl.col("hub_name").cast(pl.String),
+        source_facility_id=pl.col("facility_identifier").cast(pl.String),
+        source_connection_point_id=pl.col("ctp_identifier").cast(pl.String),
+        source_node_id=pl.lit(None).cast(pl.String),
+        source_location_id=pl.lit(None).cast(pl.String),
+        connection_point_name=pl.col("ctp_name").cast(pl.String),
+        flow_direction=pl.lit(STTM_CTP_FLOW_DIRECTION),
+        facility_name=pl.col("facility_name").cast(pl.String),
+        location_name=pl.lit(None).cast(pl.String),
+        state=pl.lit(None).cast(pl.String),
+        exempt=pl.lit(None).cast(pl.Boolean),
+        exemption_description=pl.lit(None).cast(pl.String),
+        effective_date=_parse_date("effective_from_date"),
+        effective_to_date=_parse_date("effective_to_date"),
+        source_last_updated=pl.col("last_update_datetime").cast(pl.String),
+        source_last_updated_timestamp=_parse_datetime("last_update_datetime"),
+        source_surrogate_key=pl.col("surrogate_key").cast(pl.String),
+        source_file=pl.col("source_file").cast(pl.String),
+        ingested_timestamp=pl.col("ingested_timestamp"),
+        source_zone_id=pl.col("hub_identifier").cast(pl.String),
+        zone_type=pl.lit("sttm_hub"),
+    )
+
+
 def _select_current_connection_points(
     gbb_nodes_connection_points: LazyFrame,
     gbb_demand_zone_mapping: LazyFrame,
+    sttm_ctp_register: LazyFrame,
     facilities: LazyFrame,
     locations: LazyFrame,
     zones: LazyFrame,
 ) -> LazyFrame:
-    facility_keys = facilities.select(
-        facility_key=pl.col("surrogate_key"),
-        source_system=pl.col("source_system"),
-        source_facility_id=pl.col("source_facility_id"),
+    facility_keys = (
+        facilities.select(
+            facility_key=pl.col("surrogate_key"),
+            source_system=pl.col("source_system"),
+            source_facility_id=pl.col("source_facility_id"),
+            source_hub_id=pl.col("source_hub_id"),
+        )
+        .with_columns(facility_join_hub_id=pl.col("source_hub_id").fill_null(""))
+        .drop("source_hub_id")
     )
     location_keys = locations.select(
         location_key=pl.col("surrogate_key"),
         source_system=pl.col("source_system"),
         source_location_id=pl.col("source_location_id"),
     )
-    zone_keys = zones.filter(pl.col("zone_type") == "demand_zone").select(
+    zone_keys = zones.filter(
+        pl.col("zone_type").is_in(["demand_zone", "sttm_hub"])
+    ).select(
         zone_key=pl.col("surrogate_key"),
         source_system=pl.col("source_system"),
         zone_type=pl.col("zone_type"),
         source_zone_id=pl.col("source_zone_id"),
     )
+    combined = pl.concat(
+        [
+            _gbb_connection_points(
+                gbb_nodes_connection_points,
+                gbb_demand_zone_mapping,
+            ),
+            _sttm_ctps(sttm_ctp_register),
+        ],
+        how="diagonal_relaxed",
+    )
     return (
-        gbb_nodes_connection_points.with_columns(
-            source_system=pl.lit(SOURCE_SYSTEM),
-            source_tables=pl.lit(SOURCE_TABLES).cast(pl.List(pl.String)),
-            source_facility_id=pl.col("FacilityId").cast(pl.String),
-            source_connection_point_id=pl.col("ConnectionPointId").cast(pl.String),
-            source_node_id=pl.col("NodeId").cast(pl.String),
-            source_location_id=pl.col("LocationId").cast(pl.String),
-            connection_point_name=pl.col("ConnectionPointName").cast(pl.String),
-            flow_direction=pl.col("FlowDirection").cast(pl.String),
-            facility_name=pl.col("FacilityName").cast(pl.String),
-            location_name=pl.col("LocationName").cast(pl.String),
-            state=pl.col("StateName").cast(pl.String),
-            exempt=pl.col("Exempt").cast(pl.Boolean),
-            exemption_description=pl.col("ExemptionDescription").cast(pl.String),
-            effective_date=_parse_date("EffectiveDate"),
-            source_last_updated=pl.col("LastUpdated").cast(pl.String),
-            source_last_updated_timestamp=_parse_datetime("LastUpdated"),
-            source_surrogate_key=pl.col("surrogate_key").cast(pl.String),
-        )
-        .with_columns(surrogate_key=get_surrogate_key(SURROGATE_KEY_SOURCES))
+        combined.with_columns(surrogate_key=get_surrogate_key(SURROGATE_KEY_SOURCES))
         .sort(
             [
                 "source_system",
                 "source_facility_id",
                 "source_connection_point_id",
                 "flow_direction",
+                "source_hub_id",
                 "source_last_updated_timestamp",
                 "effective_date",
                 "ingested_timestamp",
             ],
-            descending=[False, False, False, False, True, True, True],
+            descending=[False, False, False, False, False, True, True, True],
             nulls_last=True,
         )
         .unique(subset=SURROGATE_KEY_SOURCES, keep="first", maintain_order=True)
+        .with_columns(facility_join_hub_id=pl.col("source_hub_id").fill_null(""))
         .join(
-            _demand_zone_mapping(gbb_demand_zone_mapping),
-            on=[
-                "source_system",
-                "source_facility_id",
-                "source_connection_point_id",
-                "flow_direction",
-            ],
+            facility_keys,
+            on=["source_system", "source_facility_id", "facility_join_hub_id"],
             how="left",
         )
-        .join(facility_keys, on=["source_system", "source_facility_id"], how="left")
         .join(location_keys, on=["source_system", "source_location_id"], how="left")
         .join(
             zone_keys,
@@ -368,6 +498,7 @@ def _materialize_result(value: LazyFrame) -> MaterializeResult[LazyFrame]:
     ins={
         "gbb_nodes_connection_points": AssetIn(key=GBB_NODES_CONNECTION_POINTS_KEY),
         "gbb_demand_zone_mapping": AssetIn(key=GBB_DEMAND_ZONE_MAPPING_KEY),
+        "sttm_ctp_register": AssetIn(key=STTM_CTP_REGISTER_KEY),
         "facilities": AssetIn(key=FACILITIES_KEY),
         "locations": AssetIn(key=LOCATIONS_KEY),
         "zones": AssetIn(key=ZONES_KEY),
@@ -395,6 +526,7 @@ def _materialize_result(value: LazyFrame) -> MaterializeResult[LazyFrame]:
 def silver_gas_dim_connection_point(
     gbb_nodes_connection_points: LazyFrame,
     gbb_demand_zone_mapping: LazyFrame,
+    sttm_ctp_register: LazyFrame,
     facilities: LazyFrame,
     locations: LazyFrame,
     zones: LazyFrame,
@@ -404,6 +536,7 @@ def silver_gas_dim_connection_point(
         _select_current_connection_points(
             gbb_nodes_connection_points,
             gbb_demand_zone_mapping,
+            sttm_ctp_register,
             facilities,
             locations,
             zones,

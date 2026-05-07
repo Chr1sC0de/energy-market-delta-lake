@@ -33,14 +33,25 @@ TABLE_NAME = "silver_gas_participant_market_membership"
 KEY_PREFIX = ["silver", DOMAIN]
 GROUP_NAME = "gas_model"
 GRAIN = "one row per participant, source system, and market code"
-SURROGATE_KEY_SOURCES = ["participant_key", "source_system", "market_code"]
+SURROGATE_KEY_SOURCES = [
+    "participant_key",
+    "source_system",
+    "market_code",
+    "source_hub_id",
+    "registration_type",
+    "registered_capacity",
+]
 SOURCE_TABLES = [
     "silver.gbb.silver_gasbb_participants_list",
     "silver.vicgas.silver_int125_v8_details_of_organisations_1",
+    "silver.sttm.silver_int670_v1_registered_participants_rpt_1",
 ]
 GBB_PARTICIPANTS_KEY = AssetKey(["silver", "gbb", "silver_gasbb_participants_list"])
 VICGAS_ORGANISATIONS_KEY = AssetKey(
     ["silver", "vicgas", "silver_int125_v8_details_of_organisations_1"]
+)
+STTM_PARTICIPANTS_KEY = AssetKey(
+    ["silver", "sttm", "silver_int670_v1_registered_participants_rpt_1"]
 )
 PARTICIPANTS_KEY = AssetKey(["silver", "gas_model", "silver_gas_dim_participant"])
 
@@ -52,6 +63,10 @@ _IDENTITY_DEPS = [
     TableColumnDep(asset_key=VICGAS_ORGANISATIONS_KEY, column_name="abn"),
     TableColumnDep(asset_key=VICGAS_ORGANISATIONS_KEY, column_name="acn"),
     TableColumnDep(asset_key=VICGAS_ORGANISATIONS_KEY, column_name="company_name"),
+    TableColumnDep(asset_key=STTM_PARTICIPANTS_KEY, column_name="company_identifier"),
+    TableColumnDep(asset_key=STTM_PARTICIPANTS_KEY, column_name="abn"),
+    TableColumnDep(asset_key=STTM_PARTICIPANTS_KEY, column_name="acn"),
+    TableColumnDep(asset_key=STTM_PARTICIPANTS_KEY, column_name="company_name"),
 ]
 
 COLUMN_LINEAGE = TableColumnLineage(
@@ -60,6 +75,16 @@ COLUMN_LINEAGE = TableColumnLineage(
             TableColumnDep(asset_key=PARTICIPANTS_KEY, column_name="surrogate_key"),
             TableColumnDep(
                 asset_key=VICGAS_ORGANISATIONS_KEY, column_name="market_code"
+            ),
+            TableColumnDep(
+                asset_key=STTM_PARTICIPANTS_KEY, column_name="hub_identifier"
+            ),
+            TableColumnDep(
+                asset_key=STTM_PARTICIPANTS_KEY,
+                column_name="organisation_registration_type",
+            ),
+            TableColumnDep(
+                asset_key=STTM_PARTICIPANTS_KEY, column_name="registered_capacity"
             ),
         ],
         "participant_key": [
@@ -75,10 +100,38 @@ COLUMN_LINEAGE = TableColumnLineage(
             TableColumnDep(
                 asset_key=VICGAS_ORGANISATIONS_KEY, column_name="company_id"
             ),
+            TableColumnDep(
+                asset_key=STTM_PARTICIPANTS_KEY, column_name="company_identifier"
+            ),
         ],
         "source_company_code": [
             TableColumnDep(
                 asset_key=VICGAS_ORGANISATIONS_KEY, column_name="company_code"
+            )
+        ],
+        "source_hub_id": [
+            TableColumnDep(
+                asset_key=STTM_PARTICIPANTS_KEY, column_name="hub_identifier"
+            )
+        ],
+        "source_hub_name": [
+            TableColumnDep(asset_key=STTM_PARTICIPANTS_KEY, column_name="hub_name")
+        ],
+        "registration_type": [
+            TableColumnDep(
+                asset_key=STTM_PARTICIPANTS_KEY,
+                column_name="organisation_registration_type",
+            )
+        ],
+        "registered_capacity": [
+            TableColumnDep(
+                asset_key=STTM_PARTICIPANTS_KEY, column_name="registered_capacity"
+            )
+        ],
+        "membership_status": [
+            TableColumnDep(
+                asset_key=STTM_PARTICIPANTS_KEY,
+                column_name="registered_capacity_status",
             )
         ],
         "participant_identity_source": _IDENTITY_DEPS,
@@ -88,12 +141,16 @@ COLUMN_LINEAGE = TableColumnLineage(
             TableColumnDep(
                 asset_key=VICGAS_ORGANISATIONS_KEY, column_name="surrogate_key"
             ),
+            TableColumnDep(
+                asset_key=STTM_PARTICIPANTS_KEY, column_name="surrogate_key"
+            ),
         ],
         "source_file": [
             TableColumnDep(asset_key=GBB_PARTICIPANTS_KEY, column_name="source_file"),
             TableColumnDep(
                 asset_key=VICGAS_ORGANISATIONS_KEY, column_name="source_file"
             ),
+            TableColumnDep(asset_key=STTM_PARTICIPANTS_KEY, column_name="source_file"),
         ],
         "ingested_timestamp": [
             TableColumnDep(
@@ -101,6 +158,9 @@ COLUMN_LINEAGE = TableColumnLineage(
             ),
             TableColumnDep(
                 asset_key=VICGAS_ORGANISATIONS_KEY, column_name="ingested_timestamp"
+            ),
+            TableColumnDep(
+                asset_key=STTM_PARTICIPANTS_KEY, column_name="ingested_timestamp"
             ),
         ],
     }
@@ -114,6 +174,11 @@ SCHEMA = {
     "market_code": pl.String,
     "source_company_id": pl.String,
     "source_company_code": pl.String,
+    "source_hub_id": pl.String,
+    "source_hub_name": pl.String,
+    "registration_type": pl.String,
+    "registered_capacity": pl.String,
+    "membership_status": pl.String,
     "participant_identity_source": pl.String,
     "participant_identity_value": pl.String,
     "source_surrogate_key": pl.String,
@@ -129,6 +194,11 @@ DESCRIPTIONS = {
     "market_code": "Gas market registration code.",
     "source_company_id": "Source-system company identifier.",
     "source_company_code": "Source-system company code where available.",
+    "source_hub_id": "Source-system hub identifier where membership is hub-specific.",
+    "source_hub_name": "Source-system hub name where membership is hub-specific.",
+    "registration_type": "Source registration type where available.",
+    "registered_capacity": "Source registered capacity or role where available.",
+    "membership_status": "Source membership or registered-capacity status.",
     "participant_identity_source": "Identifier type used to resolve participant_key.",
     "participant_identity_value": "Identifier value used to resolve participant_key.",
     "source_surrogate_key": "Source row surrogate key for lineage.",
@@ -180,6 +250,11 @@ def _gbb_memberships(df: LazyFrame) -> LazyFrame:
         market_code=pl.lit("NATGASBB"),
         source_company_id=pl.col("CompanyId").cast(pl.String),
         source_company_code=pl.lit(None).cast(pl.String),
+        source_hub_id=pl.lit(None).cast(pl.String),
+        source_hub_name=pl.lit(None).cast(pl.String),
+        registration_type=pl.lit(None).cast(pl.String),
+        registered_capacity=pl.lit(None).cast(pl.String),
+        membership_status=pl.lit(None).cast(pl.String),
         participant_name=pl.col("CompanyName").cast(pl.String),
         abn=_normalize_identifier("ABN"),
         acn=pl.lit(None).cast(pl.String),
@@ -198,6 +273,34 @@ def _vicgas_memberships(df: LazyFrame) -> LazyFrame:
         market_code=pl.col("market_code").cast(pl.String),
         source_company_id=pl.col("company_id").cast(pl.String),
         source_company_code=pl.col("company_code").cast(pl.String),
+        source_hub_id=pl.lit(None).cast(pl.String),
+        source_hub_name=pl.lit(None).cast(pl.String),
+        registration_type=pl.lit(None).cast(pl.String),
+        registered_capacity=pl.lit(None).cast(pl.String),
+        membership_status=pl.lit(None).cast(pl.String),
+        participant_name=pl.col("company_name").cast(pl.String),
+        abn=_normalize_identifier("abn"),
+        acn=_normalize_identifier("acn"),
+        source_surrogate_key=pl.col("surrogate_key").cast(pl.String),
+        source_file=pl.col("source_file").cast(pl.String),
+        ingested_timestamp=pl.col("ingested_timestamp"),
+    )
+
+
+def _sttm_memberships(df: LazyFrame) -> LazyFrame:
+    return df.select(
+        source_system=pl.lit("STTM"),
+        source_tables=pl.lit(
+            ["silver.sttm.silver_int670_v1_registered_participants_rpt_1"]
+        ).cast(pl.List(pl.String)),
+        market_code=pl.lit("STTM"),
+        source_company_id=pl.col("company_identifier").cast(pl.String),
+        source_company_code=pl.lit(None).cast(pl.String),
+        source_hub_id=pl.col("hub_identifier").cast(pl.String),
+        source_hub_name=pl.col("hub_name").cast(pl.String),
+        registration_type=pl.col("organisation_registration_type").cast(pl.String),
+        registered_capacity=pl.col("registered_capacity").cast(pl.String),
+        membership_status=pl.col("registered_capacity_status").cast(pl.String),
         participant_name=pl.col("company_name").cast(pl.String),
         abn=_normalize_identifier("abn"),
         acn=_normalize_identifier("acn"),
@@ -210,6 +313,7 @@ def _vicgas_memberships(df: LazyFrame) -> LazyFrame:
 def _select_market_memberships(
     gbb_participants: LazyFrame,
     vicgas_organisations: LazyFrame,
+    sttm_participants: LazyFrame,
     participants: LazyFrame,
 ) -> LazyFrame:
     combined = _with_identity(
@@ -217,6 +321,7 @@ def _select_market_memberships(
             [
                 _gbb_memberships(gbb_participants),
                 _vicgas_memberships(vicgas_organisations),
+                _sttm_memberships(sttm_participants),
             ],
             how="diagonal_relaxed",
         )
@@ -233,7 +338,17 @@ def _select_market_memberships(
             how="inner",
         )
         .with_columns(surrogate_key=get_surrogate_key(SURROGATE_KEY_SOURCES))
-        .sort(["participant_key", "source_system", "market_code", "ingested_timestamp"])
+        .sort(
+            [
+                "participant_key",
+                "source_system",
+                "market_code",
+                "source_hub_id",
+                "registration_type",
+                "registered_capacity",
+                "ingested_timestamp",
+            ]
+        )
         .unique(subset=SURROGATE_KEY_SOURCES, keep="last", maintain_order=True)
         .select(list(SCHEMA))
     )
@@ -253,6 +368,7 @@ def _materialize_result(value: LazyFrame) -> MaterializeResult[LazyFrame]:
     ins={
         "gbb_participants": AssetIn(key=GBB_PARTICIPANTS_KEY),
         "vicgas_organisations": AssetIn(key=VICGAS_ORGANISATIONS_KEY),
+        "sttm_participants": AssetIn(key=STTM_PARTICIPANTS_KEY),
         "participants": AssetIn(key=PARTICIPANTS_KEY),
     },
     io_manager_key="aemo_parquet_overwrite_io_manager",
@@ -278,11 +394,17 @@ def _materialize_result(value: LazyFrame) -> MaterializeResult[LazyFrame]:
 def silver_gas_participant_market_membership(
     gbb_participants: LazyFrame,
     vicgas_organisations: LazyFrame,
+    sttm_participants: LazyFrame,
     participants: LazyFrame,
 ) -> MaterializeResult[LazyFrame]:
     """Materialize the silver gas participant market membership asset."""
     return _materialize_result(
-        _select_market_memberships(gbb_participants, vicgas_organisations, participants)
+        _select_market_memberships(
+            gbb_participants,
+            vicgas_organisations,
+            sttm_participants,
+            participants,
+        )
     )
 
 

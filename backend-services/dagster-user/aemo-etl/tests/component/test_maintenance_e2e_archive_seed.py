@@ -13,8 +13,9 @@ def test_gas_model_archive_seed_spec_uses_defs_asset_graph() -> None:
 
     assert spec.target == "gas_model"
     assert "gbb.bronze_gasbb_facilities" in source_table_ids
+    assert "sttm.bronze_int670_v1_registered_participants_rpt_1" in source_table_ids
     assert "vicgas.bronze_int041_v4_market_and_reference_prices_1" in source_table_ids
-    assert zip_domains == {"gbb", "vicgas"}
+    assert zip_domains == {"gbb", "sttm", "vicgas"}
     assert all(
         source_table.archive_prefix == f"bronze/{source_table.domain}"
         for source_table in spec.source_tables

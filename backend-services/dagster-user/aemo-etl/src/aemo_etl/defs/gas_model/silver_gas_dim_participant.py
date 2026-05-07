@@ -37,10 +37,14 @@ SURROGATE_KEY_SOURCES = ["participant_identity_source", "participant_identity_va
 SOURCE_TABLES = [
     "silver.gbb.silver_gasbb_participants_list",
     "silver.vicgas.silver_int125_v8_details_of_organisations_1",
+    "silver.sttm.silver_int670_v1_registered_participants_rpt_1",
 ]
 GBB_PARTICIPANTS_KEY = AssetKey(["silver", "gbb", "silver_gasbb_participants_list"])
 VICGAS_ORGANISATIONS_KEY = AssetKey(
     ["silver", "vicgas", "silver_int125_v8_details_of_organisations_1"]
+)
+STTM_PARTICIPANTS_KEY = AssetKey(
+    ["silver", "sttm", "silver_int670_v1_registered_participants_rpt_1"]
 )
 
 _IDENTITY_DEPS = [
@@ -51,6 +55,10 @@ _IDENTITY_DEPS = [
     TableColumnDep(asset_key=VICGAS_ORGANISATIONS_KEY, column_name="abn"),
     TableColumnDep(asset_key=VICGAS_ORGANISATIONS_KEY, column_name="acn"),
     TableColumnDep(asset_key=VICGAS_ORGANISATIONS_KEY, column_name="company_name"),
+    TableColumnDep(asset_key=STTM_PARTICIPANTS_KEY, column_name="company_identifier"),
+    TableColumnDep(asset_key=STTM_PARTICIPANTS_KEY, column_name="abn"),
+    TableColumnDep(asset_key=STTM_PARTICIPANTS_KEY, column_name="acn"),
+    TableColumnDep(asset_key=STTM_PARTICIPANTS_KEY, column_name="company_name"),
 ]
 
 COLUMN_LINEAGE = TableColumnLineage(
@@ -63,6 +71,7 @@ COLUMN_LINEAGE = TableColumnLineage(
             TableColumnDep(
                 asset_key=VICGAS_ORGANISATIONS_KEY, column_name="company_name"
             ),
+            TableColumnDep(asset_key=STTM_PARTICIPANTS_KEY, column_name="company_name"),
         ],
         "registered_name": [
             TableColumnDep(
@@ -72,8 +81,12 @@ COLUMN_LINEAGE = TableColumnLineage(
         "abn": [
             TableColumnDep(asset_key=GBB_PARTICIPANTS_KEY, column_name="ABN"),
             TableColumnDep(asset_key=VICGAS_ORGANISATIONS_KEY, column_name="abn"),
+            TableColumnDep(asset_key=STTM_PARTICIPANTS_KEY, column_name="abn"),
         ],
-        "acn": [TableColumnDep(asset_key=VICGAS_ORGANISATIONS_KEY, column_name="acn")],
+        "acn": [
+            TableColumnDep(asset_key=VICGAS_ORGANISATIONS_KEY, column_name="acn"),
+            TableColumnDep(asset_key=STTM_PARTICIPANTS_KEY, column_name="acn"),
+        ],
         "participant_type": [
             TableColumnDep(
                 asset_key=GBB_PARTICIPANTS_KEY, column_name="OrganisationTypeName"
@@ -82,17 +95,27 @@ COLUMN_LINEAGE = TableColumnLineage(
                 asset_key=VICGAS_ORGANISATIONS_KEY,
                 column_name="organization_type_name",
             ),
+            TableColumnDep(
+                asset_key=STTM_PARTICIPANTS_KEY,
+                column_name="organisation_registration_type",
+            ),
         ],
         "participant_status": [
             TableColumnDep(
                 asset_key=VICGAS_ORGANISATIONS_KEY,
                 column_name="organization_status_name",
-            )
+            ),
+            TableColumnDep(
+                asset_key=STTM_PARTICIPANTS_KEY, column_name="registration_status"
+            ),
         ],
         "source_company_ids": [
             TableColumnDep(asset_key=GBB_PARTICIPANTS_KEY, column_name="CompanyId"),
             TableColumnDep(
                 asset_key=VICGAS_ORGANISATIONS_KEY, column_name="company_id"
+            ),
+            TableColumnDep(
+                asset_key=STTM_PARTICIPANTS_KEY, column_name="company_identifier"
             ),
         ],
         "source_surrogate_keys": [
@@ -100,12 +123,16 @@ COLUMN_LINEAGE = TableColumnLineage(
             TableColumnDep(
                 asset_key=VICGAS_ORGANISATIONS_KEY, column_name="surrogate_key"
             ),
+            TableColumnDep(
+                asset_key=STTM_PARTICIPANTS_KEY, column_name="surrogate_key"
+            ),
         ],
         "source_files": [
             TableColumnDep(asset_key=GBB_PARTICIPANTS_KEY, column_name="source_file"),
             TableColumnDep(
                 asset_key=VICGAS_ORGANISATIONS_KEY, column_name="source_file"
             ),
+            TableColumnDep(asset_key=STTM_PARTICIPANTS_KEY, column_name="source_file"),
         ],
         "ingested_timestamp": [
             TableColumnDep(
@@ -113,6 +140,9 @@ COLUMN_LINEAGE = TableColumnLineage(
             ),
             TableColumnDep(
                 asset_key=VICGAS_ORGANISATIONS_KEY, column_name="ingested_timestamp"
+            ),
+            TableColumnDep(
+                asset_key=STTM_PARTICIPANTS_KEY, column_name="ingested_timestamp"
             ),
         ],
     }
@@ -213,6 +243,25 @@ def _vicgas_participants(df: LazyFrame) -> LazyFrame:
     )
 
 
+def _sttm_participants(df: LazyFrame) -> LazyFrame:
+    return df.select(
+        source_system=pl.lit("STTM"),
+        source_tables=pl.lit(
+            ["silver.sttm.silver_int670_v1_registered_participants_rpt_1"]
+        ).cast(pl.List(pl.String)),
+        source_company_id=pl.col("company_identifier").cast(pl.String),
+        participant_name=pl.col("company_name").cast(pl.String),
+        registered_name=pl.col("company_name").cast(pl.String),
+        abn=_normalize_identifier("abn"),
+        acn=_normalize_identifier("acn"),
+        participant_type=pl.col("organisation_registration_type").cast(pl.String),
+        participant_status=pl.col("registration_status").cast(pl.String),
+        source_surrogate_key=pl.col("surrogate_key").cast(pl.String),
+        source_file=pl.col("source_file").cast(pl.String),
+        ingested_timestamp=pl.col("ingested_timestamp"),
+    )
+
+
 def _with_identity(df: LazyFrame) -> LazyFrame:
     return df.with_columns(
         participant_identity_source=(
@@ -237,12 +286,15 @@ def _with_identity(df: LazyFrame) -> LazyFrame:
 
 
 def _select_current_participants(
-    gbb_participants: LazyFrame, vicgas_organisations: LazyFrame
+    gbb_participants: LazyFrame,
+    vicgas_organisations: LazyFrame,
+    sttm_participants: LazyFrame,
 ) -> LazyFrame:
     combined = pl.concat(
         [
             _gbb_participants(gbb_participants),
             _vicgas_participants(vicgas_organisations),
+            _sttm_participants(sttm_participants),
         ],
         how="diagonal_relaxed",
     )
@@ -290,6 +342,7 @@ def _materialize_result(value: LazyFrame) -> MaterializeResult[LazyFrame]:
     ins={
         "gbb_participants": AssetIn(key=GBB_PARTICIPANTS_KEY),
         "vicgas_organisations": AssetIn(key=VICGAS_ORGANISATIONS_KEY),
+        "sttm_participants": AssetIn(key=STTM_PARTICIPANTS_KEY),
     },
     io_manager_key="aemo_parquet_overwrite_io_manager",
     metadata={
@@ -312,11 +365,17 @@ def _materialize_result(value: LazyFrame) -> MaterializeResult[LazyFrame]:
     & ~AutomationCondition.any_deps_missing(),
 )
 def silver_gas_dim_participant(
-    gbb_participants: LazyFrame, vicgas_organisations: LazyFrame
+    gbb_participants: LazyFrame,
+    vicgas_organisations: LazyFrame,
+    sttm_participants: LazyFrame,
 ) -> MaterializeResult[LazyFrame]:
     """Materialize the silver gas participant dimension asset."""
     return _materialize_result(
-        _select_current_participants(gbb_participants, vicgas_organisations)
+        _select_current_participants(
+            gbb_participants,
+            vicgas_organisations,
+            sttm_participants,
+        )
     )
 
 

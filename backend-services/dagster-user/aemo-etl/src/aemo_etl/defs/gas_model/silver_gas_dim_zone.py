@@ -40,6 +40,7 @@ SOURCE_TABLES = [
     "silver.vicgas.silver_int188_v4_ctm_to_hv_zone_mapping_1",
     "silver.vicgas.silver_int284_v4_tuos_zone_postcode_map_1",
     "silver.vicgas.silver_int259_v4_pipe_segment_1",
+    "silver.sttm.silver_int671_v1_hub_facility_definition_rpt_1",
 ]
 GBB_DEMAND_ZONE_MAPPING_KEY = AssetKey(
     ["silver", "gbb", "silver_gasbb_demand_zones_and_pipeline_connectionpoint_mapping"]
@@ -54,6 +55,9 @@ VICGAS_TUOS_ZONE_MAPPING_KEY = AssetKey(
 VICGAS_PIPE_SEGMENTS_KEY = AssetKey(
     ["silver", "vicgas", "silver_int259_v4_pipe_segment_1"]
 )
+STTM_HUB_FACILITY_DEFINITION_KEY = AssetKey(
+    ["silver", "sttm", "silver_int671_v1_hub_facility_definition_rpt_1"]
+)
 
 _SOURCE_ZONE_ID_DEPS = [
     TableColumnDep(asset_key=GBB_DEMAND_ZONE_MAPPING_KEY, column_name="DemandZone"),
@@ -61,6 +65,9 @@ _SOURCE_ZONE_ID_DEPS = [
     TableColumnDep(asset_key=VICGAS_HV_ZONE_MAPPING_KEY, column_name="hv_zone"),
     TableColumnDep(asset_key=VICGAS_TUOS_ZONE_MAPPING_KEY, column_name="tuos_zone"),
     TableColumnDep(asset_key=VICGAS_PIPE_SEGMENTS_KEY, column_name="linepack_zone_id"),
+    TableColumnDep(
+        asset_key=STTM_HUB_FACILITY_DEFINITION_KEY, column_name="hub_identifier"
+    ),
 ]
 
 _SOURCE_SURROGATE_KEY_DEPS = [
@@ -69,6 +76,9 @@ _SOURCE_SURROGATE_KEY_DEPS = [
     TableColumnDep(asset_key=VICGAS_HV_ZONE_MAPPING_KEY, column_name="surrogate_key"),
     TableColumnDep(asset_key=VICGAS_TUOS_ZONE_MAPPING_KEY, column_name="surrogate_key"),
     TableColumnDep(asset_key=VICGAS_PIPE_SEGMENTS_KEY, column_name="surrogate_key"),
+    TableColumnDep(
+        asset_key=STTM_HUB_FACILITY_DEFINITION_KEY, column_name="surrogate_key"
+    ),
 ]
 
 _SOURCE_FILE_DEPS = [
@@ -77,6 +87,9 @@ _SOURCE_FILE_DEPS = [
     TableColumnDep(asset_key=VICGAS_HV_ZONE_MAPPING_KEY, column_name="source_file"),
     TableColumnDep(asset_key=VICGAS_TUOS_ZONE_MAPPING_KEY, column_name="source_file"),
     TableColumnDep(asset_key=VICGAS_PIPE_SEGMENTS_KEY, column_name="source_file"),
+    TableColumnDep(
+        asset_key=STTM_HUB_FACILITY_DEFINITION_KEY, column_name="source_file"
+    ),
 ]
 
 _INGESTED_TIMESTAMP_DEPS = [
@@ -92,6 +105,9 @@ _INGESTED_TIMESTAMP_DEPS = [
     ),
     TableColumnDep(
         asset_key=VICGAS_PIPE_SEGMENTS_KEY, column_name="ingested_timestamp"
+    ),
+    TableColumnDep(
+        asset_key=STTM_HUB_FACILITY_DEFINITION_KEY, column_name="ingested_timestamp"
     ),
 ]
 
@@ -115,6 +131,9 @@ COLUMN_LINEAGE = TableColumnLineage(
             TableColumnDep(
                 asset_key=VICGAS_PIPE_SEGMENTS_KEY, column_name="linepack_zone_id"
             ),
+            TableColumnDep(
+                asset_key=STTM_HUB_FACILITY_DEFINITION_KEY, column_name="hub_name"
+            ),
         ],
         "zone_description": [
             TableColumnDep(
@@ -126,6 +145,9 @@ COLUMN_LINEAGE = TableColumnLineage(
             ),
             TableColumnDep(
                 asset_key=VICGAS_TUOS_ZONE_MAPPING_KEY, column_name="tuos_zone_desc"
+            ),
+            TableColumnDep(
+                asset_key=STTM_HUB_FACILITY_DEFINITION_KEY, column_name="hub_name"
             ),
         ],
         "source_surrogate_keys": _SOURCE_SURROGATE_KEY_DEPS,
@@ -245,12 +267,29 @@ def _vicgas_linepack_zones(df: LazyFrame) -> LazyFrame:
     )
 
 
+def _sttm_hubs(df: LazyFrame) -> LazyFrame:
+    return df.select(
+        source_system=pl.lit("STTM"),
+        source_tables=pl.lit(
+            ["silver.sttm.silver_int671_v1_hub_facility_definition_rpt_1"]
+        ).cast(pl.List(pl.String)),
+        zone_type=pl.lit("sttm_hub"),
+        source_zone_id=pl.col("hub_identifier").cast(pl.String),
+        zone_name=pl.col("hub_name").cast(pl.String),
+        zone_description=pl.col("hub_name").cast(pl.String),
+        source_surrogate_key=pl.col("surrogate_key").cast(pl.String),
+        source_file=pl.col("source_file").cast(pl.String),
+        ingested_timestamp=pl.col("ingested_timestamp"),
+    )
+
+
 def _select_current_zones(
     gbb_demand_zone_mapping: LazyFrame,
     gbb_linepack_zones: LazyFrame,
     vicgas_hv_zone_mapping: LazyFrame,
     vicgas_tuos_zone_mapping: LazyFrame,
     vicgas_pipe_segments: LazyFrame,
+    sttm_hub_facility_definition: LazyFrame,
 ) -> LazyFrame:
     combined = pl.concat(
         [
@@ -259,6 +298,7 @@ def _select_current_zones(
             _vicgas_hv_zones(vicgas_hv_zone_mapping),
             _vicgas_tuos_zones(vicgas_tuos_zone_mapping),
             _vicgas_linepack_zones(vicgas_pipe_segments),
+            _sttm_hubs(sttm_hub_facility_definition),
         ],
         how="diagonal_relaxed",
     )
@@ -301,6 +341,7 @@ def _materialize_result(value: LazyFrame) -> MaterializeResult[LazyFrame]:
         "vicgas_hv_zone_mapping": AssetIn(key=VICGAS_HV_ZONE_MAPPING_KEY),
         "vicgas_tuos_zone_mapping": AssetIn(key=VICGAS_TUOS_ZONE_MAPPING_KEY),
         "vicgas_pipe_segments": AssetIn(key=VICGAS_PIPE_SEGMENTS_KEY),
+        "sttm_hub_facility_definition": AssetIn(key=STTM_HUB_FACILITY_DEFINITION_KEY),
     },
     io_manager_key="aemo_parquet_overwrite_io_manager",
     metadata={
@@ -328,6 +369,7 @@ def silver_gas_dim_zone(
     vicgas_hv_zone_mapping: LazyFrame,
     vicgas_tuos_zone_mapping: LazyFrame,
     vicgas_pipe_segments: LazyFrame,
+    sttm_hub_facility_definition: LazyFrame,
 ) -> MaterializeResult[LazyFrame]:
     """Materialize the silver gas zone dimension asset."""
     return _materialize_result(
@@ -337,6 +379,7 @@ def silver_gas_dim_zone(
             vicgas_hv_zone_mapping,
             vicgas_tuos_zone_mapping,
             vicgas_pipe_segments,
+            sttm_hub_facility_definition,
         )
     )
 
