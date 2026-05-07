@@ -215,6 +215,12 @@ way:
   cycle guard, and recovery guidance live in
   [OPERATOR.md](../../OPERATOR.md) and
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
+- #115: Completed or stopped checkpointed Operator runs write
+  `operator-run-rollup.md` and `operator-run-rollup.json` beside
+  `operator-run.json`. The durable rollups summarize issue outcomes, manual
+  recoveries, **Local integration** commits, **Promotion** commits, QA
+  surfaces, **Post-promotion review** follow-ups, final queue state, and stop
+  or failure reasons without reading child Codex JSONL.
 
 ## Search commands
 

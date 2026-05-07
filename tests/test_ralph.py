@@ -708,6 +708,16 @@ def write_child_manifest(
     run_kind: str,
     status: str,
     issue: ralph.Issue | None = None,
+    delivery_mode: str = ralph.GITFLOW_MODE,
+    integration_target: str = ralph.DEFAULT_GITFLOW_BRANCH,
+    integration_commit: str | None = None,
+    promotion_commit: str | None = None,
+    promoted_issues: list[dict[str, Any]] | None = None,
+    manual_recoveries: list[dict[str, Any]] | None = None,
+    unverified_commits: list[dict[str, Any]] | None = None,
+    changed_files: list[str] | None = None,
+    qa_results: list[dict[str, Any]] | None = None,
+    post_promotion_review_artifact: Path | None = None,
     followups_status: str | None = None,
     created_followups: int = 0,
 ) -> Path:
@@ -719,6 +729,17 @@ def write_child_manifest(
         "status": status,
         "stage": status,
         "paths": {"run_dir": str(run_dir)},
+        "changed_files": changed_files or ["scripts/ralph.py"],
+        "qa_results": qa_results
+        or [
+            {
+                "name": "scripted check",
+                "command": ["python3", "-m", "unittest", "tests.test_ralph"],
+                "cwd": str(log_root.parent.parent),
+                "log_path": str(run_dir / "scripted-check.log"),
+                "status": "passed" if status == "succeeded" else "failed",
+            }
+        ],
         "events": [],
     }
     if issue is not None:
@@ -726,6 +747,46 @@ def write_child_manifest(
             "number": issue.number,
             "title": issue.title,
             "url": issue.url,
+        }
+    if run_kind == "implementation":
+        payload["delivery_mode"] = delivery_mode
+        payload["integration_target"] = integration_target
+        payload["integration_commit"] = (
+            {"sha": integration_commit, "branch": integration_target}
+            if integration_commit is not None
+            else None
+        )
+    if run_kind == "promotion":
+        payload["source_branch"] = ralph.DEFAULT_GITFLOW_BRANCH
+        payload["integration_target"] = ralph.DEFAULT_TRUNK_BRANCH
+        payload["promotion_commit"] = (
+            {"sha": promotion_commit, "branch": ralph.DEFAULT_TRUNK_BRANCH}
+            if promotion_commit is not None
+            else None
+        )
+        metadata_issues = list(promoted_issues or [])
+        metadata_issues.extend(manual_recoveries or [])
+        payload["github_metadata"] = {
+            "status": (
+                "verified_issues_with_warnings"
+                if manual_recoveries
+                else "verified_issues"
+            ),
+            "issues": metadata_issues,
+        }
+        payload["promotion_commit_inventory"] = {
+            "status": "classified",
+            "base_ref": "origin/main",
+            "head_ref": "origin/dev",
+            "commits": unverified_commits or [],
+        }
+        payload["post_promotion_review"] = {
+            "enabled": True,
+            "status": "completed",
+            "log_path": str(run_dir / "codex-post-promotion-review.jsonl"),
+            "artifact_path": str(
+                post_promotion_review_artifact or run_dir / "post-promotion-review.md"
+            ),
         }
     if followups_status is not None:
         payload["post_promotion_followups"] = {
@@ -758,6 +819,7 @@ class ScriptedOperatorRun(ralph.RalphOperatorRun):
         self.current_snapshot: ralph.OperatorQueueSnapshot | None = None
         self.issue_runs = 0
         self.promotion_runs = 0
+        self.issue_commits: dict[int, str] = {}
 
     def _validate_operator_preflight(self) -> None:
         pass
@@ -775,6 +837,8 @@ class ScriptedOperatorRun(ralph.RalphOperatorRun):
 
     def _run_issue_checkpoint(self, issue: ralph.Issue) -> None:
         self.issue_runs += 1
+        integration_commit = f"local-integration-{issue.number}-{self.issue_runs}"
+        self.issue_commits[issue.number] = integration_commit
         self.manifest.record_current_issue(issue)
         manifest_path = write_child_manifest(
             self.config.log_root,
@@ -782,6 +846,7 @@ class ScriptedOperatorRun(ralph.RalphOperatorRun):
             run_kind="implementation",
             status="succeeded",
             issue=issue,
+            integration_commit=integration_commit,
         )
         self.manifest.record_checkpoint(
             "issue_succeeded",
@@ -803,11 +868,25 @@ class ScriptedOperatorRun(ralph.RalphOperatorRun):
             "before_promotion",
             message=f"Starting Promotion from {source_branch} to {target_branch}.",
         )
+        integrated_issues = (
+            self.current_snapshot.integrated if self.current_snapshot is not None else ()
+        )
         manifest_path = write_child_manifest(
             self.config.log_root,
             name=f"promote-scripted-{self.promotion_runs}",
             run_kind="promotion",
             status="succeeded",
+            promotion_commit=f"promotion-{self.promotion_runs}-sha",
+            promoted_issues=[
+                {
+                    "number": issue.number,
+                    "title": issue.title,
+                    "url": issue.url,
+                    "integrated_commit": self.issue_commits.get(issue.number),
+                    "metadata_status": "closed",
+                }
+                for issue in integrated_issues
+            ],
             followups_status="completed",
             created_followups=1 if self.promotion_runs == 1 else 0,
         )
@@ -2451,6 +2530,12 @@ class RalphOperatorRunTests(unittest.TestCase):
                 operator.run()
 
             manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+            rollup = json.loads(
+                (run_dir / ralph.OPERATOR_ROLLUP_JSON_NAME).read_text(encoding="utf-8")
+            )
+            markdown = (run_dir / ralph.OPERATOR_ROLLUP_MARKDOWN_NAME).read_text(
+                encoding="utf-8"
+            )
 
         checkpoints = [entry["checkpoint"] for entry in manifest["checkpoints"]]
         self.assertEqual(manifest["status"], "succeeded")
@@ -2467,6 +2552,133 @@ class RalphOperatorRunTests(unittest.TestCase):
                 for child in manifest["child_run_manifests"]
             )
         )
+        self.assertEqual(rollup["summary"]["succeeded_issues"], 2)
+        self.assertEqual(rollup["summary"]["promotions"], 2)
+        self.assertEqual(rollup["summary"]["local_integrations"], 2)
+        self.assertTrue(rollup["summary"]["final_queue_clean"])
+        self.assertEqual(
+            rollup["post_promotion_followups"][0]["created"],
+            [{"number": 100, "url": "https://example.test/0"}],
+        )
+        self.assertIn("#42 Initial work", markdown)
+        self.assertIn("Local integration `local-integration-42-1`", markdown)
+        self.assertIn("Promotion commit `promotion-1-sha`", markdown)
+        self.assertIn("- clean=yes", markdown)
+
+    def test_operator_rollup_records_failed_attempt_manual_recovery_and_guard_stop(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True, delivery_mode=ralph.GITFLOW_MODE)
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            failed_issue = make_issue(
+                {ralph.READY_LABEL},
+                IMPLEMENTATION_BODY,
+                number=77,
+                title="Broken attempt",
+            )
+            manifest = ralph.OperatorRunManifest.start(
+                run_dir=run_dir,
+                config=loop.config,
+                max_cycles=1,
+            )
+            failed_manifest_path = write_child_manifest(
+                loop.config.log_root,
+                name="issue-77-failed",
+                run_kind="implementation",
+                status="failed",
+                issue=failed_issue,
+                qa_results=[
+                    {
+                        "name": "script Unit test",
+                        "command": ["python3", "-m", "unittest", "tests.test_ralph"],
+                        "cwd": str(tmp_path / "repo"),
+                        "log_path": str(tmp_path / "repo" / ".ralph" / "runs" / "unit.log"),
+                        "status": "failed",
+                    }
+                ],
+            )
+            manifest.record_checkpoint(
+                "issue_failed",
+                message="Issue #77 failed.",
+                child_manifest_path=failed_manifest_path,
+                issue=failed_issue,
+                status="failed",
+                recovery_guidance="Inspect issue #77 before rerunning.",
+            )
+            manual_recovery_issue = {
+                "number": 102,
+                "title": "Recover issue integration",
+                "url": "https://github.com/example/repo/issues/102",
+                "integrated_commit": None,
+                "metadata_status": "manual_recovery_commit_unparseable",
+                "warning": (
+                    "#102 has manual Gitflow recovery evidence but no parseable "
+                    "integrated commit for Promotion closure."
+                ),
+                "recovery_action": "Reconcile the manual recovery evidence.",
+            }
+            promotion_manifest_path = write_child_manifest(
+                loop.config.log_root,
+                name="promote-manual-recovery",
+                run_kind="promotion",
+                status="succeeded",
+                promotion_commit="promotion-manual-sha",
+                manual_recoveries=[manual_recovery_issue],
+                unverified_commits=[
+                    {
+                        "sha": "manual-recovery-sha",
+                        "subject": "Manual Gitflow recovery for issue 102",
+                        "classification": "unverified_promotion_commit",
+                    }
+                ],
+                followups_status="completed_with_warnings",
+                created_followups=1,
+            )
+            manifest.record_checkpoint(
+                "promotion_succeeded",
+                message="Promotion completed.",
+                child_manifest_path=promotion_manifest_path,
+            )
+            manifest.record_checkpoint(
+                "post_promotion_followup_creation",
+                message="Post-promotion follow-up creation completed with warnings.",
+                child_manifest_path=promotion_manifest_path,
+                details={"status": "completed_with_warnings"},
+            )
+            manifest.record_queue(operator_snapshot(failed=[failed_issue]))
+            manifest.record_checkpoint(
+                "stopped_by_guard",
+                message="Reached --max-cycles 1.",
+                status="failed",
+                recovery_guidance="Review progress before raising --max-cycles.",
+            )
+
+            rollup = json.loads(
+                (run_dir / ralph.OPERATOR_ROLLUP_JSON_NAME).read_text(encoding="utf-8")
+            )
+            markdown = (run_dir / ralph.OPERATOR_ROLLUP_MARKDOWN_NAME).read_text(
+                encoding="utf-8"
+            )
+
+        self.assertEqual(rollup["summary"]["failed_issues"], 1)
+        self.assertEqual(rollup["summary"]["manual_recoveries"], 1)
+        self.assertEqual(rollup["summary"]["failed_attempts"], 1)
+        self.assertFalse(rollup["summary"]["final_queue_clean"])
+        self.assertEqual(rollup["final_queue"]["counts"]["failed"], 1)
+        self.assertTrue(rollup["stop_reason"]["stopped_by_guard"])
+        self.assertEqual(
+            rollup["failed_attempts"][0]["manifest_path"],
+            str(failed_manifest_path),
+        )
+        self.assertEqual(
+            rollup["manual_recoveries"][0]["manifest_path"],
+            str(promotion_manifest_path),
+        )
+        self.assertIn("Manual recovery: #102 Recover issue integration", markdown)
+        self.assertIn("Checkpoint: `stopped_by_guard`", markdown)
 
     def test_operator_status_reports_compact_issue_boundary_state(self) -> None:
         runner = FakeRunner()
@@ -2510,6 +2722,8 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertIn("Last checkpoint: issue_succeeded: Issue #42 completed.", text)
         self.assertIn("Queue: ready=0, integrated=1, running=0, failed=0", text)
         self.assertIn(f"- implementation #42 succeeded: {child_manifest_path}", text)
+        self.assertIn("Rollup artifacts:", text)
+        self.assertIn(str(run_dir / ralph.OPERATOR_ROLLUP_JSON_NAME), text)
         self.assertIn("Recommended next action:", text)
 
     def test_detached_operator_launch_prints_status_command_without_waiting(self) -> None:
