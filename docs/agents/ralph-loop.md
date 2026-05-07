@@ -59,10 +59,13 @@ guidance.
 Human operators should call Ralph through repo-local skills:
 
 ```text
-$grill-with-docs -> optional $to-prd -> $to-issues -> $ralph-triage -> $ralph-loop drain -> review dev -> $ralph-loop promote
+$grill-with-docs -> optional $to-prd -> $shape-issues -> $ralph-triage -> $ralph-loop drain -> review dev -> $ralph-loop promote
 ```
 
 Use [OPERATOR.md](../../OPERATOR.md) for the first-class **Operator workflow**.
+`$shape-issues` shapes tracer-bullet issue drafts, gates implementation drafts,
+and may publish explicitly confirmed gate-passing outputs as `needs-triage`
+issues only. It does not move issues to `ready-for-agent`.
 `$ralph-triage` prepares GitHub Issues for drain by setting category, state, and
 **Delivery mode** labels. `$ralph-loop` owns the backing script commands,
 including `$ralph-loop drain` and `$ralph-loop promote`.
@@ -800,6 +803,10 @@ When no unblocked `ready-for-agent` issue exists, Ralph asks Codex to run the
 - `needs-info` issues only when reporter activity appears after the latest AI
   triage note
 
+`$shape-issues` published issues intentionally arrive here as `needs-triage`;
+the triage pass remains the step that applies category, state, and
+**Delivery mode** labels before any issue becomes drainable.
+
 Automated triage may label, comment, or close issues. Every triage comment must
 begin with:
 
@@ -1063,6 +1070,8 @@ container-backed **Integration test** dependencies.
   - `docs/agents/triage-labels.md`
   - `docs/repository/documentation-sync.md`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
+  - `.agents/skills/shape-issues/SKILL.md`
+  - `.agents/skills/shape-issues/scripts/publish_shape_issues.py`
   - `.agents/skills/ralph-curate/SKILL.md`
   - `.agents/skills/ralph-loop/SKILL.md`
   - `.agents/skills/ralph-issue-refresh/SKILL.md`

@@ -19,6 +19,9 @@ directly to GitHub label strings.
 Every triaged issue should carry exactly one category label and one state label.
 If state labels conflict, stop and ask the maintainer before making further
 changes.
+Issues published by `$shape-issues` v2 intentionally start with
+`needs-triage` only; `$ralph-triage` owns category, state, and **Delivery mode**
+labels before an issue enters the ready queue.
 
 ## Ralph runtime labels
 
@@ -83,6 +86,8 @@ records why **Exploratory branches** stay outside automatic **Promotion**.
 - `sync.sources`:
   - `AGENTS.md`
   - `OPERATOR.md`
+  - `.agents/skills/shape-issues/SKILL.md`
+  - `.agents/skills/shape-issues/scripts/publish_shape_issues.py`
   - `docs/agents/README.md`
   - `docs/agents/issue-tracker.md`
   - `docs/agents/ralph-loop.md`

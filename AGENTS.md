@@ -22,10 +22,11 @@ integration to `main`; **Gitflow delivery** closes them after **Promotion** from
 
 ### Ralph loop
 
-Use the repo-local `shape-issues` skill to turn shaped plans into Ralph-ready
-issue drafts with context anchors, QA plans, embedding-based context coverage,
-and stiffness scoring before `ralph-triage`. It is non-mutating and does not
-create or edit GitHub Issues.
+Use the repo-local `shape-issues` skill to turn shaped plans into tracer-bullet
+GitHub Issue drafts with context anchors, QA plans, embedding-based context
+coverage, and stiffness scoring before `ralph-triage`. Version 2 may publish
+confirmed gated outputs as `needs-triage` issues only; it must not edit,
+comment on, close, reopen, or relabel existing GitHub Issues.
 
 Use the repo-local `ralph-loop` skill for Ralph operation, failure inspection,
 **Delivery mode** rules, and **Promotion**.

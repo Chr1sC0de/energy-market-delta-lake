@@ -30,8 +30,9 @@ Use this page as the agent documentation map. The imperative policy lives in
 ## Skills
 
 - Use `$shape-issues` before `$ralph-triage` to turn shaped plans into
-  non-mutating Ralph-ready issue drafts with context anchors, QA plans,
-  embedding-based context coverage, and stiffness scoring.
+  tracer-bullet issue drafts with context anchors, QA plans, embedding-based
+  context coverage, and stiffness scoring. Version 2 may publish explicitly
+  confirmed gated outputs as `needs-triage` issues only.
 - Use `$ralph-curate` to review open GitHub Issues against the current branch
   and propose stale, satisfied, blocked, or mislabeled issue updates.
 - Use `$ralph-issue-refresh` to reconcile ready issues after **Local
@@ -55,6 +56,7 @@ Use this page as the agent documentation map. The imperative policy lives in
   - `OPERATOR.md`
   - `CONTEXT.md`
   - `.agents/skills/shape-issues/SKILL.md`
+  - `.agents/skills/shape-issues/scripts/publish_shape_issues.py`
   - `.agents/skills/ralph-curate/SKILL.md`
   - `.agents/skills/ralph-loop/SKILL.md`
   - `.agents/skills/ralph-issue-refresh/SKILL.md`

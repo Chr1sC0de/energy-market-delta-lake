@@ -53,6 +53,13 @@ recent Ready issue refresh comments exist, Ralph appends only the latest five
 comments with the Ready issue refresh audit prefix in a separate prompt section
 after the body; normal comments and triage comments are not included.
 
+`$shape-issues` v2 may create new GitHub Issues only after explicit Operator
+confirmation of a passing gate report. Those created issues enter the board as
+`needs-triage` only, with source markers for duplicate detection. `$shape-issues`
+does not move issues to `ready-for-agent`, and it must not edit, comment on,
+close, reopen, or relabel existing issues. `$ralph-triage` remains responsible
+for category, state, and **Delivery mode** labels before Ralph drain.
+
 Runtime labels such as `agent-running`, `agent-integrated`, `agent-merged`,
 `agent-failed`, and `agent-reviewing` block repeat implementation and automated
 triage reconsideration. In particular, `agent-reviewing` means
@@ -106,6 +113,8 @@ for the decision that keeps **Exploratory branches** outside automatic
 - `sync.sources`:
   - `AGENTS.md`
   - `OPERATOR.md`
+  - `.agents/skills/shape-issues/SKILL.md`
+  - `.agents/skills/shape-issues/scripts/publish_shape_issues.py`
   - `.agents/skills/ralph-curate/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`
   - `.agents/skills/ralph-loop/SKILL.md`

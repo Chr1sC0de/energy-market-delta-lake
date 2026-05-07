@@ -27,15 +27,17 @@ Use `$to-prd` only for large, durable, or spec-heavy work where future issues
 need a stable product-level reference. Skip it for small changes that can move
 straight from shaped plan to GitHub Issues.
 
-Use `$shape-issues` to draft independently grabbable GitHub Issues with context
-anchors, QA plans, embedding-based context coverage, and stiffness scoring. It
-is non-mutating: it writes `.shape-issues/runs/.../report.md` and
-`report.json`, then the Operator reviews the drafts before GitHub Issue
-creation or triage. Each issue must include `## What to build`,
-`## Acceptance criteria`, and `## Blocked by` before it can become
-`ready-for-agent`. Exploratory delivery issues must also include
-`## Review focus` stating the human judgment the durable **Exploratory branch**
-needs.
+Use `$shape-issues` to draft independently grabbable GitHub Issues with
+tracer-bullet slices, context anchors, QA plans, embedding-based context
+coverage, and stiffness scoring. It writes `.shape-issues/runs/.../report.md`
+and `report.json`; after explicit Operator confirmation it may publish the
+gated outputs as `needs-triage` issues. `$shape-issues` does not move issues to
+`ready-for-agent` and must not edit, comment on, close, reopen, or relabel
+existing GitHub Issues. Each implementation draft must include
+`## What to build`, `## Acceptance criteria`, and `## Blocked by` before it can
+be triaged toward `ready-for-agent`. Exploratory delivery drafts must also
+include `## Review focus` stating the human judgment the durable
+**Exploratory branch** needs.
 
 Use `$ralph-triage` to prepare issues for drain. Triage sets exactly one
 category label, exactly one state label, and at most one **Delivery mode** label.
@@ -209,6 +211,7 @@ Keep failed worktrees unless the maintainer asks for cleanup.
   - `CONTEXT.md`
   - `AGENTS.md`
   - `.agents/skills/shape-issues/SKILL.md`
+  - `.agents/skills/shape-issues/scripts/publish_shape_issues.py`
   - `scripts/ralph.py`
   - `.agents/skills/ralph-loop/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`

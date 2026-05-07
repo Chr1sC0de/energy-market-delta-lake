@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -127,6 +128,9 @@ class IssueDraft:
     title: str
     body: str
     labels: tuple[str, ...]
+    classification: str | None
+    blocked_by: tuple[str, ...]
+    source_digest: str
 
 
 @dataclass(frozen=True)
@@ -135,6 +139,7 @@ class Bundle:
     shared_context: tuple[str, ...]
     operator_overrides: dict[str, str]
     issues: tuple[IssueDraft, ...]
+    source_digest: str
 
 
 @dataclass(frozen=True)
@@ -205,6 +210,7 @@ def parse_bundle(path: Path) -> Bundle:
         raise GateError("Bundle must include a non-empty issues array.")
 
     issues: list[IssueDraft] = []
+    seen_issue_ids: set[str] = set()
     for index, raw_issue in enumerate(raw_issues, start=1):
         if not isinstance(raw_issue, dict):
             raise GateError(f"Issue entry {index} must be an object.")
@@ -215,13 +221,28 @@ def parse_bundle(path: Path) -> Bundle:
         if body == "":
             raise GateError(f"Issue entry {index} is missing body.")
         issue_id = str(raw_issue.get("id") or slugify(title) or f"issue-{index}")
+        if issue_id in seen_issue_ids:
+            raise GateError(f"Duplicate issue id: {issue_id}")
+        seen_issue_ids.add(issue_id)
         labels = parse_string_list(raw_issue.get("labels"))
+        classification = optional_string(raw_issue.get("classification"))
+        blocked_by = parse_string_list(raw_issue.get("blocked_by"))
         issues.append(
             IssueDraft(
                 issue_id=issue_id,
                 title=title,
                 body=body,
                 labels=tuple(sorted(labels)),
+                classification=classification,
+                blocked_by=tuple(blocked_by),
+                source_digest=issue_source_digest(
+                    issue_id=issue_id,
+                    title=title,
+                    body=body,
+                    labels=tuple(sorted(labels)),
+                    classification=classification,
+                    blocked_by=tuple(blocked_by),
+                ),
             )
         )
 
@@ -234,11 +255,19 @@ def parse_bundle(path: Path) -> Bundle:
             if str(value).strip() != ""
         }
 
+    summary = str(payload.get("summary") or "").strip()
+    shared_context = tuple(parse_string_list(payload.get("shared_context")))
     return Bundle(
-        summary=str(payload.get("summary") or "").strip(),
-        shared_context=tuple(parse_string_list(payload.get("shared_context"))),
+        summary=summary,
+        shared_context=shared_context,
         operator_overrides=overrides,
         issues=tuple(issues),
+        source_digest=bundle_source_digest(
+            summary=summary,
+            shared_context=shared_context,
+            operator_overrides=overrides,
+            issues=tuple(issues),
+        ),
     )
 
 
@@ -248,6 +277,56 @@ def parse_string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item).strip() for item in value if str(item).strip() != ""]
+
+
+def optional_string(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if text == "":
+        return None
+    return text
+
+
+def issue_source_digest(
+    *,
+    issue_id: str,
+    title: str,
+    body: str,
+    labels: tuple[str, ...],
+    classification: str | None,
+    blocked_by: tuple[str, ...],
+) -> str:
+    payload = {
+        "blocked_by": list(blocked_by),
+        "body": body,
+        "classification": classification or "",
+        "id": issue_id,
+        "labels": sorted(labels),
+        "title": title,
+    }
+    encoded = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def bundle_source_digest(
+    *,
+    summary: str,
+    shared_context: tuple[str, ...],
+    operator_overrides: dict[str, str],
+    issues: tuple[IssueDraft, ...],
+) -> str:
+    payload = {
+        "issues": [
+            {"id": issue.issue_id, "source_digest": issue.source_digest}
+            for issue in issues
+        ],
+        "operator_overrides": operator_overrides,
+        "shared_context": list(shared_context),
+        "summary": summary,
+    }
+    encoded = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def slugify(value: str) -> str:
@@ -763,6 +842,7 @@ def evaluate_bundle(
             {
                 "id": issue.issue_id,
                 "title": issue.title,
+                "source_digest": issue.source_digest,
                 "action": action,
                 "ready": ready,
                 "recommended_state_label": state_label,
@@ -803,6 +883,7 @@ def evaluate_bundle(
 
     return {
         "summary": bundle.summary,
+        "bundle_digest": bundle.source_digest,
         "thresholds": {
             "semantic_min_score": thresholds.semantic_min_score,
             "human_review_stiffness": thresholds.human_review_stiffness,

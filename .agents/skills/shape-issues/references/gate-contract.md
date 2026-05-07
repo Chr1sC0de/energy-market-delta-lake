@@ -9,6 +9,9 @@ too large for default Ralph drain.
 - Bundle JSON with `summary`, `shared_context`, optional `operator_overrides`,
   and an `issues` array.
 - Each issue has `id`, `title`, `body`, and `labels`.
+- Version 2 bundles may include publisher metadata such as `classification` and
+  `blocked_by`; the gate ignores those fields and the publisher consumes them
+  after the report is written.
 - The repo root supplies the context corpus from tracked files.
 
 ## Readiness Rules
@@ -60,10 +63,12 @@ areas remain separate scoring surfaces.
 
 ## Outputs
 
-- `report.json`: machine-readable thresholds, model/provider metadata, issue
-  scores, actions, semantic matches, validation reasons, declared/computed
-  stiffness mismatch, ignored stiffness mentions, scoring surfaces, and any
-  Operator approval evidence found in issue bodies.
+- `report.json`: machine-readable thresholds, model/provider metadata, bundle
+  digest, issue scores, actions, semantic matches, validation reasons,
+  declared/computed stiffness mismatch, ignored stiffness mentions, scoring
+  surfaces, and any Operator approval evidence found in issue bodies. Each
+  issue entry includes a `source_digest`; the top-level `bundle_digest` lets the
+  publisher refuse stale bundle/report pairs.
 - `report.md`: Operator-readable evidence for the issue bundle.
 
 Operator approval evidence is recorded only as context. It does not grant tool

@@ -218,10 +218,12 @@ class ShapeIssueGateTests(unittest.TestCase):
 
             report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
 
+        self.assertRegex(report["bundle_digest"], r"^[0-9a-f]{64}$")
         issue = report["issues"][0]
         self.assertEqual(issue["action"], "ready")
         self.assertTrue(issue["ready"])
         self.assertEqual(issue["recommended_state_label"], "ready-for-agent")
+        self.assertRegex(issue["source_digest"], r"^[0-9a-f]{64}$")
         self.assertEqual(issue["validation_reasons"], [])
         self.assertGreaterEqual(issue["semantic"]["top_score"], 0.05)
 
@@ -377,6 +379,18 @@ class ShapeIssueGateTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Embedding provider failed", result.stderr)
+
+    def test_duplicate_issue_ids_stop_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            bundle_path = write_bundle(tmp_path, READY_BODY)
+            payload = json.loads(bundle_path.read_text(encoding="utf-8"))
+            payload["issues"].append(dict(payload["issues"][0]))
+            bundle_path.write_text(json.dumps(payload), encoding="utf-8")
+            result = run_gate(bundle_path, tmp_path)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Duplicate issue id", result.stderr)
 
 
 if __name__ == "__main__":
