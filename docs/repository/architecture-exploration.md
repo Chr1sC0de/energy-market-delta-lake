@@ -1,8 +1,10 @@
 # Architecture Exploration
 
 This temporary repository page captures issue-scoped architecture research.
-It is not durable architecture guidance. Issue #87 must consume any accepted
-findings into durable repo docs before deleting this file.
+It is not durable architecture guidance. Issue #87 must consume accepted
+findings from issues #82 through #86 into durable repo docs before deleting this
+file. Issue #125 names its own follow-on implementation issue before wiki or
+vector database work begins.
 
 ## Table of contents
 
@@ -11,6 +13,7 @@ findings into durable repo docs before deleting this file.
 - [Issue #84: Explore archive-source planning consolidation](#issue-84-explore-archive-source-planning-consolidation)
 - [Issue #85: Explore Ralph workflow and state separation](#issue-85-explore-ralph-workflow-and-state-separation)
 - [Issue #86: Explore Dagster ECS runtime task-definition consolidation](#issue-86-explore-dagster-ecs-runtime-task-definition-consolidation)
+- [Issue #125: Scope AEMO gas PDF scraper and corpus rules](#issue-125-scope-aemo-gas-pdf-scraper-and-corpus-rules)
 - [Issue #81: Final architecture decision matrix](#issue-81-final-architecture-decision-matrix)
 
 ## #82: Explore deeper gas-model asset shell Module
@@ -990,6 +993,183 @@ still preserving role-specific Inputs at the current component call sites. It
 also avoids a half-migrated state where some roles use a shared task shell and
 others keep the old inline JSON shape.
 
+## Issue #125: Scope AEMO gas PDF scraper and corpus rules
+
+Issue #125 asks for scraper and document-corpus rules before any wiki or vector
+database implementation begins. This section records exploratory research only.
+It does not add a crawler, storage table, text extractor, wiki, vector database,
+or source-table manifest change.
+
+The live AEMO source-page evidence below was sampled on 2026-05-07. The scope is
+public AEMO gas PDFs reachable without authentication from `www.aemo.com.au`
+gas and gas-market IT pages. The existing AEMO ETL Subproject remains centered
+on NEMWeb data ingestion; these PDFs are documentation and source-spec evidence,
+not source payloads.
+
+### Candidate Source Inventory
+
+Use the gas root page as the starting sitemap seed because it enumerates the
+main AEMO gas sections: GBB, Gas Approved Process, WA GBB, DWGM, ECGS, STTM,
+GSH, PCT, Gas Retail Markets, gas emergency management, and gas forecasting and
+planning.
+
+| Source page | Classification | Candidate PDF families | Boundary |
+| --- | --- | --- | --- |
+| `https://www.aemo.com.au/energy-systems/gas` | include | None directly. It routes the scraper to AEMO gas sections. | Seed page only. Do not ingest the root HTML as a document. Use it to discover candidate section roots and to detect new gas sections. |
+| `https://www.aemo.com.au/energy-systems/gas/gas-approved-process` | include | Approved Process plus Gas Market Issue and Proposed Procedure Change templates when they resolve to PDF. | These are cross-gas procedure-change rules. Keep them in a `gas_approved_process` corpus source. |
+| `https://www.aemo.com.au/energy-systems/gas/gas-bulletin-board-gbb/procedures-policies-and-guides/procedures-and-guides` | include | GBB Procedures, BB Aggregation Methodology, BB Data Submission Guide, Guide to Gas Bulletin Board Reports, BB Pipeline Flow and Capacity Business Rules, Reporting of Iona Storage Volumes, and mapping reference guides. | Exclude spreadsheets such as field-interest templates and old-to-new connection point mapping from the PDF corpus. Record them as excluded links with content type and source page. |
+| `https://www.aemo.com.au/energy-systems/gas/gas-bulletin-board-gbb/procedures-policies-and-guides/faq` | needs-human-review | Gas Transparency Measures FAQ PDF. | Useful but partly FAQ-oriented. Include only after the operator confirms FAQ documents belong in the first corpus, not just formal procedures and technical guides. |
+| `https://www.aemo.com.au/energy-systems/gas/east-coast-gas-system/procedures-and-guidelines` | include | East Coast Gas System Procedures, ECGS Guidelines, Guidance on Gas Compensation Determinations, conference competition-law protocol, and Gas Compensation Confidentiality Deed. | Exclude linked NEMWeb linepack-zone and mapping data because they are non-PDF data/source files. The page also links back to the GBB data submission guide, which duplicate handling should collapse. |
+| `https://www.aemo.com.au/energy-systems/gas/short-term-trading-market-sttm/about-the-short-term-trading-market-sttm` | include | Technical Guide to the STTM and Guide to STTM Contact Types. | Treat as STTM guide documents, not market data. |
+| `https://www.aemo.com.au/energy-systems/gas/short-term-trading-market-sttm/procedures-policies-and-guides` | include | STTM Procedures current and previous versions. | Preserve current and previous versions as separate document versions under one document family. |
+| STTM data, archived daily files, set price data, and gas market notices pages | exclude | None for first PDF corpus. | Current STTM data is CSV/ZIP/HTML market data and already belongs to NEMWeb discovery, landing, unzipper, and source-table bronze paths. Market notices are event streams, not source-spec PDFs. |
+| `https://www.aemo.com.au/energy-systems/gas/declared-wholesale-gas-market-dwgm/procedures-policies-and-guides` | include | DWGM wholesale market procedures, previous versions, technical documents, User Guide to MIBB Reports, and applicable guides. | Keep `dwgm` separate from `vicgas` source-table data. Do not scrape authenticated MIBB or WEX portals. |
+| `https://www.aemo.com.au/energy-systems/gas/gas-supply-hub-gsh/exchange-agreement-and-guides` | include | GSH exchange agreement, membership agreement, benchmark price methodology, exchange fees, interface protocol, industry guide, end-to-end example, and trading timetable. | These are market contract and guide documents. They belong in `gsh`, not PCT, even when PCT links to the GSH agreement. |
+| `https://www.aemo.com.au/energy-systems/gas/pipeline-capacity-trading-pct/procedures-policies-and-guides` | include | PCT overview, PCT industry guide, GSH-linked agreements, Capacity Transfer and Auction Procedures, interface protocol, capacity transfer guides, GSH report guide, and contract-information notices. | Exclude authenticated `portal.prod.nemnet.net.au` guide links unless a later issue explicitly scopes portal help extraction. |
+| `https://www.aemo.com.au/energy-systems/gas/gas-retail-markets/procedures-policies-and-guides` and jurisdiction child pages | include | East-coast gas retail change process, jurisdictional retail market procedures, technical protocols, WA Retail Market Procedures, AEMO Specification Pack, FRC Hub terms, connectivity certification, and user guides when they resolve to PDF. | Store under `retail_gas`. Do not use retail corpus text to infer STTM, DWGM, GBB, or source-table schemas without an explicit human review step. |
+| `https://www.aemo.com.au/energy-systems/gas/wa-gas-bulletin-board-wa-gbb/procedures-policies-and-guides` | include | GSI registration/deregistration/exemption/transfer procedures, GSI operation of the GBB and EMF, and submission forms when PDF. | Keep WA GBB separate from east-coast GBB because rules and publication paths differ. |
+| `https://www.aemo.com.au/energy-systems/market-it-systems/gas-systems-guides` | needs-human-review | Gas systems user access request, self-service password guide, Data Model reports, FRC Hub terms, FRC Hub user guides, certification guides, and related PDFs. | This page mixes PDF forms, online help, external docs, and downloadable software. A first scraper may inventory PDF/static links, but text ingestion should wait for a sample extraction review. |
+| AEMO gas forecasting and planning pages, GSOO/VGPR/QED major publications, and gas emergency management pages | needs-human-review | Annual planning and operational publications when PDF. | These are gas-relevant but not market operation/source-spec documents. Include only if the intended wiki corpus is broader than operational procedures, report specifications, and participant IT guides. |
+| AEMO consultation pages and historical stakeholder-consultation PDFs | needs-human-review | Procedure-change consultation papers, final reports, marked-up procedures, and report specifications. | The checked-in STTM manifest currently cites a consultation decision PDF through `original_pdf_url`. Future scraper work should allow explicit manual seed URLs from such pages, but must not crawl all consultations by default. |
+| AEMC, legislation, ASX, NEMWeb data, authenticated portals, Markets Portal Help, DI Help, API portals, software bundles, CSV, ZIP, XLS/XLSX, DOC/DOCX, and executable downloads | exclude | None. | Keep external or non-PDF assets as link metadata only. A later non-PDF corpus issue can deliberately scope online help or spreadsheet ingestion. |
+
+### URL Patterns
+
+Source pages use stable AEMO content paths:
+
+- `https://www.aemo.com.au/energy-systems/gas/<section>/...`
+- `https://www.aemo.com.au/energy-systems/market-it-systems/gas-systems-guides`
+- `https://www.aemo.com.au/energy-systems/gas/gas-approved-process`
+
+Document links usually resolve to media-library URLs under:
+
+- `https://www.aemo.com.au/-/media/files/...`
+- `https://www.aemo.com.au/-/media/Files/...`
+- `https://www.aemo.com.au/energy-systems/.../-/media/Files/...`
+
+AEMO media URLs may carry query parameters such as `rev`, `la`, or `sc_lang`.
+The exact source URL, including query string, must be retained because
+`source_tables.json` already relies on an `original_pdf_url` with a `rev`
+parameter for the STTM v19.1 report specification. The normalized URL is only a
+dedupe aid; it must not replace the retained source URL.
+
+### Document Identity And Metadata
+
+The future ingestion schema should record document identity separately from
+document version and source-link observations:
+
+- `corpus_source`: one of `gas_approved_process`, `gbb`, `wa_gbb`, `ecgs`,
+  `sttm`, `dwgm`, `gsh`, `pct`, `retail_gas`, `gas_systems_guides`,
+  `gas_forecasting_planning`, `gas_emergency_management`, or `manual_seed`.
+- `source_page_url`: exact AEMO page where the link was observed.
+- `source_page_title` and `source_page_section`: page heading and local section
+  such as `Procedures`, `Technical documents`, `Guides`, or
+  `Previous versions`.
+- `source_page_observed_at`: UTC timestamp for the scraper observation.
+- `source_link_text`: full visible link text, including leading date, version,
+  effective-date prose, and size text when present.
+- `source_url`: exact href from the page after absolutizing relative paths.
+- `resolved_url`: final URL after redirects.
+- `normalized_source_url`: lowercased host plus normalized media path, with
+  query parameters retained separately for comparison.
+- `document_family_id`: stable slug from `corpus_source` plus normalized title
+  after removing leading publication date, trailing size, version token, and
+  current/previous marker.
+- `document_title`: cleaned title visible to readers.
+- `document_kind`: `procedure`, `technical_document`, `guide`, `agreement`,
+  `methodology`, `template`, `form`, `report_specification`, `market_notice`,
+  `publication`, or `unknown`.
+- `include_decision`: `include`, `exclude`, or `needs_human_review`.
+- `include_reason` and `exclude_reason`: short audit text so later issues do
+  not need to rediscover the boundary.
+- `content_type`, `content_length`, `etag`, and `last_modified`: response
+  metadata from `HEAD` or `GET` when AEMO provides it.
+- `content_sha256`: hash of the downloaded bytes; this is the authoritative
+  duplicate and change detector.
+- `storage_uri`: first landing or archive object URI after bytes are fetched.
+- `pdf_title`, `pdf_author`, `pdf_created_at`, and `pdf_modified_at`: optional
+  PDF metadata captured during text extraction, not required for first landing.
+
+### Versioning And Duplicate Handling
+
+The version model should prefer content evidence over URL or filename evidence:
+
+- Parse `document_version` from visible text such as `v15.0`, `v2.1`,
+  `version 5.3`, or `V16.4`.
+- Parse `published_date` from the leading page date when present.
+- Parse `effective_date` from visible text such as `Effective date 3 March
+  2025` when present.
+- Preserve `media_revision` from the `rev` query parameter when present.
+- Use `content_sha256` as the authoritative `document_version_id` fallback when
+  no explicit version exists.
+- Treat the same `document_family_id` plus explicit version as one logical
+  version only if the `content_sha256` matches. If the hash differs, keep both
+  byte versions and mark the family as `needs_human_review`.
+- Treat the same `content_sha256` reached from multiple source pages as one
+  stored blob with multiple source-link observations. This handles GSH
+  agreements linked from both GSH and PCT pages, and GBB documents linked from
+  ECGS pages.
+- Treat URL-only changes, query-only changes, and filename case changes as
+  metadata changes unless `content_sha256` changes.
+- Keep previous versions. Do not overwrite a prior PDF when the source page
+  moves it under a `Previous versions` heading.
+- Keep source-page snapshots or at least link-observation rows so removals from
+  a source page can be audited without deleting stored PDFs.
+
+### Refresh Cadence
+
+This corpus does not need the 30-minute cadence used by current NEMWeb market
+data discovery. Procedure and guide pages are low-churn but audit-relevant:
+
+- Run source-page discovery daily in the AEMO ETL Subproject, preferably outside
+  the high-frequency market-data schedules.
+- Re-fetch a document only when the source page observation changes, a `HEAD`
+  response changes `etag`, `last_modified`, or `content_length`, or a periodic
+  monthly hash refresh is due.
+- Run a weekly sitemap cross-check from the gas root page and Library procedure
+  or guide indexes to detect new gas sections or moved pages.
+- Keep `needs_human_review` rows in the metadata table rather than silently
+  dropping them, so the operator can promote or exclude classes without code
+  archaeology.
+- Do not refresh authenticated portal links, NEMWeb data links, software
+  bundles, or non-PDF files in the PDF job.
+
+### Storage Target And Follow-On Issue
+
+The first ingestion storage target should be the existing S3-compatible AEMO ETL
+landing/archive pattern, not a wiki or vector database:
+
+- landing prefix: `LANDING_BUCKET/bronze/aemo_gas_documents/`
+- archive prefix after successful metadata write:
+  `ARCHIVE_BUCKET/bronze/aemo_gas_documents/`
+- bronze metadata table:
+  `bronze_aemo_gas_document_sources`
+
+The smallest follow-on implementation issue should be: implement the AEMO gas
+PDF landing scraper and `bronze_aemo_gas_document_sources` metadata table for
+included PDF source pages, with excluded and `needs_human_review` observations
+captured but no text extraction, wiki, or vector database output.
+
+A later, separate issue should add PDF text extraction and review a sample of
+scraped text before creating any wiki or vector database. That text-inspection
+issue is the first place where chunking, embeddings, wiki pages, and vector
+storage should be designed.
+
+### STTM Source-Spec Boundary
+
+Do not use the scraper scope to resolve the `INT685` and `INT685B` source-table
+gap. The existing STTM source-table manifest is derived from the STTM Reports
+Specifications v19.1 PDF recorded in `source_tables.json` through
+`original_pdf_url`, while `sttm_landing_only_gap_report_ids()` intentionally
+reports `INT685` and `INT685B` as live root CSV reports absent from that
+manifest.
+
+`INT685` and `INT685B` source-spec resolution stays deferred until scraped AEMO
+text can be inspected. After the PDF scraper and text extraction exist, a
+separate source-spec issue can search the corpus for those report IDs, inspect
+the source text around any matches, and then decide whether a spec-backed
+source-table manifest entry is justified.
+
 ## Issue #81: Final architecture decision matrix
 
 This is the aggregate decision matrix for issues #82, #83, #84, #85, and #86.
@@ -1025,6 +1205,7 @@ slices can close after integration to `main`; exploratory slices stay open with
   - `backend-services/scripts/aemo-etl-e2e`
   - `docs/repository/documentation-sync.md`
   - `docs/adr/0003-bounded-current-state-bronze-source-tables.md`
+  - `backend-services/dagster-user/aemo-etl/docs/architecture/ingestion_flows.md`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/utils.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
@@ -1111,4 +1292,4 @@ slices can close after integration to `main`; exploratory slices stay open with
   - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
   - `python3 -m unittest discover -s tests`
   - `prek run -a`
-  - `verify #87 consumption and deletion note remains visible`
+  - `verify #87 consumption and #125 follow-on notes remain visible`
