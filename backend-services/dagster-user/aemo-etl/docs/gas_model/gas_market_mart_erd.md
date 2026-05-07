@@ -1,7 +1,7 @@
 # Gas Market Mart ERD
 
-This document covers the currently implemented market and scheduling facts in
-`silver.gas_model`.
+This document covers the currently implemented market, scheduling, bid-stack,
+and STTM contingency facts in `silver.gas_model`.
 
 ## Table of contents
 
@@ -19,6 +19,7 @@ This document covers the currently implemented market and scheduling facts in
 | `silver.gas_model.silver_gas_fact_schedule_run` | one row per source schedule run |
 | `silver.gas_model.silver_gas_fact_scheduled_quantity` | one row per source-specific scheduled quantity observation |
 | `silver.gas_model.silver_gas_fact_bid_stack` | one row per source-specific bid stack step |
+| `silver.gas_model.silver_gas_fact_sttm_contingency_gas_call` | one STTM contingency gas quantity measure at its accepted source grain |
 
 ## ERD
 
@@ -28,7 +29,13 @@ erDiagram
     SILVER_GAS_DIM_DATE ||--o{ SILVER_GAS_FACT_SCHEDULE_RUN : date_key
     SILVER_GAS_DIM_DATE ||--o{ SILVER_GAS_FACT_SCHEDULED_QUANTITY : date_key
     SILVER_GAS_DIM_DATE ||--o{ SILVER_GAS_FACT_BID_STACK : date_key
+    SILVER_GAS_DIM_DATE ||--o{ SILVER_GAS_FACT_STTM_CONTINGENCY_GAS_CALL : date_key
     SILVER_GAS_DIM_PARTICIPANT ||--o{ SILVER_GAS_FACT_BID_STACK : participant_key
+    SILVER_GAS_DIM_PARTICIPANT ||--o{ SILVER_GAS_FACT_STTM_CONTINGENCY_GAS_CALL : participant_key
+    SILVER_GAS_DIM_FACILITY ||--o{ SILVER_GAS_FACT_BID_STACK : facility_key
+    SILVER_GAS_DIM_FACILITY ||--o{ SILVER_GAS_FACT_STTM_CONTINGENCY_GAS_CALL : facility_key
+    SILVER_GAS_DIM_ZONE ||--o{ SILVER_GAS_FACT_BID_STACK : zone_key
+    SILVER_GAS_DIM_ZONE ||--o{ SILVER_GAS_FACT_STTM_CONTINGENCY_GAS_CALL : zone_key
 
     SILVER_GAS_FACT_MARKET_PRICE {
         string table_name "silver.gas_model.silver_gas_fact_market_price"
@@ -103,13 +110,21 @@ erDiagram
         string surrogate_key PK
         string date_key FK
         string participant_key FK
+        string facility_key FK
+        string zone_key FK
         string source_system
         list source_tables
         string source_table
+        string source_report_id
         date gas_date
         string participant_id
         string participant_name
+        string source_hub_id
+        string source_hub_name
+        string source_facility_id
+        string facility_name
         string source_point_id
+        string schedule_identifier
         string bid_id
         int bid_step
         float bid_price
@@ -120,6 +135,40 @@ erDiagram
         string schedule_type
         string schedule_time
         timestamp bid_cutoff_timestamp
+        string source_surrogate_key
+        string source_file
+        timestamp ingested_timestamp
+    }
+
+    SILVER_GAS_FACT_STTM_CONTINGENCY_GAS_CALL {
+        string table_name "silver.gas_model.silver_gas_fact_sttm_contingency_gas_call"
+        string surrogate_key PK
+        string date_key FK
+        string participant_key FK
+        string facility_key FK
+        string zone_key FK
+        string source_system
+        list source_tables
+        string source_table
+        string source_report_id
+        date gas_date
+        string contingency_grain
+        string quantity_type
+        string source_hub_id
+        string source_hub_name
+        string source_facility_id
+        string facility_name
+        string flow_direction
+        string bid_offer_type
+        string participant_id
+        string participant_name
+        string contingency_call_id
+        string contingency_bid_offer_id
+        int bid_step
+        float bid_price
+        float bid_qty_gj
+        float quantity_gj
+        timestamp approval_timestamp
         string source_surrogate_key
         string source_file
         timestamp ingested_timestamp
@@ -157,13 +206,20 @@ erDiagram
   `silver.sttm.silver_int655_v1_provisional_schedule_quantity_rpt_1`
 - `silver_gas_fact_bid_stack`:
   `silver.vicgas.silver_int131_v4_bids_at_bid_cutoff_times_prev_2_1`,
-  `silver.vicgas.silver_int314_v4_bid_stack_1`
+  `silver.vicgas.silver_int314_v4_bid_stack_1`,
+  `silver.sttm.silver_int659_v1_bid_offer_rpt_1`,
+  `silver.sttm.silver_int660_v1_contingency_gas_bids_and_offers_rpt_1`
+- `silver_gas_fact_sttm_contingency_gas_call`:
+  `silver.sttm.silver_int661_v1_contingency_gas_called_scheduled_bid_offer_rpt_1`,
+  `silver.sttm.silver_int673_v1_total_contingency_bid_offer_rpt_1`,
+  `silver.sttm.silver_int674_v1_total_contingency_gas_schedules_rpt_1`
 
 ## Notes
 
-- `participant_key` on `silver_gas_fact_bid_stack` is currently nullable; the
-  transform keeps source participant identifiers without resolving them to
-  `silver_gas_dim_participant`.
+- `silver_gas_fact_bid_stack` keeps source participant and point identifiers
+  for all rows. STTM `INT659` and `INT660` rows also retain hub and facility
+  identifiers and resolve `participant_key`, `facility_key`, and `zone_key`
+  where the shared dimensions contain the accepted STTM source rows.
 - `silver_gas_fact_market_price` and `silver_gas_fact_scheduled_quantity` use
   source-qualified location, node, and transmission identifiers rather than
   conformed dimension foreign keys.
@@ -182,6 +238,15 @@ erDiagram
   type grain. The STTM source row surrogate key preserves flow direction and
   provisional schedule type lineage where those fields are part of the source
   manifest key.
+- STTM bid-stack rows from `INT659` use one row per gas date, schedule,
+  bid/offer id, and step. Contingency bid-stack rows from `INT660` use one row
+  per gas date, contingency bid/offer id, and contingency step.
+- `silver_gas_fact_sttm_contingency_gas_call` separates accepted STTM
+  contingency grains with `contingency_grain`: `bid_offer_step` rows from
+  `INT661`, `hub_total` bid/offer quantity rows from `INT673`, and
+  `facility_called_total` rows from `INT674`. Multi-measure reports emit one
+  row per non-null `quantity_type` so hub totals are not mixed with bid-step or
+  facility called totals.
 
 ## Related docs
 
@@ -198,6 +263,7 @@ erDiagram
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_schedule_run.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_scheduled_quantity.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_bid_stack.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_sttm_contingency_gas_call.py`
 - `sync.scope`: `interface`
 - `sync.qa`:
   - `git diff --name-only`

@@ -31,6 +31,9 @@ from aemo_etl.defs.gas_model import (
     silver_gas_fact_scheduled_quantity as scheduled_quantity,
 )
 from aemo_etl.defs.gas_model import silver_gas_fact_settlement_activity as settlement
+from aemo_etl.defs.gas_model import (
+    silver_gas_fact_sttm_contingency_gas_call as contingency_gas_call,
+)
 from aemo_etl.defs.gas_model import silver_gas_fact_system_notice as system_notice
 
 
@@ -47,11 +50,52 @@ def _row(**values: object) -> pl.LazyFrame:
 
 
 def _source(**values: object) -> pl.LazyFrame:
-    return _row(
-        **values,
-        surrogate_key=values.get("surrogate_key", "source-key"),
-        source_file=values.get("source_file", "s3://archive/source.csv"),
-        ingested_timestamp=values.get("ingested_timestamp", _ingested()),
+    source_values = dict(values)
+    source_values.setdefault("surrogate_key", "source-key")
+    source_values.setdefault("source_file", "s3://archive/source.csv")
+    source_values.setdefault("ingested_timestamp", _ingested())
+    return _row(**source_values)
+
+
+def _participants() -> pl.LazyFrame:
+    return pl.LazyFrame(
+        {
+            "surrogate_key": [
+                "participant-1",
+                "participant-2",
+                "participant-comp-1",
+                "participant-comp-2",
+            ],
+            "participant_identity_source": [
+                "company_id",
+                "company_id",
+                "company_id",
+                "company_id",
+            ],
+            "participant_identity_value": ["1", "2", "COMP-1", "COMP-2"],
+        }
+    )
+
+
+def _facilities() -> pl.LazyFrame:
+    return pl.LazyFrame(
+        {
+            "surrogate_key": ["facility-syd-fac-1"],
+            "source_system": ["STTM"],
+            "source_hub_id": ["SYD"],
+            "source_facility_id": ["FAC-1"],
+        }
+    )
+
+
+def _zones() -> pl.LazyFrame:
+    return pl.LazyFrame(
+        {
+            "surrogate_key": ["zone-syd"],
+            "source_system": ["STTM"],
+            "zone_type": ["sttm_hub"],
+            "source_zone_id": ["SYD"],
+        }
     )
 
 
@@ -420,6 +464,41 @@ def test_scheduling_transforms() -> None:
                 inject_withdraw="W",
                 current_date="01 Jan 2024 07:00:00",
             ),
+            _source(
+                gas_date="01 Jan 2024",
+                company_identifier="COMP-1",
+                company_name="Company 1",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                schedule_identifier="EA-1",
+                facility_identifier="FAC-1",
+                facility_name="Facility",
+                bid_offer_identifier="BO-1",
+                bid_offer_step_number=1,
+                step_price=6.0,
+                step_capped_cumulative_qty=7.0,
+                bid_offer_type="O",
+                report_datetime="01 Jan 2024 07:00:00",
+            ),
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                facility_identifier="FAC-1",
+                facility_name="Facility",
+                flow_direction="T",
+                contingency_gas_bid_offer_type="B",
+                company_identifier="COMP-2",
+                company_name="Company 2",
+                contingency_gas_bid_offer_identifier="CGBO-1",
+                contingency_gas_bid_offer_step_number=2,
+                contingency_gas_bid_offer_step_price=8.0,
+                contingency_gas_bid_offer_step_quantity=9.0,
+                report_datetime="01 Jan 2024 07:00:00",
+            ),
+            _participants(),
+            _facilities(),
+            _zones(),
         ),
     )
 
@@ -439,7 +518,17 @@ def test_scheduling_transforms() -> None:
     assert set(sttm_quantity_rows["source_table"]) == set(
         scheduled_quantity.SOURCE_TABLES[4:]
     )
-    assert _collect(bid_result).height == 2
+    bid_df = _collect(bid_result)
+    sttm_bid_rows = bid_df.filter(pl.col("source_system") == "STTM")
+
+    assert bid_df.height == 4
+    assert sttm_bid_rows.height == 2
+    assert set(sttm_bid_rows["source_report_id"]) == {"INT659", "INT660"}
+    assert sttm_bid_rows["facility_key"].to_list() == [
+        "facility-syd-fac-1",
+        "facility-syd-fac-1",
+    ]
+    assert sttm_bid_rows["zone_key"].to_list() == ["zone-syd", "zone-syd"]
     assert _check_passed(
         schedule_run.silver_gas_fact_schedule_run_required_fields, schedule_result.value
     )
@@ -457,6 +546,96 @@ def test_scheduling_transforms() -> None:
     )
     assert _check_passed(
         bid_stack.silver_gas_fact_bid_stack_required_fields, bid_result.value
+    )
+    assert _check_passed(
+        bid_stack.silver_gas_fact_bid_stack_duplicate_row_check,
+        bid_result.value,
+    )
+
+
+def test_sttm_contingency_gas_call_transform_and_checks() -> None:
+    result = cast(
+        MaterializeResult[pl.LazyFrame],
+        _dagster_fn(contingency_gas_call.silver_gas_fact_sttm_contingency_gas_call)(
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                facility_identifier="FAC-1",
+                facility_name="Facility",
+                contingency_gas_called_identifier="CALL-1",
+                flow_direction="T",
+                contingency_gas_bid_offer_type="O",
+                company_identifier="COMP-1",
+                company_name="Company 1",
+                contingency_gas_bid_offer_identifier="CGBO-1",
+                contingency_gas_bid_offer_step_number=1,
+                contingency_gas_bid_offer_step_price=8.0,
+                contingency_gas_bid_offer_step_quantity=9.0,
+                contingency_gas_bid_offer_confirmed_step_quantity=4.0,
+                contingency_gas_bid_offer_called_step_quantity=3.0,
+                approval_datetime="01 Jan 2024 06:30:00",
+                report_datetime="01 Jan 2024 07:00:00",
+            ),
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                total_contingency_gas_bid_qty=10.0,
+                total_contingency_gas_offer_qty=11.0,
+                report_datetime="01 Jan 2024 07:00:00",
+                surrogate_key="source-key-total",
+            ),
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                facility_identifier="FAC-1",
+                facility_name="Facility",
+                contingency_gas_called_identifier="CALL-1",
+                flow_direction="T",
+                contingency_gas_bid_offer_type="O",
+                contingency_gas_bid_offer_called_quantity=12.0,
+                approval_datetime="01 Jan 2024 06:30:00",
+                report_datetime="01 Jan 2024 07:00:00",
+                surrogate_key="source-key-schedule",
+            ),
+            _participants(),
+            _facilities(),
+            _zones(),
+        ),
+    )
+
+    collected = _collect(result).sort(["source_report_id", "quantity_type"])
+
+    assert collected.height == 5
+    assert collected["surrogate_key"].n_unique() == collected.height
+    assert set(collected["source_report_id"]) == {"INT661", "INT673", "INT674"}
+    assert set(collected["contingency_grain"]) == {
+        "bid_offer_step",
+        "hub_total",
+        "facility_called_total",
+    }
+    assert set(collected["quantity_type"]) == {
+        "called_step_quantity",
+        "called_total_quantity",
+        "confirmed_step_quantity",
+        "total_bid_quantity",
+        "total_offer_quantity",
+    }
+    assert (
+        collected.filter(pl.col("source_report_id") == "INT673")[
+            "facility_key"
+        ].null_count()
+        == 2
+    )
+    assert _check_passed(
+        contingency_gas_call.silver_gas_fact_sttm_contingency_gas_call_required_fields,
+        result.value,
+    )
+    assert _check_passed(
+        contingency_gas_call.silver_gas_fact_sttm_contingency_gas_call_duplicate_row_check,
+        result.value,
     )
 
 
@@ -1102,6 +1281,7 @@ def test_admin_transforms_and_defs() -> None:
         capacity_auction,
         settlement,
         customer_transfer,
+        contingency_gas_call,
         system_notice,
     ]:
         definitions = module.defs()
