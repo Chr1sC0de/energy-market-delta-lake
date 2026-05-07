@@ -11,6 +11,7 @@ findings into durable repo docs before deleting this file.
 - [Issue #84: Explore archive-source planning consolidation](#issue-84-explore-archive-source-planning-consolidation)
 - [Issue #85: Explore Ralph workflow and state separation](#issue-85-explore-ralph-workflow-and-state-separation)
 - [Issue #86: Explore Dagster ECS runtime task-definition consolidation](#issue-86-explore-dagster-ecs-runtime-task-definition-consolidation)
+- [Issue #116: STTM report-to-gas-model mapping](#issue-116-sttm-report-to-gas-model-mapping)
 - [Issue #81: Final architecture decision matrix](#issue-81-final-architecture-decision-matrix)
 
 ## #82: Explore deeper gas-model asset shell Module
@@ -990,6 +991,167 @@ still preserving role-specific Inputs at the current component call sites. It
 also avoids a half-migrated state where some roles use a shared task shell and
 others keep the old inline JSON shape.
 
+## Issue #116: STTM report-to-gas-model mapping
+
+Issue #116 asks for exploratory mapping of every manifest-backed STTM public
+report into the intended `silver.gas_model` destination. This section records
+research only. It does not change runtime behavior, git operations, GitHub
+Issue metadata, or Ralph labels. The Review focus is whether the proposed
+STTM report grouping, grains, and destination assets are the right gas-market
+domain model before the follow-on implementation issues run.
+
+### Evidence And Mapping Rules
+
+The checked-in STTM manifest at
+`backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/source_tables.json`
+contains 39 report definitions: `INT651` through `INT684` and `INT687`
+through `INT691`. `load_sttm_source_tables_manifest` and the generated raw
+definition modules expose each report as a source-table bronze and silver pair,
+with source columns as `String` and standard ingestion metadata columns. A
+`dg list defs --assets "key:*silver_int6*" --json` check from the AEMO ETL
+**Subproject** confirmed the registered `silver/sttm/silver_<name_suffix>`
+assets and their bronze dependencies.
+
+The destination mapping uses fit-plus-extend:
+
+- Existing `gas_model` facts and dimensions receive STTM rows where the report
+  grain matches the current asset meaning.
+- New `gas_model` facts are proposed where forcing the report into an existing
+  fact would hide a real STTM grain or drop domain fields.
+- Every destination row should preserve source lineage: `source_system`,
+  `source_tables`, `source_table`, `source_surrogate_key`, `source_file`, and
+  `ingested_timestamp`. The implementation can also expose a derived
+  `source_report_id` when the accepted schema wants report-id filtering without
+  parsing `source_table`.
+- STTM date and numeric report fields are still strings at the source silver
+  layer. Implementation slices should parse them inside `gas_model` transforms
+  and keep the source string in `source_last_updated`-style fields where the
+  current asset convention already does that.
+
+`INT685` and `INT685B` are not part of this `gas_model` coverage. They are live
+NEMWeb STTM root CSV files but are absent from the v19.1 report specification
+manifest, so they remain landing-only gaps until AEMO text or PDF discovery
+finds usable source definitions. Follow-on issue #125 owns the separate
+exploratory document-corpus path for those gaps.
+
+### Existing Destination Fits
+
+| Candidate destination asset | Covered reports | Fit rationale | Follow-on issue |
+| --- | --- | --- | --- |
+| `silver.gas_model.silver_gas_fact_market_price` | `INT651`, `INT654`, `INT672`, `INT676`, `INT677`, `INT690`; price measures from `INT657` need review | These reports are source-specific hub price observations or price-derived measures by gas date, hub, schedule, or call id. Represent each report measure as a `price_type` row rather than creating STTM-only price tables. | #119 |
+| `silver.gas_model.silver_gas_fact_scheduled_quantity` | `INT652`, `INT655` | These reports publish scheduled or provisional scheduled quantities by gas date, facility, flow direction, and schedule type. The current fact already models source-specific scheduled quantity observations. | #119 |
+| `silver.gas_model.silver_gas_fact_schedule_run` | `INT668` | The schedule log is one source schedule run with creation, cutoff, and approval timestamps, matching the current schedule-run fact shape. | #119 |
+| `silver.gas_model.silver_gas_fact_bid_stack` | `INT659`, `INT660` | Bid/offer and contingency bid/offer rows have participant, facility, bid id, step number, price, quantity, and bid/offer type fields that match the current bid-stack fact grain. | #120 |
+| `silver.gas_model.silver_gas_fact_system_notice` | `INT666` | Market notices fit the existing source-specific system-notice fact. Current follow-on issue text does not explicitly name `INT666`, so #121 needs a scope update or a narrow notice issue before implementation. | #121 needs scope update |
+| `silver.gas_model.silver_gas_dim_participant` and `silver.gas_model.silver_gas_participant_market_membership` | `INT670` | Participant register rows can add STTM participant identities and hub/registration memberships using company id, ABN, ACN, participant name, registration type, and status. | #118 |
+| `silver.gas_model.silver_gas_dim_zone` and `silver.gas_model.silver_gas_dim_facility` | `INT671` | Hub identifiers fit source-qualified zone rows with `zone_type = sttm_hub`; facility identifiers and types fit source-qualified facility rows. | #118 |
+| `silver.gas_model.silver_gas_dim_facility` | `INT687` | Facility hub capacity data can enrich STTM facility context, but the effective-date and threshold fields make this a review point before deciding whether they stay dimensional or become a fact. | #118, human review |
+| `silver.gas_model.silver_gas_dim_connection_point` | `INT691` | Custody transfer points are source-qualified connection points under a hub/facility, but the current dimension grain includes `flow_direction` and the STTM manifest key does not. This should be accepted explicitly before implementation. | #118, human review |
+
+### New Destination Assets
+
+| Proposed new destination asset | Covered reports | Proposed grain | Follow-on issue |
+| --- | --- | --- | --- |
+| `silver.gas_model.silver_gas_fact_sttm_pipeline_capacity` | `INT653`, `INT656` | One row per STTM gas date, facility, schedule or provisional schedule type, and capacity or price measure. | #121 needs context-anchor update |
+| `silver.gas_model.silver_gas_fact_sttm_market_imbalance` | `INT657` | One row per STTM gas date, hub, schedule type, and imbalance measure when reviewers prefer not to split `imbalance_qty` into the price fact. | #119, human review |
+| `silver.gas_model.silver_gas_fact_sttm_allocation_quantity` | `INT658`, `INT689` | One row per STTM gas date, facility, flow direction, allocation version, and data-quality type. | #121 |
+| `silver.gas_model.silver_gas_fact_sttm_contingency_gas_call` | `INT661`, `INT673`, `INT674` | One row per contingency call, hub/facility, bid/offer type, and total or called quantity measure. | #120 |
+| `silver.gas_model.silver_gas_fact_sttm_market_settlement` | `INT662`, `INT663`, `INT678`, `INT679` | One row per STTM settlement or prudential period, hub/facility, and settlement component. | #121 |
+| `silver.gas_model.silver_gas_fact_sttm_capacity_settlement` | `INT664`, `INT681`, `INT682` | One row per STTM gas date, settlement run where present, hub, facility, and MOS or capacity settlement component. | #121 |
+| `silver.gas_model.silver_gas_fact_sttm_mos_stack` | `INT665`, `INT683`, `INT684` | One row per STTM MOS stack, stack step, effective or settlement context, and used/provided status. | #121 |
+| `silver.gas_model.silver_gas_fact_sttm_market_parameter` | `INT667`, `INT680` | One row per effective market parameter or hub flag period. | #121 needs `INT667` context-anchor update |
+| `silver.gas_model.silver_gas_fact_sttm_default_allocation_notice` | `INT675` | One row per default allocation notice, gas date, hub, and facility. | #121 |
+| `silver.gas_model.silver_gas_fact_sttm_allocation_limit` | `INT688` | One row per STTM gas date and facility allocation warning-limit set. | #121 |
+
+### Full Manifest Coverage Matrix
+
+Each row below lists the report id, report name, candidate destination asset,
+grain, key fields from the compact manifest, and row-specific source lineage
+fields. The common lineage fields are `source_system = STTM`, `source_tables`,
+`source_table`, `source_surrogate_key`, `source_file`, and
+`ingested_timestamp`.
+
+| Report | Report name | Classification | Candidate destination asset | Candidate grain | Key fields | Source lineage fields | Follow-on |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `INT651` | Ex Ante Market Price | Existing fact fit | `silver.gas_model.silver_gas_fact_market_price` | One row per STTM gas date, hub, and price measure. | `gas_date`, `hub_identifier` | `source_table = silver.sttm.silver_int651_v1_ex_ante_market_price_rpt_1`; `source_report_id = INT651`; update fields `approval_datetime`, `report_datetime`. | #119 |
+| `INT652` | Ex Ante Schedule Quantity | Existing fact fit | `silver.gas_model.silver_gas_fact_scheduled_quantity` | One row per STTM gas date, facility, flow direction, and scheduled quantity measure. | `gas_date`, `facility_identifier`, `flow_direction` | `source_table = silver.sttm.silver_int652_v1_ex_ante_schedule_quantity_rpt_1`; `source_report_id = INT652`; update fields `approval_datetime`, `report_datetime`. | #119 |
+| `INT653` | Ex Ante Pipeline Data | New fact | `silver.gas_model.silver_gas_fact_sttm_pipeline_capacity` | One row per STTM gas date, facility, and ex-ante capacity or price measure. | `gas_date`, `facility_identifier` | `source_table = silver.sttm.silver_int653_v3_ex_ante_pipeline_price_rpt_1`; `source_report_id = INT653`; update fields `capacity_qty_datetime`, `approval_datetime`, `report_datetime`. | #121 needs anchor update |
+| `INT654` | Provisional Market Price | Existing fact fit | `silver.gas_model.silver_gas_fact_market_price` | One row per STTM gas date, hub, provisional schedule type, and price measure. | `gas_date`, `hub_identifier`, `provisional_schedule_type` | `source_table = silver.sttm.silver_int654_v1_provisional_market_price_rpt_1`; `source_report_id = INT654`; update field `report_datetime`. | #119 |
+| `INT655` | Provisional Schedule Quantity | Existing fact fit | `silver.gas_model.silver_gas_fact_scheduled_quantity` | One row per STTM gas date, facility, flow direction, provisional schedule type, and quantity measure. | `gas_date`, `facility_identifier`, `flow_direction`, `provisional_schedule_type` | `source_table = silver.sttm.silver_int655_v1_provisional_schedule_quantity_rpt_1`; `source_report_id = INT655`; update field `report_datetime`. | #119 |
+| `INT656` | Provisional Pipeline Data | New fact | `silver.gas_model.silver_gas_fact_sttm_pipeline_capacity` | One row per STTM gas date, facility, provisional schedule type, and capacity or price measure. | `gas_date`, `facility_identifier`, `provisional_schedule_type` | `source_table = silver.sttm.silver_int656_v2_provisional_pipeline_data_rpt_1`; `source_report_id = INT656`; update field `report_datetime`. | #121 needs anchor update |
+| `INT657` | Ex Post Market Data | New fact, with price fields reviewed for existing fit | `silver.gas_model.silver_gas_fact_sttm_market_imbalance` and reviewed price rows in `silver.gas_model.silver_gas_fact_market_price` | One row per STTM gas date, hub, schedule type, and imbalance measure. | `gas_date`, `hub_identifier`, `schedule_type_code` | `source_table = silver.sttm.silver_int657_v2_ex_post_market_data_rpt_1`; `source_report_id = INT657`; update fields `approval_datetime`, `report_datetime`. | #119, human review |
+| `INT658` | Latest Allocation Quantity | New fact | `silver.gas_model.silver_gas_fact_sttm_allocation_quantity` | One row per STTM gas date, facility, and flow direction allocation quantity. | `gas_date`, `facility_identifier`, `flow_direction` | `source_table = silver.sttm.silver_int658_v1_latest_allocation_quantity_rpt_1`; `source_report_id = INT658`; update field `report_datetime`. | #121 |
+| `INT659` | Bid & Offer Report | Existing fact fit | `silver.gas_model.silver_gas_fact_bid_stack` | One row per STTM gas date, schedule, bid/offer id, and bid/offer step. | `gas_date`, `schedule_identifier`, `bid_offer_identifier`, `bid_offer_step_number` | `source_table = silver.sttm.silver_int659_v1_bid_offer_rpt_1`; `source_report_id = INT659`; update field `report_datetime`. | #120 |
+| `INT660` | Contingency Gas Bid & Offer | Existing fact fit | `silver.gas_model.silver_gas_fact_bid_stack` | One row per STTM gas date, contingency bid/offer id, and contingency step. | `gas_date`, `contingency_gas_bid_offer_identifier`, `contingency_gas_bid_offer_step_number` | `source_table = silver.sttm.silver_int660_v1_contingency_gas_bids_and_offers_rpt_1`; `source_report_id = INT660`; update field `report_datetime`. | #120 |
+| `INT661` | Contingency Gas Called Scheduled Bid Offer | New fact | `silver.gas_model.silver_gas_fact_sttm_contingency_gas_call` | One row per STTM gas date, contingency bid/offer id, step, confirmed quantity, and called quantity. | `gas_date`, `contingency_gas_bid_offer_identifier`, `contingency_gas_bid_offer_step_number` | `source_table = silver.sttm.silver_int661_v1_contingency_gas_called_scheduled_bid_offer_rpt_1`; `source_report_id = INT661`; update fields `approval_datetime`, `report_datetime`. | #120 |
+| `INT662` | Provisional Deviation Market Settlement | New fact | `silver.gas_model.silver_gas_fact_sttm_market_settlement` | One row per STTM gas date, hub, facility, and deviation settlement component. | `gas_date`, `hub_identifier`, `facility_identifier` | `source_table = silver.sttm.silver_int662_v1_provisional_deviation_rpt_1`; `source_report_id = INT662`; update field `report_datetime`. | #121 |
+| `INT663` | Provisional Variation and MOS Service Market Settlement | New fact | `silver.gas_model.silver_gas_fact_sttm_market_settlement` | One row per STTM gas date, hub, and variation or MOS settlement component. | `gas_date`, `hub_identifier` | `source_table = silver.sttm.silver_int663_v1_provisional_variation_rpt_1`; `source_report_id = INT663`; update field `report_datetime`. | #121 |
+| `INT664` | Daily Provisional MOS Allocation Data | New fact | `silver.gas_model.silver_gas_fact_sttm_capacity_settlement` | One row per STTM gas date, facility, and provisional MOS allocation component. | `gas_date`, `facility_identifier` | `source_table = silver.sttm.silver_int664_v1_daily_provisional_mos_allocation_rpt_1`; `source_report_id = INT664`; update field `report_datetime`. | #121 |
+| `INT665` | MOS Stack Data | New fact | `silver.gas_model.silver_gas_fact_sttm_mos_stack` | One row per STTM MOS stack and stack step over an effective period. | `stack_identifier`, `stack_step_identifier` | `source_table = silver.sttm.silver_int665_v1_mos_stack_data_rpt_1`; `source_report_id = INT665`; update fields `effective_from_date`, `effective_to_date`, `report_datetime`. | #121 |
+| `INT666` | Market Notices | Existing fact fit | `silver.gas_model.silver_gas_fact_system_notice` | One row per STTM market notice. | `market_notice_identifier` | `source_table = silver.sttm.silver_int666_v1_market_notice_rpt_1`; `source_report_id = INT666`; update field `report_datetime`. | #121 needs scope update |
+| `INT667` | Market Parameters | New fact | `silver.gas_model.silver_gas_fact_sttm_market_parameter` | One row per effective STTM market parameter period and parameter code. | `effective_from_date`, `effective_to_date`, `parameter_code` | `source_table = silver.sttm.silver_int667_v1_market_parameters_rpt_1`; `source_report_id = INT667`; update fields `last_update_datetime`, `report_datetime`. | #121 needs anchor update |
+| `INT668` | Schedule Log | Existing fact fit | `silver.gas_model.silver_gas_fact_schedule_run` | One row per STTM schedule run. | `schedule_identifier` | `source_table = silver.sttm.silver_int668_v1_schedule_log_rpt_1`; `source_report_id = INT668`; update fields `creation_datetime`, `bid_offer_cut_off_datetime`, `facility_hub_capacity_cut_off_datetime`, `pipeline_allocation_cut_off_datetime`, `approval_datetime`, `report_datetime`. | #119 |
+| `INT669` | Settlement Version | New fact | `silver.gas_model.silver_gas_fact_sttm_market_settlement` | One row per STTM settlement run/version. | `settlement_run_identifier` | `source_table = silver.sttm.silver_int669_v1_settlement_version_rpt_1`; `source_report_id = INT669`; update fields `version_from_date`, `version_to_date`, `issued_datetime`, `report_datetime`. | #121 |
+| `INT670` | Participant Register | Existing dimension fit | `silver.gas_model.silver_gas_dim_participant` and `silver.gas_model.silver_gas_participant_market_membership` | One row per STTM participant identity and one row per participant, hub, and registration type membership. | `hub_identifier`, `company_identifier`, `organisation_registration_type`, `registered_capacity` | `source_table = silver.sttm.silver_int670_v1_registered_participants_rpt_1`; `source_report_id = INT670`; update fields `last_update_datetime`, `report_datetime`. | #118 |
+| `INT671` | Hub and Facility Definitions | Existing dimension fit | `silver.gas_model.silver_gas_dim_zone` and `silver.gas_model.silver_gas_dim_facility` | One row per STTM hub and one current row per STTM facility under a hub. | `hub_identifier`, `facility_identifier` | `source_table = silver.sttm.silver_int671_v1_hub_facility_definition_rpt_1`; `source_report_id = INT671`; update fields `last_update_datetime`, `report_datetime`. | #118 |
+| `INT672` | Cumulative Price & Threshold | Existing fact fit | `silver.gas_model.silver_gas_fact_market_price` | One row per STTM gas date, hub, and cumulative price or threshold measure. | `gas_date`, `hub_identifier` | `source_table = silver.sttm.silver_int672_v1_cumulative_price_rpt_1`; `source_report_id = INT672`; update field `report_datetime`. | #119 |
+| `INT673` | Total Contingency Bid & Offer | New fact | `silver.gas_model.silver_gas_fact_sttm_contingency_gas_call` | One row per STTM gas date, hub, and total contingency bid or offer quantity. | `gas_date`, `hub_identifier` | `source_table = silver.sttm.silver_int673_v1_total_contingency_bid_offer_rpt_1`; `source_report_id = INT673`; update field `report_datetime`. | #120 |
+| `INT674` | Total Contingency Gas Schedules | New fact | `silver.gas_model.silver_gas_fact_sttm_contingency_gas_call` | One row per STTM gas date, hub, facility, flow direction, bid/offer type, and called quantity. | `gas_date`, `hub_identifier`, `facility_identifier`, `flow_direction`, `contingency_gas_bid_offer_type` | `source_table = silver.sttm.silver_int674_v1_total_contingency_gas_schedules_rpt_1`; `source_report_id = INT674`; update fields `approval_datetime`, `report_datetime`. | #120 |
+| `INT675` | Default Allocation Notice | New fact | `silver.gas_model.silver_gas_fact_sttm_default_allocation_notice` | One row per STTM default allocation notice, gas date, hub, and facility. | `notice_identifier` | `source_table = silver.sttm.silver_int675_v1_default_allocation_notice_rpt_1`; `source_report_id = INT675`; update field `report_datetime`. | #121 |
+| `INT676` | Rolling Ex-ante Price Average | Existing fact fit | `silver.gas_model.silver_gas_fact_market_price` | One row per STTM gas date, hub, and rolling average price measure. | `gas_date`, `hub_identifier` | `source_table = silver.sttm.silver_int676_v1_rolling_average_price_rpt_1`; `source_report_id = INT676`; update field `report_datetime`. | #119 |
+| `INT677` | Contingency Gas Price | Existing fact fit | `silver.gas_model.silver_gas_fact_market_price` | One row per STTM contingency call id and high, low, schedule high, or schedule low price measure. | `contingency_gas_called_identifier` | `source_table = silver.sttm.silver_int677_v1_contingency_gas_price_rpt_1`; `source_report_id = INT677`; update fields `approval_datetime`, `report_datetime`. | #119 |
+| `INT678` | Net Market Balance Daily Amounts | New fact | `silver.gas_model.silver_gas_fact_sttm_market_settlement` | One row per STTM billing period, hub, and net-market-balance component. | `period_start_date`, `period_end_date`, `hub_identifier` | `source_table = silver.sttm.silver_int678_v1_net_market_balance_daily_amounts_rpt_1`; `source_report_id = INT678`; update field `report_datetime`. | #121 |
+| `INT679` | Net Market Balance Settlement Amounts | New fact | `silver.gas_model.silver_gas_fact_sttm_market_settlement` | One row per STTM settlement run, hub, billing period, and net-market-balance component. | `settlement_run_identifier`, `hub_identifier` | `source_table = silver.sttm.silver_int679_v1_net_market_balance_settlement_amounts_rpt_1`; `source_report_id = INT679`; update field `report_datetime`. | #121 |
+| `INT680` | DP Flag Data | New fact | `silver.gas_model.silver_gas_fact_sttm_market_parameter` | One row per STTM hub and effective DP flag period. | `hub_identifier`, `effective_from_date` | `source_table = silver.sttm.silver_int680_v1_dp_flag_data_rpt_1`; `source_report_id = INT680`; update field `report_datetime`. | #121 |
+| `INT681` | Daily Provisional Capacity Data | New fact | `silver.gas_model.silver_gas_fact_sttm_capacity_settlement` | One row per STTM gas date, hub, facility, and provisional capacity component. | `gas_date`, `hub_identifier`, `facility_identifier` | `source_table = silver.sttm.silver_int681_v1_daily_provisional_capacity_data_rpt_1`; `source_report_id = INT681`; update field `report_datetime`. | #121 |
+| `INT682` | Settlement MOS and Capacity Data | New fact | `silver.gas_model.silver_gas_fact_sttm_capacity_settlement` | One row per STTM settlement run, gas date, hub, facility, and MOS or capacity component. | `settlement_run_identifier`, `gas_date`, `hub_identifier`, `facility_identifier` | `source_table = silver.sttm.silver_int682_v1_settlement_mos_and_capacity_data_rpt_1`; `source_report_id = INT682`; update field `report_datetime`. | #121 |
+| `INT683` | Provisional Used MOS Steps | New fact | `silver.gas_model.silver_gas_fact_sttm_mos_stack` | One row per STTM gas date, MOS stack, and used stack step. | `gas_date`, `stack_identifier`, `stack_step_identifier` | `source_table = silver.sttm.silver_int683_v1_provisional_used_mos_steps_rpt_1`; `source_report_id = INT683`; update field `report_datetime`. | #121 |
+| `INT684` | Settlement Used MOS Steps | New fact | `silver.gas_model.silver_gas_fact_sttm_mos_stack` | One row per STTM settlement run, gas date, MOS stack, and used stack step. | `settlement_run_identifier`, `gas_date`, `stack_identifier`, `stack_step_identifier` | `source_table = silver.sttm.silver_int684_v1_settlement_used_mos_steps_rpt_1`; `source_report_id = INT684`; update field `report_datetime`. | #121 |
+| `INT687` | Facility Hub Capacity Data | Existing dimension fit, human review | `silver.gas_model.silver_gas_dim_facility` | One row per effective STTM facility capacity context, with review needed for threshold fields. | `effective_from_date`, `facility_identifier` | `source_table = silver.sttm.silver_int687_v1_facility_hub_capacity_data_rpt_1`; `source_report_id = INT687`; update fields `effective_from_date`, `effective_to_date`, `last_update_datetime`, `report_datetime`. | #118, human review |
+| `INT688` | Allocation Warning Limit Thresholds | New fact | `silver.gas_model.silver_gas_fact_sttm_allocation_limit` | One row per STTM gas date and facility warning-limit set. | `gas_date`, `facility_identifier` | `source_table = silver.sttm.silver_int688_v1_allocation_warning_limit_thresholds_rpt_1`; `source_report_id = INT688`; update fields `last_update_datetime`, `report_datetime`. | #121 |
+| `INT689` | Ex Post Allocation Quantity | New fact | `silver.gas_model.silver_gas_fact_sttm_allocation_quantity` | One row per STTM gas date, facility, flow direction, and ex-post allocation data-quality type. | `gas_date`, `facility_identifier`, `flow_direction` | `source_table = silver.sttm.silver_int689_v1_expost_allocation_quantity_rpt_1`; `source_report_id = INT689`; update field `report_datetime`. | #121 |
+| `INT690` | Deviation Price Data | Existing fact fit | `silver.gas_model.silver_gas_fact_market_price` | One row per STTM gas date, hub, and deviation price, input price, or MOS cost measure. | `gas_date`, `hub_identifier` | `source_table = silver.sttm.silver_int690_v1_deviation_price_data_rpt_1`; `source_report_id = INT690`; update fields `last_update_datetime`, `report_datetime`. | #119 |
+| `INT691` | STTM Custody Transfer Point Register | Existing dimension fit, human review | `silver.gas_model.silver_gas_dim_connection_point` | One row per source-qualified STTM custody transfer point under a hub and facility, pending accepted flow-direction policy. | `hub_identifier`, `facility_identifier` | `source_table = silver.sttm.silver_int691_v1_sttm_ctp_register_rpt_1`; `source_report_id = INT691`; update fields `effective_from_date`, `effective_to_date`, `last_update_datetime`, `report_datetime`. | #118, human review |
+
+### Source-Spec Gaps
+
+| Report | Coverage decision | Reason | Follow-on |
+| --- | --- | --- | --- |
+| `INT685` | Out of scope for `gas_model` coverage | Present in the live NEMWeb STTM root but absent from the STTM Reports Specifications v19.1 manifest, so discovery can land root CSV files but no source-table bronze or silver asset exists. | #125 |
+| `INT685B` | Out of scope for `gas_model` coverage | Present in the live NEMWeb STTM root but absent from the STTM Reports Specifications v19.1 manifest, so discovery can land root CSV files but no source-table bronze or silver asset exists. | #125 |
+
+### Handoff Comment Draft
+
+Use this as the issue #116 handoff comment content after the local validation
+run. It intentionally does not mutate GitHub from this exploratory worktree.
+
+```markdown
+Ralph exploratory handoff for #116:
+
+- Mapping artifact: `docs/repository/architecture-exploration.md`, section
+  `Issue #116: STTM report-to-gas-model mapping`.
+- Ready follow-on slices after human review accepts the mapping:
+  - #117 records the fit-plus-extend modeling decision.
+  - #118 implements STTM participant, hub, facility, and CTP dimensions.
+  - #119 implements market price, schedule run, and scheduled quantity facts.
+  - #120 implements bid, offer, and contingency gas facts.
+  - #121 implements allocation, MOS, capacity, settlement, NMB, market
+    parameter, and notice outputs.
+  - #122 expands the full-gas-model End-to-end test proof after #118-#121.
+- Human review points before draining implementation:
+  - Accept or revise the fit-plus-extend policy in #117.
+  - Decide whether `INT657` splits price rows into the existing market-price
+    fact or stays in a new market-imbalance fact.
+  - Decide whether `INT687` is dimension enrichment or a time-effective fact.
+  - Decide how `INT691` maps to `silver_gas_dim_connection_point` when the
+    STTM manifest key lacks `flow_direction`.
+  - Update #121 or create a narrow follow-on for explicit `INT653`, `INT656`,
+    `INT666`, and `INT667` coverage before implementation, because the current
+    issue body does not list all four as context anchors.
+- `INT685` and `INT685B` remain landing-only source-spec gaps and belong to
+  the separate exploratory document-corpus path in #125.
+```
+
 ## Issue #81: Final architecture decision matrix
 
 This is the aggregate decision matrix for issues #82, #83, #84, #85, and #86.
@@ -1060,6 +1222,34 @@ slices can close after integration to `main`; exploratory slices stay open with
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int677_v1_contingency_gas_price_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int678_v1_net_market_balance_daily_amounts_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int679_v1_net_market_balance_settlement_amounts_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int680_v1_dp_flag_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int681_v1_daily_provisional_capacity_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int682_v1_settlement_mos_and_capacity_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int683_v1_provisional_used_mos_steps_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int684_v1_settlement_used_mos_steps_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int687_v1_facility_hub_capacity_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int688_v1_allocation_warning_limit_thresholds_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int689_v1_expost_allocation_quantity_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int690_v1_deviation_price_data_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int691_v1_sttm_ctp_register_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_market_price.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_scheduled_quantity.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_schedule_run.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_bid_stack.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_system_notice.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_settlement_activity.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_capacity_transaction.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_capacity_outlook.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_dim_participant.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_participant_market_membership.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_dim_zone.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_dim_facility.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_dim_connection_point.py`
+  - `backend-services/dagster-user/aemo-etl/docs/gas_model/README.md`
+  - `backend-services/dagster-user/aemo-etl/docs/gas_model/gas_dim_erd.md`
+  - `backend-services/dagster-user/aemo-etl/docs/gas_model/gas_market_mart_erd.md`
+  - `backend-services/dagster-user/aemo-etl/docs/gas_model/gas_capacity_settlement_mart_erd.md`
+  - `backend-services/dagster-user/aemo-etl/docs/gas_model/gas_quality_status_mart_erd.md`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/jobs/download_vicgas_public_report_zip_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/current_state.py`
