@@ -533,6 +533,10 @@ def path_text(path: Path | None) -> str | None:
     return str(path)
 
 
+def promotion_issue_metadata_log_path(run_dir: Path, issue_number: int, step: str) -> Path:
+    return run_dir / f"gh-issue-{issue_number}-promotion-{step}.log"
+
+
 def branch_sync_worktree_path(
     *,
     worktree_container: Path,
@@ -1236,6 +1240,8 @@ class RunManifest:
         *,
         integrated_commit: str,
         status: str,
+        log_path: Path | None = None,
+        metadata_log_key: str | None = None,
     ) -> None:
         metadata = self.data.setdefault("github_metadata", {})
         if not isinstance(metadata, dict):
@@ -1243,17 +1249,30 @@ class RunManifest:
         issues = metadata.setdefault("issues", [])
         if not isinstance(issues, list):
             raise RalphError("Manifest github_metadata.issues field is not a list.")
-        entry = {
+        entry: dict[str, Any] = {
             "number": issue.number,
             "title": issue.title,
             "url": issue.url,
             "integrated_commit": integrated_commit,
             "metadata_status": status,
         }
+        if log_path is not None:
+            entry["log_path"] = path_text(log_path)
+        if metadata_log_key is not None and log_path is not None:
+            entry["metadata_log_paths"] = {metadata_log_key: path_text(log_path)}
         replaced = False
         for index, existing in enumerate(issues):
             if isinstance(existing, dict) and existing.get("number") == issue.number:
+                existing_log_paths = existing.get("metadata_log_paths")
+                merged_log_paths = (
+                    dict(existing_log_paths) if isinstance(existing_log_paths, dict) else {}
+                )
+                entry_log_paths = entry.get("metadata_log_paths")
+                if isinstance(entry_log_paths, dict):
+                    merged_log_paths.update(entry_log_paths)
                 updated = {**existing, **entry}
+                if merged_log_paths:
+                    updated["metadata_log_paths"] = merged_log_paths
                 issues[index] = updated
                 replaced = True
                 break
@@ -1262,7 +1281,12 @@ class RunManifest:
         metadata["status"] = status
         self.record_event(
             f"github_metadata_issue_{status}",
-            details={"issue": issue.number, "integrated_commit": integrated_commit},
+            details={
+                "issue": issue.number,
+                "integrated_commit": integrated_commit,
+                "log_path": path_text(log_path),
+                "metadata_log_key": metadata_log_key,
+            },
         )
 
     def record_failure(self, error: Exception, *, log_path: Path | None = None) -> None:
@@ -3919,6 +3943,7 @@ class GitHubClient:
         *,
         add: list[str] | None = None,
         remove: list[str] | None = None,
+        log_path: Path | None = None,
     ) -> None:
         add = add or []
         remove = remove or []
@@ -3929,7 +3954,12 @@ class GitHubClient:
             args.extend(["--add-label", label])
         for label in remove:
             args.extend(["--remove-label", label])
-        self.runner.run(args, cwd=self.repo_root, execute_in_dry_run=False)
+        self.runner.run(
+            args,
+            cwd=self.repo_root,
+            log_path=log_path,
+            execute_in_dry_run=False,
+        )
 
     def edit_issue_body(self, number: int, body: str, *, run_dir: Path) -> None:
         body_path = run_dir / f"issue-{number}-body.md"
@@ -3950,7 +3980,14 @@ class GitHubClient:
             execute_in_dry_run=False,
         )
 
-    def comment_issue(self, number: int, body: str, *, run_dir: Path) -> None:
+    def comment_issue(
+        self,
+        number: int,
+        body: str,
+        *,
+        run_dir: Path,
+        log_path: Path | None = None,
+    ) -> None:
         comment_path = run_dir / f"issue-{number}-comment.md"
         if not self.runner.dry_run:
             comment_path.write_text(body, encoding="utf-8")
@@ -3966,6 +4003,7 @@ class GitHubClient:
                 str(comment_path),
             ],
             cwd=self.repo_root,
+            log_path=log_path,
             execute_in_dry_run=False,
         )
 
@@ -4003,7 +4041,13 @@ class GitHubClient:
         )
         return parse_issue_reference_from_create_stdout(result.stdout, title=title)
 
-    def close_issue(self, number: int, *, run_dir: Path) -> None:
+    def close_issue(
+        self,
+        number: int,
+        *,
+        run_dir: Path,
+        log_path: Path | None = None,
+    ) -> None:
         self.runner.run(
             [
                 "gh",
@@ -4016,7 +4060,7 @@ class GitHubClient:
                 "completed",
             ],
             cwd=self.repo_root,
-            log_path=run_dir / "gh-issue-close.log",
+            log_path=log_path or run_dir / "gh-issue-close.log",
             execute_in_dry_run=False,
         )
 
@@ -5732,11 +5776,22 @@ class RalphLoop:
         manifest: RunManifest,
     ) -> None:
         for issue, integrated_commit in issues:
+            comment_log_path = promotion_issue_metadata_log_path(
+                run_dir, issue.number, "comment"
+            )
+            label_log_path = promotion_issue_metadata_log_path(
+                run_dir, issue.number, "label"
+            )
+            close_log_path = promotion_issue_metadata_log_path(
+                run_dir, issue.number, "close"
+            )
             emit(f"#{issue.number}: commenting promotion evidence")
             manifest.record_promoted_issue_metadata(
                 issue,
                 integrated_commit=integrated_commit,
                 status="commenting",
+                log_path=comment_log_path,
+                metadata_log_key="comment",
             )
             self.github.comment_issue(
                 issue.number,
@@ -5751,17 +5806,22 @@ class RalphLoop:
                     run_dir,
                 ),
                 run_dir=run_dir,
+                log_path=comment_log_path,
             )
             manifest.record_promoted_issue_metadata(
                 issue,
                 integrated_commit=integrated_commit,
                 status="commented",
+                log_path=comment_log_path,
+                metadata_log_key="comment",
             )
             emit(f"#{issue.number}: marking {AGENT_MERGED_LABEL}")
             manifest.record_promoted_issue_metadata(
                 issue,
                 integrated_commit=integrated_commit,
                 status="labeling",
+                log_path=label_log_path,
+                metadata_log_key="label",
             )
             self.github.edit_issue_labels(
                 issue.number,
@@ -5772,23 +5832,30 @@ class RalphLoop:
                     AGENT_RUNNING_LABEL,
                     AGENT_FAILED_LABEL,
                 ],
+                log_path=label_log_path,
             )
             manifest.record_promoted_issue_metadata(
                 issue,
                 integrated_commit=integrated_commit,
                 status="labeled",
+                log_path=label_log_path,
+                metadata_log_key="label",
             )
             emit(f"#{issue.number}: closing issue")
             manifest.record_promoted_issue_metadata(
                 issue,
                 integrated_commit=integrated_commit,
                 status="closing",
+                log_path=close_log_path,
+                metadata_log_key="close",
             )
-            self.github.close_issue(issue.number, run_dir=run_dir)
+            self.github.close_issue(issue.number, run_dir=run_dir, log_path=close_log_path)
             manifest.record_promoted_issue_metadata(
                 issue,
                 integrated_commit=integrated_commit,
                 status="closed",
+                log_path=close_log_path,
+                metadata_log_key="close",
             )
 
     def _handle_implementation(self, issue: Issue) -> RunManifest | None:

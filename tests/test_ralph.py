@@ -5315,6 +5315,199 @@ Build it.
         self.assertFalse(manifest["ready_issue_refresh"]["enabled"])
         self.assertEqual(manifest["ready_issue_refresh"]["status"], "skipped_disabled")
 
+    def test_promotion_records_distinct_metadata_command_logs_for_each_issue(
+        self,
+    ) -> None:
+        issue_list_command = (
+            "gh",
+            "issue",
+            "list",
+            "-R",
+            "example/repo",
+            "--state",
+            "open",
+            "--limit",
+            "100",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        issue_42_comments_command = (
+            "gh",
+            "issue",
+            "view",
+            "42",
+            "-R",
+            "example/repo",
+            "--comments",
+            "--json",
+            "comments",
+        )
+        issue_43_comments_command = (
+            "gh",
+            "issue",
+            "view",
+            "43",
+            "-R",
+            "example/repo",
+            "--comments",
+            "--json",
+            "comments",
+        )
+        issue_42_target_ancestor_command = (
+            "git",
+            "merge-base",
+            "--is-ancestor",
+            "abc1234",
+            "origin/main",
+        )
+        issue_43_target_ancestor_command = (
+            "git",
+            "merge-base",
+            "--is-ancestor",
+            "def5678",
+            "origin/main",
+        )
+        promotion_log_command = (
+            "git",
+            "log",
+            "--reverse",
+            "--format=%H%x00%s",
+            "origin/main..source-sha",
+        )
+
+        def integration_comments(commit_sha: str) -> str:
+            return json.dumps(
+                {
+                    "comments": [
+                        {
+                            "body": "\n".join(
+                                [
+                                    "Ralph Gitflow integration completed.",
+                                    "",
+                                    f"Commit: `{commit_sha}`",
+                                ]
+                            )
+                        }
+                    ]
+                }
+            )
+
+        runner = FakeRunner(
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+            command_outputs={
+                issue_list_command: [
+                    json.dumps(
+                        [
+                            issue_payload(42, ["agent-integrated"]),
+                            issue_payload(43, ["agent-integrated"]),
+                        ]
+                    )
+                ],
+                issue_42_comments_command: [integration_comments("abc1234")],
+                issue_43_comments_command: [integration_comments("def5678")],
+                promotion_log_command: [
+                    (
+                        "abc1234\x00Ralph Local integration for issue 42\n"
+                        "def5678\x00Ralph Local integration for issue 43\n"
+                    )
+                ],
+            },
+            fail_commands={
+                issue_42_target_ancestor_command: 1,
+                issue_43_target_ancestor_command: 1,
+            },
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                promote=True,
+                skip_post_promotion_review=True,
+            )
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+            metadata_by_issue = {
+                issue["number"]: issue
+                for issue in manifest["github_metadata"]["issues"]
+            }
+            issue_42_log_paths = metadata_by_issue[42]["metadata_log_paths"]
+            issue_43_log_paths = metadata_by_issue[43]["metadata_log_paths"]
+            run_dir = Path(manifest["paths"]["run_dir"])
+            all_metadata_log_paths = [
+                Path(issue_log_paths[step])
+                for issue_log_paths in (issue_42_log_paths, issue_43_log_paths)
+                for step in ("comment", "label", "close")
+            ]
+            close_log_paths = [
+                Path(issue_42_log_paths["close"]),
+                Path(issue_43_log_paths["close"]),
+            ]
+
+            self.assertEqual(
+                issue_42_log_paths,
+                {
+                    step: str(run_dir / f"gh-issue-42-promotion-{step}.log")
+                    for step in ("comment", "label", "close")
+                },
+            )
+            self.assertEqual(
+                issue_43_log_paths,
+                {
+                    step: str(run_dir / f"gh-issue-43-promotion-{step}.log")
+                    for step in ("comment", "label", "close")
+                },
+            )
+            self.assertEqual(len(set(all_metadata_log_paths)), 6)
+            self.assertNotEqual(close_log_paths[0], close_log_paths[1])
+            for log_path in all_metadata_log_paths:
+                self.assertTrue(log_path.exists(), log_path)
+
+        command_log_paths = {
+            call.args: call.log_path
+            for call in runner.calls
+            if call.args[:3] in {
+                ("gh", "issue", "comment"),
+                ("gh", "issue", "edit"),
+                ("gh", "issue", "close"),
+            }
+        }
+        self.assertEqual(
+            command_log_paths[
+                (
+                    "gh",
+                    "issue",
+                    "close",
+                    "42",
+                    "-R",
+                    "example/repo",
+                    "--reason",
+                    "completed",
+                )
+            ],
+            close_log_paths[0],
+        )
+        self.assertEqual(
+            command_log_paths[
+                (
+                    "gh",
+                    "issue",
+                    "close",
+                    "43",
+                    "-R",
+                    "example/repo",
+                    "--reason",
+                    "completed",
+                )
+            ],
+            close_log_paths[1],
+        )
+
     def test_promotion_runs_ready_issue_refresh_after_verified_closures(self) -> None:
         issue_list_command = (
             "gh",

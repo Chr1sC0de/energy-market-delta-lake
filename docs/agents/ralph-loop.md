@@ -435,7 +435,8 @@ Key fields for inspection:
 - `events`: timestamped milestone history.
 - `issue`: implementation issue number, title, and URL.
 - `github_metadata.issues`: promoted issue numbers, recorded issue evidence
-  commits, and manual recovery evidence warnings during **Promotion**.
+  commits, per-issue Promotion metadata command log paths, and manual recovery
+  evidence warnings during **Promotion**.
 - `delivery_mode`: issue **Delivery mode**; **Promotion** records `gitflow`.
 - `integration_target`: branch Ralph is updating for the run.
 - `source_branch`: **Promotion** source branch, usually `dev`.
@@ -750,10 +751,13 @@ After the push succeeds, Ralph scans open `agent-integrated` issues. It closes
 only issues whose recorded Gitflow integration commit, documented manual
 Gitflow recovery commit, or accepted Exploratory commit is still in the
 promoted `origin/main..origin/dev` range, then comments Promotion evidence and
-replaces `agent-integrated` with `agent-merged`. If an open `agent-integrated`
-issue has manual recovery evidence but no parseable commit, Ralph warns with
-the exact recovery action and records the issue under `github_metadata.issues`
-with `metadata_status: manual_recovery_commit_unparseable`.
+replaces `agent-integrated` with `agent-merged`. Each verified issue writes
+distinct command logs for the Promotion comment, label edit, and close steps,
+and stores those paths under `github_metadata.issues[].metadata_log_paths`. If
+an open `agent-integrated` issue has manual recovery evidence but no parseable
+commit, Ralph warns with the exact recovery action and records the issue under
+`github_metadata.issues` with
+`metadata_status: manual_recovery_commit_unparseable`.
 Per-issue Promotion comments describe promoted files as the full
 Promotion-range file inventory, not as files owned only by the issue being
 closed. Successful Promotions with changed files then run a **Post-promotion
