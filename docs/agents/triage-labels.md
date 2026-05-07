@@ -38,14 +38,17 @@ Ralph owns these labels while processing the issue queue:
 
 Runtime labels are not triage state labels. `ready-for-agent` remains the queue
 selection label for implementation. **Ready issue refresh** may transition an
-issue out of `ready-for-agent` when the latest **Local integration** or
-Exploratory handoff leaves the issue stale, unclear, obsolete, or already
-satisfied. Ralph's current drain first records a read-only **Ready issue
-refresh** analysis artifact with planned transitions; that subprocess is not
-allowed to mutate labels or issue state. Ralph's outer loop then applies
-validated label transitions with GitHub Issue metadata commands only. Runtime
-labels including `agent-reviewing` block repeat implementation, **Ready issue
-refresh** candidate selection, and automated triage reconsideration.
+issue out of `ready-for-agent` when the latest **Local integration**,
+Exploratory handoff, or **Promotion** leaves the issue stale, unclear, obsolete,
+or already satisfied. Post-Promotion refresh may also move stale `needs-triage`
+or unlabeled issues back toward the correct triage state when their only
+remaining blockers were closed by **Promotion**. Ralph first records a
+read-only **Ready issue refresh** analysis artifact with planned transitions;
+that subprocess is not allowed to mutate labels or issue state. Ralph's outer
+loop then applies validated label transitions with GitHub Issue metadata
+commands only. Runtime labels including `agent-reviewing` block repeat
+implementation, **Ready issue refresh** candidate selection, and automated
+triage reconsideration.
 
 Human review owns the `agent-reviewing` transition. Accepted Exploratory review
 merges the durable **Exploratory branch** to `dev`, records

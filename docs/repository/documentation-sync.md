@@ -195,6 +195,11 @@ way:
   runs require `--ready-issue-refresh`. Mutation uses only GitHub Issue metadata
   commands, records per-candidate manifest status, and stops the drain with
   recovery guidance on partial post-**Local integration** metadata failures.
+- #127: Successful **Promotion** verified issue closures may trigger **Ready
+  issue refresh** before the next ready issue claim. The checkpointed Operator
+  loop enables post-Promotion refresh by default, direct `--promote` requires
+  `--ready-issue-refresh`, and failures are warning-only because the Promotion
+  commit and verified issue closures have already completed.
 - #72: Ralph implementation prompts include bounded recent **Ready issue
   refresh** notes after the issue body while keeping the issue body as the
   primary implementation contract.
