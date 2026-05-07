@@ -355,6 +355,11 @@ spec-backed public reports: `INT651` through `INT684` and `INT687` through
 `sttm.bronze_int691_v1_sttm_ctp_register_rpt_1`, excluding `INT685` and
 `INT685B` because those live root CSV reports are landing-only gaps absent from
 the v19.1 STTM report specification manifest.
+That replay surface feeds the manifest-backed STTM `gas_model` expansion policy
+in ADR
+[0006](../../../../../docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md):
+matching STTM grains enrich existing `gas_model` assets, and distinct STTM
+grains become new `gas_model` facts.
 
 ## Test assumptions
 
@@ -402,6 +407,7 @@ across the Subproject.
 - [High-level architecture](../architecture/high_level_architecture.md)
 - [Ingestion sequence diagrams](../architecture/ingestion_flows.md)
 - [ADR 0003: bounded current-state bronze source tables](../../../../../docs/adr/0003-bounded-current-state-bronze-source-tables.md)
+- [ADR 0006: STTM gas_model fit-plus-extend modeling](../../../../../docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md)
 
 ## Sync metadata
 
@@ -470,6 +476,7 @@ across the Subproject.
   - `backend-services/dagster-user/aemo-etl/dagster.dev.yaml`
   - `backend-services/dagster-user/aemo-etl/workspace.dev.yaml`
   - `docs/adr/0003-bounded-current-state-bronze-source-tables.md`
+  - `docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md`
 - `sync.scope`: `operations, tooling`
 - `sync.qa`:
   - `git diff --name-only`

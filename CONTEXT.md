@@ -135,6 +135,18 @@ may then create structured actionable follow-up GitHub Issues through Ralph's
 validated create-only helper.
 _Avoid_: Promotion gate, pre-push review
 
+**Fit-plus-extend modeling**:
+A data-platform modeling policy where new source coverage reuses existing shared
+facts and dimensions when the source grain and meaning match, then adds a new
+shared fact when the source has a real grain that does not fit current assets.
+_Avoid_: Force-fit modeling, source-only area
+
+**Source-spec gap**:
+A live source artifact that the platform can discover or land, but does not yet
+model as curated coverage because the repository lacks a usable source
+definition for its fields, grain, and meaning.
+_Avoid_: Implemented gap, ignored report
+
 ## Relationships
 
 - A **Pytest subproject** is one kind of **Subproject**.
@@ -182,6 +194,13 @@ _Avoid_: Promotion gate, pre-push review
   through a validated create-only helper: valid drafts become
   `ready-for-agent`, invalid drafts become `needs-triage`, and helper failures
   are warning-only because `main` has already been pushed.
+- **Fit-plus-extend modeling** keeps shared data-platform tables aligned to
+  domain grain: source rows join existing shared facts and dimensions where the
+  meaning matches, and new shared facts are added only for distinct source
+  grains.
+- A **Source-spec gap** may be discovered or landed, but it remains outside
+  curated **Fit-plus-extend modeling** until a usable source definition is
+  available.
 
 ## Example dialogue
 
@@ -229,3 +248,7 @@ _Avoid_: Promotion gate, pre-push review
 - "review branch" could imply a GitHub PR branch or a temporary worktree.
   Resolved: use **Exploratory branch** for the durable branch Ralph publishes
   during **Exploratory delivery**.
+- "STTM-only area" and "force every STTM report into current facts" were
+  considered for `gas_model` expansion. Resolved: use **Fit-plus-extend
+  modeling** so matching grains enrich shared assets and distinct grains become
+  new shared facts.

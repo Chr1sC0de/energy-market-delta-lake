@@ -997,12 +997,12 @@ others keep the old inline JSON shape.
 
 ## Issue #116: STTM report-to-gas-model mapping
 
-Issue #116 asks for exploratory mapping of every manifest-backed STTM public
+Issue #116 asked for exploratory mapping of every manifest-backed STTM public
 report into the intended `silver.gas_model` destination. This section records
-research only. It does not change runtime behavior, git operations, GitHub
-Issue metadata, or Ralph labels. The Review focus is whether the proposed
-STTM report grouping, grains, and destination assets are the right gas-market
-domain model before the follow-on implementation issues run.
+the research evidence behind the accepted fit-plus-extend decision in ADR
+[0006](../adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md). It does
+not change runtime behavior, git operations, GitHub Issue metadata, or Ralph
+labels.
 
 ### Evidence And Mapping Rules
 
@@ -1134,16 +1134,16 @@ Ralph exploratory handoff for #116:
 
 - Mapping artifact: `docs/repository/architecture-exploration.md`, section
   `Issue #116: STTM report-to-gas-model mapping`.
-- Ready follow-on slices after human review accepts the mapping:
-  - #117 records the fit-plus-extend modeling decision.
+- Accepted follow-on decision:
+  - #117 and ADR 0006 record the fit-plus-extend modeling decision.
+- Ready follow-on slices after the fit-plus-extend decision:
   - #118 implements STTM participant, hub, facility, and CTP dimensions.
   - #119 implements market price, schedule run, and scheduled quantity facts.
   - #120 implements bid, offer, and contingency gas facts.
   - #121 implements allocation, MOS, capacity, settlement, NMB, market
     parameter, and notice outputs.
   - #122 expands the full-gas-model End-to-end test proof after #118-#121.
-- Human review points before draining implementation:
-  - Accept or revise the fit-plus-extend policy in #117.
+- Remaining human review points before draining implementation:
   - Decide whether `INT657` splits price rows into the existing market-price
     fact or stays in a new market-imbalance fact.
   - Decide whether `INT687` is dimension enrichment or a time-effective fact.
@@ -1152,7 +1152,7 @@ Ralph exploratory handoff for #116:
   - Update #121 or create a narrow follow-on for explicit `INT653`, `INT656`,
     `INT666`, and `INT667` coverage before implementation, because the current
     issue body does not list all four as context anchors.
-- `INT685` and `INT685B` remain landing-only source-spec gaps and belong to
+- `INT685` and `INT685B` remain landing-only **Source-spec gaps** and belong to
   the separate exploratory document-corpus path in #125.
 ```
 
@@ -1368,6 +1368,7 @@ slices can close after integration to `main`; exploratory slices stay open with
   - `backend-services/scripts/aemo-etl-e2e`
   - `docs/repository/documentation-sync.md`
   - `docs/adr/0003-bounded-current-state-bronze-source-tables.md`
+  - `docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md`
   - `backend-services/dagster-user/aemo-etl/docs/architecture/ingestion_flows.md`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/utils.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`

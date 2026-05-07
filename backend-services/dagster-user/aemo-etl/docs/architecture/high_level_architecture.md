@@ -203,6 +203,11 @@ The corresponding silver asset:
 - `silver_gas_fact_operational_meter_flow`
 
 Most of these assets consume the source silver layer and publish shared dimensions and marts back into `silver/gas_model/...` parquet snapshot datasets. `silver_gas_dim_date` is a standalone scheduled calendar generated from `1900-01-01` through the run date.
+Manifest-backed STTM coverage follows ADR
+[0006](../../../../../docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md):
+existing `gas_model` facts and dimensions receive STTM rows where report grains
+match, and new `gas_model` facts are added where a report has a real grain that
+does not fit current assets.
 Gas-model silver assets retry failed materializations up to three times with a 60-second exponential backoff and plus/minus jitter.
 
 ### Delta maintenance
@@ -311,6 +316,7 @@ flowchart TD
 - [Ingestion sequence diagrams](ingestion_flows.md)
 - [Local development guide](../development/local_development.md)
 - [ADR 0003: bounded current-state bronze source tables](../../../../../docs/adr/0003-bounded-current-state-bronze-source-tables.md)
+- [ADR 0006: STTM gas_model fit-plus-extend modeling](../../../../../docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md)
 - [Gas-model ERDs](../gas_model/)
 
 ## Sync metadata
@@ -380,6 +386,7 @@ flowchart TD
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_dim_date.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_operational_meter_flow.py`
   - `docs/adr/0003-bounded-current-state-bronze-source-tables.md`
+  - `docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`

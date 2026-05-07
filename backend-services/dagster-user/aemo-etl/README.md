@@ -158,7 +158,13 @@ Detailed sequence diagrams for GBB, VICGAS, STTM, and raw-to-silver behavior liv
   because they are absent from the v19.1 specification. Manual STTM `DAYNN.ZIP`
   bootstrap writes bundles under `bronze/sttm/<filename>` for the STTM unzipper
   path; `CURRENTDAY.*` aliases stay out of the bootstrap/backfill path.
-- `gas_model`: shared dimensions and marts that reconcile GBB and VICGAS source data into reporting-friendly tables.
+- `gas_model`: shared dimensions and marts that reconcile gas source data into
+  reporting-friendly tables. GBB and VICGAS are the current implemented
+  sources. Manifest-backed STTM coverage follows ADR
+  [0006](../../../docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md):
+  existing `gas_model` assets receive STTM rows where report grains match, and
+  new `gas_model` facts are added where a report has a real grain that does not
+  fit current assets.
 
 Detailed gas-model ERDs remain under `docs/gas_model/`:
 
@@ -303,6 +309,7 @@ aemo-etl/
 - [Ingestion sequence diagrams](docs/architecture/ingestion_flows.md)
 - [Local development guide](docs/development/local_development.md)
 - [ADR 0003: bounded current-state bronze source tables](../../../docs/adr/0003-bounded-current-state-bronze-source-tables.md)
+- [ADR 0006: STTM gas_model fit-plus-extend modeling](../../../docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md)
 - [Gas-model ERDs](docs/gas_model/)
 
 ## Sync metadata
@@ -373,6 +380,7 @@ aemo-etl/
   - `backend-services/dagster-user/aemo-etl/.pre-commit-config.yaml`
   - `backend-services/dagster-user/aemo-etl/pyproject.toml`
   - `docs/adr/0003-bounded-current-state-bronze-source-tables.md`
+  - `docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md`
 - `sync.scope`: `architecture, tooling`
 - `sync.qa`:
   - `git diff --name-only`
