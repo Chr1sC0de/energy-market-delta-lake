@@ -15,7 +15,8 @@ Subproject docs for detailed commands, defaults, diagrams, and behavior.
 ## Subprojects
 
 - [backend-services](backend-services/README.md): local development and test
-  stack for Dagster, LocalStack, Caddy, auth, Postgres, and notebooks.
+  stack for Dagster, LocalStack, Caddy, auth, Postgres, curated Marimo
+  dashboards, and the local Marimo-Codex research workspace.
 - [backend-services/dagster-user/aemo-etl](backend-services/dagster-user/aemo-etl/README.md):
   Dagster assets, sensors, resources, ETL internals, and **End-to-end test**
   defaults.

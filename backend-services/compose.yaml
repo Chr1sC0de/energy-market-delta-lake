@@ -6,7 +6,9 @@
 #   aemo-etl          Dagster gRPC code-location server
 #   dagster-webserver Dagster UI + GraphQL API
 #   dagster-daemon    Schedules, sensors, and run queue
-#   marimo            Marimo notebook server (FastAPI + marimo ASGI)
+#   marimo-dashboard Curated Marimo dashboard server (FastAPI + marimo ASGI)
+#   marimo-codex-workspace
+#                     Local-only Marimo-Codex research workspace
 #
 # The dagster-core image is built with DAGSTER_DEPLOYMENT=local which selects
 # dagster.local.yaml and workspace.local.yaml as the active instance config.
@@ -165,14 +167,15 @@ services:
       - -m
       - aemo_etl.definitions
   # -------------------------------------------------------------------------
-  # marimo — Marimo notebook server (analytics layer)
-  # Caddy strips the /marimo prefix before proxying to this service.
+  # marimo-dashboard — curated Marimo dashboard server (analytics layer)
+  # Caddy proxies /marimo traffic to this service. Codex tooling is not enabled
+  # in this image.
   # -------------------------------------------------------------------------
-  marimo:
+  marimo-dashboard:
     build:
       context: ./marimo
-      target: deploy
-    container_name: marimo
+      target: dashboard
+    container_name: marimo-dashboard
     restart: on-failure
     depends_on:
       localstack:
@@ -180,15 +183,53 @@ services:
     networks:
       - dagster_network
     environment:
+      MARIMO_WORKSPACE_KIND: dashboard
+      MARIMO_NOTEBOOKS_DIR: /opt/marimo/notebooks
       AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL}
       AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_ALLOW_HTTP: true
     volumes:
-      - ./marimo/notebooks:/opt/marimo/notebooks
+      - ./marimo/notebooks:/opt/marimo/notebooks:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:2718/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+  # -------------------------------------------------------------------------
+  # marimo-codex-workspace — local-only Marimo research workspace.
+  # The service exposes marimo edit mode on a localhost-only port and mounts a
+  # separate writable workspace with AGENTS.md guidance. It must not be used for
+  # deployed Codex execution without a security review.
+  # -------------------------------------------------------------------------
+  marimo-codex-workspace:
+    build:
+      context: ./marimo
+      target: codex-workspace
+    container_name: marimo-codex-workspace
+    restart: on-failure
+    depends_on:
+      localstack:
+        condition: service_healthy
+    networks:
+      - dagster_network
+    ports:
+      - "127.0.0.1:2719:2718"
+    environment:
+      MARIMO_WORKSPACE_KIND: codex-research
+      MARIMO_WORKSPACE_ROOT: /workspace
+      MARIMO_NOTEBOOKS_DIR: /workspace/notebooks
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_ALLOW_HTTP: true
+    volumes:
+      - ./marimo/research-workspace:/workspace
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sfL http://localhost:2718"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -224,7 +265,7 @@ services:
       - authentication
       - dagster-webserver-admin
       - dagster-webserver-guest
-      - marimo
+      - marimo-dashboard
     networks:
       - dagster_network
     ports:

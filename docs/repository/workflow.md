@@ -95,7 +95,8 @@ flowchart LR
   COMPOSE --> USERCODE[aemo-etl]
   COMPOSE --> LOCALSTACK[LocalStack]
   COMPOSE --> PG[(Postgres)]
-  COMPOSE --> MARIMO[Marimo]
+  COMPOSE --> MARIMO_DASH[Marimo dashboard]
+  COMPOSE --> MARIMO_CODEX[Marimo-Codex workspace]
   SEED --> LOCALSTACK
   SEED --> USERCODE
 ```
@@ -106,8 +107,11 @@ Local workflow notes:
   architecture.
 - LocalStack stands in for AWS-managed storage services during local validation.
 - Caddy remains the local front door so auth and routing behavior can be tested.
-- `marimo` is available locally for exploration, but it is not part of the
-  Pulumi-deployed stack.
+- `marimo-dashboard` is available locally for curated notebooks through Caddy,
+  while `marimo-codex-workspace` is a separate localhost-only research service
+  for human-operated notebook exploration and issue-draft preparation. Both are
+  local-first and are not part of the Pulumi-deployed stack; deployed Codex
+  execution remains deferred pending security review.
 - The isolated AEMO ETL **End-to-end test** stack belongs to the
   `backend-services/dagster-user/aemo-etl` Subproject and is operated through
   `backend-services/scripts/aemo-etl-e2e`; its run manifest records timing,

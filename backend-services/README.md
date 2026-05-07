@@ -31,7 +31,8 @@ architecture is defined in `infrastructure/aws-pulumi/`.
 | `dagster-webserver-guest` | Guest Dagster UI + GraphQL API | internal |
 | `dagster-daemon` | Schedule, sensor, and run queue processor | — |
 | `authentication` | OIDC/session bridge for protected routes | internal |
-| `marimo` | Local notebook service | internal |
+| `marimo-dashboard` | Curated local Marimo dashboard service | internal |
+| `marimo-codex-workspace` | Local-only Marimo-Codex research workspace | `127.0.0.1:2719` |
 | `caddy` | Local reverse proxy and public entrypoint | `80`, `443` |
 
 ______________________________________________________________________
@@ -91,6 +92,10 @@ backend-services/
 │   ├── dagster.aws.yaml           # Instance config: EcsRunLauncher, deployed AWS runtime
 │   ├── workspace.local.yaml       # gRPC code-location — local container network
 │   └── workspace.aws.yaml         # gRPC code-location — AWS network
+├── marimo/
+│   ├── Dockerfile                 # dashboard and local Codex research targets
+│   ├── notebooks/                 # curated dashboard notebooks
+│   └── research-workspace/        # local-only Marimo-Codex workspace mount
 └── dagster-user/
     └── aemo-etl/
         ├── Dockerfile             # aemo-etl gRPC code-location + run-worker image
@@ -177,7 +182,8 @@ podman ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 ```
 
 Expected output: all containers are up, with `postgres`, `localstack`,
-`aemo-etl`, and `marimo` eventually becoming healthy.
+`aemo-etl`, `marimo-dashboard`, and `marimo-codex-workspace` eventually
+becoming healthy.
 
 ```text
 NAMES                    STATUS                   PORTS
@@ -188,7 +194,8 @@ dagster-webserver-admin  Up 20 seconds
 dagster-webserver-guest  Up 20 seconds
 dagster-daemon           Up 20 seconds
 authentication           Up 20 seconds
-marimo                   Up 20 seconds (healthy)
+marimo-dashboard         Up 20 seconds (healthy)
+marimo-codex-workspace   Up 20 seconds (healthy)  127.0.0.1:2719->2718/tcp
 caddy                    Up 20 seconds            0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp
 ```
 
@@ -200,7 +207,8 @@ Useful routes:
 
 - `/dagster-webserver/guest` for the guest Dagster UI
 - `/dagster-webserver/admin` for the protected admin Dagster UI
-- `/marimo` for local notebooks
+- `/marimo` for curated local Marimo dashboards through Caddy
+- `http://127.0.0.1:2719` for the local-only Marimo-Codex research workspace
 
 The `aemo-etl` code location should appear in Dagster under
 **Deployment → Code locations** with its assets and jobs loaded.
@@ -231,6 +239,27 @@ them before starting the stack.
 | `AEMO_ETL_E2E_SEED_ENABLED` | `0` | Set to `1` to require cached Archive seed loading before `aemo-etl` starts |
 | `AEMO_ETL_E2E_SEED_RAW_LATEST_COUNT` | `3` | Required cached raw source-table objects per table |
 | `AEMO_ETL_E2E_SEED_ZIP_LATEST_COUNT` | `3` | Required cached zip objects per domain |
+
+______________________________________________________________________
+
+## Local Marimo images
+
+The Marimo Subproject builds two local images from `marimo/Dockerfile`:
+
+- `dashboard`: the curated dashboard image used by `marimo-dashboard`. It runs
+  the FastAPI wrapper, reads notebooks from `marimo/notebooks/`, and mounts that
+  directory read-only in compose. Codex tooling is not enabled in this image.
+- `codex-workspace`: the local research workspace used by
+  `marimo-codex-workspace`. It runs `marimo edit` against the writable
+  `marimo/research-workspace/` mount, including
+  `marimo/research-workspace/AGENTS.md` guidance for notebook research, local
+  data boundaries, and issue-draft generation.
+
+Both images are local-first. The workspace has LocalStack mock AWS environment
+variables and a localhost-only port binding. It must not be used as evidence
+that deployed Codex execution is approved; deployed enablement is deferred until
+a dedicated security review covers identity, secrets, network egress,
+filesystem access, audit logging, and rollback controls.
 
 ______________________________________________________________________
 
@@ -283,7 +312,8 @@ The command uses the fixed e2e stack name `aemo-etl-e2e` and writes generated
 runtime files under `backend-services/.e2e/aemo-etl/runs/<run-id>/`. The
 generated stack contains Postgres, LocalStack, the cached Archive seed loader,
 the AEMO ETL gRPC service, one Dagster webserver, and the Dagster daemon. It
-does not start Caddy, authentication, Marimo, or the second developer webserver.
+does not start Caddy, authentication, Marimo services, or the second developer
+webserver.
 The seed loader validates the cached Archive seed under
 `backend-services/.e2e/aemo-etl`, or under the explicit `--seed-root` path when
 the stack runs from an ephemeral worktree. Refresh that cache with
@@ -496,6 +526,8 @@ podman logs -f aemo-etl
 podman logs -f postgres
 podman logs -f localstack
 podman logs -f caddy
+podman logs -f marimo-dashboard
+podman logs -f marimo-codex-workspace
 ```
 
 ### Connect to the Dagster database directly
@@ -525,7 +557,7 @@ podman logs <container-name>
 - [Repository architecture](../docs/repository/architecture.md)
 - [AWS Pulumi infrastructure](../infrastructure/aws-pulumi/README.md)
 - [Authentication service](authentication/README.md)
-- [Marimo notebook service](marimo/README.md)
+- [Marimo notebook services](marimo/README.md)
 - [aemo-etl project docs](dagster-user/aemo-etl/README.md)
 
 ### Rebuild a single service after a code change
@@ -615,6 +647,8 @@ podman rmi \
   localhost/dagster-local_dagster-webserver-admin:latest \
   localhost/dagster-local_dagster-webserver-guest:latest \
   localhost/dagster-local_dagster-daemon:latest \
+  localhost/dagster-local_marimo-dashboard:latest \
+  localhost/dagster-local_marimo-codex-workspace:latest \
   localhost/dagster-local_postgres:latest
 ```
 
@@ -671,6 +705,8 @@ developer-stack setting. It renders e2e Dagster config per run from the current
 - `sync.sources`:
   - `backend-services/compose.yaml`
   - `backend-services/.envrc`
+  - `backend-services/marimo/Dockerfile`
+  - `backend-services/marimo/research-workspace/AGENTS.md`
   - `backend-services/localstack/init-s3.sh`
   - `backend-services/scripts/aemo-etl-e2e`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`

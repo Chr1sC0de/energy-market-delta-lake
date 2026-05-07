@@ -87,13 +87,14 @@ flowchart LR
     USERCODE[aemo-etl]
     LS[LocalStack]
     PG[(Postgres)]
-    MARIMO[Marimo]
+    MARIMO_DASH[Marimo dashboard]
+    MARIMO_CODEX[Marimo-Codex workspace]
   end
 
   CADDY --> AUTH
   CADDY --> ADMIN
   CADDY --> GUEST
-  CADDY --> MARIMO
+  CADDY --> MARIMO_DASH
   AUTH --> ADMIN
   SEED --> LS
   SEED --> USERCODE
@@ -108,8 +109,12 @@ flowchart LR
 ```
 
 This local stack is intentionally broader than the deployed stack in some areas.
-For example, `marimo` is part of local compose but is not provisioned by the
-current Pulumi deployment. The optional Archive seed loader is also local-only:
+For example, `marimo-dashboard` and `marimo-codex-workspace` are part of local
+compose but are not provisioned by the current Pulumi deployment. The dashboard
+serves curated notebooks through Caddy, while the Marimo-Codex workspace is
+bound to localhost for human-operated research and issue-draft preparation.
+Deployed Codex execution remains deferred pending security review. The optional
+Archive seed loader is also local-only:
 it can require a cached seed under `backend-services/.e2e/aemo-etl` before
 starting the `aemo-etl` code location for local **End-to-end test** setup.
 `backend-services/scripts/aemo-etl-e2e run` uses that cache through an isolated
@@ -164,7 +169,8 @@ development performance claims.
 - `backend-services/caddy`
   - provides the reverse-proxy image and routing rules
 - `backend-services/marimo`
-  - local notebook-oriented service used in the test/dev harness
+  - local notebook-oriented Subproject with separate dashboard and
+    Marimo-Codex research workspace images used in the test/dev harness
 
 ## Related docs
 
