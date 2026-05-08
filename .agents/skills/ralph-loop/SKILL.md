@@ -15,7 +15,7 @@ source of truth; this skill is a compact runbook for agents.
 ## Read First
 
 - Read `CONTEXT.md` for canonical terms: **Delivery mode**, **Integration target**,
-  **Local integration**, and **Promotion**.
+  **Local integration**, **Full-access implementation pass**, and **Promotion**.
 - Read `docs/agents/ralph-loop.md` before changing workflow behavior.
 - Use GitHub Issues as the queue. Do not invent local task files.
 - Use `$ralph-triage` to prepare issues before drain; this skill runs and
@@ -40,6 +40,7 @@ Use high-level requests when invoking this skill:
 - `$ralph-loop dry-run drain`
 - `$ralph-loop drain`
 - `$ralph-loop drain trunk`
+- `$ralph-loop drain with full access`
 - `$ralph-loop issue 25`
 - `$ralph-loop promote`
 - `$ralph-loop inspect failure`
@@ -51,6 +52,7 @@ python3 scripts/ralph.py --bootstrap-labels
 python3 scripts/ralph.py --drain --dry-run
 python3 scripts/ralph.py --drain
 python3 scripts/ralph.py --drain --delivery-mode trunk
+python3 scripts/ralph.py --drain --allow-full-access-implementation
 python3 scripts/ralph.py --issue 25
 python3 scripts/ralph.py --promote
 ```
@@ -67,6 +69,13 @@ local GitHub API auth with `gh auth login -h github.com --git-protocol ssh` or
 export `GH_TOKEN`; Ralph injects `GH_TOKEN` into the sandbox and wraps `gh` so
 only issue metadata commands are available. Git push auth and **Local
 integration** remain in Ralph's outer loop.
+
+Ready issues whose `## Context anchors` include `.agents/` `Path:` or `Doc:`
+paths require `--allow-full-access-implementation`. That opt-in runs only the
+implementation Codex subprocess as a **Full-access implementation pass** using
+Codex's approvals-and-sandbox bypass, keeps GitHub Issue commands read-only
+inside the subprocess, and fails before QA if the diff changes files outside
+the issue anchors.
 
 Plain `--drain` stops after 10 implementation attempts by default. Use
 `--max-issues 0` only for explicit unlimited drain mode.

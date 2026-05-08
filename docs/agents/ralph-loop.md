@@ -78,13 +78,19 @@ be reconciled against current branch state.
 flowchart TD
   START[Start drain] --> PREFLIGHT[Validate tools, root worktree, GitHub auth, sandboxed issue access, and labels]
   PREFLIGHT --> READY{Unblocked ready-for-agent issue?}
-  READY -->|Yes| CLAIM[Claim issue with agent-running]
+  READY -->|Yes| ACCESS{Issue anchors .agents paths?}
+  ACCESS -->|Yes| FLAG{Full-access flag enabled?}
+  FLAG -->|No| ENVFAIL[Stop before claim as Environment failure]
+  FLAG -->|Yes| CLAIM[Claim issue with agent-running]
+  ACCESS -->|No| CLAIM
   CLAIM --> CONTRACT{Issue contract valid?}
   CONTRACT -->|No| FAIL[Mark agent-failed and comment evidence]
   CONTRACT -->|Yes| MODE[Resolve Delivery mode and Integration target]
   MODE --> WORKTREE[Create issue branch and worktree]
   WORKTREE --> CODEX[Run Codex implementation]
-  CODEX --> QA[Run selected Test lane QA]
+  CODEX --> SCOPE{Full-access diff inside anchors?}
+  SCOPE -->|No| FAIL
+  SCOPE -->|Yes| QA[Run selected Test lane QA]
   QA --> DONE{Delivery mode?}
   DONE -->|Gitflow or Trunk| INTEGRATE[Run Local integration]
   INTEGRATE --> DONE2{Delivery mode?}
@@ -103,6 +109,7 @@ flowchart TD
   TRIAGEPASS --> READY
   TRIAGE -->|No| STOP
   FAIL --> READY
+  ENVFAIL --> STOP
 ```
 
 ## Labels
@@ -199,6 +206,13 @@ Implement one specific issue:
 
 ```bash
 python3 scripts/ralph.py --issue 25
+```
+
+Implement `.agents/` workflow issues only after explicit operator approval for a
+**Full-access implementation pass**:
+
+```bash
+python3 scripts/ralph.py --issue 25 --allow-full-access-implementation
 ```
 
 Implement one specific issue and then run **Ready issue refresh**:
@@ -300,10 +314,10 @@ When using token-based GitHub CLI auth, export `GH_TOKEN` in the shell that runs
 Ralph. Do not paste token values into commands, issue comments, docs, or logs.
 Ralph also gives spawned Codex subprocesses **Sandboxed issue access** by
 default: it resolves a token from `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth
-token`, injects it as `GH_TOKEN`, enables network for the workspace-write Codex
-sandbox, and prepends a wrapper that permits only `gh auth status` plus the
-phase-specific `gh issue` commands. Implementation, triage, and **Ready issue
-refresh** passes may get phase-limited issue reads and writes. The
+token`, injects it as `GH_TOKEN`, enables network for the Codex sandbox selected
+for that phase, and prepends a wrapper that permits only `gh auth status` plus
+the phase-specific `gh issue` commands. Implementation, triage, and **Ready
+issue refresh** passes may get phase-limited issue reads and writes. The
 **Post-promotion review** gets read-only issue access: `gh issue view`,
 `gh issue list`, and `gh issue status`. The review agent cannot call
 `gh issue create`, `comment`, `edit`, `close`, or `reopen`. After a successful
@@ -312,6 +326,26 @@ validated create-only helper that calls only issue search and issue create. This
 does not grant Git push access; Git fetches, **Local integration**, Exploratory
 handoff pushes, **Integration target** pushes, and **Promotion** stay in
 Ralph's outer loop.
+
+Ralph treats ready issues whose `## Context anchors` include `.agents/` `Path:`
+or `Doc:` paths as agent-workflow changes. Those issues require
+`--allow-full-access-implementation` before Ralph claims the issue. Without that
+operator flag, Ralph records `full_access_implementation.status:
+blocked_missing_operator_flag` and stops as an **Environment failure** before
+claiming, creating a worktree, or marking the issue failed. With the flag,
+only the Codex implementation subprocess for that issue runs as a
+**Full-access implementation pass** using Codex's approvals-and-sandbox bypass.
+The subprocess receives read-only GitHub Issue commands only: `gh auth status`,
+`gh issue view`, `gh issue list`, and `gh issue status`.
+
+After each full-access Codex implementation attempt returns, Ralph reads the
+worktree diff before QA. Every changed file must match an issue context anchor;
+`Path:` and `Doc:` anchors are file or directory path anchors, and directory
+anchors, including anchors ending in `/`, allow files below that directory. If
+any changed file is outside those anchors, Ralph records
+`full_access_implementation.status: diff_out_of_scope`, skips QA, skips retry,
+skips **Local integration** or Exploratory handoff, preserves the implementation
+worktree, and marks the claimed issue failed with recovery guidance.
 
 Ralph also standardizes writable QA runtime paths for spawned Codex
 subprocesses and Ralph-run QA commands. If the operator exports `DAGSTER_HOME`,
@@ -462,6 +496,9 @@ Key fields for inspection:
   status, formatter-modified tracked files, staged files, original and retry
   commit log paths, rerun **Commit check** results, failure type, and recovery
   guidance.
+- `full_access_implementation`: whether a **Full-access implementation pass** was
+  enabled or required, the normalized context anchors, changed files,
+  out-of-scope files, status, and recovery guidance.
 - `branches`: issue, source, and target branch names that apply to the run.
 - `paths`: repo root, run directory, worktree container, and implementation,
   branch-sync, integration, Promotion source, or Promotion target worktree
@@ -586,6 +623,12 @@ worktrees under the repo worktree container. For Exploratory delivery, Ralph
 creates the **Exploratory branch** from `origin/main`. Codex is instructed not
 to commit, push, or edit GitHub issue state; Ralph owns those steps after QA
 passes.
+
+Normal implementation attempts use the workspace-write Codex sandbox and
+phase-limited **Sandboxed issue access**. Ready issues that name `.agents/`
+context anchors use the **Full-access implementation pass** only when the
+operator passed `--allow-full-access-implementation`; they retain read-only issue
+commands and must pass Ralph's context-anchor diff guard before QA.
 
 Before building the Codex implementation prompts for an issue, Ralph fetches
 issue comments for the issue being implemented. The prompt keeps the issue body
@@ -1111,6 +1154,14 @@ the implementation worktree for inspection. Operators should inspect
 rerun the recorded **Commit check** from the owning **Subproject**, then rerun
 Ralph for the issue.
 
+Full-access diff scope failures are issue failures and keep the implementation
+worktree for inspection. Operators should inspect
+`full_access_implementation.out_of_scope_files`, remove or relocate changes that
+are outside the issue's `## Context anchors` `Path:` or `Doc:` paths, and rerun
+Ralph for the issue with
+`--allow-full-access-implementation` only if the `.agents/` scope is still
+intentional.
+
 Environment failures stop the run. Examples include invalid `gh` auth, missing
 labels, unavailable tools, failing Git operations before claim, or unavailable
 container-backed **Integration test** dependencies.
@@ -1128,6 +1179,7 @@ container-backed **Integration test** dependencies.
   - `docs/agents/triage-labels.md`
   - `docs/repository/documentation-sync.md`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
+  - `docs/adr/0007-ralph-full-access-implementation-pass.md`
   - `.agents/skills/shape-issues/SKILL.md`
   - `.agents/skills/shape-issues/scripts/publish_shape_issues.py`
   - `.agents/skills/ralph-curate/SKILL.md`

@@ -17,12 +17,14 @@ Ralph provides **Sandboxed issue access** to spawned Codex subprocesses by
 default. The sandbox receives a `GH_TOKEN` sourced from the parent environment
 or local `gh auth`, and a wrapper limits `gh` to phase-specific issue metadata
 commands. Implementation, triage, and **Ready issue refresh** passes may
-receive phase-scoped issue access; the current **Ready issue refresh** analysis
-subprocess and **Post-promotion review** receive read-only issue commands. After
-successful **Promotion**, Ralph may create structured actionable follow-up
-issues from the review artifact through its validated create-only helper; the
-review agent still cannot directly create, comment, edit, close, or reopen
-arbitrary GitHub Issues. Git push auth is separate;
+receive phase-scoped issue access; **Full-access implementation pass** runs for
+`.agents/` context-anchor issues keep read-only issue commands. The current
+**Ready issue refresh** analysis subprocess and **Post-promotion review** also
+receive read-only issue commands. After successful **Promotion**, Ralph may
+create structured actionable follow-up issues from the review artifact through
+its validated create-only helper; the review agent still cannot directly create,
+comment, edit, close, or reopen arbitrary GitHub Issues. Git push auth is
+separate;
 **Local integration**, Exploratory handoff, **Integration target** pushes, and
 **Promotion** stay outside the sandbox.
 
@@ -47,6 +49,13 @@ or publishing an Exploratory handoff.
 but existing `ready-for-agent` issues do not need that section to stay ready.
 Refreshed issues that remain `ready-for-agent` must still contain the three
 required sections above, plus `## Review focus` for `delivery-exploratory`.
+
+Ready issues whose `## Context anchors` include `.agents/` paths require an
+operator-approved **Full-access implementation pass**. Without
+`--allow-full-access-implementation`, Ralph stops before claim and leaves the
+issue unchanged. With the flag, the implementation subprocess gets full
+filesystem access, read-only GitHub Issue commands, and a pre-QA diff guard that
+fails the issue if changed files leave the listed context anchors.
 
 Ralph implementation prompts treat the issue body as the primary contract. When
 recent Ready issue refresh comments exist, Ralph appends only the latest five
@@ -128,6 +137,7 @@ for the decision that keeps **Exploratory branches** outside automatic
   - `docs/agents/ralph-loop.md`
   - `docs/agents/triage-labels.md`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
+  - `docs/adr/0007-ralph-full-access-implementation-pass.md`
   - `scripts/ralph.py`
 - `sync.scope`: `operations`
 - `sync.qa`:

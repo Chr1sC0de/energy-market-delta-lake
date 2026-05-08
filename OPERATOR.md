@@ -6,7 +6,8 @@ GitHub Issues, draining Ralph, reviewing `dev`, and running **Promotion**.
 Use repo canonical terms from [CONTEXT.md](CONTEXT.md), especially
 **Subproject**, **Test lane**, **Fast check**, **Commit check**, **Push check**,
 **Local integration**, **Delivery mode**, **Integration target**,
-**Sandboxed issue access**, **Ready issue refresh**, and **Promotion**.
+**Sandboxed issue access**, **Full-access implementation pass**,
+**Ready issue refresh**, and **Promotion**.
 
 ## Canonical Path
 
@@ -66,6 +67,13 @@ Codex should launch Operator runs detached, then stop polling child logs:
 python3 scripts/ralph.py --drain-promote-all --detach
 ```
 
+For a queue that intentionally includes ready `.agents/` workflow issues, the
+operator must opt into the **Full-access implementation pass**:
+
+```bash
+python3 scripts/ralph.py --drain-promote-all --detach --allow-full-access-implementation
+```
+
 Use the compact status command at issue boundaries:
 
 ```bash
@@ -102,6 +110,12 @@ git push --dry-run origin HEAD:main
 Use `$ralph-loop dry-run drain` when the root worktree is dirty or when you only
 want to inspect Ralph's next action. Use dirty-worktree operation only when the
 operator explicitly accepts that risk.
+
+Ready issues that anchor `.agents/` files stop before claim unless the operator
+passes `--allow-full-access-implementation`. With that flag, Ralph runs only
+those implementation subprocesses as a **Full-access implementation pass**, keeps
+their GitHub Issue commands read-only, and hard-stops before QA if the resulting
+diff changes files outside the issue's `## Context anchors`.
 
 ## Review Dev
 
@@ -183,6 +197,11 @@ the integrated commit. Inspect `ready_issue_refresh.mutation_results` in the run
 manifest, reconcile only the failed GitHub Issue metadata, then restart the
 drain once the queue is consistent.
 
+If a **Full-access implementation pass** reports `diff_out_of_scope`, inspect
+the child implementation worktree, keep only files named by the issue's
+`## Context anchors`, and rerun Ralph for that issue. Ralph does not run QA or
+**Local integration** for out-of-anchor full-access diffs.
+
 For a checkpointed Operator run, inspect status before opening child logs:
 
 ```bash
@@ -221,6 +240,7 @@ Keep failed worktrees unless the maintainer asks for cleanup.
   - `docs/agents/issue-tracker.md`
   - `docs/agents/triage-labels.md`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
+  - `docs/adr/0007-ralph-full-access-implementation-pass.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

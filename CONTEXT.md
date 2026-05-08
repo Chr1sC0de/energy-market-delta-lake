@@ -72,6 +72,14 @@ The allowed commands can be read-only or write-limited by Ralph phase.
 validated follow-up creation happens outside arbitrary sandboxed issue mutation.
 _Avoid_: Full GitHub sandbox auth, Git push sandbox auth
 
+**Full-access implementation pass**:
+The operator-approved Ralph implementation mode for ready issues whose
+`## Context anchors` include `.agents/` paths. The Codex implementation
+subprocess runs with full filesystem access, keeps **Sandboxed issue access**
+read-only, and must leave a diff confined to the issue's context anchors before
+QA or **Local integration** can proceed.
+_Avoid_: Agent auto-escalation, unrestricted agent drain
+
 **Ready issue refresh**:
 The Ralph queue-maintenance pass that reconciles open GitHub Issues after a
 successful **Local integration** or Exploratory handoff and before the next
@@ -169,6 +177,10 @@ _Avoid_: Implemented gap, ignored report
 - **Local integration** is not a **Test lane**.
 - **Sandboxed issue access** may update GitHub Issue metadata when the Ralph
   phase grants write commands, but it must not update an **Integration target**.
+- A **Full-access implementation pass** is allowed only when the operator passes
+  the explicit Ralph flag and the ready issue anchors `.agents/` work; it keeps
+  GitHub Issue commands read-only inside the subprocess and fails before QA if
+  changed files leave the issue anchors.
 - **Ready issue refresh** runs after a successful **Local integration** or
   **Exploratory delivery** handoff and before Ralph claims the next
   `ready-for-agent` issue in a drain.
@@ -216,6 +228,12 @@ _Avoid_: Implemented gap, ignored report
 > read-only. Ralph may create validated follow-up issues after successful
 > **Promotion** through its helper, and no sandboxed pass can perform
 > **Local integration**, Exploratory handoff, or **Promotion**."
+>
+> **Dev:** "Can Ralph edit `.agents` workflow files during drain?"
+> **Domain expert:** "Only through a **Full-access implementation pass**. The
+> issue must anchor `.agents/` paths, the operator must pass the explicit flag,
+> and Ralph must verify the resulting diff stays inside the issue anchors before
+> any QA or **Local integration**."
 
 ## Flagged ambiguities
 
@@ -235,6 +253,11 @@ _Avoid_: Implemented gap, ignored report
   Resolved: use **Sandboxed issue access** for issue metadata only; **Local
   integration**, Exploratory handoff, **Integration target** pushes, and
   **Promotion** stay outside the sandbox.
+- "full access" was used ambiguously for filesystem access, GitHub issue
+  mutation, and Git push. Resolved: use **Full-access implementation pass** only
+  for operator-approved `.agents/` filesystem edits; GitHub Issue commands stay
+  read-only inside that pass and **Local integration**, **Integration target**
+  pushes, and **Promotion** stay in Ralph's outer loop.
 - "operator runbook" and "agent loop" were used together for Ralph operation.
   Resolved: use **Operator workflow** for the human entrypoint and keep Ralph
   internals on the agent-facing Ralph documentation page.

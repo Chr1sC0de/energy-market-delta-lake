@@ -17,8 +17,9 @@ Use this page as the agent documentation map. The imperative policy lives in
 ## Ralph and issue work
 
 - Ralph internals, **Local integration**, **Delivery mode**, **Integration
-  target**, **Ready issue refresh**, **Promotion**, and
-  **Post-promotion review**, including checkpointed Operator runs:
+  target**, **Full-access implementation pass**, **Ready issue refresh**,
+  **Promotion**, and **Post-promotion review**, including checkpointed Operator
+  runs:
   [ralph-loop.md](ralph-loop.md)
 - GitHub Issue queue rules:
   [issue-tracker.md](issue-tracker.md)
@@ -67,6 +68,7 @@ Use this page as the agent documentation map. The imperative policy lives in
   - `docs/agents/triage-labels.md`
   - `docs/agents/domain.md`
   - `docs/repository/documentation-sync.md`
+  - `docs/adr/0007-ralph-full-access-implementation-pass.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

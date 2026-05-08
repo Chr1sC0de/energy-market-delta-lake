@@ -36,6 +36,20 @@ Build it.
 None
 """
 
+AGENTS_IMPLEMENTATION_BODY = """## What to build
+Update the agent workflow.
+
+## Acceptance criteria
+- [ ] The workflow is documented.
+
+## Blocked by
+None
+
+## Context anchors
+- Path: `.agents/skills/ralph-loop/SKILL.md`
+- Doc: `docs/agents/ralph-loop.md`
+"""
+
 EXPLORATORY_IMPLEMENTATION_BODY = """## What to build
 Build it.
 
@@ -528,6 +542,7 @@ def make_loop(
     max_issues: int = ralph.DEFAULT_DRAIN_BUDGET,
     dry_run: bool = False,
     allow_dirty_worktree: bool = False,
+    allow_full_access_implementation: bool = False,
     issue_limit: int = 100,
 ) -> ralph.RalphLoop:
     repo_root = tmp_path / "repo"
@@ -553,6 +568,7 @@ def make_loop(
         max_issues=max_issues,
         dry_run=dry_run,
         allow_dirty_worktree=allow_dirty_worktree,
+        allow_full_access_implementation=allow_full_access_implementation,
         bootstrap_labels=False,
         issue_limit=issue_limit,
         log_root=log_root,
@@ -1821,11 +1837,61 @@ Build it.
                 "-c",
                 "shell_environment_policy.include_only="
                 + json.dumps(list(ralph.SANDBOX_CODEX_ENV_INCLUDE_ONLY)),
-                "--full-auto",
                 "--json",
                 "-",
             ],
         )
+        self.assertNotIn("--full-auto", ralph.codex_exec_command(Path("/repo")))
+
+    def test_codex_exec_command_can_use_full_access_bypass(self) -> None:
+        command = ralph.codex_exec_command(
+            Path("/repo"),
+            sandbox_mode=ralph.FULL_ACCESS_CODEX_SANDBOX,
+        )
+
+        self.assertIn("--dangerously-bypass-approvals-and-sandbox", command)
+        self.assertNotIn("--sandbox", command)
+        self.assertNotIn("--full-auto", command)
+
+    def test_context_anchor_paths_detect_agent_workflow_anchors(self) -> None:
+        issue = make_issue({"ready-for-agent"}, AGENTS_IMPLEMENTATION_BODY)
+
+        access_plan = ralph.issue_implementation_access_plan(issue)
+
+        self.assertTrue(access_plan.full_access_required)
+        self.assertEqual(
+            access_plan.context_anchor_paths,
+            (
+                ralph.ContextAnchorPath(
+                    ".agents/skills/ralph-loop/SKILL.md",
+                    prefix=False,
+                ),
+                ralph.ContextAnchorPath("docs/agents/ralph-loop.md", prefix=False),
+            ),
+        )
+
+    def test_changed_files_outside_context_anchors_treats_directory_anchor_as_prefix(
+        self,
+    ) -> None:
+        anchors = (
+            ralph.ContextAnchorPath(".agents/skills/ralph-loop", prefix=True),
+            ralph.ContextAnchorPath("docs/agents/ralph-loop.md", prefix=False),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            worktree = Path(tmp)
+            (worktree / ".agents" / "skills" / "ralph-loop").mkdir(parents=True)
+
+            out_of_scope = ralph.changed_files_outside_context_anchors(
+                [
+                    ".agents/skills/ralph-loop/SKILL.md",
+                    "docs/agents/ralph-loop.md",
+                    "scripts/ralph.py",
+                ],
+                anchors,
+                worktree_path=worktree,
+            )
+
+        self.assertEqual(out_of_scope, ["scripts/ralph.py"])
 
     def test_qa_runtime_env_uses_operator_values_when_present(self) -> None:
         operator_env = {
@@ -2072,6 +2138,10 @@ Build it.
             codex_call = next(
                 call for call in runner.calls if call.args[:2] == ("codex", "exec")
             )
+            self.assertEqual(
+                codex_call.args[codex_call.args.index("--sandbox") + 1],
+                ralph.WORKSPACE_WRITE_CODEX_SANDBOX,
+            )
             self.assertIsNotNone(codex_call.env)
             assert codex_call.env is not None
             self.assertEqual(codex_call.env["GH_TOKEN"], "fake-gh-token")
@@ -2147,6 +2217,7 @@ Build it.
         self.assertIn("--skip-post-promotion-followups", help_text)
         self.assertIn("--ready-issue-refresh", help_text)
         self.assertIn("--skip-ready-issue-refresh", help_text)
+        self.assertIn("--allow-full-access-implementation", help_text)
         self.assertIn("exploratory", help_text)
 
     def test_build_config_enables_ready_issue_refresh_for_drain_by_default(self) -> None:
@@ -2314,6 +2385,23 @@ Build it.
 
         self.assertEqual(config.delivery_mode, ralph.EXPLORATORY_MODE)
         self.assertIsNone(config.target_branch)
+
+    def test_build_config_records_full_access_implementation_flag(self) -> None:
+        runner = FakeRunner(
+            command_outputs={
+                ("git", "rev-parse", "--show-toplevel"): ["/work/repo\n"],
+                ("git", "config", "--get", "remote.origin.url"): [
+                    "git@github.com:example/repo.git\n"
+                ],
+            }
+        )
+
+        config = ralph.build_config(
+            ralph.parse_args(["--allow-full-access-implementation"]),
+            runner,
+        )
+
+        self.assertTrue(config.allow_full_access_implementation)
 
     def test_dirty_root_blocks_live_issue_drain_and_promote_before_side_effects(self) -> None:
         cases = [
@@ -2838,6 +2926,7 @@ class RalphOperatorRunTests(unittest.TestCase):
                     "--max-cycles",
                     "3",
                     "--skip-post-promotion-followups",
+                    "--allow-full-access-implementation",
                 ]
             )
             process = type("DummyProcess", (), {"pid": 321})()
@@ -2860,6 +2949,7 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertIn("--max-cycles", child_command)
         self.assertIn("3", child_command)
         self.assertIn("--skip-post-promotion-followups", child_command)
+        self.assertIn("--allow-full-access-implementation", child_command)
         self.assertEqual(manifest["last_checkpoint"]["checkpoint"], "detached_launched")
         self.assertEqual(manifest["detached"]["pid"], 321)
 
@@ -3446,6 +3536,155 @@ Build it.
             self.assertEqual(manifest["pushes"]["integration_target"]["status"], "pushed")
             self.assertEqual(manifest["github_metadata"]["status"], "closed")
             self.assertEqual(manifest["qa_results"][0]["status"], "passed")
+
+    def test_agents_issue_without_full_access_flag_stops_before_claim(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            issue = make_issue({"ready-for-agent"}, AGENTS_IMPLEMENTATION_BODY)
+
+            with self.assertRaises(ralph.EnvironmentFailure) as caught:
+                loop._handle_implementation(issue)
+
+            manifest = load_run_manifest(tmp_path)
+
+        self.assertIn("Full-access implementation", str(caught.exception))
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+        self.assertFalse(any(command[:3] == ("git", "worktree", "add") for command in commands))
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["github_metadata"]["status"], "not_started")
+        self.assertEqual(
+            manifest["full_access_implementation"]["status"],
+            "blocked_missing_operator_flag",
+        )
+
+    def test_full_access_implementation_uses_bypass_and_read_only_issue_commands(
+        self,
+    ) -> None:
+        changed = (
+            " M .agents/skills/ralph-loop/SKILL.md\n"
+            " M docs/agents/ralph-loop.md\n"
+        )
+        runner = FakeRunner(status_outputs=[changed, changed])
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                allow_full_access_implementation=True,
+            )
+            issue = make_issue({"ready-for-agent"}, AGENTS_IMPLEMENTATION_BODY)
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=loop.config.delivery_mode,
+                target_branch=loop.config.target_branch,
+            )
+            branch, worktree_path, integration_path = loop._branch_and_worktrees(issue)
+            worktree_path.mkdir(parents=True)
+            run_dir = tmp_path / "logs" / "issue-42-test"
+            manifest = ralph.RunManifest.for_implementation(
+                run_dir=run_dir,
+                issue=issue,
+                delivery_plan=delivery_plan,
+                branch=branch,
+                worktree_path=worktree_path,
+                integration_path=integration_path,
+                config=loop.config,
+            )
+            access_plan = ralph.issue_implementation_access_plan(issue)
+
+            with redirect_stdout(io.StringIO()):
+                loop._implement_with_retry(
+                    issue,
+                    worktree_path,
+                    run_dir,
+                    manifest,
+                    access_plan=access_plan,
+                )
+
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        codex_call = next(call for call in runner.calls if call.args[:2] == ("codex", "exec"))
+        self.assertIn("--dangerously-bypass-approvals-and-sandbox", codex_call.args)
+        self.assertNotIn("--sandbox", codex_call.args)
+        self.assertNotIn("--full-auto", codex_call.args)
+        self.assertEqual(
+            manifest_payload["sandboxed_issue_access"]["allowed_commands"],
+            [
+                "gh auth status",
+                "gh issue view",
+                "gh issue list",
+                "gh issue status",
+            ],
+        )
+        self.assertEqual(
+            manifest_payload["full_access_implementation"]["status"],
+            "diff_confined",
+        )
+        self.assertIn(("prek", "run", "-a"), [call.args for call in runner.calls])
+
+    def test_full_access_out_of_anchor_diff_fails_before_qa_and_retry(self) -> None:
+        runner = FakeRunner(
+            status_outputs=[
+                " M .agents/skills/ralph-loop/SKILL.md\n M scripts/ralph.py\n"
+            ]
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                allow_full_access_implementation=True,
+            )
+            issue = make_issue({"ready-for-agent"}, AGENTS_IMPLEMENTATION_BODY)
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=loop.config.delivery_mode,
+                target_branch=loop.config.target_branch,
+            )
+            branch, worktree_path, integration_path = loop._branch_and_worktrees(issue)
+            worktree_path.mkdir(parents=True)
+            run_dir = tmp_path / "logs" / "issue-42-test"
+            manifest = ralph.RunManifest.for_implementation(
+                run_dir=run_dir,
+                issue=issue,
+                delivery_plan=delivery_plan,
+                branch=branch,
+                worktree_path=worktree_path,
+                integration_path=integration_path,
+                config=loop.config,
+            )
+            access_plan = ralph.issue_implementation_access_plan(issue)
+
+            with self.assertRaises(ralph.FullAccessImplementationScopeFailure):
+                with redirect_stdout(io.StringIO()):
+                    loop._implement_with_retry(
+                        issue,
+                        worktree_path,
+                        run_dir,
+                        manifest,
+                        access_plan=access_plan,
+                    )
+
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        commands = [call.args for call in runner.calls]
+        self.assertEqual(
+            sum(1 for command in commands if command[:2] == ("codex", "exec")),
+            1,
+        )
+        self.assertNotIn(("prek", "run", "-a"), commands)
+        self.assertNotIn(("python3", "-m", "unittest", "discover", "-s", "tests"), commands)
+        self.assertEqual(
+            manifest_payload["full_access_implementation"]["status"],
+            "diff_out_of_scope",
+        )
+        self.assertEqual(
+            manifest_payload["full_access_implementation"]["out_of_scope_files"],
+            ["scripts/ralph.py"],
+        )
 
     def test_end_of_file_fixer_commit_recovery_stages_reruns_commit_check_and_retries(
         self,

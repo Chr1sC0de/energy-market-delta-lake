@@ -9,8 +9,8 @@ should read the root context first and use its canonical language across the
 repo, especially **Subproject**, **Test lane**, **Fast check**, **Commit check**,
 **Push check**, **Local integration**, **Delivery mode**, **Integration target**,
 **Exploratory delivery**, **Exploratory branch**, **Sandboxed issue access**,
-**Ready issue refresh**, **Operator workflow**, **Promotion**, and
-**Post-promotion review**.
+**Full-access implementation pass**, **Ready issue refresh**, **Operator
+workflow**, **Promotion**, and **Post-promotion review**.
 
 Repo-wide ADRs live in `docs/adr/`. Create ADRs only when a decision is hard to
 reverse, surprising without context, and the result of a real trade-off.
@@ -27,6 +27,7 @@ reverse, surprising without context, and the result of a real trade-off.
   - `docs/adr/0002-ralph-delivery-modes.md`
   - `docs/adr/0004-ralph-sandboxed-issue-access.md`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
+  - `docs/adr/0007-ralph-full-access-implementation-pass.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

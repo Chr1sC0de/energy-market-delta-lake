@@ -164,12 +164,14 @@ way:
   behavior for **Delivery mode**, **Local integration**, Exploratory handoff,
   **Exploratory branch** review state, **Promotion**, accepted Exploratory
   evidence closure, manual Gitflow recovery Promotion closure evidence,
-  **Sandboxed issue access**, writable QA runtime paths, unverified
-  **Promotion** commit review context, **Post-promotion review**, and validated
-  follow-up creation remain owned by
+  **Sandboxed issue access**, **Full-access implementation pass**, writable QA
+  runtime paths, unverified **Promotion** commit review context,
+  **Post-promotion review**, and validated follow-up creation remain owned by
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md), with the
   **Exploratory branch** automatic-Promotion boundary recorded in ADR
-  [0005](../adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md).
+  [0005](../adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md)
+  and the `.agents/` full-access boundary recorded in ADR
+  [0007](../adr/0007-ralph-full-access-implementation-pass.md).
 - #68: [docs/agents/ralph-loop.md](../agents/ralph-loop.md) defines the
   **Ready issue refresh** contract, including the shared language, audit prefix,
   optional `## Current context`, stale issue handling, and completed closure
@@ -263,6 +265,7 @@ These commands support the intended flow:
   - `docs/agents/README.md`
   - `docs/agents/ralph-loop.md`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
+  - `docs/adr/0007-ralph-full-access-implementation-pass.md`
   - `tests/test_documentation_qa_ratchet.py`
   - `.pre-commit-config.yaml`
   - `backend-services/.pre-commit-config.yaml`

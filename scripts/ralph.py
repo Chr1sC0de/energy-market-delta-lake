@@ -141,6 +141,10 @@ QA_RUNTIME_ENV_DIRS = {
     "XDG_CACHE_HOME": "xdg-cache",
     "UV_CACHE_DIR": "uv-cache",
 }
+WORKSPACE_WRITE_CODEX_SANDBOX = "workspace-write"
+FULL_ACCESS_CODEX_SANDBOX = "danger-full-access"
+AGENT_WORKFLOW_CONTEXT_PREFIX = ".agents"
+FULL_ACCESS_IMPLEMENTATION_FLAG = "--allow-full-access-implementation"
 
 TRIAGE_STATE_LABELS = frozenset(
     {
@@ -277,6 +281,10 @@ class IssueFailure(RalphError):
         self.log_path = log_path
         self.failure_type = failure_type
         self.recovery_guidance = recovery_guidance
+
+
+class FullAccessImplementationScopeFailure(IssueFailure):
+    """A Full-access implementation pass changed files outside issue anchors."""
 
 
 class FormatterRewriteRecoveryFailure(IssueFailure):
@@ -501,6 +509,18 @@ class DeliveryPlan:
 
 
 @dataclass(frozen=True)
+class ContextAnchorPath:
+    path: str
+    prefix: bool
+
+
+@dataclass(frozen=True)
+class ImplementationAccessPlan:
+    full_access_required: bool
+    context_anchor_paths: tuple[ContextAnchorPath, ...]
+
+
+@dataclass(frozen=True)
 class LoopConfig:
     repo_root: Path
     repo: str
@@ -517,6 +537,7 @@ class LoopConfig:
     max_issues: int
     dry_run: bool
     allow_dirty_worktree: bool
+    allow_full_access_implementation: bool
     bootstrap_labels: bool
     issue_limit: int
     log_root: Path
@@ -621,6 +642,15 @@ class RunManifest:
             },
             "codex_attempts": [],
             "sandboxed_issue_access": {"status": "not_started"},
+            "full_access_implementation": {
+                "enabled": config.allow_full_access_implementation,
+                "required": False,
+                "status": "not_required",
+                "context_anchor_paths": [],
+                "changed_files": [],
+                "out_of_scope_files": [],
+                "recovery_guidance": None,
+            },
             "ready_issue_refresh": {
                 "enabled": config.ready_issue_refresh_enabled,
                 "status": "not_started",
@@ -1085,6 +1115,35 @@ class RunManifest:
         }
         self.data["sandboxed_issue_access"] = metadata
         self.record_event("sandboxed_issue_access_ready", details=metadata)
+
+    def record_full_access_implementation(
+        self,
+        status: str,
+        *,
+        required: bool | None = None,
+        context_anchor_paths: tuple[ContextAnchorPath, ...] | None = None,
+        changed_files: list[str] | None = None,
+        out_of_scope_files: list[str] | None = None,
+        recovery_guidance: str | None = None,
+    ) -> None:
+        full_access = self.data.setdefault("full_access_implementation", {})
+        if not isinstance(full_access, dict):
+            raise RalphError("Manifest full_access_implementation field is not an object.")
+        full_access["status"] = status
+        if required is not None:
+            full_access["required"] = required
+        if context_anchor_paths is not None:
+            full_access["context_anchor_paths"] = [
+                {"path": anchor.path, "prefix": anchor.prefix}
+                for anchor in context_anchor_paths
+            ]
+        if changed_files is not None:
+            full_access["changed_files"] = list(changed_files)
+        if out_of_scope_files is not None:
+            full_access["out_of_scope_files"] = list(out_of_scope_files)
+        if recovery_guidance is not None:
+            full_access["recovery_guidance"] = recovery_guidance
+        self.record_event(f"full_access_implementation_{status}", details=full_access)
 
     def record_ready_issue_refresh(
         self,
@@ -2538,6 +2597,95 @@ def missing_required_sections(
     return missing
 
 
+def normalize_context_anchor_path(raw_path: str) -> ContextAnchorPath | None:
+    path = raw_path.strip().strip("`").strip()
+    if path == "":
+        return None
+    prefix = path.endswith("/")
+    path = path.rstrip("/")
+    if path.startswith("./"):
+        path = path[2:]
+    if path == "" or path == "." or path.startswith("/") or path.startswith("../"):
+        return None
+    if "/../" in f"/{path}/":
+        return None
+    return ContextAnchorPath(path=path, prefix=prefix)
+
+
+def context_anchor_paths(markdown: str) -> tuple[ContextAnchorPath, ...]:
+    section = section_body(markdown, "Context anchors")
+    if section is None:
+        return ()
+    anchors: list[ContextAnchorPath] = []
+    seen: set[str] = set()
+    for line in section.splitlines():
+        match = re.match(r"^\s*-\s*(?:Path|Doc):\s*(?P<path>.+?)\s*$", line)
+        if match is None:
+            continue
+        raw_path = match.group("path")
+        anchor = normalize_context_anchor_path(raw_path)
+        if anchor is None:
+            continue
+        key = f"{anchor.path}:{anchor.prefix}"
+        if key in seen:
+            continue
+        seen.add(key)
+        anchors.append(anchor)
+    return tuple(anchors)
+
+
+def context_anchor_targets_agent_workflow(anchor: ContextAnchorPath) -> bool:
+    return (
+        anchor.path == AGENT_WORKFLOW_CONTEXT_PREFIX
+        or anchor.path.startswith(f"{AGENT_WORKFLOW_CONTEXT_PREFIX}/")
+    )
+
+
+def issue_implementation_access_plan(issue: Issue) -> ImplementationAccessPlan:
+    anchors = context_anchor_paths(issue.body)
+    return ImplementationAccessPlan(
+        full_access_required=any(
+            context_anchor_targets_agent_workflow(anchor) for anchor in anchors
+        ),
+        context_anchor_paths=anchors,
+    )
+
+
+def context_anchor_allows_changed_file(
+    anchor: ContextAnchorPath,
+    changed_file: str,
+    *,
+    worktree_path: Path,
+) -> bool:
+    if changed_file == anchor.path:
+        return True
+    anchor_is_prefix = anchor.prefix or (worktree_path / anchor.path).is_dir()
+    if not anchor_is_prefix:
+        return False
+    return changed_file.startswith(f"{anchor.path}/")
+
+
+def changed_files_outside_context_anchors(
+    changed_files: list[str],
+    anchors: tuple[ContextAnchorPath, ...],
+    *,
+    worktree_path: Path,
+) -> list[str]:
+    out_of_scope: list[str] = []
+    for changed_file in changed_files:
+        if any(
+            context_anchor_allows_changed_file(
+                anchor,
+                changed_file,
+                worktree_path=worktree_path,
+            )
+            for anchor in anchors
+        ):
+            continue
+        out_of_scope.append(changed_file)
+    return sorted(out_of_scope)
+
+
 def parse_label_values(value: Any) -> tuple[str, ...]:
     if isinstance(value, str):
         raw_labels = re.split(r"[,|\n]", value)
@@ -3487,6 +3635,7 @@ def looks_like_environment_failure(error: CommandFailure) -> bool:
 def codex_exec_command(
     cwd: Path,
     *,
+    sandbox_mode: str = WORKSPACE_WRITE_CODEX_SANDBOX,
     output_last_message: Path | None = None,
 ) -> list[str]:
     command = [
@@ -3494,19 +3643,24 @@ def codex_exec_command(
         "exec",
         "--cd",
         str(cwd),
-        "--sandbox",
-        "workspace-write",
-        "-c",
-        "sandbox_workspace_write.network_access=true",
-        "-c",
-        'shell_environment_policy.inherit="all"',
-        "-c",
-        "shell_environment_policy.ignore_default_excludes=true",
-        "-c",
-        "shell_environment_policy.include_only="
-        + json.dumps(list(SANDBOX_CODEX_ENV_INCLUDE_ONLY)),
-        "--full-auto",
     ]
+    if sandbox_mode == FULL_ACCESS_CODEX_SANDBOX:
+        command.append("--dangerously-bypass-approvals-and-sandbox")
+    else:
+        command.extend(["--sandbox", sandbox_mode])
+    command.extend(
+        [
+            "-c",
+            "sandbox_workspace_write.network_access=true",
+            "-c",
+            'shell_environment_policy.inherit="all"',
+            "-c",
+            "shell_environment_policy.ignore_default_excludes=true",
+            "-c",
+            "shell_environment_policy.include_only="
+            + json.dumps(list(SANDBOX_CODEX_ENV_INCLUDE_ONLY)),
+        ]
+    )
     if output_last_message is not None:
         command.extend(["--output-last-message", str(output_last_message)])
     command.extend(["--json", "-"])
@@ -5888,6 +6042,30 @@ class RalphLoop:
                 integration_path=integration_path,
                 config=self.config,
             )
+            access_plan = issue_implementation_access_plan(issue)
+            if access_plan.full_access_required:
+                manifest.record_full_access_implementation(
+                    "required",
+                    required=True,
+                    context_anchor_paths=access_plan.context_anchor_paths,
+                )
+                if not self.config.allow_full_access_implementation:
+                    guidance = (
+                        "Rerun Ralph with "
+                        f"`{FULL_ACCESS_IMPLEMENTATION_FLAG}` so this `.agents` "
+                        "issue can use a Full-access implementation pass."
+                    )
+                    manifest.record_full_access_implementation(
+                        "blocked_missing_operator_flag",
+                        required=True,
+                        context_anchor_paths=access_plan.context_anchor_paths,
+                        recovery_guidance=guidance,
+                    )
+                    raise EnvironmentFailure(
+                        "Issue requires `.agents` edits but Full-access implementation "
+                        "passes are not enabled.",
+                        recovery_guidance=guidance,
+                    )
             preclaim_branch_sync = self._uses_preclaim_branch_sync(delivery_plan)
             if preclaim_branch_sync:
                 manifest.record_event("preclaim_branch_sync_check")
@@ -5942,9 +6120,21 @@ class RalphLoop:
                 run_dir=run_dir,
             )
             manifest.record_event("implementation_worktree_created")
-            qa_results = self._implement_with_retry(issue, worktree_path, run_dir, manifest)
+            qa_results = self._implement_with_retry(
+                issue,
+                worktree_path,
+                run_dir,
+                manifest,
+                access_plan=access_plan,
+            )
             changed_files = self.git.changed_files(cwd=worktree_path)
             manifest.record_changed_files(changed_files, stage="implementation_changes_detected")
+            self._validate_full_access_implementation_diff(
+                access_plan,
+                worktree_path,
+                manifest,
+                changed_files=changed_files,
+            )
             if not changed_files:
                 raise IssueFailure("Codex completed without producing file changes.")
 
@@ -6924,12 +7114,70 @@ class RalphLoop:
         )
         return recovery_results
 
+    def _validate_full_access_implementation_diff(
+        self,
+        access_plan: ImplementationAccessPlan,
+        worktree_path: Path,
+        manifest: RunManifest,
+        *,
+        changed_files: list[str] | None = None,
+    ) -> None:
+        if not access_plan.full_access_required:
+            return
+
+        diff_files = (
+            self.git.changed_files(cwd=worktree_path)
+            if changed_files is None
+            else list(changed_files)
+        )
+        out_of_scope_files = changed_files_outside_context_anchors(
+            diff_files,
+            access_plan.context_anchor_paths,
+            worktree_path=worktree_path,
+        )
+        if not out_of_scope_files:
+            manifest.record_full_access_implementation(
+                "diff_confined",
+                required=True,
+                context_anchor_paths=access_plan.context_anchor_paths,
+                changed_files=diff_files,
+                out_of_scope_files=[],
+            )
+            return
+
+        out_of_scope_lines = "\n".join(f"- {path}" for path in out_of_scope_files)
+        anchor_lines = "\n".join(
+            f"- {anchor.path}{'/' if anchor.prefix else ''}"
+            for anchor in access_plan.context_anchor_paths
+        )
+        guidance = (
+            "Inspect the implementation worktree, keep only files named by issue "
+            "Context anchors, then rerun Ralph for the issue."
+        )
+        manifest.record_full_access_implementation(
+            "diff_out_of_scope",
+            required=True,
+            context_anchor_paths=access_plan.context_anchor_paths,
+            changed_files=diff_files,
+            out_of_scope_files=out_of_scope_files,
+            recovery_guidance=guidance,
+        )
+        raise FullAccessImplementationScopeFailure(
+            "Full-access implementation changed files outside issue Context anchors.\n\n"
+            f"Out-of-scope files:\n{out_of_scope_lines}\n\n"
+            f"Context anchors:\n{anchor_lines}\n\n"
+            f"Recovery guidance: {guidance}",
+            recovery_guidance=guidance,
+        )
+
     def _implement_with_retry(
         self,
         issue: Issue,
         worktree_path: Path,
         run_dir: Path,
         manifest: RunManifest,
+        *,
+        access_plan: ImplementationAccessPlan,
     ) -> list[QAResult]:
         emit(f"#{issue.number}: fetching Ready issue refresh notes")
         manifest.record_event("fetching_ready_issue_refresh_notes")
@@ -6953,13 +7201,30 @@ class RalphLoop:
                 first_log,
                 phase=f"#{issue.number}: Codex implementation attempt 1",
                 manifest=manifest,
+                allowed_issue_commands=(
+                    SANDBOX_READ_ONLY_GH_ISSUE_COMMANDS
+                    if access_plan.full_access_required
+                    else SANDBOX_ALLOWED_GH_ISSUE_COMMANDS
+                ),
+                sandbox_mode=(
+                    FULL_ACCESS_CODEX_SANDBOX
+                    if access_plan.full_access_required
+                    else WORKSPACE_WRITE_CODEX_SANDBOX
+                ),
             )
             manifest.record_codex_attempt(1, status="completed", log_path=first_log)
             first_codex_completed = True
+            self._validate_full_access_implementation_diff(
+                access_plan,
+                worktree_path,
+                manifest,
+            )
             return self._run_qa(issue, worktree_path, run_dir, log_prefix="qa", manifest=manifest)
         except EnvironmentFailure:
             if not first_codex_completed:
                 manifest.record_codex_attempt(1, status="failed", log_path=first_log)
+            raise
+        except FullAccessImplementationScopeFailure:
             raise
         except (CommandFailure, IssueFailure) as first_error:
             if first_codex_completed:
@@ -6994,6 +7259,16 @@ class RalphLoop:
                     retry_log,
                     phase=f"#{issue.number}: Codex implementation attempt 2",
                     manifest=manifest,
+                    allowed_issue_commands=(
+                        SANDBOX_READ_ONLY_GH_ISSUE_COMMANDS
+                        if access_plan.full_access_required
+                        else SANDBOX_ALLOWED_GH_ISSUE_COMMANDS
+                    ),
+                    sandbox_mode=(
+                        FULL_ACCESS_CODEX_SANDBOX
+                        if access_plan.full_access_required
+                        else WORKSPACE_WRITE_CODEX_SANDBOX
+                    ),
                 )
             except CommandFailure as retry_error:
                 manifest.record_codex_attempt(
@@ -7004,6 +7279,11 @@ class RalphLoop:
                 )
                 raise
             manifest.record_codex_attempt(2, status="completed", log_path=retry_log)
+            self._validate_full_access_implementation_diff(
+                access_plan,
+                worktree_path,
+                manifest,
+            )
             return self._run_qa(
                 issue,
                 worktree_path,
@@ -7021,6 +7301,7 @@ class RalphLoop:
         phase: str,
         manifest: RunManifest | None = None,
         allowed_issue_commands: tuple[str, ...] = SANDBOX_ALLOWED_GH_ISSUE_COMMANDS,
+        sandbox_mode: str = WORKSPACE_WRITE_CODEX_SANDBOX,
         output_last_message: Path | None = None,
     ) -> CompletedCommand:
         if not self.runner.dry_run:
@@ -7040,7 +7321,11 @@ class RalphLoop:
             manifest.record_sandboxed_issue_access(sandbox_issue_access)
             manifest.record_qa_runtime_env(qa_runtime_env)
         return self.runner.run(
-            codex_exec_command(cwd, output_last_message=output_last_message),
+            codex_exec_command(
+                cwd,
+                sandbox_mode=sandbox_mode,
+                output_last_message=output_last_message,
+            ),
             cwd=cwd,
             input_text=prompt,
             log_path=log_path,
@@ -9257,6 +9542,7 @@ def build_config(args: argparse.Namespace, runner: CommandRunner) -> LoopConfig:
         max_issues=args.max_issues,
         dry_run=args.dry_run,
         allow_dirty_worktree=args.allow_dirty_worktree,
+        allow_full_access_implementation=args.allow_full_access_implementation,
         bootstrap_labels=args.bootstrap_labels,
         issue_limit=args.issue_limit,
         log_root=log_root,
@@ -9300,6 +9586,8 @@ def operator_child_command(args: argparse.Namespace, run_dir: Path) -> list[str]
         command.append("--skip-ready-issue-refresh")
     if args.allow_dirty_worktree:
         command.append("--allow-dirty-worktree")
+    if args.allow_full_access_implementation:
+        command.append(FULL_ACCESS_IMPLEMENTATION_FLAG)
     return command
 
 
@@ -9462,6 +9750,15 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help=(
             "Allow live implementation and Promotion runs to start when the root "
             "worktree has uncommitted changes."
+        ),
+    )
+    parser.add_argument(
+        FULL_ACCESS_IMPLEMENTATION_FLAG,
+        action="store_true",
+        help=(
+            "Allow ready issues whose Context anchors include `.agents/` paths to run "
+            "the Codex implementation subprocess as a Full-access implementation pass. "
+            "Ralph hard-stops before QA if the resulting diff leaves those anchors."
         ),
     )
     parser.add_argument(
