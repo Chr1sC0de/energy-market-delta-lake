@@ -13,6 +13,12 @@ branch to `dev`, comments acceptance evidence that starts with
 removes `agent-reviewing`, and adds `agent-integrated`. Rejected Exploratory
 work stays open, removes `agent-reviewing`, adds `ready-for-human`, and records
 the review result without adding `agent-integrated`.
+Checkpointed Operator runs may stop with `needs_review` and write an
+**Exploratory acceptance review** artifact when open `agent-reviewing` issues
+remain and no unblocked ready issue can proceed. That artifact is informational
+only and does not
+merge branches, push refs, comment, edit labels, close issues, update
+**Integration targets**, or change the acceptance boundary.
 
 ## Considered options
 
@@ -34,6 +40,9 @@ state. Ralph may publish the **Exploratory branch**, add `agent-reviewing`,
 leave the issue open, and run **Ready issue refresh** for the next queue items,
 but it does not decide acceptance or rejection. The `## Review focus` section
 is therefore required before a ready `delivery-exploratory` issue can run.
+The Operator's **Exploratory acceptance review** artifact makes the waiting
+state visible by listing the branch, handoff commit, changed files, QA evidence,
+mergeability against `origin/dev`, and ready issues blocked by the decision.
 
 **Promotion** can verify accepted Exploratory work with the same branch-range
 evidence model it uses for Gitflow work. The accepted `dev` commit must appear

@@ -229,6 +229,16 @@ way:
   recoveries, **Local integration** commits, **Promotion** commits, QA
   surfaces, **Post-promotion review** follow-ups, final queue state, and stop
   or failure reasons without reading child Codex JSONL.
+- #136: Checkpointed Operator runs treat `agent-reviewing` as a first-class
+  queue state. When open **Exploratory branches** require human acceptance
+  review before the queue can proceed, Ralph stops with
+  `needs_review`, writes `exploratory-acceptance-review.md` and
+  `exploratory-acceptance-review.json`, and keeps GitHub Issues and
+  **Integration targets** unchanged. The contract lives in
+  [OPERATOR.md](../../OPERATOR.md) and
+  [docs/agents/ralph-loop.md](../agents/ralph-loop.md), with the
+  automatic-Promotion boundary in ADR
+  [0005](../adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md).
 
 ## Search commands
 

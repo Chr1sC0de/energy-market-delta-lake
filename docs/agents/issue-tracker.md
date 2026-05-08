@@ -80,6 +80,12 @@ adds `ready-for-human`, comments the review result, and leaves the issue open.
 Manual Gitflow recovery must add the parseable recovery evidence documented in
 [ralph-loop.md](ralph-loop.md) before leaving or applying `agent-integrated`, so
 later **Promotion** can verify the recovered `dev` commit before closure.
+Checkpointed Operator runs include open `agent-reviewing` issues separately in
+their queue snapshot. When no unblocked ready issue can proceed and
+`agent-reviewing` issues remain, Ralph stops as `needs_review` with checkpoint
+`exploratory_acceptance_review_required` and writes a non-mutating
+**Exploratory acceptance review** artifact instead of marking the queue as a
+generic failure.
 
 After a successful drain-mode **Local integration**, Exploratory handoff, or
 successful **Promotion** verified issue closure, Ralph computes **Ready issue
@@ -112,7 +118,8 @@ issue claim; post-Promotion refresh failures are warning-only after successful
 Use [ralph-loop.md](ralph-loop.md) for Ralph internals, including
 **Delivery mode**, **Local integration**, **Integration target**, **Promotion**,
 **Ready issue refresh**, checkpointed Operator runs, **Post-promotion review**,
-run manifests, QA selection, and recovery behavior.
+**Exploratory acceptance review**, run manifests, QA selection, and recovery
+behavior.
 Use [OPERATOR.md](../../OPERATOR.md) for the human **Operator workflow**.
 Use `$ralph-curate` when existing open issues need to be compared with the
 current branch before changing bodies, labels, blockers, or closure state.

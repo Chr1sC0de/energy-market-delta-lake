@@ -127,6 +127,13 @@ includes it in automatic **Promotion** unless a human accepts the work by
 merging it to `dev` with explicit issue evidence.
 _Avoid_: Draft PR branch, temporary review worktree
 
+**Exploratory acceptance review**:
+The non-mutating Operator review state and artifact for open
+`agent-reviewing` issues. It summarizes durable **Exploratory branches** that
+need human acceptance or rejection before blocked ready work, drain, or
+**Promotion** can continue.
+_Avoid_: Queue failure, Promotion gate
+
 **Promotion**:
 The Ralph operation that merges reviewed `dev` work into `main` and closes
 verified GitHub issues included in that branch range, including Gitflow
@@ -197,6 +204,10 @@ _Avoid_: Implemented gap, ignored report
 - An **Exploratory branch** stays outside automatic **Promotion** until accepted
   review evidence records the `dev` commit that made the work reachable from
   the Gitflow source branch.
+- **Exploratory acceptance review** is a named Operator stop state, not an
+  implementation failure. It does not push, comment, edit labels, close issues,
+  or update **Integration targets**; it writes review artifacts for the human
+  decision on `agent-reviewing` issues.
 - **Promotion** closes only issues whose Gitflow `dev` integration commit or
   accepted Exploratory commit is verified in the promoted branch range.
 - **Post-promotion review** happens after **Promotion** attempts where possible;

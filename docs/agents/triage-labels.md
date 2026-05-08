@@ -56,6 +56,11 @@ merges the durable **Exploratory branch** to `dev`, records
 commit, removes `agent-reviewing`, and adds `agent-integrated`. Rejected review
 leaves the issue open, removes `agent-reviewing`, adds `ready-for-human`,
 comments the review result, and must not add `agent-integrated`.
+Checkpointed Operator runs report open `agent-reviewing` issues separately.
+When no unblocked ready issue can proceed and `agent-reviewing` issues remain,
+Ralph stops with `needs_review` and writes an **Exploratory acceptance review**
+artifact for the human decision instead of treating the queue as an
+`agent-failed` implementation result.
 
 ## Ralph delivery labels
 

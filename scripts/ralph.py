@@ -88,6 +88,8 @@ MANIFEST_SCHEMA_VERSION = 1
 OPERATOR_MANIFEST_NAME = "operator-run.json"
 OPERATOR_ROLLUP_JSON_NAME = "operator-run-rollup.json"
 OPERATOR_ROLLUP_MARKDOWN_NAME = "operator-run-rollup.md"
+EXPLORATORY_ACCEPTANCE_REVIEW_JSON_NAME = "exploratory-acceptance-review.json"
+EXPLORATORY_ACCEPTANCE_REVIEW_MARKDOWN_NAME = "exploratory-acceptance-review.md"
 OPERATOR_ROLLUP_SCHEMA_VERSION = 1
 OPERATOR_RUN_ROOT_NAME = "operator-runs"
 OPERATOR_RUN_PREFIX = "operator"
@@ -95,6 +97,7 @@ OPERATOR_QUEUE_LABELS = frozenset(
     {
         READY_LABEL,
         AGENT_INTEGRATED_LABEL,
+        AGENT_REVIEWING_LABEL,
         AGENT_RUNNING_LABEL,
         AGENT_FAILED_LABEL,
     }
@@ -479,12 +482,19 @@ class GitWorktree:
 class OperatorQueueSnapshot:
     ready: tuple[Issue, ...]
     integrated: tuple[Issue, ...]
+    reviewing: tuple[Issue, ...]
     running: tuple[Issue, ...]
     failed: tuple[Issue, ...]
 
     @property
     def queue_issue_count(self) -> int:
-        return len(self.ready) + len(self.integrated) + len(self.running) + len(self.failed)
+        return (
+            len(self.ready)
+            + len(self.integrated)
+            + len(self.reviewing)
+            + len(self.running)
+            + len(self.failed)
+        )
 
 
 @dataclass(frozen=True)
@@ -1454,7 +1464,7 @@ class OperatorRunManifest:
                 "last_checkpoint": None,
                 "checkpoints": [],
                 "child_run_manifests": [],
-                "queue": operator_queue_payload(OperatorQueueSnapshot((), (), (), ())),
+                "queue": operator_queue_payload(OperatorQueueSnapshot((), (), (), (), ())),
                 "rollup_artifacts": operator_rollup_artifact_payload(run_dir),
                 "recovery_guidance": None,
                 "failure": None,
@@ -1539,6 +1549,7 @@ class OperatorRunManifest:
             details={
                 "ready": len(snapshot.ready),
                 "integrated": len(snapshot.integrated),
+                "reviewing": len(snapshot.reviewing),
                 "running": len(snapshot.running),
                 "failed": len(snapshot.failed),
             },
@@ -1618,6 +1629,19 @@ class OperatorRunManifest:
         child_runs.append(entry)
         self._write()
 
+    def record_exploratory_acceptance_review(self, review: dict[str, Any]) -> None:
+        self.data["exploratory_acceptance_review"] = review
+        artifacts = review.get("artifacts") if isinstance(review.get("artifacts"), dict) else {}
+        self.record_event(
+            "exploratory_acceptance_review_written",
+            details={
+                "markdown": artifacts.get("markdown"),
+                "json": artifacts.get("json"),
+                "reviewing_issues": review.get("reviewing_issue_count"),
+                "downstream_ready_issues": review.get("downstream_ready_issue_count"),
+            },
+        )
+
     def record_failure(
         self,
         error: Exception,
@@ -1666,6 +1690,7 @@ def operator_queue_payload(snapshot: OperatorQueueSnapshot) -> dict[str, Any]:
     return {
         "ready": [issue_payload_for_operator(issue) for issue in snapshot.ready],
         "integrated": [issue_payload_for_operator(issue) for issue in snapshot.integrated],
+        "reviewing": [issue_payload_for_operator(issue) for issue in snapshot.reviewing],
         "running": [issue_payload_for_operator(issue) for issue in snapshot.running],
         "failed": [issue_payload_for_operator(issue) for issue in snapshot.failed],
     }
@@ -1675,11 +1700,17 @@ def operator_rollup_artifact_payload(run_dir: Path) -> dict[str, str]:
     return {
         "markdown": str(run_dir / OPERATOR_ROLLUP_MARKDOWN_NAME),
         "json": str(run_dir / OPERATOR_ROLLUP_JSON_NAME),
+        "exploratory_acceptance_review_markdown": str(
+            run_dir / EXPLORATORY_ACCEPTANCE_REVIEW_MARKDOWN_NAME
+        ),
+        "exploratory_acceptance_review_json": str(
+            run_dir / EXPLORATORY_ACCEPTANCE_REVIEW_JSON_NAME
+        ),
     }
 
 
 def operator_run_has_terminal_status(data: dict[str, Any]) -> bool:
-    return str(data.get("status") or "") in {"succeeded", "failed"}
+    return str(data.get("status") or "") in {"succeeded", "failed", "needs_review"}
 
 
 def write_operator_rollup_artifacts(
@@ -1782,6 +1813,7 @@ def build_operator_run_rollup(
         "promotions": promotion_entries,
         "qa_surfaces": qa_surfaces,
         "post_promotion_followups": post_promotion_followups,
+        "exploratory_acceptance_review": data.get("exploratory_acceptance_review"),
         "final_queue": final_queue,
         "stop_reason": stop_reason,
     }
@@ -2226,7 +2258,7 @@ def operator_rollup_final_queue(data: dict[str, Any]) -> dict[str, Any]:
     queue = queue if isinstance(queue, dict) else {}
     counts = {
         key: len(queue.get(key)) if isinstance(queue.get(key), list) else 0
-        for key in ("ready", "integrated", "running", "failed")
+        for key in ("ready", "integrated", "reviewing", "running", "failed")
     }
     clean = all(count == 0 for count in counts.values())
     return {
@@ -2234,7 +2266,7 @@ def operator_rollup_final_queue(data: dict[str, Any]) -> dict[str, Any]:
         "counts": counts,
         "issues": {
             key: queue.get(key) if isinstance(queue.get(key), list) else []
-            for key in ("ready", "integrated", "running", "failed")
+            for key in ("ready", "integrated", "reviewing", "running", "failed")
         },
     }
 
@@ -2288,6 +2320,12 @@ def render_operator_run_rollup_markdown(rollup: dict[str, Any]) -> str:
         "## QA Surfaces",
         "",
         *operator_rollup_qa_markdown_lines(rollup["qa_surfaces"]),
+        "",
+        "## Exploratory Acceptance Review",
+        "",
+        *operator_rollup_exploratory_acceptance_review_markdown_lines(
+            rollup.get("exploratory_acceptance_review")
+        ),
         "",
         "## Final Queue",
         "",
@@ -2391,11 +2429,25 @@ def operator_rollup_qa_markdown_lines(entries: list[dict[str, Any]]) -> list[str
     return lines
 
 
+def operator_rollup_exploratory_acceptance_review_markdown_lines(value: Any) -> list[str]:
+    if not isinstance(value, dict):
+        return ["- None"]
+    artifacts = value.get("artifacts") if isinstance(value.get("artifacts"), dict) else {}
+    return [
+        f"- Status: `{value.get('status') or 'unknown'}`",
+        f"- Reviewing issues: {value.get('reviewing_issue_count') or 0}",
+        f"- Downstream ready issues: {value.get('downstream_ready_issue_count') or 0}",
+        f"- Markdown: {markdown_artifact_link(artifacts.get('markdown'), 'review markdown')}",
+        f"- JSON: {markdown_artifact_link(artifacts.get('json'), 'review json')}",
+    ]
+
+
 def operator_rollup_final_queue_markdown_lines(queue: dict[str, Any]) -> list[str]:
     counts = queue.get("counts") if isinstance(queue.get("counts"), dict) else {}
     return [
         f"- ready={counts.get('ready', 0)}",
         f"- integrated={counts.get('integrated', 0)}",
+        f"- reviewing={counts.get('reviewing', 0)}",
         f"- running={counts.get('running', 0)}",
         f"- failed={counts.get('failed', 0)}",
         f"- clean={'yes' if queue.get('clean') else 'no'}",
@@ -2431,6 +2483,13 @@ def markdown_path_link(value: Any) -> str:
     if path == "":
         return "`missing`"
     return f"[`ralph-run.json`](<{path}>)"
+
+
+def markdown_artifact_link(value: Any, label: str) -> str:
+    path = str(value or "")
+    if path == "":
+        return "`missing`"
+    return f"[`{label}`](<{path}>)"
 
 
 def child_manifest_entry(child_manifest_path: Path) -> dict[str, Any]:
@@ -7762,6 +7821,9 @@ class RalphOperatorRun:
                 self._run_issue_checkpoint(ready_issue)
                 continue
             if snapshot.ready:
+                if snapshot_needs_exploratory_acceptance_review(snapshot):
+                    self._stop_for_exploratory_acceptance_review(snapshot)
+                    return
                 self._stop_for_queue_condition(
                     "ready-for-agent issue(s) remain, but none are currently unblocked.",
                     snapshot=snapshot,
@@ -7770,6 +7832,9 @@ class RalphOperatorRun:
             if snapshot.integrated:
                 self._run_promotion_checkpoint()
                 continue
+            if snapshot.reviewing:
+                self._stop_for_exploratory_acceptance_review(snapshot)
+                return
 
             self._stop_for_queue_condition(
                 "Operator queue contained an unsupported issue state combination.",
@@ -7786,6 +7851,7 @@ class RalphOperatorRun:
     def _queue_snapshot(self) -> OperatorQueueSnapshot:
         ready: list[Issue] = []
         integrated: list[Issue] = []
+        reviewing: list[Issue] = []
         running: list[Issue] = []
         failed: list[Issue] = []
         for issue in self.github.list_open_issues(limit=self.config.issue_limit):
@@ -7797,11 +7863,14 @@ class RalphOperatorRun:
                 failed.append(issue)
             if AGENT_INTEGRATED_LABEL in issue.labels:
                 integrated.append(issue)
+            if AGENT_REVIEWING_LABEL in issue.labels:
+                reviewing.append(issue)
             if READY_LABEL in issue.labels:
                 ready.append(issue)
         return OperatorQueueSnapshot(
             ready=tuple(ready),
             integrated=tuple(integrated),
+            reviewing=tuple(reviewing),
             running=tuple(running),
             failed=tuple(failed),
         )
@@ -7958,6 +8027,7 @@ class RalphOperatorRun:
             details={
                 "ready": [issue.number for issue in snapshot.ready],
                 "integrated": [issue.number for issue in snapshot.integrated],
+                "reviewing": [issue.number for issue in snapshot.reviewing],
                 "running": [issue.number for issue in snapshot.running],
                 "failed": [issue.number for issue in snapshot.failed],
             },
@@ -7968,6 +8038,42 @@ class RalphOperatorRun:
         )
         emit(guidance, err=True)
         raise RalphError(guidance)
+
+    def _stop_for_exploratory_acceptance_review(
+        self,
+        snapshot: OperatorQueueSnapshot,
+    ) -> None:
+        message = (
+            "Exploratory acceptance review is required before the Operator queue "
+            "can continue."
+        )
+        guidance = exploratory_acceptance_review_guidance()
+        review = exploratory_acceptance_review_payload(
+            snapshot=snapshot,
+            operator_data=self.manifest.data,
+            run_dir=self.run_dir,
+            source_branch=self.config.source_branch,
+            github=self.github,
+            git=self.loop.git,
+        )
+        write_exploratory_acceptance_review_artifacts(self.run_dir, review)
+        self.manifest.record_exploratory_acceptance_review(review)
+        self.manifest.clear_current()
+        self.manifest.record_checkpoint(
+            "exploratory_acceptance_review_required",
+            message=message,
+            status="needs_review",
+            recovery_guidance=guidance,
+            details={
+                "ready": [issue.number for issue in snapshot.ready],
+                "integrated": [issue.number for issue in snapshot.integrated],
+                "reviewing": [issue.number for issue in snapshot.reviewing],
+                "running": [issue.number for issue in snapshot.running],
+                "failed": [issue.number for issue in snapshot.failed],
+                "review_artifacts": review.get("artifacts"),
+            },
+        )
+        emit(guidance)
 
 
 def operator_issue_failure_guidance(issue: Issue, manifest_path: Path | None) -> str:
@@ -8012,8 +8118,474 @@ def operator_queue_recovery_guidance(
             "Open agent-integrated issue(s): "
             + ", ".join(f"#{issue.number}" for issue in snapshot.integrated)
         )
+    if snapshot.reviewing:
+        parts.append(
+            "Open agent-reviewing issue(s): "
+            + ", ".join(f"#{issue.number}" for issue in snapshot.reviewing)
+        )
     parts.append("Inspect the issue state and rerun the Operator run after recovery.")
     return " ".join(parts)
+
+
+def exploratory_acceptance_review_guidance() -> str:
+    return (
+        "Run the $ralph-loop Exploratory acceptance review flow, then accept or "
+        "reject the listed agent-reviewing issues before rerunning drain or Promotion."
+    )
+
+
+def downstream_ready_issues_by_review_issue(
+    snapshot: OperatorQueueSnapshot,
+) -> dict[int, list[Issue]]:
+    downstream: dict[int, list[Issue]] = {issue.number: [] for issue in snapshot.reviewing}
+    if not downstream:
+        return {}
+    reviewing_numbers = set(downstream)
+    for ready_issue in snapshot.ready:
+        blockers = set(parse_blockers(ready_issue.body))
+        for reviewing_number in sorted(blockers & reviewing_numbers):
+            downstream[reviewing_number].append(ready_issue)
+    return downstream
+
+
+def snapshot_needs_exploratory_acceptance_review(
+    snapshot: OperatorQueueSnapshot,
+) -> bool:
+    if not snapshot.reviewing:
+        return False
+    if not snapshot.ready:
+        return True
+    downstream = downstream_ready_issues_by_review_issue(snapshot)
+    return any(downstream_issues for downstream_issues in downstream.values())
+
+
+def exploratory_handoff_evidence_from_operator_children(
+    data: dict[str, Any],
+) -> dict[int, dict[str, Any]]:
+    evidence: dict[int, dict[str, Any]] = {}
+    for source in operator_child_manifest_sources(data):
+        child_data = source.get("data")
+        if not isinstance(child_data, dict):
+            continue
+        if source.get("kind") != "implementation":
+            continue
+        if source.get("status") != "succeeded":
+            continue
+        if child_data.get("delivery_mode") != EXPLORATORY_MODE:
+            continue
+        issue = source.get("issue")
+        if not isinstance(issue, dict) or issue.get("number") is None:
+            continue
+        try:
+            issue_number = int(issue["number"])
+        except (TypeError, ValueError):
+            continue
+        integration_commit = normalized_commit_payload(child_data.get("integration_commit"))
+        changed_files = child_data.get("changed_files")
+        evidence[issue_number] = {
+            "source": "child_manifest",
+            "branch": child_data.get("integration_target"),
+            "handoff_commit": (
+                integration_commit.get("sha") if isinstance(integration_commit, dict) else None
+            ),
+            "changed_files": (
+                [str(path) for path in changed_files if isinstance(path, str)]
+                if isinstance(changed_files, list)
+                else []
+            ),
+            "recorded_qa_evidence": exploratory_qa_evidence_from_manifest(child_data),
+            "child_manifest_path": source.get("manifest_path"),
+        }
+    return evidence
+
+
+def exploratory_qa_evidence_from_manifest(data: dict[str, Any]) -> list[dict[str, Any]]:
+    results = data.get("qa_results")
+    if not isinstance(results, list):
+        return []
+    evidence: list[dict[str, Any]] = []
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        command_value = result.get("command")
+        command = (
+            [str(part) for part in command_value]
+            if isinstance(command_value, list)
+            else []
+        )
+        evidence.append(
+            {
+                "name": result.get("name") or format_command(command),
+                "status": result.get("status") or "unknown",
+                "command": command,
+                "command_text": format_command(command),
+                "cwd": result.get("cwd"),
+                "log_path": result.get("log_path"),
+            }
+        )
+    return evidence
+
+
+def latest_exploratory_handoff_comment(comments: list[dict[str, Any]]) -> str | None:
+    title = completion_comment_title(EXPLORATORY_MODE)
+    for comment in reversed(comments):
+        body = str(comment.get("body") or "")
+        if title in body:
+            return body
+    return None
+
+
+def parse_exploratory_handoff_comment(body: str) -> dict[str, Any]:
+    commit_match = COMMIT_LINE_PATTERN.search(body)
+    branch_match = re.search(r"(?m)^Target branch:\s+`(?P<branch>[^`]+)`\s*$", body)
+    changed_files = markdown_backtick_bullets(section_body(body, "Changed files") or "")
+    qa_lines = [
+        line.strip()
+        for line in (section_body(body, "QA") or "").splitlines()
+        if line.strip().startswith("-")
+    ]
+    return {
+        "source": "issue_comment",
+        "branch": branch_match.group("branch") if branch_match is not None else None,
+        "handoff_commit": commit_match.group("sha") if commit_match is not None else None,
+        "changed_files": changed_files,
+        "recorded_qa_evidence": [
+            {"name": "completion comment QA", "status": "recorded", "raw": line}
+            for line in qa_lines
+        ],
+        "child_manifest_path": None,
+    }
+
+
+def markdown_backtick_bullets(markdown: str) -> list[str]:
+    values: list[str] = []
+    for line in markdown.splitlines():
+        match = re.match(r"\s*-\s+`(?P<value>[^`]+)`", line)
+        if match is not None:
+            values.append(match.group("value"))
+    return values
+
+
+def test_lanes_from_issue_body(markdown: str) -> list[str]:
+    lanes: list[str] = []
+    pattern = re.compile(r"(?im)^\s*-\s*Test lane:\s*`?(?P<lane>[^`\n]+)`?\s*$")
+    for match in pattern.finditer(markdown):
+        lane = match.group("lane").strip()
+        if lane:
+            lanes.append(lane)
+    return lanes
+
+
+def normalized_evidence_text(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def missing_test_lane_evidence(
+    *,
+    expected_lanes: list[str],
+    recorded_qa_evidence: list[dict[str, Any]],
+) -> list[str]:
+    if not expected_lanes:
+        return []
+    evidence_text = " ".join(
+        normalized_evidence_text(json.dumps(entry, sort_keys=True))
+        for entry in recorded_qa_evidence
+    )
+    missing: list[str] = []
+    for lane in expected_lanes:
+        if normalized_evidence_text(lane) not in evidence_text:
+            missing.append(lane)
+    return missing
+
+
+def exploratory_mergeability_payload(
+    *,
+    git: GitClient,
+    source_branch: str,
+    review_branch: str | None,
+    run_dir: Path,
+) -> dict[str, Any]:
+    source_ref = f"origin/{source_branch}"
+    if review_branch is None or review_branch == "":
+        return {
+            "status": "unknown",
+            "source_ref": source_ref,
+            "review_ref": None,
+            "conflicted_files": [],
+            "log_path": None,
+            "error": "Exploratory branch was not found in recorded handoff evidence.",
+        }
+
+    review_ref = f"origin/{review_branch}"
+    log_path = run_dir / f"git-mergeability-{slugify(review_branch)}.log"
+    try:
+        git.fetch_base(source_branch, run_dir=run_dir)
+        git.fetch_base(review_branch, run_dir=run_dir)
+    except CommandFailure as error:
+        return {
+            "status": "unknown",
+            "source_ref": source_ref,
+            "review_ref": review_ref,
+            "conflicted_files": [],
+            "log_path": path_text(error.log_path),
+            "error": user_facing_error(error),
+        }
+
+    try:
+        git.runner.run(
+            [
+                "git",
+                "merge-tree",
+                "--write-tree",
+                "--name-only",
+                source_ref,
+                review_ref,
+            ],
+            cwd=git.repo_root,
+            log_path=log_path,
+        )
+    except CommandFailure as error:
+        return {
+            "status": "conflicts" if error.returncode == 1 else "unknown",
+            "source_ref": source_ref,
+            "review_ref": review_ref,
+            "conflicted_files": parse_mergeability_conflicted_files(error.stdout),
+            "log_path": path_text(error.log_path or log_path),
+            "error": user_facing_error(error),
+        }
+
+    return {
+        "status": "clean",
+        "source_ref": source_ref,
+        "review_ref": review_ref,
+        "conflicted_files": [],
+        "log_path": str(log_path),
+        "error": None,
+    }
+
+
+def parse_mergeability_conflicted_files(stdout: str) -> list[str]:
+    files: list[str] = []
+    for line in stdout.splitlines():
+        text = line.strip()
+        if text == "" or re.fullmatch(r"[0-9a-f]{40,64}", text):
+            continue
+        files.append(text)
+    return sorted(set(files))
+
+
+def exploratory_acceptance_review_payload(
+    *,
+    snapshot: OperatorQueueSnapshot,
+    operator_data: dict[str, Any],
+    run_dir: Path,
+    source_branch: str,
+    github: GitHubClient,
+    git: GitClient,
+) -> dict[str, Any]:
+    downstream_by_issue = downstream_ready_issues_by_review_issue(snapshot)
+    child_evidence = exploratory_handoff_evidence_from_operator_children(operator_data)
+    entries: list[dict[str, Any]] = []
+    for issue in snapshot.reviewing:
+        evidence = child_evidence.get(issue.number)
+        evidence_error: str | None = None
+        if evidence is None:
+            try:
+                comments = github.issue_comments(issue.number)
+                body = latest_exploratory_handoff_comment(comments)
+                evidence = (
+                    parse_exploratory_handoff_comment(body)
+                    if body is not None
+                    else {
+                        "source": "issue_comment",
+                        "branch": None,
+                        "handoff_commit": None,
+                        "changed_files": [],
+                        "recorded_qa_evidence": [],
+                        "child_manifest_path": None,
+                    }
+                )
+            except CommandFailure as error:
+                evidence_error = user_facing_error(error)
+                evidence = {
+                    "source": "unavailable",
+                    "branch": None,
+                    "handoff_commit": None,
+                    "changed_files": [],
+                    "recorded_qa_evidence": [],
+                    "child_manifest_path": None,
+                }
+
+        recorded_qa_evidence = evidence.get("recorded_qa_evidence")
+        recorded_qa_evidence = (
+            recorded_qa_evidence if isinstance(recorded_qa_evidence, list) else []
+        )
+        expected_lanes = test_lanes_from_issue_body(issue.body)
+        entries.append(
+            {
+                "issue": issue_payload_for_operator(issue),
+                "branch": evidence.get("branch"),
+                "handoff_commit": evidence.get("handoff_commit"),
+                "changed_files": evidence.get("changed_files")
+                if isinstance(evidence.get("changed_files"), list)
+                else [],
+                "recorded_qa_evidence": recorded_qa_evidence,
+                "detected_test_lanes": expected_lanes,
+                "missing_test_lane_evidence": missing_test_lane_evidence(
+                    expected_lanes=expected_lanes,
+                    recorded_qa_evidence=recorded_qa_evidence,
+                ),
+                "mergeability": exploratory_mergeability_payload(
+                    git=git,
+                    source_branch=source_branch,
+                    review_branch=(
+                        str(evidence.get("branch")) if evidence.get("branch") else None
+                    ),
+                    run_dir=run_dir,
+                ),
+                "downstream_ready_issues": [
+                    issue_payload_for_operator(downstream_issue)
+                    for downstream_issue in downstream_by_issue.get(issue.number, [])
+                ],
+                "evidence_source": evidence.get("source"),
+                "evidence_error": evidence_error,
+                "child_manifest_path": evidence.get("child_manifest_path"),
+            }
+        )
+
+    downstream_count = sum(
+        len(entry["downstream_ready_issues"])
+        for entry in entries
+        if isinstance(entry.get("downstream_ready_issues"), list)
+    )
+    payload = {
+        "schema_version": 1,
+        "run_kind": "exploratory_acceptance_review",
+        "status": "needs_review",
+        "generated_at": utc_now_text(),
+        "source_branch": source_branch,
+        "source_ref": f"origin/{source_branch}",
+        "reviewing_issue_count": len(entries),
+        "downstream_ready_issue_count": downstream_count,
+        "issues": entries,
+        "artifacts": {
+            "json": str(run_dir / EXPLORATORY_ACCEPTANCE_REVIEW_JSON_NAME),
+            "markdown": str(run_dir / EXPLORATORY_ACCEPTANCE_REVIEW_MARKDOWN_NAME),
+        },
+    }
+    return payload
+
+
+def write_exploratory_acceptance_review_artifacts(
+    run_dir: Path,
+    payload: dict[str, Any],
+) -> None:
+    write_json_artifact(run_dir / EXPLORATORY_ACCEPTANCE_REVIEW_JSON_NAME, payload)
+    write_text_artifact(
+        run_dir / EXPLORATORY_ACCEPTANCE_REVIEW_MARKDOWN_NAME,
+        render_exploratory_acceptance_review_markdown(payload),
+    )
+
+
+def render_exploratory_acceptance_review_markdown(payload: dict[str, Any]) -> str:
+    lines = [
+        "# Exploratory Acceptance Review",
+        "",
+        f"- Status: `{payload.get('status')}`",
+        f"- Source branch: `{payload.get('source_ref')}`",
+        f"- Reviewing issues: {payload.get('reviewing_issue_count')}",
+        f"- Downstream ready issues: {payload.get('downstream_ready_issue_count')}",
+        "",
+        "## Issues",
+        "",
+    ]
+    issues = payload.get("issues")
+    if not isinstance(issues, list) or not issues:
+        lines.append("- None")
+        return "\n".join(lines) + "\n"
+
+    for entry in issues:
+        if not isinstance(entry, dict):
+            continue
+        issue = entry.get("issue") if isinstance(entry.get("issue"), dict) else {}
+        mergeability = (
+            entry.get("mergeability") if isinstance(entry.get("mergeability"), dict) else {}
+        )
+        lines.extend(
+            [
+                f"### {operator_issue_title(issue)}",
+                "",
+                f"- Exploratory branch: `{entry.get('branch') or 'unknown'}`",
+                f"- Handoff commit: `{entry.get('handoff_commit') or 'unknown'}`",
+                f"- Evidence source: `{entry.get('evidence_source') or 'unknown'}`",
+                f"- Mergeability: `{mergeability.get('status') or 'unknown'}` "
+                f"against `{mergeability.get('source_ref') or 'unknown'}`",
+                f"- Child manifest: {markdown_path_link(entry.get('child_manifest_path'))}",
+                "",
+                "#### Changed Files",
+                "",
+                *operator_review_markdown_bullets(entry.get("changed_files")),
+                "",
+                "#### Recorded QA Evidence",
+                "",
+                *operator_review_qa_markdown_lines(entry.get("recorded_qa_evidence")),
+                "",
+                "#### Missing Test Lane Evidence",
+                "",
+                *operator_review_markdown_bullets(entry.get("missing_test_lane_evidence")),
+                "",
+                "#### Downstream Ready Issues",
+                "",
+                *operator_review_downstream_markdown_lines(
+                    entry.get("downstream_ready_issues")
+                ),
+                "",
+            ]
+        )
+        if mergeability.get("conflicted_files"):
+            lines.extend(
+                [
+                    "#### Merge Conflicts",
+                    "",
+                    *operator_review_markdown_bullets(mergeability.get("conflicted_files")),
+                    "",
+                ]
+            )
+    return "\n".join(lines) + "\n"
+
+
+def operator_review_markdown_bullets(value: Any) -> list[str]:
+    if not isinstance(value, list) or not value:
+        return ["- None"]
+    return [f"- `{item}`" for item in value]
+
+
+def operator_review_qa_markdown_lines(value: Any) -> list[str]:
+    if not isinstance(value, list) or not value:
+        return ["- None"]
+    lines: list[str] = []
+    for entry in value:
+        if not isinstance(entry, dict):
+            continue
+        raw = entry.get("raw")
+        if raw:
+            lines.append(f"- {raw}")
+            continue
+        lines.append(
+            f"- `{entry.get('name') or 'unknown'}` `{entry.get('status') or 'unknown'}`: "
+            f"`{entry.get('command_text') or ''}`"
+        )
+    return lines or ["- None"]
+
+
+def operator_review_downstream_markdown_lines(value: Any) -> list[str]:
+    if not isinstance(value, list) or not value:
+        return ["- None"]
+    lines: list[str] = []
+    for issue in value:
+        if isinstance(issue, dict):
+            lines.append(f"- {operator_issue_title(issue)}")
+    return lines or ["- None"]
 
 
 def latest_child_manifest_path(log_root: Path, *, prefix: str) -> Path | None:
@@ -8375,7 +8947,7 @@ def operator_queue_summary(data: dict[str, Any]) -> str:
     if not isinstance(queue, dict):
         return "unknown"
     parts = []
-    for key in ("ready", "integrated", "running", "failed"):
+    for key in ("ready", "integrated", "reviewing", "running", "failed"):
         value = queue.get(key)
         count = len(value) if isinstance(value, list) else 0
         parts.append(f"{key}={count}")
@@ -8390,6 +8962,8 @@ def operator_recommended_action(data: dict[str, Any]) -> str:
     state = str(data.get("state") or "")
     if status == "succeeded" or state == "queue_clean":
         return "No action needed; the Operator queue is clean."
+    if status == "needs_review" or state == "exploratory_acceptance_review_required":
+        return exploratory_acceptance_review_guidance()
     if status == "running":
         return (
             "Wait for the next issue-boundary checkpoint, then run the Operator "
@@ -8432,6 +9006,14 @@ def inspect_operator_run_status(value: str, runner: CommandRunner) -> None:
         emit("Rollup artifacts:")
         emit(f"- Markdown: {rollup_artifacts.get('markdown') or 'not_started'}")
         emit(f"- JSON: {rollup_artifacts.get('json') or 'not_started'}")
+        emit(
+            "- Exploratory acceptance review Markdown: "
+            f"{rollup_artifacts.get('exploratory_acceptance_review_markdown') or 'not_started'}"
+        )
+        emit(
+            "- Exploratory acceptance review JSON: "
+            f"{rollup_artifacts.get('exploratory_acceptance_review_json') or 'not_started'}"
+        )
     emit(f"Recommended next action: {operator_recommended_action(data)}")
 
 

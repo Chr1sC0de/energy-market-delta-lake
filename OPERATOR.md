@@ -7,7 +7,7 @@ Use repo canonical terms from [CONTEXT.md](CONTEXT.md), especially
 **Subproject**, **Test lane**, **Fast check**, **Commit check**, **Push check**,
 **Local integration**, **Delivery mode**, **Integration target**,
 **Sandboxed issue access**, **Full-access implementation pass**,
-**Ready issue refresh**, and **Promotion**.
+**Ready issue refresh**, **Exploratory acceptance review**, and **Promotion**.
 
 ## Canonical Path
 
@@ -58,8 +58,12 @@ For unattended queue cleanup after `dev` review, prefer the checkpointed
 Operator run path. It drains one ready issue boundary at a time, runs
 **Promotion** when `agent-integrated` issues remain, lets successful
 **Post-promotion review** create validated follow-up GitHub Issues, and repeats
-until no open `ready-for-agent`, `agent-integrated`, `agent-running`, or
-`agent-failed` issues remain.
+until no open `ready-for-agent`, `agent-integrated`, `agent-reviewing`,
+`agent-running`, or `agent-failed` issues remain. When no unblocked ready issue
+can proceed and open `agent-reviewing` issues remain, the Operator run stops as
+`needs_review` and writes an **Exploratory acceptance review** JSON and Markdown
+artifact under the Operator run directory instead of treating the queue as a
+generic failure.
 
 Codex should launch Operator runs detached, then stop polling child logs:
 
@@ -155,6 +159,15 @@ and next action. ADR
 [0005](docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md)
 records why **Exploratory branches** stay outside automatic **Promotion**.
 
+If Operator status reports `needs_review` with checkpoint
+`exploratory_acceptance_review_required`, read
+`exploratory-acceptance-review.md` first. It lists each `agent-reviewing` issue,
+durable **Exploratory branch**, handoff commit, changed files, recorded QA
+evidence, detectable missing **Test lane** evidence, mergeability against
+`origin/dev`, and ready issues blocked by the review decision. Run the
+`$ralph-loop` Exploratory acceptance review flow, then accept or reject the
+listed issues before rerunning drain or **Promotion**.
+
 ## Promotion
 
 Run `$ralph-loop promote` only after the `dev` review is complete.
@@ -216,8 +229,11 @@ Completed or stopped runs write `operator-run-rollup.md` and
 first for the full drain-and-**Promotion** summary: succeeded and failed issues,
 manual recoveries, **Local integration** commits, **Promotion** commits, QA
 surfaces, **Post-promotion review** follow-ups, final queue state, and the stop
-or failure reason. Use the JSON rollup for tooling or status-oriented review
-without tailing child Codex JSONL or rich command logs.
+or failure reason. Runs that stop for **Exploratory acceptance review** also
+write `exploratory-acceptance-review.md` and
+`exploratory-acceptance-review.json` beside the rollup. Use the JSON rollup for
+tooling or status-oriented review without tailing child Codex JSONL or rich
+command logs.
 
 Follow the recommended next action. Issue failures point to the child
 implementation manifest; **Promotion** failures point to the child Promotion

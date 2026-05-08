@@ -786,12 +786,14 @@ def operator_snapshot(
     *,
     ready: list[ralph.Issue] | None = None,
     integrated: list[ralph.Issue] | None = None,
+    reviewing: list[ralph.Issue] | None = None,
     running: list[ralph.Issue] | None = None,
     failed: list[ralph.Issue] | None = None,
 ) -> ralph.OperatorQueueSnapshot:
     return ralph.OperatorQueueSnapshot(
         ready=tuple(ready or []),
         integrated=tuple(integrated or []),
+        reviewing=tuple(reviewing or []),
         running=tuple(running or []),
         failed=tuple(failed or []),
     )
@@ -993,6 +995,11 @@ class ScriptedOperatorRun(ralph.RalphOperatorRun):
         )
         self._record_post_promotion_followup_checkpoint(manifest_path)
         self.manifest.clear_current()
+
+
+class BlockedReadyOperatorRun(ScriptedOperatorRun):
+    def _next_ready_issue(self) -> ralph.Issue | None:
+        return None
 
 
 class RalphHelperTests(unittest.TestCase):
@@ -1599,6 +1606,39 @@ Build it.
 
         self.assertEqual(plan.mode, ralph.EXPLORATORY_MODE)
         self.assertEqual(plan.remove_labels, ("delivery-gitflow", "delivery-trunk"))
+
+    def test_exploratory_mergeability_reports_conflict_without_push_or_issue_mutation(
+        self,
+    ) -> None:
+        merge_tree_command = (
+            "git",
+            "merge-tree",
+            "--write-tree",
+            "--name-only",
+            "origin/dev",
+            "origin/agent/exploratory/issue-42-try-it",
+        )
+        runner = FakeRunner(fail_commands={merge_tree_command: 1})
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+
+            payload = ralph.exploratory_mergeability_payload(
+                git=loop.git,
+                source_branch=ralph.DEFAULT_GITFLOW_BRANCH,
+                review_branch="agent/exploratory/issue-42-try-it",
+                run_dir=tmp_path / "run",
+            )
+
+        commands = [call.args for call in runner.calls]
+        self.assertEqual(payload["status"], "conflicts")
+        self.assertEqual(payload["source_ref"], "origin/dev")
+        self.assertEqual(payload["review_ref"], "origin/agent/exploratory/issue-42-try-it")
+        self.assertIn(("git", "fetch", "origin", "dev"), commands)
+        self.assertIn(("git", "fetch", "origin", "agent/exploratory/issue-42-try-it"), commands)
+        self.assertIn(merge_tree_command, commands)
+        self.assertFalse(any(command[:3] == ("git", "push", "origin") for command in commands))
+        self.assertFalse(any(command[:2] == ("gh", "issue") for command in commands))
 
     def test_label_specs_include_exploratory_delivery_and_reviewing_state(self) -> None:
         label_names = {label.name for label in ralph.LABEL_SPECS}
@@ -2907,6 +2947,154 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertIn("Promotion commit `promotion-1-sha`", markdown)
         self.assertIn("- clean=yes", markdown)
 
+    def test_operator_stops_needs_review_and_writes_exploratory_acceptance_review(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            reviewing_body = (
+                EXPLORATORY_IMPLEMENTATION_BODY
+                + "\n## Context anchors\n"
+                + "- Test lane: `root Ralph Unit test`\n"
+                + "- Test lane: `root Commit check`\n"
+            )
+            reviewing_issue = make_issue(
+                {ralph.AGENT_REVIEWING_LABEL, ralph.DELIVERY_EXPLORATORY_LABEL},
+                reviewing_body,
+                number=42,
+                title="Explore workflow",
+            )
+            blocked_ready_issue = make_issue(
+                {ralph.READY_LABEL},
+                implementation_body_with_blockers(42),
+                number=136,
+                title="Dependent ready work",
+            )
+            operator = BlockedReadyOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=3,
+                snapshots=[
+                    operator_snapshot(
+                        ready=[blocked_ready_issue],
+                        reviewing=[reviewing_issue],
+                    )
+                ],
+            )
+            handoff_branch = "agent/exploratory/issue-42-explore-workflow"
+            child_manifest_path = write_child_manifest(
+                loop.config.log_root,
+                name="issue-42-exploratory-handoff",
+                run_kind="implementation",
+                status="succeeded",
+                issue=reviewing_issue,
+                delivery_mode=ralph.EXPLORATORY_MODE,
+                integration_target=handoff_branch,
+                integration_commit="handoff-sha",
+                changed_files=["scripts/ralph.py", "tests/test_ralph.py"],
+                qa_results=[
+                    {
+                        "name": "root Ralph Unit test",
+                        "command": ["python3", "-m", "unittest", "discover", "-s", "tests"],
+                        "cwd": str(tmp_path / "repo"),
+                        "log_path": str(tmp_path / "repo" / ".ralph" / "runs" / "unit.log"),
+                        "status": "passed",
+                    }
+                ],
+            )
+            operator.manifest.record_child_run(child_manifest_path)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                operator.run()
+
+            manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+            review = json.loads(
+                (run_dir / ralph.EXPLORATORY_ACCEPTANCE_REVIEW_JSON_NAME).read_text(
+                    encoding="utf-8"
+                )
+            )
+            review_markdown = (
+                run_dir / ralph.EXPLORATORY_ACCEPTANCE_REVIEW_MARKDOWN_NAME
+            ).read_text(encoding="utf-8")
+            rollup = json.loads(
+                (run_dir / ralph.OPERATOR_ROLLUP_JSON_NAME).read_text(encoding="utf-8")
+            )
+            status_output = io.StringIO()
+            with redirect_stdout(status_output):
+                ralph.inspect_operator_run_status(str(run_dir), runner)
+
+        commands = [call.args for call in runner.calls]
+        self.assertEqual(manifest["status"], "needs_review")
+        self.assertEqual(manifest["state"], "exploratory_acceptance_review_required")
+        self.assertEqual(
+            manifest["last_checkpoint"]["checkpoint"],
+            "exploratory_acceptance_review_required",
+        )
+        self.assertEqual(manifest["queue"]["reviewing"][0]["number"], 42)
+        self.assertEqual(review["status"], "needs_review")
+        self.assertEqual(review["source_ref"], "origin/dev")
+        self.assertEqual(review["issues"][0]["branch"], handoff_branch)
+        self.assertEqual(review["issues"][0]["handoff_commit"], "handoff-sha")
+        self.assertEqual(
+            review["issues"][0]["changed_files"],
+            ["scripts/ralph.py", "tests/test_ralph.py"],
+        )
+        self.assertEqual(
+            review["issues"][0]["downstream_ready_issues"][0]["number"],
+            136,
+        )
+        self.assertEqual(
+            review["issues"][0]["missing_test_lane_evidence"],
+            ["root Commit check"],
+        )
+        self.assertEqual(review["issues"][0]["mergeability"]["status"], "clean")
+        self.assertEqual(rollup["operator_run"]["status"], "needs_review")
+        self.assertEqual(rollup["exploratory_acceptance_review"]["status"], "needs_review")
+        self.assertEqual(rollup["final_queue"]["counts"]["reviewing"], 1)
+        self.assertIn("### #42 Explore workflow", review_markdown)
+        self.assertIn("#136 Dependent ready work", review_markdown)
+        self.assertIn("Run the $ralph-loop Exploratory acceptance review flow", output.getvalue())
+        self.assertIn("Queue: ready=1, integrated=0, reviewing=1", status_output.getvalue())
+        self.assertIn("Recommended next action:", status_output.getvalue())
+        self.assertFalse(any(command[:3] == ("gh", "issue", "comment") for command in commands))
+        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+        self.assertFalse(any(command[:3] == ("gh", "issue", "close") for command in commands))
+
+    def test_operator_keeps_queue_blocked_for_non_review_blocked_ready_issue(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            blocked_ready_issue = make_issue(
+                {ralph.READY_LABEL},
+                implementation_body_with_blockers(99),
+                number=136,
+                title="Blocked ready work",
+            )
+            operator = BlockedReadyOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=3,
+                snapshots=[operator_snapshot(ready=[blocked_ready_issue])],
+            )
+
+            with self.assertRaises(ralph.RalphError):
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    operator.run()
+
+            manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["state"], "failed")
+        self.assertEqual(manifest["last_checkpoint"]["checkpoint"], "queue_blocked")
+
     def test_operator_rollup_records_failed_attempt_manual_recovery_and_guard_stop(
         self,
     ) -> None:
@@ -3062,7 +3250,7 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertIn("Ralph Operator run status", text)
         self.assertIn(f"Operator run directory: {run_dir}", text)
         self.assertIn("Last checkpoint: issue_succeeded: Issue #42 completed.", text)
-        self.assertIn("Queue: ready=0, integrated=1, running=0, failed=0", text)
+        self.assertIn("Queue: ready=0, integrated=1, reviewing=0, running=0, failed=0", text)
         self.assertIn(f"- implementation #42 succeeded: {child_manifest_path}", text)
         self.assertIn("Rollup artifacts:", text)
         self.assertIn(str(run_dir / ralph.OPERATOR_ROLLUP_JSON_NAME), text)

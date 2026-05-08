@@ -395,19 +395,28 @@ integration** commits, **Promotion** commits, QA surfaces,
 **Post-promotion review** follow-ups, final queue state, and stop or failure
 reasons. Both rollups record the underlying child `.ralph/runs/.../ralph-run.json`
 paths without tailing child Codex JSONL or rich command logs.
+When open `agent-reviewing` issues remain and no unblocked ready work can
+proceed, the Operator run also writes `exploratory-acceptance-review.md` and
+`exploratory-acceptance-review.json` under the same run directory.
 
 The Operator run checks the open GitHub Issue queue for these runtime states:
 
 - `ready-for-agent`
 - `agent-integrated`
+- `agent-reviewing`
 - `agent-running`
 - `agent-failed`
 
 It stops cleanly only when none of those open issues remain. It stops with
-recovery guidance when `agent-running` or `agent-failed` issues remain, when
-ready issues remain but none are unblocked, when an issue or **Promotion** child
-manifest fails, or when `--max-cycles` is reached. The default cycle guard is
-10; use `--max-cycles 0` only for explicit unlimited Operator runs.
+`needs_review` when open `agent-reviewing` issues require **Exploratory
+acceptance review** before blocked ready work can proceed. That checkpoint is
+`exploratory_acceptance_review_required`; it is non-mutating and does not push,
+comment, edit labels, close issues, or update **Integration targets**. It still
+stops with failed recovery guidance when `agent-running` or `agent-failed`
+issues remain, when ready issues are blocked by non-review work, when an issue
+or **Promotion** child manifest fails, or when `--max-cycles` is reached. The
+default cycle guard is 10; use `--max-cycles 0` only for explicit unlimited
+Operator runs.
 
 Checkpoints are recorded for:
 
@@ -415,6 +424,7 @@ Checkpoints are recorded for:
 - before **Promotion**
 - **Promotion** success or failure
 - **Post-promotion review** follow-up creation
+- **Exploratory acceptance review** required
 - queue clean
 - stopped-by-guard
 
@@ -438,7 +448,9 @@ Status reports the current state, last checkpoint, current issue or
 recommended next action. Read `operator-run-rollup.md` first for completed or
 stopped runs. Open the child `ralph-run.json` or command logs only when the
 status guidance or rollup points to a failed issue, failed **Promotion**, or
-manual recovery condition.
+manual recovery condition. If status reports `needs_review`, read
+`exploratory-acceptance-review.md`, then run the `$ralph-loop` Exploratory
+acceptance review flow before rerunning drain or **Promotion**.
 
 ## AFK run monitoring
 
@@ -702,6 +714,18 @@ next action. Rejected review must not add `agent-integrated`. ADR
 [0005](../adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md)
 records why **Exploratory branches** stay outside automatic **Promotion** until
 human acceptance evidence reaches `dev`.
+
+Checkpointed Operator runs make open `agent-reviewing` issues first-class. If
+no unblocked ready issue can proceed and ready work is waiting on
+`agent-reviewing` review, Ralph stops with terminal status `needs_review` and
+checkpoint `exploratory_acceptance_review_required`. The generated
+**Exploratory acceptance review** artifacts list each published **Exploratory
+branch**, issue number, title, handoff commit, changed files, recorded QA
+evidence, detectable missing **Test lane** evidence, mergeability against
+`origin/dev` or the configured Gitflow source branch, and downstream
+`ready-for-agent` issues blocked by the review decision. The artifact is
+non-mutating: it reads issue and git state only and does not push, comment,
+change labels, close issues, or update **Integration targets**.
 
 ```mermaid
 sequenceDiagram
