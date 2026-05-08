@@ -54,8 +54,16 @@ SOURCE_TABLES = [
     "silver.vicgas.silver_int310_v1_price_and_withdrawals_rpt_1",
     "silver.vicgas.silver_int310_v4_price_and_withdrawals_1",
     "silver.vicgas.silver_int235_v4_sched_system_total_1",
+    "silver.sttm.silver_int651_v1_ex_ante_market_price_rpt_1",
+    "silver.sttm.silver_int654_v1_provisional_market_price_rpt_1",
+    "silver.sttm.silver_int657_v2_ex_post_market_data_rpt_1",
+    "silver.sttm.silver_int672_v1_cumulative_price_rpt_1",
+    "silver.sttm.silver_int676_v1_rolling_average_price_rpt_1",
+    "silver.sttm.silver_int677_v1_contingency_gas_price_rpt_1",
+    "silver.sttm.silver_int690_v1_deviation_price_data_rpt_1",
 ]
 SOURCE_SYSTEM = "VICGAS"
+STTM_SOURCE_SYSTEM = "STTM"
 
 INT037B_KEY = AssetKey(["silver", "vicgas", "silver_int037b_v4_indicative_mkt_price_1"])
 INT037C_KEY = AssetKey(["silver", "vicgas", "silver_int037c_v4_indicative_price_1"])
@@ -76,6 +84,19 @@ INT310_V4_KEY = AssetKey(
     ["silver", "vicgas", "silver_int310_v4_price_and_withdrawals_1"]
 )
 INT235_KEY = AssetKey(["silver", "vicgas", "silver_int235_v4_sched_system_total_1"])
+INT651_KEY = AssetKey(["silver", "sttm", "silver_int651_v1_ex_ante_market_price_rpt_1"])
+INT654_KEY = AssetKey(
+    ["silver", "sttm", "silver_int654_v1_provisional_market_price_rpt_1"]
+)
+INT657_KEY = AssetKey(["silver", "sttm", "silver_int657_v2_ex_post_market_data_rpt_1"])
+INT672_KEY = AssetKey(["silver", "sttm", "silver_int672_v1_cumulative_price_rpt_1"])
+INT676_KEY = AssetKey(
+    ["silver", "sttm", "silver_int676_v1_rolling_average_price_rpt_1"]
+)
+INT677_KEY = AssetKey(
+    ["silver", "sttm", "silver_int677_v1_contingency_gas_price_rpt_1"]
+)
+INT690_KEY = AssetKey(["silver", "sttm", "silver_int690_v1_deviation_price_data_rpt_1"])
 
 _SOURCE_KEY_DEPS = [
     TableColumnDep(asset_key=INT037B_KEY, column_name="surrogate_key"),
@@ -87,6 +108,13 @@ _SOURCE_KEY_DEPS = [
     TableColumnDep(asset_key=INT310_V1_KEY, column_name="surrogate_key"),
     TableColumnDep(asset_key=INT310_V4_KEY, column_name="surrogate_key"),
     TableColumnDep(asset_key=INT235_KEY, column_name="surrogate_key"),
+    TableColumnDep(asset_key=INT651_KEY, column_name="surrogate_key"),
+    TableColumnDep(asset_key=INT654_KEY, column_name="surrogate_key"),
+    TableColumnDep(asset_key=INT657_KEY, column_name="surrogate_key"),
+    TableColumnDep(asset_key=INT672_KEY, column_name="surrogate_key"),
+    TableColumnDep(asset_key=INT676_KEY, column_name="surrogate_key"),
+    TableColumnDep(asset_key=INT677_KEY, column_name="surrogate_key"),
+    TableColumnDep(asset_key=INT690_KEY, column_name="surrogate_key"),
 ]
 
 COLUMN_LINEAGE = TableColumnLineage(
@@ -103,6 +131,13 @@ COLUMN_LINEAGE = TableColumnLineage(
             TableColumnDep(asset_key=INT310_V1_KEY, column_name="gas_date"),
             TableColumnDep(asset_key=INT310_V4_KEY, column_name="gas_date"),
             TableColumnDep(asset_key=INT235_KEY, column_name="gas_date"),
+            TableColumnDep(asset_key=INT651_KEY, column_name="gas_date"),
+            TableColumnDep(asset_key=INT654_KEY, column_name="gas_date"),
+            TableColumnDep(asset_key=INT657_KEY, column_name="gas_date"),
+            TableColumnDep(asset_key=INT672_KEY, column_name="gas_date"),
+            TableColumnDep(asset_key=INT676_KEY, column_name="gas_date"),
+            TableColumnDep(asset_key=INT677_KEY, column_name="gas_date"),
+            TableColumnDep(asset_key=INT690_KEY, column_name="gas_date"),
         ],
         "price_value_gst_ex": [
             TableColumnDep(asset_key=INT037B_KEY, column_name="price_value_gst_ex"),
@@ -113,6 +148,41 @@ COLUMN_LINEAGE = TableColumnLineage(
             TableColumnDep(asset_key=INT310_V1_KEY, column_name="price_value"),
             TableColumnDep(asset_key=INT310_V4_KEY, column_name="price_value"),
             TableColumnDep(asset_key=INT235_KEY, column_name="value"),
+            TableColumnDep(asset_key=INT651_KEY, column_name="ex_ante_market_price"),
+            TableColumnDep(asset_key=INT651_KEY, column_name="schedule_price"),
+            TableColumnDep(asset_key=INT654_KEY, column_name="provisional_price"),
+            TableColumnDep(asset_key=INT657_KEY, column_name="ex_post_imbalance_price"),
+            TableColumnDep(
+                asset_key=INT657_KEY, column_name="schedule_imbalance_price"
+            ),
+            TableColumnDep(
+                asset_key=INT677_KEY, column_name="high_contingency_gas_price"
+            ),
+            TableColumnDep(
+                asset_key=INT677_KEY, column_name="low_contingency_gas_price"
+            ),
+            TableColumnDep(
+                asset_key=INT677_KEY, column_name="schedule_high_contingency_gas_price"
+            ),
+            TableColumnDep(
+                asset_key=INT677_KEY, column_name="schedule_low_contingency_gas_price"
+            ),
+            TableColumnDep(
+                asset_key=INT690_KEY, column_name="positive_deviation_price"
+            ),
+            TableColumnDep(
+                asset_key=INT690_KEY, column_name="negative_deviation_price"
+            ),
+            TableColumnDep(asset_key=INT690_KEY, column_name="ex_ante_market_price"),
+            TableColumnDep(asset_key=INT690_KEY, column_name="ex_post_imbalance_price"),
+            TableColumnDep(
+                asset_key=INT690_KEY, column_name="low_contingency_gas_price"
+            ),
+            TableColumnDep(
+                asset_key=INT690_KEY, column_name="high_contingency_gas_price"
+            ),
+            TableColumnDep(asset_key=INT690_KEY, column_name="mos_increase_cost"),
+            TableColumnDep(asset_key=INT690_KEY, column_name="mos_decrease_cost"),
         ],
         "weighted_average_price_gst_ex": [
             TableColumnDep(
@@ -121,9 +191,19 @@ COLUMN_LINEAGE = TableColumnLineage(
             TableColumnDep(
                 asset_key=INT042_KEY, column_name="imb_dev_wa_dly_price_gst_ex"
             ),
+            TableColumnDep(asset_key=INT676_KEY, column_name="rolling_average"),
         ],
         "cumulative_price": [
-            TableColumnDep(asset_key=INT199_KEY, column_name="cumulative_price")
+            TableColumnDep(asset_key=INT199_KEY, column_name="cumulative_price"),
+            TableColumnDep(asset_key=INT672_KEY, column_name="cumulative_price"),
+            TableColumnDep(
+                asset_key=INT672_KEY, column_name="cumulative_price_threshold"
+            ),
+        ],
+        "administered_price": [
+            TableColumnDep(asset_key=INT310_V1_KEY, column_name="administered_price"),
+            TableColumnDep(asset_key=INT310_V4_KEY, column_name="administered_price"),
+            TableColumnDep(asset_key=INT651_KEY, column_name="administered_price_cap"),
         ],
     }
 )
@@ -184,10 +264,13 @@ def _parse_datetime(column: str) -> pl.Expr:
 
 
 def _base_columns(
-    source_table: str, gas_date_column: str, last_updated_column: str
+    source_table: str,
+    gas_date_column: str,
+    last_updated_column: str,
+    source_system: str = SOURCE_SYSTEM,
 ) -> list[pl.Expr]:
     return [
-        pl.lit(SOURCE_SYSTEM).alias("source_system"),
+        pl.lit(source_system).alias("source_system"),
         pl.lit([source_table]).cast(pl.List(pl.String)).alias("source_tables"),
         pl.lit(source_table).alias("source_table"),
         _parse_datetime(gas_date_column).dt.date().alias("gas_date"),
@@ -197,6 +280,17 @@ def _base_columns(
         pl.col("source_file").cast(pl.String).alias("source_file"),
         pl.col("ingested_timestamp").alias("ingested_timestamp"),
     ]
+
+
+def _sttm_base(
+    source_table: str, updated_column: str = "report_datetime"
+) -> list[pl.Expr]:
+    return _base_columns(
+        source_table,
+        "gas_date",
+        updated_column,
+        source_system=STTM_SOURCE_SYSTEM,
+    )
 
 
 def _indicative_price_rows(
@@ -214,6 +308,198 @@ def _indicative_price_rows(
         weighted_average_price_gst_ex=pl.lit(None).cast(pl.Float64),
         cumulative_price=pl.lit(None).cast(pl.Float64),
         administered_price=pl.lit(None).cast(pl.Float64),
+    )
+
+
+def _sttm_price_rows(
+    df: LazyFrame,
+    source_table: str,
+    price_columns: dict[str, str],
+    *,
+    updated_column: str = "report_datetime",
+    schedule_type: pl.Expr | None = None,
+    transmission_id: pl.Expr | None = None,
+    transmission_doc_id: pl.Expr | None = None,
+    source_location_id: pl.Expr | None = None,
+) -> LazyFrame:
+    price_column_names = list(price_columns)
+    return (
+        df.select(
+            *_sttm_base(source_table, updated_column),
+            schedule_type_id=(
+                schedule_type
+                if schedule_type is not None
+                else pl.lit(None).cast(pl.String)
+            ),
+            schedule_interval=pl.lit(None).cast(pl.String),
+            transmission_id=(
+                transmission_id
+                if transmission_id is not None
+                else pl.lit(None).cast(pl.String)
+            ),
+            transmission_doc_id=(
+                transmission_doc_id
+                if transmission_doc_id is not None
+                else pl.lit(None).cast(pl.String)
+            ),
+            source_location_id=(
+                source_location_id
+                if source_location_id is not None
+                else pl.col("hub_identifier").cast(pl.String)
+            ),
+            weighted_average_price_gst_ex=pl.lit(None).cast(pl.Float64),
+            cumulative_price=pl.lit(None).cast(pl.Float64),
+            administered_price=pl.lit(None).cast(pl.Float64),
+            *[pl.col(column).cast(pl.Float64) for column in price_column_names],
+        )
+        .unpivot(
+            index=[
+                "source_system",
+                "source_tables",
+                "source_table",
+                "gas_date",
+                "source_last_updated",
+                "source_last_updated_timestamp",
+                "source_surrogate_key",
+                "source_file",
+                "ingested_timestamp",
+                "schedule_type_id",
+                "schedule_interval",
+                "transmission_id",
+                "transmission_doc_id",
+                "source_location_id",
+                "weighted_average_price_gst_ex",
+                "cumulative_price",
+                "administered_price",
+            ],
+            on=price_column_names,
+            variable_name="price_type",
+            value_name="price_value_gst_ex",
+        )
+        .with_columns(price_type=pl.col("price_type").replace(price_columns))
+        .filter(pl.col("price_value_gst_ex").is_not_null())
+    )
+
+
+def _sttm_cumulative_price_rows(int672: LazyFrame) -> LazyFrame:
+    return (
+        int672.select(
+            *_sttm_base(SOURCE_TABLES[12]),
+            schedule_type_id=pl.lit(None).cast(pl.String),
+            schedule_interval=pl.lit(None).cast(pl.String),
+            transmission_id=pl.lit(None).cast(pl.String),
+            transmission_doc_id=pl.lit(None).cast(pl.String),
+            source_location_id=pl.col("hub_identifier").cast(pl.String),
+            price_value_gst_ex=pl.lit(None).cast(pl.Float64),
+            weighted_average_price_gst_ex=pl.lit(None).cast(pl.Float64),
+            administered_price=pl.lit(None).cast(pl.Float64),
+            source_cumulative_price=pl.col("cumulative_price").cast(pl.Float64),
+            source_cumulative_price_threshold=pl.col("cumulative_price_threshold").cast(
+                pl.Float64
+            ),
+        )
+        .unpivot(
+            index=[
+                "source_system",
+                "source_tables",
+                "source_table",
+                "gas_date",
+                "source_last_updated",
+                "source_last_updated_timestamp",
+                "source_surrogate_key",
+                "source_file",
+                "ingested_timestamp",
+                "schedule_type_id",
+                "schedule_interval",
+                "transmission_id",
+                "transmission_doc_id",
+                "source_location_id",
+                "price_value_gst_ex",
+                "weighted_average_price_gst_ex",
+                "administered_price",
+            ],
+            on=["source_cumulative_price", "source_cumulative_price_threshold"],
+            variable_name="price_type",
+            value_name="cumulative_price",
+        )
+        .with_columns(
+            price_type=pl.col("price_type").replace(
+                {
+                    "source_cumulative_price": "sttm_cumulative_price",
+                    "source_cumulative_price_threshold": (
+                        "sttm_cumulative_price_threshold"
+                    ),
+                }
+            )
+        )
+        .filter(pl.col("cumulative_price").is_not_null())
+    )
+
+
+def _sttm_rolling_average_price_rows(int676: LazyFrame) -> LazyFrame:
+    return int676.select(
+        *_sttm_base(SOURCE_TABLES[13]),
+        price_type=pl.lit("sttm_rolling_average_price"),
+        schedule_type_id=pl.lit(None).cast(pl.String),
+        schedule_interval=pl.lit(None).cast(pl.String),
+        transmission_id=pl.lit(None).cast(pl.String),
+        transmission_doc_id=pl.lit(None).cast(pl.String),
+        source_location_id=pl.col("hub_identifier").cast(pl.String),
+        price_value_gst_ex=pl.lit(None).cast(pl.Float64),
+        weighted_average_price_gst_ex=pl.col("rolling_average").cast(pl.Float64),
+        cumulative_price=pl.lit(None).cast(pl.Float64),
+        administered_price=pl.lit(None).cast(pl.Float64),
+    )
+
+
+def _sttm_ex_ante_market_price_rows(int651: LazyFrame) -> LazyFrame:
+    return (
+        int651.select(
+            *_sttm_base(SOURCE_TABLES[9]),
+            schedule_type_id=pl.lit("ex_ante"),
+            schedule_interval=pl.lit(None).cast(pl.String),
+            transmission_id=pl.col("schedule_identifier").cast(pl.String),
+            transmission_doc_id=pl.lit(None).cast(pl.String),
+            source_location_id=pl.col("hub_identifier").cast(pl.String),
+            weighted_average_price_gst_ex=pl.lit(None).cast(pl.Float64),
+            cumulative_price=pl.lit(None).cast(pl.Float64),
+            administered_price=pl.col("administered_price_cap").cast(pl.Float64),
+            ex_ante_market_price=pl.col("ex_ante_market_price").cast(pl.Float64),
+            schedule_price=pl.col("schedule_price").cast(pl.Float64),
+        )
+        .unpivot(
+            index=[
+                "source_system",
+                "source_tables",
+                "source_table",
+                "gas_date",
+                "source_last_updated",
+                "source_last_updated_timestamp",
+                "source_surrogate_key",
+                "source_file",
+                "ingested_timestamp",
+                "schedule_type_id",
+                "schedule_interval",
+                "transmission_id",
+                "transmission_doc_id",
+                "source_location_id",
+                "weighted_average_price_gst_ex",
+                "cumulative_price",
+                "administered_price",
+            ],
+            on=["ex_ante_market_price", "schedule_price"],
+            variable_name="price_type",
+            value_name="price_value_gst_ex",
+        )
+        .with_columns(
+            price_type=pl.col("price_type").replace(
+                {
+                    "ex_ante_market_price": "sttm_ex_ante_market_price",
+                    "schedule_price": "sttm_ex_ante_schedule_price",
+                }
+            )
+        )
+        .filter(pl.col("price_value_gst_ex").is_not_null())
     )
 
 
@@ -245,6 +531,13 @@ def _select_market_prices(
     int310_v1: LazyFrame,
     int310_v4: LazyFrame,
     int235: LazyFrame,
+    int651: LazyFrame,
+    int654: LazyFrame,
+    int657: LazyFrame,
+    int672: LazyFrame,
+    int676: LazyFrame,
+    int677: LazyFrame,
+    int690: LazyFrame,
 ) -> LazyFrame:
     rows = [
         _indicative_price_rows(int037b, SOURCE_TABLES[0], "indicative_market"),
@@ -330,6 +623,62 @@ def _select_market_prices(
             cumulative_price=pl.lit(None).cast(pl.Float64),
             administered_price=pl.lit(None).cast(pl.Float64),
         ),
+        _sttm_ex_ante_market_price_rows(int651),
+        _sttm_price_rows(
+            int654,
+            SOURCE_TABLES[10],
+            {"provisional_price": "sttm_provisional_price"},
+            schedule_type=pl.col("provisional_schedule_type").cast(pl.String),
+            transmission_id=pl.col("schedule_identifier").cast(pl.String),
+        ),
+        _sttm_price_rows(
+            int657,
+            SOURCE_TABLES[11],
+            {
+                "ex_post_imbalance_price": "sttm_ex_post_imbalance_price",
+                "schedule_imbalance_price": "sttm_schedule_imbalance_price",
+            },
+            schedule_type=pl.col("schedule_type_code").cast(pl.String),
+            transmission_id=pl.col("schedule_identifier").cast(pl.String),
+        ),
+        _sttm_cumulative_price_rows(int672),
+        _sttm_rolling_average_price_rows(int676),
+        _sttm_price_rows(
+            int677,
+            SOURCE_TABLES[14],
+            {
+                "high_contingency_gas_price": "sttm_high_contingency_gas_price",
+                "low_contingency_gas_price": "sttm_low_contingency_gas_price",
+                "schedule_high_contingency_gas_price": (
+                    "sttm_schedule_high_contingency_gas_price"
+                ),
+                "schedule_low_contingency_gas_price": (
+                    "sttm_schedule_low_contingency_gas_price"
+                ),
+            },
+            transmission_id=pl.col("contingency_gas_called_identifier").cast(pl.String),
+        ),
+        _sttm_price_rows(
+            int690,
+            SOURCE_TABLES[15],
+            {
+                "positive_deviation_price": "sttm_positive_deviation_price",
+                "negative_deviation_price": "sttm_negative_deviation_price",
+                "ex_ante_market_price": "sttm_deviation_input_ex_ante_market_price",
+                "ex_post_imbalance_price": (
+                    "sttm_deviation_input_ex_post_imbalance_price"
+                ),
+                "low_contingency_gas_price": (
+                    "sttm_deviation_input_low_contingency_gas_price"
+                ),
+                "high_contingency_gas_price": (
+                    "sttm_deviation_input_high_contingency_gas_price"
+                ),
+                "mos_increase_cost": "sttm_deviation_input_mos_increase_cost",
+                "mos_decrease_cost": "sttm_deviation_input_mos_decrease_cost",
+            },
+            updated_column="last_update_datetime",
+        ),
     ]
     return (
         pl.concat(rows, how="diagonal_relaxed")
@@ -362,6 +711,13 @@ def _materialize_result(value: LazyFrame) -> MaterializeResult[LazyFrame]:
         "int310_v1": AssetIn(key=INT310_V1_KEY),
         "int310_v4": AssetIn(key=INT310_V4_KEY),
         "int235": AssetIn(key=INT235_KEY),
+        "int651": AssetIn(key=INT651_KEY),
+        "int654": AssetIn(key=INT654_KEY),
+        "int657": AssetIn(key=INT657_KEY),
+        "int672": AssetIn(key=INT672_KEY),
+        "int676": AssetIn(key=INT676_KEY),
+        "int677": AssetIn(key=INT677_KEY),
+        "int690": AssetIn(key=INT690_KEY),
     },
     io_manager_key="aemo_parquet_overwrite_io_manager",
     metadata={
@@ -393,6 +749,13 @@ def silver_gas_fact_market_price(
     int310_v1: LazyFrame,
     int310_v4: LazyFrame,
     int235: LazyFrame,
+    int651: LazyFrame,
+    int654: LazyFrame,
+    int657: LazyFrame,
+    int672: LazyFrame,
+    int676: LazyFrame,
+    int677: LazyFrame,
+    int690: LazyFrame,
 ) -> MaterializeResult[LazyFrame]:
     """Materialize the silver gas market price fact asset."""
     return _materialize_result(
@@ -406,6 +769,13 @@ def silver_gas_fact_market_price(
             int310_v1,
             int310_v4,
             int235,
+            int651,
+            int654,
+            int657,
+            int672,
+            int676,
+            int677,
+            int690,
         )
     )
 

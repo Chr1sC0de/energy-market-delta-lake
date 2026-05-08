@@ -17,12 +17,14 @@ Ralph provides **Sandboxed issue access** to spawned Codex subprocesses by
 default. The sandbox receives a `GH_TOKEN` sourced from the parent environment
 or local `gh auth`, and a wrapper limits `gh` to phase-specific issue metadata
 commands. Implementation, triage, and **Ready issue refresh** passes may
-receive phase-scoped issue access; the current **Ready issue refresh** analysis
-subprocess and **Post-promotion review** receive read-only issue commands. After
-successful **Promotion**, Ralph may create structured actionable follow-up
-issues from the review artifact through its validated create-only helper; the
-review agent still cannot directly create, comment, edit, close, or reopen
-arbitrary GitHub Issues. Git push auth is separate;
+receive phase-scoped issue access; **Full-access implementation pass** runs for
+`.agents/` context-anchor issues keep read-only issue commands. The current
+**Ready issue refresh** analysis subprocess and **Post-promotion review** also
+receive read-only issue commands. After successful **Promotion**, Ralph may
+create structured actionable follow-up issues from the review artifact through
+its validated create-only helper; the review agent still cannot directly create,
+comment, edit, close, or reopen arbitrary GitHub Issues. Git push auth is
+separate;
 **Local integration**, Exploratory handoff, **Integration target** pushes, and
 **Promotion** stay outside the sandbox.
 
@@ -48,6 +50,13 @@ but existing `ready-for-agent` issues do not need that section to stay ready.
 Refreshed issues that remain `ready-for-agent` must still contain the three
 required sections above, plus `## Review focus` for `delivery-exploratory`.
 
+Ready issues whose `## Context anchors` include `.agents/` paths require an
+operator-approved **Full-access implementation pass**. Without
+`--allow-full-access-implementation`, Ralph stops before claim and leaves the
+issue unchanged. With the flag, the implementation subprocess gets full
+filesystem access, read-only GitHub Issue commands, and a pre-QA diff guard that
+fails the issue if changed files leave the listed context anchors.
+
 Ralph implementation prompts treat the issue body as the primary contract. When
 recent Ready issue refresh comments exist, Ralph appends only the latest five
 comments with the Ready issue refresh audit prefix in a separate prompt section
@@ -65,12 +74,26 @@ Runtime labels such as `agent-running`, `agent-integrated`, `agent-merged`,
 triage reconsideration. In particular, `agent-reviewing` means
 **Exploratory delivery** has already published a durable **Exploratory branch**
 and the issue is waiting for human review. Accepted review moves the issue from
-`agent-reviewing` to `agent-integrated` after the work is merged to `dev` and
-acceptance evidence is commented. Rejected review removes `agent-reviewing`,
-adds `ready-for-human`, comments the review result, and leaves the issue open.
+`agent-reviewing` to `agent-integrated` after an explicit decision artifact is
+applied: Ralph validates the recorded handoff branch and commit, merges accepted
+branches into a temporary `dev` acceptance worktree, runs selected merged-target
+QA, pushes `dev`, then comments acceptance evidence and changes labels. If an
+accepted branch merge conflicts, Ralph pauses with `acceptance_conflict`, leaves
+the acceptance worktree available, writes `decisions.json`, `conflicts.json`,
+and `codex-resolution-prompt.md`, and does not push or mutate GitHub Issues
+until `--continue-exploratory-acceptance <run_dir>` validates a clean resolved
+worktree and reruns merged-target QA. Held review keeps `agent-reviewing` and
+comments the reason. Rejected review removes `agent-reviewing`, adds
+`ready-for-human`, comments the review result, and leaves the issue open.
 Manual Gitflow recovery must add the parseable recovery evidence documented in
 [ralph-loop.md](ralph-loop.md) before leaving or applying `agent-integrated`, so
 later **Promotion** can verify the recovered `dev` commit before closure.
+Checkpointed Operator runs include open `agent-reviewing` issues separately in
+their queue snapshot. When no unblocked ready issue can proceed and
+`agent-reviewing` issues remain, Ralph stops as `needs_review` with checkpoint
+`exploratory_acceptance_review_required` and writes a non-mutating
+**Exploratory acceptance review** artifact instead of marking the queue as a
+generic failure.
 
 After a successful drain-mode **Local integration**, Exploratory handoff, or
 successful **Promotion** verified issue closure, Ralph computes **Ready issue
@@ -103,7 +126,8 @@ issue claim; post-Promotion refresh failures are warning-only after successful
 Use [ralph-loop.md](ralph-loop.md) for Ralph internals, including
 **Delivery mode**, **Local integration**, **Integration target**, **Promotion**,
 **Ready issue refresh**, checkpointed Operator runs, **Post-promotion review**,
-run manifests, QA selection, and recovery behavior.
+**Exploratory acceptance review**, run manifests, QA selection, and recovery
+behavior.
 Use [OPERATOR.md](../../OPERATOR.md) for the human **Operator workflow**.
 Use `$ralph-curate` when existing open issues need to be compared with the
 current branch before changing bodies, labels, blockers, or closure state.
@@ -128,6 +152,7 @@ for the decision that keeps **Exploratory branches** outside automatic
   - `docs/agents/ralph-loop.md`
   - `docs/agents/triage-labels.md`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
+  - `docs/adr/0007-ralph-full-access-implementation-pass.md`
   - `scripts/ralph.py`
 - `sync.scope`: `operations`
 - `sync.qa`:

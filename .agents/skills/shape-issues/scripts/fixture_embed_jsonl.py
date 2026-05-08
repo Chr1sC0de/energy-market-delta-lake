@@ -13,6 +13,7 @@ from typing import Any
 
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_./-]+")
 DIMENSIONS = 64
+METADATA_PREFIX = "shape-issues-provider-metadata:"
 
 
 def tokens(text: str) -> list[str]:
@@ -39,6 +40,20 @@ def record_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> None:
+    sys.stderr.write(
+        f"{METADATA_PREFIX} "
+        + json.dumps(
+            {
+                "batch_size": 1,
+                "model": "fixture-hash",
+                "requested_device": "fixture",
+                "runtime_device": "fixture",
+                "trust_remote_code": False,
+            },
+            sort_keys=True,
+        )
+        + "\n"
+    )
     for line in sys.stdin:
         if line.strip() == "":
             continue

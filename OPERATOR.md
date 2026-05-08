@@ -6,7 +6,8 @@ GitHub Issues, draining Ralph, reviewing `dev`, and running **Promotion**.
 Use repo canonical terms from [CONTEXT.md](CONTEXT.md), especially
 **Subproject**, **Test lane**, **Fast check**, **Commit check**, **Push check**,
 **Local integration**, **Delivery mode**, **Integration target**,
-**Sandboxed issue access**, **Ready issue refresh**, and **Promotion**.
+**Sandboxed issue access**, **Full-access implementation pass**,
+**Ready issue refresh**, **Exploratory acceptance review**, and **Promotion**.
 
 ## Canonical Path
 
@@ -57,13 +58,24 @@ For unattended queue cleanup after `dev` review, prefer the checkpointed
 Operator run path. It drains one ready issue boundary at a time, runs
 **Promotion** when `agent-integrated` issues remain, lets successful
 **Post-promotion review** create validated follow-up GitHub Issues, and repeats
-until no open `ready-for-agent`, `agent-integrated`, `agent-running`, or
-`agent-failed` issues remain.
+until no open `ready-for-agent`, `agent-integrated`, `agent-reviewing`,
+`agent-running`, or `agent-failed` issues remain. When no unblocked ready issue
+can proceed and open `agent-reviewing` issues remain, the Operator run stops as
+`needs_review` and writes an **Exploratory acceptance review** JSON and Markdown
+artifact under the Operator run directory instead of treating the queue as a
+generic failure.
 
 Codex should launch Operator runs detached, then stop polling child logs:
 
 ```bash
 python3 scripts/ralph.py --drain-promote-all --detach
+```
+
+For a queue that intentionally includes ready `.agents/` workflow issues, the
+operator must opt into the **Full-access implementation pass**:
+
+```bash
+python3 scripts/ralph.py --drain-promote-all --detach --allow-full-access-implementation
 ```
 
 Use the compact status command at issue boundaries:
@@ -100,8 +112,17 @@ git push --dry-run origin HEAD:main
 ```
 
 Use `$ralph-loop dry-run drain` when the root worktree is dirty or when you only
-want to inspect Ralph's next action. Use dirty-worktree operation only when the
-operator explicitly accepts that risk.
+want to inspect Ralph's next serial Gitflow or trunk candidate plus bounded
+Exploratory candidates. `--exploratory-concurrency` controls the Exploratory
+preview bound, defaults to `2`, and has a minimum of `1`. Targeted `--issue`
+dry runs still preview only that issue. Use dirty-worktree operation only when
+the operator explicitly accepts that risk.
+
+Ready issues that anchor `.agents/` files stop before claim unless the operator
+passes `--allow-full-access-implementation`. With that flag, Ralph runs only
+those implementation subprocesses as a **Full-access implementation pass**, keeps
+their GitHub Issue commands read-only, and hard-stops before QA if the resulting
+diff changes files outside the issue's `## Context anchors`.
 
 ## Review Dev
 
@@ -125,18 +146,62 @@ Use this checklist:
   Ralph's aggregate **Push check**.
 - If AEMO ETL files changed, expect the AEMO ETL **End-to-end test** gate during
   **Promotion**.
+- If Marimo runtime files changed, expect Marimo **Component test** and Marimo
+  **Commit check** evidence from `backend-services/marimo`. Docs-only Marimo
+  changes use the root doc **Commit check** evidence; mixed docs/runtime Marimo
+  changes should include both surfaces.
 - Confirm no open blocker or manual follow-up should stop the range from
   reaching `main`.
 
-For accepted Exploratory review, merge the durable **Exploratory branch** to
-`dev`, add an issue comment that starts with
-`Ralph exploratory acceptance completed.` and includes a `Commit: ...` line for
-the accepted `dev` commit SHA, remove `agent-reviewing`, and add
-`agent-integrated`. For rejected Exploratory review, leave the issue open,
-remove `agent-reviewing`, add `ready-for-human`, and comment the review result
-and next action. ADR
+For explicit Exploratory review decisions, create a decision JSON artifact and
+apply it through Ralph:
+
+```json
+{
+  "decisions": [
+    {"issue_number": 42, "decision": "accept", "reason": "Reviewed on dev."},
+    {"issue_number": 43, "decision": "hold", "reason": "Waiting on product."},
+    {"issue_number": 44, "decision": "reject", "reason": "Wrong workflow."}
+  ]
+}
+```
+
+```bash
+python3 scripts/ralph.py --apply-exploratory-acceptance-decisions path/to/decisions.json
+```
+
+Accepted decisions merge the durable **Exploratory branch** into a temporary
+acceptance worktree based on `origin/dev`, run selected merged-target QA from
+the resulting changed files, push `dev` only after QA passes, then comment
+`Ralph exploratory acceptance completed.`, remove `agent-reviewing`, and add
+`agent-integrated`. If an accepted branch merge conflicts, Ralph pauses with
+`acceptance_conflict`, leaves the acceptance worktree in place, and writes
+`decisions.json`, `conflicts.json`, and `codex-resolution-prompt.md` under the
+run directory without pushing or mutating GitHub Issues. Resolve only that
+acceptance worktree, preserve accepted issue intent, commit the resolution so
+the worktree is clean, then continue with:
+
+```bash
+python3 scripts/ralph.py --continue-exploratory-acceptance .ralph/runs/exploratory-acceptance-20260504T010203Z
+```
+
+The continue command validates the paused run artifacts, refuses stale,
+missing, mismatched, dirty, or still-conflicted state, reruns merged-target QA,
+pushes `dev`, and only then applies acceptance comments and labels. Held
+decisions keep `agent-reviewing` and comment the reason. Rejected decisions
+leave the issue open, remove `agent-reviewing`, add `ready-for-human`, and
+comment the review result and next action. ADR
 [0005](docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md)
 records why **Exploratory branches** stay outside automatic **Promotion**.
+
+If Operator status reports `needs_review` with checkpoint
+`exploratory_acceptance_review_required`, read
+`exploratory-acceptance-review.md` first. It lists each `agent-reviewing` issue,
+durable **Exploratory branch**, handoff commit, changed files, recorded QA
+evidence, detectable missing **Test lane** evidence, mergeability against
+`origin/dev`, and ready issues blocked by the review decision. Run the
+`$ralph-loop` Exploratory acceptance review flow, then accept or reject the
+listed issues before rerunning drain or **Promotion**.
 
 ## Promotion
 
@@ -183,6 +248,11 @@ the integrated commit. Inspect `ready_issue_refresh.mutation_results` in the run
 manifest, reconcile only the failed GitHub Issue metadata, then restart the
 drain once the queue is consistent.
 
+If a **Full-access implementation pass** reports `diff_out_of_scope`, inspect
+the child implementation worktree, keep only files named by the issue's
+`## Context anchors`, and rerun Ralph for that issue. Ralph does not run QA or
+**Local integration** for out-of-anchor full-access diffs.
+
 For a checkpointed Operator run, inspect status before opening child logs:
 
 ```bash
@@ -194,8 +264,11 @@ Completed or stopped runs write `operator-run-rollup.md` and
 first for the full drain-and-**Promotion** summary: succeeded and failed issues,
 manual recoveries, **Local integration** commits, **Promotion** commits, QA
 surfaces, **Post-promotion review** follow-ups, final queue state, and the stop
-or failure reason. Use the JSON rollup for tooling or status-oriented review
-without tailing child Codex JSONL or rich command logs.
+or failure reason. Runs that stop for **Exploratory acceptance review** also
+write `exploratory-acceptance-review.md` and
+`exploratory-acceptance-review.json` beside the rollup. Use the JSON rollup for
+tooling or status-oriented review without tailing child Codex JSONL or rich
+command logs.
 
 Follow the recommended next action. Issue failures point to the child
 implementation manifest; **Promotion** failures point to the child Promotion
@@ -221,6 +294,7 @@ Keep failed worktrees unless the maintainer asks for cleanup.
   - `docs/agents/issue-tracker.md`
   - `docs/agents/triage-labels.md`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
+  - `docs/adr/0007-ralph-full-access-implementation-pass.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

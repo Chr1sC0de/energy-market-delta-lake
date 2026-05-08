@@ -158,18 +158,22 @@ way:
   it instead of duplicating the full workflow.
 - #66: `OPERATOR.md` remains under documentation sync through this page's
   maintained-doc scope and its own sync metadata.
-- #59: docs-only AEMO ETL changes remain aligned with Ralph QA selection by
-  keeping docs-only AEMO ETL paths on the root doc **Commit check** surface.
+- #59 and #139: docs-only AEMO ETL and Marimo changes remain aligned with
+  Ralph QA selection by keeping docs-only paths on the root doc **Commit check**
+  surface. Mixed docs/runtime Marimo changes add Marimo **Component test** and
+  **Commit check** evidence from `backend-services/marimo`.
 - #57, #58, #61, #62, #88, #89, #91, #92, #94, #95, and #108: current Ralph
   behavior for **Delivery mode**, **Local integration**, Exploratory handoff,
   **Exploratory branch** review state, **Promotion**, accepted Exploratory
   evidence closure, manual Gitflow recovery Promotion closure evidence,
-  **Sandboxed issue access**, writable QA runtime paths, unverified
-  **Promotion** commit review context, **Post-promotion review**, and validated
-  follow-up creation remain owned by
+  **Sandboxed issue access**, **Full-access implementation pass**, writable QA
+  runtime paths, unverified **Promotion** commit review context,
+  **Post-promotion review**, and validated follow-up creation remain owned by
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md), with the
   **Exploratory branch** automatic-Promotion boundary recorded in ADR
-  [0005](../adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md).
+  [0005](../adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md)
+  and the `.agents/` full-access boundary recorded in ADR
+  [0007](../adr/0007-ralph-full-access-implementation-pass.md).
 - #68: [docs/agents/ralph-loop.md](../agents/ralph-loop.md) defines the
   **Ready issue refresh** contract, including the shared language, audit prefix,
   optional `## Current context`, stale issue handling, and completed closure
@@ -227,6 +231,16 @@ way:
   recoveries, **Local integration** commits, **Promotion** commits, QA
   surfaces, **Post-promotion review** follow-ups, final queue state, and stop
   or failure reasons without reading child Codex JSONL.
+- #136: Checkpointed Operator runs treat `agent-reviewing` as a first-class
+  queue state. When open **Exploratory branches** require human acceptance
+  review before the queue can proceed, Ralph stops with
+  `needs_review`, writes `exploratory-acceptance-review.md` and
+  `exploratory-acceptance-review.json`, and keeps GitHub Issues and
+  **Integration targets** unchanged. The contract lives in
+  [OPERATOR.md](../../OPERATOR.md) and
+  [docs/agents/ralph-loop.md](../agents/ralph-loop.md), with the
+  automatic-Promotion boundary in ADR
+  [0005](../adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md).
 
 ## Search commands
 
@@ -263,6 +277,7 @@ These commands support the intended flow:
   - `docs/agents/README.md`
   - `docs/agents/ralph-loop.md`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
+  - `docs/adr/0007-ralph-full-access-implementation-pass.md`
   - `tests/test_documentation_qa_ratchet.py`
   - `.pre-commit-config.yaml`
   - `backend-services/.pre-commit-config.yaml`

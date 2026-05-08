@@ -31,6 +31,9 @@ from aemo_etl.defs.gas_model import (
     silver_gas_fact_scheduled_quantity as scheduled_quantity,
 )
 from aemo_etl.defs.gas_model import silver_gas_fact_settlement_activity as settlement
+from aemo_etl.defs.gas_model import (
+    silver_gas_fact_sttm_contingency_gas_call as contingency_gas_call,
+)
 from aemo_etl.defs.gas_model import silver_gas_fact_system_notice as system_notice
 
 
@@ -47,11 +50,52 @@ def _row(**values: object) -> pl.LazyFrame:
 
 
 def _source(**values: object) -> pl.LazyFrame:
-    return _row(
-        **values,
-        surrogate_key=values.get("surrogate_key", "source-key"),
-        source_file=values.get("source_file", "s3://archive/source.csv"),
-        ingested_timestamp=values.get("ingested_timestamp", _ingested()),
+    source_values = dict(values)
+    source_values.setdefault("surrogate_key", "source-key")
+    source_values.setdefault("source_file", "s3://archive/source.csv")
+    source_values.setdefault("ingested_timestamp", _ingested())
+    return _row(**source_values)
+
+
+def _participants() -> pl.LazyFrame:
+    return pl.LazyFrame(
+        {
+            "surrogate_key": [
+                "participant-1",
+                "participant-2",
+                "participant-comp-1",
+                "participant-comp-2",
+            ],
+            "participant_identity_source": [
+                "company_id",
+                "company_id",
+                "company_id",
+                "company_id",
+            ],
+            "participant_identity_value": ["1", "2", "COMP-1", "COMP-2"],
+        }
+    )
+
+
+def _facilities() -> pl.LazyFrame:
+    return pl.LazyFrame(
+        {
+            "surrogate_key": ["facility-syd-fac-1"],
+            "source_system": ["STTM"],
+            "source_hub_id": ["SYD"],
+            "source_facility_id": ["FAC-1"],
+        }
+    )
+
+
+def _zones() -> pl.LazyFrame:
+    return pl.LazyFrame(
+        {
+            "surrogate_key": ["zone-syd"],
+            "source_system": ["STTM"],
+            "zone_type": ["sttm_hub"],
+            "source_zone_id": ["SYD"],
+        }
     )
 
 
@@ -167,13 +211,106 @@ def test_market_price_transform_and_required_check() -> None:
                 value=9.0,
                 current_date="01 Jan 2024 02:00:00",
             ),
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                schedule_identifier="EA-1",
+                ex_ante_market_price=10.0,
+                administered_price_period="N",
+                cap_applied=None,
+                administered_price_cap=400.0,
+                schedule_price=11.0,
+                approval_datetime="01 Jan 2024 01:00:00",
+                report_datetime="01 Jan 2024 02:00:00",
+            ),
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                schedule_identifier="P-1",
+                provisional_price=12.0,
+                provisional_schedule_type="D-2",
+                report_datetime="01 Jan 2024 02:00:00",
+            ),
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                schedule_identifier="XP-1",
+                imbalance_qty=1.0,
+                ex_post_imbalance_price=13.0,
+                schedule_type_code="XPOST",
+                imbalance_type="S",
+                schedule_imbalance_price=14.0,
+                approval_datetime="01 Jan 2024 01:00:00",
+                report_datetime="01 Jan 2024 02:00:00",
+            ),
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                cumulative_price=15.0,
+                cumulative_price_threshold=16.0,
+                report_datetime="01 Jan 2024 02:00:00",
+            ),
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                rolling_average=17.0,
+                report_datetime="01 Jan 2024 02:00:00",
+            ),
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                contingency_gas_called_identifier="CG-1",
+                high_contingency_gas_price=18.0,
+                low_contingency_gas_price=19.0,
+                schedule_high_contingency_gas_price=20.0,
+                schedule_low_contingency_gas_price=21.0,
+                approval_datetime="01 Jan 2024 01:00:00",
+                report_datetime="01 Jan 2024 02:00:00",
+            ),
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                positive_deviation_price=22.0,
+                negative_deviation_price=23.0,
+                ex_ante_market_price=24.0,
+                ex_post_imbalance_price=25.0,
+                low_contingency_gas_price=26.0,
+                high_contingency_gas_price=27.0,
+                mos_increase_cost=28.0,
+                mos_decrease_cost=29.0,
+                last_update_datetime="01 Jan 2024 01:30:00",
+                report_datetime="01 Jan 2024 02:00:00",
+            ),
         ),
     )
     collected = _collect(result)
+    sttm_rows = collected.filter(pl.col("source_system") == "STTM")
 
-    assert collected.height == 9
+    assert collected.height == 29
+    assert sttm_rows.height == 20
+    assert sttm_rows["surrogate_key"].n_unique() == sttm_rows.height
+    assert set(sttm_rows["source_table"]) == set(market_price.SOURCE_TABLES[9:])
+    assert {
+        "sttm_ex_ante_market_price",
+        "sttm_provisional_price",
+        "sttm_ex_post_imbalance_price",
+        "sttm_cumulative_price",
+        "sttm_rolling_average_price",
+        "sttm_high_contingency_gas_price",
+        "sttm_positive_deviation_price",
+    }.issubset(set(sttm_rows["price_type"]))
     assert _check_passed(
         market_price.silver_gas_fact_market_price_required_fields, result.value
+    )
+    assert _check_passed(
+        market_price.silver_gas_fact_market_price_duplicate_row_check, result.value
     )
 
 
@@ -197,7 +334,21 @@ def test_scheduling_transforms() -> None:
                 demand_type_id=0,
                 objective_function_value=1.5,
                 current_date="01 Jan 2024 07:00:00",
-            )
+            ),
+            _source(
+                schedule_identifier="STTM-SCHED-1",
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                schedule_type="ex ante",
+                schedule_day="D-1",
+                creation_datetime="01 Jan 2024 04:00:00",
+                bid_offer_cut_off_datetime="01 Jan 2024 05:00:00",
+                facility_hub_capacity_cut_off_datetime="01 Jan 2024 05:30:00",
+                pipeline_allocation_cut_off_datetime="01 Jan 2024 05:45:00",
+                approval_datetime="01 Jan 2024 06:30:00",
+                report_datetime="01 Jan 2024 07:00:00",
+            ),
         ),
     )
     quantity_result = cast(
@@ -236,6 +387,38 @@ def test_scheduling_transforms() -> None:
                 energy_gj=14.0,
                 volume_kscm=15.0,
                 current_date="01 Jan 2024 07:00:00",
+            ),
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                schedule_identifier="EA-1",
+                facility_identifier="FAC-1",
+                facility_name="Facility",
+                scheduled_qty=16.0,
+                firm_gas_scheduled_qty=17.0,
+                as_available_scheduled_qty=18.0,
+                flow_direction="T",
+                price_taker_bid_qty=19.0,
+                price_taker_bid_not_sched_qty=20.0,
+                approval_datetime="01 Jan 2024 06:30:00",
+                report_datetime="01 Jan 2024 07:00:00",
+            ),
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                schedule_identifier="P-1",
+                facility_identifier="FAC-1",
+                facility_name="Facility",
+                provisional_qty=21.0,
+                provisional_firm_gas_scheduled=22.0,
+                provisional_as_available_scheduled=23.0,
+                flow_direction="T",
+                price_taker_bid_provisional_not_sched_qty=24.0,
+                price_taker_bid_provisional_qty=25.0,
+                provisional_schedule_type="D-2",
+                report_datetime="01 Jan 2024 07:00:00",
             ),
         ),
     )
@@ -281,21 +464,178 @@ def test_scheduling_transforms() -> None:
                 inject_withdraw="W",
                 current_date="01 Jan 2024 07:00:00",
             ),
+            _source(
+                gas_date="01 Jan 2024",
+                company_identifier="COMP-1",
+                company_name="Company 1",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                schedule_identifier="EA-1",
+                facility_identifier="FAC-1",
+                facility_name="Facility",
+                bid_offer_identifier="BO-1",
+                bid_offer_step_number=1,
+                step_price=6.0,
+                step_capped_cumulative_qty=7.0,
+                bid_offer_type="O",
+                report_datetime="01 Jan 2024 07:00:00",
+            ),
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                facility_identifier="FAC-1",
+                facility_name="Facility",
+                flow_direction="T",
+                contingency_gas_bid_offer_type="B",
+                company_identifier="COMP-2",
+                company_name="Company 2",
+                contingency_gas_bid_offer_identifier="CGBO-1",
+                contingency_gas_bid_offer_step_number=2,
+                contingency_gas_bid_offer_step_price=8.0,
+                contingency_gas_bid_offer_step_quantity=9.0,
+                report_datetime="01 Jan 2024 07:00:00",
+            ),
+            _participants(),
+            _facilities(),
+            _zones(),
         ),
     )
 
-    assert _collect(schedule_result).height == 1
-    assert _collect(quantity_result).height == 4
-    assert _collect(bid_result).height == 2
+    schedule_df = _collect(schedule_result)
+    quantity_df = _collect(quantity_result)
+    sttm_schedule_rows = schedule_df.filter(pl.col("source_system") == "STTM")
+    sttm_quantity_rows = quantity_df.filter(pl.col("source_system") == "STTM")
+
+    assert schedule_df.height == 2
+    assert sttm_schedule_rows["source_table"].to_list() == [
+        schedule_run.SOURCE_TABLES[1]
+    ]
+    assert sttm_schedule_rows["transmission_document_id"].to_list() == ["STTM-SCHED-1"]
+    assert quantity_df.height == 14
+    assert sttm_quantity_rows.height == 10
+    assert sttm_quantity_rows["surrogate_key"].n_unique() == sttm_quantity_rows.height
+    assert set(sttm_quantity_rows["source_table"]) == set(
+        scheduled_quantity.SOURCE_TABLES[4:]
+    )
+    bid_df = _collect(bid_result)
+    sttm_bid_rows = bid_df.filter(pl.col("source_system") == "STTM")
+
+    assert bid_df.height == 4
+    assert sttm_bid_rows.height == 2
+    assert set(sttm_bid_rows["source_report_id"]) == {"INT659", "INT660"}
+    assert sttm_bid_rows["facility_key"].to_list() == [
+        "facility-syd-fac-1",
+        "facility-syd-fac-1",
+    ]
+    assert sttm_bid_rows["zone_key"].to_list() == ["zone-syd", "zone-syd"]
     assert _check_passed(
         schedule_run.silver_gas_fact_schedule_run_required_fields, schedule_result.value
+    )
+    assert _check_passed(
+        schedule_run.silver_gas_fact_schedule_run_duplicate_row_check,
+        schedule_result.value,
     )
     assert _check_passed(
         scheduled_quantity.silver_gas_fact_scheduled_quantity_required_fields,
         quantity_result.value,
     )
     assert _check_passed(
+        scheduled_quantity.silver_gas_fact_scheduled_quantity_duplicate_row_check,
+        quantity_result.value,
+    )
+    assert _check_passed(
         bid_stack.silver_gas_fact_bid_stack_required_fields, bid_result.value
+    )
+    assert _check_passed(
+        bid_stack.silver_gas_fact_bid_stack_duplicate_row_check,
+        bid_result.value,
+    )
+
+
+def test_sttm_contingency_gas_call_transform_and_checks() -> None:
+    result = cast(
+        MaterializeResult[pl.LazyFrame],
+        _dagster_fn(contingency_gas_call.silver_gas_fact_sttm_contingency_gas_call)(
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                facility_identifier="FAC-1",
+                facility_name="Facility",
+                contingency_gas_called_identifier="CALL-1",
+                flow_direction="T",
+                contingency_gas_bid_offer_type="O",
+                company_identifier="COMP-1",
+                company_name="Company 1",
+                contingency_gas_bid_offer_identifier="CGBO-1",
+                contingency_gas_bid_offer_step_number=1,
+                contingency_gas_bid_offer_step_price=8.0,
+                contingency_gas_bid_offer_step_quantity=9.0,
+                contingency_gas_bid_offer_confirmed_step_quantity=4.0,
+                contingency_gas_bid_offer_called_step_quantity=3.0,
+                approval_datetime="01 Jan 2024 06:30:00",
+                report_datetime="01 Jan 2024 07:00:00",
+            ),
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                total_contingency_gas_bid_qty=10.0,
+                total_contingency_gas_offer_qty=11.0,
+                report_datetime="01 Jan 2024 07:00:00",
+                surrogate_key="source-key-total",
+            ),
+            _source(
+                gas_date="01 Jan 2024",
+                hub_identifier="SYD",
+                hub_name="Sydney",
+                facility_identifier="FAC-1",
+                facility_name="Facility",
+                contingency_gas_called_identifier="CALL-1",
+                flow_direction="T",
+                contingency_gas_bid_offer_type="O",
+                contingency_gas_bid_offer_called_quantity=12.0,
+                approval_datetime="01 Jan 2024 06:30:00",
+                report_datetime="01 Jan 2024 07:00:00",
+                surrogate_key="source-key-schedule",
+            ),
+            _participants(),
+            _facilities(),
+            _zones(),
+        ),
+    )
+
+    collected = _collect(result).sort(["source_report_id", "quantity_type"])
+
+    assert collected.height == 5
+    assert collected["surrogate_key"].n_unique() == collected.height
+    assert set(collected["source_report_id"]) == {"INT661", "INT673", "INT674"}
+    assert set(collected["contingency_grain"]) == {
+        "bid_offer_step",
+        "hub_total",
+        "facility_called_total",
+    }
+    assert set(collected["quantity_type"]) == {
+        "called_step_quantity",
+        "called_total_quantity",
+        "confirmed_step_quantity",
+        "total_bid_quantity",
+        "total_offer_quantity",
+    }
+    assert (
+        collected.filter(pl.col("source_report_id") == "INT673")[
+            "facility_key"
+        ].null_count()
+        == 2
+    )
+    assert _check_passed(
+        contingency_gas_call.silver_gas_fact_sttm_contingency_gas_call_required_fields,
+        result.value,
+    )
+    assert _check_passed(
+        contingency_gas_call.silver_gas_fact_sttm_contingency_gas_call_duplicate_row_check,
+        result.value,
     )
 
 
@@ -941,6 +1281,7 @@ def test_admin_transforms_and_defs() -> None:
         capacity_auction,
         settlement,
         customer_transfer,
+        contingency_gas_call,
         system_notice,
     ]:
         definitions = module.defs()

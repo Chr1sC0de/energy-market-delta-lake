@@ -65,11 +65,33 @@ def _vicgas_organisations() -> pl.LazyFrame:
     )
 
 
+def _sttm_participants() -> pl.LazyFrame:
+    return pl.LazyFrame(
+        {
+            "hub_identifier": ["SYD"],
+            "hub_name": ["Sydney"],
+            "company_identifier": ["1"],
+            "company_name": ["STTM Participant"],
+            "abn": ["11 222 333 444"],
+            "acn": ["123 456 789"],
+            "organisation_registration_type": ["Trading Participant"],
+            "registered_capacity": ["Shipper"],
+            "registered_capacity_status": ["Active"],
+            "registration_status": ["Registered"],
+            "last_update_datetime": ["2024-02-03 04:05:06"],
+            "report_datetime": ["2024-02-03 05:00:00"],
+            "ingested_timestamp": [datetime(2024, 1, 3, tzinfo=timezone.utc)],
+            "surrogate_key": ["sttm-key"],
+            "source_file": ["s3://sttm"],
+        }
+    )
+
+
 def _participants() -> pl.LazyFrame:
     fn = silver_gas_dim_participant.op.compute_fn.decorated_fn  # type: ignore[union-attr]
     result = cast(
         MaterializeResult[pl.LazyFrame],
-        fn(_gbb_participants(), _vicgas_organisations()),
+        fn(_gbb_participants(), _vicgas_organisations(), _sttm_participants()),
     )
     return result.value
 
@@ -79,16 +101,28 @@ def test_silver_gas_participant_market_membership_transform() -> None:
 
     result = cast(
         MaterializeResult[pl.LazyFrame],
-        fn(_gbb_participants(), _vicgas_organisations(), _participants()),
+        fn(
+            _gbb_participants(),
+            _vicgas_organisations(),
+            _sttm_participants(),
+            _participants(),
+        ),
     )
     collected = result.value.collect()
 
     assert "dagster/column_lineage" in (result.metadata or {})
-    assert collected.height == 2
-    assert set(collected["market_code"]) == {"NATGASBB", "VICGAS"}
+    assert collected.height == 3
+    assert set(collected["market_code"]) == {"NATGASBB", "STTM", "VICGAS"}
     assert collected["participant_key"].null_count() == 0
     assert collected["surrogate_key"].n_unique() == collected.height
-    assert set(collected["source_surrogate_key"]) == {"gbb-key", "vic-key"}
+    assert set(collected["source_surrogate_key"]) == {"gbb-key", "sttm-key", "vic-key"}
+
+    sttm_row = collected.filter(pl.col("source_system") == "STTM").row(0, named=True)
+    assert sttm_row["source_hub_id"] == "SYD"
+    assert sttm_row["source_hub_name"] == "Sydney"
+    assert sttm_row["registration_type"] == "Trading Participant"
+    assert sttm_row["registered_capacity"] == "Shipper"
+    assert sttm_row["membership_status"] == "Active"
 
 
 def test_required_fields_check_fails_for_null_required_field() -> None:

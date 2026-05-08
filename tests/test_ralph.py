@@ -36,6 +36,20 @@ Build it.
 None
 """
 
+AGENTS_IMPLEMENTATION_BODY = """## What to build
+Update the agent workflow.
+
+## Acceptance criteria
+- [ ] The workflow is documented.
+
+## Blocked by
+None
+
+## Context anchors
+- Path: `.agents/skills/ralph-loop/SKILL.md`
+- Doc: `docs/agents/ralph-loop.md`
+"""
+
 EXPLORATORY_IMPLEMENTATION_BODY = """## What to build
 Build it.
 
@@ -477,6 +491,13 @@ class FakeRunner:
             )
         if command[:3] == ("gh", "issue", "view") and "comments" in command:
             return ralph.CompletedCommand(stdout=json.dumps({"comments": []}), stderr="")
+        if command[:3] == ("gh", "issue", "view") and "state" in command:
+            return ralph.CompletedCommand(stdout=json.dumps({"state": "OPEN"}), stderr="")
+        if command[:3] == ("gh", "issue", "view"):
+            return ralph.CompletedCommand(
+                stdout=issue_view_output(labels=["agent-reviewing"]),
+                stderr="",
+            )
         if command == ("gh", "auth", "token"):
             return ralph.CompletedCommand(stdout="fake-gh-token\n", stderr="")
         if command[:2] == ("codex", "exec") and input_text is not None:
@@ -526,15 +547,17 @@ def make_loop(
     issue: int | None = None,
     drain: bool = False,
     max_issues: int = ralph.DEFAULT_DRAIN_BUDGET,
+    exploratory_concurrency: int = ralph.DEFAULT_EXPLORATORY_CONCURRENCY,
     dry_run: bool = False,
     allow_dirty_worktree: bool = False,
+    allow_full_access_implementation: bool = False,
     issue_limit: int = 100,
 ) -> ralph.RalphLoop:
     repo_root = tmp_path / "repo"
     worktree_container = tmp_path / "worktrees"
     log_root = tmp_path / "logs"
-    repo_root.mkdir()
-    worktree_container.mkdir()
+    repo_root.mkdir(exist_ok=True)
+    worktree_container.mkdir(exist_ok=True)
     config = ralph.LoopConfig(
         repo_root=repo_root,
         repo="example/repo",
@@ -551,8 +574,10 @@ def make_loop(
         issue=issue,
         drain=drain,
         max_issues=max_issues,
+        exploratory_concurrency=exploratory_concurrency,
         dry_run=dry_run,
         allow_dirty_worktree=allow_dirty_worktree,
+        allow_full_access_implementation=allow_full_access_implementation,
         bootstrap_labels=False,
         issue_limit=issue_limit,
         log_root=log_root,
@@ -651,6 +676,74 @@ def issue_payload(
     }
 
 
+def exploratory_handoff_comments_output(
+    *,
+    branch: str = "agent/exploratory/issue-42-implement-thing",
+    commit: str = "abc1234",
+    changed_files: list[str] | None = None,
+) -> str:
+    file_lines = [f"- `{path}`" for path in changed_files or ["scripts/ralph.py"]]
+    body = "\n".join(
+        [
+            "Ralph exploratory handoff completed.",
+            "",
+            f"Commit: `{commit}`",
+            "Delivery mode: `exploratory`",
+            f"Target branch: `{branch}`",
+            "",
+            "## Changed files",
+            "",
+            *file_lines,
+            "",
+            "## QA",
+            "",
+            "- `python3 -m unittest discover -s tests` from `/repo`",
+            "",
+        ]
+    )
+    return json.dumps({"comments": [{"body": body}]})
+
+
+def issue_state_command(number: int) -> tuple[str, ...]:
+    return (
+        "gh",
+        "issue",
+        "view",
+        str(number),
+        "-R",
+        "example/repo",
+        "--json",
+        "state",
+    )
+
+
+def issue_view_command(number: int) -> tuple[str, ...]:
+    return (
+        "gh",
+        "issue",
+        "view",
+        str(number),
+        "-R",
+        "example/repo",
+        "--json",
+        "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+    )
+
+
+def issue_comments_command(number: int) -> tuple[str, ...]:
+    return (
+        "gh",
+        "issue",
+        "view",
+        str(number),
+        "-R",
+        "example/repo",
+        "--comments",
+        "--json",
+        "comments",
+    )
+
+
 class CountingRalphLoop(ralph.RalphLoop):
     def __init__(self, config: ralph.LoopConfig, runner: FakeRunner, ready_count: int) -> None:
         super().__init__(config, runner)
@@ -730,6 +823,32 @@ class TwoReadyIssueLoop(ralph.RalphLoop):
         return None
 
 
+class DryRunPreviewLoop(ralph.RalphLoop):
+    def __init__(
+        self,
+        config: ralph.LoopConfig,
+        runner: FakeRunner,
+        candidates: list[ralph.Issue],
+    ) -> None:
+        super().__init__(config, runner)
+        self.candidates = candidates
+
+    def _validate_tools(self) -> None:
+        pass
+
+    def _validate_labels(self) -> None:
+        pass
+
+    def _validate_clean_root_worktree_for_live_run(self) -> None:
+        pass
+
+    def _ready_implementation_candidates(self) -> list[ralph.Issue]:
+        return list(self.candidates)
+
+    def _next_triage_issue(self) -> ralph.Issue | None:
+        return None
+
+
 class NoValidationRalphLoop(ralph.RalphLoop):
     def _validate_tools(self) -> None:
         pass
@@ -742,12 +861,14 @@ def operator_snapshot(
     *,
     ready: list[ralph.Issue] | None = None,
     integrated: list[ralph.Issue] | None = None,
+    reviewing: list[ralph.Issue] | None = None,
     running: list[ralph.Issue] | None = None,
     failed: list[ralph.Issue] | None = None,
 ) -> ralph.OperatorQueueSnapshot:
     return ralph.OperatorQueueSnapshot(
         ready=tuple(ready or []),
         integrated=tuple(integrated or []),
+        reviewing=tuple(reviewing or []),
         running=tuple(running or []),
         failed=tuple(failed or []),
     )
@@ -951,6 +1072,11 @@ class ScriptedOperatorRun(ralph.RalphOperatorRun):
         self.manifest.clear_current()
 
 
+class BlockedReadyOperatorRun(ScriptedOperatorRun):
+    def _next_ready_issue(self) -> ralph.Issue | None:
+        return None
+
+
 class RalphHelperTests(unittest.TestCase):
     def test_parse_repo_slug_accepts_common_github_remote_forms(self) -> None:
         cases = {
@@ -1079,6 +1205,60 @@ class RalphHelperTests(unittest.TestCase):
         )
         self.assertEqual(ralph.slugify("!!!"), "issue")
         self.assertLessEqual(len(ralph.slugify("x" * 100)), 56)
+
+    def test_load_exploratory_acceptance_decisions_accepts_review_issue_shape(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            decision_file = Path(tmp) / "decisions.json"
+            decision_file.write_text(
+                json.dumps(
+                    {
+                        "issues": [
+                            {
+                                "issue": {"number": 42},
+                                "decision": "accept",
+                                "reason": "Looks good.",
+                            },
+                            {
+                                "issue_number": "43",
+                                "decision": "hold",
+                                "reason": "Waiting for operator review.",
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            decisions = ralph.load_exploratory_acceptance_decisions(decision_file)
+
+        self.assertEqual(
+            decisions,
+            [
+                ralph.ExploratoryAcceptanceDecision(42, "accept", "Looks good."),
+                ralph.ExploratoryAcceptanceDecision(
+                    43,
+                    "hold",
+                    "Waiting for operator review.",
+                ),
+            ],
+        )
+
+    def test_load_exploratory_acceptance_decisions_rejects_missing_hold_reason(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            decision_file = Path(tmp) / "decisions.json"
+            decision_file.write_text(
+                json.dumps({"decisions": [{"issue_number": 42, "decision": "hold"}]}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ValueError) as context:
+                ralph.load_exploratory_acceptance_decisions(decision_file)
+
+        self.assertIn("non-empty reason", str(context.exception))
 
     def test_required_issue_sections_are_case_insensitive(self) -> None:
         body = """## What to build
@@ -1556,6 +1736,39 @@ Build it.
         self.assertEqual(plan.mode, ralph.EXPLORATORY_MODE)
         self.assertEqual(plan.remove_labels, ("delivery-gitflow", "delivery-trunk"))
 
+    def test_exploratory_mergeability_reports_conflict_without_push_or_issue_mutation(
+        self,
+    ) -> None:
+        merge_tree_command = (
+            "git",
+            "merge-tree",
+            "--write-tree",
+            "--name-only",
+            "origin/dev",
+            "origin/agent/exploratory/issue-42-try-it",
+        )
+        runner = FakeRunner(fail_commands={merge_tree_command: 1})
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+
+            payload = ralph.exploratory_mergeability_payload(
+                git=loop.git,
+                source_branch=ralph.DEFAULT_GITFLOW_BRANCH,
+                review_branch="agent/exploratory/issue-42-try-it",
+                run_dir=tmp_path / "run",
+            )
+
+        commands = [call.args for call in runner.calls]
+        self.assertEqual(payload["status"], "conflicts")
+        self.assertEqual(payload["source_ref"], "origin/dev")
+        self.assertEqual(payload["review_ref"], "origin/agent/exploratory/issue-42-try-it")
+        self.assertIn(("git", "fetch", "origin", "dev"), commands)
+        self.assertIn(("git", "fetch", "origin", "agent/exploratory/issue-42-try-it"), commands)
+        self.assertIn(merge_tree_command, commands)
+        self.assertFalse(any(command[:3] == ("git", "push", "origin") for command in commands))
+        self.assertFalse(any(command[:2] == ("gh", "issue") for command in commands))
+
     def test_label_specs_include_exploratory_delivery_and_reviewing_state(self) -> None:
         label_names = {label.name for label in ralph.LABEL_SPECS}
 
@@ -1620,6 +1833,75 @@ Build it.
                 "aemo-etl Commit check",
                 "root Commit check",
             ],
+        )
+
+    def test_select_qa_commands_for_marimo_runtime_only_changes(self) -> None:
+        commands = ralph.select_qa_commands(
+            ["backend-services/marimo/src/marimoserver/main.py"],
+            Path("/repo"),
+        )
+
+        self.assertEqual(
+            [(command.name, command.args, command.cwd) for command in commands],
+            [
+                (
+                    "Marimo Component test",
+                    ("uv", "run", "pytest", "tests/component"),
+                    Path("/repo/backend-services/marimo"),
+                ),
+                (
+                    "Marimo Commit check",
+                    ("prek", "run", "-a"),
+                    Path("/repo/backend-services/marimo"),
+                ),
+            ],
+        )
+
+    def test_select_qa_commands_for_marimo_docs_only_changes(self) -> None:
+        commands = ralph.select_qa_commands(
+            ["backend-services/marimo/README.md"],
+            Path("/repo"),
+        )
+        names = [command.name for command in commands]
+
+        self.assertEqual(names, ["root Commit check"])
+
+    def test_select_qa_commands_for_mixed_marimo_docs_and_runtime_changes(self) -> None:
+        commands = ralph.select_qa_commands(
+            [
+                "backend-services/marimo/README.md",
+                "backend-services/marimo/src/marimoserver/main.py",
+            ],
+            Path("/repo"),
+        )
+        names = [command.name for command in commands]
+
+        self.assertEqual(
+            names,
+            [
+                "Marimo Component test",
+                "Marimo Commit check",
+                "root Commit check",
+            ],
+        )
+
+    def test_marimo_runtime_matching_uses_whole_subproject_prefix(self) -> None:
+        self.assertTrue(
+            ralph.has_marimo_runtime_change(
+                ["backend-services/marimo/src/marimoserver/main.py"]
+            )
+        )
+        self.assertFalse(
+            ralph.has_marimo_runtime_change(["backend-services/marimo/README.md"])
+        )
+        self.assertFalse(
+            ralph.has_marimo_runtime_change(
+                [
+                    "backend-services/marimo",
+                    "backend-services/marimo-old/src/module.py",
+                    "backend-services/marimoREADME.md",
+                ]
+            )
         )
 
     def test_protected_aemo_etl_matching_uses_whole_subproject_prefix(self) -> None:
@@ -1821,11 +2103,61 @@ Build it.
                 "-c",
                 "shell_environment_policy.include_only="
                 + json.dumps(list(ralph.SANDBOX_CODEX_ENV_INCLUDE_ONLY)),
-                "--full-auto",
                 "--json",
                 "-",
             ],
         )
+        self.assertNotIn("--full-auto", ralph.codex_exec_command(Path("/repo")))
+
+    def test_codex_exec_command_can_use_full_access_bypass(self) -> None:
+        command = ralph.codex_exec_command(
+            Path("/repo"),
+            sandbox_mode=ralph.FULL_ACCESS_CODEX_SANDBOX,
+        )
+
+        self.assertIn("--dangerously-bypass-approvals-and-sandbox", command)
+        self.assertNotIn("--sandbox", command)
+        self.assertNotIn("--full-auto", command)
+
+    def test_context_anchor_paths_detect_agent_workflow_anchors(self) -> None:
+        issue = make_issue({"ready-for-agent"}, AGENTS_IMPLEMENTATION_BODY)
+
+        access_plan = ralph.issue_implementation_access_plan(issue)
+
+        self.assertTrue(access_plan.full_access_required)
+        self.assertEqual(
+            access_plan.context_anchor_paths,
+            (
+                ralph.ContextAnchorPath(
+                    ".agents/skills/ralph-loop/SKILL.md",
+                    prefix=False,
+                ),
+                ralph.ContextAnchorPath("docs/agents/ralph-loop.md", prefix=False),
+            ),
+        )
+
+    def test_changed_files_outside_context_anchors_treats_directory_anchor_as_prefix(
+        self,
+    ) -> None:
+        anchors = (
+            ralph.ContextAnchorPath(".agents/skills/ralph-loop", prefix=True),
+            ralph.ContextAnchorPath("docs/agents/ralph-loop.md", prefix=False),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            worktree = Path(tmp)
+            (worktree / ".agents" / "skills" / "ralph-loop").mkdir(parents=True)
+
+            out_of_scope = ralph.changed_files_outside_context_anchors(
+                [
+                    ".agents/skills/ralph-loop/SKILL.md",
+                    "docs/agents/ralph-loop.md",
+                    "scripts/ralph.py",
+                ],
+                anchors,
+                worktree_path=worktree,
+            )
+
+        self.assertEqual(out_of_scope, ["scripts/ralph.py"])
 
     def test_qa_runtime_env_uses_operator_values_when_present(self) -> None:
         operator_env = {
@@ -2072,6 +2404,10 @@ Build it.
             codex_call = next(
                 call for call in runner.calls if call.args[:2] == ("codex", "exec")
             )
+            self.assertEqual(
+                codex_call.args[codex_call.args.index("--sandbox") + 1],
+                ralph.WORKSPACE_WRITE_CODEX_SANDBOX,
+            )
             self.assertIsNotNone(codex_call.env)
             assert codex_call.env is not None
             self.assertEqual(codex_call.env["GH_TOKEN"], "fake-gh-token")
@@ -2132,6 +2468,10 @@ Build it.
         self.assertFalse(config.skip_post_promotion_followups)
         self.assertFalse(config.ready_issue_refresh_enabled)
         self.assertFalse(config.skip_ready_issue_refresh)
+        self.assertEqual(
+            config.exploratory_concurrency,
+            ralph.DEFAULT_EXPLORATORY_CONCURRENCY,
+        )
 
     def test_parse_args_help_describes_default_drain_budget(self) -> None:
         output = io.StringIO()
@@ -2147,7 +2487,79 @@ Build it.
         self.assertIn("--skip-post-promotion-followups", help_text)
         self.assertIn("--ready-issue-refresh", help_text)
         self.assertIn("--skip-ready-issue-refresh", help_text)
+        self.assertIn("--allow-full-access-implementation", help_text)
+        self.assertIn("--exploratory-concurrency", help_text)
+        self.assertIn("Defaults to 2", help_text)
         self.assertIn("exploratory", help_text)
+
+    def test_parse_args_rejects_exploratory_concurrency_below_one(self) -> None:
+        output = io.StringIO()
+
+        with redirect_stderr(output), self.assertRaises(SystemExit) as caught:
+            ralph.parse_args(["--exploratory-concurrency", "0"])
+
+        self.assertEqual(caught.exception.code, 2)
+        self.assertIn("--exploratory-concurrency must be 1 or greater", output.getvalue())
+
+    def test_build_config_records_exploratory_concurrency(self) -> None:
+        runner = FakeRunner(
+            command_outputs={
+                ("git", "rev-parse", "--show-toplevel"): ["/work/repo\n"],
+                ("git", "config", "--get", "remote.origin.url"): [
+                    "git@github.com:example/repo.git\n"
+                ],
+            }
+        )
+
+        config = ralph.build_config(
+            ralph.parse_args(["--exploratory-concurrency", "4"]),
+            runner,
+        )
+
+        self.assertEqual(config.exploratory_concurrency, 4)
+
+    def test_run_manifests_record_exploratory_concurrency_configuration(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, exploratory_concurrency=5)
+            issue = make_issue({ralph.READY_LABEL}, IMPLEMENTATION_BODY)
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=loop.config.delivery_mode,
+                target_branch=loop.config.target_branch,
+            )
+            implementation_manifest = ralph.RunManifest.for_implementation(
+                run_dir=tmp_path / "logs" / "issue-42-test",
+                issue=issue,
+                delivery_plan=delivery_plan,
+                branch="agent/issue-42-implement-thing",
+                worktree_path=tmp_path / "worktrees" / "issue",
+                integration_path=tmp_path / "worktrees" / "integration",
+                config=loop.config,
+            )
+            promotion_manifest = ralph.RunManifest.for_promotion(
+                run_dir=tmp_path / "logs" / "promote-test",
+                source_branch=ralph.DEFAULT_GITFLOW_BRANCH,
+                target_branch=ralph.DEFAULT_TRUNK_BRANCH,
+                source_path=tmp_path / "worktrees" / "source",
+                promote_path=tmp_path / "worktrees" / "promote",
+                config=loop.config,
+            )
+            operator_manifest = ralph.OperatorRunManifest.start(
+                run_dir=tmp_path / "operator" / "operator-test",
+                config=loop.config,
+                max_cycles=3,
+            )
+
+            payloads = [
+                json.loads(implementation_manifest.path.read_text(encoding="utf-8")),
+                json.loads(promotion_manifest.path.read_text(encoding="utf-8")),
+                json.loads(operator_manifest.path.read_text(encoding="utf-8")),
+            ]
+
+        for payload in payloads:
+            self.assertEqual(payload["configuration"]["exploratory_concurrency"], 5)
 
     def test_build_config_enables_ready_issue_refresh_for_drain_by_default(self) -> None:
         runner = FakeRunner(
@@ -2315,6 +2727,23 @@ Build it.
         self.assertEqual(config.delivery_mode, ralph.EXPLORATORY_MODE)
         self.assertIsNone(config.target_branch)
 
+    def test_build_config_records_full_access_implementation_flag(self) -> None:
+        runner = FakeRunner(
+            command_outputs={
+                ("git", "rev-parse", "--show-toplevel"): ["/work/repo\n"],
+                ("git", "config", "--get", "remote.origin.url"): [
+                    "git@github.com:example/repo.git\n"
+                ],
+            }
+        )
+
+        config = ralph.build_config(
+            ralph.parse_args(["--allow-full-access-implementation"]),
+            runner,
+        )
+
+        self.assertTrue(config.allow_full_access_implementation)
+
     def test_dirty_root_blocks_live_issue_drain_and_promote_before_side_effects(self) -> None:
         cases = [
             {"issue": 42},
@@ -2399,21 +2828,82 @@ Build it.
         commands = [call.args for call in runner.calls]
         self.assertNotIn(("git", "status", "--porcelain"), commands)
 
-    def test_dry_run_reports_ready_issue_refresh_candidate_selection(self) -> None:
+    def test_drain_dry_run_previews_serial_and_bounded_exploratory_candidates(
+        self,
+    ) -> None:
         runner = FakeRunner()
         with tempfile.TemporaryDirectory() as tmp:
-            loop = make_loop(Path(tmp), runner, drain=True, dry_run=True)
-            probe = PreflightProbeLoop(loop.config, runner)
+            loop = make_loop(
+                Path(tmp),
+                runner,
+                delivery_mode=ralph.EXPLORATORY_MODE,
+                drain=True,
+                exploratory_concurrency=2,
+                dry_run=True,
+            )
+            probe = DryRunPreviewLoop(
+                loop.config,
+                runner,
+                [
+                    make_issue(
+                        {ralph.READY_LABEL},
+                        EXPLORATORY_IMPLEMENTATION_BODY,
+                        number=41,
+                        title="Unlabeled exploration",
+                    ),
+                    make_issue(
+                        {ralph.READY_LABEL, ralph.DELIVERY_TRUNK_LABEL},
+                        IMPLEMENTATION_BODY,
+                        number=42,
+                        title="Labeled trunk work",
+                    ),
+                    make_issue(
+                        {ralph.READY_LABEL, ralph.DELIVERY_EXPLORATORY_LABEL},
+                        EXPLORATORY_IMPLEMENTATION_BODY,
+                        number=43,
+                        title="Labeled exploration",
+                    ),
+                    make_issue(
+                        {ralph.READY_LABEL},
+                        EXPLORATORY_IMPLEMENTATION_BODY,
+                        number=44,
+                        title="Overflow exploration",
+                    ),
+                ],
+            )
             output = io.StringIO()
 
             with redirect_stdout(output):
                 probe.run()
 
         text = output.getvalue()
-        self.assertIn("DRY RUN: would implement #42: Implement thing", text)
         self.assertIn(
-            "DRY RUN: after Local integration of #42, would select Ready issue "
-            "refresh candidates within --issue-limit 100.",
+            "DRY RUN: serial candidate #42: Labeled trunk work "
+            "(Delivery mode: trunk, Integration target: main)",
+            text,
+        )
+        self.assertIn(
+            "DRY RUN: Exploratory candidate #41: Unlabeled exploration "
+            "(Delivery mode: exploratory, Integration target: "
+            "agent/exploratory/issue-41-unlabeled-exploration)",
+            text,
+        )
+        self.assertIn(
+            "DRY RUN: Exploratory candidate #43: Labeled exploration "
+            "(Delivery mode: exploratory, Integration target: "
+            "agent/exploratory/issue-43-labeled-exploration)",
+            text,
+        )
+        self.assertNotIn("#44: Overflow exploration", text)
+        self.assertIn(
+            "DRY RUN: showing 2 of 3 eligible Exploratory candidates "
+            "(--exploratory-concurrency 2).",
+            text,
+        )
+        self.assertIn(
+            "DRY RUN: after each previewed Local integration or Exploratory "
+            "handoff, would select Ready issue refresh candidates within "
+            "--issue-limit 100.",
             text,
         )
         commands = [call.args for call in runner.calls]
@@ -2563,6 +3053,48 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
         self.assertIn(guidance, text)
         self.assertNotIn("--recover-run", text)
 
+    def test_inspect_run_reports_acceptance_conflict_continue_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = tmp_path / "logs" / "exploratory-acceptance-20260504T010203Z"
+            acceptance_path = tmp_path / "worktrees" / "agent-exploratory-acceptance"
+            run_dir.mkdir(parents=True)
+            manifest = {
+                "schema_version": ralph.MANIFEST_SCHEMA_VERSION,
+                "run_kind": "exploratory_acceptance_apply",
+                "status": ralph.EXPLORATORY_ACCEPTANCE_CONFLICT_STATUS,
+                "delivery_mode": ralph.EXPLORATORY_MODE,
+                "integration_target": "dev",
+                "source_branch": "dev",
+                "paths": {
+                    "run_dir": str(run_dir),
+                    "repo_root": str(tmp_path / "repo"),
+                    "acceptance_worktree": str(acceptance_path),
+                },
+                "qa_results": [],
+                "pushes": {},
+                "github_metadata": {"status": "not_started"},
+                "ready_issue_refresh": {"status": "not_started"},
+                "events": [],
+            }
+            (run_dir / "ralph-run.json").write_text(
+                json.dumps(manifest, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.inspect_run(run_dir)
+
+        text = output.getvalue()
+        self.assertIn(f"Paused acceptance worktree: {acceptance_path}", text)
+        self.assertIn(
+            "Continue command: python3 scripts/ralph.py "
+            f"--continue-exploratory-acceptance {run_dir}",
+            text,
+        )
+        self.assertIn("Recommended next action:", text)
+
 
 class RalphOperatorRunTests(unittest.TestCase):
     def test_operator_foreground_repeats_drain_promotion_until_queue_clean(self) -> None:
@@ -2654,6 +3186,154 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertIn("Local integration `local-integration-42-1`", markdown)
         self.assertIn("Promotion commit `promotion-1-sha`", markdown)
         self.assertIn("- clean=yes", markdown)
+
+    def test_operator_stops_needs_review_and_writes_exploratory_acceptance_review(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            reviewing_body = (
+                EXPLORATORY_IMPLEMENTATION_BODY
+                + "\n## Context anchors\n"
+                + "- Test lane: `root Ralph Unit test`\n"
+                + "- Test lane: `root Commit check`\n"
+            )
+            reviewing_issue = make_issue(
+                {ralph.AGENT_REVIEWING_LABEL, ralph.DELIVERY_EXPLORATORY_LABEL},
+                reviewing_body,
+                number=42,
+                title="Explore workflow",
+            )
+            blocked_ready_issue = make_issue(
+                {ralph.READY_LABEL},
+                implementation_body_with_blockers(42),
+                number=136,
+                title="Dependent ready work",
+            )
+            operator = BlockedReadyOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=3,
+                snapshots=[
+                    operator_snapshot(
+                        ready=[blocked_ready_issue],
+                        reviewing=[reviewing_issue],
+                    )
+                ],
+            )
+            handoff_branch = "agent/exploratory/issue-42-explore-workflow"
+            child_manifest_path = write_child_manifest(
+                loop.config.log_root,
+                name="issue-42-exploratory-handoff",
+                run_kind="implementation",
+                status="succeeded",
+                issue=reviewing_issue,
+                delivery_mode=ralph.EXPLORATORY_MODE,
+                integration_target=handoff_branch,
+                integration_commit="handoff-sha",
+                changed_files=["scripts/ralph.py", "tests/test_ralph.py"],
+                qa_results=[
+                    {
+                        "name": "root Ralph Unit test",
+                        "command": ["python3", "-m", "unittest", "discover", "-s", "tests"],
+                        "cwd": str(tmp_path / "repo"),
+                        "log_path": str(tmp_path / "repo" / ".ralph" / "runs" / "unit.log"),
+                        "status": "passed",
+                    }
+                ],
+            )
+            operator.manifest.record_child_run(child_manifest_path)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                operator.run()
+
+            manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+            review = json.loads(
+                (run_dir / ralph.EXPLORATORY_ACCEPTANCE_REVIEW_JSON_NAME).read_text(
+                    encoding="utf-8"
+                )
+            )
+            review_markdown = (
+                run_dir / ralph.EXPLORATORY_ACCEPTANCE_REVIEW_MARKDOWN_NAME
+            ).read_text(encoding="utf-8")
+            rollup = json.loads(
+                (run_dir / ralph.OPERATOR_ROLLUP_JSON_NAME).read_text(encoding="utf-8")
+            )
+            status_output = io.StringIO()
+            with redirect_stdout(status_output):
+                ralph.inspect_operator_run_status(str(run_dir), runner)
+
+        commands = [call.args for call in runner.calls]
+        self.assertEqual(manifest["status"], "needs_review")
+        self.assertEqual(manifest["state"], "exploratory_acceptance_review_required")
+        self.assertEqual(
+            manifest["last_checkpoint"]["checkpoint"],
+            "exploratory_acceptance_review_required",
+        )
+        self.assertEqual(manifest["queue"]["reviewing"][0]["number"], 42)
+        self.assertEqual(review["status"], "needs_review")
+        self.assertEqual(review["source_ref"], "origin/dev")
+        self.assertEqual(review["issues"][0]["branch"], handoff_branch)
+        self.assertEqual(review["issues"][0]["handoff_commit"], "handoff-sha")
+        self.assertEqual(
+            review["issues"][0]["changed_files"],
+            ["scripts/ralph.py", "tests/test_ralph.py"],
+        )
+        self.assertEqual(
+            review["issues"][0]["downstream_ready_issues"][0]["number"],
+            136,
+        )
+        self.assertEqual(
+            review["issues"][0]["missing_test_lane_evidence"],
+            ["root Commit check"],
+        )
+        self.assertEqual(review["issues"][0]["mergeability"]["status"], "clean")
+        self.assertEqual(rollup["operator_run"]["status"], "needs_review")
+        self.assertEqual(rollup["exploratory_acceptance_review"]["status"], "needs_review")
+        self.assertEqual(rollup["final_queue"]["counts"]["reviewing"], 1)
+        self.assertIn("### #42 Explore workflow", review_markdown)
+        self.assertIn("#136 Dependent ready work", review_markdown)
+        self.assertIn("Run the $ralph-loop Exploratory acceptance review flow", output.getvalue())
+        self.assertIn("Queue: ready=1, integrated=0, reviewing=1", status_output.getvalue())
+        self.assertIn("Recommended next action:", status_output.getvalue())
+        self.assertFalse(any(command[:3] == ("gh", "issue", "comment") for command in commands))
+        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+        self.assertFalse(any(command[:3] == ("gh", "issue", "close") for command in commands))
+
+    def test_operator_keeps_queue_blocked_for_non_review_blocked_ready_issue(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            blocked_ready_issue = make_issue(
+                {ralph.READY_LABEL},
+                implementation_body_with_blockers(99),
+                number=136,
+                title="Blocked ready work",
+            )
+            operator = BlockedReadyOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=3,
+                snapshots=[operator_snapshot(ready=[blocked_ready_issue])],
+            )
+
+            with self.assertRaises(ralph.RalphError):
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    operator.run()
+
+            manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["state"], "failed")
+        self.assertEqual(manifest["last_checkpoint"]["checkpoint"], "queue_blocked")
 
     def test_operator_rollup_records_failed_attempt_manual_recovery_and_guard_stop(
         self,
@@ -2810,7 +3490,7 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertIn("Ralph Operator run status", text)
         self.assertIn(f"Operator run directory: {run_dir}", text)
         self.assertIn("Last checkpoint: issue_succeeded: Issue #42 completed.", text)
-        self.assertIn("Queue: ready=0, integrated=1, running=0, failed=0", text)
+        self.assertIn("Queue: ready=0, integrated=1, reviewing=0, running=0, failed=0", text)
         self.assertIn(f"- implementation #42 succeeded: {child_manifest_path}", text)
         self.assertIn("Rollup artifacts:", text)
         self.assertIn(str(run_dir / ralph.OPERATOR_ROLLUP_JSON_NAME), text)
@@ -2837,7 +3517,10 @@ class RalphOperatorRunTests(unittest.TestCase):
                     "--detach",
                     "--max-cycles",
                     "3",
+                    "--exploratory-concurrency",
+                    "4",
                     "--skip-post-promotion-followups",
+                    "--allow-full-access-implementation",
                 ]
             )
             process = type("DummyProcess", (), {"pid": 321})()
@@ -2859,9 +3542,13 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertIn("--operator-run-dir", child_command)
         self.assertIn("--max-cycles", child_command)
         self.assertIn("3", child_command)
+        self.assertIn("--exploratory-concurrency", child_command)
+        self.assertIn("4", child_command)
         self.assertIn("--skip-post-promotion-followups", child_command)
+        self.assertIn("--allow-full-access-implementation", child_command)
         self.assertEqual(manifest["last_checkpoint"]["checkpoint"], "detached_launched")
         self.assertEqual(manifest["detached"]["pid"], 321)
+        self.assertEqual(manifest["configuration"]["exploratory_concurrency"], 4)
 
     def test_operator_docs_include_codex_safe_command_strings(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]
@@ -3065,6 +3752,496 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertFalse(any(command[:3] == ("gh", "issue", "close") for command in commands))
         self.assertEqual(manifest["github_metadata"]["status"], "marked_integrated")
         self.assertIn("Recovered issue #42 Gitflow metadata for abc1234.", output.getvalue())
+
+
+class RalphExploratoryAcceptanceApplyTests(unittest.TestCase):
+    def _decision_file(
+        self,
+        tmp_path: Path,
+        decisions: list[dict[str, Any]],
+    ) -> Path:
+        decision_file = tmp_path / "repo" / "decisions.json"
+        decision_file.write_text(
+            json.dumps({"decisions": decisions}),
+            encoding="utf-8",
+        )
+        return decision_file
+
+    def _reviewing_issue_output(self, *, labels: list[str] | None = None) -> str:
+        return json.dumps(
+            issue_payload(
+                42,
+                labels or [ralph.AGENT_REVIEWING_LABEL, ralph.DELIVERY_EXPLORATORY_LABEL],
+                EXPLORATORY_IMPLEMENTATION_BODY,
+            )
+        )
+
+    def _runner_for_reviewing_issue(
+        self,
+        *,
+        branch: str = "agent/exploratory/issue-42-implement-thing",
+        commit: str = "abc1234",
+        labels: list[str] | None = None,
+        extra_outputs: dict[tuple[str, ...], list[str]] | None = None,
+        **runner_kwargs: Any,
+    ) -> FakeRunner:
+        command_outputs = {
+            issue_state_command(42): [json.dumps({"state": "OPEN"})],
+            issue_view_command(42): [self._reviewing_issue_output(labels=labels)],
+            issue_comments_command(42): [
+                exploratory_handoff_comments_output(branch=branch, commit=commit)
+            ],
+        }
+        if extra_outputs is not None:
+            command_outputs.update(extra_outputs)
+        return FakeRunner(command_outputs=command_outputs, **runner_kwargs)
+
+    def _pause_acceptance_conflict(
+        self,
+        tmp_path: Path,
+        *,
+        handoff_branch: str = "agent/exploratory/issue-42-implement-thing",
+    ) -> tuple[ralph.RunManifest, FakeRunner]:
+        merge_command = (
+            "git",
+            "merge",
+            "--no-ff",
+            f"origin/{handoff_branch}",
+            "-m",
+            "Accept Exploratory issue #42: Issue 42",
+        )
+        runner = self._runner_for_reviewing_issue(
+            branch=handoff_branch,
+            diff_outputs=["docs/repository/architecture-exploration.md\n"],
+            rev_parse_outputs=["abc1234\n", "source-sha\n"],
+            fail_commands={merge_command},
+        )
+        loop = make_loop(tmp_path, runner, source_branch=ralph.DEFAULT_GITFLOW_BRANCH)
+        decision_file = self._decision_file(
+            tmp_path,
+            [{"issue_number": 42, "decision": "accept", "reason": "Approved."}],
+        )
+
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            manifest = loop._apply_exploratory_acceptance_decisions(decision_file)
+        return manifest, runner
+
+    def test_accept_merges_runs_qa_pushes_then_updates_metadata(self) -> None:
+        handoff_branch = "agent/exploratory/issue-42-implement-thing"
+        runner = self._runner_for_reviewing_issue(
+            branch=handoff_branch,
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=[
+                "abc1234\n",
+                "source-sha\n",
+                "def5678\n",
+                "def5678\n",
+            ],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, source_branch=ralph.DEFAULT_GITFLOW_BRANCH)
+            decision_file = self._decision_file(
+                tmp_path,
+                [{"issue_number": 42, "decision": "accept", "reason": "Approved."}],
+            )
+
+            with redirect_stdout(io.StringIO()):
+                manifest = loop._apply_exploratory_acceptance_decisions(decision_file)
+
+            comment_path = next(
+                tmp_path.glob("logs/exploratory-acceptance-*/issue-42-comment.md")
+            )
+            comment = comment_path.read_text(encoding="utf-8")
+
+        commands = [call.args for call in runner.calls]
+        push_command = ("git", "push", "origin", "HEAD:dev")
+        push_index = commands.index(push_command)
+        mutation_indexes = [
+            index
+            for index, command in enumerate(commands)
+            if command[:3]
+            in {
+                ("gh", "issue", "comment"),
+                ("gh", "issue", "edit"),
+            }
+        ]
+        self.assertTrue(mutation_indexes)
+        self.assertTrue(all(index > push_index for index in mutation_indexes))
+        self.assertIn(
+            (
+                "git",
+                "worktree",
+                "add",
+                "--detach",
+                manifest.data["paths"]["acceptance_worktree"],
+                "origin/dev",
+            ),
+            commands,
+        )
+        self.assertIn(
+            (
+                "git",
+                "merge",
+                "--no-ff",
+                f"origin/{handoff_branch}",
+                "-m",
+                "Accept Exploratory issue #42: Issue 42",
+            ),
+            commands,
+        )
+        self.assertIn(
+            ("python3", "-m", "unittest", "discover", "-s", "tests"),
+            commands,
+        )
+        self.assertIn(ralph.EXPLORATORY_ACCEPTANCE_COMMENT_TITLE, comment)
+        self.assertIn("Commit: `def5678`", comment)
+        self.assertIn(f"Exploratory branch: `{handoff_branch}`", comment)
+        self.assertIn("Handoff commit: `abc1234`", comment)
+        self.assertEqual(manifest.data["status"], "succeeded")
+        self.assertEqual(manifest.data["decisions"][0]["status"], "metadata_applied")
+
+    def test_accept_merge_conflict_pauses_with_artifacts_without_mutation(self) -> None:
+        handoff_branch = "agent/exploratory/issue-42-implement-thing"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            manifest, runner = self._pause_acceptance_conflict(
+                tmp_path,
+                handoff_branch=handoff_branch,
+            )
+            run_dir = Path(manifest.data["paths"]["run_dir"])
+            decisions = json.loads(
+                (run_dir / ralph.EXPLORATORY_ACCEPTANCE_DECISIONS_ARTIFACT_NAME).read_text(
+                    encoding="utf-8"
+                )
+            )
+            conflicts = json.loads(
+                (run_dir / ralph.EXPLORATORY_ACCEPTANCE_CONFLICTS_ARTIFACT_NAME).read_text(
+                    encoding="utf-8"
+                )
+            )
+            prompt = (
+                run_dir / ralph.EXPLORATORY_ACCEPTANCE_CODEX_PROMPT_NAME
+            ).read_text(encoding="utf-8")
+
+        commands = [call.args for call in runner.calls]
+        self.assertEqual(
+            manifest.data["status"],
+            ralph.EXPLORATORY_ACCEPTANCE_CONFLICT_STATUS,
+        )
+        self.assertEqual(
+            manifest.data["acceptance_conflict"]["conflicted_files"],
+            ["docs/repository/architecture-exploration.md"],
+        )
+        self.assertEqual(decisions["status"], ralph.EXPLORATORY_ACCEPTANCE_CONFLICT_STATUS)
+        self.assertEqual(decisions["decisions"][0]["decision"], "accept")
+        self.assertEqual(decisions["decisions"][0]["status"], "acceptance_conflict")
+        self.assertEqual(conflicts["current_branch"], handoff_branch)
+        self.assertIn("codex-resolution-prompt.md", conflicts["artifacts"]["codex_resolution_prompt"])
+        self.assertIn("Resolve only the paused acceptance worktree", prompt)
+        self.assertIn("Preserve accepted issue intent", prompt)
+        self.assertIn("--continue-exploratory-acceptance", prompt)
+        self.assertFalse(any(command[:2] == ("git", "push") for command in commands))
+        self.assertFalse(any(command[:3] == ("gh", "issue", "comment") for command in commands))
+        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("git", "worktree", "remove") for command in commands)
+        )
+
+    def test_continue_acceptance_conflict_runs_qa_pushes_then_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            paused_manifest, _pause_runner = self._pause_acceptance_conflict(tmp_path)
+            run_dir = Path(paused_manifest.data["paths"]["run_dir"])
+            acceptance_path = Path(paused_manifest.data["paths"]["acceptance_worktree"])
+            acceptance_path.mkdir(parents=True)
+            runner = self._runner_for_reviewing_issue(
+                diff_outputs=["", "scripts/ralph.py\n"],
+                status_outputs=["", ""],
+                rev_parse_outputs=["abc1234\n", "source-sha\n", "resolved-sha\n"],
+            )
+            loop = make_loop(tmp_path, runner)
+
+            with redirect_stdout(io.StringIO()):
+                manifest = loop._continue_exploratory_acceptance(run_dir)
+
+            comment = next(run_dir.glob("issue-42-comment.md")).read_text(encoding="utf-8")
+
+        commands = [call.args for call in runner.calls]
+        push_command = ("git", "push", "origin", "HEAD:dev")
+        push_index = commands.index(push_command)
+        qa_indexes = [
+            index
+            for index, command in enumerate(commands)
+            if command
+            in {
+                ("prek", "run", "-a"),
+                ("python3", "-m", "unittest", "discover", "-s", "tests"),
+            }
+        ]
+        mutation_indexes = [
+            index
+            for index, command in enumerate(commands)
+            if command[:3]
+            in {
+                ("gh", "issue", "comment"),
+                ("gh", "issue", "edit"),
+            }
+        ]
+        self.assertTrue(qa_indexes)
+        self.assertTrue(all(index < push_index for index in qa_indexes))
+        self.assertTrue(mutation_indexes)
+        self.assertTrue(all(index > push_index for index in mutation_indexes))
+        self.assertEqual(manifest.data["status"], "succeeded")
+        self.assertEqual(manifest.data["integration_commit"]["sha"], "resolved-sha")
+        self.assertIn(ralph.EXPLORATORY_ACCEPTANCE_COMMENT_TITLE, comment)
+        self.assertIn("Commit: `resolved-sha`", comment)
+        self.assertEqual(manifest.data["decisions"][0]["status"], "metadata_applied")
+
+    def test_continue_acceptance_conflict_refuses_dirty_worktree(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            paused_manifest, _pause_runner = self._pause_acceptance_conflict(tmp_path)
+            run_dir = Path(paused_manifest.data["paths"]["run_dir"])
+            acceptance_path = Path(paused_manifest.data["paths"]["acceptance_worktree"])
+            acceptance_path.mkdir(parents=True)
+            runner = self._runner_for_reviewing_issue(
+                diff_outputs=[""],
+                status_outputs=[" M docs/repository/architecture-exploration.md\n"],
+                rev_parse_outputs=["abc1234\n"],
+            )
+            loop = make_loop(tmp_path, runner)
+
+            with self.assertRaises(ralph.IssueFailure) as caught:
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    loop._continue_exploratory_acceptance(run_dir)
+
+        commands = [call.args for call in runner.calls]
+        self.assertEqual(caught.exception.failure_type, "exploratory_acceptance_dirty_worktree")
+        self.assertIn("git status --porcelain", caught.exception.recovery_guidance or "")
+        self.assertFalse(any(command[:2] == ("git", "push") for command in commands))
+        self.assertFalse(any(command[:3] == ("gh", "issue", "comment") for command in commands))
+        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+
+    def test_continue_acceptance_conflict_refuses_missing_decision_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            paused_manifest, _pause_runner = self._pause_acceptance_conflict(tmp_path)
+            run_dir = Path(paused_manifest.data["paths"]["run_dir"])
+            acceptance_path = Path(paused_manifest.data["paths"]["acceptance_worktree"])
+            acceptance_path.mkdir(parents=True)
+            (run_dir / ralph.EXPLORATORY_ACCEPTANCE_DECISIONS_ARTIFACT_NAME).unlink()
+            runner = self._runner_for_reviewing_issue()
+            loop = make_loop(tmp_path, runner)
+
+            with self.assertRaises(ralph.IssueFailure) as caught:
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    loop._continue_exploratory_acceptance(run_dir)
+
+        self.assertEqual(
+            caught.exception.failure_type,
+            "exploratory_acceptance_missing_decisions_artifact",
+        )
+        self.assertIn("paused run directory is incomplete", str(caught.exception.recovery_guidance))
+
+    def test_continue_acceptance_conflict_refuses_stale_source_branch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            paused_manifest, _pause_runner = self._pause_acceptance_conflict(tmp_path)
+            run_dir = Path(paused_manifest.data["paths"]["run_dir"])
+            acceptance_path = Path(paused_manifest.data["paths"]["acceptance_worktree"])
+            acceptance_path.mkdir(parents=True)
+            runner = self._runner_for_reviewing_issue(
+                diff_outputs=[""],
+                status_outputs=[""],
+                rev_parse_outputs=["abc1234\n", "new-source-sha\n"],
+            )
+            loop = make_loop(tmp_path, runner)
+
+            with self.assertRaises(ralph.IssueFailure) as caught:
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    loop._continue_exploratory_acceptance(run_dir)
+
+        self.assertEqual(
+            caught.exception.failure_type,
+            "exploratory_acceptance_stale_source_branch",
+        )
+        self.assertIn("Do not push", caught.exception.recovery_guidance or "")
+
+    def test_continue_acceptance_conflict_refuses_mismatched_decisions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            paused_manifest, _pause_runner = self._pause_acceptance_conflict(tmp_path)
+            run_dir = Path(paused_manifest.data["paths"]["run_dir"])
+            acceptance_path = Path(paused_manifest.data["paths"]["acceptance_worktree"])
+            acceptance_path.mkdir(parents=True)
+            decisions_path = run_dir / ralph.EXPLORATORY_ACCEPTANCE_DECISIONS_ARTIFACT_NAME
+            payload = json.loads(decisions_path.read_text(encoding="utf-8"))
+            payload["decisions"][0]["decision"] = "reject"
+            decisions_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            runner = self._runner_for_reviewing_issue()
+            loop = make_loop(tmp_path, runner)
+
+            with self.assertRaises(ralph.IssueFailure) as caught:
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    loop._continue_exploratory_acceptance(run_dir)
+
+        self.assertEqual(
+            caught.exception.failure_type,
+            "exploratory_acceptance_mismatched_decisions_artifact",
+        )
+
+    def test_accept_qa_failure_leaves_metadata_unchanged_before_push(self) -> None:
+        runner = self._runner_for_reviewing_issue(
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["abc1234\n", "source-sha\n", "def5678\n"],
+            fail_commands={
+                ("python3", "-m", "unittest", "discover", "-s", "tests"),
+            },
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            decision_file = self._decision_file(
+                tmp_path,
+                [{"issue_number": 42, "decision": "accept"}],
+            )
+
+            with self.assertRaises(ralph.IssueFailure):
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    loop._apply_exploratory_acceptance_decisions(decision_file)
+
+            manifest = json.loads(
+                next(
+                    tmp_path.glob("logs/exploratory-acceptance-*/ralph-run.json")
+                ).read_text(encoding="utf-8")
+            )
+
+        commands = [call.args for call in runner.calls]
+        self.assertNotIn(("git", "push", "origin", "HEAD:dev"), commands)
+        self.assertFalse(any(command[:3] == ("gh", "issue", "comment") for command in commands))
+        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+        self.assertEqual(manifest["status"], "failed")
+        self.assertIn(
+            "No accepted issue metadata was changed",
+            manifest["failure"]["recovery_guidance"],
+        )
+
+    def test_hold_comments_reason_without_push_or_label_change(self) -> None:
+        runner = self._runner_for_reviewing_issue(
+            rev_parse_outputs=["abc1234\n"],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            decision_file = self._decision_file(
+                tmp_path,
+                [
+                    {
+                        "issue_number": 42,
+                        "decision": "hold",
+                        "reason": "Needs another product review.",
+                    }
+                ],
+            )
+
+            with redirect_stdout(io.StringIO()):
+                loop._apply_exploratory_acceptance_decisions(decision_file)
+
+            comment = next(
+                tmp_path.glob("logs/exploratory-acceptance-*/issue-42-comment.md")
+            ).read_text(encoding="utf-8")
+
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(any(command[:2] == ("git", "push") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("git", "worktree", "add") for command in commands)
+        )
+        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+        self.assertIn("Ralph exploratory acceptance held.", comment)
+        self.assertIn("Needs another product review.", comment)
+        self.assertIn("remains `agent-reviewing`", comment)
+
+    def test_reject_comments_and_moves_issue_to_ready_for_human(self) -> None:
+        runner = self._runner_for_reviewing_issue(
+            rev_parse_outputs=["abc1234\n"],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            decision_file = self._decision_file(
+                tmp_path,
+                [
+                    {
+                        "issue_number": 42,
+                        "decision": "reject",
+                        "reason": "The review branch changes the wrong workflow.",
+                    }
+                ],
+            )
+
+            with redirect_stdout(io.StringIO()):
+                loop._apply_exploratory_acceptance_decisions(decision_file)
+
+            comment = next(
+                tmp_path.glob("logs/exploratory-acceptance-*/issue-42-comment.md")
+            ).read_text(encoding="utf-8")
+
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(any(command[:2] == ("git", "push") for command in commands))
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "edit",
+                "42",
+                "-R",
+                "example/repo",
+                "--add-label",
+                "ready-for-human",
+                "--remove-label",
+                "agent-reviewing",
+                "--remove-label",
+                "agent-integrated",
+                "--remove-label",
+                "agent-running",
+                "--remove-label",
+                "agent-failed",
+                "--remove-label",
+                "agent-merged",
+                "--remove-label",
+                "ready-for-agent",
+            ),
+            commands,
+        )
+        command_text = " ".join(" ".join(command) for command in commands)
+        self.assertNotIn("--add-label agent-integrated", command_text)
+        self.assertIn("Ralph exploratory acceptance rejected.", comment)
+        self.assertIn("wrong workflow", comment)
+
+    def test_validation_requires_agent_reviewing_label_before_metadata_mutation(
+        self,
+    ) -> None:
+        runner = self._runner_for_reviewing_issue(
+            labels=[ralph.DELIVERY_EXPLORATORY_LABEL],
+            rev_parse_outputs=[],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            decision_file = self._decision_file(
+                tmp_path,
+                [{"issue_number": 42, "decision": "accept"}],
+            )
+
+            with self.assertRaises(ralph.IssueFailure):
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    loop._apply_exploratory_acceptance_decisions(decision_file)
+
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(any(command[:2] == ("git", "push") for command in commands))
+        self.assertFalse(any(command[:3] == ("gh", "issue", "comment") for command in commands))
+        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
 
 
 class CommandRunnerTests(unittest.TestCase):
@@ -3446,6 +4623,155 @@ Build it.
             self.assertEqual(manifest["pushes"]["integration_target"]["status"], "pushed")
             self.assertEqual(manifest["github_metadata"]["status"], "closed")
             self.assertEqual(manifest["qa_results"][0]["status"], "passed")
+
+    def test_agents_issue_without_full_access_flag_stops_before_claim(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            issue = make_issue({"ready-for-agent"}, AGENTS_IMPLEMENTATION_BODY)
+
+            with self.assertRaises(ralph.EnvironmentFailure) as caught:
+                loop._handle_implementation(issue)
+
+            manifest = load_run_manifest(tmp_path)
+
+        self.assertIn("Full-access implementation", str(caught.exception))
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+        self.assertFalse(any(command[:3] == ("git", "worktree", "add") for command in commands))
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["github_metadata"]["status"], "not_started")
+        self.assertEqual(
+            manifest["full_access_implementation"]["status"],
+            "blocked_missing_operator_flag",
+        )
+
+    def test_full_access_implementation_uses_bypass_and_read_only_issue_commands(
+        self,
+    ) -> None:
+        changed = (
+            " M .agents/skills/ralph-loop/SKILL.md\n"
+            " M docs/agents/ralph-loop.md\n"
+        )
+        runner = FakeRunner(status_outputs=[changed, changed])
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                allow_full_access_implementation=True,
+            )
+            issue = make_issue({"ready-for-agent"}, AGENTS_IMPLEMENTATION_BODY)
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=loop.config.delivery_mode,
+                target_branch=loop.config.target_branch,
+            )
+            branch, worktree_path, integration_path = loop._branch_and_worktrees(issue)
+            worktree_path.mkdir(parents=True)
+            run_dir = tmp_path / "logs" / "issue-42-test"
+            manifest = ralph.RunManifest.for_implementation(
+                run_dir=run_dir,
+                issue=issue,
+                delivery_plan=delivery_plan,
+                branch=branch,
+                worktree_path=worktree_path,
+                integration_path=integration_path,
+                config=loop.config,
+            )
+            access_plan = ralph.issue_implementation_access_plan(issue)
+
+            with redirect_stdout(io.StringIO()):
+                loop._implement_with_retry(
+                    issue,
+                    worktree_path,
+                    run_dir,
+                    manifest,
+                    access_plan=access_plan,
+                )
+
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        codex_call = next(call for call in runner.calls if call.args[:2] == ("codex", "exec"))
+        self.assertIn("--dangerously-bypass-approvals-and-sandbox", codex_call.args)
+        self.assertNotIn("--sandbox", codex_call.args)
+        self.assertNotIn("--full-auto", codex_call.args)
+        self.assertEqual(
+            manifest_payload["sandboxed_issue_access"]["allowed_commands"],
+            [
+                "gh auth status",
+                "gh issue view",
+                "gh issue list",
+                "gh issue status",
+            ],
+        )
+        self.assertEqual(
+            manifest_payload["full_access_implementation"]["status"],
+            "diff_confined",
+        )
+        self.assertIn(("prek", "run", "-a"), [call.args for call in runner.calls])
+
+    def test_full_access_out_of_anchor_diff_fails_before_qa_and_retry(self) -> None:
+        runner = FakeRunner(
+            status_outputs=[
+                " M .agents/skills/ralph-loop/SKILL.md\n M scripts/ralph.py\n"
+            ]
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                allow_full_access_implementation=True,
+            )
+            issue = make_issue({"ready-for-agent"}, AGENTS_IMPLEMENTATION_BODY)
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=loop.config.delivery_mode,
+                target_branch=loop.config.target_branch,
+            )
+            branch, worktree_path, integration_path = loop._branch_and_worktrees(issue)
+            worktree_path.mkdir(parents=True)
+            run_dir = tmp_path / "logs" / "issue-42-test"
+            manifest = ralph.RunManifest.for_implementation(
+                run_dir=run_dir,
+                issue=issue,
+                delivery_plan=delivery_plan,
+                branch=branch,
+                worktree_path=worktree_path,
+                integration_path=integration_path,
+                config=loop.config,
+            )
+            access_plan = ralph.issue_implementation_access_plan(issue)
+
+            with self.assertRaises(ralph.FullAccessImplementationScopeFailure):
+                with redirect_stdout(io.StringIO()):
+                    loop._implement_with_retry(
+                        issue,
+                        worktree_path,
+                        run_dir,
+                        manifest,
+                        access_plan=access_plan,
+                    )
+
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        commands = [call.args for call in runner.calls]
+        self.assertEqual(
+            sum(1 for command in commands if command[:2] == ("codex", "exec")),
+            1,
+        )
+        self.assertNotIn(("prek", "run", "-a"), commands)
+        self.assertNotIn(("python3", "-m", "unittest", "discover", "-s", "tests"), commands)
+        self.assertEqual(
+            manifest_payload["full_access_implementation"]["status"],
+            "diff_out_of_scope",
+        )
+        self.assertEqual(
+            manifest_payload["full_access_implementation"]["out_of_scope_files"],
+            ["scripts/ralph.py"],
+        )
 
     def test_end_of_file_fixer_commit_recovery_stages_reruns_commit_check_and_retries(
         self,

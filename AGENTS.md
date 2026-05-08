@@ -74,13 +74,19 @@ This repo uses a single root `CONTEXT.md` for canonical language. See
   - `make integration-test` for local **Integration test** validation.
   - `make duplicate-check` for the pylint duplicate-code check.
   - `make run-prek` for the ETL **Commit check** surface.
+- For `backend-services/marimo`, use:
+  - `uv run pytest tests/component` for **Component test** validation.
+  - `prek run -a` for the Marimo **Commit check** surface.
 - Direct `uv run pytest path::test` commands are fine for narrowed debugging.
-  Use the Makefile targets again before treating a lane as validated.
+  Use the documented Subproject command surface again before treating a lane as
+  validated.
 - Run ETL **Integration tests** when changes touch LocalStack, S3, Dagster
   integration boundaries, or when doing **Push check** validation. Do not run
   them by default for pure unit-scoped changes.
 - Use `make run-prek` for isolated `aemo-etl` changes. Use root `prek run -a`
-  for root docs/config changes or cross-subproject changes.
+  for root docs/config changes or cross-subproject changes. For Marimo
+  docs-only changes, use root `prek run -a`; for mixed Marimo runtime and
+  maintained-doc changes, run both Marimo Subproject QA and root `prek run -a`.
 
 ## Doc sync
 

@@ -22,10 +22,10 @@ corresponding Python definitions.
 | --- | --- |
 | `silver.gas_model.silver_gas_dim_date` | one row per calendar date from 1900-01-01 through the run date |
 | `silver.gas_model.silver_gas_dim_participant` | one current row per merged gas participant identity |
-| `silver.gas_model.silver_gas_participant_market_membership` | one row per participant, source system, and market code |
-| `silver.gas_model.silver_gas_dim_facility` | one current row per source-qualified gas facility |
+| `silver.gas_model.silver_gas_participant_market_membership` | one row per participant, source system, market code, and optional STTM hub/registration role |
+| `silver.gas_model.silver_gas_dim_facility` | one current row per source-qualified gas facility and optional hub |
 | `silver.gas_model.silver_gas_dim_location` | one current row per source-qualified gas location |
-| `silver.gas_model.silver_gas_dim_connection_point` | one current row per source-qualified gas connection point |
+| `silver.gas_model.silver_gas_dim_connection_point` | one current row per source-qualified gas connection point, flow direction, and optional hub |
 | `silver.gas_model.silver_gas_dim_zone` | one current row per source-qualified gas zone |
 | `silver.gas_model.silver_gas_dim_pipeline_segment` | one current row per source-qualified gas pipeline segment |
 | `silver.gas_model.silver_gas_dim_operational_point` | one current row per source-qualified VICGAS operational point |
@@ -36,6 +36,7 @@ corresponding Python definitions.
 erDiagram
     SILVER_GAS_DIM_PARTICIPANT ||--o{ SILVER_GAS_PARTICIPANT_MARKET_MEMBERSHIP : participant_key
     SILVER_GAS_DIM_PARTICIPANT ||--o{ SILVER_GAS_DIM_FACILITY : participant_key
+    SILVER_GAS_DIM_ZONE ||--o{ SILVER_GAS_DIM_FACILITY : zone_key
     SILVER_GAS_DIM_FACILITY ||--o{ SILVER_GAS_DIM_CONNECTION_POINT : facility_key
     SILVER_GAS_DIM_LOCATION ||--o{ SILVER_GAS_DIM_CONNECTION_POINT : location_key
     SILVER_GAS_DIM_ZONE ||--o{ SILVER_GAS_DIM_CONNECTION_POINT : zone_key
@@ -82,6 +83,11 @@ erDiagram
         string market_code
         string source_company_id
         string source_company_code
+        string source_hub_id
+        string source_hub_name
+        string registration_type
+        string registered_capacity
+        string membership_status
         string participant_identity_source
         string participant_identity_value
         string source_surrogate_key
@@ -93,8 +99,11 @@ erDiagram
         string table_name "silver.gas_model.silver_gas_dim_facility"
         string surrogate_key PK
         string participant_key FK
+        string zone_key FK
         string source_system
         list source_tables
+        string source_hub_id
+        string source_hub_name
         string source_facility_id
         string facility_name
         string facility_short_name
@@ -105,8 +114,16 @@ erDiagram
         string operator_name
         string source_operator_id
         date operator_change_date
+        date capacity_effective_from_date
+        date capacity_effective_to_date
+        float default_capacity
+        float maximum_capacity
+        float high_capacity_threshold
+        float low_capacity_threshold
         string source_surrogate_key
+        list source_surrogate_keys
         string source_file
+        list source_files
         timestamp ingested_timestamp
     }
 
@@ -133,6 +150,8 @@ erDiagram
         string zone_key FK
         string source_system
         list source_tables
+        string source_hub_id
+        string source_hub_name
         string source_facility_id
         string source_connection_point_id
         string source_node_id
@@ -145,6 +164,7 @@ erDiagram
         boolean exempt
         string exemption_description
         date effective_date
+        date effective_to_date
         string source_surrogate_key
         string source_file
         timestamp ingested_timestamp
@@ -210,21 +230,28 @@ erDiagram
   from `1900-01-01` through the run date.
 - `silver_gas_dim_participant`:
   `silver.gbb.silver_gasbb_participants_list`,
-  `silver.vicgas.silver_int125_v8_details_of_organisations_1`
+  `silver.vicgas.silver_int125_v8_details_of_organisations_1`,
+  `silver.sttm.silver_int670_v1_registered_participants_rpt_1`
 - `silver_gas_participant_market_membership`:
   `silver.gbb.silver_gasbb_participants_list`,
-  `silver.vicgas.silver_int125_v8_details_of_organisations_1`
-- `silver_gas_dim_facility`: `silver.gbb.silver_gasbb_facilities`
+  `silver.vicgas.silver_int125_v8_details_of_organisations_1`,
+  `silver.sttm.silver_int670_v1_registered_participants_rpt_1`
+- `silver_gas_dim_facility`:
+  `silver.gbb.silver_gasbb_facilities`,
+  `silver.sttm.silver_int671_v1_hub_facility_definition_rpt_1`,
+  `silver.sttm.silver_int687_v1_facility_hub_capacity_data_rpt_1`
 - `silver_gas_dim_location`: `silver.gbb.silver_gasbb_locations_list`
 - `silver_gas_dim_connection_point`:
   `silver.gbb.silver_gasbb_nodes_connection_points`,
-  `silver.gbb.silver_gasbb_demand_zones_and_pipeline_connectionpoint_mapping`
+  `silver.gbb.silver_gasbb_demand_zones_and_pipeline_connectionpoint_mapping`,
+  `silver.sttm.silver_int691_v1_sttm_ctp_register_rpt_1`
 - `silver_gas_dim_zone`:
   `silver.gbb.silver_gasbb_demand_zones_and_pipeline_connectionpoint_mapping`,
   `silver.gbb.silver_gasbb_linepack_zones`,
   `silver.vicgas.silver_int188_v4_ctm_to_hv_zone_mapping_1`,
   `silver.vicgas.silver_int284_v4_tuos_zone_postcode_map_1`,
-  `silver.vicgas.silver_int259_v4_pipe_segment_1`
+  `silver.vicgas.silver_int259_v4_pipe_segment_1`,
+  `silver.sttm.silver_int671_v1_hub_facility_definition_rpt_1`
 - `silver_gas_dim_pipeline_segment`:
   `silver.vicgas.silver_int259_v4_pipe_segment_1`,
   `silver.vicgas.silver_int258_v4_mce_nodes_1`
@@ -240,6 +267,17 @@ erDiagram
   source tables and refreshed by a daily Dagster schedule.
 - `silver_gas_dim_zone` also keeps list-valued lineage because multiple source
   rows can contribute to one conformed zone row.
+- STTM hub identifiers from `INT671` are represented as
+  `silver_gas_dim_zone` rows with `zone_type = sttm_hub`.
+- `silver_gas_dim_facility.zone_key` is nullable for non-hub-scoped facility
+  rows. STTM facilities resolve `zone_key` through their STTM hub zone rows;
+  STTM facility `participant_key` remains nullable because `INT671` and
+  `INT687` do not identify an operator participant.
+- STTM CTP rows from `INT691` resolve `facility_key` through STTM facility
+  rows and `zone_key` through STTM hub rows. Their `location_key` is nullable
+  because `INT691` has no source location identifier, and their
+  `flow_direction` is `not_applicable` because `INT691` has no flow-direction
+  field.
 - `silver_gas_dim_operational_point` currently has nullable `zone_key` and
   `pipeline_segment_key`; the implemented transform does not yet resolve those
   joins from source identifiers.

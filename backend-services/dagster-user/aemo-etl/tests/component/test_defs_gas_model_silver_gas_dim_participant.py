@@ -63,12 +63,34 @@ def _vicgas_organisations() -> pl.LazyFrame:
     )
 
 
+def _sttm_participants() -> pl.LazyFrame:
+    return pl.LazyFrame(
+        {
+            "hub_identifier": ["SYD"],
+            "hub_name": ["Sydney"],
+            "company_identifier": ["1"],
+            "company_name": ["STTM Participant"],
+            "abn": ["11 222 333 444"],
+            "acn": ["123 456 789"],
+            "organisation_registration_type": ["Trading Participant"],
+            "registered_capacity": ["Shipper"],
+            "registered_capacity_status": ["Active"],
+            "registration_status": ["Registered"],
+            "last_update_datetime": ["2024-02-03 04:05:06"],
+            "report_datetime": ["2024-02-03 05:00:00"],
+            "ingested_timestamp": [datetime(2024, 1, 3, tzinfo=timezone.utc)],
+            "surrogate_key": ["sttm-key"],
+            "source_file": ["s3://sttm"],
+        }
+    )
+
+
 def test_silver_gas_dim_participant_transform() -> None:
     fn = silver_gas_dim_participant.op.compute_fn.decorated_fn  # type: ignore[union-attr]
 
     result = cast(
         MaterializeResult[pl.LazyFrame],
-        fn(_gbb_participants(), _vicgas_organisations()),
+        fn(_gbb_participants(), _vicgas_organisations(), _sttm_participants()),
     )
     collected = result.value.collect()
 
@@ -78,9 +100,9 @@ def test_silver_gas_dim_participant_transform() -> None:
     assert row["participant_identity_source"] == "company_id"
     assert row["participant_identity_value"] == "1"
     assert row["surrogate_key"] is not None
-    assert row["source_systems"] == ["GBB", "VICGAS"]
-    assert row["source_tables"] == SOURCE_TABLES
-    assert row["source_surrogate_keys"] == ["gbb-key", "vic-key"]
+    assert row["source_systems"] == ["GBB", "STTM", "VICGAS"]
+    assert set(row["source_tables"]) == set(SOURCE_TABLES)
+    assert row["source_surrogate_keys"] == ["gbb-key", "sttm-key", "vic-key"]
 
 
 def test_required_fields_check_fails_for_null_required_field() -> None:

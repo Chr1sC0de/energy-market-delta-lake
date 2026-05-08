@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import ModuleType
+from unittest import mock
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GATE_SCRIPT = REPO_ROOT / ".agents" / "skills" / "shape-issues" / "scripts" / "shape_issue_gate.py"
+HF_PROVIDER_SCRIPT = (
+    REPO_ROOT / ".agents" / "skills" / "shape-issues" / "scripts" / "hf_embed_jsonl.py"
+)
 FIXTURE_PROVIDER = (
     REPO_ROOT / ".agents" / "skills" / "shape-issues" / "scripts" / "fixture_embed_jsonl.py"
 )
@@ -209,7 +215,109 @@ def run_gate(bundle_path: Path, out_dir: Path, *extra_args: str) -> subprocess.C
     )
 
 
+def load_script_module(name: str, path: Path) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise AssertionError(f"Could not load script module: {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 class ShapeIssueGateTests(unittest.TestCase):
+    def test_gate_defaults_use_06b_safe_embedding_command(self) -> None:
+        gate = load_script_module("shape_issue_gate_under_test", GATE_SCRIPT)
+
+        with (
+            mock.patch.dict("os.environ", {}, clear=True),
+            mock.patch.object(sys, "argv", ["shape_issue_gate.py", "bundle.json"]),
+        ):
+            args = gate.parse_args()
+            command = gate.default_embedding_command()
+
+        self.assertEqual(args.model_id, "Qwen/Qwen3-Embedding-0.6B")
+        self.assertIn("--model Qwen/Qwen3-Embedding-0.6B", command)
+        self.assertIn("--no-trust-remote-code", command)
+        self.assertIn("--batch-size 2", command)
+        self.assertIn("--device auto", command)
+        self.assertIn("--min-free-vram-gb 6", command)
+        self.assertNotIn("Qwen/Qwen3-Embedding-8B", command)
+
+    def test_hf_provider_defaults_use_06b_without_remote_code(self) -> None:
+        provider = load_script_module("hf_embed_jsonl_under_test", HF_PROVIDER_SCRIPT)
+
+        with mock.patch.object(sys, "argv", ["hf_embed_jsonl.py"]):
+            args = provider.parse_args()
+
+        self.assertEqual(args.model, "Qwen/Qwen3-Embedding-0.6B")
+        self.assertEqual(args.batch_size, 2)
+        self.assertEqual(args.device, "auto")
+        self.assertEqual(args.min_free_vram_gb, 6.0)
+        self.assertFalse(args.trust_remote_code)
+
+        with mock.patch.object(
+            sys,
+            "argv",
+            ["hf_embed_jsonl.py", "--trust-remote-code"],
+        ):
+            opted_in = provider.parse_args()
+        self.assertTrue(opted_in.trust_remote_code)
+
+    def test_hf_provider_auto_device_requires_enough_free_vram(self) -> None:
+        provider = load_script_module(
+            "hf_embed_jsonl_runtime_under_test",
+            HF_PROVIDER_SCRIPT,
+        )
+
+        class FakeCuda:
+            def __init__(
+                self,
+                *,
+                available: bool,
+                free_gb: float,
+                total_gb: float,
+            ) -> None:
+                self._available = available
+                self._free_bytes = int(free_gb * provider.BYTES_PER_GIB)
+                self._total_bytes = int(total_gb * provider.BYTES_PER_GIB)
+
+            def is_available(self) -> bool:
+                return self._available
+
+            def mem_get_info(self) -> tuple[int, int]:
+                return self._free_bytes, self._total_bytes
+
+            def current_device(self) -> int:
+                return 0
+
+        class FakeTorch:
+            def __init__(self, cuda: FakeCuda) -> None:
+                self.cuda = cuda
+
+        with mock.patch.object(sys, "argv", ["hf_embed_jsonl.py"]):
+            args = provider.parse_args()
+
+        high_vram = provider.select_runtime(
+            args,
+            FakeTorch(FakeCuda(available=True, free_gb=8.0, total_gb=12.0)),
+        )
+        low_vram = provider.select_runtime(
+            args,
+            FakeTorch(FakeCuda(available=True, free_gb=2.0, total_gb=12.0)),
+        )
+        no_cuda = provider.select_runtime(
+            args,
+            FakeTorch(FakeCuda(available=False, free_gb=0.0, total_gb=0.0)),
+        )
+
+        self.assertEqual(high_vram.device, "cuda:0")
+        self.assertIsNone(high_vram.fallback_reason)
+        self.assertEqual(low_vram.device, "cpu")
+        self.assertIn("below", low_vram.fallback_reason or "")
+        self.assertEqual(no_cuda.device, "cpu")
+        self.assertEqual(no_cuda.fallback_reason, "CUDA unavailable")
+
     def test_ready_issue_passes_with_context_anchors(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -217,8 +325,14 @@ class ShapeIssueGateTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
 
             report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+            markdown = (tmp_path / "report.md").read_text(encoding="utf-8")
 
         self.assertRegex(report["bundle_digest"], r"^[0-9a-f]{64}$")
+        self.assertEqual(report["embedding"]["runtime_device"], "fixture")
+        self.assertEqual(report["embedding"]["batch_size"], 1)
+        self.assertFalse(report["embedding"]["provider_metadata"]["trust_remote_code"])
+        self.assertIn("- Runtime device: `fixture`", markdown)
+        self.assertIn("- Batch size: `1`", markdown)
         issue = report["issues"][0]
         self.assertEqual(issue["action"], "ready")
         self.assertTrue(issue["ready"])

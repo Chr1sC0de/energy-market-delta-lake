@@ -17,7 +17,8 @@ Use this page as the agent documentation map. The imperative policy lives in
 ## Ralph and issue work
 
 - Ralph internals, **Local integration**, **Delivery mode**, **Integration
-  target**, **Ready issue refresh**, **Promotion**, and
+  target**, **Full-access implementation pass**, **Ready issue refresh**,
+  **Exploratory acceptance review**, **Promotion**, and
   **Post-promotion review**, including checkpointed Operator runs:
   [ralph-loop.md](ralph-loop.md)
 - GitHub Issue queue rules:
@@ -44,8 +45,9 @@ Use this page as the agent documentation map. The imperative policy lives in
   `## Review focus` explains the needed **Exploratory branch** review.
 - Use `$ralph-loop` to drain ready issues, launch checkpointed Operator runs,
   publish **Exploratory branches** for Exploratory handoff, inspect failures,
-  and run **Promotion**. Human review accepts Exploratory work by moving it to
-  `agent-integrated`, or rejects it by moving it to `ready-for-human`.
+  handle **Exploratory acceptance review**, and run **Promotion**. Human review
+  accepts Exploratory work by moving it to `agent-integrated`, or rejects it by
+  moving it to `ready-for-human`.
 - Use `$grill-with-docs`, `$to-prd`, and `$shape-issues` before Ralph when the
   work needs shaping or issue creation.
 
@@ -67,6 +69,7 @@ Use this page as the agent documentation map. The imperative policy lives in
   - `docs/agents/triage-labels.md`
   - `docs/agents/domain.md`
   - `docs/repository/documentation-sync.md`
+  - `docs/adr/0007-ralph-full-access-implementation-pass.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

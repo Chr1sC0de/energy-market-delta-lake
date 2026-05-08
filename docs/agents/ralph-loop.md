@@ -78,13 +78,19 @@ be reconciled against current branch state.
 flowchart TD
   START[Start drain] --> PREFLIGHT[Validate tools, root worktree, GitHub auth, sandboxed issue access, and labels]
   PREFLIGHT --> READY{Unblocked ready-for-agent issue?}
-  READY -->|Yes| CLAIM[Claim issue with agent-running]
+  READY -->|Yes| ACCESS{Issue anchors .agents paths?}
+  ACCESS -->|Yes| FLAG{Full-access flag enabled?}
+  FLAG -->|No| ENVFAIL[Stop before claim as Environment failure]
+  FLAG -->|Yes| CLAIM[Claim issue with agent-running]
+  ACCESS -->|No| CLAIM
   CLAIM --> CONTRACT{Issue contract valid?}
   CONTRACT -->|No| FAIL[Mark agent-failed and comment evidence]
   CONTRACT -->|Yes| MODE[Resolve Delivery mode and Integration target]
   MODE --> WORKTREE[Create issue branch and worktree]
   WORKTREE --> CODEX[Run Codex implementation]
-  CODEX --> QA[Run selected Test lane QA]
+  CODEX --> SCOPE{Full-access diff inside anchors?}
+  SCOPE -->|No| FAIL
+  SCOPE -->|Yes| QA[Run selected Test lane QA]
   QA --> DONE{Delivery mode?}
   DONE -->|Gitflow or Trunk| INTEGRATE[Run Local integration]
   INTEGRATE --> DONE2{Delivery mode?}
@@ -103,6 +109,7 @@ flowchart TD
   TRIAGEPASS --> READY
   TRIAGE -->|No| STOP
   FAIL --> READY
+  ENVFAIL --> STOP
 ```
 
 ## Labels
@@ -158,11 +165,17 @@ python3 scripts/ralph.py --bootstrap-labels
 
 ## Run modes
 
-Dry-run the next action:
+Dry-run the drain queue preview:
 
 ```bash
 python3 scripts/ralph.py --drain --dry-run
 ```
+
+`--drain --dry-run` previews the next serial Gitflow or trunk candidate plus up
+to two eligible Exploratory candidates, using each issue's resolved
+**Delivery mode**. Set `--exploratory-concurrency N` to change that
+Exploratory preview bound; the default is `2` and the minimum is `1`.
+Targeted `--issue` dry runs still preview only that issue.
 
 Drain up to 10 implementation attempts:
 
@@ -189,6 +202,12 @@ Drain to durable **Exploratory branches** for exploratory changes:
 python3 scripts/ralph.py --drain --delivery-mode exploratory
 ```
 
+Preview more Exploratory candidates in a dry run:
+
+```bash
+python3 scripts/ralph.py --drain --dry-run --exploratory-concurrency 4
+```
+
 Drain until only blocked or non-actionable issues remain:
 
 ```bash
@@ -199,6 +218,13 @@ Implement one specific issue:
 
 ```bash
 python3 scripts/ralph.py --issue 25
+```
+
+Implement `.agents/` workflow issues only after explicit operator approval for a
+**Full-access implementation pass**:
+
+```bash
+python3 scripts/ralph.py --issue 25 --allow-full-access-implementation
 ```
 
 Implement one specific issue and then run **Ready issue refresh**:
@@ -226,6 +252,9 @@ Run repeated drain and **Promotion** cycles in a foreground terminal:
 python3 scripts/ralph.py --drain-promote-all --max-cycles 10
 ```
 
+Checkpointed Operator child runs forward `--exploratory-concurrency`; the
+default remains `2`.
+
 Launch the checkpointed Operator run in Codex-safe detached mode:
 
 ```bash
@@ -237,6 +266,23 @@ Inspect the latest Operator run without following child logs:
 ```bash
 python3 scripts/ralph.py --operator-run-status latest
 ```
+
+Apply explicit Exploratory acceptance decisions from a JSON artifact:
+
+```bash
+python3 scripts/ralph.py --apply-exploratory-acceptance-decisions path/to/decisions.json
+```
+
+Continue a paused Exploratory acceptance conflict run after the acceptance
+worktree is resolved and clean:
+
+```bash
+python3 scripts/ralph.py --continue-exploratory-acceptance .ralph/runs/exploratory-acceptance-20260504T010203Z
+```
+
+Use `--source-branch <branch>` with that command only when the Gitflow source
+branch is not `dev`. The apply flow does not support `--dry-run` because
+accepted decisions may push the source branch after merged-target QA passes.
 
 Skip the default **Post-promotion review** during **Promotion**:
 
@@ -280,13 +326,16 @@ python3 scripts/ralph.py --drain --allow-dirty-worktree
 
 ## Live run preflight
 
-Live `--issue`, `--drain`, and `--promote` runs fail before GitHub issue claim,
-worktree creation, **Local integration**, Exploratory handoff, or push when the
-root worktree has uncommitted changes. Commit or stash root worktree changes
-before live Ralph runs. Use `--allow-dirty-worktree` only for an explicit
-dirty-worktree operation. `--dry-run` remains available on a dirty root worktree
-so operators can inspect the next Ralph action without mutating issues or
-branches.
+Live `--issue`, `--drain`, `--promote`,
+`--apply-exploratory-acceptance-decisions`, and
+`--continue-exploratory-acceptance` runs fail before GitHub issue claim,
+worktree creation, **Local integration**, Exploratory handoff, acceptance
+merge, acceptance continue, or push when the root worktree has uncommitted
+changes. Commit or stash root worktree changes before live Ralph runs. Use
+`--allow-dirty-worktree` only for an explicit dirty-worktree operation.
+`--dry-run` remains available on a dirty root worktree for drain and issue
+previews so operators can inspect the next Ralph action without mutating issues
+or branches.
 
 Before a live drain, validate both GitHub API auth and Git push auth for the
 expected **Integration target**:
@@ -300,10 +349,10 @@ When using token-based GitHub CLI auth, export `GH_TOKEN` in the shell that runs
 Ralph. Do not paste token values into commands, issue comments, docs, or logs.
 Ralph also gives spawned Codex subprocesses **Sandboxed issue access** by
 default: it resolves a token from `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth
-token`, injects it as `GH_TOKEN`, enables network for the workspace-write Codex
-sandbox, and prepends a wrapper that permits only `gh auth status` plus the
-phase-specific `gh issue` commands. Implementation, triage, and **Ready issue
-refresh** passes may get phase-limited issue reads and writes. The
+token`, injects it as `GH_TOKEN`, enables network for the Codex sandbox selected
+for that phase, and prepends a wrapper that permits only `gh auth status` plus
+the phase-specific `gh issue` commands. Implementation, triage, and **Ready
+issue refresh** passes may get phase-limited issue reads and writes. The
 **Post-promotion review** gets read-only issue access: `gh issue view`,
 `gh issue list`, and `gh issue status`. The review agent cannot call
 `gh issue create`, `comment`, `edit`, `close`, or `reopen`. After a successful
@@ -312,6 +361,26 @@ validated create-only helper that calls only issue search and issue create. This
 does not grant Git push access; Git fetches, **Local integration**, Exploratory
 handoff pushes, **Integration target** pushes, and **Promotion** stay in
 Ralph's outer loop.
+
+Ralph treats ready issues whose `## Context anchors` include `.agents/` `Path:`
+or `Doc:` paths as agent-workflow changes. Those issues require
+`--allow-full-access-implementation` before Ralph claims the issue. Without that
+operator flag, Ralph records `full_access_implementation.status:
+blocked_missing_operator_flag` and stops as an **Environment failure** before
+claiming, creating a worktree, or marking the issue failed. With the flag,
+only the Codex implementation subprocess for that issue runs as a
+**Full-access implementation pass** using Codex's approvals-and-sandbox bypass.
+The subprocess receives read-only GitHub Issue commands only: `gh auth status`,
+`gh issue view`, `gh issue list`, and `gh issue status`.
+
+After each full-access Codex implementation attempt returns, Ralph reads the
+worktree diff before QA. Every changed file must match an issue context anchor;
+`Path:` and `Doc:` anchors are file or directory path anchors, and directory
+anchors, including anchors ending in `/`, allow files below that directory. If
+any changed file is outside those anchors, Ralph records
+`full_access_implementation.status: diff_out_of_scope`, skips QA, skips retry,
+skips **Local integration** or Exploratory handoff, preserves the implementation
+worktree, and marks the claimed issue failed with recovery guidance.
 
 Ralph also standardizes writable QA runtime paths for spawned Codex
 subprocesses and Ralph-run QA commands. If the operator exports `DAGSTER_HOME`,
@@ -346,19 +415,28 @@ integration** commits, **Promotion** commits, QA surfaces,
 **Post-promotion review** follow-ups, final queue state, and stop or failure
 reasons. Both rollups record the underlying child `.ralph/runs/.../ralph-run.json`
 paths without tailing child Codex JSONL or rich command logs.
+When open `agent-reviewing` issues remain and no unblocked ready work can
+proceed, the Operator run also writes `exploratory-acceptance-review.md` and
+`exploratory-acceptance-review.json` under the same run directory.
 
 The Operator run checks the open GitHub Issue queue for these runtime states:
 
 - `ready-for-agent`
 - `agent-integrated`
+- `agent-reviewing`
 - `agent-running`
 - `agent-failed`
 
 It stops cleanly only when none of those open issues remain. It stops with
-recovery guidance when `agent-running` or `agent-failed` issues remain, when
-ready issues remain but none are unblocked, when an issue or **Promotion** child
-manifest fails, or when `--max-cycles` is reached. The default cycle guard is
-10; use `--max-cycles 0` only for explicit unlimited Operator runs.
+`needs_review` when open `agent-reviewing` issues require **Exploratory
+acceptance review** before blocked ready work can proceed. That checkpoint is
+`exploratory_acceptance_review_required`; it is non-mutating and does not push,
+comment, edit labels, close issues, or update **Integration targets**. It still
+stops with failed recovery guidance when `agent-running` or `agent-failed`
+issues remain, when ready issues are blocked by non-review work, when an issue
+or **Promotion** child manifest fails, or when `--max-cycles` is reached. The
+default cycle guard is 10; use `--max-cycles 0` only for explicit unlimited
+Operator runs.
 
 Checkpoints are recorded for:
 
@@ -366,6 +444,7 @@ Checkpoints are recorded for:
 - before **Promotion**
 - **Promotion** success or failure
 - **Post-promotion review** follow-up creation
+- **Exploratory acceptance review** required
 - queue clean
 - stopped-by-guard
 
@@ -389,7 +468,9 @@ Status reports the current state, last checkpoint, current issue or
 recommended next action. Read `operator-run-rollup.md` first for completed or
 stopped runs. Open the child `ralph-run.json` or command logs only when the
 status guidance or rollup points to a failed issue, failed **Promotion**, or
-manual recovery condition.
+manual recovery condition. If status reports `needs_review`, read
+`exploratory-acceptance-review.md`, then run the `$ralph-loop` Exploratory
+acceptance review flow before rerunning drain or **Promotion**.
 
 ## AFK run monitoring
 
@@ -437,6 +518,8 @@ Key fields for inspection:
 - `github_metadata.issues`: promoted issue numbers, recorded issue evidence
   commits, per-issue Promotion metadata command log paths, and manual recovery
   evidence warnings during **Promotion**.
+- `configuration.exploratory_concurrency`: the configured Exploratory preview
+  bound for the Ralph run.
 - `delivery_mode`: issue **Delivery mode**; **Promotion** records `gitflow`.
 - `integration_target`: branch Ralph is updating for the run.
 - `source_branch`: **Promotion** source branch, usually `dev`.
@@ -462,12 +545,22 @@ Key fields for inspection:
   status, formatter-modified tracked files, staged files, original and retry
   commit log paths, rerun **Commit check** results, failure type, and recovery
   guidance.
+- `full_access_implementation`: whether a **Full-access implementation pass** was
+  enabled or required, the normalized context anchors, changed files,
+  out-of-scope files, status, and recovery guidance.
+- `decisions`: explicit Exploratory acceptance decisions, per-issue validation
+  state, handoff branch and commit, accepted `dev` commit, metadata operations,
+  and recovery context for `exploratory_acceptance_apply` runs.
+- `acceptance_conflict`: paused Exploratory acceptance conflict status,
+  acceptance worktree path, conflicted files, `decisions.json`,
+  `conflicts.json`, `codex-resolution-prompt.md`, continue command, and
+  recovery guidance.
 - `branches`: issue, source, and target branch names that apply to the run.
 - `paths`: repo root, run directory, worktree container, and implementation,
-  branch-sync, integration, Promotion source, or Promotion target worktree
-  paths.
+  branch-sync, integration, Promotion source, Promotion target, or Exploratory
+  acceptance worktree paths.
 - `changed_files`: current file diff used for QA, **Local integration**, or
-  Exploratory handoff.
+  Exploratory handoff or acceptance.
 - `qa_results`: selected QA commands, cwd, log path, and pass/fail state.
 - `qa_runtime_env`: effective `DAGSTER_HOME`, `XDG_CACHE_HOME`, and
   `UV_CACHE_DIR` values plus whether each came from the operator environment or
@@ -519,6 +612,26 @@ Recovery does not rerun Codex, rerun QA, create commits, push branches, or clean
 worktrees. Normal Ralph runs keep fail-stop behavior: if metadata operations
 fail after a push, Ralph stops loudly so an operator can inspect the run and
 recover deliberately.
+
+Exploratory acceptance merge conflicts pause with run status
+`acceptance_conflict` before push or GitHub Issue metadata mutation. Ralph
+leaves the acceptance worktree in place and writes `decisions.json`,
+`conflicts.json`, and `codex-resolution-prompt.md` under the run directory. The
+prompt tells Codex to work only in that acceptance worktree, preserve the
+accepted issue intent, commit the conflict resolution, and leave the worktree
+clean. Use `--inspect-run <run_dir>` to print the paused worktree path and the
+`--continue-exploratory-acceptance <run_dir>` command.
+
+`--continue-exploratory-acceptance <run_dir>` reloads the paused decision set,
+refuses missing or mismatched artifacts, refuses a missing, stale, dirty, or
+still-conflicted acceptance worktree, reruns selected merged-target QA, pushes
+the Gitflow source branch, and only then applies acceptance metadata. If
+metadata fails after `dev` is pushed, treat the run as post-push recovery:
+verify the pushed commit in the manifest, then add any missing
+`Ralph exploratory acceptance completed.` evidence and label transitions before
+rerunning **Promotion**. Non-conflict apply failures before the accepted branch
+push still leave accepted issue metadata unchanged and record recovery guidance
+in the manifest.
 
 If a failed Gitflow run passed issue QA but failed before recording
 `integration_commit`, and an operator manually creates or pushes the recovered
@@ -587,6 +700,12 @@ creates the **Exploratory branch** from `origin/main`. Codex is instructed not
 to commit, push, or edit GitHub issue state; Ralph owns those steps after QA
 passes.
 
+Normal implementation attempts use the workspace-write Codex sandbox and
+phase-limited **Sandboxed issue access**. Ready issues that name `.agents/`
+context anchors use the **Full-access implementation pass** only when the
+operator passed `--allow-full-access-implementation`; they retain read-only issue
+commands and must pass Ralph's context-anchor diff guard before QA.
+
 Before building the Codex implementation prompts for an issue, Ralph fetches
 issue comments for the issue being implemented. The prompt keeps the issue body
 as the primary contract, then appends a separate
@@ -623,11 +742,31 @@ squash merge: Ralph pushes the validated **Exploratory branch** to origin,
 marks the issue `agent-reviewing`, and leaves it open for human review. Ralph
 does not open a GitHub draft PR.
 
-Human review owns the next Exploratory state transition. For accepted
-Exploratory work, merge the reviewed **Exploratory branch** to `dev`, add
-acceptance evidence to the issue, remove `agent-reviewing`, and add
+Human review owns the next Exploratory state decision. The Operator records
+explicit `accept`, `hold`, or `reject` decisions in a JSON artifact:
+
+```json
+{
+  "decisions": [
+    {"issue_number": 42, "decision": "accept", "reason": "Reviewed."}
+  ]
+}
+```
+
+Ralph applies that artifact with:
+
+```bash
+python3 scripts/ralph.py --apply-exploratory-acceptance-decisions path/to/decisions.json
+```
+
+Ralph validates that each issue is still open with `agent-reviewing` and has a
+parseable Exploratory handoff branch and commit. Accepted decisions are merged
+into one temporary acceptance worktree based on the configured Gitflow source
+branch, normally `origin/dev`. Ralph runs selected merged-target QA from the
+resulting changed files, pushes `dev` only after QA passes, then adds
+acceptance evidence to the issue, removes `agent-reviewing`, and adds
 `agent-integrated` so the issue can close through the existing **Promotion**
-path. The acceptance comment must start with:
+path. The acceptance comment starts with:
 
 ```markdown
 Ralph exploratory acceptance completed.
@@ -636,12 +775,31 @@ Commit: `<dev-commit-sha>`
 ```
 
 The commit is the `dev` commit that made the accepted work reachable from the
-source branch. For rejected Exploratory work, leave the issue open, remove
-`agent-reviewing`, add `ready-for-human`, and comment the review result and
-next action. Rejected review must not add `agent-integrated`. ADR
+source branch. Held decisions comment the reason and leave `agent-reviewing` in
+place. Rejected decisions leave the issue open, remove `agent-reviewing`, add
+`ready-for-human`, and comment the review result and next action. Rejected
+review must not add `agent-integrated`. If an accepted branch merge conflicts,
+Ralph pauses with `acceptance_conflict`, writes `decisions.json`,
+`conflicts.json`, and `codex-resolution-prompt.md`, and does not push or mutate
+GitHub Issues until `--continue-exploratory-acceptance <run_dir>` validates a
+clean resolved acceptance worktree and reruns merged-target QA. No GitHub
+metadata changes happen for accepted decisions before the accepted branch
+merge, merged-target QA, and source branch push succeed. ADR
 [0005](../adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md)
 records why **Exploratory branches** stay outside automatic **Promotion** until
 human acceptance evidence reaches `dev`.
+
+Checkpointed Operator runs make open `agent-reviewing` issues first-class. If
+no unblocked ready issue can proceed and ready work is waiting on
+`agent-reviewing` review, Ralph stops with terminal status `needs_review` and
+checkpoint `exploratory_acceptance_review_required`. The generated
+**Exploratory acceptance review** artifacts list each published **Exploratory
+branch**, issue number, title, handoff commit, changed files, recorded QA
+evidence, detectable missing **Test lane** evidence, mergeability against
+`origin/dev` or the configured Gitflow source branch, and downstream
+`ready-for-agent` issues blocked by the review decision. The artifact is
+non-mutating: it reads issue and git state only and does not push, comment,
+change labels, close issues, or update **Integration targets**.
 
 ```mermaid
 sequenceDiagram
@@ -947,9 +1105,10 @@ If post-Promotion analysis or metadata mutation fails, Ralph records
 succeeded, and continues cleanup. Operators inspect the Promotion manifest and
 reconcile only the failed GitHub Issue metadata before rerunning the drain.
 
-In `--dry-run`, Ralph reports that Ready issue refresh candidate selection would
-run after **Local integration** or Exploratory handoff; it does not invoke Codex
-or mutate GitHub Issues.
+In `--drain --dry-run`, Ralph reports the serial and Exploratory queue preview
+and that Ready issue refresh candidate selection would run after each previewed
+**Local integration** or Exploratory handoff; it does not invoke Codex or mutate
+GitHub Issues.
 
 Use the repo-local `$ralph-issue-refresh` skill as the entry point for this
 contract. The full metadata-refresh contract is allowed to mutate only GitHub
@@ -1015,6 +1174,25 @@ prek run -a
 
 Mixed docs/runtime `aemo-etl` changes run both the runtime AEMO ETL commands and
 the root doc **Commit check**.
+
+For runtime Marimo changes, Ralph runs from the owning **Subproject**:
+
+```bash
+uv run pytest tests/component
+prek run -a
+```
+
+Docs-only Marimo changes are recognized by the maintained Markdown doc path
+rules in [documentation-sync.md](../repository/documentation-sync.md). They skip
+the Marimo **Component test** and run the root doc **Commit check** surface:
+
+```bash
+prek run -a
+```
+
+Mixed docs/runtime Marimo changes run both the Marimo **Component test** and
+Marimo **Commit check** from `backend-services/marimo`, plus the root doc
+**Commit check**.
 
 For root docs/config or cross-**Subproject** changes, Ralph runs:
 
@@ -1111,6 +1289,14 @@ the implementation worktree for inspection. Operators should inspect
 rerun the recorded **Commit check** from the owning **Subproject**, then rerun
 Ralph for the issue.
 
+Full-access diff scope failures are issue failures and keep the implementation
+worktree for inspection. Operators should inspect
+`full_access_implementation.out_of_scope_files`, remove or relocate changes that
+are outside the issue's `## Context anchors` `Path:` or `Doc:` paths, and rerun
+Ralph for the issue with
+`--allow-full-access-implementation` only if the `.agents/` scope is still
+intentional.
+
 Environment failures stop the run. Examples include invalid `gh` auth, missing
 labels, unavailable tools, failing Git operations before claim, or unavailable
 container-backed **Integration test** dependencies.
@@ -1128,6 +1314,7 @@ container-backed **Integration test** dependencies.
   - `docs/agents/triage-labels.md`
   - `docs/repository/documentation-sync.md`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
+  - `docs/adr/0007-ralph-full-access-implementation-pass.md`
   - `.agents/skills/shape-issues/SKILL.md`
   - `.agents/skills/shape-issues/scripts/publish_shape_issues.py`
   - `.agents/skills/ralph-curate/SKILL.md`

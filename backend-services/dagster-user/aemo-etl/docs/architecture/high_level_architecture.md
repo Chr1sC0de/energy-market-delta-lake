@@ -100,6 +100,16 @@ manifest. The ad hoc `download_sttm_day_zip_files_job` handles DAYNN.ZIP
 bootstrap/backfill separately and lands bundles under `bronze/sttm/<filename>`
 for the STTM unzipper path.
 
+`src/aemo_etl/defs/raw/aemo_gas_documents.py` registers
+`bronze_aemo_gas_document_sources`, a daily AEMO gas document source asset. It
+uses `factories/aemo_gas_documents` to scrape the scoped public AEMO gas PDF
+source pages, record included, excluded, and `needs_human_review` source-page
+or link observations, land included PDF bytes under
+`LANDING_BUCKET/bronze/aemo_gas_documents`, write the metadata Delta table, and
+archive landed PDFs under `ARCHIVE_BUCKET/bronze/aemo_gas_documents` only after
+that metadata write succeeds. It does not extract PDF text, create wiki output,
+or write embeddings/vector storage.
+
 ### Unzipper assets
 
 `src/aemo_etl/defs/raw/unzipper.py` registers one unzipper asset per domain:
@@ -299,6 +309,7 @@ flowchart TD
     Defs --> GasModel["gas_model/"]
 
     Raw --> NemwebDefs["nemweb_public_files.py"]
+    Raw --> AemoGasDocs["aemo_gas_documents.py"]
     Raw --> UnzipDefs["unzipper.py"]
     Raw --> GBB["gbb/*.py"]
     Raw --> STTM["sttm/*.py + source_tables.json"]
@@ -308,6 +319,7 @@ flowchart TD
     STTM --> DFFactory
     VICGAS --> DFFactory
     NemwebDefs --> NemwebFactory["factories/nemweb_public_files"]
+    AemoGasDocs --> AemoGasDocsFactory["factories/aemo_gas_documents"]
     UnzipDefs --> UnzipFactory["factories/unzipper"]
 ```
 
@@ -329,6 +341,7 @@ flowchart TD
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/testing.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/jobs/download_vicgas_public_report_zip_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/aemo_gas_documents.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/unzipper.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/_manifest.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/source_tables.json`
@@ -376,6 +389,10 @@ flowchart TD
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/assets.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/models.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/scraper.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`

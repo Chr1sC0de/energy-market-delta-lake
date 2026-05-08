@@ -49,6 +49,10 @@ TEXT_EXTENSIONS = frozenset(
     }
 )
 TEXT_FILE_NAMES = frozenset({"Makefile", "AGENTS.md", "CONTEXT.md", "OPERATOR.md"})
+DEFAULT_EMBEDDING_MODEL_ID = "Qwen/Qwen3-Embedding-0.6B"
+DEFAULT_EMBEDDING_BATCH_SIZE = 2
+DEFAULT_EMBEDDING_MIN_FREE_VRAM_GB = 6.0
+PROVIDER_METADATA_PREFIX = "shape-issues-provider-metadata:"
 IGNORED_DIRS = frozenset(
     {
         ".git",
@@ -153,6 +157,12 @@ class CorpusDocument:
 class SemanticMatch:
     path: str
     score: float
+
+
+@dataclass(frozen=True)
+class EmbeddingProviderResult:
+    vectors: dict[str, list[float]]
+    metadata: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -482,7 +492,7 @@ def run_embedding_provider(
     records: list[dict[str, str]],
     *,
     repo_root: Path,
-) -> dict[str, list[float]]:
+) -> EmbeddingProviderResult:
     if command.strip() == "":
         raise GateError("Embedding command is required.")
     input_text = "".join(json.dumps(record) + "\n" for record in records)
@@ -513,7 +523,24 @@ def run_embedding_provider(
     missing = sorted(record["id"] for record in records if record["id"] not in vectors)
     if missing:
         raise GateError(f"Embedding provider omitted vector(s): {', '.join(missing)}")
-    return vectors
+    return EmbeddingProviderResult(
+        vectors=vectors,
+        metadata=provider_metadata_from_stderr(result.stderr),
+    )
+
+
+def provider_metadata_from_stderr(stderr: str) -> dict[str, Any]:
+    metadata: dict[str, Any] = {}
+    for line_number, line in enumerate(stderr.splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped.startswith(PROVIDER_METADATA_PREFIX):
+            continue
+        raw_payload = stripped[len(PROVIDER_METADATA_PREFIX) :].strip()
+        payload = json.loads(raw_payload)
+        if not isinstance(payload, dict):
+            raise GateError(f"Provider metadata line {line_number} is not an object.")
+        metadata = payload
+    return metadata
 
 
 def cosine_similarity(left: list[float], right: list[float]) -> float:
@@ -791,7 +818,12 @@ def evaluate_bundle(
         {"id": document.doc_id, "kind": "document", "text": document.text}
         for document in documents
     )
-    vectors = run_embedding_provider(embedding_command, records, repo_root=repo_root)
+    embedding_result = run_embedding_provider(
+        embedding_command,
+        records,
+        repo_root=repo_root,
+    )
+    vectors = embedding_result.vectors
 
     issue_reports: list[dict[str, Any]] = []
     for issue in bundle.issues:
@@ -895,6 +927,11 @@ def evaluate_bundle(
             "model": model_id,
             "command": embedding_command,
             "source": embedding_source(provider_name, model_id),
+            "runtime_device": str(
+                embedding_result.metadata.get("runtime_device") or "unknown"
+            ),
+            "batch_size": embedding_result.metadata.get("batch_size"),
+            "provider_metadata": embedding_result.metadata,
         },
         "corpus": {
             "documents": len(documents),
@@ -943,6 +980,8 @@ def report_markdown(report: dict[str, Any]) -> str:
         f"- Provider: `{report['embedding']['provider']}`",
         f"- Model: `{report['embedding']['model']}`",
         f"- Source: {report['embedding']['source']}",
+        f"- Runtime device: `{report['embedding']['runtime_device']}`",
+        f"- Batch size: `{report['embedding']['batch_size'] or 'unknown'}`",
         "",
         "## Thresholds",
         "",
@@ -1001,7 +1040,11 @@ def default_embedding_command() -> str:
     return (
         "uv run --with sentence-transformers --with torch "
         "python .agents/skills/shape-issues/scripts/hf_embed_jsonl.py "
-        "--model Qwen/Qwen3-Embedding-8B"
+        f"--model {DEFAULT_EMBEDDING_MODEL_ID} "
+        "--no-trust-remote-code "
+        f"--batch-size {DEFAULT_EMBEDDING_BATCH_SIZE} "
+        "--device auto "
+        f"--min-free-vram-gb {DEFAULT_EMBEDDING_MIN_FREE_VRAM_GB:g}"
     )
 
 
@@ -1020,7 +1063,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out-dir", type=Path, default=None)
     parser.add_argument("--embedding-command", default=default_embedding_command())
     parser.add_argument("--provider-name", default="huggingface")
-    parser.add_argument("--model-id", default="Qwen/Qwen3-Embedding-8B")
+    parser.add_argument("--model-id", default=DEFAULT_EMBEDDING_MODEL_ID)
     parser.add_argument("--corpus-path", action="append", default=[])
     parser.add_argument("--semantic-min-score", type=float, default=0.20)
     parser.add_argument("--human-review-stiffness", type=int, default=55)

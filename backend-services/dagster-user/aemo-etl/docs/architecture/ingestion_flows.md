@@ -1,12 +1,13 @@
 # Ingestion Flows
 
-These diagrams show the main ingestion paths implemented by the current factories and definition modules. They stay close to the repo's real layers: scheduled NEMWeb discovery, landing and archive buckets, unzipper assets, bronze ingestion assets, source silver assets, and downstream `gas_model` automation.
+These diagrams show the main ingestion paths implemented by the current factories and definition modules. They stay close to the repo's real layers: scheduled NEMWeb discovery, AEMO gas document discovery, landing and archive buckets, unzipper assets, bronze ingestion assets, source silver assets, and downstream `gas_model` automation.
 
 ## Table of contents
 
 - [GBB ingestion flow](#gbb-ingestion-flow)
 - [VICGAS ingestion flow](#vicgas-ingestion-flow)
 - [STTM ingestion flow](#sttm-ingestion-flow)
+- [AEMO gas document source flow](#aemo-gas-document-source-flow)
 - [Raw-to-silver transformation flow](#raw-to-silver-transformation-flow)
 - [LocalStack and S3-compatible behavior](#localstack-and-s3-compatible-behavior)
 - [Related docs](#related-docs)
@@ -178,6 +179,38 @@ Trigger and output notes:
   matching STTM grains enrich existing `gas_model` assets, and distinct STTM
   grains become new `gas_model` facts.
 
+## AEMO gas document source flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant AEMO as AEMO gas source pages
+    participant Schedule as bronze_aemo_gas_document_sources_job_schedule
+    participant Docs as bronze_aemo_gas_document_sources
+    participant Landing as LANDING_BUCKET/bronze/aemo_gas_documents
+    participant DeltaDocs as AEMO Delta metadata table
+    participant Archive as ARCHIVE_BUCKET/bronze/aemo_gas_documents
+
+    Schedule->>Docs: Run daily
+    Docs->>AEMO: Scrape scoped public gas PDF source pages
+    Docs->>Docs: Classify include, exclude, and needs_human_review observations
+    Docs->>Landing: Write included PDF bytes by content_sha256
+    Docs->>DeltaDocs: Merge bronze_aemo_gas_document_sources metadata rows
+    Docs->>Archive: Copy landed PDFs after metadata write, then delete from landing
+```
+
+Trigger and output notes:
+
+- The asset is registered by `src/aemo_etl/defs/raw/aemo_gas_documents.py` and
+  built by `factories/aemo_gas_documents`.
+- Included PDF links produce content-addressed PDF objects and metadata rows
+  with source URL, resolved URL, source page, include decision,
+  `content_sha256`, document family/version fields, and archive `storage_uri`.
+- Excluded and `needs_human_review` source-page or source-link observations are
+  retained in `bronze_aemo_gas_document_sources` without landing PDF bytes.
+- This flow stops at landing/archive plus bronze metadata. It has no wiki,
+  embedding, vector-store, or PDF text-extraction side effects.
+
 ## Raw-to-silver transformation flow
 
 ```mermaid
@@ -242,6 +275,12 @@ materializations. For local **End-to-end test** setup,
 before Dagster starts. The default seed slice is 3 raw objects per required
 source table and 3 zip objects per required domain.
 
+The AEMO gas document Integration test uses the same LocalStack buckets and
+Delta lock table to verify included PDF bytes move from
+`LANDING_BUCKET/bronze/aemo_gas_documents` to
+`ARCHIVE_BUCKET/bronze/aemo_gas_documents` after
+`bronze_aemo_gas_document_sources` is written.
+
 ## Related docs
 
 - [High-level architecture](high_level_architecture.md)
@@ -255,6 +294,7 @@ source table and 3 zip objects per required domain.
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/aemo_gas_documents.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/_manifest.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/source_tables.json`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int651_v1_ex_ante_market_price_rpt_1.py`
@@ -304,6 +344,10 @@ source table and 3 zip objects per required domain.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/assets.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/models.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/scraper.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/s3_pending_objects.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`

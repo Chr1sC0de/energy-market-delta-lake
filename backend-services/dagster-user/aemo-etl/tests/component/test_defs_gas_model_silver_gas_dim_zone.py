@@ -100,6 +100,29 @@ def _vicgas_pipe_segments() -> pl.LazyFrame:
     )
 
 
+def _sttm_hub_facility_definition() -> pl.LazyFrame:
+    return pl.LazyFrame(
+        {
+            "hub_identifier": ["SYD", "SYD"],
+            "hub_name": ["Sydney", "Sydney"],
+            "facility_identifier": ["PIPE1", "PIPE2"],
+            "facility_name": ["Pipeline 1", "Pipeline 2"],
+            "facility_type": ["PIPE", "PIPE"],
+            "last_update_datetime": [
+                "2024-02-01 00:00:00",
+                "2024-02-02 00:00:00",
+            ],
+            "report_datetime": ["2024-02-02 01:00:00", "2024-02-02 01:00:00"],
+            "ingested_timestamp": [
+                datetime(2024, 2, 1, tzinfo=timezone.utc),
+                datetime(2024, 2, 2, tzinfo=timezone.utc),
+            ],
+            "surrogate_key": ["sttm-hub-1", "sttm-hub-2"],
+            "source_file": ["s3://sttm-hub-1", "s3://sttm-hub-2"],
+        }
+    )
+
+
 def test_silver_gas_dim_zone_transform() -> None:
     fn = silver_gas_dim_zone.op.compute_fn.decorated_fn  # type: ignore[union-attr]
 
@@ -111,18 +134,20 @@ def test_silver_gas_dim_zone_transform() -> None:
             _vicgas_hv_zone_mapping(),
             _vicgas_tuos_zone_mapping(),
             _vicgas_pipe_segments(),
+            _sttm_hub_facility_definition(),
         ),
     )
     collected = result.value.collect()
 
     assert "dagster/column_lineage" in (result.metadata or {})
-    assert collected.height == 5
+    assert collected.height == 6
     assert collected["surrogate_key"].null_count() == 0
     assert collected["surrogate_key"].n_unique() == collected.height
     assert set(collected["zone_type"]) == {
         "demand_zone",
         "heating_value_zone",
         "linepack_zone",
+        "sttm_hub",
         "tuos_zone",
     }
 
@@ -130,6 +155,12 @@ def test_silver_gas_dim_zone_transform() -> None:
     assert demand_zone["source_system"] == "GBB"
     assert demand_zone["source_surrogate_keys"] == ["demand-new", "demand-old"]
     assert demand_zone["source_files"] == ["s3://demand-new", "s3://demand-old"]
+
+    sttm_hub = collected.filter(pl.col("zone_type") == "sttm_hub").row(0, named=True)
+    assert sttm_hub["source_system"] == "STTM"
+    assert sttm_hub["source_zone_id"] == "SYD"
+    assert sttm_hub["zone_name"] == "Sydney"
+    assert sttm_hub["source_surrogate_keys"] == ["sttm-hub-1", "sttm-hub-2"]
 
 
 def test_required_fields_check_fails_for_null_required_field() -> None:

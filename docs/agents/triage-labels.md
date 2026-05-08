@@ -53,9 +53,18 @@ triage reconsideration.
 Human review owns the `agent-reviewing` transition. Accepted Exploratory review
 merges the durable **Exploratory branch** to `dev`, records
 `Ralph exploratory acceptance completed.` evidence with the accepted `dev`
-commit, removes `agent-reviewing`, and adds `agent-integrated`. Rejected review
-leaves the issue open, removes `agent-reviewing`, adds `ready-for-human`,
-comments the review result, and must not add `agent-integrated`.
+commit, removes `agent-reviewing`, and adds `agent-integrated`. If an accepted
+branch merge conflicts, Ralph pauses with `acceptance_conflict` and does not
+change labels until `--continue-exploratory-acceptance <run_dir>` validates the
+resolved acceptance worktree, reruns merged-target QA, and pushes `dev`.
+Rejected review leaves the issue open, removes `agent-reviewing`, adds
+`ready-for-human`, comments the review result, and must not add
+`agent-integrated`.
+Checkpointed Operator runs report open `agent-reviewing` issues separately.
+When no unblocked ready issue can proceed and `agent-reviewing` issues remain,
+Ralph stops with `needs_review` and writes an **Exploratory acceptance review**
+artifact for the human decision instead of treating the queue as an
+`agent-failed` implementation result.
 
 ## Ralph delivery labels
 

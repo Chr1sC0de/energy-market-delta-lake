@@ -9,9 +9,14 @@ low-risk docs, tests, tooling, or script changes that can integrate directly to
 `main` and close immediately. **Exploratory delivery** publishes validated work
 to a durable **Exploratory branch**, marks the issue `agent-reviewing`, and
 leaves it open for human review; ready Exploratory issues must state that
-review need in `## Review focus`. Accepted Exploratory work can then be merged
-to `dev`, marked `agent-integrated` with acceptance evidence, and closed by
-later **Promotion**. ADR
+review need in `## Review focus`. Accepted Exploratory work can then be applied
+from an explicit decision artifact: Ralph merges the reviewed branch to `dev`,
+runs selected merged-target QA, marks `agent-integrated` with acceptance
+evidence after the push succeeds, and leaves closure to later **Promotion**.
+Accepted branch merge conflicts pause as `acceptance_conflict` with durable
+resolution artifacts and resume only through
+`--continue-exploratory-acceptance <run_dir>` after a clean resolved worktree
+passes merged-target QA. ADR
 [0005](0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md)
 records why **Exploratory branches** stay outside automatic **Promotion** until
 human acceptance evidence reaches `dev`.
@@ -60,6 +65,9 @@ loop enables that reconciliation by default, direct Promotion requires
 `--ready-issue-refresh`, and post-Promotion refresh failures are warning-only
 because the promoted **Integration target** and verified issue closures already
 completed.
+Checkpointed Operator runs keep `agent-reviewing` issues in a separate queue
+bucket and stop with `needs_review` when their **Exploratory acceptance review**
+decision is required before the queue can proceed.
 When a **Promotion** range includes non-doc runtime files in the AEMO ETL
 **Subproject**, the AEMO ETL **End-to-end test** gate runs from the same
 isolated source worktree as the aggregate **Push check**, before any merge,

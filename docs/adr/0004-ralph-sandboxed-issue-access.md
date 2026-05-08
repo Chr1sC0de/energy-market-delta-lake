@@ -2,14 +2,15 @@
 
 Ralph spawned Codex subprocesses may use **Sandboxed issue access** for
 authenticated GitHub Issue access. Ralph injects a `GH_TOKEN` sourced from the
-parent environment or local `gh auth`, enables network for the workspace-write
-Codex sandbox, and places a wrapper ahead of `gh` so the sandbox can use only
-`gh auth status` and the phase-specific `gh issue` command set. Implementation
-and triage passes may use triage-safe issue reads and writes. The
-**Post-promotion review** pass gets read-only issue access and cannot create
-issues directly, comment, label, close, reopen, or edit issues. After a
-successful **Promotion**, Ralph may create structured follow-up issues through
-its own validated create-only helper.
+parent environment or local `gh auth`, enables network for the Codex sandbox
+selected by that Ralph phase, and places a wrapper ahead of `gh` so the sandbox
+can use only `gh auth status` and the phase-specific `gh issue` command set.
+Normal implementation and triage passes may use triage-safe issue reads and
+writes. **Full-access implementation pass** runs for `.agents/` context-anchor
+issues keep read-only issue access. The **Post-promotion review** pass also gets
+read-only issue access and cannot create issues directly, comment, label, close,
+reopen, or edit issues. After a successful **Promotion**, Ralph may create
+structured follow-up issues through its own validated create-only helper.
 
 ## Considered options
 
@@ -20,6 +21,9 @@ its own validated create-only helper.
 - Use **Sandboxed issue access**: keeps GitHub Issues usable inside Ralph while
   leaving **Local integration**, Exploratory handoff, Git push auth, and
   **Promotion** outside the sandbox.
+- Keep **Sandboxed issue access** read-only when a **Full-access implementation
+  pass** is required: avoids combining filesystem escalation for `.agents/`
+  files with arbitrary GitHub Issue mutation.
 
 ## Consequences
 
@@ -27,12 +31,17 @@ Operators may refresh local auth with `gh auth login -h github.com
 --git-protocol ssh` or export `GH_TOKEN`; Ralph still injects only `GH_TOKEN`
 into sandboxed Codex command environments. Git fetch and push continue to use
 the repository remote, usually SSH, and remain part of Ralph's outer loop.
+When a ready issue anchors `.agents/` paths and the operator enables a
+**Full-access implementation pass**, Ralph still limits the spawned Codex
+subprocess to read-only issue commands: `gh issue view`, `gh issue list`, and
+`gh issue status`. Ralph stops before claim when the operator flag is absent,
+and stops before QA when a full-access diff leaves the issue's context anchors.
+
 After **Local integration**, Exploratory handoff, or successful **Promotion**
 verified issue closure and before the next ready issue claim, Ralph's current
 **Ready issue refresh** analysis subprocess gets the same read-only issue
-command boundary as **Post-promotion review**: `gh issue view`,
-`gh issue list`, and `gh issue status`. It writes planned issue updates and a
-structured mutation plan to `ready-issue-refresh-analysis.md` and cannot
+command boundary as **Post-promotion review**. It writes planned issue updates
+and a structured mutation plan to `ready-issue-refresh-analysis.md` and cannot
 comment, edit labels, edit bodies, close, reopen, or create GitHub Issues.
 Ralph's outer loop validates and applies that plan with GitHub Issue metadata
 commands only; it does not grant the analysis subprocess code, commit, ref,
@@ -61,6 +70,7 @@ recovery guidance in the **Promotion** manifest and review artifact.
   - `scripts/ralph.py`
   - `docs/agents/ralph-loop.md`
   - `CONTEXT.md`
+  - `docs/adr/0007-ralph-full-access-implementation-pass.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

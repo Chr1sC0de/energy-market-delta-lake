@@ -48,18 +48,29 @@ SOURCE_TABLES = [
     "silver.vicgas.silver_int235_v4_sched_system_total_1",
     "silver.vicgas.silver_int291_v4_out_of_merit_order_gas_1",
     "silver.vicgas.silver_int316_v4_operational_gas_1",
+    "silver.sttm.silver_int652_v1_ex_ante_schedule_quantity_rpt_1",
+    "silver.sttm.silver_int655_v1_provisional_schedule_quantity_rpt_1",
 ]
 SOURCE_SYSTEM = "VICGAS"
+STTM_SOURCE_SYSTEM = "STTM"
 INT050_KEY = AssetKey(["silver", "vicgas", "silver_int050_v4_sched_withdrawals_1"])
 INT235_KEY = AssetKey(["silver", "vicgas", "silver_int235_v4_sched_system_total_1"])
 INT291_KEY = AssetKey(["silver", "vicgas", "silver_int291_v4_out_of_merit_order_gas_1"])
 INT316_KEY = AssetKey(["silver", "vicgas", "silver_int316_v4_operational_gas_1"])
+INT652_KEY = AssetKey(
+    ["silver", "sttm", "silver_int652_v1_ex_ante_schedule_quantity_rpt_1"]
+)
+INT655_KEY = AssetKey(
+    ["silver", "sttm", "silver_int655_v1_provisional_schedule_quantity_rpt_1"]
+)
 
 _SOURCE_KEY_DEPS = [
     TableColumnDep(asset_key=INT050_KEY, column_name="surrogate_key"),
     TableColumnDep(asset_key=INT235_KEY, column_name="surrogate_key"),
     TableColumnDep(asset_key=INT291_KEY, column_name="surrogate_key"),
     TableColumnDep(asset_key=INT316_KEY, column_name="surrogate_key"),
+    TableColumnDep(asset_key=INT652_KEY, column_name="surrogate_key"),
+    TableColumnDep(asset_key=INT655_KEY, column_name="surrogate_key"),
 ]
 
 COLUMN_LINEAGE = TableColumnLineage(
@@ -73,6 +84,29 @@ COLUMN_LINEAGE = TableColumnLineage(
                 asset_key=INT291_KEY, column_name="scheduled_out_of_merit_gj"
             ),
             TableColumnDep(asset_key=INT316_KEY, column_name="energy_gj"),
+            TableColumnDep(asset_key=INT652_KEY, column_name="scheduled_qty"),
+            TableColumnDep(asset_key=INT652_KEY, column_name="firm_gas_scheduled_qty"),
+            TableColumnDep(
+                asset_key=INT652_KEY, column_name="as_available_scheduled_qty"
+            ),
+            TableColumnDep(asset_key=INT652_KEY, column_name="price_taker_bid_qty"),
+            TableColumnDep(
+                asset_key=INT652_KEY, column_name="price_taker_bid_not_sched_qty"
+            ),
+            TableColumnDep(asset_key=INT655_KEY, column_name="provisional_qty"),
+            TableColumnDep(
+                asset_key=INT655_KEY, column_name="provisional_firm_gas_scheduled"
+            ),
+            TableColumnDep(
+                asset_key=INT655_KEY, column_name="provisional_as_available_scheduled"
+            ),
+            TableColumnDep(
+                asset_key=INT655_KEY,
+                column_name="price_taker_bid_provisional_not_sched_qty",
+            ),
+            TableColumnDep(
+                asset_key=INT655_KEY, column_name="price_taker_bid_provisional_qty"
+            ),
         ],
         "amount_gst_ex": [
             TableColumnDep(asset_key=INT291_KEY, column_name="ancillary_amt_gst_ex")
@@ -111,10 +145,13 @@ def _parse_datetime(column: str) -> pl.Expr:
 
 
 def _base(
-    source_table: str, gas_date_column: str, updated_column: str
+    source_table: str,
+    gas_date_column: str,
+    updated_column: str,
+    source_system: str = SOURCE_SYSTEM,
 ) -> list[pl.Expr]:
     return [
-        pl.lit(SOURCE_SYSTEM).alias("source_system"),
+        pl.lit(source_system).alias("source_system"),
         pl.lit([source_table]).cast(pl.List(pl.String)).alias("source_tables"),
         pl.lit(source_table).alias("source_table"),
         _parse_datetime(gas_date_column).dt.date().alias("gas_date"),
@@ -126,8 +163,68 @@ def _base(
     ]
 
 
+def _sttm_base(source_table: str) -> list[pl.Expr]:
+    return _base(
+        source_table,
+        "gas_date",
+        "report_datetime",
+        source_system=STTM_SOURCE_SYSTEM,
+    )
+
+
+def _sttm_quantity_rows(
+    df: LazyFrame,
+    source_table: str,
+    quantity_columns: dict[str, str],
+    *,
+    schedule_type: pl.Expr,
+) -> LazyFrame:
+    quantity_column_names = list(quantity_columns)
+    return (
+        df.select(
+            *_sttm_base(source_table),
+            schedule_type_id=schedule_type,
+            transmission_id=pl.col("schedule_identifier").cast(pl.String),
+            transmission_doc_id=pl.lit(None).cast(pl.String),
+            source_point_id=pl.col("facility_identifier").cast(pl.String),
+            volume_kscm=pl.lit(None).cast(pl.Float64),
+            amount_gst_ex=pl.lit(None).cast(pl.Float64),
+            *[pl.col(column).cast(pl.Float64) for column in quantity_column_names],
+        )
+        .unpivot(
+            index=[
+                "source_system",
+                "source_tables",
+                "source_table",
+                "gas_date",
+                "source_last_updated",
+                "source_last_updated_timestamp",
+                "source_surrogate_key",
+                "source_file",
+                "ingested_timestamp",
+                "schedule_type_id",
+                "transmission_id",
+                "transmission_doc_id",
+                "source_point_id",
+                "volume_kscm",
+                "amount_gst_ex",
+            ],
+            on=quantity_column_names,
+            variable_name="quantity_type",
+            value_name="quantity_gj",
+        )
+        .with_columns(quantity_type=pl.col("quantity_type").replace(quantity_columns))
+        .filter(pl.col("quantity_gj").is_not_null())
+    )
+
+
 def _select_scheduled_quantities(
-    int050: LazyFrame, int235: LazyFrame, int291: LazyFrame, int316: LazyFrame
+    int050: LazyFrame,
+    int235: LazyFrame,
+    int291: LazyFrame,
+    int316: LazyFrame,
+    int652: LazyFrame,
+    int655: LazyFrame,
 ) -> LazyFrame:
     rows = [
         int050.select(
@@ -176,6 +273,42 @@ def _select_scheduled_quantities(
             volume_kscm=pl.col("volume_kscm").cast(pl.Float64),
             amount_gst_ex=pl.lit(None).cast(pl.Float64),
         ),
+        _sttm_quantity_rows(
+            int652,
+            SOURCE_TABLES[4],
+            {
+                "scheduled_qty": "sttm_ex_ante_scheduled_qty",
+                "firm_gas_scheduled_qty": "sttm_ex_ante_firm_gas_scheduled_qty",
+                "as_available_scheduled_qty": (
+                    "sttm_ex_ante_as_available_scheduled_qty"
+                ),
+                "price_taker_bid_qty": "sttm_ex_ante_price_taker_bid_qty",
+                "price_taker_bid_not_sched_qty": (
+                    "sttm_ex_ante_price_taker_bid_not_scheduled_qty"
+                ),
+            },
+            schedule_type=pl.lit("ex_ante"),
+        ),
+        _sttm_quantity_rows(
+            int655,
+            SOURCE_TABLES[5],
+            {
+                "provisional_qty": "sttm_provisional_scheduled_qty",
+                "provisional_firm_gas_scheduled": (
+                    "sttm_provisional_firm_gas_scheduled_qty"
+                ),
+                "provisional_as_available_scheduled": (
+                    "sttm_provisional_as_available_scheduled_qty"
+                ),
+                "price_taker_bid_provisional_not_sched_qty": (
+                    "sttm_provisional_price_taker_bid_not_scheduled_qty"
+                ),
+                "price_taker_bid_provisional_qty": (
+                    "sttm_provisional_price_taker_bid_qty"
+                ),
+            },
+            schedule_type=pl.col("provisional_schedule_type").cast(pl.String),
+        ),
     ]
     return (
         pl.concat(rows, how="diagonal_relaxed")
@@ -202,6 +335,8 @@ def _materialize_result(value: LazyFrame) -> MaterializeResult[LazyFrame]:
         "int235": AssetIn(key=INT235_KEY),
         "int291": AssetIn(key=INT291_KEY),
         "int316": AssetIn(key=INT316_KEY),
+        "int652": AssetIn(key=INT652_KEY),
+        "int655": AssetIn(key=INT655_KEY),
     },
     io_manager_key="aemo_parquet_overwrite_io_manager",
     metadata={
@@ -224,11 +359,16 @@ def _materialize_result(value: LazyFrame) -> MaterializeResult[LazyFrame]:
     & ~AutomationCondition.any_deps_missing(),
 )
 def silver_gas_fact_scheduled_quantity(
-    int050: LazyFrame, int235: LazyFrame, int291: LazyFrame, int316: LazyFrame
+    int050: LazyFrame,
+    int235: LazyFrame,
+    int291: LazyFrame,
+    int316: LazyFrame,
+    int652: LazyFrame,
+    int655: LazyFrame,
 ) -> MaterializeResult[LazyFrame]:
     """Materialize the silver gas scheduled quantity fact asset."""
     return _materialize_result(
-        _select_scheduled_quantities(int050, int235, int291, int316)
+        _select_scheduled_quantities(int050, int235, int291, int316, int652, int655)
     )
 
 
