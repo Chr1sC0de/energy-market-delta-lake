@@ -63,13 +63,15 @@ areas remain separate scoring surfaces.
 
 ## Outputs
 
-- `report.json`: machine-readable thresholds, model/provider metadata, bundle
-  digest, issue scores, actions, semantic matches, validation reasons,
+- `report.json`: machine-readable thresholds, model/provider metadata
+  including selected runtime device and batch size, bundle digest, issue
+  scores, actions, semantic matches, validation reasons,
   declared/computed stiffness mismatch, ignored stiffness mentions, scoring
   surfaces, and any Operator approval evidence found in issue bodies. Each
   issue entry includes a `source_digest`; the top-level `bundle_digest` lets the
   publisher refuse stale bundle/report pairs.
-- `report.md`: Operator-readable evidence for the issue bundle.
+- `report.md`: Operator-readable evidence for the issue bundle, including the
+  embedding provider, model, selected runtime device, and batch size.
 
 Operator approval evidence is recorded only as context. It does not grant tool
 permission and must not bypass Codex escalation or sandbox review.

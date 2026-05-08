@@ -186,7 +186,11 @@ Default live provider command:
 ```bash
 uv run --with sentence-transformers --with torch \
   python .agents/skills/shape-issues/scripts/hf_embed_jsonl.py \
-  --model Qwen/Qwen3-Embedding-8B
+  --model Qwen/Qwen3-Embedding-0.6B \
+  --no-trust-remote-code \
+  --batch-size 2 \
+  --device auto \
+  --min-free-vram-gb 6
 ```
 
 Run the gate:
@@ -195,9 +199,16 @@ Run the gate:
 python3 .agents/skills/shape-issues/scripts/shape_issue_gate.py \
   .shape-issues/runs/<slug>/bundle.json \
   --repo-root . \
-  --embedding-command "uv run --with sentence-transformers --with torch python .agents/skills/shape-issues/scripts/hf_embed_jsonl.py --model Qwen/Qwen3-Embedding-8B" \
+  --embedding-command "uv run --with sentence-transformers --with torch python .agents/skills/shape-issues/scripts/hf_embed_jsonl.py --model Qwen/Qwen3-Embedding-0.6B --no-trust-remote-code --batch-size 2 --device auto --min-free-vram-gb 6" \
+  --model-id Qwen/Qwen3-Embedding-0.6B \
   --out-dir .shape-issues/runs/<slug>
 ```
+
+The default Hugging Face provider selects CUDA only when Torch reports at least
+6 GiB of free VRAM. Otherwise it records an explicit CPU fallback in the gate
+report. The report also records the selected runtime device and batch size.
+Operators with a larger GPU may override the command and `--model-id` to use
+`Qwen/Qwen3-Embedding-8B`, but that is not the default gate path.
 
 The gate writes `report.md` and `report.json`. Runtime outputs under
 `.shape-issues/` are ignored by git.
