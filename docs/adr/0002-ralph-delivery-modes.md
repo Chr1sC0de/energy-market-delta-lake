@@ -9,9 +9,10 @@ low-risk docs, tests, tooling, or script changes that can integrate directly to
 `main` and close immediately. **Exploratory delivery** publishes validated work
 to a durable **Exploratory branch**, marks the issue `agent-reviewing`, and
 leaves it open for human review; ready Exploratory issues must state that
-review need in `## Review focus`. Accepted Exploratory work can then be merged
-to `dev`, marked `agent-integrated` with acceptance evidence, and closed by
-later **Promotion**. ADR
+review need in `## Review focus`. Accepted Exploratory work can then be applied
+from an explicit decision artifact: Ralph merges the reviewed branch to `dev`,
+runs selected merged-target QA, marks `agent-integrated` with acceptance
+evidence after the push succeeds, and leaves closure to later **Promotion**. ADR
 [0005](0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md)
 records why **Exploratory branches** stay outside automatic **Promotion** until
 human acceptance evidence reaches `dev`.

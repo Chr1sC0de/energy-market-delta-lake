@@ -149,13 +149,30 @@ Use this checklist:
 - Confirm no open blocker or manual follow-up should stop the range from
   reaching `main`.
 
-For accepted Exploratory review, merge the durable **Exploratory branch** to
-`dev`, add an issue comment that starts with
-`Ralph exploratory acceptance completed.` and includes a `Commit: ...` line for
-the accepted `dev` commit SHA, remove `agent-reviewing`, and add
-`agent-integrated`. For rejected Exploratory review, leave the issue open,
-remove `agent-reviewing`, add `ready-for-human`, and comment the review result
-and next action. ADR
+For explicit Exploratory review decisions, create a decision JSON artifact and
+apply it through Ralph:
+
+```json
+{
+  "decisions": [
+    {"issue_number": 42, "decision": "accept", "reason": "Reviewed on dev."},
+    {"issue_number": 43, "decision": "hold", "reason": "Waiting on product."},
+    {"issue_number": 44, "decision": "reject", "reason": "Wrong workflow."}
+  ]
+}
+```
+
+```bash
+python3 scripts/ralph.py --apply-exploratory-acceptance-decisions path/to/decisions.json
+```
+
+Accepted decisions merge the durable **Exploratory branch** into a temporary
+acceptance worktree based on `origin/dev`, run selected merged-target QA from
+the resulting changed files, push `dev` only after QA passes, then comment
+`Ralph exploratory acceptance completed.`, remove `agent-reviewing`, and add
+`agent-integrated`. Held decisions keep `agent-reviewing` and comment the
+reason. Rejected decisions leave the issue open, remove `agent-reviewing`, add
+`ready-for-human`, and comment the review result and next action. ADR
 [0005](docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md)
 records why **Exploratory branches** stay outside automatic **Promotion**.
 

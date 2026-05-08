@@ -491,6 +491,13 @@ class FakeRunner:
             )
         if command[:3] == ("gh", "issue", "view") and "comments" in command:
             return ralph.CompletedCommand(stdout=json.dumps({"comments": []}), stderr="")
+        if command[:3] == ("gh", "issue", "view") and "state" in command:
+            return ralph.CompletedCommand(stdout=json.dumps({"state": "OPEN"}), stderr="")
+        if command[:3] == ("gh", "issue", "view"):
+            return ralph.CompletedCommand(
+                stdout=issue_view_output(labels=["agent-reviewing"]),
+                stderr="",
+            )
         if command == ("gh", "auth", "token"):
             return ralph.CompletedCommand(stdout="fake-gh-token\n", stderr="")
         if command[:2] == ("codex", "exec") and input_text is not None:
@@ -667,6 +674,74 @@ def issue_payload(
         "comments": [],
         "author": {"login": "reporter"},
     }
+
+
+def exploratory_handoff_comments_output(
+    *,
+    branch: str = "agent/exploratory/issue-42-implement-thing",
+    commit: str = "abc1234",
+    changed_files: list[str] | None = None,
+) -> str:
+    file_lines = [f"- `{path}`" for path in changed_files or ["scripts/ralph.py"]]
+    body = "\n".join(
+        [
+            "Ralph exploratory handoff completed.",
+            "",
+            f"Commit: `{commit}`",
+            "Delivery mode: `exploratory`",
+            f"Target branch: `{branch}`",
+            "",
+            "## Changed files",
+            "",
+            *file_lines,
+            "",
+            "## QA",
+            "",
+            "- `python3 -m unittest discover -s tests` from `/repo`",
+            "",
+        ]
+    )
+    return json.dumps({"comments": [{"body": body}]})
+
+
+def issue_state_command(number: int) -> tuple[str, ...]:
+    return (
+        "gh",
+        "issue",
+        "view",
+        str(number),
+        "-R",
+        "example/repo",
+        "--json",
+        "state",
+    )
+
+
+def issue_view_command(number: int) -> tuple[str, ...]:
+    return (
+        "gh",
+        "issue",
+        "view",
+        str(number),
+        "-R",
+        "example/repo",
+        "--json",
+        "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+    )
+
+
+def issue_comments_command(number: int) -> tuple[str, ...]:
+    return (
+        "gh",
+        "issue",
+        "view",
+        str(number),
+        "-R",
+        "example/repo",
+        "--comments",
+        "--json",
+        "comments",
+    )
 
 
 class CountingRalphLoop(ralph.RalphLoop):
@@ -1130,6 +1205,60 @@ class RalphHelperTests(unittest.TestCase):
         )
         self.assertEqual(ralph.slugify("!!!"), "issue")
         self.assertLessEqual(len(ralph.slugify("x" * 100)), 56)
+
+    def test_load_exploratory_acceptance_decisions_accepts_review_issue_shape(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            decision_file = Path(tmp) / "decisions.json"
+            decision_file.write_text(
+                json.dumps(
+                    {
+                        "issues": [
+                            {
+                                "issue": {"number": 42},
+                                "decision": "accept",
+                                "reason": "Looks good.",
+                            },
+                            {
+                                "issue_number": "43",
+                                "decision": "hold",
+                                "reason": "Waiting for operator review.",
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            decisions = ralph.load_exploratory_acceptance_decisions(decision_file)
+
+        self.assertEqual(
+            decisions,
+            [
+                ralph.ExploratoryAcceptanceDecision(42, "accept", "Looks good."),
+                ralph.ExploratoryAcceptanceDecision(
+                    43,
+                    "hold",
+                    "Waiting for operator review.",
+                ),
+            ],
+        )
+
+    def test_load_exploratory_acceptance_decisions_rejects_missing_hold_reason(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            decision_file = Path(tmp) / "decisions.json"
+            decision_file.write_text(
+                json.dumps({"decisions": [{"issue_number": 42, "decision": "hold"}]}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ValueError) as context:
+                ralph.load_exploratory_acceptance_decisions(decision_file)
+
+        self.assertIn("non-empty reason", str(context.exception))
 
     def test_required_issue_sections_are_case_insensitive(self) -> None:
         body = """## What to build
@@ -3512,6 +3641,276 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertFalse(any(command[:3] == ("gh", "issue", "close") for command in commands))
         self.assertEqual(manifest["github_metadata"]["status"], "marked_integrated")
         self.assertIn("Recovered issue #42 Gitflow metadata for abc1234.", output.getvalue())
+
+
+class RalphExploratoryAcceptanceApplyTests(unittest.TestCase):
+    def _decision_file(
+        self,
+        tmp_path: Path,
+        decisions: list[dict[str, Any]],
+    ) -> Path:
+        decision_file = tmp_path / "repo" / "decisions.json"
+        decision_file.write_text(
+            json.dumps({"decisions": decisions}),
+            encoding="utf-8",
+        )
+        return decision_file
+
+    def _reviewing_issue_output(self, *, labels: list[str] | None = None) -> str:
+        return json.dumps(
+            issue_payload(
+                42,
+                labels or [ralph.AGENT_REVIEWING_LABEL, ralph.DELIVERY_EXPLORATORY_LABEL],
+                EXPLORATORY_IMPLEMENTATION_BODY,
+            )
+        )
+
+    def _runner_for_reviewing_issue(
+        self,
+        *,
+        branch: str = "agent/exploratory/issue-42-implement-thing",
+        commit: str = "abc1234",
+        labels: list[str] | None = None,
+        extra_outputs: dict[tuple[str, ...], list[str]] | None = None,
+        **runner_kwargs: Any,
+    ) -> FakeRunner:
+        command_outputs = {
+            issue_state_command(42): [json.dumps({"state": "OPEN"})],
+            issue_view_command(42): [self._reviewing_issue_output(labels=labels)],
+            issue_comments_command(42): [
+                exploratory_handoff_comments_output(branch=branch, commit=commit)
+            ],
+        }
+        if extra_outputs is not None:
+            command_outputs.update(extra_outputs)
+        return FakeRunner(command_outputs=command_outputs, **runner_kwargs)
+
+    def test_accept_merges_runs_qa_pushes_then_updates_metadata(self) -> None:
+        handoff_branch = "agent/exploratory/issue-42-implement-thing"
+        runner = self._runner_for_reviewing_issue(
+            branch=handoff_branch,
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=[
+                "abc1234\n",
+                "source-sha\n",
+                "def5678\n",
+                "def5678\n",
+            ],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, source_branch=ralph.DEFAULT_GITFLOW_BRANCH)
+            decision_file = self._decision_file(
+                tmp_path,
+                [{"issue_number": 42, "decision": "accept", "reason": "Approved."}],
+            )
+
+            with redirect_stdout(io.StringIO()):
+                manifest = loop._apply_exploratory_acceptance_decisions(decision_file)
+
+            comment_path = next(
+                tmp_path.glob("logs/exploratory-acceptance-*/issue-42-comment.md")
+            )
+            comment = comment_path.read_text(encoding="utf-8")
+
+        commands = [call.args for call in runner.calls]
+        push_command = ("git", "push", "origin", "HEAD:dev")
+        push_index = commands.index(push_command)
+        mutation_indexes = [
+            index
+            for index, command in enumerate(commands)
+            if command[:3]
+            in {
+                ("gh", "issue", "comment"),
+                ("gh", "issue", "edit"),
+            }
+        ]
+        self.assertTrue(mutation_indexes)
+        self.assertTrue(all(index > push_index for index in mutation_indexes))
+        self.assertIn(
+            (
+                "git",
+                "worktree",
+                "add",
+                "--detach",
+                manifest.data["paths"]["acceptance_worktree"],
+                "origin/dev",
+            ),
+            commands,
+        )
+        self.assertIn(
+            (
+                "git",
+                "merge",
+                "--no-ff",
+                f"origin/{handoff_branch}",
+                "-m",
+                "Accept Exploratory issue #42: Issue 42",
+            ),
+            commands,
+        )
+        self.assertIn(
+            ("python3", "-m", "unittest", "discover", "-s", "tests"),
+            commands,
+        )
+        self.assertIn(ralph.EXPLORATORY_ACCEPTANCE_COMMENT_TITLE, comment)
+        self.assertIn("Commit: `def5678`", comment)
+        self.assertIn(f"Exploratory branch: `{handoff_branch}`", comment)
+        self.assertIn("Handoff commit: `abc1234`", comment)
+        self.assertEqual(manifest.data["status"], "succeeded")
+        self.assertEqual(manifest.data["decisions"][0]["status"], "metadata_applied")
+
+    def test_accept_qa_failure_leaves_metadata_unchanged_before_push(self) -> None:
+        runner = self._runner_for_reviewing_issue(
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["abc1234\n", "source-sha\n", "def5678\n"],
+            fail_commands={
+                ("python3", "-m", "unittest", "discover", "-s", "tests"),
+            },
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            decision_file = self._decision_file(
+                tmp_path,
+                [{"issue_number": 42, "decision": "accept"}],
+            )
+
+            with self.assertRaises(ralph.IssueFailure):
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    loop._apply_exploratory_acceptance_decisions(decision_file)
+
+            manifest = json.loads(
+                next(
+                    tmp_path.glob("logs/exploratory-acceptance-*/ralph-run.json")
+                ).read_text(encoding="utf-8")
+            )
+
+        commands = [call.args for call in runner.calls]
+        self.assertNotIn(("git", "push", "origin", "HEAD:dev"), commands)
+        self.assertFalse(any(command[:3] == ("gh", "issue", "comment") for command in commands))
+        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+        self.assertEqual(manifest["status"], "failed")
+        self.assertIn(
+            "No accepted issue metadata was changed",
+            manifest["failure"]["recovery_guidance"],
+        )
+
+    def test_hold_comments_reason_without_push_or_label_change(self) -> None:
+        runner = self._runner_for_reviewing_issue(
+            rev_parse_outputs=["abc1234\n"],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            decision_file = self._decision_file(
+                tmp_path,
+                [
+                    {
+                        "issue_number": 42,
+                        "decision": "hold",
+                        "reason": "Needs another product review.",
+                    }
+                ],
+            )
+
+            with redirect_stdout(io.StringIO()):
+                loop._apply_exploratory_acceptance_decisions(decision_file)
+
+            comment = next(
+                tmp_path.glob("logs/exploratory-acceptance-*/issue-42-comment.md")
+            ).read_text(encoding="utf-8")
+
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(any(command[:2] == ("git", "push") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("git", "worktree", "add") for command in commands)
+        )
+        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+        self.assertIn("Ralph exploratory acceptance held.", comment)
+        self.assertIn("Needs another product review.", comment)
+        self.assertIn("remains `agent-reviewing`", comment)
+
+    def test_reject_comments_and_moves_issue_to_ready_for_human(self) -> None:
+        runner = self._runner_for_reviewing_issue(
+            rev_parse_outputs=["abc1234\n"],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            decision_file = self._decision_file(
+                tmp_path,
+                [
+                    {
+                        "issue_number": 42,
+                        "decision": "reject",
+                        "reason": "The review branch changes the wrong workflow.",
+                    }
+                ],
+            )
+
+            with redirect_stdout(io.StringIO()):
+                loop._apply_exploratory_acceptance_decisions(decision_file)
+
+            comment = next(
+                tmp_path.glob("logs/exploratory-acceptance-*/issue-42-comment.md")
+            ).read_text(encoding="utf-8")
+
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(any(command[:2] == ("git", "push") for command in commands))
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "edit",
+                "42",
+                "-R",
+                "example/repo",
+                "--add-label",
+                "ready-for-human",
+                "--remove-label",
+                "agent-reviewing",
+                "--remove-label",
+                "agent-integrated",
+                "--remove-label",
+                "agent-running",
+                "--remove-label",
+                "agent-failed",
+                "--remove-label",
+                "agent-merged",
+                "--remove-label",
+                "ready-for-agent",
+            ),
+            commands,
+        )
+        command_text = " ".join(" ".join(command) for command in commands)
+        self.assertNotIn("--add-label agent-integrated", command_text)
+        self.assertIn("Ralph exploratory acceptance rejected.", comment)
+        self.assertIn("wrong workflow", comment)
+
+    def test_validation_requires_agent_reviewing_label_before_metadata_mutation(
+        self,
+    ) -> None:
+        runner = self._runner_for_reviewing_issue(
+            labels=[ralph.DELIVERY_EXPLORATORY_LABEL],
+            rev_parse_outputs=[],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            decision_file = self._decision_file(
+                tmp_path,
+                [{"issue_number": 42, "decision": "accept"}],
+            )
+
+            with self.assertRaises(ralph.IssueFailure):
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    loop._apply_exploratory_acceptance_decisions(decision_file)
+
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(any(command[:2] == ("git", "push") for command in commands))
+        self.assertFalse(any(command[:3] == ("gh", "issue", "comment") for command in commands))
+        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
 
 
 class CommandRunnerTests(unittest.TestCase):

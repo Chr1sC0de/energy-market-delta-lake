@@ -267,6 +267,16 @@ Inspect the latest Operator run without following child logs:
 python3 scripts/ralph.py --operator-run-status latest
 ```
 
+Apply explicit Exploratory acceptance decisions from a JSON artifact:
+
+```bash
+python3 scripts/ralph.py --apply-exploratory-acceptance-decisions path/to/decisions.json
+```
+
+Use `--source-branch <branch>` with that command only when the Gitflow source
+branch is not `dev`. The apply flow does not support `--dry-run` because
+accepted decisions may push the source branch after merged-target QA passes.
+
 Skip the default **Post-promotion review** during **Promotion**:
 
 ```bash
@@ -309,13 +319,14 @@ python3 scripts/ralph.py --drain --allow-dirty-worktree
 
 ## Live run preflight
 
-Live `--issue`, `--drain`, and `--promote` runs fail before GitHub issue claim,
-worktree creation, **Local integration**, Exploratory handoff, or push when the
-root worktree has uncommitted changes. Commit or stash root worktree changes
-before live Ralph runs. Use `--allow-dirty-worktree` only for an explicit
-dirty-worktree operation. `--dry-run` remains available on a dirty root worktree
-so operators can inspect the next Ralph action without mutating issues or
-branches.
+Live `--issue`, `--drain`, `--promote`, and
+`--apply-exploratory-acceptance-decisions` runs fail before GitHub issue claim,
+worktree creation, **Local integration**, Exploratory handoff, acceptance
+merge, or push when the root worktree has uncommitted changes. Commit or stash
+root worktree changes before live Ralph runs. Use `--allow-dirty-worktree` only
+for an explicit dirty-worktree operation. `--dry-run` remains available on a
+dirty root worktree for drain and issue previews so operators can inspect the
+next Ralph action without mutating issues or branches.
 
 Before a live drain, validate both GitHub API auth and Git push auth for the
 expected **Integration target**:
@@ -528,12 +539,15 @@ Key fields for inspection:
 - `full_access_implementation`: whether a **Full-access implementation pass** was
   enabled or required, the normalized context anchors, changed files,
   out-of-scope files, status, and recovery guidance.
+- `decisions`: explicit Exploratory acceptance decisions, per-issue validation
+  state, handoff branch and commit, accepted `dev` commit, metadata operations,
+  and recovery context for `exploratory_acceptance_apply` runs.
 - `branches`: issue, source, and target branch names that apply to the run.
 - `paths`: repo root, run directory, worktree container, and implementation,
-  branch-sync, integration, Promotion source, or Promotion target worktree
-  paths.
+  branch-sync, integration, Promotion source, Promotion target, or Exploratory
+  acceptance worktree paths.
 - `changed_files`: current file diff used for QA, **Local integration**, or
-  Exploratory handoff.
+  Exploratory handoff or acceptance.
 - `qa_results`: selected QA commands, cwd, log path, and pass/fail state.
 - `qa_runtime_env`: effective `DAGSTER_HOME`, `XDG_CACHE_HOME`, and
   `UV_CACHE_DIR` values plus whether each came from the operator environment or
@@ -585,6 +599,14 @@ Recovery does not rerun Codex, rerun QA, create commits, push branches, or clean
 worktrees. Normal Ralph runs keep fail-stop behavior: if metadata operations
 fail after a push, Ralph stops loudly so an operator can inspect the run and
 recover deliberately.
+
+Exploratory acceptance apply failures before the accepted branch push leave
+accepted issue metadata unchanged. The run manifest records the decision file,
+acceptance worktree path, selected merged-target QA, and recovery guidance. If
+metadata fails after `dev` is pushed, treat the run as post-push recovery:
+verify the pushed commit in the manifest, then add any missing
+`Ralph exploratory acceptance completed.` evidence and label transitions before
+rerunning **Promotion**.
 
 If a failed Gitflow run passed issue QA but failed before recording
 `integration_commit`, and an operator manually creates or pushes the recovered
@@ -695,11 +717,31 @@ squash merge: Ralph pushes the validated **Exploratory branch** to origin,
 marks the issue `agent-reviewing`, and leaves it open for human review. Ralph
 does not open a GitHub draft PR.
 
-Human review owns the next Exploratory state transition. For accepted
-Exploratory work, merge the reviewed **Exploratory branch** to `dev`, add
-acceptance evidence to the issue, remove `agent-reviewing`, and add
+Human review owns the next Exploratory state decision. The Operator records
+explicit `accept`, `hold`, or `reject` decisions in a JSON artifact:
+
+```json
+{
+  "decisions": [
+    {"issue_number": 42, "decision": "accept", "reason": "Reviewed."}
+  ]
+}
+```
+
+Ralph applies that artifact with:
+
+```bash
+python3 scripts/ralph.py --apply-exploratory-acceptance-decisions path/to/decisions.json
+```
+
+Ralph validates that each issue is still open with `agent-reviewing` and has a
+parseable Exploratory handoff branch and commit. Accepted decisions are merged
+into one temporary acceptance worktree based on the configured Gitflow source
+branch, normally `origin/dev`. Ralph runs selected merged-target QA from the
+resulting changed files, pushes `dev` only after QA passes, then adds
+acceptance evidence to the issue, removes `agent-reviewing`, and adds
 `agent-integrated` so the issue can close through the existing **Promotion**
-path. The acceptance comment must start with:
+path. The acceptance comment starts with:
 
 ```markdown
 Ralph exploratory acceptance completed.
@@ -708,9 +750,12 @@ Commit: `<dev-commit-sha>`
 ```
 
 The commit is the `dev` commit that made the accepted work reachable from the
-source branch. For rejected Exploratory work, leave the issue open, remove
-`agent-reviewing`, add `ready-for-human`, and comment the review result and
-next action. Rejected review must not add `agent-integrated`. ADR
+source branch. Held decisions comment the reason and leave `agent-reviewing` in
+place. Rejected decisions leave the issue open, remove `agent-reviewing`, add
+`ready-for-human`, and comment the review result and next action. Rejected
+review must not add `agent-integrated`. No GitHub metadata changes happen for
+accepted decisions before the accepted branch merge, merged-target QA, and
+source branch push succeed. ADR
 [0005](../adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md)
 records why **Exploratory branches** stay outside automatic **Promotion** until
 human acceptance evidence reaches `dev`.

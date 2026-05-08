@@ -74,9 +74,13 @@ Runtime labels such as `agent-running`, `agent-integrated`, `agent-merged`,
 triage reconsideration. In particular, `agent-reviewing` means
 **Exploratory delivery** has already published a durable **Exploratory branch**
 and the issue is waiting for human review. Accepted review moves the issue from
-`agent-reviewing` to `agent-integrated` after the work is merged to `dev` and
-acceptance evidence is commented. Rejected review removes `agent-reviewing`,
-adds `ready-for-human`, comments the review result, and leaves the issue open.
+`agent-reviewing` to `agent-integrated` after an explicit decision artifact is
+applied: Ralph validates the recorded handoff branch and commit, merges accepted
+branches into a temporary `dev` acceptance worktree, runs selected merged-target
+QA, pushes `dev`, then comments acceptance evidence and changes labels. Held
+review keeps `agent-reviewing` and comments the reason. Rejected review removes
+`agent-reviewing`, adds `ready-for-human`, comments the review result, and
+leaves the issue open.
 Manual Gitflow recovery must add the parseable recovery evidence documented in
 [ralph-loop.md](ralph-loop.md) before leaving or applying `agent-integrated`, so
 later **Promotion** can verify the recovered `dev` commit before closure.

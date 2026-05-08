@@ -90,6 +90,7 @@ OPERATOR_ROLLUP_JSON_NAME = "operator-run-rollup.json"
 OPERATOR_ROLLUP_MARKDOWN_NAME = "operator-run-rollup.md"
 EXPLORATORY_ACCEPTANCE_REVIEW_JSON_NAME = "exploratory-acceptance-review.json"
 EXPLORATORY_ACCEPTANCE_REVIEW_MARKDOWN_NAME = "exploratory-acceptance-review.md"
+EXPLORATORY_ACCEPTANCE_DECISIONS = frozenset({"accept", "hold", "reject"})
 OPERATOR_ROLLUP_SCHEMA_VERSION = 1
 OPERATOR_RUN_ROOT_NAME = "operator-runs"
 OPERATOR_RUN_PREFIX = "operator"
@@ -472,6 +473,22 @@ class ReadyIssueRefreshMutation:
 
 
 @dataclass(frozen=True)
+class ExploratoryAcceptanceDecision:
+    issue_number: int
+    decision: str
+    reason: str | None
+
+
+@dataclass(frozen=True)
+class ExploratoryAcceptanceTarget:
+    decision: ExploratoryAcceptanceDecision
+    issue: Issue
+    branch: str
+    handoff_commit: str
+    changed_files: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class GitWorktree:
     path: Path
     head: str | None
@@ -810,6 +827,54 @@ class RunManifest:
                 "recovery_guidance": None,
                 "failure": None,
             },
+            "pushes": {},
+            "github_metadata": {"status": "not_started", "issues": []},
+            "failure": None,
+            "events": [],
+        }
+        manifest = cls(run_dir / MANIFEST_NAME, data)
+        manifest.record_event("created")
+        return manifest
+
+    @classmethod
+    def for_exploratory_acceptance_apply(
+        cls,
+        *,
+        run_dir: Path,
+        decision_file: Path,
+        source_branch: str,
+        acceptance_path: Path,
+        config: LoopConfig,
+    ) -> "RunManifest":
+        data: dict[str, Any] = {
+            "schema_version": MANIFEST_SCHEMA_VERSION,
+            "run_kind": "exploratory_acceptance_apply",
+            "status": "running",
+            "stage": "created",
+            "started_at": utc_now_text(),
+            "updated_at": utc_now_text(),
+            "repo": config.repo,
+            "configuration": run_configuration_payload(config),
+            "delivery_mode": EXPLORATORY_MODE,
+            "source_branch": source_branch,
+            "integration_target": source_branch,
+            "branches": {
+                "source": source_branch,
+                "integration_target": source_branch,
+            },
+            "paths": {
+                "repo_root": str(config.repo_root),
+                "run_dir": str(run_dir),
+                "worktree_container": str(config.worktree_container),
+                "acceptance_worktree": str(acceptance_path),
+                "decision_file": str(decision_file),
+            },
+            "decisions": [],
+            "changed_files": [],
+            "qa_results": [],
+            "qa_runtime_env": {"status": "not_started"},
+            "commits": {},
+            "integration_commit": None,
             "pushes": {},
             "github_metadata": {"status": "not_started", "issues": []},
             "failure": None,
@@ -1372,6 +1437,69 @@ class RunManifest:
                 "log_path": path_text(log_path),
                 "metadata_log_key": metadata_log_key,
             },
+        )
+
+    def record_exploratory_acceptance_decision(
+        self,
+        *,
+        issue_number: int,
+        decision: str,
+        status: str,
+        issue: Issue | None = None,
+        branch: str | None = None,
+        handoff_commit: str | None = None,
+        acceptance_commit: str | None = None,
+        reason: str | None = None,
+        changed_files: list[str] | tuple[str, ...] | None = None,
+        operations: dict[str, Any] | None = None,
+        log_path: Path | None = None,
+        error: str | None = None,
+        recovery_guidance: str | None = None,
+    ) -> None:
+        decisions = self.data.setdefault("decisions", [])
+        if not isinstance(decisions, list):
+            raise RalphError("Manifest decisions field is not a list.")
+        entry: dict[str, Any] = {
+            "issue_number": issue_number,
+            "decision": decision,
+            "status": status,
+        }
+        if issue is not None:
+            entry["title"] = issue.title
+            entry["url"] = issue.url
+        if branch is not None:
+            entry["branch"] = branch
+        if handoff_commit is not None:
+            entry["handoff_commit"] = handoff_commit
+        if acceptance_commit is not None:
+            entry["acceptance_commit"] = acceptance_commit
+        if reason is not None:
+            entry["reason"] = reason
+        if changed_files is not None:
+            entry["changed_files"] = list(changed_files)
+        if operations is not None:
+            entry["operations"] = operations
+        if log_path is not None:
+            entry["log_path"] = path_text(log_path)
+        if error is not None:
+            entry["error"] = error
+        if recovery_guidance is not None:
+            entry["recovery_guidance"] = recovery_guidance
+
+        replaced = False
+        for index, existing in enumerate(decisions):
+            if (
+                isinstance(existing, dict)
+                and existing.get("issue_number") == issue_number
+            ):
+                decisions[index] = {**existing, **entry}
+                replaced = True
+                break
+        if not replaced:
+            decisions.append(entry)
+        self.record_event(
+            f"exploratory_acceptance_{decision}_{status}",
+            details=entry,
         )
 
     def record_failure(self, error: Exception, *, log_path: Path | None = None) -> None:
@@ -5229,6 +5357,525 @@ class RalphLoop:
     def _promotion_target_branch(self) -> str:
         return self.config.target_branch or DEFAULT_TRUNK_BRANCH
 
+    def apply_exploratory_acceptance_decisions(self, decision_file: Path) -> RunManifest:
+        if self.config.dry_run:
+            raise RalphError(
+                "--apply-exploratory-acceptance-decisions does not support --dry-run."
+            )
+        self._validate_exploratory_acceptance_apply_preflight()
+        return self._apply_exploratory_acceptance_decisions(decision_file)
+
+    def _validate_exploratory_acceptance_apply_preflight(self) -> None:
+        missing = [tool for tool in ("git", "gh") if shutil.which(tool) is None]
+        if missing:
+            raise RalphError(f"Missing required command(s): {', '.join(missing)}")
+        self._validate_clean_root_worktree_for_live_run()
+        self.github.auth_status()
+        self._validate_labels()
+
+    def _apply_exploratory_acceptance_decisions(
+        self,
+        decision_file: Path,
+    ) -> RunManifest:
+        source_branch = self.config.source_branch
+        run_dir = self._exploratory_acceptance_run_dir()
+        acceptance_path = self.config.worktree_container / (
+            f"agent-exploratory-acceptance-{slugify(run_dir.name)}"
+        )
+        run_dir.mkdir(parents=True, exist_ok=True)
+        manifest = RunManifest.for_exploratory_acceptance_apply(
+            run_dir=run_dir,
+            decision_file=decision_file,
+            source_branch=source_branch,
+            acceptance_path=acceptance_path,
+            config=self.config,
+        )
+        pushed = False
+        acceptance_worktree_created = False
+        try:
+            decisions = load_exploratory_acceptance_decisions(decision_file)
+            for decision in decisions:
+                manifest.record_exploratory_acceptance_decision(
+                    issue_number=decision.issue_number,
+                    decision=decision.decision,
+                    status="loaded",
+                    reason=decision.reason,
+                )
+            targets = self._validated_exploratory_acceptance_targets(
+                decisions,
+                run_dir=run_dir,
+                manifest=manifest,
+            )
+            accepted_targets = [
+                target for target in targets if target.decision.decision == "accept"
+            ]
+            acceptance_commits: dict[int, str] = {}
+            changed_files: list[str] = []
+            qa_results: list[QAResult] = []
+
+            if accepted_targets:
+                acceptance_worktree_created = True
+                self._merge_accepted_exploratory_targets(
+                    accepted_targets,
+                    source_branch=source_branch,
+                    acceptance_path=acceptance_path,
+                    run_dir=run_dir,
+                    manifest=manifest,
+                    acceptance_commits=acceptance_commits,
+                )
+                changed_files = self.git.changed_files_against(
+                    cwd=acceptance_path,
+                    base_ref=f"origin/{source_branch}",
+                )
+                manifest.record_changed_files(
+                    changed_files,
+                    stage="exploratory_acceptance_changes_detected",
+                )
+                if not changed_files:
+                    raise IssueFailure(
+                        "Accepted Exploratory branches produced no diff against "
+                        f"origin/{source_branch}.",
+                        failure_type="exploratory_acceptance_empty_diff",
+                        recovery_guidance=exploratory_acceptance_recovery_guidance(
+                            run_dir=run_dir,
+                            source_branch=source_branch,
+                            pushed=False,
+                        ),
+                    )
+                qa_results = self._run_qa_commands(
+                    changed_files,
+                    acceptance_path,
+                    run_dir,
+                    log_prefix="exploratory-acceptance-qa",
+                    subject="Exploratory acceptance",
+                    manifest=manifest,
+                )
+                if self.git.has_uncommitted_changes(cwd=acceptance_path):
+                    raise IssueFailure(
+                        "Merged-target QA modified the acceptance worktree. "
+                        "Review those changes before accepting the Exploratory branch.",
+                        failure_type="exploratory_acceptance_dirty_after_qa",
+                        recovery_guidance=exploratory_acceptance_recovery_guidance(
+                            run_dir=run_dir,
+                            source_branch=source_branch,
+                            pushed=False,
+                        ),
+                    )
+                final_commit = self.git.rev_parse("HEAD", cwd=acceptance_path)
+                manifest.record_integration_commit(final_commit, branch=source_branch)
+                push_log = run_dir / f"git-push-{slugify(source_branch)}.log"
+                manifest.record_push(
+                    key="integration_target",
+                    branch=source_branch,
+                    status="running",
+                    commit_sha=final_commit,
+                    log_path=push_log,
+                )
+                self.git.push_head(
+                    cwd=acceptance_path,
+                    branch=source_branch,
+                    run_dir=run_dir,
+                )
+                manifest.record_push(
+                    key="integration_target",
+                    branch=source_branch,
+                    status="pushed",
+                    commit_sha=final_commit,
+                    log_path=push_log,
+                )
+                pushed = True
+
+            self._apply_exploratory_acceptance_metadata(
+                targets,
+                source_branch=source_branch,
+                acceptance_commits=acceptance_commits,
+                changed_files=changed_files,
+                qa_results=qa_results,
+                run_dir=run_dir,
+                manifest=manifest,
+            )
+            if acceptance_worktree_created:
+                self._cleanup_exploratory_acceptance_worktree(
+                    acceptance_path,
+                    run_dir=run_dir,
+                )
+            manifest.record_success("exploratory_acceptance_applied")
+            emit(f"Exploratory acceptance decisions applied from {decision_file}.")
+            return manifest
+        except (CommandFailure, RalphError, OSError, json.JSONDecodeError, ValueError) as error:
+            log_path = error.log_path if isinstance(error, (CommandFailure, IssueFailure)) else None
+            if pushed:
+                manifest.record_metadata_status(
+                    "failed",
+                    details={"error": str(error), "log_path": path_text(log_path)},
+                )
+                guidance = exploratory_acceptance_recovery_guidance(
+                    run_dir=run_dir,
+                    source_branch=source_branch,
+                    pushed=True,
+                )
+                failure = PostPushFailure(
+                    f"Exploratory acceptance metadata failed after pushing "
+                    f"{source_branch}: {error}\nRecovery guidance: {guidance}",
+                    log_path=log_path,
+                )
+                manifest.record_failure(failure, log_path=log_path)
+                raise failure from error
+
+            guidance = exploratory_acceptance_recovery_guidance(
+                run_dir=run_dir,
+                source_branch=source_branch,
+                pushed=False,
+            )
+            if isinstance(error, IssueFailure) and error.recovery_guidance is not None:
+                failure = error
+            else:
+                failure = IssueFailure(
+                    f"Exploratory acceptance apply failed before pushing "
+                    f"{source_branch}: {error}",
+                    log_path=log_path,
+                    failure_type="exploratory_acceptance_pre_push_failure",
+                    recovery_guidance=guidance,
+                )
+            manifest.record_failure(failure, log_path=log_path)
+            emit(str(failure), err=True)
+            raise failure from error
+
+    def _validated_exploratory_acceptance_targets(
+        self,
+        decisions: list[ExploratoryAcceptanceDecision],
+        *,
+        run_dir: Path,
+        manifest: RunManifest,
+    ) -> list[ExploratoryAcceptanceTarget]:
+        targets: list[ExploratoryAcceptanceTarget] = []
+        for decision in decisions:
+            state = self.github.issue_state(decision.issue_number)
+            if state != "OPEN":
+                raise IssueFailure(
+                    f"Decision targets issue #{decision.issue_number}, but it is {state}.",
+                    failure_type="exploratory_acceptance_invalid_issue_state",
+                )
+            issue = self.github.view_issue(decision.issue_number)
+            if AGENT_REVIEWING_LABEL not in issue.labels:
+                raise IssueFailure(
+                    f"Decision targets issue #{decision.issue_number}, but it is not "
+                    f"labeled `{AGENT_REVIEWING_LABEL}`.",
+                    failure_type="exploratory_acceptance_missing_reviewing_label",
+                )
+            comments = self.github.issue_comments(decision.issue_number)
+            body = latest_exploratory_handoff_comment(comments)
+            if body is None:
+                raise IssueFailure(
+                    f"Issue #{decision.issue_number} has no recorded Exploratory "
+                    "handoff comment.",
+                    failure_type="exploratory_acceptance_missing_handoff",
+                )
+            evidence = parse_exploratory_handoff_comment(body)
+            branch = str(evidence.get("branch") or "")
+            handoff_commit = str(evidence.get("handoff_commit") or "")
+            if branch == "" or handoff_commit == "":
+                raise IssueFailure(
+                    f"Issue #{decision.issue_number} has incomplete Exploratory "
+                    "handoff evidence.",
+                    failure_type="exploratory_acceptance_incomplete_handoff",
+                )
+            self.git.fetch_base(branch, run_dir=run_dir)
+            branch_head = self.git.rev_parse(f"origin/{branch}")
+            if not recorded_commit_matches(branch_head, handoff_commit):
+                raise IssueFailure(
+                    f"Issue #{decision.issue_number} records Exploratory branch "
+                    f"`{branch}` at `{handoff_commit}`, but origin/{branch} is "
+                    f"`{branch_head}`.",
+                    failure_type="exploratory_acceptance_branch_moved",
+                )
+            changed_files_value = evidence.get("changed_files")
+            changed_files = (
+                tuple(str(path) for path in changed_files_value if isinstance(path, str))
+                if isinstance(changed_files_value, list)
+                else ()
+            )
+            target = ExploratoryAcceptanceTarget(
+                decision=decision,
+                issue=issue,
+                branch=branch,
+                handoff_commit=handoff_commit,
+                changed_files=changed_files,
+            )
+            manifest.record_exploratory_acceptance_decision(
+                issue_number=decision.issue_number,
+                decision=decision.decision,
+                status="validated",
+                issue=issue,
+                branch=branch,
+                handoff_commit=handoff_commit,
+                reason=decision.reason,
+                changed_files=changed_files,
+            )
+            targets.append(target)
+        return targets
+
+    def _merge_accepted_exploratory_targets(
+        self,
+        targets: list[ExploratoryAcceptanceTarget],
+        *,
+        source_branch: str,
+        acceptance_path: Path,
+        run_dir: Path,
+        manifest: RunManifest,
+        acceptance_commits: dict[int, str],
+    ) -> None:
+        emit(f"Creating Exploratory acceptance worktree from origin/{source_branch}")
+        manifest.record_event("creating_exploratory_acceptance_worktree")
+        self.git.fetch_base(source_branch, run_dir=run_dir)
+        source_commit = self.git.rev_parse(f"origin/{source_branch}")
+        manifest.record_commit("source", source_commit)
+        self.git.add_detached_worktree(
+            path=acceptance_path,
+            ref=f"origin/{source_branch}",
+            run_dir=run_dir,
+            log_name="git-worktree-add-exploratory-acceptance.log",
+        )
+        manifest.record_event("exploratory_acceptance_worktree_created")
+        for target in targets:
+            emit(
+                f"#{target.issue.number}: merging accepted Exploratory branch "
+                f"origin/{target.branch}"
+            )
+            manifest.record_exploratory_acceptance_decision(
+                issue_number=target.issue.number,
+                decision=target.decision.decision,
+                status="merging",
+                issue=target.issue,
+                branch=target.branch,
+                handoff_commit=target.handoff_commit,
+                reason=target.decision.reason,
+            )
+            self.git.merge_no_ff(
+                cwd=acceptance_path,
+                ref=f"origin/{target.branch}",
+                message=f"Accept Exploratory issue #{target.issue.number}: {target.issue.title}",
+                run_dir=run_dir,
+                log_name=f"git-merge-accept-issue-{target.issue.number}.log",
+            )
+            acceptance_commit = self.git.rev_parse("HEAD", cwd=acceptance_path)
+            if not self.git.is_ancestor(
+                ancestor=target.handoff_commit,
+                descendant=acceptance_commit,
+                cwd=acceptance_path,
+            ):
+                raise IssueFailure(
+                    f"Acceptance merge for issue #{target.issue.number} did not make "
+                    f"handoff commit `{target.handoff_commit}` reachable.",
+                    failure_type="exploratory_acceptance_handoff_not_reachable",
+                )
+            acceptance_commits[target.issue.number] = acceptance_commit
+            manifest.record_exploratory_acceptance_decision(
+                issue_number=target.issue.number,
+                decision=target.decision.decision,
+                status="merged",
+                issue=target.issue,
+                branch=target.branch,
+                handoff_commit=target.handoff_commit,
+                acceptance_commit=acceptance_commit,
+                reason=target.decision.reason,
+            )
+
+    def _apply_exploratory_acceptance_metadata(
+        self,
+        targets: list[ExploratoryAcceptanceTarget],
+        *,
+        source_branch: str,
+        acceptance_commits: dict[int, str],
+        changed_files: list[str],
+        qa_results: list[QAResult],
+        run_dir: Path,
+        manifest: RunManifest,
+    ) -> None:
+        manifest.record_metadata_status("applying_exploratory_acceptance")
+        for target in targets:
+            decision = target.decision.decision
+            if decision == "accept":
+                acceptance_commit = acceptance_commits.get(target.issue.number)
+                if acceptance_commit is None:
+                    raise RalphError(
+                        f"Missing acceptance commit for issue #{target.issue.number}."
+                    )
+                operations = self._apply_exploratory_accept_metadata(
+                    target,
+                    source_branch=source_branch,
+                    acceptance_commit=acceptance_commit,
+                    changed_files=changed_files,
+                    qa_results=qa_results,
+                    run_dir=run_dir,
+                )
+                manifest.record_exploratory_acceptance_decision(
+                    issue_number=target.issue.number,
+                    decision=decision,
+                    status="metadata_applied",
+                    issue=target.issue,
+                    branch=target.branch,
+                    handoff_commit=target.handoff_commit,
+                    acceptance_commit=acceptance_commit,
+                    reason=target.decision.reason,
+                    operations=operations,
+                )
+                continue
+            if decision == "hold":
+                operations = self._apply_exploratory_hold_metadata(target, run_dir=run_dir)
+                manifest.record_exploratory_acceptance_decision(
+                    issue_number=target.issue.number,
+                    decision=decision,
+                    status="metadata_applied",
+                    issue=target.issue,
+                    branch=target.branch,
+                    handoff_commit=target.handoff_commit,
+                    reason=target.decision.reason,
+                    operations=operations,
+                )
+                continue
+            if decision == "reject":
+                operations = self._apply_exploratory_rejection_metadata(
+                    target,
+                    run_dir=run_dir,
+                )
+                manifest.record_exploratory_acceptance_decision(
+                    issue_number=target.issue.number,
+                    decision=decision,
+                    status="metadata_applied",
+                    issue=target.issue,
+                    branch=target.branch,
+                    handoff_commit=target.handoff_commit,
+                    reason=target.decision.reason,
+                    operations=operations,
+                )
+                continue
+            raise ValueError(f"Unsupported Exploratory acceptance decision: {decision}")
+        manifest.record_metadata_status("applied_exploratory_acceptance")
+
+    def _apply_exploratory_accept_metadata(
+        self,
+        target: ExploratoryAcceptanceTarget,
+        *,
+        source_branch: str,
+        acceptance_commit: str,
+        changed_files: list[str],
+        qa_results: list[QAResult],
+        run_dir: Path,
+    ) -> dict[str, Any]:
+        emit(f"#{target.issue.number}: commenting Exploratory acceptance evidence")
+        self.github.comment_issue(
+            target.issue.number,
+            build_exploratory_acceptance_comment(
+                target,
+                acceptance_commit=acceptance_commit,
+                source_branch=source_branch,
+                changed_files=changed_files,
+                qa_results=qa_results,
+                run_dir=run_dir,
+            ),
+            run_dir=run_dir,
+        )
+        emit(f"#{target.issue.number}: marking {AGENT_INTEGRATED_LABEL}")
+        self.github.edit_issue_labels(
+            target.issue.number,
+            add=[AGENT_INTEGRATED_LABEL],
+            remove=[
+                AGENT_REVIEWING_LABEL,
+                AGENT_RUNNING_LABEL,
+                AGENT_FAILED_LABEL,
+                AGENT_MERGED_LABEL,
+                READY_FOR_HUMAN_LABEL,
+            ],
+        )
+        return {
+            "comment": "created",
+            "labels": {
+                "added": [AGENT_INTEGRATED_LABEL],
+                "removed": [
+                    AGENT_REVIEWING_LABEL,
+                    AGENT_RUNNING_LABEL,
+                    AGENT_FAILED_LABEL,
+                    AGENT_MERGED_LABEL,
+                    READY_FOR_HUMAN_LABEL,
+                ],
+            },
+        }
+
+    def _apply_exploratory_hold_metadata(
+        self,
+        target: ExploratoryAcceptanceTarget,
+        *,
+        run_dir: Path,
+    ) -> dict[str, Any]:
+        emit(f"#{target.issue.number}: commenting Exploratory hold decision")
+        self.github.comment_issue(
+            target.issue.number,
+            build_exploratory_hold_comment(target),
+            run_dir=run_dir,
+        )
+        return {"comment": "created", "labels": "unchanged"}
+
+    def _apply_exploratory_rejection_metadata(
+        self,
+        target: ExploratoryAcceptanceTarget,
+        *,
+        run_dir: Path,
+    ) -> dict[str, Any]:
+        emit(f"#{target.issue.number}: commenting Exploratory rejection")
+        self.github.comment_issue(
+            target.issue.number,
+            build_exploratory_rejection_comment(target),
+            run_dir=run_dir,
+        )
+        emit(f"#{target.issue.number}: marking {READY_FOR_HUMAN_LABEL}")
+        self.github.edit_issue_labels(
+            target.issue.number,
+            add=[READY_FOR_HUMAN_LABEL],
+            remove=[
+                AGENT_REVIEWING_LABEL,
+                AGENT_INTEGRATED_LABEL,
+                AGENT_RUNNING_LABEL,
+                AGENT_FAILED_LABEL,
+                AGENT_MERGED_LABEL,
+                READY_LABEL,
+            ],
+        )
+        return {
+            "comment": "created",
+            "labels": {
+                "added": [READY_FOR_HUMAN_LABEL],
+                "removed": [
+                    AGENT_REVIEWING_LABEL,
+                    AGENT_INTEGRATED_LABEL,
+                    AGENT_RUNNING_LABEL,
+                    AGENT_FAILED_LABEL,
+                    AGENT_MERGED_LABEL,
+                    READY_LABEL,
+                ],
+            },
+        }
+
+    def _cleanup_exploratory_acceptance_worktree(
+        self,
+        acceptance_path: Path,
+        *,
+        run_dir: Path,
+    ) -> None:
+        emit(f"Removing Exploratory acceptance worktree {acceptance_path}")
+        try:
+            self.git.remove_worktree(
+                acceptance_path,
+                run_dir=run_dir,
+                log_name="git-worktree-remove-exploratory-acceptance.log",
+            )
+        except CommandFailure as error:
+            emit(f"Cleanup warning: {error}", err=True)
+
+    def _exploratory_acceptance_run_dir(self) -> Path:
+        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        return self.config.log_root / f"exploratory-acceptance-{timestamp}"
+
     def _promote(self) -> RunManifest:
         source_branch = self.config.source_branch
         target_branch = self._promotion_target_branch()
@@ -8257,6 +8904,105 @@ def parse_exploratory_handoff_comment(body: str) -> dict[str, Any]:
     }
 
 
+def load_exploratory_acceptance_decisions(
+    decision_file: Path,
+) -> list[ExploratoryAcceptanceDecision]:
+    if not decision_file.exists():
+        raise ValueError(f"Decision JSON artifact does not exist: {decision_file}")
+    payload = json.loads(decision_file.read_text(encoding="utf-8"))
+    entries = exploratory_acceptance_decision_entries(payload)
+    if not entries:
+        raise ValueError("Decision JSON artifact must include at least one decision.")
+
+    decisions: list[ExploratoryAcceptanceDecision] = []
+    seen_issue_numbers: set[int] = set()
+    for index, entry in enumerate(entries, start=1):
+        decision = exploratory_acceptance_decision_from_entry(entry, index=index)
+        if decision.issue_number in seen_issue_numbers:
+            raise ValueError(
+                "Decision JSON artifact includes duplicate issue number "
+                f"#{decision.issue_number}."
+            )
+        seen_issue_numbers.add(decision.issue_number)
+        decisions.append(decision)
+    return decisions
+
+
+def exploratory_acceptance_decision_entries(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return validated_exploratory_acceptance_decision_entries(payload)
+    if not isinstance(payload, dict):
+        raise ValueError("Decision JSON artifact must be an object or list.")
+    for key in ("decisions", "issues"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return validated_exploratory_acceptance_decision_entries(value)
+    return []
+
+
+def validated_exploratory_acceptance_decision_entries(value: list[Any]) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    for index, entry in enumerate(value, start=1):
+        if not isinstance(entry, dict):
+            raise ValueError(f"Decision entry {index} must be an object.")
+        entries.append(entry)
+    return entries
+
+
+def exploratory_acceptance_decision_from_entry(
+    entry: dict[str, Any],
+    *,
+    index: int,
+) -> ExploratoryAcceptanceDecision:
+    issue_number = exploratory_acceptance_issue_number_from_entry(entry)
+    if issue_number is None:
+        raise ValueError(f"Decision entry {index} is missing an issue number.")
+
+    raw_decision = str(entry.get("decision") or "").strip().lower()
+    if raw_decision not in EXPLORATORY_ACCEPTANCE_DECISIONS:
+        valid = ", ".join(sorted(EXPLORATORY_ACCEPTANCE_DECISIONS))
+        raise ValueError(
+            f"Decision entry {index} for issue #{issue_number} has unsupported "
+            f"decision `{raw_decision or '<missing>'}`. Use one of: {valid}."
+        )
+
+    reason = exploratory_acceptance_reason_from_entry(entry)
+    if raw_decision in {"hold", "reject"} and (reason is None or reason.strip() == ""):
+        raise ValueError(
+            f"Decision entry {index} for issue #{issue_number} must include a "
+            f"non-empty reason for `{raw_decision}`."
+        )
+    return ExploratoryAcceptanceDecision(
+        issue_number=issue_number,
+        decision=raw_decision,
+        reason=reason,
+    )
+
+
+def exploratory_acceptance_issue_number_from_entry(entry: dict[str, Any]) -> int | None:
+    candidates = (entry.get("issue_number"), entry.get("number"), entry.get("issue"))
+    for candidate in candidates:
+        if isinstance(candidate, dict):
+            candidate = candidate.get("number")
+        if isinstance(candidate, int):
+            return candidate
+        if isinstance(candidate, str) and candidate.strip().isdigit():
+            return int(candidate.strip())
+    return None
+
+
+def exploratory_acceptance_reason_from_entry(entry: dict[str, Any]) -> str | None:
+    for key in ("reason", "review_result", "result", "comment"):
+        value = entry.get(key)
+        if isinstance(value, str) and value.strip() != "":
+            return value.strip()
+    return None
+
+
+def recorded_commit_matches(actual_commit: str, recorded_commit: str) -> bool:
+    return actual_commit == recorded_commit or actual_commit.startswith(recorded_commit)
+
+
 def markdown_backtick_bullets(markdown: str) -> list[str]:
     values: list[str] = []
     for line in markdown.splitlines():
@@ -10016,6 +10762,113 @@ def user_facing_error(error: Exception) -> str:
     return str(error)
 
 
+def build_exploratory_acceptance_comment(
+    target: ExploratoryAcceptanceTarget,
+    *,
+    acceptance_commit: str,
+    source_branch: str,
+    changed_files: list[str],
+    qa_results: list[QAResult],
+    run_dir: Path,
+) -> str:
+    qa_lines = [
+        f"- `{format_command(result.command.args)}` from `{result.command.cwd}`"
+        for result in qa_results
+    ]
+    changed_lines = [f"- `{path}`" for path in changed_files]
+    reason = target.decision.reason
+    reason_lines = ["Review reason:"] if reason else []
+    if reason:
+        reason_lines.extend(["", reason, ""])
+    return "\n".join(
+        [
+            EXPLORATORY_ACCEPTANCE_COMMENT_TITLE,
+            "",
+            f"Commit: `{acceptance_commit}`",
+            f"Delivery mode: `{EXPLORATORY_MODE}`",
+            f"Target branch: `{source_branch}`",
+            f"Exploratory branch: `{target.branch}`",
+            f"Handoff commit: `{target.handoff_commit}`",
+            "",
+            *reason_lines,
+            "## Merged-target changed files",
+            "",
+            *changed_lines,
+            "",
+            "## Merged-target QA",
+            "",
+            *qa_lines,
+            "",
+            f"Run logs: `{run_dir}`",
+            "",
+            f"Issue #{target.issue.number} will stay open until Ralph promotes `{source_branch}`.",
+            "",
+        ]
+    )
+
+
+def build_exploratory_hold_comment(target: ExploratoryAcceptanceTarget) -> str:
+    return "\n".join(
+        [
+            "Ralph exploratory acceptance held.",
+            "",
+            "Decision: `hold`",
+            f"Exploratory branch: `{target.branch}`",
+            f"Handoff commit: `{target.handoff_commit}`",
+            "",
+            "## Reason",
+            "",
+            target.decision.reason or "",
+            "",
+            f"Issue #{target.issue.number} remains `{AGENT_REVIEWING_LABEL}`.",
+            "",
+        ]
+    )
+
+
+def build_exploratory_rejection_comment(target: ExploratoryAcceptanceTarget) -> str:
+    return "\n".join(
+        [
+            "Ralph exploratory acceptance rejected.",
+            "",
+            "Decision: `reject`",
+            f"Exploratory branch: `{target.branch}`",
+            f"Handoff commit: `{target.handoff_commit}`",
+            "",
+            "## Review result",
+            "",
+            target.decision.reason or "",
+            "",
+            (
+                f"Issue #{target.issue.number} needs human follow-up and will not be "
+                f"marked `{AGENT_INTEGRATED_LABEL}`."
+            ),
+            "",
+        ]
+    )
+
+
+def exploratory_acceptance_recovery_guidance(
+    *,
+    run_dir: Path,
+    source_branch: str,
+    pushed: bool,
+) -> str:
+    if pushed:
+        return (
+            f"Inspect `{run_dir / MANIFEST_NAME}`. The `{source_branch}` Integration "
+            "target may already include accepted Exploratory work, but issue metadata "
+            "may be incomplete. Verify the pushed commit, then add missing "
+            f"`{EXPLORATORY_ACCEPTANCE_COMMENT_TITLE}` evidence and label transitions "
+            "manually before rerunning Promotion."
+        )
+    return (
+        f"Inspect the acceptance worktree and `{run_dir / MANIFEST_NAME}`. No accepted "
+        "issue metadata was changed before the accepted branch push. Resolve the merge "
+        f"or merged-target QA failure, then rerun the same decision artifact."
+    )
+
+
 def build_completion_comment(
     issue: Issue,
     commit_sha: str,
@@ -10417,6 +11270,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--apply-exploratory-acceptance-decisions",
+        help=(
+            "Apply a JSON artifact containing explicit Exploratory acceptance "
+            "decisions for open agent-reviewing issues."
+        ),
+    )
+    parser.add_argument(
         "--drain",
         action="store_true",
         help="Continue through implementation and triage until the queue is blocked or empty.",
@@ -10482,13 +11342,27 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         args.inspect_run is not None,
         args.recover_run is not None,
         args.operator_run_status is not None,
+        args.apply_exploratory_acceptance_decisions is not None,
         args.drain_promote_all,
     ]
     if sum(1 for enabled in exclusive_modes if enabled) > 1:
         parser.error(
             "Use only one of --inspect-run, --recover-run, --operator-run-status, "
-            "or --drain-promote-all."
+            "--apply-exploratory-acceptance-decisions, or --drain-promote-all."
         )
+    if args.apply_exploratory_acceptance_decisions is not None:
+        if args.dry_run:
+            parser.error("--apply-exploratory-acceptance-decisions does not support --dry-run.")
+        if args.promote or args.drain or args.issue is not None or args.bootstrap_labels:
+            parser.error(
+                "--apply-exploratory-acceptance-decisions cannot be combined with "
+                "--promote, --drain, --issue, or --bootstrap-labels."
+            )
+        if args.target_branch is not None or args.base is not None:
+            parser.error(
+                "Use --source-branch, not --target-branch or --base, with "
+                "--apply-exploratory-acceptance-decisions."
+            )
     if args.ready_issue_refresh and args.skip_ready_issue_refresh:
         parser.error("Use only one of --ready-issue-refresh or --skip-ready-issue-refresh.")
     if args.drain_promote_all and (
@@ -10529,6 +11403,11 @@ def main(argv: list[str] | None = None) -> int:
             recovery = RalphRunRecovery(config, runner)
             recovery.validate_tools()
             recovery.recover(Path(parsed_args.recover_run))
+            return 0
+        if parsed_args.apply_exploratory_acceptance_decisions is not None:
+            RalphLoop(config, runner).apply_exploratory_acceptance_decisions(
+                Path(parsed_args.apply_exploratory_acceptance_decisions)
+            )
             return 0
         if parsed_args.drain_promote_all:
             run_dir = (

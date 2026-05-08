@@ -7,12 +7,16 @@ pushed to origin after QA, and recorded on the issue with `agent-reviewing`.
 The issue remains open until a human review accepts or rejects the work.
 
 Automatic **Promotion** does not merge **Exploratory branches**. Accepted
-Exploratory work enters **Promotion** only after a human merges the reviewed
-branch to `dev`, comments acceptance evidence that starts with
+Exploratory work enters **Promotion** only after an explicit human decision is
+applied. Ralph's acceptance apply flow validates the open `agent-reviewing`
+issue and recorded handoff branch/commit, merges accepted branches into a
+temporary `dev` acceptance worktree, runs selected merged-target QA, pushes
+`dev`, comments acceptance evidence that starts with
 `Ralph exploratory acceptance completed.`, records the accepted `dev` commit,
-removes `agent-reviewing`, and adds `agent-integrated`. Rejected Exploratory
-work stays open, removes `agent-reviewing`, adds `ready-for-human`, and records
-the review result without adding `agent-integrated`.
+removes `agent-reviewing`, and adds `agent-integrated`. Held Exploratory work
+keeps `agent-reviewing` with a reason comment. Rejected Exploratory work stays
+open, removes `agent-reviewing`, adds `ready-for-human`, and records the review
+result without adding `agent-integrated`.
 Checkpointed Operator runs may stop with `needs_review` and write an
 **Exploratory acceptance review** artifact when open `agent-reviewing` issues
 remain and no unblocked ready issue can proceed. That artifact is informational
@@ -38,8 +42,11 @@ merge branches, push refs, comment, edit labels, close issues, update
 Exploratory review is an explicit human state transition, not a Ralph drain
 state. Ralph may publish the **Exploratory branch**, add `agent-reviewing`,
 leave the issue open, and run **Ready issue refresh** for the next queue items,
-but it does not decide acceptance or rejection. The `## Review focus` section
-is therefore required before a ready `delivery-exploratory` issue can run.
+but it does not decide acceptance or rejection. The acceptance apply flow only
+executes decisions supplied by the Operator or `$ralph-loop` session, and it
+does not change accepted issue metadata before the accepted branch push and
+merged-target QA succeed. The `## Review focus` section is therefore required
+before a ready `delivery-exploratory` issue can run.
 The Operator's **Exploratory acceptance review** artifact makes the waiting
 state visible by listing the branch, handoff commit, changed files, QA evidence,
 mergeability against `origin/dev`, and ready issues blocked by the decision.
