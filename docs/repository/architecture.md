@@ -146,10 +146,12 @@ live source asset keys, dependency-wave count, run-batch count, and asset batch
 size. The Promotion scenario enforces regression budgets from the approved
 targeted baseline: total gate duration at or below 20 minutes, peak active and
 queued runs at or below `6`, total Dagster runs at or below `48`, target
-progress exactly `29/29`, and missing or failed target assets and asset checks
-at `0`. Budget failures print the observed values, thresholds, and run manifest
-path. The full scenario prints the same telemetry without making local
-development performance claims.
+progress matching the current GraphQL-derived
+`dataflow.scenario_evidence.target_asset_count`, and missing or failed target
+assets and asset checks at `0`. Budget failures print the observed values,
+thresholds, dynamic target-count evidence, and run manifest path. The full
+scenario prints the same telemetry without making local development performance
+claims.
 
 ## Repository responsibilities
 

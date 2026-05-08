@@ -225,8 +225,9 @@ Dagster dataflow monitor, and cleanup durations plus cleanup phase status, final
 Dagster run, target progress, target materialization timestamp, and asset-check
 telemetry. For the `promotion-gas-model` direct launch path, the dataflow
 manifest also records scenario evidence: selected scenario, launch mode, target
-group, target asset count, selected upstream closure count, skipped live source
-asset keys, dependency-wave count, run-batch count, and asset batch size.
+group, current GraphQL-derived target asset count, selected upstream closure
+count, skipped live source asset keys, dependency-wave count, run-batch count,
+and asset batch size.
 After startup, it uses Dagster GraphQL to drive the selected scenario. The
 default `full-gas-model` scenario starts only the intended unzipper,
 event-driven raw, and gas model automation sensors. NEMWeb discovery schedules,
@@ -254,12 +255,14 @@ The required **End-to-end test** coverage remains the approved #77 contract:
 exercise Dagster, LocalStack/S3, Podman run-worker containers, and the Dagster
 GraphQL monitor; materialize every materializable Dagster asset in group
 `gas_model`; and preserve final asset-check status for that target. Current
-`dg list defs --assets "group:gas_model" --json` discovery evidence is 29
-assets and 112 asset checks, including
-`silver/metadata/silver_table_metadata`. Ralph runs this as a **Promotion**
-gate after the aggregate **Push check** for the source revision and before
-`main` is merged, pushed, or issue metadata is updated. It protects work that
-has already reached `dev` through **Local integration** in Gitflow
+`dataflow.scenario_evidence.target_asset_count` evidence is derived from the
+Dagster GraphQL asset graph before budget enforcement. At the current source
+revision, `dg list defs --assets "group:gas_model" --json` reports 37
+executable `gas_model` assets and 144 asset checks, including the eight
+`silver_gas_fact_sttm_*` assets. Ralph runs this as a **Promotion** gate after
+the aggregate **Push check** for the source revision and before `main` is
+merged, pushed, or issue metadata is updated. It protects work that has already
+reached `dev` through **Local integration** in Gitflow
 **Delivery mode**; it is not a separate **Test lane** and it is not a local
 development benchmark.
 
@@ -269,20 +272,23 @@ and issues; peak active and queued Dagster run counts; final run status counts;
 target progress; target materialization timestamps; and final missing or failed
 asset-check counts. For `promotion-gas-model`, `dataflow.scenario_evidence`
 also records the selected scenario, launch mode, target group, target asset
-count, selected upstream closure count, skipped live source asset keys,
-dependency-wave count, run-batch count, and asset batch size. The #76 budget
-report prints those values in command output before #79 enforcement is applied.
+count derived from the current GraphQL asset graph, selected upstream closure
+count, skipped live source asset keys, dependency-wave count, run-batch count,
+and asset batch size. The #76 budget report prints those values in command
+output before #79 enforcement is applied.
 
 The `promotion-gas-model` scenario enforces #79 Promotion guard regression
 budgets from the approved #78 targeted baseline: total gate duration at or
 below 20 minutes, peak active runs at or below `6`, peak queued runs at or below
-`6`, total Dagster runs at or below `48`, target progress exactly `29/29`, and
-missing or failed target assets and asset checks at `0`. Budget failures print
-observed values, thresholds, and the `run-manifest.json` path. Duration or run
-count failures point to run explosion, queue contention, or local environment
-slowdown that needs evidence before rerun or launch-shape changes. Target
-progress and asset-check failures mean the coverage contract was not satisfied
-and the source revision must not be promoted until the dataflow regression is
+`6`, total Dagster runs at or below `48`, target progress matching the current
+`dataflow.scenario_evidence.target_asset_count`, and missing or failed target
+assets and asset checks at `0`. Budget failures print observed values,
+thresholds, dynamic target-count evidence, and the `run-manifest.json` path.
+Duration or run count failures point to run explosion, queue contention, or
+local environment slowdown that needs evidence before rerun or launch-shape
+changes. Target progress and asset-check failures mean the coverage contract
+was not satisfied and the source revision must not be promoted until the
+dataflow regression is
 fixed. Missing telemetry is also a Promotion gate failure because Ralph cannot
 prove the source revision satisfied the contract. The full scenario prints the
 same telemetry without enforcing these Promotion budgets.

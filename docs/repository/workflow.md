@@ -138,12 +138,13 @@ Local workflow notes:
   cleanup, and manifest-path fields. The scenario enforces #79 Promotion guard
   regression budgets from the approved #78 targeted baseline: 20 minute total
   duration, `6` peak active runs, `6` peak queued runs, `48` total Dagster runs,
-  `29/29` target progress, and `0` missing or failed target assets and asset
-  checks. Duration or run-count failures indicate run explosion, queue
-  contention, or local environment slowdown; target-progress, asset-check, or
-  missing-telemetry failures mean Ralph cannot prove the source revision met the
-  **Promotion** contract. Temporary Promotion source worktrees therefore do not
-  look for ignored seed data under the ephemeral worktree.
+  target progress matching the current GraphQL-derived
+  `dataflow.scenario_evidence.target_asset_count`, and `0` missing or failed
+  target assets and asset checks. Duration or run-count failures indicate run
+  explosion, queue contention, or local environment slowdown; target-progress,
+  asset-check, or missing-telemetry failures mean Ralph cannot prove the source
+  revision met the **Promotion** contract. Temporary Promotion source worktrees
+  therefore do not look for ignored seed data under the ephemeral worktree.
 
 Use [backend-services/README.md](../../backend-services/README.md) for local
 stack commands and

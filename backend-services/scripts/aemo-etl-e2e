@@ -32,7 +32,9 @@ FULL_GAS_MODEL_SCENARIO = "full-gas-model"
 PROMOTION_GAS_MODEL_SCENARIO = "promotion-gas-model"
 SENSOR_DRIVEN_LAUNCH_MODE = "sensor-driven"
 DIRECT_UPSTREAM_ASSET_LAUNCH_MODE = "direct-upstream-asset-launch"
-PROMOTION_E2E_REQUIRED_TARGET_ASSET_COUNT = 29
+PROMOTION_E2E_REQUIRED_TARGET_ASSET_COUNT_SOURCE = (
+    "dataflow.scenario_evidence.target_asset_count"
+)
 PROMOTION_E2E_MAX_TOTAL_GATE_DURATION_SECONDS = 20 * 60
 PROMOTION_E2E_MAX_PEAK_ACTIVE_RUN_COUNT = DEFAULT_MAX_CONCURRENT_RUNS
 PROMOTION_E2E_MAX_PEAK_QUEUED_RUN_COUNT = DEFAULT_MAX_CONCURRENT_RUNS
@@ -421,7 +423,8 @@ class E2ERegressionBudgets:
     """Promotion guard regression budgets for one e2e scenario."""
 
     scenario: str
-    required_target_asset_count: int
+    required_target_asset_count: int | None
+    required_target_asset_count_source: str
     max_total_gate_duration_seconds: int
     max_peak_active_run_count: int
     max_peak_queued_run_count: int
@@ -3664,7 +3667,10 @@ def enforce_e2e_regression_budgets_for_run(
     options: RunOptions,
 ) -> None:
     """Record and enforce e2e regression budgets for the completed run."""
-    budgets = e2e_regression_budgets_for_scenario(options.scenario)
+    budgets = e2e_regression_budgets_for_run(
+        options.scenario,
+        dataflow_payload=optional_mapping(manifest.get("dataflow")),
+    )
     telemetry_payload = telemetry.to_manifest()
     manifest["budget"] = e2e_budget_manifest(
         telemetry_payload,
@@ -3706,18 +3712,58 @@ def emit_e2e_budget_report(
 
 def e2e_regression_budgets_for_scenario(
     scenario: str,
+    *,
+    required_target_asset_count: int | None = None,
+    required_target_asset_count_source: str = (
+        PROMOTION_E2E_REQUIRED_TARGET_ASSET_COUNT_SOURCE
+    ),
 ) -> E2ERegressionBudgets | None:
     """Return enforced regression budgets for a scenario, if any."""
     if scenario != PROMOTION_GAS_MODEL_SCENARIO:
         return None
     return E2ERegressionBudgets(
         scenario=scenario,
-        required_target_asset_count=PROMOTION_E2E_REQUIRED_TARGET_ASSET_COUNT,
+        required_target_asset_count=required_target_asset_count,
+        required_target_asset_count_source=required_target_asset_count_source,
         max_total_gate_duration_seconds=(PROMOTION_E2E_MAX_TOTAL_GATE_DURATION_SECONDS),
         max_peak_active_run_count=PROMOTION_E2E_MAX_PEAK_ACTIVE_RUN_COUNT,
         max_peak_queued_run_count=PROMOTION_E2E_MAX_PEAK_QUEUED_RUN_COUNT,
         max_total_run_count=PROMOTION_E2E_MAX_TOTAL_RUN_COUNT,
     )
+
+
+def e2e_regression_budgets_for_run(
+    scenario: str,
+    *,
+    dataflow_payload: Mapping[str, object] | None,
+) -> E2ERegressionBudgets | None:
+    """Return regression budgets with run-specific dynamic target evidence."""
+    if scenario != PROMOTION_GAS_MODEL_SCENARIO:
+        return None
+    return e2e_regression_budgets_for_scenario(
+        scenario,
+        required_target_asset_count=promotion_target_asset_count_from_dataflow(
+            dataflow_payload
+        ),
+        required_target_asset_count_source=(
+            PROMOTION_E2E_REQUIRED_TARGET_ASSET_COUNT_SOURCE
+        ),
+    )
+
+
+def promotion_target_asset_count_from_dataflow(
+    dataflow_payload: Mapping[str, object] | None,
+) -> int | None:
+    """Return the Promotion target count derived from current Dagster definitions."""
+    if dataflow_payload is None:
+        return None
+    scenario_evidence = optional_mapping(dataflow_payload.get("scenario_evidence"))
+    if scenario_evidence is None:
+        return None
+    target_count = optional_int(scenario_evidence.get("target_asset_count"))
+    if target_count is None or target_count <= 0:
+        return None
+    return target_count
 
 
 def e2e_budget_manifest(
@@ -3748,6 +3794,7 @@ def e2e_budget_thresholds(budgets: E2ERegressionBudgets) -> dict[str, object]:
     """Return the configured budget thresholds in manifest shape."""
     return {
         "required_target_asset_count": budgets.required_target_asset_count,
+        "required_target_asset_count_source": budgets.required_target_asset_count_source,
         "max_total_gate_duration_seconds": budgets.max_total_gate_duration_seconds,
         "max_peak_active_run_count": budgets.max_peak_active_run_count,
         "max_peak_queued_run_count": budgets.max_peak_queued_run_count,
@@ -3834,8 +3881,7 @@ def format_enforced_e2e_budget_report(
             f"threshold <= {budgets.max_total_run_count}",
             "- target progress: observed "
             f"{format_target_progress(observations['materialized_target_asset_count'], observations['target_asset_count'])}; "
-            f"required {budgets.required_target_asset_count}/"
-            f"{budgets.required_target_asset_count} materialized",
+            f"required {format_required_target_progress(budgets)}",
             "- missing target assets: observed "
             f"{format_optional_count(observations['missing_target_asset_count'])}; "
             f"threshold <= {budgets.max_missing_target_asset_count}",
@@ -4019,24 +4065,33 @@ def append_target_progress_failure(
     budgets: E2ERegressionBudgets,
 ) -> None:
     """Append target-progress contract failures."""
+    required_target_count = budgets.required_target_asset_count
+    if required_target_count is None:
+        failures.append(
+            "target count evidence unavailable from "
+            f"{budgets.required_target_asset_count_source}; "
+            "cannot validate target progress"
+        )
+        return
+
     materialized_targets = observations["materialized_target_asset_count"]
     target_count = observations["target_asset_count"]
     if materialized_targets is None or target_count is None:
         failures.append(
             "target progress unavailable; required "
-            f"{budgets.required_target_asset_count}/"
-            f"{budgets.required_target_asset_count} materialized"
+            f"{required_target_count}/{required_target_count} materialized "
+            f"from {budgets.required_target_asset_count_source}"
         )
         return
     if (
-        materialized_targets != budgets.required_target_asset_count
-        or target_count != budgets.required_target_asset_count
+        materialized_targets != required_target_count
+        or target_count != required_target_count
     ):
         failures.append(
             "target progress observed "
             f"{format_target_progress(materialized_targets, target_count)}; "
-            f"required {budgets.required_target_asset_count}/"
-            f"{budgets.required_target_asset_count} materialized"
+            f"required {required_target_count}/{required_target_count} "
+            f"materialized from {budgets.required_target_asset_count_source}"
         )
 
 
@@ -4151,6 +4206,17 @@ def format_target_progress(
     if materialized_targets is None or target_count is None:
         return "unavailable"
     return f"{materialized_targets}/{target_count} materialized"
+
+
+def format_required_target_progress(budgets: E2ERegressionBudgets) -> str:
+    """Return the required target materialization progress and evidence source."""
+    required_target_count = budgets.required_target_asset_count
+    if required_target_count is None:
+        return f"unavailable from {budgets.required_target_asset_count_source}"
+    return (
+        f"{required_target_count}/{required_target_count} materialized from "
+        f"{budgets.required_target_asset_count_source}"
+    )
 
 
 def format_failed_asset_check_count(failed_checks: int | None) -> str:
