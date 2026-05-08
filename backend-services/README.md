@@ -342,9 +342,12 @@ Dagster dataflow. The approved #77 coverage invariants are:
 - preserve final asset-check status for that target as part of the
   **Promotion** decision
 - keep current discovery evidence visible:
-  `dg list defs --assets "group:gas_model" --json` reports 29 `gas_model`
-  assets and 112 asset checks, including
-  `silver/metadata/silver_table_metadata` as a group member
+  `dataflow.scenario_evidence.target_asset_count` is derived from the current
+  Dagster GraphQL asset graph and the budget requires final target progress to
+  match that dynamic count. At the current source revision,
+  `dg list defs --assets "group:gas_model" --json` reports 37 executable
+  `gas_model` assets and 144 asset checks, including the eight
+  `silver_gas_fact_sttm_*` assets.
 
 The full scenario remains the sensor/dependency-path reference. The
 `promotion-gas-model` scenario uses the #78 targeted launch shape to preserve
@@ -379,17 +382,20 @@ failure remain in the manifest.
 | `telemetry.dagster_dataflow.final_target_progress` | Materialized, missing, failed, and total target asset counts for the `gas_model` gate target |
 | `telemetry.dagster_dataflow.first_target_materialization_at`, `last_target_materialization_at` | First and last observed target materialization timestamps |
 | `telemetry.dagster_dataflow.final_missing_asset_check_count`, `final_failed_asset_check_count` | Final asset-check drift for the gate target |
-| `dataflow.scenario_evidence` | Direct-launch coverage evidence: scenario, launch mode, target group, target asset count, selected upstream closure count, skipped live source keys, wave count, batch count, and asset batch size |
-| `budget.status`, `budget.thresholds`, `budget.failures`, `budget.run_manifest` | Enforced Promotion budget result, threshold values, actionable failure lines, and the manifest path operators should inspect |
+| `dataflow.scenario_evidence` | Direct-launch coverage evidence: scenario, launch mode, target group, current GraphQL-derived target asset count, selected upstream closure count, skipped live source keys, wave count, batch count, and asset batch size |
+| `budget.status`, `budget.thresholds`, `budget.failures`, `budget.run_manifest` | Enforced Promotion budget result, dynamic target-count source, threshold values, actionable failure lines, and the manifest path operators should inspect |
 
 The `promotion-gas-model` scenario enforces #79 Promotion guard regression
 budgets from the approved #78 targeted baseline: total gate duration at or
 below 20 minutes, peak active runs at or below `6`, peak queued runs at or
 below `6`, total Dagster runs at or below `48`, target progress exactly
-`29/29`, and missing or failed target assets and asset checks at `0`. These
-budgets protect **Promotion** from run explosion and missing coverage; they are
-not generic local development performance claims. The full scenario prints the
-same telemetry for review without enforcing those Promotion budgets.
+matching the current `dataflow.scenario_evidence.target_asset_count` evidence
+from the Dagster asset graph, and missing or failed target assets and asset
+checks at `0`. For the current source definitions that target-progress
+requirement is `37/37`, not a static historical count. These budgets protect
+**Promotion** from run explosion and missing coverage; they are not generic
+local development performance claims. The full scenario prints the same
+telemetry for review without enforcing those Promotion budgets.
 
 Interpret failures by the failed field. Duration, peak-run, queued-run, or
 total-run failures usually mean run explosion, run queue contention, or a local

@@ -878,20 +878,22 @@ on Podman DNS during high-concurrency gates. This preserves final target
 progress and final asset-check status without creating one sensor-triggered run
 per upstream source table. The e2e `run-manifest.json` dataflow section records
 structured direct-launch scenario evidence: selected scenario, launch mode,
-target group, target asset count, selected upstream closure count, skipped live
-source asset keys, dependency-wave count, run-batch count, and asset batch size.
+target group, current GraphQL-derived target asset count, selected upstream
+closure count, skipped live source asset keys, dependency-wave count, run-batch
+count, and asset batch size.
 The gate protects the approved #77 coverage invariants: every materializable
 `gas_model` asset, final asset-check status for that target, Dagster,
 LocalStack/S3, Podman run-worker containers, and the Dagster GraphQL monitor.
 It enforces #79 Promotion guard regression budgets from the approved #78
 targeted baseline: 20 minute total duration, `6` peak active runs, `6` peak
-queued runs, `48` total Dagster runs, `29/29` target progress, and `0` missing
-or failed target assets and asset checks. Direct Promotion launches pace batch
-submission against `max_concurrent_runs` before starting more work in a
-dependency wave so the queued-run budget remains bounded. The
-`run-manifest.json` telemetry records the #75 timing, run-shape, target
-progress, asset-check, cleanup, and direct-launch scenario evidence; the budget
-report prints the #76 observed values, thresholds, failure lines, and manifest
+queued runs, `48` total Dagster runs, target progress matching the current
+`dataflow.scenario_evidence.target_asset_count`, and `0` missing or failed
+target assets and asset checks. Direct Promotion launches pace batch submission
+against `max_concurrent_runs` before starting more work in a dependency wave so
+the queued-run budget remains bounded. The `run-manifest.json` telemetry
+records the #75 timing, run-shape, target progress, asset-check, cleanup, and
+direct-launch scenario evidence; the budget report prints the #76 observed
+values, thresholds, dynamic target-count evidence, failure lines, and manifest
 path. Duration or run-count failures indicate run explosion, run queue
 contention, or local environment slowdown. Target-progress or asset-check
 failures indicate the approved coverage contract was not met. Missing telemetry
