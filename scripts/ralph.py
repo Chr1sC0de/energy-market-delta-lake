@@ -3805,6 +3805,7 @@ def select_promotion_gate_commands(
     args: tuple[str, ...] = (
         "scripts/aemo-etl-e2e",
         "run",
+        "--rebuild",
         "--scenario",
         AEMO_ETL_PROMOTION_E2E_SCENARIO,
         "--timeout-seconds",

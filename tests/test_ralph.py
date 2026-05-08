@@ -1957,6 +1957,7 @@ Build it.
             (
                 "scripts/aemo-etl-e2e",
                 "run",
+                "--rebuild",
                 "--scenario",
                 "promotion-gas-model",
                 "--timeout-seconds",
@@ -1980,6 +1981,7 @@ Build it.
             (
                 "scripts/aemo-etl-e2e",
                 "run",
+                "--rebuild",
                 "--scenario",
                 "promotion-gas-model",
                 "--timeout-seconds",
@@ -8373,6 +8375,7 @@ None.
             e2e_command = (
                 "scripts/aemo-etl-e2e",
                 "run",
+                "--rebuild",
                 "--scenario",
                 "promotion-gas-model",
                 "--timeout-seconds",
@@ -8438,6 +8441,7 @@ None.
             [
                 "scripts/aemo-etl-e2e",
                 "run",
+                "--rebuild",
                 "--scenario",
                 "promotion-gas-model",
                 "--timeout-seconds",
@@ -8463,6 +8467,7 @@ None.
             e2e_command = (
                 "scripts/aemo-etl-e2e",
                 "run",
+                "--rebuild",
                 "--scenario",
                 "promotion-gas-model",
                 "--timeout-seconds",

@@ -292,6 +292,7 @@ the stack runs from an ephemeral worktree. Refresh that cache with
 | Option | Default | Purpose |
 |---|---:|---|
 | `--scenario` | `full-gas-model` | Named target profile; `promotion-gas-model` narrows seed volume and launches the explicit `gas_model` upstream asset graph for Ralph **Promotion** |
+| `--rebuild` | off | Rebuild all local e2e images before startup; Ralph **Promotion** passes this so stale image tags cannot be reused silently |
 | `--webserver-port` | `3001` | Host port for the isolated Dagster webserver |
 | `--seed-root` | `backend-services/.e2e/aemo-etl` | Cached Archive seed root mounted into the isolated stack |
 | `--raw-latest-count` | scenario-specific | Cached raw source-table objects required per table; `3` for `full-gas-model`, `1` for `promotion-gas-model` |
@@ -330,7 +331,9 @@ worktree as the aggregate **Push check**, after that **Push check** and before
 the Promotion worktree, merge to `main`, push, `dev` branch sync, GitHub
 metadata update, or issue closure. It protects work already accepted through
 **Local integration** to `dev`; it is not a standalone **Test lane**, and it is
-not part of the local **Fast check** or **Commit check**.
+not part of the local **Fast check** or **Commit check**. Ralph passes
+`--rebuild` for this gate so the local AEMO ETL, Dagster core, LocalStack, and
+Postgres e2e image tags are rebuilt from the source worktree before startup.
 
 The gate exists because AEMO ETL runtime changes can pass narrowed unit,
 component, static, or script checks while still breaking the complete local
@@ -342,9 +345,11 @@ Dagster dataflow. The approved #77 coverage invariants are:
 - preserve final asset-check status for that target as part of the
   **Promotion** decision
 - keep current discovery evidence visible:
-  `dataflow.scenario_evidence.target_asset_count` is derived from the current
-  Dagster GraphQL asset graph and the budget requires final target progress to
-  match that dynamic count. At the current source revision,
+  `source_definitions.executable_asset_count` is derived from
+  `uv run dg list defs --assets "group:gas_model" --json` in the source
+  worktree before startup, and the runtime GraphQL
+  `dataflow.scenario_evidence.target_asset_count` must match it before
+  Promotion asset batches launch. At the current source revision,
   `dg list defs --assets "group:gas_model" --json` reports 37 executable
   `gas_model` assets and 144 asset checks, including the eight
   `silver_gas_fact_sttm_*` assets.
@@ -382,16 +387,17 @@ failure remain in the manifest.
 | `telemetry.dagster_dataflow.final_target_progress` | Materialized, missing, failed, and total target asset counts for the `gas_model` gate target |
 | `telemetry.dagster_dataflow.first_target_materialization_at`, `last_target_materialization_at` | First and last observed target materialization timestamps |
 | `telemetry.dagster_dataflow.final_missing_asset_check_count`, `final_failed_asset_check_count` | Final asset-check drift for the gate target |
-| `dataflow.scenario_evidence` | Direct-launch coverage evidence: scenario, launch mode, target group, current GraphQL-derived target asset count, selected upstream closure count, skipped live source keys, wave count, batch count, and asset batch size |
+| `source_definitions` | Current-source `dg list defs` provenance: command, working directory, target group, executable asset count, asset-check count, full target asset keys, and STTM target keys |
+| `dataflow.scenario_evidence` | Direct-launch coverage evidence: scenario, launch mode, target group, GraphQL-derived target asset count, selected upstream closure count, skipped live source keys, wave count, batch count, asset batch size, and nested source-definition evidence when available |
 | `budget.status`, `budget.thresholds`, `budget.failures`, `budget.run_manifest` | Enforced Promotion budget result, dynamic target-count source, threshold values, actionable failure lines, and the manifest path operators should inspect |
 
 The `promotion-gas-model` scenario enforces #79 Promotion guard regression
 budgets from the approved #78 targeted baseline: total gate duration at or
 below 20 minutes, peak active runs at or below `6`, peak queued runs at or
 below `6`, total Dagster runs at or below `48`, target progress exactly
-matching the current `dataflow.scenario_evidence.target_asset_count` evidence
-from the Dagster asset graph, and missing or failed target assets and asset
-checks at `0`. For the current source definitions that target-progress
+matching the current `source_definitions.executable_asset_count` evidence from
+the source worktree, and missing or failed target assets and asset checks at
+`0`. For the current source definitions that target-progress
 requirement is `37/37`, not a static historical count. These budgets protect
 **Promotion** from run explosion and missing coverage; they are not generic
 local development performance claims. The full scenario prints the same
@@ -400,14 +406,19 @@ telemetry for review without enforcing those Promotion budgets.
 Interpret failures by the failed field. Duration, peak-run, queued-run, or
 total-run failures usually mean run explosion, run queue contention, or a local
 environment slowdown that needs evidence before retrying or changing the launch
-shape. Target progress, missing target asset, failed target asset, missing
-asset-check, or failed asset-check failures mean the approved #77 coverage
-contract was not met and the source revision must not be promoted until the
-dataflow or check regression is fixed. Missing telemetry is also a gate failure
-because Ralph cannot prove the **Promotion** source revision satisfied the
-contract. Budget failures mark the run manifest failed and print observed
-values, thresholds, and the `run-manifest.json` path; keep that manifest and
-logs as the first inspection target instead of weakening the guard.
+shape. A mismatch between `source_definitions.executable_asset_count` and
+`dataflow.scenario_evidence.target_asset_count` means the running Dagster graph
+is stale for the source revision; for example, current source definitions at
+37 targets and runtime scenario evidence at 29 targets fail the gate before
+Promotion launches asset batches. Target progress, missing target asset, failed
+target asset, missing asset-check, or failed asset-check failures mean the
+approved #77 coverage contract was not met and the source revision must not be
+promoted until the dataflow or check regression is fixed. Missing telemetry is
+also a gate failure because Ralph cannot prove the **Promotion** source
+revision satisfied the contract. Budget failures mark the run manifest failed
+and print observed values, thresholds, and the `run-manifest.json` path; keep
+that manifest and logs as the first inspection target instead of weakening the
+guard.
 
 Local service images are tagged for the e2e stack. Missing images are built
 automatically, existing images are reused by default, and `--rebuild` forces all

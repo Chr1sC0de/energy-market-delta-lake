@@ -117,15 +117,19 @@ Local workflow notes:
   `backend-services/scripts/aemo-etl-e2e`; its run manifest records timing,
   dataflow telemetry, direct-launch scenario evidence, and non-benign cleanup
   warning or failure evidence for Promotion review. Ralph **Promotion** runs pass
-  an explicit `--seed-root` pointing at the primary repo cache and select the
-  `promotion-gas-model` scenario with `--timeout-seconds 1200` and
+  `--rebuild`, an explicit `--seed-root` pointing at the primary repo cache, and
+  select the `promotion-gas-model` scenario with `--timeout-seconds 1200` and
   `--max-concurrent-runs 6`. The scenario narrows the raw and zip seed horizon
-  to 1 object and launches explicit Dagster asset-run batches by dependency wave
-  for every materializable `gas_model` asset plus its materializable upstream
-  closure, while skipping live `bronze_nemweb_public_files_*` discovery/listing
-  assets. Each batch runs in-process inside its Podman run-worker container,
-  and the generated stack uses fixed service IPs for Postgres, LocalStack, and
-  the AEMO ETL code server. This preserves the approved #77 coverage contract:
+  to 1 object, records current source definitions with
+  `uv run dg list defs --assets "group:gas_model" --json`, validates the runtime
+  GraphQL target count against that source count, and launches explicit Dagster
+  asset-run batches by dependency wave for every materializable `gas_model`
+  asset plus its
+  materializable upstream closure, while skipping live
+  `bronze_nemweb_public_files_*` discovery/listing assets. Each batch runs
+  in-process inside its Podman run-worker container, and the generated stack
+  uses fixed service IPs for Postgres, LocalStack, and the AEMO ETL code server.
+  This preserves the approved #77 coverage contract:
   every materializable `gas_model` asset, final asset-check status for that
   target, Dagster, LocalStack/S3, Podman run-worker containers, and the Dagster
   GraphQL monitor. Direct launches pace batch submission against
@@ -133,18 +137,20 @@ Local workflow notes:
   the queued-run budget bounded. For direct launches, the dataflow manifest
   records the scenario, launch mode, target group, target asset count, selected
   upstream closure count, skipped live source asset keys, dependency-wave count,
-  run-batch count, and asset batch size. The #75 telemetry and #76 budget
-  report expose the observed timing, run-shape, target-progress, asset-check,
-  cleanup, and manifest-path fields. The scenario enforces #79 Promotion guard
+  run-batch count, asset batch size, and source-definition evidence. The #75
+  telemetry and #76 budget report expose the observed timing, run-shape,
+  target-progress, asset-check, cleanup, and manifest-path fields. The scenario
+  enforces #79 Promotion guard
   regression budgets from the approved #78 targeted baseline: 20 minute total
   duration, `6` peak active runs, `6` peak queued runs, `48` total Dagster runs,
-  target progress matching the current GraphQL-derived
-  `dataflow.scenario_evidence.target_asset_count`, and `0` missing or failed
+  target progress matching the current
+  `source_definitions.executable_asset_count`, and `0` missing or failed
   target assets and asset checks. Duration or run-count failures indicate run
-  explosion, queue contention, or local environment slowdown; target-progress,
-  asset-check, or missing-telemetry failures mean Ralph cannot prove the source
-  revision met the **Promotion** contract. Temporary Promotion source worktrees
-  therefore do not look for ignored seed data under the ephemeral worktree.
+  explosion, queue contention, or local environment slowdown; target-count
+  mismatches, target-progress, asset-check, or missing-telemetry failures mean
+  Ralph cannot prove the source revision met the **Promotion** contract.
+  Temporary Promotion source worktrees therefore do not look for ignored seed
+  data under the ephemeral worktree.
 
 Use [backend-services/README.md](../../backend-services/README.md) for local
 stack commands and
