@@ -16,7 +16,12 @@ temporary `dev` acceptance worktree, runs selected merged-target QA, pushes
 removes `agent-reviewing`, and adds `agent-integrated`. Held Exploratory work
 keeps `agent-reviewing` with a reason comment. Rejected Exploratory work stays
 open, removes `agent-reviewing`, adds `ready-for-human`, and records the review
-result without adding `agent-integrated`.
+result without adding `agent-integrated`. If an accepted branch merge
+conflicts, Ralph pauses with `acceptance_conflict`, leaves the acceptance
+worktree in place, writes `decisions.json`, `conflicts.json`, and
+`codex-resolution-prompt.md`, and requires
+`--continue-exploratory-acceptance <run_dir>` to validate the resolved worktree
+and rerun merged-target QA before push or metadata changes.
 Checkpointed Operator runs may stop with `needs_review` and write an
 **Exploratory acceptance review** artifact when open `agent-reviewing` issues
 remain and no unblocked ready issue can proceed. That artifact is informational
@@ -45,8 +50,11 @@ leave the issue open, and run **Ready issue refresh** for the next queue items,
 but it does not decide acceptance or rejection. The acceptance apply flow only
 executes decisions supplied by the Operator or `$ralph-loop` session, and it
 does not change accepted issue metadata before the accepted branch push and
-merged-target QA succeed. The `## Review focus` section is therefore required
-before a ready `delivery-exploratory` issue can run.
+merged-target QA succeed. Conflict pauses keep that same boundary by recording
+durable run artifacts and deferring push plus GitHub metadata until the continue
+command validates the resolved acceptance worktree. The `## Review focus`
+section is therefore required before a ready `delivery-exploratory` issue can
+run.
 The Operator's **Exploratory acceptance review** artifact makes the waiting
 state visible by listing the branch, handoff commit, changed files, QA evidence,
 mergeability against `origin/dev`, and ready issues blocked by the decision.

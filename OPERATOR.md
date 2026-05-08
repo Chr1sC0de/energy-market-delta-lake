@@ -170,9 +170,23 @@ Accepted decisions merge the durable **Exploratory branch** into a temporary
 acceptance worktree based on `origin/dev`, run selected merged-target QA from
 the resulting changed files, push `dev` only after QA passes, then comment
 `Ralph exploratory acceptance completed.`, remove `agent-reviewing`, and add
-`agent-integrated`. Held decisions keep `agent-reviewing` and comment the
-reason. Rejected decisions leave the issue open, remove `agent-reviewing`, add
-`ready-for-human`, and comment the review result and next action. ADR
+`agent-integrated`. If an accepted branch merge conflicts, Ralph pauses with
+`acceptance_conflict`, leaves the acceptance worktree in place, and writes
+`decisions.json`, `conflicts.json`, and `codex-resolution-prompt.md` under the
+run directory without pushing or mutating GitHub Issues. Resolve only that
+acceptance worktree, preserve accepted issue intent, commit the resolution so
+the worktree is clean, then continue with:
+
+```bash
+python3 scripts/ralph.py --continue-exploratory-acceptance .ralph/runs/exploratory-acceptance-20260504T010203Z
+```
+
+The continue command validates the paused run artifacts, refuses stale,
+missing, mismatched, dirty, or still-conflicted state, reruns merged-target QA,
+pushes `dev`, and only then applies acceptance comments and labels. Held
+decisions keep `agent-reviewing` and comment the reason. Rejected decisions
+leave the issue open, remove `agent-reviewing`, add `ready-for-human`, and
+comment the review result and next action. ADR
 [0005](docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md)
 records why **Exploratory branches** stay outside automatic **Promotion**.
 

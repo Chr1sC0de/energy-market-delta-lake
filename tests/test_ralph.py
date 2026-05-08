@@ -556,8 +556,8 @@ def make_loop(
     repo_root = tmp_path / "repo"
     worktree_container = tmp_path / "worktrees"
     log_root = tmp_path / "logs"
-    repo_root.mkdir()
-    worktree_container.mkdir()
+    repo_root.mkdir(exist_ok=True)
+    worktree_container.mkdir(exist_ok=True)
     config = ralph.LoopConfig(
         repo_root=repo_root,
         repo="example/repo",
@@ -2984,6 +2984,48 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
         self.assertIn(guidance, text)
         self.assertNotIn("--recover-run", text)
 
+    def test_inspect_run_reports_acceptance_conflict_continue_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = tmp_path / "logs" / "exploratory-acceptance-20260504T010203Z"
+            acceptance_path = tmp_path / "worktrees" / "agent-exploratory-acceptance"
+            run_dir.mkdir(parents=True)
+            manifest = {
+                "schema_version": ralph.MANIFEST_SCHEMA_VERSION,
+                "run_kind": "exploratory_acceptance_apply",
+                "status": ralph.EXPLORATORY_ACCEPTANCE_CONFLICT_STATUS,
+                "delivery_mode": ralph.EXPLORATORY_MODE,
+                "integration_target": "dev",
+                "source_branch": "dev",
+                "paths": {
+                    "run_dir": str(run_dir),
+                    "repo_root": str(tmp_path / "repo"),
+                    "acceptance_worktree": str(acceptance_path),
+                },
+                "qa_results": [],
+                "pushes": {},
+                "github_metadata": {"status": "not_started"},
+                "ready_issue_refresh": {"status": "not_started"},
+                "events": [],
+            }
+            (run_dir / "ralph-run.json").write_text(
+                json.dumps(manifest, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.inspect_run(run_dir)
+
+        text = output.getvalue()
+        self.assertIn(f"Paused acceptance worktree: {acceptance_path}", text)
+        self.assertIn(
+            "Continue command: python3 scripts/ralph.py "
+            f"--continue-exploratory-acceptance {run_dir}",
+            text,
+        )
+        self.assertIn("Recommended next action:", text)
+
 
 class RalphOperatorRunTests(unittest.TestCase):
     def test_operator_foreground_repeats_drain_promotion_until_queue_clean(self) -> None:
@@ -3685,6 +3727,36 @@ class RalphExploratoryAcceptanceApplyTests(unittest.TestCase):
             command_outputs.update(extra_outputs)
         return FakeRunner(command_outputs=command_outputs, **runner_kwargs)
 
+    def _pause_acceptance_conflict(
+        self,
+        tmp_path: Path,
+        *,
+        handoff_branch: str = "agent/exploratory/issue-42-implement-thing",
+    ) -> tuple[ralph.RunManifest, FakeRunner]:
+        merge_command = (
+            "git",
+            "merge",
+            "--no-ff",
+            f"origin/{handoff_branch}",
+            "-m",
+            "Accept Exploratory issue #42: Issue 42",
+        )
+        runner = self._runner_for_reviewing_issue(
+            branch=handoff_branch,
+            diff_outputs=["docs/repository/architecture-exploration.md\n"],
+            rev_parse_outputs=["abc1234\n", "source-sha\n"],
+            fail_commands={merge_command},
+        )
+        loop = make_loop(tmp_path, runner, source_branch=ralph.DEFAULT_GITFLOW_BRANCH)
+        decision_file = self._decision_file(
+            tmp_path,
+            [{"issue_number": 42, "decision": "accept", "reason": "Approved."}],
+        )
+
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            manifest = loop._apply_exploratory_acceptance_decisions(decision_file)
+        return manifest, runner
+
     def test_accept_merges_runs_qa_pushes_then_updates_metadata(self) -> None:
         handoff_branch = "agent/exploratory/issue-42-implement-thing"
         runner = self._runner_for_reviewing_issue(
@@ -3759,6 +3831,196 @@ class RalphExploratoryAcceptanceApplyTests(unittest.TestCase):
         self.assertIn("Handoff commit: `abc1234`", comment)
         self.assertEqual(manifest.data["status"], "succeeded")
         self.assertEqual(manifest.data["decisions"][0]["status"], "metadata_applied")
+
+    def test_accept_merge_conflict_pauses_with_artifacts_without_mutation(self) -> None:
+        handoff_branch = "agent/exploratory/issue-42-implement-thing"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            manifest, runner = self._pause_acceptance_conflict(
+                tmp_path,
+                handoff_branch=handoff_branch,
+            )
+            run_dir = Path(manifest.data["paths"]["run_dir"])
+            decisions = json.loads(
+                (run_dir / ralph.EXPLORATORY_ACCEPTANCE_DECISIONS_ARTIFACT_NAME).read_text(
+                    encoding="utf-8"
+                )
+            )
+            conflicts = json.loads(
+                (run_dir / ralph.EXPLORATORY_ACCEPTANCE_CONFLICTS_ARTIFACT_NAME).read_text(
+                    encoding="utf-8"
+                )
+            )
+            prompt = (
+                run_dir / ralph.EXPLORATORY_ACCEPTANCE_CODEX_PROMPT_NAME
+            ).read_text(encoding="utf-8")
+
+        commands = [call.args for call in runner.calls]
+        self.assertEqual(
+            manifest.data["status"],
+            ralph.EXPLORATORY_ACCEPTANCE_CONFLICT_STATUS,
+        )
+        self.assertEqual(
+            manifest.data["acceptance_conflict"]["conflicted_files"],
+            ["docs/repository/architecture-exploration.md"],
+        )
+        self.assertEqual(decisions["status"], ralph.EXPLORATORY_ACCEPTANCE_CONFLICT_STATUS)
+        self.assertEqual(decisions["decisions"][0]["decision"], "accept")
+        self.assertEqual(decisions["decisions"][0]["status"], "acceptance_conflict")
+        self.assertEqual(conflicts["current_branch"], handoff_branch)
+        self.assertIn("codex-resolution-prompt.md", conflicts["artifacts"]["codex_resolution_prompt"])
+        self.assertIn("Resolve only the paused acceptance worktree", prompt)
+        self.assertIn("Preserve accepted issue intent", prompt)
+        self.assertIn("--continue-exploratory-acceptance", prompt)
+        self.assertFalse(any(command[:2] == ("git", "push") for command in commands))
+        self.assertFalse(any(command[:3] == ("gh", "issue", "comment") for command in commands))
+        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("git", "worktree", "remove") for command in commands)
+        )
+
+    def test_continue_acceptance_conflict_runs_qa_pushes_then_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            paused_manifest, _pause_runner = self._pause_acceptance_conflict(tmp_path)
+            run_dir = Path(paused_manifest.data["paths"]["run_dir"])
+            acceptance_path = Path(paused_manifest.data["paths"]["acceptance_worktree"])
+            acceptance_path.mkdir(parents=True)
+            runner = self._runner_for_reviewing_issue(
+                diff_outputs=["", "scripts/ralph.py\n"],
+                status_outputs=["", ""],
+                rev_parse_outputs=["abc1234\n", "source-sha\n", "resolved-sha\n"],
+            )
+            loop = make_loop(tmp_path, runner)
+
+            with redirect_stdout(io.StringIO()):
+                manifest = loop._continue_exploratory_acceptance(run_dir)
+
+            comment = next(run_dir.glob("issue-42-comment.md")).read_text(encoding="utf-8")
+
+        commands = [call.args for call in runner.calls]
+        push_command = ("git", "push", "origin", "HEAD:dev")
+        push_index = commands.index(push_command)
+        qa_indexes = [
+            index
+            for index, command in enumerate(commands)
+            if command
+            in {
+                ("prek", "run", "-a"),
+                ("python3", "-m", "unittest", "discover", "-s", "tests"),
+            }
+        ]
+        mutation_indexes = [
+            index
+            for index, command in enumerate(commands)
+            if command[:3]
+            in {
+                ("gh", "issue", "comment"),
+                ("gh", "issue", "edit"),
+            }
+        ]
+        self.assertTrue(qa_indexes)
+        self.assertTrue(all(index < push_index for index in qa_indexes))
+        self.assertTrue(mutation_indexes)
+        self.assertTrue(all(index > push_index for index in mutation_indexes))
+        self.assertEqual(manifest.data["status"], "succeeded")
+        self.assertEqual(manifest.data["integration_commit"]["sha"], "resolved-sha")
+        self.assertIn(ralph.EXPLORATORY_ACCEPTANCE_COMMENT_TITLE, comment)
+        self.assertIn("Commit: `resolved-sha`", comment)
+        self.assertEqual(manifest.data["decisions"][0]["status"], "metadata_applied")
+
+    def test_continue_acceptance_conflict_refuses_dirty_worktree(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            paused_manifest, _pause_runner = self._pause_acceptance_conflict(tmp_path)
+            run_dir = Path(paused_manifest.data["paths"]["run_dir"])
+            acceptance_path = Path(paused_manifest.data["paths"]["acceptance_worktree"])
+            acceptance_path.mkdir(parents=True)
+            runner = self._runner_for_reviewing_issue(
+                diff_outputs=[""],
+                status_outputs=[" M docs/repository/architecture-exploration.md\n"],
+                rev_parse_outputs=["abc1234\n"],
+            )
+            loop = make_loop(tmp_path, runner)
+
+            with self.assertRaises(ralph.IssueFailure) as caught:
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    loop._continue_exploratory_acceptance(run_dir)
+
+        commands = [call.args for call in runner.calls]
+        self.assertEqual(caught.exception.failure_type, "exploratory_acceptance_dirty_worktree")
+        self.assertIn("git status --porcelain", caught.exception.recovery_guidance or "")
+        self.assertFalse(any(command[:2] == ("git", "push") for command in commands))
+        self.assertFalse(any(command[:3] == ("gh", "issue", "comment") for command in commands))
+        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+
+    def test_continue_acceptance_conflict_refuses_missing_decision_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            paused_manifest, _pause_runner = self._pause_acceptance_conflict(tmp_path)
+            run_dir = Path(paused_manifest.data["paths"]["run_dir"])
+            acceptance_path = Path(paused_manifest.data["paths"]["acceptance_worktree"])
+            acceptance_path.mkdir(parents=True)
+            (run_dir / ralph.EXPLORATORY_ACCEPTANCE_DECISIONS_ARTIFACT_NAME).unlink()
+            runner = self._runner_for_reviewing_issue()
+            loop = make_loop(tmp_path, runner)
+
+            with self.assertRaises(ralph.IssueFailure) as caught:
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    loop._continue_exploratory_acceptance(run_dir)
+
+        self.assertEqual(
+            caught.exception.failure_type,
+            "exploratory_acceptance_missing_decisions_artifact",
+        )
+        self.assertIn("paused run directory is incomplete", str(caught.exception.recovery_guidance))
+
+    def test_continue_acceptance_conflict_refuses_stale_source_branch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            paused_manifest, _pause_runner = self._pause_acceptance_conflict(tmp_path)
+            run_dir = Path(paused_manifest.data["paths"]["run_dir"])
+            acceptance_path = Path(paused_manifest.data["paths"]["acceptance_worktree"])
+            acceptance_path.mkdir(parents=True)
+            runner = self._runner_for_reviewing_issue(
+                diff_outputs=[""],
+                status_outputs=[""],
+                rev_parse_outputs=["abc1234\n", "new-source-sha\n"],
+            )
+            loop = make_loop(tmp_path, runner)
+
+            with self.assertRaises(ralph.IssueFailure) as caught:
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    loop._continue_exploratory_acceptance(run_dir)
+
+        self.assertEqual(
+            caught.exception.failure_type,
+            "exploratory_acceptance_stale_source_branch",
+        )
+        self.assertIn("Do not push", caught.exception.recovery_guidance or "")
+
+    def test_continue_acceptance_conflict_refuses_mismatched_decisions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            paused_manifest, _pause_runner = self._pause_acceptance_conflict(tmp_path)
+            run_dir = Path(paused_manifest.data["paths"]["run_dir"])
+            acceptance_path = Path(paused_manifest.data["paths"]["acceptance_worktree"])
+            acceptance_path.mkdir(parents=True)
+            decisions_path = run_dir / ralph.EXPLORATORY_ACCEPTANCE_DECISIONS_ARTIFACT_NAME
+            payload = json.loads(decisions_path.read_text(encoding="utf-8"))
+            payload["decisions"][0]["decision"] = "reject"
+            decisions_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            runner = self._runner_for_reviewing_issue()
+            loop = make_loop(tmp_path, runner)
+
+            with self.assertRaises(ralph.IssueFailure) as caught:
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    loop._continue_exploratory_acceptance(run_dir)
+
+        self.assertEqual(
+            caught.exception.failure_type,
+            "exploratory_acceptance_mismatched_decisions_artifact",
+        )
 
     def test_accept_qa_failure_leaves_metadata_unchanged_before_push(self) -> None:
         runner = self._runner_for_reviewing_issue(

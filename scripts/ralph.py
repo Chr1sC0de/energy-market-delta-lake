@@ -91,6 +91,10 @@ OPERATOR_ROLLUP_MARKDOWN_NAME = "operator-run-rollup.md"
 EXPLORATORY_ACCEPTANCE_REVIEW_JSON_NAME = "exploratory-acceptance-review.json"
 EXPLORATORY_ACCEPTANCE_REVIEW_MARKDOWN_NAME = "exploratory-acceptance-review.md"
 EXPLORATORY_ACCEPTANCE_DECISIONS = frozenset({"accept", "hold", "reject"})
+EXPLORATORY_ACCEPTANCE_CONFLICT_STATUS = "acceptance_conflict"
+EXPLORATORY_ACCEPTANCE_DECISIONS_ARTIFACT_NAME = "decisions.json"
+EXPLORATORY_ACCEPTANCE_CONFLICTS_ARTIFACT_NAME = "conflicts.json"
+EXPLORATORY_ACCEPTANCE_CODEX_PROMPT_NAME = "codex-resolution-prompt.md"
 OPERATOR_ROLLUP_SCHEMA_VERSION = 1
 OPERATOR_RUN_ROOT_NAME = "operator-runs"
 OPERATOR_RUN_PREFIX = "operator"
@@ -870,6 +874,16 @@ class RunManifest:
                 "decision_file": str(decision_file),
             },
             "decisions": [],
+            "acceptance_conflict": {
+                "status": "not_started",
+                "worktree_path": str(acceptance_path),
+                "conflicted_files": [],
+                "artifacts": {},
+                "continue_command": None,
+                "recovery_guidance": None,
+                "failure_type": None,
+                "error": None,
+            },
             "changed_files": [],
             "qa_results": [],
             "qa_runtime_env": {"status": "not_started"},
@@ -1500,6 +1514,67 @@ class RunManifest:
         self.record_event(
             f"exploratory_acceptance_{decision}_{status}",
             details=entry,
+        )
+
+    def record_exploratory_acceptance_conflict(
+        self,
+        *,
+        worktree_path: Path,
+        conflicted_files: list[str],
+        current_issue: Issue,
+        current_branch: str,
+        current_handoff_commit: str,
+        source_branch: str,
+        log_path: Path | None,
+        artifacts: dict[str, str],
+        continue_command: str,
+        recovery_guidance: str,
+        error: str,
+    ) -> None:
+        entry: dict[str, Any] = {
+            "status": EXPLORATORY_ACCEPTANCE_CONFLICT_STATUS,
+            "worktree_path": str(worktree_path),
+            "source_branch": source_branch,
+            "current_issue": issue_payload_for_operator(current_issue),
+            "current_branch": current_branch,
+            "current_handoff_commit": current_handoff_commit,
+            "conflicted_files": list(conflicted_files),
+            "log_path": path_text(log_path),
+            "artifacts": dict(artifacts),
+            "continue_command": continue_command,
+            "recovery_guidance": recovery_guidance,
+            "failure_type": "merge_conflict",
+            "error": error,
+        }
+        self.data["acceptance_conflict"] = entry
+        self.record_event(
+            "exploratory_acceptance_conflict",
+            status=EXPLORATORY_ACCEPTANCE_CONFLICT_STATUS,
+            details=entry,
+        )
+
+    def record_exploratory_acceptance_continue_refusal(
+        self,
+        *,
+        failure_type: str,
+        recovery_guidance: str,
+        error: str,
+        log_path: Path | None = None,
+    ) -> None:
+        conflict = self.data.setdefault("acceptance_conflict", {})
+        if not isinstance(conflict, dict):
+            raise RalphError("Manifest acceptance_conflict field is not an object.")
+        conflict["last_continue_failure"] = {
+            "type": failure_type,
+            "message": error,
+            "log_path": path_text(log_path),
+            "recovery_guidance": recovery_guidance,
+            "timestamp": utc_now_text(),
+        }
+        self.record_event(
+            "exploratory_acceptance_continue_refused",
+            status=EXPLORATORY_ACCEPTANCE_CONFLICT_STATUS,
+            details=conflict["last_continue_failure"],
         )
 
     def record_failure(self, error: Exception, *, log_path: Path | None = None) -> None:
@@ -5365,6 +5440,14 @@ class RalphLoop:
         self._validate_exploratory_acceptance_apply_preflight()
         return self._apply_exploratory_acceptance_decisions(decision_file)
 
+    def continue_exploratory_acceptance(self, run_dir: Path) -> RunManifest:
+        if self.config.dry_run:
+            raise RalphError(
+                "--continue-exploratory-acceptance does not support --dry-run."
+            )
+        self._validate_exploratory_acceptance_apply_preflight()
+        return self._continue_exploratory_acceptance(run_dir)
+
     def _validate_exploratory_acceptance_apply_preflight(self) -> None:
         missing = [tool for tool in ("git", "gh") if shutil.which(tool) is None]
         if missing:
@@ -5415,7 +5498,7 @@ class RalphLoop:
 
             if accepted_targets:
                 acceptance_worktree_created = True
-                self._merge_accepted_exploratory_targets(
+                paused_for_conflict = self._merge_accepted_exploratory_targets(
                     accepted_targets,
                     source_branch=source_branch,
                     acceptance_path=acceptance_path,
@@ -5423,6 +5506,16 @@ class RalphLoop:
                     manifest=manifest,
                     acceptance_commits=acceptance_commits,
                 )
+                if paused_for_conflict:
+                    emit(
+                        "Exploratory acceptance paused for merge conflict. "
+                        f"Worktree: {acceptance_path}"
+                    )
+                    emit(
+                        "Continue with: "
+                        f"{exploratory_acceptance_continue_command(run_dir)}"
+                    )
+                    return manifest
                 changed_files = self.git.changed_files_against(
                     cwd=acceptance_path,
                     base_ref=f"origin/{source_branch}",
@@ -5541,12 +5634,539 @@ class RalphLoop:
             emit(str(failure), err=True)
             raise failure from error
 
+    def _continue_exploratory_acceptance(self, run_dir: Path) -> RunManifest:
+        manifest = load_run_manifest(run_dir)
+        pushed = False
+        try:
+            paused = self._validated_paused_exploratory_acceptance_run(manifest)
+            source_branch = str(paused["source_branch"])
+            acceptance_path = Path(str(paused["acceptance_path"]))
+            decisions = load_exploratory_acceptance_decisions(
+                Path(str(paused["decisions_path"]))
+            )
+            targets = self._validated_exploratory_acceptance_targets(
+                decisions,
+                run_dir=manifest_run_dir(manifest),
+                manifest=manifest,
+                record_manifest=False,
+            )
+            self._validate_paused_acceptance_targets_match_artifact(
+                targets,
+                paused["decisions_payload"],
+                manifest=manifest,
+            )
+            accepted_targets = [
+                target for target in targets if target.decision.decision == "accept"
+            ]
+            if not accepted_targets:
+                raise self._exploratory_acceptance_continue_failure(
+                    manifest,
+                    "Paused Exploratory acceptance run has no accepted decisions.",
+                    failure_type="exploratory_acceptance_missing_accepted_decision",
+                    recovery_guidance=exploratory_acceptance_continue_recovery_guidance(
+                        run_dir=manifest_run_dir(manifest),
+                        acceptance_path=acceptance_path,
+                    ),
+                )
+
+            self._validate_resolved_acceptance_worktree(
+                acceptance_path,
+                run_dir=manifest_run_dir(manifest),
+                manifest=manifest,
+            )
+            recorded_source_commit = str(
+                (manifest.data.get("commits") or {}).get("source") or ""
+            )
+            self.git.fetch_base(source_branch, run_dir=manifest_run_dir(manifest))
+            current_source_commit = self.git.rev_parse(f"origin/{source_branch}")
+            if recorded_source_commit and current_source_commit != recorded_source_commit:
+                raise self._exploratory_acceptance_continue_failure(
+                    manifest,
+                    (
+                        f"Paused Exploratory acceptance run is stale: origin/{source_branch} "
+                        f"moved from `{recorded_source_commit}` to "
+                        f"`{current_source_commit}`."
+                    ),
+                    failure_type="exploratory_acceptance_stale_source_branch",
+                    recovery_guidance=(
+                        "Do not push the paused acceptance worktree. Review the new "
+                        f"origin/{source_branch} state, remove the stale acceptance "
+                        "worktree if it is no longer needed, then rerun "
+                        "--apply-exploratory-acceptance-decisions with the original "
+                        "decision artifact."
+                    ),
+                )
+
+            final_commit = self.git.rev_parse("HEAD", cwd=acceptance_path)
+            if recorded_source_commit and not self.git.is_ancestor(
+                ancestor=recorded_source_commit,
+                descendant=final_commit,
+                cwd=acceptance_path,
+            ):
+                raise self._exploratory_acceptance_continue_failure(
+                    manifest,
+                    (
+                        "Paused Exploratory acceptance worktree no longer descends "
+                        f"from the recorded origin/{source_branch} commit "
+                        f"`{recorded_source_commit}`."
+                    ),
+                    failure_type="exploratory_acceptance_mismatched_worktree_head",
+                    recovery_guidance=exploratory_acceptance_continue_recovery_guidance(
+                        run_dir=manifest_run_dir(manifest),
+                        acceptance_path=acceptance_path,
+                    ),
+                )
+            for target in accepted_targets:
+                if self.git.is_ancestor(
+                    ancestor=target.handoff_commit,
+                    descendant=final_commit,
+                    cwd=acceptance_path,
+                ):
+                    continue
+                raise self._exploratory_acceptance_continue_failure(
+                    manifest,
+                    (
+                        f"Resolved acceptance worktree does not make issue "
+                        f"#{target.issue.number} handoff commit "
+                        f"`{target.handoff_commit}` reachable."
+                    ),
+                    failure_type="exploratory_acceptance_missing_handoff_commit",
+                    recovery_guidance=exploratory_acceptance_continue_recovery_guidance(
+                        run_dir=manifest_run_dir(manifest),
+                        acceptance_path=acceptance_path,
+                    ),
+                )
+
+            changed_files = self.git.changed_files_against(
+                cwd=acceptance_path,
+                base_ref=f"origin/{source_branch}",
+            )
+            manifest.record_changed_files(
+                changed_files,
+                stage="exploratory_acceptance_continue_changes_detected",
+            )
+            if not changed_files:
+                raise self._exploratory_acceptance_continue_failure(
+                    manifest,
+                    (
+                        "Resolved Exploratory acceptance worktree produced no diff "
+                        f"against origin/{source_branch}."
+                    ),
+                    failure_type="exploratory_acceptance_empty_diff",
+                    recovery_guidance=exploratory_acceptance_continue_recovery_guidance(
+                        run_dir=manifest_run_dir(manifest),
+                        acceptance_path=acceptance_path,
+                    ),
+                )
+
+            qa_results = self._run_qa_commands(
+                changed_files,
+                acceptance_path,
+                manifest_run_dir(manifest),
+                log_prefix="exploratory-acceptance-qa",
+                subject="Exploratory acceptance",
+                manifest=manifest,
+            )
+            if self.git.has_uncommitted_changes(cwd=acceptance_path):
+                raise self._exploratory_acceptance_continue_failure(
+                    manifest,
+                    (
+                        "Merged-target QA modified the acceptance worktree. "
+                        "Review and commit or revert those changes before continuing."
+                    ),
+                    failure_type="exploratory_acceptance_dirty_after_qa",
+                    recovery_guidance=exploratory_acceptance_continue_recovery_guidance(
+                        run_dir=manifest_run_dir(manifest),
+                        acceptance_path=acceptance_path,
+                    ),
+                )
+
+            acceptance_commits = {
+                target.issue.number: final_commit for target in accepted_targets
+            }
+            manifest.record_integration_commit(final_commit, branch=source_branch)
+            push_log = manifest_run_dir(manifest) / f"git-push-{slugify(source_branch)}.log"
+            manifest.record_push(
+                key="integration_target",
+                branch=source_branch,
+                status="running",
+                commit_sha=final_commit,
+                log_path=push_log,
+            )
+            self.git.push_head(
+                cwd=acceptance_path,
+                branch=source_branch,
+                run_dir=manifest_run_dir(manifest),
+            )
+            manifest.record_push(
+                key="integration_target",
+                branch=source_branch,
+                status="pushed",
+                commit_sha=final_commit,
+                log_path=push_log,
+            )
+            pushed = True
+
+            self._apply_exploratory_acceptance_metadata(
+                targets,
+                source_branch=source_branch,
+                acceptance_commits=acceptance_commits,
+                changed_files=changed_files,
+                qa_results=qa_results,
+                run_dir=manifest_run_dir(manifest),
+                manifest=manifest,
+            )
+            self._cleanup_exploratory_acceptance_worktree(
+                acceptance_path,
+                run_dir=manifest_run_dir(manifest),
+            )
+            manifest.record_success("exploratory_acceptance_continued")
+            emit(f"Exploratory acceptance continued from {manifest_run_dir(manifest)}.")
+            return manifest
+        except (CommandFailure, RalphError, OSError, json.JSONDecodeError, ValueError) as error:
+            log_path = error.log_path if isinstance(error, (CommandFailure, IssueFailure)) else None
+            source_branch = str(manifest.data.get("source_branch") or self.config.source_branch)
+            if pushed:
+                manifest.record_metadata_status(
+                    "failed",
+                    details={"error": str(error), "log_path": path_text(log_path)},
+                )
+                guidance = exploratory_acceptance_recovery_guidance(
+                    run_dir=manifest_run_dir(manifest),
+                    source_branch=source_branch,
+                    pushed=True,
+                )
+                failure = PostPushFailure(
+                    f"Exploratory acceptance metadata failed after pushing "
+                    f"{source_branch}: {error}\nRecovery guidance: {guidance}",
+                    log_path=log_path,
+                )
+                manifest.record_failure(failure, log_path=log_path)
+                raise failure from error
+
+            guidance = (
+                error.recovery_guidance
+                if isinstance(error, IssueFailure) and error.recovery_guidance is not None
+                else exploratory_acceptance_continue_recovery_guidance(
+                    run_dir=manifest_run_dir(manifest),
+                    acceptance_path=manifest_acceptance_worktree_path_or_run_dir(manifest),
+                )
+            )
+            failure_type = (
+                error.failure_type
+                if isinstance(error, IssueFailure) and error.failure_type is not None
+                else "exploratory_acceptance_continue_pre_push_failure"
+            )
+            if manifest_can_record_acceptance_continue_refusal(manifest):
+                manifest.record_exploratory_acceptance_continue_refusal(
+                    failure_type=failure_type,
+                    recovery_guidance=guidance,
+                    error=str(error),
+                    log_path=log_path,
+                )
+            if isinstance(error, IssueFailure) and error.recovery_guidance is not None:
+                emit(str(error), err=True)
+                raise
+            failure = IssueFailure(
+                f"Exploratory acceptance continue failed before pushing "
+                f"{source_branch}: {error}",
+                log_path=log_path,
+                failure_type=failure_type,
+                recovery_guidance=guidance,
+            )
+            emit(str(failure), err=True)
+            raise failure from error
+
+    def _validated_paused_exploratory_acceptance_run(
+        self,
+        manifest: RunManifest,
+    ) -> dict[str, Any]:
+        run_dir = manifest_run_dir(manifest)
+        if str(manifest.data.get("run_kind") or "") != "exploratory_acceptance_apply":
+            raise RalphError(
+                "Run directory is not an Exploratory acceptance apply run: "
+                f"{run_dir}"
+            )
+        if str(manifest.data.get("status") or "") != EXPLORATORY_ACCEPTANCE_CONFLICT_STATUS:
+            raise RalphError(
+                "Run directory is not paused for Exploratory acceptance conflict "
+                f"resolution: {run_dir}"
+            )
+        source_branch = str(manifest.data.get("source_branch") or "")
+        if source_branch == "":
+            raise RalphError("Paused run manifest does not include a source branch.")
+        acceptance_path = manifest_acceptance_worktree_path(manifest)
+        if not acceptance_path.exists():
+            raise self._exploratory_acceptance_continue_failure(
+                manifest,
+                f"Paused Exploratory acceptance worktree is missing: {acceptance_path}",
+                failure_type="exploratory_acceptance_missing_worktree",
+                recovery_guidance=(
+                    "The paused acceptance worktree is required for resume. "
+                    "If it was removed, rerun --apply-exploratory-acceptance-decisions "
+                    "with the original decision artifact to create a new paused run."
+                ),
+            )
+
+        decisions_path = run_dir / EXPLORATORY_ACCEPTANCE_DECISIONS_ARTIFACT_NAME
+        conflicts_path = run_dir / EXPLORATORY_ACCEPTANCE_CONFLICTS_ARTIFACT_NAME
+        prompt_path = run_dir / EXPLORATORY_ACCEPTANCE_CODEX_PROMPT_NAME
+        decisions_payload = self._load_required_acceptance_artifact(
+            manifest,
+            decisions_path,
+            failure_type="exploratory_acceptance_missing_decisions_artifact",
+        )
+        conflicts_payload = self._load_required_acceptance_artifact(
+            manifest,
+            conflicts_path,
+            failure_type="exploratory_acceptance_missing_conflicts_artifact",
+        )
+        if not prompt_path.exists():
+            raise self._exploratory_acceptance_continue_failure(
+                manifest,
+                f"Paused Exploratory acceptance prompt is missing: {prompt_path}",
+                failure_type="exploratory_acceptance_missing_prompt_artifact",
+                recovery_guidance=(
+                    "The Codex resolution prompt is part of the paused conflict "
+                    "record. Rerun --apply-exploratory-acceptance-decisions with "
+                    "the original decision artifact to recreate a complete run "
+                    "directory."
+                ),
+            )
+
+        self._validate_paused_acceptance_artifact_payload(
+            manifest,
+            decisions_payload,
+            artifact_path=decisions_path,
+            expected_kind="exploratory_acceptance_decisions",
+        )
+        self._validate_paused_acceptance_artifact_payload(
+            manifest,
+            conflicts_payload,
+            artifact_path=conflicts_path,
+            expected_kind="exploratory_acceptance_conflicts",
+        )
+        return {
+            "source_branch": source_branch,
+            "acceptance_path": acceptance_path,
+            "decisions_path": decisions_path,
+            "conflicts_path": conflicts_path,
+            "prompt_path": prompt_path,
+            "decisions_payload": decisions_payload,
+            "conflicts_payload": conflicts_payload,
+        }
+
+    def _load_required_acceptance_artifact(
+        self,
+        manifest: RunManifest,
+        path: Path,
+        *,
+        failure_type: str,
+    ) -> dict[str, Any]:
+        if not path.exists():
+            raise self._exploratory_acceptance_continue_failure(
+                manifest,
+                f"Paused Exploratory acceptance artifact is missing: {path}",
+                failure_type=failure_type,
+                recovery_guidance=(
+                    "The paused run directory is incomplete. Rerun "
+                    "--apply-exploratory-acceptance-decisions with the original "
+                    "decision artifact to recreate the conflict artifacts."
+                ),
+            )
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as error:
+            raise self._exploratory_acceptance_continue_failure(
+                manifest,
+                f"Paused Exploratory acceptance artifact is invalid JSON: {path}: {error}",
+                failure_type="exploratory_acceptance_invalid_artifact",
+                recovery_guidance=(
+                    "Do not hand-edit paused acceptance artifacts. Restore the "
+                    "recorded artifact or rerun --apply-exploratory-acceptance-decisions "
+                    "with the original decision artifact."
+                ),
+            ) from error
+        if not isinstance(payload, dict):
+            raise self._exploratory_acceptance_continue_failure(
+                manifest,
+                f"Paused Exploratory acceptance artifact is not a JSON object: {path}",
+                failure_type="exploratory_acceptance_invalid_artifact",
+                recovery_guidance=(
+                    "Do not hand-edit paused acceptance artifacts. Restore the "
+                    "recorded artifact or rerun --apply-exploratory-acceptance-decisions "
+                    "with the original decision artifact."
+                ),
+            )
+        return payload
+
+    def _validate_paused_acceptance_artifact_payload(
+        self,
+        manifest: RunManifest,
+        payload: dict[str, Any],
+        *,
+        artifact_path: Path,
+        expected_kind: str,
+    ) -> None:
+        run_dir = manifest_run_dir(manifest)
+        acceptance_path = manifest_acceptance_worktree_path(manifest)
+        expected = {
+            "schema_version": 1,
+            "artifact": expected_kind,
+            "status": EXPLORATORY_ACCEPTANCE_CONFLICT_STATUS,
+            "manifest_path": str(manifest.path),
+            "run_dir": str(run_dir),
+            "source_branch": str(manifest.data.get("source_branch") or ""),
+            "acceptance_worktree": str(acceptance_path),
+        }
+        mismatches = [
+            key
+            for key, expected_value in expected.items()
+            if payload.get(key) != expected_value
+        ]
+        if mismatches:
+            raise self._exploratory_acceptance_continue_failure(
+                manifest,
+                (
+                    f"Paused Exploratory acceptance artifact is mismatched: "
+                    f"{artifact_path} ({', '.join(mismatches)})."
+                ),
+                failure_type="exploratory_acceptance_mismatched_artifact",
+                recovery_guidance=(
+                    "Use the unmodified artifacts from the paused run directory. "
+                    "If the artifacts no longer match the manifest, rerun "
+                    "--apply-exploratory-acceptance-decisions with the original "
+                    "decision artifact."
+                ),
+            )
+        expected_decisions = exploratory_acceptance_decision_artifact_identities(
+            manifest.data.get("decisions")
+        )
+        payload_decisions = exploratory_acceptance_decision_artifact_identities(
+            payload.get("decisions")
+        )
+        if payload_decisions != expected_decisions:
+            raise self._exploratory_acceptance_continue_failure(
+                manifest,
+                f"Paused Exploratory acceptance artifact decision set is mismatched: {artifact_path}",
+                failure_type="exploratory_acceptance_mismatched_decisions_artifact",
+                recovery_guidance=(
+                    "Do not change the accepted, held, or rejected decision set in "
+                    "the paused run. Restore the recorded decisions.json or rerun "
+                    "--apply-exploratory-acceptance-decisions with a new decision artifact."
+                ),
+            )
+
+    def _validate_paused_acceptance_targets_match_artifact(
+        self,
+        targets: list[ExploratoryAcceptanceTarget],
+        decisions_payload: Any,
+        *,
+        manifest: RunManifest,
+    ) -> None:
+        decisions = decisions_payload.get("decisions") if isinstance(decisions_payload, dict) else None
+        identities = exploratory_acceptance_decision_artifact_identities(decisions)
+        by_issue = {
+            int(identity["issue_number"]): identity
+            for identity in identities
+            if isinstance(identity.get("issue_number"), int)
+        }
+        for target in targets:
+            identity = by_issue.get(target.issue.number)
+            if identity is None:
+                raise self._exploratory_acceptance_continue_failure(
+                    manifest,
+                    f"Validated issue #{target.issue.number} is missing from decisions.json.",
+                    failure_type="exploratory_acceptance_mismatched_decisions_artifact",
+                    recovery_guidance=exploratory_acceptance_continue_recovery_guidance(
+                        run_dir=manifest_run_dir(manifest),
+                        acceptance_path=manifest_acceptance_worktree_path(manifest),
+                    ),
+                )
+            if identity.get("branch") == target.branch and identity.get(
+                "handoff_commit"
+            ) == target.handoff_commit:
+                continue
+            raise self._exploratory_acceptance_continue_failure(
+                manifest,
+                (
+                    f"Issue #{target.issue.number} handoff evidence no longer matches "
+                    "the paused decision artifact."
+                ),
+                failure_type="exploratory_acceptance_stale_decision_artifact",
+                recovery_guidance=(
+                    "The GitHub Issue handoff evidence changed after the conflict "
+                    "pause. Do not continue this run; review the issue state and rerun "
+                    "--apply-exploratory-acceptance-decisions with a fresh decision "
+                    "artifact if acceptance is still intended."
+                ),
+            )
+
+    def _validate_resolved_acceptance_worktree(
+        self,
+        acceptance_path: Path,
+        *,
+        run_dir: Path,
+        manifest: RunManifest,
+    ) -> None:
+        conflicted_files = self._acceptance_conflicted_files(acceptance_path)
+        if conflicted_files:
+            raise self._exploratory_acceptance_continue_failure(
+                manifest,
+                (
+                    "Paused Exploratory acceptance worktree still has unresolved "
+                    "merge conflicts: "
+                    + ", ".join(conflicted_files)
+                ),
+                failure_type="exploratory_acceptance_unresolved_conflicts",
+                recovery_guidance=exploratory_acceptance_continue_recovery_guidance(
+                    run_dir=run_dir,
+                    acceptance_path=acceptance_path,
+                ),
+            )
+        if self.git.has_uncommitted_changes(cwd=acceptance_path):
+            raise self._exploratory_acceptance_continue_failure(
+                manifest,
+                (
+                    "Paused Exploratory acceptance worktree is not clean. Resolve, "
+                    "stage, and commit the merge conflict resolution before continuing."
+                ),
+                failure_type="exploratory_acceptance_dirty_worktree",
+                recovery_guidance=exploratory_acceptance_continue_recovery_guidance(
+                    run_dir=run_dir,
+                    acceptance_path=acceptance_path,
+                ),
+            )
+
+    def _exploratory_acceptance_continue_failure(
+        self,
+        manifest: RunManifest,
+        message: str,
+        *,
+        failure_type: str,
+        recovery_guidance: str,
+        log_path: Path | None = None,
+    ) -> IssueFailure:
+        manifest.record_exploratory_acceptance_continue_refusal(
+            failure_type=failure_type,
+            recovery_guidance=recovery_guidance,
+            error=message,
+            log_path=log_path,
+        )
+        return IssueFailure(
+            message,
+            log_path=log_path,
+            failure_type=failure_type,
+            recovery_guidance=recovery_guidance,
+        )
+
     def _validated_exploratory_acceptance_targets(
         self,
         decisions: list[ExploratoryAcceptanceDecision],
         *,
         run_dir: Path,
         manifest: RunManifest,
+        record_manifest: bool = True,
     ) -> list[ExploratoryAcceptanceTarget]:
         targets: list[ExploratoryAcceptanceTarget] = []
         for decision in decisions:
@@ -5602,16 +6222,17 @@ class RalphLoop:
                 handoff_commit=handoff_commit,
                 changed_files=changed_files,
             )
-            manifest.record_exploratory_acceptance_decision(
-                issue_number=decision.issue_number,
-                decision=decision.decision,
-                status="validated",
-                issue=issue,
-                branch=branch,
-                handoff_commit=handoff_commit,
-                reason=decision.reason,
-                changed_files=changed_files,
-            )
+            if record_manifest:
+                manifest.record_exploratory_acceptance_decision(
+                    issue_number=decision.issue_number,
+                    decision=decision.decision,
+                    status="validated",
+                    issue=issue,
+                    branch=branch,
+                    handoff_commit=handoff_commit,
+                    reason=decision.reason,
+                    changed_files=changed_files,
+                )
             targets.append(target)
         return targets
 
@@ -5624,7 +6245,7 @@ class RalphLoop:
         run_dir: Path,
         manifest: RunManifest,
         acceptance_commits: dict[int, str],
-    ) -> None:
+    ) -> bool:
         emit(f"Creating Exploratory acceptance worktree from origin/{source_branch}")
         manifest.record_event("creating_exploratory_acceptance_worktree")
         self.git.fetch_base(source_branch, run_dir=run_dir)
@@ -5651,13 +6272,61 @@ class RalphLoop:
                 handoff_commit=target.handoff_commit,
                 reason=target.decision.reason,
             )
-            self.git.merge_no_ff(
-                cwd=acceptance_path,
-                ref=f"origin/{target.branch}",
-                message=f"Accept Exploratory issue #{target.issue.number}: {target.issue.title}",
-                run_dir=run_dir,
-                log_name=f"git-merge-accept-issue-{target.issue.number}.log",
-            )
+            merge_log_name = f"git-merge-accept-issue-{target.issue.number}.log"
+            try:
+                self.git.merge_no_ff(
+                    cwd=acceptance_path,
+                    ref=f"origin/{target.branch}",
+                    message=(
+                        f"Accept Exploratory issue #{target.issue.number}: "
+                        f"{target.issue.title}"
+                    ),
+                    run_dir=run_dir,
+                    log_name=merge_log_name,
+                )
+            except CommandFailure as error:
+                conflicted_files = self._acceptance_conflicted_files(acceptance_path)
+                guidance = exploratory_acceptance_conflict_recovery_guidance(
+                    run_dir=run_dir,
+                    acceptance_path=acceptance_path,
+                )
+                manifest.record_exploratory_acceptance_decision(
+                    issue_number=target.issue.number,
+                    decision=target.decision.decision,
+                    status=EXPLORATORY_ACCEPTANCE_CONFLICT_STATUS,
+                    issue=target.issue,
+                    branch=target.branch,
+                    handoff_commit=target.handoff_commit,
+                    reason=target.decision.reason,
+                    log_path=error.log_path or run_dir / merge_log_name,
+                    error=str(error),
+                    recovery_guidance=guidance,
+                )
+                artifacts = write_exploratory_acceptance_conflict_artifacts(
+                    run_dir=run_dir,
+                    manifest=manifest,
+                    source_branch=source_branch,
+                    acceptance_path=acceptance_path,
+                    current_target=target,
+                    conflicted_files=conflicted_files,
+                    merge_log_path=error.log_path or run_dir / merge_log_name,
+                    error=str(error),
+                    recovery_guidance=guidance,
+                )
+                manifest.record_exploratory_acceptance_conflict(
+                    worktree_path=acceptance_path,
+                    conflicted_files=conflicted_files,
+                    current_issue=target.issue,
+                    current_branch=target.branch,
+                    current_handoff_commit=target.handoff_commit,
+                    source_branch=source_branch,
+                    log_path=error.log_path or run_dir / merge_log_name,
+                    artifacts=artifacts,
+                    continue_command=exploratory_acceptance_continue_command(run_dir),
+                    recovery_guidance=guidance,
+                    error=str(error),
+                )
+                return True
             acceptance_commit = self.git.rev_parse("HEAD", cwd=acceptance_path)
             if not self.git.is_ancestor(
                 ancestor=target.handoff_commit,
@@ -5680,6 +6349,14 @@ class RalphLoop:
                 acceptance_commit=acceptance_commit,
                 reason=target.decision.reason,
             )
+        return False
+
+    def _acceptance_conflicted_files(self, acceptance_path: Path) -> list[str]:
+        try:
+            return self.git.unmerged_files(cwd=acceptance_path)
+        except CommandFailure as error:
+            emit(f"Exploratory acceptance conflict file detection warning: {error}", err=True)
+            return []
 
     def _apply_exploratory_acceptance_metadata(
         self,
@@ -8904,6 +9581,261 @@ def parse_exploratory_handoff_comment(body: str) -> dict[str, Any]:
     }
 
 
+def exploratory_acceptance_continue_command(run_dir: Path) -> str:
+    return (
+        "python3 scripts/ralph.py --continue-exploratory-acceptance "
+        f"{shlex.quote(str(run_dir))}"
+    )
+
+
+def manifest_acceptance_worktree_path(manifest: RunManifest) -> Path:
+    paths = manifest.data.get("paths")
+    if not isinstance(paths, dict):
+        raise RalphError("Run manifest does not include paths.")
+    value = paths.get("acceptance_worktree")
+    if not isinstance(value, str) or value == "":
+        raise RalphError("Run manifest does not include an acceptance worktree path.")
+    return Path(value)
+
+
+def manifest_acceptance_worktree_path_or_run_dir(manifest: RunManifest) -> Path:
+    try:
+        return manifest_acceptance_worktree_path(manifest)
+    except RalphError:
+        return manifest_run_dir(manifest)
+
+
+def manifest_can_record_acceptance_continue_refusal(manifest: RunManifest) -> bool:
+    return (
+        str(manifest.data.get("run_kind") or "") == "exploratory_acceptance_apply"
+        and str(manifest.data.get("status") or "")
+        == EXPLORATORY_ACCEPTANCE_CONFLICT_STATUS
+    )
+
+
+def exploratory_acceptance_conflict_recovery_guidance(
+    *,
+    run_dir: Path,
+    acceptance_path: Path,
+) -> str:
+    return (
+        "No push or GitHub Issue metadata mutation happened. Resolve the merge "
+        f"conflict only in the acceptance worktree `{acceptance_path}`, preserving "
+        "the accepted issue intent in `decisions.json`. Commit the resolution so "
+        "the acceptance worktree is clean, then run "
+        f"`{exploratory_acceptance_continue_command(run_dir)}`."
+    )
+
+
+def exploratory_acceptance_continue_recovery_guidance(
+    *,
+    run_dir: Path,
+    acceptance_path: Path,
+) -> str:
+    return (
+        f"Inspect `{run_dir / MANIFEST_NAME}`, "
+        f"`{run_dir / EXPLORATORY_ACCEPTANCE_DECISIONS_ARTIFACT_NAME}`, and the "
+        f"acceptance worktree `{acceptance_path}`. Continue only after "
+        "`git diff --name-only --diff-filter=U` and `git status --porcelain` "
+        f"produce no output in that worktree, then rerun "
+        f"`{exploratory_acceptance_continue_command(run_dir)}`."
+    )
+
+
+def exploratory_acceptance_decision_artifact_identities(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    entries: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        issue_number_value = item.get("issue_number")
+        try:
+            issue_number = (
+                int(issue_number_value)
+                if issue_number_value is not None
+                else None
+            )
+        except (TypeError, ValueError):
+            issue_number = None
+        changed_files_value = item.get("changed_files")
+        changed_files = (
+            [str(path) for path in changed_files_value if isinstance(path, str)]
+            if isinstance(changed_files_value, list)
+            else []
+        )
+        entries.append(
+            {
+                "issue_number": issue_number,
+                "decision": item.get("decision"),
+                "reason": item.get("reason"),
+                "status": item.get("status"),
+                "title": item.get("title"),
+                "url": item.get("url"),
+                "branch": item.get("branch"),
+                "handoff_commit": item.get("handoff_commit"),
+                "acceptance_commit": item.get("acceptance_commit"),
+                "changed_files": changed_files,
+            }
+        )
+    return entries
+
+
+def exploratory_acceptance_conflict_artifact_base_payload(
+    *,
+    artifact: str,
+    run_dir: Path,
+    manifest: RunManifest,
+    source_branch: str,
+    acceptance_path: Path,
+) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "artifact": artifact,
+        "run_kind": "exploratory_acceptance_apply",
+        "status": EXPLORATORY_ACCEPTANCE_CONFLICT_STATUS,
+        "generated_at": utc_now_text(),
+        "manifest_path": str(manifest.path),
+        "run_dir": str(run_dir),
+        "source_branch": source_branch,
+        "acceptance_worktree": str(acceptance_path),
+    }
+
+
+def write_exploratory_acceptance_conflict_artifacts(
+    *,
+    run_dir: Path,
+    manifest: RunManifest,
+    source_branch: str,
+    acceptance_path: Path,
+    current_target: ExploratoryAcceptanceTarget,
+    conflicted_files: list[str],
+    merge_log_path: Path | None,
+    error: str,
+    recovery_guidance: str,
+) -> dict[str, str]:
+    decisions_path = run_dir / EXPLORATORY_ACCEPTANCE_DECISIONS_ARTIFACT_NAME
+    conflicts_path = run_dir / EXPLORATORY_ACCEPTANCE_CONFLICTS_ARTIFACT_NAME
+    prompt_path = run_dir / EXPLORATORY_ACCEPTANCE_CODEX_PROMPT_NAME
+    decision_entries = exploratory_acceptance_decision_artifact_identities(
+        manifest.data.get("decisions")
+    )
+    continue_command = exploratory_acceptance_continue_command(run_dir)
+    artifacts = {
+        "decisions": str(decisions_path),
+        "conflicts": str(conflicts_path),
+        "codex_resolution_prompt": str(prompt_path),
+    }
+    decisions_payload = exploratory_acceptance_conflict_artifact_base_payload(
+        artifact="exploratory_acceptance_decisions",
+        run_dir=run_dir,
+        manifest=manifest,
+        source_branch=source_branch,
+        acceptance_path=acceptance_path,
+    )
+    decisions_payload["decisions"] = decision_entries
+    decisions_payload["continue_command"] = continue_command
+    conflicts_payload = exploratory_acceptance_conflict_artifact_base_payload(
+        artifact="exploratory_acceptance_conflicts",
+        run_dir=run_dir,
+        manifest=manifest,
+        source_branch=source_branch,
+        acceptance_path=acceptance_path,
+    )
+    conflicts_payload.update(
+        {
+            "current_issue": issue_payload_for_operator(current_target.issue),
+            "current_branch": current_target.branch,
+            "current_handoff_commit": current_target.handoff_commit,
+            "conflicted_files": list(conflicted_files),
+            "merge_state": {
+                "status": "merge_conflict",
+                "merge_log_path": path_text(merge_log_path),
+                "source_commit": (manifest.data.get("commits") or {}).get("source"),
+                "previous_acceptance_commits": {
+                    str(entry.get("issue_number")): entry.get("acceptance_commit")
+                    for entry in decision_entries
+                    if entry.get("acceptance_commit")
+                },
+            },
+            "decisions": decision_entries,
+            "artifacts": artifacts,
+            "continue_command": continue_command,
+            "recovery_guidance": recovery_guidance,
+            "error": error,
+        }
+    )
+    write_json_artifact(decisions_path, decisions_payload)
+    write_json_artifact(conflicts_path, conflicts_payload)
+    write_text_artifact(
+        prompt_path,
+        render_exploratory_acceptance_conflict_prompt(conflicts_payload),
+    )
+    return artifacts
+
+
+def render_exploratory_acceptance_conflict_prompt(payload: dict[str, Any]) -> str:
+    acceptance_path = str(payload.get("acceptance_worktree") or "")
+    run_dir = str(payload.get("run_dir") or "")
+    continue_command = str(payload.get("continue_command") or "")
+    conflicted_files = payload.get("conflicted_files")
+    file_lines = (
+        [f"- `{path}`" for path in conflicted_files if isinstance(path, str)]
+        if isinstance(conflicted_files, list) and conflicted_files
+        else ["- None recorded; run `git diff --name-only --diff-filter=U` in the worktree."]
+    )
+    decisions = payload.get("decisions")
+    decision_lines: list[str] = []
+    if isinstance(decisions, list):
+        for entry in decisions:
+            if not isinstance(entry, dict):
+                continue
+            reason = entry.get("reason")
+            reason_text = f"; reason: {reason}" if reason else ""
+            decision_lines.append(
+                f"- #{entry.get('issue_number')} `{entry.get('decision')}` "
+                f"`{entry.get('branch') or 'no-branch'}` "
+                f"handoff `{entry.get('handoff_commit') or 'none'}`{reason_text}"
+            )
+    if not decision_lines:
+        decision_lines = ["- No decisions recorded."]
+    return "\n".join(
+        [
+            "# Resolve Exploratory Acceptance Conflict",
+            "",
+            "Resolve only the paused acceptance worktree. Do not edit the root "
+            "worktree, do not push, and do not change GitHub Issue comments or labels.",
+            "",
+            f"- Acceptance worktree: `{acceptance_path}`",
+            f"- Run directory: `{run_dir}`",
+            "",
+            "## Decision Set",
+            "",
+            *decision_lines,
+            "",
+            "Preserve accepted issue intent. Do not change accept, hold, or reject "
+            "decisions while resolving the merge conflict.",
+            "",
+            "## Conflicted Files",
+            "",
+            *file_lines,
+            "",
+            "## Finish State",
+            "",
+            "- Resolve the merge conflicts in the acceptance worktree.",
+            "- Stage and commit the merge resolution in the acceptance worktree.",
+            "- Leave `git diff --name-only --diff-filter=U` with no output.",
+            "- Leave `git status --porcelain` with no output.",
+            "- Do not run Ralph metadata recovery, push, or GitHub Issue mutation commands.",
+            "",
+            "After the worktree is clean, return to the repository root and run:",
+            "",
+            f"```bash\n{continue_command}\n```",
+            "",
+        ]
+    )
+
+
 def load_exploratory_acceptance_decisions(
     decision_file: Path,
 ) -> list[ExploratoryAcceptanceDecision]:
@@ -9534,6 +10466,19 @@ def metadata_recovery_complete_status(mode: str) -> str:
 
 def recommended_run_action(manifest: RunManifest) -> str:
     run_kind = str(manifest.data.get("run_kind") or "")
+    if run_kind == "exploratory_acceptance_apply":
+        status = str(manifest.data.get("status") or "")
+        if status == EXPLORATORY_ACCEPTANCE_CONFLICT_STATUS:
+            run_dir = manifest_run_dir(manifest)
+            acceptance_path = manifest_acceptance_worktree_path(manifest)
+            return (
+                f"Resolve the paused acceptance worktree `{acceptance_path}`, "
+                "commit the resolution so it is clean, then run "
+                f"`{exploratory_acceptance_continue_command(run_dir)}`."
+            )
+        if status == "succeeded":
+            return "No recovery needed according to the manifest."
+        return "Inspect the Exploratory acceptance manifest and artifacts manually."
     if run_kind != "implementation":
         return "Inspect the Promotion manifest manually; --recover-run is for implementation runs."
 
@@ -9605,6 +10550,13 @@ def inspect_run(run_dir: Path) -> None:
     emit(f"Push status: {push_status_summary(manifest)}")
     emit(f"Metadata status: {metadata_status_value(manifest)}")
     emit(f"Ready issue refresh status: {ready_issue_refresh_status_value(manifest)}")
+    if str(manifest.data.get("status") or "") == EXPLORATORY_ACCEPTANCE_CONFLICT_STATUS:
+        acceptance_path = manifest_acceptance_worktree_path(manifest)
+        emit(f"Paused acceptance worktree: {acceptance_path}")
+        emit(
+            "Continue command: "
+            f"{exploratory_acceptance_continue_command(manifest_run_dir(manifest))}"
+        )
     emit(f"Recommended next action: {recommended_run_action(manifest)}")
 
 
@@ -11277,6 +12229,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--continue-exploratory-acceptance",
+        help=(
+            "Resume a paused Exploratory acceptance conflict run from its run "
+            "directory after the acceptance worktree is resolved and clean."
+        ),
+    )
+    parser.add_argument(
         "--drain",
         action="store_true",
         help="Continue through implementation and triage until the queue is blocked or empty.",
@@ -11343,12 +12302,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         args.recover_run is not None,
         args.operator_run_status is not None,
         args.apply_exploratory_acceptance_decisions is not None,
+        args.continue_exploratory_acceptance is not None,
         args.drain_promote_all,
     ]
     if sum(1 for enabled in exclusive_modes if enabled) > 1:
         parser.error(
             "Use only one of --inspect-run, --recover-run, --operator-run-status, "
-            "--apply-exploratory-acceptance-decisions, or --drain-promote-all."
+            "--apply-exploratory-acceptance-decisions, "
+            "--continue-exploratory-acceptance, or --drain-promote-all."
         )
     if args.apply_exploratory_acceptance_decisions is not None:
         if args.dry_run:
@@ -11362,6 +12323,20 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
             parser.error(
                 "Use --source-branch, not --target-branch or --base, with "
                 "--apply-exploratory-acceptance-decisions."
+            )
+    if args.continue_exploratory_acceptance is not None:
+        if args.dry_run:
+            parser.error("--continue-exploratory-acceptance does not support --dry-run.")
+        if args.promote or args.drain or args.issue is not None or args.bootstrap_labels:
+            parser.error(
+                "--continue-exploratory-acceptance cannot be combined with "
+                "--promote, --drain, --issue, or --bootstrap-labels."
+            )
+        if args.target_branch is not None or args.base is not None:
+            parser.error(
+                "--continue-exploratory-acceptance resumes the Integration target "
+                "recorded in the paused run directory; do not pass --target-branch "
+                "or --base."
             )
     if args.ready_issue_refresh and args.skip_ready_issue_refresh:
         parser.error("Use only one of --ready-issue-refresh or --skip-ready-issue-refresh.")
@@ -11407,6 +12382,11 @@ def main(argv: list[str] | None = None) -> int:
         if parsed_args.apply_exploratory_acceptance_decisions is not None:
             RalphLoop(config, runner).apply_exploratory_acceptance_decisions(
                 Path(parsed_args.apply_exploratory_acceptance_decisions)
+            )
+            return 0
+        if parsed_args.continue_exploratory_acceptance is not None:
+            RalphLoop(config, runner).continue_exploratory_acceptance(
+                Path(parsed_args.continue_exploratory_acceptance)
             )
             return 0
         if parsed_args.drain_promote_all:

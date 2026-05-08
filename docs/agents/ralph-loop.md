@@ -273,6 +273,13 @@ Apply explicit Exploratory acceptance decisions from a JSON artifact:
 python3 scripts/ralph.py --apply-exploratory-acceptance-decisions path/to/decisions.json
 ```
 
+Continue a paused Exploratory acceptance conflict run after the acceptance
+worktree is resolved and clean:
+
+```bash
+python3 scripts/ralph.py --continue-exploratory-acceptance .ralph/runs/exploratory-acceptance-20260504T010203Z
+```
+
 Use `--source-branch <branch>` with that command only when the Gitflow source
 branch is not `dev`. The apply flow does not support `--dry-run` because
 accepted decisions may push the source branch after merged-target QA passes.
@@ -319,14 +326,16 @@ python3 scripts/ralph.py --drain --allow-dirty-worktree
 
 ## Live run preflight
 
-Live `--issue`, `--drain`, `--promote`, and
-`--apply-exploratory-acceptance-decisions` runs fail before GitHub issue claim,
+Live `--issue`, `--drain`, `--promote`,
+`--apply-exploratory-acceptance-decisions`, and
+`--continue-exploratory-acceptance` runs fail before GitHub issue claim,
 worktree creation, **Local integration**, Exploratory handoff, acceptance
-merge, or push when the root worktree has uncommitted changes. Commit or stash
-root worktree changes before live Ralph runs. Use `--allow-dirty-worktree` only
-for an explicit dirty-worktree operation. `--dry-run` remains available on a
-dirty root worktree for drain and issue previews so operators can inspect the
-next Ralph action without mutating issues or branches.
+merge, acceptance continue, or push when the root worktree has uncommitted
+changes. Commit or stash root worktree changes before live Ralph runs. Use
+`--allow-dirty-worktree` only for an explicit dirty-worktree operation.
+`--dry-run` remains available on a dirty root worktree for drain and issue
+previews so operators can inspect the next Ralph action without mutating issues
+or branches.
 
 Before a live drain, validate both GitHub API auth and Git push auth for the
 expected **Integration target**:
@@ -542,6 +551,10 @@ Key fields for inspection:
 - `decisions`: explicit Exploratory acceptance decisions, per-issue validation
   state, handoff branch and commit, accepted `dev` commit, metadata operations,
   and recovery context for `exploratory_acceptance_apply` runs.
+- `acceptance_conflict`: paused Exploratory acceptance conflict status,
+  acceptance worktree path, conflicted files, `decisions.json`,
+  `conflicts.json`, `codex-resolution-prompt.md`, continue command, and
+  recovery guidance.
 - `branches`: issue, source, and target branch names that apply to the run.
 - `paths`: repo root, run directory, worktree container, and implementation,
   branch-sync, integration, Promotion source, Promotion target, or Exploratory
@@ -600,13 +613,25 @@ worktrees. Normal Ralph runs keep fail-stop behavior: if metadata operations
 fail after a push, Ralph stops loudly so an operator can inspect the run and
 recover deliberately.
 
-Exploratory acceptance apply failures before the accepted branch push leave
-accepted issue metadata unchanged. The run manifest records the decision file,
-acceptance worktree path, selected merged-target QA, and recovery guidance. If
+Exploratory acceptance merge conflicts pause with run status
+`acceptance_conflict` before push or GitHub Issue metadata mutation. Ralph
+leaves the acceptance worktree in place and writes `decisions.json`,
+`conflicts.json`, and `codex-resolution-prompt.md` under the run directory. The
+prompt tells Codex to work only in that acceptance worktree, preserve the
+accepted issue intent, commit the conflict resolution, and leave the worktree
+clean. Use `--inspect-run <run_dir>` to print the paused worktree path and the
+`--continue-exploratory-acceptance <run_dir>` command.
+
+`--continue-exploratory-acceptance <run_dir>` reloads the paused decision set,
+refuses missing or mismatched artifacts, refuses a missing, stale, dirty, or
+still-conflicted acceptance worktree, reruns selected merged-target QA, pushes
+the Gitflow source branch, and only then applies acceptance metadata. If
 metadata fails after `dev` is pushed, treat the run as post-push recovery:
 verify the pushed commit in the manifest, then add any missing
 `Ralph exploratory acceptance completed.` evidence and label transitions before
-rerunning **Promotion**.
+rerunning **Promotion**. Non-conflict apply failures before the accepted branch
+push still leave accepted issue metadata unchanged and record recovery guidance
+in the manifest.
 
 If a failed Gitflow run passed issue QA but failed before recording
 `integration_commit`, and an operator manually creates or pushes the recovered
@@ -753,9 +778,13 @@ The commit is the `dev` commit that made the accepted work reachable from the
 source branch. Held decisions comment the reason and leave `agent-reviewing` in
 place. Rejected decisions leave the issue open, remove `agent-reviewing`, add
 `ready-for-human`, and comment the review result and next action. Rejected
-review must not add `agent-integrated`. No GitHub metadata changes happen for
-accepted decisions before the accepted branch merge, merged-target QA, and
-source branch push succeed. ADR
+review must not add `agent-integrated`. If an accepted branch merge conflicts,
+Ralph pauses with `acceptance_conflict`, writes `decisions.json`,
+`conflicts.json`, and `codex-resolution-prompt.md`, and does not push or mutate
+GitHub Issues until `--continue-exploratory-acceptance <run_dir>` validates a
+clean resolved acceptance worktree and reruns merged-target QA. No GitHub
+metadata changes happen for accepted decisions before the accepted branch
+merge, merged-target QA, and source branch push succeed. ADR
 [0005](../adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md)
 records why **Exploratory branches** stay outside automatic **Promotion** until
 human acceptance evidence reaches `dev`.
