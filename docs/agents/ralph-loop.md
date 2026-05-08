@@ -165,11 +165,17 @@ python3 scripts/ralph.py --bootstrap-labels
 
 ## Run modes
 
-Dry-run the next action:
+Dry-run the drain queue preview:
 
 ```bash
 python3 scripts/ralph.py --drain --dry-run
 ```
+
+`--drain --dry-run` previews the next serial Gitflow or trunk candidate plus up
+to two eligible Exploratory candidates, using each issue's resolved
+**Delivery mode**. Set `--exploratory-concurrency N` to change that
+Exploratory preview bound; the default is `2` and the minimum is `1`.
+Targeted `--issue` dry runs still preview only that issue.
 
 Drain up to 10 implementation attempts:
 
@@ -194,6 +200,12 @@ Drain to durable **Exploratory branches** for exploratory changes:
 
 ```bash
 python3 scripts/ralph.py --drain --delivery-mode exploratory
+```
+
+Preview more Exploratory candidates in a dry run:
+
+```bash
+python3 scripts/ralph.py --drain --dry-run --exploratory-concurrency 4
 ```
 
 Drain until only blocked or non-actionable issues remain:
@@ -239,6 +251,9 @@ Run repeated drain and **Promotion** cycles in a foreground terminal:
 ```bash
 python3 scripts/ralph.py --drain-promote-all --max-cycles 10
 ```
+
+Checkpointed Operator child runs forward `--exploratory-concurrency`; the
+default remains `2`.
 
 Launch the checkpointed Operator run in Codex-safe detached mode:
 
@@ -471,6 +486,8 @@ Key fields for inspection:
 - `github_metadata.issues`: promoted issue numbers, recorded issue evidence
   commits, per-issue Promotion metadata command log paths, and manual recovery
   evidence warnings during **Promotion**.
+- `configuration.exploratory_concurrency`: the configured Exploratory preview
+  bound for the Ralph run.
 - `delivery_mode`: issue **Delivery mode**; **Promotion** records `gitflow`.
 - `integration_target`: branch Ralph is updating for the run.
 - `source_branch`: **Promotion** source branch, usually `dev`.
@@ -990,9 +1007,10 @@ If post-Promotion analysis or metadata mutation fails, Ralph records
 succeeded, and continues cleanup. Operators inspect the Promotion manifest and
 reconcile only the failed GitHub Issue metadata before rerunning the drain.
 
-In `--dry-run`, Ralph reports that Ready issue refresh candidate selection would
-run after **Local integration** or Exploratory handoff; it does not invoke Codex
-or mutate GitHub Issues.
+In `--drain --dry-run`, Ralph reports the serial and Exploratory queue preview
+and that Ready issue refresh candidate selection would run after each previewed
+**Local integration** or Exploratory handoff; it does not invoke Codex or mutate
+GitHub Issues.
 
 Use the repo-local `$ralph-issue-refresh` skill as the entry point for this
 contract. The full metadata-refresh contract is allowed to mutate only GitHub

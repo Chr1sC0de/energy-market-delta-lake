@@ -67,6 +67,7 @@ DEFAULT_GITFLOW_BRANCH = "dev"
 DEFAULT_TRUNK_BRANCH = "main"
 DEFAULT_EXPLORATORY_BRANCH_PREFIX = "agent/exploratory"
 DEFAULT_DRAIN_BUDGET = 10
+DEFAULT_EXPLORATORY_CONCURRENCY = 2
 DEFAULT_OPERATOR_MAX_CYCLES = 10
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30.0
 DIRTY_WORKTREE_STATUS_PREVIEW_LIMIT = 12
@@ -509,6 +510,12 @@ class DeliveryPlan:
 
 
 @dataclass(frozen=True)
+class DrainDryRunCandidate:
+    issue: Issue
+    delivery_plan: DeliveryPlan
+
+
+@dataclass(frozen=True)
 class ContextAnchorPath:
     path: str
     prefix: bool
@@ -535,6 +542,7 @@ class LoopConfig:
     issue: int | None
     drain: bool
     max_issues: int
+    exploratory_concurrency: int
     dry_run: bool
     allow_dirty_worktree: bool
     allow_full_access_implementation: bool
@@ -552,6 +560,12 @@ def path_text(path: Path | None) -> str | None:
     if path is None:
         return None
     return str(path)
+
+
+def run_configuration_payload(config: LoopConfig) -> dict[str, Any]:
+    return {
+        "exploratory_concurrency": config.exploratory_concurrency,
+    }
 
 
 def promotion_issue_metadata_log_path(run_dir: Path, issue_number: int, step: str) -> Path:
@@ -596,6 +610,7 @@ class RunManifest:
             "started_at": utc_now_text(),
             "updated_at": utc_now_text(),
             "repo": config.repo,
+            "configuration": run_configuration_payload(config),
             "issue": {
                 "number": issue.number,
                 "title": issue.title,
@@ -696,6 +711,7 @@ class RunManifest:
             "started_at": utc_now_text(),
             "updated_at": utc_now_text(),
             "repo": config.repo,
+            "configuration": run_configuration_payload(config),
             "delivery_mode": GITFLOW_MODE,
             "source_branch": source_branch,
             "integration_target": target_branch,
@@ -1431,6 +1447,7 @@ class OperatorRunManifest:
                 "started_at": utc_now_text(),
                 "updated_at": utc_now_text(),
                 "repo": config.repo,
+                "configuration": run_configuration_payload(config),
                 "max_cycles": max_cycles,
                 "cycle": 0,
                 "current": None,
@@ -1444,6 +1461,7 @@ class OperatorRunManifest:
                 "events": [],
             }
         data["repo"] = config.repo
+        data["configuration"] = run_configuration_payload(config)
         data["max_cycles"] = max_cycles
         paths = data.setdefault("paths", {})
         if not isinstance(paths, dict):
@@ -4566,17 +4584,23 @@ class RalphLoop:
             ready_issue = self._next_ready_issue()
             if ready_issue is not None:
                 if self.config.dry_run:
-                    emit(f"DRY RUN: would implement #{ready_issue.number}: {ready_issue.title}")
-                    if self.config.ready_issue_refresh_enabled:
-                        delivery_plan = resolve_delivery_plan(
-                            ready_issue,
-                            default_mode=self.config.delivery_mode,
-                            target_branch=self.config.target_branch,
+                    if self.config.drain and self.config.issue is None:
+                        self._report_drain_dry_run_preview()
+                    else:
+                        emit(
+                            f"DRY RUN: would implement "
+                            f"#{ready_issue.number}: {ready_issue.title}"
                         )
-                        self._report_ready_issue_refresh_dry_run(
-                            ready_issue,
-                            delivery_mode=delivery_plan.mode,
-                        )
+                        if self.config.ready_issue_refresh_enabled:
+                            delivery_plan = resolve_delivery_plan(
+                                ready_issue,
+                                default_mode=self.config.delivery_mode,
+                                target_branch=self.config.target_branch,
+                            )
+                            self._report_ready_issue_refresh_dry_run(
+                                ready_issue,
+                                delivery_mode=delivery_plan.mode,
+                            )
                     return
                 self._handle_implementation(ready_issue)
                 implemented += 1
@@ -4644,14 +4668,92 @@ class RalphLoop:
             raise RalphError(f"Missing labels: {labels}. Run with --bootstrap-labels first.")
 
     def _next_ready_issue(self) -> Issue | None:
-        issues = self._issue_pool()
-        for issue in issues:
+        for issue in self._ready_implementation_candidates():
+            return issue
+        return None
+
+    def _ready_implementation_candidates(self) -> list[Issue]:
+        candidates: list[Issue] = []
+        for issue in self._issue_pool():
             if not is_ready_candidate(issue):
                 continue
             if self._has_open_blockers(issue):
                 continue
-            return issue
-        return None
+            candidates.append(issue)
+        return candidates
+
+    def _drain_dry_run_candidates(
+        self,
+    ) -> tuple[DrainDryRunCandidate | None, list[DrainDryRunCandidate], int]:
+        serial_candidate: DrainDryRunCandidate | None = None
+        exploratory_candidates: list[DrainDryRunCandidate] = []
+        eligible_exploratory_count = 0
+        for issue in self._ready_implementation_candidates():
+            delivery_plan = resolve_delivery_plan(
+                issue,
+                default_mode=self.config.delivery_mode,
+                target_branch=self.config.target_branch,
+            )
+            candidate = DrainDryRunCandidate(issue=issue, delivery_plan=delivery_plan)
+            if delivery_plan.mode == EXPLORATORY_MODE:
+                eligible_exploratory_count += 1
+                if len(exploratory_candidates) < self.config.exploratory_concurrency:
+                    exploratory_candidates.append(candidate)
+                continue
+            if serial_candidate is None:
+                serial_candidate = candidate
+        return serial_candidate, exploratory_candidates, eligible_exploratory_count
+
+    def _report_drain_dry_run_preview(self) -> None:
+        serial_candidate, exploratory_candidates, eligible_exploratory_count = (
+            self._drain_dry_run_candidates()
+        )
+        emit(
+            "DRY RUN: drain preview for one serial Gitflow/Trunk candidate "
+            f"plus up to {self.config.exploratory_concurrency} Exploratory candidate(s)."
+        )
+        if serial_candidate is None:
+            emit("DRY RUN: no serial Gitflow or Trunk candidate is currently eligible.")
+        else:
+            self._emit_drain_dry_run_candidate("serial candidate", serial_candidate)
+
+        if not exploratory_candidates:
+            emit("DRY RUN: no Exploratory candidates are currently eligible.")
+        for candidate in exploratory_candidates:
+            self._emit_drain_dry_run_candidate("Exploratory candidate", candidate)
+
+        if eligible_exploratory_count > len(exploratory_candidates):
+            emit(
+                "DRY RUN: showing "
+                f"{len(exploratory_candidates)} of {eligible_exploratory_count} "
+                "eligible Exploratory candidates "
+                f"(--exploratory-concurrency {self.config.exploratory_concurrency})."
+            )
+        elif exploratory_candidates:
+            emit(
+                "DRY RUN: showing "
+                f"{len(exploratory_candidates)} eligible Exploratory candidate(s) "
+                f"(--exploratory-concurrency {self.config.exploratory_concurrency})."
+            )
+
+        if self.config.ready_issue_refresh_enabled:
+            emit(
+                "DRY RUN: after each previewed Local integration or Exploratory "
+                "handoff, would select Ready issue refresh candidates within "
+                f"--issue-limit {self.config.issue_limit}."
+            )
+
+    def _emit_drain_dry_run_candidate(
+        self,
+        candidate_name: str,
+        candidate: DrainDryRunCandidate,
+    ) -> None:
+        emit(
+            f"DRY RUN: {candidate_name} #{candidate.issue.number}: "
+            f"{candidate.issue.title} "
+            f"(Delivery mode: {candidate.delivery_plan.mode}, "
+            f"Integration target: {candidate.delivery_plan.target_branch})"
+        )
 
     def _next_triage_issue(self) -> Issue | None:
         current_user: str | None = None
@@ -9540,6 +9642,7 @@ def build_config(args: argparse.Namespace, runner: CommandRunner) -> LoopConfig:
         issue=args.issue,
         drain=args.drain or args.drain_promote_all,
         max_issues=args.max_issues,
+        exploratory_concurrency=args.exploratory_concurrency,
         dry_run=args.dry_run,
         allow_dirty_worktree=args.allow_dirty_worktree,
         allow_full_access_implementation=args.allow_full_access_implementation,
@@ -9563,6 +9666,8 @@ def operator_child_command(args: argparse.Namespace, run_dir: Path) -> list[str]
         args.source_branch,
         "--max-issues",
         str(args.max_issues),
+        "--exploratory-concurrency",
+        str(args.exploratory_concurrency),
         "--issue-limit",
         str(args.issue_limit),
     ]
@@ -9743,7 +9848,21 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
             f"Defaults to {DEFAULT_DRAIN_BUDGET}. Use 0 for unlimited."
         ),
     )
-    parser.add_argument("--dry-run", action="store_true", help="Show the next action only.")
+    parser.add_argument(
+        "--exploratory-concurrency",
+        type=int,
+        default=DEFAULT_EXPLORATORY_CONCURRENCY,
+        help=(
+            "Maximum eligible Exploratory candidates to preview during "
+            "--drain --dry-run. "
+            f"Defaults to {DEFAULT_EXPLORATORY_CONCURRENCY}."
+        ),
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show the next drain preview or action only.",
+    )
     parser.add_argument(
         "--allow-dirty-worktree",
         action="store_true",
@@ -9803,6 +9922,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         parser.error("--operator-run-dir is reserved for foreground Operator child runs.")
     if args.max_cycles < 0:
         parser.error("--max-cycles must be 0 or greater.")
+    if args.exploratory_concurrency < 1:
+        parser.error("--exploratory-concurrency must be 1 or greater.")
     return args
 
 

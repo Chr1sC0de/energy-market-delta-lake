@@ -108,8 +108,11 @@ git push --dry-run origin HEAD:main
 ```
 
 Use `$ralph-loop dry-run drain` when the root worktree is dirty or when you only
-want to inspect Ralph's next action. Use dirty-worktree operation only when the
-operator explicitly accepts that risk.
+want to inspect Ralph's next serial Gitflow or trunk candidate plus bounded
+Exploratory candidates. `--exploratory-concurrency` controls the Exploratory
+preview bound, defaults to `2`, and has a minimum of `1`. Targeted `--issue`
+dry runs still preview only that issue. Use dirty-worktree operation only when
+the operator explicitly accepts that risk.
 
 Ready issues that anchor `.agents/` files stop before claim unless the operator
 passes `--allow-full-access-implementation`. With that flag, Ralph runs only

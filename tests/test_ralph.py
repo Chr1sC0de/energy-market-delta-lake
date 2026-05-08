@@ -540,6 +540,7 @@ def make_loop(
     issue: int | None = None,
     drain: bool = False,
     max_issues: int = ralph.DEFAULT_DRAIN_BUDGET,
+    exploratory_concurrency: int = ralph.DEFAULT_EXPLORATORY_CONCURRENCY,
     dry_run: bool = False,
     allow_dirty_worktree: bool = False,
     allow_full_access_implementation: bool = False,
@@ -566,6 +567,7 @@ def make_loop(
         issue=issue,
         drain=drain,
         max_issues=max_issues,
+        exploratory_concurrency=exploratory_concurrency,
         dry_run=dry_run,
         allow_dirty_worktree=allow_dirty_worktree,
         allow_full_access_implementation=allow_full_access_implementation,
@@ -741,6 +743,32 @@ class TwoReadyIssueLoop(ralph.RalphLoop):
         if self.ready_calls == 2:
             return make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=43)
         return None
+
+    def _next_triage_issue(self) -> ralph.Issue | None:
+        return None
+
+
+class DryRunPreviewLoop(ralph.RalphLoop):
+    def __init__(
+        self,
+        config: ralph.LoopConfig,
+        runner: FakeRunner,
+        candidates: list[ralph.Issue],
+    ) -> None:
+        super().__init__(config, runner)
+        self.candidates = candidates
+
+    def _validate_tools(self) -> None:
+        pass
+
+    def _validate_labels(self) -> None:
+        pass
+
+    def _validate_clean_root_worktree_for_live_run(self) -> None:
+        pass
+
+    def _ready_implementation_candidates(self) -> list[ralph.Issue]:
+        return list(self.candidates)
 
     def _next_triage_issue(self) -> ralph.Issue | None:
         return None
@@ -2202,6 +2230,10 @@ Build it.
         self.assertFalse(config.skip_post_promotion_followups)
         self.assertFalse(config.ready_issue_refresh_enabled)
         self.assertFalse(config.skip_ready_issue_refresh)
+        self.assertEqual(
+            config.exploratory_concurrency,
+            ralph.DEFAULT_EXPLORATORY_CONCURRENCY,
+        )
 
     def test_parse_args_help_describes_default_drain_budget(self) -> None:
         output = io.StringIO()
@@ -2218,7 +2250,78 @@ Build it.
         self.assertIn("--ready-issue-refresh", help_text)
         self.assertIn("--skip-ready-issue-refresh", help_text)
         self.assertIn("--allow-full-access-implementation", help_text)
+        self.assertIn("--exploratory-concurrency", help_text)
+        self.assertIn("Defaults to 2", help_text)
         self.assertIn("exploratory", help_text)
+
+    def test_parse_args_rejects_exploratory_concurrency_below_one(self) -> None:
+        output = io.StringIO()
+
+        with redirect_stderr(output), self.assertRaises(SystemExit) as caught:
+            ralph.parse_args(["--exploratory-concurrency", "0"])
+
+        self.assertEqual(caught.exception.code, 2)
+        self.assertIn("--exploratory-concurrency must be 1 or greater", output.getvalue())
+
+    def test_build_config_records_exploratory_concurrency(self) -> None:
+        runner = FakeRunner(
+            command_outputs={
+                ("git", "rev-parse", "--show-toplevel"): ["/work/repo\n"],
+                ("git", "config", "--get", "remote.origin.url"): [
+                    "git@github.com:example/repo.git\n"
+                ],
+            }
+        )
+
+        config = ralph.build_config(
+            ralph.parse_args(["--exploratory-concurrency", "4"]),
+            runner,
+        )
+
+        self.assertEqual(config.exploratory_concurrency, 4)
+
+    def test_run_manifests_record_exploratory_concurrency_configuration(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, exploratory_concurrency=5)
+            issue = make_issue({ralph.READY_LABEL}, IMPLEMENTATION_BODY)
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=loop.config.delivery_mode,
+                target_branch=loop.config.target_branch,
+            )
+            implementation_manifest = ralph.RunManifest.for_implementation(
+                run_dir=tmp_path / "logs" / "issue-42-test",
+                issue=issue,
+                delivery_plan=delivery_plan,
+                branch="agent/issue-42-implement-thing",
+                worktree_path=tmp_path / "worktrees" / "issue",
+                integration_path=tmp_path / "worktrees" / "integration",
+                config=loop.config,
+            )
+            promotion_manifest = ralph.RunManifest.for_promotion(
+                run_dir=tmp_path / "logs" / "promote-test",
+                source_branch=ralph.DEFAULT_GITFLOW_BRANCH,
+                target_branch=ralph.DEFAULT_TRUNK_BRANCH,
+                source_path=tmp_path / "worktrees" / "source",
+                promote_path=tmp_path / "worktrees" / "promote",
+                config=loop.config,
+            )
+            operator_manifest = ralph.OperatorRunManifest.start(
+                run_dir=tmp_path / "operator" / "operator-test",
+                config=loop.config,
+                max_cycles=3,
+            )
+
+            payloads = [
+                json.loads(implementation_manifest.path.read_text(encoding="utf-8")),
+                json.loads(promotion_manifest.path.read_text(encoding="utf-8")),
+                json.loads(operator_manifest.path.read_text(encoding="utf-8")),
+            ]
+
+        for payload in payloads:
+            self.assertEqual(payload["configuration"]["exploratory_concurrency"], 5)
 
     def test_build_config_enables_ready_issue_refresh_for_drain_by_default(self) -> None:
         runner = FakeRunner(
@@ -2487,21 +2590,82 @@ Build it.
         commands = [call.args for call in runner.calls]
         self.assertNotIn(("git", "status", "--porcelain"), commands)
 
-    def test_dry_run_reports_ready_issue_refresh_candidate_selection(self) -> None:
+    def test_drain_dry_run_previews_serial_and_bounded_exploratory_candidates(
+        self,
+    ) -> None:
         runner = FakeRunner()
         with tempfile.TemporaryDirectory() as tmp:
-            loop = make_loop(Path(tmp), runner, drain=True, dry_run=True)
-            probe = PreflightProbeLoop(loop.config, runner)
+            loop = make_loop(
+                Path(tmp),
+                runner,
+                delivery_mode=ralph.EXPLORATORY_MODE,
+                drain=True,
+                exploratory_concurrency=2,
+                dry_run=True,
+            )
+            probe = DryRunPreviewLoop(
+                loop.config,
+                runner,
+                [
+                    make_issue(
+                        {ralph.READY_LABEL},
+                        EXPLORATORY_IMPLEMENTATION_BODY,
+                        number=41,
+                        title="Unlabeled exploration",
+                    ),
+                    make_issue(
+                        {ralph.READY_LABEL, ralph.DELIVERY_TRUNK_LABEL},
+                        IMPLEMENTATION_BODY,
+                        number=42,
+                        title="Labeled trunk work",
+                    ),
+                    make_issue(
+                        {ralph.READY_LABEL, ralph.DELIVERY_EXPLORATORY_LABEL},
+                        EXPLORATORY_IMPLEMENTATION_BODY,
+                        number=43,
+                        title="Labeled exploration",
+                    ),
+                    make_issue(
+                        {ralph.READY_LABEL},
+                        EXPLORATORY_IMPLEMENTATION_BODY,
+                        number=44,
+                        title="Overflow exploration",
+                    ),
+                ],
+            )
             output = io.StringIO()
 
             with redirect_stdout(output):
                 probe.run()
 
         text = output.getvalue()
-        self.assertIn("DRY RUN: would implement #42: Implement thing", text)
         self.assertIn(
-            "DRY RUN: after Local integration of #42, would select Ready issue "
-            "refresh candidates within --issue-limit 100.",
+            "DRY RUN: serial candidate #42: Labeled trunk work "
+            "(Delivery mode: trunk, Integration target: main)",
+            text,
+        )
+        self.assertIn(
+            "DRY RUN: Exploratory candidate #41: Unlabeled exploration "
+            "(Delivery mode: exploratory, Integration target: "
+            "agent/exploratory/issue-41-unlabeled-exploration)",
+            text,
+        )
+        self.assertIn(
+            "DRY RUN: Exploratory candidate #43: Labeled exploration "
+            "(Delivery mode: exploratory, Integration target: "
+            "agent/exploratory/issue-43-labeled-exploration)",
+            text,
+        )
+        self.assertNotIn("#44: Overflow exploration", text)
+        self.assertIn(
+            "DRY RUN: showing 2 of 3 eligible Exploratory candidates "
+            "(--exploratory-concurrency 2).",
+            text,
+        )
+        self.assertIn(
+            "DRY RUN: after each previewed Local integration or Exploratory "
+            "handoff, would select Ready issue refresh candidates within "
+            "--issue-limit 100.",
             text,
         )
         commands = [call.args for call in runner.calls]
@@ -2925,6 +3089,8 @@ class RalphOperatorRunTests(unittest.TestCase):
                     "--detach",
                     "--max-cycles",
                     "3",
+                    "--exploratory-concurrency",
+                    "4",
                     "--skip-post-promotion-followups",
                     "--allow-full-access-implementation",
                 ]
@@ -2948,10 +3114,13 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertIn("--operator-run-dir", child_command)
         self.assertIn("--max-cycles", child_command)
         self.assertIn("3", child_command)
+        self.assertIn("--exploratory-concurrency", child_command)
+        self.assertIn("4", child_command)
         self.assertIn("--skip-post-promotion-followups", child_command)
         self.assertIn("--allow-full-access-implementation", child_command)
         self.assertEqual(manifest["last_checkpoint"]["checkpoint"], "detached_launched")
         self.assertEqual(manifest["detached"]["pid"], 321)
+        self.assertEqual(manifest["configuration"]["exploratory_concurrency"], 4)
 
     def test_operator_docs_include_codex_safe_command_strings(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]
