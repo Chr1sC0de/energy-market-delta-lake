@@ -158,8 +158,10 @@ way:
   it instead of duplicating the full workflow.
 - #66: `OPERATOR.md` remains under documentation sync through this page's
   maintained-doc scope and its own sync metadata.
-- #59: docs-only AEMO ETL changes remain aligned with Ralph QA selection by
-  keeping docs-only AEMO ETL paths on the root doc **Commit check** surface.
+- #59 and #139: docs-only AEMO ETL and Marimo changes remain aligned with
+  Ralph QA selection by keeping docs-only paths on the root doc **Commit check**
+  surface. Mixed docs/runtime Marimo changes add Marimo **Component test** and
+  **Commit check** evidence from `backend-services/marimo`.
 - #57, #58, #61, #62, #88, #89, #91, #92, #94, #95, and #108: current Ralph
   behavior for **Delivery mode**, **Local integration**, Exploratory handoff,
   **Exploratory branch** review state, **Promotion**, accepted Exploratory

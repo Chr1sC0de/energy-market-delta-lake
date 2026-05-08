@@ -1835,6 +1835,75 @@ Build it.
             ],
         )
 
+    def test_select_qa_commands_for_marimo_runtime_only_changes(self) -> None:
+        commands = ralph.select_qa_commands(
+            ["backend-services/marimo/src/marimoserver/main.py"],
+            Path("/repo"),
+        )
+
+        self.assertEqual(
+            [(command.name, command.args, command.cwd) for command in commands],
+            [
+                (
+                    "Marimo Component test",
+                    ("uv", "run", "pytest", "tests/component"),
+                    Path("/repo/backend-services/marimo"),
+                ),
+                (
+                    "Marimo Commit check",
+                    ("prek", "run", "-a"),
+                    Path("/repo/backend-services/marimo"),
+                ),
+            ],
+        )
+
+    def test_select_qa_commands_for_marimo_docs_only_changes(self) -> None:
+        commands = ralph.select_qa_commands(
+            ["backend-services/marimo/README.md"],
+            Path("/repo"),
+        )
+        names = [command.name for command in commands]
+
+        self.assertEqual(names, ["root Commit check"])
+
+    def test_select_qa_commands_for_mixed_marimo_docs_and_runtime_changes(self) -> None:
+        commands = ralph.select_qa_commands(
+            [
+                "backend-services/marimo/README.md",
+                "backend-services/marimo/src/marimoserver/main.py",
+            ],
+            Path("/repo"),
+        )
+        names = [command.name for command in commands]
+
+        self.assertEqual(
+            names,
+            [
+                "Marimo Component test",
+                "Marimo Commit check",
+                "root Commit check",
+            ],
+        )
+
+    def test_marimo_runtime_matching_uses_whole_subproject_prefix(self) -> None:
+        self.assertTrue(
+            ralph.has_marimo_runtime_change(
+                ["backend-services/marimo/src/marimoserver/main.py"]
+            )
+        )
+        self.assertFalse(
+            ralph.has_marimo_runtime_change(["backend-services/marimo/README.md"])
+        )
+        self.assertFalse(
+            ralph.has_marimo_runtime_change(
+                [
+                    "backend-services/marimo",
+                    "backend-services/marimo-old/src/module.py",
+                    "backend-services/marimoREADME.md",
+                ]
+            )
+        )
+
     def test_protected_aemo_etl_matching_uses_whole_subproject_prefix(self) -> None:
         self.assertTrue(
             ralph.has_protected_aemo_etl_change(

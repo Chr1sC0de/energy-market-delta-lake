@@ -1175,6 +1175,25 @@ prek run -a
 Mixed docs/runtime `aemo-etl` changes run both the runtime AEMO ETL commands and
 the root doc **Commit check**.
 
+For runtime Marimo changes, Ralph runs from the owning **Subproject**:
+
+```bash
+uv run pytest tests/component
+prek run -a
+```
+
+Docs-only Marimo changes are recognized by the maintained Markdown doc path
+rules in [documentation-sync.md](../repository/documentation-sync.md). They skip
+the Marimo **Component test** and run the root doc **Commit check** surface:
+
+```bash
+prek run -a
+```
+
+Mixed docs/runtime Marimo changes run both the Marimo **Component test** and
+Marimo **Commit check** from `backend-services/marimo`, plus the root doc
+**Commit check**.
+
 For root docs/config or cross-**Subproject** changes, Ralph runs:
 
 ```bash

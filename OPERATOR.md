@@ -146,6 +146,10 @@ Use this checklist:
   Ralph's aggregate **Push check**.
 - If AEMO ETL files changed, expect the AEMO ETL **End-to-end test** gate during
   **Promotion**.
+- If Marimo runtime files changed, expect Marimo **Component test** and Marimo
+  **Commit check** evidence from `backend-services/marimo`. Docs-only Marimo
+  changes use the root doc **Commit check** evidence; mixed docs/runtime Marimo
+  changes should include both surfaces.
 - Confirm no open blocker or manual follow-up should stop the range from
   reaching `main`.
 

@@ -194,6 +194,7 @@ TRIAGE_STOP_LABELS = frozenset(
 REQUIRED_ISSUE_SECTIONS = ("What to build", "Acceptance criteria", "Blocked by")
 EXPLORATORY_REQUIRED_ISSUE_SECTIONS = ("Review focus",)
 AEMO_ETL_PREFIX = "backend-services/dagster-user/aemo-etl/"
+MARIMO_PREFIX = "backend-services/marimo/"
 BACKEND_SERVICES_PREFIX = "backend-services/"
 AEMO_ETL_E2E_QA_NAME = "aemo-etl End-to-end test"
 AEMO_ETL_PROMOTION_E2E_SCENARIO = "promotion-gas-model"
@@ -3706,6 +3707,7 @@ def root_prek_needed(changed_file: str) -> bool:
         or (
             changed_file.startswith("backend-services/")
             and not changed_file.startswith(AEMO_ETL_PREFIX)
+            and not changed_file.startswith(MARIMO_PREFIX)
         )
     )
 
@@ -3713,6 +3715,13 @@ def root_prek_needed(changed_file: str) -> bool:
 def has_protected_aemo_etl_change(changed_files: list[str]) -> bool:
     return any(
         path.startswith(AEMO_ETL_PREFIX) and not is_maintained_doc_path(path)
+        for path in changed_files
+    )
+
+
+def has_marimo_runtime_change(changed_files: list[str]) -> bool:
+    return any(
+        path.startswith(MARIMO_PREFIX) and not is_maintained_doc_path(path)
         for path in changed_files
     )
 
@@ -3728,6 +3737,19 @@ def select_qa_commands(changed_files: list[str], repo_root: Path) -> list[QAComm
                 QACommand(("make", "component-test"), aemo_root, "aemo-etl Component test"),
                 QACommand(("make", "integration-test"), aemo_root, "aemo-etl Integration test"),
                 QACommand(("make", "run-prek"), aemo_root, "aemo-etl Commit check"),
+            ]
+        )
+
+    if has_marimo_runtime_change(changed_files):
+        marimo_root = repo_root / MARIMO_PREFIX
+        commands.extend(
+            [
+                QACommand(
+                    ("uv", "run", "pytest", "tests/component"),
+                    marimo_root,
+                    "Marimo Component test",
+                ),
+                QACommand(("prek", "run", "-a"), marimo_root, "Marimo Commit check"),
             ]
         )
 
