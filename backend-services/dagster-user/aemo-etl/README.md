@@ -24,7 +24,8 @@ The project materializes Dagster assets defined under `src/aemo_etl/defs` to bui
   every 30 minutes and copy source files into landing storage.
 - `bronze_aemo_gas_document_sources` loads the checked-in AEMO gas document
   media manifest, records included, excluded, and `needs_human_review`
-  source-page and media-link observations, lands included PDF bytes under
+  source-page and direct `https://www.aemo.com.au/-/media/...` media-link
+  observations, lands included PDF bytes under
   `LANDING_BUCKET/bronze/aemo_gas_documents`, and archives those bytes under
   `ARCHIVE_BUCKET/bronze/aemo_gas_documents` after the metadata table write.
 - `download_vicgas_public_report_zip_files_job` and
@@ -301,10 +302,15 @@ LocalStack runs can load that cache without live archive access.
 `aemo-refresh-gas-document-media-manifest` is the manual discovery workflow for
 the AEMO gas document asset. It uses Playwright Chromium to visit configured
 source pages, writes the checked-in media manifest and discovery report, and
-validates direct media URLs with normal HTTP requests. By default it stages and
-commits only those generated JSON files; use `--no-commit` to write them for
-review without staging or committing. If the local Playwright Chromium binary is
-missing, install it once with `uv run playwright install chromium`.
+validates direct media URLs with normal HTTP requests. The checked-in manifest
+is expected to be non-empty, and the discovery report records validation status,
+HTTP status code, content type, content length, resolved URL, and validation
+errors. If a source page is blocked or unreadable, the refresh preserves any
+existing media entries for that source page instead of replacing them with an
+empty discovery result. By default it stages and commits only those generated
+JSON files; use `--no-commit` to write them for review without staging or
+committing. If the local Playwright Chromium binary is missing, install it once
+with `uv run playwright install chromium`.
 
 ## Project layout
 

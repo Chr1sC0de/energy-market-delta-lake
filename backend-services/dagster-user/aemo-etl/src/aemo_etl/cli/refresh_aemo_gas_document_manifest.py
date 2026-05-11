@@ -261,6 +261,7 @@ def discover_manifest_payloads(
 
         try:
             html = page_loader(source_page)
+            _raise_if_blocked_source_page(html)
         except Exception as error:
             preserved = existing_media_links.get(source_page.source_page_url, [])
             manifest_source_pages.append(
@@ -433,6 +434,19 @@ def _media_link_observations(
     ]
 
 
+def _raise_if_blocked_source_page(html: str) -> None:
+    if _is_cloudflare_challenge_page(html):
+        raise RuntimeError("AEMO source page returned a Cloudflare challenge page")
+
+
+def _is_cloudflare_challenge_page(html: str) -> bool:
+    normalized = html.lower()
+    return (
+        "challenges.cloudflare.com" in normalized
+        and "<title>just a moment" in normalized
+    )
+
+
 def _is_public_aemo_media_url(source_url: str) -> bool:
     return (
         is_aemo_public_url(source_url)
@@ -466,14 +480,12 @@ def _media_validation_report_entry(
     entry: dict[str, Any] = {
         "source_url": validation.source_url,
         "ok": validation.ok,
+        "status": "ok" if validation.ok else "failed",
+        "status_code": validation.status_code,
         "resolved_url": validation.resolved_url,
+        "content_type": validation.content_type,
+        "content_length": validation.content_length,
     }
-    if validation.status_code is not None:
-        entry["status_code"] = validation.status_code
-    if validation.content_type is not None:
-        entry["content_type"] = validation.content_type
-    if validation.content_length is not None:
-        entry["content_length"] = validation.content_length
     if validation.error is not None:
         entry["error"] = validation.error
     return entry

@@ -194,7 +194,7 @@ sequenceDiagram
     participant Archive as ARCHIVE_BUCKET/bronze/aemo_gas_documents
 
     Discovery->>AEMO: Manually visit configured source pages with Playwright
-    Discovery->>Manifest: Write manifest and discovery report JSON
+    Discovery->>Manifest: Write non-empty manifest and validation report JSON
     Schedule->>Docs: Run daily
     Docs->>Manifest: Load source-page and media-link observations
     Docs->>AEMO: Download included direct media URLs
@@ -209,10 +209,14 @@ Trigger and output notes:
 - The asset is registered by `src/aemo_etl/defs/raw/aemo_gas_documents.py` and
   built by `factories/aemo_gas_documents`.
 - Daily materialization reads the checked-in media manifest from the package and
-  does not fetch AEMO source-page HTML. The manual
-  `aemo-refresh-gas-document-media-manifest` CLI performs source-page discovery
-  with Playwright, validates direct media URLs, and preserves existing manifest
-  entries when a source page is blocked or unreadable.
+  does not fetch AEMO source-page HTML. The manifest is expected to contain
+  direct `https://www.aemo.com.au/-/media/...` media-link observations, so the
+  default asset path can download included PDFs without revisiting source pages.
+  The manual `aemo-refresh-gas-document-media-manifest` CLI performs source-page
+  discovery with Playwright, validates direct media URLs, records validation
+  status, HTTP metadata, resolved URLs, and validation errors in the discovery
+  report, and preserves existing manifest entries when a source page is blocked
+  or unreadable.
 - Included PDF links produce content-addressed PDF objects and metadata rows
   with source URL, resolved URL, source page, include decision,
   `content_sha256`, document family/version fields, and archive `storage_uri`.

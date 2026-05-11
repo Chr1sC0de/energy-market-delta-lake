@@ -99,6 +99,7 @@ def test_discover_manifest_payloads_extracts_public_aemo_media_links() -> None:
             "ok": True,
             "resolved_url": f"{_PDF_URL}&download=1",
             "source_url": _PDF_URL,
+            "status": "ok",
             "status_code": 200,
         }
     ]
@@ -152,6 +153,7 @@ def test_discover_manifest_payloads_discovers_child_pages_and_failed_validations
     assert manifest["media_links"][0]["source_page_url"] == child_url
     assert manifest["media_links"][0]["resolved_url"] == child_pdf_url
     assert report["media_validations"][0]["error"] == "blocked"
+    assert report["media_validations"][0]["status"] == "failed"
 
 
 def test_blocked_source_page_preserves_existing_manifest_entries() -> None:
@@ -188,6 +190,50 @@ def test_blocked_source_page_preserves_existing_manifest_entries() -> None:
     assert report["source_pages"][0]["status"] == "source_page_failed"
     assert report["source_pages"][0]["preserved_media_link_count"] == 1
     assert report["source_pages"][0]["error"] == "blocked"
+
+
+def test_cloudflare_challenge_page_preserves_existing_manifest_entries() -> None:
+    existing_payload = {
+        "schema_version": 1,
+        "source_pages": [
+            {
+                "corpus_source": "playwright",
+                "source_page_url": _PAGE_URL,
+                "include_decision": "include",
+                "status": "previous",
+            }
+        ],
+        "media_links": [
+            {
+                "corpus_source": "playwright",
+                "source_page_url": _PAGE_URL,
+                "source_url": _PDF_URL,
+                "include_decision": "include",
+            }
+        ],
+    }
+    html = """
+    <html>
+      <head>
+        <title>Just a moment...</title>
+        <script src="https://challenges.cloudflare.com/turnstile/v0/api.js"></script>
+      </head>
+      <body></body>
+    </html>
+    """
+
+    manifest, report = discover_manifest_payloads(
+        source_pages=(_source_page(),),
+        page_loader=lambda _source_page: html,
+        media_validator=_validation,
+        generated_at=_GENERATED_AT,
+        existing_payload=existing_payload,
+    )
+
+    assert manifest["source_pages"] == existing_payload["source_pages"]
+    assert manifest["media_links"] == existing_payload["media_links"]
+    assert report["source_pages"][0]["status"] == "source_page_failed"
+    assert "Cloudflare challenge" in report["source_pages"][0]["error"]
 
 
 def test_playwright_page_loader_uses_chromium_page_content(
