@@ -306,6 +306,12 @@ def discover_manifest_payloads(
             media_validations.append(_media_validation_report_entry(validation))
             if validation.ok:
                 observation = replace(observation, resolved_url=validation.resolved_url)
+            else:
+                observation = replace(
+                    observation,
+                    resolved_url=validation.resolved_url,
+                    should_download=False,
+                )
             manifest_media_links.append(media_link_manifest_entry(observation))
 
         report_source_pages.append(

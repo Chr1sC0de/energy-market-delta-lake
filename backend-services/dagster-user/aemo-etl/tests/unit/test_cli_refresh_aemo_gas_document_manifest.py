@@ -92,6 +92,7 @@ def test_discover_manifest_payloads_extracts_public_aemo_media_links() -> None:
     assert media_link["source_page_section"] == "Guides"
     assert media_link["include_decision"] == "include"
     assert media_link["media_revision"] == "ABC"
+    assert media_link["should_download"] is True
     assert report["media_validations"] == [
         {
             "content_length": 1234,
@@ -151,7 +152,8 @@ def test_discover_manifest_payloads_discovers_child_pages_and_failed_validations
     assert manifest["source_page_count"] == 2
     assert manifest["media_link_count"] == 1
     assert manifest["media_links"][0]["source_page_url"] == child_url
-    assert manifest["media_links"][0]["resolved_url"] == child_pdf_url
+    assert manifest["media_links"][0]["resolved_url"] == f"{child_pdf_url}?blocked=1"
+    assert manifest["media_links"][0]["should_download"] is False
     assert report["media_validations"][0]["error"] == "blocked"
     assert report["media_validations"][0]["status"] == "failed"
 

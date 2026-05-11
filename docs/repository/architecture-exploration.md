@@ -1329,6 +1329,13 @@ status, HTTP metadata, resolved URLs, and validation errors, and the manual
 refresh preserves existing media entries when a source page is blocked or
 unreadable.
 
+Issue #144 makes failed direct-media validations non-fatal for the daily asset
+path. Failed validation rows stay in the checked-in manifest with
+`should_download=false`, so `bronze_aemo_gas_document_sources` records metadata
+for the source-link observation without requesting that failed media URL or
+landing bytes. A later manifest refresh can mark the row downloadable again when
+direct-media validation succeeds.
+
 The smallest follow-on implementation issue was: implement the AEMO gas
 PDF landing scraper and `bronze_aemo_gas_document_sources` metadata table for
 included PDF source pages, with excluded and `needs_human_review` observations
