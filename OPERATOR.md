@@ -255,6 +255,13 @@ the child implementation worktree, keep only files named by the issue's
 `## Context anchors`, and rerun Ralph for that issue. Ralph does not run QA or
 **Local integration** for out-of-anchor full-access diffs.
 
+If **Promotion** reports `promotion_worktree_preflight.status: failed`, inspect
+the recorded Promotion source or target worktree path before retrying. Remove
+only a clean stale worktree with `git worktree remove <path>`; preserve or
+resolve dirty worktrees before removal. This failure happens before **Push
+check** QA, the AEMO ETL **End-to-end test** gate, merge, push, or GitHub Issue
+metadata changes.
+
 For a checkpointed Operator run, inspect status before opening child logs:
 
 ```bash

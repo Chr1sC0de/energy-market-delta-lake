@@ -525,6 +525,9 @@ Key fields for inspection:
 - `source_branch`: **Promotion** source branch, usually `dev`.
 - `source_tree`: **Promotion** source branch revision and source worktree used
   for QA.
+- `promotion_worktree_preflight`: stale Promotion source or target worktree
+  checks, including the blocking path, git-worktree registration state, current
+  head, dirty state when inspectable, and recovery guidance.
 - `promotion_commit_inventory`: full promoted source commit range with each
   commit SHA, subject, and whether it matched verified issue evidence or
   remained an unverified **Promotion** commit.
@@ -1275,10 +1278,15 @@ failures and keep the worktrees for inspection. Failures after the target is
 pushed stop the drain because the code may already be published while GitHub
 issue metadata may be inconsistent. Promotion failures before `main` is pushed
 leave issues open with `agent-integrated`; failures after `main` is pushed stop
-the run for the same metadata consistency reason. Failed or partial Promotion
-attempts still try warning-only **Post-promotion review** when a review worktree
-is available; the original Promotion exception, manifest `status`, and failure
-state remain the source of truth.
+the run for the same metadata consistency reason. Stale Promotion source or
+target worktrees stop before **Push check** QA, the AEMO ETL **End-to-end test**
+gate, merge, push, or GitHub metadata changes. Ralph records
+`promotion_worktree_preflight` recovery guidance in the manifest; operators
+should inspect the recorded path and remove only a clean stale worktree with
+`git worktree remove <path>` before rerunning Promotion. Failed or partial
+Promotion attempts still try warning-only **Post-promotion review** when a
+review worktree is available; the original Promotion exception, manifest
+`status`, and failure state remain the source of truth.
 
 Implementation **Ready issue refresh** analysis or metadata mutation failures
 also stop the drain, but they do not imply the integrated issue metadata needs
