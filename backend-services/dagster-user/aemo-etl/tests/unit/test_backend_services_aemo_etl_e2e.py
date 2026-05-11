@@ -400,7 +400,7 @@ def test_run_parser_defaults_to_full_dataflow_timeout_and_concurrency() -> None:
     assert getattr(options, "zip_latest_count") == 3
     assert getattr(options, "timeout_seconds") == 90 * 60
     assert getattr(options, "max_concurrent_runs") == 6
-    assert getattr(options, "launch_mode") == "sensor-driven"
+    assert getattr(options, "launch_mode") == "direct-upstream-asset-launch"
 
     promotion_options = run_options_from_args(
         build_parser().parse_args(["run", "--scenario", "promotion-gas-model"])
@@ -449,6 +449,7 @@ def test_promotion_scenario_keeps_approved_sensor_and_target_contract() -> None:
     assert "silver_table_metadata_sensor" in expected_sensor_names
     assert "silver_gas_fact_operational_meter_flow_sensor" in expected_sensor_names
     assert "dependencyKeys" in asset_graph_query
+    assert "assetChecksOrError" not in asset_graph_query
     assert 'groupName: "gas_model"' in target_status_query
     assert "isMaterializable" in target_status_query
 
@@ -1215,6 +1216,55 @@ def test_promotion_launch_plan_counts_current_sttm_target_growth() -> None:
     }.issubset(target_asset_keys)
 
 
+def test_full_launch_plan_records_expanded_sttm_baseline_evidence() -> None:
+    """The full scenario manifest evidence includes STTM target and check counts."""
+    module = load_e2e_command_module()
+    asset_node_class = get_callable(module, "DagsterAssetNode")
+    build_launch_plan = get_callable(
+        module,
+        "build_gas_model_upstream_asset_launch_plan",
+    )
+
+    launch_plan = build_launch_plan(
+        [
+            asset_node_class(
+                key=("silver", "gas_model", "silver_gas_legacy_target"),
+                group_name="gas_model",
+                is_materializable=True,
+                dependency_keys=(),
+                asset_check_count=1,
+            ),
+            asset_node_class(
+                key=("silver", "gas_model", STTM_GAS_MODEL_FACT_NAMES[0]),
+                group_name="gas_model",
+                is_materializable=True,
+                dependency_keys=(),
+                asset_check_count=4,
+            ),
+            asset_node_class(
+                key=("silver", "gas_model", STTM_GAS_MODEL_FACT_NAMES[1]),
+                group_name="gas_model",
+                is_materializable=True,
+                dependency_keys=(),
+                asset_check_count=4,
+            ),
+        ],
+        scenario="full-gas-model",
+        launch_mode="direct-upstream-asset-launch",
+    )
+
+    manifest = getattr(launch_plan, "to_manifest")()
+
+    assert manifest["scenario"] == "full-gas-model"
+    assert manifest["target_asset_count"] == 3
+    assert manifest["target_asset_check_count"] == 9
+    assert manifest["sttm_target_asset_count"] == 2
+    assert manifest["sttm_target_asset_keys"] == [
+        f"silver/gas_model/{STTM_GAS_MODEL_FACT_NAMES[0]}",
+        f"silver/gas_model/{STTM_GAS_MODEL_FACT_NAMES[1]}",
+    ]
+
+
 def test_collect_promotion_source_definition_evidence_records_current_source_count(
     tmp_path: Path,
 ) -> None:
@@ -1394,6 +1444,7 @@ def test_launch_plan_manifest_includes_source_definition_evidence(
     )
 
     assert manifest["target_asset_count"] == CURRENT_GAS_MODEL_TARGET_ASSET_COUNT
+    assert manifest["target_asset_check_count"] == 144
     assert (
         manifest["source_definitions"]["executable_asset_count"]
         == CURRENT_GAS_MODEL_TARGET_ASSET_COUNT
@@ -1593,6 +1644,10 @@ def test_promotion_upstream_launch_uses_dependency_waves() -> None:
         "launch_mode": "direct-upstream-asset-launch",
         "target_group": "gas_model",
         "target_asset_count": 1,
+        "target_asset_check_count": 0,
+        "target_asset_keys": ["silver/gas_model/target"],
+        "sttm_target_asset_count": 0,
+        "sttm_target_asset_keys": [],
         "selected_upstream_closure_count": 9,
         "skipped_live_source_asset_keys": [
             "bronze/gbb/bronze_nemweb_public_files_gbb",
@@ -2111,6 +2166,68 @@ def test_gate_run_telemetry_manifest_records_durations() -> None:
             "status": "completed",
         }
     ]
+
+
+def test_full_e2e_budget_manifest_records_unenforced_baseline() -> None:
+    """The full scenario records baseline telemetry without Promotion thresholds."""
+    module = load_e2e_command_module()
+    status_class = get_callable(module, "DagsterDataflowStatus")
+    telemetry_class = get_callable(module, "GateRunTelemetry")
+    dataflow_telemetry_class = get_callable(module, "DagsterDataflowTelemetry")
+    e2e_budget_manifest = get_callable(module, "e2e_budget_manifest")
+    e2e_regression_budgets_for_run = get_callable(
+        module,
+        "e2e_regression_budgets_for_run",
+    )
+    telemetry = telemetry_class(started_monotonic=0.0, completed_monotonic=601.0)
+    dataflow_telemetry = dataflow_telemetry_class()
+    dataflow_telemetry.record_status_sample(
+        status_class(
+            active_runs=(),
+            failed_runs=(),
+            materialized_target_assets=tuple(
+                f"silver/gas_model/asset_{index}"
+                for index in range(CURRENT_GAS_MODEL_TARGET_ASSET_COUNT)
+            ),
+            missing_target_assets=(),
+            failed_target_assets=(),
+            missing_asset_checks=(),
+            failed_asset_checks=(),
+            run_status_counts={"SUCCESS": 67},
+        )
+    )
+    telemetry.dataflow = dataflow_telemetry
+    dataflow_payload = {
+        "scenario_evidence": {
+            "target_asset_count": CURRENT_GAS_MODEL_TARGET_ASSET_COUNT,
+            "target_asset_check_count": 144,
+            "batch_count": 67,
+        }
+    }
+    budgets = e2e_regression_budgets_for_run(
+        "full-gas-model",
+        dataflow_payload=dataflow_payload,
+    )
+
+    manifest = e2e_budget_manifest(
+        telemetry.to_manifest(),
+        manifest_path=Path("/tmp/run-manifest.json"),
+        budgets=budgets,
+        dataflow_payload=dataflow_payload,
+    )
+
+    assert budgets is None
+    assert manifest["status"] == "not-enforced"
+    assert manifest["observations"]["total_gate_duration_seconds"] == 601.0
+    assert manifest["observations"]["total_run_count"] == 67
+    assert manifest["observations"]["target_asset_count"] == (
+        CURRENT_GAS_MODEL_TARGET_ASSET_COUNT
+    )
+    assert manifest["observations"]["target_asset_check_count"] == 144
+    assert manifest["observations"]["missing_target_asset_count"] == 0
+    assert manifest["observations"]["failed_target_asset_count"] == 0
+    assert manifest["observations"]["missing_asset_check_count"] == 0
+    assert manifest["observations"]["failed_asset_check_count"] == 0
 
 
 def test_e2e_promotion_regression_budgets_pass_for_current_launch_plan() -> None:

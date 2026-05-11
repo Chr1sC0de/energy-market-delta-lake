@@ -29,26 +29,34 @@ handoff, plus **Promotion** as the success paths after QA.
 
 Ralph drains agent-ready GitHub issues through a guarded local loop:
 
-1. Find the oldest unblocked `ready-for-agent` issue.
-2. Resolve the issue **Delivery mode** and **Integration target**.
-3. Run `codex exec` to implement the issue.
-4. Run deterministic local QA.
-5. For Gitflow or Trunk delivery, squash-merge validated work onto the latest
+1. Find unblocked `ready-for-agent` issues in queue order.
+2. Resolve each issue **Delivery mode** and **Integration target** before lane
+   selection.
+3. Keep Gitflow and Trunk delivery in a serial lane while eligible Exploratory
+   delivery issues run in a bounded worker pool.
+4. Run `codex exec` to implement each claimed issue.
+5. Run deterministic local QA.
+6. For Gitflow or Trunk delivery, squash-merge validated work onto the latest
    **Integration target** locally.
-6. In **Gitflow delivery**, push `dev`, comment evidence, mark
+7. In **Gitflow delivery**, push `dev`, comment evidence, mark
    `agent-integrated`, and leave the issue open for **Promotion**.
-7. In **Trunk delivery**, push `main`, comment evidence, mark `agent-merged`,
+8. In **Trunk delivery**, push `main`, comment evidence, mark `agent-merged`,
    and close the issue.
-8. In **Exploratory delivery**, push a durable **Exploratory branch** from
+9. In **Exploratory delivery**, push a durable **Exploratory branch** from
    `origin/main`, comment evidence, mark `agent-reviewing`, and leave the issue
    open for human review.
-9. Run **Ready issue refresh** before the next ready issue claim.
-10. If no ready issue exists, triage the next unblocked issue and rescan.
+10. Run **Ready issue refresh** when enabled as part of each successful issue
+    attempt.
+11. If no ready issue exists and no Exploratory worker is active, triage the next
+    unblocked issue and rescan.
 
 The loop stops when the queue has no unblocked implementation or triage
 candidates, or when `--max-issues` is reached. A plain `--drain` run defaults
 to 10 implementation attempts; `--max-issues 0` is the explicit unlimited drain
 mode.
+`--max-issues` counts claimed implementation attempts across the serial and
+Exploratory lanes. When the cap is reached, Ralph stops scheduling new issue
+attempts and waits for already active Exploratory workers to finish.
 
 The checkpointed Operator run path wraps the issue and **Promotion** commands
 for unattended cleanup. It implements one ready issue at a time, checkpoints the
@@ -78,8 +86,11 @@ be reconciled against current branch state.
 ```mermaid
 flowchart TD
   START[Start drain] --> PREFLIGHT[Validate tools, root worktree, GitHub auth, sandboxed issue access, and labels]
-  PREFLIGHT --> READY{Unblocked ready-for-agent issue?}
-  READY -->|Yes| ACCESS{Issue anchors .agents paths?}
+  PREFLIGHT --> READY[Resolve unblocked ready-for-agent candidates through Delivery mode helpers]
+  READY --> SERIAL{Serial Gitflow/Trunk candidate?}
+  READY --> EXPLORERS[Fill Exploratory worker pool up to exploratory concurrency]
+  SERIAL -->|Yes| ACCESS{Issue anchors .agents paths?}
+  EXPLORERS --> ACCESS
   ACCESS -->|Yes| FLAG{Full-access flag enabled?}
   FLAG -->|No| ENVFAIL[Stop before claim as Environment failure]
   FLAG -->|Yes| CLAIM[Claim issue with agent-running]
@@ -104,13 +115,17 @@ flowchart TD
   REVIEW --> REFRESH
   REFRESH --> LIMIT{Max implementation attempts reached?}
   LIMIT -->|No| READY
-  LIMIT -->|Yes| STOP[Stop drain]
-  READY -->|No| TRIAGE{Unblocked triage candidate?}
+  LIMIT -->|Yes| WAIT[Wait for active Exploratory workers]
+  WAIT --> STOP[Stop drain]
+  READY --> ACTIVE{Exploratory workers active?}
+  ACTIVE -->|Yes| WAITONE[Wait for one worker result]
+  WAITONE --> READY
+  ACTIVE -->|No| TRIAGE{Unblocked triage candidate?}
   TRIAGE -->|Yes| TRIAGEPASS[Run automated triage]
   TRIAGEPASS --> READY
   TRIAGE -->|No| STOP
-  FAIL --> READY
-  ENVFAIL --> STOP
+  FAIL --> LIMIT
+  ENVFAIL --> WAIT
 ```
 
 ## Labels
@@ -183,6 +198,12 @@ Drain up to 10 implementation attempts:
 ```bash
 python3 scripts/ralph.py --drain
 ```
+
+Live `--drain` runs a lane-aware scheduler. Gitflow and Trunk delivery stay in a
+single serial lane. Exploratory delivery issues are submitted oldest-first to a
+`ThreadPoolExecutor` with at most `--exploratory-concurrency` active workers.
+The scheduler preserves queue order within each lane and applies `--max-issues`
+to claimed attempts across both lanes.
 
 Drain or run the Operator loop without applying **Ready issue refresh** metadata
 updates:
@@ -890,9 +911,10 @@ high-concurrency gates. This preserves final target progress and final
 asset-check status without creating one sensor-triggered run per upstream
 source table. The e2e `run-manifest.json` dataflow section records structured
 direct-launch scenario evidence: selected scenario, launch mode, target group,
-current GraphQL-derived target asset count, selected upstream closure count,
-skipped live source asset keys, dependency-wave count, run-batch count, asset
-batch size, and nested source-definition evidence when available.
+current GraphQL-derived target asset count, target asset-check count, target
+keys, STTM target keys, selected upstream closure count, skipped live source
+asset keys, dependency-wave count, run-batch count, asset batch size, and nested
+source-definition evidence when available.
 The gate protects the approved #77 coverage invariants: every materializable
 `gas_model` asset, final asset-check status for that target, Dagster,
 LocalStack/S3, Podman run-worker containers, and the Dagster GraphQL monitor.
@@ -1040,10 +1062,10 @@ stay on `delivery-gitflow` unless the issue explicitly asks for
 
 **Ready issue refresh** is the queue-maintenance pass Ralph runs after a
 successful implementation **Local integration**, Exploratory handoff, or
-successful **Promotion** verified issue closure before the next
-`ready-for-agent` issue claim. It reconciles open GitHub Issues against the
-updated **Integration target** so follow-on work does not keep stale blockers,
-stale acceptance criteria, or already-satisfied issues in the ready queue.
+successful **Promotion** verified issue closure. It reconciles open GitHub
+Issues against the updated **Integration target** so follow-on work does not
+keep stale blockers, stale acceptance criteria, or already-satisfied issues in
+the ready queue.
 
 After each successful drain-mode **Local integration** or Exploratory handoff,
 Ralph computes and applies **Ready issue refresh** by default. The checkpointed
@@ -1110,14 +1132,15 @@ run code edits, commits, pushes, fetches, merges, rebases, ref updates, or
 are idempotent: Ralph skips already-current body text, already-applied label
 transitions, duplicate refresh comments, and already-closed completed issues.
 If analysis or metadata mutation fails after a successful **Local integration**
-or Exploratory handoff, Ralph stops the drain before claiming another issue. It
-does not roll back the pushed **Integration target** commit or revert the
+or Exploratory handoff, Ralph stops the drain before scheduling further issue
+attempts. Already active Exploratory workers are allowed to finish. Ralph does
+not roll back the pushed **Integration target** commit or revert the
 already-completed issue metadata; operators inspect the manifest mutation
-results and reconcile only the failed GitHub Issue metadata before rerunning
-the drain.
+results and reconcile only the failed GitHub Issue metadata before rerunning the
+drain.
 Malformed or missing mutation JSON for selected candidates is a mutation failure:
-Ralph records `ready_issue_refresh.status: failed` and stops before another
-ready issue claim.
+Ralph records `ready_issue_refresh.status: failed` and stops before scheduling
+further issue attempts.
 If post-Promotion analysis or metadata mutation fails, Ralph records
 `ready_issue_refresh.status: failed_warning_only`, keeps **Promotion**
 succeeded, and continues cleanup. Operators inspect the Promotion manifest and
@@ -1184,6 +1207,23 @@ make integration-test
 **Integration test** so formatter, static-check, **Unit test**, and
 **Component test** failures feed back through Ralph before container-dependent
 QA starts.
+
+If a ready issue explicitly declares the AEMO ETL **End-to-end test** lane or an
+`aemo-etl-e2e` QA command in its issue body, Ralph treats that issue contract as
+an implementation gate rather than deferring it to **Promotion**. For protected
+runtime `aemo-etl` changes, Ralph adds the declared local End-to-end command
+after the selected **Commit check** and **Integration test** commands and before
+**Local integration** or Exploratory handoff. The default declared-lane command
+is:
+
+```bash
+cd backend-services
+scripts/aemo-etl-e2e run --scenario full-gas-model
+```
+
+If the issue declares that lane but Ralph has no recorded
+`aemo-etl End-to-end test` QA evidence, the issue fails before
+**Local integration** metadata is written.
 
 Docs-only `aemo-etl` changes are recognized by the maintained Markdown doc path
 rules in [documentation-sync.md](../repository/documentation-sync.md). They skip

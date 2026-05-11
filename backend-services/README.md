@@ -291,7 +291,7 @@ the stack runs from an ephemeral worktree. Refresh that cache with
 
 | Option | Default | Purpose |
 |---|---:|---|
-| `--scenario` | `full-gas-model` | Named target profile; `promotion-gas-model` narrows seed volume and launches the explicit `gas_model` upstream asset graph for Ralph **Promotion** |
+| `--scenario` | `full-gas-model` | Named target profile; `full-gas-model` launches the expanded manifest-backed `gas_model` upstream graph with the full seed horizon; `promotion-gas-model` narrows seed volume and adds the Ralph **Promotion** guard |
 | `--rebuild` | off | Rebuild all local e2e images before startup; Ralph **Promotion** passes this so stale image tags cannot be reused silently |
 | `--webserver-port` | `3001` | Host port for the isolated Dagster webserver |
 | `--seed-root` | `backend-services/.e2e/aemo-etl` | Cached Archive seed root mounted into the isolated stack |
@@ -301,25 +301,26 @@ the stack runs from an ephemeral worktree. Refresh that cache with
 | `--max-concurrent-runs` | scenario-specific | Dagster queued run coordinator `max_concurrent_runs`; `6` for `full-gas-model`, `6` for `promotion-gas-model` |
 
 After the isolated stack reaches readiness, the command drives the Dagster
-dataflow through GraphQL. The `full-gas-model` scenario starts only the unzipper
-sensors, event-driven raw sensors, and gas model automation sensors; NEMWeb
-discovery schedules, the failed-run alert sensor, the daily date-dimension
-schedule, and maintenance schedules stay stopped. It bootstraps non-sensor
-prerequisites, including the date dimension and table-metadata prerequisite,
-then polls Dagster until the full `gas_model` target has materialized and
-required checks have reported success. The `promotion-gas-model` scenario keeps
-automation stopped and launches explicit Dagster asset-run batches by dependency
-wave for every materializable `gas_model` asset plus its materializable upstream
-closure. It skips live `bronze_nemweb_public_files_*` discovery/listing assets
-so the gate starts from seeded LocalStack objects, matching
-`+group:gas_model` targeting without creating one sensor-triggered run per
-upstream source table. Each Promotion batch uses Dagster's in-process executor
-inside its Podman run-worker container to avoid a subprocess storm against
-LocalStack and the Delta Lake DynamoDB lock table. Background or queued runs may
-still exist after
-target/check coverage is complete. Failed runs, failed or missing target
-materializations, and failed asset checks fail the command, including
-WARN-level checks such as skipped selected S3 keys.
+dataflow through GraphQL. The `full-gas-model` scenario keeps automation stopped
+and launches explicit Dagster asset-run batches by dependency wave for every
+materializable `gas_model` asset plus its materializable upstream closure. It
+uses the full cached Archive seed horizon, records direct-launch evidence for
+the expanded manifest-backed target, including STTM target keys and target
+asset-check count, then polls Dagster until the full `gas_model` target has
+materialized and required checks have reported success. The
+`promotion-gas-model` scenario uses the same direct-launch shape for Ralph
+**Promotion**, but narrows the raw and zip seed horizon to 1 object and adds the
+stale-runtime/current-source validation guard from GitHub issue #141. Both
+scenarios skip live `bronze_nemweb_public_files_*` discovery/listing assets so
+the gate starts from seeded LocalStack objects, matching `+group:gas_model`
+targeting without creating
+one sensor-triggered run per upstream source table. Each direct-launch batch
+uses Dagster's in-process executor inside its Podman run-worker container to
+avoid a subprocess storm against LocalStack and the Delta Lake DynamoDB lock
+table. Background or queued runs may still exist after target/check coverage is
+complete. Failed runs, failed or missing target materializations, and failed
+asset checks fail the command, including WARN-level checks such as skipped
+selected S3 keys.
 
 ### Promotion gate contract
 
@@ -354,14 +355,16 @@ Dagster dataflow. The approved #77 coverage invariants are:
   `gas_model` assets and 144 asset checks, including the eight
   `silver_gas_fact_sttm_*` assets.
 
-The full scenario remains the sensor/dependency-path reference. The
-`promotion-gas-model` scenario uses the #78 targeted launch shape to preserve
-the same final coverage inside the guard budget: it narrows the raw and zip seed
-horizon to 1 object, keeps automation stopped, launches explicit
-dependency-wave asset batches for the `gas_model` upstream asset graph, and
-skips live `bronze_nemweb_public_files_*` discovery/listing assets so the gate
-starts from seeded LocalStack objects. Each batch still runs inside a Podman
-run-worker container, and direct launches pace submission against Dagster
+The full scenario is the local proof for the expanded manifest-backed target. It
+uses the #78 targeted launch shape with the full seed horizon and records
+baseline duration, run count, target count, target asset-check count, STTM target
+keys, and missing/failed counts without enforcing a new budget. The
+`promotion-gas-model` scenario is the separate Ralph **Promotion** guard: it
+narrows the raw and zip seed horizon to 1 object, records current-source
+definitions, fails stale runtime graphs through the #141
+`source_definitions.executable_asset_count` validation, and enforces the
+Promotion regression budgets. Each batch still runs inside a Podman run-worker
+container, and direct launches pace submission against Dagster
 `max_concurrent_runs` so dependency-wave ordering is preserved and queued runs
 remain bounded.
 
@@ -388,8 +391,8 @@ failure remain in the manifest.
 | `telemetry.dagster_dataflow.first_target_materialization_at`, `last_target_materialization_at` | First and last observed target materialization timestamps |
 | `telemetry.dagster_dataflow.final_missing_asset_check_count`, `final_failed_asset_check_count` | Final asset-check drift for the gate target |
 | `source_definitions` | Current-source `dg list defs` provenance: command, working directory, target group, executable asset count, asset-check count, full target asset keys, and STTM target keys |
-| `dataflow.scenario_evidence` | Direct-launch coverage evidence: scenario, launch mode, target group, GraphQL-derived target asset count, selected upstream closure count, skipped live source keys, wave count, batch count, asset batch size, and nested source-definition evidence when available |
-| `budget.status`, `budget.thresholds`, `budget.failures`, `budget.run_manifest` | Enforced Promotion budget result, dynamic target-count and planned-batch sources, threshold values, actionable failure lines, and the manifest path operators should inspect |
+| `dataflow.scenario_evidence` | Direct-launch coverage evidence: scenario, launch mode, target group, GraphQL-derived target asset count, source-definition-backed target asset-check count when available, target keys, STTM target keys, selected upstream closure count, skipped live source keys, wave count, batch count, asset batch size, and nested source-definition evidence when available |
+| `budget.status`, `budget.observations`, `budget.thresholds`, `budget.failures`, `budget.run_manifest` | Non-enforced baseline observations or enforced Promotion budget result, dynamic target-count and planned-batch sources, threshold values, actionable failure lines, and the manifest path operators should inspect |
 
 The `promotion-gas-model` scenario enforces #79 Promotion guard regression
 budgets from the approved #78 targeted baseline: total gate duration at or
@@ -401,8 +404,9 @@ worktree, and missing or failed target assets and asset checks at `0`.
 For the current source definitions that target-progress
 requirement is `37/37`, not a static historical count. These budgets protect
 **Promotion** from run explosion and missing coverage; they are not generic
-local development performance claims. The full scenario prints the same
-telemetry for review without enforcing those Promotion budgets.
+local development performance claims. The full scenario records the expanded
+baseline observations for review and leaves `budget.status` as `not-enforced`
+without applying those Promotion budgets.
 
 Interpret failures by the failed field. Duration, peak-run, queued-run, or
 total-run failures usually mean run explosion, run queue contention, or a local

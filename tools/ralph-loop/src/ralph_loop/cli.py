@@ -13,8 +13,10 @@ import shutil
 import subprocess
 import sys
 import textwrap
+import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
@@ -204,7 +206,10 @@ MARIMO_PREFIX = "backend-services/marimo/"
 RALPH_LOOP_PREFIX = "tools/ralph-loop/"
 RALPH_SCRIPT_PATH = "scripts/ralph.py"
 BACKEND_SERVICES_PREFIX = "backend-services/"
+AEMO_ETL_E2E_SCRIPT_PATH = "backend-services/scripts/aemo-etl-e2e"
 AEMO_ETL_E2E_QA_NAME = "aemo-etl End-to-end test"
+AEMO_ETL_E2E_TEST_LANE = "AEMO ETL End-to-end test"
+AEMO_ETL_FULL_E2E_SCENARIO = "full-gas-model"
 AEMO_ETL_PROMOTION_E2E_SCENARIO = "promotion-gas-model"
 AEMO_ETL_PROMOTION_E2E_TIMEOUT_SECONDS = 20 * 60
 AEMO_ETL_PROMOTION_E2E_MAX_CONCURRENT_RUNS = 6
@@ -608,9 +613,12 @@ class DeliveryPlan:
 
 
 @dataclass(frozen=True)
-class DrainDryRunCandidate:
+class ReadyImplementationCandidate:
     issue: Issue
     delivery_plan: DeliveryPlan
+
+
+DrainDryRunCandidate = ReadyImplementationCandidate
 
 
 @dataclass(frozen=True)
@@ -623,6 +631,20 @@ class ContextAnchorPath:
 class ImplementationAccessPlan:
     full_access_required: bool
     context_anchor_paths: tuple[ContextAnchorPath, ...]
+
+
+class ExploratoryLaneOrder:
+    """Preserve Exploratory claim order while work runs in a worker pool."""
+
+    def __init__(self) -> None:
+        self._next_sequence = 0
+        self._condition = threading.Condition()
+
+    def wait_for_turn(self, sequence: int) -> None:
+        with self._condition:
+            self._condition.wait_for(lambda: sequence == self._next_sequence)
+            self._next_sequence += 1
+            self._condition.notify_all()
 
 
 @dataclass(frozen=True)
@@ -3970,6 +3992,12 @@ def has_protected_aemo_etl_change(changed_files: list[str]) -> bool:
     )
 
 
+def has_aemo_etl_e2e_declared_qa_change(changed_files: list[str]) -> bool:
+    return has_protected_aemo_etl_change(changed_files) or any(
+        path == AEMO_ETL_E2E_SCRIPT_PATH for path in changed_files
+    )
+
+
 def has_marimo_runtime_change(changed_files: list[str]) -> bool:
     return any(
         path.startswith(MARIMO_PREFIX) and not is_maintained_doc_path(path)
@@ -3992,7 +4020,12 @@ def has_root_python_workflow_change(changed_files: list[str]) -> bool:
     )
 
 
-def select_qa_commands(changed_files: list[str], repo_root: Path) -> list[QACommand]:
+def select_qa_commands(
+    changed_files: list[str],
+    repo_root: Path,
+    *,
+    issue_body: str | None = None,
+) -> list[QACommand]:
     commands: list[QACommand] = []
     has_aemo_etl_change = has_protected_aemo_etl_change(changed_files)
     aemo_etl_integration_command: QACommand | None = None
@@ -4046,6 +4079,15 @@ def select_qa_commands(changed_files: list[str], repo_root: Path) -> list[QAComm
     if aemo_etl_integration_command is not None:
         commands.append(aemo_etl_integration_command)
 
+    if issue_body is not None:
+        commands.extend(
+            select_declared_issue_qa_commands(
+                issue_body,
+                changed_files=changed_files,
+                repo_root=repo_root,
+            )
+        )
+
     deduped: list[QACommand] = []
     seen: set[tuple[tuple[str, ...], Path]] = set()
     for command in commands:
@@ -4054,6 +4096,95 @@ def select_qa_commands(changed_files: list[str], repo_root: Path) -> list[QAComm
             deduped.append(command)
             seen.add(key)
     return deduped
+
+
+def select_declared_issue_qa_commands(
+    issue_body: str,
+    *,
+    changed_files: list[str],
+    repo_root: Path,
+) -> list[QACommand]:
+    if not has_aemo_etl_e2e_declared_qa_change(changed_files):
+        return []
+    scenario = declared_aemo_etl_e2e_scenario(issue_body)
+    if scenario is None:
+        return []
+    return [
+        QACommand(
+            ("scripts/aemo-etl-e2e", "run", "--scenario", scenario),
+            repo_root / BACKEND_SERVICES_PREFIX,
+            AEMO_ETL_E2E_QA_NAME,
+        )
+    ]
+
+
+def declared_aemo_etl_e2e_scenario(issue_body: str) -> str | None:
+    for command_text in qa_command_lines_from_issue_body(issue_body):
+        scenario = aemo_etl_e2e_scenario_from_command_text(command_text)
+        if scenario is not None:
+            return scenario
+    if issue_declares_test_lane(issue_body, AEMO_ETL_E2E_TEST_LANE):
+        return AEMO_ETL_FULL_E2E_SCENARIO
+    return None
+
+
+def qa_command_lines_from_issue_body(issue_body: str) -> list[str]:
+    pattern = re.compile(r"(?im)^\s*-\s*QA:\s*`?(?P<command>[^`\n]+)`?\s*$")
+    commands: list[str] = []
+    for match in pattern.finditer(issue_body):
+        command = match.group("command").strip()
+        if command != "":
+            commands.append(command)
+    return commands
+
+
+def aemo_etl_e2e_scenario_from_command_text(command_text: str) -> str | None:
+    try:
+        args = shlex.split(command_text)
+    except ValueError:
+        return None
+    if not args:
+        return None
+    executable = args[0]
+    if executable == "backend-services/scripts/aemo-etl-e2e":
+        executable = "scripts/aemo-etl-e2e"
+    if executable != "scripts/aemo-etl-e2e":
+        return None
+    if "run" not in args[1:]:
+        return None
+    if "--scenario" not in args:
+        return AEMO_ETL_FULL_E2E_SCENARIO
+    scenario_index = args.index("--scenario") + 1
+    if scenario_index >= len(args):
+        return None
+    scenario = args[scenario_index]
+    if scenario in {AEMO_ETL_FULL_E2E_SCENARIO, AEMO_ETL_PROMOTION_E2E_SCENARIO}:
+        return scenario
+    return None
+
+
+def issue_declares_test_lane(issue_body: str, expected_lane: str) -> bool:
+    expected = normalized_evidence_text(expected_lane)
+    return any(
+        normalized_evidence_text(lane) == expected
+        for lane in test_lanes_from_issue_body(issue_body)
+    )
+
+
+def validate_declared_issue_qa_evidence(
+    issue: Issue,
+    qa_results: list[QAResult],
+) -> None:
+    if declared_aemo_etl_e2e_scenario(issue.body) is None:
+        return
+    if any(result.command.name == AEMO_ETL_E2E_QA_NAME for result in qa_results):
+        return
+    raise IssueFailure(
+        f"Issue #{issue.number} declares `{AEMO_ETL_E2E_TEST_LANE}` evidence, "
+        f"but Ralph did not record `{AEMO_ETL_E2E_QA_NAME}` before Local integration. "
+        "Run the declared End-to-end Test lane or remove the stale issue QA "
+        "requirement before rerunning Ralph."
+    )
 
 
 def is_commit_check_command(command: QACommand) -> bool:
@@ -5169,6 +5300,10 @@ class RalphLoop:
             self._promote()
             return
 
+        if self.config.drain and not self.config.dry_run and self.config.issue is None:
+            self._run_drain_scheduler()
+            return
+
         implemented = 0
         while True:
             if self.config.max_issues > 0 and implemented >= self.config.max_issues:
@@ -5198,7 +5333,7 @@ class RalphLoop:
                     return
                 self._handle_implementation(ready_issue)
                 implemented += 1
-                if not self.config.drain:
+                if not self.config.drain or self.config.issue is not None:
                     return
                 continue
 
@@ -5217,6 +5352,194 @@ class RalphLoop:
                 return
             self._run_triage(triage_issue)
             self.triaged_this_run.add(triage_issue.number)
+
+    def _run_drain_scheduler(self) -> None:
+        attempts_started = 0
+        next_exploratory_sequence = 0
+        exploratory_order = ExploratoryLaneOrder()
+        active_exploratory: dict[
+            Future[RunManifest | None], ReadyImplementationCandidate
+        ] = {}
+
+        with ThreadPoolExecutor(
+            max_workers=self.config.exploratory_concurrency
+        ) as executor:
+            while True:
+                fatal_error = self._collect_exploratory_results(
+                    active_exploratory,
+                    wait_for_one=False,
+                )
+                if fatal_error is not None:
+                    self._raise_after_exploratory_workers_finish(
+                        active_exploratory,
+                        fatal_error,
+                    )
+
+                if self._drain_attempt_budget_reached(attempts_started):
+                    emit(f"Reached --max-issues {self.config.max_issues}.")
+                    if active_exploratory:
+                        emit("Waiting for active Exploratory worker(s) to finish.")
+                    fatal_error = self._wait_for_exploratory_workers(active_exploratory)
+                    if fatal_error is not None:
+                        raise fatal_error
+                    return
+
+                active_issue_numbers = {
+                    candidate.issue.number for candidate in active_exploratory.values()
+                }
+                candidates = self._ready_implementation_candidate_plans(
+                    exclude_issue_numbers=active_issue_numbers
+                )
+                serial_candidate = next(
+                    (
+                        candidate
+                        for candidate in candidates
+                        if candidate.delivery_plan.mode != EXPLORATORY_MODE
+                    ),
+                    None,
+                )
+                exploratory_candidates = [
+                    candidate
+                    for candidate in candidates
+                    if candidate.delivery_plan.mode == EXPLORATORY_MODE
+                ]
+
+                made_progress = False
+                reserved_serial_candidate: ReadyImplementationCandidate | None = None
+                if serial_candidate is not None:
+                    reserved_serial_candidate = serial_candidate
+                    attempts_started += 1
+                    made_progress = True
+
+                for candidate in exploratory_candidates:
+                    if len(active_exploratory) >= self.config.exploratory_concurrency:
+                        break
+                    if self._drain_attempt_budget_reached(attempts_started):
+                        break
+                    future = executor.submit(
+                        self._handle_exploratory_candidate,
+                        candidate,
+                        exploratory_order,
+                        next_exploratory_sequence,
+                    )
+                    active_exploratory[future] = candidate
+                    next_exploratory_sequence += 1
+                    attempts_started += 1
+                    made_progress = True
+
+                if reserved_serial_candidate is not None:
+                    try:
+                        self._handle_implementation(reserved_serial_candidate.issue)
+                    except EnvironmentFailure as error:
+                        self._raise_after_exploratory_workers_finish(
+                            active_exploratory,
+                            error,
+                        )
+                    except IssueFailure as error:
+                        emit(
+                            f"Issue #{reserved_serial_candidate.issue.number} failed: "
+                            f"{error}",
+                            err=True,
+                        )
+                    except RalphError as error:
+                        self._raise_after_exploratory_workers_finish(
+                            active_exploratory,
+                            error,
+                        )
+                    continue
+
+                if made_progress:
+                    continue
+
+                if active_exploratory:
+                    fatal_error = self._collect_exploratory_results(
+                        active_exploratory,
+                        wait_for_one=True,
+                    )
+                    if fatal_error is not None:
+                        self._raise_after_exploratory_workers_finish(
+                            active_exploratory,
+                            fatal_error,
+                        )
+                    continue
+
+                triage_issue = self._next_triage_issue()
+                if triage_issue is None:
+                    emit("No unblocked ready or triage-actionable issues remain.")
+                    return
+                self._run_triage(triage_issue)
+                self.triaged_this_run.add(triage_issue.number)
+
+    def _drain_attempt_budget_reached(self, attempts_started: int) -> bool:
+        return self.config.max_issues > 0 and attempts_started >= self.config.max_issues
+
+    def _handle_exploratory_candidate(
+        self,
+        candidate: ReadyImplementationCandidate,
+        lane_order: ExploratoryLaneOrder,
+        sequence: int,
+    ) -> RunManifest | None:
+        lane_order.wait_for_turn(sequence)
+        return self._handle_implementation(candidate.issue)
+
+    def _collect_exploratory_results(
+        self,
+        active_exploratory: dict[
+            Future[RunManifest | None], ReadyImplementationCandidate
+        ],
+        *,
+        wait_for_one: bool,
+    ) -> RalphError | None:
+        if not active_exploratory:
+            return None
+
+        done_futures = {future for future in active_exploratory if future.done()}
+        if not done_futures and wait_for_one:
+            done_futures, _ = wait(
+                active_exploratory,
+                return_when=FIRST_COMPLETED,
+            )
+
+        first_fatal_error: RalphError | None = None
+        for future in done_futures:
+            candidate = active_exploratory.pop(future)
+            try:
+                future.result()
+            except EnvironmentFailure as error:
+                if first_fatal_error is None:
+                    first_fatal_error = error
+            except IssueFailure as error:
+                emit(f"Issue #{candidate.issue.number} failed: {error}", err=True)
+            except RalphError as error:
+                if first_fatal_error is None:
+                    first_fatal_error = error
+        return first_fatal_error
+
+    def _wait_for_exploratory_workers(
+        self,
+        active_exploratory: dict[
+            Future[RunManifest | None], ReadyImplementationCandidate
+        ],
+    ) -> RalphError | None:
+        first_fatal_error: RalphError | None = None
+        while active_exploratory:
+            fatal_error = self._collect_exploratory_results(
+                active_exploratory,
+                wait_for_one=True,
+            )
+            if first_fatal_error is None and fatal_error is not None:
+                first_fatal_error = fatal_error
+        return first_fatal_error
+
+    def _raise_after_exploratory_workers_finish(
+        self,
+        active_exploratory: dict[
+            Future[RunManifest | None], ReadyImplementationCandidate
+        ],
+        error: RalphError,
+    ) -> None:
+        self._wait_for_exploratory_workers(active_exploratory)
+        raise error
 
     def _validate_clean_root_worktree_for_live_run(self) -> None:
         if self.config.dry_run:
@@ -5282,20 +5605,42 @@ class RalphLoop:
             candidates.append(issue)
         return candidates
 
-    def _drain_dry_run_candidates(
+    def _ready_implementation_candidate_plans(
         self,
-    ) -> tuple[DrainDryRunCandidate | None, list[DrainDryRunCandidate], int]:
-        serial_candidate: DrainDryRunCandidate | None = None
-        exploratory_candidates: list[DrainDryRunCandidate] = []
-        eligible_exploratory_count = 0
+        *,
+        exclude_issue_numbers: set[int],
+    ) -> list[ReadyImplementationCandidate]:
+        candidates: list[ReadyImplementationCandidate] = []
         for issue in self._ready_implementation_candidates():
+            if issue.number in exclude_issue_numbers:
+                continue
             delivery_plan = resolve_delivery_plan(
                 issue,
                 default_mode=self.config.delivery_mode,
                 target_branch=self.config.target_branch,
             )
-            candidate = DrainDryRunCandidate(issue=issue, delivery_plan=delivery_plan)
-            if delivery_plan.mode == EXPLORATORY_MODE:
+            candidates.append(
+                ReadyImplementationCandidate(
+                    issue=issue,
+                    delivery_plan=delivery_plan,
+                )
+            )
+        return candidates
+
+    def _drain_dry_run_candidates(
+        self,
+    ) -> tuple[
+        ReadyImplementationCandidate | None,
+        list[ReadyImplementationCandidate],
+        int,
+    ]:
+        serial_candidate: ReadyImplementationCandidate | None = None
+        exploratory_candidates: list[ReadyImplementationCandidate] = []
+        eligible_exploratory_count = 0
+        for candidate in self._ready_implementation_candidate_plans(
+            exclude_issue_numbers=set()
+        ):
+            if candidate.delivery_plan.mode == EXPLORATORY_MODE:
                 eligible_exploratory_count += 1
                 if len(exploratory_candidates) < self.config.exploratory_concurrency:
                     exploratory_candidates.append(candidate)
@@ -5346,7 +5691,7 @@ class RalphLoop:
     def _emit_drain_dry_run_candidate(
         self,
         candidate_name: str,
-        candidate: DrainDryRunCandidate,
+        candidate: ReadyImplementationCandidate,
     ) -> None:
         emit(
             f"DRY RUN: {candidate_name} #{candidate.issue.number}: "
@@ -9440,14 +9785,17 @@ class RalphLoop:
         log_prefix: str,
         manifest: RunManifest,
     ) -> list[QAResult]:
-        return self._run_qa_commands(
+        qa_results = self._run_qa_commands(
             changed_files,
             worktree_path,
             run_dir,
             log_prefix=log_prefix,
             subject=f"#{issue.number}",
             manifest=manifest,
+            issue_body=issue.body,
         )
+        validate_declared_issue_qa_evidence(issue, qa_results)
+        return qa_results
 
     def _run_qa_commands(
         self,
@@ -9458,8 +9806,13 @@ class RalphLoop:
         log_prefix: str,
         subject: str,
         manifest: RunManifest | None = None,
+        issue_body: str | None = None,
     ) -> list[QAResult]:
-        commands = select_qa_commands(changed_files, repo_root)
+        commands = select_qa_commands(
+            changed_files,
+            repo_root,
+            issue_body=issue_body,
+        )
         if not commands:
             raise IssueFailure(
                 "No QA command matched changed files: " + ", ".join(changed_files)

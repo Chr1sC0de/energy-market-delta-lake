@@ -56,8 +56,9 @@ reconciles `agent-merged` and issue closure, Gitflow delivery reconciles
 `agent-integrated` and leaves the issue open for **Promotion**, and Exploratory
 delivery reconciles `agent-reviewing` and leaves the issue open for review.
 After each successful issue **Local integration** or Exploratory handoff,
-**Ready issue refresh** reconciles the open issue queue before the next ready
-issue claim; the current drain records a read-only analysis artifact with
+**Ready issue refresh** reconciles the open issue queue before Ralph schedules
+more issue attempts; a parallel drain still lets already active Exploratory
+workers finish. The current drain records a read-only analysis artifact with
 planned issue updates before any later metadata mutation. This is separate from
 the later **Post-promotion review** path. Successful **Promotion** closures can
 also trigger **Ready issue refresh** before the next ready claim: the Operator

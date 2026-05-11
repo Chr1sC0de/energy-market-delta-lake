@@ -38,11 +38,11 @@ subprocess to read-only issue commands: `gh issue view`, `gh issue list`, and
 and stops before QA when a full-access diff leaves the issue's context anchors.
 
 After **Local integration**, Exploratory handoff, or successful **Promotion**
-verified issue closure and before the next ready issue claim, Ralph's current
-**Ready issue refresh** analysis subprocess gets the same read-only issue
-command boundary as **Post-promotion review**. It writes planned issue updates
-and a structured mutation plan to `ready-issue-refresh-analysis.md` and cannot
-comment, edit labels, edit bodies, close, reopen, or create GitHub Issues.
+verified issue closure, Ralph's current **Ready issue refresh** analysis
+subprocess gets the same read-only issue command boundary as
+**Post-promotion review**. It writes planned issue updates and a structured
+mutation plan to `ready-issue-refresh-analysis.md` and cannot comment, edit
+labels, edit bodies, close, reopen, or create GitHub Issues.
 Ralph's outer loop validates and applies that plan with GitHub Issue metadata
 commands only; it does not grant the analysis subprocess code, commit, ref,
 push, or **Integration target** mutation authority. Post-Promotion refresh

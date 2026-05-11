@@ -38,8 +38,7 @@ Use this page as the agent documentation map. The imperative policy lives in
   and propose stale, satisfied, blocked, or mislabeled issue updates.
 - Use `$ralph-issue-refresh` to reconcile ready issues after **Local
   integration**, Exploratory handoff, or successful **Promotion** verified issue
-  closure and before the next ready issue claim; it must not accept or reject
-  `agent-reviewing` work.
+  closure; it must not accept or reject `agent-reviewing` work.
 - Use `$ralph-triage` to prepare GitHub Issues for drain with category, state,
   and **Delivery mode** labels, including `delivery-exploratory` only when
   `## Review focus` explains the needed **Exploratory branch** review.

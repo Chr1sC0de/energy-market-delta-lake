@@ -119,9 +119,9 @@ When candidates were selected, the analysis must include a parseable fenced
 update use an explicit `no_change` entry. Reports with no selected candidates
 may omit mutation JSON. The run manifest records per-candidate mutation status
 and recovery guidance for partial failures. Malformed or missing mutation JSON
-for selected implementation candidates stops the drain before the next ready
-issue claim; post-Promotion refresh failures are warning-only after successful
-**Promotion**.
+for selected implementation candidates stops the drain before scheduling further
+issue attempts; post-Promotion refresh failures are warning-only after
+successful **Promotion**.
 
 Use [ralph-loop.md](ralph-loop.md) for Ralph internals, including
 **Delivery mode**, **Local integration**, **Integration target**, **Promotion**,

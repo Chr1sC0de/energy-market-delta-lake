@@ -116,17 +116,21 @@ Local workflow notes:
   `backend-services/dagster-user/aemo-etl` Subproject and is operated through
   `backend-services/scripts/aemo-etl-e2e`; its run manifest records timing,
   dataflow telemetry, direct-launch scenario evidence, and non-benign cleanup
-  warning or failure evidence for Promotion review. Ralph **Promotion** runs pass
+  warning or failure evidence for local proof and Promotion review. The default
+  `full-gas-model` scenario launches explicit dependency-wave asset batches for
+  every materializable `gas_model` asset plus its materializable upstream closure
+  with the full 3-object seed horizon, then records expanded baseline
+  observations with `budget.status` set to `not-enforced`. Ralph **Promotion**
+  runs pass
   `--rebuild`, an explicit `--seed-root` pointing at the primary repo cache, and
   select the `promotion-gas-model` scenario with `--timeout-seconds 1200` and
   `--max-concurrent-runs 6`. The scenario narrows the raw and zip seed horizon
   to 1 object, records current source definitions with
   `uv run dg list defs --assets "group:gas_model" --json`, validates the runtime
-  GraphQL target count against that source count, and launches explicit Dagster
-  asset-run batches by dependency wave for every materializable `gas_model`
-  asset plus its
-  materializable upstream closure, while skipping live
-  `bronze_nemweb_public_files_*` discovery/listing assets. Each batch runs
+  GraphQL target count against that source count through the #141
+  stale-runtime/current-source guard, and uses the same explicit Dagster
+  asset-run batch shape while skipping live `bronze_nemweb_public_files_*`
+  discovery/listing assets. Each batch runs
   in-process inside its Podman run-worker container, and the generated stack
   uses fixed service IPs for Postgres, LocalStack, and the AEMO ETL code server.
   This preserves the approved #77 coverage contract:
@@ -135,12 +139,14 @@ Local workflow notes:
   GraphQL monitor. Direct launches pace batch submission against
   `max_concurrent_runs` before starting more work in a dependency wave, keeping
   the queued-run budget bounded. For direct launches, the dataflow manifest
-  records the scenario, launch mode, target group, target asset count, selected
-  upstream closure count, skipped live source asset keys, dependency-wave count,
-  run-batch count, asset batch size, and source-definition evidence. The #75
+  records the scenario, launch mode, target group, target asset count,
+  source-definition-backed target asset-check count when available, target keys,
+  STTM target keys, selected upstream closure count, skipped live source asset
+  keys, dependency-wave count, run-batch count, asset batch size, and
+  source-definition evidence when available. The #75
   telemetry and #76 budget report expose the observed timing, run-shape,
-  target-progress, asset-check, cleanup, and manifest-path fields. The scenario
-  enforces #79 Promotion guard
+  target-progress, asset-check, cleanup, and manifest-path fields. The Promotion
+  scenario enforces #79 Promotion guard
   regression budgets from the approved #78 targeted baseline: 20 minute total
   duration, `6` peak active runs, `6` peak queued runs, total Dagster runs at
   or below the current direct-launch `dataflow.scenario_evidence.batch_count`,
