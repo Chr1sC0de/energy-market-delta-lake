@@ -139,10 +139,11 @@ Local workflow notes:
   GraphQL monitor. Direct launches pace batch submission against
   `max_concurrent_runs` before starting more work in a dependency wave, keeping
   the queued-run budget bounded. For direct launches, the dataflow manifest
-  records the scenario, launch mode, target group, target asset count, target
-  asset-check count, target keys, STTM target keys, selected upstream closure
-  count, skipped live source asset keys, dependency-wave count, run-batch count,
-  asset batch size, and source-definition evidence when available. The #75
+  records the scenario, launch mode, target group, target asset count,
+  source-definition-backed target asset-check count when available, target keys,
+  STTM target keys, selected upstream closure count, skipped live source asset
+  keys, dependency-wave count, run-batch count, asset batch size, and
+  source-definition evidence when available. The #75
   telemetry and #76 budget report expose the observed timing, run-shape,
   target-progress, asset-check, cleanup, and manifest-path fields. The Promotion
   scenario enforces #79 Promotion guard

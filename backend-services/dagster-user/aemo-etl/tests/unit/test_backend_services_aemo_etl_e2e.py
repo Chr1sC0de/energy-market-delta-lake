@@ -449,6 +449,7 @@ def test_promotion_scenario_keeps_approved_sensor_and_target_contract() -> None:
     assert "silver_table_metadata_sensor" in expected_sensor_names
     assert "silver_gas_fact_operational_meter_flow_sensor" in expected_sensor_names
     assert "dependencyKeys" in asset_graph_query
+    assert "assetChecksOrError" not in asset_graph_query
     assert 'groupName: "gas_model"' in target_status_query
     assert "isMaterializable" in target_status_query
 
@@ -1443,6 +1444,7 @@ def test_launch_plan_manifest_includes_source_definition_evidence(
     )
 
     assert manifest["target_asset_count"] == CURRENT_GAS_MODEL_TARGET_ASSET_COUNT
+    assert manifest["target_asset_check_count"] == 144
     assert (
         manifest["source_definitions"]["executable_asset_count"]
         == CURRENT_GAS_MODEL_TARGET_ASSET_COUNT

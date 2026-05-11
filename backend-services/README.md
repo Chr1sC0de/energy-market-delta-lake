@@ -391,7 +391,7 @@ failure remain in the manifest.
 | `telemetry.dagster_dataflow.first_target_materialization_at`, `last_target_materialization_at` | First and last observed target materialization timestamps |
 | `telemetry.dagster_dataflow.final_missing_asset_check_count`, `final_failed_asset_check_count` | Final asset-check drift for the gate target |
 | `source_definitions` | Current-source `dg list defs` provenance: command, working directory, target group, executable asset count, asset-check count, full target asset keys, and STTM target keys |
-| `dataflow.scenario_evidence` | Direct-launch coverage evidence: scenario, launch mode, target group, GraphQL-derived target asset count, target asset-check count, target keys, STTM target keys, selected upstream closure count, skipped live source keys, wave count, batch count, asset batch size, and nested source-definition evidence when available |
+| `dataflow.scenario_evidence` | Direct-launch coverage evidence: scenario, launch mode, target group, GraphQL-derived target asset count, source-definition-backed target asset-check count when available, target keys, STTM target keys, selected upstream closure count, skipped live source keys, wave count, batch count, asset batch size, and nested source-definition evidence when available |
 | `budget.status`, `budget.observations`, `budget.thresholds`, `budget.failures`, `budget.run_manifest` | Non-enforced baseline observations or enforced Promotion budget result, dynamic target-count and planned-batch sources, threshold values, actionable failure lines, and the manifest path operators should inspect |
 
 The `promotion-gas-model` scenario enforces #79 Promotion guard regression

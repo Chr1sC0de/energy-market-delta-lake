@@ -326,17 +326,6 @@ query E2EAssetGraph {
     dependencyKeys {
       path
     }
-    assetChecksOrError {
-      __typename
-      ... on AssetChecks {
-        checks {
-          name
-        }
-      }
-      ... on Error {
-        message
-      }
-    }
   }
 }
 """
@@ -2636,6 +2625,9 @@ def launch_plan_manifest(
     """Return launch-plan evidence with optional current-source provenance."""
     manifest = launch_plan.to_manifest()
     if source_definition_evidence is not None:
+        manifest["target_asset_check_count"] = (
+            source_definition_evidence.asset_check_count
+        )
         manifest["source_definitions"] = source_definition_evidence.to_manifest()
     return manifest
 

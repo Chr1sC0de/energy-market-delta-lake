@@ -282,11 +282,11 @@ and issues; peak active and queued Dagster run counts; final run status counts;
 target progress; target materialization timestamps; and final missing or failed
 asset-check counts. Direct-launch `dataflow.scenario_evidence` also records the
 selected scenario, launch mode, target group, target asset count derived from
-the current GraphQL asset graph, target asset-check count, target keys, STTM
-target keys, selected upstream closure count, skipped live source asset keys,
-dependency-wave count, run-batch count, asset batch size, and source-definition
-evidence when available. The #76 budget report prints those values in command
-output before #79 enforcement is applied.
+the current GraphQL asset graph, source-definition-backed target asset-check
+count when available, target keys, STTM target keys, selected upstream closure
+count, skipped live source asset keys, dependency-wave count, run-batch count,
+asset batch size, and source-definition evidence when available. The #76 budget
+report prints those values in command output before #79 enforcement is applied.
 
 The `promotion-gas-model` scenario enforces #79 Promotion guard regression
 budgets from the approved #78 targeted baseline: total gate duration at or
