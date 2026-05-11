@@ -1322,6 +1322,13 @@ manifest and discovery report. This keeps regular Dagster materialization on the
 existing landing/archive storage target without depending on live source-page
 HTML rendering.
 
+Issue #143 refreshes that checked-in manifest from source-page-only scope rows
+to a non-empty set of direct `https://www.aemo.com.au/-/media/...` media-link
+observations. The paired discovery report records direct-media validation
+status, HTTP metadata, resolved URLs, and validation errors, and the manual
+refresh preserves existing media entries when a source page is blocked or
+unreadable.
+
 The smallest follow-on implementation issue was: implement the AEMO gas
 PDF landing scraper and `bronze_aemo_gas_document_sources` metadata table for
 included PDF source pages, with excluded and `needs_human_review` observations

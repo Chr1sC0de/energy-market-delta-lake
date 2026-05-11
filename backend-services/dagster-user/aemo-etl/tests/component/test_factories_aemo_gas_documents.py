@@ -17,9 +17,6 @@ from aemo_etl.factories.aemo_gas_documents.definitions import (
     aemo_gas_document_sources_definitions_factory,
 )
 from aemo_etl.factories.aemo_gas_documents.models import AEMOGasDocumentSourcePage
-from aemo_etl.factories.aemo_gas_documents.manifest import (
-    observations_from_manifest_payload,
-)
 
 _PAGE_URL = "https://www.aemo.com.au/energy-systems/gas/component"
 _PDF_URL = "https://www.aemo.com.au/-/media/files/gas/component-guide.pdf"
@@ -216,40 +213,17 @@ def test_definitions_factory_default_getter_uses_retrying_request_get(
     s3_client.copy_object.assert_not_called()
 
 
-def test_definitions_factory_default_asset_uses_manifest_without_source_page_fetch(
+def test_definitions_factory_default_asset_uses_packaged_manifest_media_only(
     mocker: MockerFixture,
 ) -> None:
-    source_page_url = "https://www.aemo.com.au/energy-systems/gas/default-source"
-    media_url = "https://www.aemo.com.au/-/media/files/gas/default-guide.pdf"
-    request_get = mocker.patch(
-        "aemo_etl.factories.aemo_gas_documents.definitions.request_get",
-        return_value=_response(url=media_url, content=_PDF_BYTES),
-    )
-    mocker.patch(
-        "aemo_etl.factories.aemo_gas_documents.assets.load_default_aemo_gas_document_observations",
-        return_value=observations_from_manifest_payload(
-            {
-                "schema_version": 1,
-                "generated_at": "2026-05-10T00:00:00Z",
-                "source_pages": [
-                    {
-                        "corpus_source": "default",
-                        "source_page_url": source_page_url,
-                        "include_decision": "include",
-                    }
-                ],
-                "media_links": [
-                    {
-                        "corpus_source": "default",
-                        "source_page_url": source_page_url,
-                        "source_link_text": "Default Guide v1.0",
-                        "source_url": media_url,
-                        "include_decision": "include",
-                    }
-                ],
-            }
-        ),
-    )
+    requested_urls: list[str] = []
+
+    def _get(url: str) -> Response:
+        requested_urls.append(url)
+        if not url.startswith("https://www.aemo.com.au/-/media/"):
+            raise AssertionError(f"unexpected source-page request: {url}")
+        return _response(url=url, content=_PDF_BYTES)
+
     mocker.patch(
         "aemo_etl.factories.aemo_gas_documents.assets.write_aemo_gas_document_sources_batch",
         return_value=AEMOGasDocumentSourceWriteResult(
@@ -259,7 +233,10 @@ def test_definitions_factory_default_asset_uses_manifest_without_source_page_fet
             write_mode="skip",
         ),
     )
-    defs = aemo_gas_document_sources_definitions_factory(process_retry=1)
+    defs = aemo_gas_document_sources_definitions_factory(
+        request_getter=_get,
+        process_retry=1,
+    )
     asset_def = next(
         asset for asset in defs.assets or [] if isinstance(asset, AssetsDefinition)
     )
@@ -269,7 +246,9 @@ def test_definitions_factory_default_asset_uses_manifest_without_source_page_fet
     result = fn(context, s3=s3)
 
     assert isinstance(result, MaterializeResult)
-    request_get.assert_called_once_with(media_url)
+    assert requested_urls
+    assert result.metadata is not None
+    assert result.metadata["included_pdf_count"] == len(requested_urls)
     s3_client.copy_object.assert_not_called()
 
 

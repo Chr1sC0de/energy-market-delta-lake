@@ -201,15 +201,27 @@ def test_manifest_payload_recreates_source_page_and_media_observations() -> None
     assert observations[1].media_revision == "ABC"
 
 
-def test_default_manifest_loads_packaged_source_page_observations() -> None:
+def test_default_manifest_loads_packaged_source_page_and_media_observations() -> None:
     payload = load_default_manifest_payload()
     observations = load_default_aemo_gas_document_observations(
         observed_at=_OBSERVED_AT,
     )
+    source_page_observations = [
+        item for item in observations if item.observation_type == "source_page"
+    ]
+    media_observations = [
+        item for item in observations if item.observation_type == "link"
+    ]
 
     assert payload["schema_version"] == 1
-    assert len(observations) == payload["source_page_count"]
-    assert all(item.observation_type == "source_page" for item in observations)
+    assert payload["media_link_count"] > 0
+    assert len(source_page_observations) == payload["source_page_count"]
+    assert len(media_observations) == payload["media_link_count"]
+    assert any(item.should_download for item in media_observations)
+    assert all(
+        item.source_url.startswith("https://www.aemo.com.au/-/media/")
+        for item in media_observations
+    )
 
 
 def test_manifest_helpers_dump_and_index_entries() -> None:

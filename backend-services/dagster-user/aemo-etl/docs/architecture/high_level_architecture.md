@@ -103,14 +103,17 @@ for the STTM unzipper path.
 `src/aemo_etl/defs/raw/aemo_gas_documents.py` registers
 `bronze_aemo_gas_document_sources`, a daily AEMO gas document source asset. It
 uses `factories/aemo_gas_documents` to load a checked-in package media manifest,
-record included, excluded, and `needs_human_review` source-page or media-link
-observations, land included direct-media PDF bytes under
+record included, excluded, and `needs_human_review` source-page or direct
+`https://www.aemo.com.au/-/media/...` media-link observations, land included
+direct-media PDF bytes under
 `LANDING_BUCKET/bronze/aemo_gas_documents`, write the metadata Delta table, and
 archive landed PDFs under `ARCHIVE_BUCKET/bronze/aemo_gas_documents` only after
 that metadata write succeeds. Source-page HTML discovery is a manual Playwright
 CLI workflow, so the daily asset path does not fetch AEMO source-page HTML. It
 does not extract PDF text, create wiki output, or write embeddings/vector
-storage.
+storage. The packaged manifest is expected to contain media-link observations,
+and the paired discovery report records direct-media validation status, HTTP
+metadata, resolved URLs, and validation errors.
 
 ### Unzipper assets
 
