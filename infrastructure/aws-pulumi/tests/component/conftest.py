@@ -145,6 +145,16 @@ def _augment_dynamodb_table_outputs(
     outputs.setdefault("tableName", args.inputs.get("name", "delta_log"))
 
 
+def _augment_ssm_parameter_outputs(
+    args: pulumi.runtime.MockResourceArgs,
+    outputs: MockOutputs,
+) -> None:
+    parameter_name = outputs.get("name", args.name)
+    outputs["arn"] = (
+        f"arn:aws:ssm:ap-southeast-2:123456789012:parameter{parameter_name}"
+    )
+
+
 RESOURCE_OUTPUT_AUGMENTERS: tuple[tuple[str, ResourceOutputAugmenter], ...] = (
     ("ec2/vpc:Vpc", _augment_vpc_outputs),
     ("ec2/instance:Instance", _augment_ec2_instance_outputs),
@@ -162,6 +172,7 @@ RESOURCE_OUTPUT_AUGMENTERS: tuple[tuple[str, ResourceOutputAugmenter], ...] = (
         _augment_service_discovery_namespace_outputs,
     ),
     ("dynamodb/table:Table", _augment_dynamodb_table_outputs),
+    ("ssm/parameter:Parameter", _augment_ssm_parameter_outputs),
 )
 
 

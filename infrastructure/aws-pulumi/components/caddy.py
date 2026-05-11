@@ -236,6 +236,11 @@ class CaddyServerComponentResource(pulumi.ComponentResource):
             vpc_security_group_ids=[self.security_groups.register.caddy_instance.id],
             iam_instance_profile=self._instance_profile.name,
             key_name=self._key_pair.key_name,
+            metadata_options=aws.ec2.InstanceMetadataOptionsArgs(
+                http_endpoint="enabled",
+                http_tokens="required",
+            ),
+            root_block_device=aws.ec2.InstanceRootBlockDeviceArgs(encrypted=True),
             user_data=user_data,
             user_data_replace_on_change=True,
             availability_zone=self.vpc.availability_zone,

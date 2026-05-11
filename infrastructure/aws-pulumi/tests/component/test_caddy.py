@@ -54,6 +54,27 @@ class TestCaddyServerComponent:
             "Caddy must create an EBS volume for certificate persistence"
         )
 
+    @pulumi.runtime.test
+    def test_instance_requires_imdsv2(self) -> None:
+        vpc, ecr, auth, sgs = _make_deps()
+        caddy = CaddyServerComponentResource("test-energy-market", vpc, ecr, auth, sgs)
+
+        def check(metadata_options: dict) -> None:
+            assert metadata_options.get("http_tokens") == "required"
+            assert metadata_options.get("http_endpoint") == "enabled"
+
+        return caddy.instance.metadata_options.apply(check)
+
+    @pulumi.runtime.test
+    def test_root_volume_is_encrypted(self) -> None:
+        vpc, ecr, auth, sgs = _make_deps()
+        caddy = CaddyServerComponentResource("test-energy-market", vpc, ecr, auth, sgs)
+
+        def check(root_block_device: dict) -> None:
+            assert root_block_device.get("encrypted") is True
+
+        return caddy.instance.root_block_device.apply(check)
+
     def test_no_deprecation_warnings(self) -> None:
         """Regression guard: region.region must be used, not region.name."""
         vpc, ecr, auth, sgs = _make_deps()

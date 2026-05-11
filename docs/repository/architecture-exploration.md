@@ -1386,6 +1386,14 @@ open after integration to `dev` until **Promotion** moves them to `main`; trunk
 slices can close after integration to `main`; exploratory slices stay open with
 `agent-reviewing` after publishing their durable **Exploratory branch**.
 
+2026-05-11 security-audit note: the AWS Pulumi **Subproject** now carries
+runtime security hardening outside issue #86's refactor slice. Current task
+definitions use ECS secrets for the Postgres password, ECS services use stable
+service names for deployed checks, ECR repositories enable scan-on-push, and
+IAM policies have narrower SSM and `iam:PassRole` resources. Future #86-style
+runtime extraction must preserve those controls rather than treating the older
+"leave IAM policy definitions unchanged" wording as a current-state invariant.
+
 ## Sync metadata
 
 - `sync.owner`: `docs`

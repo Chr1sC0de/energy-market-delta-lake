@@ -197,3 +197,14 @@ def ec2_client(deployed_enabled: None, aws_region: str):
         return boto3.client("ec2", region_name=aws_region)
     except ImportError as exc:
         pytest.skip(f"boto3 not installed: {exc}")
+
+
+@pytest.fixture(scope="session")
+def ecr_client(deployed_enabled: None, aws_region: str):
+    """Boto3 ECR client."""
+    try:
+        import boto3
+
+        return boto3.client("ecr", region_name=aws_region)
+    except ImportError as exc:
+        pytest.skip(f"boto3 not installed: {exc}")

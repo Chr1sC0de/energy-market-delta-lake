@@ -10,6 +10,7 @@ run_launcher:
   module: "dagster_aws.ecs"
   class: "EcsRunLauncher"
   config:
+    secrets_tag: null
     run_task_kwargs:
       capacityProviderStrategy:
         - capacityProvider: "FARGATE_SPOT"

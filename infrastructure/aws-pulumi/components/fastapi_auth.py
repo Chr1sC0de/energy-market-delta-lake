@@ -4,7 +4,7 @@ Mirrors CDK: infrastructure/fastapi_authentication_server.py
 - t3.nano, Amazon Linux 2023
 - Private subnet
 - Docker: pulls dagster/authentication image and runs on port 8000
-- Cognito env vars injected via Pulumi config secrets
+- Cognito env vars are fetched from SSM SecureString parameters at boot
 """
 
 import json
@@ -23,6 +23,7 @@ class FastAPIAuthComponentResource(pulumi.ComponentResource):
     """Private FastAPI authentication service instance."""
 
     instance: aws.ec2.Instance
+    cognito_parameter_names: dict[str, str]
 
     def __init__(
         self,
@@ -53,6 +54,8 @@ class FastAPIAuthComponentResource(pulumi.ComponentResource):
         self._website_root_url = config.require("website_root_url")
 
         self._setup_iam_role()
+        self._setup_cognito_parameters()
+        self._setup_ssm_read_policy()
         self._setup_key_pair()
         self._setup_ami()
         self._setup_instance()
@@ -85,6 +88,54 @@ class FastAPIAuthComponentResource(pulumi.ComponentResource):
             role=role.name,
             opts=pulumi.ResourceOptions(parent=role),
         )
+        self._role = role
+
+    def _setup_cognito_parameters(self) -> None:
+        self.cognito_parameter_names = {
+            "client_id": f"/{self.name}/dagster/fastapi-auth/cognito_client_id",
+            "server_metadata_url": f"/{self.name}/dagster/fastapi-auth/cognito_server_metadata_url",
+            "token_signing_key_url": f"/{self.name}/dagster/fastapi-auth/cognito_token_signing_key_url",
+            "client_secret": f"/{self.name}/dagster/fastapi-auth/cognito_client_secret",
+        }
+        parameter_values = {
+            "client_id": self._cognito_client_id,
+            "server_metadata_url": self._cognito_server_metadata_url,
+            "token_signing_key_url": self._cognito_token_signing_key_url,
+            "client_secret": self._cognito_client_secret,
+        }
+        self._cognito_parameters = [
+            aws.ssm.Parameter(
+                f"{self.name}-fastapi-auth-{label}-ssm",
+                name=parameter_name,
+                type="SecureString",
+                value=parameter_values[label],
+                overwrite=True,
+                opts=self.child_opts,
+            )
+            for label, parameter_name in self.cognito_parameter_names.items()
+        ]
+
+    def _setup_ssm_read_policy(self) -> None:
+        parameter_arns = [parameter.arn for parameter in self._cognito_parameters]
+        self._ssm_read_policy = aws.iam.RolePolicy(
+            f"{self.name}-fastapi-auth-ssm-policy",
+            role=self._role.name,
+            policy=pulumi.Output.all(*parameter_arns).apply(
+                lambda arns: json.dumps(
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Action": ["ssm:GetParameter", "ssm:GetParameters"],
+                                "Resource": arns,
+                            }
+                        ],
+                    }
+                )
+            ),
+            opts=pulumi.ResourceOptions(parent=self._role),
+        )
 
     def _setup_key_pair(self) -> None:
         self._private_key = tls.PrivateKey(
@@ -116,10 +167,14 @@ class FastAPIAuthComponentResource(pulumi.ComponentResource):
         user_data = pulumi.Output.all(
             repo_uri=self.ecr.authentication.repository_url,
             region=region.region,
-            cognito_client_id=self._cognito_client_id,
-            cognito_server_metadata_url=self._cognito_server_metadata_url,
-            cognito_token_signing_key_url=self._cognito_token_signing_key_url,
-            cognito_client_secret=self._cognito_client_secret,
+            cognito_client_id_param=self.cognito_parameter_names["client_id"],
+            cognito_server_metadata_url_param=self.cognito_parameter_names[
+                "server_metadata_url"
+            ],
+            cognito_token_signing_key_url_param=self.cognito_parameter_names[
+                "token_signing_key_url"
+            ],
+            cognito_client_secret_param=self.cognito_parameter_names["client_secret"],
             website_root_url=self._website_root_url,
         ).apply(
             lambda a: dedent(f"""\
@@ -127,10 +182,24 @@ class FastAPIAuthComponentResource(pulumi.ComponentResource):
                 set -euo pipefail
                 export HOME=/home/ec2-user
                 dnf update -y
-                dnf install -y docker
+                dnf install -y awscli docker
                 systemctl enable docker
                 systemctl start docker
                 usermod -a -G docker ec2-user
+
+                ssm_value() {{
+                    aws ssm get-parameter \\
+                        --name "$1" \\
+                        --with-decryption \\
+                        --query 'Parameter.Value' \\
+                        --output text
+                }}
+
+                COGNITO_DAGSTER_AUTH_CLIENT_ID="$(ssm_value '{a["cognito_client_id_param"]}')"
+                COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL="$(ssm_value '{a["cognito_server_metadata_url_param"]}')"
+                COGNITO_TOKEN_SIGNING_KEY_URL="$(ssm_value '{a["cognito_token_signing_key_url_param"]}')"
+                COGNITO_DAGSTER_AUTH_CLIENT_SECRET="$(ssm_value '{a["cognito_client_secret_param"]}')"
+
                 aws ecr get-login-password --region {a["region"]} | \\
                     docker login --username AWS --password-stdin {a["repo_uri"].split("/")[0]}
                 for attempt in $(seq 1 30); do
@@ -147,10 +216,10 @@ class FastAPIAuthComponentResource(pulumi.ComponentResource):
                 docker run -d \\
                     --restart unless-stopped \\
                     -p 8000:8000 \\
-                    -e COGNITO_DAGSTER_AUTH_CLIENT_ID={a["cognito_client_id"]} \\
-                    -e COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL={a["cognito_server_metadata_url"]} \\
-                    -e COGNITO_TOKEN_SIGNING_KEY_URL={a["cognito_token_signing_key_url"]} \\
-                    -e COGNITO_DAGSTER_AUTH_CLIENT_SECRET={a["cognito_client_secret"]} \\
+                    -e COGNITO_DAGSTER_AUTH_CLIENT_ID="$COGNITO_DAGSTER_AUTH_CLIENT_ID" \\
+                    -e COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL="$COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL" \\
+                    -e COGNITO_TOKEN_SIGNING_KEY_URL="$COGNITO_TOKEN_SIGNING_KEY_URL" \\
+                    -e COGNITO_DAGSTER_AUTH_CLIENT_SECRET="$COGNITO_DAGSTER_AUTH_CLIENT_SECRET" \\
                     -e WEBSITE_ROOT_URL={a["website_root_url"]} \\
                     {a["repo_uri"]}:latest \\
                     uvicorn main:app --host 0.0.0.0 --port 8000
@@ -165,11 +234,19 @@ class FastAPIAuthComponentResource(pulumi.ComponentResource):
             vpc_security_group_ids=[self.security_groups.register.fastapi_auth.id],
             iam_instance_profile=self._instance_profile.name,
             key_name=self._key_pair.key_name,
+            metadata_options=aws.ec2.InstanceMetadataOptionsArgs(
+                http_endpoint="enabled",
+                http_tokens="required",
+            ),
+            root_block_device=aws.ec2.InstanceRootBlockDeviceArgs(encrypted=True),
             user_data=user_data,
             user_data_replace_on_change=True,
             tags={
                 "dagster/service": "fastapi-authentication-server",
                 "Name": f"{self.name}-fastapi-auth",
             },
-            opts=self.child_opts,
+            opts=pulumi.ResourceOptions(
+                parent=self,
+                depends_on=[self._ssm_read_policy, *self._cognito_parameters],
+            ),
         )

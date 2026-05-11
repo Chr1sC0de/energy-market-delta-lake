@@ -81,15 +81,16 @@ All bucket names are prefixed by `"{ENVIRONMENT}-energy-market"`.
 - The DynamoDB Delta locking table uses `tablePath` as the partition key,
   `fileName` as the sort key, `PAY_PER_REQUEST` billing, and `expireTime` as
   the TTL attribute for automatic lock metadata expiry.
-- Postgres is provisioned on a private `t4g.nano` instance and bootstrapped by
-  user data that installs PostgreSQL 14, creates `dagster_user`, and creates
-  the `dagster` database.
+- Postgres is provisioned on a private `t4g.nano` instance with IMDSv2
+  required and encrypted root storage. User data installs PostgreSQL 14,
+  fetches the database password from SSM at boot, configures
+  `scram-sha-256` password auth for the VPC CIDR, creates `dagster_user`, and
+  creates the `dagster` database.
 - Postgres writes two SSM parameters:
   - password as `SecureString`
   - private DNS name as `String`
-- ECS services consume the Postgres password and private DNS as Pulumi outputs
-  so previews do not depend on an SSM lookup for a parameter that does not yet
-  exist.
+- ECS services consume the Postgres private DNS as a Pulumi output and the
+  password as an ECS task secret backed by the SSM SecureString parameter.
 
 ## Related docs
 

@@ -157,7 +157,7 @@ class ECRComponentResource(pulumi.ComponentResource):
             image_tag_mutability="MUTABLE",
             force_delete=True,
             image_scanning_configuration=aws.ecr.RepositoryImageScanningConfigurationArgs(
-                scan_on_push=False,
+                scan_on_push=True,
             ),
             opts=self.child_opts,
         )

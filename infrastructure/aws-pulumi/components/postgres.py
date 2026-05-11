@@ -26,6 +26,7 @@ class PostgresComponentResource(pulumi.ComponentResource):
     instance: aws.ec2.Instance
     ssm_param_password_name: str
     ssm_param_private_dns_name: str
+    ssm_param_password_arn: pulumi.Output[str]
     # Direct Output references – use these in ECS task definitions to avoid
     # SSM data-source lookups that fail during `pulumi preview` before the
     # parameter exists.
@@ -53,6 +54,7 @@ class PostgresComponentResource(pulumi.ComponentResource):
 
         self._setup_password()
         self._setup_iam_role()
+        self._setup_password_read_policy()
         self._setup_key_pair()
         self._setup_ami()
         self._setup_instance()
@@ -80,6 +82,15 @@ class PostgresComponentResource(pulumi.ComponentResource):
             opts=self.child_opts,
         )
         self._password = self._random_password.result
+        self._password_parameter = aws.ssm.Parameter(
+            f"{self.name}-postgres-password-ssm",
+            name=self.ssm_param_password_name,
+            type="SecureString",
+            value=self._password,
+            opts=self.child_opts,
+            overwrite=True,
+        )
+        self.ssm_param_password_arn = self._password_parameter.arn
 
     def _setup_iam_role(self) -> None:
         assume_role = json.dumps(
@@ -102,10 +113,32 @@ class PostgresComponentResource(pulumi.ComponentResource):
             ],
             opts=self.child_opts,
         )
+        self._role = role
         self._instance_profile = aws.iam.InstanceProfile(
             f"{self.name}-postgres-instance-profile",
             role=role.name,
             opts=pulumi.ResourceOptions(parent=role),
+        )
+
+    def _setup_password_read_policy(self) -> None:
+        self._password_read_policy = aws.iam.RolePolicy(
+            f"{self.name}-postgres-password-ssm-policy",
+            role=self._role.name,
+            policy=self.ssm_param_password_arn.apply(
+                lambda arn: json.dumps(
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Action": ["ssm:GetParameter", "ssm:GetParameters"],
+                                "Resource": arn,
+                            }
+                        ],
+                    }
+                )
+            ),
+            opts=pulumi.ResourceOptions(parent=self._role),
         )
 
     def _setup_key_pair(self) -> None:
@@ -137,14 +170,24 @@ class PostgresComponentResource(pulumi.ComponentResource):
         )
 
     def _setup_instance(self) -> None:
-        user_data = self._password.apply(
-            lambda pw: dedent(f"""\
+        user_data = pulumi.Output.all(
+            vpc_cidr=self.vpc.vpc.cidr_block,
+            region=aws.get_region().region,
+        ).apply(
+            lambda a: dedent(f"""\
                 #!/bin/bash
                 set -euo pipefail
 
                 yum update -y
                 amazon-linux-extras enable postgresql14
-                yum install -y postgresql-server postgresql
+                yum install -y awscli postgresql-server postgresql
+
+                PG_PASSWORD="$(aws ssm get-parameter \\
+                    --name '{self.ssm_param_password_name}' \\
+                    --region '{a["region"]}' \\
+                    --with-decryption \\
+                    --query 'Parameter.Value' \\
+                    --output text)"
 
                 postgresql-setup initdb
 
@@ -155,10 +198,13 @@ class PostgresComponentResource(pulumi.ComponentResource):
                 # Set to 64MB to leave headroom for the OS and other processes.
                 sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" \\
                     /var/lib/pgsql/data/postgresql.conf
+                grep -q '^password_encryption' /var/lib/pgsql/data/postgresql.conf \\
+                    && sed -i "s/^password_encryption.*/password_encryption = scram-sha-256/" /var/lib/pgsql/data/postgresql.conf \\
+                    || echo "password_encryption = scram-sha-256" >> /var/lib/pgsql/data/postgresql.conf
                 grep -q '^shared_buffers' /var/lib/pgsql/data/postgresql.conf \\
                     && sed -i "s/^shared_buffers.*/shared_buffers = 64MB/" /var/lib/pgsql/data/postgresql.conf \\
                     || echo "shared_buffers = 64MB" >> /var/lib/pgsql/data/postgresql.conf
-                echo 'host all all 0.0.0.0/0 md5' >> /var/lib/pgsql/data/pg_hba.conf
+                echo 'host all all {a["vpc_cidr"]} scram-sha-256' >> /var/lib/pgsql/data/pg_hba.conf
 
                 systemctl enable postgresql
                 systemctl start postgresql
@@ -172,7 +218,7 @@ class PostgresComponentResource(pulumi.ComponentResource):
                 done
 
                 # Idempotent: || true so re-runs on the same instance never fail.
-                sudo -u postgres psql -c "CREATE USER dagster_user WITH PASSWORD '{pw}';" || true
+                sudo -u postgres psql -c "CREATE USER dagster_user WITH PASSWORD '$PG_PASSWORD';" || true
                 sudo -u postgres psql -c "CREATE DATABASE dagster;" || true
                 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE dagster TO dagster_user;" || true
             """)  # ty:ignore[invalid-argument-type]
@@ -186,22 +232,21 @@ class PostgresComponentResource(pulumi.ComponentResource):
             vpc_security_group_ids=[self.security_groups.register.dagster_postgres.id],
             iam_instance_profile=self._instance_profile.name,
             key_name=self._key_pair.key_name,
+            metadata_options=aws.ec2.InstanceMetadataOptionsArgs(
+                http_endpoint="enabled",
+                http_tokens="required",
+            ),
+            root_block_device=aws.ec2.InstanceRootBlockDeviceArgs(encrypted=True),
             user_data=user_data,
             user_data_replace_on_change=True,
             tags={"dagster/service": "postgres", "Name": f"{self.name}-postgres"},
-            opts=self.child_opts,
+            opts=pulumi.ResourceOptions(
+                parent=self,
+                depends_on=[self._password_parameter, self._password_read_policy],
+            ),
         )
 
     def _setup_ssm_parameters(self) -> None:
-        aws.ssm.Parameter(
-            f"{self.name}-postgres-password-ssm",
-            name=self.ssm_param_password_name,
-            type="SecureString",
-            value=self._password,
-            opts=self.child_opts,
-            overwrite=True,
-        )
-
         aws.ssm.Parameter(
             f"{self.name}-postgres-private-dns-ssm",
             name=self.ssm_param_private_dns_name,

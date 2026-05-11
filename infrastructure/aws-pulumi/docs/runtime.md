@@ -56,8 +56,9 @@ flowchart LR
     USERREPO --> USERTASK
 ```
 
-`ECRComponentResource` builds and pushes images during `pulumi up` and exposes
-digest-pinned image URIs for the ECS task definitions.
+`ECRComponentResource` builds and pushes images during `pulumi up`, enables
+scan-on-push on each repository, and exposes digest-pinned image URIs for the
+ECS task definitions.
 
 ## ECS runtime topology
 
@@ -122,6 +123,9 @@ peak compute in the dev deployment. Spot capacity can be unavailable or
 interrupted. AWS run monitoring is enabled so the daemon can detect interrupted
 or orphaned run-worker tasks, poll ECS every 120 seconds, cap runtime at 30
 minutes, and mark unrecovered runs failed without automatic resume attempts.
+The default Secrets Manager tag lookup is disabled because this deployment
+injects required runtime secrets through ECS task-definition secrets and SSM
+SecureString parameters instead.
 
 ## Component summary
 
@@ -137,6 +141,9 @@ minutes, and mark unrecovered runs failed without automatic resume attempts.
   built with `DAGSTER_DEPLOYMENT=aws`.
 - ECS services use digest-pinned image URIs rather than mutable `:latest` tags
   at runtime.
+- ECS task definitions inject the Postgres password through ECS `secrets`
+  backed by the SSM SecureString parameter, not through plain container
+  environment variables.
 - Admin and guest webservers get separate task-definition families so revisions
   are not shared across the two variants.
 - Cloud Map registration is used only for the inbound-facing private services:

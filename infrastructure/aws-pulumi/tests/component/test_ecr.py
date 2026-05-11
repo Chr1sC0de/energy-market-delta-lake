@@ -26,6 +26,23 @@ class TestEcrRepositories:
         assert ecr.authentication_image is not None
 
     @pulumi.runtime.test
+    def test_all_repositories_scan_on_push(self) -> None:
+        ecr = ECRComponentResource("test-energy-market")
+
+        def check(scanning_configs: list[dict]) -> None:
+            for config in scanning_configs:
+                assert config.get("scan_on_push") is True
+
+        return pulumi.Output.all(
+            ecr.dagster_postgres.image_scanning_configuration,
+            ecr.dagster_webserver.image_scanning_configuration,
+            ecr.dagster_daemon.image_scanning_configuration,
+            ecr.dagster_user_code_aemo_etl.image_scanning_configuration,
+            ecr.caddy.image_scanning_configuration,
+            ecr.authentication.image_scanning_configuration,
+        ).apply(check)
+
+    @pulumi.runtime.test
     def test_fargate_image_resources_expose_repo_digests(self) -> None:
         ecr = ECRComponentResource("test-energy-market")
 

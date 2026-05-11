@@ -28,6 +28,33 @@ from urllib.parse import urlparse
 
 import pytest
 
+
+def _required_ecs_service_names(resource_name: str) -> set[str]:
+    return {
+        f"{resource_name}-user-code-user-code-service",
+        f"{resource_name}-webserver-admin-webserver-service",
+        f"{resource_name}-webserver-guest-webserver-service",
+        f"{resource_name}-daemon-daemon-service",
+    }
+
+
+def _describe_required_ecs_services(ecs_client, resource_name: str) -> list[dict]:
+    cluster = f"{resource_name}-dagster-cluster"
+    required_names = _required_ecs_service_names(resource_name)
+    response = ecs_client.describe_services(
+        cluster=cluster,
+        services=sorted(required_names),
+    )
+    failures = response.get("failures", [])
+    assert not failures, f"Failed to describe required ECS services: {failures}"
+
+    services = response.get("services", [])
+    service_names = {svc["serviceName"] for svc in services}
+    missing = required_names - service_names
+    assert not missing, f"Missing required ECS services: {sorted(missing)}"
+    return services
+
+
 # ---------------------------------------------------------------------------
 # ECS service health tests
 # ---------------------------------------------------------------------------
@@ -35,59 +62,70 @@ import pytest
 
 class TestEcsServicesRunning:
     def test_ecs_services_active(self, ecs_client, resource_name: str) -> None:
-        """All four Dagster Fargate services must be in ACTIVE state."""
-        cluster = f"{resource_name}-dagster-cluster"
-        paginator = ecs_client.get_paginator("list_services")
-        all_arns: list[str] = []
-        for page in paginator.paginate(cluster=cluster):
-            all_arns.extend(page["serviceArns"])
-
-        assert len(all_arns) >= 4, (
-            f"Expected at least 4 services in cluster {cluster}, "
-            f"found {len(all_arns)}: {all_arns}"
-        )
-
-        response = ecs_client.describe_services(cluster=cluster, services=all_arns)
-        statuses = {svc["serviceName"]: svc["status"] for svc in response["services"]}
+        """All required Dagster Fargate services must be in ACTIVE state."""
+        services = _describe_required_ecs_services(ecs_client, resource_name)
+        statuses = {svc["serviceName"]: svc["status"] for svc in services}
         inactive = {name: st for name, st in statuses.items() if st != "ACTIVE"}
         assert not inactive, f"Services not ACTIVE: {inactive}"
 
     def test_all_fargate_tasks_healthy(self, ecs_client, resource_name: str) -> None:
-        """Every service must have runningCount == desiredCount."""
-        cluster = f"{resource_name}-dagster-cluster"
-        paginator = ecs_client.get_paginator("list_services")
-        all_arns: list[str] = []
-        for page in paginator.paginate(cluster=cluster):
-            all_arns.extend(page["serviceArns"])
-
-        response = ecs_client.describe_services(cluster=cluster, services=all_arns)
+        """Every required service must be steady with desired tasks running."""
+        services = _describe_required_ecs_services(ecs_client, resource_name)
         unhealthy = {}
-        for svc in response["services"]:
-            if svc["runningCount"] != svc["desiredCount"]:
+        for svc in services:
+            if (
+                svc["desiredCount"] < 1
+                or svc["runningCount"] != svc["desiredCount"]
+                or svc["pendingCount"] != 0
+            ):
                 unhealthy[svc["serviceName"]] = {
                     "running": svc["runningCount"],
                     "desired": svc["desiredCount"],
+                    "pending": svc["pendingCount"],
                 }
-        assert not unhealthy, f"Services with runningCount != desiredCount: {unhealthy}"
+        assert not unhealthy, f"Unsteady required ECS services: {unhealthy}"
 
     def test_dagster_daemon_running(self, ecs_client, resource_name: str) -> None:
         """The Dagster daemon service must have at least one running task."""
-        cluster = f"{resource_name}-dagster-cluster"
-        paginator = ecs_client.get_paginator("list_services")
-        all_arns: list[str] = []
-        for page in paginator.paginate(cluster=cluster):
-            all_arns.extend(page["serviceArns"])
-
-        response = ecs_client.describe_services(cluster=cluster, services=all_arns)
+        services = _describe_required_ecs_services(ecs_client, resource_name)
         daemon_services = [
-            svc
-            for svc in response["services"]
-            if "daemon" in svc["serviceName"].lower()
+            svc for svc in services if "daemon" in svc["serviceName"].lower()
         ]
         assert daemon_services, "No daemon service found in cluster"
         daemon = daemon_services[0]
         assert daemon["runningCount"] >= 1, (
             f"Daemon service {daemon['serviceName']} has 0 running tasks"
+        )
+
+    def test_ecs_service_rollouts_complete(
+        self, ecs_client, resource_name: str
+    ) -> None:
+        """Required ECS services must not have failed or in-progress rollouts."""
+        services = _describe_required_ecs_services(ecs_client, resource_name)
+        bad_rollouts = {}
+        for service in services:
+            failed = [
+                deployment
+                for deployment in service.get("deployments", [])
+                if deployment.get("rolloutState") == "FAILED"
+            ]
+            primary: dict[str, object] = next(
+                (
+                    deployment
+                    for deployment in service.get("deployments", [])
+                    if deployment.get("status") == "PRIMARY"
+                ),
+                {},
+            )
+            primary_state = primary.get("rolloutState")
+            if failed or primary_state not in {None, "COMPLETED"}:
+                bad_rollouts[service["serviceName"]] = {
+                    "primary": primary_state,
+                    "failed": failed,
+                }
+
+        assert not bad_rollouts, (
+            f"Services with incomplete/failed rollout: {bad_rollouts}"
         )
 
 
@@ -259,13 +297,12 @@ class TestWebpageAccessibility:
     def test_caddy_guest_ui_reachable(
         self, deployed_enabled: None, route53_client: object, base_url: str
     ) -> None:
-        """The Dagster guest UI must return a non-5xx response from Caddy.
+        """The Dagster guest UI must return a ready response from Caddy.
 
         Acceptable status codes:
           200 — page served directly
           302 — Cognito redirect (if auth is applied)
           307 — Dagster's canonical redirect (/guest → /guest/)
-          502 — backend starting up; Caddy is live but Fargate task not ready yet
         """
         try:
             import requests  # noqa: F401
@@ -279,8 +316,8 @@ class TestWebpageAccessibility:
             timeout=30,
             allow_redirects=False,
         )
-        assert response.status_code in {200, 302, 307, 502}, (
-            f"Expected 200, 302, 307, or 502 from {url}, got {response.status_code}"
+        assert response.status_code in {200, 302, 307}, (
+            f"Expected 200, 302, or 307 from {url}, got {response.status_code}"
         )
 
     def test_caddy_root_reachable(
@@ -336,6 +373,33 @@ class TestCloudWatchLogs:
             "Has at least one Fargate task started?"
         )
 
+    def test_current_daemon_logs_have_no_permission_denials(
+        self, ecs_client, logs_client: object, resource_name: str
+    ) -> None:
+        """The current daemon must not be blocked by IAM denials."""
+        cluster = f"{resource_name}-dagster-cluster"
+        service = f"{resource_name}-daemon-daemon-service"
+        tasks_response = ecs_client.list_tasks(
+            cluster=cluster,
+            serviceName=service,
+            desiredStatus="RUNNING",
+        )
+        task_arns = tasks_response.get("taskArns", [])
+        assert task_arns, f"No running daemon task found for {service}"
+
+        task_id = task_arns[0].rsplit("/", 1)[-1]
+        log_group_name = f"/ecs/{resource_name}-dagster-cluster"
+        log_stream_name = f"dagster-daemon/DagsterDaemonContainer/{task_id}"
+        response = logs_client.get_log_events(  # type: ignore[union-attr]
+            logGroupName=log_group_name,
+            logStreamName=log_stream_name,
+            limit=200,
+        )
+        messages = "\n".join(event["message"] for event in response.get("events", []))
+        assert "AccessDenied" not in messages
+        assert "not authorized" not in messages
+        assert "secretsmanager:ListSecrets" not in messages
+
 
 # ---------------------------------------------------------------------------
 # SSM parameter tests
@@ -368,6 +432,126 @@ class TestSsmParameters:
         assert response["Parameter"]["Type"] == "SecureString", (
             f"Expected SecureString type for {param_name!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Live security posture tests
+# ---------------------------------------------------------------------------
+
+
+def _expected_ec2_names(resource_name: str) -> set[str]:
+    return {
+        f"{resource_name}-bastion",
+        f"{resource_name}-caddy",
+        f"{resource_name}-fastapi-auth",
+        f"{resource_name}-fck-nat",
+        f"{resource_name}-postgres",
+    }
+
+
+def _deployed_ec2_instances(ec2_client: object, resource_name: str) -> list[dict]:
+    expected_names = _expected_ec2_names(resource_name)
+    response = ec2_client.describe_instances(  # type: ignore[union-attr]
+        Filters=[
+            {"Name": "tag:Name", "Values": sorted(expected_names)},
+            {
+                "Name": "instance-state-name",
+                "Values": ["pending", "running", "stopping", "stopped"],
+            },
+        ]
+    )
+    instances = [
+        instance
+        for reservation in response.get("Reservations", [])
+        for instance in reservation.get("Instances", [])
+    ]
+    found_names = {
+        tag["Value"]
+        for instance in instances
+        for tag in instance.get("Tags", [])
+        if tag.get("Key") == "Name"
+    }
+    missing = expected_names - found_names
+    assert not missing, f"Missing expected EC2 instances by Name tag: {sorted(missing)}"
+    return instances
+
+
+class TestLiveSecurityPosture:
+    def test_ec2_instances_require_imdsv2(
+        self, ec2_client: object, resource_name: str
+    ) -> None:
+        """All deployed EC2 hosts must require IMDSv2 tokens."""
+        insecure = {}
+        for instance in _deployed_ec2_instances(ec2_client, resource_name):
+            tokens = instance.get("MetadataOptions", {}).get("HttpTokens")
+            if tokens != "required":
+                insecure[instance["InstanceId"]] = tokens
+
+        assert not insecure, f"EC2 instances without required IMDSv2: {insecure}"
+
+    def test_ec2_ebs_volumes_are_encrypted(
+        self, ec2_client: object, resource_name: str
+    ) -> None:
+        """All attached EBS volumes on deployed EC2 hosts must be encrypted."""
+        instances = _deployed_ec2_instances(ec2_client, resource_name)
+        volume_ids = [
+            mapping["Ebs"]["VolumeId"]
+            for instance in instances
+            for mapping in instance.get("BlockDeviceMappings", [])
+            if "Ebs" in mapping
+        ]
+        assert volume_ids, "No EC2 EBS volumes found to check"
+
+        response = ec2_client.describe_volumes(  # type: ignore[union-attr]
+            VolumeIds=volume_ids
+        )
+        unencrypted = [
+            volume["VolumeId"]
+            for volume in response.get("Volumes", [])
+            if volume.get("Encrypted") is not True
+        ]
+        assert not unencrypted, f"Unencrypted EC2 EBS volumes: {unencrypted}"
+
+    def test_ecr_repositories_scan_on_push(
+        self, ecr_client: object, resource_name: str
+    ) -> None:
+        """All deployment ECR repositories must have scan-on-push enabled."""
+        response = ecr_client.describe_repositories()  # type: ignore[union-attr]
+        repositories = [
+            repo
+            for repo in response.get("repositories", [])
+            if repo.get("repositoryName", "").startswith(f"{resource_name}/dagster/")
+        ]
+        assert repositories, f"No ECR repositories found for {resource_name}/dagster/"
+
+        not_scanned = [
+            repo["repositoryName"]
+            for repo in repositories
+            if repo.get("imageScanningConfiguration", {}).get("scanOnPush") is not True
+        ]
+        assert not not_scanned, f"ECR repositories without scan-on-push: {not_scanned}"
+
+    def test_ecs_task_definitions_use_ssm_secret_for_postgres_password(
+        self, ecs_client, resource_name: str
+    ) -> None:
+        """Required ECS task definitions must not expose DB password as env."""
+        services = _describe_required_ecs_services(ecs_client, resource_name)
+        insecure = {}
+        for service in services:
+            response = ecs_client.describe_task_definition(
+                taskDefinition=service["taskDefinition"]
+            )
+            task_definition = response["taskDefinition"]
+            for container in task_definition.get("containerDefinitions", []):
+                env_names = {item["name"] for item in container.get("environment", [])}
+                secret_names = {item["name"] for item in container.get("secrets", [])}
+                if (
+                    "DAGSTER_POSTGRES_PASSWORD" in env_names
+                    or "DAGSTER_POSTGRES_PASSWORD" not in secret_names
+                ):
+                    insecure[task_definition["taskDefinitionArn"]] = container["name"]
+
+        assert not insecure, f"Task definitions exposing DB password: {insecure}"
 
 
 # ---------------------------------------------------------------------------

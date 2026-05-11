@@ -7,7 +7,7 @@ import pulumi_aws as aws
 import pulumi_tls as tls
 from pulumi_aws import get_availability_zones
 
-from configs import ADMINISTRATOR_IPS
+from configs import ADMINISTRATOR_CIDRS
 
 
 class VpcComponentResource(pulumi.ComponentResource):
@@ -125,7 +125,7 @@ class VpcComponentResource(pulumi.ComponentResource):
         )
 
         # Allow SSH from admin IPs
-        for idx, ip in enumerate(ADMINISTRATOR_IPS):
+        for idx, cidr in enumerate(ADMINISTRATOR_CIDRS):
             aws.ec2.SecurityGroupRule(
                 f"{self.name}-fk-nat-security-group-ingress-ssh-{idx}",
                 type="ingress",
@@ -133,8 +133,8 @@ class VpcComponentResource(pulumi.ComponentResource):
                 from_port=22,
                 to_port=22,
                 protocol="tcp",
-                cidr_blocks=[f"{ip}/32"],
-                description=f"Allow SSH from admin IP {ip}",
+                cidr_blocks=[cidr],
+                description=f"Allow SSH from admin {cidr}",
                 opts=self.child_opts,
             )
 
@@ -175,10 +175,16 @@ class VpcComponentResource(pulumi.ComponentResource):
             vpc_security_group_ids=[self.fk_nat_security_group.id],
             key_name=self.fk_nat_key_pair.key_name,
             source_dest_check=False,
+            metadata_options=aws.ec2.InstanceMetadataOptionsArgs(
+                http_endpoint="enabled",
+                http_tokens="required",
+            ),
+            root_block_device=aws.ec2.InstanceRootBlockDeviceArgs(encrypted=True),
             user_data=dedent("""#!/bin/bash
                 echo "eni_id=${FckNatInterface}" >> /etc/fck-nat.conf
                 service fck-nat restart
             """),
+            tags={"dagster/service": "fck-nat", "Name": f"{self.name}-fck-nat"},
             opts=self.child_opts,
         )
 

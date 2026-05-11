@@ -55,6 +55,42 @@ class TestPostgresComponent:
         pg = PostgresComponentResource("test-energy-market", vpc, sgs)
         assert pg.password is not None
 
+    @pulumi.runtime.test
+    def test_instance_requires_imdsv2(self) -> None:
+        vpc, sgs = _make_deps()
+        pg = PostgresComponentResource("test-energy-market", vpc, sgs)
+
+        def check(metadata_options: dict) -> None:
+            assert metadata_options.get("http_tokens") == "required"
+            assert metadata_options.get("http_endpoint") == "enabled"
+
+        return pg.instance.metadata_options.apply(check)
+
+    @pulumi.runtime.test
+    def test_root_volume_is_encrypted(self) -> None:
+        vpc, sgs = _make_deps()
+        pg = PostgresComponentResource("test-energy-market", vpc, sgs)
+
+        def check(root_block_device: dict) -> None:
+            assert root_block_device.get("encrypted") is True
+
+        return pg.instance.root_block_device.apply(check)
+
+    @pulumi.runtime.test
+    def test_user_data_fetches_password_from_ssm(self) -> None:
+        vpc, sgs = _make_deps()
+        pg = PostgresComponentResource("test-energy-market", vpc, sgs)
+
+        def check(user_data: str) -> None:
+            assert "MockPassword123!" not in user_data
+            assert "aws ssm get-parameter" in user_data
+            assert pg.ssm_param_password_name in user_data
+            assert "--region 'ap-southeast-2'" in user_data
+            assert "0.0.0.0/0 md5" not in user_data
+            assert "10.0.0.0/16 scram-sha-256" in user_data
+
+        return pg.instance.user_data.apply(check)
+
     def test_no_deprecation_warnings(self) -> None:
         vpc, sgs = _make_deps()
         with warnings.catch_warnings(record=True) as caught:

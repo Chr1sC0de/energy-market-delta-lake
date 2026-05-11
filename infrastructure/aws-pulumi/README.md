@@ -12,6 +12,7 @@ entrypoint used by the Dagster-based deployment.
 - [Architecture summary](#architecture-summary)
 - [Component order](#component-order)
 - [Component docs](#component-docs)
+- [Security posture](#security-posture)
 - [Container images and service source](#container-images-and-service-source)
 - [Runtime behavior](#runtime-behavior)
 - [Configuration](#configuration)
@@ -130,6 +131,25 @@ Detailed subsystem docs live under [docs/](docs/README.md):
 - [Storage](docs/storage.md)
 - [Runtime](docs/runtime.md)
 - [Edge and access](docs/edge-and-access.md)
+- [Security audit](docs/security-audit.md)
+
+## Security posture
+
+The dev stack now treats the Pulumi code and deployed AWS resources as the
+security boundary to audit. Current controls include:
+
+- administrator SSH ingress is limited to validated IPv4 `/32` CIDRs from
+  `ADMINISTRATOR_IPS`
+- EC2 hosts require IMDSv2 and encrypted root volumes
+- Cognito and Postgres secrets are stored in SSM SecureString parameters and
+  fetched at boot/task start instead of being embedded directly in EC2 user
+  data or ECS plain environment variables
+- ECS task execution roles can read only the required Postgres password
+  parameter, and task roles scope `iam:PassRole` to the Dagster run-worker
+  roles
+- ECR repositories keep digest-pinned runtime deploys and enable scan-on-push
+
+The latest audit record is [docs/security-audit.md](docs/security-audit.md).
 
 ## Container images and service source
 
@@ -167,6 +187,7 @@ This project reads a small set of important config values:
   - contributes to the shared resource prefix
 - `ADMINISTRATOR_IPS`
   - used outside local mode for admin-access configuration
+  - accepts individual IPv4 addresses or `/32` CIDRs only
 - `aws:region`
   - stack region, shown in `Pulumi.dev-ausenergymarket.yaml` as `ap-southeast-2`
 - Pulumi secrets for Cognito/auth and public site configuration:
@@ -245,10 +266,12 @@ Apply infrastructure changes:
 pulumi up
 ```
 
-Run the full deployed-test workflow against the default stack:
+Run the full deployed-test workflow against the default stack. The script runs
+local Pulumi **Unit test** and **Component test** validation plus the
+**Commit check** before applying the stack:
 
 ```bash
-AWS_DEFAULT_REGION=ap-southeast-2 scripts/run-integration-tests
+AWS_DEFAULT_REGION=ap-southeast-2 scripts/run-integration-tests --with-idempotency
 ```
 
 Run deployed tests without applying infrastructure first:
@@ -289,8 +312,15 @@ system's services and Dagster workflows.
 - `sync.sources`:
   - `infrastructure/aws-pulumi/__main__.py`
   - `infrastructure/aws-pulumi/configs.py`
+  - `infrastructure/aws-pulumi/components/bastion_host.py`
+  - `infrastructure/aws-pulumi/components/caddy.py`
+  - `infrastructure/aws-pulumi/components/ecr.py`
   - `infrastructure/aws-pulumi/components/ecs_services.py`
+  - `infrastructure/aws-pulumi/components/fastapi_auth.py`
   - `infrastructure/aws-pulumi/components/iam_roles.py`
+  - `infrastructure/aws-pulumi/components/postgres.py`
+  - `infrastructure/aws-pulumi/components/security_groups.py`
+  - `infrastructure/aws-pulumi/components/vpc.py`
   - `infrastructure/aws-pulumi/.pre-commit-config.yaml`
   - `infrastructure/aws-pulumi/pyproject.toml`
   - `infrastructure/aws-pulumi/scripts/setup_secrets`

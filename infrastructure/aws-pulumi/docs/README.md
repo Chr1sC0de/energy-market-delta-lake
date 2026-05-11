@@ -17,6 +17,7 @@ Detailed subsystem documentation for the deployed AWS platform defined in
 - [Storage](storage.md)
 - [Runtime](runtime.md)
 - [Edge and access](edge-and-access.md)
+- [Security audit](security-audit.md)
 
 ## Component map
 
@@ -39,6 +40,9 @@ Detailed subsystem documentation for the deployed AWS platform defined in
 | `FastAPIAuthComponentResource` | [edge-and-access.md](edge-and-access.md) |
 | `CaddyServerComponentResource` | [edge-and-access.md](edge-and-access.md) |
 
+Security controls that span multiple components are summarized in
+[security-audit.md](security-audit.md).
+
 ## Related docs
 
 - [AWS Pulumi infrastructure overview](../README.md)
@@ -52,6 +56,7 @@ Detailed subsystem documentation for the deployed AWS platform defined in
   - `infrastructure/aws-pulumi/__main__.py`
   - `infrastructure/aws-pulumi/components/vpc.py`
   - `infrastructure/aws-pulumi/components/ecs_services.py`
+  - `infrastructure/aws-pulumi/docs/security-audit.md`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`

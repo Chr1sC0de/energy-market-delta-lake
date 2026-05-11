@@ -29,6 +29,12 @@ def test_dagster_core_uses_spot_fargate_run_workers() -> None:
     assert "base:" not in config
 
 
+def test_dagster_core_disables_default_secrets_manager_tag_lookup() -> None:
+    config = _dagster_core_aws_config()
+
+    assert "secrets_tag: null" in config
+
+
 def test_dagster_core_uses_cost_optimized_ecs_run_resources() -> None:
     config = _dagster_core_aws_config()
 

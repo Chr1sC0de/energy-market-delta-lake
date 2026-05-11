@@ -64,6 +64,25 @@ class TestVpcResourceCreation:
 
         return vpc.fk_nat_instance.instance_type.apply(check)
 
+    @pulumi.runtime.test
+    def test_nat_instance_requires_imdsv2(self) -> None:
+        vpc = VpcComponentResource("test-energy-market")
+
+        def check(metadata_options: dict) -> None:
+            assert metadata_options.get("http_tokens") == "required"
+            assert metadata_options.get("http_endpoint") == "enabled"
+
+        return vpc.fk_nat_instance.metadata_options.apply(check)
+
+    @pulumi.runtime.test
+    def test_nat_root_volume_is_encrypted(self) -> None:
+        vpc = VpcComponentResource("test-energy-market")
+
+        def check(root_block_device: dict) -> None:
+            assert root_block_device.get("encrypted") is True
+
+        return vpc.fk_nat_instance.root_block_device.apply(check)
+
     def test_internet_gateway_created(self) -> None:
         vpc = VpcComponentResource("test-energy-market")
         assert vpc.internet_gateway is not None

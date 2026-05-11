@@ -100,6 +100,9 @@ Internet → IGW → Public subnet resource (must have public IP/EIP)
 | Public Subnet | 10.0.0.0/24 | Contains NAT instance with Elastic IP |
 | Private Subnet | 10.0.16.0/20 | Private resources, outbound traffic via NAT |
 
+The NAT instance requires IMDSv2, uses an encrypted root volume, and accepts
+administrator SSH ingress only from validated `/32` CIDRs.
+
 ## CIDR Explained
 
 CIDR (Classless Inter-Domain Routing) notation combines an IP address with a prefix length (`/n`) to define a contiguous range of IP addresses.

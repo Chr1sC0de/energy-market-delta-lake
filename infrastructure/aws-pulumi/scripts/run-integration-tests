@@ -7,6 +7,7 @@ STACK="${PULUMI_STACK:-dev-ausenergymarket}"
 AWS_REGION="${AWS_DEFAULT_REGION:-ap-southeast-2}"
 RUN_UP=1
 RUN_IDEMPOTENCY=0
+HAS_AWS_CLI=0
 
 usage() {
 	printf 'Usage: %s [--skip-up] [--with-idempotency] [--stack STACK]\n' "$0"
@@ -59,11 +60,13 @@ require_command() {
 
 require_command pulumi
 require_command uv
+require_command prek
 
 export PULUMI_STACK="$STACK"
 export AWS_DEFAULT_REGION="$AWS_REGION"
 
 if command -v aws >/dev/null 2>&1; then
+	HAS_AWS_CLI=1
 	aws sts get-caller-identity >/dev/null
 else
 	printf 'WARN: aws CLI not found; Pulumi/pytest will still validate AWS credentials.\n' >&2
@@ -74,11 +77,41 @@ printf 'Using AWS region: %s\n' "$AWS_DEFAULT_REGION"
 
 pulumi stack select "$PULUMI_STACK"
 
+printf '\n==> Running local Pulumi QA\n'
+uv run pytest tests/unit tests/component -q
+prek run -a
+
 if [[ "$RUN_UP" -eq 1 ]]; then
 	printf '\n==> Applying Pulumi stack\n'
 	pulumi up --yes --non-interactive --stack "$PULUMI_STACK"
 else
 	printf '\n==> Skipping pulumi up\n'
+fi
+
+if [[ "$HAS_AWS_CLI" -eq 1 ]]; then
+	ENVIRONMENT_NAME="${ENVIRONMENT:-${PULUMI_STACK%%-*}}"
+	RESOURCE_NAME="${ENVIRONMENT_NAME}-energy-market"
+	CLUSTER_NAME="${RESOURCE_NAME}-dagster-cluster"
+	SERVICES=(
+		"${RESOURCE_NAME}-user-code-user-code-service"
+		"${RESOURCE_NAME}-webserver-admin-webserver-service"
+		"${RESOURCE_NAME}-webserver-guest-webserver-service"
+		"${RESOURCE_NAME}-daemon-daemon-service"
+	)
+
+	printf '\n==> Waiting for ECS Fargate services to stabilize\n'
+	aws ecs wait services-stable \
+		--cluster "$CLUSTER_NAME" \
+		--services "${SERVICES[@]}"
+
+	ECS_STABILITY_HOLD_SECONDS="${ECS_STABILITY_HOLD_SECONDS:-75}"
+	if [[ "$ECS_STABILITY_HOLD_SECONDS" != "0" ]]; then
+		printf '\n==> Holding ECS stability for %ss\n' "$ECS_STABILITY_HOLD_SECONDS"
+		sleep "$ECS_STABILITY_HOLD_SECONDS"
+		aws ecs wait services-stable \
+			--cluster "$CLUSTER_NAME" \
+			--services "${SERVICES[@]}"
+	fi
 fi
 
 printf '\n==> Running deployed AWS tests\n'

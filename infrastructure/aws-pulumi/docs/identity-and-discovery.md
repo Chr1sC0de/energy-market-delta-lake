@@ -39,17 +39,18 @@ flowchart TB
     ECSAPI[ECS orchestration APIs]
     DDB[DynamoDB delta_log]
     S3[S3 data-lake buckets]
-    SECRETS[Secrets Manager]
+    SSMPARAM[SSM SecureString parameters]
 
     BASTIONROLE --> SSM
     BASTIONPROFILE --> BASTIONROLE
     WEBEXEC --> ECRPOLICY
     DAEMONEXEC --> ECRPOLICY
+    WEBEXEC --> SSMPARAM
+    DAEMONEXEC --> SSMPARAM
     WEBTASK --> ECSAPI
     DAEMONTASK --> ECSAPI
     DAEMONTASK --> DDB
     DAEMONTASK --> S3
-    DAEMONTASK --> SECRETS
 ```
 
 The role split is deliberate:
@@ -106,16 +107,20 @@ The daemon is not registered because it does not accept inbound traffic.
   profile.
 - The webserver task role can inspect and stop ECS tasks and pass roles to
   ECS tasks when launching work.
-- The daemon execution role adds `ssm:GetParameters` so daemon tasks can start
-  cleanly with their bootstrap configuration.
+- The webserver and daemon execution roles add scoped `ssm:GetParameters`
+  access to the Postgres password parameter so ECS can inject the database
+  password as a task secret.
 - The daemon task role includes:
   - ECS orchestration calls
-  - Secrets Manager reads
+  - `dagster-*` service and `run_*` run-worker task definition registration,
+    tagging, and launch permissions
+  - `ecs:TagResource` for tasks created inside the Dagster ECS cluster during
+    `RunTask`
   - SNS topic publish for Dagster failed-run alerts when a Pulumi secret topic
     ARN is configured
   - DynamoDB access to `delta_log`
   - S3 access to the environment-scoped `*-energy-market*` buckets
-  - `iam:PassRole` for ECS task launches
+  - scoped `iam:PassRole` for ECS task launches
 
 ## Related docs
 

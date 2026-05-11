@@ -81,6 +81,27 @@ class TestBastionHostComponent:
             private_subnet_id,
         ).apply(check)
 
+    @pulumi.runtime.test
+    def test_instance_requires_imdsv2(self) -> None:
+        vpc, sgs, iam = _make_deps()
+        bastion = BastionHostComponentResource("test-energy-market", vpc, sgs, iam)
+
+        def check(metadata_options: dict) -> None:
+            assert metadata_options.get("http_tokens") == "required"
+            assert metadata_options.get("http_endpoint") == "enabled"
+
+        return bastion.instance.metadata_options.apply(check)
+
+    @pulumi.runtime.test
+    def test_root_volume_is_encrypted(self) -> None:
+        vpc, sgs, iam = _make_deps()
+        bastion = BastionHostComponentResource("test-energy-market", vpc, sgs, iam)
+
+        def check(root_block_device: dict) -> None:
+            assert root_block_device.get("encrypted") is True
+
+        return bastion.instance.root_block_device.apply(check)
+
     def test_no_deprecation_warnings(self) -> None:
         vpc, sgs, iam = _make_deps()
         with warnings.catch_warnings(record=True) as caught:

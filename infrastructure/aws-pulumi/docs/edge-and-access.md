@@ -43,6 +43,7 @@ The public edge is intentionally thin:
 - Caddy is the only internet-facing runtime host
 - FastAPI auth stays in the private subnet
 - Dagster webservers stay in ECS private networking behind Caddy
+- EC2 hosts require IMDSv2 and encrypted root volumes
 
 ## Operator access flow
 
@@ -75,8 +76,9 @@ flowchart LR
 - The bastion host uses the shared bastion instance profile from
   `IamRolesComponentResource` and stores its instance ID and key-pair ID in
   SSM.
-- The FastAPI auth host pulls the `dagster/authentication` image from ECR and
-  injects Cognito and website-root configuration from Pulumi config.
+- The FastAPI auth host stores Cognito values in SSM SecureString parameters,
+  fetches them at boot, and passes them to the auth container without embedding
+  secret values in EC2 user data.
 - The Caddy host:
   - pulls the `dagster/caddy` image from ECR
   - mounts a dedicated encrypted EBS volume at `/mnt/caddy-certs`

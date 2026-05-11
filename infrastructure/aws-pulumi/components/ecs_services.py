@@ -71,6 +71,7 @@ def _fargate_service(
 
     return aws.ecs.Service(
         resource_name,
+        name=resource_name,
         cluster=cluster.arn,
         task_definition=task_definition.arn,
         desired_count=1,
@@ -158,7 +159,7 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
 
         # Use direct Output references – avoids SSM data-source calls during preview
         postgres_host = postgres.private_dns
-        postgres_password = postgres.password
+        postgres_password_parameter = postgres.ssm_param_password_arn
         config = pulumi.Config()
         failure_alert_topic_arn = (
             config.get_secret(FAILURE_ALERT_TOPIC_ARN_CONFIG_KEY) or ""
@@ -173,7 +174,7 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
         container_defs = pulumi.Output.all(
             image=ecr.dagster_user_code_aemo_etl_image_uri,
             pg_host=postgres_host,
-            pg_pass=postgres_password,
+            pg_pass_param=postgres_password_parameter,
             log_group=cluster.log_group.name,
             region=aws.get_region().region,
             failure_alert_topic_arn=failure_alert_topic_arn,
@@ -203,10 +204,6 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
                                 "value": a["pg_host"],
                             },
                             {"name": "DAGSTER_POSTGRES_USER", "value": "dagster_user"},
-                            {
-                                "name": "DAGSTER_POSTGRES_PASSWORD",
-                                "value": a["pg_pass"],
-                            },
                             {"name": "AWS_S3_LOCKING_PROVIDER", "value": "dynamodb"},
                             {"name": "AWS_DEFAULT_REGION", "value": a["region"]},
                             {
@@ -224,6 +221,12 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
                                 "name": "DAGSTER_FAILURE_ALERT_BASE_URL",
                                 "value": a["failure_alert_base_url"],
                             },
+                        ],
+                        "secrets": [
+                            {
+                                "name": "DAGSTER_POSTGRES_PASSWORD",
+                                "valueFrom": a["pg_pass_param"],
+                            }
                         ],
                         "portMappings": [
                             {"containerPort": 4000, "hostPort": 4000, "protocol": "tcp"}
@@ -318,7 +321,7 @@ class DagsterWebserverServiceComponentResource(pulumi.ComponentResource):
 
         # Use direct Output references – avoids SSM data-source calls during preview
         postgres_host = postgres.private_dns
-        postgres_password = postgres.password
+        postgres_password_parameter = postgres.ssm_param_password_arn
 
         entry_point = [
             "dagster-webserver",
@@ -338,7 +341,7 @@ class DagsterWebserverServiceComponentResource(pulumi.ComponentResource):
         container_defs = pulumi.Output.all(
             image=ecr.dagster_webserver_image_uri,
             pg_host=postgres_host,
-            pg_pass=postgres_password,
+            pg_pass_param=postgres_password_parameter,
             log_group=cluster.log_group.name,
             region=aws.get_region().region,
         ).apply(
@@ -356,12 +359,14 @@ class DagsterWebserverServiceComponentResource(pulumi.ComponentResource):
                                 "value": a["pg_host"],
                             },
                             {"name": "DAGSTER_POSTGRES_USER", "value": "dagster_user"},
-                            {
-                                "name": "DAGSTER_POSTGRES_PASSWORD",
-                                "value": a["pg_pass"],
-                            },
                             {"name": "DEVELOPMENT_ENVIRONMENT", "value": ENVIRONMENT},
                             {"name": "DEVELOPMENT_LOCATION", "value": "aws"},
+                        ],
+                        "secrets": [
+                            {
+                                "name": "DAGSTER_POSTGRES_PASSWORD",
+                                "valueFrom": a["pg_pass_param"],
+                            }
                         ],
                         "portMappings": [
                             {"containerPort": 3000, "hostPort": 3000, "protocol": "tcp"}
@@ -375,7 +380,10 @@ class DagsterWebserverServiceComponentResource(pulumi.ComponentResource):
                             },
                         },
                         "healthCheck": {
-                            "command": ["CMD-SHELL", "true"],
+                            "command": [
+                                "CMD-SHELL",
+                                "python -c \"import socket; s=socket.socket(); s.connect(('localhost',3000)); s.close()\" || exit 1",
+                            ],
                             "interval": 15,
                             "timeout": 5,
                             "retries": 4,
@@ -453,12 +461,12 @@ class DagsterDaemonServiceComponentResource(pulumi.ComponentResource):
 
         # Use direct Output references – avoids SSM data-source calls during preview
         postgres_host = postgres.private_dns
-        postgres_password = postgres.password
+        postgres_password_parameter = postgres.ssm_param_password_arn
 
         container_defs = pulumi.Output.all(
             image=ecr.dagster_daemon_image_uri,
             pg_host=postgres_host,
-            pg_pass=postgres_password,
+            pg_pass_param=postgres_password_parameter,
             log_group=cluster.log_group.name,
             region=aws.get_region().region,
         ).apply(
@@ -476,14 +484,16 @@ class DagsterDaemonServiceComponentResource(pulumi.ComponentResource):
                                 "value": a["pg_host"],
                             },
                             {"name": "DAGSTER_POSTGRES_USER", "value": "dagster_user"},
-                            {
-                                "name": "DAGSTER_POSTGRES_PASSWORD",
-                                "value": a["pg_pass"],
-                            },
                             {"name": "AWS_S3_LOCKING_PROVIDER", "value": "dynamodb"},
                             {"name": "DAGSTER_GRPC_TIMEOUT_SECONDS", "value": "300"},
                             {"name": "DEVELOPMENT_ENVIRONMENT", "value": ENVIRONMENT},
                             {"name": "DEVELOPMENT_LOCATION", "value": "aws"},
+                        ],
+                        "secrets": [
+                            {
+                                "name": "DAGSTER_POSTGRES_PASSWORD",
+                                "valueFrom": a["pg_pass_param"],
+                            }
                         ],
                         "logConfiguration": {
                             "logDriver": "awslogs",

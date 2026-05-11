@@ -63,6 +63,17 @@ def _env_value(container: dict, name: str) -> str:
     raise AssertionError(f"Missing environment variable {name!r}")
 
 
+def _env_names(container: dict) -> set[str]:
+    return {item["name"] for item in container.get("environment", [])}
+
+
+def _secret_value(container: dict, name: str) -> str:
+    for item in container.get("secrets", []):
+        if item["name"] == name:
+            return item["valueFrom"]
+    raise AssertionError(f"Missing secret {name!r}")
+
+
 def _assert_spot_fargate_strategy(strategies: list) -> None:
     providers = [s.get("capacity_provider") for s in strategies]
     assert providers == ["FARGATE_SPOT"], (
@@ -70,6 +81,22 @@ def _assert_spot_fargate_strategy(strategies: list) -> None:
     )
     assert strategies[0].get("weight") == 1
     assert strategies[0].get("base") == 0
+
+
+def _assert_postgres_password_uses_ecs_secret(container: dict) -> None:
+    assert "DAGSTER_POSTGRES_PASSWORD" not in _env_names(container)
+    value_from = _secret_value(container, "DAGSTER_POSTGRES_PASSWORD")
+    assert value_from.endswith(
+        ":parameter/test-energy-market/dagster/postgres/password"
+    )
+
+
+def _assert_webserver_health_check_probes_port(container: dict) -> None:
+    health_check = container["healthCheck"]
+    command = " ".join(health_check["command"])
+    assert "socket.socket()" in command
+    assert "localhost',3000" in command
+    assert command != "CMD-SHELL true"
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +274,27 @@ class TestDagsterUserCodeService:
 
         return svc.task_definition.container_definitions.apply(check)
 
+    @pulumi.runtime.test
+    def test_user_code_uses_ecs_secret_for_postgres_password(self) -> None:
+        vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
+        svc = DagsterUserCodeServiceComponentResource(
+            "test-energy-market-user-code",
+            vpc=vpc,
+            cluster=cluster,
+            ecr=ecr,
+            postgres=pg,
+            security_groups=sgs,
+            service_discovery=sd,
+            iam_roles=iam,
+        )
+
+        def check(container_definitions: str) -> None:
+            _assert_postgres_password_uses_ecs_secret(
+                _first_container(container_definitions)
+            )
+
+        return svc.task_definition.container_definitions.apply(check)
+
     def test_no_deprecation_warnings(self) -> None:
         """Regression guard: failure_threshold and .name must not be used."""
         vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
@@ -340,6 +388,56 @@ class TestDagsterWebserverAdminService:
             assert cb.get("rollback") is True
 
         return svc.service.deployment_circuit_breaker.apply(check)
+
+    @pulumi.runtime.test
+    def test_webserver_admin_uses_ecs_secret_for_postgres_password(self) -> None:
+        vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
+        svc = DagsterWebserverServiceComponentResource(
+            "test-energy-market-webserver-admin",
+            vpc=vpc,
+            cluster=cluster,
+            ecr=ecr,
+            postgres=pg,
+            security_groups=sgs,
+            service_discovery=sd,
+            iam_roles=iam,
+            cloud_map_name="webserver-admin",
+            path_prefix="/dagster-webserver/admin",
+            stream_prefix="dagster-webserver-service-admin",
+            readonly=False,
+        )
+
+        def check(container_definitions: str) -> None:
+            _assert_postgres_password_uses_ecs_secret(
+                _first_container(container_definitions)
+            )
+
+        return svc.task_definition.container_definitions.apply(check)
+
+    @pulumi.runtime.test
+    def test_webserver_admin_health_check_probes_port(self) -> None:
+        vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
+        svc = DagsterWebserverServiceComponentResource(
+            "test-energy-market-webserver-admin-health",
+            vpc=vpc,
+            cluster=cluster,
+            ecr=ecr,
+            postgres=pg,
+            security_groups=sgs,
+            service_discovery=sd,
+            iam_roles=iam,
+            cloud_map_name="webserver-admin",
+            path_prefix="/dagster-webserver/admin",
+            stream_prefix="dagster-webserver-service-admin",
+            readonly=False,
+        )
+
+        def check(container_definitions: str) -> None:
+            _assert_webserver_health_check_probes_port(
+                _first_container(container_definitions)
+            )
+
+        return svc.task_definition.container_definitions.apply(check)
 
     @pulumi.runtime.test
     def test_webserver_admin_uses_spot_fargate(self) -> None:
@@ -527,6 +625,56 @@ class TestDagsterWebserverGuestService:
 
         return svc.service.deployment_circuit_breaker.apply(check)
 
+    @pulumi.runtime.test
+    def test_webserver_guest_uses_ecs_secret_for_postgres_password(self) -> None:
+        vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
+        svc = DagsterWebserverServiceComponentResource(
+            "test-energy-market-webserver-guest",
+            vpc=vpc,
+            cluster=cluster,
+            ecr=ecr,
+            postgres=pg,
+            security_groups=sgs,
+            service_discovery=sd,
+            iam_roles=iam,
+            cloud_map_name="webserver-guest",
+            path_prefix="/dagster-webserver/guest",
+            stream_prefix="dagster-webserver-service-guest",
+            readonly=True,
+        )
+
+        def check(container_definitions: str) -> None:
+            _assert_postgres_password_uses_ecs_secret(
+                _first_container(container_definitions)
+            )
+
+        return svc.task_definition.container_definitions.apply(check)
+
+    @pulumi.runtime.test
+    def test_webserver_guest_health_check_probes_port(self) -> None:
+        vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
+        svc = DagsterWebserverServiceComponentResource(
+            "test-energy-market-webserver-guest-health",
+            vpc=vpc,
+            cluster=cluster,
+            ecr=ecr,
+            postgres=pg,
+            security_groups=sgs,
+            service_discovery=sd,
+            iam_roles=iam,
+            cloud_map_name="webserver-guest",
+            path_prefix="/dagster-webserver/guest",
+            stream_prefix="dagster-webserver-service-guest",
+            readonly=True,
+        )
+
+        def check(container_definitions: str) -> None:
+            _assert_webserver_health_check_probes_port(
+                _first_container(container_definitions)
+            )
+
+        return svc.task_definition.container_definitions.apply(check)
+
     def test_webserver_guest_no_deprecation_warnings(self) -> None:
         vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
         with warnings.catch_warnings(record=True) as caught:
@@ -666,6 +814,26 @@ class TestDagsterDaemonService:
             assert net_config.get("assign_public_ip") is False
 
         return svc.service.network_configuration.apply(check)
+
+    @pulumi.runtime.test
+    def test_daemon_uses_ecs_secret_for_postgres_password(self) -> None:
+        vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
+        svc = DagsterDaemonServiceComponentResource(
+            "test-energy-market-daemon",
+            vpc=vpc,
+            cluster=cluster,
+            ecr=ecr,
+            postgres=pg,
+            security_groups=sgs,
+            iam_roles=iam,
+        )
+
+        def check(container_definitions: str) -> None:
+            _assert_postgres_password_uses_ecs_secret(
+                _first_container(container_definitions)
+            )
+
+        return svc.task_definition.container_definitions.apply(check)
 
     def test_daemon_no_deprecation_warnings(self) -> None:
         vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()

@@ -56,6 +56,41 @@ class TestFastAPIAuthComponent:
             public_subnet_id,
         ).apply(check)
 
+    @pulumi.runtime.test
+    def test_instance_requires_imdsv2(self) -> None:
+        vpc, ecr, sgs = _make_deps()
+        auth = FastAPIAuthComponentResource("test-energy-market", vpc, ecr, sgs)
+
+        def check(metadata_options: dict) -> None:
+            assert metadata_options.get("http_tokens") == "required"
+            assert metadata_options.get("http_endpoint") == "enabled"
+
+        return auth.instance.metadata_options.apply(check)
+
+    @pulumi.runtime.test
+    def test_root_volume_is_encrypted(self) -> None:
+        vpc, ecr, sgs = _make_deps()
+        auth = FastAPIAuthComponentResource("test-energy-market", vpc, ecr, sgs)
+
+        def check(root_block_device: dict) -> None:
+            assert root_block_device.get("encrypted") is True
+
+        return auth.instance.root_block_device.apply(check)
+
+    @pulumi.runtime.test
+    def test_user_data_fetches_cognito_values_from_ssm(self) -> None:
+        vpc, ecr, sgs = _make_deps()
+        auth = FastAPIAuthComponentResource("test-energy-market", vpc, ecr, sgs)
+
+        def check(user_data: str) -> None:
+            assert "test-cognito-client-id" not in user_data
+            assert "test-cognito-client-secret" not in user_data
+            assert "aws ssm get-parameter" in user_data
+            for parameter_name in auth.cognito_parameter_names.values():
+                assert parameter_name in user_data
+
+        return auth.instance.user_data.apply(check)
+
     def test_no_deprecation_warnings(self) -> None:
         """Regression guard: region.region must be used, not region.name."""
         vpc, ecr, sgs = _make_deps()

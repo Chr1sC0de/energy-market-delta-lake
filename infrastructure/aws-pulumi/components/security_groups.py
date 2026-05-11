@@ -6,7 +6,7 @@ import pulumi
 import pulumi_aws as aws
 
 from components.vpc import VpcComponentResource
-from configs import ADMINISTRATOR_IPS
+from configs import ADMINISTRATOR_CIDRS
 
 
 @dataclass
@@ -134,7 +134,7 @@ class SecurityGroupsComponentResource(pulumi.ComponentResource):
 
     def _setup_bastion_host(self) -> None:
         sg = self.register.bastion_host
-        for idx, ip in enumerate(ADMINISTRATOR_IPS):
+        for idx, cidr in enumerate(ADMINISTRATOR_CIDRS):
             aws.ec2.SecurityGroupRule(
                 f"{self.name}-bastion-ssh-{idx}",
                 type="ingress",
@@ -142,8 +142,8 @@ class SecurityGroupsComponentResource(pulumi.ComponentResource):
                 from_port=22,
                 to_port=22,
                 protocol="tcp",
-                cidr_blocks=[f"{ip}/32"],
-                description=f"SSH from admin {ip}",
+                cidr_blocks=[cidr],
+                description=f"SSH from admin {cidr}",
                 opts=pulumi.ResourceOptions(parent=sg),
             )
 
@@ -207,7 +207,7 @@ class SecurityGroupsComponentResource(pulumi.ComponentResource):
     def _setup_caddy_instance(self) -> None:
         sg = self.register.caddy_instance
         # SSH from admin IPs
-        for idx, ip in enumerate(ADMINISTRATOR_IPS):
+        for idx, cidr in enumerate(ADMINISTRATOR_CIDRS):
             aws.ec2.SecurityGroupRule(
                 f"{self.name}-caddy-ssh-{idx}",
                 type="ingress",
@@ -215,8 +215,8 @@ class SecurityGroupsComponentResource(pulumi.ComponentResource):
                 from_port=22,
                 to_port=22,
                 protocol="tcp",
-                cidr_blocks=[f"{ip}/32"],
-                description=f"SSH from admin {ip}",
+                cidr_blocks=[cidr],
+                description=f"SSH from admin {cidr}",
                 opts=pulumi.ResourceOptions(parent=sg),
             )
         # HTTP + HTTPS from anywhere (ACME challenge + user traffic)

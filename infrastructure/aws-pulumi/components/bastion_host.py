@@ -88,11 +88,17 @@ class BastionHostComponentResource(pulumi.ComponentResource):
             vpc_security_group_ids=[self.security_groups.register.bastion_host.id],
             iam_instance_profile=self.iam_roles.bastion_profile.name,
             key_name=self.key_pair.key_name,
+            metadata_options=aws.ec2.InstanceMetadataOptionsArgs(
+                http_endpoint="enabled",
+                http_tokens="required",
+            ),
+            root_block_device=aws.ec2.InstanceRootBlockDeviceArgs(encrypted=True),
             user_data=dedent("""#!/bin/bash
                 set -euo pipefail
                 dnf install -y go git
             """),
             user_data_replace_on_change=True,
+            tags={"dagster/service": "bastion-host", "Name": f"{self.name}-bastion"},
             opts=self.child_opts,
         )
 

@@ -109,6 +109,9 @@ flowchart LR
 ## Traffic rules
 
 - Caddy is the only internet-facing service security group.
+- Administrator SSH ingress is generated only from validated IPv4 `/32` CIDRs
+  in `ADMINISTRATOR_IPS`; empty, malformed, IPv6, or broader CIDRs fail during
+  configuration loading.
 - FastAPI auth is private and only accepts traffic from Caddy plus SSH from the
   bastion host.
 - Dagster webservers accept port `3000` from Caddy and the bastion host.
