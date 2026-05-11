@@ -47,6 +47,12 @@ def load_default_manifest_payload() -> dict[str, Any]:
     return cast(dict[str, Any], json.loads(resource.read_text(encoding="utf-8")))
 
 
+def load_default_discovery_report_payload() -> dict[str, Any]:
+    """Load the checked-in AEMO gas document media discovery report JSON."""
+    resource = files(__package__).joinpath(DISCOVERY_REPORT_FILENAME)
+    return cast(dict[str, Any], json.loads(resource.read_text(encoding="utf-8")))
+
+
 def observations_from_manifest_payload(
     payload: Mapping[str, Any],
     *,

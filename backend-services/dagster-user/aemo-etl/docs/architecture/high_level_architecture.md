@@ -104,16 +104,19 @@ for the STTM unzipper path.
 `bronze_aemo_gas_document_sources`, a daily AEMO gas document source asset. It
 uses `factories/aemo_gas_documents` to load a checked-in package media manifest,
 record included, excluded, and `needs_human_review` source-page or direct
-`https://www.aemo.com.au/-/media/...` media-link observations, land included
-direct-media PDF bytes under
-`LANDING_BUCKET/bronze/aemo_gas_documents`, write the metadata Delta table, and
-archive landed PDFs under `ARCHIVE_BUCKET/bronze/aemo_gas_documents` only after
-that metadata write succeeds. Source-page HTML discovery is a manual Playwright
-CLI workflow, so the daily asset path does not fetch AEMO source-page HTML. It
-does not extract PDF text, create wiki output, or write embeddings/vector
-storage. The packaged manifest is expected to contain media-link observations,
-and the paired discovery report records direct-media validation status, HTTP
-metadata, resolved URLs, and validation errors.
+`https://www.aemo.com.au/-/media/...` media-link observations, land
+direct-media PDF bytes under `LANDING_BUCKET/bronze/aemo_gas_documents` only
+when the manifest row has `should_download=true`, write the metadata Delta
+table, and archive landed PDFs under
+`ARCHIVE_BUCKET/bronze/aemo_gas_documents` only after that metadata write
+succeeds. Source-page HTML discovery is a manual Playwright CLI workflow, so the
+daily asset path does not fetch AEMO source-page HTML. It does not extract PDF
+text, create wiki output, or write embeddings/vector storage. The packaged
+manifest is expected to contain media-link observations, and the paired
+discovery report records direct-media validation status, HTTP metadata, resolved
+URLs, and validation errors. Failed direct-media validation rows are retained in
+the manifest with `should_download=false`, so daily materialization writes
+metadata for the row without requesting the failed media URL.
 
 ### Unzipper assets
 

@@ -25,9 +25,10 @@ The project materializes Dagster assets defined under `src/aemo_etl/defs` to bui
 - `bronze_aemo_gas_document_sources` loads the checked-in AEMO gas document
   media manifest, records included, excluded, and `needs_human_review`
   source-page and direct `https://www.aemo.com.au/-/media/...` media-link
-  observations, lands included PDF bytes under
-  `LANDING_BUCKET/bronze/aemo_gas_documents`, and archives those bytes under
-  `ARCHIVE_BUCKET/bronze/aemo_gas_documents` after the metadata table write.
+  observations, lands only media rows whose manifest `should_download` is true
+  under `LANDING_BUCKET/bronze/aemo_gas_documents`, and archives those bytes
+  under `ARCHIVE_BUCKET/bronze/aemo_gas_documents` after the metadata table
+  write.
 - `download_vicgas_public_report_zip_files_job` and
   `download_sttm_day_zip_files_job` can be launched manually to bootstrap or
   backfill VicGas `PublicRptsNN.zip` and STTM `DAYNN.ZIP` bundles into landing
@@ -305,12 +306,15 @@ source pages, writes the checked-in media manifest and discovery report, and
 validates direct media URLs with normal HTTP requests. The checked-in manifest
 is expected to be non-empty, and the discovery report records validation status,
 HTTP status code, content type, content length, resolved URL, and validation
-errors. If a source page is blocked or unreadable, the refresh preserves any
-existing media entries for that source page instead of replacing them with an
-empty discovery result. By default it stages and commits only those generated
-JSON files; use `--no-commit` to write them for review without staging or
-committing. If the local Playwright Chromium binary is missing, install it once
-with `uv run playwright install chromium`.
+errors. Direct media rows with failed validation are retained in the manifest
+with `should_download=false`; the daily asset path records their metadata rows
+without issuing media GETs or landing bytes, while rows with passing validation
+remain downloadable. If a source page is blocked or unreadable, the refresh
+preserves any existing media entries for that source page instead of replacing
+them with an empty discovery result. By default it stages and commits only those
+generated JSON files; use `--no-commit` to write them for review without staging
+or committing. If the local Playwright Chromium binary is missing, install it
+once with `uv run playwright install chromium`.
 
 ## Project layout
 

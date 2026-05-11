@@ -387,9 +387,11 @@ grains become new `gas_model` facts.
 daily materialization path. The manifest is expected to contain direct
 `https://www.aemo.com.au/-/media/...` media-link observations, and the paired
 discovery report records validation status, HTTP status code, content type,
-content length, resolved URL, and validation errors. Source-page discovery is
-refreshed manually with a Playwright-backed CLI so regular Dagster runs do not
-depend on source-page HTML availability.
+content length, resolved URL, and validation errors. Failed direct-media
+validation rows stay in the manifest with `should_download=false`; the daily
+asset path records those rows without requesting the failed media URL or landing
+bytes. Source-page discovery is refreshed manually with a Playwright-backed CLI
+so regular Dagster runs do not depend on source-page HTML availability.
 
 Run commands from this Subproject:
 
@@ -408,8 +410,11 @@ Omit `--no-commit` only when the refreshed generated JSON files are ready to be
 staged and committed. The CLI stages and commits only the checked-in AEMO gas
 document media manifest and discovery report files. If a configured source page
 is blocked or unreadable, the refresh preserves any existing media entries for
-that page rather than replacing them with an empty result. If the local
-Playwright Chromium binary is missing, install it once with
+that page rather than replacing them with an empty result. If direct-media
+validation fails, the refresh records the failure in the discovery report and
+sets the manifest row `should_download=false` until a later successful refresh
+can make it downloadable again. If the local Playwright Chromium binary is
+missing, install it once with
 `uv run playwright install chromium`.
 
 ## Test assumptions

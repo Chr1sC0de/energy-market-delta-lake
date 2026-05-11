@@ -197,7 +197,7 @@ sequenceDiagram
     Discovery->>Manifest: Write non-empty manifest and validation report JSON
     Schedule->>Docs: Run daily
     Docs->>Manifest: Load source-page and media-link observations
-    Docs->>AEMO: Download included direct media URLs
+    Docs->>AEMO: Download media rows with should_download=true
     Docs->>Docs: Classify include, exclude, and needs_human_review observations
     Docs->>Landing: Write included PDF bytes by content_sha256
     Docs->>DeltaDocs: Merge bronze_aemo_gas_document_sources metadata rows
@@ -215,13 +215,17 @@ Trigger and output notes:
   The manual `aemo-refresh-gas-document-media-manifest` CLI performs source-page
   discovery with Playwright, validates direct media URLs, records validation
   status, HTTP metadata, resolved URLs, and validation errors in the discovery
-  report, and preserves existing manifest entries when a source page is blocked
-  or unreadable.
+  report, holds failed validation rows in the manifest with
+  `should_download=false`, and preserves existing manifest entries when a source
+  page is blocked or unreadable.
 - Included PDF links produce content-addressed PDF objects and metadata rows
   with source URL, resolved URL, source page, include decision,
   `content_sha256`, document family/version fields, and archive `storage_uri`.
-- Excluded and `needs_human_review` source-page or source-link observations are
-  retained in `bronze_aemo_gas_document_sources` without landing PDF bytes.
+- Excluded and `needs_human_review` source-page or source-link observations,
+  plus failed direct-media validation source-link observations, are retained in
+  `bronze_aemo_gas_document_sources` without landing PDF bytes. Failed
+  validation rows are not requested by the daily asset path until a later
+  manifest refresh marks them downloadable.
 - This flow stops at landing/archive plus bronze metadata. It has no wiki,
   embedding, vector-store, or PDF text-extraction side effects.
 

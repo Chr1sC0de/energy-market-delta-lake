@@ -28,6 +28,7 @@ from aemo_etl.factories.aemo_gas_documents.manifest import (
     discovery_report_payload,
     dump_manifest_json,
     existing_manifest_entries,
+    load_default_discovery_report_payload,
     load_default_aemo_gas_document_observations,
     load_default_manifest_payload,
     manifest_payload,
@@ -222,6 +223,32 @@ def test_default_manifest_loads_packaged_source_page_and_media_observations() ->
         item.source_url.startswith("https://www.aemo.com.au/-/media/")
         for item in media_observations
     )
+
+
+def test_default_manifest_does_not_download_failed_media_validations() -> None:
+    manifest = load_default_manifest_payload()
+    report = load_default_discovery_report_payload()
+    failed_urls = {
+        validation["source_url"]
+        for validation in report["media_validations"]
+        if validation["ok"] is False
+    }
+    downloadable_urls = {
+        media_link["source_url"]
+        for media_link in manifest["media_links"]
+        if media_link["should_download"] is True
+    }
+    held_failed_urls = {
+        media_link["source_url"]
+        for media_link in manifest["media_links"]
+        if media_link["source_url"] in failed_urls
+        and media_link["should_download"] is False
+    }
+
+    assert failed_urls
+    assert downloadable_urls
+    assert held_failed_urls
+    assert failed_urls.isdisjoint(downloadable_urls)
 
 
 def test_manifest_helpers_dump_and_index_entries() -> None:

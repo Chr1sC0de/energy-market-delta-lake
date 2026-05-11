@@ -16,6 +16,10 @@ from aemo_etl.factories.aemo_gas_documents.assets import (
 from aemo_etl.factories.aemo_gas_documents.definitions import (
     aemo_gas_document_sources_definitions_factory,
 )
+from aemo_etl.factories.aemo_gas_documents.manifest import (
+    load_default_discovery_report_payload,
+    load_default_manifest_payload,
+)
 from aemo_etl.factories.aemo_gas_documents.models import AEMOGasDocumentSourcePage
 
 _PAGE_URL = "https://www.aemo.com.au/energy-systems/gas/component"
@@ -216,12 +220,34 @@ def test_definitions_factory_default_getter_uses_retrying_request_get(
 def test_definitions_factory_default_asset_uses_packaged_manifest_media_only(
     mocker: MockerFixture,
 ) -> None:
+    manifest = load_default_manifest_payload()
+    report = load_default_discovery_report_payload()
+    failed_urls = {
+        validation["source_url"]
+        for validation in report["media_validations"]
+        if validation["ok"] is False
+    }
+    failed_indexes = [
+        index
+        for index, media_link in enumerate(manifest["media_links"])
+        if media_link["source_url"] in failed_urls
+        and media_link["should_download"] is False
+    ]
+    later_downloadable_url = next(
+        media_link["source_url"]
+        for index, media_link in enumerate(manifest["media_links"])
+        if failed_indexes
+        and index > failed_indexes[0]
+        and media_link["should_download"] is True
+    )
     requested_urls: list[str] = []
 
     def _get(url: str) -> Response:
         requested_urls.append(url)
         if not url.startswith("https://www.aemo.com.au/-/media/"):
             raise AssertionError(f"unexpected source-page request: {url}")
+        if url in failed_urls:
+            raise AssertionError(f"unexpected failed media request: {url}")
         return _response(url=url, content=_PDF_BYTES)
 
     mocker.patch(
@@ -246,7 +272,9 @@ def test_definitions_factory_default_asset_uses_packaged_manifest_media_only(
     result = fn(context, s3=s3)
 
     assert isinstance(result, MaterializeResult)
+    assert failed_indexes
     assert requested_urls
+    assert later_downloadable_url in requested_urls
     assert result.metadata is not None
     assert result.metadata["included_pdf_count"] == len(requested_urls)
     s3_client.copy_object.assert_not_called()
