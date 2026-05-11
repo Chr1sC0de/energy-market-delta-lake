@@ -41,7 +41,7 @@ PROMOTION_E2E_SOURCE_DEFINITION_TARGET_ASSET_COUNT_SOURCE = (
 PROMOTION_E2E_MAX_TOTAL_GATE_DURATION_SECONDS = 20 * 60
 PROMOTION_E2E_MAX_PEAK_ACTIVE_RUN_COUNT = DEFAULT_MAX_CONCURRENT_RUNS
 PROMOTION_E2E_MAX_PEAK_QUEUED_RUN_COUNT = DEFAULT_MAX_CONCURRENT_RUNS
-PROMOTION_E2E_MAX_TOTAL_RUN_COUNT = 48
+PROMOTION_E2E_MAX_TOTAL_RUN_COUNT_SOURCE = "dataflow.scenario_evidence.batch_count"
 E2E_SCENARIO_DEFAULTS = {
     FULL_GAS_MODEL_SCENARIO: {
         "raw_latest_count": DEFAULT_RAW_LATEST_COUNT,
@@ -431,7 +431,8 @@ class E2ERegressionBudgets:
     max_total_gate_duration_seconds: int
     max_peak_active_run_count: int
     max_peak_queued_run_count: int
-    max_total_run_count: int
+    max_total_run_count: int | None
+    max_total_run_count_source: str
     max_missing_target_asset_count: int = 0
     max_failed_target_asset_count: int = 0
     max_missing_asset_check_count: int = 0
@@ -3945,6 +3946,8 @@ def e2e_regression_budgets_for_scenario(
     required_target_asset_count_source: str = (
         PROMOTION_E2E_REQUIRED_TARGET_ASSET_COUNT_SOURCE
     ),
+    max_total_run_count: int | None = None,
+    max_total_run_count_source: str = PROMOTION_E2E_MAX_TOTAL_RUN_COUNT_SOURCE,
 ) -> E2ERegressionBudgets | None:
     """Return enforced regression budgets for a scenario, if any."""
     if scenario != PROMOTION_GAS_MODEL_SCENARIO:
@@ -3956,7 +3959,8 @@ def e2e_regression_budgets_for_scenario(
         max_total_gate_duration_seconds=(PROMOTION_E2E_MAX_TOTAL_GATE_DURATION_SECONDS),
         max_peak_active_run_count=PROMOTION_E2E_MAX_PEAK_ACTIVE_RUN_COUNT,
         max_peak_queued_run_count=PROMOTION_E2E_MAX_PEAK_QUEUED_RUN_COUNT,
-        max_total_run_count=PROMOTION_E2E_MAX_TOTAL_RUN_COUNT,
+        max_total_run_count=max_total_run_count,
+        max_total_run_count_source=max_total_run_count_source,
     )
 
 
@@ -3969,6 +3973,9 @@ def e2e_regression_budgets_for_run(
     """Return regression budgets with run-specific dynamic target evidence."""
     if scenario != PROMOTION_GAS_MODEL_SCENARIO:
         return None
+    max_total_run_count = promotion_total_run_count_budget_from_dataflow(
+        dataflow_payload
+    )
     if source_definition_payload is not None:
         return e2e_regression_budgets_for_scenario(
             scenario,
@@ -3978,6 +3985,7 @@ def e2e_regression_budgets_for_run(
             required_target_asset_count_source=(
                 PROMOTION_E2E_SOURCE_DEFINITION_TARGET_ASSET_COUNT_SOURCE
             ),
+            max_total_run_count=max_total_run_count,
         )
     return e2e_regression_budgets_for_scenario(
         scenario,
@@ -3987,7 +3995,23 @@ def e2e_regression_budgets_for_run(
         required_target_asset_count_source=(
             PROMOTION_E2E_REQUIRED_TARGET_ASSET_COUNT_SOURCE
         ),
+        max_total_run_count=max_total_run_count,
     )
+
+
+def promotion_total_run_count_budget_from_dataflow(
+    dataflow_payload: Mapping[str, object] | None,
+) -> int | None:
+    """Return the Promotion run-count budget from the direct-launch plan."""
+    if dataflow_payload is None:
+        return None
+    scenario_evidence = optional_mapping(dataflow_payload.get("scenario_evidence"))
+    if scenario_evidence is None:
+        return None
+    batch_count = optional_int(scenario_evidence.get("batch_count"))
+    if batch_count is None or batch_count <= 0:
+        return None
+    return batch_count
 
 
 def promotion_target_asset_count_from_dataflow(
@@ -4052,6 +4076,7 @@ def e2e_budget_thresholds(budgets: E2ERegressionBudgets) -> dict[str, object]:
         "max_peak_active_run_count": budgets.max_peak_active_run_count,
         "max_peak_queued_run_count": budgets.max_peak_queued_run_count,
         "max_total_run_count": budgets.max_total_run_count,
+        "max_total_run_count_source": budgets.max_total_run_count_source,
         "max_missing_target_asset_count": budgets.max_missing_target_asset_count,
         "max_failed_target_asset_count": budgets.max_failed_target_asset_count,
         "max_missing_asset_check_count": budgets.max_missing_asset_check_count,
@@ -4131,7 +4156,7 @@ def format_enforced_e2e_budget_report(
             f"threshold <= {budgets.max_peak_queued_run_count}",
             "- total Dagster runs: observed "
             f"{format_optional_count(observations['total_run_count'])}; "
-            f"threshold <= {budgets.max_total_run_count}",
+            f"threshold <= {format_total_run_count_budget(budgets)}",
             "- target progress: observed "
             f"{format_target_progress(observations['materialized_target_asset_count'], observations['target_asset_count'])}; "
             f"required {format_required_target_progress(budgets)}",
@@ -4250,13 +4275,7 @@ def e2e_budget_failures(
         label="peak queued runs",
         threshold=budgets.max_peak_queued_run_count,
     )
-    append_max_budget_failure(
-        failures,
-        observations,
-        key="total_run_count",
-        label="total Dagster runs",
-        threshold=budgets.max_total_run_count,
-    )
+    append_total_run_count_failure(failures, observations, budgets)
     append_target_progress_failure(failures, observations, budgets)
     append_max_budget_failure(
         failures,
@@ -4287,6 +4306,34 @@ def e2e_budget_failures(
         threshold=budgets.max_failed_asset_check_count,
     )
     return tuple(failures)
+
+
+def append_total_run_count_failure(
+    failures: list[str],
+    observations: Mapping[str, int | float | None],
+    budgets: E2ERegressionBudgets,
+) -> None:
+    """Append the graph-aware total-run budget failure when needed."""
+    threshold = budgets.max_total_run_count
+    if threshold is None:
+        failures.append(
+            "total Dagster run budget unavailable from "
+            f"{budgets.max_total_run_count_source}; "
+            "cannot validate total Dagster runs"
+        )
+        return
+    observed = observations["total_run_count"]
+    if observed is None:
+        failures.append(
+            "total Dagster runs unavailable; threshold <= "
+            f"{format_total_run_count_budget(budgets)}"
+        )
+        return
+    if observed > threshold:
+        failures.append(
+            f"total Dagster runs observed {observed}; threshold <= "
+            f"{format_total_run_count_budget(budgets)}"
+        )
 
 
 def append_max_budget_failure(
@@ -4449,6 +4496,13 @@ def format_optional_count(count: int | None) -> str:
     if count is None:
         return "unavailable"
     return str(count)
+
+
+def format_total_run_count_budget(budgets: E2ERegressionBudgets) -> str:
+    """Return the total-run threshold and launch-plan evidence source."""
+    if budgets.max_total_run_count is None:
+        return f"unavailable from {budgets.max_total_run_count_source}"
+    return f"{budgets.max_total_run_count} from {budgets.max_total_run_count_source}"
 
 
 def format_target_progress(

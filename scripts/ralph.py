@@ -3729,15 +3729,16 @@ def has_marimo_runtime_change(changed_files: list[str]) -> bool:
 def select_qa_commands(changed_files: list[str], repo_root: Path) -> list[QACommand]:
     commands: list[QACommand] = []
     has_aemo_etl_change = has_protected_aemo_etl_change(changed_files)
+    aemo_etl_integration_command: QACommand | None = None
     if has_aemo_etl_change:
         aemo_root = repo_root / AEMO_ETL_PREFIX
-        commands.extend(
-            [
-                QACommand(("make", "unit-test"), aemo_root, "aemo-etl Unit test"),
-                QACommand(("make", "component-test"), aemo_root, "aemo-etl Component test"),
-                QACommand(("make", "integration-test"), aemo_root, "aemo-etl Integration test"),
-                QACommand(("make", "run-prek"), aemo_root, "aemo-etl Commit check"),
-            ]
+        commands.append(
+            QACommand(("make", "run-prek"), aemo_root, "aemo-etl Commit check")
+        )
+        aemo_etl_integration_command = QACommand(
+            ("make", "integration-test"),
+            aemo_root,
+            "aemo-etl Integration test",
         )
 
     if has_marimo_runtime_change(changed_files):
@@ -3764,6 +3765,9 @@ def select_qa_commands(changed_files: list[str], repo_root: Path) -> list[QAComm
                 "Ralph unit tests",
             )
         )
+
+    if aemo_etl_integration_command is not None:
+        commands.append(aemo_etl_integration_command)
 
     deduped: list[QACommand] = []
     seen: set[tuple[tuple[str, ...], Path]] = set()

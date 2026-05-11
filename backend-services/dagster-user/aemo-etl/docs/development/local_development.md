@@ -291,16 +291,18 @@ those values in command output before #79 enforcement is applied.
 The `promotion-gas-model` scenario enforces #79 Promotion guard regression
 budgets from the approved #78 targeted baseline: total gate duration at or
 below 20 minutes, peak active runs at or below `6`, peak queued runs at or below
-`6`, total Dagster runs at or below `48`, target progress matching the current
-`source_definitions.executable_asset_count`, and missing or failed target
-assets and asset checks at `0`. Budget failures print observed values,
-thresholds, dynamic target-count evidence, and the `run-manifest.json` path.
-Duration or run count failures point to run explosion, queue contention, or
-local environment slowdown that needs evidence before rerun or launch-shape
-changes. Target-count mismatches mean the running Dagster asset graph is stale
-for the source revision. Target progress and asset-check failures mean the
-coverage contract was not satisfied and the source revision must not be
-promoted until the dataflow regression is fixed. Missing telemetry is also a
+`6`, total Dagster runs at or below the current direct-launch
+`dataflow.scenario_evidence.batch_count`, target progress matching the current
+`source_definitions.executable_asset_count`, and missing or failed target assets
+and asset checks at `0`. Budget failures print observed values, thresholds,
+dynamic target-count evidence, planned-batch evidence, and the
+`run-manifest.json` path. Duration or run count failures point to run
+explosion, queue contention, unexpected extra Dagster runs beyond the launch
+plan, or local environment slowdown that needs evidence before rerun or
+launch-shape changes. Target-count mismatches mean the running Dagster asset
+graph is stale for the source revision. Target progress and asset-check failures
+mean the coverage contract was not satisfied and the source revision must not
+be promoted until the dataflow regression is fixed. Missing telemetry is also a
 Promotion gate failure because Ralph cannot prove the source revision satisfied
 the contract. The full scenario prints the same telemetry without enforcing
 these Promotion budgets.

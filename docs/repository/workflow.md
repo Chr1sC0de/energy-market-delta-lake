@@ -142,13 +142,15 @@ Local workflow notes:
   target-progress, asset-check, cleanup, and manifest-path fields. The scenario
   enforces #79 Promotion guard
   regression budgets from the approved #78 targeted baseline: 20 minute total
-  duration, `6` peak active runs, `6` peak queued runs, `48` total Dagster runs,
+  duration, `6` peak active runs, `6` peak queued runs, total Dagster runs at
+  or below the current direct-launch `dataflow.scenario_evidence.batch_count`,
   target progress matching the current
   `source_definitions.executable_asset_count`, and `0` missing or failed
   target assets and asset checks. Duration or run-count failures indicate run
-  explosion, queue contention, or local environment slowdown; target-count
-  mismatches, target-progress, asset-check, or missing-telemetry failures mean
-  Ralph cannot prove the source revision met the **Promotion** contract.
+  explosion, queue contention, unexpected extra Dagster runs beyond the launch
+  plan, or local environment slowdown; target-count mismatches,
+  target-progress, asset-check, or missing-telemetry failures mean Ralph cannot
+  prove the source revision met the **Promotion** contract.
   Temporary Promotion source worktrees therefore do not look for ignored seed
   data under the ephemeral worktree.
 

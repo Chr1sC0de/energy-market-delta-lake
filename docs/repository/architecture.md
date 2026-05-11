@@ -150,11 +150,12 @@ size; the manifest also records top-level source-definition evidence with the
 current executable asset count, asset-check count, full target keys, and STTM
 target keys. The Promotion scenario enforces regression budgets from the approved
 targeted baseline: total gate duration at or below 20 minutes, peak active and
-queued runs at or below `6`, total Dagster runs at or below `48`, target
-progress matching the current `source_definitions.executable_asset_count`, and
-missing or failed target assets and asset checks at `0`. A source/runtime
-target-count mismatch indicates a stale Dagster graph for the source revision.
-Budget failures print the observed values, thresholds, dynamic target-count
+queued runs at or below `6`, total Dagster runs at or below the current
+direct-launch `dataflow.scenario_evidence.batch_count`, target progress matching
+the current `source_definitions.executable_asset_count`, and missing or failed
+target assets and asset checks at `0`. A source/runtime target-count mismatch
+indicates a stale Dagster graph for the source revision. Budget failures print
+the observed values, thresholds, dynamic target-count evidence, planned-batch
 evidence, and run manifest path. The full scenario prints the same telemetry
 without making local development performance claims.
 

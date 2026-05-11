@@ -1794,10 +1794,8 @@ Build it.
         self.assertEqual(
             names,
             [
-                "aemo-etl Unit test",
-                "aemo-etl Component test",
-                "aemo-etl Integration test",
                 "aemo-etl Commit check",
+                "aemo-etl Integration test",
             ],
         )
 
@@ -1827,11 +1825,9 @@ Build it.
         self.assertEqual(
             names,
             [
-                "aemo-etl Unit test",
-                "aemo-etl Component test",
-                "aemo-etl Integration test",
                 "aemo-etl Commit check",
                 "root Commit check",
+                "aemo-etl Integration test",
             ],
         )
 
@@ -6306,6 +6302,37 @@ Build it.
         self.assertTrue(
             any(event["stage"] == "qa_failed" for event in manifest["events"])
         )
+
+    def test_aemo_etl_commit_check_failure_stops_before_integration_test(self) -> None:
+        qa_command = ("make", "run-prek")
+        changed_file = (
+            " M backend-services/dagster-user/aemo-etl/src/aemo_etl/"
+            "definitions.py\n"
+        )
+        runner = FakeRunner(
+            status_outputs=[changed_file, changed_file],
+            rev_parse_outputs=["base-sha\n"],
+            fail_commands={qa_command},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(Path(tmp), runner)
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._handle_implementation(
+                    make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+                )
+
+            manifest = load_run_manifest(Path(tmp))
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn(qa_command, commands)
+        self.assertNotIn(("make", "integration-test"), commands)
+        failed_qa = [
+            result
+            for result in manifest["qa_results"]
+            if result["name"] == "aemo-etl Commit check"
+            and result["status"] == "failed"
+        ]
+        self.assertGreaterEqual(len(failed_qa), 1)
 
     def test_promotion_merges_dev_and_closes_verified_integrated_issue(self) -> None:
         issue_list_command = (

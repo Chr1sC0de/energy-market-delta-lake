@@ -389,15 +389,16 @@ failure remain in the manifest.
 | `telemetry.dagster_dataflow.final_missing_asset_check_count`, `final_failed_asset_check_count` | Final asset-check drift for the gate target |
 | `source_definitions` | Current-source `dg list defs` provenance: command, working directory, target group, executable asset count, asset-check count, full target asset keys, and STTM target keys |
 | `dataflow.scenario_evidence` | Direct-launch coverage evidence: scenario, launch mode, target group, GraphQL-derived target asset count, selected upstream closure count, skipped live source keys, wave count, batch count, asset batch size, and nested source-definition evidence when available |
-| `budget.status`, `budget.thresholds`, `budget.failures`, `budget.run_manifest` | Enforced Promotion budget result, dynamic target-count source, threshold values, actionable failure lines, and the manifest path operators should inspect |
+| `budget.status`, `budget.thresholds`, `budget.failures`, `budget.run_manifest` | Enforced Promotion budget result, dynamic target-count and planned-batch sources, threshold values, actionable failure lines, and the manifest path operators should inspect |
 
 The `promotion-gas-model` scenario enforces #79 Promotion guard regression
 budgets from the approved #78 targeted baseline: total gate duration at or
 below 20 minutes, peak active runs at or below `6`, peak queued runs at or
-below `6`, total Dagster runs at or below `48`, target progress exactly
-matching the current `source_definitions.executable_asset_count` evidence from
-the source worktree, and missing or failed target assets and asset checks at
-`0`. For the current source definitions that target-progress
+below `6`, total Dagster runs at or below the current direct-launch
+`dataflow.scenario_evidence.batch_count`, target progress exactly matching the
+current `source_definitions.executable_asset_count` evidence from the source
+worktree, and missing or failed target assets and asset checks at `0`.
+For the current source definitions that target-progress
 requirement is `37/37`, not a static historical count. These budgets protect
 **Promotion** from run explosion and missing coverage; they are not generic
 local development performance claims. The full scenario prints the same

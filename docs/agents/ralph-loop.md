@@ -894,16 +894,18 @@ The gate protects the approved #77 coverage invariants: every materializable
 LocalStack/S3, Podman run-worker containers, and the Dagster GraphQL monitor.
 It enforces #79 Promotion guard regression budgets from the approved #78
 targeted baseline: 20 minute total duration, `6` peak active runs, `6` peak
-queued runs, `48` total Dagster runs, target progress matching the current
-`source_definitions.executable_asset_count`, and `0` missing or failed
-target assets and asset checks. Direct Promotion launches pace batch submission
-against `max_concurrent_runs` before starting more work in a dependency wave so
-the queued-run budget remains bounded. The `run-manifest.json` telemetry
-records the #75 timing, run-shape, target progress, asset-check, cleanup, and
+queued runs, total Dagster runs at or below the current direct-launch
+`dataflow.scenario_evidence.batch_count`, target progress matching the current
+`source_definitions.executable_asset_count`, and `0` missing or failed target
+assets and asset checks. Direct Promotion launches pace batch submission against
+`max_concurrent_runs` before starting more work in a dependency wave so the
+queued-run budget remains bounded. The `run-manifest.json` telemetry records
+the #75 timing, run-shape, target progress, asset-check, cleanup, and
 direct-launch scenario evidence plus source-definition provenance; the budget
-report prints the #76 observed values, thresholds, dynamic target-count
-evidence, failure lines, and manifest path. Duration or run-count failures
-indicate run explosion, run queue contention, or local environment slowdown.
+report prints the #76 observed values, thresholds, dynamic target-count and
+planned-batch evidence, failure lines, and manifest path. Duration or run-count
+failures indicate run explosion, run queue contention, unexpected extra Dagster
+runs beyond the launch plan, or local environment slowdown.
 Target-count mismatches indicate a stale runtime Dagster graph. Target-progress
 or asset-check failures indicate the approved coverage contract was not met.
 Missing telemetry is also a gate failure because Ralph cannot prove the source
@@ -1169,11 +1171,15 @@ after a successful **Promotion**.
 For runtime `aemo-etl` changes, Ralph runs from the owning **Subproject**:
 
 ```bash
-make unit-test
-make component-test
-make integration-test
 make run-prek
+make integration-test
 ```
+
+`make run-prek` is the enforced development **Fast check** surface for
+`aemo-etl` runtime work in the Ralph loop. It runs before the heavier local
+**Integration test** so formatter, static-check, **Unit test**, and
+**Component test** failures feed back through Ralph before container-dependent
+QA starts.
 
 Docs-only `aemo-etl` changes are recognized by the maintained Markdown doc path
 rules in [documentation-sync.md](../repository/documentation-sync.md). They skip
@@ -1242,6 +1248,7 @@ issue closure:
 ```bash
 cd backend-services
 scripts/aemo-etl-e2e run \
+  --rebuild \
   --scenario promotion-gas-model \
   --timeout-seconds 1200 \
   --max-concurrent-runs 6 \

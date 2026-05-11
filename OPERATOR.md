@@ -232,7 +232,8 @@ reconciling GitHub metadata.
 
 When the AEMO ETL **End-to-end test** gate runs, treat its budget report as a
 **Promotion** contract, not a local development benchmark. Duration or run-count
-failures point to run explosion, queue contention, or environment slowdown;
+failures point to run explosion, queue contention, unexpected extra Dagster runs
+beyond the direct-launch plan, or environment slowdown;
 target-count mismatches, target-progress, asset-check, or missing-telemetry
 failures mean the source revision has not proven the required coverage. Use the printed
 `run-manifest.json` path before retrying or reconciling issue state.
