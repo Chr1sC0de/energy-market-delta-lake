@@ -771,7 +771,17 @@ class CountingRalphLoop(ralph.RalphLoop):
     def _next_ready_issue(self) -> ralph.Issue | None:
         if self.implemented >= self.ready_count:
             return None
-        return make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+        return make_issue(
+            {"ready-for-agent"},
+            IMPLEMENTATION_BODY,
+            number=42 + self.implemented,
+        )
+
+    def _ready_implementation_candidates(self) -> list[ralph.Issue]:
+        issue = self._next_ready_issue()
+        if issue is None:
+            return []
+        return [issue]
 
     def _handle_implementation(self, issue: ralph.Issue) -> None:
         self.implemented += 1
@@ -798,6 +808,12 @@ class PreflightProbeLoop(ralph.RalphLoop):
             return None
         self.ready_returned = True
         return make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+
+    def _ready_implementation_candidates(self) -> list[ralph.Issue]:
+        issue = self._next_ready_issue()
+        if issue is None:
+            return []
+        return [issue]
 
     def _handle_implementation(self, issue: ralph.Issue) -> None:
         self.implemented += 1
@@ -831,6 +847,12 @@ class TwoReadyIssueLoop(ralph.RalphLoop):
             return make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=43)
         return None
 
+    def _ready_implementation_candidates(self) -> list[ralph.Issue]:
+        issue = self._next_ready_issue()
+        if issue is None:
+            return []
+        return [issue]
+
     def _next_triage_issue(self) -> ralph.Issue | None:
         return None
 
@@ -859,6 +881,100 @@ class DryRunPreviewLoop(ralph.RalphLoop):
 
     def _next_triage_issue(self) -> ralph.Issue | None:
         return None
+
+
+class LaneSchedulerProbeLoop(ralph.RalphLoop):
+    def __init__(
+        self,
+        config: ralph.LoopConfig,
+        runner: FakeRunner,
+        candidates: list[ralph.Issue],
+        *,
+        issue_failures: set[int] | None = None,
+        blocked_issue_numbers: set[int] | None = None,
+    ) -> None:
+        super().__init__(config, runner)
+        self.candidates = list(candidates)
+        self.issue_failures = issue_failures or set()
+        self.blocked_issue_numbers = blocked_issue_numbers or set()
+        self.started_events = {
+            issue.number: threading.Event() for issue in self.candidates
+        }
+        self.release_events = {
+            issue.number: threading.Event()
+            for issue in self.candidates
+            if issue.number in self.blocked_issue_numbers
+        }
+        self.claimed_numbers: list[int] = []
+        self.serial_started: list[int] = []
+        self.exploratory_started: list[int] = []
+        self.completed_numbers: list[int] = []
+        self.failed_numbers: list[int] = []
+        self.active_serial = 0
+        self.max_active_serial = 0
+        self.active_exploratory = 0
+        self.max_active_exploratory = 0
+        self._claimed_issue_numbers: set[int] = set()
+        self._lock = threading.Lock()
+
+    def _validate_tools(self) -> None:
+        pass
+
+    def _validate_labels(self) -> None:
+        pass
+
+    def _validate_clean_root_worktree_for_live_run(self) -> None:
+        pass
+
+    def _ready_implementation_candidates(self) -> list[ralph.Issue]:
+        with self._lock:
+            claimed = set(self._claimed_issue_numbers)
+        return [issue for issue in self.candidates if issue.number not in claimed]
+
+    def _next_triage_issue(self) -> ralph.Issue | None:
+        return None
+
+    def _handle_implementation(self, issue: ralph.Issue) -> None:
+        delivery_plan = ralph.resolve_delivery_plan(
+            issue,
+            default_mode=self.config.delivery_mode,
+            target_branch=self.config.target_branch,
+        )
+        is_exploratory = delivery_plan.mode == ralph.EXPLORATORY_MODE
+        with self._lock:
+            self._claimed_issue_numbers.add(issue.number)
+            self.claimed_numbers.append(issue.number)
+            if is_exploratory:
+                self.exploratory_started.append(issue.number)
+                self.active_exploratory += 1
+                self.max_active_exploratory = max(
+                    self.max_active_exploratory,
+                    self.active_exploratory,
+                )
+            else:
+                self.serial_started.append(issue.number)
+                self.active_serial += 1
+                self.max_active_serial = max(
+                    self.max_active_serial,
+                    self.active_serial,
+                )
+        self.started_events[issue.number].set()
+        try:
+            if issue.number in self.issue_failures:
+                with self._lock:
+                    self.failed_numbers.append(issue.number)
+                raise ralph.IssueFailure(f"simulated issue failure for #{issue.number}")
+            release_event = self.release_events.get(issue.number)
+            if release_event is not None:
+                release_event.wait(timeout=5)
+            with self._lock:
+                self.completed_numbers.append(issue.number)
+        finally:
+            with self._lock:
+                if is_exploratory:
+                    self.active_exploratory -= 1
+                else:
+                    self.active_serial -= 1
 
 
 class NoValidationRalphLoop(ralph.RalphLoop):
@@ -3016,6 +3132,244 @@ Build it.
         self.assertFalse(
             any(command[:3] == ("gh", "issue", "close") for command in commands)
         )
+
+    def test_drain_scheduler_resolves_delivery_modes_before_lane_selection(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(
+                Path(tmp),
+                runner,
+                delivery_mode=ralph.EXPLORATORY_MODE,
+                drain=True,
+                max_issues=4,
+                exploratory_concurrency=2,
+            )
+            probe = LaneSchedulerProbeLoop(
+                loop.config,
+                runner,
+                [
+                    make_issue(
+                        {ralph.READY_LABEL},
+                        EXPLORATORY_IMPLEMENTATION_BODY,
+                        number=41,
+                    ),
+                    make_issue(
+                        {ralph.READY_LABEL, ralph.DELIVERY_TRUNK_LABEL},
+                        IMPLEMENTATION_BODY,
+                        number=42,
+                    ),
+                    make_issue(
+                        {ralph.READY_LABEL, ralph.DELIVERY_EXPLORATORY_LABEL},
+                        EXPLORATORY_IMPLEMENTATION_BODY,
+                        number=43,
+                    ),
+                    make_issue(
+                        {ralph.READY_LABEL, ralph.DELIVERY_GITFLOW_LABEL},
+                        IMPLEMENTATION_BODY,
+                        number=44,
+                    ),
+                ],
+            )
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                probe.run()
+
+        self.assertEqual(probe.serial_started, [42, 44])
+        self.assertEqual(probe.exploratory_started, [41, 43])
+        self.assertEqual(probe.max_active_serial, 1)
+
+    def test_drain_scheduler_limits_exploratory_worker_pool(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(
+                Path(tmp),
+                runner,
+                delivery_mode=ralph.EXPLORATORY_MODE,
+                drain=True,
+                max_issues=3,
+                exploratory_concurrency=2,
+            )
+            probe = LaneSchedulerProbeLoop(
+                loop.config,
+                runner,
+                [
+                    make_issue(
+                        {ralph.READY_LABEL},
+                        EXPLORATORY_IMPLEMENTATION_BODY,
+                        number=41,
+                    ),
+                    make_issue(
+                        {ralph.READY_LABEL},
+                        EXPLORATORY_IMPLEMENTATION_BODY,
+                        number=42,
+                    ),
+                    make_issue(
+                        {ralph.READY_LABEL},
+                        EXPLORATORY_IMPLEMENTATION_BODY,
+                        number=43,
+                    ),
+                ],
+                blocked_issue_numbers={41, 42, 43},
+            )
+            errors: list[BaseException] = []
+
+            def run_probe() -> None:
+                try:
+                    with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                        probe.run()
+                except BaseException as error:
+                    errors.append(error)
+
+            worker = threading.Thread(target=run_probe)
+            worker.start()
+            try:
+                self.assertTrue(probe.started_events[41].wait(timeout=1))
+                self.assertTrue(probe.started_events[42].wait(timeout=1))
+                self.assertFalse(probe.started_events[43].wait(timeout=0.05))
+                probe.release_events[41].set()
+                self.assertTrue(probe.started_events[43].wait(timeout=1))
+            finally:
+                for event in probe.release_events.values():
+                    event.set()
+                worker.join(timeout=2)
+
+        self.assertFalse(worker.is_alive())
+        if errors:
+            raise errors[0]
+        self.assertLessEqual(probe.max_active_exploratory, 2)
+        self.assertEqual(probe.exploratory_started, [41, 42, 43])
+
+    def test_max_issues_waits_for_active_exploratory_workers(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(
+                Path(tmp),
+                runner,
+                delivery_mode=ralph.EXPLORATORY_MODE,
+                drain=True,
+                max_issues=2,
+                exploratory_concurrency=2,
+            )
+            probe = LaneSchedulerProbeLoop(
+                loop.config,
+                runner,
+                [
+                    make_issue(
+                        {ralph.READY_LABEL},
+                        EXPLORATORY_IMPLEMENTATION_BODY,
+                        number=41,
+                    ),
+                    make_issue(
+                        {ralph.READY_LABEL},
+                        EXPLORATORY_IMPLEMENTATION_BODY,
+                        number=42,
+                    ),
+                    make_issue(
+                        {ralph.READY_LABEL},
+                        EXPLORATORY_IMPLEMENTATION_BODY,
+                        number=43,
+                    ),
+                ],
+                blocked_issue_numbers={41, 42},
+            )
+            errors: list[BaseException] = []
+
+            def run_probe() -> None:
+                try:
+                    with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                        probe.run()
+                except BaseException as error:
+                    errors.append(error)
+
+            worker = threading.Thread(target=run_probe)
+            worker.start()
+            try:
+                self.assertTrue(probe.started_events[41].wait(timeout=1))
+                self.assertTrue(probe.started_events[42].wait(timeout=1))
+                self.assertFalse(probe.started_events[43].wait(timeout=0.05))
+                self.assertTrue(worker.is_alive())
+            finally:
+                for event in probe.release_events.values():
+                    event.set()
+                worker.join(timeout=2)
+
+        self.assertFalse(worker.is_alive())
+        if errors:
+            raise errors[0]
+        self.assertEqual(probe.exploratory_started, [41, 42])
+        self.assertEqual(sorted(probe.completed_numbers), [41, 42])
+        self.assertNotIn(43, probe.claimed_numbers)
+
+    def test_issue_failure_in_exploratory_lane_does_not_stop_unrelated_work(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(
+                Path(tmp),
+                runner,
+                delivery_mode=ralph.EXPLORATORY_MODE,
+                drain=True,
+                max_issues=3,
+                exploratory_concurrency=2,
+            )
+            probe = LaneSchedulerProbeLoop(
+                loop.config,
+                runner,
+                [
+                    make_issue(
+                        {ralph.READY_LABEL},
+                        EXPLORATORY_IMPLEMENTATION_BODY,
+                        number=41,
+                    ),
+                    make_issue(
+                        {ralph.READY_LABEL},
+                        EXPLORATORY_IMPLEMENTATION_BODY,
+                        number=42,
+                    ),
+                    make_issue(
+                        {ralph.READY_LABEL, ralph.DELIVERY_TRUNK_LABEL},
+                        IMPLEMENTATION_BODY,
+                        number=43,
+                    ),
+                ],
+                issue_failures={41},
+            )
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                probe.run()
+
+        self.assertEqual(probe.failed_numbers, [41])
+        self.assertIn(42, probe.completed_numbers)
+        self.assertIn(43, probe.completed_numbers)
+
+    def test_targeted_issue_does_not_use_parallel_drain_scheduler(self) -> None:
+        class TargetedProbeLoop(PreflightProbeLoop):
+            def __init__(self, config: ralph.LoopConfig, runner: FakeRunner) -> None:
+                super().__init__(config, runner)
+                self.scheduler_called = False
+
+            def _run_drain_scheduler(self) -> None:
+                self.scheduler_called = True
+                raise AssertionError("targeted issue should remain single-issue path")
+
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(
+                Path(tmp),
+                runner,
+                drain=True,
+                issue=42,
+            )
+            probe = TargetedProbeLoop(loop.config, runner)
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                probe.run()
+
+        self.assertEqual(probe.implemented, 1)
+        self.assertFalse(probe.scheduler_called)
 
     def test_completion_comment_records_local_integration_evidence(self) -> None:
         issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
