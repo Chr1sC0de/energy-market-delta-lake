@@ -48,6 +48,9 @@ Use this page as the agent documentation map. The imperative policy lives in
   handle **Exploratory acceptance review**, and run **Promotion**. Human review
   accepts Exploratory work by moving it to `agent-integrated`, or rejects it by
   moving it to `ready-for-human`.
+  The backing CLI is packaged in
+  [tools/ralph-loop](../../tools/ralph-loop/README.md), while the compatibility
+  command remains `python3 scripts/ralph.py`.
 - Use `$grill-with-docs`, `$to-prd`, and `$shape-issues` before Ralph when the
   work needs shaping or issue creation.
 
@@ -64,6 +67,7 @@ Use this page as the agent documentation map. The imperative policy lives in
   - `.agents/skills/ralph-loop/SKILL.md`
   - `.agents/skills/ralph-issue-refresh/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`
+  - `tools/ralph-loop/README.md`
   - `docs/agents/ralph-loop.md`
   - `docs/agents/issue-tracker.md`
   - `docs/agents/triage-labels.md`
@@ -73,6 +77,6 @@ Use this page as the agent documentation map. The imperative policy lives in
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`
-  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
+  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure tools`
   - `python3 -m unittest discover -s tests`
   - `verify agent workflow map links resolve`

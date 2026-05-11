@@ -46,6 +46,8 @@ and behavior belong on the owning Subproject or repository page.
   [infrastructure/aws-pulumi/README.md](../infrastructure/aws-pulumi/README.md)
 - AWS Pulumi component docs:
   [infrastructure/aws-pulumi/docs/README.md](../infrastructure/aws-pulumi/docs/README.md)
+- Ralph loop:
+  [tools/ralph-loop/README.md](../tools/ralph-loop/README.md)
 
 ## Repository pages
 
@@ -79,9 +81,10 @@ and behavior belong on the owning Subproject or repository page.
   - `backend-services/dagster-user/aemo-etl/docs/gas_model/README.md`
   - `infrastructure/aws-pulumi/README.md`
   - `infrastructure/aws-pulumi/docs/README.md`
+  - `tools/ralph-loop/README.md`
 - `sync.scope`: `router`
 - `sync.qa`:
   - `git diff --name-only`
-  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
+  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure tools`
   - `python3 -m unittest discover -s tests`
   - `verify task and Subproject coverage links resolve`

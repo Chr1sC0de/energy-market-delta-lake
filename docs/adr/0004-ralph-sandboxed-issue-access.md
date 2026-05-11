@@ -68,12 +68,13 @@ recovery guidance in the **Promotion** manifest and review artifact.
 - `sync.owner`: `agents`
 - `sync.sources`:
   - `scripts/ralph.py`
+  - `tools/ralph-loop/src/ralph_loop/cli.py`
   - `docs/agents/ralph-loop.md`
   - `CONTEXT.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`
-  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
+  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure tools`
   - `python3 -m unittest discover -s tests`
   - `verify decision text matches Ralph sandbox, issue metadata, and Git auth boundaries`

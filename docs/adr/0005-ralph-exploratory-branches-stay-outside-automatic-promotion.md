@@ -76,6 +76,7 @@ close the issue with normal issue evidence.
 - `sync.owner`: `agents`
 - `sync.sources`:
   - `scripts/ralph.py`
+  - `tools/ralph-loop/src/ralph_loop/cli.py`
   - `CONTEXT.md`
   - `OPERATOR.md`
   - `docs/agents/ralph-loop.md`
@@ -84,6 +85,6 @@ close the issue with normal issue evidence.
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`
-  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
+  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure tools`
   - `python3 -m unittest discover -s tests`
   - `verify decision text matches Exploratory delivery labels, review states, and Promotion evidence`

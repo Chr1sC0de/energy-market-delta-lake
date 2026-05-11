@@ -103,8 +103,8 @@ flowchart LR
 | Service | CPU | Memory | Port | Cloud Map name | Notes |
 |---|---:|---:|---:|---|---|
 | user-code | 256 | 1024 | 4000 | `aemo-etl` | Dagster gRPC server |
-| webserver admin | 512 | 1024 | 3000 | `webserver-admin` | path prefix `/dagster-webserver/admin` |
-| webserver guest | 512 | 1024 | 3000 | `webserver-guest` | `--read-only`, path prefix `/dagster-webserver/guest` |
+| webserver admin | 256 | 1024 | 3000 | `webserver-admin` | path prefix `/dagster-webserver/admin` |
+| webserver guest | 256 | 1024 | 3000 | `webserver-guest` | `--read-only`, path prefix `/dagster-webserver/guest` |
 | daemon | 256 | 1024 | none | none | background scheduler/sensor/orchestration process |
 
 Cluster-level behavior:

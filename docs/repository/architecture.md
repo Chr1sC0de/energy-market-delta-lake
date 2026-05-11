@@ -195,6 +195,6 @@ without making local development performance claims.
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`
-  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
+  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure tools`
   - `python3 -m unittest discover -s tests`
   - `verify links, diagrams, commands, paths, ports, env vars, and names`

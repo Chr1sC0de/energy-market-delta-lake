@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.util
 import io
 import json
 import subprocess
@@ -16,14 +15,9 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+from ralph_loop import cli as ralph
 
-RALPH_PATH = Path(__file__).resolve().parents[1] / "scripts" / "ralph.py"
-SPEC = importlib.util.spec_from_file_location("ralph", RALPH_PATH)
-if SPEC is None or SPEC.loader is None:
-    raise RuntimeError("Could not load scripts/ralph.py")
-ralph = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = ralph
-SPEC.loader.exec_module(ralph)
+REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 IMPLEMENTATION_BODY = """## What to build
@@ -65,7 +59,9 @@ Review whether this branch should become the production workflow.
 
 
 def implementation_body_with_blockers(*blockers: int) -> str:
-    blocked_by = "\n".join(f"- #{blocker}" for blocker in blockers) if blockers else "None"
+    blocked_by = (
+        "\n".join(f"- #{blocker}" for blocker in blockers) if blockers else "None"
+    )
     return f"""## What to build
 Build it.
 
@@ -385,7 +381,8 @@ class FakeRunner:
         rev_parse_outputs: list[str] | None = None,
         command_outputs: dict[tuple[str, ...], list[str]] | None = None,
         fail_commands: set[tuple[str, ...]] | dict[tuple[str, ...], int] | None = None,
-        fail_command_attempts: dict[tuple[str, ...], list[tuple[int, str]]] | None = None,
+        fail_command_attempts: dict[tuple[str, ...], list[tuple[int, str]]]
+        | None = None,
         fail_post_promotion_review: bool = False,
         fail_ready_issue_refresh_analysis: bool = False,
         ready_issue_refresh_analysis_markdown: str = READY_ISSUE_REFRESH_ANALYSIS_MARKDOWN,
@@ -400,7 +397,9 @@ class FakeRunner:
         self.fail_command_attempts = fail_command_attempts or {}
         self.fail_post_promotion_review = fail_post_promotion_review
         self.fail_ready_issue_refresh_analysis = fail_ready_issue_refresh_analysis
-        self.ready_issue_refresh_analysis_markdown = ready_issue_refresh_analysis_markdown
+        self.ready_issue_refresh_analysis_markdown = (
+            ready_issue_refresh_analysis_markdown
+        )
         self.fail_issue_create = fail_issue_create
         self.created_issue_number = 99
         if isinstance(fail_commands, dict):
@@ -434,7 +433,10 @@ class FakeRunner:
         if log_path is not None:
             log_path.parent.mkdir(parents=True, exist_ok=True)
             log_path.write_text("fake log", encoding="utf-8")
-        if command in self.fail_command_attempts and self.fail_command_attempts[command]:
+        if (
+            command in self.fail_command_attempts
+            and self.fail_command_attempts[command]
+        ):
             returncode, stderr = self.fail_command_attempts[command].pop(0)
             raise ralph.CommandFailure(
                 args,
@@ -464,7 +466,9 @@ class FakeRunner:
         if command[:3] == ("git", "diff", "--name-only"):
             return ralph.CompletedCommand(stdout=self.diff_outputs.pop(0), stderr="")
         if command[:2] == ("git", "rev-parse"):
-            return ralph.CompletedCommand(stdout=self.rev_parse_outputs.pop(0), stderr="")
+            return ralph.CompletedCommand(
+                stdout=self.rev_parse_outputs.pop(0), stderr=""
+            )
         if command[:5] == ("git", "ls-remote", "--exit-code", "--heads", "origin"):
             branch = command[5]
             return ralph.CompletedCommand(
@@ -490,9 +494,13 @@ class FakeRunner:
                 stderr="",
             )
         if command[:3] == ("gh", "issue", "view") and "comments" in command:
-            return ralph.CompletedCommand(stdout=json.dumps({"comments": []}), stderr="")
+            return ralph.CompletedCommand(
+                stdout=json.dumps({"comments": []}), stderr=""
+            )
         if command[:3] == ("gh", "issue", "view") and "state" in command:
-            return ralph.CompletedCommand(stdout=json.dumps({"state": "OPEN"}), stderr="")
+            return ralph.CompletedCommand(
+                stdout=json.dumps({"state": "OPEN"}), stderr=""
+            )
         if command[:3] == ("gh", "issue", "view"):
             return ralph.CompletedCommand(
                 stdout=issue_view_output(labels=["agent-reviewing"]),
@@ -568,7 +576,9 @@ def make_loop(
         skip_post_promotion_review=skip_post_promotion_review,
         skip_post_promotion_followups=skip_post_promotion_followups,
         ready_issue_refresh_enabled=(
-            drain if ready_issue_refresh_enabled is None else ready_issue_refresh_enabled
+            drain
+            if ready_issue_refresh_enabled is None
+            else ready_issue_refresh_enabled
         ),
         skip_ready_issue_refresh=skip_ready_issue_refresh,
         issue=issue,
@@ -615,8 +625,8 @@ def write_recovery_manifest(
         "changed_files": ["scripts/ralph.py"],
         "qa_results": [
             {
-                "name": "Ralph unit tests",
-                "command": ["python3", "-m", "unittest", "discover", "-s", "tests"],
+                "name": "Ralph loop Commit check",
+                "command": ["make", "run-prek"],
                 "cwd": str(tmp_path / "repo"),
                 "log_path": str(run_dir / "qa.log"),
                 "status": "passed",
@@ -697,7 +707,7 @@ def exploratory_handoff_comments_output(
             "",
             "## QA",
             "",
-            "- `python3 -m unittest discover -s tests` from `/repo`",
+            "- `make run-prek` from `/repo`",
             "",
         ]
     )
@@ -745,7 +755,9 @@ def issue_comments_command(number: int) -> tuple[str, ...]:
 
 
 class CountingRalphLoop(ralph.RalphLoop):
-    def __init__(self, config: ralph.LoopConfig, runner: FakeRunner, ready_count: int) -> None:
+    def __init__(
+        self, config: ralph.LoopConfig, runner: FakeRunner, ready_count: int
+    ) -> None:
         super().__init__(config, runner)
         self.ready_count = ready_count
         self.implemented = 0
@@ -1042,7 +1054,9 @@ class ScriptedOperatorRun(ralph.RalphOperatorRun):
             message=f"Starting Promotion from {source_branch} to {target_branch}.",
         )
         integrated_issues = (
-            self.current_snapshot.integrated if self.current_snapshot is not None else ()
+            self.current_snapshot.integrated
+            if self.current_snapshot is not None
+            else ()
         )
         manifest_path = write_child_manifest(
             self.config.log_root,
@@ -1106,7 +1120,9 @@ class RalphHelperTests(unittest.TestCase):
 
         self.assertEqual(issue.comments, 2)
 
-    def test_ready_issue_refresh_notes_filter_limit_and_order_by_created_at(self) -> None:
+    def test_ready_issue_refresh_notes_filter_limit_and_order_by_created_at(
+        self,
+    ) -> None:
         comments = [
             {
                 "body": ready_issue_refresh_body("refresh 4"),
@@ -1159,9 +1175,12 @@ class RalphHelperTests(unittest.TestCase):
             ],
         )
 
-    def test_ready_issue_refresh_notes_preserve_input_order_without_timestamps(self) -> None:
+    def test_ready_issue_refresh_notes_preserve_input_order_without_timestamps(
+        self,
+    ) -> None:
         comments = [
-            {"body": ready_issue_refresh_body(f"refresh {index}")} for index in range(1, 7)
+            {"body": ready_issue_refresh_body(f"refresh {index}")}
+            for index in range(1, 7)
         ]
 
         notes = ralph.ready_issue_refresh_notes(comments)
@@ -1189,7 +1208,9 @@ class RalphHelperTests(unittest.TestCase):
         self.assertLess(body_index, section_index)
         self.assertLess(section_index, note_index)
         self.assertIn("## What to build", prompt[:section_index])
-        self.assertIn("Treat the issue body above as the primary implementation contract.", prompt)
+        self.assertIn(
+            "Treat the issue body above as the primary implementation contract.", prompt
+        )
 
     def test_implementation_prompt_omits_refresh_section_when_no_notes(self) -> None:
         issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
@@ -1328,7 +1349,10 @@ Build it.
         self.assertFalse(invalid_result.ready)
         self.assertEqual(invalid_result.labels, ("needs-triage",))
         self.assertTrue(
-            any("Missing required issue section" in reason for reason in invalid_result.reasons)
+            any(
+                "Missing required issue section" in reason
+                for reason in invalid_result.reasons
+            )
         )
         self.assertTrue(
             any("category label" in reason for reason in invalid_result.reasons)
@@ -1345,7 +1369,9 @@ Build it.
         self.assertIn("## What to build", drafts[0].body)
         self.assertEqual(drafts[0].labels, ("delivery-gitflow", "enhancement"))
 
-    def test_parse_blockers_reads_issue_references_from_blocked_by_section(self) -> None:
+    def test_parse_blockers_reads_issue_references_from_blocked_by_section(
+        self,
+    ) -> None:
         body = """## What to build
 Build it.
 
@@ -1442,7 +1468,9 @@ Build it.
             "agent-reviewing",
         ]
         issues = [
-            make_issue({"ready-for-agent", stop_label}, IMPLEMENTATION_BODY, number=number)
+            make_issue(
+                {"ready-for-agent", stop_label}, IMPLEMENTATION_BODY, number=number
+            )
             for number, stop_label in enumerate(stop_labels, start=43)
         ]
 
@@ -1492,7 +1520,9 @@ Build it.
 
         self.assertEqual([issue.number for issue in candidates], [117, 122])
 
-    def test_ready_issue_refresh_candidates_respect_issue_limit_scan_bound(self) -> None:
+    def test_ready_issue_refresh_candidates_respect_issue_limit_scan_bound(
+        self,
+    ) -> None:
         issue_list_command = (
             "gh",
             "issue",
@@ -1552,9 +1582,9 @@ Build it.
         )
         qa_result = ralph.QAResult(
             command=ralph.QACommand(
-                ("python3", "-m", "unittest", "discover", "-s", "tests"),
+                ("make", "run-prek"),
                 Path("/repo"),
-                "Ralph unit tests",
+                "Ralph loop Commit check",
             ),
             log_path=Path("/logs/qa.log"),
         )
@@ -1571,14 +1601,18 @@ Build it.
         )
 
         self.assertIn("Use the repo-local $ralph-issue-refresh skill", prompt)
-        self.assertIn("Do not comment, edit labels, edit issue bodies, close issues", prompt)
-        self.assertIn("Do not run `gh issue comment`, `gh issue edit`, `gh issue close`", prompt)
+        self.assertIn(
+            "Do not comment, edit labels, edit issue bodies, close issues", prompt
+        )
+        self.assertIn(
+            "Do not run `gh issue comment`, `gh issue edit`, `gh issue close`", prompt
+        )
         self.assertIn("commit, push, pull, fetch, merge, rebase, reset", prompt)
         self.assertIn("Delivery mode: `trunk`", prompt)
         self.assertIn("Integration target: `main`", prompt)
         self.assertIn("Local integration commit: `merge-sha`", prompt)
         self.assertIn("- `scripts/ralph.py`", prompt)
-        self.assertIn("`python3 -m unittest discover -s tests` from `/repo`", prompt)
+        self.assertIn("`make run-prek` from `/repo`", prompt)
         self.assertIn("Run logs: `/logs/issue-42-test`", prompt)
         self.assertIn("## What to build", prompt)
         self.assertIn("### Candidate issue #43: Refresh candidate", prompt)
@@ -1601,7 +1635,9 @@ Build it.
         self.assertEqual(mutations[0].add_labels, (ralph.NEEDS_TRIAGE_LABEL,))
         self.assertIn(ralph.READY_LABEL, mutations[0].remove_labels)
         assert mutations[0].comment is not None
-        self.assertTrue(mutations[0].comment.startswith(ralph.AI_READY_ISSUE_REFRESH_DISCLAIMER))
+        self.assertTrue(
+            mutations[0].comment.startswith(ralph.AI_READY_ISSUE_REFRESH_DISCLAIMER)
+        )
 
     def test_ready_issue_refresh_mutation_parser_rejects_malformed_json(self) -> None:
         candidate = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=43)
@@ -1612,7 +1648,9 @@ Build it.
                 candidates=[candidate],
             )
 
-    def test_ready_issue_refresh_mutation_parser_requires_plan_for_candidates(self) -> None:
+    def test_ready_issue_refresh_mutation_parser_requires_plan_for_candidates(
+        self,
+    ) -> None:
         candidate = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=43)
 
         with self.assertRaisesRegex(ValueError, "required when candidate issues exist"):
@@ -1645,10 +1683,14 @@ Build it.
     def test_basic_triage_candidate_accepts_unlabeled_and_needs_triage(self) -> None:
         self.assertTrue(ralph.is_basic_triage_candidate(make_issue(set())))
         self.assertTrue(ralph.is_basic_triage_candidate(make_issue({"needs-triage"})))
-        self.assertFalse(ralph.is_basic_triage_candidate(make_issue({"ready-for-agent"})))
+        self.assertFalse(
+            ralph.is_basic_triage_candidate(make_issue({"ready-for-agent"}))
+        )
         self.assertFalse(ralph.is_basic_triage_candidate(make_issue({"wontfix"})))
         self.assertFalse(ralph.is_basic_triage_candidate(make_issue({"agent-merged"})))
-        self.assertFalse(ralph.is_basic_triage_candidate(make_issue({"agent-reviewing"})))
+        self.assertFalse(
+            ralph.is_basic_triage_candidate(make_issue({"agent-reviewing"}))
+        )
 
     def test_agent_reviewing_blocks_needs_info_triage_reconsideration(self) -> None:
         issue_list_command = (
@@ -1716,7 +1758,9 @@ Build it.
         )
 
         self.assertEqual(plan.mode, ralph.EXPLORATORY_MODE)
-        self.assertEqual(plan.target_branch, "agent/exploratory/issue-42-implement-thing")
+        self.assertEqual(
+            plan.target_branch, "agent/exploratory/issue-42-implement-thing"
+        )
         self.assertEqual(plan.add_labels, ("delivery-exploratory",))
 
     def test_delivery_plan_exploratory_wins_conflicting_delivery_labels(self) -> None:
@@ -1762,11 +1806,17 @@ Build it.
         commands = [call.args for call in runner.calls]
         self.assertEqual(payload["status"], "conflicts")
         self.assertEqual(payload["source_ref"], "origin/dev")
-        self.assertEqual(payload["review_ref"], "origin/agent/exploratory/issue-42-try-it")
+        self.assertEqual(
+            payload["review_ref"], "origin/agent/exploratory/issue-42-try-it"
+        )
         self.assertIn(("git", "fetch", "origin", "dev"), commands)
-        self.assertIn(("git", "fetch", "origin", "agent/exploratory/issue-42-try-it"), commands)
+        self.assertIn(
+            ("git", "fetch", "origin", "agent/exploratory/issue-42-try-it"), commands
+        )
         self.assertIn(merge_tree_command, commands)
-        self.assertFalse(any(command[:3] == ("git", "push", "origin") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("git", "push", "origin") for command in commands)
+        )
         self.assertFalse(any(command[:2] == ("gh", "issue") for command in commands))
 
     def test_label_specs_include_exploratory_delivery_and_reviewing_state(self) -> None:
@@ -1812,7 +1862,9 @@ Build it.
 
         self.assertEqual(names, ["root Commit check"])
 
-    def test_select_qa_commands_for_mixed_aemo_etl_docs_and_runtime_changes(self) -> None:
+    def test_select_qa_commands_for_mixed_aemo_etl_docs_and_runtime_changes(
+        self,
+    ) -> None:
         commands = ralph.select_qa_commands(
             [
                 "backend-services/dagster-user/aemo-etl/docs/development/local_development.md",
@@ -2005,10 +2057,26 @@ Build it.
             ["docs/repository/workflow.md", "scripts/ralph.py"], Path("/repo")
         )
         names = [command.name for command in commands]
-        self.assertEqual(names, ["root Commit check", "Ralph unit tests"])
+        self.assertEqual(names, ["root Commit check", "Ralph loop Commit check"])
+
+    def test_select_qa_commands_for_ralph_loop_docs_changes(self) -> None:
+        commands = ralph.select_qa_commands(
+            ["tools/ralph-loop/README.md"],
+            Path("/repo"),
+        )
+
+        self.assertEqual(
+            [(command.name, command.cwd) for command in commands],
+            [
+                ("root Commit check", Path("/repo")),
+                ("Ralph loop Commit check", Path("/repo/tools/ralph-loop")),
+            ],
+        )
 
     def test_select_promotion_gate_commands_skips_non_aemo_changes(self) -> None:
-        commands = ralph.select_promotion_gate_commands(["scripts/ralph.py"], Path("/repo"))
+        commands = ralph.select_promotion_gate_commands(
+            ["scripts/ralph.py"], Path("/repo")
+        )
 
         self.assertEqual(commands, [])
 
@@ -2016,16 +2084,22 @@ Build it.
         status = "\n".join(
             [
                 " M scripts/ralph.py",
-                "?? tests/test_ralph.py",
+                "?? tools/ralph-loop/tests/unit/test_ralph.py",
                 "R  old-name.md -> docs/agents/ralph-loop.md",
             ]
         )
         self.assertEqual(
             ralph.parse_git_status_paths(status),
-            ["docs/agents/ralph-loop.md", "scripts/ralph.py", "tests/test_ralph.py"],
+            [
+                "docs/agents/ralph-loop.md",
+                "scripts/ralph.py",
+                "tools/ralph-loop/tests/unit/test_ralph.py",
+            ],
         )
 
-    def test_parse_git_status_tracked_unstaged_paths_excludes_untracked_files(self) -> None:
+    def test_parse_git_status_tracked_unstaged_paths_excludes_untracked_files(
+        self,
+    ) -> None:
         status = "\n".join(
             [
                 "M  README.md",
@@ -2340,7 +2414,9 @@ Build it.
                     self.assertEqual(blocked.returncode, 126)
                     self.assertIn("blocked gh command", blocked.stderr)
 
-    def test_post_promotion_review_markdown_reads_codex_json_final_message(self) -> None:
+    def test_post_promotion_review_markdown_reads_codex_json_final_message(
+        self,
+    ) -> None:
         stdout = "\n".join(
             [
                 json.dumps({"type": "session_configured", "session_id": "test"}),
@@ -2367,7 +2443,9 @@ Build it.
             POST_PROMOTION_REVIEW_MARKDOWN.strip(),
         )
 
-    def test_run_codex_injects_sandbox_issue_access_without_recording_token(self) -> None:
+    def test_run_codex_injects_sandbox_issue_access_without_recording_token(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             runner = FakeRunner()
@@ -2431,11 +2509,15 @@ Build it.
             self.assertIn(str(wrapper_path), manifest_text)
             self.assertNotIn("fake-gh-token", manifest_text)
             self.assertEqual(
-                manifest_payload["qa_runtime_env"]["variables"]["DAGSTER_HOME"]["source"],
+                manifest_payload["qa_runtime_env"]["variables"]["DAGSTER_HOME"][
+                    "source"
+                ],
                 "ralph_default",
             )
             self.assertEqual(
-                manifest_payload["qa_runtime_env"]["variables"]["UV_CACHE_DIR"]["value"],
+                manifest_payload["qa_runtime_env"]["variables"]["UV_CACHE_DIR"][
+                    "value"
+                ],
                 str(runtime_root / "uv-cache"),
             )
 
@@ -2446,7 +2528,9 @@ Build it.
             Path("/work/repo__worktrees"),
         )
         main = Path("/work/repo")
-        self.assertEqual(ralph.default_worktree_container(main), Path("/work/repo__worktrees"))
+        self.assertEqual(
+            ralph.default_worktree_container(main), Path("/work/repo__worktrees")
+        )
 
     def test_build_config_defaults_to_gitflow_without_target_branch(self) -> None:
         runner = FakeRunner(
@@ -2478,8 +2562,8 @@ Build it.
             ralph.parse_args(["--help"])
 
         help_text = output.getvalue()
-        self.assertIn("Defaults to 10", help_text)
-        self.assertIn("Use 0 for unlimited", help_text)
+        self.assertIn("Defaults to", help_text)
+        self.assertIn("10. Use 0 for unlimited", help_text)
         self.assertIn("--allow-dirty-worktree", help_text)
         self.assertIn("--skip-post-promotion-review", help_text)
         self.assertIn("--skip-post-promotion-followups", help_text)
@@ -2497,7 +2581,9 @@ Build it.
             ralph.parse_args(["--exploratory-concurrency", "0"])
 
         self.assertEqual(caught.exception.code, 2)
-        self.assertIn("--exploratory-concurrency must be 1 or greater", output.getvalue())
+        self.assertIn(
+            "--exploratory-concurrency must be 1 or greater", output.getvalue()
+        )
 
     def test_build_config_records_exploratory_concurrency(self) -> None:
         runner = FakeRunner(
@@ -2559,7 +2645,9 @@ Build it.
         for payload in payloads:
             self.assertEqual(payload["configuration"]["exploratory_concurrency"], 5)
 
-    def test_build_config_enables_ready_issue_refresh_for_drain_by_default(self) -> None:
+    def test_build_config_enables_ready_issue_refresh_for_drain_by_default(
+        self,
+    ) -> None:
         runner = FakeRunner(
             command_outputs={
                 ("git", "rev-parse", "--show-toplevel"): ["/work/repo\n"],
@@ -2648,13 +2736,13 @@ Build it.
     def test_dirty_root_worktree_message_lists_changed_paths_and_override(self) -> None:
         message = ralph.dirty_root_worktree_message(
             Path("/repo"),
-            " M scripts/ralph.py\n?? tests/test_ralph.py\n",
+            " M scripts/ralph.py\n?? tools/ralph-loop/tests/unit/test_ralph.py\n",
         )
 
         self.assertIn("Root worktree has uncommitted changes: /repo", message)
         self.assertIn("--allow-dirty-worktree", message)
         self.assertIn("- scripts/ralph.py", message)
-        self.assertIn("- tests/test_ralph.py", message)
+        self.assertIn("- tools/ralph-loop/tests/unit/test_ralph.py", message)
 
     def test_drain_defaults_to_ten_implementation_attempts(self) -> None:
         runner = FakeRunner()
@@ -2681,7 +2769,9 @@ Build it.
                 Path(tmp),
                 runner,
                 drain=True,
-                max_issues=ralph.parse_args(["--drain", "--max-issues", "0"]).max_issues,
+                max_issues=ralph.parse_args(
+                    ["--drain", "--max-issues", "0"]
+                ).max_issues,
             )
             counting_loop = CountingRalphLoop(loop.config, runner, ready_count=12)
             output = io.StringIO()
@@ -2742,7 +2832,9 @@ Build it.
 
         self.assertTrue(config.allow_full_access_implementation)
 
-    def test_dirty_root_blocks_live_issue_drain_and_promote_before_side_effects(self) -> None:
+    def test_dirty_root_blocks_live_issue_drain_and_promote_before_side_effects(
+        self,
+    ) -> None:
         cases = [
             {"issue": 42},
             {"drain": True},
@@ -2758,7 +2850,9 @@ Build it.
                     with self.assertRaises(ralph.RalphError) as caught:
                         probe.run()
 
-                self.assertIn("Root worktree has uncommitted changes", str(caught.exception))
+                self.assertIn(
+                    "Root worktree has uncommitted changes", str(caught.exception)
+                )
                 self.assertEqual(probe.implemented, 0)
                 self.assertFalse(probe.promoted)
                 commands = [call.args for call in runner.calls]
@@ -2777,10 +2871,15 @@ Build it.
                     commands,
                 )
                 self.assertFalse(
-                    any(command[:3] == ("git", "worktree", "add") for command in commands)
+                    any(
+                        command[:3] == ("git", "worktree", "add")
+                        for command in commands
+                    )
                 )
                 self.assertFalse(
-                    any(command[:3] == ("git", "push", "origin") for command in commands)
+                    any(
+                        command[:3] == ("git", "push", "origin") for command in commands
+                    )
                 )
 
     def test_allow_dirty_worktree_bypasses_live_preflight(self) -> None:
@@ -2822,7 +2921,9 @@ Build it.
                 probe.run()
 
         self.assertEqual(probe.implemented, 0)
-        self.assertIn("DRY RUN: would implement #42: Implement thing", output.getvalue())
+        self.assertIn(
+            "DRY RUN: would implement #42: Implement thing", output.getvalue()
+        )
         commands = [call.args for call in runner.calls]
         self.assertNotIn(("git", "status", "--porcelain"), commands)
 
@@ -2906,18 +3007,24 @@ Build it.
         )
         commands = [call.args for call in runner.calls]
         self.assertFalse(any(command[:2] == ("codex", "exec") for command in commands))
-        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
-        self.assertFalse(any(command[:3] == ("gh", "issue", "comment") for command in commands))
-        self.assertFalse(any(command[:3] == ("gh", "issue", "close") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "comment") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "close") for command in commands)
+        )
 
     def test_completion_comment_records_local_integration_evidence(self) -> None:
         issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
         qa_results = [
             ralph.QAResult(
                 command=ralph.QACommand(
-                    ("python3", "-m", "unittest", "discover", "-s", "tests"),
+                    ("make", "run-prek"),
                     Path("/repo"),
-                    "Ralph unit tests",
+                    "Ralph loop Commit check",
                 ),
                 log_path=Path("/logs/qa.log"),
             )
@@ -2942,7 +3049,7 @@ Build it.
         self.assertIn("Commit: `abc123`", comment)
         self.assertIn("Delivery mode: `trunk`", comment)
         self.assertIn("- `scripts/ralph.py`", comment)
-        self.assertIn("python3 -m unittest discover -s tests", comment)
+        self.assertIn("make run-prek", comment)
         self.assertIn("Issue #42 will be closed by the Ralph loop.", comment)
 
     def test_exploratory_completion_comment_records_review_branch(self) -> None:
@@ -2950,9 +3057,9 @@ Build it.
         qa_results = [
             ralph.QAResult(
                 command=ralph.QACommand(
-                    ("python3", "-m", "unittest", "discover", "-s", "tests"),
+                    ("make", "run-prek"),
                     Path("/repo"),
-                    "Ralph unit tests",
+                    "Ralph loop Commit check",
                 ),
                 log_path=Path("/logs/qa.log"),
             )
@@ -2975,7 +3082,9 @@ Build it.
 
         self.assertIn("Ralph exploratory handoff completed.", comment)
         self.assertIn("Delivery mode: `exploratory`", comment)
-        self.assertIn("Target branch: `agent/exploratory/issue-42-implement-thing`", comment)
+        self.assertIn(
+            "Target branch: `agent/exploratory/issue-42-implement-thing`", comment
+        )
         self.assertIn("Issue #42 is ready for review on", comment)
 
     def test_user_facing_error_includes_command_stderr(self) -> None:
@@ -3017,9 +3126,7 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
         self.assertIn("--recover-run", text)
 
     def test_inspect_run_reports_branch_sync_recovery_guidance(self) -> None:
-        guidance = (
-            "Inspect `/worktrees/agent-sync-main-into-dev` before rerunning Ralph drain."
-        )
+        guidance = "Inspect `/worktrees/agent-sync-main-into-dev` before rerunning Ralph drain."
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = write_recovery_manifest(Path(tmp))
             manifest_path = run_dir / "ralph-run.json"
@@ -3095,11 +3202,15 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
 
 
 class RalphOperatorRunTests(unittest.TestCase):
-    def test_operator_foreground_repeats_drain_promotion_until_queue_clean(self) -> None:
+    def test_operator_foreground_repeats_drain_promotion_until_queue_clean(
+        self,
+    ) -> None:
         runner = FakeRunner()
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            loop = make_loop(tmp_path, runner, drain=True, delivery_mode=ralph.GITFLOW_MODE)
+            loop = make_loop(
+                tmp_path, runner, drain=True, delivery_mode=ralph.GITFLOW_MODE
+            )
             initial_issue = make_issue(
                 {ralph.READY_LABEL},
                 IMPLEMENTATION_BODY,
@@ -3196,7 +3307,7 @@ class RalphOperatorRunTests(unittest.TestCase):
             reviewing_body = (
                 EXPLORATORY_IMPLEMENTATION_BODY
                 + "\n## Context anchors\n"
-                + "- Test lane: `root Ralph Unit test`\n"
+                + "- Test lane: `Ralph loop Commit check`\n"
                 + "- Test lane: `root Commit check`\n"
             )
             reviewing_issue = make_issue(
@@ -3233,13 +3344,18 @@ class RalphOperatorRunTests(unittest.TestCase):
                 delivery_mode=ralph.EXPLORATORY_MODE,
                 integration_target=handoff_branch,
                 integration_commit="handoff-sha",
-                changed_files=["scripts/ralph.py", "tests/test_ralph.py"],
+                changed_files=[
+                    "scripts/ralph.py",
+                    "tools/ralph-loop/tests/unit/test_ralph.py",
+                ],
                 qa_results=[
                     {
-                        "name": "root Ralph Unit test",
-                        "command": ["python3", "-m", "unittest", "discover", "-s", "tests"],
+                        "name": "Ralph loop Commit check",
+                        "command": ["make", "run-prek"],
                         "cwd": str(tmp_path / "repo"),
-                        "log_path": str(tmp_path / "repo" / ".ralph" / "runs" / "unit.log"),
+                        "log_path": str(
+                            tmp_path / "repo" / ".ralph" / "runs" / "unit.log"
+                        ),
                         "status": "passed",
                     }
                 ],
@@ -3280,7 +3396,7 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertEqual(review["issues"][0]["handoff_commit"], "handoff-sha")
         self.assertEqual(
             review["issues"][0]["changed_files"],
-            ["scripts/ralph.py", "tests/test_ralph.py"],
+            ["scripts/ralph.py", "tools/ralph-loop/tests/unit/test_ralph.py"],
         )
         self.assertEqual(
             review["issues"][0]["downstream_ready_issues"][0]["number"],
@@ -3292,18 +3408,32 @@ class RalphOperatorRunTests(unittest.TestCase):
         )
         self.assertEqual(review["issues"][0]["mergeability"]["status"], "clean")
         self.assertEqual(rollup["operator_run"]["status"], "needs_review")
-        self.assertEqual(rollup["exploratory_acceptance_review"]["status"], "needs_review")
+        self.assertEqual(
+            rollup["exploratory_acceptance_review"]["status"], "needs_review"
+        )
         self.assertEqual(rollup["final_queue"]["counts"]["reviewing"], 1)
         self.assertIn("### #42 Explore workflow", review_markdown)
         self.assertIn("#136 Dependent ready work", review_markdown)
-        self.assertIn("Run the $ralph-loop Exploratory acceptance review flow", output.getvalue())
-        self.assertIn("Queue: ready=1, integrated=0, reviewing=1", status_output.getvalue())
+        self.assertIn(
+            "Run the $ralph-loop Exploratory acceptance review flow", output.getvalue()
+        )
+        self.assertIn(
+            "Queue: ready=1, integrated=0, reviewing=1", status_output.getvalue()
+        )
         self.assertIn("Recommended next action:", status_output.getvalue())
-        self.assertFalse(any(command[:3] == ("gh", "issue", "comment") for command in commands))
-        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
-        self.assertFalse(any(command[:3] == ("gh", "issue", "close") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "comment") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "close") for command in commands)
+        )
 
-    def test_operator_keeps_queue_blocked_for_non_review_blocked_ready_issue(self) -> None:
+    def test_operator_keeps_queue_blocked_for_non_review_blocked_ready_issue(
+        self,
+    ) -> None:
         runner = FakeRunner()
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -3339,7 +3469,9 @@ class RalphOperatorRunTests(unittest.TestCase):
         runner = FakeRunner()
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            loop = make_loop(tmp_path, runner, drain=True, delivery_mode=ralph.GITFLOW_MODE)
+            loop = make_loop(
+                tmp_path, runner, drain=True, delivery_mode=ralph.GITFLOW_MODE
+            )
             run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
             failed_issue = make_issue(
                 {ralph.READY_LABEL},
@@ -3363,7 +3495,9 @@ class RalphOperatorRunTests(unittest.TestCase):
                         "name": "script Unit test",
                         "command": ["python3", "-m", "unittest", "tests.test_ralph"],
                         "cwd": str(tmp_path / "repo"),
-                        "log_path": str(tmp_path / "repo" / ".ralph" / "runs" / "unit.log"),
+                        "log_path": str(
+                            tmp_path / "repo" / ".ralph" / "runs" / "unit.log"
+                        ),
                         "status": "failed",
                     }
                 ],
@@ -3488,13 +3622,17 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertIn("Ralph Operator run status", text)
         self.assertIn(f"Operator run directory: {run_dir}", text)
         self.assertIn("Last checkpoint: issue_succeeded: Issue #42 completed.", text)
-        self.assertIn("Queue: ready=0, integrated=1, reviewing=0, running=0, failed=0", text)
+        self.assertIn(
+            "Queue: ready=0, integrated=1, reviewing=0, running=0, failed=0", text
+        )
         self.assertIn(f"- implementation #42 succeeded: {child_manifest_path}", text)
         self.assertIn("Rollup artifacts:", text)
         self.assertIn(str(run_dir / ralph.OPERATOR_ROLLUP_JSON_NAME), text)
         self.assertIn("Recommended next action:", text)
 
-    def test_detached_operator_launch_prints_status_command_without_waiting(self) -> None:
+    def test_detached_operator_launch_prints_status_command_without_waiting(
+        self,
+    ) -> None:
         runner = FakeRunner(
             command_outputs={
                 ("git", "rev-parse", "--show-toplevel"): [],
@@ -3536,7 +3674,9 @@ class RalphOperatorRunTests(unittest.TestCase):
         text = output.getvalue()
         child_command = popen.call_args.args[0]
         self.assertIn("Operator run directory:", text)
-        self.assertIn("Status command: python3 scripts/ralph.py --operator-run-status", text)
+        self.assertIn(
+            "Status command: python3 scripts/ralph.py --operator-run-status", text
+        )
         self.assertIn("--operator-run-dir", child_command)
         self.assertIn("--max-cycles", child_command)
         self.assertIn("3", child_command)
@@ -3549,7 +3689,7 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertEqual(manifest["configuration"]["exploratory_concurrency"], 4)
 
     def test_operator_docs_include_codex_safe_command_strings(self) -> None:
-        repo_root = Path(__file__).resolve().parents[1]
+        repo_root = REPO_ROOT
         docs = [
             repo_root / "OPERATOR.md",
             repo_root / "docs" / "agents" / "ralph-loop.md",
@@ -3584,7 +3724,9 @@ class RalphOperatorRunTests(unittest.TestCase):
             with self.assertRaises(ralph.RalphError) as caught:
                 ralph.RalphRunRecovery(loop.config, runner).recover(run_dir)
 
-        self.assertIn("not reachable from expected Integration target", str(caught.exception))
+        self.assertIn(
+            "not reachable from expected Integration target", str(caught.exception)
+        )
         commands = [call.args for call in runner.calls]
         self.assertIn(("git", "fetch", "origin", "main"), commands)
         self.assertNotIn(
@@ -3599,8 +3741,12 @@ class RalphOperatorRunTests(unittest.TestCase):
             ),
             [command[:7] for command in commands],
         )
-        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
-        self.assertFalse(any(command[:3] == ("gh", "issue", "close") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "close") for command in commands)
+        )
 
     def test_recover_run_reconciles_trunk_comment_labels_and_closure(self) -> None:
         issue_view_command = (
@@ -3625,7 +3771,9 @@ class RalphOperatorRunTests(unittest.TestCase):
         )
         runner = FakeRunner(
             command_outputs={
-                issue_view_command: [issue_view_output(labels=[ralph.AGENT_RUNNING_LABEL])],
+                issue_view_command: [
+                    issue_view_output(labels=[ralph.AGENT_RUNNING_LABEL])
+                ],
                 issue_state_command: [json.dumps({"state": "OPEN"})],
             }
         )
@@ -3640,7 +3788,9 @@ class RalphOperatorRunTests(unittest.TestCase):
 
             comment_path = run_dir / "issue-42-comment.md"
             comment = comment_path.read_text(encoding="utf-8")
-            manifest = json.loads((run_dir / "ralph-run.json").read_text(encoding="utf-8"))
+            manifest = json.loads(
+                (run_dir / "ralph-run.json").read_text(encoding="utf-8")
+            )
 
         commands = [call.args for call in runner.calls]
         self.assertIn("Ralph trunk integration completed.", comment)
@@ -3680,7 +3830,9 @@ class RalphOperatorRunTests(unittest.TestCase):
             commands,
         )
         self.assertEqual(manifest["github_metadata"]["status"], "closed")
-        self.assertIn("Recovered issue #42 trunk metadata for abc1234.", output.getvalue())
+        self.assertIn(
+            "Recovered issue #42 trunk metadata for abc1234.", output.getvalue()
+        )
 
     def test_recover_run_reconciles_gitflow_without_closing_issue(self) -> None:
         issue_view_command = (
@@ -3705,7 +3857,9 @@ class RalphOperatorRunTests(unittest.TestCase):
         )
         runner = FakeRunner(
             command_outputs={
-                issue_view_command: [issue_view_output(labels=[ralph.AGENT_RUNNING_LABEL])],
+                issue_view_command: [
+                    issue_view_output(labels=[ralph.AGENT_RUNNING_LABEL])
+                ],
                 issue_state_command: [json.dumps({"state": "OPEN"})],
             }
         )
@@ -3722,7 +3876,9 @@ class RalphOperatorRunTests(unittest.TestCase):
             with redirect_stdout(output):
                 ralph.RalphRunRecovery(loop.config, runner).recover(run_dir)
 
-            manifest = json.loads((run_dir / "ralph-run.json").read_text(encoding="utf-8"))
+            manifest = json.loads(
+                (run_dir / "ralph-run.json").read_text(encoding="utf-8")
+            )
 
         commands = [call.args for call in runner.calls]
         self.assertIn(("git", "fetch", "origin", "dev"), commands)
@@ -3747,9 +3903,13 @@ class RalphOperatorRunTests(unittest.TestCase):
             ),
             commands,
         )
-        self.assertFalse(any(command[:3] == ("gh", "issue", "close") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "close") for command in commands)
+        )
         self.assertEqual(manifest["github_metadata"]["status"], "marked_integrated")
-        self.assertIn("Recovered issue #42 Gitflow metadata for abc1234.", output.getvalue())
+        self.assertIn(
+            "Recovered issue #42 Gitflow metadata for abc1234.", output.getvalue()
+        )
 
 
 class RalphExploratoryAcceptanceApplyTests(unittest.TestCase):
@@ -3769,7 +3929,8 @@ class RalphExploratoryAcceptanceApplyTests(unittest.TestCase):
         return json.dumps(
             issue_payload(
                 42,
-                labels or [ralph.AGENT_REVIEWING_LABEL, ralph.DELIVERY_EXPLORATORY_LABEL],
+                labels
+                or [ralph.AGENT_REVIEWING_LABEL, ralph.DELIVERY_EXPLORATORY_LABEL],
                 EXPLORATORY_IMPLEMENTATION_BODY,
             )
         )
@@ -3838,7 +3999,9 @@ class RalphExploratoryAcceptanceApplyTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            loop = make_loop(tmp_path, runner, source_branch=ralph.DEFAULT_GITFLOW_BRANCH)
+            loop = make_loop(
+                tmp_path, runner, source_branch=ralph.DEFAULT_GITFLOW_BRANCH
+            )
             decision_file = self._decision_file(
                 tmp_path,
                 [{"issue_number": 42, "decision": "accept", "reason": "Approved."}],
@@ -3889,7 +4052,7 @@ class RalphExploratoryAcceptanceApplyTests(unittest.TestCase):
             commands,
         )
         self.assertIn(
-            ("python3", "-m", "unittest", "discover", "-s", "tests"),
+            ("make", "run-prek"),
             commands,
         )
         self.assertIn(ralph.EXPLORATORY_ACCEPTANCE_COMMENT_TITLE, comment)
@@ -3909,14 +4072,14 @@ class RalphExploratoryAcceptanceApplyTests(unittest.TestCase):
             )
             run_dir = Path(manifest.data["paths"]["run_dir"])
             decisions = json.loads(
-                (run_dir / ralph.EXPLORATORY_ACCEPTANCE_DECISIONS_ARTIFACT_NAME).read_text(
-                    encoding="utf-8"
-                )
+                (
+                    run_dir / ralph.EXPLORATORY_ACCEPTANCE_DECISIONS_ARTIFACT_NAME
+                ).read_text(encoding="utf-8")
             )
             conflicts = json.loads(
-                (run_dir / ralph.EXPLORATORY_ACCEPTANCE_CONFLICTS_ARTIFACT_NAME).read_text(
-                    encoding="utf-8"
-                )
+                (
+                    run_dir / ralph.EXPLORATORY_ACCEPTANCE_CONFLICTS_ARTIFACT_NAME
+                ).read_text(encoding="utf-8")
             )
             prompt = (
                 run_dir / ralph.EXPLORATORY_ACCEPTANCE_CODEX_PROMPT_NAME
@@ -3931,17 +4094,26 @@ class RalphExploratoryAcceptanceApplyTests(unittest.TestCase):
             manifest.data["acceptance_conflict"]["conflicted_files"],
             ["docs/repository/architecture-exploration.md"],
         )
-        self.assertEqual(decisions["status"], ralph.EXPLORATORY_ACCEPTANCE_CONFLICT_STATUS)
+        self.assertEqual(
+            decisions["status"], ralph.EXPLORATORY_ACCEPTANCE_CONFLICT_STATUS
+        )
         self.assertEqual(decisions["decisions"][0]["decision"], "accept")
         self.assertEqual(decisions["decisions"][0]["status"], "acceptance_conflict")
         self.assertEqual(conflicts["current_branch"], handoff_branch)
-        self.assertIn("codex-resolution-prompt.md", conflicts["artifacts"]["codex_resolution_prompt"])
+        self.assertIn(
+            "codex-resolution-prompt.md",
+            conflicts["artifacts"]["codex_resolution_prompt"],
+        )
         self.assertIn("Resolve only the paused acceptance worktree", prompt)
         self.assertIn("Preserve accepted issue intent", prompt)
         self.assertIn("--continue-exploratory-acceptance", prompt)
         self.assertFalse(any(command[:2] == ("git", "push") for command in commands))
-        self.assertFalse(any(command[:3] == ("gh", "issue", "comment") for command in commands))
-        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "comment") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
         self.assertFalse(
             any(command[:3] == ("git", "worktree", "remove") for command in commands)
         )
@@ -3963,7 +4135,9 @@ class RalphExploratoryAcceptanceApplyTests(unittest.TestCase):
             with redirect_stdout(io.StringIO()):
                 manifest = loop._continue_exploratory_acceptance(run_dir)
 
-            comment = next(run_dir.glob("issue-42-comment.md")).read_text(encoding="utf-8")
+            comment = next(run_dir.glob("issue-42-comment.md")).read_text(
+                encoding="utf-8"
+            )
 
         commands = [call.args for call in runner.calls]
         push_command = ("git", "push", "origin", "HEAD:dev")
@@ -3974,7 +4148,7 @@ class RalphExploratoryAcceptanceApplyTests(unittest.TestCase):
             if command
             in {
                 ("prek", "run", "-a"),
-                ("python3", "-m", "unittest", "discover", "-s", "tests"),
+                ("make", "run-prek"),
             }
         ]
         mutation_indexes = [
@@ -4015,13 +4189,23 @@ class RalphExploratoryAcceptanceApplyTests(unittest.TestCase):
                     loop._continue_exploratory_acceptance(run_dir)
 
         commands = [call.args for call in runner.calls]
-        self.assertEqual(caught.exception.failure_type, "exploratory_acceptance_dirty_worktree")
-        self.assertIn("git status --porcelain", caught.exception.recovery_guidance or "")
+        self.assertEqual(
+            caught.exception.failure_type, "exploratory_acceptance_dirty_worktree"
+        )
+        self.assertIn(
+            "git status --porcelain", caught.exception.recovery_guidance or ""
+        )
         self.assertFalse(any(command[:2] == ("git", "push") for command in commands))
-        self.assertFalse(any(command[:3] == ("gh", "issue", "comment") for command in commands))
-        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "comment") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
 
-    def test_continue_acceptance_conflict_refuses_missing_decision_artifact(self) -> None:
+    def test_continue_acceptance_conflict_refuses_missing_decision_artifact(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             paused_manifest, _pause_runner = self._pause_acceptance_conflict(tmp_path)
@@ -4040,7 +4224,10 @@ class RalphExploratoryAcceptanceApplyTests(unittest.TestCase):
             caught.exception.failure_type,
             "exploratory_acceptance_missing_decisions_artifact",
         )
-        self.assertIn("paused run directory is incomplete", str(caught.exception.recovery_guidance))
+        self.assertIn(
+            "paused run directory is incomplete",
+            str(caught.exception.recovery_guidance),
+        )
 
     def test_continue_acceptance_conflict_refuses_stale_source_branch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -4073,7 +4260,9 @@ class RalphExploratoryAcceptanceApplyTests(unittest.TestCase):
             run_dir = Path(paused_manifest.data["paths"]["run_dir"])
             acceptance_path = Path(paused_manifest.data["paths"]["acceptance_worktree"])
             acceptance_path.mkdir(parents=True)
-            decisions_path = run_dir / ralph.EXPLORATORY_ACCEPTANCE_DECISIONS_ARTIFACT_NAME
+            decisions_path = (
+                run_dir / ralph.EXPLORATORY_ACCEPTANCE_DECISIONS_ARTIFACT_NAME
+            )
             payload = json.loads(decisions_path.read_text(encoding="utf-8"))
             payload["decisions"][0]["decision"] = "reject"
             decisions_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -4094,7 +4283,7 @@ class RalphExploratoryAcceptanceApplyTests(unittest.TestCase):
             diff_outputs=["scripts/ralph.py\n"],
             rev_parse_outputs=["abc1234\n", "source-sha\n", "def5678\n"],
             fail_commands={
-                ("python3", "-m", "unittest", "discover", "-s", "tests"),
+                ("make", "run-prek"),
             },
         )
         with tempfile.TemporaryDirectory() as tmp:
@@ -4117,8 +4306,12 @@ class RalphExploratoryAcceptanceApplyTests(unittest.TestCase):
 
         commands = [call.args for call in runner.calls]
         self.assertNotIn(("git", "push", "origin", "HEAD:dev"), commands)
-        self.assertFalse(any(command[:3] == ("gh", "issue", "comment") for command in commands))
-        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "comment") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
         self.assertEqual(manifest["status"], "failed")
         self.assertIn(
             "No accepted issue metadata was changed",
@@ -4155,7 +4348,9 @@ class RalphExploratoryAcceptanceApplyTests(unittest.TestCase):
         self.assertFalse(
             any(command[:3] == ("git", "worktree", "add") for command in commands)
         )
-        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
         self.assertIn("Ralph exploratory acceptance held.", comment)
         self.assertIn("Needs another product review.", comment)
         self.assertIn("remains `agent-reviewing`", comment)
@@ -4238,8 +4433,12 @@ class RalphExploratoryAcceptanceApplyTests(unittest.TestCase):
 
         commands = [call.args for call in runner.calls]
         self.assertFalse(any(command[:2] == ("git", "push") for command in commands))
-        self.assertFalse(any(command[:3] == ("gh", "issue", "comment") for command in commands))
-        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "comment") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
 
 
 class CommandRunnerTests(unittest.TestCase):
@@ -4305,7 +4504,9 @@ class CommandRunnerTests(unittest.TestCase):
             self.assertIn("exit: 0", final_log)
             self.assertIn("STDOUT:\nfirst line\nsecond line\n", final_log)
             self.assertIn("STDERR:\nerror line\n", final_log)
-            self.assertIn("Ralph heartbeat: phase=streaming test phase; log=", output.getvalue())
+            self.assertIn(
+                "Ralph heartbeat: phase=streaming test phase; log=", output.getvalue()
+            )
 
     def test_command_runner_failure_preserves_command_log_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -4358,7 +4559,9 @@ Build it.
                     make_issue({"ready-for-agent"}, malformed_body)
                 )
 
-            comment_path = next((Path(tmp) / "logs").glob("issue-42-*/issue-42-comment.md"))
+            comment_path = next(
+                (Path(tmp) / "logs").glob("issue-42-*/issue-42-comment.md")
+            )
             comment = comment_path.read_text(encoding="utf-8")
             manifest = load_run_manifest(Path(tmp))
 
@@ -4403,7 +4606,9 @@ Build it.
             ),
             commands,
         )
-        self.assertFalse(any(command[:3] == ("git", "worktree", "add") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("git", "worktree", "add") for command in commands)
+        )
         self.assertIn(
             "Missing required issue section(s): Acceptance criteria, Blocked by",
             comment,
@@ -4434,8 +4639,12 @@ Build it.
 
         commands = [call.args for call in runner.calls]
         self.assertFalse(any(command[:2] == ("codex", "exec") for command in commands))
-        self.assertFalse(any(command[:3] == ("git", "worktree", "add") for command in commands))
-        self.assertFalse(any(command[:3] == ("git", "push", "origin") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("git", "worktree", "add") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("git", "push", "origin") for command in commands)
+        )
         self.assertIn("Missing required issue section(s): Review focus", comment)
         self.assertEqual(manifest["status"], "failed")
         self.assertEqual(manifest["delivery_mode"], "exploratory")
@@ -4481,9 +4690,7 @@ Build it.
                     )
 
             qa_call = next(
-                call
-                for call in runner.calls
-                if call.args == ("python3", "-m", "unittest", "discover", "-s", "tests")
+                call for call in runner.calls if call.args == ("make", "run-prek")
             )
             manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
 
@@ -4564,7 +4771,9 @@ Build it.
             ],
         )
 
-    def test_successful_implementation_squash_merges_pushes_comments_and_closes(self) -> None:
+    def test_successful_implementation_squash_merges_pushes_comments_and_closes(
+        self,
+    ) -> None:
         runner = FakeRunner(
             status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
             diff_outputs=["scripts/ralph.py\n"],
@@ -4598,16 +4807,20 @@ Build it.
                 ),
                 commands,
             )
-            self.assertFalse(any(command[:3] == ("gh", "pr", "create") for command in commands))
+            self.assertFalse(
+                any(command[:3] == ("gh", "pr", "create") for command in commands)
+            )
             progress = output.getvalue()
             self.assertIn("#42: claiming issue with agent-running", progress)
-            self.assertIn("#42: running QA Ralph unit tests", progress)
+            self.assertIn("#42: running QA Ralph loop Commit check", progress)
             self.assertIn("#42: pushing merge-sha to main", progress)
             self.assertIn("Issue #42 merged to main: merge-sha", progress)
             self.assertIn("#42: Codex implementation attempt 1", phases)
-            self.assertIn("#42: QA Ralph unit tests", phases)
+            self.assertIn("#42: QA Ralph loop Commit check", phases)
 
-            comment_path = next((Path(tmp) / "logs").glob("issue-42-*/issue-42-comment.md"))
+            comment_path = next(
+                (Path(tmp) / "logs").glob("issue-42-*/issue-42-comment.md")
+            )
             comment = comment_path.read_text(encoding="utf-8")
             manifest = load_run_manifest(Path(tmp))
             self.assertIn("Ralph trunk integration completed.", comment)
@@ -4616,9 +4829,13 @@ Build it.
             self.assertEqual(manifest["issue"]["number"], 42)
             self.assertEqual(manifest["delivery_mode"], "trunk")
             self.assertEqual(manifest["integration_target"], "main")
-            self.assertEqual(manifest["branches"]["issue"], "agent/issue-42-implement-thing")
+            self.assertEqual(
+                manifest["branches"]["issue"], "agent/issue-42-implement-thing"
+            )
             self.assertEqual(manifest["integration_commit"]["sha"], "merge-sha")
-            self.assertEqual(manifest["pushes"]["integration_target"]["status"], "pushed")
+            self.assertEqual(
+                manifest["pushes"]["integration_target"]["status"], "pushed"
+            )
             self.assertEqual(manifest["github_metadata"]["status"], "closed")
             self.assertEqual(manifest["qa_results"][0]["status"], "passed")
 
@@ -4636,8 +4853,12 @@ Build it.
 
         self.assertIn("Full-access implementation", str(caught.exception))
         commands = [call.args for call in runner.calls]
-        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
-        self.assertFalse(any(command[:3] == ("git", "worktree", "add") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("git", "worktree", "add") for command in commands)
+        )
         self.assertEqual(manifest["status"], "failed")
         self.assertEqual(manifest["github_metadata"]["status"], "not_started")
         self.assertEqual(
@@ -4649,8 +4870,7 @@ Build it.
         self,
     ) -> None:
         changed = (
-            " M .agents/skills/ralph-loop/SKILL.md\n"
-            " M docs/agents/ralph-loop.md\n"
+            " M .agents/skills/ralph-loop/SKILL.md\n M docs/agents/ralph-loop.md\n"
         )
         runner = FakeRunner(status_outputs=[changed, changed])
         with tempfile.TemporaryDirectory() as tmp:
@@ -4691,7 +4911,9 @@ Build it.
 
             manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
 
-        codex_call = next(call for call in runner.calls if call.args[:2] == ("codex", "exec"))
+        codex_call = next(
+            call for call in runner.calls if call.args[:2] == ("codex", "exec")
+        )
         self.assertIn("--dangerously-bypass-approvals-and-sandbox", codex_call.args)
         self.assertNotIn("--sandbox", codex_call.args)
         self.assertNotIn("--full-auto", codex_call.args)
@@ -4761,7 +4983,7 @@ Build it.
             1,
         )
         self.assertNotIn(("prek", "run", "-a"), commands)
-        self.assertNotIn(("python3", "-m", "unittest", "discover", "-s", "tests"), commands)
+        self.assertNotIn(("make", "run-prek"), commands)
         self.assertEqual(
             manifest_payload["full_access_implementation"]["status"],
             "diff_out_of_scope",
@@ -4801,7 +5023,9 @@ Build it.
             loop = make_loop(tmp_path, runner)
 
             with redirect_stdout(io.StringIO()):
-                loop._handle_implementation(make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY))
+                loop._handle_implementation(
+                    make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+                )
 
             manifest = load_run_manifest(tmp_path)
 
@@ -4868,17 +5092,21 @@ Build it.
             loop = make_loop(tmp_path, runner)
 
             with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-                loop._handle_implementation(make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY))
+                loop._handle_implementation(
+                    make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+                )
 
             manifest = load_run_manifest(tmp_path)
-            comment = next(tmp_path.glob("logs/issue-42-*/issue-42-comment.md")).read_text(
-                encoding="utf-8"
-            )
+            comment = next(
+                tmp_path.glob("logs/issue-42-*/issue-42-comment.md")
+            ).read_text(encoding="utf-8")
 
         commands = [call.args for call in runner.calls]
         run_prek_command = ("make", "run-prek")
         self.assertEqual(commands.count(run_prek_command), 2)
-        self.assertNotIn(("git", "merge", "--squash", "agent/issue-42-implement-thing"), commands)
+        self.assertNotIn(
+            ("git", "merge", "--squash", "agent/issue-42-implement-thing"), commands
+        )
         self.assertEqual(manifest["status"], "failed")
         self.assertEqual(manifest["formatter_recovery"]["status"], "failed")
         self.assertEqual(
@@ -4890,7 +5118,9 @@ Build it.
             ralph.FORMATTER_REWRITE_RECOVERY_FAILURE_TYPE,
         )
         self.assertEqual(manifest["failure"]["modified_files"], [aemo_path])
-        self.assertIn("issue-git-commit.log", manifest["failure"]["initial_commit_log_path"])
+        self.assertIn(
+            "issue-git-commit.log", manifest["failure"]["initial_commit_log_path"]
+        )
         self.assertIn(
             "formatter-recovery-commit-check-1-aemo-etl-commit-check.log",
             manifest["failure"]["commit_check_log_paths"][0],
@@ -4915,7 +5145,9 @@ Build it.
             "--json",
             "comments",
         )
-        included_note = ready_issue_refresh_body("Issue body blockers changed after #68.")
+        included_note = ready_issue_refresh_body(
+            "Issue body blockers changed after #68."
+        )
         runner = FakeRunner(
             status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
             diff_outputs=["scripts/ralph.py\n"],
@@ -4951,7 +5183,9 @@ Build it.
                 loop._handle_implementation(issue)
 
         commands = [call.args for call in runner.calls]
-        codex_call = next(call for call in runner.calls if call.args[:2] == ("codex", "exec"))
+        codex_call = next(
+            call for call in runner.calls if call.args[:2] == ("codex", "exec")
+        )
         codex_index = runner.calls.index(codex_call)
         self.assertLess(commands.index(issue_comments_command), codex_index)
         self.assertIsNotNone(codex_call.input_text)
@@ -5018,7 +5252,9 @@ Build it.
             diff_outputs=["scripts/ralph.py\n"],
             rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
             command_outputs={
-                issue_list_command: [json.dumps([issue_payload(43, ["ready-for-agent"])])]
+                issue_list_command: [
+                    json.dumps([issue_payload(43, ["ready-for-agent"])])
+                ]
             },
         )
         with tempfile.TemporaryDirectory() as tmp:
@@ -5027,10 +5263,14 @@ Build it.
             output = io.StringIO()
 
             with redirect_stdout(output):
-                loop._handle_implementation(make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY))
+                loop._handle_implementation(
+                    make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+                )
 
             manifest = load_run_manifest(tmp_path)
-            artifact_path = next(tmp_path.glob("logs/issue-42-*/ready-issue-refresh-analysis.md"))
+            artifact_path = next(
+                tmp_path.glob("logs/issue-42-*/ready-issue-refresh-analysis.md")
+            )
             artifact = artifact_path.read_text(encoding="utf-8")
 
         commands = [call.args for call in runner.calls]
@@ -5052,7 +5292,9 @@ Build it.
             "completed",
         )
         self.assertIn(issue_list_command, commands)
-        self.assertLess(commands.index(close_command), commands.index(issue_list_command))
+        self.assertLess(
+            commands.index(close_command), commands.index(issue_list_command)
+        )
         self.assertLess(commands.index(issue_list_command), analysis_index)
         self.assertIn(
             "Ready issue refresh candidate selection found 1 candidate(s) after "
@@ -5060,10 +5302,16 @@ Build it.
             output.getvalue(),
         )
         self.assertIn("- #43: Issue 43", output.getvalue())
-        self.assertIn("Running read-only Ready issue refresh analysis for #42.", output.getvalue())
-        self.assertEqual(artifact, READY_ISSUE_REFRESH_ANALYSIS_MARKDOWN.rstrip() + "\n")
+        self.assertIn(
+            "Running read-only Ready issue refresh analysis for #42.", output.getvalue()
+        )
+        self.assertEqual(
+            artifact, READY_ISSUE_REFRESH_ANALYSIS_MARKDOWN.rstrip() + "\n"
+        )
         self.assertEqual(manifest["ready_issue_refresh"]["status"], "completed")
-        self.assertEqual(manifest["ready_issue_refresh"]["candidate_issue_numbers"], [43])
+        self.assertEqual(
+            manifest["ready_issue_refresh"]["candidate_issue_numbers"], [43]
+        )
         self.assertEqual(
             manifest["ready_issue_refresh"]["artifact_path"],
             str(artifact_path),
@@ -5083,7 +5331,9 @@ Build it.
         self.assertNotIn("gh issue edit", allowed_commands)
         self.assertNotIn("gh issue close", allowed_commands)
         self.assertNotIn("gh issue create", allowed_commands)
-        after_analysis_commands = [call.args for call in runner.calls[analysis_index + 1 :]]
+        after_analysis_commands = [
+            call.args for call in runner.calls[analysis_index + 1 :]
+        ]
         self.assertFalse(
             any(
                 command[:3]
@@ -5112,7 +5362,9 @@ Build it.
             loop = make_loop(tmp_path, runner, drain=True)
 
             with redirect_stdout(io.StringIO()):
-                loop._handle_implementation(make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY))
+                loop._handle_implementation(
+                    make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+                )
 
             manifest = load_run_manifest(tmp_path)
 
@@ -5162,8 +5414,12 @@ Build it.
             rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
             ready_issue_refresh_analysis_markdown=READY_ISSUE_REFRESH_COMPLETED_MARKDOWN,
             command_outputs={
-                issue_list_command: [json.dumps([issue_payload(43, ["ready-for-agent"])])],
-                candidate_view_command: [json.dumps(issue_payload(43, ["ready-for-agent"]))],
+                issue_list_command: [
+                    json.dumps([issue_payload(43, ["ready-for-agent"])])
+                ],
+                candidate_view_command: [
+                    json.dumps(issue_payload(43, ["ready-for-agent"]))
+                ],
                 candidate_state_command: [json.dumps({"state": "OPEN"})],
             },
         )
@@ -5173,11 +5429,13 @@ Build it.
             output = io.StringIO()
 
             with redirect_stdout(output):
-                loop._handle_implementation(make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY))
+                loop._handle_implementation(
+                    make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+                )
 
-            comment = next(tmp_path.glob("logs/issue-42-*/issue-43-comment.md")).read_text(
-                encoding="utf-8"
-            )
+            comment = next(
+                tmp_path.glob("logs/issue-42-*/issue-43-comment.md")
+            ).read_text(encoding="utf-8")
             manifest = load_run_manifest(tmp_path)
 
         commands = [call.args for call in runner.calls]
@@ -5228,13 +5486,15 @@ Build it.
         )
         mutation_commands = [
             call.args
-            for call in runner.calls[
-                analysis_index + 1 : commands.index(close_43) + 1
-            ]
+            for call in runner.calls[analysis_index + 1 : commands.index(close_43) + 1]
         ]
         self.assertFalse(any(command[:1] == ("git",) for command in mutation_commands))
-        self.assertFalse(any(command[:2] == ("codex", "exec") for command in mutation_commands))
-        self.assertIn("Applying Ready issue refresh metadata mutations", output.getvalue())
+        self.assertFalse(
+            any(command[:2] == ("codex", "exec") for command in mutation_commands)
+        )
+        self.assertIn(
+            "Applying Ready issue refresh metadata mutations", output.getvalue()
+        )
         mutation = manifest["ready_issue_refresh"]["mutation_results"][0]
         self.assertEqual(mutation["issue_number"], 43)
         self.assertEqual(mutation["status"], "completed")
@@ -5259,12 +5519,16 @@ Build it.
             )
 
             with redirect_stdout(io.StringIO()):
-                loop._handle_implementation(make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY))
+                loop._handle_implementation(
+                    make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+                )
 
             manifest = load_run_manifest(tmp_path)
 
         commands = [call.args for call in runner.calls]
-        self.assertFalse(any(command[:3] == ("gh", "issue", "list") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "list") for command in commands)
+        )
         self.assertFalse(
             any(
                 call.input_text is not None
@@ -5296,7 +5560,9 @@ Build it.
             diff_outputs=["scripts/ralph.py\n"],
             rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
             command_outputs={
-                issue_list_command: [json.dumps([issue_payload(43, ["ready-for-agent"])])]
+                issue_list_command: [
+                    json.dumps([issue_payload(43, ["ready-for-agent"])])
+                ]
             },
         )
         with tempfile.TemporaryDirectory() as tmp:
@@ -5309,14 +5575,18 @@ Build it.
             )
 
             with redirect_stdout(io.StringIO()):
-                loop._handle_implementation(make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY))
+                loop._handle_implementation(
+                    make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+                )
 
             manifest = load_run_manifest(tmp_path)
 
         commands = [call.args for call in runner.calls]
         self.assertIn(issue_list_command, commands)
         self.assertEqual(manifest["ready_issue_refresh"]["status"], "completed")
-        self.assertEqual(manifest["ready_issue_refresh"]["candidate_issue_numbers"], [43])
+        self.assertEqual(
+            manifest["ready_issue_refresh"]["candidate_issue_numbers"], [43]
+        )
 
     def test_ready_issue_refresh_needs_triage_mutation_transitions_labels_and_comments(
         self,
@@ -5333,7 +5603,9 @@ Build it.
         )
         runner = FakeRunner(
             command_outputs={
-                candidate_view_command: [json.dumps(issue_payload(43, ["ready-for-agent"]))]
+                candidate_view_command: [
+                    json.dumps(issue_payload(43, ["ready-for-agent"]))
+                ]
             }
         )
         with tempfile.TemporaryDirectory() as tmp:
@@ -5359,7 +5631,9 @@ Build it.
             with redirect_stdout(io.StringIO()):
                 loop._apply_ready_issue_refresh_mutations(
                     analysis_markdown=READY_ISSUE_REFRESH_NEEDS_TRIAGE_MARKDOWN,
-                    candidates=[make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=43)],
+                    candidates=[
+                        make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=43)
+                    ],
                     run_dir=run_dir,
                     manifest=manifest,
                 )
@@ -5400,7 +5674,9 @@ Build it.
         mutation = payload["ready_issue_refresh"]["mutation_results"][0]
         self.assertEqual(mutation["status"], "completed")
         self.assertEqual(mutation["operations"]["labels"]["added"], ["needs-triage"])
-        self.assertEqual(mutation["operations"]["labels"]["removed"], ["ready-for-agent"])
+        self.assertEqual(
+            mutation["operations"]["labels"]["removed"], ["ready-for-agent"]
+        )
 
     def test_ready_issue_refresh_body_update_preserves_ready_contract(self) -> None:
         candidate_view_command = (
@@ -5441,7 +5717,9 @@ Build it.
 """
         runner = FakeRunner(
             command_outputs={
-                candidate_view_command: [json.dumps(issue_payload(43, ["ready-for-agent"]))]
+                candidate_view_command: [
+                    json.dumps(issue_payload(43, ["ready-for-agent"]))
+                ]
             }
         )
         with tempfile.TemporaryDirectory() as tmp:
@@ -5467,7 +5745,9 @@ Build it.
             with redirect_stdout(io.StringIO()):
                 loop._apply_ready_issue_refresh_mutations(
                     analysis_markdown=mutation_markdown,
-                    candidates=[make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=43)],
+                    candidates=[
+                        make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=43)
+                    ],
                     run_dir=run_dir,
                     manifest=manifest,
                 )
@@ -5520,8 +5800,12 @@ Build it.
         )
         runner = FakeRunner(
             command_outputs={
-                candidate_view_command: [json.dumps(issue_payload(43, ["needs-triage"]))],
-                candidate_comments_command: [json.dumps({"comments": [{"body": existing_comment}]})],
+                candidate_view_command: [
+                    json.dumps(issue_payload(43, ["needs-triage"]))
+                ],
+                candidate_comments_command: [
+                    json.dumps({"comments": [{"body": existing_comment}]})
+                ],
             }
         )
         with tempfile.TemporaryDirectory() as tmp:
@@ -5547,7 +5831,9 @@ Build it.
             with redirect_stdout(io.StringIO()):
                 loop._apply_ready_issue_refresh_mutations(
                     analysis_markdown=READY_ISSUE_REFRESH_NEEDS_TRIAGE_MARKDOWN,
-                    candidates=[make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=43)],
+                    candidates=[
+                        make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=43)
+                    ],
                     run_dir=run_dir,
                     manifest=manifest,
                 )
@@ -5555,9 +5841,15 @@ Build it.
             payload = json.loads(manifest.path.read_text(encoding="utf-8"))
 
         commands = [call.args for call in runner.calls]
-        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
-        self.assertFalse(any(command[:3] == ("gh", "issue", "comment") for command in commands))
-        self.assertFalse(any(command[:3] == ("gh", "issue", "close") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "comment") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "close") for command in commands)
+        )
         mutation = payload["ready_issue_refresh"]["mutation_results"][0]
         self.assertEqual(mutation["operations"]["labels"], "unchanged")
         self.assertEqual(mutation["operations"]["comment"], "already_present")
@@ -5584,7 +5876,9 @@ Build it.
             rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
             ready_issue_refresh_analysis_markdown=READY_ISSUE_REFRESH_MALFORMED_MUTATION_MARKDOWN,
             command_outputs={
-                issue_list_command: [json.dumps([issue_payload(43, ["ready-for-agent"])])]
+                issue_list_command: [
+                    json.dumps([issue_payload(43, ["ready-for-agent"])])
+                ]
             },
         )
         with tempfile.TemporaryDirectory() as tmp:
@@ -5677,9 +5971,9 @@ Build it.
             "    }\n  ]",
             "    },\n"
             "    {\n"
-            "      \"issue_number\": 44,\n"
-            "      \"action\": \"needs_triage\",\n"
-            "      \"comment\": \"Issue #44 needs maintainer review after merge-sha.\"\n"
+            '      "issue_number": 44,\n'
+            '      "action": "needs_triage",\n'
+            '      "comment": "Issue #44 needs maintainer review after merge-sha."\n'
             "    }\n"
             "  ]",
         )
@@ -5781,7 +6075,9 @@ Build it.
             manifest["failure"]["message"],
         )
 
-    def test_gitflow_implementation_creates_dev_integrates_and_leaves_issue_open(self) -> None:
+    def test_gitflow_implementation_creates_dev_integrates_and_leaves_issue_open(
+        self,
+    ) -> None:
         ls_remote = ("git", "ls-remote", "--exit-code", "--heads", "origin", "dev")
         runner = FakeRunner(
             status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
@@ -5798,7 +6094,9 @@ Build it.
                 loop._handle_implementation(issue)
 
             commands = [call.args for call in runner.calls]
-            self.assertIn(("git", "push", "origin", "origin/main:refs/heads/dev"), commands)
+            self.assertIn(
+                ("git", "push", "origin", "origin/main:refs/heads/dev"), commands
+            )
             self.assertIn(("git", "push", "origin", "HEAD:dev"), commands)
             self.assertIn(
                 (
@@ -5819,10 +6117,14 @@ Build it.
                 ),
                 commands,
             )
-            self.assertFalse(any(command[:3] == ("gh", "issue", "close") for command in commands))
+            self.assertFalse(
+                any(command[:3] == ("gh", "issue", "close") for command in commands)
+            )
             self.assertIn("Issue #42 integrated to dev: merge-sha", output.getvalue())
 
-            comment_path = next((Path(tmp) / "logs").glob("issue-42-*/issue-42-comment.md"))
+            comment_path = next(
+                (Path(tmp) / "logs").glob("issue-42-*/issue-42-comment.md")
+            )
             comment = comment_path.read_text(encoding="utf-8")
             self.assertIn("Ralph Gitflow integration completed.", comment)
             self.assertIn("Target branch: `dev`", comment)
@@ -5899,13 +6201,17 @@ Build it.
                 ),
                 commands,
             )
-            self.assertFalse(any(command[:3] == ("gh", "issue", "close") for command in commands))
+            self.assertFalse(
+                any(command[:3] == ("gh", "issue", "close") for command in commands)
+            )
             self.assertIn(
                 f"Issue #42 ready for review on {handoff_branch}: merge-sha",
                 output.getvalue(),
             )
 
-            comment_path = next((Path(tmp) / "logs").glob("issue-42-*/issue-42-comment.md"))
+            comment_path = next(
+                (Path(tmp) / "logs").glob("issue-42-*/issue-42-comment.md")
+            )
             comment = comment_path.read_text(encoding="utf-8")
             manifest = load_run_manifest(Path(tmp))
             self.assertIn("Ralph exploratory handoff completed.", comment)
@@ -5941,8 +6247,12 @@ Build it.
         commands = [call.args for call in runner.calls]
         self.assertIn(ls_remote, commands)
         self.assertFalse(any(command[:2] == ("codex", "exec") for command in commands))
-        self.assertFalse(any(command[:3] == ("git", "worktree", "add") for command in commands))
-        self.assertFalse(any(command[:3] == ("git", "push", "origin") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("git", "worktree", "add") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("git", "push", "origin") for command in commands)
+        )
         self.assertIn(
             f"Remote Exploratory branch already exists: origin/{handoff_branch}",
             comment,
@@ -5978,7 +6288,9 @@ Build it.
             diff_outputs=["scripts/ralph.py\n"],
             rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
             command_outputs={
-                issue_list_command: [json.dumps([issue_payload(43, ["ready-for-agent"])])]
+                issue_list_command: [
+                    json.dumps([issue_payload(43, ["ready-for-agent"])])
+                ]
             },
             fail_commands={ls_remote: 2},
         )
@@ -6016,14 +6328,18 @@ Build it.
             "agent-integrated",
         )
         self.assertIn(issue_list_command, commands)
-        self.assertLess(commands.index(reviewing_command), commands.index(issue_list_command))
+        self.assertLess(
+            commands.index(reviewing_command), commands.index(issue_list_command)
+        )
         self.assertIn(
             "Ready issue refresh candidate selection found 1 candidate(s) after "
             "Exploratory handoff of #42.",
             output.getvalue(),
         )
 
-    def test_gitflow_implementation_syncs_dev_with_main_before_issue_branch(self) -> None:
+    def test_gitflow_implementation_syncs_dev_with_main_before_issue_branch(
+        self,
+    ) -> None:
         ancestor_command = (
             "git",
             "merge-base",
@@ -6113,10 +6429,14 @@ Build it.
                     )
 
             manifest = load_run_manifest(tmp_path)
-            merge_log = next((tmp_path / "logs").glob("issue-42-*/git-merge-main-into-dev.log"))
+            merge_log = next(
+                (tmp_path / "logs").glob("issue-42-*/git-merge-main-into-dev.log")
+            )
 
         commands = [call.args for call in runner.calls]
-        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
         self.assertEqual(manifest["github_metadata"]["status"], "not_started")
         self.assertEqual(manifest["branch_sync"]["status"], "failed")
         self.assertEqual(manifest["branch_sync"]["failure_type"], "merge_conflict")
@@ -6128,7 +6448,9 @@ Build it.
         self.assertEqual(manifest["paths"]["branch_sync_worktree"], str(sync_path))
         self.assertEqual(manifest["branch_sync"]["log_path"], str(merge_log))
         self.assertEqual(manifest["failure"]["log_path"], str(merge_log))
-        self.assertIn("git worktree remove --force", manifest["branch_sync"]["recovery_guidance"])
+        self.assertIn(
+            "git worktree remove --force", manifest["branch_sync"]["recovery_guidance"]
+        )
         self.assertIn("Syncing origin/main into origin/dev", output.getvalue())
 
     def test_stale_branch_sync_worktree_stops_before_claim_with_guidance(self) -> None:
@@ -6159,12 +6481,17 @@ Build it.
             ("git", "worktree", "add", "--detach", str(sync_path), "origin/dev"),
             commands,
         )
-        self.assertFalse(any(command[:3] == ("gh", "issue", "edit") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
         self.assertEqual(manifest["github_metadata"]["status"], "not_started")
         self.assertEqual(manifest["branch_sync"]["status"], "failed")
         self.assertEqual(manifest["branch_sync"]["failure_type"], "stale_worktree")
         self.assertEqual(manifest["branch_sync"]["worktree_path"], str(sync_path))
-        self.assertIn("existing branch-sync worktree", manifest["branch_sync"]["recovery_guidance"])
+        self.assertIn(
+            "existing branch-sync worktree",
+            manifest["branch_sync"]["recovery_guidance"],
+        )
 
     def test_branch_sync_conflict_stops_drain_without_repeated_ready_issue_failures(
         self,
@@ -6233,7 +6560,9 @@ Build it.
             issue_43_runs = list((tmp_path / "logs").glob("issue-43-*"))
 
         commands = [call.args for call in runner.calls]
-        issue_edits = [command for command in commands if command[:3] == ("gh", "issue", "edit")]
+        issue_edits = [
+            command for command in commands if command[:3] == ("gh", "issue", "edit")
+        ]
         self.assertEqual(issue_edits, [])
         self.assertEqual(commands.count(issue_list_command), 1)
         self.assertEqual(issue_43_runs, [])
@@ -6259,9 +6588,7 @@ Build it.
         commands = [call.args for call in runner.calls]
         self.assertIn(("git", "rebase", "origin/main"), commands)
         qa_commands = [
-            command
-            for command in commands
-            if command == ("python3", "-m", "unittest", "discover", "-s", "tests")
+            command for command in commands if command == ("make", "run-prek")
         ]
         self.assertEqual(len(qa_commands), 2)
         self.assertIn(
@@ -6275,7 +6602,7 @@ Build it.
         )
 
     def test_failed_qa_persists_failed_manifest_state(self) -> None:
-        qa_command = ("python3", "-m", "unittest", "discover", "-s", "tests")
+        qa_command = ("make", "run-prek")
         runner = FakeRunner(
             status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
             rev_parse_outputs=["base-sha\n"],
@@ -6296,7 +6623,8 @@ Build it.
         failed_qa = [
             result
             for result in manifest["qa_results"]
-            if result["name"] == "Ralph unit tests" and result["status"] == "failed"
+            if result["name"] == "Ralph loop Commit check"
+            and result["status"] == "failed"
         ]
         self.assertGreaterEqual(len(failed_qa), 1)
         self.assertTrue(
@@ -6306,8 +6634,7 @@ Build it.
     def test_aemo_etl_commit_check_failure_stops_before_integration_test(self) -> None:
         qa_command = ("make", "run-prek")
         changed_file = (
-            " M backend-services/dagster-user/aemo-etl/src/aemo_etl/"
-            "definitions.py\n"
+            " M backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py\n"
         )
         runner = FakeRunner(
             status_outputs=[changed_file, changed_file],
@@ -6421,9 +6748,13 @@ Build it.
             with redirect_stdout(output):
                 loop._promote()
 
-            comment_path = next((Path(tmp) / "logs").glob("promote-*/issue-42-comment.md"))
+            comment_path = next(
+                (Path(tmp) / "logs").glob("promote-*/issue-42-comment.md")
+            )
             comment = comment_path.read_text(encoding="utf-8")
-            artifact_path = next((Path(tmp) / "logs").glob("promote-*/post-promotion-review.md"))
+            artifact_path = next(
+                (Path(tmp) / "logs").glob("promote-*/post-promotion-review.md")
+            )
             artifact = artifact_path.read_text(encoding="utf-8")
             followup_body_path = next(
                 (Path(tmp) / "logs").glob(
@@ -6452,13 +6783,13 @@ Build it.
             str(promote_path),
             "origin/main",
         )
-        qa_command = ("python3", "-m", "unittest", "discover", "-s", "tests")
+        qa_command = ("make", "run-prek")
         source_worktree_index = commands.index(source_worktree)
         qa_index = commands.index(qa_command)
         promote_worktree_index = commands.index(promote_worktree)
         self.assertLess(source_worktree_index, qa_index)
         self.assertLess(qa_index, promote_worktree_index)
-        self.assertEqual(runner.calls[qa_index].cwd, source_path)
+        self.assertEqual(runner.calls[qa_index].cwd, source_path / "tools/ralph-loop")
         self.assertIn(
             ("git", "merge", "--no-ff", "source-sha", "-m", "Promote dev to main"),
             commands,
@@ -6517,18 +6848,32 @@ Build it.
         self.assertLess(review_index, cleanup_index)
         self.assertEqual(runner.calls[review_index].cwd, promote_path)
         self.assertIn("--output-last-message", runner.calls[review_index].args)
-        self.assertIn("Run a Post-promotion review", runner.calls[review_index].input_text)
+        self.assertIn(
+            "Run a Post-promotion review", runner.calls[review_index].input_text
+        )
         self.assertIn("## Learnings", runner.calls[review_index].input_text)
         self.assertIn(
             "## Recovery and Consistency Guidance",
             runner.calls[review_index].input_text,
         )
-        self.assertIn("## Follow-up GitHub Issue Drafts", runner.calls[review_index].input_text)
-        self.assertIn("Do not create the follow-up issues yourself.", runner.calls[review_index].input_text)
-        self.assertIn("Automatic validated follow-up issue creation is enabled.", runner.calls[review_index].input_text)
+        self.assertIn(
+            "## Follow-up GitHub Issue Drafts", runner.calls[review_index].input_text
+        )
+        self.assertIn(
+            "Do not create the follow-up issues yourself.",
+            runner.calls[review_index].input_text,
+        )
+        self.assertIn(
+            "Automatic validated follow-up issue creation is enabled.",
+            runner.calls[review_index].input_text,
+        )
         self.assertLess(
-            runner.calls[review_index].input_text.index("## Recovery and Consistency Guidance"),
-            runner.calls[review_index].input_text.index("## Follow-up GitHub Issue Drafts"),
+            runner.calls[review_index].input_text.index(
+                "## Recovery and Consistency Guidance"
+            ),
+            runner.calls[review_index].input_text.index(
+                "## Follow-up GitHub Issue Drafts"
+            ),
         )
         self.assertIn(
             "Promotion outcome: `succeeded`",
@@ -6662,7 +7007,9 @@ Build it.
             "ralph-post-promotion-followup:promotion-sha:harden-promotion-evidence-checks",
         )
         self.assertEqual(manifest["post_promotion_followups"]["duplicates"], [])
-        self.assertEqual(manifest["post_promotion_followups"]["validation_downgrades"], [])
+        self.assertEqual(
+            manifest["post_promotion_followups"]["validation_downgrades"], []
+        )
         self.assertEqual(manifest["post_promotion_followups"]["failures"], [])
         self.assertEqual(manifest["pushes"]["promotion_target"]["status"], "pushed")
         self.assertEqual(manifest["pushes"]["source_branch_sync"]["status"], "pushed")
@@ -6717,13 +7064,10 @@ Build it.
             ("git", "worktree", "add", "--detach", str(source_path), "source-sha"),
             commands,
         )
+        self.assertFalse(any(command == ("make", "run-prek") for command in commands))
         self.assertFalse(
-            any(
-                command == ("python3", "-m", "unittest", "discover", "-s", "tests")
-                for command in commands
-            )
+            any(command[:3] == ("git", "push", "origin") for command in commands)
         )
-        self.assertFalse(any(command[:3] == ("git", "push", "origin") for command in commands))
         preflight = manifest["promotion_worktree_preflight"]
         self.assertEqual(preflight["status"], "failed")
         self.assertEqual(preflight["failure_type"], "stale_worktree")
@@ -6739,7 +7083,9 @@ Build it.
         self.assertEqual(manifest["promotion_commit"], None)
         self.assertEqual(manifest["pushes"], {})
 
-    def test_stale_promotion_target_worktree_stops_before_worktree_creation(self) -> None:
+    def test_stale_promotion_target_worktree_stops_before_worktree_creation(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             repo_path = tmp_path / "repo"
@@ -6946,7 +7292,8 @@ Build it.
         command_log_paths = {
             call.args: call.log_path
             for call in runner.calls
-            if call.args[:3] in {
+            if call.args[:3]
+            in {
                 ("gh", "issue", "comment"),
                 ("gh", "issue", "edit"),
                 ("gh", "issue", "close"),
@@ -7063,7 +7410,9 @@ Build it.
                 ],
                 issue_comments_command: [json.dumps(comments_payload)],
                 candidate_view_command: [json.dumps(retriage_candidate)],
-                promotion_log_command: ["abc1234\x00Ralph Local integration for issue 42\n"],
+                promotion_log_command: [
+                    "abc1234\x00Ralph Local integration for issue 42\n"
+                ],
             },
             fail_commands={target_ancestor_command: 1},
         )
@@ -7082,15 +7431,19 @@ Build it.
                 loop._promote()
 
             manifest = load_run_manifest(tmp_path, run_glob="promote-*")
-            artifact_path = next(tmp_path.glob("logs/promote-*/ready-issue-refresh-analysis.md"))
-            artifact = artifact_path.read_text(encoding="utf-8")
-            comment = next(tmp_path.glob("logs/promote-*/issue-117-comment.md")).read_text(
-                encoding="utf-8"
+            artifact_path = next(
+                tmp_path.glob("logs/promote-*/ready-issue-refresh-analysis.md")
             )
+            artifact = artifact_path.read_text(encoding="utf-8")
+            comment = next(
+                tmp_path.glob("logs/promote-*/issue-117-comment.md")
+            ).read_text(encoding="utf-8")
 
         commands = [call.args for call in runner.calls]
         issue_list_indexes = [
-            index for index, command in enumerate(commands) if command == issue_list_command
+            index
+            for index, command in enumerate(commands)
+            if command == issue_list_command
         ]
         close_command = (
             "gh",
@@ -7117,7 +7470,8 @@ Build it.
         review_call = next(
             call
             for call in runner.calls
-            if call.input_text is not None and "Run a Post-promotion review" in call.input_text
+            if call.input_text is not None
+            and "Run a Post-promotion review" in call.input_text
         )
         refresh_call = next(
             call
@@ -7127,7 +7481,9 @@ Build it.
         )
         self.assertEqual(len(issue_list_indexes), 2)
         self.assertLess(commands.index(close_command), issue_list_indexes[1])
-        self.assertLess(runner.calls.index(review_call), runner.calls.index(refresh_call))
+        self.assertLess(
+            runner.calls.index(review_call), runner.calls.index(refresh_call)
+        )
         self.assertIn(label_command, commands)
         self.assertTrue(comment.startswith(ralph.AI_READY_ISSUE_REFRESH_DISCLAIMER))
         self.assertIn("Promotion closed #42", comment)
@@ -7136,9 +7492,13 @@ Build it.
             "Promotion closure of #42.",
             output.getvalue(),
         )
-        self.assertEqual(artifact, POST_PROMOTION_READY_ISSUE_REFRESH_MARKDOWN.rstrip() + "\n")
+        self.assertEqual(
+            artifact, POST_PROMOTION_READY_ISSUE_REFRESH_MARKDOWN.rstrip() + "\n"
+        )
         self.assertIn("Post-promotion review notes:", refresh_call.input_text)
-        self.assertIn('"title": "Harden Promotion evidence checks"', refresh_call.input_text)
+        self.assertIn(
+            '"title": "Harden Promotion evidence checks"', refresh_call.input_text
+        )
         self.assertIn("### Candidate issue #117: Issue 117", refresh_call.input_text)
         self.assertEqual(manifest["status"], "succeeded")
         self.assertIsNone(manifest["failure"])
@@ -7152,8 +7512,12 @@ Build it.
             for item in manifest["ready_issue_refresh"]["mutation_results"]
         }
         self.assertEqual(results[117]["status"], "completed")
-        self.assertEqual(results[117]["operations"]["labels"]["added"], ["ready-for-agent"])
-        self.assertEqual(results[117]["operations"]["labels"]["removed"], ["needs-triage"])
+        self.assertEqual(
+            results[117]["operations"]["labels"]["added"], ["ready-for-agent"]
+        )
+        self.assertEqual(
+            results[117]["operations"]["labels"]["removed"], ["needs-triage"]
+        )
         self.assertEqual(results[122]["status"], "skipped_no_change")
 
     def test_promotion_fast_forwards_clean_checked_out_local_branches(self) -> None:
@@ -7221,7 +7585,9 @@ Build it.
             str(main_path),
         )
 
-    def test_promotion_records_recovery_for_dirty_checked_out_local_branch(self) -> None:
+    def test_promotion_records_recovery_for_dirty_checked_out_local_branch(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             main_path = tmp_path / "main-worktree"
@@ -7260,7 +7626,9 @@ Build it.
                 for call in runner.calls
             )
         )
-        target_fast_forward = manifest["local_branch_fast_forwards"]["integration_target"]
+        target_fast_forward = manifest["local_branch_fast_forwards"][
+            "integration_target"
+        ]
         self.assertEqual(target_fast_forward["status"], "skipped_dirty_worktree")
         self.assertEqual(target_fast_forward["worktree_path"], str(main_path))
         self.assertIn("uncommitted changes", target_fast_forward["reason"])
@@ -7271,7 +7639,9 @@ Build it.
             ),
         )
 
-    def test_promotion_from_unrelated_worktree_updates_checked_out_target_only(self) -> None:
+    def test_promotion_from_unrelated_worktree_updates_checked_out_target_only(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             repo_path = tmp_path / "repo"
@@ -7793,7 +8163,9 @@ Build it.
             "abc1234",
         )
 
-    def test_promotion_skip_post_promotion_review_flag_disables_review_agent(self) -> None:
+    def test_promotion_skip_post_promotion_review_flag_disables_review_agent(
+        self,
+    ) -> None:
         runner = FakeRunner(
             diff_outputs=["scripts/ralph.py\n"],
             rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
@@ -7817,7 +8189,9 @@ Build it.
         promote_path = Path(tmp) / "worktrees" / "agent-promote-dev-to-main"
         commands = [call.args for call in runner.calls]
         self.assertNotIn(tuple(ralph.codex_exec_command(promote_path)), commands)
-        self.assertFalse(any(command[:3] == ("gh", "issue", "create") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "create") for command in commands)
+        )
         self.assertIn(
             "Post-promotion review skipped by --skip-post-promotion-review.",
             output.getvalue(),
@@ -7855,7 +8229,9 @@ Build it.
                 loop._promote()
 
             manifest = load_run_manifest(tmp_path, run_glob="promote-*")
-            artifact_path = next(tmp_path.glob("logs/promote-*/post-promotion-review.md"))
+            artifact_path = next(
+                tmp_path.glob("logs/promote-*/post-promotion-review.md")
+            )
 
         commands = [call.args for call in runner.calls]
         promote_path = Path(tmp) / "worktrees" / "agent-promote-dev-to-main"
@@ -7866,7 +8242,9 @@ Build it.
             )
         )
         self.assertIn(review_command, commands)
-        self.assertFalse(any(command[:3] == ("gh", "issue", "create") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "create") for command in commands)
+        )
         review_index = commands.index(review_command)
         self.assertIn(
             "Automatic validated follow-up issue creation is disabled for this Promotion attempt.",
@@ -7945,7 +8323,9 @@ None.
             body = body_path.read_text(encoding="utf-8")
 
         create_command = next(
-            call.args for call in runner.calls if call.args[:3] == ("gh", "issue", "create")
+            call.args
+            for call in runner.calls
+            if call.args[:3] == ("gh", "issue", "create")
         )
         self.assertIn("needs-triage", create_command)
         self.assertNotIn("ready-for-agent", create_command)
@@ -7953,13 +8333,19 @@ None.
         self.assertIn("## Ralph validation evidence", body)
         self.assertIn("Missing required issue section", body)
         self.assertIn("Expected exactly one category label", body)
-        self.assertEqual(manifest_payload["post_promotion_followups"]["status"], "completed")
         self.assertEqual(
-            manifest_payload["post_promotion_followups"]["created"][0]["validation_status"],
+            manifest_payload["post_promotion_followups"]["status"], "completed"
+        )
+        self.assertEqual(
+            manifest_payload["post_promotion_followups"]["created"][0][
+                "validation_status"
+            ],
             "needs_triage",
         )
         self.assertEqual(
-            manifest_payload["post_promotion_followups"]["validation_downgrades"][0]["labels"],
+            manifest_payload["post_promotion_followups"]["validation_downgrades"][0][
+                "labels"
+            ],
             ["needs-triage"],
         )
 
@@ -8029,8 +8415,12 @@ None.
 
         commands = [call.args for call in runner.calls]
         self.assertIn(list_command, commands)
-        self.assertFalse(any(command[:3] == ("gh", "issue", "create") for command in commands))
-        self.assertEqual(manifest_payload["post_promotion_followups"]["status"], "completed")
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "create") for command in commands)
+        )
+        self.assertEqual(
+            manifest_payload["post_promotion_followups"]["status"], "completed"
+        )
         self.assertEqual(
             manifest_payload["post_promotion_followups"]["duplicates"][0]["url"],
             "https://github.com/example/repo/issues/77",
@@ -8055,7 +8445,9 @@ None.
 
         commands = [call.args for call in runner.calls]
         self.assertFalse(any(command[:2] == ("codex", "exec") for command in commands))
-        self.assertFalse(any(command[:3] == ("git", "worktree", "add") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("git", "worktree", "add") for command in commands)
+        )
         self.assertIn("No changes to promote from dev to main.", output.getvalue())
         self.assertIn(
             "Post-promotion review skipped: no Promotion changes.",
@@ -8169,7 +8561,9 @@ None.
                     json.dumps([issue_payload(43, ["ready-for-agent"])]),
                 ],
                 issue_comments_command: [json.dumps(comments_payload)],
-                promotion_log_command: ["abc1234\x00Ralph Local integration for issue 42\n"],
+                promotion_log_command: [
+                    "abc1234\x00Ralph Local integration for issue 42\n"
+                ],
             },
             fail_commands={target_ancestor_command: 1},
         )
@@ -8224,7 +8618,9 @@ None.
                 loop._promote()
 
             manifest = load_run_manifest(tmp_path, run_glob="promote-*")
-            artifact_path = next(tmp_path.glob("logs/promote-*/post-promotion-review.md"))
+            artifact_path = next(
+                tmp_path.glob("logs/promote-*/post-promotion-review.md")
+            )
             artifact = artifact_path.read_text(encoding="utf-8")
 
         commands = [call.args for call in runner.calls]
@@ -8253,7 +8649,7 @@ None.
         self.assertIn("Promotion remains succeeded", artifact)
 
     def test_failed_promotion_push_check_runs_review_without_side_effects(self) -> None:
-        qa_command = ("python3", "-m", "unittest", "discover", "-s", "tests")
+        qa_command = ("make", "run-prek")
         runner = FakeRunner(
             diff_outputs=["scripts/ralph.py\n"],
             rev_parse_outputs=["source-sha\n"],
@@ -8270,7 +8666,9 @@ None.
 
             commands = [call.args for call in runner.calls]
             manifest = load_run_manifest(tmp_path, run_glob="promote-*")
-            artifact_path = next(tmp_path.glob("logs/promote-*/post-promotion-review.md"))
+            artifact_path = next(
+                tmp_path.glob("logs/promote-*/post-promotion-review.md")
+            )
             artifact = artifact_path.read_text(encoding="utf-8")
 
         source_path = Path(tmp) / "worktrees" / "agent-promote-source-dev-to-main"
@@ -8293,7 +8691,7 @@ None.
             commands,
         )
         qa_index = commands.index(qa_command)
-        self.assertEqual(runner.calls[qa_index].cwd, source_path)
+        self.assertEqual(runner.calls[qa_index].cwd, source_path / "tools/ralph-loop")
         review_index = commands.index(review_command)
         self.assertLess(qa_index, review_index)
         self.assertEqual(runner.calls[review_index].cwd, source_path)
@@ -8307,8 +8705,12 @@ None.
             runner.calls[review_index].input_text,
         )
         self.assertLess(
-            runner.calls[review_index].input_text.index("## Recovery and Consistency Guidance"),
-            runner.calls[review_index].input_text.index("## Follow-up GitHub Issue Drafts"),
+            runner.calls[review_index].input_text.index(
+                "## Recovery and Consistency Guidance"
+            ),
+            runner.calls[review_index].input_text.index(
+                "## Follow-up GitHub Issue Drafts"
+            ),
         )
         self.assertNotIn(
             (
@@ -8349,7 +8751,7 @@ None.
         failed_push_check = [
             result
             for result in manifest["qa_results"]
-            if result["name"] == "Ralph unit tests"
+            if result["name"] == "Ralph loop Commit check"
         ]
         self.assertEqual(len(failed_push_check), 1)
         self.assertEqual(failed_push_check[0]["status"], "failed")
@@ -8437,7 +8839,9 @@ None.
             command_outputs={
                 issue_list_command: [json.dumps(issue_payload)],
                 issue_comments_command: [json.dumps(comments_payload)],
-                promotion_log_command: ["abc1234\x00Ralph Local integration for issue 42\n"],
+                promotion_log_command: [
+                    "abc1234\x00Ralph Local integration for issue 42\n"
+                ],
             },
             fail_commands={
                 target_ancestor_command: 1,
@@ -8455,7 +8859,9 @@ None.
                     loop._promote()
 
             manifest = load_run_manifest(tmp_path, run_glob="promote-*")
-            artifact_path = next(tmp_path.glob("logs/promote-*/post-promotion-review.md"))
+            artifact_path = next(
+                tmp_path.glob("logs/promote-*/post-promotion-review.md")
+            )
             artifact = artifact_path.read_text(encoding="utf-8")
 
         promote_path = Path(tmp) / "worktrees" / "agent-promote-dev-to-main"
@@ -8480,10 +8886,16 @@ None.
             runner.calls[review_index].input_text,
         )
         self.assertLess(
-            runner.calls[review_index].input_text.index("## Recovery and Consistency Guidance"),
-            runner.calls[review_index].input_text.index("## Follow-up GitHub Issue Drafts"),
+            runner.calls[review_index].input_text.index(
+                "## Recovery and Consistency Guidance"
+            ),
+            runner.calls[review_index].input_text.index(
+                "## Follow-up GitHub Issue Drafts"
+            ),
         )
-        self.assertIn("Post-push promotion metadata failed:", str(error_context.exception))
+        self.assertIn(
+            "Post-push promotion metadata failed:", str(error_context.exception)
+        )
         self.assertIn("Post-push promotion metadata failed:", stderr.getvalue())
         self.assertEqual(manifest["status"], "failed")
         self.assertEqual(manifest["stage"], "failed")
@@ -8506,7 +8918,9 @@ None.
     def test_promotion_runs_aemo_etl_e2e_gate_from_source_worktree_before_side_effects(
         self,
     ) -> None:
-        changed_file = "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"
+        changed_file = (
+            "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"
+        )
         runner = FakeRunner(
             diff_outputs=[f"{changed_file}\n"],
             rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
@@ -8599,7 +9013,11 @@ None.
                 str(tmp_path / "repo" / "backend-services" / ".e2e/aemo-etl"),
             ],
         )
-        self.assertTrue(e2e_results[0]["cwd"].endswith("/agent-promote-source-dev-to-main/backend-services"))
+        self.assertTrue(
+            e2e_results[0]["cwd"].endswith(
+                "/agent-promote-source-dev-to-main/backend-services"
+            )
+        )
         self.assertEqual(e2e_results[0]["status"], "passed")
         self.assertIn(
             "promotion-gate-1-aemo-etl-end-to-end-test.log",
@@ -8608,7 +9026,9 @@ None.
         self.assertEqual(manifest["source_tree"]["revision"], "source-sha")
 
     def test_promotion_e2e_gate_failure_stops_before_side_effects(self) -> None:
-        changed_file = "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"
+        changed_file = (
+            "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"
+        )
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             e2e_command = (

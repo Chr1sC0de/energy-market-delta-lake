@@ -584,7 +584,7 @@ before deleting this temporary file.
   `is_basic_triage_candidate`, `parse_blockers`, and
   `missing_required_sections` hold the reusable workflow rules. Tests cover
   label blocking, triage candidacy, drain budgets, and dirty-root preflight in
-  `tests/test_ralph.py`; `docs/agents/ralph-loop.md` documents the same drain
+  `tools/ralph-loop/tests/unit/test_ralph.py`; `docs/agents/ralph-loop.md` documents the same drain
   flow and implementation stop labels.
 - **Delivery mode** and **Integration target** resolution are already mostly
   pure. Constants such as `GITFLOW_MODE`, `TRUNK_MODE`, `EXPLORATORY_MODE`,
@@ -617,14 +617,15 @@ before deleting this temporary file.
   failed QA, Promotion, inspection, and recovery.
 - QA selection is pure policy plus command execution. `select_qa_commands`
   maps changed files to the AEMO ETL **Test lane** commands, root
-  **Commit check**, and Ralph unit tests. `select_promotion_gate_commands`
-  adds the AEMO ETL **End-to-end test** gate for non-doc runtime AEMO ETL
-  changes during **Promotion**. `_run_qa_command_sequence` owns execution,
-  logs, run-scoped QA runtime environment, failure classification, and manifest
-  mutation. Tests cover runtime AEMO ETL changes, docs-only AEMO ETL changes,
-  mixed changes, root docs plus Ralph script changes, Promotion gates, and
-  manifest-recorded QA runtime variables. `docs/agents/ralph-loop.md` mirrors
-  this policy in the QA policy section.
+  **Commit check**, and the Ralph loop package **Commit check**.
+  `select_promotion_gate_commands` adds the AEMO ETL **End-to-end test** gate
+  for non-doc runtime AEMO ETL changes during **Promotion**.
+  `_run_qa_command_sequence` owns execution, logs, run-scoped QA runtime
+  environment, failure classification, and manifest mutation. Tests cover
+  runtime AEMO ETL changes, docs-only AEMO ETL changes, mixed changes, root
+  docs plus Ralph package changes, Promotion gates, and manifest-recorded QA
+  runtime variables. `docs/agents/ralph-loop.md` mirrors this policy in the QA
+  policy section.
 - Codex implementation and sandbox setup are workflow-adjacent side effects.
   `_implement_with_retry` decides the two-attempt behavior and when to rerun QA
   after a retry. `_run_codex`, `prepare_sandbox_issue_access`,
@@ -690,26 +691,31 @@ before deleting this temporary file.
 
 ### Proposed Module Structure
 
-Keep `scripts/ralph.py` as the CLI entrypoint and controller, but move policy
-and state into Modules that can be tested without git or GitHub:
+Keep `scripts/ralph.py` as the compatibility entrypoint and
+`tools/ralph-loop/src/ralph_loop/cli.py` as the packaged Typer CLI/controller,
+but move policy and state into Modules that can be tested without git or
+GitHub:
 
 ```text
 scripts/ralph.py
-  CLI parsing, command wiring, and high-level controller.
+  Compatibility wrapper that launches the packaged Ralph CLI.
 
-scripts/ralph_workflow.py
+tools/ralph-loop/src/ralph_loop/cli.py
+  Typer CLI parsing, command wiring, and high-level controller.
+
+tools/ralph-loop/src/ralph_loop/workflow.py
   Pure workflow policy: label sets, Issue snapshot, issue eligibility,
   required-section validation, blocker parsing, DeliveryPlan resolution,
   Integration target defaults, branch/worktree naming, QA command selection,
   recovery action recommendation, and comment body builders.
 
-scripts/ralph_state.py
+tools/ralph-loop/src/ralph_loop/state.py
   RunManifest and manifest readers/writers. This Module owns the JSON schema,
   state transitions, event names, status values, QA result serialization,
   push metadata, GitHub metadata status, and recovery preconditions that can be
   checked without calling git or gh.
 
-scripts/ralph_adapters.py
+tools/ralph-loop/src/ralph_loop/adapters.py
   Side-effect Adapters: CommandRunner, GitAdapter, GitHubIssueAdapter, and
   CodexAdapter or sandbox preparation helpers. These classes translate method
   calls into shell commands, file writes, gh calls, and command logs. They do
@@ -790,28 +796,30 @@ The useful boundaries are:
 Start with a no-behavior-change extraction of pure workflow and state objects,
 not a full controller rewrite:
 
-1. Create `scripts/ralph_workflow.py` and move label constants, issue
+1. Create `tools/ralph-loop/src/ralph_loop/workflow.py` and move label constants, issue
    eligibility helpers, blocker parsing, required-section validation,
    `DeliveryPlan`, delivery resolution, target defaults, QA command selection,
    recovery action recommendation, and completion/promotion comment builders
    into it.
-2. Create `scripts/ralph_state.py` and move `RunManifest`, manifest loading,
-   manifest summary helpers, and recovery precondition readers into it.
+2. Create `tools/ralph-loop/src/ralph_loop/state.py` and move `RunManifest`,
+   manifest loading, manifest summary helpers, and recovery precondition
+   readers into it.
 3. Leave `GitClient`, `GitHubClient`, `CommandRunner`, Codex sandbox setup,
-   `RalphLoop`, and `RalphRunRecovery` in `scripts/ralph.py` for the first
-   slice, importing the extracted policy/state code. This keeps the git and
-   GitHub Adapter behavior stable while making the workflow/state boundary
-   explicit.
+   `RalphLoop`, and `RalphRunRecovery` in
+   `tools/ralph-loop/src/ralph_loop/cli.py` for the first slice, importing the
+   extracted policy/state code. This keeps the git and GitHub Adapter behavior
+   stable while making the workflow/state boundary explicit.
 4. Move or add focused unit tests for the extracted Modules, but keep the
-   existing end-to-end fake-runner tests in `tests/test_ralph.py` as regression
+   existing end-to-end fake-runner tests in `tools/ralph-loop/tests/unit/test_ralph.py` as regression
    coverage for current **Local integration**, **Promotion**, recovery, and
    issue metadata semantics.
 
-That slice should run Ralph's script-level **Test lane** plus the root
-**Commit check** because it changes `scripts/`, `tests/`, and maintained docs:
+That slice should run the Ralph loop **Commit check** plus the root
+**Commit check** because it changes `tools/ralph-loop`, `scripts/`, and
+maintained docs:
 
 ```bash
-python3 -m unittest discover -s tests
+cd tools/ralph-loop && make run-prek
 prek run -a
 ```
 
@@ -855,7 +863,7 @@ defines a health-check object with the same timing settings.
 | Logging | All roles use `logDriver="awslogs"` with the shared cluster log group and region. | Stream prefixes are role-specific: `dagster-aemo-etl-user-code`, the supplied webserver stream prefix, and `dagster-daemon`. |
 | Health | All roles use interval `15`, timeout `5`, retries `4`, and start period `60`. | User code performs a socket check against localhost port `4000`. Webserver and daemon currently use `true`. |
 | Container task shape | Every role defines one essential container and serializes the container list to the ECS task definition. | Container name, entry point, and ports differ: `dagster-grpc` exposes `4000`, webserver exposes `3000` and may insert `--read-only`, and daemon has no port mapping. |
-| Task settings | Code currently gives all four deployed task definitions CPU `256` and memory `1024` through `_task_definition`. | Families and IAM role ARNs differ. User code and daemon currently use daemon execution/task roles, while webservers use webserver execution/task roles. The runtime doc currently lists webservers as CPU `512`; `#87` should reconcile that durable-doc drift while consuming this temporary section. |
+| Task settings | Code currently gives all four deployed task definitions CPU `256` and memory `1024` through `_task_definition`. | Families and IAM role ARNs differ. User code and daemon currently use daemon execution/task roles, while webservers use webserver execution/task roles. The durable runtime doc has been reconciled to CPU `256`; `#87` should still consume this temporary section. |
 | Service Fargate settings | `_fargate_service` already centralizes `FARGATE_SPOT`, private subnet, no public IP, circuit breaker, desired count, and tag propagation. | Security group, Cloud Map namespace/name, service tags, and absence of daemon Cloud Map registration remain role-owned service Inputs rather than task-definition Inputs. |
 
 This is enough repetition to justify a shared runtime task Module, but not a
@@ -1373,8 +1381,8 @@ known doc drift into maintained repo docs before deleting this file.
 | Gas-model asset shell | #82 found 28 `silver_*.py` gas-model assets under `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model` with repeated Dagster asset metadata, retry policy, checks, sensors, and `Definitions` assembly. The same section cites `silver_gas_dim_date.py` as the schedule-shaped exception and tests such as `test_defs_sensors.py` and gas-model component tests as current behavior evidence. | High. The current asset files mostly repeat shell code around domain transforms, so a Module would deepen the gas-model asset boundary while keeping transform logic local. | Removes repeated Dagster decoration, metadata, standard checks, retry policy, `MaterializeResult` wrapping, and default sensor assembly from each asset file. | `backend-services/dagster-user/aemo-etl` AEMO ETL **Subproject**. | Python Module with `GasModelAssetSpec` plus `build_gas_model_asset_definitions(spec) -> Definitions`. Keep `AssetIn`, `AssetKey`, lineage, schedules, and Polars transforms explicit at each asset. | Medium. Over-generalizing scheduled assets such as `silver_gas_dim_date` would hide real graph variation; asset metadata and sensor names are regression-prone. | AEMO ETL **Component test** lane with narrowed asset tests and `test_defs_sensors.py`; finish with `make component-test` and the Subproject **Commit check** `make run-prek`. Add **Unit tests** only for pure helper extraction. | Likely `backend-services/dagster-user/aemo-etl/README.md`, `backend-services/dagster-user/aemo-etl/docs/architecture/high_level_architecture.md`, and `backend-services/dagster-user/aemo-etl/docs/gas_model/README.md`; individual gas-model ERD docs only if public table contracts or column metadata change. | Add a private gas-model shell Module and migrate one ordinary dependency-updated asset such as `silver_gas_dim_location` or `silver_gas_fact_scada_pressure`; leave `silver_gas_dim_date` explicit. |
 | NEMWeb discovery | #83 traced `defs/raw/nemweb_public_files.py`, `nemweb_public_files_definitions_factory`, the four op-builder seams, `HTTPNEMWebLinkFetcher`, `FilteredDynamicNEMWebLinksFetcher`, `S3NemwebLinkProcessor`, `S3ProcessedLinkCombiner`, and tests such as `test_factories_nemweb.py`, `test_defs_raw_modules.py`, and `test_download_vicgas_public_report_zip_files.py`. It also cites ADR 0003 as evidence that current-state semantics belong to source-table bronze assets, not discovery/listing assets. | High. The discovery/listing asset is one cohesive fetch-filter-process-combine Module with too much caller-visible orchestration. | Removes one-Adapter strategy classes, op-builder pass-throughs, cached-link filter assembly, fixed output schema wiring, surrogate-key construction, duplicate-row check wiring, job naming, and schedule assembly from caller-owned configuration. | `backend-services/dagster-user/aemo-etl` AEMO ETL **Subproject**. | Compatibility wrapper around `NEMWebPublicFilesSpec` plus `build_nemweb_public_files_definitions(spec) -> Definitions`. Keep domain identity, filters, schedule/status, concurrency, retry knobs, buckets, and IO manager explicit. | Medium. Dynamic mapping, landing object writes, schedule names, and duplicate suppression must remain byte-for-byte equivalent from the caller perspective. | AEMO ETL **Component test** lane; narrowed debug targets are `test_factories_nemweb.py`, `test_defs_raw_modules.py`, and `test_download_vicgas_public_report_zip_files.py`; finish with `make component-test` and `make run-prek`. Run **Integration tests** only if LocalStack, S3-compatible behavior, or landing/Delta contracts change. | Likely `backend-services/dagster-user/aemo-etl/README.md`, `backend-services/dagster-user/aemo-etl/docs/architecture/ingestion_flows.md`, and `backend-services/dagster-user/aemo-etl/docs/architecture/high_level_architecture.md`; ADR 0003 only if current-state boundary language changes. | Introduce the spec-shaped builder, keep `nemweb_public_files_definitions_factory` as a thin wrapper, and migrate only the NEMWeb discovery factory. Do not fold in manual ZIP bootstrap downloads, unzipper assets, or source-table bronze ingestion. |
 | Archive-source planning | #84 compared archive replay and local **End-to-end test** seed logic. Evidence came from source-table registry files, `maintenance/archive_replay.py`, `maintenance/e2e_archive_seed.py`, both CLIs, shared S3 helpers in `utils.py`, LocalStack/compose wiring, ADR 0003, and unit/component tests for archive replay and seed refresh/load behavior. | Medium-high. The repeated archive object matching and coverage planning are deep enough for a pure planning Module, but execution side effects should stay outside it. | Removes duplicated prefix/glob matching, object-head normalization, latest-object selection, coverage accounting, and byte/file batch planning from replay and seed paths. | `backend-services/dagster-user/aemo-etl` AEMO ETL **Subproject** plus local development wiring in `backend-services` when seed behavior is documented. | Pure Python Module such as `maintenance/archive_source_planning.py` with `ArchiveSourceRequirement`, `ArchiveSourceObject`, `ArchiveSourceSelectionPolicy`, `ArchiveSourceCoverage`, `ArchiveSourcePlan`, `match_archive_source_objects`, and `plan_archive_sources`. | Medium. Mixing planning with ADR 0003 current-state writes, LocalStack upload side effects, or Dagster graph selection would create the wrong abstraction. | AEMO ETL **Unit test** lane; finish with `make unit-test` and `make run-prek`. Add AEMO ETL **Component test** lane only if `build_gas_model_archive_seed_spec` or Dagster definition graph behavior changes. Run **Integration tests** only if LocalStack, S3-compatible behavior, cache uploads, or landing/Delta contracts change. | Likely `backend-services/dagster-user/aemo-etl/README.md`, `backend-services/dagster-user/aemo-etl/docs/development/local_development.md`, `backend-services/dagster-user/aemo-etl/docs/architecture/ingestion_flows.md`, `backend-services/README.md`, and ADR 0003 if current-state scope wording changes. | Extract pure archive-source planning and migrate only duplicated matching, latest-object selection, coverage accounting, and batch planning. Keep source-table specs, DAG selection, CLI parsing, S3 download/upload, LocalStack loading, and current-state Delta writes in their current modules. |
-| Ralph workflow/state separation | #85 mapped `scripts/ralph.py`, `tests/test_ralph.py`, `docs/agents/ralph-loop.md`, ADR 0001, ADR 0002, and ADR 0004. Evidence covered issue eligibility, **Delivery mode** resolution, **Integration target** defaults, `RunManifest`, QA selection, **Local integration**, GitHub metadata ordering, recovery, and **Promotion** gates. #88 adds Exploratory delivery labels, **Exploratory branch** defaults, and `agent-reviewing` blocking; #89 moves Exploratory delivery to a durable `agent/exploratory/issue-N-slug` **Exploratory branch** from `origin/main` without **Local integration**; #90 requires `## Review focus` before Exploratory handoff; #91 lets human-accepted Exploratory work close during **Promotion** after acceptance evidence reaches `dev`; #92 records the canonical **Exploratory branch** term and ADR 0005 automatic-Promotion boundary; #136 adds the `needs_review` Operator state and **Exploratory acceptance review** artifacts for `agent-reviewing` queues; #137 adds explicit `accept`, `hold`, and `reject` decision application with merged-target QA before accepted `dev` pushes or metadata changes; #138 adds resumable `acceptance_conflict` artifacts and `--continue-exploratory-acceptance` before push or metadata mutation; #141 adds Promotion gate `--rebuild`, source-definition provenance, and stale runtime graph rejection for AEMO ETL e2e evidence; ADR 0007 records the `.agents/` **Full-access implementation pass** boundary. | High. Pure workflow and state rules can become testable Modules while the CLI controller keeps side effects in one place. | Removes pure label policy, blocker parsing, required-section validation, delivery planning, QA command selection, manifest schema, comment builders, Promotion evidence parsing, full-access scope checks, and recovery recommendation from the side-effect-heavy controller. | Repository root scripts/docs **Subproject** surface: `scripts/`, `tests/`, `docs/agents`, and ADRs. | `scripts/ralph_workflow.py` for pure policy and `scripts/ralph_state.py` for manifest/state. Keep Git, GitHub, command, and Codex adapters in `scripts/ralph.py` for the first slice. | High. Ordering is critical: QA must precede **Local integration** or Exploratory handoff, git pushes must precede issue metadata, full-access `.agents/` work must fail before claim when operator approval is absent and before QA when the diff leaves issue anchors, Gitflow work must remain open until **Promotion**, trunk work must close after integration to `main`, Exploratory work must fail if the Review focus is missing or the remote **Exploratory branch** already exists and otherwise remain open with `agent-reviewing` until accepted or rejected, accepted Exploratory work must record `Ralph exploratory acceptance completed.` evidence before **Promotion** closure, and recovery must stay manifest-gated by reachability from the expected **Integration target**. | Ralph script-level **Test lane** with `python3 -m unittest discover -s tests`; add the AEMO ETL **Unit test** lane when Promotion gate command selection or e2e evidence behavior changes; finish with root **Commit check** `prek run -a`. | Likely `docs/agents/ralph-loop.md`; ADR 0001, ADR 0002, ADR 0004, ADR 0005, and ADR 0007 if **Local integration**, **Delivery mode**, **Integration target**, sandboxed issue access, **Full-access implementation pass**, **Exploratory branch**, or **Promotion** semantics are touched. `docs/repository/documentation-sync.md` only if root doc QA policy changes. | Extract pure workflow helpers to `scripts/ralph_workflow.py` and manifest/state helpers to `scripts/ralph_state.py`, then import them from `scripts/ralph.py` while keeping `GitClient`, `GitHubClient`, `CommandRunner`, `RalphLoop`, and `RalphRunRecovery` in place. |
-| Dagster ECS runtime task definitions | #86 found repeated container JSON assembly in `infrastructure/aws-pulumi/components/ecs_services.py` across the AEMO ETL user-code service, two webserver variants, and the daemon. Evidence also came from `_task_definition`, `_fargate_service`, `test_ecs_services.py`, `test_deprecation_warnings.py`, and `infrastructure/aws-pulumi/docs/runtime.md`, including the noted CPU documentation drift for webservers. | Medium-high. Task-definition and container-definition defaults can become one runtime Module without hiding service-level Pulumi wiring. | Removes repeated PostgreSQL/deployment environment variables, one-container ECS JSON serialization, CloudWatch log config, health-check timing, optional port mapping, and Fargate task-definition defaults from role components. | `infrastructure/aws-pulumi` AWS Pulumi **Subproject**. | Python Module with `DagsterRuntimeTaskSharedInputs`, `DagsterRuntimeTaskSpec`, and `build_dagster_runtime_task_definition(shared, spec) -> aws.ecs.TaskDefinition`. Keep ECR image outputs, roles, entry points, ports, role-specific env, Cloud Map, security groups, and `_fargate_service` explicit. | Medium. Pulumi `Input`/`Output` ordering, role-specific IAM ARNs, read-only webserver flags, daemon no-port behavior, and runtime doc drift make equivalence testing important. | AWS Pulumi **Component test** lane with `tests/component/test_ecs_services.py` and `tests/component/test_deprecation_warnings.py`; finish with the AWS Pulumi **Commit check** `prek run -a` from `infrastructure/aws-pulumi`. No **Push check** or deployed validation unless live service settings change. | Likely `infrastructure/aws-pulumi/README.md` and `infrastructure/aws-pulumi/docs/runtime.md`; root `docs/repository/architecture.md` only if repository-level AWS runtime structure changes. #87 should reconcile the webserver CPU doc drift while making durable updates. | Extract only runtime task-definition and container-definition assembly behind `DagsterRuntimeTaskSpec`, then migrate user code, both webservers, and daemon together. Leave ECR publishing, IAM policy definitions, `_fargate_service`, Cloud Map, security groups, subnet placement, and Dagster run-worker configuration unchanged. |
+| Ralph workflow/state separation | #85 mapped `scripts/ralph.py`, `tools/ralph-loop/tests/unit/test_ralph.py`, `docs/agents/ralph-loop.md`, ADR 0001, ADR 0002, and ADR 0004. Evidence covered issue eligibility, **Delivery mode** resolution, **Integration target** defaults, `RunManifest`, QA selection, **Local integration**, GitHub metadata ordering, recovery, and **Promotion** gates. #88 adds Exploratory delivery labels, **Exploratory branch** defaults, and `agent-reviewing` blocking; #89 moves Exploratory delivery to a durable `agent/exploratory/issue-N-slug` **Exploratory branch** from `origin/main` without **Local integration**; #90 requires `## Review focus` before Exploratory handoff; #91 lets human-accepted Exploratory work close during **Promotion** after acceptance evidence reaches `dev`; #92 records the canonical **Exploratory branch** term and ADR 0005 automatic-Promotion boundary; #136 adds the `needs_review` Operator state and **Exploratory acceptance review** artifacts for `agent-reviewing` queues; #137 adds explicit `accept`, `hold`, and `reject` decision application with merged-target QA before accepted `dev` pushes or metadata changes; #138 adds resumable `acceptance_conflict` artifacts and `--continue-exploratory-acceptance` before push or metadata mutation; #141 adds Promotion gate `--rebuild`, source-definition provenance, and stale runtime graph rejection for AEMO ETL e2e evidence; ADR 0007 records the `.agents/` **Full-access implementation pass** boundary. | High. Pure workflow and state rules can become testable Modules while the CLI controller keeps side effects in one place. | Removes pure label policy, blocker parsing, required-section validation, delivery planning, QA command selection, manifest schema, comment builders, Promotion evidence parsing, full-access scope checks, and recovery recommendation from the side-effect-heavy controller. | Ralph loop tooling **Subproject** surface: `tools/ralph-loop`, compatibility `scripts/ralph.py`, `docs/agents`, and ADRs. | `ralph_loop.workflow` for pure policy and `ralph_loop.state` for manifest/state. Keep Git, GitHub, command, and Codex adapters in `ralph_loop.cli` for the first slice. | High. Ordering is critical: QA must precede **Local integration** or Exploratory handoff, git pushes must precede issue metadata, full-access `.agents/` work must fail before claim when operator approval is absent and before QA when the diff leaves issue anchors, Gitflow work must remain open until **Promotion**, trunk work must close after integration to `main`, Exploratory work must fail if the Review focus is missing or the remote **Exploratory branch** already exists and otherwise remain open with `agent-reviewing` until accepted or rejected, accepted Exploratory work must record `Ralph exploratory acceptance completed.` evidence before **Promotion** closure, and recovery must stay manifest-gated by reachability from the expected **Integration target**. | Ralph loop **Commit check** with `cd tools/ralph-loop && make run-prek`; add the AEMO ETL **Unit test** lane when Promotion gate command selection or e2e evidence behavior changes; finish with root **Commit check** `prek run -a`. | Likely `docs/agents/ralph-loop.md`; ADR 0001, ADR 0002, ADR 0004, ADR 0005, and ADR 0007 if **Local integration**, **Delivery mode**, **Integration target**, sandboxed issue access, **Full-access implementation pass**, **Exploratory branch**, or **Promotion** semantics are touched. `docs/repository/documentation-sync.md` only if root doc QA policy changes. | Extract pure workflow helpers to `tools/ralph-loop/src/ralph_loop/workflow.py` and manifest/state helpers to `tools/ralph-loop/src/ralph_loop/state.py`, then import them from `ralph_loop.cli` while keeping `GitClient`, `GitHubClient`, `CommandRunner`, `RalphLoop`, and `RalphRunRecovery` in place. |
+| Dagster ECS runtime task definitions | #86 found repeated container JSON assembly in `infrastructure/aws-pulumi/components/ecs_services.py` across the AEMO ETL user-code service, two webserver variants, and the daemon. Evidence also came from `_task_definition`, `_fargate_service`, `test_ecs_services.py`, `test_deprecation_warnings.py`, and `infrastructure/aws-pulumi/docs/runtime.md`, including the previously noted CPU documentation drift for webservers. | Medium-high. Task-definition and container-definition defaults can become one runtime Module without hiding service-level Pulumi wiring. | Removes repeated PostgreSQL/deployment environment variables, one-container ECS JSON serialization, CloudWatch log config, health-check timing, optional port mapping, and Fargate task-definition defaults from role components. | `infrastructure/aws-pulumi` AWS Pulumi **Subproject**. | Python Module with `DagsterRuntimeTaskSharedInputs`, `DagsterRuntimeTaskSpec`, and `build_dagster_runtime_task_definition(shared, spec) -> aws.ecs.TaskDefinition`. Keep ECR image outputs, roles, entry points, ports, role-specific env, Cloud Map, security groups, and `_fargate_service` explicit. | Medium. Pulumi `Input`/`Output` ordering, role-specific IAM ARNs, read-only webserver flags, daemon no-port behavior, and the runtime doc drift that has since been reconciled make equivalence testing important. | AWS Pulumi **Component test** lane with `tests/component/test_ecs_services.py` and `tests/component/test_deprecation_warnings.py`; finish with the AWS Pulumi **Commit check** `prek run -a` from `infrastructure/aws-pulumi`. No **Push check** or deployed validation unless live service settings change. | Likely `infrastructure/aws-pulumi/README.md` and `infrastructure/aws-pulumi/docs/runtime.md`; root `docs/repository/architecture.md` only if repository-level AWS runtime structure changes. #87 should preserve the reconciled webserver CPU values while making durable updates. | Extract only runtime task-definition and container-definition assembly behind `DagsterRuntimeTaskSpec`, then migrate user code, both webservers, and daemon together. Leave ECR publishing, IAM policy definitions, `_fargate_service`, Cloud Map, security groups, subnet placement, and Dagster run-worker configuration unchanged. |
 
 The matrix points to no runtime behavior change by itself. Later implementation
 issues should treat these as independent slices, run the listed local **Test
@@ -1522,11 +1530,12 @@ runtime extraction must preserve those controls rather than treating the older
   - `infrastructure/aws-pulumi/tests/component/test_ecs_services.py`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
   - `scripts/ralph.py`
-  - `tests/test_ralph.py`
+  - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/tests/unit/test_ralph.py`
 - `sync.scope`: `temporary architecture exploration`
 - `sync.qa`:
   - `git diff --name-only`
-  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
+  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure tools`
   - `python3 -m unittest discover -s tests`
   - `prek run -a`
   - `verify #87 consumption, #117 decision handoff, and #125 follow-on notes remain visible`

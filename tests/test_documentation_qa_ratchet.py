@@ -20,6 +20,7 @@ PYTHON_DOCSTRING_RATCHET_SUBPROJECTS = (
     Path("backend-services/marimo"),
     Path("backend-services/dagster-user/aemo-etl"),
     Path("infrastructure/aws-pulumi"),
+    Path("tools/ralph-loop"),
 )
 PYTHON_DOCSTRING_RATCHET_EXCLUDED_SUBPROJECTS = (
     Path("backend-services/dagster-core"),
@@ -45,7 +46,7 @@ IGNORED_DISCOVERY_DIRS = frozenset(
         "vendor",
     }
 )
-SUBPROJECT_PARENT_DIRS = frozenset({"backend-services", "infrastructure"})
+SUBPROJECT_PARENT_DIRS = frozenset({"backend-services", "infrastructure", "tools"})
 DOC_DISCOVERY_REQUIRED_EXCLUSIONS = frozenset(
     {
         ".ralph",
@@ -85,6 +86,7 @@ DOCS_README_REQUIRED_TARGETS = frozenset(
         "backend-services/dagster-user/aemo-etl/docs/gas_model/README.md",
         "infrastructure/aws-pulumi/README.md",
         "infrastructure/aws-pulumi/docs/README.md",
+        "tools/ralph-loop/README.md",
     }
 )
 AGENTS_README_REQUIRED_TARGETS = frozenset(
@@ -281,6 +283,8 @@ def _is_maintained_doc_path(relative_path: Path) -> bool:
         return True
     if relative_path.parts[0] == "backend-services":
         return True
+    if relative_path.parts[:2] == ("tools", "ralph-loop"):
+        return True
     return relative_path.parts[:2] == ("infrastructure", "aws-pulumi")
 
 
@@ -446,6 +450,7 @@ def _stale_sweep_paths() -> tuple[Path, ...]:
         REPO_ROOT / "docs",
         REPO_ROOT / "backend-services",
         REPO_ROOT / "infrastructure",
+        REPO_ROOT / "tools",
         REPO_ROOT / "tests",
         REPO_ROOT / "scripts",
     )

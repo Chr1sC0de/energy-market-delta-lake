@@ -154,9 +154,10 @@ for the decision that keeps **Exploratory branches** outside automatic
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
   - `scripts/ralph.py`
+  - `tools/ralph-loop/src/ralph_loop/cli.py`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`
-  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
+  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure tools`
   - `python3 -m unittest discover -s tests`
   - `verify repo names, commands, labels, and links`

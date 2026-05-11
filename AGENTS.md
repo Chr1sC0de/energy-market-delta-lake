@@ -77,6 +77,10 @@ This repo uses a single root `CONTEXT.md` for canonical language. See
 - For `backend-services/marimo`, use:
   - `uv run pytest tests/component` for **Component test** validation.
   - `prek run -a` for the Marimo **Commit check** surface.
+- For `tools/ralph-loop`, use:
+  - `make unit-test` for the Ralph loop **Unit test** validation.
+  - `make fast-test` for the Ralph loop fast pytest target.
+  - `make run-prek` for the Ralph loop **Commit check** surface.
 - Direct `uv run pytest path::test` commands are fine for narrowed debugging.
   Use the documented Subproject command surface again before treating a lane as
   validated.
@@ -90,7 +94,7 @@ This repo uses a single root `CONTEXT.md` for canonical language. See
 
 ## Doc sync
 
-- Scope: `README.md`, `docs/**/*.md`, maintained `backend-services/**/*.md`, `infrastructure/aws-pulumi/**/*.md`, `backend-services/dagster-user/aemo-etl/**/*.md`
+- Scope: `README.md`, `docs/**/*.md`, maintained `backend-services/**/*.md`, `infrastructure/aws-pulumi/**/*.md`, `backend-services/dagster-user/aemo-etl/**/*.md`, `tools/ralph-loop/**/*.md`
 - Out: `specs/`
 - Each maintained doc ends with `## Sync metadata`
 - Required keys: `sync.owner`, `sync.sources`, `sync.scope`, `sync.qa`
@@ -109,8 +113,8 @@ Commands:
 
 ```bash
 git diff --name-only
-rg -n "<changed-file-path>" README.md docs backend-services infrastructure
-rg -n "sync.sources|sync.scope|sync.qa" README.md docs backend-services infrastructure
+rg -n "<changed-file-path>" README.md docs backend-services infrastructure tools
+rg -n "sync.sources|sync.scope|sync.qa" README.md docs backend-services infrastructure tools
 ```
 
 ## QA

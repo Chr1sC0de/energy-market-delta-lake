@@ -1,10 +1,11 @@
 # Ralph Loop
 
-This page documents the repo-local Ralph loop in `scripts/ralph.py`. The loop
-uses GitHub Issues as the queue, Codex as the implementation and triage worker,
-repo **Test lane** commands as the validation boundary, and **Local
-integration**, Exploratory handoff, plus **Promotion** as the success paths
-after QA.
+This page documents the repo-local Ralph loop. The compatibility command stays
+at `scripts/ralph.py`; the packaged Typer CLI and loop implementation live in
+`tools/ralph-loop/src/ralph_loop/cli.py`. The loop uses GitHub Issues as the
+queue, Codex as the implementation and triage worker, repo **Test lane**
+commands as the validation boundary, and **Local integration**, Exploratory
+handoff, plus **Promotion** as the success paths after QA.
 
 ## Table of contents
 
@@ -1221,10 +1222,11 @@ For root docs/config or cross-**Subproject** changes, Ralph runs:
 prek run -a
 ```
 
-For Ralph script or unit-test changes, Ralph runs:
+For Ralph loop package, compatibility script, or unit-test changes, Ralph runs
+the Ralph loop **Commit check** from `tools/ralph-loop`:
 
 ```bash
-python3 -m unittest discover -s tests
+make run-prek
 ```
 
 If the implementation base changes after the implementation worktree was
@@ -1333,6 +1335,12 @@ container-backed **Integration test** dependencies.
 - `sync.owner`: `agents`
 - `sync.sources`:
   - `scripts/ralph.py`
+  - `tools/ralph-loop/.pre-commit-config.yaml`
+  - `tools/ralph-loop/Makefile`
+  - `tools/ralph-loop/README.md`
+  - `tools/ralph-loop/pyproject.toml`
+  - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/tests/unit/test_ralph.py`
   - `CONTEXT.md`
   - `OPERATOR.md`
   - `AGENTS.md`
@@ -1352,6 +1360,6 @@ container-backed **Integration test** dependencies.
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`
-  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
-  - `python3 -m unittest discover -s tests`
+  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure tools`
+  - `cd tools/ralph-loop && make run-prek`
   - `verify links, headings, commands, paths, labels, and names`

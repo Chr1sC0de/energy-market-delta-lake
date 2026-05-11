@@ -21,6 +21,8 @@ Subproject docs for detailed commands, defaults, diagrams, and behavior.
   defaults.
 - [infrastructure/aws-pulumi](infrastructure/aws-pulumi/README.md): deployed
   AWS platform and cloud validation.
+- [tools/ralph-loop](tools/ralph-loop/README.md): packaged Ralph issue loop
+  CLI, unit tests, and **Commit check** surface.
 
 ## Repository docs
 
@@ -50,9 +52,10 @@ Subproject docs for detailed commands, defaults, diagrams, and behavior.
   - `backend-services/README.md`
   - `backend-services/dagster-user/aemo-etl/README.md`
   - `infrastructure/aws-pulumi/README.md`
+  - `tools/ralph-loop/README.md`
 - `sync.scope`: `router`
 - `sync.qa`:
   - `git diff --name-only`
-  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
+  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure tools`
   - `python3 -m unittest discover -s tests`
   - `verify root routes point to owning docs`

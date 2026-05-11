@@ -295,6 +295,12 @@ Keep failed worktrees unless the maintainer asks for cleanup.
   - `.agents/skills/shape-issues/SKILL.md`
   - `.agents/skills/shape-issues/scripts/publish_shape_issues.py`
   - `scripts/ralph.py`
+  - `tools/ralph-loop/.pre-commit-config.yaml`
+  - `tools/ralph-loop/Makefile`
+  - `tools/ralph-loop/README.md`
+  - `tools/ralph-loop/pyproject.toml`
+  - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/tests/unit/test_ralph.py`
   - `.agents/skills/ralph-loop/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`
   - `docs/agents/README.md`
@@ -307,6 +313,6 @@ Keep failed worktrees unless the maintainer asks for cleanup.
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`
-  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
-  - `python3 -m unittest discover -s tests`
+  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure tools`
+  - `cd tools/ralph-loop && make run-prek`
   - `verify commands, links, labels, and canonical Ralph terms`

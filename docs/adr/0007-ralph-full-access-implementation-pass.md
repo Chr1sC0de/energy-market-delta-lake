@@ -56,7 +56,8 @@ existing phase-limited **Sandboxed issue access**.
 - `sync.owner`: `agents`
 - `sync.sources`:
   - `scripts/ralph.py`
-  - `tests/test_ralph.py`
+  - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/tests/unit/test_ralph.py`
   - `CONTEXT.md`
   - `OPERATOR.md`
   - `docs/agents/ralph-loop.md`
@@ -66,6 +67,6 @@ existing phase-limited **Sandboxed issue access**.
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`
-  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
+  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure tools`
   - `python3 -m unittest discover -s tests`
   - `verify full-access boundary, sandboxed issue access, commands, and links`

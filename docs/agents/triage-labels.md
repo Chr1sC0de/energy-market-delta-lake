@@ -105,6 +105,7 @@ records why **Exploratory branches** stay outside automatic **Promotion**.
   - `docs/agents/ralph-loop.md`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
   - `scripts/ralph.py`
+  - `tools/ralph-loop/src/ralph_loop/cli.py`
   - `.agents/skills/ralph-curate/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`
   - `.agents/skills/ralph-loop/SKILL.md`
@@ -112,6 +113,6 @@ records why **Exploratory branches** stay outside automatic **Promotion**.
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`
-  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
+  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure tools`
   - `python3 -m unittest discover -s tests`
   - `verify label names match script constants and GitHub labels`

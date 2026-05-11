@@ -213,6 +213,6 @@ For the doc-sync contract, searchable `sync.sources` metadata, and the required
 - `sync.scope`: `behavior`
 - `sync.qa`:
   - `git diff --name-only`
-  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
+  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure tools`
   - `python3 -m unittest discover -s tests`
   - `verify links, diagrams, commands, paths, ports, env vars, and names`

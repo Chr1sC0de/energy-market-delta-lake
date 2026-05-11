@@ -26,6 +26,7 @@ The sync workflow applies to maintained Markdown files in these paths:
 - maintained `backend-services/**/*.md`
 - `infrastructure/aws-pulumi/**/*.md`
 - `backend-services/dagster-user/aemo-etl/**/*.md`
+- `tools/ralph-loop/**/*.md`
 
 Each maintained doc must end with a visible `## Sync metadata` section.
 
@@ -126,10 +127,12 @@ the same `prek` command surfaces as code QA:
   Google-style docstring ratchet only when its `pyproject.toml` selects Ruff `D`
   rules and its hook config runs `ruff check`. The current ratchet covers
   `backend-services/authentication`, `backend-services/marimo`,
-  `backend-services/dagster-user/aemo-etl`, and
-  `infrastructure/aws-pulumi`, with each Subproject's pyproject defining its
-  test, generated, schema-heavy, or entrypoint exclusions. AEMO ETL and AWS
-  Pulumi also select Ruff `C901` with Ruff's default complexity threshold.
+  `backend-services/dagster-user/aemo-etl`, `infrastructure/aws-pulumi`, and
+  `tools/ralph-loop`, with each Subproject's pyproject defining its test,
+  generated, schema-heavy, legacy-entrypoint, or package-controller exclusions.
+  AEMO ETL, AWS Pulumi, and Ralph loop also select Ruff `C901` with scoped
+  exclusions where existing controller code is intentionally above the default
+  complexity threshold.
   `backend-services/dagster-core` is not currently on this ratchet.
 - `shfmt` formats shell scripts.
 - `shellcheck` checks shell correctness.
@@ -169,8 +172,11 @@ way:
   **Sandboxed issue access**, **Full-access implementation pass**, writable QA
   runtime paths, unverified **Promotion** commit review context,
   **Post-promotion review**, and validated follow-up creation remain owned by
-  [docs/agents/ralph-loop.md](../agents/ralph-loop.md), with the
-  **Exploratory branch** automatic-Promotion boundary recorded in ADR
+  [docs/agents/ralph-loop.md](../agents/ralph-loop.md). Ralph's compatibility
+  command remains `python3 scripts/ralph.py`, and its implementation, unit
+  tests, and **Commit check** surface now live in the
+  [tools/ralph-loop](../../tools/ralph-loop/README.md) Subproject. The
+  **Exploratory branch** automatic-Promotion boundary is recorded in ADR
   [0005](../adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md)
   and the `.agents/` full-access boundary recorded in ADR
   [0007](../adr/0007-ralph-full-access-implementation-pass.md).
@@ -246,8 +252,8 @@ way:
 
 ```bash
 git diff --name-only
-rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure
-rg -n "sync.sources|sync.scope|sync.qa" OPERATOR.md README.md docs backend-services infrastructure
+rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure tools
+rg -n "sync.sources|sync.scope|sync.qa" OPERATOR.md README.md docs backend-services infrastructure tools
 ```
 
 These commands support the intended flow:
@@ -291,12 +297,19 @@ These commands support the intended flow:
   - `backend-services/marimo/pyproject.toml`
   - `infrastructure/aws-pulumi/.pre-commit-config.yaml`
   - `infrastructure/aws-pulumi/pyproject.toml`
+  - `tools/ralph-loop/.pre-commit-config.yaml`
+  - `tools/ralph-loop/Makefile`
+  - `tools/ralph-loop/README.md`
+  - `tools/ralph-loop/pyproject.toml`
+  - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/tests/unit/test_ralph.py`
+  - `tools/ralph-loop/uv.lock`
   - `scripts/check_shell_script_headers.py`
   - `scripts/ralph.py`
 - `sync.scope`: `operations, tooling`
 - `sync.qa`:
   - `git diff --name-only`
-  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure`
+  - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure tools`
   - `python3 -m unittest discover -s tests`
   - `prek run -a`
   - `verify links, diagrams, commands, paths, ports, env vars, and names`
