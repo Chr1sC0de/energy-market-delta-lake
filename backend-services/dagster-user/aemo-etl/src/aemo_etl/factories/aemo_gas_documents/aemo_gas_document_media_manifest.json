@@ -1,0 +1,198 @@
+{
+  "generated_at": "2026-05-11T00:00:00Z",
+  "generator": "aemo-refresh-gas-document-media-manifest",
+  "media_link_count": 0,
+  "media_links": [],
+  "schema_version": 1,
+  "source_page_count": 17,
+  "source_pages": [
+    {
+      "corpus_source": "gas_root",
+      "discover_child_pages": false,
+      "fetch_links": false,
+      "include_decision": "include",
+      "include_reason": "Seed page for public AEMO gas section discovery.",
+      "observed_at": "2026-05-11T00:00:00Z",
+      "source_page_section": "Seed page",
+      "source_page_title": "Gas",
+      "source_page_url": "https://www.aemo.com.au/energy-systems/gas",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "corpus_source": "gas_approved_process",
+      "discover_child_pages": false,
+      "fetch_links": true,
+      "include_decision": "include",
+      "include_reason": "Cross-gas procedure-change process documents and templates.",
+      "observed_at": "2026-05-11T00:00:00Z",
+      "source_page_title": "Gas approved process",
+      "source_page_url": "https://www.aemo.com.au/energy-systems/gas/gas-approved-process",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "corpus_source": "gbb",
+      "discover_child_pages": false,
+      "fetch_links": true,
+      "include_decision": "include",
+      "include_reason": "GBB procedures, guides, methodologies, and business rules.",
+      "observed_at": "2026-05-11T00:00:00Z",
+      "source_page_title": "GBB procedures and guides",
+      "source_page_url": "https://www.aemo.com.au/energy-systems/gas/gas-bulletin-board-gbb/procedures-policies-and-guides/procedures-and-guides",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "corpus_source": "gbb",
+      "discover_child_pages": false,
+      "fetch_links": true,
+      "include_decision": "needs_human_review",
+      "include_reason": "FAQ documents need operator confirmation before ingestion.",
+      "observed_at": "2026-05-11T00:00:00Z",
+      "source_page_title": "GBB FAQ",
+      "source_page_url": "https://www.aemo.com.au/energy-systems/gas/gas-bulletin-board-gbb/procedures-policies-and-guides/faq",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "corpus_source": "ecgs",
+      "discover_child_pages": false,
+      "fetch_links": true,
+      "include_decision": "include",
+      "include_reason": "East Coast Gas System procedures and compensation guides.",
+      "observed_at": "2026-05-11T00:00:00Z",
+      "source_page_title": "East Coast Gas System procedures and guidelines",
+      "source_page_url": "https://www.aemo.com.au/energy-systems/gas/east-coast-gas-system/procedures-and-guidelines",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "corpus_source": "sttm",
+      "discover_child_pages": false,
+      "fetch_links": true,
+      "include_decision": "include",
+      "include_reason": "STTM technical and contact-type guide documents.",
+      "observed_at": "2026-05-11T00:00:00Z",
+      "source_page_title": "About the Short Term Trading Market",
+      "source_page_url": "https://www.aemo.com.au/energy-systems/gas/short-term-trading-market-sttm/about-the-short-term-trading-market-sttm",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "corpus_source": "sttm",
+      "discover_child_pages": false,
+      "fetch_links": true,
+      "include_decision": "include",
+      "include_reason": "Current and previous STTM procedure documents.",
+      "observed_at": "2026-05-11T00:00:00Z",
+      "source_page_title": "STTM procedures, policies and guides",
+      "source_page_url": "https://www.aemo.com.au/energy-systems/gas/short-term-trading-market-sttm/procedures-policies-and-guides",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "corpus_source": "dwgm",
+      "discover_child_pages": false,
+      "fetch_links": true,
+      "include_decision": "include",
+      "include_reason": "DWGM procedures, technical documents, and applicable guides.",
+      "observed_at": "2026-05-11T00:00:00Z",
+      "source_page_title": "DWGM procedures, policies and guides",
+      "source_page_url": "https://www.aemo.com.au/energy-systems/gas/declared-wholesale-gas-market-dwgm/procedures-policies-and-guides",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "corpus_source": "gsh",
+      "discover_child_pages": false,
+      "fetch_links": true,
+      "include_decision": "include",
+      "include_reason": "GSH exchange agreement, membership, methodology, and guides.",
+      "observed_at": "2026-05-11T00:00:00Z",
+      "source_page_title": "GSH exchange agreement and guides",
+      "source_page_url": "https://www.aemo.com.au/energy-systems/gas/gas-supply-hub-gsh/exchange-agreement-and-guides",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "corpus_source": "pct",
+      "discover_child_pages": false,
+      "fetch_links": true,
+      "include_decision": "include",
+      "include_reason": "PCT procedures, transfer, auction, protocol, and guide documents.",
+      "observed_at": "2026-05-11T00:00:00Z",
+      "source_page_title": "PCT procedures, policies and guides",
+      "source_page_url": "https://www.aemo.com.au/energy-systems/gas/pipeline-capacity-trading-pct/procedures-policies-and-guides",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "corpus_source": "retail_gas",
+      "discover_child_pages": true,
+      "fetch_links": true,
+      "include_decision": "include",
+      "include_reason": "Retail gas procedure, protocol, FRC, and user-guide PDFs.",
+      "observed_at": "2026-05-11T00:00:00Z",
+      "source_page_title": "Gas retail procedures, policies and guides",
+      "source_page_url": "https://www.aemo.com.au/energy-systems/gas/gas-retail-markets/procedures-policies-and-guides",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "corpus_source": "wa_gbb",
+      "discover_child_pages": false,
+      "fetch_links": true,
+      "include_decision": "include",
+      "include_reason": "WA GBB GSI procedures, operation guides, and forms.",
+      "observed_at": "2026-05-11T00:00:00Z",
+      "source_page_title": "WA GBB procedures, policies and guides",
+      "source_page_url": "https://www.aemo.com.au/energy-systems/gas/wa-gas-bulletin-board-wa-gbb/procedures-policies-and-guides",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "corpus_source": "gas_systems_guides",
+      "discover_child_pages": false,
+      "fetch_links": true,
+      "include_decision": "needs_human_review",
+      "include_reason": "Mixed forms, online help, and guides need review before ingestion.",
+      "observed_at": "2026-05-11T00:00:00Z",
+      "source_page_title": "Gas systems guides",
+      "source_page_url": "https://www.aemo.com.au/energy-systems/market-it-systems/gas-systems-guides",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "corpus_source": "gas_forecasting_planning",
+      "discover_child_pages": false,
+      "fetch_links": false,
+      "include_decision": "needs_human_review",
+      "include_reason": "Planning publications are gas-relevant but outside the first operational-procedure corpus without operator review.",
+      "observed_at": "2026-05-11T00:00:00Z",
+      "source_page_title": "Gas forecasting and planning publications",
+      "source_page_url": "scope://aemo-gas/gas-forecasting-and-planning-publications",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "corpus_source": "gas_emergency_management",
+      "discover_child_pages": false,
+      "fetch_links": false,
+      "include_decision": "needs_human_review",
+      "include_reason": "Emergency-management publications are gas-relevant but outside the first operational-procedure corpus without operator review.",
+      "observed_at": "2026-05-11T00:00:00Z",
+      "source_page_title": "Gas emergency management publications",
+      "source_page_url": "scope://aemo-gas/gas-emergency-management-publications",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "corpus_source": "manual_seed",
+      "discover_child_pages": false,
+      "fetch_links": false,
+      "include_decision": "needs_human_review",
+      "include_reason": "Consultation and historical stakeholder PDFs require explicit manual seeds before crawling.",
+      "observed_at": "2026-05-11T00:00:00Z",
+      "source_page_title": "Consultation and historical manual seeds",
+      "source_page_url": "scope://aemo-gas/consultation-and-historical-manual-seeds",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "corpus_source": "excluded_external_or_non_pdf",
+      "discover_child_pages": false,
+      "exclude_reason": "External bodies, authenticated portals, NEMWeb data, APIs, software bundles, and non-PDF downloads are link metadata only for this slice.",
+      "fetch_links": false,
+      "include_decision": "exclude",
+      "observed_at": "2026-05-11T00:00:00Z",
+      "source_page_title": "External, authenticated, NEMWeb, and non-PDF assets",
+      "source_page_url": "scope://aemo-gas/external-authenticated-nemweb-and-non-pdf-assets",
+      "status": "seeded_from_default_scope"
+    }
+  ]
+}

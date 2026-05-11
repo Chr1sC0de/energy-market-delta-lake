@@ -1315,6 +1315,13 @@ the landing prefix, archives those byte versions only after the metadata Delta
 write, and deliberately stops before PDF text extraction, wiki output, embedding
 generation, or vector storage.
 
+Issue #142 separates AEMO source-page discovery from daily ingestion. The daily
+asset path now loads a checked-in AEMO gas document media manifest and downloads
+only included direct media URLs, while a manual Playwright CLI refreshes the
+manifest and discovery report. This keeps regular Dagster materialization on the
+existing landing/archive storage target without depending on live source-page
+HTML rendering.
+
 The smallest follow-on implementation issue was: implement the AEMO gas
 PDF landing scraper and `bronze_aemo_gas_document_sources` metadata table for
 included PDF source pages, with excluded and `needs_human_review` observations
@@ -1456,8 +1463,10 @@ slices can close after integration to `main`; exploratory slices stay open with
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/nemweb_public_files/ops/processed_link_combiner.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/manifest.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/models.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/scraper.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/refresh_aemo_gas_document_manifest.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/tests/component/test_factories_nemweb.py`

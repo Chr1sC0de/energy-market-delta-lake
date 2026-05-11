@@ -90,6 +90,19 @@ class AEMOGasDocumentSourceRecord:
     source_content_hash: str
 
 
+@dataclass(frozen=True, slots=True)
+class AEMOGasDocumentMediaValidation:
+    """HTTP validation result for one discovered AEMO media URL."""
+
+    source_url: str
+    ok: bool
+    status_code: int | None
+    resolved_url: str
+    content_type: str | None
+    content_length: int | None
+    error: str | None
+
+
 DEFAULT_AEMO_GAS_DOCUMENT_SOURCE_PAGES: tuple[AEMOGasDocumentSourcePage, ...] = (
     AEMOGasDocumentSourcePage(
         corpus_source="gas_root",

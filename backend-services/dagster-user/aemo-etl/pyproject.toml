@@ -27,6 +27,7 @@ dependencies = [
   "types-requests>=2.32.4.20260107",
 ]
 scripts.aemo-e2e-archive-seed = "aemo_etl.cli.e2e_archive_seed:main"
+scripts.aemo-refresh-gas-document-media-manifest = "aemo_etl.cli.refresh_aemo_gas_document_manifest:main"
 scripts.aemo-replay-bronze-archive = "aemo_etl.cli.replay_bronze_archive:main"
 
 [dependency-groups]
@@ -35,6 +36,7 @@ dev = [
   "dagster-webserver",
   "debugpy>=1.8.20",
   "matplotlib>=3.10.9",
+  "playwright",
   "prek>=0.3.3",
   "pylint>=4.0.5",
   "pytest>=9.0.2",
@@ -49,7 +51,9 @@ dev = [
 ]
 
 [tool.hatch]
-build.targets.wheel.force-include = { "pyproject.toml" = "pyproject.toml" }
+build.targets.wheel.force-include."pyproject.toml" = "pyproject.toml"
+build.targets.wheel.force-include."src/aemo_etl/factories/aemo_gas_documents/aemo_gas_document_media_manifest.json" = "aemo_etl/factories/aemo_gas_documents/aemo_gas_document_media_manifest.json"
+build.targets.wheel.force-include."src/aemo_etl/factories/aemo_gas_documents/aemo_gas_document_media_discovery_report.json" = "aemo_etl/factories/aemo_gas_documents/aemo_gas_document_media_discovery_report.json"
 
 [tool.ruff]
 line-length = 88

@@ -102,13 +102,15 @@ for the STTM unzipper path.
 
 `src/aemo_etl/defs/raw/aemo_gas_documents.py` registers
 `bronze_aemo_gas_document_sources`, a daily AEMO gas document source asset. It
-uses `factories/aemo_gas_documents` to scrape the scoped public AEMO gas PDF
-source pages, record included, excluded, and `needs_human_review` source-page
-or link observations, land included PDF bytes under
+uses `factories/aemo_gas_documents` to load a checked-in package media manifest,
+record included, excluded, and `needs_human_review` source-page or media-link
+observations, land included direct-media PDF bytes under
 `LANDING_BUCKET/bronze/aemo_gas_documents`, write the metadata Delta table, and
 archive landed PDFs under `ARCHIVE_BUCKET/bronze/aemo_gas_documents` only after
-that metadata write succeeds. It does not extract PDF text, create wiki output,
-or write embeddings/vector storage.
+that metadata write succeeds. Source-page HTML discovery is a manual Playwright
+CLI workflow, so the daily asset path does not fetch AEMO source-page HTML. It
+does not extract PDF text, create wiki output, or write embeddings/vector
+storage.
 
 ### Unzipper assets
 
@@ -391,8 +393,11 @@ flowchart TD
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/manifest.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/models.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/scraper.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/refresh_aemo_gas_document_manifest.py`
+  - `backend-services/dagster-user/aemo-etl/pyproject.toml`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`

@@ -28,6 +28,10 @@ from aemo_etl.factories.aemo_gas_documents.models import (
     AEMOGasDocumentPendingObservation,
     AEMOGasDocumentSourcePage,
     AEMOGasDocumentSourceRecord,
+    DEFAULT_AEMO_GAS_DOCUMENT_SOURCE_PAGES,
+)
+from aemo_etl.factories.aemo_gas_documents.manifest import (
+    load_default_aemo_gas_document_observations,
 )
 from aemo_etl.factories.aemo_gas_documents.scraper import (
     discover_aemo_gas_document_observations,
@@ -55,6 +59,11 @@ DELTA_MERGE_OPTIONS = {
     "source_alias": "source",
     "target_alias": "target",
 }
+
+type AEMOGasDocumentObservationLoader = Callable[
+    [datetime],
+    Iterable[AEMOGasDocumentPendingObservation],
+]
 
 SCHEMA = Schema(
     {
@@ -412,7 +421,24 @@ def scrape_and_land_aemo_gas_document_sources(
         request_getter=request_getter,
         observed_at=observed_at,
     )
+    return land_aemo_gas_document_observations(
+        s3_client=s3_client,
+        observations=observations,
+        request_getter=request_getter,
+        landing_bucket=landing_bucket,
+        archive_bucket=archive_bucket,
+    )
 
+
+def land_aemo_gas_document_observations(
+    *,
+    s3_client: S3Client,
+    observations: Iterable[AEMOGasDocumentPendingObservation],
+    request_getter: Callable[[str], Response] = request_get,
+    landing_bucket: str = LANDING_BUCKET,
+    archive_bucket: str = ARCHIVE_BUCKET,
+) -> AEMOGasDocumentScrapeResult:
+    """Land included PDF bytes and return metadata for pending observations."""
     records: list[AEMOGasDocumentSourceRecord] = []
     landed_keys: list[str] = []
     landed_hashes: set[str] = set()
@@ -588,12 +614,20 @@ def aemo_gas_document_sources_asset_factory(
     *,
     source_pages: Iterable[AEMOGasDocumentSourcePage],
     request_getter: Callable[[str], Response] = request_get,
+    observation_loader: AEMOGasDocumentObservationLoader | None = None,
     landing_bucket: str = LANDING_BUCKET,
     archive_bucket: str = ARCHIVE_BUCKET,
     aemo_bucket: str = AEMO_BUCKET,
     **asset_kwargs: Unpack[AssetDefinitonParamSpec],
 ) -> AssetsDefinition:
     """Create the AEMO gas document-source metadata bronze asset."""
+    source_pages_tuple = tuple(source_pages)
+    if observation_loader is None:
+        observation_loader = _default_observation_loader(
+            source_pages=source_pages_tuple,
+            request_getter=request_getter,
+        )
+
     target_table_uri = (
         f"s3://{aemo_bucket}/{AEMO_GAS_DOCUMENTS_PREFIX}/"
         f"{BRONZE_AEMO_GAS_DOCUMENT_SOURCES_TABLE_NAME}"
@@ -632,13 +666,12 @@ def aemo_gas_document_sources_asset_factory(
     ) -> MaterializeResult[None]:
         s3_client = s3.get_client()
         ingested_timestamp = datetime.now(UTC)
-        scrape_result = scrape_and_land_aemo_gas_document_sources(
+        scrape_result = land_aemo_gas_document_observations(
             s3_client=s3_client,
-            source_pages=source_pages,
+            observations=observation_loader(ingested_timestamp),
             request_getter=request_getter,
             landing_bucket=landing_bucket,
             archive_bucket=archive_bucket,
-            observed_at=ingested_timestamp,
         )
         batch = records_to_lazyframe(
             scrape_result.records,
@@ -666,3 +699,30 @@ def aemo_gas_document_sources_asset_factory(
         )
 
     return _asset
+
+
+def _default_observation_loader(
+    *,
+    source_pages: tuple[AEMOGasDocumentSourcePage, ...],
+    request_getter: Callable[[str], Response],
+) -> AEMOGasDocumentObservationLoader:
+    """Return manifest-backed defaults while preserving custom scrape fixtures."""
+    if source_pages == DEFAULT_AEMO_GAS_DOCUMENT_SOURCE_PAGES:
+
+        def _load_manifest(
+            observed_at: datetime,
+        ) -> Iterable[AEMOGasDocumentPendingObservation]:
+            return load_default_aemo_gas_document_observations(observed_at=observed_at)
+
+        return _load_manifest
+
+    def _scrape_source_pages(
+        observed_at: datetime,
+    ) -> Iterable[AEMOGasDocumentPendingObservation]:
+        return discover_aemo_gas_document_observations(
+            source_pages=source_pages,
+            request_getter=request_getter,
+            observed_at=observed_at,
+        )
+
+    return _scrape_source_pages

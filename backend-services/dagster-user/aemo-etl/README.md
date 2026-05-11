@@ -22,9 +22,9 @@ The project materializes Dagster assets defined under `src/aemo_etl/defs` to bui
 - Scheduled NEMWeb discovery/listing assets poll `REPORTS/CURRENT/VicGas`,
   `REPORTS/CURRENT/GBB`, and the root CSV reports in `REPORTS/CURRENT/STTM`
   every 30 minutes and copy source files into landing storage.
-- `bronze_aemo_gas_document_sources` inventories the scoped public AEMO gas PDF
-  source pages, records included, excluded, and `needs_human_review`
-  observations, lands included PDF bytes under
+- `bronze_aemo_gas_document_sources` loads the checked-in AEMO gas document
+  media manifest, records included, excluded, and `needs_human_review`
+  source-page and media-link observations, lands included PDF bytes under
   `LANDING_BUCKET/bronze/aemo_gas_documents`, and archives those bytes under
   `ARCHIVE_BUCKET/bronze/aemo_gas_documents` after the metadata table write.
 - `download_vicgas_public_report_zip_files_job` and
@@ -44,7 +44,8 @@ The project materializes Dagster assets defined under `src/aemo_etl/defs` to bui
 flowchart LR
     subgraph Sources
         NEMWeb["AEMO / NEMWeb public files"]
-        AEMODocs["AEMO gas PDF pages"]
+        AEMODocs["Checked-in AEMO gas document media manifest"]
+        AEMOMedia["AEMO gas direct media URLs"]
     end
 
     subgraph Dagster
@@ -65,7 +66,8 @@ flowchart LR
     end
 
     NEMWeb --> Schedules
-    AEMODocs --> Schedules
+    AEMODocs --> RawAssets
+    AEMOMedia --> RawAssets
     Schedules --> Landing
     Landing --> UnzipSensors
     UnzipSensors --> Landing
@@ -110,7 +112,7 @@ flowchart TD
     Docs --> GasDocs["gas_model/"]
 ```
 
-- Raw ingestion: `factories/nemweb_public_files`, `factories/aemo_gas_documents`, `factories/unzipper`, and `factories/df_from_s3_keys` define separate roles: NEMWeb discovery/listing bronze assets, AEMO gas document source metadata, unzipper extraction assets, and source-table bronze/silver ingestion assets. Source-table bronze writes current-state Delta tables through explicit ingestion logic, archives processed files only after a table write, deletes zero-byte landing objects, and reports skipped selected keys with a non-blocking WARN asset check; downstream silver assets and checks load bronze tables through a read-only Delta IO manager. The AEMO gas document asset also writes through explicit ingestion logic so included PDFs are archived only after `bronze_aemo_gas_document_sources` is written.
+- Raw ingestion: `factories/nemweb_public_files`, `factories/aemo_gas_documents`, `factories/unzipper`, and `factories/df_from_s3_keys` define separate roles: NEMWeb discovery/listing bronze assets, manifest-backed AEMO gas document source metadata, unzipper extraction assets, and source-table bronze/silver ingestion assets. Source-table bronze writes current-state Delta tables through explicit ingestion logic, archives processed files only after a table write, deletes zero-byte landing objects, and reports skipped selected keys with a non-blocking WARN asset check; downstream silver assets and checks load bronze tables through a read-only Delta IO manager. The AEMO gas document asset also writes through explicit ingestion logic so included PDFs are archived only after `bronze_aemo_gas_document_sources` is written.
 - Source-specific silver assets: `silver.gbb.*` and `silver.vicgas.*` assets deduplicate current source rows and expose consistent parquet snapshot datasets for downstream use.
 - Gas-model marts: `src/aemo_etl/defs/gas_model` builds cross-source dimensions and fact tables from the source-specific silver layer.
 - Storage: landing and archive buckets hold files; the AEMO bucket holds bronze Delta tables plus parquet snapshot datasets for source silver and `gas_model`; the IO manager bucket stores Dagster-managed intermediates.
@@ -131,6 +133,7 @@ Delta maintenance metadata is optional and flat:
 ```mermaid
 sequenceDiagram
     participant Source as AEMO / NEMWeb
+    participant Manifest as AEMO gas document media manifest
     participant Discover as Discovery asset
     participant Docs as AEMO gas document asset
     participant Landing as Landing bucket
@@ -142,7 +145,8 @@ sequenceDiagram
 
     Source->>Discover: Publish files
     Discover->>Landing: Save discovered files
-    Source->>Docs: Publish gas PDF source pages
+    Manifest->>Docs: Load source-page and media-link observations
+    Docs->>Source: Download included direct media URLs
     Docs->>Landing: Save included PDF bytes
     Docs->>Archive: Move included PDF bytes after metadata write
     Landing->>Unzip: Zip files detected by unzipper sensor
@@ -266,6 +270,7 @@ uv run dg launch --job download_sttm_day_zip_files_job
 dg launch --assets "key:ops/testing/failed_run_alert_probe"
 uv run aemo-e2e-archive-seed spec
 uv run aemo-e2e-archive-seed refresh
+uv run aemo-refresh-gas-document-media-manifest --no-commit
 uv run aemo-replay-bronze-archive --domain gbb
 uv run aemo-replay-bronze-archive --domain sttm
 uv run aemo-replay-bronze-archive --table gbb.bronze_gasbb_contacts --replace
@@ -292,6 +297,14 @@ from later files.
 and 3 zip objects per required domain. It writes cached objects and
 `seed-run-manifest.json` under `backend-services/.e2e/aemo-etl`; later
 LocalStack runs can load that cache without live archive access.
+
+`aemo-refresh-gas-document-media-manifest` is the manual discovery workflow for
+the AEMO gas document asset. It uses Playwright Chromium to visit configured
+source pages, writes the checked-in media manifest and discovery report, and
+validates direct media URLs with normal HTTP requests. By default it stages and
+commits only those generated JSON files; use `--no-commit` to write them for
+review without staging or committing. If the local Playwright Chromium binary is
+missing, install it once with `uv run playwright install chromium`.
 
 ## Project layout
 
@@ -383,8 +396,11 @@ aemo-etl/
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/manifest.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/models.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/scraper.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/refresh_aemo_gas_document_manifest.py`
+  - `backend-services/dagster-user/aemo-etl/pyproject.toml`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`

@@ -10,6 +10,7 @@ This guide covers the local workflow for running `aemo-etl` against LocalStack-b
 - [Local Dagster workflow](#local-dagster-workflow)
 - [Cached Archive seed runbook](#cached-archive-seed-runbook)
 - [Bronze archive rebuild runbook](#bronze-archive-rebuild-runbook)
+- [AEMO gas document manifest refresh](#aemo-gas-document-manifest-refresh)
 - [Test assumptions](#test-assumptions)
 - [Useful commands](#useful-commands)
 - [Related docs](#related-docs)
@@ -378,6 +379,32 @@ in ADR
 matching STTM grains enrich existing `gas_model` assets, and distinct STTM
 grains become new `gas_model` facts.
 
+## AEMO gas document manifest refresh
+
+`bronze_aemo_gas_document_sources` uses a checked-in package manifest for its
+daily materialization path. Source-page discovery is refreshed manually with a
+Playwright-backed CLI so regular Dagster runs do not depend on source-page HTML
+availability.
+
+Run commands from this Subproject:
+
+```bash
+cd backend-services/dagster-user/aemo-etl
+```
+
+Refresh the manifest and discovery report for local review without staging or
+committing generated files:
+
+```bash
+uv run aemo-refresh-gas-document-media-manifest --no-commit
+```
+
+Omit `--no-commit` only when the refreshed generated JSON files are ready to be
+staged and committed. The CLI stages and commits only the checked-in AEMO gas
+document media manifest and discovery report files. If the local Playwright
+Chromium binary is missing, install it once with
+`uv run playwright install chromium`.
+
 ## Test assumptions
 
 Integration tests in `tests/integration/conftest.py` make these assumptions:
@@ -406,6 +433,7 @@ make integration-test
 make integration-test-testmon
 make duplicate-check
 make run-prek
+uv run aemo-refresh-gas-document-media-manifest --no-commit
 uv run aemo-replay-bronze-archive --domain gbb
 uv run aemo-replay-bronze-archive --domain sttm
 uv run aemo-replay-bronze-archive --table gbb.bronze_gasbb_contacts --replace
@@ -440,6 +468,7 @@ across the Subproject.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/refresh_aemo_gas_document_manifest.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
   - `backend-services/scripts/aemo-etl-e2e`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/current_state.py`
