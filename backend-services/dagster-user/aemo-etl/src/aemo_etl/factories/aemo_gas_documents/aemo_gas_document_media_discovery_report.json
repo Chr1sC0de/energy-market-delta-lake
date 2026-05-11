@@ -1,0 +1,129 @@
+{
+  "generated_at": "2026-05-11T00:00:00Z",
+  "generator": "aemo-refresh-gas-document-media-manifest",
+  "media_validation_count": 0,
+  "media_validations": [],
+  "schema_version": 1,
+  "source_page_count": 17,
+  "source_pages": [
+    {
+      "candidate_media_link_count": 0,
+      "corpus_source": "gas_root",
+      "preserved_media_link_count": 0,
+      "source_page_url": "https://www.aemo.com.au/energy-systems/gas",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "candidate_media_link_count": 0,
+      "corpus_source": "gas_approved_process",
+      "preserved_media_link_count": 0,
+      "source_page_url": "https://www.aemo.com.au/energy-systems/gas/gas-approved-process",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "candidate_media_link_count": 0,
+      "corpus_source": "gbb",
+      "preserved_media_link_count": 0,
+      "source_page_url": "https://www.aemo.com.au/energy-systems/gas/gas-bulletin-board-gbb/procedures-policies-and-guides/procedures-and-guides",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "candidate_media_link_count": 0,
+      "corpus_source": "gbb",
+      "preserved_media_link_count": 0,
+      "source_page_url": "https://www.aemo.com.au/energy-systems/gas/gas-bulletin-board-gbb/procedures-policies-and-guides/faq",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "candidate_media_link_count": 0,
+      "corpus_source": "ecgs",
+      "preserved_media_link_count": 0,
+      "source_page_url": "https://www.aemo.com.au/energy-systems/gas/east-coast-gas-system/procedures-and-guidelines",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "candidate_media_link_count": 0,
+      "corpus_source": "sttm",
+      "preserved_media_link_count": 0,
+      "source_page_url": "https://www.aemo.com.au/energy-systems/gas/short-term-trading-market-sttm/about-the-short-term-trading-market-sttm",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "candidate_media_link_count": 0,
+      "corpus_source": "sttm",
+      "preserved_media_link_count": 0,
+      "source_page_url": "https://www.aemo.com.au/energy-systems/gas/short-term-trading-market-sttm/procedures-policies-and-guides",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "candidate_media_link_count": 0,
+      "corpus_source": "dwgm",
+      "preserved_media_link_count": 0,
+      "source_page_url": "https://www.aemo.com.au/energy-systems/gas/declared-wholesale-gas-market-dwgm/procedures-policies-and-guides",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "candidate_media_link_count": 0,
+      "corpus_source": "gsh",
+      "preserved_media_link_count": 0,
+      "source_page_url": "https://www.aemo.com.au/energy-systems/gas/gas-supply-hub-gsh/exchange-agreement-and-guides",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "candidate_media_link_count": 0,
+      "corpus_source": "pct",
+      "preserved_media_link_count": 0,
+      "source_page_url": "https://www.aemo.com.au/energy-systems/gas/pipeline-capacity-trading-pct/procedures-policies-and-guides",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "candidate_media_link_count": 0,
+      "corpus_source": "retail_gas",
+      "preserved_media_link_count": 0,
+      "source_page_url": "https://www.aemo.com.au/energy-systems/gas/gas-retail-markets/procedures-policies-and-guides",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "candidate_media_link_count": 0,
+      "corpus_source": "wa_gbb",
+      "preserved_media_link_count": 0,
+      "source_page_url": "https://www.aemo.com.au/energy-systems/gas/wa-gas-bulletin-board-wa-gbb/procedures-policies-and-guides",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "candidate_media_link_count": 0,
+      "corpus_source": "gas_systems_guides",
+      "preserved_media_link_count": 0,
+      "source_page_url": "https://www.aemo.com.au/energy-systems/market-it-systems/gas-systems-guides",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "candidate_media_link_count": 0,
+      "corpus_source": "gas_forecasting_planning",
+      "preserved_media_link_count": 0,
+      "source_page_url": "scope://aemo-gas/gas-forecasting-and-planning-publications",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "candidate_media_link_count": 0,
+      "corpus_source": "gas_emergency_management",
+      "preserved_media_link_count": 0,
+      "source_page_url": "scope://aemo-gas/gas-emergency-management-publications",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "candidate_media_link_count": 0,
+      "corpus_source": "manual_seed",
+      "preserved_media_link_count": 0,
+      "source_page_url": "scope://aemo-gas/consultation-and-historical-manual-seeds",
+      "status": "seeded_from_default_scope"
+    },
+    {
+      "candidate_media_link_count": 0,
+      "corpus_source": "excluded_external_or_non_pdf",
+      "preserved_media_link_count": 0,
+      "source_page_url": "scope://aemo-gas/external-authenticated-nemweb-and-non-pdf-assets",
+      "status": "seeded_from_default_scope"
+    }
+  ]
+}

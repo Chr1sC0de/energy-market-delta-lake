@@ -1794,10 +1794,8 @@ Build it.
         self.assertEqual(
             names,
             [
-                "aemo-etl Unit test",
-                "aemo-etl Component test",
-                "aemo-etl Integration test",
                 "aemo-etl Commit check",
+                "aemo-etl Integration test",
             ],
         )
 
@@ -1827,11 +1825,9 @@ Build it.
         self.assertEqual(
             names,
             [
-                "aemo-etl Unit test",
-                "aemo-etl Component test",
-                "aemo-etl Integration test",
                 "aemo-etl Commit check",
                 "root Commit check",
+                "aemo-etl Integration test",
             ],
         )
 
@@ -1957,6 +1953,7 @@ Build it.
             (
                 "scripts/aemo-etl-e2e",
                 "run",
+                "--rebuild",
                 "--scenario",
                 "promotion-gas-model",
                 "--timeout-seconds",
@@ -1980,6 +1977,7 @@ Build it.
             (
                 "scripts/aemo-etl-e2e",
                 "run",
+                "--rebuild",
                 "--scenario",
                 "promotion-gas-model",
                 "--timeout-seconds",
@@ -6305,6 +6303,37 @@ Build it.
             any(event["stage"] == "qa_failed" for event in manifest["events"])
         )
 
+    def test_aemo_etl_commit_check_failure_stops_before_integration_test(self) -> None:
+        qa_command = ("make", "run-prek")
+        changed_file = (
+            " M backend-services/dagster-user/aemo-etl/src/aemo_etl/"
+            "definitions.py\n"
+        )
+        runner = FakeRunner(
+            status_outputs=[changed_file, changed_file],
+            rev_parse_outputs=["base-sha\n"],
+            fail_commands={qa_command},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(Path(tmp), runner)
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._handle_implementation(
+                    make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+                )
+
+            manifest = load_run_manifest(Path(tmp))
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn(qa_command, commands)
+        self.assertNotIn(("make", "integration-test"), commands)
+        failed_qa = [
+            result
+            for result in manifest["qa_results"]
+            if result["name"] == "aemo-etl Commit check"
+            and result["status"] == "failed"
+        ]
+        self.assertGreaterEqual(len(failed_qa), 1)
+
     def test_promotion_merges_dev_and_closes_verified_integrated_issue(self) -> None:
         issue_list_command = (
             "gh",
@@ -6548,6 +6577,14 @@ Build it.
             manifest["paths"]["promotion_source_worktree"],
             str(source_path),
         )
+        self.assertEqual(manifest["promotion_worktree_preflight"]["status"], "passed")
+        self.assertEqual(
+            [
+                check["role"]
+                for check in manifest["promotion_worktree_preflight"]["checks"]
+            ],
+            ["source", "target"],
+        )
         self.assertEqual(
             manifest["source_tree"],
             {
@@ -6640,6 +6677,118 @@ Build it.
         )
         self.assertFalse(manifest["ready_issue_refresh"]["enabled"])
         self.assertEqual(manifest["ready_issue_refresh"]["status"], "skipped_disabled")
+
+    def test_stale_promotion_source_worktree_stops_before_qa_or_push(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo_path = tmp_path / "repo"
+            source_path = tmp_path / "worktrees" / "agent-promote-source-dev-to-main"
+            source_path.mkdir(parents=True)
+            runner = FakeRunner(
+                diff_outputs=["scripts/ralph.py\n"],
+                rev_parse_outputs=["source-sha\n"],
+                command_outputs={
+                    ("git", "worktree", "list", "--porcelain"): [
+                        "\n".join(
+                            [
+                                f"worktree {repo_path}",
+                                "HEAD source-sha",
+                                "branch refs/heads/dev",
+                                "",
+                                f"worktree {source_path}",
+                                "HEAD stale-sha",
+                                "detached",
+                                "",
+                            ]
+                        )
+                    ]
+                },
+            )
+            loop = make_loop(tmp_path, runner, promote=True)
+
+            with self.assertRaises(ralph.RalphError):
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        commands = [call.args for call in runner.calls]
+        self.assertNotIn(
+            ("git", "worktree", "add", "--detach", str(source_path), "source-sha"),
+            commands,
+        )
+        self.assertFalse(
+            any(
+                command == ("python3", "-m", "unittest", "discover", "-s", "tests")
+                for command in commands
+            )
+        )
+        self.assertFalse(any(command[:3] == ("git", "push", "origin") for command in commands))
+        preflight = manifest["promotion_worktree_preflight"]
+        self.assertEqual(preflight["status"], "failed")
+        self.assertEqual(preflight["failure_type"], "stale_worktree")
+        self.assertIn(str(source_path), preflight["recovery_guidance"])
+        self.assertIn("git worktree remove", preflight["recovery_guidance"])
+        source_check = preflight["checks"][0]
+        self.assertEqual(source_check["role"], "source")
+        self.assertTrue(source_check["exists"])
+        self.assertTrue(source_check["registered"])
+        self.assertEqual(source_check["head"], "stale-sha")
+        self.assertFalse(source_check["dirty"])
+        self.assertEqual(manifest["qa_results"], [])
+        self.assertEqual(manifest["promotion_commit"], None)
+        self.assertEqual(manifest["pushes"], {})
+
+    def test_stale_promotion_target_worktree_stops_before_worktree_creation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo_path = tmp_path / "repo"
+            source_path = tmp_path / "worktrees" / "agent-promote-source-dev-to-main"
+            promote_path = tmp_path / "worktrees" / "agent-promote-dev-to-main"
+            promote_path.mkdir(parents=True)
+            runner = FakeRunner(
+                diff_outputs=["scripts/ralph.py\n"],
+                rev_parse_outputs=["source-sha\n"],
+                command_outputs={
+                    ("git", "worktree", "list", "--porcelain"): [
+                        "\n".join(
+                            [
+                                f"worktree {repo_path}",
+                                "HEAD source-sha",
+                                "branch refs/heads/dev",
+                                "",
+                                f"worktree {promote_path}",
+                                "HEAD stale-target-sha",
+                                "detached",
+                                "",
+                            ]
+                        )
+                    ]
+                },
+            )
+            loop = make_loop(tmp_path, runner, promote=True)
+
+            with self.assertRaises(ralph.RalphError):
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        commands = [call.args for call in runner.calls]
+        self.assertNotIn(
+            ("git", "worktree", "add", "--detach", str(source_path), "source-sha"),
+            commands,
+        )
+        self.assertNotIn(
+            ("git", "worktree", "add", "--detach", str(promote_path), "origin/main"),
+            commands,
+        )
+        preflight = manifest["promotion_worktree_preflight"]
+        self.assertEqual(preflight["status"], "failed")
+        self.assertEqual(preflight["failure_type"], "stale_worktree")
+        self.assertEqual(preflight["checks"][1]["role"], "target")
+        self.assertEqual(preflight["checks"][1]["head"], "stale-target-sha")
+        self.assertIn(str(promote_path), preflight["recovery_guidance"])
 
     def test_promotion_records_distinct_metadata_command_logs_for_each_issue(
         self,
@@ -8373,6 +8522,7 @@ None.
             e2e_command = (
                 "scripts/aemo-etl-e2e",
                 "run",
+                "--rebuild",
                 "--scenario",
                 "promotion-gas-model",
                 "--timeout-seconds",
@@ -8438,6 +8588,7 @@ None.
             [
                 "scripts/aemo-etl-e2e",
                 "run",
+                "--rebuild",
                 "--scenario",
                 "promotion-gas-model",
                 "--timeout-seconds",
@@ -8463,6 +8614,7 @@ None.
             e2e_command = (
                 "scripts/aemo-etl-e2e",
                 "run",
+                "--rebuild",
                 "--scenario",
                 "promotion-gas-model",
                 "--timeout-seconds",

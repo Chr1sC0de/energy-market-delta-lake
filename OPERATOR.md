@@ -145,7 +145,8 @@ Use this checklist:
 - Check whether changed **Subprojects** require operator attention beyond
   Ralph's aggregate **Push check**.
 - If AEMO ETL files changed, expect the AEMO ETL **End-to-end test** gate during
-  **Promotion**.
+  **Promotion**. That gate rebuilds its local e2e images and validates runtime
+  Dagster GraphQL target counts against current source definitions.
 - If Marimo runtime files changed, expect Marimo **Component test** and Marimo
   **Commit check** evidence from `backend-services/marimo`. Docs-only Marimo
   changes use the root doc **Commit check** evidence; mixed docs/runtime Marimo
@@ -231,9 +232,10 @@ reconciling GitHub metadata.
 
 When the AEMO ETL **End-to-end test** gate runs, treat its budget report as a
 **Promotion** contract, not a local development benchmark. Duration or run-count
-failures point to run explosion, queue contention, or environment slowdown;
-target-progress, asset-check, or missing-telemetry failures mean the source
-revision has not proven the required coverage. Use the printed
+failures point to run explosion, queue contention, unexpected extra Dagster runs
+beyond the direct-launch plan, or environment slowdown;
+target-count mismatches, target-progress, asset-check, or missing-telemetry
+failures mean the source revision has not proven the required coverage. Use the printed
 `run-manifest.json` path before retrying or reconciling issue state.
 
 ## Recovery
@@ -252,6 +254,13 @@ If a **Full-access implementation pass** reports `diff_out_of_scope`, inspect
 the child implementation worktree, keep only files named by the issue's
 `## Context anchors`, and rerun Ralph for that issue. Ralph does not run QA or
 **Local integration** for out-of-anchor full-access diffs.
+
+If **Promotion** reports `promotion_worktree_preflight.status: failed`, inspect
+the recorded Promotion source or target worktree path before retrying. Remove
+only a clean stale worktree with `git worktree remove <path>`; preserve or
+resolve dirty worktrees before removal. This failure happens before **Push
+check** QA, the AEMO ETL **End-to-end test** gate, merge, push, or GitHub Issue
+metadata changes.
 
 For a checkpointed Operator run, inspect status before opening child logs:
 

@@ -758,6 +758,13 @@ class RunManifest:
                 "promotion_source_worktree": str(source_path),
                 "promotion_worktree": str(promote_path),
             },
+            "promotion_worktree_preflight": {
+                "status": "not_started",
+                "checks": [],
+                "failure_type": None,
+                "recovery_guidance": None,
+                "error": None,
+            },
             "changed_files": [],
             "qa_results": [],
             "qa_runtime_env": {"status": "not_started"},
@@ -1190,6 +1197,25 @@ class RunManifest:
             raise RalphError("Manifest paths field is not an object.")
         paths["branch_sync_worktree"] = str(worktree_path)
         self.record_event(f"branch_sync_{status}", details=entry)
+
+    def record_promotion_worktree_preflight(
+        self,
+        status: str,
+        *,
+        checks: list[dict[str, Any]],
+        failure_type: str | None = None,
+        recovery_guidance: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        preflight = {
+            "status": status,
+            "checks": checks,
+            "failure_type": failure_type,
+            "recovery_guidance": recovery_guidance,
+            "error": error,
+        }
+        self.data["promotion_worktree_preflight"] = preflight
+        self.record_event(f"promotion_worktree_preflight_{status}", details=preflight)
 
     def record_metadata_status(
         self,
@@ -3440,6 +3466,36 @@ def branch_sync_recovery_guidance(
     )
 
 
+def promotion_worktree_recovery_guidance(
+    *,
+    worktree_path: Path,
+    dirty: bool | None,
+    registered: bool,
+) -> str:
+    if dirty is False:
+        removal = f"remove it with `git worktree remove {worktree_path}`"
+    elif dirty is True:
+        removal = (
+            "preserve or commit the local changes there before removing the worktree"
+        )
+    elif registered:
+        removal = (
+            "inspect it with `git status` from that path before deciding whether it "
+            "can be removed"
+        )
+    else:
+        removal = (
+            "inspect the path manually; it may be a non-worktree directory that must "
+            "be moved or removed before Promotion can continue"
+        )
+    return (
+        "An existing Promotion worktree path is blocking Ralph. "
+        f"Inspect `{worktree_path}` and {removal}. "
+        "Rerun `$ralph-loop promote` only after the path no longer appears in "
+        "`git worktree list` and no filesystem entry remains at that location."
+    )
+
+
 def ready_issue_refresh_recovery_guidance(
     *,
     run_dir: Path,
@@ -3729,15 +3785,16 @@ def has_marimo_runtime_change(changed_files: list[str]) -> bool:
 def select_qa_commands(changed_files: list[str], repo_root: Path) -> list[QACommand]:
     commands: list[QACommand] = []
     has_aemo_etl_change = has_protected_aemo_etl_change(changed_files)
+    aemo_etl_integration_command: QACommand | None = None
     if has_aemo_etl_change:
         aemo_root = repo_root / AEMO_ETL_PREFIX
-        commands.extend(
-            [
-                QACommand(("make", "unit-test"), aemo_root, "aemo-etl Unit test"),
-                QACommand(("make", "component-test"), aemo_root, "aemo-etl Component test"),
-                QACommand(("make", "integration-test"), aemo_root, "aemo-etl Integration test"),
-                QACommand(("make", "run-prek"), aemo_root, "aemo-etl Commit check"),
-            ]
+        commands.append(
+            QACommand(("make", "run-prek"), aemo_root, "aemo-etl Commit check")
+        )
+        aemo_etl_integration_command = QACommand(
+            ("make", "integration-test"),
+            aemo_root,
+            "aemo-etl Integration test",
         )
 
     if has_marimo_runtime_change(changed_files):
@@ -3764,6 +3821,9 @@ def select_qa_commands(changed_files: list[str], repo_root: Path) -> list[QAComm
                 "Ralph unit tests",
             )
         )
+
+    if aemo_etl_integration_command is not None:
+        commands.append(aemo_etl_integration_command)
 
     deduped: list[QACommand] = []
     seen: set[tuple[tuple[str, ...], Path]] = set()
@@ -3805,6 +3865,7 @@ def select_promotion_gate_commands(
     args: tuple[str, ...] = (
         "scripts/aemo-etl-e2e",
         "run",
+        "--rebuild",
         "--scenario",
         AEMO_ETL_PROMOTION_E2E_SCENARIO,
         "--timeout-seconds",
@@ -3887,6 +3948,14 @@ def parse_git_worktree_list_porcelain(output: str) -> list[GitWorktree]:
 
     append_current()
     return worktrees
+
+
+def matching_git_worktree(worktrees: list[GitWorktree], path: Path) -> GitWorktree | None:
+    target = path.resolve()
+    for worktree in worktrees:
+        if worktree.path.resolve() == target:
+            return worktree
+    return None
 
 
 def checked_out_worktree_for_branch(
@@ -6575,6 +6644,103 @@ class RalphLoop:
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         return self.config.log_root / f"exploratory-acceptance-{timestamp}"
 
+    def _promotion_worktree_preflight_check(
+        self,
+        *,
+        role: str,
+        path: Path,
+        worktrees: list[GitWorktree],
+    ) -> dict[str, Any]:
+        registered_worktree = matching_git_worktree(worktrees, path)
+        exists = path.exists()
+        check: dict[str, Any] = {
+            "role": role,
+            "worktree_path": str(path),
+            "exists": exists,
+            "registered": registered_worktree is not None,
+            "head": registered_worktree.head if registered_worktree is not None else None,
+            "branch": (
+                registered_worktree.branch if registered_worktree is not None else None
+            ),
+            "dirty": None,
+            "status_output": None,
+            "error": None,
+        }
+        if not exists:
+            return check
+
+        if check["head"] is None:
+            try:
+                check["head"] = self.git.rev_parse("HEAD", cwd=path)
+            except CommandFailure as error:
+                check["error"] = str(error)
+        try:
+            status_output = self.git.status_porcelain(cwd=path)
+        except CommandFailure as error:
+            existing_error = check.get("error")
+            check["error"] = (
+                f"{existing_error}; {error}" if existing_error is not None else str(error)
+            )
+            return check
+        check["status_output"] = status_output
+        check["dirty"] = status_output.strip() != ""
+        return check
+
+    def _ensure_promotion_worktree_paths_available(
+        self,
+        *,
+        source_path: Path,
+        promote_path: Path,
+        manifest: RunManifest,
+    ) -> None:
+        worktrees = (
+            self.git.worktrees()
+            if source_path.exists() or promote_path.exists()
+            else []
+        )
+        checks = [
+            self._promotion_worktree_preflight_check(
+                role="source",
+                path=source_path,
+                worktrees=worktrees,
+            ),
+            self._promotion_worktree_preflight_check(
+                role="target",
+                path=promote_path,
+                worktrees=worktrees,
+            ),
+        ]
+        blocking_checks = [
+            check
+            for check in checks
+            if check["exists"] is True or check["registered"] is True
+        ]
+        if not blocking_checks:
+            manifest.record_promotion_worktree_preflight("passed", checks=checks)
+            return
+
+        blocking_check = blocking_checks[0]
+        blocking_path = Path(str(blocking_check["worktree_path"]))
+        dirty_value = blocking_check.get("dirty")
+        dirty = dirty_value if isinstance(dirty_value, bool) else None
+        guidance = promotion_worktree_recovery_guidance(
+            worktree_path=blocking_path,
+            dirty=dirty,
+            registered=blocking_check["registered"] is True,
+        )
+        message = (
+            f"Stale Promotion {blocking_check['role']} worktree blocks Promotion: "
+            f"{blocking_path}. {guidance}"
+        )
+        manifest.record_promotion_worktree_preflight(
+            "failed",
+            checks=checks,
+            failure_type="stale_worktree",
+            recovery_guidance=guidance,
+            error=message,
+        )
+        raise IssueFailure(message)
+
     def _promote(self) -> RunManifest:
         source_branch = self.config.source_branch
         target_branch = self._promotion_target_branch()
@@ -6643,6 +6809,12 @@ class RalphLoop:
                 )
                 manifest.record_success("no_changes_to_promote")
                 return manifest
+            manifest.record_event("checking_promotion_worktree_preflight")
+            self._ensure_promotion_worktree_paths_available(
+                source_path=source_path,
+                promote_path=promote_path,
+                manifest=manifest,
+            )
             emit(f"Creating Promotion source worktree {source_path}")
             manifest.record_event("creating_promotion_source_worktree")
             self.git.add_detached_worktree(

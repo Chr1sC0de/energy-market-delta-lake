@@ -17,6 +17,9 @@ from aemo_etl.factories.aemo_gas_documents.definitions import (
     aemo_gas_document_sources_definitions_factory,
 )
 from aemo_etl.factories.aemo_gas_documents.models import AEMOGasDocumentSourcePage
+from aemo_etl.factories.aemo_gas_documents.manifest import (
+    observations_from_manifest_payload,
+)
 
 _PAGE_URL = "https://www.aemo.com.au/energy-systems/gas/component"
 _PDF_URL = "https://www.aemo.com.au/-/media/files/gas/component-guide.pdf"
@@ -210,6 +213,63 @@ def test_definitions_factory_default_getter_uses_retrying_request_get(
 
     assert isinstance(result, MaterializeResult)
     request_get.assert_called_once_with(page_url)
+    s3_client.copy_object.assert_not_called()
+
+
+def test_definitions_factory_default_asset_uses_manifest_without_source_page_fetch(
+    mocker: MockerFixture,
+) -> None:
+    source_page_url = "https://www.aemo.com.au/energy-systems/gas/default-source"
+    media_url = "https://www.aemo.com.au/-/media/files/gas/default-guide.pdf"
+    request_get = mocker.patch(
+        "aemo_etl.factories.aemo_gas_documents.definitions.request_get",
+        return_value=_response(url=media_url, content=_PDF_BYTES),
+    )
+    mocker.patch(
+        "aemo_etl.factories.aemo_gas_documents.assets.load_default_aemo_gas_document_observations",
+        return_value=observations_from_manifest_payload(
+            {
+                "schema_version": 1,
+                "generated_at": "2026-05-10T00:00:00Z",
+                "source_pages": [
+                    {
+                        "corpus_source": "default",
+                        "source_page_url": source_page_url,
+                        "include_decision": "include",
+                    }
+                ],
+                "media_links": [
+                    {
+                        "corpus_source": "default",
+                        "source_page_url": source_page_url,
+                        "source_link_text": "Default Guide v1.0",
+                        "source_url": media_url,
+                        "include_decision": "include",
+                    }
+                ],
+            }
+        ),
+    )
+    mocker.patch(
+        "aemo_etl.factories.aemo_gas_documents.assets.write_aemo_gas_document_sources_batch",
+        return_value=AEMOGasDocumentSourceWriteResult(
+            row_count=2,
+            target_exists_before_write=True,
+            wrote_table=False,
+            write_mode="skip",
+        ),
+    )
+    defs = aemo_gas_document_sources_definitions_factory(process_retry=1)
+    asset_def = next(
+        asset for asset in defs.assets or [] if isinstance(asset, AssetsDefinition)
+    )
+    context, s3, s3_client = _context_and_s3(mocker)
+
+    fn = asset_def.op.compute_fn.decorated_fn  # type: ignore[attr-defined, union-attr]
+    result = fn(context, s3=s3)
+
+    assert isinstance(result, MaterializeResult)
+    request_get.assert_called_once_with(media_url)
     s3_client.copy_object.assert_not_called()
 
 

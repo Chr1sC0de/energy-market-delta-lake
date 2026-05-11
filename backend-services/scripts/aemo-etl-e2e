@@ -35,10 +35,13 @@ DIRECT_UPSTREAM_ASSET_LAUNCH_MODE = "direct-upstream-asset-launch"
 PROMOTION_E2E_REQUIRED_TARGET_ASSET_COUNT_SOURCE = (
     "dataflow.scenario_evidence.target_asset_count"
 )
+PROMOTION_E2E_SOURCE_DEFINITION_TARGET_ASSET_COUNT_SOURCE = (
+    "source_definitions.executable_asset_count"
+)
 PROMOTION_E2E_MAX_TOTAL_GATE_DURATION_SECONDS = 20 * 60
 PROMOTION_E2E_MAX_PEAK_ACTIVE_RUN_COUNT = DEFAULT_MAX_CONCURRENT_RUNS
 PROMOTION_E2E_MAX_PEAK_QUEUED_RUN_COUNT = DEFAULT_MAX_CONCURRENT_RUNS
-PROMOTION_E2E_MAX_TOTAL_RUN_COUNT = 48
+PROMOTION_E2E_MAX_TOTAL_RUN_COUNT_SOURCE = "dataflow.scenario_evidence.batch_count"
 E2E_SCENARIO_DEFAULTS = {
     FULL_GAS_MODEL_SCENARIO: {
         "raw_latest_count": DEFAULT_RAW_LATEST_COUNT,
@@ -428,11 +431,56 @@ class E2ERegressionBudgets:
     max_total_gate_duration_seconds: int
     max_peak_active_run_count: int
     max_peak_queued_run_count: int
-    max_total_run_count: int
+    max_total_run_count: int | None
+    max_total_run_count_source: str
     max_missing_target_asset_count: int = 0
     max_failed_target_asset_count: int = 0
     max_missing_asset_check_count: int = 0
     max_failed_asset_check_count: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class SourceDefinitionEvidence:
+    """Current source-definition evidence for one Promotion target group."""
+
+    command: tuple[str, ...]
+    working_directory: Path
+    target_group: str
+    executable_asset_keys: tuple[tuple[str, ...], ...]
+    asset_check_count: int
+
+    @property
+    def executable_asset_count(self) -> int:
+        """Return the executable current-source asset count."""
+        return len(self.executable_asset_keys)
+
+    @property
+    def sttm_asset_keys(self) -> tuple[tuple[str, ...], ...]:
+        """Return STTM gas-model assets included in the current source count."""
+        return tuple(
+            asset_key
+            for asset_key in self.executable_asset_keys
+            if asset_key and asset_key[-1].startswith("silver_gas_fact_sttm_")
+        )
+
+    def to_manifest(self) -> dict[str, object]:
+        """Return this source-definition evidence in manifest shape."""
+        return {
+            "source": "current-source",
+            "command": list(self.command),
+            "working_directory": str(self.working_directory),
+            "target_group": self.target_group,
+            "executable_asset_count": self.executable_asset_count,
+            "asset_check_count": self.asset_check_count,
+            "asset_keys": [
+                format_asset_key_path(asset_key)
+                for asset_key in self.executable_asset_keys
+            ],
+            "sttm_asset_count": len(self.sttm_asset_keys),
+            "sttm_asset_keys": [
+                format_asset_key_path(asset_key) for asset_key in self.sttm_asset_keys
+            ],
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -1032,8 +1080,16 @@ def run_stack(
     manifest_path = run_dir / "run-manifest.json"
     write_run_manifest(manifest_path, manifest, telemetry)
     deadline = time.monotonic() + options.timeout_seconds
+    source_definition_evidence: SourceDefinitionEvidence | None = None
 
     try:
+        if options.scenario == PROMOTION_GAS_MODEL_SCENARIO:
+            source_definition_evidence = collect_promotion_source_definition_evidence(
+                command_runner,
+                backend_dir=backend_dir,
+            )
+            manifest["source_definitions"] = source_definition_evidence.to_manifest()
+            write_run_manifest(manifest_path, manifest, telemetry)
         render_runtime_files(
             compose_file=compose_file,
             dagster_config_file=dagster_config_file,
@@ -1087,6 +1143,7 @@ def run_stack(
             run_id=run_id,
             runner=command_runner,
             telemetry=telemetry,
+            source_definition_evidence=source_definition_evidence,
         )
     except Exception as error:
         collect_logs(command_runner, compose_command, logs_dir, backend_dir)
@@ -1805,6 +1862,7 @@ def drive_dagster_dataflow(
     launch_mode: str = SENSOR_DRIVEN_LAUNCH_MODE,
     runner: CommandRunner | None = None,
     telemetry: GateRunTelemetry | None = None,
+    source_definition_evidence: SourceDefinitionEvidence | None = None,
 ) -> dict[str, object]:
     """Start intended Dagster automation and monitor the full e2e dataflow."""
     client = DagsterGraphQLClient(dagster_graphql_url(webserver_port))
@@ -1838,6 +1896,7 @@ def drive_dagster_dataflow(
         max_concurrent_runs=expected_max_concurrent_runs,
         runner=command_runner,
         telemetry=dataflow_telemetry,
+        source_definition_evidence=source_definition_evidence,
     )
     monitor_started = time.monotonic()
     try:
@@ -2144,10 +2203,18 @@ def launch_dataflow_runs(
     max_concurrent_runs: int,
     runner: CommandRunner | None = None,
     telemetry: DagsterDataflowTelemetry | None = None,
+    source_definition_evidence: SourceDefinitionEvidence | None = None,
 ) -> DagsterDataflowLaunchResult:
     """Launch the selected scenario's Dagster dataflow runs."""
     if launch_mode == SENSOR_DRIVEN_LAUNCH_MODE:
-        del started_after, timeout_seconds, max_concurrent_runs, runner, telemetry
+        del (
+            started_after,
+            timeout_seconds,
+            max_concurrent_runs,
+            runner,
+            telemetry,
+            source_definition_evidence,
+        )
         start_expected_sensors(client, selector)
         validate_dagster_automation_state(
             fetch_dagster_definition_state(client),
@@ -2169,6 +2236,7 @@ def launch_dataflow_runs(
             max_active_runs=max_concurrent_runs,
             runner=runner,
             telemetry=telemetry,
+            source_definition_evidence=source_definition_evidence,
         )
 
     raise CommandError(f"unknown e2e launch mode: {launch_mode}")
@@ -2216,6 +2284,7 @@ def launch_gas_model_upstream_assets(
     max_active_runs: int = DEFAULT_MAX_CONCURRENT_RUNS,
     runner: CommandRunner | None = None,
     telemetry: DagsterDataflowTelemetry | None = None,
+    source_definition_evidence: SourceDefinitionEvidence | None = None,
 ) -> DagsterDataflowLaunchResult:
     """Launch explicit asset graph batches for the gas_model Promotion target."""
     if max_active_runs <= 0:
@@ -2227,6 +2296,11 @@ def launch_gas_model_upstream_assets(
         scenario=scenario,
         launch_mode=launch_mode,
     )
+    if source_definition_evidence is not None:
+        validate_promotion_source_definition_target_count(
+            launch_plan=launch_plan,
+            source_definition_evidence=source_definition_evidence,
+        )
     launch_waves = launch_plan.waves
     command_runner = runner or CommandRunner()
     deadline = time.monotonic() + timeout_seconds
@@ -2278,7 +2352,10 @@ def launch_gas_model_upstream_assets(
 
     return DagsterDataflowLaunchResult(
         run_ids=tuple(run_ids),
-        scenario_evidence=launch_plan.to_manifest(),
+        scenario_evidence=launch_plan_manifest(
+            launch_plan,
+            source_definition_evidence=source_definition_evidence,
+        ),
     )
 
 
@@ -2359,6 +2436,126 @@ def read_dagster_asset_node(asset_node: Mapping[str, object]) -> DagsterAssetNod
     )
 
 
+def collect_promotion_source_definition_evidence(
+    runner: CommandRunner,
+    *,
+    backend_dir: Path,
+) -> SourceDefinitionEvidence:
+    """Collect current-source gas_model definitions before stack startup."""
+    aemo_etl_dir = backend_dir / "dagster-user/aemo-etl"
+    command = (
+        "uv",
+        "run",
+        "dg",
+        "list",
+        "defs",
+        "--assets",
+        f"group:{GAS_MODEL_GROUP_NAME}",
+        "--json",
+    )
+    result = runner.run(
+        command,
+        cwd=aemo_etl_dir,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise CommandError(
+            "current source definition command failed for Promotion target "
+            f"{GAS_MODEL_GROUP_NAME}: {format_command(command)}\n"
+            f"{format_source_definition_command_output(result)}"
+        )
+
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise CommandError(
+            "current source definition command did not return valid JSON: "
+            f"{error}"
+        ) from error
+    if not isinstance(payload, Mapping):
+        raise CommandError("current source definition payload was not an object")
+    return read_source_definition_evidence(
+        payload,
+        command=command,
+        working_directory=aemo_etl_dir,
+    )
+
+
+def format_source_definition_command_output(
+    result: subprocess.CompletedProcess[str],
+) -> str:
+    """Return compact command output for a source-definition failure."""
+    lines: list[str] = []
+    if result.stdout:
+        lines.append("stdout:\n" + result.stdout.strip())
+    if result.stderr:
+        lines.append("stderr:\n" + result.stderr.strip())
+    if len(lines) == 0:
+        return "no command output"
+    return "\n".join(lines)
+
+
+def read_source_definition_evidence(
+    payload: Mapping[str, object],
+    *,
+    command: Sequence[str],
+    working_directory: Path,
+) -> SourceDefinitionEvidence:
+    """Read `dg list defs --json` output into Promotion manifest evidence."""
+    assets = payload.get("assets")
+    if not isinstance(assets, list):
+        raise CommandError("current source definition payload.assets was not a list")
+    executable_asset_keys = tuple(
+        sorted(
+            {
+                read_dg_list_defs_asset_key_path(asset)
+                for asset in assets
+                if isinstance(asset, Mapping)
+                and asset.get("group_name") == GAS_MODEL_GROUP_NAME
+                and asset.get("is_executable") is True
+            }
+        )
+    )
+    if len(executable_asset_keys) == 0:
+        raise CommandError(
+            f"current source definitions include no executable {GAS_MODEL_GROUP_NAME} assets"
+        )
+
+    asset_checks = payload.get("asset_checks")
+    if not isinstance(asset_checks, list):
+        raise CommandError(
+            "current source definition payload.asset_checks was not a list"
+        )
+    executable_asset_key_labels = {
+        format_asset_key_path(asset_key) for asset_key in executable_asset_keys
+    }
+    asset_check_count = sum(
+        1
+        for asset_check in asset_checks
+        if isinstance(asset_check, Mapping)
+        and asset_check.get("asset_key") in executable_asset_key_labels
+    )
+    return SourceDefinitionEvidence(
+        command=tuple(command),
+        working_directory=working_directory,
+        target_group=GAS_MODEL_GROUP_NAME,
+        executable_asset_keys=executable_asset_keys,
+        asset_check_count=asset_check_count,
+    )
+
+
+def read_dg_list_defs_asset_key_path(asset: Mapping[str, object]) -> tuple[str, ...]:
+    """Return one asset key path from `dg list defs --json` output."""
+    parts = asset.get("asset_key_parts")
+    if isinstance(parts, list) and all(isinstance(part, str) for part in parts):
+        return tuple(parts)
+    asset_key = asset.get("asset_key")
+    if isinstance(asset_key, str) and asset_key:
+        return tuple(asset_key.split("/"))
+    raise CommandError("current source definition asset key was not readable")
+
+
 def build_gas_model_upstream_asset_launch_plan(
     asset_nodes: Sequence[DagsterAssetNode],
     *,
@@ -2386,6 +2583,37 @@ def build_gas_model_upstream_asset_launch_plan(
         waves=launch_waves,
         batch_count=batch_count,
         asset_batch_size=asset_batch_size,
+    )
+
+
+def launch_plan_manifest(
+    launch_plan: DagsterAssetLaunchPlan,
+    *,
+    source_definition_evidence: SourceDefinitionEvidence | None = None,
+) -> dict[str, object]:
+    """Return launch-plan evidence with optional current-source provenance."""
+    manifest = launch_plan.to_manifest()
+    if source_definition_evidence is not None:
+        manifest["source_definitions"] = source_definition_evidence.to_manifest()
+    return manifest
+
+
+def validate_promotion_source_definition_target_count(
+    *,
+    launch_plan: DagsterAssetLaunchPlan,
+    source_definition_evidence: SourceDefinitionEvidence,
+) -> None:
+    """Fail when runtime GraphQL exposes a stale gas_model target count."""
+    runtime_target_count = len(launch_plan.target_asset_keys)
+    source_target_count = source_definition_evidence.executable_asset_count
+    if runtime_target_count == source_target_count:
+        return
+    raise CommandError(
+        "stale Dagster asset graph detected for Promotion gate: "
+        f"dataflow.scenario_evidence.target_asset_count is {runtime_target_count}, "
+        f"but current source definitions from {format_command(source_definition_evidence.command)} "
+        f"report {source_target_count} executable {GAS_MODEL_GROUP_NAME} assets "
+        f"at {PROMOTION_E2E_SOURCE_DEFINITION_TARGET_ASSET_COUNT_SOURCE}"
     )
 
 
@@ -3670,6 +3898,7 @@ def enforce_e2e_regression_budgets_for_run(
     budgets = e2e_regression_budgets_for_run(
         options.scenario,
         dataflow_payload=optional_mapping(manifest.get("dataflow")),
+        source_definition_payload=optional_mapping(manifest.get("source_definitions")),
     )
     telemetry_payload = telemetry.to_manifest()
     manifest["budget"] = e2e_budget_manifest(
@@ -3717,6 +3946,8 @@ def e2e_regression_budgets_for_scenario(
     required_target_asset_count_source: str = (
         PROMOTION_E2E_REQUIRED_TARGET_ASSET_COUNT_SOURCE
     ),
+    max_total_run_count: int | None = None,
+    max_total_run_count_source: str = PROMOTION_E2E_MAX_TOTAL_RUN_COUNT_SOURCE,
 ) -> E2ERegressionBudgets | None:
     """Return enforced regression budgets for a scenario, if any."""
     if scenario != PROMOTION_GAS_MODEL_SCENARIO:
@@ -3728,7 +3959,8 @@ def e2e_regression_budgets_for_scenario(
         max_total_gate_duration_seconds=(PROMOTION_E2E_MAX_TOTAL_GATE_DURATION_SECONDS),
         max_peak_active_run_count=PROMOTION_E2E_MAX_PEAK_ACTIVE_RUN_COUNT,
         max_peak_queued_run_count=PROMOTION_E2E_MAX_PEAK_QUEUED_RUN_COUNT,
-        max_total_run_count=PROMOTION_E2E_MAX_TOTAL_RUN_COUNT,
+        max_total_run_count=max_total_run_count,
+        max_total_run_count_source=max_total_run_count_source,
     )
 
 
@@ -3736,10 +3968,25 @@ def e2e_regression_budgets_for_run(
     scenario: str,
     *,
     dataflow_payload: Mapping[str, object] | None,
+    source_definition_payload: Mapping[str, object] | None = None,
 ) -> E2ERegressionBudgets | None:
     """Return regression budgets with run-specific dynamic target evidence."""
     if scenario != PROMOTION_GAS_MODEL_SCENARIO:
         return None
+    max_total_run_count = promotion_total_run_count_budget_from_dataflow(
+        dataflow_payload
+    )
+    if source_definition_payload is not None:
+        return e2e_regression_budgets_for_scenario(
+            scenario,
+            required_target_asset_count=promotion_target_asset_count_from_source_definitions(
+                source_definition_payload
+            ),
+            required_target_asset_count_source=(
+                PROMOTION_E2E_SOURCE_DEFINITION_TARGET_ASSET_COUNT_SOURCE
+            ),
+            max_total_run_count=max_total_run_count,
+        )
     return e2e_regression_budgets_for_scenario(
         scenario,
         required_target_asset_count=promotion_target_asset_count_from_dataflow(
@@ -3748,7 +3995,23 @@ def e2e_regression_budgets_for_run(
         required_target_asset_count_source=(
             PROMOTION_E2E_REQUIRED_TARGET_ASSET_COUNT_SOURCE
         ),
+        max_total_run_count=max_total_run_count,
     )
+
+
+def promotion_total_run_count_budget_from_dataflow(
+    dataflow_payload: Mapping[str, object] | None,
+) -> int | None:
+    """Return the Promotion run-count budget from the direct-launch plan."""
+    if dataflow_payload is None:
+        return None
+    scenario_evidence = optional_mapping(dataflow_payload.get("scenario_evidence"))
+    if scenario_evidence is None:
+        return None
+    batch_count = optional_int(scenario_evidence.get("batch_count"))
+    if batch_count is None or batch_count <= 0:
+        return None
+    return batch_count
 
 
 def promotion_target_asset_count_from_dataflow(
@@ -3761,6 +4024,20 @@ def promotion_target_asset_count_from_dataflow(
     if scenario_evidence is None:
         return None
     target_count = optional_int(scenario_evidence.get("target_asset_count"))
+    if target_count is None or target_count <= 0:
+        return None
+    return target_count
+
+
+def promotion_target_asset_count_from_source_definitions(
+    source_definition_payload: Mapping[str, object] | None,
+) -> int | None:
+    """Return the Promotion target count from current source definitions."""
+    if source_definition_payload is None:
+        return None
+    target_count = optional_int(
+        source_definition_payload.get("executable_asset_count")
+    )
     if target_count is None or target_count <= 0:
         return None
     return target_count
@@ -3799,6 +4076,7 @@ def e2e_budget_thresholds(budgets: E2ERegressionBudgets) -> dict[str, object]:
         "max_peak_active_run_count": budgets.max_peak_active_run_count,
         "max_peak_queued_run_count": budgets.max_peak_queued_run_count,
         "max_total_run_count": budgets.max_total_run_count,
+        "max_total_run_count_source": budgets.max_total_run_count_source,
         "max_missing_target_asset_count": budgets.max_missing_target_asset_count,
         "max_failed_target_asset_count": budgets.max_failed_target_asset_count,
         "max_missing_asset_check_count": budgets.max_missing_asset_check_count,
@@ -3878,7 +4156,7 @@ def format_enforced_e2e_budget_report(
             f"threshold <= {budgets.max_peak_queued_run_count}",
             "- total Dagster runs: observed "
             f"{format_optional_count(observations['total_run_count'])}; "
-            f"threshold <= {budgets.max_total_run_count}",
+            f"threshold <= {format_total_run_count_budget(budgets)}",
             "- target progress: observed "
             f"{format_target_progress(observations['materialized_target_asset_count'], observations['target_asset_count'])}; "
             f"required {format_required_target_progress(budgets)}",
@@ -3997,13 +4275,7 @@ def e2e_budget_failures(
         label="peak queued runs",
         threshold=budgets.max_peak_queued_run_count,
     )
-    append_max_budget_failure(
-        failures,
-        observations,
-        key="total_run_count",
-        label="total Dagster runs",
-        threshold=budgets.max_total_run_count,
-    )
+    append_total_run_count_failure(failures, observations, budgets)
     append_target_progress_failure(failures, observations, budgets)
     append_max_budget_failure(
         failures,
@@ -4034,6 +4306,34 @@ def e2e_budget_failures(
         threshold=budgets.max_failed_asset_check_count,
     )
     return tuple(failures)
+
+
+def append_total_run_count_failure(
+    failures: list[str],
+    observations: Mapping[str, int | float | None],
+    budgets: E2ERegressionBudgets,
+) -> None:
+    """Append the graph-aware total-run budget failure when needed."""
+    threshold = budgets.max_total_run_count
+    if threshold is None:
+        failures.append(
+            "total Dagster run budget unavailable from "
+            f"{budgets.max_total_run_count_source}; "
+            "cannot validate total Dagster runs"
+        )
+        return
+    observed = observations["total_run_count"]
+    if observed is None:
+        failures.append(
+            "total Dagster runs unavailable; threshold <= "
+            f"{format_total_run_count_budget(budgets)}"
+        )
+        return
+    if observed > threshold:
+        failures.append(
+            f"total Dagster runs observed {observed}; threshold <= "
+            f"{format_total_run_count_budget(budgets)}"
+        )
 
 
 def append_max_budget_failure(
@@ -4196,6 +4496,13 @@ def format_optional_count(count: int | None) -> str:
     if count is None:
         return "unavailable"
     return str(count)
+
+
+def format_total_run_count_budget(budgets: E2ERegressionBudgets) -> str:
+    """Return the total-run threshold and launch-plan evidence source."""
+    if budgets.max_total_run_count is None:
+        return f"unavailable from {budgets.max_total_run_count_source}"
+    return f"{budgets.max_total_run_count} from {budgets.max_total_run_count_source}"
 
 
 def format_target_progress(

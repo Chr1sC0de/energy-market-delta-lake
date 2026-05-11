@@ -15,6 +15,7 @@ from aemo_etl.factories.aemo_gas_documents.assets import (
     DELTA_MERGE_OPTIONS,
     AEMOGasDocumentSourceWriteResult,
     _land_pdf_once,
+    land_aemo_gas_document_observations,
     _stable_hash,
     records_to_lazyframe,
     scrape_and_land_aemo_gas_document_sources,
@@ -22,6 +23,17 @@ from aemo_etl.factories.aemo_gas_documents.assets import (
 )
 from aemo_etl.factories.aemo_gas_documents.models import (
     AEMOGasDocumentSourcePage,
+)
+from aemo_etl.factories.aemo_gas_documents.manifest import (
+    discovery_report_payload,
+    dump_manifest_json,
+    existing_manifest_entries,
+    load_default_aemo_gas_document_observations,
+    load_default_manifest_payload,
+    manifest_payload,
+    media_link_manifest_entry,
+    observations_from_manifest_payload,
+    source_page_manifest_entry,
 )
 from aemo_etl.factories.aemo_gas_documents.scraper import (
     _page_link_observations,
@@ -142,6 +154,242 @@ def test_discover_observations_classifies_pdf_non_pdf_and_review_links() -> None
     assert pdf_observation.published_date == "1 May 2026"
     assert pdf_observation.media_revision == "ABC"
     assert pdf_observation.document_kind == "guide"
+
+
+def test_manifest_payload_recreates_source_page_and_media_observations() -> None:
+    payload = {
+        "schema_version": 1,
+        "generated_at": "2026-05-10T00:00:00Z",
+        "source_pages": [
+            {
+                "corpus_source": "example",
+                "source_page_url": _PAGE_URL,
+                "source_page_title": "Example Gas Page",
+                "include_decision": "include",
+                "include_reason": "Included for test",
+            }
+        ],
+        "media_links": [
+            {
+                "corpus_source": "example",
+                "source_page_url": _PAGE_URL,
+                "source_page_title": "Example Gas Page",
+                "source_page_section": "Guides",
+                "source_link_text": "1 May 2026 Gas Guide v2.1",
+                "source_url": _PDF_URL,
+                "resolved_url": f"{_PDF_URL}&resolved=true",
+                "document_kind": "guide",
+                "include_decision": "include",
+                "include_reason": "Included for test",
+                "media_revision": "ABC",
+            }
+        ],
+    }
+
+    observations = observations_from_manifest_payload(
+        payload,
+        observed_at=_OBSERVED_AT,
+    )
+
+    assert [item.observation_type for item in observations] == ["source_page", "link"]
+    assert observations[0].source_page_title == "Example Gas Page"
+    assert observations[1].should_download is True
+    assert observations[1].resolved_url == f"{_PDF_URL}&resolved=true"
+    assert observations[1].document_family_id == "example__gas-guide"
+    assert observations[1].document_version == "2.1"
+    assert observations[1].published_date == "1 May 2026"
+    assert observations[1].media_revision == "ABC"
+
+
+def test_default_manifest_loads_packaged_source_page_observations() -> None:
+    payload = load_default_manifest_payload()
+    observations = load_default_aemo_gas_document_observations(
+        observed_at=_OBSERVED_AT,
+    )
+
+    assert payload["schema_version"] == 1
+    assert len(observations) == payload["source_page_count"]
+    assert all(item.observation_type == "source_page" for item in observations)
+
+
+def test_manifest_helpers_dump_and_index_entries() -> None:
+    source_page = AEMOGasDocumentSourcePage(
+        corpus_source="example",
+        source_page_url=_PAGE_URL,
+        include_decision="include",
+        include_reason="Included for test",
+    )
+    source_entry = source_page_manifest_entry(
+        source_page,
+        observed_at=_OBSERVED_AT,
+        status="refreshed",
+    )
+    observation = observations_from_manifest_payload(
+        {
+            "schema_version": 1,
+            "generated_at": "2026-05-10T00:00:00Z",
+            "source_pages": [source_entry],
+            "media_links": [
+                {
+                    "corpus_source": "example",
+                    "source_page_url": _PAGE_URL,
+                    "source_url": _PDF_URL,
+                    "include_decision": "include",
+                }
+            ],
+        },
+        observed_at=_OBSERVED_AT,
+    )[1]
+    media_entry = media_link_manifest_entry(observation)
+    payload = manifest_payload(
+        generated_at=_OBSERVED_AT,
+        source_pages=[source_entry],
+        media_links=[media_entry],
+    )
+    report = discovery_report_payload(
+        generated_at=_OBSERVED_AT,
+        source_pages=[{"source_page_url": _PAGE_URL}],
+        media_validations=[{"source_url": _PDF_URL}],
+    )
+    source_pages, media_links = existing_manifest_entries(payload)
+
+    assert source_pages[_PAGE_URL]["status"] == "refreshed"
+    assert media_links[_PAGE_URL] == [media_entry]
+    assert '"media_link_count": 1' in dump_manifest_json(payload)
+    assert report["media_validation_count"] == 1
+
+
+def test_manifest_uses_generation_timestamp_fallbacks() -> None:
+    observations = observations_from_manifest_payload(
+        {
+            "schema_version": 1,
+            "generated_at": "2026-05-11T10:00:00+10:00",
+            "source_pages": [
+                {
+                    "corpus_source": "example",
+                    "source_page_url": _PAGE_URL,
+                    "include_decision": "include",
+                }
+            ],
+            "media_links": [],
+        }
+    )
+    observations_without_generated_at = observations_from_manifest_payload(
+        {
+            "schema_version": 1,
+            "source_pages": [
+                {
+                    "corpus_source": "example",
+                    "source_page_url": _PAGE_URL,
+                    "include_decision": "include",
+                }
+            ],
+        }
+    )
+
+    assert observations[0].source_page_observed_at == dt.datetime(
+        2026,
+        5,
+        11,
+        0,
+        0,
+        tzinfo=dt.UTC,
+    )
+    assert observations_without_generated_at[0].source_page_observed_at.tzinfo == dt.UTC
+
+
+def test_manifest_respects_explicit_should_download_false() -> None:
+    observations = observations_from_manifest_payload(
+        {
+            "schema_version": 1,
+            "generated_at": "2026-05-11T00:00:00Z",
+            "source_pages": [],
+            "media_links": [
+                {
+                    "corpus_source": "example",
+                    "source_page_url": _PAGE_URL,
+                    "source_url": _PDF_URL,
+                    "include_decision": "include",
+                    "should_download": False,
+                }
+            ],
+        }
+    )
+
+    assert observations[0].include_decision == "include"
+    assert observations[0].should_download is False
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"schema_version": 2, "source_pages": [], "media_links": []},
+        {"schema_version": 1, "source_pages": {}, "media_links": []},
+        {"schema_version": 1, "source_pages": [object()], "media_links": []},
+        {
+            "schema_version": 1,
+            "source_pages": [
+                {
+                    "corpus_source": "",
+                    "source_page_url": _PAGE_URL,
+                    "include_decision": "include",
+                }
+            ],
+            "media_links": [],
+        },
+        {
+            "schema_version": 1,
+            "source_pages": [
+                {
+                    "corpus_source": "example",
+                    "source_page_url": _PAGE_URL,
+                    "include_decision": "include",
+                    "include_reason": 5,
+                }
+            ],
+            "media_links": [],
+        },
+        {
+            "schema_version": 1,
+            "source_pages": [
+                {
+                    "corpus_source": "example",
+                    "source_page_url": _PAGE_URL,
+                    "include_decision": "include",
+                    "fetch_links": "yes",
+                }
+            ],
+            "media_links": [],
+        },
+        {
+            "schema_version": 1,
+            "source_pages": [
+                {
+                    "corpus_source": "example",
+                    "source_page_url": _PAGE_URL,
+                    "include_decision": "maybe",
+                }
+            ],
+            "media_links": [],
+        },
+        {
+            "schema_version": 1,
+            "source_pages": [],
+            "media_links": [
+                {
+                    "corpus_source": "example",
+                    "source_page_url": _PAGE_URL,
+                    "source_url": _PDF_URL,
+                    "include_decision": "include",
+                    "should_download": "yes",
+                }
+            ],
+        },
+    ],
+)
+def test_manifest_rejects_invalid_payloads(payload: dict[str, object]) -> None:
+    with pytest.raises(ValueError):
+        observations_from_manifest_payload(payload)
 
 
 def test_child_source_pages_discovers_same_scope_non_media_pages() -> None:
@@ -414,6 +662,62 @@ def test_scrape_and_land_downloads_included_pdfs_and_records_metadata() -> None:
         "exclude",
         "needs_human_review",
     }
+
+
+def test_land_manifest_observations_downloads_only_direct_media_urls() -> None:
+    observations = observations_from_manifest_payload(
+        {
+            "schema_version": 1,
+            "generated_at": "2026-05-10T00:00:00Z",
+            "source_pages": [
+                {
+                    "corpus_source": "example",
+                    "source_page_url": _PAGE_URL,
+                    "source_page_title": "Example Gas Page",
+                    "include_decision": "include",
+                }
+            ],
+            "media_links": [
+                {
+                    "corpus_source": "example",
+                    "source_page_url": _PAGE_URL,
+                    "source_link_text": "Gas Guide v2.1",
+                    "source_url": _PDF_URL,
+                    "include_decision": "include",
+                }
+            ],
+        },
+        observed_at=_OBSERVED_AT,
+    )
+    requested_urls: list[str] = []
+    s3_client = MagicMock()
+    s3_client.head_object.side_effect = ClientError(
+        {"Error": {"Code": "404"}},
+        "HeadObject",
+    )
+
+    def _get(url: str) -> Response:
+        requested_urls.append(url)
+        if url != _PDF_URL:
+            raise AssertionError(f"unexpected source-page request: {url}")
+        return _response(
+            url=url,
+            content=_PDF_BYTES,
+            headers={"Content-Type": "application/pdf"},
+        )
+
+    result = land_aemo_gas_document_observations(
+        s3_client=s3_client,
+        observations=observations,
+        request_getter=_get,
+        landing_bucket="landing",
+        archive_bucket="archive",
+    )
+
+    assert requested_urls == [_PDF_URL]
+    assert result.included_pdf_count == 1
+    assert result.excluded_observation_count == 0
+    assert len(result.records) == 2
 
 
 def test_scrape_and_land_deduplicates_landed_pdf_bytes() -> None:

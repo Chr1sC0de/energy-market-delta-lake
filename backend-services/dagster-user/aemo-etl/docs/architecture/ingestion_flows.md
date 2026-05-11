@@ -1,6 +1,6 @@
 # Ingestion Flows
 
-These diagrams show the main ingestion paths implemented by the current factories and definition modules. They stay close to the repo's real layers: scheduled NEMWeb discovery, AEMO gas document discovery, landing and archive buckets, unzipper assets, bronze ingestion assets, source silver assets, and downstream `gas_model` automation.
+These diagrams show the main ingestion paths implemented by the current factories and definition modules. They stay close to the repo's real layers: scheduled NEMWeb discovery, manifest-backed AEMO gas document ingestion, landing and archive buckets, unzipper assets, bronze ingestion assets, source silver assets, and downstream `gas_model` automation.
 
 ## Table of contents
 
@@ -184,15 +184,20 @@ Trigger and output notes:
 ```mermaid
 sequenceDiagram
     autonumber
-    participant AEMO as AEMO gas source pages
+    participant Discovery as aemo-refresh-gas-document-media-manifest
+    participant Manifest as Checked-in media manifest
+    participant AEMO as AEMO direct media URLs
     participant Schedule as bronze_aemo_gas_document_sources_job_schedule
     participant Docs as bronze_aemo_gas_document_sources
     participant Landing as LANDING_BUCKET/bronze/aemo_gas_documents
     participant DeltaDocs as AEMO Delta metadata table
     participant Archive as ARCHIVE_BUCKET/bronze/aemo_gas_documents
 
+    Discovery->>AEMO: Manually visit configured source pages with Playwright
+    Discovery->>Manifest: Write manifest and discovery report JSON
     Schedule->>Docs: Run daily
-    Docs->>AEMO: Scrape scoped public gas PDF source pages
+    Docs->>Manifest: Load source-page and media-link observations
+    Docs->>AEMO: Download included direct media URLs
     Docs->>Docs: Classify include, exclude, and needs_human_review observations
     Docs->>Landing: Write included PDF bytes by content_sha256
     Docs->>DeltaDocs: Merge bronze_aemo_gas_document_sources metadata rows
@@ -203,6 +208,11 @@ Trigger and output notes:
 
 - The asset is registered by `src/aemo_etl/defs/raw/aemo_gas_documents.py` and
   built by `factories/aemo_gas_documents`.
+- Daily materialization reads the checked-in media manifest from the package and
+  does not fetch AEMO source-page HTML. The manual
+  `aemo-refresh-gas-document-media-manifest` CLI performs source-page discovery
+  with Playwright, validates direct media URLs, and preserves existing manifest
+  entries when a source page is blocked or unreadable.
 - Included PDF links produce content-addressed PDF objects and metadata rows
   with source URL, resolved URL, source page, include decision,
   `content_sha256`, document family/version fields, and archive `storage_uri`.
@@ -346,8 +356,11 @@ Delta lock table to verify included PDF bytes move from
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/source_tables.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/manifest.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/models.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/scraper.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/refresh_aemo_gas_document_manifest.py`
+  - `backend-services/dagster-user/aemo-etl/pyproject.toml`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/s3_pending_objects.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`

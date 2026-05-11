@@ -38,6 +38,38 @@ STTM_GAS_MODEL_FACT_NAMES = (
 )
 
 
+def gas_model_source_definition_payload(
+    asset_names: Sequence[str],
+    *,
+    asset_check_count: int = 0,
+) -> dict[str, object]:
+    """Return a compact `dg list defs --json` fixture for gas_model assets."""
+    asset_keys = [f"silver/gas_model/{asset_name}" for asset_name in asset_names]
+    return {
+        "assets": [
+            {
+                "asset_key": asset_key,
+                "asset_key_parts": asset_key.split("/"),
+                "group_name": "gas_model",
+                "is_executable": True,
+            }
+            for asset_key in asset_keys
+        ],
+        "asset_checks": [
+            {
+                "key": f"{asset_keys[index % len(asset_keys)]}:check_{index}",
+                "asset_key": asset_keys[index % len(asset_keys)],
+                "name": f"check_{index}",
+            }
+            for index in range(asset_check_count)
+        ],
+        "jobs": [],
+        "resources": [],
+        "schedules": [],
+        "sensors": [],
+    }
+
+
 def load_e2e_command_module() -> dict[str, Any]:
     """Load the extensionless backend-services command as a Python module."""
     script_path = Path(__file__).resolve().parents[4] / "scripts/aemo-etl-e2e"
@@ -1183,6 +1215,192 @@ def test_promotion_launch_plan_counts_current_sttm_target_growth() -> None:
     }.issubset(target_asset_keys)
 
 
+def test_collect_promotion_source_definition_evidence_records_current_source_count(
+    tmp_path: Path,
+) -> None:
+    """Promotion records the current dg source-definition target count."""
+    module = load_e2e_command_module()
+    collect_evidence = get_callable(
+        module,
+        "collect_promotion_source_definition_evidence",
+    )
+    non_sttm_target_names = tuple(
+        f"silver_gas_legacy_target_{index}"
+        for index in range(
+            CURRENT_GAS_MODEL_TARGET_ASSET_COUNT - len(STTM_GAS_MODEL_FACT_NAMES)
+        )
+    )
+    payload = gas_model_source_definition_payload(
+        (*non_sttm_target_names, *STTM_GAS_MODEL_FACT_NAMES),
+        asset_check_count=144,
+    )
+
+    class FakeRunner:
+        """Return current source definitions from a fake dg command."""
+
+        def __init__(self) -> None:
+            self.calls: list[tuple[Sequence[str], Path | None, bool, bool]] = []
+
+        def run(
+            self,
+            args: Sequence[str],
+            *,
+            cwd: Path | None = None,
+            env: Mapping[str, str] | None = None,
+            capture_output: bool = False,
+            check: bool = True,
+        ) -> subprocess.CompletedProcess[str]:
+            del env
+            self.calls.append((args, cwd, capture_output, check))
+            return subprocess.CompletedProcess(
+                list(args),
+                0,
+                stdout=json.dumps(payload),
+                stderr="",
+            )
+
+    runner = FakeRunner()
+
+    evidence = collect_evidence(runner, backend_dir=tmp_path / "backend-services")
+    manifest = getattr(evidence, "to_manifest")()
+
+    assert runner.calls == [
+        (
+            (
+                "uv",
+                "run",
+                "dg",
+                "list",
+                "defs",
+                "--assets",
+                "group:gas_model",
+                "--json",
+            ),
+            tmp_path / "backend-services/dagster-user/aemo-etl",
+            True,
+            False,
+        )
+    ]
+    assert manifest["executable_asset_count"] == CURRENT_GAS_MODEL_TARGET_ASSET_COUNT
+    assert manifest["asset_check_count"] == 144
+    assert manifest["sttm_asset_count"] == len(STTM_GAS_MODEL_FACT_NAMES)
+    assert set(manifest["sttm_asset_keys"]) == {
+        f"silver/gas_model/{asset_name}" for asset_name in STTM_GAS_MODEL_FACT_NAMES
+    }
+
+
+def test_promotion_source_definition_validation_fails_stale_runtime_graph(
+    tmp_path: Path,
+) -> None:
+    """A stale 29-asset runtime graph is rejected before Promotion launches."""
+    module = load_e2e_command_module()
+    asset_node_class = get_callable(module, "DagsterAssetNode")
+    source_definition_class = get_callable(module, "SourceDefinitionEvidence")
+    build_launch_plan = get_callable(
+        module,
+        "build_gas_model_upstream_asset_launch_plan",
+    )
+    validate_target_count = get_callable(
+        module,
+        "validate_promotion_source_definition_target_count",
+    )
+    command_error = get_exception_class(module, "CommandError")
+    legacy_target_names = tuple(
+        f"silver_gas_legacy_target_{index}"
+        for index in range(LEGACY_GAS_MODEL_TARGET_ASSET_COUNT)
+    )
+    current_target_names = tuple(
+        f"silver_gas_current_target_{index}"
+        for index in range(CURRENT_GAS_MODEL_TARGET_ASSET_COUNT)
+    )
+    launch_plan = build_launch_plan(
+        [
+            asset_node_class(
+                key=("silver", "gas_model", asset_name),
+                group_name="gas_model",
+                is_materializable=True,
+                dependency_keys=(),
+            )
+            for asset_name in legacy_target_names
+        ],
+        scenario="promotion-gas-model",
+        launch_mode="direct-upstream-asset-launch",
+    )
+    source_definition_evidence = source_definition_class(
+        command=("uv", "run", "dg", "list", "defs"),
+        working_directory=tmp_path,
+        target_group="gas_model",
+        executable_asset_keys=tuple(
+            ("silver", "gas_model", asset_name) for asset_name in current_target_names
+        ),
+        asset_check_count=144,
+    )
+
+    with pytest.raises(command_error) as caught:
+        validate_target_count(
+            launch_plan=launch_plan,
+            source_definition_evidence=source_definition_evidence,
+        )
+
+    message = str(caught.value)
+    assert "stale Dagster asset graph detected for Promotion gate" in message
+    assert "dataflow.scenario_evidence.target_asset_count is 29" in message
+    assert "source_definitions.executable_asset_count" in message
+    assert "report 37 executable gas_model assets" in message
+
+
+def test_launch_plan_manifest_includes_source_definition_evidence(
+    tmp_path: Path,
+) -> None:
+    """Run-manifest scenario evidence includes current-source provenance."""
+    module = load_e2e_command_module()
+    asset_node_class = get_callable(module, "DagsterAssetNode")
+    source_definition_class = get_callable(module, "SourceDefinitionEvidence")
+    build_launch_plan = get_callable(
+        module,
+        "build_gas_model_upstream_asset_launch_plan",
+    )
+    launch_plan_manifest = get_callable(module, "launch_plan_manifest")
+    asset_names = tuple(
+        f"silver_gas_target_{index}"
+        for index in range(CURRENT_GAS_MODEL_TARGET_ASSET_COUNT)
+    )
+    launch_plan = build_launch_plan(
+        [
+            asset_node_class(
+                key=("silver", "gas_model", asset_name),
+                group_name="gas_model",
+                is_materializable=True,
+                dependency_keys=(),
+            )
+            for asset_name in asset_names
+        ],
+        scenario="promotion-gas-model",
+        launch_mode="direct-upstream-asset-launch",
+    )
+    source_definition_evidence = source_definition_class(
+        command=("uv", "run", "dg", "list", "defs"),
+        working_directory=tmp_path,
+        target_group="gas_model",
+        executable_asset_keys=tuple(
+            ("silver", "gas_model", asset_name) for asset_name in asset_names
+        ),
+        asset_check_count=144,
+    )
+
+    manifest = launch_plan_manifest(
+        launch_plan,
+        source_definition_evidence=source_definition_evidence,
+    )
+
+    assert manifest["target_asset_count"] == CURRENT_GAS_MODEL_TARGET_ASSET_COUNT
+    assert (
+        manifest["source_definitions"]["executable_asset_count"]
+        == CURRENT_GAS_MODEL_TARGET_ASSET_COUNT
+    )
+    assert manifest["source_definitions"]["asset_check_count"] == 144
+
+
 def test_promotion_upstream_launch_uses_dependency_waves() -> None:
     """Promotion launch evidence records dependency-wave coverage."""
     module = load_e2e_command_module()
@@ -1895,18 +2113,23 @@ def test_gate_run_telemetry_manifest_records_durations() -> None:
     ]
 
 
-def test_e2e_promotion_regression_budgets_pass_for_approved_baseline() -> None:
-    """The Promotion guard budgets pass for the approved targeted baseline."""
+def test_e2e_promotion_regression_budgets_pass_for_current_launch_plan() -> None:
+    """Promotion run-count budgets pass when observed runs match planned batches."""
     module = load_e2e_command_module()
     format_e2e_budget_report = get_callable(module, "format_e2e_budget_report")
     e2e_budget_failures = get_callable(module, "e2e_budget_failures")
-    e2e_regression_budgets_for_scenario = get_callable(
+    e2e_regression_budgets_for_run = get_callable(
         module,
-        "e2e_regression_budgets_for_scenario",
+        "e2e_regression_budgets_for_run",
     )
-    budgets = e2e_regression_budgets_for_scenario(
+    budgets = e2e_regression_budgets_for_run(
         "promotion-gas-model",
-        required_target_asset_count=CURRENT_GAS_MODEL_TARGET_ASSET_COUNT,
+        dataflow_payload={
+            "scenario_evidence": {
+                "target_asset_count": CURRENT_GAS_MODEL_TARGET_ASSET_COUNT,
+                "batch_count": 67,
+            }
+        },
     )
 
     report = format_e2e_budget_report(
@@ -1915,7 +2138,7 @@ def test_e2e_promotion_regression_budgets_pass_for_approved_baseline() -> None:
             "dagster_dataflow": {
                 "peak_active_run_count": 6,
                 "peak_queued_run_count": 0,
-                "final_run_status_counts": {"SUCCESS": 48},
+                "final_run_status_counts": {"SUCCESS": 67},
                 "final_target_progress": {
                     "materialized_target_asset_count": (
                         CURRENT_GAS_MODEL_TARGET_ASSET_COUNT
@@ -1939,7 +2162,7 @@ def test_e2e_promotion_regression_budgets_pass_for_approved_baseline() -> None:
                 "dagster_dataflow": {
                     "peak_active_run_count": 6,
                     "peak_queued_run_count": 0,
-                    "final_run_status_counts": {"SUCCESS": 48},
+                    "final_run_status_counts": {"SUCCESS": 67},
                     "final_target_progress": {
                         "materialized_target_asset_count": (
                             CURRENT_GAS_MODEL_TARGET_ASSET_COUNT
@@ -1959,7 +2182,10 @@ def test_e2e_promotion_regression_budgets_pass_for_approved_baseline() -> None:
     assert "E2E Promotion guard regression budgets (passed):" in report
     assert "run manifest: /tmp/run-manifest.json" in report
     assert "7m55s; threshold <= 20m00s" in report
-    assert "total Dagster runs: observed 48; threshold <= 48" in report
+    assert (
+        "total Dagster runs: observed 67; "
+        "threshold <= 67 from dataflow.scenario_evidence.batch_count" in report
+    )
     assert "target progress: observed 37/37 materialized" in report
     assert "failed target asset checks: observed 0; threshold <= 0" in report
 
@@ -1969,13 +2195,18 @@ def test_e2e_promotion_regression_budgets_fail_duration_and_run_counts() -> None
     module = load_e2e_command_module()
     format_e2e_budget_report = get_callable(module, "format_e2e_budget_report")
     e2e_budget_failures = get_callable(module, "e2e_budget_failures")
-    e2e_regression_budgets_for_scenario = get_callable(
+    e2e_regression_budgets_for_run = get_callable(
         module,
-        "e2e_regression_budgets_for_scenario",
+        "e2e_regression_budgets_for_run",
     )
-    budgets = e2e_regression_budgets_for_scenario(
+    budgets = e2e_regression_budgets_for_run(
         "promotion-gas-model",
-        required_target_asset_count=CURRENT_GAS_MODEL_TARGET_ASSET_COUNT,
+        dataflow_payload={
+            "scenario_evidence": {
+                "target_asset_count": CURRENT_GAS_MODEL_TARGET_ASSET_COUNT,
+                "batch_count": 48,
+            }
+        },
     )
     telemetry = {
         "total_gate_duration_seconds": 20 * 60 + 1,
@@ -2007,9 +2238,15 @@ def test_e2e_promotion_regression_budgets_fail_duration_and_run_counts() -> None
     assert "total gate duration observed 20m01s; threshold <= 20m00s" in failures
     assert "peak active runs observed 7; threshold <= 6" in failures
     assert "peak queued runs observed 7; threshold <= 6" in failures
-    assert "total Dagster runs observed 49; threshold <= 48" in failures
+    assert (
+        "total Dagster runs observed 49; "
+        "threshold <= 48 from dataflow.scenario_evidence.batch_count" in failures
+    )
     assert "total gate duration observed 20m01s; threshold <= 20m00s" in report
-    assert "total Dagster runs observed 49; threshold <= 48" in report
+    assert (
+        "total Dagster runs observed 49; "
+        "threshold <= 48 from dataflow.scenario_evidence.batch_count" in report
+    )
 
 
 def test_e2e_promotion_regression_budget_enforcement_fails_command(
@@ -2047,6 +2284,7 @@ def test_e2e_promotion_regression_budget_enforcement_fails_command(
         "dataflow": {
             "scenario_evidence": {
                 "target_asset_count": CURRENT_GAS_MODEL_TARGET_ASSET_COUNT,
+                "batch_count": 48,
             }
         },
     }
@@ -2086,6 +2324,11 @@ def test_e2e_promotion_regression_budget_enforcement_fails_command(
         written_manifest["budget"]["thresholds"]["required_target_asset_count_source"]
         == "dataflow.scenario_evidence.target_asset_count"
     )
+    assert written_manifest["budget"]["thresholds"]["max_total_run_count"] == 48
+    assert (
+        written_manifest["budget"]["thresholds"]["max_total_run_count_source"]
+        == "dataflow.scenario_evidence.batch_count"
+    )
 
 
 def test_e2e_promotion_regression_budgets_fail_coverage_contract() -> None:
@@ -2099,6 +2342,7 @@ def test_e2e_promotion_regression_budgets_fail_coverage_contract() -> None:
     budgets = e2e_regression_budgets_for_scenario(
         "promotion-gas-model",
         required_target_asset_count=CURRENT_GAS_MODEL_TARGET_ASSET_COUNT,
+        max_total_run_count=48,
     )
 
     failures = e2e_budget_failures(
@@ -2143,6 +2387,7 @@ def test_e2e_promotion_regression_budgets_fail_stale_target_count() -> None:
         dataflow_payload={
             "scenario_evidence": {
                 "target_asset_count": CURRENT_GAS_MODEL_TARGET_ASSET_COUNT,
+                "batch_count": 48,
             }
         },
     )
@@ -2175,6 +2420,160 @@ def test_e2e_promotion_regression_budgets_fail_stale_target_count() -> None:
     )
 
 
+def test_e2e_promotion_regression_budget_enforcement_fails_stale_runtime_graph(
+    tmp_path: Path,
+) -> None:
+    """A 29/29 stale runtime graph fails against current source definitions."""
+    module = load_e2e_command_module()
+    enforce_budgets = get_callable(module, "enforce_e2e_regression_budgets_for_run")
+    run_options_class = get_callable(module, "RunOptions")
+    status_class = get_callable(module, "DagsterDataflowStatus")
+    telemetry_class = get_callable(module, "GateRunTelemetry")
+    dataflow_telemetry_class = get_callable(module, "DagsterDataflowTelemetry")
+    command_error = get_exception_class(module, "CommandError")
+    manifest_path = tmp_path / "run-manifest.json"
+    telemetry = telemetry_class(started_monotonic=0.0, completed_monotonic=600.0)
+    dataflow_telemetry = dataflow_telemetry_class()
+    dataflow_telemetry.record_status_sample(
+        status_class(
+            active_runs=(),
+            failed_runs=(),
+            materialized_target_assets=tuple(
+                f"silver/gas_model/asset_{index}"
+                for index in range(LEGACY_GAS_MODEL_TARGET_ASSET_COUNT)
+            ),
+            missing_target_assets=(),
+            failed_target_assets=(),
+            missing_asset_checks=(),
+            failed_asset_checks=(),
+            run_status_counts={"SUCCESS": 48},
+        )
+    )
+    telemetry.dataflow = dataflow_telemetry
+    manifest: dict[str, object] = {
+        "status": "running",
+        "source_definitions": {
+            "executable_asset_count": CURRENT_GAS_MODEL_TARGET_ASSET_COUNT,
+            "command": [
+                "uv",
+                "run",
+                "dg",
+                "list",
+                "defs",
+                "--assets",
+                "group:gas_model",
+                "--json",
+            ],
+        },
+        "dataflow": {
+            "scenario_evidence": {
+                "target_asset_count": LEGACY_GAS_MODEL_TARGET_ASSET_COUNT,
+                "batch_count": 48,
+            }
+        },
+    }
+    options = run_options_class(
+        scenario="promotion-gas-model",
+        launch_mode="direct-upstream-asset-launch",
+        rebuild=True,
+        reuse=False,
+        always_clean=False,
+        seed_root=None,
+        webserver_port=3001,
+        raw_latest_count=1,
+        zip_latest_count=1,
+        timeout_seconds=1200,
+        max_concurrent_runs=6,
+    )
+
+    with pytest.raises(command_error) as caught:
+        enforce_budgets(
+            telemetry=telemetry,
+            manifest=manifest,
+            manifest_path=manifest_path,
+            options=options,
+        )
+
+    assert "E2E Promotion guard regression budget failed" in str(caught.value)
+    assert (
+        "target progress observed 29/29 materialized; required 37/37 "
+        "materialized from source_definitions.executable_asset_count"
+        in str(caught.value)
+    )
+    written_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert written_manifest["status"] == "failed"
+    assert (
+        written_manifest["budget"]["thresholds"]["required_target_asset_count"]
+        == CURRENT_GAS_MODEL_TARGET_ASSET_COUNT
+    )
+    assert (
+        written_manifest["budget"]["thresholds"]["required_target_asset_count_source"]
+        == "source_definitions.executable_asset_count"
+    )
+
+
+@pytest.mark.parametrize(
+    "scenario_evidence",
+    [
+        {"target_asset_count": CURRENT_GAS_MODEL_TARGET_ASSET_COUNT},
+        {
+            "target_asset_count": CURRENT_GAS_MODEL_TARGET_ASSET_COUNT,
+            "batch_count": "67",
+        },
+        {
+            "target_asset_count": CURRENT_GAS_MODEL_TARGET_ASSET_COUNT,
+            "batch_count": 0,
+        },
+        {
+            "target_asset_count": CURRENT_GAS_MODEL_TARGET_ASSET_COUNT,
+            "batch_count": -1,
+        },
+    ],
+)
+def test_e2e_promotion_regression_budgets_fail_missing_batch_count_evidence(
+    scenario_evidence: Mapping[str, object],
+) -> None:
+    """Missing launch-plan batch evidence fails the Promotion run-count budget."""
+    module = load_e2e_command_module()
+    e2e_budget_failures = get_callable(module, "e2e_budget_failures")
+    e2e_regression_budgets_for_run = get_callable(
+        module,
+        "e2e_regression_budgets_for_run",
+    )
+    budgets = e2e_regression_budgets_for_run(
+        "promotion-gas-model",
+        dataflow_payload={"scenario_evidence": scenario_evidence},
+    )
+
+    failures = e2e_budget_failures(
+        {
+            "total_gate_duration_seconds": 600,
+            "dagster_dataflow": {
+                "peak_active_run_count": 6,
+                "peak_queued_run_count": 0,
+                "final_run_status_counts": {"SUCCESS": 67},
+                "final_target_progress": {
+                    "materialized_target_asset_count": (
+                        CURRENT_GAS_MODEL_TARGET_ASSET_COUNT
+                    ),
+                    "target_asset_count": CURRENT_GAS_MODEL_TARGET_ASSET_COUNT,
+                    "missing_target_asset_count": 0,
+                    "failed_target_asset_count": 0,
+                },
+                "final_missing_asset_check_count": 0,
+                "final_failed_asset_check_count": 0,
+            },
+        },
+        budgets,
+    )
+
+    assert (
+        "total Dagster run budget unavailable from "
+        "dataflow.scenario_evidence.batch_count; "
+        "cannot validate total Dagster runs" in failures
+    )
+
+
 def test_e2e_promotion_regression_budgets_fail_missing_telemetry() -> None:
     """Missing telemetry produces actionable Promotion budget failures."""
     module = load_e2e_command_module()
@@ -2196,6 +2595,11 @@ def test_e2e_promotion_regression_budgets_fail_missing_telemetry() -> None:
     assert "run manifest: /tmp/run-manifest.json" in report
     assert "total gate duration unavailable; threshold <= 20m00s" in failures
     assert "peak active runs unavailable; threshold <= 6" in failures
+    assert (
+        "total Dagster run budget unavailable from "
+        "dataflow.scenario_evidence.batch_count; "
+        "cannot validate total Dagster runs" in failures
+    )
     assert (
         "target count evidence unavailable from "
         "dataflow.scenario_evidence.target_asset_count; "

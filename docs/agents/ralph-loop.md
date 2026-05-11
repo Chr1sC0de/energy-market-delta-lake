@@ -525,6 +525,9 @@ Key fields for inspection:
 - `source_branch`: **Promotion** source branch, usually `dev`.
 - `source_tree`: **Promotion** source branch revision and source worktree used
   for QA.
+- `promotion_worktree_preflight`: stale Promotion source or target worktree
+  checks, including the blocking path, git-worktree registration state, current
+  head, dirty state when inspectable, and recovery guidance.
 - `promotion_commit_inventory`: full promoted source commit range with each
   commit SHA, subject, and whether it matched verified issue evidence or
   remained an unverified **Promotion** commit.
@@ -860,45 +863,57 @@ When the promoted range includes non-doc runtime files under
 target Promotion worktree. The gate is recorded as
 `aemo-etl End-to-end test` in the Promotion run manifest and invokes
 `scripts/aemo-etl-e2e run` from the `backend-services` **Subproject** with
-`--scenario promotion-gas-model`, `--timeout-seconds 1200`,
+`--rebuild`, `--scenario promotion-gas-model`, `--timeout-seconds 1200`,
 `--max-concurrent-runs 6`, and
 `--seed-root <primary-repo>/backend-services/.e2e/aemo-etl`, so the temporary
 Promotion source worktree uses the operator-maintained cached Archive seed
-instead of an empty ignored cache under the worktree. Promotion keeps this gate
+instead of an empty ignored cache under the worktree, and rebuilds all local e2e
+image tags from that source worktree before startup. Promotion keeps this gate
 at the command default run queue concurrency and narrows the raw and zip seed
-horizon to 1 object. The `promotion-gas-model` scenario keeps Dagster automation
-stopped and launches explicit asset-run batches by dependency wave for every
-materializable `gas_model` asset plus its materializable upstream closure, while
-skipping live `bronze_nemweb_public_files_*` discovery/listing assets so the
-gate starts from seeded LocalStack objects. Each batch runs in-process inside its
-Podman run-worker container, reducing LocalStack and Delta Lake DynamoDB
-lock-table contention. The generated stack uses fixed service IPs for Postgres,
-LocalStack, and the AEMO ETL code server so run-worker containers do not depend
-on Podman DNS during high-concurrency gates. This preserves final target
-progress and final asset-check status without creating one sensor-triggered run
-per upstream source table. The e2e `run-manifest.json` dataflow section records
-structured direct-launch scenario evidence: selected scenario, launch mode,
-target group, current GraphQL-derived target asset count, selected upstream
-closure count, skipped live source asset keys, dependency-wave count, run-batch
-count, and asset batch size.
+horizon to 1 object. Before startup, the scenario records current source
+definitions from `uv run dg list defs --assets "group:gas_model" --json` as
+`source_definitions`, including executable target count, asset-check count,
+full target keys, and STTM target keys. The `promotion-gas-model` scenario keeps
+Dagster automation stopped and launches explicit asset-run batches by dependency
+wave for every materializable `gas_model` asset plus its materializable upstream
+closure, while skipping live `bronze_nemweb_public_files_*` discovery/listing
+assets so the gate starts from seeded LocalStack objects. The runtime GraphQL
+`dataflow.scenario_evidence.target_asset_count` must match
+`source_definitions.executable_asset_count`; a stale 29-asset runtime graph
+therefore fails against current 37-asset source definitions before Promotion
+launches asset batches. Each batch runs in-process inside its Podman run-worker
+container, reducing LocalStack and Delta Lake DynamoDB lock-table contention.
+The generated stack uses fixed service IPs for Postgres, LocalStack, and the
+AEMO ETL code server so run-worker containers do not depend on Podman DNS during
+high-concurrency gates. This preserves final target progress and final
+asset-check status without creating one sensor-triggered run per upstream
+source table. The e2e `run-manifest.json` dataflow section records structured
+direct-launch scenario evidence: selected scenario, launch mode, target group,
+current GraphQL-derived target asset count, selected upstream closure count,
+skipped live source asset keys, dependency-wave count, run-batch count, asset
+batch size, and nested source-definition evidence when available.
 The gate protects the approved #77 coverage invariants: every materializable
 `gas_model` asset, final asset-check status for that target, Dagster,
 LocalStack/S3, Podman run-worker containers, and the Dagster GraphQL monitor.
 It enforces #79 Promotion guard regression budgets from the approved #78
 targeted baseline: 20 minute total duration, `6` peak active runs, `6` peak
-queued runs, `48` total Dagster runs, target progress matching the current
-`dataflow.scenario_evidence.target_asset_count`, and `0` missing or failed
-target assets and asset checks. Direct Promotion launches pace batch submission
-against `max_concurrent_runs` before starting more work in a dependency wave so
-the queued-run budget remains bounded. The `run-manifest.json` telemetry
-records the #75 timing, run-shape, target progress, asset-check, cleanup, and
-direct-launch scenario evidence; the budget report prints the #76 observed
-values, thresholds, dynamic target-count evidence, failure lines, and manifest
-path. Duration or run-count failures indicate run explosion, run queue
-contention, or local environment slowdown. Target-progress or asset-check
-failures indicate the approved coverage contract was not met. Missing telemetry
-is also a gate failure because Ralph cannot prove the source revision satisfied
-the contract. Because the aggregate **Push check** and gate run first,
+queued runs, total Dagster runs at or below the current direct-launch
+`dataflow.scenario_evidence.batch_count`, target progress matching the current
+`source_definitions.executable_asset_count`, and `0` missing or failed target
+assets and asset checks. Direct Promotion launches pace batch submission against
+`max_concurrent_runs` before starting more work in a dependency wave so the
+queued-run budget remains bounded. The `run-manifest.json` telemetry records
+the #75 timing, run-shape, target progress, asset-check, cleanup, and
+direct-launch scenario evidence plus source-definition provenance; the budget
+report prints the #76 observed values, thresholds, dynamic target-count and
+planned-batch evidence, failure lines, and manifest path. Duration or run-count
+failures indicate run explosion, run queue contention, unexpected extra Dagster
+runs beyond the launch plan, or local environment slowdown.
+Target-count mismatches indicate a stale runtime Dagster graph. Target-progress
+or asset-check failures indicate the approved coverage contract was not met.
+Missing telemetry is also a gate failure because Ralph cannot prove the source
+revision satisfied the contract. Because the aggregate **Push check** and gate
+run first,
 source-branch changes cannot reach a Promotion merge, `main` push, `dev` branch
 sync, GitHub metadata update, or issue closure without passing against the exact
 source revision.
@@ -1159,11 +1174,15 @@ after a successful **Promotion**.
 For runtime `aemo-etl` changes, Ralph runs from the owning **Subproject**:
 
 ```bash
-make unit-test
-make component-test
-make integration-test
 make run-prek
+make integration-test
 ```
+
+`make run-prek` is the enforced development **Fast check** surface for
+`aemo-etl` runtime work in the Ralph loop. It runs before the heavier local
+**Integration test** so formatter, static-check, **Unit test**, and
+**Component test** failures feed back through Ralph before container-dependent
+QA starts.
 
 Docs-only `aemo-etl` changes are recognized by the maintained Markdown doc path
 rules in [documentation-sync.md](../repository/documentation-sync.md). They skip
@@ -1232,6 +1251,7 @@ issue closure:
 ```bash
 cd backend-services
 scripts/aemo-etl-e2e run \
+  --rebuild \
   --scenario promotion-gas-model \
   --timeout-seconds 1200 \
   --max-concurrent-runs 6 \
@@ -1258,10 +1278,15 @@ failures and keep the worktrees for inspection. Failures after the target is
 pushed stop the drain because the code may already be published while GitHub
 issue metadata may be inconsistent. Promotion failures before `main` is pushed
 leave issues open with `agent-integrated`; failures after `main` is pushed stop
-the run for the same metadata consistency reason. Failed or partial Promotion
-attempts still try warning-only **Post-promotion review** when a review worktree
-is available; the original Promotion exception, manifest `status`, and failure
-state remain the source of truth.
+the run for the same metadata consistency reason. Stale Promotion source or
+target worktrees stop before **Push check** QA, the AEMO ETL **End-to-end test**
+gate, merge, push, or GitHub metadata changes. Ralph records
+`promotion_worktree_preflight` recovery guidance in the manifest; operators
+should inspect the recorded path and remove only a clean stale worktree with
+`git worktree remove <path>` before rerunning Promotion. Failed or partial
+Promotion attempts still try warning-only **Post-promotion review** when a
+review worktree is available; the original Promotion exception, manifest
+`status`, and failure state remain the source of truth.
 
 Implementation **Ready issue refresh** analysis or metadata mutation failures
 also stop the drain, but they do not imply the integrated issue metadata needs
