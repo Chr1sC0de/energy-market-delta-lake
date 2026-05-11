@@ -890,9 +890,10 @@ high-concurrency gates. This preserves final target progress and final
 asset-check status without creating one sensor-triggered run per upstream
 source table. The e2e `run-manifest.json` dataflow section records structured
 direct-launch scenario evidence: selected scenario, launch mode, target group,
-current GraphQL-derived target asset count, selected upstream closure count,
-skipped live source asset keys, dependency-wave count, run-batch count, asset
-batch size, and nested source-definition evidence when available.
+current GraphQL-derived target asset count, target asset-check count, target
+keys, STTM target keys, selected upstream closure count, skipped live source
+asset keys, dependency-wave count, run-batch count, asset batch size, and nested
+source-definition evidence when available.
 The gate protects the approved #77 coverage invariants: every materializable
 `gas_model` asset, final asset-check status for that target, Dagster,
 LocalStack/S3, Podman run-worker containers, and the Dagster GraphQL monitor.

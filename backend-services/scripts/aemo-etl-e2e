@@ -48,7 +48,7 @@ E2E_SCENARIO_DEFAULTS = {
         "zip_latest_count": DEFAULT_ZIP_LATEST_COUNT,
         "timeout_seconds": DEFAULT_TIMEOUT_SECONDS,
         "max_concurrent_runs": DEFAULT_MAX_CONCURRENT_RUNS,
-        "launch_mode": SENSOR_DRIVEN_LAUNCH_MODE,
+        "launch_mode": DIRECT_UPSTREAM_ASSET_LAUNCH_MODE,
     },
     PROMOTION_GAS_MODEL_SCENARIO: {
         "raw_latest_count": 1,
@@ -326,6 +326,17 @@ query E2EAssetGraph {
     dependencyKeys {
       path
     }
+    assetChecksOrError {
+      __typename
+      ... on AssetChecks {
+        checks {
+          name
+        }
+      }
+      ... on Error {
+        message
+      }
+    }
   }
 }
 """
@@ -526,6 +537,7 @@ class DagsterAssetNode:
     group_name: str
     is_materializable: bool
     dependency_keys: tuple[tuple[str, ...], ...]
+    asset_check_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -547,17 +559,27 @@ class DagsterAssetClosureSelection:
 
 @dataclass(frozen=True, slots=True)
 class DagsterAssetLaunchPlan:
-    """Structured Promotion scenario launch plan evidence."""
+    """Structured gas_model direct-launch plan evidence."""
 
     scenario: str
     launch_mode: str
     target_group: str
     target_asset_keys: tuple[tuple[str, ...], ...]
+    target_asset_check_count: int
     selected_asset_keys: tuple[tuple[str, ...], ...]
     skipped_live_source_asset_keys: tuple[tuple[str, ...], ...]
     waves: tuple[DagsterAssetLaunchWave, ...]
     batch_count: int
     asset_batch_size: int
+
+    @property
+    def sttm_target_asset_keys(self) -> tuple[tuple[str, ...], ...]:
+        """Return STTM gas_model target keys included in the direct-launch plan."""
+        return tuple(
+            asset_key
+            for asset_key in self.target_asset_keys
+            if asset_key and asset_key[-1].startswith("silver_gas_fact_sttm_")
+        )
 
     def to_manifest(self) -> dict[str, object]:
         """Return this launch plan in the e2e run manifest shape."""
@@ -566,6 +588,15 @@ class DagsterAssetLaunchPlan:
             "launch_mode": self.launch_mode,
             "target_group": self.target_group,
             "target_asset_count": len(self.target_asset_keys),
+            "target_asset_check_count": self.target_asset_check_count,
+            "target_asset_keys": [
+                format_asset_key_path(asset_key) for asset_key in self.target_asset_keys
+            ],
+            "sttm_target_asset_count": len(self.sttm_target_asset_keys),
+            "sttm_target_asset_keys": [
+                format_asset_key_path(asset_key)
+                for asset_key in self.sttm_target_asset_keys
+            ],
             "selected_upstream_closure_count": len(self.selected_asset_keys),
             "skipped_live_source_asset_keys": [
                 format_asset_key_path(asset_key)
@@ -2286,9 +2317,9 @@ def launch_gas_model_upstream_assets(
     telemetry: DagsterDataflowTelemetry | None = None,
     source_definition_evidence: SourceDefinitionEvidence | None = None,
 ) -> DagsterDataflowLaunchResult:
-    """Launch explicit asset graph batches for the gas_model Promotion target."""
+    """Launch explicit asset graph batches for the gas_model target."""
     if max_active_runs <= 0:
-        raise CommandError("max active Promotion asset runs must be greater than zero")
+        raise CommandError("max active direct asset runs must be greater than zero")
 
     asset_nodes = fetch_dagster_asset_graph(client)
     launch_plan = build_gas_model_upstream_asset_launch_plan(
@@ -2309,7 +2340,7 @@ def launch_gas_model_upstream_assets(
     for wave in launch_waves:
         batches = tuple(chunk_asset_keys(wave.asset_keys, launch_plan.asset_batch_size))
         sys.stdout.write(
-            "Launching Promotion asset wave "
+            "Launching gas_model asset wave "
             f"{wave.index}/{len(launch_waves)}: "
             f"{len(wave.asset_keys)} assets in {len(batches)} run batches\n"
         )
@@ -2326,7 +2357,7 @@ def launch_gas_model_upstream_assets(
                 )
                 active_run_count = len(status.active_runs)
             sys.stdout.write(
-                "Launching Promotion asset batch "
+                "Launching gas_model asset batch "
                 f"{batch_index}/{len(batches)} for wave {wave.index}: "
                 f"{len(batch)} assets\n"
             )
@@ -2368,9 +2399,9 @@ def wait_for_dagster_run_launch_slot(
     poll_interval_seconds: int = DEFAULT_DAGSTER_POLL_INTERVAL_SECONDS,
     telemetry: DagsterDataflowTelemetry | None = None,
 ) -> DagsterDataflowStatus:
-    """Wait until one Promotion asset batch launch slot is available."""
+    """Wait until one direct asset batch launch slot is available."""
     if max_active_runs <= 0:
-        raise CommandError("max active Promotion asset runs must be greater than zero")
+        raise CommandError("max active direct asset runs must be greater than zero")
 
     deadline = time.monotonic() + timeout_seconds
     last_summary = "Dagster run capacity has not been checked yet"
@@ -2422,16 +2453,20 @@ def read_dagster_asset_node(asset_node: Mapping[str, object]) -> DagsterAssetNod
     dependency_keys = asset_node.get("dependencyKeys")
     if not isinstance(dependency_keys, list):
         raise CommandError("Dagster asset dependencyKeys was not a list")
+    key = read_asset_key_path(asset_node.get("assetKey"), "asset key")
     group_name = asset_node.get("groupName")
     if not isinstance(group_name, str):
         group_name = ""
     return DagsterAssetNode(
-        key=read_asset_key_path(asset_node.get("assetKey"), "asset key"),
+        key=key,
         group_name=group_name,
         is_materializable=asset_node.get("isMaterializable") is True,
         dependency_keys=tuple(
             read_asset_key_path(dependency_key, "dependency asset key")
             for dependency_key in dependency_keys
+        ),
+        asset_check_count=len(
+            read_asset_checks(asset_node, asset_key=format_asset_key_path(key))
         ),
     )
 
@@ -2563,7 +2598,7 @@ def build_gas_model_upstream_asset_launch_plan(
     launch_mode: str,
     asset_batch_size: int = PROMOTION_ASSET_BATCH_SIZE,
 ) -> DagsterAssetLaunchPlan:
-    """Return the structured direct-launch plan for the Promotion scenario."""
+    """Return the structured direct-launch plan for a gas_model scenario."""
     selection = select_gas_model_upstream_materializable_asset_closure(asset_nodes)
     launch_waves = build_gas_model_upstream_asset_launch_waves(
         asset_nodes,
@@ -2573,11 +2608,18 @@ def build_gas_model_upstream_asset_launch_plan(
         len(chunk_asset_keys(wave.asset_keys, asset_batch_size))
         for wave in launch_waves
     )
+    nodes_by_key = {asset_node.key: asset_node for asset_node in asset_nodes}
+    target_asset_check_count = sum(
+        nodes_by_key[asset_key].asset_check_count
+        for asset_key in selection.target_asset_keys
+        if asset_key in nodes_by_key
+    )
     return DagsterAssetLaunchPlan(
         scenario=scenario,
         launch_mode=launch_mode,
         target_group=GAS_MODEL_GROUP_NAME,
         target_asset_keys=selection.target_asset_keys,
+        target_asset_check_count=target_asset_check_count,
         selected_asset_keys=selection.selected_asset_keys,
         skipped_live_source_asset_keys=selection.skipped_live_source_asset_keys,
         waves=launch_waves,
@@ -3895,22 +3937,28 @@ def enforce_e2e_regression_budgets_for_run(
     options: RunOptions,
 ) -> None:
     """Record and enforce e2e regression budgets for the completed run."""
+    dataflow_payload = optional_mapping(manifest.get("dataflow"))
+    source_definition_payload = optional_mapping(manifest.get("source_definitions"))
     budgets = e2e_regression_budgets_for_run(
         options.scenario,
-        dataflow_payload=optional_mapping(manifest.get("dataflow")),
-        source_definition_payload=optional_mapping(manifest.get("source_definitions")),
+        dataflow_payload=dataflow_payload,
+        source_definition_payload=source_definition_payload,
     )
     telemetry_payload = telemetry.to_manifest()
     manifest["budget"] = e2e_budget_manifest(
         telemetry_payload,
         manifest_path=manifest_path,
         budgets=budgets,
+        dataflow_payload=dataflow_payload,
+        source_definition_payload=source_definition_payload,
     )
     sys.stdout.write(
         format_e2e_budget_report(
             telemetry_payload,
             manifest_path=manifest_path,
             budgets=budgets,
+            dataflow_payload=dataflow_payload,
+            source_definition_payload=source_definition_payload,
         )
     )
     if budgets is None:
@@ -4048,9 +4096,18 @@ def e2e_budget_manifest(
     *,
     manifest_path: Path,
     budgets: E2ERegressionBudgets | None,
+    dataflow_payload: Mapping[str, object] | None = None,
+    source_definition_payload: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     """Return the budget section stored in the e2e run manifest."""
-    payload: dict[str, object] = {"run_manifest": str(manifest_path)}
+    payload: dict[str, object] = {
+        "run_manifest": str(manifest_path),
+        "observations": e2e_budget_observations(
+            telemetry_payload,
+            dataflow_payload=dataflow_payload,
+            source_definition_payload=source_definition_payload,
+        ),
+    }
     if budgets is None:
         payload["status"] = "not-enforced"
         return payload
@@ -4089,9 +4146,15 @@ def format_e2e_budget_report(
     *,
     manifest_path: Path | None = None,
     budgets: E2ERegressionBudgets | None = None,
+    dataflow_payload: Mapping[str, object] | None = None,
+    source_definition_payload: Mapping[str, object] | None = None,
 ) -> str:
     """Return a concise budget report from e2e telemetry."""
-    observations = e2e_budget_observations(telemetry_payload)
+    observations = e2e_budget_observations(
+        telemetry_payload,
+        dataflow_payload=dataflow_payload,
+        source_definition_payload=source_definition_payload,
+    )
     if budgets is not None:
         return format_enforced_e2e_budget_report(
             observations,
@@ -4117,6 +4180,8 @@ def format_e2e_budget_report(
             f"{format_optional_count(observations['total_run_count'])}",
             "- target progress: "
             f"{format_target_progress(observations['materialized_target_asset_count'], observations['target_asset_count'])}",
+            "- target asset checks: "
+            f"{format_optional_count(observations['target_asset_check_count'])}",
             "- final asset-check status: "
             f"{format_asset_check_status(observations['missing_asset_check_count'], observations['failed_asset_check_count'])}",
             "- regression budgets: not enforced for this scenario",
@@ -4180,9 +4245,17 @@ def format_enforced_e2e_budget_report(
 
 def e2e_budget_observations(
     telemetry_payload: Mapping[str, object],
+    *,
+    dataflow_payload: Mapping[str, object] | None = None,
+    source_definition_payload: Mapping[str, object] | None = None,
 ) -> dict[str, int | float | None]:
     """Extract normalized budget observations from telemetry."""
     dataflow = optional_mapping(telemetry_payload.get("dagster_dataflow"))
+    scenario_evidence = (
+        optional_mapping(dataflow_payload.get("scenario_evidence"))
+        if dataflow_payload is not None
+        else None
+    )
     target_progress = optional_mapping(
         dataflow.get("final_target_progress") if dataflow is not None else None
     )
@@ -4212,6 +4285,10 @@ def e2e_budget_observations(
         if target_progress is not None
         else None
     )
+    target_asset_check_count = target_asset_check_count_from_evidence(
+        scenario_evidence=scenario_evidence,
+        source_definition_payload=source_definition_payload,
+    )
     missing_targets = optional_int(
         target_progress.get("missing_target_asset_count")
         if target_progress is not None
@@ -4239,11 +4316,29 @@ def e2e_budget_observations(
         "total_run_count": total_runs,
         "materialized_target_asset_count": materialized_targets,
         "target_asset_count": target_count,
+        "target_asset_check_count": target_asset_check_count,
         "missing_target_asset_count": missing_targets,
         "failed_target_asset_count": failed_targets,
         "missing_asset_check_count": missing_checks,
         "failed_asset_check_count": failed_checks,
     }
+
+
+def target_asset_check_count_from_evidence(
+    *,
+    scenario_evidence: Mapping[str, object] | None,
+    source_definition_payload: Mapping[str, object] | None,
+) -> int | None:
+    """Return the target asset-check count from direct-launch or source evidence."""
+    if scenario_evidence is not None:
+        check_count = optional_int(scenario_evidence.get("target_asset_check_count"))
+        if check_count is not None and check_count >= 0:
+            return check_count
+    if source_definition_payload is not None:
+        check_count = optional_int(source_definition_payload.get("asset_check_count"))
+        if check_count is not None and check_count >= 0:
+            return check_count
+    return None
 
 
 def e2e_budget_failures(

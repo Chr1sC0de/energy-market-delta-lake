@@ -224,35 +224,31 @@ dataflow result. Failures preserve the stack plus run manifests unless
 `--always-clean` is used. The run manifest records total gate, stack startup,
 Dagster dataflow monitor, and cleanup durations plus cleanup phase status, final
 Dagster run, target progress, target materialization timestamp, and asset-check
-telemetry. For the `promotion-gas-model` direct launch path, the dataflow
-manifest also records scenario evidence: selected scenario, launch mode, target
-group, GraphQL-derived target asset count, selected upstream closure count,
-skipped live source asset keys, dependency-wave count, run-batch count, asset
-batch size, and nested source-definition evidence when available. The top-level
-`source_definitions` section records the
+telemetry. For direct-launch scenarios, the dataflow manifest also records
+scenario evidence: selected scenario, launch mode, target group, GraphQL-derived
+target asset count, target asset-check count, target keys, STTM target keys,
+selected upstream closure count, skipped live source asset keys, dependency-wave
+count, run-batch count, asset batch size, and nested source-definition evidence
+when available. For `promotion-gas-model`, the top-level `source_definitions`
+section records the
 `uv run dg list defs --assets "group:gas_model" --json` command, working
 directory, executable asset count, asset-check count, full target asset keys,
 and STTM target keys.
 After startup, it uses Dagster GraphQL to drive the selected scenario. The
-default `full-gas-model` scenario starts only the intended unzipper,
-event-driven raw, and gas model automation sensors. NEMWeb discovery schedules,
-the failed-run alert sensor, the date-dimension schedule, and maintenance
-schedules remain stopped. The command bootstraps non-sensor prerequisites,
-including date dimension and table metadata materialization, then monitors until
-the full `gas_model` target succeeds, fails, or the timeout is reached. The
-`full-gas-model` scenario uses host webserver port `3001`, a 90 minute timeout,
-3 raw objects per required source table, 3 zip objects per required domain, and
-Dagster `max_concurrent_runs` `6`. The `promotion-gas-model` scenario keeps
-automation stopped and launches one explicit Dagster asset run for every
-materializable `gas_model` asset plus its materializable upstream closure,
-while skipping live `bronze_nemweb_public_files_*` discovery/listing assets and
-narrowing the seed horizon to 1 raw object and 1 zip object. Promotion asset
-batches use Dagster's in-process executor inside Podman run-worker containers,
-with a 20 minute timeout and `max_concurrent_runs` `6`; Ralph **Promotion** uses
-that scenario from the isolated source worktree. Direct Promotion launches pace
-asset-run batch submission against `max_concurrent_runs` before starting more
-batches in a dependency wave so the queued-run guard remains bounded. Override
-these values with
+default `full-gas-model` scenario keeps automation stopped and launches explicit
+Dagster asset-run batches by dependency wave for every materializable
+`gas_model` asset plus its materializable upstream closure. It uses host
+webserver port `3001`, a 90 minute timeout, 3 raw objects per required source
+table, 3 zip objects per required domain, and Dagster `max_concurrent_runs` `6`.
+The `promotion-gas-model` scenario uses the same direct-launch shape from the
+isolated source worktree for Ralph **Promotion**, but narrows the seed horizon to
+1 raw object and 1 zip object, uses a 20 minute timeout, and adds the #141
+stale-runtime/current-source validation guard. Both direct scenarios skip live
+`bronze_nemweb_public_files_*` discovery/listing assets. Asset batches use
+Dagster's in-process executor inside Podman run-worker containers. Direct
+launches pace asset-run batch submission against `max_concurrent_runs` before
+starting more batches in a dependency wave so the queued-run guard remains
+bounded. Override these values with
 `--webserver-port`, `--timeout-seconds`, `--max-concurrent-runs`,
 `--raw-latest-count`, and `--zip-latest-count`. Ralph **Promotion** also passes
 `--rebuild` so the local e2e image tags are rebuilt from the source worktree
@@ -267,7 +263,10 @@ GraphQL monitor; materialize every materializable Dagster asset in group
 before stack startup. The runtime GraphQL
 `dataflow.scenario_evidence.target_asset_count` must match that source count
 before Promotion asset batches launch, so a stale 29-asset runtime graph fails
-against current 37-asset source definitions. At the current source revision,
+against current 37-asset source definitions. That stale-runtime/current-source
+guard belongs to the `promotion-gas-model` scenario and was closed by #141; the
+`full-gas-model` scenario records expanded baseline evidence without enforcing
+that guard. At the current source revision,
 `dg list defs --assets "group:gas_model" --json` reports 37 executable
 `gas_model` assets and 144 asset checks, including the eight
 `silver_gas_fact_sttm_*` assets. Ralph runs this as a **Promotion** gate after
@@ -281,12 +280,13 @@ Each `run-manifest.json` records the #75 telemetry fields: total gate, stack
 startup, Dagster dataflow monitor, and cleanup durations; cleanup phase status
 and issues; peak active and queued Dagster run counts; final run status counts;
 target progress; target materialization timestamps; and final missing or failed
-asset-check counts. For `promotion-gas-model`, `dataflow.scenario_evidence`
-also records the selected scenario, launch mode, target group, target asset
-count derived from the current GraphQL asset graph, selected upstream closure
-count, skipped live source asset keys, dependency-wave count, run-batch count,
-asset batch size, and source-definition evidence. The #76 budget report prints
-those values in command output before #79 enforcement is applied.
+asset-check counts. Direct-launch `dataflow.scenario_evidence` also records the
+selected scenario, launch mode, target group, target asset count derived from
+the current GraphQL asset graph, target asset-check count, target keys, STTM
+target keys, selected upstream closure count, skipped live source asset keys,
+dependency-wave count, run-batch count, asset batch size, and source-definition
+evidence when available. The #76 budget report prints those values in command
+output before #79 enforcement is applied.
 
 The `promotion-gas-model` scenario enforces #79 Promotion guard regression
 budgets from the approved #78 targeted baseline: total gate duration at or
@@ -304,8 +304,9 @@ graph is stale for the source revision. Target progress and asset-check failures
 mean the coverage contract was not satisfied and the source revision must not
 be promoted until the dataflow regression is fixed. Missing telemetry is also a
 Promotion gate failure because Ralph cannot prove the source revision satisfied
-the contract. The full scenario prints the same telemetry without enforcing
-these Promotion budgets.
+the contract. The full scenario records the expanded baseline duration, run
+count, target count, target asset-check count, and missing/failed counts with
+`budget.status` set to `not-enforced`.
 
 The generated compose stack uses fixed service IPs for Postgres, LocalStack,
 and the AEMO ETL code server so Podman run-worker containers do not depend on

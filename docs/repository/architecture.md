@@ -118,25 +118,26 @@ code, one webserver, and the daemon. Once the stack is ready, it keeps
 local-only schedules and alerting stopped, drives the selected Dagster dataflow
 through GraphQL, and monitors the full `gas_model` dataflow plus a direct
 Dagster event-log storage read for final asset-check status. The
-`full-gas-model` scenario enables only the intended Dagster sensors and
-bootstraps non-sensor prerequisites; it defaults to host webserver port `3001`,
-a 90 minute timeout, Dagster `max_concurrent_runs` `6`, 3 cached raw objects
-per required source table, and 3 cached zip objects per required domain. Ralph
+`full-gas-model` scenario launches explicit Dagster asset-run batches by
+dependency wave for every materializable `gas_model` asset plus its
+materializable upstream closure; it defaults to host webserver port `3001`, a 90
+minute timeout, Dagster `max_concurrent_runs` `6`, 3 cached raw objects per
+required source table, and 3 cached zip objects per required domain. Ralph
 **Promotion** uses the `promotion-gas-model` scenario from the isolated source
 worktree with `--rebuild`, a 20 minute timeout, Dagster `max_concurrent_runs`
 `6`, and a 1-object raw and zip seed horizon. That Promotion scenario records
 current source definitions from
 `uv run dg list defs --assets "group:gas_model" --json`, validates the runtime
-GraphQL target count against that source count, and launches one explicit
-Dagster asset-run batch per dependency-wave chunk for every materializable
-`gas_model` asset plus its materializable upstream closure, while skipping live
-`bronze_nemweb_public_files_*` discovery/listing assets so it starts from seeded
-LocalStack objects. This preserves the mandatory final target and asset-check
-status without the full sensor-triggered run queue. Each Promotion batch uses
-Dagster's in-process executor inside its Podman run-worker container to reduce
-LocalStack and Delta Lake DynamoDB lock-table contention, and direct launch
-paces batch submission against `max_concurrent_runs` so queued runs remain
-within the Promotion guard budget.
+GraphQL target count against that source count through the #141
+stale-runtime/current-source guard, and uses the same dependency-wave launch
+shape. Both scenarios skip live `bronze_nemweb_public_files_*`
+discovery/listing assets so they start from seeded LocalStack objects. This
+preserves the mandatory final target and asset-check status without the full
+sensor-triggered run queue. Each direct-launch batch uses Dagster's in-process
+executor inside its Podman run-worker container to reduce LocalStack and Delta
+Lake DynamoDB lock-table contention, and direct launch paces batch submission
+against `max_concurrent_runs` so queued runs remain bounded for the full proof
+and within the Promotion guard budget.
 The generated stack uses fixed service IPs for Postgres, LocalStack, and the
 AEMO ETL code server so run-worker containers do not depend on Podman DNS during
 high-concurrency Promotion gates. Its run
@@ -144,19 +145,22 @@ manifest records gate timing, final dataflow telemetry, direct-launch scenario
 evidence, cleanup duration, and non-benign cleanup evidence so Promotion review
 can distinguish dataflow success from cleanup residue without changing the
 dataflow gate decision. The direct-launch evidence records the scenario, launch
-mode, target group, target asset count, selected upstream closure count, skipped
-live source asset keys, dependency-wave count, run-batch count, and asset batch
-size; the manifest also records top-level source-definition evidence with the
+mode, target group, target asset count, target asset-check count, target keys,
+STTM target keys, selected upstream closure count, skipped live source asset
+keys, dependency-wave count, run-batch count, and asset batch size; the
+Promotion manifest also records top-level source-definition evidence with the
 current executable asset count, asset-check count, full target keys, and STTM
-target keys. The Promotion scenario enforces regression budgets from the approved
-targeted baseline: total gate duration at or below 20 minutes, peak active and
-queued runs at or below `6`, total Dagster runs at or below the current
-direct-launch `dataflow.scenario_evidence.batch_count`, target progress matching
-the current `source_definitions.executable_asset_count`, and missing or failed
-target assets and asset checks at `0`. A source/runtime target-count mismatch
-indicates a stale Dagster graph for the source revision. Budget failures print
-the observed values, thresholds, dynamic target-count evidence, planned-batch
-evidence, and run manifest path. The full scenario prints the same telemetry
+target keys. The Promotion scenario enforces regression budgets from the
+approved targeted baseline: total gate duration at or below 20 minutes, peak
+active and queued runs at or below `6`, total Dagster runs at or below the
+current direct-launch `dataflow.scenario_evidence.batch_count`, target progress
+matching the current `source_definitions.executable_asset_count`, and missing or
+failed target assets and asset checks at `0`. A source/runtime target-count
+mismatch indicates a stale Dagster graph for the source revision. Budget
+failures print the observed values, thresholds, dynamic target-count evidence,
+planned-batch evidence, and run manifest path. The full scenario records the
+expanded baseline observations with `budget.status` set to `not-enforced`
+without making local development performance claims.
 without making local development performance claims.
 
 ## Repository responsibilities
