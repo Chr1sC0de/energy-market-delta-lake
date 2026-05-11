@@ -1999,6 +1999,136 @@ Build it.
             ],
         )
 
+    def test_select_qa_commands_adds_declared_aemo_etl_end_to_end_lane(self) -> None:
+        commands = ralph.select_qa_commands(
+            ["backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"],
+            Path("/repo"),
+            issue_body="\n".join(
+                [
+                    "## Context anchors",
+                    "",
+                    "- Test lane: `AEMO ETL End-to-end test`",
+                ]
+            ),
+        )
+
+        self.assertEqual(
+            [(command.name, command.args, command.cwd) for command in commands],
+            [
+                (
+                    "aemo-etl Commit check",
+                    ("make", "run-prek"),
+                    Path("/repo/backend-services/dagster-user/aemo-etl"),
+                ),
+                (
+                    "aemo-etl Integration test",
+                    ("make", "integration-test"),
+                    Path("/repo/backend-services/dagster-user/aemo-etl"),
+                ),
+                (
+                    "aemo-etl End-to-end test",
+                    ("scripts/aemo-etl-e2e", "run", "--scenario", "full-gas-model"),
+                    Path("/repo/backend-services"),
+                ),
+            ],
+        )
+
+    def test_select_qa_commands_adds_declared_aemo_etl_e2e_qa_command(self) -> None:
+        commands = ralph.select_qa_commands(
+            ["backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"],
+            Path("/repo"),
+            issue_body="\n".join(
+                [
+                    "## Context anchors",
+                    "",
+                    "- QA: `backend-services/scripts/aemo-etl-e2e run --scenario "
+                    "full-gas-model`",
+                ]
+            ),
+        )
+
+        self.assertEqual(commands[-1].name, "aemo-etl End-to-end test")
+        self.assertEqual(
+            commands[-1].args,
+            ("scripts/aemo-etl-e2e", "run", "--scenario", "full-gas-model"),
+        )
+        self.assertEqual(commands[-1].cwd, Path("/repo/backend-services"))
+
+    def test_declared_aemo_etl_e2e_qa_includes_backend_e2e_script_changes(
+        self,
+    ) -> None:
+        commands = ralph.select_qa_commands(
+            ["backend-services/scripts/aemo-etl-e2e"],
+            Path("/repo"),
+            issue_body="\n".join(
+                [
+                    "## Context anchors",
+                    "",
+                    "- Test lane: `AEMO ETL End-to-end test`",
+                ]
+            ),
+        )
+
+        self.assertIn("root Commit check", [command.name for command in commands])
+        self.assertEqual(commands[-1].name, "aemo-etl End-to-end test")
+        self.assertEqual(commands[-1].cwd, Path("/repo/backend-services"))
+
+    def test_declared_aemo_etl_end_to_end_lane_requires_recorded_evidence(
+        self,
+    ) -> None:
+        issue = make_issue(
+            {ralph.READY_LABEL},
+            body="\n".join(
+                [
+                    "## Context anchors",
+                    "",
+                    "- Test lane: `AEMO ETL End-to-end test`",
+                ]
+            ),
+        )
+        qa_results = [
+            ralph.QAResult(
+                command=ralph.QACommand(
+                    ("make", "run-prek"),
+                    Path("/repo/backend-services/dagster-user/aemo-etl"),
+                    "aemo-etl Commit check",
+                ),
+                log_path=Path("/logs/qa.log"),
+            )
+        ]
+
+        with self.assertRaises(ralph.IssueFailure) as context:
+            ralph.validate_declared_issue_qa_evidence(issue, qa_results)
+
+        self.assertIn("AEMO ETL End-to-end test", str(context.exception))
+        self.assertIn("before Local integration", str(context.exception))
+
+    def test_declared_aemo_etl_end_to_end_lane_accepts_recorded_evidence(
+        self,
+    ) -> None:
+        issue = make_issue(
+            {ralph.READY_LABEL},
+            body="\n".join(
+                [
+                    "## Context anchors",
+                    "",
+                    "- Test lane: `AEMO ETL End-to-end test`",
+                ]
+            ),
+        )
+        qa_results = [
+            ralph.QAResult(
+                command=ralph.QACommand(
+                    ("scripts/aemo-etl-e2e", "run", "--scenario", "full-gas-model"),
+                    Path("/repo/backend-services"),
+                    "aemo-etl End-to-end test",
+                ),
+                log_path=Path("/logs/e2e.log"),
+            )
+        ]
+
+        ralph.validate_declared_issue_qa_evidence(issue, qa_results)
+
     def test_select_qa_commands_for_marimo_runtime_only_changes(self) -> None:
         commands = ralph.select_qa_commands(
             ["backend-services/marimo/src/marimoserver/main.py"],

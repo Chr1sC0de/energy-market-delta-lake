@@ -1208,6 +1208,23 @@ make integration-test
 **Component test** failures feed back through Ralph before container-dependent
 QA starts.
 
+If a ready issue explicitly declares the AEMO ETL **End-to-end test** lane or an
+`aemo-etl-e2e` QA command in its issue body, Ralph treats that issue contract as
+an implementation gate rather than deferring it to **Promotion**. For protected
+runtime `aemo-etl` changes, Ralph adds the declared local End-to-end command
+after the selected **Commit check** and **Integration test** commands and before
+**Local integration** or Exploratory handoff. The default declared-lane command
+is:
+
+```bash
+cd backend-services
+scripts/aemo-etl-e2e run --scenario full-gas-model
+```
+
+If the issue declares that lane but Ralph has no recorded
+`aemo-etl End-to-end test` QA evidence, the issue fails before
+**Local integration** metadata is written.
+
 Docs-only `aemo-etl` changes are recognized by the maintained Markdown doc path
 rules in [documentation-sync.md](../repository/documentation-sync.md). They skip
 the runtime AEMO ETL **Test lanes** above and run the root doc **Commit check**

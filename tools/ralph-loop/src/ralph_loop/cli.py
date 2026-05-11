@@ -206,7 +206,10 @@ MARIMO_PREFIX = "backend-services/marimo/"
 RALPH_LOOP_PREFIX = "tools/ralph-loop/"
 RALPH_SCRIPT_PATH = "scripts/ralph.py"
 BACKEND_SERVICES_PREFIX = "backend-services/"
+AEMO_ETL_E2E_SCRIPT_PATH = "backend-services/scripts/aemo-etl-e2e"
 AEMO_ETL_E2E_QA_NAME = "aemo-etl End-to-end test"
+AEMO_ETL_E2E_TEST_LANE = "AEMO ETL End-to-end test"
+AEMO_ETL_FULL_E2E_SCENARIO = "full-gas-model"
 AEMO_ETL_PROMOTION_E2E_SCENARIO = "promotion-gas-model"
 AEMO_ETL_PROMOTION_E2E_TIMEOUT_SECONDS = 20 * 60
 AEMO_ETL_PROMOTION_E2E_MAX_CONCURRENT_RUNS = 6
@@ -3989,6 +3992,12 @@ def has_protected_aemo_etl_change(changed_files: list[str]) -> bool:
     )
 
 
+def has_aemo_etl_e2e_declared_qa_change(changed_files: list[str]) -> bool:
+    return has_protected_aemo_etl_change(changed_files) or any(
+        path == AEMO_ETL_E2E_SCRIPT_PATH for path in changed_files
+    )
+
+
 def has_marimo_runtime_change(changed_files: list[str]) -> bool:
     return any(
         path.startswith(MARIMO_PREFIX) and not is_maintained_doc_path(path)
@@ -4011,7 +4020,12 @@ def has_root_python_workflow_change(changed_files: list[str]) -> bool:
     )
 
 
-def select_qa_commands(changed_files: list[str], repo_root: Path) -> list[QACommand]:
+def select_qa_commands(
+    changed_files: list[str],
+    repo_root: Path,
+    *,
+    issue_body: str | None = None,
+) -> list[QACommand]:
     commands: list[QACommand] = []
     has_aemo_etl_change = has_protected_aemo_etl_change(changed_files)
     aemo_etl_integration_command: QACommand | None = None
@@ -4065,6 +4079,15 @@ def select_qa_commands(changed_files: list[str], repo_root: Path) -> list[QAComm
     if aemo_etl_integration_command is not None:
         commands.append(aemo_etl_integration_command)
 
+    if issue_body is not None:
+        commands.extend(
+            select_declared_issue_qa_commands(
+                issue_body,
+                changed_files=changed_files,
+                repo_root=repo_root,
+            )
+        )
+
     deduped: list[QACommand] = []
     seen: set[tuple[tuple[str, ...], Path]] = set()
     for command in commands:
@@ -4073,6 +4096,95 @@ def select_qa_commands(changed_files: list[str], repo_root: Path) -> list[QAComm
             deduped.append(command)
             seen.add(key)
     return deduped
+
+
+def select_declared_issue_qa_commands(
+    issue_body: str,
+    *,
+    changed_files: list[str],
+    repo_root: Path,
+) -> list[QACommand]:
+    if not has_aemo_etl_e2e_declared_qa_change(changed_files):
+        return []
+    scenario = declared_aemo_etl_e2e_scenario(issue_body)
+    if scenario is None:
+        return []
+    return [
+        QACommand(
+            ("scripts/aemo-etl-e2e", "run", "--scenario", scenario),
+            repo_root / BACKEND_SERVICES_PREFIX,
+            AEMO_ETL_E2E_QA_NAME,
+        )
+    ]
+
+
+def declared_aemo_etl_e2e_scenario(issue_body: str) -> str | None:
+    for command_text in qa_command_lines_from_issue_body(issue_body):
+        scenario = aemo_etl_e2e_scenario_from_command_text(command_text)
+        if scenario is not None:
+            return scenario
+    if issue_declares_test_lane(issue_body, AEMO_ETL_E2E_TEST_LANE):
+        return AEMO_ETL_FULL_E2E_SCENARIO
+    return None
+
+
+def qa_command_lines_from_issue_body(issue_body: str) -> list[str]:
+    pattern = re.compile(r"(?im)^\s*-\s*QA:\s*`?(?P<command>[^`\n]+)`?\s*$")
+    commands: list[str] = []
+    for match in pattern.finditer(issue_body):
+        command = match.group("command").strip()
+        if command != "":
+            commands.append(command)
+    return commands
+
+
+def aemo_etl_e2e_scenario_from_command_text(command_text: str) -> str | None:
+    try:
+        args = shlex.split(command_text)
+    except ValueError:
+        return None
+    if not args:
+        return None
+    executable = args[0]
+    if executable == "backend-services/scripts/aemo-etl-e2e":
+        executable = "scripts/aemo-etl-e2e"
+    if executable != "scripts/aemo-etl-e2e":
+        return None
+    if "run" not in args[1:]:
+        return None
+    if "--scenario" not in args:
+        return AEMO_ETL_FULL_E2E_SCENARIO
+    scenario_index = args.index("--scenario") + 1
+    if scenario_index >= len(args):
+        return None
+    scenario = args[scenario_index]
+    if scenario in {AEMO_ETL_FULL_E2E_SCENARIO, AEMO_ETL_PROMOTION_E2E_SCENARIO}:
+        return scenario
+    return None
+
+
+def issue_declares_test_lane(issue_body: str, expected_lane: str) -> bool:
+    expected = normalized_evidence_text(expected_lane)
+    return any(
+        normalized_evidence_text(lane) == expected
+        for lane in test_lanes_from_issue_body(issue_body)
+    )
+
+
+def validate_declared_issue_qa_evidence(
+    issue: Issue,
+    qa_results: list[QAResult],
+) -> None:
+    if declared_aemo_etl_e2e_scenario(issue.body) is None:
+        return
+    if any(result.command.name == AEMO_ETL_E2E_QA_NAME for result in qa_results):
+        return
+    raise IssueFailure(
+        f"Issue #{issue.number} declares `{AEMO_ETL_E2E_TEST_LANE}` evidence, "
+        f"but Ralph did not record `{AEMO_ETL_E2E_QA_NAME}` before Local integration. "
+        "Run the declared End-to-end Test lane or remove the stale issue QA "
+        "requirement before rerunning Ralph."
+    )
 
 
 def is_commit_check_command(command: QACommand) -> bool:
@@ -9673,14 +9785,17 @@ class RalphLoop:
         log_prefix: str,
         manifest: RunManifest,
     ) -> list[QAResult]:
-        return self._run_qa_commands(
+        qa_results = self._run_qa_commands(
             changed_files,
             worktree_path,
             run_dir,
             log_prefix=log_prefix,
             subject=f"#{issue.number}",
             manifest=manifest,
+            issue_body=issue.body,
         )
+        validate_declared_issue_qa_evidence(issue, qa_results)
+        return qa_results
 
     def _run_qa_commands(
         self,
@@ -9691,8 +9806,13 @@ class RalphLoop:
         log_prefix: str,
         subject: str,
         manifest: RunManifest | None = None,
+        issue_body: str | None = None,
     ) -> list[QAResult]:
-        commands = select_qa_commands(changed_files, repo_root)
+        commands = select_qa_commands(
+            changed_files,
+            repo_root,
+            issue_body=issue_body,
+        )
         if not commands:
             raise IssueFailure(
                 "No QA command matched changed files: " + ", ".join(changed_files)
