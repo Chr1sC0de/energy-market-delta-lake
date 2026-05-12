@@ -28,7 +28,7 @@ flowchart LR
     ADMIN[Webserver admin]
     GUEST[Webserver guest]
     DAEMON[Daemon]
-    USERCODE[aemo-etl gRPC user code]
+    USERCODE[aemo-etl manifest default]
   end
 
   subgraph Data[State and storage]
@@ -166,11 +166,13 @@ without making local development performance claims.
 ## Repository responsibilities
 
 - `infrastructure/aws-pulumi`
-  - provisions the canonical AWS platform and deployed runtime
+  - provisions the canonical AWS platform and deployed runtime, including
+    manifest-declared Dagster user-code images and ECS services
 - `backend-services/dagster-user/aemo-etl`
   - defines Dagster assets, sensors, resources, and ETL-specific docs
 - `backend-services/dagster-core`
-  - provides the Dagster runtime image and environment-specific configuration
+  - provides the Dagster runtime image, environment-specific configuration, and
+    the AWS code-location manifest used to render the deployed workspace
 - `backend-services/authentication`
   - implements the OIDC/session bridge used in front of protected routes
 - `backend-services/caddy`
@@ -191,6 +193,8 @@ without making local development performance claims.
 - `sync.sources`:
   - `docs/README.md`
   - `infrastructure/aws-pulumi/__main__.py`
+  - `backend-services/dagster-core/code-locations.aws.toml`
+  - `infrastructure/aws-pulumi/code_locations.py`
   - `backend-services/compose.yaml`
   - `backend-services/scripts/aemo-etl-e2e`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`

@@ -28,10 +28,30 @@ from urllib.parse import urlparse
 
 import pytest
 
+from code_locations import (
+    DagsterCodeLocation,
+    default_code_location,
+    load_code_locations,
+    user_code_component_name,
+    user_code_ecs_service_resource_name,
+)
+
+DAGSTER_CODE_LOCATIONS = load_code_locations()
+DEFAULT_DAGSTER_CODE_LOCATION = default_code_location(DAGSTER_CODE_LOCATIONS)
+
 
 def _required_ecs_service_names(resource_name: str) -> set[str]:
     return {
-        f"{resource_name}-user-code-user-code-service",
+        *{
+            user_code_ecs_service_resource_name(
+                user_code_component_name(
+                    resource_name,
+                    location,
+                    DEFAULT_DAGSTER_CODE_LOCATION,
+                )
+            )
+            for location in DAGSTER_CODE_LOCATIONS
+        },
         f"{resource_name}-webserver-admin-webserver-service",
         f"{resource_name}-webserver-guest-webserver-service",
         f"{resource_name}-daemon-daemon-service",
@@ -144,18 +164,27 @@ class TestServiceDiscoveryRegistration:
                 return str(ns["Id"])
         raise AssertionError(f"Namespace '{namespace_name}' not found in Cloud Map")
 
+    @pytest.mark.parametrize(
+        "code_location",
+        DAGSTER_CODE_LOCATIONS,
+        ids=[location.name for location in DAGSTER_CODE_LOCATIONS],
+    )
     def test_user_code_cloud_map_registered(
-        self, servicediscovery_client: object, resource_name: str
+        self,
+        servicediscovery_client: object,
+        resource_name: str,
+        code_location: DagsterCodeLocation,
     ) -> None:
-        """aemo-etl must be discoverable via Cloud Map."""
+        """Manifest-declared user-code locations must be discoverable."""
         self._get_namespace_id(servicediscovery_client)
         response = servicediscovery_client.discover_instances(  # type: ignore[union-attr]
             NamespaceName="dagster",
-            ServiceName="aemo-etl",
+            ServiceName=code_location.cloud_map_name,
         )
         instances = response.get("Instances", [])
         assert len(instances) >= 1, (
-            f"Expected at least 1 instance for aemo-etl.dagster, got {len(instances)}"
+            "Expected at least 1 instance for "
+            f"{code_location.cloud_map_name}.dagster, got {len(instances)}"
         )
 
     def test_webserver_admin_cloud_map_registered(

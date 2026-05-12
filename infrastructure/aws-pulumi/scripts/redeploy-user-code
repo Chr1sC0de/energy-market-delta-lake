@@ -1,7 +1,63 @@
 #!/usr/bin/env bash
 # Redeploys only the Pulumi resources needed for Dagster user code.
 
-pulumi up \
-	--target "urn:pulumi:dev-ausenergymarket::aws-pulumi::dev-energy-market:components:ecr\$aws:ecr/repository:Repository::dev-energy-market-dev-energy-market-dagster-user-code-aemo-etl" \
-	--target "urn:pulumi:dev-ausenergymarket::aws-pulumi::dev-energy-market-user-code:components:DagsterUserCodeService\$aws:ecs/taskDefinition:TaskDefinition::dev-energy-market-user-code-user-code-task-def" \
-	--target "urn:pulumi:dev-ausenergymarket::aws-pulumi::dev-energy-market-user-code:components:DagsterUserCodeService\$aws:ecs/service:Service::dev-energy-market-user-code-user-code-service"
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+
+cd "$PROJECT_DIR"
+
+STACK="${PULUMI_STACK:-dev-ausenergymarket}"
+ENVIRONMENT_NAME="${ENVIRONMENT:-${STACK%%-*}}"
+RESOURCE_NAME="${ENVIRONMENT_NAME}-energy-market"
+
+mapfile -t TARGETS < <(
+	STACK="$STACK" RESOURCE_NAME="$RESOURCE_NAME" uv run python - <<'PY'
+import os
+
+from code_locations import (
+    default_code_location,
+    load_code_locations,
+    user_code_component_name,
+    user_code_ecr_repository_resource_name,
+    user_code_ecs_service_resource_name,
+    user_code_task_definition_resource_name,
+)
+
+stack = os.environ["STACK"]
+resource_name = os.environ["RESOURCE_NAME"]
+locations = load_code_locations()
+default_location = default_code_location(locations)
+
+for location in locations:
+    component_name = user_code_component_name(resource_name, location, default_location)
+    repository_name = user_code_ecr_repository_resource_name(resource_name, location)
+    task_definition_name = user_code_task_definition_resource_name(component_name)
+    service_name = user_code_ecs_service_resource_name(component_name)
+
+    print(
+        "urn:pulumi:"
+        f"{stack}::aws-pulumi::{resource_name}:components:ecr"
+        f"$aws:ecr/repository:Repository::{repository_name}"
+    )
+    print(
+        "urn:pulumi:"
+        f"{stack}::aws-pulumi::{component_name}:components:DagsterUserCodeService"
+        f"$aws:ecs/taskDefinition:TaskDefinition::{task_definition_name}"
+    )
+    print(
+        "urn:pulumi:"
+        f"{stack}::aws-pulumi::{component_name}:components:DagsterUserCodeService"
+        f"$aws:ecs/service:Service::{service_name}"
+    )
+PY
+)
+
+PULUMI_ARGS=(up)
+for target in "${TARGETS[@]}"; do
+	PULUMI_ARGS+=(--target "$target")
+done
+
+pulumi stack select "$STACK"
+pulumi "${PULUMI_ARGS[@]}"

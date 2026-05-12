@@ -157,12 +157,16 @@ The latest audit record is [docs/security-audit.md](docs/security-audit.md).
 repository:
 
 - `backend-services/dagster-core` for Dagster webserver and daemon
-- `backend-services/dagster-user/aemo-etl` for the gRPC user-code service
+- `backend-services/dagster-user/aemo-etl` for the default gRPC user-code
+  service declared in `backend-services/dagster-core/code-locations.aws.toml`
 - `backend-services/authentication` for the auth service
 - `backend-services/caddy` for the public reverse proxy
 
 The Pulumi deployment uses the AWS-targeted Dagster configuration by building
-`dagster-core` with `DAGSTER_DEPLOYMENT=aws`.
+`dagster-core` with `DAGSTER_DEPLOYMENT=aws`. In the AWS image, the workspace
+is rendered from the code-location manifest before `workspace.yaml` is copied
+into place. This **Exploratory branch** keeps `aemo-etl` as the only live
+manifest location while tests exercise a two-location fixture for review.
 
 ## Runtime behavior
 
@@ -173,7 +177,8 @@ Key deployed behaviors visible in the infrastructure code:
   - `webserver-guest.dagster:3000`
   - the FastAPI auth service
 - Dagster services run as ECS Fargate services in private subnets
-- Cloud Map provides private DNS names under the `dagster` namespace
+- Cloud Map provides private DNS names under the `dagster` namespace, with
+  user-code names resolved from the manifest
 - PostgreSQL is used for Dagster run, schedule, and event-log storage
 - S3 holds landing, archive, Delta-table, and IO-manager data
 - DynamoDB `delta_log` supports Delta locking
@@ -311,7 +316,11 @@ system's services and Dagster workflows.
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `infrastructure/aws-pulumi/__main__.py`
+  - `backend-services/dagster-core/code-locations.aws.toml`
+  - `backend-services/dagster-core/Dockerfile`
+  - `backend-services/dagster-core/render_aws_workspace.py`
   - `infrastructure/aws-pulumi/configs.py`
+  - `infrastructure/aws-pulumi/code_locations.py`
   - `infrastructure/aws-pulumi/components/bastion_host.py`
   - `infrastructure/aws-pulumi/components/caddy.py`
   - `infrastructure/aws-pulumi/components/ecr.py`
@@ -324,7 +333,10 @@ system's services and Dagster workflows.
   - `infrastructure/aws-pulumi/.pre-commit-config.yaml`
   - `infrastructure/aws-pulumi/pyproject.toml`
   - `infrastructure/aws-pulumi/scripts/setup_secrets`
+  - `infrastructure/aws-pulumi/scripts/redeploy-user-code`
   - `infrastructure/aws-pulumi/scripts/run-integration-tests`
+  - `infrastructure/aws-pulumi/tests/component/test_ecr.py`
+  - `infrastructure/aws-pulumi/tests/component/test_ecs_services.py`
   - `infrastructure/aws-pulumi/tests/deployed/conftest.py`
   - `infrastructure/aws-pulumi/tests/deployed/test_integration.py`
   - `infrastructure/aws-pulumi/Pulumi.dev-ausenergymarket.yaml`

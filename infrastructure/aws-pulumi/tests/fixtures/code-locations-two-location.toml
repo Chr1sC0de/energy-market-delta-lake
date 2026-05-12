@@ -1,0 +1,16 @@
+[[locations]]
+name = "aemo-etl"
+module = "aemo_etl.definitions"
+port = 4000
+cloud_map_name = "aemo-etl"
+source_path = "backend-services/dagster-user/aemo-etl"
+image_repository = "dagster/user-code/aemo-etl"
+default = true
+
+[[locations]]
+name = "fixture-etl"
+module = "aemo_etl.fixture_definitions"
+port = 4100
+cloud_map_name = "fixture-etl"
+source_path = "backend-services/dagster-user/aemo-etl"
+image_repository = "dagster/user-code/fixture-etl"

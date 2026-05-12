@@ -46,7 +46,8 @@ That workflow runs local Pulumi unit/component tests, the **Commit check**,
 `pulumi up`, deployed AWS tests, and a no-op preview. The deployed tests verify:
 
 - guest access at `/dagster-webserver/guest` returns `200`, `302`, or `307`
-- the exact required ECS Fargate services exist, are `ACTIVE`, have
+- the exact required ECS Fargate services, including manifest-declared
+  user-code services, exist, are `ACTIVE`, have
   `desiredCount >= 1`, `runningCount == desiredCount`, `pendingCount == 0`,
   and have no failed rollout
 - Cloud Map registrations and CloudWatch log streams exist
@@ -98,6 +99,8 @@ That workflow runs local Pulumi unit/component tests, the **Commit check**,
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `infrastructure/aws-pulumi/configs.py`
+  - `backend-services/dagster-core/code-locations.aws.toml`
+  - `infrastructure/aws-pulumi/code_locations.py`
   - `infrastructure/aws-pulumi/components/bastion_host.py`
   - `infrastructure/aws-pulumi/components/caddy.py`
   - `infrastructure/aws-pulumi/components/ecr.py`
@@ -107,6 +110,7 @@ That workflow runs local Pulumi unit/component tests, the **Commit check**,
   - `infrastructure/aws-pulumi/components/postgres.py`
   - `infrastructure/aws-pulumi/components/security_groups.py`
   - `infrastructure/aws-pulumi/components/vpc.py`
+  - `infrastructure/aws-pulumi/scripts/redeploy-user-code`
   - `infrastructure/aws-pulumi/scripts/run-integration-tests`
   - `infrastructure/aws-pulumi/tests/component/conftest.py`
   - `infrastructure/aws-pulumi/tests/component/test_bastion_host.py`
