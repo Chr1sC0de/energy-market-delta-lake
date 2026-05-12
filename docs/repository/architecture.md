@@ -162,7 +162,6 @@ failures print the observed values, thresholds, dynamic target-count evidence,
 planned-batch evidence, and run manifest path. The full scenario records the
 expanded baseline observations with `budget.status` set to `not-enforced`
 without making local development performance claims.
-without making local development performance claims.
 
 ## Repository responsibilities
 
