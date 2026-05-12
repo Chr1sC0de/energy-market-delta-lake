@@ -396,8 +396,8 @@ def test_run_parser_defaults_to_full_dataflow_timeout_and_concurrency() -> None:
     options = run_options_from_args(build_parser().parse_args(["run"]))
 
     assert getattr(options, "scenario") == "full-gas-model"
-    assert getattr(options, "raw_latest_count") == 3
-    assert getattr(options, "zip_latest_count") == 3
+    assert getattr(options, "raw_latest_count") == 1
+    assert getattr(options, "zip_latest_count") == 1
     assert getattr(options, "timeout_seconds") == 90 * 60
     assert getattr(options, "max_concurrent_runs") == 6
     assert getattr(options, "launch_mode") == "direct-upstream-asset-launch"
@@ -436,7 +436,7 @@ def test_run_parser_defaults_to_full_dataflow_timeout_and_concurrency() -> None:
 
 
 def test_promotion_scenario_keeps_approved_sensor_and_target_contract() -> None:
-    """Promotion targeting narrows seed volume without bypassing coverage."""
+    """Promotion targeting adds the guard without bypassing coverage."""
     module = load_e2e_command_module()
     expected_sensor_names = set(module["EXPECTED_DATAFLOW_SENSOR_NAMES"])
     asset_graph_query = module["DAGSTER_ASSET_GRAPH_QUERY"]
@@ -1265,14 +1265,14 @@ def test_full_launch_plan_records_expanded_sttm_baseline_evidence() -> None:
     ]
 
 
-def test_collect_promotion_source_definition_evidence_records_current_source_count(
+def test_collect_gas_model_source_definition_evidence_records_current_source_count(
     tmp_path: Path,
 ) -> None:
-    """Promotion records the current dg source-definition target count."""
+    """Direct gas_model scenarios record the current source-definition target count."""
     module = load_e2e_command_module()
     collect_evidence = get_callable(
         module,
-        "collect_promotion_source_definition_evidence",
+        "collect_gas_model_source_definition_evidence",
     )
     non_sttm_target_names = tuple(
         f"silver_gas_legacy_target_{index}"
@@ -1450,6 +1450,93 @@ def test_launch_plan_manifest_includes_source_definition_evidence(
         == CURRENT_GAS_MODEL_TARGET_ASSET_COUNT
     )
     assert manifest["source_definitions"]["asset_check_count"] == 144
+
+
+def test_full_launch_plan_manifest_uses_source_check_count_without_runtime_checks(
+    tmp_path: Path,
+) -> None:
+    """Full scenario check-count evidence survives omitted runtime asset checks."""
+    module = load_e2e_command_module()
+    source_definition_class = get_callable(module, "SourceDefinitionEvidence")
+    fetch_asset_graph = get_callable(module, "fetch_dagster_asset_graph")
+    build_launch_plan = get_callable(
+        module,
+        "build_gas_model_upstream_asset_launch_plan",
+    )
+    launch_plan_manifest = get_callable(module, "launch_plan_manifest")
+
+    class FakeClient:
+        """Return an asset graph payload without assetChecksOrError."""
+
+        def execute(
+            self,
+            query: str,
+            variables: Mapping[str, object] | None = None,
+            *,
+            timeout_seconds: int | None = None,
+        ) -> Mapping[str, object]:
+            del variables, timeout_seconds
+            assert "assetChecksOrError" not in query
+            return {
+                "assetNodes": [
+                    {
+                        "assetKey": {
+                            "path": [
+                                "silver",
+                                "gas_model",
+                                STTM_GAS_MODEL_FACT_NAMES[0],
+                            ]
+                        },
+                        "groupName": "gas_model",
+                        "isMaterializable": True,
+                        "dependencyKeys": [],
+                    },
+                    {
+                        "assetKey": {
+                            "path": [
+                                "silver",
+                                "gas_model",
+                                STTM_GAS_MODEL_FACT_NAMES[1],
+                            ]
+                        },
+                        "groupName": "gas_model",
+                        "isMaterializable": True,
+                        "dependencyKeys": [],
+                    },
+                ]
+            }
+
+    asset_nodes = fetch_asset_graph(FakeClient())
+    launch_plan = build_launch_plan(
+        asset_nodes,
+        scenario="full-gas-model",
+        launch_mode="direct-upstream-asset-launch",
+    )
+    source_definition_evidence = source_definition_class(
+        command=("uv", "run", "dg", "list", "defs"),
+        working_directory=tmp_path,
+        target_group="gas_model",
+        executable_asset_keys=tuple(
+            ("silver", "gas_model", asset_name)
+            for asset_name in STTM_GAS_MODEL_FACT_NAMES[:2]
+        ),
+        asset_check_count=8,
+    )
+
+    manifest = launch_plan_manifest(
+        launch_plan,
+        source_definition_evidence=source_definition_evidence,
+    )
+
+    assert [getattr(asset_node, "asset_check_count") for asset_node in asset_nodes] == [
+        0,
+        0,
+    ]
+    assert manifest["scenario"] == "full-gas-model"
+    assert manifest["target_asset_count"] == 2
+    assert manifest["target_asset_check_count"] == 8
+    assert manifest["sttm_target_asset_count"] == 2
+    assert manifest["source_definitions"]["asset_check_count"] == 8
 
 
 def test_promotion_upstream_launch_uses_dependency_waves() -> None:
