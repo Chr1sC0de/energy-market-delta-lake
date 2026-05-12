@@ -1,6 +1,5 @@
 """Cached archive seed refresh support for local AEMO ETL End-to-end tests."""
 
-import fnmatch
 import json
 import os
 import shutil
@@ -8,7 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Final, Literal
+from typing import Final, Literal, cast
 
 from dagster import AssetKey, AssetSelection, Definitions
 from types_boto3_s3 import S3Client
@@ -17,10 +16,16 @@ from aemo_etl.factories.df_from_s3_keys.source_tables import (
     DFFromS3KeysSourceTableSpec,
     load_source_table_specs,
 )
+from aemo_etl.maintenance.archive_source_planning import (
+    ArchiveObjectHead,
+    ArchiveSourceCoverage,
+    ArchiveSourceObject as SeedObject,
+    ArchiveSourceRequirement,
+    ArchiveSourceSelectionPolicy,
+    plan_archive_sources,
+)
 from aemo_etl.utils import (
-    S3ObjectHead,
     get_object_head_from_pages,
-    get_s3_object_keys_from_prefix_and_name_glob,
     get_s3_pagination,
 )
 
@@ -97,18 +102,6 @@ class ArchiveSeedSpec:
             ],
             "zip_domains": [zip_domain.as_dict() for zip_domain in self.zip_domains],
         }
-
-
-@dataclass(frozen=True, slots=True)
-class SeedObject:
-    """Archive object selected for a seed refresh or local cache load."""
-
-    key: str
-    size: int
-
-    def as_dict(self) -> dict[str, object]:
-        """Return a JSON-serializable representation."""
-        return {"key": self.key, "size": self.size}
 
 
 @dataclass(frozen=True, slots=True)
@@ -548,21 +541,16 @@ def _build_s3_coverage_entry(
     glob_pattern: str,
     requested_count: int,
 ) -> SeedCoverageEntry:
-    object_heads = _list_matching_s3_object_heads(
-        s3_client,
-        archive_bucket=archive_bucket,
-        archive_prefix=archive_prefix,
-        glob_pattern=glob_pattern,
-    )
-    selected_objects = _latest_objects(object_heads, requested_count=requested_count)
-    return SeedCoverageEntry(
-        kind=kind,
-        name=name,
-        archive_prefix=archive_prefix,
-        glob_pattern=glob_pattern,
-        requested_count=requested_count,
-        available_count=len(object_heads),
-        selected_objects=selected_objects,
+    pages = get_s3_pagination(s3_client, archive_bucket, archive_prefix)
+    return _seed_coverage_entry(
+        _plan_seed_coverage(
+            get_object_head_from_pages(pages),
+            kind=kind,
+            name=name,
+            archive_prefix=archive_prefix,
+            glob_pattern=glob_pattern,
+            requested_count=requested_count,
+        )
     )
 
 
@@ -575,46 +563,67 @@ def _build_cached_coverage_entry(
     glob_pattern: str,
     requested_count: int,
 ) -> SeedCoverageEntry:
-    object_heads = _list_matching_cached_object_heads(
-        seed_root=seed_root,
-        archive_prefix=archive_prefix,
-        glob_pattern=glob_pattern,
-    )
-    selected_objects = _latest_objects(object_heads, requested_count=requested_count)
-    return SeedCoverageEntry(
-        kind=kind,
-        name=name,
-        archive_prefix=archive_prefix,
-        glob_pattern=glob_pattern,
-        requested_count=requested_count,
-        available_count=len(object_heads),
-        selected_objects=selected_objects,
+    return _seed_coverage_entry(
+        _plan_seed_coverage(
+            _list_cached_object_heads(
+                seed_root=seed_root,
+                archive_prefix=archive_prefix,
+            ),
+            kind=kind,
+            name=name,
+            archive_prefix=archive_prefix,
+            glob_pattern=glob_pattern,
+            requested_count=requested_count,
+        )
     )
 
 
-def _list_matching_s3_object_heads(
-    s3_client: S3Client,
+def _plan_seed_coverage(
+    object_heads: Mapping[str, ArchiveObjectHead],
     *,
-    archive_bucket: str,
+    kind: Literal["source-table", "zip-domain"],
+    name: str,
     archive_prefix: str,
     glob_pattern: str,
-) -> dict[str, S3ObjectHead]:
-    pages = get_s3_pagination(s3_client, archive_bucket, archive_prefix)
-    object_heads = get_object_head_from_pages(pages)
-    matching_keys = get_s3_object_keys_from_prefix_and_name_glob(
-        archive_prefix,
-        glob_pattern,
-        sorted(object_heads),
+    requested_count: int,
+) -> ArchiveSourceCoverage:
+    plan = plan_archive_sources(
+        object_heads,
+        requirements=(
+            ArchiveSourceRequirement(
+                kind=kind,
+                name=name,
+                archive_prefix=archive_prefix,
+                glob_pattern=glob_pattern,
+            ),
+        ),
+        selection_policy=ArchiveSourceSelectionPolicy(
+            latest_count=requested_count,
+            max_batch_bytes=None,
+            max_batch_files=None,
+        ),
     )
-    return {key: object_heads[key] for key in matching_keys}
+    return plan.coverage[0]
 
 
-def _list_matching_cached_object_heads(
+def _seed_coverage_entry(coverage: ArchiveSourceCoverage) -> SeedCoverageEntry:
+    seed_kind = cast(Literal["source-table", "zip-domain"], coverage.kind)
+    return SeedCoverageEntry(
+        kind=seed_kind,
+        name=coverage.name,
+        archive_prefix=coverage.archive_prefix,
+        glob_pattern=coverage.glob_pattern,
+        requested_count=cast(int, coverage.requested_count),
+        available_count=coverage.available_count,
+        selected_objects=coverage.selected_objects,
+    )
+
+
+def _list_cached_object_heads(
     *,
     seed_root: Path,
     archive_prefix: str,
-    glob_pattern: str,
-) -> dict[str, S3ObjectHead]:
+) -> dict[str, ArchiveObjectHead]:
     objects_root = seed_objects_root(seed_root)
     if not objects_root.exists():
         return {}
@@ -623,34 +632,16 @@ def _list_matching_cached_object_heads(
     if not prefix_path.exists():
         return {}
 
-    object_heads: dict[str, S3ObjectHead] = {}
+    object_heads: dict[str, ArchiveObjectHead] = {}
     for path in prefix_path.rglob("*"):
         if not path.is_file():
             continue
         relative_key = path.relative_to(objects_root).as_posix()
-        normalized_pattern = f"{archive_prefix}/{glob_pattern}".lower()
-        if not fnmatch.fnmatch(relative_key.lower(), normalized_pattern):
-            continue
         object_heads[relative_key] = {
             "Key": relative_key,
             "Size": path.stat().st_size,
         }
     return object_heads
-
-
-def _latest_objects(
-    object_heads: dict[str, S3ObjectHead],
-    *,
-    requested_count: int,
-) -> tuple[SeedObject, ...]:
-    selected_keys = sorted(object_heads)[-requested_count:]
-    return tuple(
-        SeedObject(
-            key=key,
-            size=int(object_heads[key].get("Size", 0)),
-        )
-        for key in selected_keys
-    )
 
 
 def _manifest_from_coverage(

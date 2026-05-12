@@ -32,6 +32,7 @@ from aemo_etl.maintenance.archive_replay import (
     _StagedArchiveBatch,
     _stage_archive_batch,
     build_archive_replay_plans,
+    list_matching_archive_objects,
     plan_archive_batches,
     rebuild_archive_table,
     run_archive_replay,
@@ -256,6 +257,24 @@ def test_build_archive_replay_plans_reports_target_uri_and_totals(
         "bronze/gbb/table_20240101.csv",
         "bronze/gbb/table_20240102.csv",
     )
+
+
+def test_list_matching_archive_objects_delegates_to_source_planner(
+    mocker: MockerFixture,
+) -> None:
+    s3_client = _s3_client_with_archive_keys(
+        mocker,
+        [
+            {"Key": "bronze/gbb/table_20240101.csv", "Size": 40},
+            {"Key": "bronze/gbb/other.csv", "Size": 999},
+        ],
+    )
+
+    assert list_matching_archive_objects(
+        s3_client,
+        archive_bucket="archive",
+        spec=_spec(),
+    ) == (ArchiveObject(key="bronze/gbb/table_20240101.csv", size=40),)
 
 
 def test_archive_replay_result_as_dict_is_serializable() -> None:
