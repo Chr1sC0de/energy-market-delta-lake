@@ -8,7 +8,13 @@ from unittest.mock import MagicMock
 import bs4
 import polars as pl
 import pytest
-from dagster import Definitions
+from dagster import (
+    AssetsDefinition,
+    DefaultScheduleStatus,
+    Definitions,
+    GraphDefinition,
+    ScheduleDefinition,
+)
 from dagster_aws.s3 import S3Resource
 from pytest_mock import MockerFixture
 from types_boto3_s3 import S3Client
@@ -18,6 +24,8 @@ from aemo_etl.factories.nemweb_public_files.assets import (
     nemweb_public_files_asset_factory,
 )
 from aemo_etl.factories.nemweb_public_files.definitions import (
+    NEMWebPublicFilesSpec,
+    build_nemweb_public_files_definitions,
     nemweb_public_files_definitions_factory,
 )
 from aemo_etl.factories.nemweb_public_files.models import Link, ProcessedLink
@@ -634,6 +642,88 @@ def test_nemweb_public_files_definitions_factory_returns_definitions() -> None:
         n_executors=1,
     )
     assert isinstance(defs, Definitions)
+
+
+def test_build_nemweb_public_files_definitions_from_spec() -> None:
+    defs = build_nemweb_public_files_definitions(
+        NEMWebPublicFilesSpec(
+            domain="vicgas",
+            table_name="bronze_nemweb_public_files_vicgas_test",
+            nemweb_relative_href="REPORTS/CURRENT/VicGas",
+            cron_schedule="*/15 * * * *",
+            default_status=DefaultScheduleStatus.STOPPED,
+            n_executors=1,
+            folder_filter=default_folder_filter,
+            file_filter=default_file_filter,
+            group_name="integration",
+            tags={"ecs/cpu": "512"},
+            process_retry=3,
+            initial=10,
+            exp_base=3,
+            max_retry_time=100,
+            table_bucket="aemo",
+            landing_bucket="landing",
+            io_manager_key="aemo_deltalake_append_io_manager",
+            cached_link_ttl_seconds=900,
+        )
+    )
+
+    asset = list(defs.assets or [])[0]
+    job = list(defs.jobs or [])[0]
+    schedule = list(defs.schedules or [])[0]
+    asset_check = list(defs.asset_checks or [])[0]
+    assert isinstance(asset, AssetsDefinition)
+    assert isinstance(schedule, ScheduleDefinition)
+
+    asset_check_spec = list(asset_check.check_specs)[0]
+    metadata = asset.metadata_by_key[asset.key]
+    node_def = asset.node_def
+    assert isinstance(node_def, GraphDefinition)
+
+    assert asset.key.path == [
+        "bronze",
+        "vicgas",
+        "bronze_nemweb_public_files_vicgas_test",
+    ]
+    assert (
+        metadata["dagster/uri"]
+        == "s3://aemo/bronze/vicgas/bronze_nemweb_public_files_vicgas_test"
+    )
+    assert metadata["s3_landing_root"] == "s3://landing/bronze/vicgas"
+    assert job.name == "bronze_nemweb_public_files_vicgas_test_job"
+    assert schedule.cron_schedule == "*/15 * * * *"
+    assert schedule.default_status == DefaultScheduleStatus.STOPPED
+    assert asset_check_spec.name == "check_for_duplicate_rows"
+    assert asset_check_spec.asset_key == asset.key
+
+    dynamic_node = next(n for n in node_def.nodes if "dynamic" in n.name)
+    dynamic_fn = dynamic_node.definition._compute_fn.decorated_fn  # type: ignore[attr-defined,union-attr]
+    dynamic_fetcher = dynamic_fn.__closure__[
+        dynamic_fn.__code__.co_freevars.index("fetcher")
+    ].cell_contents
+    link_filter = dynamic_fetcher.link_filter
+
+    assert isinstance(dynamic_fetcher, FilteredDynamicNEMWebLinksFetcher)
+    assert dynamic_fetcher.n_executors == 1
+    assert isinstance(link_filter, InMemoryCachedLinkFilter)
+    assert (
+        link_filter.table_path
+        == "s3://aemo/bronze/vicgas/bronze_nemweb_public_files_vicgas_test"
+    )
+    assert link_filter.ttl_seconds == 900
+
+    processor_node = next(n for n in node_def.nodes if "processor" in n.name)
+    processor_fn = processor_node.definition._compute_fn.decorated_fn  # type: ignore[attr-defined,union-attr]
+    closure_vars = processor_fn.__code__.co_freevars
+    landing_bucket = processor_fn.__closure__[
+        closure_vars.index("s3_landing_bucket")
+    ].cell_contents
+    landing_prefix = processor_fn.__closure__[
+        closure_vars.index("s3_landing_prefix")
+    ].cell_contents
+
+    assert landing_bucket == "landing"
+    assert landing_prefix == "bronze/vicgas"
 
 
 def test_nemweb_public_files_definitions_factory_passes_file_filter(
