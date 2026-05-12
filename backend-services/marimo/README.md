@@ -7,6 +7,7 @@ the rest of the repo.
 ## Table of contents
 
 - [What it does](#what-it-does)
+- [Local table explorer](#local-table-explorer)
 - [Gas market dashboard](#gas-market-dashboard)
 - [Local usage](#local-usage)
 - [Validation](#validation)
@@ -25,6 +26,28 @@ The app in [src/marimoserver/main.py](src/marimoserver/main.py):
 In the local compose stack, Caddy proxies `/marimo*` traffic to this service.
 Most notebook routes are protected by the authentication service, while static
 asset and websocket paths are proxied through directly.
+
+## Local table explorer
+
+[notebooks/local_table_explorer.py](notebooks/local_table_explorer.py) discovers
+the compose-local `dev-energy-market-*` LocalStack buckets and shows bucket
+health, table-like prefixes, and on-demand inspection for selected tables.
+
+The explorer reads the same AWS settings passed to the Marimo service by
+compose: `AWS_ENDPOINT_URL`, `AWS_DEFAULT_REGION`, `AWS_ACCESS_KEY_ID`,
+`AWS_SECRET_ACCESS_KEY`, and `AWS_ALLOW_HTTP`. It always checks the default
+local buckets:
+
+- `dev-energy-market-aemo`
+- `dev-energy-market-landing`
+- `dev-energy-market-archive`
+- `dev-energy-market-io-manager`
+
+Prefixes with `_delta_log/` are classified as Delta tables. Prefixes with one or
+more parquet files are classified as parquet tables. Empty buckets render bucket
+health and an empty state instead of raising notebook exceptions. Selecting a
+live table and running inspection loads schema, exact row count, and a small
+preview.
 
 ## Gas market dashboard
 
@@ -70,7 +93,7 @@ The implementation also accepts `MARIMO_NOTEBOOKS_DIR` if you need to point the
 server at a different notebook directory.
 
 With the local backend stack running, open the Marimo index through Caddy and
-choose `sample_energy_market`:
+choose `local_table_explorer` or `sample_energy_market`:
 
 ```text
 http://localhost/marimo
@@ -82,6 +105,13 @@ host-exposed LocalStack endpoint:
 ```bash
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/sample_energy_market.py
+```
+
+Use the same pattern for the local table explorer:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/local_table_explorer.py
 ```
 
 Materialize the `gas_model` assets in Dagster, or seed LocalStack with curated
@@ -114,7 +144,9 @@ prek run -a
 - `sync.sources`:
   - `backend-services/marimo/src/marimoserver/main.py`
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
+  - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/notebooks/sample_energy_market.py`
+  - `backend-services/marimo/notebooks/local_table_explorer.py`
   - `backend-services/compose.yaml`
   - `backend-services/caddy/Caddyfile`
 - `sync.scope`: `interface`

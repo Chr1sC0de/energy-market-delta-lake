@@ -200,7 +200,7 @@ Useful routes:
 
 - `/dagster-webserver/guest` for the guest Dagster UI
 - `/dagster-webserver/admin` for the protected admin Dagster UI
-- `/marimo` for local notebooks
+- `/marimo` for local notebooks, including the LocalStack table explorer
 
 The `aemo-etl` code location should appear in Dagster under
 **Deployment → Code locations** with its assets and jobs loaded.
@@ -249,6 +249,10 @@ the DynamoDB `delta_log` table used for Delta locking:
 
 Bucket names are derived from the defaults in `aemo_etl/configs.py`
 (`DEVELOPMENT_ENVIRONMENT=dev`, `NAME_PREFIX=energy-market`).
+
+The Marimo `local_table_explorer` notebook lists these buckets, reports empty
+bucket health, and can inspect discovered Delta or parquet table prefixes after
+assets have been materialized or LocalStack has been seeded.
 
 ## Cached Archive seed
 
@@ -695,6 +699,8 @@ developer-stack setting. It renders e2e Dagster config per run from the current
   - `backend-services/compose.yaml`
   - `backend-services/.envrc`
   - `backend-services/localstack/init-s3.sh`
+  - `backend-services/marimo/src/marimoserver/table_explorer.py`
+  - `backend-services/marimo/notebooks/local_table_explorer.py`
   - `backend-services/scripts/aemo-etl-e2e`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
