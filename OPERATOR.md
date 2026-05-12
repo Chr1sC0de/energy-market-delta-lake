@@ -29,8 +29,8 @@ need a stable product-level reference. Skip it for small changes that can move
 straight from shaped plan to GitHub Issues.
 
 Use `$shape-issues` to draft independently grabbable GitHub Issues with
-tracer-bullet slices, context anchors, QA plans, embedding-based context
-coverage, and stiffness scoring. It writes `.shape-issues/runs/.../report.md`
+tracer-bullet slices, context anchors, QA plans, **Issue context assessor**
+evidence, and stiffness scoring. It writes `.shape-issues/runs/.../report.md`
 and `report.json`; after explicit Operator confirmation it may publish the
 gated outputs as `needs-triage` issues. `$shape-issues` does not move issues to
 `ready-for-agent` and must not edit, comment on, close, reopen, or relabel
@@ -296,6 +296,8 @@ Keep failed worktrees unless the maintainer asks for cleanup.
   - `CONTEXT.md`
   - `AGENTS.md`
   - `.agents/skills/shape-issues/SKILL.md`
+  - `.agents/skills/shape-issues/scripts/shape_issue_gate.py`
+  - `.agents/skills/shape-issues/scripts/codex_context_assessor.py`
   - `.agents/skills/shape-issues/scripts/publish_shape_issues.py`
   - `scripts/ralph.py`
   - `tools/ralph-loop/.pre-commit-config.yaml`

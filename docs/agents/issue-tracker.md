@@ -147,6 +147,8 @@ for the decision that keeps **Exploratory branches** outside automatic
   - `AGENTS.md`
   - `OPERATOR.md`
   - `.agents/skills/shape-issues/SKILL.md`
+  - `.agents/skills/shape-issues/scripts/shape_issue_gate.py`
+  - `.agents/skills/shape-issues/scripts/codex_context_assessor.py`
   - `.agents/skills/shape-issues/scripts/publish_shape_issues.py`
   - `.agents/skills/ralph-curate/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`

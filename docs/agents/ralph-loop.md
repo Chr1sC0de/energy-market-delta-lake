@@ -79,8 +79,9 @@ $grill-with-docs -> optional $to-prd -> $shape-issues -> $ralph-triage -> $ralph
 
 Use [OPERATOR.md](../../OPERATOR.md) for the first-class **Operator workflow**.
 `$shape-issues` shapes tracer-bullet issue drafts, gates implementation drafts,
-and may publish explicitly confirmed gate-passing outputs as `needs-triage`
-issues only. It does not move issues to `ready-for-agent`.
+checks **Issue context assessor** evidence and stiffness, and may publish
+explicitly confirmed gate-passing outputs as `needs-triage` issues only. It
+does not move issues to `ready-for-agent`.
 `$ralph-triage` prepares GitHub Issues for drain by setting category, state, and
 **Delivery mode** labels. `$ralph-loop` owns the backing script commands,
 including `$ralph-loop drain` and `$ralph-loop promote`.
@@ -1447,6 +1448,8 @@ container-backed **Integration test** dependencies.
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
   - `.agents/skills/shape-issues/SKILL.md`
+  - `.agents/skills/shape-issues/scripts/shape_issue_gate.py`
+  - `.agents/skills/shape-issues/scripts/codex_context_assessor.py`
   - `.agents/skills/shape-issues/scripts/publish_shape_issues.py`
   - `.agents/skills/ralph-curate/SKILL.md`
   - `.agents/skills/ralph-loop/SKILL.md`

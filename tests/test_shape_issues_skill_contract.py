@@ -21,6 +21,8 @@ class ShapeIssuesSkillContractTests(unittest.TestCase):
         self.assertIn("`human-decision`", text)
         self.assertIn("`exploratory`", text)
         self.assertIn("Operator Quiz", text)
+        self.assertIn("Issue context assessor", text)
+        self.assertIn("context-assessors.md", text)
 
     def test_skill_keeps_human_decision_separate_from_exploratory_delivery(self) -> None:
         text = SKILL_PATH.read_text(encoding="utf-8")
