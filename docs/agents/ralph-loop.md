@@ -587,6 +587,12 @@ Key fields for inspection:
 - `changed_files`: current file diff used for QA, **Local integration**, or
   Exploratory handoff or acceptance.
 - `qa_results`: selected QA commands, cwd, log path, and pass/fail state.
+- `qa_results[].run_manifest_evidence`: durable evidence captured from a
+  successful QA command that prints `run manifest:`. Ralph copies the emitted
+  JSON manifest into the Ralph run directory when it still exists, or writes a
+  JSON evidence extract from the QA log when the source manifest is unavailable.
+  The entry records the original source path, durable artifact path, artifact
+  kind, and key e2e observations.
 - `qa_runtime_env`: effective `DAGSTER_HOME`, `XDG_CACHE_HOME`, and
   `UV_CACHE_DIR` values plus whether each came from the operator environment or
   Ralph's writable fallback.
@@ -1224,6 +1230,20 @@ scripts/aemo-etl-e2e run --scenario full-gas-model
 If the issue declares that lane but Ralph has no recorded
 `aemo-etl End-to-end test` QA evidence, the issue fails before
 **Local integration** metadata is written.
+
+When an implementation or **Promotion** End-to-end QA command succeeds and its
+log contains `run manifest:`, Ralph captures that evidence before removing the
+implementation worktree. The preferred artifact is a copied e2e
+`run-manifest.json` saved under the Ralph run directory with a name derived from
+the successful QA log, for example
+`qa-retry-3-aemo-etl-end-to-end-test-run-manifest.json`. If the emitted manifest
+path is already gone, Ralph writes a durable JSON extract beside the QA logs
+instead. The **Local integration** or Exploratory handoff evidence comment lists
+the durable artifact path and key observations such as scenario, target
+progress, target asset-check count, asset-check drift, Dagster run count, and
+peak active/queued runs. If the first End-to-end QA attempt fails and a retry
+succeeds, the handoff comment reports the successful retry artifact, not the
+failed attempt's manifest path.
 
 Docs-only `aemo-etl` changes are recognized by the maintained Markdown doc path
 rules in [documentation-sync.md](../repository/documentation-sync.md). They skip

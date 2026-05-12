@@ -81,6 +81,9 @@ DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30.0
 DIRTY_WORKTREE_STATUS_PREVIEW_LIMIT = 12
 COMMAND_READ_CHUNK_SIZE = 65536
 COMMIT_LINE_PATTERN = re.compile(r"(?m)^Commit: `(?P<sha>[0-9a-f]{7,40})`$")
+RUN_MANIFEST_LINE_PATTERN = re.compile(
+    r"(?im)^\s*(?:-\s*)?run manifest:\s*(?P<path>.+?)\s*$"
+)
 GITFLOW_INTEGRATION_COMMENT_TITLE = "Ralph Gitflow integration completed."
 MANUAL_GITFLOW_RECOVERY_COMMENT_TITLE = "Ralph Gitflow manual recovery completed."
 EXPLORATORY_ACCEPTANCE_COMMENT_TITLE = "Ralph exploratory acceptance completed."
@@ -598,9 +601,26 @@ class QACommand:
 
 
 @dataclass(frozen=True)
+class QARunManifestEvidence:
+    source_path: Path
+    artifact_path: Path
+    artifact_kind: str
+    observations: dict[str, Any]
+
+    def to_manifest(self) -> dict[str, Any]:
+        return {
+            "source_path": str(self.source_path),
+            "artifact_path": str(self.artifact_path),
+            "artifact_kind": self.artifact_kind,
+            "observations": dict(self.observations),
+        }
+
+
+@dataclass(frozen=True)
 class QAResult:
     command: QACommand
     log_path: Path | None
+    run_manifest_evidence: QARunManifestEvidence | None = None
 
 
 @dataclass(frozen=True)
@@ -1170,6 +1190,7 @@ class RunManifest:
         log_path: Path,
         status: str,
         error: str | None = None,
+        run_manifest_evidence: QARunManifestEvidence | None = None,
     ) -> None:
         entry: dict[str, Any] = {
             "name": command.name,
@@ -1180,6 +1201,8 @@ class RunManifest:
         }
         if error is not None:
             entry["error"] = error
+        if run_manifest_evidence is not None:
+            entry["run_manifest_evidence"] = run_manifest_evidence.to_manifest()
         self._upsert_list_entry("qa_results", "log_path", str(log_path), entry)
         self.record_event(
             f"qa_{status}",
@@ -2103,6 +2126,238 @@ def write_text_artifact(path: Path, text: str) -> None:
     tmp_path.replace(path)
 
 
+def latest_run_manifest_path_from_log(log_text: str, *, cwd: Path) -> Path | None:
+    matches = list(RUN_MANIFEST_LINE_PATTERN.finditer(log_text))
+    if not matches:
+        return None
+    raw_path = matches[-1].group("path").strip().strip("`")
+    source_path = Path(raw_path).expanduser()
+    if source_path.is_absolute():
+        return source_path
+    return cwd / source_path
+
+
+def capture_qa_run_manifest_evidence(
+    command: QACommand,
+    *,
+    log_path: Path,
+    run_dir: Path,
+) -> QARunManifestEvidence | None:
+    if not log_path.exists():
+        return None
+    log_text = log_path.read_text(encoding="utf-8")
+    source_path = latest_run_manifest_path_from_log(log_text, cwd=command.cwd)
+    if source_path is None:
+        return None
+
+    artifact_stem = f"{log_path.stem}-run-manifest"
+    if source_path.exists() and source_path.is_file():
+        artifact_path = run_dir / f"{artifact_stem}.json"
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        if source_path.resolve() != artifact_path.resolve():
+            shutil.copy2(source_path, artifact_path)
+        payload = json_object_from_path(artifact_path)
+        observations = (
+            e2e_run_manifest_observations(payload)
+            if payload is not None
+            else e2e_log_observations(log_text)
+        )
+        return QARunManifestEvidence(
+            source_path=source_path,
+            artifact_path=artifact_path,
+            artifact_kind="copied_run_manifest",
+            observations=observations,
+        )
+
+    observations = e2e_log_observations(log_text)
+    artifact_path = run_dir / f"{artifact_stem}-evidence.json"
+    write_json_artifact(
+        artifact_path,
+        {
+            "source_path": str(source_path),
+            "source_available": False,
+            "log_path": str(log_path),
+            "artifact_kind": "log_extract",
+            "observations": observations,
+        },
+    )
+    return QARunManifestEvidence(
+        source_path=source_path,
+        artifact_path=artifact_path,
+        artifact_kind="log_extract",
+        observations=observations,
+    )
+
+
+def json_object_from_path(path: Path) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def e2e_run_manifest_observations(payload: dict[str, Any]) -> dict[str, Any]:
+    observations: dict[str, Any] = {}
+    options = mapping_value(payload.get("options"))
+    source_definitions = mapping_value(payload.get("source_definitions"))
+    dataflow = mapping_value(payload.get("dataflow"))
+    scenario_evidence = mapping_value(
+        dataflow.get("scenario_evidence") if dataflow is not None else None
+    )
+    telemetry = mapping_value(payload.get("telemetry"))
+    dagster_dataflow = mapping_value(
+        telemetry.get("dagster_dataflow") if telemetry is not None else None
+    )
+    target_progress = mapping_value(
+        dagster_dataflow.get("final_target_progress")
+        if dagster_dataflow is not None
+        else None
+    )
+    run_status_counts = mapping_value(
+        dagster_dataflow.get("final_run_status_counts")
+        if dagster_dataflow is not None
+        else None
+    )
+    budget = mapping_value(payload.get("budget"))
+    budget_observations = mapping_value(
+        budget.get("observations") if budget is not None else None
+    )
+
+    set_observation(observations, "status", scalar_value(payload.get("status")))
+    set_observation(
+        observations,
+        "scenario",
+        first_scalar(
+            options.get("scenario") if options is not None else None,
+            scenario_evidence.get("scenario")
+            if scenario_evidence is not None
+            else None,
+            budget.get("scenario") if budget is not None else None,
+        ),
+    )
+    set_observation(
+        observations,
+        "launch_mode",
+        first_scalar(
+            options.get("launch_mode") if options is not None else None,
+            scenario_evidence.get("launch_mode")
+            if scenario_evidence is not None
+            else None,
+        ),
+    )
+    set_observation(
+        observations,
+        "target_group",
+        scalar_value(
+            scenario_evidence.get("target_group")
+            if scenario_evidence is not None
+            else None
+        ),
+    )
+
+    for key in (
+        "total_gate_duration_seconds",
+        "peak_active_run_count",
+        "peak_queued_run_count",
+        "successful_run_count",
+        "total_run_count",
+        "materialized_target_asset_count",
+        "target_asset_count",
+        "target_asset_check_count",
+        "missing_target_asset_count",
+        "failed_target_asset_count",
+        "missing_asset_check_count",
+        "failed_asset_check_count",
+    ):
+        set_observation(
+            observations,
+            key,
+            first_scalar(
+                budget_observations.get(key)
+                if budget_observations is not None
+                else None,
+                target_progress.get(key) if target_progress is not None else None,
+                dagster_dataflow.get(key) if dagster_dataflow is not None else None,
+                dagster_dataflow.get("final_missing_asset_check_count")
+                if key == "missing_asset_check_count" and dagster_dataflow is not None
+                else None,
+                dagster_dataflow.get("final_failed_asset_check_count")
+                if key == "failed_asset_check_count" and dagster_dataflow is not None
+                else None,
+                telemetry.get(key) if telemetry is not None else None,
+                scenario_evidence.get(key) if scenario_evidence is not None else None,
+                source_definitions.get("asset_check_count")
+                if key == "target_asset_check_count" and source_definitions is not None
+                else None,
+            ),
+        )
+
+    if "successful_run_count" not in observations and run_status_counts is not None:
+        set_observation(
+            observations,
+            "successful_run_count",
+            scalar_value(run_status_counts.get("SUCCESS")),
+        )
+    if "total_run_count" not in observations and run_status_counts is not None:
+        total_runs = sum(
+            value for value in run_status_counts.values() if isinstance(value, int)
+        )
+        set_observation(observations, "total_run_count", total_runs)
+    return observations
+
+
+def e2e_log_observations(log_text: str) -> dict[str, Any]:
+    observations: dict[str, Any] = {}
+    line_extracts = {
+        "total_gate_duration": r"^\s*-\s*total gate duration:\s*(?P<value>.+?)\s*$",
+        "peak_active_queued": r"^\s*-\s*peak active/queued runs:\s*(?P<value>.+?)\s*$",
+        "successful_runs": r"^\s*-\s*final successful runs:\s*(?P<value>.+?)\s*$",
+        "total_runs": r"^\s*-\s*total Dagster runs:\s*(?P<value>.+?)\s*$",
+        "target_progress": r"^\s*-\s*target progress:\s*(?P<value>.+?)\s*$",
+        "target_asset_checks": r"^\s*-\s*target asset checks:\s*(?P<value>.+?)\s*$",
+        "asset_check_status": r"^\s*-\s*final asset-check status:\s*(?P<value>.+?)\s*$",
+    }
+    for key, pattern in line_extracts.items():
+        match = re.search(pattern, log_text, flags=re.MULTILINE)
+        if match is not None:
+            observations[key] = match.group("value").strip()
+    return observations
+
+
+def mapping_value(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        return value
+    return None
+
+
+def scalar_value(value: Any) -> str | int | float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, str | int | float):
+        return value
+    return None
+
+
+def first_scalar(*values: Any) -> str | int | float | None:
+    for value in values:
+        scalar = scalar_value(value)
+        if scalar is not None:
+            return scalar
+    return None
+
+
+def set_observation(
+    observations: dict[str, Any],
+    key: str,
+    value: str | int | float | None,
+) -> None:
+    if value is not None:
+        observations[key] = value
+
+
 def build_operator_run_rollup(
     operator_manifest_path: Path,
     data: dict[str, Any],
@@ -2411,7 +2666,7 @@ def operator_rollup_qa_result(result: dict[str, Any]) -> dict[str, Any]:
     command = (
         [str(part) for part in command_value] if isinstance(command_value, list) else []
     )
-    return {
+    payload = {
         "name": result.get("name") or format_command(command),
         "status": result.get("status") or "unknown",
         "command": command,
@@ -2419,6 +2674,10 @@ def operator_rollup_qa_result(result: dict[str, Any]) -> dict[str, Any]:
         "cwd": result.get("cwd"),
         "log_path": result.get("log_path"),
     }
+    evidence = result.get("run_manifest_evidence")
+    if isinstance(evidence, dict):
+        payload["run_manifest_evidence"] = evidence
+    return payload
 
 
 def operator_rollup_qa_surfaces(source: dict[str, Any]) -> list[dict[str, Any]]:
@@ -9900,9 +10159,32 @@ class RalphLoop:
                     )
                 raise
             emit(f"{subject}: QA passed {command.name}")
+            try:
+                run_manifest_evidence = capture_qa_run_manifest_evidence(
+                    command,
+                    log_path=log_path,
+                    run_dir=run_dir,
+                )
+            except OSError as error:
+                raise IssueFailure(
+                    "QA passed but Ralph could not preserve emitted run manifest "
+                    f"evidence for {command.name}: {error}",
+                    log_path=log_path,
+                ) from error
             if manifest is not None:
-                manifest.record_qa(command, log_path=log_path, status="passed")
-            results.append(QAResult(command=command, log_path=log_path))
+                manifest.record_qa(
+                    command,
+                    log_path=log_path,
+                    status="passed",
+                    run_manifest_evidence=run_manifest_evidence,
+                )
+            results.append(
+                QAResult(
+                    command=command,
+                    log_path=log_path,
+                    run_manifest_evidence=run_manifest_evidence,
+                )
+            )
         return results
 
     def _cleanup_success_artifacts(
@@ -10484,16 +10766,18 @@ def exploratory_qa_evidence_from_manifest(data: dict[str, Any]) -> list[dict[str
             if isinstance(command_value, list)
             else []
         )
-        evidence.append(
-            {
-                "name": result.get("name") or format_command(command),
-                "status": result.get("status") or "unknown",
-                "command": command,
-                "command_text": format_command(command),
-                "cwd": result.get("cwd"),
-                "log_path": result.get("log_path"),
-            }
-        )
+        payload = {
+            "name": result.get("name") or format_command(command),
+            "status": result.get("status") or "unknown",
+            "command": command,
+            "command_text": format_command(command),
+            "cwd": result.get("cwd"),
+            "log_path": result.get("log_path"),
+        }
+        run_manifest_evidence = result.get("run_manifest_evidence")
+        if isinstance(run_manifest_evidence, dict):
+            payload["run_manifest_evidence"] = run_manifest_evidence
+        evidence.append(payload)
     return evidence
 
 
@@ -11709,10 +11993,36 @@ def qa_results_from_manifest(manifest: RunManifest) -> list[QAResult]:
         name = str(item.get("name") or format_command(command))
         log_path_value = item.get("log_path")
         log_path = Path(str(log_path_value)) if log_path_value else None
+        evidence = qa_run_manifest_evidence_from_manifest(
+            item.get("run_manifest_evidence")
+        )
         qa_results.append(
-            QAResult(command=QACommand(command, cwd, name), log_path=log_path)
+            QAResult(
+                command=QACommand(command, cwd, name),
+                log_path=log_path,
+                run_manifest_evidence=evidence,
+            )
         )
     return qa_results
+
+
+def qa_run_manifest_evidence_from_manifest(
+    value: Any,
+) -> QARunManifestEvidence | None:
+    if not isinstance(value, dict):
+        return None
+    artifact_path_value = value.get("artifact_path")
+    if not artifact_path_value:
+        return None
+    source_path_value = value.get("source_path") or artifact_path_value
+    observations_value = value.get("observations")
+    observations = observations_value if isinstance(observations_value, dict) else {}
+    return QARunManifestEvidence(
+        source_path=Path(str(source_path_value)),
+        artifact_path=Path(str(artifact_path_value)),
+        artifact_kind=str(value.get("artifact_kind") or "unknown"),
+        observations=dict(observations),
+    )
 
 
 def issue_from_manifest(manifest: RunManifest) -> Issue:
@@ -12025,6 +12335,15 @@ def ready_issue_refresh_qa_evidence_lines(qa_results: list[QAResult]) -> str:
         lines.append(
             f"- `{format_command(result.command.args)}` from `{result.command.cwd}`{log_text}"
         )
+        evidence = result.run_manifest_evidence
+        if evidence is not None:
+            lines.append(
+                f"  - Durable run manifest artifact: `{evidence.artifact_path}`"
+            )
+            lines.append(
+                "  - Key observations: "
+                f"{format_run_manifest_observations(evidence.observations)}"
+            )
     return "\n".join(lines)
 
 
@@ -12838,10 +13157,7 @@ def build_completion_comment(
     *,
     delivery_plan: DeliveryPlan,
 ) -> str:
-    qa_lines = [
-        f"- `{format_command(result.command.args)}` from `{result.command.cwd}`"
-        for result in qa_results
-    ]
+    qa_lines = qa_result_markdown_lines(qa_results)
     changed_lines = [f"- `{path}`" for path in changed_files]
     if delivery_plan.mode == TRUNK_MODE:
         title = completion_comment_title(delivery_plan.mode)
@@ -12884,6 +13200,109 @@ def build_completion_comment(
     )
 
 
+def qa_result_markdown_lines(qa_results: list[QAResult]) -> list[str]:
+    lines: list[str] = []
+    for result in qa_results:
+        lines.append(
+            f"- `{format_command(result.command.args)}` from `{result.command.cwd}`"
+        )
+        evidence = result.run_manifest_evidence
+        if evidence is None:
+            continue
+        lines.append(f"  - Durable run manifest artifact: `{evidence.artifact_path}`")
+        lines.append(
+            "  - Key observations: "
+            f"{format_run_manifest_observations(evidence.observations)}"
+        )
+    return lines
+
+
+def format_run_manifest_observations(observations: dict[str, Any]) -> str:
+    parts: list[str] = []
+    status = observations.get("status")
+    if isinstance(status, str):
+        parts.append(f"status `{status}`")
+    scenario = observations.get("scenario")
+    if isinstance(scenario, str):
+        parts.append(f"scenario `{scenario}`")
+    target_group = observations.get("target_group")
+    if isinstance(target_group, str):
+        parts.append(f"target group `{target_group}`")
+
+    target_progress = target_progress_observation(observations)
+    if target_progress is not None:
+        parts.append(f"target progress `{target_progress}`")
+
+    asset_checks = observations.get("target_asset_check_count")
+    if isinstance(asset_checks, int | float):
+        parts.append(f"asset checks `{asset_checks:g}`")
+    elif isinstance(observations.get("target_asset_checks"), str):
+        parts.append(f"asset checks `{observations['target_asset_checks']}`")
+
+    asset_check_drift = asset_check_drift_observation(observations)
+    if asset_check_drift is not None:
+        parts.append(f"asset-check drift `{asset_check_drift}`")
+
+    dagster_runs = dagster_runs_observation(observations)
+    if dagster_runs is not None:
+        parts.append(f"Dagster runs `{dagster_runs}`")
+
+    peak_runs = peak_runs_observation(observations)
+    if peak_runs is not None:
+        parts.append(f"peak active/queued `{peak_runs}`")
+
+    if not parts:
+        return "see durable artifact"
+    return "; ".join(parts)
+
+
+def target_progress_observation(observations: dict[str, Any]) -> str | None:
+    materialized = observations.get("materialized_target_asset_count")
+    target = observations.get("target_asset_count")
+    if isinstance(materialized, int | float) and isinstance(target, int | float):
+        return f"{materialized:g}/{target:g} materialized"
+    target_progress = observations.get("target_progress")
+    if isinstance(target_progress, str):
+        return target_progress
+    return None
+
+
+def asset_check_drift_observation(observations: dict[str, Any]) -> str | None:
+    failed = observations.get("failed_asset_check_count")
+    missing = observations.get("missing_asset_check_count")
+    if isinstance(failed, int | float) and isinstance(missing, int | float):
+        return f"{failed:g} failed / {missing:g} missing"
+    asset_check_status = observations.get("asset_check_status")
+    if isinstance(asset_check_status, str):
+        return asset_check_status
+    return None
+
+
+def dagster_runs_observation(observations: dict[str, Any]) -> str | None:
+    total = observations.get("total_run_count")
+    successful = observations.get("successful_run_count")
+    if isinstance(total, int | float) and isinstance(successful, int | float):
+        return f"{total:g} total / {successful:g} successful"
+    total_runs = observations.get("total_runs")
+    successful_runs = observations.get("successful_runs")
+    if isinstance(total_runs, str) and isinstance(successful_runs, str):
+        return f"{total_runs} total / {successful_runs} successful"
+    if isinstance(total_runs, str):
+        return total_runs
+    return None
+
+
+def peak_runs_observation(observations: dict[str, Any]) -> str | None:
+    active = observations.get("peak_active_run_count")
+    queued = observations.get("peak_queued_run_count")
+    if isinstance(active, int | float) and isinstance(queued, int | float):
+        return f"{active:g}/{queued:g}"
+    peak_active_queued = observations.get("peak_active_queued")
+    if isinstance(peak_active_queued, str):
+        return peak_active_queued
+    return None
+
+
 def build_promotion_comment(
     issue: Issue,
     promotion_sha: str,
@@ -12894,10 +13313,7 @@ def build_promotion_comment(
     qa_results: list[QAResult],
     run_dir: Path,
 ) -> str:
-    qa_lines = [
-        f"- `{format_command(result.command.args)}` from `{result.command.cwd}`"
-        for result in qa_results
-    ]
+    qa_lines = qa_result_markdown_lines(qa_results)
     changed_lines = [f"- `{path}`" for path in changed_files]
     return "\n".join(
         [

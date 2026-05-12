@@ -30,6 +30,15 @@ Build it.
 None
 """
 
+E2E_IMPLEMENTATION_BODY = (
+    IMPLEMENTATION_BODY
+    + """
+## Context anchors
+
+- Test lane: `AEMO ETL End-to-end test`
+"""
+)
+
 AGENTS_IMPLEMENTATION_BODY = """## What to build
 Update the agent workflow.
 
@@ -538,6 +547,161 @@ class FakeRunner:
                     stderr="",
                 )
         return ralph.CompletedCommand(stdout="", stderr="")
+
+
+class E2EManifestRetryRunner(FakeRunner):
+    e2e_command = ("scripts/aemo-etl-e2e", "run", "--scenario", "full-gas-model")
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.e2e_attempts = 0
+        self.success_manifest_path: Path | None = None
+
+    def run(
+        self,
+        args: list[str],
+        *,
+        cwd: Path,
+        input_text: str | None = None,
+        log_path: Path | None = None,
+        phase: str | None = None,
+        execute_in_dry_run: bool = True,
+        env: dict[str, str] | None = None,
+    ):
+        command = tuple(args)
+        if command != self.e2e_command:
+            return super().run(
+                args,
+                cwd=cwd,
+                input_text=input_text,
+                log_path=log_path,
+                phase=phase,
+                execute_in_dry_run=execute_in_dry_run,
+                env=env,
+            )
+
+        self.calls.append(
+            FakeCall(
+                args=command,
+                cwd=cwd,
+                input_text=input_text,
+                log_path=log_path,
+                phase=phase,
+                execute_in_dry_run=execute_in_dry_run,
+                env=env,
+            )
+        )
+        self.e2e_attempts += 1
+        manifest_path = (
+            cwd
+            / ".e2e"
+            / "aemo-etl"
+            / "runs"
+            / f"attempt-{self.e2e_attempts}"
+            / "run-manifest.json"
+        )
+        status = "failed" if self.e2e_attempts == 1 else "success"
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(
+            json.dumps(self._manifest_payload(status=status), indent=2) + "\n",
+            encoding="utf-8",
+        )
+        if log_path is not None:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.write_text(
+                "\n".join(
+                    [
+                        f"$ {ralph.format_command(args)}",
+                        f"cwd: {cwd}",
+                        f"exit: {1 if self.e2e_attempts == 1 else 0}",
+                        "",
+                        "STDOUT:",
+                        "E2E budget report (informational):",
+                        f"- run manifest: {manifest_path}",
+                        "- target progress: 37/37 materialized",
+                        "- final asset-check status: 0 failed / 0 missing",
+                        "run manifest: " + str(manifest_path),
+                        "",
+                        "STDERR:",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+        if self.e2e_attempts == 1:
+            raise ralph.CommandFailure(
+                args,
+                cwd,
+                1,
+                "",
+                "first e2e attempt failed",
+                log_path,
+            )
+        self.success_manifest_path = manifest_path
+        return ralph.CompletedCommand(stdout="", stderr="")
+
+    @staticmethod
+    def _manifest_payload(*, status: str) -> dict[str, Any]:
+        observations = {
+            "total_gate_duration_seconds": 623,
+            "peak_active_run_count": 6,
+            "peak_queued_run_count": 6,
+            "successful_run_count": 67,
+            "total_run_count": 67,
+            "materialized_target_asset_count": 37,
+            "target_asset_count": 37,
+            "target_asset_check_count": 144,
+            "missing_target_asset_count": 0,
+            "failed_target_asset_count": 0,
+            "missing_asset_check_count": 0,
+            "failed_asset_check_count": 0,
+        }
+        return {
+            "run_id": f"attempt-{status}",
+            "status": status,
+            "cleanup": "completed-after-success"
+            if status == "success"
+            else "preserved-after-failure",
+            "options": {
+                "scenario": "full-gas-model",
+                "launch_mode": "direct-upstream-asset-launch",
+                "max_concurrent_runs": 6,
+            },
+            "source_definitions": {
+                "executable_asset_count": 37,
+                "asset_check_count": 144,
+            },
+            "dataflow": {
+                "scenario_evidence": {
+                    "scenario": "full-gas-model",
+                    "launch_mode": "direct-upstream-asset-launch",
+                    "target_group": "gas_model",
+                    "target_asset_count": 37,
+                    "target_asset_check_count": 144,
+                    "batch_count": 67,
+                }
+            },
+            "telemetry": {
+                "total_gate_duration_seconds": 623,
+                "dagster_dataflow": {
+                    "peak_active_run_count": 6,
+                    "peak_queued_run_count": 6,
+                    "final_run_status_counts": {"SUCCESS": 67},
+                    "final_target_progress": {
+                        "materialized_target_asset_count": 37,
+                        "target_asset_count": 37,
+                        "missing_target_asset_count": 0,
+                        "failed_target_asset_count": 0,
+                    },
+                    "final_missing_asset_check_count": 0,
+                    "final_failed_asset_check_count": 0,
+                },
+            },
+            "budget": {
+                "status": "not-enforced",
+                "observations": observations,
+            },
+        }
 
 
 def make_loop(
@@ -5322,6 +5486,62 @@ Build it.
             )
             self.assertEqual(manifest["github_metadata"]["status"], "closed")
             self.assertEqual(manifest["qa_results"][0]["status"], "passed")
+
+    def test_successful_e2e_retry_reports_durable_run_manifest_evidence(self) -> None:
+        changed_path = (
+            "backend-services/dagster-user/aemo-etl/src/aemo_etl/assets/foo.py"
+        )
+        runner = E2EManifestRetryRunner(
+            status_outputs=[f" M {changed_path}\n"] * 3,
+            diff_outputs=[f"{changed_path}\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+
+            with redirect_stdout(io.StringIO()):
+                loop._handle_implementation(
+                    make_issue({"ready-for-agent"}, E2E_IMPLEMENTATION_BODY)
+                )
+
+            run_dir = next(tmp_path.glob("logs/issue-42-*"))
+            comment = (run_dir / "issue-42-comment.md").read_text(encoding="utf-8")
+            manifest = load_run_manifest(tmp_path)
+
+            e2e_results = [
+                result
+                for result in manifest["qa_results"]
+                if result["name"] == ralph.AEMO_ETL_E2E_QA_NAME
+            ]
+            self.assertEqual(
+                [result["status"] for result in e2e_results],
+                ["failed", "passed"],
+            )
+            failed_result, passed_result = e2e_results
+            self.assertNotIn("run_manifest_evidence", failed_result)
+            evidence = passed_result["run_manifest_evidence"]
+            artifact_path = Path(evidence["artifact_path"])
+
+            self.assertEqual(
+                evidence["source_path"],
+                str(runner.success_manifest_path),
+            )
+            self.assertTrue(artifact_path.is_relative_to(run_dir))
+            self.assertTrue(artifact_path.exists())
+            self.assertEqual(
+                json.loads(artifact_path.read_text(encoding="utf-8"))["status"],
+                "success",
+            )
+            self.assertIn(str(artifact_path), comment)
+            self.assertIn("qa-retry-3-aemo-etl-end-to-end-test", comment)
+            self.assertNotIn(
+                "qa-3-aemo-etl-end-to-end-test-run-manifest.json",
+                comment,
+            )
+            self.assertIn("scenario `full-gas-model`", comment)
+            self.assertIn("target progress `37/37 materialized`", comment)
+            self.assertIn("asset checks `144`", comment)
 
     def test_agents_issue_without_full_access_flag_stops_before_claim(self) -> None:
         runner = FakeRunner()
