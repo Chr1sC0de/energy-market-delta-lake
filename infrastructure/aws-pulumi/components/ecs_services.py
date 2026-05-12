@@ -6,11 +6,16 @@ Mirrors CDK:
   infrastructure/ecs/dagster_daemon_service.py
 """
 
-import json
-
 import pulumi
 import pulumi_aws as aws
 
+from components.dagster_runtime_task import (
+    DagsterRuntimeEnvironmentVariable,
+    DagsterRuntimeHealthCheck,
+    DagsterRuntimeTaskSharedInputs,
+    DagsterRuntimeTaskSpec,
+    build_dagster_runtime_task_definition,
+)
 from components.ecr import ECRComponentResource
 from components.ecs_cluster import EcsClusterComponentResource
 from components.iam_roles import IamRolesComponentResource
@@ -22,6 +27,13 @@ from configs import ENVIRONMENT
 
 DAGSTER_ADMIN_PATH_PREFIX = "/dagster-webserver/admin"
 FAILURE_ALERT_TOPIC_ARN_CONFIG_KEY = "dagster_failure_alert_topic_arn"
+
+
+def _tcp_socket_health_check_command(port: int) -> tuple[str, str]:
+    return (
+        "CMD-SHELL",
+        f"python -c \"import socket; s=socket.socket(); s.connect(('localhost',{port})); s.close()\" || exit 1",
+    )
 
 
 def _fargate_service(
@@ -102,30 +114,6 @@ def _fargate_service(
     )
 
 
-def _task_definition(
-    resource_name: str,
-    family: str,
-    cpu: str,
-    memory: str,
-    execution_role_arn: pulumi.Input[str] | None,
-    task_role_arn: pulumi.Input[str],
-    container_definitions: pulumi.Input[str],
-    child_opts: pulumi.ResourceOptions | None = None,
-) -> aws.ecs.TaskDefinition:
-    return aws.ecs.TaskDefinition(
-        resource_name,
-        family=family,
-        requires_compatibilities=["FARGATE"],
-        network_mode="awsvpc",
-        cpu=cpu,
-        memory=memory,
-        execution_role_arn=execution_role_arn,
-        task_role_arn=task_role_arn,
-        container_definitions=container_definitions,
-        opts=child_opts,
-    )
-
-
 # ---------------------------------------------------------------------------
 # dagster-user-code-aemo-etl
 # ---------------------------------------------------------------------------
@@ -158,8 +146,14 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
         self.child_opts = pulumi.ResourceOptions(parent=self)
 
         # Use direct Output references – avoids SSM data-source calls during preview
-        postgres_host = postgres.private_dns
-        postgres_password_parameter = postgres.ssm_param_password_arn
+        shared_task_inputs = DagsterRuntimeTaskSharedInputs(
+            postgres_hostname=postgres.private_dns,
+            postgres_password_parameter_arn=postgres.ssm_param_password_arn,
+            log_group_name=cluster.log_group.name,
+            region=aws.get_region().region,
+            development_environment=ENVIRONMENT,
+            development_location="aws",
+        )
         config = pulumi.Config()
         failure_alert_topic_arn = (
             config.get_secret(FAILURE_ALERT_TOPIC_ARN_CONFIG_KEY) or ""
@@ -171,98 +165,63 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
             else ""
         )
 
-        container_defs = pulumi.Output.all(
-            image=ecr.dagster_user_code_aemo_etl_image_uri,
-            pg_host=postgres_host,
-            pg_pass_param=postgres_password_parameter,
-            log_group=cluster.log_group.name,
-            region=aws.get_region().region,
-            failure_alert_topic_arn=failure_alert_topic_arn,
-            failure_alert_base_url=failure_alert_base_url,
-        ).apply(
-            lambda a: json.dumps(
-                [
-                    {
-                        "name": "dagster-grpc",
-                        "image": a["image"],
-                        "essential": True,
-                        "entryPoint": [
-                            "dagster",
-                            "api",
-                            "grpc",
-                            "-h",
-                            "0.0.0.0",
-                            "-p",
-                            "4000",
-                            "-m",
-                            "aemo_etl.definitions",
-                        ],
-                        "environment": [
-                            {"name": "DAGSTER_POSTGRES_DB", "value": "dagster"},
-                            {
-                                "name": "DAGSTER_POSTGRES_HOSTNAME",
-                                "value": a["pg_host"],
-                            },
-                            {"name": "DAGSTER_POSTGRES_USER", "value": "dagster_user"},
-                            {"name": "AWS_S3_LOCKING_PROVIDER", "value": "dynamodb"},
-                            {"name": "AWS_DEFAULT_REGION", "value": a["region"]},
-                            {
-                                "name": "DAGSTER_CURRENT_IMAGE",
-                                "value": a["image"],
-                            },
-                            {"name": "DAGSTER_GRPC_TIMEOUT_SECONDS", "value": "300"},
-                            {"name": "DEVELOPMENT_ENVIRONMENT", "value": ENVIRONMENT},
-                            {"name": "DEVELOPMENT_LOCATION", "value": "aws"},
-                            {
-                                "name": "DAGSTER_FAILURE_ALERT_TOPIC_ARN",
-                                "value": a["failure_alert_topic_arn"],
-                            },
-                            {
-                                "name": "DAGSTER_FAILURE_ALERT_BASE_URL",
-                                "value": a["failure_alert_base_url"],
-                            },
-                        ],
-                        "secrets": [
-                            {
-                                "name": "DAGSTER_POSTGRES_PASSWORD",
-                                "valueFrom": a["pg_pass_param"],
-                            }
-                        ],
-                        "portMappings": [
-                            {"containerPort": 4000, "hostPort": 4000, "protocol": "tcp"}
-                        ],
-                        "logConfiguration": {
-                            "logDriver": "awslogs",
-                            "options": {
-                                "awslogs-group": a["log_group"],
-                                "awslogs-region": a["region"],
-                                "awslogs-stream-prefix": "dagster-aemo-etl-user-code",
-                            },
-                        },
-                        "healthCheck": {
-                            "command": [
-                                "CMD-SHELL",
-                                "python -c \"import socket; s=socket.socket(); s.connect(('localhost',4000)); s.close()\" || exit 1",
-                            ],
-                            "interval": 15,
-                            "timeout": 5,
-                            "retries": 4,
-                            "startPeriod": 60,
-                        },
-                    }
-                ]
-            )  # ty:ignore[invalid-argument-type]
-        )  # ty:ignore[missing-argument]
-
-        self.task_definition = _task_definition(
-            f"{name}-user-code-task-def",
-            family="dagster-user-code-aemo-etl",
-            cpu="256",
-            memory="1024",
-            execution_role_arn=iam_roles.daemon_execution_role.arn,
-            task_role_arn=iam_roles.daemon_task_role.arn,
-            container_definitions=container_defs,
-            child_opts=self.child_opts,
+        self.task_definition = build_dagster_runtime_task_definition(
+            shared_task_inputs,
+            DagsterRuntimeTaskSpec(
+                resource_name=f"{name}-user-code-task-def",
+                family="dagster-user-code-aemo-etl",
+                cpu="256",
+                memory="1024",
+                execution_role_arn=iam_roles.daemon_execution_role.arn,
+                task_role_arn=iam_roles.daemon_task_role.arn,
+                container_name="dagster-grpc",
+                image_uri=ecr.dagster_user_code_aemo_etl_image_uri,
+                entry_point=(
+                    "dagster",
+                    "api",
+                    "grpc",
+                    "-h",
+                    "0.0.0.0",
+                    "-p",
+                    "4000",
+                    "-m",
+                    "aemo_etl.definitions",
+                ),
+                log_stream_prefix="dagster-aemo-etl-user-code",
+                health_check=DagsterRuntimeHealthCheck(
+                    command=_tcp_socket_health_check_command(4000)
+                ),
+                container_port=4000,
+                environment_after_postgres=(
+                    DagsterRuntimeEnvironmentVariable(
+                        name="AWS_S3_LOCKING_PROVIDER",
+                        value="dynamodb",
+                    ),
+                    DagsterRuntimeEnvironmentVariable(
+                        name="AWS_DEFAULT_REGION",
+                        value=shared_task_inputs.region,
+                    ),
+                    DagsterRuntimeEnvironmentVariable(
+                        name="DAGSTER_CURRENT_IMAGE",
+                        value=ecr.dagster_user_code_aemo_etl_image_uri,
+                    ),
+                    DagsterRuntimeEnvironmentVariable(
+                        name="DAGSTER_GRPC_TIMEOUT_SECONDS",
+                        value="300",
+                    ),
+                ),
+                environment_after_development=(
+                    DagsterRuntimeEnvironmentVariable(
+                        name="DAGSTER_FAILURE_ALERT_TOPIC_ARN",
+                        value=failure_alert_topic_arn,
+                    ),
+                    DagsterRuntimeEnvironmentVariable(
+                        name="DAGSTER_FAILURE_ALERT_BASE_URL",
+                        value=failure_alert_base_url,
+                    ),
+                ),
+                child_opts=self.child_opts,
+            ),
         )
 
         self.service = _fargate_service(
@@ -320,10 +279,16 @@ class DagsterWebserverServiceComponentResource(pulumi.ComponentResource):
         self.child_opts = pulumi.ResourceOptions(parent=self)
 
         # Use direct Output references – avoids SSM data-source calls during preview
-        postgres_host = postgres.private_dns
-        postgres_password_parameter = postgres.ssm_param_password_arn
+        shared_task_inputs = DagsterRuntimeTaskSharedInputs(
+            postgres_hostname=postgres.private_dns,
+            postgres_password_parameter_arn=postgres.ssm_param_password_arn,
+            log_group_name=cluster.log_group.name,
+            region=aws.get_region().region,
+            development_environment=ENVIRONMENT,
+            development_location="aws",
+        )
 
-        entry_point = [
+        entry_point = (
             "dagster-webserver",
             "-h",
             "0.0.0.0",
@@ -333,66 +298,10 @@ class DagsterWebserverServiceComponentResource(pulumi.ComponentResource):
             "workspace.yaml",
             "--path-prefix",
             path_prefix,
-        ]
+        )
         if readonly:
             # Insert --read-only after dagster-webserver
-            entry_point.insert(1, "--read-only")
-
-        container_defs = pulumi.Output.all(
-            image=ecr.dagster_webserver_image_uri,
-            pg_host=postgres_host,
-            pg_pass_param=postgres_password_parameter,
-            log_group=cluster.log_group.name,
-            region=aws.get_region().region,
-        ).apply(
-            lambda a: json.dumps(
-                [
-                    {
-                        "name": "webserver",
-                        "image": a["image"],
-                        "essential": True,
-                        "entryPoint": entry_point,
-                        "environment": [
-                            {"name": "DAGSTER_POSTGRES_DB", "value": "dagster"},
-                            {
-                                "name": "DAGSTER_POSTGRES_HOSTNAME",
-                                "value": a["pg_host"],
-                            },
-                            {"name": "DAGSTER_POSTGRES_USER", "value": "dagster_user"},
-                            {"name": "DEVELOPMENT_ENVIRONMENT", "value": ENVIRONMENT},
-                            {"name": "DEVELOPMENT_LOCATION", "value": "aws"},
-                        ],
-                        "secrets": [
-                            {
-                                "name": "DAGSTER_POSTGRES_PASSWORD",
-                                "valueFrom": a["pg_pass_param"],
-                            }
-                        ],
-                        "portMappings": [
-                            {"containerPort": 3000, "hostPort": 3000, "protocol": "tcp"}
-                        ],
-                        "logConfiguration": {
-                            "logDriver": "awslogs",
-                            "options": {
-                                "awslogs-group": a["log_group"],
-                                "awslogs-region": a["region"],
-                                "awslogs-stream-prefix": stream_prefix,
-                            },
-                        },
-                        "healthCheck": {
-                            "command": [
-                                "CMD-SHELL",
-                                "python -c \"import socket; s=socket.socket(); s.connect(('localhost',3000)); s.close()\" || exit 1",
-                            ],
-                            "interval": 15,
-                            "timeout": 5,
-                            "retries": 4,
-                            "startPeriod": 60,
-                        },
-                    }
-                ]
-            )  # ty:ignore[invalid-argument-type]
-        )  # ty:ignore[missing-argument]
+            entry_point = (entry_point[0], "--read-only", *entry_point[1:])
 
         # Derive a distinct task definition family per service variant so that
         # admin and guest task definitions don't share revision numbers under
@@ -400,15 +309,25 @@ class DagsterWebserverServiceComponentResource(pulumi.ComponentResource):
         # cloud_map_name is "webserver-admin" or "webserver-guest".
         td_family = f"dagster-{cloud_map_name}"
 
-        self.task_definition = _task_definition(
-            f"{name}-webserver-task-def",
-            family=td_family,
-            cpu="256",
-            memory="1024",
-            execution_role_arn=iam_roles.webserver_execution_role.arn,
-            task_role_arn=iam_roles.webserver_task_role.arn,
-            container_definitions=container_defs,
-            child_opts=self.child_opts,
+        self.task_definition = build_dagster_runtime_task_definition(
+            shared_task_inputs,
+            DagsterRuntimeTaskSpec(
+                resource_name=f"{name}-webserver-task-def",
+                family=td_family,
+                cpu="256",
+                memory="1024",
+                execution_role_arn=iam_roles.webserver_execution_role.arn,
+                task_role_arn=iam_roles.webserver_task_role.arn,
+                container_name="webserver",
+                image_uri=ecr.dagster_webserver_image_uri,
+                entry_point=entry_point,
+                log_stream_prefix=stream_prefix,
+                health_check=DagsterRuntimeHealthCheck(
+                    command=_tcp_socket_health_check_command(3000)
+                ),
+                container_port=3000,
+                child_opts=self.child_opts,
+            ),
         )
 
         self.service = _fargate_service(
@@ -460,70 +379,41 @@ class DagsterDaemonServiceComponentResource(pulumi.ComponentResource):
         self.child_opts = pulumi.ResourceOptions(parent=self)
 
         # Use direct Output references – avoids SSM data-source calls during preview
-        postgres_host = postgres.private_dns
-        postgres_password_parameter = postgres.ssm_param_password_arn
-
-        container_defs = pulumi.Output.all(
-            image=ecr.dagster_daemon_image_uri,
-            pg_host=postgres_host,
-            pg_pass_param=postgres_password_parameter,
-            log_group=cluster.log_group.name,
+        shared_task_inputs = DagsterRuntimeTaskSharedInputs(
+            postgres_hostname=postgres.private_dns,
+            postgres_password_parameter_arn=postgres.ssm_param_password_arn,
+            log_group_name=cluster.log_group.name,
             region=aws.get_region().region,
-        ).apply(
-            lambda a: json.dumps(
-                [
-                    {
-                        "name": "DagsterDaemonContainer",
-                        "image": a["image"],
-                        "essential": True,
-                        "entryPoint": ["dagster-daemon", "run"],
-                        "environment": [
-                            {"name": "DAGSTER_POSTGRES_DB", "value": "dagster"},
-                            {
-                                "name": "DAGSTER_POSTGRES_HOSTNAME",
-                                "value": a["pg_host"],
-                            },
-                            {"name": "DAGSTER_POSTGRES_USER", "value": "dagster_user"},
-                            {"name": "AWS_S3_LOCKING_PROVIDER", "value": "dynamodb"},
-                            {"name": "DAGSTER_GRPC_TIMEOUT_SECONDS", "value": "300"},
-                            {"name": "DEVELOPMENT_ENVIRONMENT", "value": ENVIRONMENT},
-                            {"name": "DEVELOPMENT_LOCATION", "value": "aws"},
-                        ],
-                        "secrets": [
-                            {
-                                "name": "DAGSTER_POSTGRES_PASSWORD",
-                                "valueFrom": a["pg_pass_param"],
-                            }
-                        ],
-                        "logConfiguration": {
-                            "logDriver": "awslogs",
-                            "options": {
-                                "awslogs-group": a["log_group"],
-                                "awslogs-region": a["region"],
-                                "awslogs-stream-prefix": "dagster-daemon",
-                            },
-                        },
-                        "healthCheck": {
-                            "command": ["CMD-SHELL", "true"],
-                            "interval": 15,
-                            "timeout": 5,
-                            "retries": 4,
-                            "startPeriod": 60,
-                        },
-                    }
-                ]
-            )  # ty:ignore[invalid-argument-type]
-        )  # ty:ignore[missing-argument]
+            development_environment=ENVIRONMENT,
+            development_location="aws",
+        )
 
-        self.task_definition = _task_definition(
-            f"{name}-daemon-task-def",
-            family="dagster-daemon",
-            cpu="256",
-            memory="1024",
-            execution_role_arn=iam_roles.daemon_execution_role.arn,
-            task_role_arn=iam_roles.daemon_task_role.arn,
-            container_definitions=container_defs,
-            child_opts=self.child_opts,
+        self.task_definition = build_dagster_runtime_task_definition(
+            shared_task_inputs,
+            DagsterRuntimeTaskSpec(
+                resource_name=f"{name}-daemon-task-def",
+                family="dagster-daemon",
+                cpu="256",
+                memory="1024",
+                execution_role_arn=iam_roles.daemon_execution_role.arn,
+                task_role_arn=iam_roles.daemon_task_role.arn,
+                container_name="DagsterDaemonContainer",
+                image_uri=ecr.dagster_daemon_image_uri,
+                entry_point=("dagster-daemon", "run"),
+                log_stream_prefix="dagster-daemon",
+                health_check=DagsterRuntimeHealthCheck(command=("CMD-SHELL", "true")),
+                environment_after_postgres=(
+                    DagsterRuntimeEnvironmentVariable(
+                        name="AWS_S3_LOCKING_PROVIDER",
+                        value="dynamodb",
+                    ),
+                    DagsterRuntimeEnvironmentVariable(
+                        name="DAGSTER_GRPC_TIMEOUT_SECONDS",
+                        value="300",
+                    ),
+                ),
+                child_opts=self.child_opts,
+            ),
         )
 
         self.service = _fargate_service(

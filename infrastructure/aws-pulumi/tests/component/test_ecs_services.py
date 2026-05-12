@@ -99,6 +99,30 @@ def _assert_webserver_health_check_probes_port(container: dict) -> None:
     assert command != "CMD-SHELL true"
 
 
+def _assert_port_mapping(container: dict, port: int) -> None:
+    assert container["portMappings"] == [
+        {"containerPort": port, "hostPort": port, "protocol": "tcp"}
+    ]
+
+
+def _assert_no_port_mappings(container: dict) -> None:
+    assert "portMappings" not in container
+
+
+def _assert_log_stream_prefix(container: dict, stream_prefix: str) -> None:
+    options = container["logConfiguration"]["options"]
+    assert options["awslogs-stream-prefix"] == stream_prefix
+    assert options["awslogs-region"] == "ap-southeast-2"
+
+
+def _assert_health_check_timing(container: dict) -> None:
+    health_check = container["healthCheck"]
+    assert health_check["interval"] == 15
+    assert health_check["timeout"] == 5
+    assert health_check["retries"] == 4
+    assert health_check["startPeriod"] == 60
+
+
 # ---------------------------------------------------------------------------
 # User-code service
 # ---------------------------------------------------------------------------
@@ -240,11 +264,29 @@ class TestDagsterUserCodeService:
             iam_roles=iam,
         )
 
-        def check(task_arn: str) -> None:
-            # Task ARN should be set (mock returns the resource id)
-            assert task_arn is not None
+        def check(container_definitions: str) -> None:
+            container = _first_container(container_definitions)
+            assert container["name"] == "dagster-grpc"
+            assert container["entryPoint"] == [
+                "dagster",
+                "api",
+                "grpc",
+                "-h",
+                "0.0.0.0",
+                "-p",
+                "4000",
+                "-m",
+                "aemo_etl.definitions",
+            ]
+            _assert_port_mapping(container, 4000)
+            _assert_log_stream_prefix(container, "dagster-aemo-etl-user-code")
+            _assert_health_check_timing(container)
+            health_check_command = " ".join(container["healthCheck"]["command"])
+            assert "localhost',4000" in health_check_command
+            assert _env_value(container, "AWS_S3_LOCKING_PROVIDER") == "dynamodb"
+            assert _env_value(container, "DAGSTER_GRPC_TIMEOUT_SECONDS") == "300"
 
-        return svc.service.task_definition.apply(check)
+        return svc.task_definition.container_definitions.apply(check)
 
     @pulumi.runtime.test
     def test_user_code_task_definition_has_failure_alert_env(self) -> None:
@@ -436,6 +478,44 @@ class TestDagsterWebserverAdminService:
             _assert_webserver_health_check_probes_port(
                 _first_container(container_definitions)
             )
+
+        return svc.task_definition.container_definitions.apply(check)
+
+    @pulumi.runtime.test
+    def test_webserver_admin_task_definition_has_runtime_settings(self) -> None:
+        vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
+        svc = DagsterWebserverServiceComponentResource(
+            "test-energy-market-webserver-admin-runtime",
+            vpc=vpc,
+            cluster=cluster,
+            ecr=ecr,
+            postgres=pg,
+            security_groups=sgs,
+            service_discovery=sd,
+            iam_roles=iam,
+            cloud_map_name="webserver-admin",
+            path_prefix="/dagster-webserver/admin",
+            stream_prefix="dagster-webserver-service-admin",
+            readonly=False,
+        )
+
+        def check(container_definitions: str) -> None:
+            container = _first_container(container_definitions)
+            assert container["name"] == "webserver"
+            assert container["entryPoint"] == [
+                "dagster-webserver",
+                "-h",
+                "0.0.0.0",
+                "-p",
+                "3000",
+                "-w",
+                "workspace.yaml",
+                "--path-prefix",
+                "/dagster-webserver/admin",
+            ]
+            _assert_port_mapping(container, 3000)
+            _assert_log_stream_prefix(container, "dagster-webserver-service-admin")
+            _assert_health_check_timing(container)
 
         return svc.task_definition.container_definitions.apply(check)
 
@@ -675,6 +755,45 @@ class TestDagsterWebserverGuestService:
 
         return svc.task_definition.container_definitions.apply(check)
 
+    @pulumi.runtime.test
+    def test_webserver_guest_task_definition_has_runtime_settings(self) -> None:
+        vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
+        svc = DagsterWebserverServiceComponentResource(
+            "test-energy-market-webserver-guest-runtime",
+            vpc=vpc,
+            cluster=cluster,
+            ecr=ecr,
+            postgres=pg,
+            security_groups=sgs,
+            service_discovery=sd,
+            iam_roles=iam,
+            cloud_map_name="webserver-guest",
+            path_prefix="/dagster-webserver/guest",
+            stream_prefix="dagster-webserver-service-guest",
+            readonly=True,
+        )
+
+        def check(container_definitions: str) -> None:
+            container = _first_container(container_definitions)
+            assert container["name"] == "webserver"
+            assert container["entryPoint"] == [
+                "dagster-webserver",
+                "--read-only",
+                "-h",
+                "0.0.0.0",
+                "-p",
+                "3000",
+                "-w",
+                "workspace.yaml",
+                "--path-prefix",
+                "/dagster-webserver/guest",
+            ]
+            _assert_port_mapping(container, 3000)
+            _assert_log_stream_prefix(container, "dagster-webserver-service-guest")
+            _assert_health_check_timing(container)
+
+        return svc.task_definition.container_definitions.apply(check)
+
     def test_webserver_guest_no_deprecation_warnings(self) -> None:
         vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
         with warnings.catch_warnings(record=True) as caught:
@@ -832,6 +951,32 @@ class TestDagsterDaemonService:
             _assert_postgres_password_uses_ecs_secret(
                 _first_container(container_definitions)
             )
+
+        return svc.task_definition.container_definitions.apply(check)
+
+    @pulumi.runtime.test
+    def test_daemon_task_definition_has_runtime_settings(self) -> None:
+        vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
+        svc = DagsterDaemonServiceComponentResource(
+            "test-energy-market-daemon-runtime",
+            vpc=vpc,
+            cluster=cluster,
+            ecr=ecr,
+            postgres=pg,
+            security_groups=sgs,
+            iam_roles=iam,
+        )
+
+        def check(container_definitions: str) -> None:
+            container = _first_container(container_definitions)
+            assert container["name"] == "DagsterDaemonContainer"
+            assert container["entryPoint"] == ["dagster-daemon", "run"]
+            _assert_no_port_mappings(container)
+            _assert_log_stream_prefix(container, "dagster-daemon")
+            _assert_health_check_timing(container)
+            assert container["healthCheck"]["command"] == ["CMD-SHELL", "true"]
+            assert _env_value(container, "AWS_S3_LOCKING_PROVIDER") == "dynamodb"
+            assert _env_value(container, "DAGSTER_GRPC_TIMEOUT_SECONDS") == "300"
 
         return svc.task_definition.container_definitions.apply(check)
 
