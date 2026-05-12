@@ -229,8 +229,8 @@ scenario evidence: selected scenario, launch mode, target group, GraphQL-derived
 target asset count, target asset-check count, target keys, STTM target keys,
 selected upstream closure count, skipped live source asset keys, dependency-wave
 count, run-batch count, asset batch size, and nested source-definition evidence
-when available. For `promotion-gas-model`, the top-level `source_definitions`
-section records the
+when available. For direct-launch gas_model scenarios, the top-level
+`source_definitions` section records the
 `uv run dg list defs --assets "group:gas_model" --json` command, working
 directory, executable asset count, asset-check count, full target asset keys,
 and STTM target keys.
@@ -238,11 +238,11 @@ After startup, it uses Dagster GraphQL to drive the selected scenario. The
 default `full-gas-model` scenario keeps automation stopped and launches explicit
 Dagster asset-run batches by dependency wave for every materializable
 `gas_model` asset plus its materializable upstream closure. It uses host
-webserver port `3001`, a 90 minute timeout, 3 raw objects per required source
-table, 3 zip objects per required domain, and Dagster `max_concurrent_runs` `6`.
+webserver port `3001`, a 90 minute timeout, 1 raw object per required source
+table, 1 zip object per required domain, and Dagster `max_concurrent_runs` `6`.
 The `promotion-gas-model` scenario uses the same direct-launch shape from the
-isolated source worktree for Ralph **Promotion**, but narrows the seed horizon to
-1 raw object and 1 zip object, uses a 20 minute timeout, and adds the #141
+isolated source worktree for Ralph **Promotion** with the same one-object seed
+horizon, uses a 20 minute timeout, and adds the #141
 stale-runtime/current-source validation guard. Both direct scenarios skip live
 `bronze_nemweb_public_files_*` discovery/listing assets. Asset batches use
 Dagster's in-process executor inside Podman run-worker containers. Direct
@@ -265,7 +265,8 @@ before stack startup. The runtime GraphQL
 before Promotion asset batches launch, so a stale 29-asset runtime graph fails
 against current 37-asset source definitions. That stale-runtime/current-source
 guard belongs to the `promotion-gas-model` scenario and was closed by #141; the
-`full-gas-model` scenario records expanded baseline evidence without enforcing
+`full-gas-model` scenario shares the same source-definition evidence for
+check-count provenance and records expanded baseline evidence without enforcing
 that guard. At the current source revision,
 `dg list defs --assets "group:gas_model" --json` reports 37 executable
 `gas_model` assets and 144 asset checks, including the eight

@@ -115,18 +115,18 @@ Local workflow notes:
 - The isolated AEMO ETL **End-to-end test** stack belongs to the
   `backend-services/dagster-user/aemo-etl` Subproject and is operated through
   `backend-services/scripts/aemo-etl-e2e`; its run manifest records timing,
-  dataflow telemetry, direct-launch scenario evidence, and non-benign cleanup
-  warning or failure evidence for local proof and Promotion review. The default
+  dataflow telemetry, direct-launch scenario evidence, current-source
+  `source_definitions`, and non-benign cleanup warning or failure evidence for
+  local proof and Promotion review. The default
   `full-gas-model` scenario launches explicit dependency-wave asset batches for
   every materializable `gas_model` asset plus its materializable upstream closure
-  with the full 3-object seed horizon, then records expanded baseline
-  observations with `budget.status` set to `not-enforced`. Ralph **Promotion**
-  runs pass
+  with the shared 1-object seed horizon, then records expanded baseline
+  observations, including source-definition-backed asset-check count, with
+  `budget.status` set to `not-enforced`. Ralph **Promotion** runs pass
   `--rebuild`, an explicit `--seed-root` pointing at the primary repo cache, and
   select the `promotion-gas-model` scenario with `--timeout-seconds 1200` and
-  `--max-concurrent-runs 6`. The scenario narrows the raw and zip seed horizon
-  to 1 object, records current source definitions with
-  `uv run dg list defs --assets "group:gas_model" --json`, validates the runtime
+  `--max-concurrent-runs 6`. The scenario uses the same raw and zip seed horizon
+  and validates the runtime
   GraphQL target count against that source count through the #141
   stale-runtime/current-source guard, and uses the same explicit Dagster
   asset-run batch shape while skipping live `bronze_nemweb_public_files_*`

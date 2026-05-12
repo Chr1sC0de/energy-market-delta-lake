@@ -26,8 +26,8 @@ CONTAINER_SOCKET_PATH = "/run/podman/podman.sock"
 DEFAULT_WEBSERVER_PORT = 3001
 DEFAULT_TIMEOUT_SECONDS = 90 * 60
 DEFAULT_MAX_CONCURRENT_RUNS = 6
-DEFAULT_RAW_LATEST_COUNT = 3
-DEFAULT_ZIP_LATEST_COUNT = 3
+DEFAULT_RAW_LATEST_COUNT = 1
+DEFAULT_ZIP_LATEST_COUNT = 1
 FULL_GAS_MODEL_SCENARIO = "full-gas-model"
 PROMOTION_GAS_MODEL_SCENARIO = "promotion-gas-model"
 SENSOR_DRIVEN_LAUNCH_MODE = "sensor-driven"
@@ -441,7 +441,7 @@ class E2ERegressionBudgets:
 
 @dataclass(frozen=True, slots=True)
 class SourceDefinitionEvidence:
-    """Current source-definition evidence for one Promotion target group."""
+    """Current source-definition evidence for one target group."""
 
     command: tuple[str, ...]
     working_directory: Path
@@ -1103,8 +1103,8 @@ def run_stack(
     source_definition_evidence: SourceDefinitionEvidence | None = None
 
     try:
-        if options.scenario == PROMOTION_GAS_MODEL_SCENARIO:
-            source_definition_evidence = collect_promotion_source_definition_evidence(
+        if options.launch_mode == DIRECT_UPSTREAM_ASSET_LAUNCH_MODE:
+            source_definition_evidence = collect_gas_model_source_definition_evidence(
                 command_runner,
                 backend_dir=backend_dir,
             )
@@ -2316,7 +2316,10 @@ def launch_gas_model_upstream_assets(
         scenario=scenario,
         launch_mode=launch_mode,
     )
-    if source_definition_evidence is not None:
+    if (
+        source_definition_evidence is not None
+        and scenario == PROMOTION_GAS_MODEL_SCENARIO
+    ):
         validate_promotion_source_definition_target_count(
             launch_plan=launch_plan,
             source_definition_evidence=source_definition_evidence,
@@ -2460,7 +2463,7 @@ def read_dagster_asset_node(asset_node: Mapping[str, object]) -> DagsterAssetNod
     )
 
 
-def collect_promotion_source_definition_evidence(
+def collect_gas_model_source_definition_evidence(
     runner: CommandRunner,
     *,
     backend_dir: Path,
@@ -2485,7 +2488,7 @@ def collect_promotion_source_definition_evidence(
     )
     if result.returncode != 0:
         raise CommandError(
-            "current source definition command failed for Promotion target "
+            "current source definition command failed for target "
             f"{GAS_MODEL_GROUP_NAME}: {format_command(command)}\n"
             f"{format_source_definition_command_output(result)}"
         )
@@ -2526,7 +2529,7 @@ def read_source_definition_evidence(
     command: Sequence[str],
     working_directory: Path,
 ) -> SourceDefinitionEvidence:
-    """Read `dg list defs --json` output into Promotion manifest evidence."""
+    """Read `dg list defs --json` output into manifest evidence."""
     assets = payload.get("assets")
     if not isinstance(assets, list):
         raise CommandError("current source definition payload.assets was not a list")
@@ -4322,14 +4325,20 @@ def target_asset_check_count_from_evidence(
     source_definition_payload: Mapping[str, object] | None,
 ) -> int | None:
     """Return the target asset-check count from direct-launch or source evidence."""
+    source_check_count = None
+    if source_definition_payload is not None:
+        source_check_count = optional_int(
+            source_definition_payload.get("asset_check_count")
+        )
+        if source_check_count is not None and source_check_count > 0:
+            return source_check_count
+
     if scenario_evidence is not None:
         check_count = optional_int(scenario_evidence.get("target_asset_check_count"))
         if check_count is not None and check_count >= 0:
             return check_count
-    if source_definition_payload is not None:
-        check_count = optional_int(source_definition_payload.get("asset_check_count"))
-        if check_count is not None and check_count >= 0:
-            return check_count
+    if source_check_count is not None and source_check_count >= 0:
+        return source_check_count
     return None
 
 

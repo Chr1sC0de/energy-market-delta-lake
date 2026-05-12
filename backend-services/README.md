@@ -291,12 +291,12 @@ the stack runs from an ephemeral worktree. Refresh that cache with
 
 | Option | Default | Purpose |
 |---|---:|---|
-| `--scenario` | `full-gas-model` | Named target profile; `full-gas-model` launches the expanded manifest-backed `gas_model` upstream graph with the full seed horizon; `promotion-gas-model` narrows seed volume and adds the Ralph **Promotion** guard |
+| `--scenario` | `full-gas-model` | Named target profile; `full-gas-model` launches the expanded manifest-backed `gas_model` upstream graph; `promotion-gas-model` uses the same seed volume and adds the Ralph **Promotion** guard |
 | `--rebuild` | off | Rebuild all local e2e images before startup; Ralph **Promotion** passes this so stale image tags cannot be reused silently |
 | `--webserver-port` | `3001` | Host port for the isolated Dagster webserver |
 | `--seed-root` | `backend-services/.e2e/aemo-etl` | Cached Archive seed root mounted into the isolated stack |
-| `--raw-latest-count` | scenario-specific | Cached raw source-table objects required per table; `3` for `full-gas-model`, `1` for `promotion-gas-model` |
-| `--zip-latest-count` | scenario-specific | Cached zip objects required per domain; `3` for `full-gas-model`, `1` for `promotion-gas-model` |
+| `--raw-latest-count` | scenario-specific | Cached raw source-table objects required per table; `1` for `full-gas-model`, `1` for `promotion-gas-model` |
+| `--zip-latest-count` | scenario-specific | Cached zip objects required per domain; `1` for `full-gas-model`, `1` for `promotion-gas-model` |
 | `--timeout-seconds` | scenario-specific | Overall stack and dataflow timeout; `5400` for `full-gas-model`, `1200` for `promotion-gas-model` |
 | `--max-concurrent-runs` | scenario-specific | Dagster queued run coordinator `max_concurrent_runs`; `6` for `full-gas-model`, `6` for `promotion-gas-model` |
 
@@ -304,14 +304,16 @@ After the isolated stack reaches readiness, the command drives the Dagster
 dataflow through GraphQL. The `full-gas-model` scenario keeps automation stopped
 and launches explicit Dagster asset-run batches by dependency wave for every
 materializable `gas_model` asset plus its materializable upstream closure. It
-uses the full cached Archive seed horizon, records direct-launch evidence for
-the expanded manifest-backed target, including STTM target keys and target
-asset-check count, then polls Dagster until the full `gas_model` target has
+uses the cached one-object Archive seed horizon, records direct-launch evidence
+for the expanded manifest-backed target, including STTM target keys and
+source-definition-backed target asset-check count, then polls Dagster until the
+full `gas_model` target has
 materialized and required checks have reported success. The
 `promotion-gas-model` scenario uses the same direct-launch shape for Ralph
-**Promotion**, but narrows the raw and zip seed horizon to 1 object and adds the
+**Promotion** with the same one-object raw and zip seed horizon, and adds the
 stale-runtime/current-source validation guard from GitHub issue #141. Both
-scenarios skip live `bronze_nemweb_public_files_*` discovery/listing assets so
+direct scenarios collect current-source `source_definitions` before stack
+startup and skip live `bronze_nemweb_public_files_*` discovery/listing assets so
 the gate starts from seeded LocalStack objects, matching `+group:gas_model`
 targeting without creating
 one sensor-triggered run per upstream source table. Each direct-launch batch
@@ -356,12 +358,11 @@ Dagster dataflow. The approved #77 coverage invariants are:
   `silver_gas_fact_sttm_*` assets.
 
 The full scenario is the local proof for the expanded manifest-backed target. It
-uses the #78 targeted launch shape with the full seed horizon and records
-baseline duration, run count, target count, target asset-check count, STTM target
-keys, and missing/failed counts without enforcing a new budget. The
-`promotion-gas-model` scenario is the separate Ralph **Promotion** guard: it
-narrows the raw and zip seed horizon to 1 object, records current-source
-definitions, fails stale runtime graphs through the #141
+uses the #78 targeted launch shape with the shared one-object seed horizon and
+records baseline duration, run count, target count, target asset-check count,
+STTM target keys, source-definition provenance, and missing/failed counts
+without enforcing a new budget. The `promotion-gas-model` scenario is the
+separate Ralph **Promotion** guard: it fails stale runtime graphs through the #141
 `source_definitions.executable_asset_count` validation, and enforces the
 Promotion regression budgets. Each batch still runs inside a Podman run-worker
 container, and direct launches pace submission against Dagster

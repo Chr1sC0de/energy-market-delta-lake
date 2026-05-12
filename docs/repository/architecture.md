@@ -117,20 +117,21 @@ e2e stack with generated Dagster config, Postgres, LocalStack, AEMO ETL user
 code, one webserver, and the daemon. Once the stack is ready, it keeps
 local-only schedules and alerting stopped, drives the selected Dagster dataflow
 through GraphQL, and monitors the full `gas_model` dataflow plus a direct
-Dagster event-log storage read for final asset-check status. The
-`full-gas-model` scenario launches explicit Dagster asset-run batches by
+Dagster event-log storage read for final asset-check status. Direct-launch
+scenarios also collect current-source `source_definitions` with
+`uv run dg list defs --assets "group:gas_model" --json` before stack startup.
+The `full-gas-model` scenario launches explicit Dagster asset-run batches by
 dependency wave for every materializable `gas_model` asset plus its
 materializable upstream closure; it defaults to host webserver port `3001`, a 90
-minute timeout, Dagster `max_concurrent_runs` `6`, 3 cached raw objects per
-required source table, and 3 cached zip objects per required domain. Ralph
+minute timeout, Dagster `max_concurrent_runs` `6`, 1 cached raw object per
+required source table, and 1 cached zip object per required domain. Ralph
 **Promotion** uses the `promotion-gas-model` scenario from the isolated source
 worktree with `--rebuild`, a 20 minute timeout, Dagster `max_concurrent_runs`
-`6`, and a 1-object raw and zip seed horizon. That Promotion scenario records
-current source definitions from
-`uv run dg list defs --assets "group:gas_model" --json`, validates the runtime
-GraphQL target count against that source count through the #141
-stale-runtime/current-source guard, and uses the same dependency-wave launch
-shape. Both scenarios skip live `bronze_nemweb_public_files_*`
+`6`, and the same 1-object raw and zip seed horizon. That Promotion scenario
+validates the runtime GraphQL target count against that source count through the
+GitHub issue #141 stale-runtime/current-source guard, and uses the same
+dependency-wave launch shape. Both scenarios skip live
+`bronze_nemweb_public_files_*`
 discovery/listing assets so they start from seeded LocalStack objects. This
 preserves the mandatory final target and asset-check status without the full
 sensor-triggered run queue. Each direct-launch batch uses Dagster's in-process
@@ -148,9 +149,9 @@ dataflow gate decision. The direct-launch evidence records the scenario, launch
 mode, target group, target asset count, target asset-check count, target keys,
 STTM target keys, selected upstream closure count, skipped live source asset
 keys, dependency-wave count, run-batch count, and asset batch size; the
-Promotion manifest also records top-level source-definition evidence with the
-current executable asset count, asset-check count, full target keys, and STTM
-target keys. The Promotion scenario enforces regression budgets from the
+manifest also records top-level source-definition evidence with the current
+executable asset count, asset-check count, full target keys, and STTM target
+keys. The Promotion scenario enforces regression budgets from the
 approved targeted baseline: total gate duration at or below 20 minutes, peak
 active and queued runs at or below `6`, total Dagster runs at or below the
 current direct-launch `dataflow.scenario_evidence.batch_count`, target progress
