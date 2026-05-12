@@ -45,8 +45,10 @@ Ralph drains agent-ready GitHub issues through a guarded local loop:
 9. In **Exploratory delivery**, push a durable **Exploratory branch** from
    `origin/main`, comment evidence, mark `agent-reviewing`, and leave the issue
    open for human review.
-10. Run **Ready issue refresh** when enabled as part of each successful issue
-    attempt.
+10. Run **Ready issue refresh** when enabled under a scheduler claim gate after
+    each successful issue attempt. The gate pauses new claims while refresh
+    analysis and metadata mutation run; already active Exploratory workers may
+    finish.
 11. If no ready issue exists and no Exploratory worker is active, triage the next
     unblocked issue and rescan.
 
@@ -203,7 +205,11 @@ Live `--drain` runs a lane-aware scheduler. Gitflow and Trunk delivery stay in a
 single serial lane. Exploratory delivery issues are submitted oldest-first to a
 `ThreadPoolExecutor` with at most `--exploratory-concurrency` active workers.
 The scheduler preserves queue order within each lane and applies `--max-issues`
-to claimed attempts across both lanes.
+to claimed attempts across both lanes. When **Ready issue refresh** starts after
+a successful **Local integration** or Exploratory handoff, the scheduler pauses
+new issue claims until all pending refresh passes complete successfully. Running
+Exploratory workers are not cancelled; they may finish while the claim gate is
+closed.
 
 Drain or run the Operator loop without applying **Ready issue refresh** metadata
 updates:
@@ -563,6 +569,10 @@ Key fields for inspection:
   artifact path, mutation results, recovery guidance, and failure state for
   implementation runs after successful **Local integration** or Exploratory
   handoff and for **Promotion** runs after verified issue closures.
+- `drain_scheduler.fatal_stop`: drain fatal-stop state for implementation runs,
+  including whether the live drain scheduler was enabled, whether the child
+  triggered or observed the stop, the fatal reason, error message, recovery log
+  path, and active Exploratory worker issue numbers.
 - `branch_sync`: Gitflow `main`-into-`dev` sync status, sync worktree path,
   merge or push log path, conflicted files, failure type, and recovery guidance
   when Ralph must stop before issue implementation.
@@ -1144,6 +1154,12 @@ not roll back the pushed **Integration target** commit or revert the
 already-completed issue metadata; operators inspect the manifest mutation
 results and reconcile only the failed GitHub Issue metadata before rerunning the
 drain.
+In live `--drain` mode, the scheduler treats the refresh as a claim gate. New
+claims stay paused while read-only analysis, metadata mutation, or queued
+parallel refresh passes are running. A successful refresh reopens the scheduler
+when the drain budget still permits more issue attempts; a refresh failure
+records `drain_scheduler.fatal_stop` in child run manifests and keeps new claims
+closed while active Exploratory workers settle.
 Malformed or missing mutation JSON for selected candidates is a mutation failure:
 Ralph records `ready_issue_refresh.status: failed` and stops before scheduling
 further issue attempts.
@@ -1352,13 +1368,16 @@ review worktree is available; the original Promotion exception, manifest
 
 Implementation **Ready issue refresh** analysis or metadata mutation failures
 also stop the drain, but they do not imply the integrated issue metadata needs
-recovery. The manifest records the pushed **Integration target** commit,
+recovery. The scheduler prints a fatal drain stop, stops new claims, waits for
+active Exploratory workers, and records `drain_scheduler.fatal_stop` in child
+run manifests. The manifest records the pushed **Integration target** commit,
 completed integrated issue metadata, `ready_issue_refresh.status: failed`, and
 any candidate-level `ready_issue_refresh.mutation_results`. Operators inspect
 the analysis log, artifact path, and mutation results, then reconcile only
-failed GitHub Issue metadata before restarting the drain. Post-Promotion
-**Ready issue refresh** failures are warning-only: **Promotion** remains
-succeeded, the manifest records
+failed GitHub Issue metadata before restarting the drain. Post-push metadata
+failures and environment failures follow the same scheduler fatal-stop pattern
+for live parallel drains. Post-Promotion **Ready issue refresh** failures are
+warning-only: **Promotion** remains succeeded, the manifest records
 `ready_issue_refresh.status: failed_warning_only`, and operators reconcile only
 the affected GitHub Issue
 metadata before rerunning the drain.

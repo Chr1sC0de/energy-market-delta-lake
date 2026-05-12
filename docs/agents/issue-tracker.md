@@ -120,8 +120,12 @@ update use an explicit `no_change` entry. Reports with no selected candidates
 may omit mutation JSON. The run manifest records per-candidate mutation status
 and recovery guidance for partial failures. Malformed or missing mutation JSON
 for selected implementation candidates stops the drain before scheduling further
-issue attempts; post-Promotion refresh failures are warning-only after
-successful **Promotion**.
+issue attempts. In parallel drains, the scheduler pauses new claims while
+implementation **Ready issue refresh** analysis or metadata mutation runs,
+allows already active Exploratory workers to finish, and records
+`drain_scheduler.fatal_stop` recovery evidence in child run manifests for fatal
+refresh, post-push metadata, or environment failures. Post-Promotion refresh
+failures are warning-only after successful **Promotion**.
 
 Use [ralph-loop.md](ralph-loop.md) for Ralph internals, including
 **Delivery mode**, **Local integration**, **Integration target**, **Promotion**,

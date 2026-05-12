@@ -1141,6 +1141,200 @@ class LaneSchedulerProbeLoop(ralph.RalphLoop):
                     self.active_serial -= 1
 
 
+class RefreshGateSchedulerProbeLoop(ralph.RalphLoop):
+    def __init__(
+        self,
+        config: ralph.LoopConfig,
+        runner: FakeRunner,
+        candidates: list[ralph.Issue],
+        *,
+        refresh_issue_numbers: set[int] | None = None,
+        refresh_failure_issue_numbers: set[int] | None = None,
+        fatal_kinds: dict[int, str] | None = None,
+        blocked_issue_numbers: set[int] | None = None,
+    ) -> None:
+        super().__init__(config, runner)
+        self.candidates = list(candidates)
+        self.refresh_issue_numbers = refresh_issue_numbers or set()
+        self.refresh_failure_issue_numbers = refresh_failure_issue_numbers or set()
+        self.fatal_kinds = fatal_kinds or {}
+        self.blocked_issue_numbers = blocked_issue_numbers or set()
+        self.started_events = {
+            issue.number: threading.Event() for issue in self.candidates
+        }
+        self.completed_events = {
+            issue.number: threading.Event() for issue in self.candidates
+        }
+        self.release_events = {
+            issue.number: threading.Event()
+            for issue in self.candidates
+            if issue.number in self.blocked_issue_numbers
+        }
+        refresh_numbers = (
+            self.refresh_issue_numbers | self.refresh_failure_issue_numbers
+        )
+        self.refresh_started_events = {
+            issue_number: threading.Event() for issue_number in refresh_numbers
+        }
+        self.refresh_release_events = {
+            issue_number: threading.Event() for issue_number in refresh_numbers
+        }
+        self.fatal_release_events = {
+            issue_number: threading.Event() for issue_number in self.fatal_kinds
+        }
+        self.claimed_numbers: list[int] = []
+        self.completed_numbers: list[int] = []
+        self._claimed_issue_numbers: set[int] = set()
+        self._lock = threading.Lock()
+
+    def _validate_tools(self) -> None:
+        pass
+
+    def _validate_labels(self) -> None:
+        pass
+
+    def _validate_clean_root_worktree_for_live_run(self) -> None:
+        pass
+
+    def _ready_implementation_candidates(self) -> list[ralph.Issue]:
+        with self._lock:
+            claimed = set(self._claimed_issue_numbers)
+        return [issue for issue in self.candidates if issue.number not in claimed]
+
+    def _next_triage_issue(self) -> ralph.Issue | None:
+        return None
+
+    def _new_manifest(
+        self,
+        issue: ralph.Issue,
+        delivery_plan: ralph.DeliveryPlan,
+    ) -> ralph.RunManifest:
+        run_dir = self._run_dir(issue)
+        run_dir.mkdir(parents=True, exist_ok=True)
+        branch = f"agent/exploratory/issue-{issue.number}-probe"
+        return ralph.RunManifest.for_implementation(
+            run_dir=run_dir,
+            issue=issue,
+            delivery_plan=delivery_plan,
+            branch=branch,
+            worktree_path=self.config.worktree_container / f"issue-{issue.number}",
+            integration_path=None,
+            config=self.config,
+        )
+
+    def _fatal_error_for_issue(
+        self,
+        issue: ralph.Issue,
+        run_dir: Path,
+    ) -> ralph.RalphError:
+        kind = self.fatal_kinds[issue.number]
+        log_path = run_dir / f"{kind}-failure.log"
+        if kind == "post_push":
+            return ralph.PostPushFailure(
+                f"simulated post-push failure for #{issue.number}",
+                log_path=log_path,
+            )
+        if kind == "environment":
+            return ralph.EnvironmentFailure(
+                f"simulated environment failure for #{issue.number}",
+                log_path=log_path,
+            )
+        raise AssertionError(f"unknown fatal kind: {kind}")
+
+    def _run_probe_refresh(
+        self,
+        issue: ralph.Issue,
+        manifest: ralph.RunManifest,
+        *,
+        fail: bool,
+    ) -> None:
+        run_dir = Path(manifest.data["paths"]["run_dir"])
+        log_path = run_dir / "codex-ready-issue-refresh-analysis.jsonl"
+        artifact_path = run_dir / ralph.READY_ISSUE_REFRESH_ANALYSIS_ARTIFACT_NAME
+        manifest.record_ready_issue_refresh(
+            "running",
+            candidates=[],
+            log_path=log_path,
+            artifact_path=artifact_path,
+        )
+        self.refresh_started_events[issue.number].set()
+        self.refresh_release_events[issue.number].wait(timeout=5)
+        if fail:
+            error = ralph.ReadyIssueRefreshFailure(
+                f"simulated Ready issue refresh failure for #{issue.number}",
+                log_path=log_path,
+            )
+            manifest.record_ready_issue_refresh(
+                "failed",
+                candidates=[],
+                log_path=log_path,
+                artifact_path=artifact_path,
+                error=str(error),
+            )
+            manifest.record_failure(error, log_path=log_path)
+            raise error
+        manifest.record_ready_issue_refresh(
+            "completed",
+            candidates=[],
+            log_path=log_path,
+            artifact_path=artifact_path,
+        )
+
+    def _handle_implementation(
+        self,
+        issue: ralph.Issue,
+    ) -> ralph.RunManifest | None:
+        delivery_plan = ralph.resolve_delivery_plan(
+            issue,
+            default_mode=self.config.delivery_mode,
+            target_branch=self.config.target_branch,
+        )
+        manifest = self._new_manifest(issue, delivery_plan)
+        with self._lock:
+            self._claimed_issue_numbers.add(issue.number)
+            self.claimed_numbers.append(issue.number)
+        self.started_events[issue.number].set()
+
+        try:
+            fatal_release = self.fatal_release_events.get(issue.number)
+            if fatal_release is not None:
+                fatal_release.wait(timeout=5)
+                error = self._fatal_error_for_issue(
+                    issue,
+                    Path(manifest.data["paths"]["run_dir"]),
+                )
+                manifest.record_failure(
+                    error,
+                    log_path=getattr(error, "log_path", None),
+                )
+                raise error
+
+            release_event = self.release_events.get(issue.number)
+            if release_event is not None:
+                release_event.wait(timeout=5)
+
+            if (
+                issue.number in self.refresh_issue_numbers
+                or issue.number in self.refresh_failure_issue_numbers
+            ):
+                self._run_with_ready_issue_refresh_claim_gate(
+                    issue,
+                    lambda: self._run_probe_refresh(
+                        issue,
+                        manifest,
+                        fail=issue.number in self.refresh_failure_issue_numbers,
+                    ),
+                )
+
+            with self._lock:
+                self.completed_numbers.append(issue.number)
+            self.completed_events[issue.number].set()
+            manifest.record_success()
+            return manifest
+        except ralph.RalphError:
+            raise
+
+
 class NoValidationRalphLoop(ralph.RalphLoop):
     def _validate_tools(self) -> None:
         pass
@@ -3595,6 +3789,253 @@ Build it.
         self.assertEqual(probe.exploratory_started, [41, 42])
         self.assertEqual(sorted(probe.completed_numbers), [41, 42])
         self.assertNotIn(43, probe.claimed_numbers)
+
+    def test_ready_issue_refresh_gate_pauses_claims_while_active_workers_finish(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(
+                Path(tmp),
+                runner,
+                delivery_mode=ralph.EXPLORATORY_MODE,
+                drain=True,
+                max_issues=3,
+                exploratory_concurrency=2,
+            )
+            probe = RefreshGateSchedulerProbeLoop(
+                loop.config,
+                runner,
+                [
+                    make_issue(
+                        {ralph.READY_LABEL},
+                        EXPLORATORY_IMPLEMENTATION_BODY,
+                        number=41,
+                    ),
+                    make_issue(
+                        {ralph.READY_LABEL},
+                        EXPLORATORY_IMPLEMENTATION_BODY,
+                        number=42,
+                    ),
+                    make_issue(
+                        {ralph.READY_LABEL},
+                        EXPLORATORY_IMPLEMENTATION_BODY,
+                        number=43,
+                    ),
+                ],
+                refresh_issue_numbers={41},
+                blocked_issue_numbers={42},
+            )
+            errors: list[BaseException] = []
+
+            def run_probe() -> None:
+                try:
+                    with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                        probe.run()
+                except BaseException as error:
+                    errors.append(error)
+
+            worker = threading.Thread(target=run_probe)
+            worker.start()
+            try:
+                self.assertTrue(probe.started_events[41].wait(timeout=1))
+                self.assertTrue(probe.started_events[42].wait(timeout=1))
+                self.assertTrue(probe.refresh_started_events[41].wait(timeout=1))
+                probe.release_events[42].set()
+                self.assertTrue(probe.completed_events[42].wait(timeout=1))
+                self.assertFalse(probe.started_events[43].wait(timeout=0.05))
+                probe.refresh_release_events[41].set()
+                self.assertTrue(probe.started_events[43].wait(timeout=1))
+            finally:
+                for event in probe.release_events.values():
+                    event.set()
+                for event in probe.refresh_release_events.values():
+                    event.set()
+                worker.join(timeout=2)
+
+        self.assertFalse(worker.is_alive())
+        if errors:
+            raise errors[0]
+        self.assertEqual(sorted(probe.claimed_numbers), [41, 42, 43])
+
+    def test_ready_issue_refresh_failure_stops_claims_and_records_fatal_stop(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                delivery_mode=ralph.EXPLORATORY_MODE,
+                drain=True,
+                max_issues=3,
+                exploratory_concurrency=2,
+            )
+            probe = RefreshGateSchedulerProbeLoop(
+                loop.config,
+                runner,
+                [
+                    make_issue(
+                        {ralph.READY_LABEL},
+                        EXPLORATORY_IMPLEMENTATION_BODY,
+                        number=41,
+                    ),
+                    make_issue(
+                        {ralph.READY_LABEL},
+                        EXPLORATORY_IMPLEMENTATION_BODY,
+                        number=42,
+                    ),
+                    make_issue(
+                        {ralph.READY_LABEL},
+                        EXPLORATORY_IMPLEMENTATION_BODY,
+                        number=43,
+                    ),
+                ],
+                refresh_failure_issue_numbers={41},
+                blocked_issue_numbers={42},
+            )
+            errors: list[BaseException] = []
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+
+            def run_probe() -> None:
+                try:
+                    with redirect_stdout(stdout), redirect_stderr(stderr):
+                        probe.run()
+                except BaseException as error:
+                    errors.append(error)
+
+            worker = threading.Thread(target=run_probe)
+            worker.start()
+            try:
+                self.assertTrue(probe.started_events[41].wait(timeout=1))
+                self.assertTrue(probe.started_events[42].wait(timeout=1))
+                self.assertTrue(probe.refresh_started_events[41].wait(timeout=1))
+                probe.refresh_release_events[41].set()
+                self.assertFalse(probe.started_events[43].wait(timeout=0.05))
+                probe.release_events[42].set()
+                self.assertTrue(probe.completed_events[42].wait(timeout=1))
+            finally:
+                for event in probe.release_events.values():
+                    event.set()
+                for event in probe.refresh_release_events.values():
+                    event.set()
+                worker.join(timeout=2)
+
+            manifest_41 = load_run_manifest(tmp_path, run_glob="issue-41-*")
+            manifest_42 = load_run_manifest(tmp_path, run_glob="issue-42-*")
+
+        self.assertFalse(worker.is_alive())
+        self.assertTrue(errors)
+        self.assertIsInstance(errors[0], ralph.ReadyIssueRefreshFailure)
+        self.assertNotIn(43, probe.claimed_numbers)
+        self.assertIn("Ready issue refresh gate active", stdout.getvalue())
+        self.assertIn(
+            "Fatal drain stop: ready_issue_refresh_failure", stderr.getvalue()
+        )
+        self.assertEqual(
+            manifest_41["drain_scheduler"]["fatal_stop"]["status"], "triggered"
+        )
+        self.assertEqual(
+            manifest_42["drain_scheduler"]["fatal_stop"]["status"], "observed"
+        )
+        self.assertEqual(
+            manifest_42["drain_scheduler"]["fatal_stop"]["reason"],
+            "ready_issue_refresh_failure",
+        )
+
+    def test_post_push_and_environment_failures_stop_claims_after_active_workers(
+        self,
+    ) -> None:
+        for fatal_kind, expected_error, expected_reason in [
+            ("post_push", ralph.PostPushFailure, "post_push_failure"),
+            ("environment", ralph.EnvironmentFailure, "environment_failure"),
+        ]:
+            with self.subTest(fatal_kind=fatal_kind):
+                runner = FakeRunner()
+                with tempfile.TemporaryDirectory() as tmp:
+                    tmp_path = Path(tmp)
+                    loop = make_loop(
+                        tmp_path,
+                        runner,
+                        delivery_mode=ralph.EXPLORATORY_MODE,
+                        drain=True,
+                        max_issues=3,
+                        exploratory_concurrency=2,
+                    )
+                    probe = RefreshGateSchedulerProbeLoop(
+                        loop.config,
+                        runner,
+                        [
+                            make_issue(
+                                {ralph.READY_LABEL},
+                                EXPLORATORY_IMPLEMENTATION_BODY,
+                                number=41,
+                            ),
+                            make_issue(
+                                {ralph.READY_LABEL},
+                                EXPLORATORY_IMPLEMENTATION_BODY,
+                                number=42,
+                            ),
+                            make_issue(
+                                {ralph.READY_LABEL},
+                                EXPLORATORY_IMPLEMENTATION_BODY,
+                                number=43,
+                            ),
+                        ],
+                        fatal_kinds={41: fatal_kind},
+                        blocked_issue_numbers={42},
+                    )
+                    errors: list[BaseException] = []
+                    stderr = io.StringIO()
+
+                    def run_probe() -> None:
+                        try:
+                            with (
+                                redirect_stdout(io.StringIO()),
+                                redirect_stderr(stderr),
+                            ):
+                                probe.run()
+                        except BaseException as error:
+                            errors.append(error)
+
+                    worker = threading.Thread(target=run_probe)
+                    worker.start()
+                    try:
+                        self.assertTrue(probe.started_events[41].wait(timeout=1))
+                        self.assertTrue(probe.started_events[42].wait(timeout=1))
+                        probe.fatal_release_events[41].set()
+                        self.assertFalse(probe.started_events[43].wait(timeout=0.05))
+                        probe.release_events[42].set()
+                        self.assertTrue(probe.completed_events[42].wait(timeout=1))
+                    finally:
+                        for event in probe.release_events.values():
+                            event.set()
+                        for event in probe.fatal_release_events.values():
+                            event.set()
+                        worker.join(timeout=2)
+
+                    manifest_41 = load_run_manifest(tmp_path, run_glob="issue-41-*")
+                    manifest_42 = load_run_manifest(tmp_path, run_glob="issue-42-*")
+
+                self.assertFalse(worker.is_alive())
+                self.assertTrue(errors)
+                self.assertIsInstance(errors[0], expected_error)
+                self.assertNotIn(43, probe.claimed_numbers)
+                self.assertIn(f"Fatal drain stop: {expected_reason}", stderr.getvalue())
+                self.assertEqual(
+                    manifest_41["drain_scheduler"]["fatal_stop"]["status"],
+                    "triggered",
+                )
+                self.assertEqual(
+                    manifest_42["drain_scheduler"]["fatal_stop"]["status"],
+                    "observed",
+                )
+                self.assertEqual(
+                    manifest_42["drain_scheduler"]["fatal_stop"]["reason"],
+                    expected_reason,
+                )
 
     def test_issue_failure_in_exploratory_lane_does_not_stop_unrelated_work(
         self,

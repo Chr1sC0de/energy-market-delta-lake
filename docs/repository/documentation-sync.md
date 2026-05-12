@@ -205,6 +205,11 @@ way:
   runs require `--ready-issue-refresh`. Mutation uses only GitHub Issue metadata
   commands, records per-candidate manifest status, and stops the drain with
   recovery guidance on partial post-**Local integration** metadata failures.
+- #133: Parallel drains serialize implementation **Ready issue refresh** behind
+  a scheduler claim gate. New claims pause while refresh analysis or metadata
+  mutation runs, active Exploratory workers are allowed to finish, and
+  **Ready issue refresh**, post-push metadata, or environment fatal stops record
+  `drain_scheduler.fatal_stop` recovery evidence in child run manifests.
 - #127: Successful **Promotion** verified issue closures may trigger **Ready
   issue refresh** before the next ready issue claim. The checkpointed Operator
   loop enables post-Promotion refresh by default, direct `--promote` requires

@@ -248,7 +248,10 @@ target**.
 If **Ready issue refresh** fails after **Local integration**, do not roll back
 the integrated commit. Inspect `ready_issue_refresh.mutation_results` in the run
 manifest, reconcile only the failed GitHub Issue metadata, then restart the
-drain once the queue is consistent.
+drain once the queue is consistent. In parallel drains, a refresh failure,
+post-push metadata failure, or environment failure stops new claims and waits
+for active Exploratory workers; inspect `drain_scheduler.fatal_stop` in the
+child run manifests for the fatal reason and recovery log path.
 
 If a **Full-access implementation pass** reports `diff_out_of_scope`, inspect
 the child implementation worktree, keep only files named by the issue's
