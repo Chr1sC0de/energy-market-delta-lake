@@ -7,7 +7,9 @@ the rest of the repo.
 ## Table of contents
 
 - [What it does](#what-it-does)
+- [Gas market dashboard](#gas-market-dashboard)
 - [Local usage](#local-usage)
+- [Validation](#validation)
 - [Related docs](#related-docs)
 
 ## What it does
@@ -24,6 +26,40 @@ In the local compose stack, Caddy proxies `/marimo*` traffic to this service.
 Most notebook routes are protected by the authentication service, while static
 asset and websocket paths are proxied through directly.
 
+## Gas market dashboard
+
+The default notebook,
+[notebooks/sample_energy_market.py](notebooks/sample_energy_market.py), is a
+local gas market overview dashboard over curated `silver.gas_model` outputs. It
+reads Delta tables from:
+
+```text
+s3://<AEMO_BUCKET>/silver/gas_model/<table>
+```
+
+The dashboard discovers its bucket and storage settings from environment
+variables available to the Marimo service:
+
+- `AEMO_BUCKET`, when explicitly set
+- `DEVELOPMENT_ENVIRONMENT` and `NAME_PREFIX`, used to derive the default
+  `<environment>-<name-prefix>-aemo` bucket
+- `AWS_ENDPOINT_URL`, `AWS_DEFAULT_REGION`, `AWS_ACCESS_KEY_ID`,
+  `AWS_SECRET_ACCESS_KEY`, and `AWS_ALLOW_HTTP`, passed through to Delta Lake
+  storage options
+
+It gives first-look sections for:
+
+- prices from `silver_gas_fact_market_price`
+- schedules from `silver_gas_fact_schedule_run` and
+  `silver_gas_fact_scheduled_quantity`
+- flow and capacity from connection-point flow, facility flow/storage,
+  linepack, capacity outlook, and capacity auction facts
+- source coverage from the `source_system`, `source_table`, and
+  `source_tables` columns on loaded `gas_model` outputs
+
+When LocalStack has no seeded or materialized gas_model tables yet, the notebook
+renders section empty states instead of surfacing Delta read tracebacks.
+
 ## Local usage
 
 The service is started by [../compose.yaml](../compose.yaml). Notebook files are
@@ -33,10 +69,43 @@ there makes it available through the `/marimo` index.
 The implementation also accepts `MARIMO_NOTEBOOKS_DIR` if you need to point the
 server at a different notebook directory.
 
+With the local backend stack running, open the Marimo index through Caddy and
+choose `sample_energy_market`:
+
+```text
+http://localhost/marimo
+```
+
+For direct notebook development from this Subproject, point the notebook at the
+host-exposed LocalStack endpoint:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/sample_energy_market.py
+```
+
+Materialize the `gas_model` assets in Dagster, or seed LocalStack with curated
+outputs, then refresh the dashboard to see populated sections.
+
+## Validation
+
+From this Subproject, run the Marimo **Component test** lane:
+
+```bash
+uv run pytest tests/component
+```
+
+Run the Marimo **Commit check** surface before handing changes to Ralph:
+
+```bash
+prek run -a
+```
+
 ## Related docs
 
 - [Local backend-services stack](../README.md)
 - [Authentication service](../authentication/README.md)
+- [Gas-model ERDs](../dagster-user/aemo-etl/docs/gas_model/README.md)
 - [Repository workflow](../../docs/repository/workflow.md)
 
 ## Sync metadata
@@ -44,6 +113,8 @@ server at a different notebook directory.
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `backend-services/marimo/src/marimoserver/main.py`
+  - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
+  - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/compose.yaml`
   - `backend-services/caddy/Caddyfile`
 - `sync.scope`: `interface`
