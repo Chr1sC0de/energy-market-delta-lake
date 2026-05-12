@@ -8,8 +8,8 @@ fit current assets without hiding domain fields or changing the asset meaning.
 
 The policy applies to the STTM public reports backed by the checked-in v19.1
 manifest: `INT651` through `INT684` and `INT687` through `INT691`. The detailed
-report-to-destination mapping remains in
-[architecture-exploration.md](../repository/architecture-exploration.md#issue-116-sttm-report-to-gas-model-mapping);
+report-to-destination mapping remains in the GitHub Issue
+[#116 archival note](https://github.com/Chr1sC0de/energy-market-delta-lake/issues/116#issuecomment-4427802319);
 this ADR records the accepted modeling decision for follow-on implementation.
 
 `INT685` and `INT685B` remain explicit **Source-spec gaps**. They are live
@@ -53,7 +53,6 @@ document-discovery path produces source definitions that can be reviewed.
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `CONTEXT.md`
-  - `docs/repository/architecture-exploration.md`
   - `docs/adr/0003-bounded-current-state-bronze-source-tables.md`
   - `backend-services/dagster-user/aemo-etl/README.md`
   - `backend-services/dagster-user/aemo-etl/docs/gas_model/README.md`

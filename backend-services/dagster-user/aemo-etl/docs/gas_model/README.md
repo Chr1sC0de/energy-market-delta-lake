@@ -41,7 +41,6 @@ provides usable source definitions.
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `CONTEXT.md`
-  - `docs/repository/architecture-exploration.md`
   - `docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/source_tables.json`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/__init__.py`
