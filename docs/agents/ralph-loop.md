@@ -49,8 +49,9 @@ Ralph drains agent-ready GitHub issues through a guarded local loop:
     each successful issue attempt. The gate pauses new claims while refresh
     analysis and metadata mutation run; already active Exploratory workers may
     finish.
-11. If no ready issue exists and no Exploratory worker is active, triage the next
-    unblocked issue and rescan.
+11. If no serial Gitflow or Trunk ready issue can be claimed, triage the next
+    unblocked issue and rescan. In parallel drains, that triage pass may run
+    while already active Exploratory workers continue.
 
 The loop stops when the queue has no unblocked implementation or triage
 candidates, or when `--max-issues` is reached. A plain `--drain` run defaults
@@ -58,7 +59,10 @@ to 10 implementation attempts; `--max-issues 0` is the explicit unlimited drain
 mode.
 `--max-issues` counts claimed implementation attempts across the serial and
 Exploratory lanes. When the cap is reached, Ralph stops scheduling new issue
-attempts and waits for already active Exploratory workers to finish.
+attempts and waits for already active Exploratory workers to finish. Automated
+triage remains outside this implementation-attempt budget; if active
+Exploratory workers are already running and no serial ready issue is claimable,
+Ralph may run a triage pass before waiting for those workers.
 
 The checkpointed Operator run path wraps the issue and **Promotion** commands
 for unattended cleanup. It implements one ready issue at a time, checkpoints the
@@ -117,10 +121,14 @@ flowchart TD
   REVIEW --> REFRESH
   REFRESH --> LIMIT{Max implementation attempts reached?}
   LIMIT -->|No| READY
-  LIMIT -->|Yes| WAIT[Wait for active Exploratory workers]
+  LIMIT -->|Yes| BUDGETTRIAGE{Active Exploratory workers and triage candidate?}
+  BUDGETTRIAGE -->|Yes| TRIAGEPASS
+  BUDGETTRIAGE -->|No| WAIT[Wait for active Exploratory workers]
   WAIT --> STOP[Stop drain]
   READY --> ACTIVE{Exploratory workers active?}
-  ACTIVE -->|Yes| WAITONE[Wait for one worker result]
+  ACTIVE -->|Yes| ACTIVETRIAGE{No serial ready issue and triage candidate?}
+  ACTIVETRIAGE -->|Yes| TRIAGEPASS
+  ACTIVETRIAGE -->|No| WAITONE[Wait for one worker result]
   WAITONE --> READY
   ACTIVE -->|No| TRIAGE{Unblocked triage candidate?}
   TRIAGE -->|Yes| TRIAGEPASS[Run automated triage]
@@ -209,7 +217,10 @@ to claimed attempts across both lanes. When **Ready issue refresh** starts after
 a successful **Local integration** or Exploratory handoff, the scheduler pauses
 new issue claims until all pending refresh passes complete successfully. Running
 Exploratory workers are not cancelled; they may finish while the claim gate is
-closed.
+closed. When no serial Gitflow or Trunk ready issue is claimable, the scheduler
+may run one automated triage pass while active Exploratory workers continue.
+That triage pass does not consume the `--max-issues` implementation-attempt
+budget.
 
 Drain or run the Operator loop without applying **Ready issue refresh** metadata
 updates:
@@ -1055,6 +1066,12 @@ When no unblocked `ready-for-agent` issue exists, Ralph asks Codex to run the
 `$shape-issues` published issues intentionally arrive here as `needs-triage`;
 the triage pass remains the step that applies category, state, and
 **Delivery mode** labels before any issue becomes drainable.
+In the live drain scheduler, serial Gitflow and Trunk ready issues keep
+priority over triage. If no serial ready issue is claimable, Ralph may run a
+triage pass while already active Exploratory workers continue in their
+worktrees. A triage failure keeps the existing triage failure behavior and, when
+Exploratory workers are active, Ralph waits for them to finish before surfacing
+the failure.
 
 Automated triage may label, comment, or close issues. Every triage comment must
 begin with:

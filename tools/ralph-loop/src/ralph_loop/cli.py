@@ -5750,15 +5750,6 @@ class RalphLoop:
                     )
                 self._wait_for_ready_issue_refresh_claim_gate(active_exploratory)
 
-                if self._drain_attempt_budget_reached(attempts_started):
-                    emit(f"Reached --max-issues {self.config.max_issues}.")
-                    if active_exploratory:
-                        emit("Waiting for active Exploratory worker(s) to finish.")
-                    fatal_error = self._wait_for_exploratory_workers(active_exploratory)
-                    if fatal_error is not None:
-                        raise fatal_error
-                    return
-
                 active_issue_numbers = {
                     candidate.issue.number for candidate in active_exploratory.values()
                 }
@@ -5778,6 +5769,22 @@ class RalphLoop:
                     for candidate in candidates
                     if candidate.delivery_plan.mode == EXPLORATORY_MODE
                 ]
+                attempt_budget_reached = self._drain_attempt_budget_reached(
+                    attempts_started
+                )
+
+                if attempt_budget_reached:
+                    if active_exploratory and self._run_scheduler_triage_if_available(
+                        active_exploratory
+                    ):
+                        continue
+                    emit(f"Reached --max-issues {self.config.max_issues}.")
+                    if active_exploratory:
+                        emit("Waiting for active Exploratory worker(s) to finish.")
+                    fatal_error = self._wait_for_exploratory_workers(active_exploratory)
+                    if fatal_error is not None:
+                        raise fatal_error
+                    return
 
                 made_progress = False
                 reserved_serial_candidate: ReadyImplementationCandidate | None = None
@@ -5828,6 +5835,8 @@ class RalphLoop:
                     continue
 
                 if active_exploratory:
+                    if self._run_scheduler_triage_if_available(active_exploratory):
+                        continue
                     fatal_error = self._collect_exploratory_results(
                         active_exploratory,
                         wait_for_one=True,
@@ -5846,6 +5855,27 @@ class RalphLoop:
                     return
                 self._run_triage(triage_issue)
                 self.triaged_this_run.add(triage_issue.number)
+
+    def _run_scheduler_triage_if_available(
+        self,
+        active_exploratory: dict[
+            Future[RunManifest | None], ReadyImplementationCandidate
+        ],
+    ) -> bool:
+        triage_issue = self._next_triage_issue()
+        if triage_issue is None:
+            return False
+        try:
+            self._run_triage(triage_issue)
+        except RalphError as error:
+            if active_exploratory:
+                self._raise_after_exploratory_workers_finish(
+                    active_exploratory,
+                    error,
+                )
+            raise
+        self.triaged_this_run.add(triage_issue.number)
+        return True
 
     def _drain_attempt_budget_reached(self, attempts_started: int) -> bool:
         return self.config.max_issues > 0 and attempts_started >= self.config.max_issues
