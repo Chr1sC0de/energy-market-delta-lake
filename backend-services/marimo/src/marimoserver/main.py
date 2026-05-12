@@ -119,10 +119,20 @@ async def index() -> HTMLResponse:
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Marimo Notebooks</title>
+    <link rel="stylesheet" href="/theme.css">
     <style>
-        body {{ font-family: sans-serif; max-width: 600px; margin: 80px auto; padding: 0 20px; color: #333; }}
-        h1 {{ color: #1a73e8; }}
-        a {{ color: #1a73e8; }}
+        body {{
+            max-width: 600px;
+            margin: 80px auto;
+            padding: 0 20px;
+            color: var(--emdl-ink, #1d2526);
+            background: var(--emdl-paper, #f6f8f3);
+            font-family: ui-sans-serif, system-ui, -apple-system,
+                BlinkMacSystemFont, "Segoe UI", sans-serif;
+            line-height: 1.5;
+        }}
+        h1 {{ color: var(--emdl-blue, #176b91); }}
+        a {{ color: var(--emdl-blue, #176b91); }}
     </style>
 </head>
 <body>

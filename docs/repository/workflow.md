@@ -101,7 +101,7 @@ flowchart LR
   COMPOSE --> PG[(Postgres)]
   COMPOSE --> MARIMO[Marimo]
   SEED --> LOCALSTACK
-  SEED --> USERCODE
+  USERCODE --> LOCALSTACK
 ```
 
 Local workflow notes:

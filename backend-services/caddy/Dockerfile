@@ -3,3 +3,4 @@ FROM docker.io/library/caddy:latest
 
 COPY Caddyfile /etc/caddy/
 COPY index.html /var/www/html/
+COPY theme.css /var/www/html/

@@ -18,16 +18,21 @@ RUN apt-get update \
 RUN ["/bin/bash", "-o", "pipefail", "-c", "curl https://sh.rustup.rs -sSf | bash -s -- -y"]
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-RUN mkdir -p ${BUILD_DIR}
+RUN mkdir -p ${BUILD_DIR};
 COPY . ${BUILD_DIR}
 WORKDIR ${BUILD_DIR}
 
 RUN uv export --format requirements-txt --no-dev >requirements.txt \
     && uv pip install . --system --prefix=/install \
-    && rm -rf "$HOME/.cargo"
+    && rm -rf "$HOME/.cargo";
 
 # ── runtime ───────────────────────────────────────────────────────────────────
 FROM ${IMAGE} AS deploy
+
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*;
 
 COPY --from=builder /install/ /usr/local/
 

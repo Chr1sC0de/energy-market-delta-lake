@@ -127,11 +127,6 @@ services:
       target: dagster-grpc
     container_name: aemo-etl
     restart: on-failure
-    depends_on:
-      localstack:
-        condition: service_healthy
-      aemo-etl-seed-localstack:
-        condition: service_completed_successfully
     networks:
       - dagster_network
     environment:
@@ -220,11 +215,6 @@ services:
       context: ./caddy
     container_name: caddy
     restart: on-failure
-    depends_on:
-      - authentication
-      - dagster-webserver-admin
-      - dagster-webserver-guest
-      - marimo
     networks:
       - dagster_network
     ports:

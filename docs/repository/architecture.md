@@ -96,7 +96,6 @@ flowchart LR
   CADDY --> MARIMO
   AUTH --> ADMIN
   SEED --> LS
-  SEED --> USERCODE
   ADMIN --> USERCODE
   GUEST --> USERCODE
   DAEMON --> USERCODE
@@ -110,8 +109,9 @@ flowchart LR
 This local stack is intentionally broader than the deployed stack in some areas.
 For example, `marimo` is part of local compose but is not provisioned by the
 current Pulumi deployment. The optional Archive seed loader is also local-only:
-it can require a cached seed under `backend-services/.e2e/aemo-etl` before
-starting the `aemo-etl` code location for local **End-to-end test** setup.
+it can load a cached seed under `backend-services/.e2e/aemo-etl` into LocalStack
+during local compose startup. Strict seed-before-Dagster gating belongs to the
+isolated **End-to-end test** stack.
 `backend-services/scripts/aemo-etl-e2e run` uses that cache through an isolated
 e2e stack with generated Dagster config, Postgres, LocalStack, AEMO ETL user
 code, one webserver, and the daemon. Once the stack is ready, it keeps

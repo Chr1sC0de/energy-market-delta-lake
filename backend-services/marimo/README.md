@@ -18,11 +18,15 @@ The app in [src/marimoserver/main.py](src/marimoserver/main.py):
 - discovers `*.py` notebooks from `notebooks/`
 - mounts each notebook as a marimo sub-app under `/marimo/<notebook-name>`
 - serves a simple index page at `/marimo`
+- links the Caddy-served shared theme at `/theme.css` for the index and sample
+  notebook head
 - applies a MIME-type fix middleware for `woff` and `woff2` assets
 
 In the local compose stack, Caddy proxies `/marimo*` traffic to this service.
 Most notebook routes are protected by the authentication service, while static
-asset and websocket paths are proxied through directly.
+asset and websocket paths are proxied through directly. Caddy still serves
+`/theme.css` from its static root, so notebook pages can use the same palette as
+the root portfolio page.
 
 ## Local usage
 
@@ -44,8 +48,11 @@ server at a different notebook directory.
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `backend-services/marimo/src/marimoserver/main.py`
+  - `backend-services/marimo/notebooks/head.html`
+  - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/compose.yaml`
   - `backend-services/caddy/Caddyfile`
+  - `backend-services/caddy/theme.css`
 - `sync.scope`: `interface`
 - `sync.qa`:
   - `git diff --name-only`

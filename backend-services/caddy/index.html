@@ -5,27 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Energy Market Delta Lake project portfolio entrypoint for Australian energy market data ingestion, orchestration, storage, and service access.">
     <title>Energy Market Delta Lake</title>
+    <link rel="stylesheet" href="/theme.css">
     <style>
-        :root {
-            --ink: #1d2526;
-            --muted: #58666a;
-            --paper: #f6f8f3;
-            --panel: #ffffff;
-            --line: #d3ded9;
-            --blue: #176b91;
-            --green: #43784f;
-            --amber: #a65f2b;
-            --red: #9d4c3c;
-            --shadow: 0 16px 48px rgba(29, 37, 38, 0.08);
-        }
-
         * {
             box-sizing: border-box;
         }
 
         html {
-            background: var(--paper);
-            color: var(--ink);
+            background: var(--emdl-paper);
+            color: var(--emdl-ink);
         }
 
         body {
@@ -41,7 +29,7 @@
         }
 
         a:focus-visible {
-            outline: 3px solid rgba(23, 107, 145, 0.45);
+            outline: 3px solid rgb(var(--emdl-blue-rgb) / 0.45);
             outline-offset: 4px;
         }
 
@@ -51,8 +39,8 @@
             top: 1rem;
             z-index: 10;
             padding: 0.6rem 0.8rem;
-            background: var(--ink);
-            color: var(--panel);
+            background: var(--emdl-ink);
+            color: var(--emdl-panel);
             border-radius: 6px;
             transform: translateY(-180%);
         }
@@ -66,12 +54,12 @@
             padding: 2rem 1.5rem 2.75rem;
             display: flex;
             align-items: center;
-            border-bottom: 1px solid var(--line);
+            border-bottom: 1px solid var(--emdl-line);
             background:
-                linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(255, 255, 255, 0.34)),
-                repeating-linear-gradient(90deg, rgba(23, 107, 145, 0.07) 0 1px, transparent 1px 88px),
-                repeating-linear-gradient(0deg, rgba(67, 120, 79, 0.08) 0 1px, transparent 1px 88px),
-                var(--paper);
+                linear-gradient(180deg, rgb(var(--emdl-panel-rgb) / 0.76), rgb(var(--emdl-panel-rgb) / 0.34)),
+                repeating-linear-gradient(90deg, rgb(var(--emdl-blue-rgb) / 0.07) 0 1px, transparent 1px 88px),
+                repeating-linear-gradient(0deg, rgb(var(--emdl-green-rgb) / 0.08) 0 1px, transparent 1px 88px),
+                var(--emdl-paper);
         }
 
         .hero-inner,
@@ -82,7 +70,7 @@
 
         .kicker {
             margin: 0 0 0.85rem;
-            color: var(--blue);
+            color: var(--emdl-blue);
             font-size: 0.82rem;
             font-weight: 800;
             letter-spacing: 0;
@@ -107,7 +95,7 @@
         .lede {
             max-width: 790px;
             margin-bottom: 1.35rem;
-            color: var(--muted);
+            color: var(--emdl-muted);
             font-size: 1.18rem;
         }
 
@@ -125,31 +113,31 @@
             justify-content: center;
             gap: 0.55rem;
             padding: 0.72rem 1rem;
-            border: 1px solid var(--ink);
+            border: 1px solid var(--emdl-ink);
             border-radius: 8px;
             font-weight: 800;
-            background: var(--panel);
-            box-shadow: 0 3px 0 var(--ink);
+            background: var(--emdl-panel);
+            box-shadow: 0 3px 0 var(--emdl-ink);
         }
 
         .button-primary {
-            background: var(--ink);
-            color: var(--panel);
+            background: var(--emdl-ink);
+            color: var(--emdl-panel);
         }
 
         .button span {
             padding: 0.14rem 0.45rem;
             border-radius: 999px;
-            background: rgba(29, 37, 38, 0.08);
-            color: var(--muted);
+            background: rgb(var(--emdl-ink-rgb) / 0.08);
+            color: var(--emdl-muted);
             font-size: 0.74rem;
             font-weight: 800;
             white-space: nowrap;
         }
 
         .button-primary span {
-            background: rgba(255, 255, 255, 0.16);
-            color: var(--panel);
+            background: rgb(var(--emdl-panel-rgb) / 0.16);
+            color: var(--emdl-panel);
         }
 
         .flow {
@@ -171,23 +159,23 @@
             flex-direction: column;
             justify-content: space-between;
             gap: 1rem;
-            background: rgba(255, 255, 255, 0.88);
-            border: 1px solid var(--line);
-            border-top: 5px solid var(--blue);
+            background: rgb(var(--emdl-panel-rgb) / 0.88);
+            border: 1px solid var(--emdl-line);
+            border-top: 5px solid var(--emdl-blue);
             border-radius: 8px;
-            box-shadow: var(--shadow);
+            box-shadow: var(--emdl-shadow);
         }
 
         .flow-node:nth-child(2) {
-            border-top-color: var(--amber);
+            border-top-color: var(--emdl-amber);
         }
 
         .flow-node:nth-child(3) {
-            border-top-color: var(--green);
+            border-top-color: var(--emdl-green);
         }
 
         .flow-node:nth-child(4) {
-            border-top-color: var(--red);
+            border-top-color: var(--emdl-red);
         }
 
         .node-meta {
@@ -195,7 +183,7 @@
             align-items: center;
             justify-content: space-between;
             gap: 0.75rem;
-            color: var(--muted);
+            color: var(--emdl-muted);
             font-size: 0.76rem;
             font-weight: 800;
             text-transform: uppercase;
@@ -207,8 +195,8 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            color: var(--panel);
-            background: var(--ink);
+            color: var(--emdl-panel);
+            background: var(--emdl-ink);
             border-radius: 50%;
             font-size: 0.82rem;
         }
@@ -222,7 +210,7 @@
 
         .flow-node p {
             margin-bottom: 0;
-            color: var(--muted);
+            color: var(--emdl-muted);
             font-size: 0.94rem;
         }
 
@@ -234,10 +222,10 @@
 
         .tags span {
             padding: 0.24rem 0.48rem;
-            border: 1px solid rgba(29, 37, 38, 0.16);
+            border: 1px solid rgb(var(--emdl-ink-rgb) / 0.16);
             border-radius: 999px;
-            color: var(--ink);
-            background: rgba(246, 248, 243, 0.92);
+            color: var(--emdl-ink);
+            background: rgb(var(--emdl-paper-rgb) / 0.92);
             font-size: 0.76rem;
             font-weight: 800;
         }
@@ -247,7 +235,7 @@
             top: 50%;
             right: -1.25rem;
             width: 1.25rem;
-            border-top: 2px solid rgba(29, 37, 38, 0.32);
+            border-top: 2px solid rgb(var(--emdl-ink-rgb) / 0.32);
         }
 
         .flow-arrow::after {
@@ -257,16 +245,16 @@
             top: -5px;
             width: 0.55rem;
             height: 0.55rem;
-            border-top: 2px solid rgba(29, 37, 38, 0.32);
-            border-right: 2px solid rgba(29, 37, 38, 0.32);
+            border-top: 2px solid rgb(var(--emdl-ink-rgb) / 0.32);
+            border-right: 2px solid rgb(var(--emdl-ink-rgb) / 0.32);
             transform: rotate(45deg);
             background: transparent;
         }
 
         .case-band {
             padding: 3rem 1.5rem;
-            background: var(--panel);
-            border-bottom: 1px solid var(--line);
+            background: var(--emdl-panel);
+            border-bottom: 1px solid var(--emdl-line);
         }
 
         .section-heading {
@@ -282,7 +270,7 @@
         }
 
         .section-heading p {
-            color: var(--muted);
+            color: var(--emdl-muted);
             font-size: 1rem;
         }
 
@@ -296,9 +284,9 @@
         .capability,
         .service-card {
             padding: 1.15rem;
-            border: 1px solid var(--line);
+            border: 1px solid var(--emdl-line);
             border-radius: 8px;
-            background: var(--panel);
+            background: var(--emdl-panel);
         }
 
         .capability h3,
@@ -312,20 +300,20 @@
         .capability p,
         .service-card p {
             margin-bottom: 0;
-            color: var(--muted);
+            color: var(--emdl-muted);
             font-size: 0.95rem;
         }
 
         .service-band {
             padding: 3rem 1.5rem;
-            background: #eef4f1;
+            background: var(--emdl-service-band);
         }
 
         .service-card {
             display: flex;
             flex-direction: column;
             min-height: 12rem;
-            background: rgba(255, 255, 255, 0.86);
+            background: rgb(var(--emdl-panel-rgb) / 0.86);
         }
 
         .service-card .access {
@@ -333,21 +321,21 @@
             margin-bottom: 0.85rem;
             padding: 0.24rem 0.52rem;
             border-radius: 999px;
-            color: var(--panel);
-            background: var(--green);
+            color: var(--emdl-panel);
+            background: var(--emdl-green);
             font-size: 0.74rem;
             font-weight: 800;
             text-transform: uppercase;
         }
 
         .service-card .access-protected {
-            background: var(--red);
+            background: var(--emdl-red);
         }
 
         .service-link {
             margin-top: auto;
             padding-top: 1rem;
-            color: var(--blue);
+            color: var(--emdl-blue);
             font-weight: 800;
             overflow-wrap: anywhere;
         }
@@ -355,7 +343,7 @@
         .boundary-note {
             max-width: 760px;
             margin: 1.5rem 0 0;
-            color: var(--muted);
+            color: var(--emdl-muted);
             font-size: 0.94rem;
         }
 
