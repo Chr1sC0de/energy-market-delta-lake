@@ -1,32 +1,27 @@
 """Dagster definitions for the silver gas location dimension asset."""
 
+from typing import cast
+
 import polars as pl
 from dagster import (
-    AssetCheckResult,
+    AssetChecksDefinition,
     AssetIn,
     AssetKey,
-    AutomationCondition,
-    AutomationConditionSensorDefinition,
-    Backoff,
+    AssetsDefinition,
     Definitions,
-    Jitter,
     MaterializeResult,
-    RetryPolicy,
+    SensorDefinition,
     TableColumnDep,
     TableColumnLineage,
-    asset,
-    asset_check,
     definitions,
 )
 from polars import LazyFrame
 
-from aemo_etl.configs import AEMO_BUCKET, DEFAULT_SENSOR_STATUS
-from aemo_etl.factories.checks import (
-    duplicate_row_check_factory,
-    schema_drift_check_factory,
-    schema_matches_check_factor,
+from aemo_etl.defs.gas_model._asset_shell import (
+    GasModelAssetSpec,
+    build_gas_model_asset_definitions,
 )
-from aemo_etl.utils import get_metadata_schema, get_surrogate_key
+from aemo_etl.utils import get_surrogate_key
 
 DOMAIN = "gas_model"
 TABLE_NAME = "silver_gas_dim_location"
@@ -164,76 +159,76 @@ def _materialize_result(value: LazyFrame) -> MaterializeResult[LazyFrame]:
     )
 
 
-@asset(
-    key_prefix=KEY_PREFIX,
-    group_name=GROUP_NAME,
-    description="Silver current-snapshot gas location dimension.",
-    ins={"gbb_locations": AssetIn(key=GBB_LOCATIONS_KEY)},
-    io_manager_key="aemo_parquet_overwrite_io_manager",
-    metadata={
-        "dagster/table_name": f"silver.{DOMAIN}.{TABLE_NAME}",
-        "dagster/uri": f"s3://{AEMO_BUCKET}/{'/'.join(KEY_PREFIX)}/{TABLE_NAME}",
-        "dagster/column_schema": get_metadata_schema(SCHEMA, DESCRIPTIONS),
-        "grain": GRAIN,
-        "surrogate_key_sources": SURROGATE_KEY_SOURCES,
-        "source_tables": SOURCE_TABLES,
-    },
-    kinds={"table", "parquet"},
-    retry_policy=RetryPolicy(
-        max_retries=3,
-        delay=60,
-        backoff=Backoff.EXPONENTIAL,
-        jitter=Jitter.PLUS_MINUS,
-    ),
-    automation_condition=AutomationCondition.any_deps_updated()
-    & ~AutomationCondition.in_progress()
-    & ~AutomationCondition.any_deps_missing(),
-)
-def silver_gas_dim_location(gbb_locations: LazyFrame) -> MaterializeResult[LazyFrame]:
+def _materialize_silver_gas_dim_location(
+    gbb_locations: LazyFrame,
+) -> MaterializeResult[LazyFrame]:
     """Materialize the silver gas location dimension asset."""
     return _materialize_result(_select_current_locations(gbb_locations))
 
 
-@asset_check(
-    asset=silver_gas_dim_location,
-    name="check_required_fields",
-    description="Check required dimension fields are not null.",
-)
-def silver_gas_dim_location_required_fields(input_df: LazyFrame) -> AssetCheckResult:
-    """Validate required fields for the silver gas location dimension asset."""
-    null_counts = (
-        input_df.select(pl.col(column).is_null().sum() for column in REQUIRED_COLUMNS)
-        .collect()
-        .to_dicts()[0]
-    )
-    passed = all(count == 0 for count in null_counts.values())
-    return AssetCheckResult(
-        passed=passed,
-        check_name="check_required_fields",
-        metadata={"null_counts": null_counts},
-    )
-
-
-silver_gas_dim_location_duplicate_row_check = duplicate_row_check_factory(
-    assets_definition=silver_gas_dim_location,
-    check_name="check_for_duplicate_rows",
-    primary_key="surrogate_key",
-    description="Check that surrogate_key is unique.",
-)
-
-silver_gas_dim_location_schema_check = schema_matches_check_factor(
+_GAS_MODEL_SPEC = GasModelAssetSpec(
+    name=TABLE_NAME,
+    description="Silver current-snapshot gas location dimension.",
+    ins={"gbb_locations": AssetIn(key=GBB_LOCATIONS_KEY)},
+    materialize=_materialize_silver_gas_dim_location,
     schema=SCHEMA,
-    assets_definition=silver_gas_dim_location,
-    check_name="check_schema_matches",
-    description="Check observed schema matches target schema.",
+    column_descriptions=DESCRIPTIONS,
+    grain=GRAIN,
+    surrogate_key_sources=SURROGATE_KEY_SOURCES,
+    source_tables=SOURCE_TABLES,
+    required_columns=REQUIRED_COLUMNS,
+    required_fields_description="Check required dimension fields are not null.",
 )
 
-silver_gas_dim_location_schema_drift_check = schema_drift_check_factory(
-    schema=SCHEMA,
-    assets_definition=silver_gas_dim_location,
-    check_name="check_schema_drift",
-    description="Check for schema drift against the declared asset schema.",
-)
+type _LocationAssetChecks = tuple[
+    AssetChecksDefinition,
+    AssetChecksDefinition,
+    AssetChecksDefinition,
+    AssetChecksDefinition,
+]
+
+
+def _build_shell_parts() -> tuple[
+    AssetsDefinition,
+    _LocationAssetChecks,
+    tuple[SensorDefinition, ...],
+]:
+    definitions_result = build_gas_model_asset_definitions(_GAS_MODEL_SPEC)
+    assets = list(definitions_result.assets or [])
+    asset_checks = tuple(definitions_result.asset_checks or ())
+    sensors = tuple(definitions_result.sensors or ())
+
+    assert len(assets) == 1, f"expected one asset definition, got {len(assets)}"
+    assert len(asset_checks) == 4, (
+        f"expected four asset checks, got {len(asset_checks)}"
+    )
+    asset_definition = assets[0]
+    assert isinstance(asset_definition, AssetsDefinition), (
+        f"expected AssetsDefinition, got {type(asset_definition)}"
+    )
+    assert all(
+        isinstance(asset_check_definition, AssetChecksDefinition)
+        for asset_check_definition in asset_checks
+    ), "expected only AssetChecksDefinition values"
+
+    return (
+        asset_definition,
+        cast(_LocationAssetChecks, asset_checks),
+        sensors,
+    )
+
+
+(
+    silver_gas_dim_location,
+    _SILVER_GAS_DIM_LOCATION_ASSET_CHECKS,
+    _SILVER_GAS_DIM_LOCATION_SENSORS,
+) = _build_shell_parts()
+(
+    silver_gas_dim_location_duplicate_row_check,
+    silver_gas_dim_location_schema_check,
+    silver_gas_dim_location_schema_drift_check,
+    silver_gas_dim_location_required_fields,
+) = _SILVER_GAS_DIM_LOCATION_ASSET_CHECKS
 
 
 @definitions
@@ -241,17 +236,6 @@ def defs() -> Definitions:
     """Return Dagster definitions for the silver gas location dimension asset."""
     return Definitions(
         assets=[silver_gas_dim_location],
-        asset_checks=[
-            silver_gas_dim_location_duplicate_row_check,
-            silver_gas_dim_location_schema_check,
-            silver_gas_dim_location_schema_drift_check,
-            silver_gas_dim_location_required_fields,
-        ],
-        sensors=[
-            AutomationConditionSensorDefinition(
-                name="silver_gas_dim_location_sensor",
-                target=[silver_gas_dim_location.key],
-                default_status=DEFAULT_SENSOR_STATUS,
-            )
-        ],
+        asset_checks=list(_SILVER_GAS_DIM_LOCATION_ASSET_CHECKS),
+        sensors=list(_SILVER_GAS_DIM_LOCATION_SENSORS),
     )
