@@ -5780,6 +5780,163 @@ class RalphExploratoryAcceptanceApplyTests(unittest.TestCase):
         self.assertIn("Commit: `resolved-sha`", comment)
         self.assertEqual(manifest.data["decisions"][0]["status"], "metadata_applied")
 
+    def test_continue_multi_issue_acceptance_conflict_preserves_issue_commits(
+        self,
+    ) -> None:
+        source_commit = "a6c6673000000000000000000000000000000000"
+        handoff_123 = "1de18a5000000000000000000000000000000000"
+        handoff_153 = "b6ff18e000000000000000000000000000000000"
+        handoff_157 = "f1f16fb000000000000000000000000000000000"
+        acceptance_123 = "189fb1017d9fca4d7b4aef1bc27b589599a60cff"
+        acceptance_153 = "3f140d7b2cf749ad4c5c67c442736f1b4a5086b0"
+        acceptance_157 = "9c12f1258cf680849829a91fab0b94c8eeed886a"
+        targets = [
+            (123, "agent/exploratory/issue-123-marimo-images", handoff_123),
+            (153, "agent/exploratory/issue-153-aws-deploy", handoff_153),
+            (157, "agent/exploratory/issue-157-caddy-portfolio", handoff_157),
+        ]
+
+        def reviewing_issue_outputs() -> dict[tuple[str, ...], list[str]]:
+            return {
+                command: outputs
+                for issue_number, branch, handoff_commit in targets
+                for command, outputs in {
+                    issue_state_command(issue_number): [json.dumps({"state": "OPEN"})],
+                    issue_view_command(issue_number): [
+                        json.dumps(
+                            issue_payload(
+                                issue_number,
+                                [
+                                    ralph.AGENT_REVIEWING_LABEL,
+                                    ralph.DELIVERY_EXPLORATORY_LABEL,
+                                ],
+                                EXPLORATORY_IMPLEMENTATION_BODY,
+                            )
+                        )
+                    ],
+                    issue_comments_command(issue_number): [
+                        exploratory_handoff_comments_output(
+                            branch=branch,
+                            commit=handoff_commit,
+                        )
+                    ],
+                }.items()
+            }
+
+        conflict_merge_command = (
+            "git",
+            "merge",
+            "--no-ff",
+            "origin/agent/exploratory/issue-157-caddy-portfolio",
+            "-m",
+            "Accept Exploratory issue #157: Issue 157",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            pause_runner = FakeRunner(
+                diff_outputs=["docs/repository/architecture-exploration.md\n"],
+                rev_parse_outputs=[
+                    f"{handoff_123}\n",
+                    f"{handoff_153}\n",
+                    f"{handoff_157}\n",
+                    f"{source_commit}\n",
+                    f"{acceptance_123}\n",
+                    f"{acceptance_153}\n",
+                ],
+                command_outputs=reviewing_issue_outputs(),
+                fail_commands={conflict_merge_command},
+            )
+            loop = make_loop(
+                tmp_path,
+                pause_runner,
+                source_branch=ralph.DEFAULT_GITFLOW_BRANCH,
+            )
+            decision_file = self._decision_file(
+                tmp_path,
+                [
+                    {"issue_number": issue_number, "decision": "accept"}
+                    for issue_number, _branch, _handoff_commit in targets
+                ],
+            )
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                paused_manifest = loop._apply_exploratory_acceptance_decisions(
+                    decision_file
+                )
+
+            run_dir = Path(paused_manifest.data["paths"]["run_dir"])
+            acceptance_path = Path(paused_manifest.data["paths"]["acceptance_worktree"])
+            acceptance_path.mkdir(parents=True)
+            continue_runner = FakeRunner(
+                diff_outputs=["", "scripts/ralph.py\n"],
+                status_outputs=["", ""],
+                rev_parse_outputs=[
+                    f"{handoff_123}\n",
+                    f"{handoff_153}\n",
+                    f"{handoff_157}\n",
+                    f"{source_commit}\n",
+                    f"{acceptance_157}\n",
+                ],
+                command_outputs={
+                    **reviewing_issue_outputs(),
+                    (
+                        "git",
+                        "rev-list",
+                        "--first-parent",
+                        "--reverse",
+                        f"{source_commit}..{acceptance_157}",
+                    ): [
+                        "\n".join([acceptance_123, acceptance_153, acceptance_157])
+                        + "\n"
+                    ],
+                },
+                fail_commands={
+                    (
+                        "git",
+                        "merge-base",
+                        "--is-ancestor",
+                        handoff_153,
+                        acceptance_123,
+                    ): 1,
+                    (
+                        "git",
+                        "merge-base",
+                        "--is-ancestor",
+                        handoff_157,
+                        acceptance_123,
+                    ): 1,
+                    (
+                        "git",
+                        "merge-base",
+                        "--is-ancestor",
+                        handoff_157,
+                        acceptance_153,
+                    ): 1,
+                },
+            )
+            loop = make_loop(tmp_path, continue_runner)
+
+            with redirect_stdout(io.StringIO()):
+                manifest = loop._continue_exploratory_acceptance(run_dir)
+
+            comments = {
+                issue_number: (run_dir / f"issue-{issue_number}-comment.md").read_text(
+                    encoding="utf-8"
+                )
+                for issue_number, _branch, _handoff_commit in targets
+            }
+
+        decisions = {
+            int(entry["issue_number"]): entry for entry in manifest.data["decisions"]
+        }
+        self.assertIn(f"Commit: `{acceptance_123}`", comments[123])
+        self.assertIn(f"Commit: `{acceptance_153}`", comments[153])
+        self.assertIn(f"Commit: `{acceptance_157}`", comments[157])
+        self.assertEqual(decisions[123]["acceptance_commit"], acceptance_123)
+        self.assertEqual(decisions[153]["acceptance_commit"], acceptance_153)
+        self.assertEqual(decisions[157]["acceptance_commit"], acceptance_157)
+        self.assertEqual(manifest.data["integration_commit"]["sha"], acceptance_157)
+
     def test_continue_acceptance_conflict_refuses_dirty_worktree(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -9827,6 +9984,187 @@ Build it.
         self.assertEqual(
             manifest["github_metadata"]["issues"][0]["integrated_commit"],
             "abc1234",
+        )
+
+    def test_promotion_classifies_resumed_exploratory_acceptance_commits(
+        self,
+    ) -> None:
+        acceptance_123 = "189fb1017d9fca4d7b4aef1bc27b589599a60cff"
+        acceptance_153 = "3f140d7b2cf749ad4c5c67c442736f1b4a5086b0"
+        acceptance_157 = "9c12f1258cf680849829a91fab0b94c8eeed886a"
+        accepted_issues = [
+            (123, acceptance_123, "Split local Marimo dashboard images"),
+            (153, acceptance_153, "Prototype manifest-driven AWS deployment"),
+            (157, acceptance_157, "Redesign Caddy root portfolio"),
+        ]
+        issue_list_payload = [
+            {
+                **issue_payload(
+                    issue_number,
+                    [ralph.AGENT_INTEGRATED_LABEL, ralph.DELIVERY_EXPLORATORY_LABEL],
+                    EXPLORATORY_IMPLEMENTATION_BODY,
+                ),
+                "title": title,
+            }
+            for issue_number, _commit, title in accepted_issues
+        ]
+        command_outputs: dict[tuple[str, ...], list[str]] = {
+            issue_list_command(): [json.dumps(issue_list_payload)],
+            (
+                "git",
+                "log",
+                "--reverse",
+                "--format=%H%x00%s",
+                "origin/main..source-sha",
+            ): [
+                "\n".join(
+                    f"{commit}\x00Accept Exploratory issue #{issue_number}: {title}"
+                    for issue_number, commit, title in accepted_issues
+                )
+                + "\n"
+            ],
+        }
+        for issue_number, commit, _title in accepted_issues:
+            command_outputs[issue_comments_command(issue_number)] = [
+                json.dumps(
+                    {
+                        "comments": [
+                            {
+                                "body": "\n".join(
+                                    [
+                                        "Ralph exploratory acceptance completed.",
+                                        "",
+                                        f"Commit: `{commit}`",
+                                    ]
+                                )
+                            }
+                        ]
+                    }
+                )
+            ]
+
+        runner = FakeRunner(
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+            command_outputs=command_outputs,
+            fail_commands={
+                (
+                    "git",
+                    "merge-base",
+                    "--is-ancestor",
+                    commit,
+                    "origin/main",
+                ): 1
+                for _issue_number, commit, _title in accepted_issues
+            },
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                promote=True,
+                skip_post_promotion_followups=True,
+            )
+            with redirect_stdout(io.StringIO()):
+                loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        review_prompt = next(
+            call.input_text
+            for call in runner.calls
+            if call.input_text is not None
+            and "Run a Post-promotion review" in call.input_text
+        )
+        self.assertEqual(
+            [
+                entry["issue"]["number"]
+                for entry in manifest["promotion_commit_inventory"]["commits"]
+            ],
+            [123, 153, 157],
+        )
+        self.assertEqual(
+            [
+                issue["integrated_commit"]
+                for issue in manifest["github_metadata"]["issues"]
+            ],
+            [acceptance_123, acceptance_153, acceptance_157],
+        )
+        self.assertIn(
+            f"`{acceptance_123}` Accept Exploratory issue #123: "
+            "Split local Marimo dashboard images - verified issue evidence commit "
+            "for #123 Split local Marimo dashboard images",
+            review_prompt,
+        )
+        self.assertIn(
+            f"`{acceptance_153}` Accept Exploratory issue #153: "
+            "Prototype manifest-driven AWS deployment - verified issue evidence "
+            "commit for #153 Prototype manifest-driven AWS deployment",
+            review_prompt,
+        )
+        self.assertIn(
+            f"`{acceptance_157}` Accept Exploratory issue #157: "
+            "Redesign Caddy root portfolio - verified issue evidence commit "
+            "for #157 Redesign Caddy root portfolio",
+            review_prompt,
+        )
+
+    def test_promotion_inventory_prompt_lists_shared_commit_issue_mappings(
+        self,
+    ) -> None:
+        shared_commit = "9c12f1258cf680849829a91fab0b94c8eeed886a"
+        entries = ralph.promotion_commit_inventory_entries(
+            [
+                ralph.PromotedSourceCommit(
+                    sha=shared_commit,
+                    subject="Manual resumed Exploratory acceptance",
+                )
+            ],
+            [
+                (
+                    make_issue(
+                        {ralph.AGENT_INTEGRATED_LABEL},
+                        number=123,
+                        title="First accepted issue",
+                    ),
+                    shared_commit,
+                ),
+                (
+                    make_issue(
+                        {ralph.AGENT_INTEGRATED_LABEL},
+                        number=153,
+                        title="Second accepted issue",
+                    ),
+                    shared_commit,
+                ),
+            ],
+        )
+
+        self.assertNotIn("issue", entries[0])
+        self.assertEqual(
+            entries[0]["issues"],
+            [
+                {
+                    "number": 123,
+                    "title": "First accepted issue",
+                    "url": "https://github.com/example/repo/issues/123",
+                },
+                {
+                    "number": 153,
+                    "title": "Second accepted issue",
+                    "url": "https://github.com/example/repo/issues/153",
+                },
+            ],
+        )
+        self.assertEqual(
+            ralph.promotion_commit_inventory_prompt_lines(entries),
+            (
+                f"- `{shared_commit}` Manual resumed Exploratory acceptance - "
+                "verified issue evidence commit for #123 First accepted issue, "
+                "#153 Second accepted issue"
+            ),
         )
 
     def test_promotion_skip_post_promotion_review_flag_disables_review_agent(

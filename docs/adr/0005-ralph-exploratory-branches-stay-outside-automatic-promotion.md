@@ -12,16 +12,17 @@ applied. Ralph's acceptance apply flow validates the open `agent-reviewing`
 issue and recorded handoff branch/commit, merges accepted branches into a
 temporary `dev` acceptance worktree, runs selected merged-target QA, pushes
 `dev`, comments acceptance evidence that starts with
-`Ralph exploratory acceptance completed.`, records the accepted `dev` commit,
-removes `agent-reviewing`, and adds `agent-integrated`. Held Exploratory work
-keeps `agent-reviewing` with a reason comment. Rejected Exploratory work stays
-open, removes `agent-reviewing`, adds `ready-for-human`, and records the review
-result without adding `agent-integrated`. If an accepted branch merge
-conflicts, Ralph pauses with `acceptance_conflict`, leaves the acceptance
-worktree in place, writes `decisions.json`, `conflicts.json`, and
+`Ralph exploratory acceptance completed.`, records the accepted `dev` evidence
+commit for each issue, removes `agent-reviewing`, and adds `agent-integrated`.
+Held Exploratory work keeps `agent-reviewing` with a reason comment. Rejected
+Exploratory work stays open, removes `agent-reviewing`, adds `ready-for-human`,
+and records the review result without adding `agent-integrated`. If an accepted
+branch merge conflicts, Ralph pauses with `acceptance_conflict`, leaves the
+acceptance worktree in place, writes `decisions.json`, `conflicts.json`, and
 `codex-resolution-prompt.md`, and requires
-`--continue-exploratory-acceptance <run_dir>` to validate the resolved worktree
-and rerun merged-target QA before push or metadata changes.
+`--continue-exploratory-acceptance <run_dir>` to validate the resolved worktree,
+preserve or derive per-issue acceptance commits, and rerun merged-target QA
+before push or metadata changes.
 Checkpointed Operator runs may stop with `needs_review` and write an
 **Exploratory acceptance review** artifact when open `agent-reviewing` issues
 remain and no unblocked ready issue can proceed. That artifact is informational
@@ -63,8 +64,10 @@ mergeability against `origin/dev`, and ready issues blocked by the decision.
 evidence model it uses for Gitflow work. The accepted `dev` commit must appear
 in the promoted `origin/main..origin/dev` range before Ralph comments Promotion
 evidence, replaces `agent-integrated` with `agent-merged`, and closes the issue.
-If the acceptance comment is missing or unparseable, **Promotion** warns instead
-of silently closing the issue.
+When multiple issues share an evidence commit, the **Promotion** inventory and
+**Post-promotion review** prompt preserve every issue mapping. If the
+acceptance comment is missing or unparseable, **Promotion** warns instead of
+silently closing the issue.
 
 Keeping rejected Exploratory work out of `agent-integrated` prevents accidental
 closure. Rejection leaves the issue open with `ready-for-human` and a review

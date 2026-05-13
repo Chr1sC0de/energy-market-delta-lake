@@ -587,7 +587,8 @@ Key fields for inspection:
   head, dirty state when inspectable, and recovery guidance.
 - `promotion_commit_inventory`: full promoted source commit range with each
   commit SHA, subject, and whether it matched verified issue evidence or
-  remained an unverified **Promotion** commit.
+  remained an unverified **Promotion** commit. When one evidence commit maps to
+  multiple issues, the inventory records every issue mapping.
 - `post_promotion_review`: enabled state, skip reason, warning-only review
   status, review log path, and Markdown artifact path for **Promotion** runs.
 - `post_promotion_followups`: enabled state, created issue URLs, duplicate
@@ -695,9 +696,12 @@ clean. Use `--inspect-run <run_dir>` to print the paused worktree path and the
 `--continue-exploratory-acceptance <run_dir>` reloads the paused decision set,
 refuses missing or mismatched artifacts, refuses a missing, stale, dirty, or
 still-conflicted acceptance worktree, reruns selected merged-target QA, pushes
-the Gitflow source branch, and only then applies acceptance metadata. If
+the Gitflow source branch, and only then applies acceptance metadata. During
+resume, Ralph preserves already-recorded per-issue acceptance commits and
+derives any missing issue evidence from the resolved first-parent history so
+each accepted issue points at the commit that made its handoff reachable. If
 metadata fails after `dev` is pushed, treat the run as post-push recovery:
-verify the pushed commit in the manifest, then add any missing
+verify the pushed commits in the manifest, then add any missing
 `Ralph exploratory acceptance completed.` evidence and label transitions before
 rerunning **Promotion**. Non-conflict apply failures before the accepted branch
 push still leave accepted issue metadata unchanged and record recovery guidance
@@ -845,7 +849,10 @@ Commit: `<dev-commit-sha>`
 ```
 
 The commit is the `dev` commit that made the accepted work reachable from the
-source branch. Held decisions comment the reason and leave `agent-reviewing` in
+source branch. When a multi-issue acceptance run resumes after conflict
+resolution, Ralph keeps prior per-issue acceptance commits and derives the
+remaining accepted issue commits from the resolved history before writing
+metadata. Held decisions comment the reason and leave `agent-reviewing` in
 place. Rejected decisions leave the issue open, remove `agent-reviewing`, add
 `ready-for-human`, and comment the review result and next action. Rejected
 review must not add `agent-integrated`. If an accepted branch merge conflicts,
@@ -914,8 +921,10 @@ revision. The commit inventory records every promoted source commit with its
 SHA and subject. After verified issues are identified, commits whose SHA matches
 a recorded Gitflow **Local integration** commit, a documented manual Gitflow
 recovery commit, or an accepted Exploratory commit are treated as verified issue
-evidence; other commits remain visible as unverified **Promotion** commits in
-the run manifest and **Post-promotion review** prompt.
+evidence. If more than one issue records the same evidence commit, the
+inventory and **Post-promotion review** prompt list every issue mapping instead
+of keeping only the first match. Other commits remain visible as unverified
+**Promotion** commits in the run manifest and **Post-promotion review** prompt.
 Unverified **Promotion** commits are mandatory **Post-promotion review**
 context only. They do not block **Promotion**, do not require explicit issue
 association before **Promotion**, and do not create follow-up issues by

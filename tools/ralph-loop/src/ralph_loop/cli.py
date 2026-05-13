@@ -3313,30 +3313,36 @@ def promotion_commit_inventory_entries(
     commits: list[PromotedSourceCommit],
     integrated_issues: list[tuple[Issue, str]],
 ) -> list[dict[str, Any]]:
-    verified_by_commit: dict[str, Issue] = {}
+    verified_by_commit: dict[str, list[Issue]] = {}
     for issue, integrated_commit in integrated_issues:
-        if integrated_commit not in verified_by_commit:
-            verified_by_commit[integrated_commit] = issue
+        verified_by_commit.setdefault(integrated_commit, []).append(issue)
 
     entries: list[dict[str, Any]] = []
     for commit in commits:
-        issue = verified_by_commit.get(commit.sha)
+        issues = verified_by_commit.get(commit.sha, [])
         entry: dict[str, Any] = {
             "sha": commit.sha,
             "subject": commit.subject,
-            "verified_local_integration": issue is not None,
+            "verified_local_integration": bool(issues),
             "classification": (
                 "verified_local_integration"
-                if issue is not None
+                if issues
                 else "unverified_promotion_commit"
             ),
         }
-        if issue is not None:
-            entry["issue"] = {
-                "number": issue.number,
-                "title": issue.title,
-                "url": issue.url,
-            }
+        if issues:
+            issue_payloads = [
+                {
+                    "number": issue.number,
+                    "title": issue.title,
+                    "url": issue.url,
+                }
+                for issue in issues
+            ]
+            if len(issue_payloads) == 1:
+                entry["issue"] = issue_payloads[0]
+            else:
+                entry["issues"] = issue_payloads
             entry["integrated_commit"] = commit.sha
         entries.append(entry)
     return entries
@@ -5468,6 +5474,25 @@ class GitClient:
             commits.append(PromotedSourceCommit(sha=sha, subject=subject))
         return commits
 
+    def first_parent_commits_between(
+        self,
+        *,
+        cwd: Path,
+        base_ref: str,
+        head_ref: str,
+    ) -> list[str]:
+        result = self.runner.run(
+            [
+                "git",
+                "rev-list",
+                "--first-parent",
+                "--reverse",
+                f"{base_ref}..{head_ref}",
+            ],
+            cwd=cwd,
+        )
+        return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
     def has_uncommitted_changes(self, *, cwd: Path) -> bool:
         return self.status_porcelain(cwd=cwd).strip() != ""
 
@@ -7010,9 +7035,13 @@ class RalphLoop:
                     ),
                 )
 
-            acceptance_commits = {
-                target.issue.number: final_commit for target in accepted_targets
-            }
+            acceptance_commits = self._resolved_exploratory_acceptance_commits(
+                accepted_targets,
+                source_commit=recorded_source_commit or current_source_commit,
+                final_commit=final_commit,
+                acceptance_path=acceptance_path,
+                manifest=manifest,
+            )
             manifest.record_integration_commit(final_commit, branch=source_branch)
             push_log = (
                 manifest_run_dir(manifest) / f"git-push-{slugify(source_branch)}.log"
@@ -7354,6 +7383,122 @@ class RalphLoop:
                     "artifact if acceptance is still intended."
                 ),
             )
+
+    def _resolved_exploratory_acceptance_commits(
+        self,
+        targets: list[ExploratoryAcceptanceTarget],
+        *,
+        source_commit: str,
+        final_commit: str,
+        acceptance_path: Path,
+        manifest: RunManifest,
+    ) -> dict[int, str]:
+        acceptance_commits = self._preserved_exploratory_acceptance_commits(
+            targets,
+            final_commit=final_commit,
+            acceptance_path=acceptance_path,
+            manifest=manifest,
+        )
+        derived_commits = self._derived_exploratory_acceptance_commits(
+            targets,
+            source_commit=source_commit,
+            final_commit=final_commit,
+            acceptance_path=acceptance_path,
+        )
+        for issue_number, acceptance_commit in derived_commits.items():
+            acceptance_commits.setdefault(issue_number, acceptance_commit)
+
+        missing_targets = [
+            target
+            for target in targets
+            if target.issue.number not in acceptance_commits
+        ]
+        if len(missing_targets) == 1:
+            target = missing_targets[0]
+            acceptance_commits[target.issue.number] = final_commit
+            return acceptance_commits
+        if missing_targets:
+            missing_issues = ", ".join(
+                f"#{target.issue.number}" for target in missing_targets
+            )
+            raise self._exploratory_acceptance_continue_failure(
+                manifest,
+                (
+                    "Resolved Exploratory acceptance worktree does not include "
+                    "issue-specific acceptance commits for: " + missing_issues
+                ),
+                failure_type="exploratory_acceptance_missing_acceptance_commits",
+                recovery_guidance=exploratory_acceptance_continue_recovery_guidance(
+                    run_dir=manifest_run_dir(manifest),
+                    acceptance_path=acceptance_path,
+                ),
+            )
+        return acceptance_commits
+
+    def _preserved_exploratory_acceptance_commits(
+        self,
+        targets: list[ExploratoryAcceptanceTarget],
+        *,
+        final_commit: str,
+        acceptance_path: Path,
+        manifest: RunManifest,
+    ) -> dict[int, str]:
+        target_by_issue = {target.issue.number: target for target in targets}
+        decisions = manifest.data.get("decisions")
+        if not isinstance(decisions, list):
+            return {}
+
+        acceptance_commits: dict[int, str] = {}
+        for entry in decisions:
+            if not isinstance(entry, dict):
+                continue
+            issue_number = exploratory_acceptance_issue_number_from_entry(entry)
+            if issue_number is None or issue_number not in target_by_issue:
+                continue
+            acceptance_commit = entry.get("acceptance_commit")
+            if not isinstance(acceptance_commit, str) or acceptance_commit == "":
+                continue
+            target = target_by_issue[issue_number]
+            if not self.git.is_ancestor(
+                ancestor=acceptance_commit,
+                descendant=final_commit,
+                cwd=acceptance_path,
+            ):
+                continue
+            if not self.git.is_ancestor(
+                ancestor=target.handoff_commit,
+                descendant=acceptance_commit,
+                cwd=acceptance_path,
+            ):
+                continue
+            acceptance_commits[issue_number] = acceptance_commit
+        return acceptance_commits
+
+    def _derived_exploratory_acceptance_commits(
+        self,
+        targets: list[ExploratoryAcceptanceTarget],
+        *,
+        source_commit: str,
+        final_commit: str,
+        acceptance_path: Path,
+    ) -> dict[int, str]:
+        first_parent_commits = self.git.first_parent_commits_between(
+            cwd=acceptance_path,
+            base_ref=source_commit,
+            head_ref=final_commit,
+        )
+        acceptance_commits: dict[int, str] = {}
+        for target in targets:
+            for commit in first_parent_commits:
+                if not self.git.is_ancestor(
+                    ancestor=target.handoff_commit,
+                    descendant=commit,
+                    cwd=acceptance_path,
+                ):
+                    continue
+                acceptance_commits[target.issue.number] = commit
+                break
+        return acceptance_commits
 
     def _validate_resolved_acceptance_worktree(
         self,
@@ -13190,18 +13335,33 @@ def promotion_commit_inventory_prompt_lines(entries: list[dict[str, Any]]) -> st
             entry.get("classification") or "unverified_promotion_commit"
         )
         if classification == "verified_local_integration":
-            issue_value = entry.get("issue")
-            issue_text = ""
-            if isinstance(issue_value, dict):
-                issue_number = issue_value.get("number")
-                issue_title = str(issue_value.get("title") or "")
-                issue_text = f" for #{issue_number} {issue_title}".rstrip()
+            issue_text = promotion_commit_inventory_issue_text(entry)
             lines.append(
                 f"- `{sha}` {subject} - verified issue evidence commit{issue_text}"
             )
             continue
         lines.append(f"- `{sha}` {subject} - unverified Promotion commit")
     return "\n".join(lines)
+
+
+def promotion_commit_inventory_issue_text(entry: dict[str, Any]) -> str:
+    issue_values = entry.get("issues")
+    issues = issue_values if isinstance(issue_values, list) else []
+    if not issues:
+        issue_value = entry.get("issue")
+        issues = [issue_value] if isinstance(issue_value, dict) else []
+
+    issue_texts: list[str] = []
+    for issue in issues:
+        if not isinstance(issue, dict):
+            continue
+        issue_number = issue.get("number")
+        issue_title = str(issue.get("title") or "")
+        issue_text = f"#{issue_number} {issue_title}".rstrip()
+        issue_texts.append(issue_text)
+    if not issue_texts:
+        return ""
+    return " for " + ", ".join(issue_texts)
 
 
 def post_promotion_review_prompt(
