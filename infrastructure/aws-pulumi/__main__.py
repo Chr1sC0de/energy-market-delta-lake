@@ -30,6 +30,7 @@ and exports it so it is set before any docker.Provider resource is created.
 import os
 import pathlib
 
+import pulumi
 import pulumi_docker as docker
 
 from components.bastion_host import BastionHostComponentResource
@@ -51,6 +52,12 @@ from components.service_discovery import ServiceDiscoveryComponentResource
 from components.vpc import VpcComponentResource
 from components.vpc_endpoints import VpcEndpointsComponentResource
 from configs import NAME
+
+_config = pulumi.Config()
+_dagster_core_deployment = _config.get("dagster_core_deployment") or "aws"
+_enable_ec2_run_worker_capacity_prototype = (
+    _config.get_bool("enable_ec2_run_worker_capacity_prototype") or False
+)
 
 # ── Docker provider ───────────────────────────────────────────────────────────
 # Resolve the Docker / Podman socket automatically when DOCKER_HOST is not set.
@@ -78,7 +85,11 @@ s3_buckets = S3BucketsComponentResource(NAME)
 
 delta_locking_table = DeltaLockingTableComponentResource(NAME)
 
-ecr = ECRComponentResource(NAME, docker_provider=_docker_provider)
+ecr = ECRComponentResource(
+    NAME,
+    docker_provider=_docker_provider,
+    dagster_core_deployment=_dagster_core_deployment,
+)
 
 service_discovery = ServiceDiscoveryComponentResource(NAME, vpc)
 
@@ -86,7 +97,13 @@ postgres = PostgresComponentResource(NAME, vpc, security_groups)
 
 bastion_host = BastionHostComponentResource(NAME, vpc, security_groups, iam_roles)
 
-ecs_cluster = EcsClusterComponentResource(NAME, vpc, security_groups)
+ecs_cluster = EcsClusterComponentResource(
+    NAME,
+    vpc,
+    security_groups,
+    enable_ec2_run_worker_capacity_prototype=_enable_ec2_run_worker_capacity_prototype,
+    run_worker_instance_profile_arn=iam_roles.ecs_instance_profile.arn,
+)
 
 fastapi_auth = FastAPIAuthComponentResource(NAME, vpc, ecr, security_groups)
 

@@ -344,6 +344,8 @@ class DagsterWebserverServiceComponentResource(pulumi.ComponentResource):
             pg_pass_param=postgres_password_parameter,
             log_group=cluster.log_group.name,
             region=aws.get_region().region,
+            run_worker_execution_role_arn=iam_roles.daemon_execution_role.arn,
+            run_worker_task_role_arn=iam_roles.daemon_task_role.arn,
         ).apply(
             lambda a: json.dumps(
                 [
@@ -359,8 +361,27 @@ class DagsterWebserverServiceComponentResource(pulumi.ComponentResource):
                                 "value": a["pg_host"],
                             },
                             {"name": "DAGSTER_POSTGRES_USER", "value": "dagster_user"},
+                            {"name": "AWS_S3_LOCKING_PROVIDER", "value": "dynamodb"},
+                            {"name": "AWS_DEFAULT_REGION", "value": a["region"]},
+                            {"name": "DAGSTER_GRPC_TIMEOUT_SECONDS", "value": "300"},
                             {"name": "DEVELOPMENT_ENVIRONMENT", "value": ENVIRONMENT},
                             {"name": "DEVELOPMENT_LOCATION", "value": "aws"},
+                            {
+                                "name": "DAGSTER_ECS_LOG_GROUP_NAME",
+                                "value": a["log_group"],
+                            },
+                            {
+                                "name": "DAGSTER_RUN_WORKER_EXECUTION_ROLE_ARN",
+                                "value": a["run_worker_execution_role_arn"],
+                            },
+                            {
+                                "name": "DAGSTER_RUN_WORKER_TASK_ROLE_ARN",
+                                "value": a["run_worker_task_role_arn"],
+                            },
+                            {
+                                "name": "DAGSTER_POSTGRES_PASSWORD_PARAMETER_ARN",
+                                "value": a["pg_pass_param"],
+                            },
                         ],
                         "secrets": [
                             {
@@ -469,6 +490,8 @@ class DagsterDaemonServiceComponentResource(pulumi.ComponentResource):
             pg_pass_param=postgres_password_parameter,
             log_group=cluster.log_group.name,
             region=aws.get_region().region,
+            run_worker_execution_role_arn=iam_roles.daemon_execution_role.arn,
+            run_worker_task_role_arn=iam_roles.daemon_task_role.arn,
         ).apply(
             lambda a: json.dumps(
                 [
@@ -485,9 +508,26 @@ class DagsterDaemonServiceComponentResource(pulumi.ComponentResource):
                             },
                             {"name": "DAGSTER_POSTGRES_USER", "value": "dagster_user"},
                             {"name": "AWS_S3_LOCKING_PROVIDER", "value": "dynamodb"},
+                            {"name": "AWS_DEFAULT_REGION", "value": a["region"]},
                             {"name": "DAGSTER_GRPC_TIMEOUT_SECONDS", "value": "300"},
                             {"name": "DEVELOPMENT_ENVIRONMENT", "value": ENVIRONMENT},
                             {"name": "DEVELOPMENT_LOCATION", "value": "aws"},
+                            {
+                                "name": "DAGSTER_ECS_LOG_GROUP_NAME",
+                                "value": a["log_group"],
+                            },
+                            {
+                                "name": "DAGSTER_RUN_WORKER_EXECUTION_ROLE_ARN",
+                                "value": a["run_worker_execution_role_arn"],
+                            },
+                            {
+                                "name": "DAGSTER_RUN_WORKER_TASK_ROLE_ARN",
+                                "value": a["run_worker_task_role_arn"],
+                            },
+                            {
+                                "name": "DAGSTER_POSTGRES_PASSWORD_PARAMETER_ARN",
+                                "value": a["pg_pass_param"],
+                            },
                         ],
                         "secrets": [
                             {

@@ -99,6 +99,20 @@ def _assert_webserver_health_check_probes_port(container: dict) -> None:
     assert command != "CMD-SHELL true"
 
 
+def _assert_run_worker_prototype_env(container: dict) -> None:
+    assert _env_value(container, "DAGSTER_ECS_LOG_GROUP_NAME")
+    assert _env_value(container, "DAGSTER_RUN_WORKER_EXECUTION_ROLE_ARN").endswith(
+        "test-energy-market-ecs-daemon-execution-role"
+    )
+    assert _env_value(container, "DAGSTER_RUN_WORKER_TASK_ROLE_ARN").endswith(
+        "test-energy-market-ecs-daemon-task-role"
+    )
+    assert _env_value(container, "DAGSTER_POSTGRES_PASSWORD_PARAMETER_ARN").endswith(
+        ":parameter/test-energy-market/dagster/postgres/password"
+    )
+    assert _env_value(container, "AWS_DEFAULT_REGION") == "ap-southeast-2"
+
+
 # ---------------------------------------------------------------------------
 # User-code service
 # ---------------------------------------------------------------------------
@@ -411,6 +425,29 @@ class TestDagsterWebserverAdminService:
             _assert_postgres_password_uses_ecs_secret(
                 _first_container(container_definitions)
             )
+
+        return svc.task_definition.container_definitions.apply(check)
+
+    @pulumi.runtime.test
+    def test_webserver_admin_exposes_run_worker_prototype_env(self) -> None:
+        vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
+        svc = DagsterWebserverServiceComponentResource(
+            "test-energy-market-webserver-admin",
+            vpc=vpc,
+            cluster=cluster,
+            ecr=ecr,
+            postgres=pg,
+            security_groups=sgs,
+            service_discovery=sd,
+            iam_roles=iam,
+            cloud_map_name="webserver-admin",
+            path_prefix="/dagster-webserver/admin",
+            stream_prefix="dagster-webserver-service-admin",
+            readonly=False,
+        )
+
+        def check(container_definitions: str) -> None:
+            _assert_run_worker_prototype_env(_first_container(container_definitions))
 
         return svc.task_definition.container_definitions.apply(check)
 
@@ -832,6 +869,27 @@ class TestDagsterDaemonService:
             _assert_postgres_password_uses_ecs_secret(
                 _first_container(container_definitions)
             )
+
+        return svc.task_definition.container_definitions.apply(check)
+
+    @pulumi.runtime.test
+    def test_daemon_exposes_run_worker_prototype_env(self) -> None:
+        vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
+        svc = DagsterDaemonServiceComponentResource(
+            "test-energy-market-daemon",
+            vpc=vpc,
+            cluster=cluster,
+            ecr=ecr,
+            postgres=pg,
+            security_groups=sgs,
+            iam_roles=iam,
+        )
+
+        def check(container_definitions: str) -> None:
+            container = _first_container(container_definitions)
+            _assert_run_worker_prototype_env(container)
+            assert _env_value(container, "AWS_S3_LOCKING_PROVIDER") == "dynamodb"
+            assert _env_value(container, "DAGSTER_GRPC_TIMEOUT_SECONDS") == "300"
 
         return svc.task_definition.container_definitions.apply(check)
 

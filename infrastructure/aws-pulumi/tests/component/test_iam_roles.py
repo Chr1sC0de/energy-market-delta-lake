@@ -13,6 +13,10 @@ class TestIamRolesCreation:
         iam = IamRolesComponentResource("test-energy-market")
         assert iam.bastion_profile is not None
 
+    def test_ecs_instance_profile_created(self) -> None:
+        iam = IamRolesComponentResource("test-energy-market")
+        assert iam.ecs_instance_profile is not None
+
     def test_webserver_execution_role_created(self) -> None:
         iam = IamRolesComponentResource("test-energy-market")
         assert iam.webserver_execution_role is not None
@@ -70,6 +74,22 @@ class TestIamRolesCreation:
             )
 
         return iam.daemon_execution_role.assume_role_policy.apply(check)
+
+    @pulumi.runtime.test
+    def test_ecs_instance_role_supports_container_instances(self) -> None:
+        iam = IamRolesComponentResource("test-energy-market")
+
+        def check(managed_policy_arns: list[str]) -> None:
+            assert (
+                "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
+                in managed_policy_arns
+            )
+            assert (
+                "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+                in managed_policy_arns
+            )
+
+        return iam.ecs_instance_role.managed_policy_arns.apply(check)
 
     @pulumi.runtime.test
     def test_daemon_task_role_can_publish_sns_alerts(self) -> None:

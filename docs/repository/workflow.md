@@ -87,6 +87,9 @@ Detailed ETL behavior lives in the
 [AEMO ETL Subproject docs](../../backend-services/dagster-user/aemo-etl/README.md).
 Detailed deployed platform behavior lives in the
 [AWS Pulumi Subproject docs](../../infrastructure/aws-pulumi/README.md).
+The issue #126 EC2-backed run-worker path is an **Exploratory delivery**
+prototype in that Subproject; the normal AWS workflow still uses the Fargate
+runtime unless an Operator deliberately enables the prototype Pulumi config.
 
 ## Local development and testing workflow
 

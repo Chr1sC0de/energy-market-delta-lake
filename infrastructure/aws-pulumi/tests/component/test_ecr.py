@@ -3,6 +3,7 @@
 import warnings
 
 import pulumi
+import pytest
 
 from components.ecr import ECRComponentResource
 
@@ -24,6 +25,24 @@ class TestEcrRepositories:
         assert ecr.dagster_user_code_aemo_etl_image is not None
         assert ecr.caddy_image is not None
         assert ecr.authentication_image is not None
+
+    def test_dagster_core_deployment_defaults_to_aws(self) -> None:
+        ecr = ECRComponentResource("test-energy-market")
+        assert ecr.dagster_core_deployment == "aws"
+
+    def test_dagster_core_deployment_accepts_ec2_run_worker_prototype(self) -> None:
+        ecr = ECRComponentResource(
+            "test-energy-market",
+            dagster_core_deployment="aws-ec2-run-workers-prototype",
+        )
+        assert ecr.dagster_core_deployment == "aws-ec2-run-workers-prototype"
+
+    def test_dagster_core_deployment_rejects_unknown_target(self) -> None:
+        with pytest.raises(ValueError, match="Unsupported Dagster core deployment"):
+            ECRComponentResource(
+                "test-energy-market",
+                dagster_core_deployment="unknown",
+            )
 
     @pulumi.runtime.test
     def test_all_repositories_scan_on_push(self) -> None:

@@ -1,0 +1,98 @@
+scheduler:
+  module: dagster.core.scheduler
+  class: DagsterDaemonScheduler
+run_coordinator:
+  module: dagster.core.run_coordinator
+  class: QueuedRunCoordinator
+  config:
+    max_concurrent_runs: 20
+run_launcher:
+  module: "dagster_aws.ecs"
+  class: "EcsRunLauncher"
+  config:
+    secrets_tag: null
+    task_definition:
+      log_group:
+        env: DAGSTER_ECS_LOG_GROUP_NAME
+      requires_compatibilities:
+        - "EC2"
+      execution_role_arn:
+        env: DAGSTER_RUN_WORKER_EXECUTION_ROLE_ARN
+      task_role_arn:
+        env: DAGSTER_RUN_WORKER_TASK_ROLE_ARN
+      runtime_platform:
+        cpuArchitecture: "X86_64"
+        operatingSystemFamily: "LINUX"
+    env_vars:
+      - DAGSTER_POSTGRES_DB
+      - DAGSTER_POSTGRES_HOSTNAME
+      - DAGSTER_POSTGRES_USER
+      - AWS_S3_LOCKING_PROVIDER
+      - DAGSTER_GRPC_TIMEOUT_SECONDS
+      - DEVELOPMENT_ENVIRONMENT
+      - DEVELOPMENT_LOCATION
+      - AWS_DEFAULT_REGION
+    secrets:
+      - name: "DAGSTER_POSTGRES_PASSWORD"
+        valueFrom:
+          env: DAGSTER_POSTGRES_PASSWORD_PARAMETER_ARN
+    run_task_kwargs:
+      capacityProviderStrategy:
+        - capacityProvider: "dev-energy-market-run-worker-ec2"
+          weight: 1
+      placementStrategy:
+        - type: "binpack"
+          field: "memory"
+    run_resources:
+      cpu: "256"
+      memory: "2048"
+run_storage:
+  module: dagster_postgres.run_storage
+  class: PostgresRunStorage
+  config:
+    postgres_db:
+      hostname:
+        env: DAGSTER_POSTGRES_HOSTNAME
+      username:
+        env: DAGSTER_POSTGRES_USER
+      password:
+        env: DAGSTER_POSTGRES_PASSWORD
+      db_name:
+        env: DAGSTER_POSTGRES_DB
+      port: 5432
+schedule_storage:
+  module: dagster_postgres.schedule_storage
+  class: PostgresScheduleStorage
+  config:
+    postgres_db:
+      hostname:
+        env: DAGSTER_POSTGRES_HOSTNAME
+      username:
+        env: DAGSTER_POSTGRES_USER
+      password:
+        env: DAGSTER_POSTGRES_PASSWORD
+      db_name:
+        env: DAGSTER_POSTGRES_DB
+      port: 5432
+event_log_storage:
+  module: dagster_postgres.event_log
+  class: PostgresEventLogStorage
+  config:
+    postgres_db:
+      hostname:
+        env: DAGSTER_POSTGRES_HOSTNAME
+      username:
+        env: DAGSTER_POSTGRES_USER
+      password:
+        env: DAGSTER_POSTGRES_PASSWORD
+      db_name:
+        env: DAGSTER_POSTGRES_DB
+      port: 5432
+run_monitoring:
+  enabled: true
+  max_runtime_seconds: 1800
+  # values below are the defaults, and don't need to be specified except to override them
+  start_timeout_seconds: 180
+  cancel_timeout_seconds: 180
+  max_resume_run_attempts: 0
+  poll_interval_seconds: 120

@@ -55,6 +55,8 @@ Security controls that span multiple components are summarized in
 - `sync.sources`:
   - `infrastructure/aws-pulumi/__main__.py`
   - `infrastructure/aws-pulumi/components/vpc.py`
+  - `infrastructure/aws-pulumi/components/ecr.py`
+  - `infrastructure/aws-pulumi/components/ecs_cluster.py`
   - `infrastructure/aws-pulumi/components/ecs_services.py`
   - `infrastructure/aws-pulumi/docs/security-audit.md`
 - `sync.scope`: `architecture`
