@@ -56,7 +56,8 @@ network, filesystem, secret, audit, and rollback controls.
 [notebooks/local_table_explorer.py](notebooks/local_table_explorer.py) discovers
 the compose-local `dev-energy-market-*` LocalStack buckets, overlays the local
 Dagster GraphQL table asset catalogue, and shows bucket health, table assets,
-storage status, and on-demand inspection for selected live tables.
+storage status, catalogue controls, and cached inspection for selected live
+tables.
 
 The explorer reads the same AWS settings passed to the Marimo service by
 compose: `AWS_ENDPOINT_URL`, `AWS_DEFAULT_REGION`, `AWS_ACCESS_KEY_ID`,
@@ -82,8 +83,22 @@ show asset key, group, kinds, description, `dagster/uri`, materializable and
 executable flags, latest materialization timestamp, and column metadata when
 Dagster provides it. If GraphQL is unavailable, the notebook warns clearly and
 continues in storage-only mode. Empty buckets render bucket health and an empty
-state instead of raising notebook exceptions. Selecting a live table and running
-inspection loads schema, exact row count, and a small preview.
+state instead of raising notebook exceptions.
+
+The catalogue controls filter by asset group, layer or domain, live status, and
+free-text asset search. For a selected live LocalStack table, the preview
+controls support row limit, column picker, sort column and direction, text
+search, exact row count, selected-column null counts, selected-column distinct
+counts, and preview rows. The notebook caches the selected table scan for the
+Marimo session, so changing preview controls does not repeatedly read the same
+table from LocalStack. Use **Refresh table scan** after materializing or
+re-seeding data.
+
+Unmaterialized assets and empty local tables show materialization guidance
+instead of a traceback. In a fresh compose stack, LocalStack may contain empty
+or schema-only table prefixes before any Dagster run has produced rows; those
+tables are not previewable until the asset is materialized or curated outputs
+are seeded.
 
 ## Gas market dashboard
 
@@ -141,6 +156,14 @@ choose `local_table_explorer` or `sample_energy_market`:
 http://localhost/marimo
 ```
 
+The table explorer is compose-first. Start the stack from
+[../compose.yaml](../compose.yaml), wait for `localstack`, `aemo-etl`, both
+Dagster webservers, and `marimo-dashboard` to be healthy, then open
+`/marimo` and choose `local_table_explorer`. The explorer can list Dagster table
+assets before local data exists, but previews require materialized LocalStack
+tables. Materialize the target assets from the Dagster UI or a local Dagster
+launch, then refresh the table scan in the notebook.
+
 For direct notebook development from this Subproject, point the notebook at the
 host-exposed LocalStack endpoint:
 
@@ -159,7 +182,9 @@ AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/local_table_
 When running the table explorer outside compose, set `DAGSTER_GRAPHQL_URL` to a
 reachable Dagster GraphQL endpoint if you want the catalogue overlay. Leaving it
 unset is still usable: the notebook shows a GraphQL warning and keeps
-storage-only discovery and preview behavior.
+storage-only discovery and preview behavior. Outside compose, previews still
+require `AWS_ENDPOINT_URL` to point at the LocalStack endpoint that holds the
+materialized table data.
 
 Materialize the `gas_model` assets in Dagster, or seed LocalStack with curated
 outputs, then refresh the dashboard to see populated sections.
@@ -205,4 +230,6 @@ prek run -a
 - `sync.qa`:
   - `git diff --name-only`
   - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`
+  - `uv run pytest tests/component`
+  - `prek run -a`
   - `verify links, diagrams, commands, paths, ports, env vars, and names`

@@ -1,6 +1,6 @@
 """LocalStack-backed table discovery helpers for the Marimo table explorer."""
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Hashable, Iterable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -35,6 +35,7 @@ DEFAULT_AWS_SECRET_ACCESS_KEY = "test"
 DEFAULT_AWS_ALLOW_HTTP = "true"
 DEFAULT_DISCOVERY_OBJECT_LIMIT = 10_000
 DEFAULT_PREVIEW_ROWS = 25
+DEFAULT_ROW_LIMIT = 25
 
 
 @runtime_checkable
@@ -224,10 +225,72 @@ class TableInspection:
         return self.error is None
 
 
+@dataclass(frozen=True)
+class TableScan:
+    """A full table scan cached for a notebook session."""
+
+    table: TablePrefix
+    dataframe: pl.DataFrame
+    error: str | None
+
+    @property
+    def available(self) -> bool:
+        """Return whether the table loaded successfully."""
+        return self.error is None
+
+
+@dataclass(frozen=True)
+class TableQuery:
+    """In-memory exploration controls for a loaded table."""
+
+    row_limit: int = DEFAULT_ROW_LIMIT
+    columns: tuple[str, ...] = ()
+    sort_column: str | None = None
+    sort_descending: bool = False
+    text_search: str = ""
+
+
+@dataclass(frozen=True)
+class ColumnStatistic:
+    """Selected-column statistics computed from an exact table scan."""
+
+    column: str
+    null_count: int
+    distinct_count: int
+
+
+@dataclass(frozen=True)
+class TableExploration:
+    """Preview and selected-column statistics for a loaded table."""
+
+    table: TablePrefix
+    schema: tuple[ColumnSchema, ...]
+    row_count: int
+    filtered_row_count: int
+    preview: pl.DataFrame
+    column_statistics: tuple[ColumnStatistic, ...]
+    error: str | None
+
+    @property
+    def available(self) -> bool:
+        """Return whether the exploration loaded successfully."""
+        return self.error is None
+
+
 @dataclass
 class _TableFacts:
     parquet_files: list[str]
     has_delta_log: bool = False
+
+
+TableScanCacheKey = tuple[
+    str,
+    str,
+    str,
+    tuple[str, ...],
+    tuple[tuple[str, str], ...],
+    Hashable,
+]
 
 
 def discover_table_explorer_config(
@@ -457,21 +520,17 @@ def inspect_table(
     preview_rows: int = DEFAULT_PREVIEW_ROWS,
 ) -> TableInspection:
     """Load schema, exact row count, and preview rows for a discovered table."""
-    try:
-        if table.table_format is TableFormat.DELTA:
-            dataframe = read_delta_table(table, config)
-        else:
-            client = create_s3_client(config) if s3_client is None else s3_client
-            dataframe = read_parquet_table(table, client)
-    except Exception as error:
+    scan = load_table_dataframe(table, config, s3_client=s3_client)
+    if scan.error is not None:
         return TableInspection(
             table=table,
             schema=(),
             row_count=0,
             preview=pl.DataFrame(),
-            error=_compact_error(error),
+            error=scan.error,
         )
 
+    dataframe = scan.dataframe
     return TableInspection(
         table=table,
         schema=_schema_from_dataframe(dataframe),
@@ -479,6 +538,143 @@ def inspect_table(
         preview=dataframe.head(preview_rows),
         error=None,
     )
+
+
+def load_table_dataframe(
+    table: TablePrefix,
+    config: TableExplorerConfig,
+    s3_client: S3Client | None = None,
+) -> TableScan:
+    """Load a full table DataFrame for notebook-session caching."""
+    try:
+        if table.table_format is TableFormat.DELTA:
+            dataframe = read_delta_table(table, config)
+        else:
+            client = create_s3_client(config) if s3_client is None else s3_client
+            dataframe = read_parquet_table(table, client)
+    except Exception as error:
+        return TableScan(
+            table=table,
+            dataframe=pl.DataFrame(),
+            error=_compact_error(error),
+        )
+
+    return TableScan(table=table, dataframe=dataframe, error=None)
+
+
+def cached_table_scan(
+    table: TablePrefix,
+    config: TableExplorerConfig,
+    cache: MutableMapping[TableScanCacheKey, TableScan],
+    *,
+    s3_client: S3Client | None = None,
+    refresh_token: Hashable = 0,
+) -> TableScan:
+    """Return a cached full table scan for one notebook session."""
+    cache_key = _table_scan_cache_key(table, config, refresh_token)
+    if cache_key not in cache:
+        cache[cache_key] = load_table_dataframe(table, config, s3_client=s3_client)
+    return cache[cache_key]
+
+
+def explore_table_scan(scan: TableScan, query: TableQuery) -> TableExploration:
+    """Apply row, column, sort, and text-search controls to a cached table scan."""
+    if scan.error is not None:
+        return TableExploration(
+            table=scan.table,
+            schema=(),
+            row_count=0,
+            filtered_row_count=0,
+            preview=pl.DataFrame(),
+            column_statistics=(),
+            error=scan.error,
+        )
+
+    dataframe = scan.dataframe
+    selected_columns = _selected_columns(dataframe, query.columns)
+    filtered = _filter_text(dataframe, selected_columns, query.text_search)
+    if query.sort_column in dataframe.columns:
+        filtered = filtered.sort(
+            query.sort_column,
+            descending=query.sort_descending,
+            nulls_last=True,
+        )
+
+    preview_columns = selected_columns or tuple(dataframe.columns)
+    return TableExploration(
+        table=scan.table,
+        schema=_schema_from_dataframe(dataframe),
+        row_count=dataframe.height,
+        filtered_row_count=filtered.height,
+        preview=filtered.select(preview_columns).head(_normalized_row_limit(query)),
+        column_statistics=_column_statistics(dataframe, preview_columns),
+        error=None,
+    )
+
+
+def filter_catalogued_tables(
+    tables: Sequence[CataloguedTable],
+    *,
+    groups: Sequence[str] = (),
+    layers_or_domains: Sequence[str] = (),
+    statuses: Sequence[str | TableAvailability] = (),
+    search: str = "",
+) -> tuple[CataloguedTable, ...]:
+    """Filter overlaid table catalogue rows for notebook controls."""
+    group_filters = {group.strip().lower() for group in groups if group.strip()}
+    layer_filters = {
+        layer_or_domain.strip().lower()
+        for layer_or_domain in layers_or_domains
+        if layer_or_domain.strip()
+    }
+    status_filters = {
+        _status_filter_value(status).lower()
+        for status in statuses
+        if _status_filter_value(status) != ""
+    }
+    search_term = search.strip().lower()
+    filtered: list[CataloguedTable] = []
+
+    for table in tables:
+        if group_filters and catalogued_table_group(table).lower() not in group_filters:
+            continue
+        table_layers = {
+            layer_or_domain.lower()
+            for layer_or_domain in catalogued_table_layers_or_domains(table)
+        }
+        if layer_filters and table_layers.isdisjoint(layer_filters):
+            continue
+        if status_filters and table.status.value.lower() not in status_filters:
+            continue
+        if search_term and search_term not in _catalogued_table_search_text(table):
+            continue
+        filtered.append(table)
+
+    return tuple(filtered)
+
+
+def catalogued_table_group(table: CataloguedTable) -> str:
+    """Return the asset group filter value for an overlaid table row."""
+    if table.asset is None:
+        return "Storage only"
+    return table.asset.group_name or "(no group)"
+
+
+def catalogued_table_layers_or_domains(table: CataloguedTable) -> tuple[str, ...]:
+    """Return layer and domain filter values for an overlaid table row."""
+    if table.table is not None:
+        parts = _path_parts(table.table.prefix)
+    elif table.uri is not None and (location := _s3_table_location(table.uri)):
+        parts = _path_parts(location[1])
+    elif table.asset is not None:
+        parts = table.asset.asset_key
+    else:
+        parts = ()
+
+    values = list(parts[:2])
+    if not values and table.table is not None:
+        values.append(table.table.bucket)
+    return tuple(dict.fromkeys(value for value in values if value))
 
 
 def table_by_id(
@@ -628,11 +824,120 @@ def _last_path_part(path: str) -> str:
     return path.rsplit("/", maxsplit=1)[-1]
 
 
+def _path_parts(path: str) -> tuple[str, ...]:
+    return tuple(part for part in path.split("/") if part)
+
+
 def _schema_from_dataframe(dataframe: pl.DataFrame) -> tuple[ColumnSchema, ...]:
     return tuple(
         ColumnSchema(name=name, dtype=str(dtype))
         for name, dtype in dataframe.schema.items()
     )
+
+
+def _table_scan_cache_key(
+    table: TablePrefix,
+    config: TableExplorerConfig,
+    refresh_token: Hashable,
+) -> TableScanCacheKey:
+    config_fingerprint = tuple(
+        sorted(
+            {
+                "AWS_ENDPOINT_URL": config.aws_endpoint_url,
+                "AWS_REGION": config.aws_region,
+                "AWS_ACCESS_KEY_ID": config.aws_access_key_id,
+                "AWS_SECRET_ACCESS_KEY": config.aws_secret_access_key,
+                "AWS_ALLOW_HTTP": config.aws_allow_http,
+            }.items()
+        )
+    )
+    return (
+        table.table_id,
+        table.uri,
+        table.table_format.value,
+        table.parquet_files,
+        config_fingerprint,
+        refresh_token,
+    )
+
+
+def _selected_columns(
+    dataframe: pl.DataFrame,
+    columns: Sequence[str],
+) -> tuple[str, ...]:
+    available_columns = set(dataframe.columns)
+    return tuple(column for column in columns if column in available_columns)
+
+
+def _filter_text(
+    dataframe: pl.DataFrame,
+    selected_columns: Sequence[str],
+    text_search: str,
+) -> pl.DataFrame:
+    search_term = text_search.strip().lower()
+    if search_term == "" or not dataframe.columns:
+        return dataframe
+
+    search_columns = tuple(selected_columns) or tuple(dataframe.columns)
+    search_expression = pl.any_horizontal(
+        [
+            pl.col(column)
+            .cast(pl.String)
+            .str.to_lowercase()
+            .str.contains(search_term, literal=True)
+            for column in search_columns
+        ]
+    ).fill_null(False)
+    return dataframe.filter(search_expression)
+
+
+def _normalized_row_limit(query: TableQuery) -> int:
+    return max(1, int(query.row_limit))
+
+
+def _column_statistics(
+    dataframe: pl.DataFrame,
+    columns: Sequence[str],
+) -> tuple[ColumnStatistic, ...]:
+    statistics: list[ColumnStatistic] = []
+    for column in columns:
+        statistics.append(
+            ColumnStatistic(
+                column=column,
+                null_count=int(dataframe.select(pl.col(column).null_count()).item()),
+                distinct_count=int(
+                    dataframe.select(pl.col(column).drop_nulls().n_unique()).item()
+                ),
+            )
+        )
+    return tuple(statistics)
+
+
+def _status_filter_value(status: str | TableAvailability) -> str:
+    if isinstance(status, TableAvailability):
+        return status.value
+    return status.strip()
+
+
+def _catalogued_table_search_text(table: CataloguedTable) -> str:
+    values = [
+        table.display_name,
+        table.status.value,
+        table.uri or "",
+        catalogued_table_group(table),
+        " ".join(catalogued_table_layers_or_domains(table)),
+    ]
+    if table.asset is not None:
+        values.extend(
+            [
+                table.asset.asset_id,
+                table.asset.description or "",
+                " ".join(table.asset.kinds),
+            ]
+        )
+    if table.table is not None:
+        values.extend([table.table.table_id, table.table.uri])
+    return " ".join(values).lower()
 
 
 def _setting(environ: Mapping[str, str], name: str, default: str) -> str:

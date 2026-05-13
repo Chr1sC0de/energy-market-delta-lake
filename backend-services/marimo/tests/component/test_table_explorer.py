@@ -13,16 +13,23 @@ from marimoserver.table_explorer import (
     CataloguedTable,
     S3Client,
     StorageDiscovery,
+    TableQuery,
     TableExplorerConfig,
     TableAvailability,
     TableFormat,
     TablePrefix,
+    TableScan,
+    cached_table_scan,
     catalogued_table_by_id,
+    catalogued_table_group,
+    catalogued_table_layers_or_domains,
     classify_table_prefixes,
     create_s3_client,
     discover_table_catalogue,
     discover_storage,
     discover_table_explorer_config,
+    explore_table_scan,
+    filter_catalogued_tables,
     format_materialization_timestamp,
     inspect_table,
     overlay_table_catalogue,
@@ -298,6 +305,90 @@ def test_overlay_table_catalogue_keeps_storage_when_graphql_unavailable() -> Non
     )
 
 
+def test_filter_catalogued_tables_combines_group_layer_status_and_search() -> None:
+    live_table = TablePrefix(
+        bucket="dev-energy-market-aemo",
+        prefix="silver/gas_model/live",
+        table_format=TableFormat.PARQUET,
+        parquet_files=("silver/gas_model/live/part-000.parquet",),
+    )
+    live_entry = CataloguedTable(
+        entry_id="asset:silver/gas_model/live",
+        status=TableAvailability.LIVE,
+        asset=_asset(
+            ("silver", "gas_model", "live"),
+            uri=live_table.uri,
+            latest_materialization_timestamp=1_714_000_000,
+        ),
+        table=live_table,
+    )
+    missing_entry = CataloguedTable(
+        entry_id="asset:bronze/raw/missing",
+        status=TableAvailability.MISSING,
+        asset=_asset(
+            ("bronze", "raw", "missing"),
+            uri="s3://dev-energy-market-aemo/bronze/raw/missing",
+            latest_materialization_timestamp=1_714_000_001,
+            group_name="raw",
+        ),
+        table=None,
+    )
+    uri_only_entry = CataloguedTable(
+        entry_id="asset:silver_gas_dim_zone",
+        status=TableAvailability.UNMATERIALIZED,
+        asset=_asset(
+            ("silver_gas_dim_zone",),
+            uri="s3://dev-energy-market-aemo/silver/gas_model/silver_gas_dim_zone",
+            latest_materialization_timestamp=None,
+        ),
+        table=None,
+    )
+    storage_entry = CataloguedTable(
+        entry_id="storage:dev-energy-market-landing/bronze/storage_only",
+        status=TableAvailability.LIVE,
+        asset=None,
+        table=TablePrefix(
+            bucket="dev-energy-market-landing",
+            prefix="bronze/storage_only",
+            table_format=TableFormat.PARQUET,
+            parquet_files=("bronze/storage_only/part-000.parquet",),
+        ),
+    )
+
+    entries = (live_entry, missing_entry, storage_entry)
+
+    assert catalogued_table_group(storage_entry) == "Storage only"
+    assert catalogued_table_layers_or_domains(live_entry) == ("silver", "gas_model")
+    assert catalogued_table_layers_or_domains(uri_only_entry) == (
+        "silver",
+        "gas_model",
+    )
+    assert catalogued_table_layers_or_domains(
+        CataloguedTable(
+            entry_id="asset:schema_only",
+            status=TableAvailability.UNMATERIALIZED,
+            asset=_asset(
+                ("schema_only",),
+                uri=None,
+                latest_materialization_timestamp=None,
+            ),
+            table=None,
+        )
+    ) == ("schema_only",)
+    assert filter_catalogued_tables(
+        entries,
+        groups=("gas_model",),
+        layers_or_domains=("silver",),
+        statuses=(TableAvailability.LIVE,),
+        search="live",
+    ) == (live_entry,)
+    assert filter_catalogued_tables(entries, layers_or_domains=("silver",)) == (
+        live_entry,
+    )
+    assert filter_catalogued_tables(entries, statuses=("Missing",)) == (missing_entry,)
+    assert filter_catalogued_tables(entries, search="storage only") == (storage_entry,)
+
+
 def test_catalogued_table_properties_fall_back_to_entry_id() -> None:
     entry = CataloguedTable(
         entry_id="entry",
@@ -308,6 +399,20 @@ def test_catalogued_table_properties_fall_back_to_entry_id() -> None:
 
     assert entry.display_name == "entry"
     assert entry.uri is None
+    assert catalogued_table_layers_or_domains(entry) == ()
+    assert catalogued_table_layers_or_domains(
+        CataloguedTable(
+            entry_id="storage:bucket/",
+            status=TableAvailability.LIVE,
+            asset=None,
+            table=TablePrefix(
+                bucket="bucket",
+                prefix="",
+                table_format=TableFormat.PARQUET,
+                parquet_files=("part-000.parquet",),
+            ),
+        )
+    ) == ("bucket",)
 
 
 def test_format_materialization_timestamp_returns_utc_iso_string() -> None:
@@ -582,6 +687,134 @@ def test_inspect_table_returns_error_detail() -> None:
     assert inspection.preview.is_empty()
 
 
+def test_cached_table_scan_reuses_scan_until_refresh_token_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = discover_table_explorer_config({})
+    table = TablePrefix(
+        bucket="dev-energy-market-aemo",
+        prefix="silver/gas",
+        table_format=TableFormat.PARQUET,
+        parquet_files=("silver/gas/part-000.parquet",),
+    )
+    calls: list[int] = []
+
+    def fake_load_table_dataframe(
+        table_arg: TablePrefix,
+        config_arg: TableExplorerConfig,
+        s3_client: S3Client | None = None,
+    ) -> TableScan:
+        assert table_arg == table
+        assert config_arg == config
+        assert s3_client is None
+        calls.append(len(calls) + 1)
+        return TableScan(
+            table=table_arg,
+            dataframe=pl.DataFrame({"scan": [calls[-1]]}),
+            error=None,
+        )
+
+    monkeypatch.setattr(explorer, "load_table_dataframe", fake_load_table_dataframe)
+    cache: dict[explorer.TableScanCacheKey, TableScan] = {}
+
+    first_scan = cached_table_scan(table, config, cache)
+    cached_scan = cached_table_scan(table, config, cache)
+    refreshed_scan = cached_table_scan(table, config, cache, refresh_token=1)
+
+    assert first_scan.available
+    assert first_scan is cached_scan
+    assert refreshed_scan is not first_scan
+    assert [scan.dataframe.item() for scan in (first_scan, refreshed_scan)] == [1, 2]
+    assert calls == [1, 2]
+
+
+def test_explore_table_scan_applies_column_sort_text_and_stats() -> None:
+    table = TablePrefix(
+        bucket="dev-energy-market-aemo",
+        prefix="silver/gas",
+        table_format=TableFormat.PARQUET,
+        parquet_files=("silver/gas/part-000.parquet",),
+    )
+    scan = TableScan(
+        table=table,
+        dataframe=pl.DataFrame(
+            {
+                "id": [2, 1, 3],
+                "name": ["Beta", None, "alpha"],
+                "region": ["VIC", "NSW", "VIC"],
+            }
+        ),
+        error=None,
+    )
+
+    exploration = explore_table_scan(
+        scan,
+        TableQuery(
+            row_limit=1,
+            columns=("id", "name"),
+            sort_column="id",
+            text_search="a",
+        ),
+    )
+
+    assert exploration.available
+    assert exploration.row_count == 3
+    assert exploration.filtered_row_count == 2
+    assert [(column.name, column.dtype) for column in exploration.schema] == [
+        ("id", "Int64"),
+        ("name", "String"),
+        ("region", "String"),
+    ]
+    assert exploration.preview.to_dict(as_series=False) == {
+        "id": [2],
+        "name": ["Beta"],
+    }
+    assert [
+        (statistic.column, statistic.null_count, statistic.distinct_count)
+        for statistic in exploration.column_statistics
+    ] == [("id", 0, 3), ("name", 1, 2)]
+
+
+def test_explore_table_scan_handles_empty_tables_without_error() -> None:
+    table = TablePrefix(
+        bucket="dev-energy-market-aemo",
+        prefix="silver/empty",
+        table_format=TableFormat.PARQUET,
+        parquet_files=(),
+    )
+
+    exploration = explore_table_scan(
+        TableScan(table=table, dataframe=pl.DataFrame(), error=None),
+        TableQuery(),
+    )
+
+    assert exploration.available
+    assert exploration.row_count == 0
+    assert exploration.filtered_row_count == 0
+    assert exploration.preview.is_empty()
+    assert exploration.column_statistics == ()
+
+
+def test_explore_table_scan_returns_scan_errors() -> None:
+    table = TablePrefix(
+        bucket="dev-energy-market-aemo",
+        prefix="silver/error",
+        table_format=TableFormat.PARQUET,
+        parquet_files=(),
+    )
+
+    exploration = explore_table_scan(
+        TableScan(table=table, dataframe=pl.DataFrame({"id": [1]}), error="boom"),
+        TableQuery(),
+    )
+
+    assert not exploration.available
+    assert exploration.error == "boom"
+    assert exploration.schema == ()
+    assert exploration.row_count == 0
+    assert exploration.preview.is_empty()
+
+
 def test_compact_error_handles_empty_messages() -> None:
     class EmptyMessageError(Exception):
         def __str__(self) -> str:
@@ -600,10 +833,11 @@ def _asset(
     *,
     uri: str | None,
     latest_materialization_timestamp: float | None,
+    group_name: str = "gas_model",
 ) -> DagsterTableAsset:
     return DagsterTableAsset(
         asset_key=asset_key,
-        group_name="gas_model",
+        group_name=group_name,
         kinds=("parquet", "table"),
         description="Asset description.",
         uri=uri,

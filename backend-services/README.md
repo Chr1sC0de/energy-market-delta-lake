@@ -208,11 +208,17 @@ Useful routes:
 - `/dagster-webserver/guest` for the guest Dagster UI
 - `/dagster-webserver/admin` for the protected admin Dagster UI
 - `/marimo` for curated local Marimo dashboards through Caddy, including the
-  LocalStack table explorer
+  LocalStack table explorer. The table explorer lists the Dagster table asset
+  catalogue, filters by group, layer or domain, status, and search text, and
+  previews only materialized LocalStack tables.
 - `http://127.0.0.1:2719` for the local-only Marimo-Codex research workspace
 
 The `aemo-etl` code location should appear in Dagster under
 **Deployment → Code locations** with its assets and jobs loaded.
+
+In a fresh stack, empty LocalStack table prefixes can appear unmaterialized in
+the Marimo table explorer; materialize the relevant assets in Dagster or seed
+curated outputs before expecting preview rows.
 
 ______________________________________________________________________
 
@@ -282,12 +288,15 @@ Bucket names are derived from the defaults in `aemo_etl/configs.py`
 
 The Marimo `local_table_explorer` notebook lists these buckets, reports empty
 bucket health, overlays the local Dagster GraphQL table asset catalogue from
-`DAGSTER_GRAPHQL_URL`, and can inspect discovered Delta or parquet table
-prefixes after assets have been materialized or LocalStack has been seeded. In
-compose, `DAGSTER_GRAPHQL_URL` defaults to
+`DAGSTER_GRAPHQL_URL`, filters by group, layer or domain, status, and search
+text, and can inspect discovered Delta or parquet table prefixes after assets
+have been materialized or LocalStack has been seeded. In compose,
+`DAGSTER_GRAPHQL_URL` defaults to
 `http://dagster-webserver-guest:3000/graphql`, so the notebook can list
 unmaterialized table assets from Dagster while still falling back to
-storage-only discovery when GraphQL is unavailable.
+storage-only discovery when GraphQL is unavailable. Preview controls reuse a
+cached table scan for row limits, selected columns, sort order, text search, and
+selected-column statistics.
 
 ## Cached Archive seed
 
@@ -757,4 +766,6 @@ developer-stack setting. It renders e2e Dagster config per run from the current
 - `sync.qa`:
   - `git diff --name-only`
   - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`
+  - `uv run pytest tests/component` from `backend-services/marimo`
+  - `prek run -a` from `backend-services/marimo`
   - `verify links, diagrams, commands, paths, ports, env vars, and names`
