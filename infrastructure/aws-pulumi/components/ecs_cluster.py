@@ -8,8 +8,8 @@ import pulumi_aws as aws
 
 from components.security_groups import SecurityGroupsComponentResource
 from components.vpc import VpcComponentResource
+from dagster_core_deployment import run_worker_ec2_capacity_provider_name
 
-RUN_WORKER_EC2_CAPACITY_PROVIDER_SUFFIX = "run-worker-ec2"
 RUN_WORKER_EC2_INSTANCE_TYPE = "t3.medium"
 RUN_WORKER_EC2_ASG_MAX_SIZE = 2
 RUN_WORKER_EC2_ROOT_VOLUME_GB = 30
@@ -31,10 +31,6 @@ def _ecs_container_instance_user_data(cluster_name: str) -> str:
         """
     )
     return base64.b64encode(user_data.encode("utf-8")).decode("ascii")
-
-
-def _run_worker_ec2_capacity_provider_name(name: str) -> str:
-    return f"{name}-{RUN_WORKER_EC2_CAPACITY_PROVIDER_SUFFIX}"
 
 
 class EcsClusterComponentResource(pulumi.ComponentResource):
@@ -191,7 +187,7 @@ class EcsClusterComponentResource(pulumi.ComponentResource):
 
         self.run_worker_capacity_provider = aws.ecs.CapacityProvider(
             f"{self.name}-run-worker-ec2-capacity-provider",
-            name=_run_worker_ec2_capacity_provider_name(self.name),
+            name=run_worker_ec2_capacity_provider_name(self.name),
             auto_scaling_group_provider=aws.ecs.CapacityProviderAutoScalingGroupProviderArgs(
                 auto_scaling_group_arn=self.run_worker_auto_scaling_group.arn,
                 managed_draining="ENABLED",

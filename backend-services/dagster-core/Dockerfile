@@ -76,6 +76,7 @@ RUN cp dagster.aws.yaml dagster.yaml \
 FROM base AS aws-ec2-run-workers-prototype
 
 RUN cp dagster.aws.ec2-run-workers.prototype.yaml dagster.yaml \
+    && python render_aws_workspace.py code-locations.aws.toml > workspace.aws.yaml \
     && cp workspace.aws.yaml workspace.yaml;
 
 # ── deploy ────────────────────────────────────────────────────────────────────────

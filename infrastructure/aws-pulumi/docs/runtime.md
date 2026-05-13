@@ -162,6 +162,21 @@ pulumi config set dagster_core_deployment aws-ec2-run-workers-prototype
 pulumi config set enable_ec2_run_worker_capacity_prototype true
 ```
 
+Pulumi validates this as a strict pairing before it constructs stack resources:
+
+- `dagster_core_deployment=aws-ec2-run-workers-prototype` without
+  `enable_ec2_run_worker_capacity_prototype=true` is rejected because the
+  Dagster daemon would launch run-worker tasks against a capacity provider the
+  stack does not create.
+- `enable_ec2_run_worker_capacity_prototype=true` with the normal `aws`
+  Dagster image is also rejected; unused EC2 capacity-provider previews are not
+  an accepted configuration.
+- The prototype is dev-only while
+  `backend-services/dagster-core/dagster.aws.ec2-run-workers.prototype.yaml`
+  names `dev-energy-market-run-worker-ec2` directly. If `ENVIRONMENT` would
+  produce any other stack prefix, Pulumi fails instead of creating a capacity
+  provider whose name cannot be reached by the baked Dagster config.
+
 Prototype resources:
 
 - `EcsClusterComponentResource` can add a `dev-energy-market-run-worker-ec2`
@@ -238,8 +253,9 @@ placement, image pull, task startup latency, or scale-in behavior because issue
 
 - The webserver and daemon images both come from `backend-services/dagster-core`
   built with `DAGSTER_DEPLOYMENT=aws` by default.
-- The AWS core image renders `workspace.aws.yaml` from the manifest during the
-  Docker build before copying it to `workspace.yaml`.
+- The AWS-targeted core image stages, `aws` and
+  `aws-ec2-run-workers-prototype`, render `workspace.aws.yaml` from the
+  manifest during the Docker build before copying it to `workspace.yaml`.
 - The issue #126 **Exploratory delivery** prototype can swap only that build
   argument to `aws-ec2-run-workers-prototype`.
 - ECS services use digest-pinned image URIs rather than mutable `:latest` tags
@@ -270,6 +286,8 @@ placement, image pull, task startup latency, or scale-in behavior because issue
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `infrastructure/aws-pulumi/components/ecr.py`
+  - `infrastructure/aws-pulumi/__main__.py`
+  - `infrastructure/aws-pulumi/dagster_core_deployment.py`
   - `infrastructure/aws-pulumi/code_locations.py`
   - `infrastructure/aws-pulumi/components/dagster_runtime_task.py`
   - `infrastructure/aws-pulumi/components/ecs_cluster.py`
@@ -283,6 +301,7 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   - `backend-services/dagster-core/workspace.aws.yaml`
   - `infrastructure/aws-pulumi/tests/fixtures/code-locations-two-location.toml`
   - `infrastructure/aws-pulumi/tests/unit/test_code_locations.py`
+  - `infrastructure/aws-pulumi/tests/unit/test_dagster_core_deployment.py`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`

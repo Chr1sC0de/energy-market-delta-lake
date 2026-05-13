@@ -118,6 +118,10 @@ is baked into the image at build time as `dagster.yaml` and `workspace.yaml`.
 | `aws` | `dagster.aws.yaml` | `workspace.aws.yaml` | `EcsRunLauncher` |
 | `aws-ec2-run-workers-prototype` | `dagster.aws.ec2-run-workers.prototype.yaml` | `workspace.aws.yaml` | `EcsRunLauncher` with EC2-backed run-worker task definitions |
 
+Both AWS-targeted targets render `workspace.aws.yaml` from
+`code-locations.aws.toml` with `render_aws_workspace.py` during the Docker
+build before copying it to `workspace.yaml`.
+
 `compose.yaml` passes `DAGSTER_DEPLOYMENT=local` as a build arg for the two
 Dagster webservers and the daemon. To target AWS, update the build arg
 to `aws` and supply the appropriate environment variables.
@@ -136,7 +140,10 @@ but supplies an explicit EC2-compatible `EcsRunLauncher.task_definition`, uses
 `capacityProviderStrategy` for `dev-energy-market-run-worker-ec2`, and binpacks
 run-worker tasks by memory. The normal `aws` target remains the documented
 default unless an Operator deliberately pairs this image target with the AWS
-Pulumi EC2 run-worker capacity prototype.
+Pulumi EC2 run-worker capacity prototype. The AWS Pulumi stack rejects
+mismatched pairs in either direction, and the current prototype is dev-only
+because this baked Dagster config names `dev-energy-market-run-worker-ec2`
+directly.
 
 ______________________________________________________________________
 
@@ -775,6 +782,7 @@ developer-stack setting. It renders e2e Dagster config per run from the current
   - `backend-services/dagster-core/dagster.aws.yaml`
   - `backend-services/dagster-core/dagster.aws.ec2-run-workers.prototype.yaml`
   - `backend-services/dagster-core/Dockerfile`
+  - `infrastructure/aws-pulumi/dagster_core_deployment.py`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

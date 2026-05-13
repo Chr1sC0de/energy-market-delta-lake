@@ -86,8 +86,9 @@ That workflow runs local Pulumi unit/component tests, the **Commit check**,
   topic ARN is configured.
 - The issue #126 EC2 run-worker capacity provider is default-off Exploratory
   infrastructure. It adds an ECS container-instance profile and Auto Scaling
-  group only when explicitly enabled, and still needs deployed smoke evidence
-  before it should become part of the normal Gitflow runtime.
+  group only when explicitly paired with the matching dev-only Dagster image
+  target, and still needs deployed smoke evidence before it should become part
+  of the normal Gitflow runtime.
 
 ## Related docs
 
@@ -103,6 +104,7 @@ That workflow runs local Pulumi unit/component tests, the **Commit check**,
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `infrastructure/aws-pulumi/configs.py`
+  - `infrastructure/aws-pulumi/dagster_core_deployment.py`
   - `backend-services/dagster-core/code-locations.aws.toml`
   - `infrastructure/aws-pulumi/code_locations.py`
   - `infrastructure/aws-pulumi/components/bastion_host.py`
