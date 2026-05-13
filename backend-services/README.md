@@ -237,7 +237,7 @@ them before starting the stack.
 | `AWS_SECRET_ACCESS_KEY` | `test` | Dummy credential accepted by LocalStack |
 | `DAGSTER_FAILURE_ALERT_TOPIC_ARN` | empty | Optional SNS topic ARN for failed-run alert fan-out |
 | `DAGSTER_FAILURE_ALERT_BASE_URL` | `https://localhost/dagster-webserver/admin` | Dagster UI base URL included in failed-run alerts |
-| `AEMO_ETL_E2E_SEED_ENABLED` | `0` | Set to `1` to require cached Archive seed loading before `aemo-etl` starts |
+| `AEMO_ETL_E2E_SEED_ENABLED` | `0` | Set to `1` to load cached Archive objects into LocalStack during local stack startup |
 | `AEMO_ETL_E2E_SEED_RAW_LATEST_COUNT` | `3` | Required cached raw source-table objects per table |
 | `AEMO_ETL_E2E_SEED_ZIP_LATEST_COUNT` | `3` | Required cached zip objects per domain |
 
@@ -289,9 +289,11 @@ assets have been materialized or LocalStack has been seeded.
 The local stack includes a one-shot `aemo-etl-seed-localstack` service. It is a
 no-op by default. When `AEMO_ETL_E2E_SEED_ENABLED=1`, the service validates the
 cache under `backend-services/.e2e/aemo-etl`, uploads the selected cached
-Archive objects into LocalStack landing storage, writes
-`seed-run-manifest.json`, and must complete successfully before `aemo-etl`
-starts.
+Archive objects into LocalStack landing storage, and writes
+`seed-run-manifest.json`. The broader developer stack keeps the dependency graph
+shallow for `podman-compose` startup; use
+`backend-services/scripts/aemo-etl-e2e run` when a strict seed-before-Dagster
+gate is required.
 
 Refresh the cache from the live dev archive bucket with the AEMO ETL CLI:
 
@@ -695,10 +697,12 @@ postgres  ──(healthy)──► dagster-webserver-admin
                       ├─► dagster-webserver-guest
                       └─► dagster-daemon
 
-localstack ──(healthy)──► aemo-etl-seed-localstack ──(completed)──► aemo-etl
-                                                                  ├─► dagster-webserver-admin
-                                                                  ├─► dagster-webserver-guest
-                                                                  └─► dagster-daemon
+localstack ──(healthy)──► aemo-etl-seed-localstack
+                      └─► marimo
+
+aemo-etl ──(healthy)──► dagster-webserver-admin
+                    ├─► dagster-webserver-guest
+                    └─► dagster-daemon
 ```
 
 ### Run execution flow

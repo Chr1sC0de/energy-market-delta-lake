@@ -104,7 +104,7 @@ flowchart LR
   COMPOSE --> MARIMO_DASH[Marimo dashboard]
   COMPOSE --> MARIMO_CODEX[Marimo-Codex workspace]
   SEED --> LOCALSTACK
-  SEED --> USERCODE
+  USERCODE --> LOCALSTACK
 ```
 
 Local workflow notes:
