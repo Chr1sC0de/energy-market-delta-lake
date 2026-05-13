@@ -66,9 +66,15 @@ loop enables that reconciliation by default, direct Promotion requires
 `--ready-issue-refresh`, and post-Promotion refresh failures are warning-only
 because the promoted **Integration target** and verified issue closures already
 completed.
-Checkpointed Operator runs keep `agent-reviewing` issues in a separate queue
-bucket and stop with `needs_review` when their **Exploratory acceptance review**
-decision is required before the queue can proceed.
+Checkpointed Operator runs use the same parallel drain scheduler for ready work:
+Gitflow and Trunk attempts stay serial, eligible Exploratory attempts use the
+configured worker pool, and one Operator cycle may record multiple issue
+checkpoints before **Promotion**. Promotion starts only after active Exploratory
+workers, implementation **Ready issue refresh** gates, and scheduler-owned
+metadata updates have settled. Checkpointed Operator runs also keep
+`agent-reviewing` issues in a separate queue bucket and stop with `needs_review`
+when their **Exploratory acceptance review** decision is required before the
+queue can proceed.
 When a **Promotion** range includes non-doc runtime files in the AEMO ETL
 **Subproject**, the AEMO ETL **End-to-end test** gate runs from the same
 isolated source worktree as the aggregate **Push check**, before any merge,

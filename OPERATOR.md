@@ -55,15 +55,20 @@ integration** or Exploratory handoff, **Ready issue refresh** reconciles the
 open issue queue before Ralph claims the next `ready-for-agent` issue.
 
 For unattended queue cleanup after `dev` review, prefer the checkpointed
-Operator run path. It drains one ready issue boundary at a time, runs
-**Promotion** when `agent-integrated` issues remain, lets successful
-**Post-promotion review** create validated follow-up GitHub Issues, and repeats
-until no open `ready-for-agent`, `agent-integrated`, `agent-reviewing`,
-`agent-running`, or `agent-failed` issues remain. When no unblocked ready issue
-can proceed and open `agent-reviewing` issues remain, the Operator run stops as
-`needs_review` and writes an **Exploratory acceptance review** JSON and Markdown
-artifact under the Operator run directory instead of treating the queue as a
-generic failure.
+Operator run path. It drains ready work through the same lane-aware scheduler as
+plain `$ralph-loop drain`: Gitflow and Trunk attempts stay serial while eligible
+Exploratory attempts run up to `--exploratory-concurrency` in parallel. One
+Operator cycle can record multiple issue checkpoints from that scheduler pass,
+then runs **Promotion** when `agent-integrated` issues remain. Promotion starts
+only after active Exploratory workers, implementation **Ready issue refresh**
+gates, and scheduler metadata updates have settled. The Operator lets
+successful **Post-promotion review** create validated follow-up GitHub Issues,
+and repeats until no open `ready-for-agent`, `agent-integrated`,
+`agent-reviewing`, `agent-running`, or `agent-failed` issues remain. When no
+unblocked ready issue can proceed and open `agent-reviewing` issues remain, the
+Operator run stops as `needs_review` and writes an **Exploratory acceptance
+review** JSON and Markdown artifact under the Operator run directory instead of
+treating the queue as a generic failure.
 
 Codex should launch Operator runs detached, then stop polling child logs:
 
@@ -114,9 +119,10 @@ git push --dry-run origin HEAD:main
 Use `$ralph-loop dry-run drain` when the root worktree is dirty or when you only
 want to inspect Ralph's next serial Gitflow or trunk candidate plus bounded
 Exploratory candidates. `--exploratory-concurrency` controls the Exploratory
-preview bound, defaults to `2`, and has a minimum of `1`. Targeted `--issue`
-dry runs still preview only that issue. Use dirty-worktree operation only when
-the operator explicitly accepts that risk.
+preview and live worker-pool bound, including checkpointed Operator runs. It
+defaults to `2` and has a minimum of `1`. Targeted `--issue` dry runs still
+preview only that issue. Use dirty-worktree operation only when the operator
+explicitly accepts that risk.
 
 Ready issues that anchor `.agents/` files stop before claim unless the operator
 passes `--allow-full-access-implementation`. With that flag, Ralph runs only

@@ -201,6 +201,13 @@ _Avoid_: Implemented gap, ignored report
   `ready-for-agent` issue in a drain.
 - **Ready issue refresh** may mutate GitHub Issue metadata under its audit
   contract; it is not **Promotion** and is not **Post-promotion review**.
+- A checkpointed **Operator workflow** drain uses the same lane-aware scheduler
+  as plain drain: Gitflow and Trunk attempts stay serial, eligible
+  **Exploratory delivery** attempts use the configured worker pool, and one
+  Operator cycle may record multiple issue checkpoints before **Promotion**.
+- **Promotion** in a checkpointed **Operator workflow** starts only after active
+  Exploratory workers, implementation **Ready issue refresh** gates, and
+  scheduler metadata updates have settled.
 - The **Operator workflow** is the human entrypoint; Ralph internals remain on
   the agent-facing Ralph documentation page.
 - The **Issue context assessor** is part of the in-development

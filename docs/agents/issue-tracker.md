@@ -94,6 +94,12 @@ their queue snapshot. When no unblocked ready issue can proceed and
 `exploratory_acceptance_review_required` and writes a non-mutating
 **Exploratory acceptance review** artifact instead of marking the queue as a
 generic failure.
+When unblocked ready work exists, checkpointed Operator runs use the same
+parallel drain scheduler as plain `--drain`. A single Operator cycle may record
+multiple issue checkpoints from serial Gitflow or Trunk attempts and bounded
+Exploratory workers before a **Promotion** checkpoint. Promotion starts only
+after active Exploratory workers and implementation **Ready issue refresh**
+claim gates have settled.
 
 After a successful drain-mode **Local integration**, Exploratory handoff, or
 successful **Promotion** verified issue closure, Ralph computes **Ready issue

@@ -2078,6 +2078,7 @@ class OperatorRunManifest:
         message: str,
         child_manifest_path: Path | None = None,
         issue: Issue | None = None,
+        issue_payload: dict[str, Any] | None = None,
         details: dict[str, Any] | None = None,
         status: str | None = None,
         recovery_guidance: str | None = None,
@@ -2092,6 +2093,8 @@ class OperatorRunManifest:
             self.record_child_run(child_manifest_path)
         if issue is not None:
             entry["issue"] = issue_payload_for_operator(issue)
+        elif issue_payload is not None:
+            entry["issue"] = issue_payload
         if details is not None:
             entry["details"] = details
         self.data["last_checkpoint"] = entry
@@ -10622,8 +10625,12 @@ class RalphOperatorRun:
             self.manifest.record_cycle(cycle)
             ready_issue = self._next_ready_issue()
             if ready_issue is not None:
-                self._run_issue_checkpoint(ready_issue)
-                continue
+                self._run_drain_scheduler_checkpoint()
+                snapshot = self._queue_snapshot()
+                self.manifest.record_queue(snapshot)
+                if self._handle_post_drain_snapshot(snapshot):
+                    continue
+                return
             if snapshot.ready:
                 if snapshot_needs_exploratory_acceptance_review(snapshot):
                     self._stop_for_exploratory_acceptance_review(snapshot)
@@ -10681,6 +10688,111 @@ class RalphOperatorRun:
 
     def _next_ready_issue(self) -> Issue | None:
         return self.loop._next_ready_issue()
+
+    def _run_drain_scheduler_checkpoint(self) -> None:
+        before_paths = implementation_child_manifest_paths(self.config.log_root)
+        emit(
+            "Operator cycle: draining ready work with the parallel drain scheduler "
+            f"(--exploratory-concurrency {self.config.exploratory_concurrency})."
+        )
+        try:
+            self.loop._run_drain_scheduler()
+        except RalphError as error:
+            new_paths = self._record_drain_scheduler_child_checkpoints(before_paths)
+            guidance = operator_drain_scheduler_failure_guidance(error, new_paths)
+            self.manifest.record_failure(error, recovery_guidance=guidance)
+            raise
+        self._record_drain_scheduler_child_checkpoints(before_paths)
+
+    def _record_drain_scheduler_child_checkpoints(
+        self,
+        before_paths: set[Path],
+    ) -> list[Path]:
+        new_paths = sorted(
+            implementation_child_manifest_paths(self.config.log_root) - before_paths,
+            key=child_manifest_sort_key,
+        )
+        for manifest_path in new_paths:
+            self._record_drain_scheduler_child_checkpoint(manifest_path)
+        return new_paths
+
+    def _record_drain_scheduler_child_checkpoint(self, manifest_path: Path) -> None:
+        status = child_manifest_status(manifest_path)
+        issue_payload = child_manifest_issue_payload(manifest_path)
+        issue_number = (
+            issue_payload.get("number") if issue_payload is not None else None
+        )
+        issue_text = f"Issue #{issue_number}" if issue_number is not None else "Issue"
+        if status == "succeeded":
+            self.manifest.record_checkpoint(
+                "issue_succeeded",
+                message=f"{issue_text} completed.",
+                child_manifest_path=manifest_path,
+                issue_payload=issue_payload,
+            )
+            return
+
+        guidance = operator_issue_failure_guidance_from_payload(
+            issue_payload,
+            manifest_path,
+        )
+        self.manifest.record_checkpoint(
+            "issue_failed",
+            message=f"{issue_text} did not complete successfully.",
+            child_manifest_path=manifest_path,
+            issue_payload=issue_payload,
+            status="failed",
+            recovery_guidance=guidance,
+        )
+
+    def _handle_post_drain_snapshot(self, snapshot: OperatorQueueSnapshot) -> bool:
+        if snapshot.running:
+            self._stop_for_queue_condition(
+                "agent-running issue(s) remain from another Ralph run.",
+                snapshot=snapshot,
+            )
+            return False
+        if snapshot.failed:
+            self._stop_for_queue_condition(
+                "agent-failed issue(s) remain and need operator recovery.",
+                snapshot=snapshot,
+            )
+            return False
+        if snapshot.integrated:
+            self._run_promotion_checkpoint()
+            return True
+        if snapshot.queue_issue_count == 0:
+            self.manifest.clear_current()
+            self.manifest.record_checkpoint(
+                "queue_clean",
+                message=(
+                    "No open ready-for-agent, agent-integrated, agent-running, "
+                    "or agent-failed issues remain."
+                ),
+                status="succeeded",
+            )
+            emit("Operator run queue clean.")
+            return False
+        if snapshot.ready:
+            if self._next_ready_issue() is not None:
+                return True
+            if snapshot_needs_exploratory_acceptance_review(snapshot):
+                self._stop_for_exploratory_acceptance_review(snapshot)
+                return False
+            self._stop_for_queue_condition(
+                "ready-for-agent issue(s) remain, but none are currently unblocked.",
+                snapshot=snapshot,
+            )
+            return False
+        if snapshot.reviewing:
+            self._stop_for_exploratory_acceptance_review(snapshot)
+            return False
+
+        self._stop_for_queue_condition(
+            "Operator queue contained an unsupported issue state combination.",
+            snapshot=snapshot,
+        )
+        return False
 
     def _run_issue_checkpoint(self, issue: Issue) -> None:
         self.manifest.record_current_issue(issue)
@@ -10887,6 +10999,38 @@ def operator_issue_failure_guidance(issue: Issue, manifest_path: Path | None) ->
     return (
         f"Inspect issue #{issue.number} and child run manifest{manifest_text}. "
         "Resolve the failure or issue labels before restarting the Operator run."
+    )
+
+
+def operator_issue_failure_guidance_from_payload(
+    issue_payload: dict[str, Any] | None,
+    manifest_path: Path | None,
+) -> str:
+    issue_number = issue_payload.get("number") if issue_payload is not None else None
+    manifest_text = f" `{manifest_path}`" if manifest_path is not None else ""
+    if issue_number is None:
+        return (
+            f"Inspect the child run manifest{manifest_text}. Resolve the failure "
+            "or issue labels before restarting the Operator run."
+        )
+    return (
+        f"Inspect issue #{issue_number} and child run manifest{manifest_text}. "
+        "Resolve the failure or issue labels before restarting the Operator run."
+    )
+
+
+def operator_drain_scheduler_failure_guidance(
+    error: RalphError,
+    child_manifest_paths: list[Path],
+) -> str:
+    manifest_text = ""
+    if child_manifest_paths:
+        manifests = ", ".join(f"`{path}`" for path in child_manifest_paths)
+        manifest_text = f" Child implementation manifest(s): {manifests}."
+    return (
+        "The Operator drain scheduler stopped before Promotion. "
+        f"Resolve the scheduler failure, active issue metadata, or queue state "
+        f"before restarting the Operator run. Error: {error}.{manifest_text}"
     )
 
 
@@ -11775,6 +11919,22 @@ def latest_child_manifest_path(log_root: Path, *, prefix: str) -> Path | None:
     return candidates[-1]
 
 
+def implementation_child_manifest_paths(log_root: Path) -> set[Path]:
+    return set(log_root.glob(f"issue-*/{MANIFEST_NAME}"))
+
+
+def child_manifest_sort_key(manifest_path: Path) -> tuple[str, str]:
+    if not manifest_path.exists():
+        return ("", str(manifest_path))
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return ("", str(manifest_path))
+    if not isinstance(data, dict):
+        return ("", str(manifest_path))
+    return (str(data.get("started_at") or ""), str(manifest_path))
+
+
 def child_manifest_status(manifest_path: Path | None) -> str:
     if manifest_path is None or not manifest_path.exists():
         return "missing"
@@ -11785,6 +11945,18 @@ def child_manifest_status(manifest_path: Path | None) -> str:
     if not isinstance(data, dict):
         return "invalid"
     return str(data.get("status") or "unknown")
+
+
+def child_manifest_issue_payload(manifest_path: Path) -> dict[str, Any] | None:
+    if not manifest_path.exists():
+        return None
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    return operator_issue_payload_from_values(data.get("issue"))
 
 
 def post_promotion_followup_checkpoint_details(

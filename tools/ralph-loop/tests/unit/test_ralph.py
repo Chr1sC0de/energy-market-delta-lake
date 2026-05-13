@@ -1542,6 +1542,12 @@ class ScriptedOperatorRun(ralph.RalphOperatorRun):
             return None
         return self.current_snapshot.ready[0]
 
+    def _run_drain_scheduler_checkpoint(self) -> None:
+        if self.current_snapshot is None:
+            return
+        for issue in self.current_snapshot.ready:
+            self._run_issue_checkpoint(issue)
+
     def _run_issue_checkpoint(self, issue: ralph.Issue) -> None:
         self.issue_runs += 1
         integration_commit = f"local-integration-{issue.number}-{self.issue_runs}"
@@ -1611,6 +1617,64 @@ class ScriptedOperatorRun(ralph.RalphOperatorRun):
 class BlockedReadyOperatorRun(ScriptedOperatorRun):
     def _next_ready_issue(self) -> ralph.Issue | None:
         return None
+
+
+class ParallelSchedulerOperatorRun(ScriptedOperatorRun):
+    def __init__(
+        self,
+        config: ralph.LoopConfig,
+        runner: FakeRunner,
+        *,
+        run_dir: Path,
+        max_cycles: int,
+        snapshots: list[ralph.OperatorQueueSnapshot],
+        events: list[str],
+    ) -> None:
+        super().__init__(
+            config,
+            runner,
+            run_dir=run_dir,
+            max_cycles=max_cycles,
+            snapshots=snapshots,
+        )
+        self.events = events
+        self.observed_exploratory_concurrency: int | None = None
+        self.loop = self
+
+    def _run_drain_scheduler_checkpoint(self) -> None:
+        ralph.RalphOperatorRun._run_drain_scheduler_checkpoint(self)
+
+    def _run_drain_scheduler(self) -> None:
+        self.events.append("scheduler_started")
+        self.observed_exploratory_concurrency = self.config.exploratory_concurrency
+        if self.current_snapshot is None:
+            return
+        for issue in self.current_snapshot.ready:
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=self.config.delivery_mode,
+                target_branch=self.config.target_branch,
+            )
+            self.issue_runs += 1
+            integration_commit = (
+                f"scheduler-{delivery_plan.mode}-{issue.number}-{self.issue_runs}"
+            )
+            self.issue_commits[issue.number] = integration_commit
+            write_child_manifest(
+                self.config.log_root,
+                name=f"issue-{issue.number}-scheduler-{self.issue_runs}",
+                run_kind="implementation",
+                status="succeeded",
+                issue=issue,
+                delivery_mode=delivery_plan.mode,
+                integration_target=delivery_plan.target_branch,
+                integration_commit=integration_commit,
+            )
+        self.events.append("ready_issue_refresh_settled")
+
+    def _run_promotion_checkpoint(self) -> None:
+        self.events.append("promotion_started")
+        super()._run_promotion_checkpoint()
 
 
 class RalphHelperTests(unittest.TestCase):
@@ -4756,6 +4820,91 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertIn("Local integration `local-integration-42-1`", markdown)
         self.assertIn("Promotion commit `promotion-1-sha`", markdown)
         self.assertIn("- clean=yes", markdown)
+
+    def test_operator_records_parallel_scheduler_issue_checkpoints_before_promotion(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                drain=True,
+                delivery_mode=ralph.GITFLOW_MODE,
+                exploratory_concurrency=3,
+            )
+            exploratory_one = make_issue(
+                {ralph.READY_LABEL, ralph.DELIVERY_EXPLORATORY_LABEL},
+                EXPLORATORY_IMPLEMENTATION_BODY,
+                number=41,
+                title="Explore first path",
+            )
+            exploratory_two = make_issue(
+                {ralph.READY_LABEL, ralph.DELIVERY_EXPLORATORY_LABEL},
+                EXPLORATORY_IMPLEMENTATION_BODY,
+                number=42,
+                title="Explore second path",
+            )
+            gitflow_issue = make_issue(
+                {ralph.READY_LABEL, ralph.DELIVERY_GITFLOW_LABEL},
+                IMPLEMENTATION_BODY,
+                number=43,
+                title="Integrate serial path",
+            )
+            integrated_issue = make_issue(
+                {ralph.AGENT_INTEGRATED_LABEL},
+                IMPLEMENTATION_BODY,
+                number=43,
+                title="Integrate serial path",
+            )
+            events: list[str] = []
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = ParallelSchedulerOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=3,
+                snapshots=[
+                    operator_snapshot(
+                        ready=[exploratory_one, exploratory_two, gitflow_issue]
+                    ),
+                    operator_snapshot(integrated=[integrated_issue]),
+                    operator_snapshot(),
+                ],
+                events=events,
+            )
+
+            with redirect_stdout(io.StringIO()):
+                operator.run()
+
+            manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+            rollup = json.loads(
+                (run_dir / ralph.OPERATOR_ROLLUP_JSON_NAME).read_text(encoding="utf-8")
+            )
+
+        checkpoints = [entry["checkpoint"] for entry in manifest["checkpoints"]]
+        issue_checkpoint_indexes = [
+            index
+            for index, checkpoint in enumerate(checkpoints)
+            if checkpoint == "issue_succeeded"
+        ]
+        promotion_index = checkpoints.index("before_promotion")
+        self.assertEqual(operator.observed_exploratory_concurrency, 3)
+        self.assertEqual(
+            events,
+            ["scheduler_started", "ready_issue_refresh_settled", "promotion_started"],
+        )
+        self.assertEqual(len(issue_checkpoint_indexes), 3)
+        self.assertTrue(
+            all(index < promotion_index for index in issue_checkpoint_indexes)
+        )
+        self.assertEqual(len(manifest["child_run_manifests"]), 4)
+        self.assertEqual(rollup["summary"]["succeeded_issues"], 3)
+        self.assertEqual(
+            [entry["issue"]["number"] for entry in rollup["issues"]["succeeded"]],
+            [41, 42, 43],
+        )
 
     def test_operator_stops_needs_review_and_writes_exploratory_acceptance_review(
         self,
