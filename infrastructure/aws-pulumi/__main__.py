@@ -32,6 +32,11 @@ import pathlib
 
 import pulumi_docker as docker
 
+from code_locations import (
+    default_code_location,
+    load_code_locations,
+    user_code_component_name,
+)
 from components.bastion_host import BastionHostComponentResource
 from components.caddy import CaddyServerComponentResource
 from components.dynamodb import DeltaLockingTableComponentResource
@@ -66,6 +71,9 @@ _docker_provider = docker.Provider(
     host=os.environ.get("DOCKER_HOST", "unix:///var/run/docker.sock"),
 )
 
+dagster_code_locations = load_code_locations()
+default_dagster_code_location = default_code_location(dagster_code_locations)
+
 vpc = VpcComponentResource(NAME)
 
 vpc_endpoints = VpcEndpointsComponentResource(NAME, vpc)
@@ -78,7 +86,11 @@ s3_buckets = S3BucketsComponentResource(NAME)
 
 delta_locking_table = DeltaLockingTableComponentResource(NAME)
 
-ecr = ECRComponentResource(NAME, docker_provider=_docker_provider)
+ecr = ECRComponentResource(
+    NAME,
+    code_locations=dagster_code_locations,
+    docker_provider=_docker_provider,
+)
 
 service_discovery = ServiceDiscoveryComponentResource(NAME, vpc)
 
@@ -92,16 +104,21 @@ fastapi_auth = FastAPIAuthComponentResource(NAME, vpc, ecr, security_groups)
 
 caddy = CaddyServerComponentResource(NAME, vpc, ecr, fastapi_auth, security_groups)
 
-dagster_user_code = DagsterUserCodeServiceComponentResource(
-    f"{NAME}-user-code",
-    vpc=vpc,
-    cluster=ecs_cluster,
-    ecr=ecr,
-    postgres=postgres,
-    security_groups=security_groups,
-    service_discovery=service_discovery,
-    iam_roles=iam_roles,
-)
+dagster_user_code_services = {
+    location.name: DagsterUserCodeServiceComponentResource(
+        user_code_component_name(NAME, location, default_dagster_code_location),
+        vpc=vpc,
+        cluster=ecs_cluster,
+        ecr=ecr,
+        postgres=postgres,
+        security_groups=security_groups,
+        service_discovery=service_discovery,
+        iam_roles=iam_roles,
+        code_location=location,
+    )
+    for location in dagster_code_locations
+}
+dagster_user_code = dagster_user_code_services[default_dagster_code_location.name]
 
 dagster_webserver_admin = DagsterWebserverServiceComponentResource(
     f"{NAME}-webserver-admin",

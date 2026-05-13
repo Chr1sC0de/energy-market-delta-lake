@@ -10,7 +10,7 @@ Authentication to ECR uses a short-lived token obtained via
 Backend-service layout (relative to repo root):
   backend-services/
     dagster-core/          → webserver + daemon images (build target: deploy, arg: DAGSTER_DEPLOYMENT=aws)
-    dagster-user/aemo-etl/ → user-code gRPC server
+    dagster-user/aemo-etl/ → default user-code gRPC server
     authentication/        → FastAPI auth server
     caddy/                 → Caddy reverse proxy
     postgres/              → Postgres sidecar (not deployed to ECS, kept for local dev)
@@ -22,6 +22,12 @@ import pathlib
 import pulumi
 import pulumi_aws as aws
 import pulumi_docker as docker
+
+from code_locations import (
+    DagsterCodeLocation,
+    default_code_location,
+    load_code_locations,
+)
 
 # Resolve the backend-services directory relative to this file so the path
 # is correct regardless of the working directory used to run `pulumi up`.
@@ -52,6 +58,7 @@ class ECRComponentResource(pulumi.ComponentResource):
     def __init__(
         self,
         name: str,
+        code_locations: tuple[DagsterCodeLocation, ...] | None = None,
         docker_provider: docker.Provider | None = None,
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
@@ -59,6 +66,7 @@ class ECRComponentResource(pulumi.ComponentResource):
         super().__init__(f"{name}:components:ecr", name, {}, opts)
         self.name = name
         self.child_opts = pulumi.ResourceOptions(parent=self)
+        self.code_locations = code_locations or load_code_locations()
         # Provider used for all docker.Image build+push resources.
         self._docker_provider = docker_provider
 
@@ -111,20 +119,13 @@ class ECRComponentResource(pulumi.ComponentResource):
             self.dagster_daemon_image,
         )
 
-        # ── user-code: aemo-etl ───────────────────────────────────────────────
-        self.dagster_user_code_aemo_etl = self._make_repo(
-            f"{name}/dagster/user-code/aemo-etl"
-        )
-        self.dagster_user_code_aemo_etl_image = self._build_image(
-            resource_name=f"{name}-dagster-user-code-aemo-etl-image",
-            repo=self.dagster_user_code_aemo_etl,
-            context=str(_SERVICES / "dagster-user" / "aemo-etl"),
-            platform="linux/amd64",
-        )
-        self.dagster_user_code_aemo_etl_image_uri = self._published_image_uri(
-            self.dagster_user_code_aemo_etl,
-            self.dagster_user_code_aemo_etl_image,
-        )
+        # ── user-code locations from the AWS code-location manifest ──────────
+        self.dagster_user_code_repositories: dict[str, aws.ecr.Repository] = {}
+        self.dagster_user_code_images: dict[str, docker.Image] = {}
+        self.dagster_user_code_image_uris: dict[str, pulumi.Output[str]] = {}
+        for location in self.code_locations:
+            self._make_user_code_image(location)
+        self._set_default_user_code_aliases(default_code_location(self.code_locations))
 
         # ── caddy ─────────────────────────────────────────────────────────────
         self.caddy = self._make_repo(f"{name}/dagster/caddy")
@@ -168,6 +169,44 @@ class ECRComponentResource(pulumi.ComponentResource):
             opts=pulumi.ResourceOptions(parent=repo),
         )
         return repo
+
+    def _make_user_code_image(self, location: DagsterCodeLocation) -> None:
+        repo = self._make_repo(f"{self.name}/{location.image_repository}")
+        image = self._build_image(
+            resource_name=(
+                f"{self.name}-dagster-user-code-{location.resource_suffix}-image"
+            ),
+            repo=repo,
+            context=str(location.source_dir),
+            platform="linux/amd64",
+        )
+        self.dagster_user_code_repositories[location.name] = repo
+        self.dagster_user_code_images[location.name] = image
+        self.dagster_user_code_image_uris[location.name] = self._published_image_uri(
+            repo,
+            image,
+        )
+
+    def _set_default_user_code_aliases(
+        self,
+        default_location: DagsterCodeLocation,
+    ) -> None:
+        self.dagster_user_code_aemo_etl = self.dagster_user_code_repositories[
+            default_location.name
+        ]
+        self.dagster_user_code_aemo_etl_image = self.dagster_user_code_images[
+            default_location.name
+        ]
+        self.dagster_user_code_aemo_etl_image_uri = self.dagster_user_code_image_uris[
+            default_location.name
+        ]
+
+    def dagster_user_code_image_uri(
+        self,
+        location: DagsterCodeLocation,
+    ) -> pulumi.Output[str]:
+        """Return the digest-pinned image URI for a manifest location."""
+        return self.dagster_user_code_image_uris[location.name]
 
     def _build_image(
         self,

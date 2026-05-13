@@ -1,10 +1,18 @@
 """Tests for ECRComponentResource."""
 
 import warnings
+from pathlib import Path
 
 import pulumi
 
+from code_locations import load_code_locations
 from components.ecr import ECRComponentResource
+
+TWO_LOCATION_MANIFEST = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "code-locations-two-location.toml"
+)
 
 
 class TestEcrRepositories:
@@ -24,6 +32,35 @@ class TestEcrRepositories:
         assert ecr.dagster_user_code_aemo_etl_image is not None
         assert ecr.caddy_image is not None
         assert ecr.authentication_image is not None
+
+    def test_manifest_user_code_repositories_created(self) -> None:
+        locations = load_code_locations(TWO_LOCATION_MANIFEST)
+        ecr = ECRComponentResource("test-energy-market", code_locations=locations)
+
+        assert set(ecr.dagster_user_code_repositories) == {
+            "aemo-etl",
+            "fixture-etl",
+        }
+        assert set(ecr.dagster_user_code_images) == {"aemo-etl", "fixture-etl"}
+        assert set(ecr.dagster_user_code_image_uris) == {
+            "aemo-etl",
+            "fixture-etl",
+        }
+
+    @pulumi.runtime.test
+    def test_two_location_fixture_creates_distinct_user_code_repos(self) -> None:
+        locations = load_code_locations(TWO_LOCATION_MANIFEST)
+        ecr = ECRComponentResource("test-energy-market", code_locations=locations)
+
+        def check(repo_urls: list[str]) -> None:
+            assert len(set(repo_urls)) == 2
+            assert any("aemo-etl" in repo_url for repo_url in repo_urls)
+            assert any("fixture-etl" in repo_url for repo_url in repo_urls)
+
+        return pulumi.Output.all(
+            ecr.dagster_user_code_repositories["aemo-etl"].repository_url,
+            ecr.dagster_user_code_repositories["fixture-etl"].repository_url,
+        ).apply(check)
 
     @pulumi.runtime.test
     def test_all_repositories_scan_on_push(self) -> None:

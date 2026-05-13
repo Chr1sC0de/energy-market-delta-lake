@@ -92,8 +92,28 @@ if [[ "$HAS_AWS_CLI" -eq 1 ]]; then
 	ENVIRONMENT_NAME="${ENVIRONMENT:-${PULUMI_STACK%%-*}}"
 	RESOURCE_NAME="${ENVIRONMENT_NAME}-energy-market"
 	CLUSTER_NAME="${RESOURCE_NAME}-dagster-cluster"
+	mapfile -t USER_CODE_SERVICES < <(
+		RESOURCE_NAME="$RESOURCE_NAME" uv run python - <<'PY'
+import os
+
+from code_locations import (
+    default_code_location,
+    load_code_locations,
+    user_code_component_name,
+    user_code_ecs_service_resource_name,
+)
+
+resource_name = os.environ["RESOURCE_NAME"]
+locations = load_code_locations()
+default_location = default_code_location(locations)
+
+for location in locations:
+    component_name = user_code_component_name(resource_name, location, default_location)
+    print(user_code_ecs_service_resource_name(component_name))
+PY
+	)
 	SERVICES=(
-		"${RESOURCE_NAME}-user-code-user-code-service"
+		"${USER_CODE_SERVICES[@]}"
 		"${RESOURCE_NAME}-webserver-admin-webserver-service"
 		"${RESOURCE_NAME}-webserver-guest-webserver-service"
 		"${RESOURCE_NAME}-daemon-daemon-service"

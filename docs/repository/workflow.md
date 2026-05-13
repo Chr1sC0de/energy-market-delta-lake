@@ -86,7 +86,9 @@ Production orchestration behavior:
 Detailed ETL behavior lives in the
 [AEMO ETL Subproject docs](../../backend-services/dagster-user/aemo-etl/README.md).
 Detailed deployed platform behavior lives in the
-[AWS Pulumi Subproject docs](../../infrastructure/aws-pulumi/README.md).
+[AWS Pulumi Subproject docs](../../infrastructure/aws-pulumi/README.md),
+including the AWS code-location manifest that currently keeps `aemo-etl` as the
+default deployed Dagster gRPC location.
 
 ## Local development and testing workflow
 
@@ -219,6 +221,8 @@ For the doc-sync contract, searchable `sync.sources` metadata, and the required
   - `backend-services/compose.yaml`
   - `backend-services/scripts/aemo-etl-e2e`
   - `infrastructure/aws-pulumi/__main__.py`
+  - `backend-services/dagster-core/code-locations.aws.toml`
+  - `infrastructure/aws-pulumi/code_locations.py`
   - `docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md`
 - `sync.scope`: `behavior`
 - `sync.qa`:

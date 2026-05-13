@@ -66,6 +66,7 @@ RUN cp dagster.local.yaml dagster.yaml \
 FROM base AS aws
 
 RUN cp dagster.aws.yaml dagster.yaml \
+    && python render_aws_workspace.py code-locations.aws.toml > workspace.aws.yaml \
     && cp workspace.aws.yaml workspace.yaml;
 
 # ── deploy ────────────────────────────────────────────────────────────────────────

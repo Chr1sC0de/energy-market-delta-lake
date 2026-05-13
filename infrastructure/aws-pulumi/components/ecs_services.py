@@ -9,6 +9,11 @@ Mirrors CDK:
 import pulumi
 import pulumi_aws as aws
 
+from code_locations import (
+    DagsterCodeLocation,
+    default_code_location,
+    load_code_locations,
+)
 from components.dagster_runtime_task import (
     DagsterRuntimeEnvironmentVariable,
     DagsterRuntimeHealthCheck,
@@ -115,7 +120,7 @@ def _fargate_service(
 
 
 # ---------------------------------------------------------------------------
-# dagster-user-code-aemo-etl
+# dagster-user-code locations
 # ---------------------------------------------------------------------------
 
 
@@ -138,12 +143,16 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
         security_groups: SecurityGroupsComponentResource,
         service_discovery: ServiceDiscoveryComponentResource,
         iam_roles: IamRolesComponentResource,
+        code_location: DagsterCodeLocation | None = None,
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
         """Create the Dagster user-code ECS service component."""
         super().__init__(f"{name}:components:DagsterUserCodeService", name, {}, opts)
         self.name = name
         self.child_opts = pulumi.ResourceOptions(parent=self)
+        self.code_location = code_location or default_code_location(
+            load_code_locations()
+        )
 
         # Use direct Output references – avoids SSM data-source calls during preview
         shared_task_inputs = DagsterRuntimeTaskSharedInputs(
@@ -169,13 +178,13 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
             shared_task_inputs,
             DagsterRuntimeTaskSpec(
                 resource_name=f"{name}-user-code-task-def",
-                family="dagster-user-code-aemo-etl",
-                cpu="256",
-                memory="1024",
+                family=f"dagster-user-code-{self.code_location.resource_suffix}",
+                cpu=self.code_location.cpu,
+                memory=self.code_location.memory,
                 execution_role_arn=iam_roles.daemon_execution_role.arn,
                 task_role_arn=iam_roles.daemon_task_role.arn,
-                container_name="dagster-grpc",
-                image_uri=ecr.dagster_user_code_aemo_etl_image_uri,
+                container_name=self.code_location.container_name,
+                image_uri=ecr.dagster_user_code_image_uri(self.code_location),
                 entry_point=(
                     "dagster",
                     "api",
@@ -183,15 +192,15 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
                     "-h",
                     "0.0.0.0",
                     "-p",
-                    "4000",
+                    str(self.code_location.port),
                     "-m",
-                    "aemo_etl.definitions",
+                    self.code_location.module,
                 ),
-                log_stream_prefix="dagster-aemo-etl-user-code",
+                log_stream_prefix=self.code_location.effective_log_stream_prefix,
                 health_check=DagsterRuntimeHealthCheck(
-                    command=_tcp_socket_health_check_command(4000)
+                    command=_tcp_socket_health_check_command(self.code_location.port)
                 ),
-                container_port=4000,
+                container_port=self.code_location.port,
                 environment_after_postgres=(
                     DagsterRuntimeEnvironmentVariable(
                         name="AWS_S3_LOCKING_PROVIDER",
@@ -203,11 +212,11 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
                     ),
                     DagsterRuntimeEnvironmentVariable(
                         name="DAGSTER_CURRENT_IMAGE",
-                        value=ecr.dagster_user_code_aemo_etl_image_uri,
+                        value=ecr.dagster_user_code_image_uri(self.code_location),
                     ),
                     DagsterRuntimeEnvironmentVariable(
                         name="DAGSTER_GRPC_TIMEOUT_SECONDS",
-                        value="300",
+                        value=self.code_location.grpc_timeout_seconds,
                     ),
                 ),
                 environment_after_development=(
@@ -231,10 +240,10 @@ class DagsterUserCodeServiceComponentResource(pulumi.ComponentResource):
             security_group=security_groups.register.dagster_user_code,
             private_subnet_id=vpc.private_subnet.id,
             namespace_id=service_discovery.namespace.id,
-            cloud_map_name="aemo-etl",
+            cloud_map_name=self.code_location.cloud_map_name,
             tags={
                 "dagster/service": "user-code",
-                "dagster/job_name": "Code Location: aemo_etl.definitions",
+                "dagster/job_name": f"Code Location: {self.code_location.module}",
             },
             child_opts=self.child_opts,
         )

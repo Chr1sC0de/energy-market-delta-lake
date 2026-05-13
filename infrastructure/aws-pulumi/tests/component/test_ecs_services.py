@@ -14,9 +14,15 @@ This file verifies:
 
 import json
 import warnings
+from pathlib import Path
 
 import pulumi
 
+from code_locations import (
+    default_code_location,
+    load_code_locations,
+    user_code_component_name,
+)
 from components.ecr import ECRComponentResource
 from components.ecs_cluster import EcsClusterComponentResource
 from components.ecs_services import (
@@ -29,6 +35,12 @@ from components.postgres import PostgresComponentResource
 from components.security_groups import SecurityGroupsComponentResource
 from components.service_discovery import ServiceDiscoveryComponentResource
 from components.vpc import VpcComponentResource
+
+TWO_LOCATION_MANIFEST = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "code-locations-two-location.toml"
+)
 
 
 def _make_all_deps() -> tuple[
@@ -336,6 +348,76 @@ class TestDagsterUserCodeService:
             )
 
         return svc.task_definition.container_definitions.apply(check)
+
+    @pulumi.runtime.test
+    def test_two_location_fixture_creates_distinct_user_code_services(self) -> None:
+        locations = load_code_locations(TWO_LOCATION_MANIFEST)
+        default_location = default_code_location(locations)
+        vpc, cluster, ecr, pg, sgs, sd, iam = _make_all_deps()
+        ecr = ECRComponentResource(
+            "test-energy-market-fixture", code_locations=locations
+        )
+        services = {
+            location.name: DagsterUserCodeServiceComponentResource(
+                user_code_component_name(
+                    "test-energy-market",
+                    location,
+                    default_location,
+                ),
+                vpc=vpc,
+                cluster=cluster,
+                ecr=ecr,
+                postgres=pg,
+                security_groups=sgs,
+                service_discovery=sd,
+                iam_roles=iam,
+                code_location=location,
+            )
+            for location in locations
+        }
+
+        def check(values: list[str]) -> None:
+            service_names = values[:2]
+            default_container = _first_container(values[2])
+            fixture_container = _first_container(values[3])
+
+            assert service_names == [
+                "test-energy-market-user-code-user-code-service",
+                "test-energy-market-user-code-fixture-etl-user-code-service",
+            ]
+            assert default_container["entryPoint"] == [
+                "dagster",
+                "api",
+                "grpc",
+                "-h",
+                "0.0.0.0",
+                "-p",
+                "4000",
+                "-m",
+                "aemo_etl.definitions",
+            ]
+            assert fixture_container["entryPoint"] == [
+                "dagster",
+                "api",
+                "grpc",
+                "-h",
+                "0.0.0.0",
+                "-p",
+                "4100",
+                "-m",
+                "aemo_etl.fixture_definitions",
+            ]
+            _assert_port_mapping(fixture_container, 4100)
+            _assert_log_stream_prefix(
+                fixture_container, "dagster-fixture-etl-user-code"
+            )
+
+        return pulumi.Output.all(
+            services["aemo-etl"].service.name,
+            services["fixture-etl"].service.name,
+            services["aemo-etl"].task_definition.container_definitions,
+            services["fixture-etl"].task_definition.container_definitions,
+        ).apply(check)
 
     def test_no_deprecation_warnings(self) -> None:
         """Regression guard: failure_threshold and .name must not be used."""
