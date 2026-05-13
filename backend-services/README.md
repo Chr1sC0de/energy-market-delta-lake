@@ -281,8 +281,13 @@ Bucket names are derived from the defaults in `aemo_etl/configs.py`
 (`DEVELOPMENT_ENVIRONMENT=dev`, `NAME_PREFIX=energy-market`).
 
 The Marimo `local_table_explorer` notebook lists these buckets, reports empty
-bucket health, and can inspect discovered Delta or parquet table prefixes after
-assets have been materialized or LocalStack has been seeded.
+bucket health, overlays the local Dagster GraphQL table asset catalogue from
+`DAGSTER_GRAPHQL_URL`, and can inspect discovered Delta or parquet table
+prefixes after assets have been materialized or LocalStack has been seeded. In
+compose, `DAGSTER_GRAPHQL_URL` defaults to
+`http://dagster-webserver-guest:3000/graphql`, so the notebook can list
+unmaterialized table assets from Dagster while still falling back to
+storage-only discovery when GraphQL is unavailable.
 
 ## Cached Archive seed
 
@@ -740,6 +745,7 @@ developer-stack setting. It renders e2e Dagster config per run from the current
   - `backend-services/marimo/Dockerfile`
   - `backend-services/marimo/research-workspace/AGENTS.md`
   - `backend-services/localstack/init-s3.sh`
+  - `backend-services/marimo/src/marimoserver/dagster_graphql.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/notebooks/local_table_explorer.py`
   - `backend-services/scripts/aemo-etl-e2e`

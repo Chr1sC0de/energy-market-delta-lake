@@ -10,18 +10,30 @@ from marimoserver import table_explorer as explorer
 from marimoserver.table_explorer import (
     DEFAULT_LOCAL_BUCKETS,
     BucketStatus,
+    CataloguedTable,
     S3Client,
+    StorageDiscovery,
     TableExplorerConfig,
+    TableAvailability,
     TableFormat,
     TablePrefix,
+    catalogued_table_by_id,
     classify_table_prefixes,
     create_s3_client,
+    discover_table_catalogue,
     discover_storage,
     discover_table_explorer_config,
+    format_materialization_timestamp,
     inspect_table,
+    overlay_table_catalogue,
     read_delta_table,
     read_parquet_table,
     table_by_id,
+)
+from marimoserver.dagster_graphql import (
+    DagsterAssetCatalogue,
+    DagsterColumnMetadata,
+    DagsterTableAsset,
 )
 
 
@@ -84,6 +96,23 @@ class FakeS3Client:
         return {"Body": FakeBody(self._objects_by_key[(Bucket, Key)])}
 
 
+class FakeGraphQLClient:
+    def __init__(self, payload: Mapping[str, object]) -> None:
+        self.payload = payload
+
+    def execute(
+        self,
+        query: str,
+        variables: Mapping[str, object] | None = None,
+        *,
+        timeout_seconds: int | None = None,
+    ) -> Mapping[str, object]:
+        assert query
+        assert variables is None
+        assert timeout_seconds is None
+        return self.payload
+
+
 def test_discover_table_explorer_config_uses_compose_env() -> None:
     config = discover_table_explorer_config(
         {
@@ -92,6 +121,7 @@ def test_discover_table_explorer_config_uses_compose_env() -> None:
             "AWS_ACCESS_KEY_ID": "local",
             "AWS_SECRET_ACCESS_KEY": "secret",
             "AWS_ALLOW_HTTP": "false",
+            "DAGSTER_GRAPHQL_URL": "http://dagster.local/graphql",
         }
     )
 
@@ -111,6 +141,7 @@ def test_discover_table_explorer_config_uses_compose_env() -> None:
         "AWS_ALLOW_HTTP": "false",
         "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
     }
+    assert config.dagster_graphql_url == "http://dagster.local/graphql"
 
 
 def test_discover_table_explorer_config_treats_blanks_as_unset() -> None:
@@ -121,6 +152,7 @@ def test_discover_table_explorer_config_treats_blanks_as_unset() -> None:
             "AWS_ACCESS_KEY_ID": "",
             "AWS_SECRET_ACCESS_KEY": "",
             "AWS_ALLOW_HTTP": "",
+            "DAGSTER_GRAPHQL_URL": "",
         }
     )
 
@@ -129,6 +161,7 @@ def test_discover_table_explorer_config_treats_blanks_as_unset() -> None:
     assert config.aws_access_key_id == "test"
     assert config.aws_secret_access_key == "test"
     assert config.aws_allow_http == "true"
+    assert config.dagster_graphql_url == "http://dagster-webserver-guest:3000/graphql"
 
 
 def test_create_s3_client_uses_configured_endpoint(
@@ -146,6 +179,141 @@ def test_create_s3_client_uses_configured_endpoint(
 
     assert create_s3_client(config) is fake_client
     assert captured == [("s3", config.s3_client_kwargs())]
+
+
+def test_discover_table_catalogue_uses_configured_graphql_url() -> None:
+    config = discover_table_explorer_config(
+        {"DAGSTER_GRAPHQL_URL": "http://dagster/graphql"}
+    )
+
+    catalogue = discover_table_catalogue(
+        config,
+        FakeGraphQLClient(
+            {
+                "assetNodes": [
+                    {
+                        "assetKey": {"path": ["silver", "gas", "table"]},
+                        "kinds": ["table"],
+                        "metadataEntries": [],
+                        "assetMaterializations": [],
+                    }
+                ]
+            }
+        ),
+    )
+
+    assert catalogue.url == "http://dagster/graphql"
+    assert [asset.asset_id for asset in catalogue.assets] == ["silver/gas/table"]
+
+
+def test_overlay_table_catalogue_distinguishes_storage_states() -> None:
+    live_table = TablePrefix(
+        bucket="dev-energy-market-aemo",
+        prefix="silver/gas_model/live",
+        table_format=TableFormat.PARQUET,
+        parquet_files=("silver/gas_model/live/part-000.parquet",),
+    )
+    storage_only_table = TablePrefix(
+        bucket="dev-energy-market-aemo",
+        prefix="bronze/storage_only",
+        table_format=TableFormat.DELTA,
+        parquet_files=(),
+    )
+    discovery = StorageDiscovery(
+        buckets=(),
+        tables=(live_table, storage_only_table),
+        bucket_listing_error=None,
+    )
+    catalogue = DagsterAssetCatalogue(
+        url="http://dagster/graphql",
+        error=None,
+        assets=(
+            _asset(
+                ("silver", "gas_model", "live"),
+                uri="s3://dev-energy-market-aemo/silver/gas_model/live/",
+                latest_materialization_timestamp=1_714_000_000,
+            ),
+            _asset(
+                ("silver", "gas_model", "missing"),
+                uri="s3://dev-energy-market-aemo/silver/gas_model/missing",
+                latest_materialization_timestamp=1_714_000_001,
+            ),
+            _asset(
+                ("silver", "gas_model", "unmaterialized"),
+                uri="s3://dev-energy-market-aemo/silver/gas_model/unmaterialized",
+                latest_materialization_timestamp=None,
+            ),
+            _asset(
+                ("silver", "gas_model", "schema_only"),
+                uri=None,
+                latest_materialization_timestamp=None,
+            ),
+        ),
+    )
+
+    entries = overlay_table_catalogue(discovery, catalogue)
+
+    assert [(entry.display_name, entry.status) for entry in entries] == [
+        ("dev-energy-market-aemo/bronze/storage_only", TableAvailability.LIVE),
+        ("silver/gas_model/live", TableAvailability.LIVE),
+        ("silver/gas_model/missing", TableAvailability.MISSING),
+        ("silver/gas_model/schema_only", TableAvailability.UNMATERIALIZED),
+        ("silver/gas_model/unmaterialized", TableAvailability.UNMATERIALIZED),
+    ]
+    assert entries[1].table == live_table
+    assert entries[1].uri == "s3://dev-energy-market-aemo/silver/gas_model/live/"
+    assert entries[0].uri == "s3://dev-energy-market-aemo/bronze/storage_only"
+    assert catalogued_table_by_id(entries, entries[2].entry_id) == entries[2]
+    assert catalogued_table_by_id(entries, None) is None
+    assert catalogued_table_by_id(entries, "missing") is None
+
+
+def test_overlay_table_catalogue_keeps_storage_when_graphql_unavailable() -> None:
+    table = TablePrefix(
+        bucket="dev-energy-market-aemo",
+        prefix="silver/gas_model/live",
+        table_format=TableFormat.PARQUET,
+        parquet_files=("silver/gas_model/live/part-000.parquet",),
+    )
+    discovery = StorageDiscovery(
+        buckets=(),
+        tables=(table,),
+        bucket_listing_error=None,
+    )
+    catalogue = DagsterAssetCatalogue(
+        url="http://dagster/graphql",
+        error="Connection refused",
+        assets=(),
+    )
+
+    entries = overlay_table_catalogue(discovery, catalogue)
+
+    assert entries == (
+        CataloguedTable(
+            entry_id="storage:dev-energy-market-aemo/silver/gas_model/live",
+            status=TableAvailability.GRAPHQL_UNAVAILABLE,
+            asset=None,
+            table=table,
+        ),
+    )
+
+
+def test_catalogued_table_properties_fall_back_to_entry_id() -> None:
+    entry = CataloguedTable(
+        entry_id="entry",
+        status=TableAvailability.UNMATERIALIZED,
+        asset=None,
+        table=None,
+    )
+
+    assert entry.display_name == "entry"
+    assert entry.uri is None
+
+
+def test_format_materialization_timestamp_returns_utc_iso_string() -> None:
+    assert format_materialization_timestamp(None) == ""
+    assert format_materialization_timestamp(0) == "1970-01-01T00:00:00+00:00"
+    assert explorer._s3_table_location("http://not-s3/table") is None
 
 
 def test_discover_storage_reports_bucket_health_and_tables() -> None:
@@ -425,6 +593,25 @@ def test_compact_error_handles_empty_messages() -> None:
 class BadBodyS3Client(FakeS3Client):
     def get_object(self, *, Bucket: str, Key: str) -> Mapping[str, object]:
         return {"Body": object()}
+
+
+def _asset(
+    asset_key: tuple[str, ...],
+    *,
+    uri: str | None,
+    latest_materialization_timestamp: float | None,
+) -> DagsterTableAsset:
+    return DagsterTableAsset(
+        asset_key=asset_key,
+        group_name="gas_model",
+        kinds=("parquet", "table"),
+        description="Asset description.",
+        uri=uri,
+        columns=(DagsterColumnMetadata(name="id", dtype="Int64", description=None),),
+        is_materializable=True,
+        is_executable=True,
+        latest_materialization_timestamp=latest_materialization_timestamp,
+    )
 
 
 def _parquet_bytes(dataframe: pl.DataFrame) -> bytes:

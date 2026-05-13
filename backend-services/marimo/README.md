@@ -54,13 +54,19 @@ network, filesystem, secret, audit, and rollback controls.
 ## Local table explorer
 
 [notebooks/local_table_explorer.py](notebooks/local_table_explorer.py) discovers
-the compose-local `dev-energy-market-*` LocalStack buckets and shows bucket
-health, table-like prefixes, and on-demand inspection for selected tables.
+the compose-local `dev-energy-market-*` LocalStack buckets, overlays the local
+Dagster GraphQL table asset catalogue, and shows bucket health, table assets,
+storage status, and on-demand inspection for selected live tables.
 
 The explorer reads the same AWS settings passed to the Marimo service by
 compose: `AWS_ENDPOINT_URL`, `AWS_DEFAULT_REGION`, `AWS_ACCESS_KEY_ID`,
-`AWS_SECRET_ACCESS_KEY`, and `AWS_ALLOW_HTTP`. It always checks the default
-local buckets:
+`AWS_SECRET_ACCESS_KEY`, and `AWS_ALLOW_HTTP`. It also reads
+`DAGSTER_GRAPHQL_URL`, defaulting inside compose to
+`http://dagster-webserver-guest:3000/graphql`. The compose services pass the
+same default with a shell override so local operators can point Marimo at a
+different reachable Dagster GraphQL endpoint without editing the notebook.
+
+It always checks the default local buckets:
 
 - `dev-energy-market-aemo`
 - `dev-energy-market-landing`
@@ -68,10 +74,16 @@ local buckets:
 - `dev-energy-market-io-manager`
 
 Prefixes with `_delta_log/` are classified as Delta tables. Prefixes with one or
-more parquet files are classified as parquet tables. Empty buckets render bucket
-health and an empty state instead of raising notebook exceptions. Selecting a
-live table and running inspection loads schema, exact row count, and a small
-preview.
+more parquet files are classified as parquet tables. When GraphQL is reachable,
+the catalogue includes table assets even when their `dagster/uri` prefix has not
+been materialized in LocalStack yet. The table view distinguishes live,
+unmaterialized, missing, and GraphQL-unavailable rows. Selected GraphQL assets
+show asset key, group, kinds, description, `dagster/uri`, materializable and
+executable flags, latest materialization timestamp, and column metadata when
+Dagster provides it. If GraphQL is unavailable, the notebook warns clearly and
+continues in storage-only mode. Empty buckets render bucket health and an empty
+state instead of raising notebook exceptions. Selecting a live table and running
+inspection loads schema, exact row count, and a small preview.
 
 ## Gas market dashboard
 
@@ -144,6 +156,11 @@ cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/local_table_explorer.py
 ```
 
+When running the table explorer outside compose, set `DAGSTER_GRAPHQL_URL` to a
+reachable Dagster GraphQL endpoint if you want the catalogue overlay. Leaving it
+unset is still usable: the notebook shows a GraphQL warning and keeps
+storage-only discovery and preview behavior.
+
 Materialize the `gas_model` assets in Dagster, or seed LocalStack with curated
 outputs, then refresh the dashboard to see populated sections.
 
@@ -176,6 +193,7 @@ prek run -a
   - `backend-services/marimo/Dockerfile`
   - `backend-services/marimo/research-workspace/AGENTS.md`
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
+  - `backend-services/marimo/src/marimoserver/dagster_graphql.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/notebooks/head.html`
   - `backend-services/marimo/notebooks/sample_energy_market.py`

@@ -11,6 +11,12 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _service_block(compose: str, service_name: str, next_service_name: str) -> str:
+    start = compose.index(f"  {service_name}:")
+    end = compose.index(f"  {next_service_name}:", start)
+    return compose[start:end]
+
+
 class TestLocalMarimoImageSplit:
     def test_compose_declares_distinct_local_services(self) -> None:
         compose = _read(BACKEND_SERVICES_DIR / "compose.yaml")
@@ -25,18 +31,32 @@ class TestLocalMarimoImageSplit:
 
     def test_dashboard_service_uses_curated_read_only_notebooks(self) -> None:
         compose = _read(BACKEND_SERVICES_DIR / "compose.yaml")
+        dashboard = _service_block(
+            compose,
+            "marimo-dashboard",
+            "marimo-codex-workspace",
+        )
 
-        assert "      MARIMO_WORKSPACE_KIND: dashboard" in compose
-        assert "      MARIMO_NOTEBOOKS_DIR: /opt/marimo/notebooks" in compose
-        assert "      - ./marimo/notebooks:/opt/marimo/notebooks:ro" in compose
+        assert "      MARIMO_WORKSPACE_KIND: dashboard" in dashboard
+        assert "      MARIMO_NOTEBOOKS_DIR: /opt/marimo/notebooks" in dashboard
+        assert (
+            "      DAGSTER_GRAPHQL_URL: "
+            "${DAGSTER_GRAPHQL_URL:-http://dagster-webserver-guest:3000/graphql}"
+        ) in dashboard
+        assert "      - ./marimo/notebooks:/opt/marimo/notebooks:ro" in dashboard
 
     def test_research_workspace_uses_separate_writable_workspace(self) -> None:
         compose = _read(BACKEND_SERVICES_DIR / "compose.yaml")
+        workspace = _service_block(compose, "marimo-codex-workspace", "authentication")
 
-        assert "      MARIMO_WORKSPACE_KIND: codex-research" in compose
-        assert "      MARIMO_WORKSPACE_ROOT: /workspace" in compose
-        assert "      MARIMO_NOTEBOOKS_DIR: /workspace/notebooks" in compose
-        assert "      - ./marimo/research-workspace:/workspace" in compose
+        assert "      MARIMO_WORKSPACE_KIND: codex-research" in workspace
+        assert "      MARIMO_WORKSPACE_ROOT: /workspace" in workspace
+        assert "      MARIMO_NOTEBOOKS_DIR: /workspace/notebooks" in workspace
+        assert (
+            "      DAGSTER_GRAPHQL_URL: "
+            "${DAGSTER_GRAPHQL_URL:-http://dagster-webserver-guest:3000/graphql}"
+        ) in workspace
+        assert "      - ./marimo/research-workspace:/workspace" in workspace
 
     def test_dockerfile_keeps_dashboard_and_workspace_commands_separate(self) -> None:
         dockerfile = _read(MARIMO_DIR / "Dockerfile")

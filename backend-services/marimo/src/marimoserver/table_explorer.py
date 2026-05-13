@@ -2,14 +2,24 @@
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 from io import BytesIO
 import os
 import posixpath
 from typing import Protocol, runtime_checkable
+from urllib.parse import urlparse
 
 import boto3
 import polars as pl
+
+from marimoserver.dagster_graphql import (
+    DEFAULT_DAGSTER_GRAPHQL_URL,
+    DagsterAssetCatalogue,
+    DagsterTableAsset,
+    GraphQLExecutorProtocol,
+    fetch_dagster_asset_catalogue,
+)
 
 DEFAULT_LOCAL_BUCKETS: tuple[str, ...] = (
     "dev-energy-market-aemo",
@@ -67,6 +77,15 @@ class TableFormat(StrEnum):
     PARQUET = "Parquet"
 
 
+class TableAvailability(StrEnum):
+    """Joined catalogue and local storage state for one table row."""
+
+    LIVE = "Live"
+    UNMATERIALIZED = "Unmaterialized"
+    MISSING = "Missing"
+    GRAPHQL_UNAVAILABLE = "GraphQL unavailable"
+
+
 @dataclass(frozen=True)
 class TableExplorerConfig:
     """Environment-derived settings for compose-local table exploration."""
@@ -78,6 +97,7 @@ class TableExplorerConfig:
     aws_access_key_id: str
     aws_secret_access_key: str
     aws_allow_http: str
+    dagster_graphql_url: str
 
     def s3_client_kwargs(self) -> dict[str, str]:
         """Return boto3 S3 client keyword arguments."""
@@ -153,6 +173,34 @@ class StorageDiscovery:
 
 
 @dataclass(frozen=True)
+class CataloguedTable:
+    """One table row after overlaying Dagster GraphQL and local storage."""
+
+    entry_id: str
+    status: TableAvailability
+    asset: DagsterTableAsset | None
+    table: TablePrefix | None
+
+    @property
+    def display_name(self) -> str:
+        """Return the best readable label for this table row."""
+        if self.asset is not None:
+            return self.asset.asset_id
+        if self.table is not None:
+            return self.table.display_name
+        return self.entry_id
+
+    @property
+    def uri(self) -> str | None:
+        """Return the Dagster URI or local storage URI for this row."""
+        if self.asset is not None and self.asset.uri is not None:
+            return self.asset.uri
+        if self.table is not None:
+            return self.table.uri
+        return None
+
+
+@dataclass(frozen=True)
 class ColumnSchema:
     """One loaded table column and its dtype."""
 
@@ -207,6 +255,11 @@ def discover_table_explorer_config(
             DEFAULT_AWS_SECRET_ACCESS_KEY,
         ),
         aws_allow_http=_setting(settings, "AWS_ALLOW_HTTP", DEFAULT_AWS_ALLOW_HTTP),
+        dagster_graphql_url=_setting(
+            settings,
+            "DAGSTER_GRAPHQL_URL",
+            DEFAULT_DAGSTER_GRAPHQL_URL,
+        ),
     )
 
 
@@ -262,6 +315,72 @@ def discover_storage(
         tables=tuple(sorted(tables, key=lambda table: table.table_id)),
         bucket_listing_error=bucket_listing_error,
     )
+
+
+def discover_table_catalogue(
+    config: TableExplorerConfig,
+    client: GraphQLExecutorProtocol | None = None,
+) -> DagsterAssetCatalogue:
+    """Discover table assets from the configured Dagster GraphQL endpoint."""
+    return fetch_dagster_asset_catalogue(
+        config.dagster_graphql_url,
+        client=client,
+    )
+
+
+def overlay_table_catalogue(
+    discovery: StorageDiscovery,
+    catalogue: DagsterAssetCatalogue,
+) -> tuple[CataloguedTable, ...]:
+    """Overlay Dagster catalogue assets with local storage table status."""
+    local_tables_by_location = {
+        location: table
+        for table in discovery.tables
+        if (location := _s3_table_location(table.uri)) is not None
+    }
+    matched_table_ids: set[str] = set()
+    entries: list[CataloguedTable] = []
+
+    if not catalogue.available:
+        entries.extend(
+            CataloguedTable(
+                entry_id=f"storage:{table.table_id}",
+                status=TableAvailability.GRAPHQL_UNAVAILABLE,
+                asset=None,
+                table=table,
+            )
+            for table in discovery.tables
+        )
+        return tuple(sorted(entries, key=lambda entry: entry.display_name))
+
+    for asset in catalogue.assets:
+        table = None
+        if asset.uri is not None:
+            location = _s3_table_location(asset.uri)
+            if location is not None:
+                table = local_tables_by_location.get(location)
+        if table is not None:
+            matched_table_ids.add(table.table_id)
+        entries.append(
+            CataloguedTable(
+                entry_id=f"asset:{asset.asset_id}",
+                status=_catalogue_asset_status(asset, table),
+                asset=asset,
+                table=table,
+            )
+        )
+
+    entries.extend(
+        CataloguedTable(
+            entry_id=f"storage:{table.table_id}",
+            status=TableAvailability.LIVE,
+            asset=None,
+            table=table,
+        )
+        for table in discovery.tables
+        if table.table_id not in matched_table_ids
+    )
+    return tuple(sorted(entries, key=lambda entry: entry.display_name))
 
 
 def classify_table_prefixes(
@@ -375,6 +494,26 @@ def table_by_id(
     return None
 
 
+def catalogued_table_by_id(
+    tables: Sequence[CataloguedTable],
+    entry_id: str | None,
+) -> CataloguedTable | None:
+    """Return an overlaid table row by selector id."""
+    if entry_id is None:
+        return None
+    for table in tables:
+        if table.entry_id == entry_id:
+            return table
+    return None
+
+
+def format_materialization_timestamp(timestamp: float | None) -> str:
+    """Return a readable UTC timestamp for Dagster materialization time."""
+    if timestamp is None:
+        return ""
+    return datetime.fromtimestamp(timestamp, tz=UTC).isoformat()
+
+
 def _discover_bucket_names(
     s3_client: S3Client,
     bucket_prefix: str,
@@ -394,6 +533,24 @@ def _discover_bucket_names(
         and name.startswith(bucket_prefix)
     }
     return discovered, None
+
+
+def _catalogue_asset_status(
+    asset: DagsterTableAsset,
+    table: TablePrefix | None,
+) -> TableAvailability:
+    if table is not None:
+        return TableAvailability.LIVE
+    if asset.latest_materialization_timestamp is None:
+        return TableAvailability.UNMATERIALIZED
+    return TableAvailability.MISSING
+
+
+def _s3_table_location(uri: str) -> tuple[str, str] | None:
+    parsed = urlparse(uri)
+    if parsed.scheme != "s3" or parsed.netloc == "":
+        return None
+    return parsed.netloc, parsed.path.removeprefix("/").rstrip("/")
 
 
 def _ordered_bucket_names(

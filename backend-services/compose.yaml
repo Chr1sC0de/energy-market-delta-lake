@@ -185,6 +185,7 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_ALLOW_HTTP: true
+      DAGSTER_GRAPHQL_URL: ${DAGSTER_GRAPHQL_URL:-http://dagster-webserver-guest:3000/graphql}
     volumes:
       - ./marimo/notebooks:/opt/marimo/notebooks:ro
     healthcheck:
@@ -221,6 +222,7 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_ALLOW_HTTP: true
+      DAGSTER_GRAPHQL_URL: ${DAGSTER_GRAPHQL_URL:-http://dagster-webserver-guest:3000/graphql}
     volumes:
       - ./marimo/research-workspace:/workspace
     healthcheck:
