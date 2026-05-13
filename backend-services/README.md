@@ -118,6 +118,10 @@ is baked into the image at build time as `dagster.yaml` and `workspace.yaml`.
 | `aws` | `dagster.aws.yaml` | `workspace.aws.yaml` | `EcsRunLauncher` |
 | `aws-ec2-run-workers-prototype` | `dagster.aws.ec2-run-workers.prototype.yaml` | `workspace.aws.yaml` | `EcsRunLauncher` with EC2-backed run-worker task definitions |
 
+Both AWS-targeted targets render `workspace.aws.yaml` from
+`code-locations.aws.toml` with `render_aws_workspace.py` during the Docker
+build before copying it to `workspace.yaml`.
+
 `compose.yaml` passes `DAGSTER_DEPLOYMENT=local` as a build arg for the two
 Dagster webservers and the daemon. To target AWS, update the build arg
 to `aws` and supply the appropriate environment variables.

@@ -26,6 +26,16 @@ def _dagster_core_dockerfile() -> str:
     return _dagster_core_config("Dockerfile")
 
 
+def _dagster_core_docker_stage(stage_name: str) -> str:
+    dockerfile = _dagster_core_dockerfile()
+    stage_header = f"FROM base AS {stage_name}"
+    stage_start = dockerfile.index(stage_header)
+    next_stage_start = dockerfile.find("\nFROM ", stage_start + len(stage_header))
+    if next_stage_start == -1:
+        return dockerfile[stage_start:]
+    return dockerfile[stage_start:next_stage_start]
+
+
 def test_dagster_core_limits_run_concurrency_to_20() -> None:
     config = _dagster_core_aws_config()
 
@@ -48,6 +58,20 @@ def test_dagster_core_has_ec2_run_workers_prototype_target() -> None:
 
     assert "FROM base AS aws-ec2-run-workers-prototype" in dockerfile
     assert "dagster.aws.ec2-run-workers.prototype.yaml dagster.yaml" in dockerfile
+
+
+def test_dagster_core_aws_targets_render_workspace_from_manifest() -> None:
+    render_line = (
+        "python render_aws_workspace.py code-locations.aws.toml > workspace.aws.yaml"
+    )
+    copy_line = "cp workspace.aws.yaml workspace.yaml"
+
+    for stage_name in ("aws", "aws-ec2-run-workers-prototype"):
+        stage = _dagster_core_docker_stage(stage_name)
+
+        assert render_line in stage
+        assert copy_line in stage
+        assert stage.index(render_line) < stage.index(copy_line)
 
 
 def test_dagster_core_ec2_run_workers_prototype_uses_capacity_provider() -> None:

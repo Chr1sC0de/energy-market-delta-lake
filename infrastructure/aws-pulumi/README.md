@@ -163,9 +163,10 @@ repository:
 - `backend-services/caddy` for the public reverse proxy
 
 The Pulumi deployment uses the AWS-targeted Dagster configuration by building
-`dagster-core` with `DAGSTER_DEPLOYMENT=aws`. In the AWS image, the workspace
-is rendered from the code-location manifest before `workspace.yaml` is copied
-into place. The issue #126 **Exploratory delivery** prototype can set
+`dagster-core` with `DAGSTER_DEPLOYMENT=aws` by default. Both AWS-targeted
+Dagster core Docker stages, `aws` and `aws-ec2-run-workers-prototype`, render
+`workspace.aws.yaml` from the code-location manifest before `workspace.yaml` is
+copied into place. The issue #126 **Exploratory delivery** prototype can set
 `dagster_core_deployment` to
 `aws-ec2-run-workers-prototype` so only the webserver and daemon images switch
 to the EC2 run-worker `EcsRunLauncher` config. Pulumi rejects that image target

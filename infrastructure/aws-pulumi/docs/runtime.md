@@ -253,8 +253,9 @@ placement, image pull, task startup latency, or scale-in behavior because issue
 
 - The webserver and daemon images both come from `backend-services/dagster-core`
   built with `DAGSTER_DEPLOYMENT=aws` by default.
-- The AWS core image renders `workspace.aws.yaml` from the manifest during the
-  Docker build before copying it to `workspace.yaml`.
+- The AWS-targeted core image stages, `aws` and
+  `aws-ec2-run-workers-prototype`, render `workspace.aws.yaml` from the
+  manifest during the Docker build before copying it to `workspace.yaml`.
 - The issue #126 **Exploratory delivery** prototype can swap only that build
   argument to `aws-ec2-run-workers-prototype`.
 - ECS services use digest-pinned image URIs rather than mutable `:latest` tags
