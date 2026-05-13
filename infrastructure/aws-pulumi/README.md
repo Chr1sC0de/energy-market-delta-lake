@@ -165,8 +165,10 @@ repository:
 The Pulumi deployment uses the AWS-targeted Dagster configuration by building
 `dagster-core` with `DAGSTER_DEPLOYMENT=aws`. In the AWS image, the workspace
 is rendered from the code-location manifest before `workspace.yaml` is copied
-into place. This **Exploratory branch** keeps `aemo-etl` as the only live
-manifest location while tests exercise a two-location fixture for review.
+into place. The issue #126 **Exploratory delivery** prototype can set
+`dagster_core_deployment` to
+`aws-ec2-run-workers-prototype` so only the webserver and daemon images switch
+to the EC2 run-worker `EcsRunLauncher` config.
 
 ## Runtime behavior
 
@@ -177,6 +179,9 @@ Key deployed behaviors visible in the infrastructure code:
   - `webserver-guest.dagster:3000`
   - the FastAPI auth service
 - Dagster services run as ECS Fargate services in private subnets
+- An issue #126 **Exploratory delivery** path can add EC2-backed run-worker
+  capacity behind explicit Pulumi config, but the default runtime remains
+  Fargate/Fargate Spot
 - Cloud Map provides private DNS names under the `dagster` namespace, with
   user-code names resolved from the manifest
 - PostgreSQL is used for Dagster run, schedule, and event-log storage
@@ -204,6 +209,15 @@ This project reads a small set of important config values:
   - `aws-pulumi:developer_email`
 - Optional Pulumi secret for Dagster failed-run alerts:
   - `aws-pulumi:dagster_failure_alert_topic_arn`
+- Optional issue #126 EC2 run-worker prototype config:
+  - `aws-pulumi:dagster_core_deployment`
+    - defaults to `aws`
+    - set to `aws-ec2-run-workers-prototype` only for the Exploratory
+      run-worker EC2 image variant
+  - `aws-pulumi:enable_ec2_run_worker_capacity_prototype`
+    - defaults to `false`
+    - set to `true` only when previewing or deploying the matching EC2-backed
+      ECS capacity provider
 
 The stack name prefix resolves to `"{ENVIRONMENT}-energy-market"`.
 
@@ -324,6 +338,7 @@ system's services and Dagster workflows.
   - `infrastructure/aws-pulumi/components/bastion_host.py`
   - `infrastructure/aws-pulumi/components/caddy.py`
   - `infrastructure/aws-pulumi/components/ecr.py`
+  - `infrastructure/aws-pulumi/components/ecs_cluster.py`
   - `infrastructure/aws-pulumi/components/ecs_services.py`
   - `infrastructure/aws-pulumi/components/fastapi_auth.py`
   - `infrastructure/aws-pulumi/components/iam_roles.py`
@@ -340,6 +355,8 @@ system's services and Dagster workflows.
   - `infrastructure/aws-pulumi/tests/deployed/conftest.py`
   - `infrastructure/aws-pulumi/tests/deployed/test_integration.py`
   - `infrastructure/aws-pulumi/Pulumi.dev-ausenergymarket.yaml`
+  - `backend-services/dagster-core/Dockerfile`
+  - `backend-services/dagster-core/dagster.aws.ec2-run-workers.prototype.yaml`
 - `sync.scope`: `architecture, tooling`
 - `sync.qa`:
   - `git diff --name-only`

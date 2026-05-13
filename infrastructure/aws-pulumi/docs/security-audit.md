@@ -29,7 +29,7 @@ deployed tests.
 | Medium | Daemon task role included unused Secrets Manager reads | Secrets Manager permissions were removed |
 | Medium | Dagster run-worker launches were blocked by incomplete ECS resource scope | The daemon can register and launch `dagster-*` and `run_*` task definitions, tag created ECS tasks during `RunTask`, and no longer performs the unused default Secrets Manager tag lookup |
 | Medium | ECS execution-role SSM access used wildcard resources | Execution roles can read only the Postgres password parameter |
-| Medium | EC2 hosts did not require IMDSv2 or encrypted root volumes | NAT, bastion, Postgres, FastAPI auth, and Caddy instances now require IMDSv2 and encrypted roots |
+| Medium | EC2 hosts did not require IMDSv2 or encrypted root volumes | NAT, bastion, Postgres, FastAPI auth, Caddy, and optional run-worker ECS container instances now require IMDSv2 and encrypted roots |
 | Medium | Postgres accepted `0.0.0.0/0 md5` in `pg_hba.conf` | Postgres now accepts the VPC CIDR with `scram-sha-256` |
 | Medium | ECR repositories disabled scan-on-push | All deployment ECR repositories now enable scan-on-push |
 | Medium | Administrator ingress accepted empty or broad values | `ADMINISTRATOR_IPS` now requires individual IPv4 addresses or `/32` CIDRs |
@@ -84,6 +84,10 @@ That workflow runs local Pulumi unit/component tests, the **Commit check**,
   complete successfully.
 - SNS alert-topic creation remains manual. Pulumi scopes publish access when a
   topic ARN is configured.
+- The issue #126 EC2 run-worker capacity provider is default-off Exploratory
+  infrastructure. It adds an ECS container-instance profile and Auto Scaling
+  group only when explicitly enabled, and still needs deployed smoke evidence
+  before it should become part of the normal Gitflow runtime.
 
 ## Related docs
 
@@ -104,6 +108,7 @@ That workflow runs local Pulumi unit/component tests, the **Commit check**,
   - `infrastructure/aws-pulumi/components/bastion_host.py`
   - `infrastructure/aws-pulumi/components/caddy.py`
   - `infrastructure/aws-pulumi/components/ecr.py`
+  - `infrastructure/aws-pulumi/components/ecs_cluster.py`
   - `infrastructure/aws-pulumi/components/ecs_services.py`
   - `infrastructure/aws-pulumi/components/fastapi_auth.py`
   - `infrastructure/aws-pulumi/components/iam_roles.py`

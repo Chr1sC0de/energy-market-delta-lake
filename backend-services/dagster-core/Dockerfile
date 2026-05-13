@@ -2,7 +2,7 @@
 # dagster-core — webserver and daemon image
 #
 # Build arguments
-#   DAGSTER_DEPLOYMENT  "local" (default) | "aws"
+#   DAGSTER_DEPLOYMENT  "local" (default) | "aws" | "aws-ec2-run-workers-prototype"
 #                       Selects which dagster.<env>.yaml and workspace.<env>.yaml
 #                       are baked in as dagster.yaml / workspace.yaml.
 #
@@ -67,6 +67,15 @@ FROM base AS aws
 
 RUN cp dagster.aws.yaml dagster.yaml \
     && python render_aws_workspace.py code-locations.aws.toml > workspace.aws.yaml \
+    && cp workspace.aws.yaml workspace.yaml;
+
+# ── aws-ec2-run-workers-prototype ─────────────────────────────────────────────
+# Exploratory AWS deployment variant: webserver/daemon stay on Fargate Spot,
+# while EcsRunLauncher registers EC2-compatible run-worker task definitions and
+# uses an EC2-backed capacity provider created by the AWS Pulumi prototype.
+FROM base AS aws-ec2-run-workers-prototype
+
+RUN cp dagster.aws.ec2-run-workers.prototype.yaml dagster.yaml \
     && cp workspace.aws.yaml workspace.yaml;
 
 # ── deploy ────────────────────────────────────────────────────────────────────────

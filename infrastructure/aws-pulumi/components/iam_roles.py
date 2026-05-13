@@ -178,6 +178,8 @@ class IamRolesComponentResource(pulumi.ComponentResource):
     """IAM roles and policies shared by bastion and ECS resources."""
 
     bastion_profile: aws.iam.InstanceProfile
+    ecs_instance_role: aws.iam.Role
+    ecs_instance_profile: aws.iam.InstanceProfile
     # ECS task execution roles
     webserver_execution_role: aws.iam.Role
     daemon_execution_role: aws.iam.Role
@@ -195,6 +197,7 @@ class IamRolesComponentResource(pulumi.ComponentResource):
         self.child_opts = pulumi.ResourceOptions(parent=self)
 
         self.setup_bastion_host()
+        self.setup_ecs_container_instances()
         self.setup_ecs_webserver_roles()
         self.setup_ecs_daemon_roles()
         self.setup_ecs_webserver_task_policy()
@@ -251,6 +254,26 @@ class IamRolesComponentResource(pulumi.ComponentResource):
             f"{self.name}-bastion-profile",
             role=bastion_role.name,
             opts=pulumi.ResourceOptions(parent=bastion_role),
+        )
+
+    # ── ECS container instances ──────────────────────────────────────────────
+
+    def setup_ecs_container_instances(self) -> None:
+        """Create the instance profile for EC2-backed ECS capacity."""
+        self.ecs_instance_role = aws.iam.Role(
+            f"{self.name}-ecs-instance-role",
+            assume_role_policy=self.get_ec2_assume_role(),
+            managed_policy_arns=[
+                "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role",
+                "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+            ],
+            opts=self.child_opts,
+        )
+
+        self.ecs_instance_profile = aws.iam.InstanceProfile(
+            f"{self.name}-ecs-instance-profile",
+            role=self.ecs_instance_role.name,
+            opts=pulumi.ResourceOptions(parent=self.ecs_instance_role),
         )
 
     # ── ECS – webserver ───────────────────────────────────────────────────────

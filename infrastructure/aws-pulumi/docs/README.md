@@ -59,6 +59,8 @@ boundary are described in [runtime.md](runtime.md).
   - `backend-services/dagster-core/code-locations.aws.toml`
   - `infrastructure/aws-pulumi/code_locations.py`
   - `infrastructure/aws-pulumi/components/vpc.py`
+  - `infrastructure/aws-pulumi/components/ecr.py`
+  - `infrastructure/aws-pulumi/components/ecs_cluster.py`
   - `infrastructure/aws-pulumi/components/ecs_services.py`
   - `infrastructure/aws-pulumi/docs/security-audit.md`
 - `sync.scope`: `architecture`

@@ -26,6 +26,8 @@ flowchart TB
     subgraph EC2Roles[EC2 instance roles]
         BASTIONROLE[Bastion role]
         BASTIONPROFILE[Bastion instance profile]
+        ECSINSTANCEROLE[ECS container-instance role]
+        ECSINSTANCEPROFILE[ECS container-instance profile]
     end
 
     subgraph ECSRoles[ECS task roles]
@@ -36,6 +38,7 @@ flowchart TB
     end
 
     SSM[Amazon SSM Managed Instance / ReadOnly]
+    ECSINSTANCEPOLICY[ECS container-instance policy]
     ECRPOLICY[ECS task execution policy]
     ECSAPI[ECS orchestration APIs]
     DDB[DynamoDB delta_log]
@@ -44,6 +47,9 @@ flowchart TB
 
     BASTIONROLE --> SSM
     BASTIONPROFILE --> BASTIONROLE
+    ECSINSTANCEPROFILE --> ECSINSTANCEROLE
+    ECSINSTANCEROLE --> ECSINSTANCEPOLICY
+    ECSINSTANCEROLE --> SSM
     WEBEXEC --> ECRPOLICY
     DAEMONEXEC --> ECRPOLICY
     WEBEXEC --> SSMPARAM
@@ -109,13 +115,17 @@ definitions before a human accepts a broader production interface.
 
 | Component | Key resources | Purpose |
 |---|---|---|
-| `IamRolesComponentResource` | 1 EC2 instance profile, 2 ECS execution roles, 2 ECS task roles | Separate bootstrap permissions from runtime permissions |
+| `IamRolesComponentResource` | 2 EC2 instance profiles, 2 ECS execution roles, 2 ECS task roles | Separate bootstrap permissions from runtime permissions |
 | `ServiceDiscoveryComponentResource` | 1 Cloud Map private DNS namespace | Give private service names to the ECS runtime |
 
 ## Permission boundaries
 
 - The bastion host gets SSM-centric EC2 permissions through an instance
   profile.
+- The optional issue #126 EC2 run-worker capacity prototype uses a separate ECS
+  container-instance profile with `AmazonEC2ContainerServiceforEC2Role` for ECS
+  agent registration and `AmazonSSMManagedInstanceCore` for operator access
+  without SSH keys.
 - The webserver task role can inspect and stop ECS tasks and pass roles to
   ECS tasks when launching work.
 - The webserver and daemon execution roles add scoped `ssm:GetParameters`
