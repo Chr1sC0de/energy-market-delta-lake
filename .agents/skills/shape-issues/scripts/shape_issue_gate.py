@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Evaluate shape-issues bundles for context coverage and stiffness."""
+"""Evaluate shape-issues bundles for context evidence and stiffness."""
 
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
-import math
 import os
 import re
 import shlex
@@ -49,10 +48,14 @@ TEXT_EXTENSIONS = frozenset(
     }
 )
 TEXT_FILE_NAMES = frozenset({"Makefile", "AGENTS.md", "CONTEXT.md", "OPERATOR.md"})
-DEFAULT_EMBEDDING_MODEL_ID = "Qwen/Qwen3-Embedding-0.6B"
-DEFAULT_EMBEDDING_BATCH_SIZE = 2
-DEFAULT_EMBEDDING_MIN_FREE_VRAM_GB = 6.0
-PROVIDER_METADATA_PREFIX = "shape-issues-provider-metadata:"
+CONTEXT_ASSESSOR_SCHEMA_VERSION = "shape-issues-context-assessor-v1"
+DEFAULT_CONTEXT_ASSESSOR_PROVIDER = "codex"
+DEFAULT_RG_CANDIDATE_FILES = 8
+MAX_SEARCH_TERMS = 24
+MAX_EVIDENCE_SNIPPETS_PER_FILE = 3
+MAX_SNIPPET_CHARS = 900
+MAX_FILE_READ_CHARS = 80_000
+ASSESSOR_VERDICTS = frozenset({"pass", "weak", "fail"})
 IGNORED_DIRS = frozenset(
     {
         ".git",
@@ -112,6 +115,47 @@ ROOT_AGENT_WORKFLOW_FILES = frozenset(
         "docs/repository/documentation-sync.md",
     }
 )
+STOP_WORDS = frozenset(
+    {
+        "about",
+        "after",
+        "again",
+        "against",
+        "agent",
+        "before",
+        "build",
+        "check",
+        "context",
+        "delivery",
+        "draft",
+        "drafts",
+        "evidence",
+        "existing",
+        "from",
+        "gate",
+        "github",
+        "implementation",
+        "issue",
+        "issues",
+        "label",
+        "labels",
+        "local",
+        "must",
+        "plan",
+        "ready",
+        "report",
+        "reports",
+        "root",
+        "run",
+        "shape",
+        "test",
+        "tests",
+        "that",
+        "this",
+        "with",
+        "work",
+    }
+)
 
 
 class GateError(Exception):
@@ -120,10 +164,9 @@ class GateError(Exception):
 
 @dataclass(frozen=True)
 class Thresholds:
-    semantic_min_score: float = 0.20
     human_review_stiffness: int = 55
     split_stiffness: int = 70
-    max_corpus_files: int = 2000
+    max_rg_candidate_files: int = DEFAULT_RG_CANDIDATE_FILES
 
 
 @dataclass(frozen=True)
@@ -147,22 +190,49 @@ class Bundle:
 
 
 @dataclass(frozen=True)
-class CorpusDocument:
-    doc_id: str
-    path: str
+class EvidenceSnippet:
+    start_line: int
     text: str
 
 
 @dataclass(frozen=True)
-class SemanticMatch:
+class EvidenceDocument:
     path: str
-    score: float
+    source: str
+    snippets: tuple[EvidenceSnippet, ...]
 
 
 @dataclass(frozen=True)
-class EmbeddingProviderResult:
-    vectors: dict[str, list[float]]
-    metadata: dict[str, Any]
+class EvidenceCorpus:
+    digest: str
+    documents: tuple[EvidenceDocument, ...]
+    anchor_paths: tuple[str, ...]
+    rg_candidate_paths: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class RawContextAssessment:
+    verdict: str
+    confidence: float | None
+    cited_paths: tuple[str, ...]
+    reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ContextAssessorProviderResult:
+    assessments: dict[str, RawContextAssessment]
+    bundle_digest: str | None
+    corpus_digest: str | None
+
+
+@dataclass(frozen=True)
+class ContextAssessment:
+    verdict: str
+    confidence: float
+    cited_paths: tuple[str, ...]
+    reasons: tuple[str, ...]
+    valid: bool
+    validation_reasons: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -344,75 +414,10 @@ def slugify(value: str) -> str:
     return re.sub(r"-{2,}", "-", slug)
 
 
-def repo_files(repo_root: Path, corpus_paths: tuple[str, ...], max_files: int) -> list[Path]:
-    if corpus_paths:
-        return [(repo_root / path).resolve() for path in corpus_paths]
-
-    tracked_files = git_ls_files(repo_root)
-    if tracked_files:
-        return tracked_files[:max_files]
-
-    discovered: list[Path] = []
-    for current_root, dir_names, file_names in os.walk(repo_root):
-        dir_names[:] = [name for name in dir_names if name not in IGNORED_DIRS]
-        for file_name in file_names:
-            discovered.append(Path(current_root) / file_name)
-    return sorted(discovered)[:max_files]
-
-
-def git_ls_files(repo_root: Path) -> list[Path]:
-    result = subprocess.run(
-        ["git", "ls-files"],
-        cwd=repo_root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        return []
-    paths: list[Path] = []
-    for line in result.stdout.splitlines():
-        if line.strip() == "":
-            continue
-        path = repo_root / line.strip()
-        if is_candidate_text_file(path):
-            paths.append(path)
-    return sorted(paths)
-
-
 def is_candidate_text_file(path: Path) -> bool:
     if path.name in TEXT_FILE_NAMES:
         return True
     return path.suffix in TEXT_EXTENSIONS
-
-
-def build_corpus(
-    repo_root: Path,
-    *,
-    corpus_paths: tuple[str, ...],
-    max_files: int,
-) -> tuple[CorpusDocument, ...]:
-    documents: list[CorpusDocument] = []
-    for path in repo_files(repo_root, corpus_paths, max_files):
-        if not path.exists() or not path.is_file() or not is_candidate_text_file(path):
-            continue
-        try:
-            text = path.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            continue
-        relative_path = str(path.relative_to(repo_root))
-        if text.strip() == "":
-            continue
-        documents.append(
-            CorpusDocument(
-                doc_id=f"doc:{len(documents)}",
-                path=relative_path,
-                text=text[:12000],
-            )
-        )
-    if not documents:
-        raise GateError("No corpus documents were available for semantic scoring.")
-    return tuple(documents)
 
 
 def parse_anchors(body: str, repo_root: Path) -> AnchorSummary:
@@ -429,6 +434,8 @@ def parse_anchors(body: str, repo_root: Path) -> AnchorSummary:
     for match in ANCHOR_PATTERN.finditer(section):
         kind = normalize_anchor_kind(match.group("kind"))
         value = clean_anchor_value(match.group("value"))
+        if kind in {"paths", "docs"} and value != "":
+            value = normalize_repo_path_text(repo_root, value) or value
         if kind in values and value != "":
             values[kind].append(value)
 
@@ -444,8 +451,8 @@ def parse_anchors(body: str, repo_root: Path) -> AnchorSummary:
 
     missing_paths: list[str] = []
     for candidate in [*values["paths"], *values["docs"]]:
-        candidate_path = repo_root / candidate
-        if not candidate_path.exists():
+        relative_path = normalize_repo_path_text(repo_root, candidate)
+        if relative_path is None or not (repo_root / relative_path).exists():
             missing_paths.append(candidate)
 
     return AnchorSummary(
@@ -487,15 +494,326 @@ def clean_anchor_value(value: str) -> str:
     return cleaned.strip("`").strip()
 
 
-def run_embedding_provider(
-    command: str,
-    records: list[dict[str, str]],
+def normalize_repo_path_text(repo_root: Path, path_text: str) -> str | None:
+    if path_text.strip() == "":
+        return None
+    candidate = Path(path_text)
+    if candidate.is_absolute():
+        resolved = candidate.resolve()
+    else:
+        resolved = (repo_root / candidate).resolve()
+    try:
+        relative = resolved.relative_to(repo_root)
+    except ValueError:
+        return None
+    return relative.as_posix()
+
+
+def context_search_terms(
+    issue: IssueDraft,
+    shared_context: tuple[str, ...],
+    anchors: AnchorSummary,
+) -> tuple[str, ...]:
+    terms: list[str] = []
+
+    def add(term: str) -> None:
+        cleaned = re.sub(r"\s+", " ", term).strip()
+        if len(cleaned) < 4:
+            return
+        lowered = cleaned.lower()
+        if lowered in STOP_WORDS or lowered in {item.lower() for item in terms}:
+            return
+        terms.append(cleaned)
+
+    for value in [*anchors.symbols, *anchors.labels, *anchors.targets]:
+        add(value)
+    text_parts = [
+        issue.title,
+        section_body(issue.body, "What to build") or "",
+        section_body(issue.body, "Current context") or "",
+        section_body(issue.body, "QA plan") or "",
+        "\n".join(shared_context),
+    ]
+    for text in text_parts:
+        for quoted in re.findall(r"`([^`]{4,80})`", text):
+            add(quoted)
+        for word in re.findall(r"[A-Za-z][A-Za-z0-9_-]{3,}", text):
+            add(word)
+    return tuple(terms[:MAX_SEARCH_TERMS])
+
+
+def build_issue_evidence(
+    issue: IssueDraft,
+    shared_context: tuple[str, ...],
+    anchors: AnchorSummary,
     *,
     repo_root: Path,
-) -> EmbeddingProviderResult:
+    max_rg_candidate_files: int,
+) -> EvidenceCorpus:
+    search_terms = context_search_terms(issue, shared_context, anchors)
+    anchor_paths = tuple(
+        path
+        for path in sorted({*anchors.paths, *anchors.docs})
+        if is_readable_repo_text_file(repo_root, path)
+    )
+    rg_paths = rg_candidate_files(
+        repo_root,
+        search_terms,
+        excluded_paths=set(anchor_paths),
+        max_files=max_rg_candidate_files,
+    )
+    documents: list[EvidenceDocument] = []
+    for path in anchor_paths:
+        document = read_evidence_document(
+            repo_root,
+            path,
+            source="anchor",
+            search_terms=search_terms,
+        )
+        if document is not None:
+            documents.append(document)
+    for path in rg_paths:
+        document = read_evidence_document(
+            repo_root,
+            path,
+            source="rg-candidate",
+            search_terms=search_terms,
+        )
+        if document is not None:
+            documents.append(document)
+
+    document_tuple = tuple(documents)
+    return EvidenceCorpus(
+        digest=evidence_corpus_digest(document_tuple),
+        documents=document_tuple,
+        anchor_paths=anchor_paths,
+        rg_candidate_paths=tuple(rg_paths),
+    )
+
+
+def is_readable_repo_text_file(repo_root: Path, relative_path: str) -> bool:
+    normalized = normalize_repo_path_text(repo_root, relative_path)
+    if normalized is None:
+        return False
+    path = repo_root / normalized
+    return path.exists() and path.is_file() and is_candidate_text_file(path)
+
+
+def rg_candidate_files(
+    repo_root: Path,
+    search_terms: tuple[str, ...],
+    *,
+    excluded_paths: set[str],
+    max_files: int,
+) -> tuple[str, ...]:
+    if not search_terms or max_files <= 0:
+        return ()
+    args = [
+        "rg",
+        "--files-with-matches",
+        "--fixed-strings",
+        "--ignore-case",
+        "--color",
+        "never",
+    ]
+    for ignored_dir in sorted(IGNORED_DIRS):
+        args.extend(["--glob", f"!{ignored_dir}/**"])
+    for term in search_terms:
+        args.extend(["-e", term])
+    args.append(".")
+    try:
+        result = subprocess.run(
+            args,
+            cwd=repo_root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return ()
+    if result.returncode == 1:
+        return ()
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip()
+        raise GateError(f"rg candidate search failed: {detail}")
+
+    candidates: set[str] = set()
+    for line in result.stdout.splitlines():
+        normalized = line.strip().removeprefix("./")
+        relative_path = normalize_repo_path_text(repo_root, normalized)
+        if relative_path is None:
+            continue
+        if relative_path in excluded_paths:
+            continue
+        if not is_readable_repo_text_file(repo_root, relative_path):
+            continue
+        candidates.add(relative_path)
+    return tuple(sorted(candidates)[:max_files])
+
+
+def read_evidence_document(
+    repo_root: Path,
+    relative_path: str,
+    *,
+    source: str,
+    search_terms: tuple[str, ...],
+) -> EvidenceDocument | None:
+    path = repo_root / relative_path
+    try:
+        text = path.read_text(encoding="utf-8")[:MAX_FILE_READ_CHARS]
+    except UnicodeDecodeError:
+        return None
+    if text.strip() == "":
+        return None
+    return EvidenceDocument(
+        path=relative_path,
+        source=source,
+        snippets=evidence_snippets(text, search_terms),
+    )
+
+
+def evidence_snippets(
+    text: str,
+    search_terms: tuple[str, ...],
+) -> tuple[EvidenceSnippet, ...]:
+    lines = text.splitlines()
+    if not lines:
+        return ()
+    lowered_terms = tuple(term.lower() for term in search_terms)
+    hit_indexes: list[int] = []
+    for index, line in enumerate(lines):
+        line_lower = line.lower()
+        if any(term in line_lower for term in lowered_terms):
+            hit_indexes.append(index)
+        if len(hit_indexes) >= MAX_EVIDENCE_SNIPPETS_PER_FILE:
+            break
+    if not hit_indexes:
+        hit_indexes = [0]
+
+    snippets: list[EvidenceSnippet] = []
+    seen_windows: set[tuple[int, int]] = set()
+    for index in hit_indexes:
+        start = max(0, index - 2)
+        end = min(len(lines), index + 3)
+        window = (start, end)
+        if window in seen_windows:
+            continue
+        seen_windows.add(window)
+        snippet = "\n".join(
+            f"{line_number + 1}: {lines[line_number]}"
+            for line_number in range(start, end)
+        )
+        snippets.append(
+            EvidenceSnippet(
+                start_line=start + 1,
+                text=clip_snippet(snippet),
+            )
+        )
+    return tuple(snippets)
+
+
+def clip_snippet(text: str) -> str:
+    if len(text) <= MAX_SNIPPET_CHARS:
+        return text
+    return text[: MAX_SNIPPET_CHARS - 3].rstrip() + "..."
+
+
+def evidence_corpus_digest(documents: tuple[EvidenceDocument, ...]) -> str:
+    payload = [
+        {
+            "path": document.path,
+            "snippets": [
+                {"start_line": snippet.start_line, "text": snippet.text}
+                for snippet in document.snippets
+            ],
+            "source": document.source,
+        }
+        for document in documents
+    ]
+    encoded = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def bundle_context_corpus_digest(
+    corpora_by_issue: dict[str, EvidenceCorpus],
+) -> str:
+    payload = [
+        {"id": issue_id, "corpus_digest": corpus.digest}
+        for issue_id, corpus in sorted(corpora_by_issue.items())
+    ]
+    encoded = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def assessor_request_payload(
+    bundle: Bundle,
+    anchors_by_issue: dict[str, AnchorSummary],
+    corpora_by_issue: dict[str, EvidenceCorpus],
+) -> dict[str, Any]:
+    corpus_digest = bundle_context_corpus_digest(corpora_by_issue)
+    return {
+        "schema_version": CONTEXT_ASSESSOR_SCHEMA_VERSION,
+        "bundle_digest": bundle.source_digest,
+        "corpus_digest": corpus_digest,
+        "shared_context": list(bundle.shared_context),
+        "issues": [
+            {
+                "id": issue.issue_id,
+                "title": issue.title,
+                "body": issue.body,
+                "source_digest": issue.source_digest,
+                "anchors": anchor_summary_payload(anchors_by_issue[issue.issue_id]),
+                "context_corpus": evidence_corpus_payload(
+                    corpora_by_issue[issue.issue_id]
+                ),
+            }
+            for issue in bundle.issues
+        ],
+    }
+
+
+def anchor_summary_payload(anchors: AnchorSummary) -> dict[str, Any]:
+    return {
+        "paths": list(anchors.paths),
+        "docs": list(anchors.docs),
+        "symbols": list(anchors.symbols),
+        "labels": list(anchors.labels),
+        "targets": list(anchors.targets),
+        "qa": list(anchors.qa),
+        "test_lanes": list(anchors.test_lanes),
+        "missing_categories": list(anchors.missing_categories),
+        "missing_paths": list(anchors.missing_paths),
+    }
+
+
+def evidence_corpus_payload(corpus: EvidenceCorpus) -> dict[str, Any]:
+    return {
+        "digest": corpus.digest,
+        "anchor_paths": list(corpus.anchor_paths),
+        "rg_candidate_paths": list(corpus.rg_candidate_paths),
+        "evidence": [
+            {
+                "path": document.path,
+                "source": document.source,
+                "snippets": [
+                    {"start_line": snippet.start_line, "text": snippet.text}
+                    for snippet in document.snippets
+                ],
+            }
+            for document in corpus.documents
+        ],
+    }
+
+
+def run_context_assessor_provider(
+    command: str,
+    request_payload: dict[str, Any],
+    *,
+    repo_root: Path,
+) -> ContextAssessorProviderResult:
     if command.strip() == "":
-        raise GateError("Embedding command is required.")
-    input_text = "".join(json.dumps(record) + "\n" for record in records)
+        raise GateError("Context assessor command is required.")
+    input_text = json.dumps(request_payload, separators=(",", ":"), sort_keys=True)
     result = subprocess.run(
         shlex.split(command),
         cwd=repo_root,
@@ -506,63 +824,132 @@ def run_embedding_provider(
     )
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip()
-        raise GateError(f"Embedding provider failed: {detail}")
+        raise GateError(f"Context assessor provider failed: {detail}")
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise GateError("Context assessor provider returned invalid JSON.") from error
+    if not isinstance(payload, dict):
+        raise GateError("Context assessor provider output must be a JSON object.")
 
-    vectors: dict[str, list[float]] = {}
-    for line_number, line in enumerate(result.stdout.splitlines(), start=1):
-        if line.strip() == "":
-            continue
-        payload = json.loads(line)
-        if not isinstance(payload, dict):
-            raise GateError(f"Provider output line {line_number} is not an object.")
-        record_id = str(payload.get("id") or "")
-        vector = payload.get("vector")
-        if record_id == "" or not isinstance(vector, list):
-            raise GateError(f"Provider output line {line_number} is malformed.")
-        vectors[record_id] = [float(value) for value in vector]
-    missing = sorted(record["id"] for record in records if record["id"] not in vectors)
-    if missing:
-        raise GateError(f"Embedding provider omitted vector(s): {', '.join(missing)}")
-    return EmbeddingProviderResult(
-        vectors=vectors,
-        metadata=provider_metadata_from_stderr(result.stderr),
+    raw_assessments = payload.get("assessments")
+    if not isinstance(raw_assessments, list):
+        raise GateError("Context assessor provider output must include assessments.")
+
+    assessments: dict[str, RawContextAssessment] = {}
+    for index, raw_assessment in enumerate(raw_assessments, start=1):
+        if not isinstance(raw_assessment, dict):
+            raise GateError(f"Assessment entry {index} must be an object.")
+        issue_id = str(
+            raw_assessment.get("id") or raw_assessment.get("issue_id") or ""
+        ).strip()
+        if issue_id == "":
+            raise GateError(f"Assessment entry {index} is missing id.")
+        if issue_id in assessments:
+            raise GateError(f"Duplicate assessment id: {issue_id}")
+        confidence = optional_float(raw_assessment.get("confidence"))
+        assessments[issue_id] = RawContextAssessment(
+            verdict=str(raw_assessment.get("verdict") or "").strip().lower(),
+            confidence=confidence,
+            cited_paths=tuple(parse_string_list(raw_assessment.get("cited_paths"))),
+            reasons=tuple(parse_string_list(raw_assessment.get("reasons"))),
+        )
+
+    return ContextAssessorProviderResult(
+        assessments=assessments,
+        bundle_digest=optional_string(payload.get("bundle_digest")),
+        corpus_digest=optional_string(payload.get("corpus_digest")),
     )
 
 
-def provider_metadata_from_stderr(stderr: str) -> dict[str, Any]:
-    metadata: dict[str, Any] = {}
-    for line_number, line in enumerate(stderr.splitlines(), start=1):
-        stripped = line.strip()
-        if not stripped.startswith(PROVIDER_METADATA_PREFIX):
-            continue
-        raw_payload = stripped[len(PROVIDER_METADATA_PREFIX) :].strip()
-        payload = json.loads(raw_payload)
-        if not isinstance(payload, dict):
-            raise GateError(f"Provider metadata line {line_number} is not an object.")
-        metadata = payload
-    return metadata
+def optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
-def cosine_similarity(left: list[float], right: list[float]) -> float:
-    if len(left) != len(right):
-        raise GateError("Embedding vectors must have the same dimension.")
-    left_norm = math.sqrt(sum(value * value for value in left))
-    right_norm = math.sqrt(sum(value * value for value in right))
-    if left_norm == 0 or right_norm == 0:
-        return 0.0
-    dot = sum(left_value * right_value for left_value, right_value in zip(left, right))
-    return dot / (left_norm * right_norm)
+def normalize_context_assessment(
+    issue: IssueDraft,
+    raw_assessment: RawContextAssessment | None,
+    provider_result: ContextAssessorProviderResult,
+    *,
+    bundle_digest: str,
+    corpus_digest: str,
+    available_paths: set[str],
+) -> ContextAssessment:
+    invalid_reasons: list[str] = []
+    reasons: list[str] = []
+    cited_paths: tuple[str, ...] = ()
+    confidence = 0.0
+    verdict = "fail"
+
+    if provider_result.bundle_digest != bundle_digest:
+        invalid_reasons.append("assessor bundle digest mismatch")
+    if provider_result.corpus_digest != corpus_digest:
+        invalid_reasons.append("assessor corpus digest mismatch")
+
+    if raw_assessment is None:
+        invalid_reasons.append("assessor omitted issue assessment")
+    else:
+        verdict = raw_assessment.verdict
+        confidence = raw_assessment.confidence if raw_assessment.confidence is not None else 0.0
+        cited_paths = tuple(dict.fromkeys(raw_assessment.cited_paths))
+        reasons = list(raw_assessment.reasons)
+
+        if verdict not in ASSESSOR_VERDICTS:
+            invalid_reasons.append(f"invalid assessor verdict: {verdict or 'missing'}")
+            verdict = "fail"
+        if raw_assessment.confidence is None or not 0.0 <= confidence <= 1.0:
+            invalid_reasons.append("assessor confidence must be between 0 and 1")
+            confidence = 0.0
+        if not cited_paths:
+            invalid_reasons.append("assessor did not cite supplied evidence paths")
+        invalid_citations = sorted(set(cited_paths) - available_paths)
+        if invalid_citations:
+            invalid_reasons.append(
+                "assessor cited paths outside supplied evidence: "
+                + ", ".join(invalid_citations)
+            )
+        if not reasons:
+            invalid_reasons.append("assessor did not provide reasons")
+
+    if invalid_reasons:
+        return ContextAssessment(
+            verdict="fail",
+            confidence=0.0,
+            cited_paths=tuple(path for path in cited_paths if path in available_paths),
+            reasons=tuple([*invalid_reasons, *reasons]),
+            valid=False,
+            validation_reasons=tuple(invalid_reasons),
+        )
+
+    return ContextAssessment(
+        verdict=verdict,
+        confidence=confidence,
+        cited_paths=cited_paths,
+        reasons=tuple(reasons),
+        valid=True,
+        validation_reasons=(),
+    )
 
 
-def issue_query(issue: IssueDraft, shared_context: tuple[str, ...]) -> str:
-    parts = [
-        issue.title,
-        section_body(issue.body, "What to build") or "",
-        section_body(issue.body, "Current context") or "",
-        section_body(issue.body, "Context anchors") or "",
-        "\n".join(shared_context),
-    ]
-    return "\n\n".join(part for part in parts if part.strip() != "")
+def issue_context_validation_reasons(assessment: ContextAssessment) -> list[str]:
+    if not assessment.valid:
+        return [
+            f"Issue context assessor evidence invalid: {reason}"
+            for reason in assessment.validation_reasons
+        ]
+    if assessment.verdict == "pass":
+        return []
+    detail = "; ".join(assessment.reasons)
+    if detail == "":
+        return [f"Issue context assessor verdict {assessment.verdict}"]
+    return [f"Issue context assessor verdict {assessment.verdict}: {detail}"]
 
 
 def operator_approval_evidence(body: str) -> dict[str, Any]:
@@ -574,29 +961,11 @@ def operator_approval_evidence(body: str) -> dict[str, Any]:
         "Approval evidence is context only; it does not grant tool permission."
     ]
     evidence_lower = evidence.lower()
-    if "trust_remote_code" in evidence_lower and "no-trust-remote-code" not in evidence_lower:
-        warnings.append("Evidence mentions trust_remote_code without requiring it to be disabled.")
     if "corpus scope" not in evidence_lower:
         warnings.append("Evidence does not name a corpus scope.")
     if "prohibited" not in evidence_lower:
         warnings.append("Evidence does not list prohibited actions.")
     return {"present": True, "body": evidence, "warnings": warnings}
-
-
-def semantic_matches_for_issue(
-    issue: IssueDraft,
-    documents: tuple[CorpusDocument, ...],
-    vectors: dict[str, list[float]],
-) -> list[SemanticMatch]:
-    query_vector = vectors[f"issue:{issue.issue_id}"]
-    matches = [
-        SemanticMatch(
-            path=document.path,
-            score=cosine_similarity(query_vector, vectors[document.doc_id]),
-        )
-        for document in documents
-    ]
-    return sorted(matches, key=lambda match: match.score, reverse=True)[:5]
 
 
 def area_for_path(path: str) -> str:
@@ -705,13 +1074,13 @@ def stiffness_term_evidence(body: str) -> tuple[tuple[str, ...], tuple[str, ...]
 def stiffness_score(
     issue: IssueDraft,
     anchors: AnchorSummary,
-    matches: list[SemanticMatch],
+    context_paths: tuple[str, ...],
 ) -> StiffnessResult:
     reasons: list[str] = []
     score = 0
     area_values = {
         area_for_path(path)
-        for path in [*anchors.paths, *anchors.docs, *(match.path for match in matches[:3])]
+        for path in [*anchors.paths, *anchors.docs, *context_paths[:3]]
     }
     if len(area_values) > 1:
         added = min(30, (len(area_values) - 1) * 15)
@@ -727,7 +1096,9 @@ def stiffness_score(
             score += 10
             reasons.append("mentions many stiff boundary terms")
 
-    criteria_count = len(CHECKBOX_PATTERN.findall(section_body(issue.body, "Acceptance criteria") or ""))
+    criteria_count = len(
+        CHECKBOX_PATTERN.findall(section_body(issue.body, "Acceptance criteria") or "")
+    )
     if criteria_count > 7:
         score += 20
         reasons.append(f"has {criteria_count} acceptance criteria")
@@ -772,15 +1143,14 @@ def validate_labels(labels: frozenset[str]) -> list[str]:
 
 def action_for_issue(
     *,
-    issue: IssueDraft,
     labels: frozenset[str],
     validation_reasons: list[str],
-    semantic_passed: bool,
+    context_passed: bool,
     stiffness: int,
     thresholds: Thresholds,
     override: str | None,
 ) -> tuple[str, bool, str]:
-    if validation_reasons or not semantic_passed:
+    if validation_reasons or not context_passed:
         return "needs-context", False, NEEDS_TRIAGE_LABEL
     if stiffness >= thresholds.split_stiffness:
         if override is not None:
@@ -799,39 +1169,46 @@ def evaluate_bundle(
     bundle: Bundle,
     *,
     repo_root: Path,
-    embedding_command: str,
-    corpus_paths: tuple[str, ...],
+    context_assessor_command: str,
     thresholds: Thresholds,
     provider_name: str,
-    model_id: str,
 ) -> dict[str, Any]:
-    documents = build_corpus(
-        repo_root,
-        corpus_paths=corpus_paths,
-        max_files=thresholds.max_corpus_files,
-    )
-    records: list[dict[str, str]] = [
-        {"id": f"issue:{issue.issue_id}", "kind": "query", "text": issue_query(issue, bundle.shared_context)}
-        for issue in bundle.issues
-    ]
-    records.extend(
-        {"id": document.doc_id, "kind": "document", "text": document.text}
-        for document in documents
-    )
-    embedding_result = run_embedding_provider(
-        embedding_command,
-        records,
+    anchors_by_issue: dict[str, AnchorSummary] = {}
+    corpora_by_issue: dict[str, EvidenceCorpus] = {}
+    for issue in bundle.issues:
+        anchors = parse_anchors(issue.body, repo_root)
+        anchors_by_issue[issue.issue_id] = anchors
+        corpora_by_issue[issue.issue_id] = build_issue_evidence(
+            issue,
+            bundle.shared_context,
+            anchors,
+            repo_root=repo_root,
+            max_rg_candidate_files=thresholds.max_rg_candidate_files,
+        )
+
+    request_payload = assessor_request_payload(bundle, anchors_by_issue, corpora_by_issue)
+    provider_result = run_context_assessor_provider(
+        context_assessor_command,
+        request_payload,
         repo_root=repo_root,
     )
-    vectors = embedding_result.vectors
+    corpus_digest = str(request_payload["corpus_digest"])
 
     issue_reports: list[dict[str, Any]] = []
     for issue in bundle.issues:
         labels = frozenset(issue.labels)
-        anchors = parse_anchors(issue.body, repo_root)
-        matches = semantic_matches_for_issue(issue, documents, vectors)
-        top_score = matches[0].score if matches else 0.0
-        semantic_passed = top_score >= thresholds.semantic_min_score
+        anchors = anchors_by_issue[issue.issue_id]
+        corpus = corpora_by_issue[issue.issue_id]
+        raw_assessment = provider_result.assessments.get(issue.issue_id)
+        available_paths = {document.path for document in corpus.documents}
+        context_assessment = normalize_context_assessment(
+            issue,
+            raw_assessment,
+            provider_result,
+            bundle_digest=bundle.source_digest,
+            corpus_digest=corpus_digest,
+            available_paths=available_paths,
+        )
 
         validation_reasons: list[str] = []
         validation_reasons.extend(
@@ -847,13 +1224,10 @@ def evaluate_bundle(
             f"anchor path does not exist: {path}"
             for path in anchors.missing_paths
         )
-        if not semantic_passed:
-            validation_reasons.append(
-                "semantic coverage below threshold "
-                f"{thresholds.semantic_min_score:.2f}: {top_score:.3f}"
-            )
+        validation_reasons.extend(issue_context_validation_reasons(context_assessment))
 
-        stiffness = stiffness_score(issue, anchors, matches)
+        context_paths = tuple(document.path for document in corpus.documents)
+        stiffness = stiffness_score(issue, anchors, context_paths)
         stiffness_level_value = stiffness_level(stiffness.score, thresholds)
         declared_mismatch = declared_stiffness_mismatch(
             stiffness.declared_level,
@@ -861,11 +1235,11 @@ def evaluate_bundle(
             thresholds,
         )
         override = bundle.operator_overrides.get(issue.issue_id)
+        context_passed = context_assessment.valid and context_assessment.verdict == "pass"
         action, ready, state_label = action_for_issue(
-            issue=issue,
             labels=labels,
             validation_reasons=validation_reasons,
-            semantic_passed=semantic_passed,
+            context_passed=context_passed,
             stiffness=stiffness.score,
             thresholds=thresholds,
             override=override,
@@ -882,25 +1256,17 @@ def evaluate_bundle(
                 "operator_override": override,
                 "operator_approval_evidence": operator_approval_evidence(issue.body),
                 "validation_reasons": validation_reasons,
-                "semantic": {
-                    "passed": semantic_passed,
-                    "top_score": round(top_score, 6),
-                    "matches": [
-                        {"path": match.path, "score": round(match.score, 6)}
-                        for match in matches
-                    ],
+                "context_assessment": {
+                    "verdict": context_assessment.verdict,
+                    "passed": context_passed,
+                    "confidence": context_assessment.confidence,
+                    "cited_paths": list(context_assessment.cited_paths),
+                    "reasons": list(context_assessment.reasons),
+                    "valid": context_assessment.valid,
+                    "validation_reasons": list(context_assessment.validation_reasons),
                 },
-                "anchors": {
-                    "paths": list(anchors.paths),
-                    "docs": list(anchors.docs),
-                    "symbols": list(anchors.symbols),
-                    "labels": list(anchors.labels),
-                    "targets": list(anchors.targets),
-                    "qa": list(anchors.qa),
-                    "test_lanes": list(anchors.test_lanes),
-                    "missing_categories": list(anchors.missing_categories),
-                    "missing_paths": list(anchors.missing_paths),
-                },
+                "context_corpus": evidence_corpus_payload(corpus),
+                "anchors": anchor_summary_payload(anchors),
                 "stiffness": {
                     "score": stiffness.score,
                     "level": stiffness_level_value,
@@ -917,25 +1283,17 @@ def evaluate_bundle(
         "summary": bundle.summary,
         "bundle_digest": bundle.source_digest,
         "thresholds": {
-            "semantic_min_score": thresholds.semantic_min_score,
             "human_review_stiffness": thresholds.human_review_stiffness,
             "split_stiffness": thresholds.split_stiffness,
-            "max_corpus_files": thresholds.max_corpus_files,
+            "max_rg_candidate_files": thresholds.max_rg_candidate_files,
+            "max_evidence_snippets_per_file": MAX_EVIDENCE_SNIPPETS_PER_FILE,
+            "max_snippet_chars": MAX_SNIPPET_CHARS,
         },
-        "embedding": {
+        "context_assessor": {
             "provider": provider_name,
-            "model": model_id,
-            "command": embedding_command,
-            "source": embedding_source(provider_name, model_id),
-            "runtime_device": str(
-                embedding_result.metadata.get("runtime_device") or "unknown"
-            ),
-            "batch_size": embedding_result.metadata.get("batch_size"),
-            "provider_metadata": embedding_result.metadata,
-        },
-        "corpus": {
-            "documents": len(documents),
-            "paths": [document.path for document in documents],
+            "command": context_assessor_command,
+            "schema_version": CONTEXT_ASSESSOR_SCHEMA_VERSION,
+            "corpus_digest": corpus_digest,
         },
         "issues": issue_reports,
     }
@@ -975,34 +1333,37 @@ def report_markdown(report: dict[str, Any]) -> str:
         "",
         f"Summary: {report['summary'] or 'No summary provided.'}",
         "",
-        "## Embedding",
+        "## Issue Context Assessor",
         "",
-        f"- Provider: `{report['embedding']['provider']}`",
-        f"- Model: `{report['embedding']['model']}`",
-        f"- Source: {report['embedding']['source']}",
-        f"- Runtime device: `{report['embedding']['runtime_device']}`",
-        f"- Batch size: `{report['embedding']['batch_size'] or 'unknown'}`",
+        f"- Provider: `{report['context_assessor']['provider']}`",
+        f"- Schema: `{report['context_assessor']['schema_version']}`",
+        f"- Corpus digest: `{report['context_assessor']['corpus_digest']}`",
         "",
         "## Thresholds",
         "",
-        f"- Semantic minimum score: `{report['thresholds']['semantic_min_score']}`",
         f"- Human review stiffness: `{report['thresholds']['human_review_stiffness']}`",
         f"- Split stiffness: `{report['thresholds']['split_stiffness']}`",
+        f"- Max rg candidate files: `{report['thresholds']['max_rg_candidate_files']}`",
         "",
         "## Issues",
         "",
     ]
     for issue in report["issues"]:
+        context_assessment = issue["context_assessment"]
         lines.extend(
             [
                 f"### {issue['id']}: {issue['title']}",
                 "",
                 f"- Action: `{issue['action']}`",
                 f"- Ready: `{str(issue['ready']).lower()}`",
-                f"- Recommended labels: {', '.join(f'`{label}`' for label in issue['recommended_labels'])}",
+                "- Recommended labels: "
+                + ", ".join(f"`{label}`" for label in issue["recommended_labels"]),
+                f"- Context verdict: `{context_assessment['verdict']}`",
+                f"- Context confidence: `{context_assessment['confidence']}`",
+                f"- Context corpus digest: `{issue['context_corpus']['digest']}`",
                 f"- Stiffness: `{issue['stiffness']['score']}` ({issue['stiffness']['level']})",
-                f"- Stiffness surface areas: {', '.join(f'`{area}`' for area in issue['stiffness']['surface_areas'])}",
-                f"- Semantic top score: `{issue['semantic']['top_score']}`",
+                "- Stiffness surface areas: "
+                + ", ".join(f"`{area}`" for area in issue["stiffness"]["surface_areas"]),
             ]
         )
         declared_level = issue["stiffness"]["declared_level"]
@@ -1019,10 +1380,17 @@ def report_markdown(report: dict[str, Any]) -> str:
         if issue["validation_reasons"]:
             lines.append("- Validation reasons:")
             lines.extend(f"  - {reason}" for reason in issue["validation_reasons"])
-        lines.append("- Top semantic matches:")
+        lines.append("- Context cited paths:")
+        if context_assessment["cited_paths"]:
+            lines.extend(f"  - `{path}`" for path in context_assessment["cited_paths"])
+        else:
+            lines.append("  - None")
+        lines.append("- Context reasons:")
+        lines.extend(f"  - {reason}" for reason in context_assessment["reasons"])
+        lines.append("- Evidence files:")
         lines.extend(
-            f"  - `{match['path']}`: `{match['score']}`"
-            for match in issue["semantic"]["matches"][:3]
+            f"  - `{entry['path']}` ({entry['source']}, {len(entry['snippets'])} snippet(s))"
+            for entry in issue["context_corpus"]["evidence"]
         )
         lines.append("- Stiffness reasons:")
         lines.extend(f"  - {reason}" for reason in issue["stiffness"]["reasons"])
@@ -1033,25 +1401,11 @@ def report_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def default_embedding_command() -> str:
-    env_command = os.environ.get("SHAPE_ISSUES_EMBED_COMMAND")
+def default_context_assessor_command() -> str:
+    env_command = os.environ.get("SHAPE_ISSUES_CONTEXT_ASSESSOR_COMMAND")
     if env_command is not None and env_command.strip() != "":
         return env_command
-    return (
-        "uv run --with sentence-transformers --with torch "
-        "python .agents/skills/shape-issues/scripts/hf_embed_jsonl.py "
-        f"--model {DEFAULT_EMBEDDING_MODEL_ID} "
-        "--no-trust-remote-code "
-        f"--batch-size {DEFAULT_EMBEDDING_BATCH_SIZE} "
-        "--device auto "
-        f"--min-free-vram-gb {DEFAULT_EMBEDDING_MIN_FREE_VRAM_GB:g}"
-    )
-
-
-def embedding_source(provider_name: str, model_id: str) -> str:
-    if provider_name.lower() == "huggingface" and model_id.strip() != "":
-        return f"https://huggingface.co/{model_id.strip()}"
-    return "local"
+    return "python3 .agents/skills/shape-issues/scripts/codex_context_assessor.py --repo-root ."
 
 
 def parse_args() -> argparse.Namespace:
@@ -1061,14 +1415,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("bundle", type=Path, help="Path to bundle JSON.")
     parser.add_argument("--repo-root", type=Path, default=Path("."))
     parser.add_argument("--out-dir", type=Path, default=None)
-    parser.add_argument("--embedding-command", default=default_embedding_command())
-    parser.add_argument("--provider-name", default="huggingface")
-    parser.add_argument("--model-id", default=DEFAULT_EMBEDDING_MODEL_ID)
-    parser.add_argument("--corpus-path", action="append", default=[])
-    parser.add_argument("--semantic-min-score", type=float, default=0.20)
+    parser.add_argument("--context-assessor-command", default=default_context_assessor_command())
+    parser.add_argument("--context-assessor-name", default=DEFAULT_CONTEXT_ASSESSOR_PROVIDER)
     parser.add_argument("--human-review-stiffness", type=int, default=55)
     parser.add_argument("--split-stiffness", type=int, default=70)
-    parser.add_argument("--max-corpus-files", type=int, default=2000)
+    parser.add_argument(
+        "--max-rg-candidate-files",
+        type=int,
+        default=DEFAULT_RG_CANDIDATE_FILES,
+    )
     return parser.parse_args()
 
 
@@ -1078,21 +1433,18 @@ def main() -> None:
     out_dir = (args.out_dir or args.bundle.parent).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     thresholds = Thresholds(
-        semantic_min_score=args.semantic_min_score,
         human_review_stiffness=args.human_review_stiffness,
         split_stiffness=args.split_stiffness,
-        max_corpus_files=args.max_corpus_files,
+        max_rg_candidate_files=args.max_rg_candidate_files,
     )
     try:
         bundle = parse_bundle(args.bundle)
         report = evaluate_bundle(
             bundle,
             repo_root=repo_root,
-            embedding_command=args.embedding_command,
-            corpus_paths=tuple(args.corpus_path),
+            context_assessor_command=args.context_assessor_command,
             thresholds=thresholds,
-            provider_name=args.provider_name,
-            model_id=args.model_id,
+            provider_name=args.context_assessor_name,
         )
     except (GateError, json.JSONDecodeError, OSError, ValueError) as error:
         sys.stderr.write(f"shape-issues gate failed: {error}\n")

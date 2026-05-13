@@ -93,6 +93,14 @@ The human workflow for shaping work, preparing GitHub Issues, draining Ralph,
 reviewing `dev`, and running **Promotion**.
 _Avoid_: Agent loop, Ralph internals
 
+**Issue context assessor**:
+The bounded `$shape-issues` gate provider that judges whether each draft issue's
+declared `Path:` and `Doc:` anchors plus deterministic `rg` evidence snippets
+give an implementation agent enough context to work independently. It reports a
+per-issue `pass`, `weak`, or `fail` verdict before publication; it is not a
+repo exploration pass.
+_Avoid_: Embedding coverage, semantic coverage, model corpus scoring
+
 **Delivery mode**:
 The Ralph branch strategy that decides where validated issue work is integrated
 and when its GitHub issue is closed.
@@ -193,8 +201,19 @@ _Avoid_: Implemented gap, ignored report
   `ready-for-agent` issue in a drain.
 - **Ready issue refresh** may mutate GitHub Issue metadata under its audit
   contract; it is not **Promotion** and is not **Post-promotion review**.
+- A checkpointed **Operator workflow** drain uses the same lane-aware scheduler
+  as plain drain: Gitflow and Trunk attempts stay serial, eligible
+  **Exploratory delivery** attempts use the configured worker pool, and one
+  Operator cycle may record multiple issue checkpoints before **Promotion**.
+- **Promotion** in a checkpointed **Operator workflow** starts only after active
+  Exploratory workers, implementation **Ready issue refresh** gates, and
+  scheduler metadata updates have settled.
 - The **Operator workflow** is the human entrypoint; Ralph internals remain on
   the agent-facing Ralph documentation page.
+- The **Issue context assessor** is part of the in-development
+  `$shape-issues` workflow. Replacing the earlier draft coverage mechanism does
+  not require an ADR because it does not establish a durable repo architecture
+  decision.
 - A **Delivery mode** selects an **Integration target**.
 - **Gitflow delivery** uses `dev` as the default **Integration target**.
 - **Trunk delivery** uses `main` as the default **Integration target**.

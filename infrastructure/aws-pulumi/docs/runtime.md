@@ -7,6 +7,7 @@ hosts Dagster services in AWS.
 
 - [What this page covers](#what-this-page-covers)
 - [Image build and publish flow](#image-build-and-publish-flow)
+- [Code-location manifest prototype](#code-location-manifest-prototype)
 - [ECS runtime topology](#ecs-runtime-topology)
 - [Service profiles](#service-profiles)
 - [Component summary](#component-summary)
@@ -27,7 +28,8 @@ hosts Dagster services in AWS.
 flowchart LR
     subgraph Repo[Repository build contexts]
         CORE[backend-services/dagster-core]
-        USERCODE[backend-services/dagster-user/aemo-etl]
+        MANIFEST[backend-services/dagster-core/code-locations.aws.toml]
+        USERCODE[manifest-declared user code]
         AUTH[backend-services/authentication]
         CADDY[backend-services/caddy]
     end
@@ -43,9 +45,11 @@ flowchart LR
     subgraph ECS[ECS task definitions]
         WEBTASK[webserver tasks]
         DAEMONTASK[daemon task]
-        USERTASK[user-code task]
+        USERTASK[user-code gRPC tasks]
     end
 
+    MANIFEST --> CORE
+    MANIFEST --> USERCODE
     CORE --> WEBREPO
     CORE --> DAEMONREPO
     USERCODE --> USERREPO
@@ -59,6 +63,24 @@ flowchart LR
 `ECRComponentResource` builds and pushes images during `pulumi up`, enables
 scan-on-push on each repository, and exposes digest-pinned image URIs for the
 ECS task definitions.
+
+## Code-location manifest prototype
+
+The issue #153 **Exploratory branch** trials
+`backend-services/dagster-core/code-locations.aws.toml` as the shared AWS
+Dagster code-location declaration. The manifest is now the source for:
+
+- AWS core-image workspace rendering through
+  `backend-services/dagster-core/render_aws_workspace.py`
+- user-code ECR repository and image resources in `ECRComponentResource`
+- user-code gRPC ECS services in `DagsterUserCodeServiceComponentResource`
+- redeploy and deployed-test service-name resolution
+
+The current production review boundary is deliberately narrow: `aemo-etl`
+remains the only checked-in live location and stays the default location with
+module `aemo_etl.definitions`, port `4000`, and Cloud Map name `aemo-etl`.
+The two-location path is proven by AWS Pulumi tests with a fixture manifest, not
+by adding a second production code location on this branch.
 
 ## ECS runtime topology
 
@@ -102,7 +124,7 @@ flowchart LR
 
 | Service | CPU | Memory | Port | Cloud Map name | Notes |
 |---|---:|---:|---:|---|---|
-| user-code | 256 | 1024 | 4000 | `aemo-etl` | Dagster gRPC server |
+| user-code default | 256 | 1024 | 4000 | `aemo-etl` | Dagster gRPC server from the manifest |
 | webserver admin | 256 | 1024 | 3000 | `webserver-admin` | path prefix `/dagster-webserver/admin` |
 | webserver guest | 256 | 1024 | 3000 | `webserver-guest` | `--read-only`, path prefix `/dagster-webserver/guest` |
 | daemon | 256 | 1024 | none | none | background scheduler/sensor/orchestration process |
@@ -134,11 +156,14 @@ SecureString parameters instead.
 | `ECRComponentResource` | ECR repos, lifecycle policies, docker build+push resources | Publish deployable images from repo source |
 | `EcsClusterComponentResource` | ECS cluster, CloudWatch log group, capacity providers | Shared compute substrate for Dagster runtime |
 | `ecs_services.py` components | task definitions, ECS services, Cloud Map service registrations | Run Dagster webserver, daemon, and user-code containers |
+| `code_locations.py` | manifest parser, workspace renderer, resource-name helpers | Keep user-code images, workspaces, services, and live checks aligned |
 
 ## Implementation notes
 
 - The webserver and daemon images both come from `backend-services/dagster-core`
   built with `DAGSTER_DEPLOYMENT=aws`.
+- The AWS core image renders `workspace.aws.yaml` from the manifest during the
+  Docker build before copying it to `workspace.yaml`.
 - ECS services use digest-pinned image URIs rather than mutable `:latest` tags
   at runtime.
 - ECS task definitions inject the Postgres password through ECS `secrets`
@@ -167,9 +192,17 @@ SecureString parameters instead.
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `infrastructure/aws-pulumi/components/ecr.py`
+  - `infrastructure/aws-pulumi/code_locations.py`
+  - `infrastructure/aws-pulumi/components/dagster_runtime_task.py`
   - `infrastructure/aws-pulumi/components/ecs_cluster.py`
   - `infrastructure/aws-pulumi/components/ecs_services.py`
+  - `backend-services/dagster-core/code-locations.aws.toml`
+  - `backend-services/dagster-core/Dockerfile`
+  - `backend-services/dagster-core/render_aws_workspace.py`
+  - `backend-services/dagster-core/workspace.aws.yaml`
   - `backend-services/dagster-core/dagster.aws.yaml`
+  - `infrastructure/aws-pulumi/tests/fixtures/code-locations-two-location.toml`
+  - `infrastructure/aws-pulumi/tests/unit/test_code_locations.py`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`

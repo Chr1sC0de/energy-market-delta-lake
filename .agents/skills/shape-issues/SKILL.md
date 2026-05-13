@@ -1,6 +1,6 @@
 ---
 name: shape-issues
-description: Shape plans, specs, PRDs, or broad requests into repo-local GitHub Issue drafts using tracer-bullet slices and Ralph gate evidence. Use when Codex needs to replace or strengthen to-issues for this repository by producing independently workable issue drafts with required Ralph sections, context anchors, QA plans, embedding-based context coverage, stiffness or step-size scoring, and optional confirmed publication as needs-triage issues before ralph-triage or ralph-loop work.
+description: Shape plans, specs, PRDs, or broad requests into repo-local GitHub Issue drafts using tracer-bullet slices and Ralph gate evidence. Use when Codex needs to replace or strengthen to-issues for this repository by producing independently workable issue drafts with required Ralph sections, context anchors, QA plans, Issue context assessor evidence, stiffness or step-size scoring, and optional confirmed publication as needs-triage issues before ralph-triage or ralph-loop work.
 ---
 
 # Shape Issues
@@ -17,8 +17,8 @@ on, close, reopen, or relabel existing GitHub Issues.
 - Read `docs/agents/issue-tracker.md` and `docs/agents/triage-labels.md` for
   the ready issue contract and labels.
 - Read `references/gate-contract.md` before running the gate script.
-- Read `references/embedding-providers.md` when configuring the embedding
-  provider or diagnosing provider failures.
+- Read `references/context-assessors.md` when configuring the **Issue context
+  assessor** provider or diagnosing provider failures.
 
 ## Workflow
 
@@ -35,7 +35,8 @@ on, close, reopen, or relabel existing GitHub Issues.
    blockers, and classifications are right. Iterate until approved.
 6. Put only implementation slices (`afk` and `exploratory`) in
    `.shape-issues/runs/<slug>/bundle.json`.
-7. Run `scripts/shape_issue_gate.py` on the bundle with an embedding provider.
+7. Run `scripts/shape_issue_gate.py` on the bundle with an **Issue context
+   assessor** provider.
 8. Revise the drafts until AFK slices have `action: ready` and Exploratory
    implementation slices have `action: exploratory`.
 9. Present the Markdown report, issue drafts, and any report-only
@@ -92,7 +93,8 @@ Exploratory delivery drafts must also include:
 
 - `## Review focus`
 
-When a draft expects a live embedding run outside the sandbox, include:
+When a draft expects a non-default assessor command, broader corpus scope, or
+execution outside the default read-only/no-approval boundary, include:
 
 - `## Operator approval evidence`
 
@@ -106,14 +108,14 @@ Use this shape:
 ## Operator approval evidence
 
 - Purpose: run `$shape-issues` gate against this issue bundle.
-- Model: `Qwen/Qwen3-Embedding-0.6B`.
-- Remote model code: prohibited; use `--no-trust-remote-code`.
-- Downloads: PyPI packages and Hugging Face model files are acceptable.
-- Corpus scope: only the files listed in `## Context anchors`.
+- Provider command: `python3 .agents/skills/shape-issues/scripts/codex_context_assessor.py --repo-root .`.
+- Sandbox: read-only with no approvals.
+- Corpus scope: declared `Path:` and `Doc:` anchors plus the gate's bounded
+  deterministic `rg` candidate snippets.
 - Output path: `.shape-issues/runs/<issue-slug>/`.
 - Prohibited: secrets, credentials, unlisted repo files, GitHub mutation,
   commits, pushes.
-- If the command, model, corpus, or trust settings differ, stop and ask the
+- If the command, corpus, sandbox, or approval settings differ, stop and ask the
   Operator again.
 ```
 
@@ -184,13 +186,7 @@ ready-state recommendations and creates new issues with `needs-triage` only, so
 Default live provider command:
 
 ```bash
-uv run --with sentence-transformers --with torch \
-  python .agents/skills/shape-issues/scripts/hf_embed_jsonl.py \
-  --model Qwen/Qwen3-Embedding-0.6B \
-  --no-trust-remote-code \
-  --batch-size 2 \
-  --device auto \
-  --min-free-vram-gb 6
+python3 .agents/skills/shape-issues/scripts/codex_context_assessor.py --repo-root .
 ```
 
 Run the gate:
@@ -199,16 +195,16 @@ Run the gate:
 python3 .agents/skills/shape-issues/scripts/shape_issue_gate.py \
   .shape-issues/runs/<slug>/bundle.json \
   --repo-root . \
-  --embedding-command "uv run --with sentence-transformers --with torch python .agents/skills/shape-issues/scripts/hf_embed_jsonl.py --model Qwen/Qwen3-Embedding-0.6B --no-trust-remote-code --batch-size 2 --device auto --min-free-vram-gb 6" \
-  --model-id Qwen/Qwen3-Embedding-0.6B \
+  --context-assessor-command "python3 .agents/skills/shape-issues/scripts/codex_context_assessor.py --repo-root ." \
   --out-dir .shape-issues/runs/<slug>
 ```
 
-The default Hugging Face provider selects CUDA only when Torch reports at least
-6 GiB of free VRAM. Otherwise it records an explicit CPU fallback in the gate
-report. The report also records the selected runtime device and batch size.
-Operators with a larger GPU may override the command and `--model-id` to use
-`Qwen/Qwen3-Embedding-8B`, but that is not the default gate path.
+The default wrapper invokes `codex exec` with read-only sandboxing and
+`approval_policy="never"`. The gate, not the assessor, assembles the bounded
+evidence corpus from declared `Path:` and `Doc:` anchors plus up to eight
+deterministic `rg` candidate files. Use
+`scripts/fixture_context_assessor.py` only for deterministic tests and dry
+contract examples.
 
 The gate writes `report.md` and `report.json`. Runtime outputs under
 `.shape-issues/` are ignored by git.
@@ -256,8 +252,8 @@ skip issues that were already created.
 ## Gate Actions
 
 - `ready`: the issue is ready to hand to `$ralph-triage` as AFK-drainable.
-- `needs-context`: required sections, labels, anchors, QA, or semantic coverage
-  are missing.
+- `needs-context`: required sections, labels, anchors, QA, or **Issue context
+  assessor** `pass` evidence are missing.
 - `split`: the issue is too stiff or oversized for default AFK drain.
 - `exploratory`: use only when the issue explicitly needs durable human review
   and includes `## Review focus`.

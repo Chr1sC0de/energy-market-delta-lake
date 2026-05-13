@@ -94,6 +94,12 @@ their queue snapshot. When no unblocked ready issue can proceed and
 `exploratory_acceptance_review_required` and writes a non-mutating
 **Exploratory acceptance review** artifact instead of marking the queue as a
 generic failure.
+When unblocked ready work exists, checkpointed Operator runs use the same
+parallel drain scheduler as plain `--drain`. A single Operator cycle may record
+multiple issue checkpoints from serial Gitflow or Trunk attempts and bounded
+Exploratory workers before a **Promotion** checkpoint. Promotion starts only
+after active Exploratory workers and implementation **Ready issue refresh**
+claim gates have settled.
 
 After a successful drain-mode **Local integration**, Exploratory handoff, or
 successful **Promotion** verified issue closure, Ralph computes **Ready issue
@@ -120,8 +126,12 @@ update use an explicit `no_change` entry. Reports with no selected candidates
 may omit mutation JSON. The run manifest records per-candidate mutation status
 and recovery guidance for partial failures. Malformed or missing mutation JSON
 for selected implementation candidates stops the drain before scheduling further
-issue attempts; post-Promotion refresh failures are warning-only after
-successful **Promotion**.
+issue attempts. In parallel drains, the scheduler pauses new claims while
+implementation **Ready issue refresh** analysis or metadata mutation runs,
+allows already active Exploratory workers to finish, and records
+`drain_scheduler.fatal_stop` recovery evidence in child run manifests for fatal
+refresh, post-push metadata, or environment failures. Post-Promotion refresh
+failures are warning-only after successful **Promotion**.
 
 Use [ralph-loop.md](ralph-loop.md) for Ralph internals, including
 **Delivery mode**, **Local integration**, **Integration target**, **Promotion**,
@@ -143,6 +153,8 @@ for the decision that keeps **Exploratory branches** outside automatic
   - `AGENTS.md`
   - `OPERATOR.md`
   - `.agents/skills/shape-issues/SKILL.md`
+  - `.agents/skills/shape-issues/scripts/shape_issue_gate.py`
+  - `.agents/skills/shape-issues/scripts/codex_context_assessor.py`
   - `.agents/skills/shape-issues/scripts/publish_shape_issues.py`
   - `.agents/skills/ralph-curate/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`

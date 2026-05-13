@@ -28,7 +28,7 @@ flowchart LR
     ADMIN[Webserver admin]
     GUEST[Webserver guest]
     DAEMON[Daemon]
-    USERCODE[aemo-etl gRPC user code]
+    USERCODE[aemo-etl manifest default]
   end
 
   subgraph Data[State and storage]
@@ -87,16 +87,16 @@ flowchart LR
     USERCODE[aemo-etl]
     LS[LocalStack]
     PG[(Postgres)]
-    MARIMO[Marimo]
+    MARIMO_DASH[Marimo dashboard]
+    MARIMO_CODEX[Marimo-Codex workspace]
   end
 
   CADDY --> AUTH
   CADDY --> ADMIN
   CADDY --> GUEST
-  CADDY --> MARIMO
+  CADDY --> MARIMO_DASH
   AUTH --> ADMIN
   SEED --> LS
-  SEED --> USERCODE
   ADMIN --> USERCODE
   GUEST --> USERCODE
   DAEMON --> USERCODE
@@ -108,10 +108,15 @@ flowchart LR
 ```
 
 This local stack is intentionally broader than the deployed stack in some areas.
-For example, `marimo` is part of local compose but is not provisioned by the
-current Pulumi deployment. The optional Archive seed loader is also local-only:
-it can require a cached seed under `backend-services/.e2e/aemo-etl` before
-starting the `aemo-etl` code location for local **End-to-end test** setup.
+For example, `marimo-dashboard` and `marimo-codex-workspace` are part of local
+compose but are not provisioned by the current Pulumi deployment. The dashboard
+serves curated notebooks through Caddy, while the Marimo-Codex workspace is
+bound to localhost for human-operated research and issue-draft preparation.
+Deployed Codex execution remains deferred pending security review. The optional
+Archive seed loader is also local-only: it can load a cached seed under
+`backend-services/.e2e/aemo-etl` into LocalStack during local compose startup.
+Strict seed-before-Dagster gating belongs to the isolated **End-to-end test**
+stack.
 `backend-services/scripts/aemo-etl-e2e run` uses that cache through an isolated
 e2e stack with generated Dagster config, Postgres, LocalStack, AEMO ETL user
 code, one webserver, and the daemon. Once the stack is ready, it keeps
@@ -166,17 +171,20 @@ without making local development performance claims.
 ## Repository responsibilities
 
 - `infrastructure/aws-pulumi`
-  - provisions the canonical AWS platform and deployed runtime
+  - provisions the canonical AWS platform and deployed runtime, including
+    manifest-declared Dagster user-code images and ECS services
 - `backend-services/dagster-user/aemo-etl`
   - defines Dagster assets, sensors, resources, and ETL-specific docs
 - `backend-services/dagster-core`
-  - provides the Dagster runtime image and environment-specific configuration
+  - provides the Dagster runtime image, environment-specific configuration, and
+    the AWS code-location manifest used to render the deployed workspace
 - `backend-services/authentication`
   - implements the OIDC/session bridge used in front of protected routes
 - `backend-services/caddy`
   - provides the reverse-proxy image and routing rules
 - `backend-services/marimo`
-  - local notebook-oriented service used in the test/dev harness
+  - local notebook-oriented Subproject with separate dashboard and
+    Marimo-Codex research workspace images used in the test/dev harness
 
 ## Related docs
 
@@ -191,6 +199,8 @@ without making local development performance claims.
 - `sync.sources`:
   - `docs/README.md`
   - `infrastructure/aws-pulumi/__main__.py`
+  - `backend-services/dagster-core/code-locations.aws.toml`
+  - `infrastructure/aws-pulumi/code_locations.py`
   - `backend-services/compose.yaml`
   - `backend-services/scripts/aemo-etl-e2e`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`

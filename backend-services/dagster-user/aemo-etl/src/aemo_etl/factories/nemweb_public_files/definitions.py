@@ -1,6 +1,7 @@
 """Definitions factory for scheduled NEMWeb public file discovery."""
 
-from typing import Mapping
+from collections.abc import Mapping
+from dataclasses import dataclass
 
 from cron_descriptor import get_description
 from dagster import (
@@ -43,28 +44,59 @@ from aemo_etl.factories.nemweb_public_files.ops.processed_link_combiner import (
 from aemo_etl.utils import request_get
 
 
-def nemweb_public_files_definitions_factory(
-    domain: str,
-    table_name: str,
-    nemweb_relative_href: str,
-    cron_schedule: str,
-    n_executors: int = 1,
-    process_retry: int = 3,
-    initial: int = 10,
-    exp_base: int = 3,
-    max_retry_time: int = 100,
-    folder_filter: TagFilter = default_folder_filter,
-    file_filter: TagFilter = default_file_filter,
-    group_name: str = "gas_raw",
-    tags: Mapping[str, str] | None = None,
-    default_status: DefaultScheduleStatus = DefaultScheduleStatus.STOPPED,
+@dataclass(frozen=True, slots=True, kw_only=True)
+class NEMWebPublicFilesSpec:
+    """Definition-building spec for one NEMWeb public-file listing asset."""
+
+    domain: str
+    table_name: str
+    nemweb_relative_href: str
+    cron_schedule: str
+    default_status: DefaultScheduleStatus
+    n_executors: int
+    folder_filter: TagFilter
+    file_filter: TagFilter
+    group_name: str
+    tags: Mapping[str, str] | None
+    process_retry: int
+    initial: int
+    exp_base: int
+    max_retry_time: int
+    table_bucket: str
+    landing_bucket: str
+    io_manager_key: str
+    cached_link_ttl_seconds: float
+
+    @property
+    def key_prefix(self) -> list[str]:
+        """Return the bronze asset key prefix for this listing table."""
+        return ["bronze", self.domain]
+
+    @property
+    def s3_prefix(self) -> str:
+        """Return the S3 prefix shared by the table and landing objects."""
+        return "/".join(self.key_prefix)
+
+    @property
+    def table_path(self) -> str:
+        """Return the Delta table URI used for cached-link filtering."""
+        return f"s3://{self.table_bucket}/{self.s3_prefix}/{self.table_name}"
+
+    @property
+    def landing_root(self) -> str:
+        """Return the landing bucket root URI for this listing table."""
+        return f"s3://{self.landing_bucket}/{self.s3_prefix}"
+
+
+def build_nemweb_public_files_definitions(
+    spec: NEMWebPublicFilesSpec,
 ) -> Definitions:
-    """Create scheduled definitions for a NEMWeb public file listing asset."""
+    """Build scheduled definitions from a NEMWeb public-file listing spec."""
 
     @retry(
-        stop=stop_after_attempt(process_retry),
+        stop=stop_after_attempt(spec.process_retry),
         wait=wait_exponential_jitter(
-            initial=initial, exp_base=exp_base, max=max_retry_time
+            initial=spec.initial, exp_base=spec.exp_base, max=spec.max_retry_time
         ),
         retry=retry_if_exception_type(RequestException),
         reraise=True,
@@ -72,36 +104,31 @@ def nemweb_public_files_definitions_factory(
     def request_getter_with_retries(path: str) -> Response:
         return request_get(path)
 
-    key_prefix = ["bronze", domain]
-    s3_prefix = "/".join(key_prefix)
-    # since we're using the 'aemo_deltalake_append_io_manager' the
-    # table we will be writing to will be stored on
-    table_path = f"s3://{AEMO_BUCKET}/{s3_prefix}/{table_name}"
-
     asset = nemweb_public_files_asset_factory(
-        tags=tags,
+        tags=spec.tags,
         metadata={
-            "dagster/uri": table_path,
-            "dagster/table_name": f"bronze.{domain}.{table_name}",
-            "cron_schedule": cron_schedule,
-            "cron_description": get_description(cron_schedule),
-            "s3_landing_root": f"s3://{LANDING_BUCKET}/{s3_prefix}",
+            "dagster/uri": spec.table_path,
+            "dagster/table_name": f"bronze.{spec.domain}.{spec.table_name}",
+            "cron_schedule": spec.cron_schedule,
+            "cron_description": get_description(spec.cron_schedule),
+            "s3_landing_root": spec.landing_root,
         },
-        io_manager_key="aemo_deltalake_append_io_manager",
-        group_name=group_name,
-        key_prefix=key_prefix,
-        name=table_name,
-        nemweb_relative_href=nemweb_relative_href,
-        s3_landing_prefix=s3_prefix,
+        io_manager_key=spec.io_manager_key,
+        group_name=spec.group_name,
+        key_prefix=spec.key_prefix,
+        name=spec.table_name,
+        nemweb_relative_href=spec.nemweb_relative_href,
+        s3_landing_bucket=spec.landing_bucket,
+        s3_landing_prefix=spec.s3_prefix,
         nemweb_link_fetcher=HTTPNEMWebLinkFetcher(
-            folder_filter=folder_filter,
-            file_filter=file_filter,
+            folder_filter=spec.folder_filter,
+            file_filter=spec.file_filter,
         ),
         dynamic_nemweb_links_fetcher=FilteredDynamicNEMWebLinksFetcher(
-            n_executors=n_executors,
+            n_executors=spec.n_executors,
             link_filter=InMemoryCachedLinkFilter(
-                table_path=table_path,
-                ttl_seconds=900,
+                table_path=spec.table_path,
+                ttl_seconds=spec.cached_link_ttl_seconds,
             ),
         ),
         nemweb_link_processor=S3NemwebLinkProcessor(
@@ -121,12 +148,12 @@ def nemweb_public_files_definitions_factory(
 
     # create a scheduled asset job
 
-    job = define_asset_job(name=f"{table_name}_job", selection=[asset])
+    job = define_asset_job(name=f"{spec.table_name}_job", selection=[asset])
 
     schedule = ScheduleDefinition(
         job=job,
-        cron_schedule=cron_schedule,
-        default_status=default_status,
+        cron_schedule=spec.cron_schedule,
+        default_status=spec.default_status,
     )
 
     return Definitions(
@@ -134,4 +161,49 @@ def nemweb_public_files_definitions_factory(
         jobs=[job],
         schedules=[schedule],
         asset_checks=[asset_check],
+    )
+
+
+def nemweb_public_files_definitions_factory(
+    domain: str,
+    table_name: str,
+    nemweb_relative_href: str,
+    cron_schedule: str,
+    n_executors: int = 1,
+    process_retry: int = 3,
+    initial: int = 10,
+    exp_base: int = 3,
+    max_retry_time: int = 100,
+    folder_filter: TagFilter = default_folder_filter,
+    file_filter: TagFilter = default_file_filter,
+    group_name: str = "gas_raw",
+    tags: Mapping[str, str] | None = None,
+    default_status: DefaultScheduleStatus = DefaultScheduleStatus.STOPPED,
+    table_bucket: str = AEMO_BUCKET,
+    landing_bucket: str = LANDING_BUCKET,
+    io_manager_key: str = "aemo_deltalake_append_io_manager",
+    cached_link_ttl_seconds: float = 900,
+) -> Definitions:
+    """Create scheduled definitions for a NEMWeb public file listing asset."""
+    return build_nemweb_public_files_definitions(
+        NEMWebPublicFilesSpec(
+            domain=domain,
+            table_name=table_name,
+            nemweb_relative_href=nemweb_relative_href,
+            cron_schedule=cron_schedule,
+            default_status=default_status,
+            n_executors=n_executors,
+            folder_filter=folder_filter,
+            file_filter=file_filter,
+            group_name=group_name,
+            tags=tags,
+            process_retry=process_retry,
+            initial=initial,
+            exp_base=exp_base,
+            max_retry_time=max_retry_time,
+            table_bucket=table_bucket,
+            landing_bucket=landing_bucket,
+            io_manager_key=io_manager_key,
+            cached_link_ttl_seconds=cached_link_ttl_seconds,
+        )
     )

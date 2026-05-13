@@ -9,6 +9,7 @@ network.
 - [What this page covers](#what-this-page-covers)
 - [IAM role model](#iam-role-model)
 - [Service discovery topology](#service-discovery-topology)
+- [Code-location discovery boundary](#code-location-discovery-boundary)
 - [Component summary](#component-summary)
 - [Permission boundaries](#permission-boundaries)
 - [Related docs](#related-docs)
@@ -66,7 +67,7 @@ The role split is deliberate:
 flowchart LR
     subgraph CloudMap[Cloud Map namespace: dagster]
         NAMESPACE[Private DNS namespace]
-        UCODE[aemo-etl]
+        UCODE[aemo-etl manifest default]
         ADMIN[webserver-admin]
         GUEST[webserver-guest]
     end
@@ -93,6 +94,16 @@ The namespace is private to the VPC and currently backs:
 - `webserver-guest.dagster:3000`
 
 The daemon is not registered because it does not accept inbound traffic.
+
+## Code-location discovery boundary
+
+User-code Cloud Map names now come from
+`backend-services/dagster-core/code-locations.aws.toml`. This issue #153
+**Exploratory branch** keeps the live namespace boundary unchanged: only
+`aemo-etl.dagster:4000` is declared for production review. A second
+fixture-declared code location is covered in AWS Pulumi tests to prove the
+manifest path can produce distinct workspace, ECR, ECS, and Cloud Map resource
+definitions before a human accepts a broader production interface.
 
 ## Component summary
 
@@ -133,6 +144,9 @@ The daemon is not registered because it does not accept inbound traffic.
 
 - `sync.owner`: `docs`
 - `sync.sources`:
+  - `backend-services/dagster-core/code-locations.aws.toml`
+  - `infrastructure/aws-pulumi/code_locations.py`
+  - `infrastructure/aws-pulumi/components/ecs_services.py`
   - `infrastructure/aws-pulumi/components/iam_roles.py`
   - `infrastructure/aws-pulumi/components/service_discovery.py`
 - `sync.scope`: `architecture`

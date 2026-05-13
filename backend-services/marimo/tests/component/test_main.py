@@ -71,6 +71,13 @@ class TestIndexPage:
         response = client.get("/marimo")
         assert "test_notebook" in response.text
 
+    def test_index_uses_shared_theme(self) -> None:
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.get("/marimo")
+        assert '<link rel="stylesheet" href="/theme.css">' in response.text
+        assert "var(--emdl-blue" in response.text
+        assert "#1a73e8" not in response.text
+
 
 # ---------------------------------------------------------------------------
 # TestMarimoMount

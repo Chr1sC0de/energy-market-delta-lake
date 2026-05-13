@@ -29,8 +29,8 @@ need a stable product-level reference. Skip it for small changes that can move
 straight from shaped plan to GitHub Issues.
 
 Use `$shape-issues` to draft independently grabbable GitHub Issues with
-tracer-bullet slices, context anchors, QA plans, embedding-based context
-coverage, and stiffness scoring. It writes `.shape-issues/runs/.../report.md`
+tracer-bullet slices, context anchors, QA plans, **Issue context assessor**
+evidence, and stiffness scoring. It writes `.shape-issues/runs/.../report.md`
 and `report.json`; after explicit Operator confirmation it may publish the
 gated outputs as `needs-triage` issues. `$shape-issues` does not move issues to
 `ready-for-agent` and must not edit, comment on, close, reopen, or relabel
@@ -55,15 +55,20 @@ integration** or Exploratory handoff, **Ready issue refresh** reconciles the
 open issue queue before Ralph claims the next `ready-for-agent` issue.
 
 For unattended queue cleanup after `dev` review, prefer the checkpointed
-Operator run path. It drains one ready issue boundary at a time, runs
-**Promotion** when `agent-integrated` issues remain, lets successful
-**Post-promotion review** create validated follow-up GitHub Issues, and repeats
-until no open `ready-for-agent`, `agent-integrated`, `agent-reviewing`,
-`agent-running`, or `agent-failed` issues remain. When no unblocked ready issue
-can proceed and open `agent-reviewing` issues remain, the Operator run stops as
-`needs_review` and writes an **Exploratory acceptance review** JSON and Markdown
-artifact under the Operator run directory instead of treating the queue as a
-generic failure.
+Operator run path. It drains ready work through the same lane-aware scheduler as
+plain `$ralph-loop drain`: Gitflow and Trunk attempts stay serial while eligible
+Exploratory attempts run up to `--exploratory-concurrency` in parallel. One
+Operator cycle can record multiple issue checkpoints from that scheduler pass,
+then runs **Promotion** when `agent-integrated` issues remain. Promotion starts
+only after active Exploratory workers, implementation **Ready issue refresh**
+gates, and scheduler metadata updates have settled. The Operator lets
+successful **Post-promotion review** create validated follow-up GitHub Issues,
+and repeats until no open `ready-for-agent`, `agent-integrated`,
+`agent-reviewing`, `agent-running`, or `agent-failed` issues remain. When no
+unblocked ready issue can proceed and open `agent-reviewing` issues remain, the
+Operator run stops as `needs_review` and writes an **Exploratory acceptance
+review** JSON and Markdown artifact under the Operator run directory instead of
+treating the queue as a generic failure.
 
 Codex should launch Operator runs detached, then stop polling child logs:
 
@@ -114,9 +119,10 @@ git push --dry-run origin HEAD:main
 Use `$ralph-loop dry-run drain` when the root worktree is dirty or when you only
 want to inspect Ralph's next serial Gitflow or trunk candidate plus bounded
 Exploratory candidates. `--exploratory-concurrency` controls the Exploratory
-preview bound, defaults to `2`, and has a minimum of `1`. Targeted `--issue`
-dry runs still preview only that issue. Use dirty-worktree operation only when
-the operator explicitly accepts that risk.
+preview and live worker-pool bound, including checkpointed Operator runs. It
+defaults to `2` and has a minimum of `1`. Targeted `--issue` dry runs still
+preview only that issue. Use dirty-worktree operation only when the operator
+explicitly accepts that risk.
 
 Ready issues that anchor `.agents/` files stop before claim unless the operator
 passes `--allow-full-access-implementation`. With that flag, Ralph runs only
@@ -248,7 +254,10 @@ target**.
 If **Ready issue refresh** fails after **Local integration**, do not roll back
 the integrated commit. Inspect `ready_issue_refresh.mutation_results` in the run
 manifest, reconcile only the failed GitHub Issue metadata, then restart the
-drain once the queue is consistent.
+drain once the queue is consistent. In parallel drains, a refresh failure,
+post-push metadata failure, or environment failure stops new claims and waits
+for active Exploratory workers; inspect `drain_scheduler.fatal_stop` in the
+child run manifests for the fatal reason and recovery log path.
 
 If a **Full-access implementation pass** reports `diff_out_of_scope`, inspect
 the child implementation worktree, keep only files named by the issue's
@@ -293,6 +302,8 @@ Keep failed worktrees unless the maintainer asks for cleanup.
   - `CONTEXT.md`
   - `AGENTS.md`
   - `.agents/skills/shape-issues/SKILL.md`
+  - `.agents/skills/shape-issues/scripts/shape_issue_gate.py`
+  - `.agents/skills/shape-issues/scripts/codex_context_assessor.py`
   - `.agents/skills/shape-issues/scripts/publish_shape_issues.py`
   - `scripts/ralph.py`
   - `tools/ralph-loop/.pre-commit-config.yaml`

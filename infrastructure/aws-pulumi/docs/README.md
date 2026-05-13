@@ -42,6 +42,8 @@ Detailed subsystem documentation for the deployed AWS platform defined in
 
 Security controls that span multiple components are summarized in
 [security-audit.md](security-audit.md).
+The Dagster user-code location manifest and its current exploratory review
+boundary are described in [runtime.md](runtime.md).
 
 ## Related docs
 
@@ -54,6 +56,8 @@ Security controls that span multiple components are summarized in
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `infrastructure/aws-pulumi/__main__.py`
+  - `backend-services/dagster-core/code-locations.aws.toml`
+  - `infrastructure/aws-pulumi/code_locations.py`
   - `infrastructure/aws-pulumi/components/vpc.py`
   - `infrastructure/aws-pulumi/components/ecs_services.py`
   - `infrastructure/aws-pulumi/docs/security-audit.md`

@@ -20,8 +20,13 @@ PUBLISHER_PATH = (
 )
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GATE_SCRIPT = REPO_ROOT / ".agents" / "skills" / "shape-issues" / "scripts" / "shape_issue_gate.py"
-FIXTURE_PROVIDER = (
-    REPO_ROOT / ".agents" / "skills" / "shape-issues" / "scripts" / "fixture_embed_jsonl.py"
+FIXTURE_ASSESSOR = (
+    REPO_ROOT
+    / ".agents"
+    / "skills"
+    / "shape-issues"
+    / "scripts"
+    / "fixture_context_assessor.py"
 )
 SPEC = importlib.util.spec_from_file_location("publish_shape_issues", PUBLISHER_PATH)
 if SPEC is None or SPEC.loader is None:
@@ -186,16 +191,10 @@ def run_gate(bundle_path: Path, out_dir: Path) -> None:
             str(REPO_ROOT),
             "--out-dir",
             str(out_dir),
-            "--embedding-command",
-            f"{sys.executable} {FIXTURE_PROVIDER}",
-            "--provider-name",
+            "--context-assessor-command",
+            f"{sys.executable} {FIXTURE_ASSESSOR}",
+            "--context-assessor-name",
             "fixture",
-            "--model-id",
-            "fixture-hash",
-            "--corpus-path",
-            ".agents/skills/shape-issues/SKILL.md",
-            "--semantic-min-score",
-            "0.0",
         ],
         cwd=REPO_ROOT,
         check=False,

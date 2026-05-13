@@ -45,10 +45,13 @@ Ralph drains agent-ready GitHub issues through a guarded local loop:
 9. In **Exploratory delivery**, push a durable **Exploratory branch** from
    `origin/main`, comment evidence, mark `agent-reviewing`, and leave the issue
    open for human review.
-10. Run **Ready issue refresh** when enabled as part of each successful issue
-    attempt.
-11. If no ready issue exists and no Exploratory worker is active, triage the next
-    unblocked issue and rescan.
+10. Run **Ready issue refresh** when enabled under a scheduler claim gate after
+    each successful issue attempt. The gate pauses new claims while refresh
+    analysis and metadata mutation run; already active Exploratory workers may
+    finish.
+11. If no serial Gitflow or Trunk ready issue can be claimed, triage the next
+    unblocked issue and rescan. In parallel drains, that triage pass may run
+    while already active Exploratory workers continue.
 
 The loop stops when the queue has no unblocked implementation or triage
 candidates, or when `--max-issues` is reached. A plain `--drain` run defaults
@@ -56,12 +59,20 @@ to 10 implementation attempts; `--max-issues 0` is the explicit unlimited drain
 mode.
 `--max-issues` counts claimed implementation attempts across the serial and
 Exploratory lanes. When the cap is reached, Ralph stops scheduling new issue
-attempts and waits for already active Exploratory workers to finish.
+attempts and waits for already active Exploratory workers to finish. Automated
+triage remains outside this implementation-attempt budget; if active
+Exploratory workers are already running and no serial ready issue is claimable,
+Ralph may run a triage pass before waiting for those workers.
 
 The checkpointed Operator run path wraps the issue and **Promotion** commands
-for unattended cleanup. It implements one ready issue at a time, checkpoints the
-issue result, runs **Promotion** when reviewed Gitflow work remains, checkpoints
-**Post-promotion review** follow-up creation, and repeats until the Operator
+for unattended cleanup. It uses the same lane-aware drain scheduler as plain
+`--drain`, so Gitflow and Trunk work stays serial while eligible Exploratory
+work uses the bounded worker pool. One Operator cycle can checkpoint multiple
+child implementation manifests from that scheduler pass before it runs
+**Promotion** for reviewed Gitflow work. **Promotion** starts only after active
+Exploratory workers, implementation **Ready issue refresh** gates, and metadata
+updates from the scheduler pass have settled. The Operator checkpoints
+**Post-promotion review** follow-up creation and repeats until the Operator
 queue is clean or a guard or failure condition stops the run with recovery
 guidance.
 
@@ -73,8 +84,9 @@ $grill-with-docs -> optional $to-prd -> $shape-issues -> $ralph-triage -> $ralph
 
 Use [OPERATOR.md](../../OPERATOR.md) for the first-class **Operator workflow**.
 `$shape-issues` shapes tracer-bullet issue drafts, gates implementation drafts,
-and may publish explicitly confirmed gate-passing outputs as `needs-triage`
-issues only. It does not move issues to `ready-for-agent`.
+checks **Issue context assessor** evidence and stiffness, and may publish
+explicitly confirmed gate-passing outputs as `needs-triage` issues only. It
+does not move issues to `ready-for-agent`.
 `$ralph-triage` prepares GitHub Issues for drain by setting category, state, and
 **Delivery mode** labels. `$ralph-loop` owns the backing script commands,
 including `$ralph-loop drain` and `$ralph-loop promote`.
@@ -115,10 +127,14 @@ flowchart TD
   REVIEW --> REFRESH
   REFRESH --> LIMIT{Max implementation attempts reached?}
   LIMIT -->|No| READY
-  LIMIT -->|Yes| WAIT[Wait for active Exploratory workers]
+  LIMIT -->|Yes| BUDGETTRIAGE{Active Exploratory workers and triage candidate?}
+  BUDGETTRIAGE -->|Yes| TRIAGEPASS
+  BUDGETTRIAGE -->|No| WAIT[Wait for active Exploratory workers]
   WAIT --> STOP[Stop drain]
   READY --> ACTIVE{Exploratory workers active?}
-  ACTIVE -->|Yes| WAITONE[Wait for one worker result]
+  ACTIVE -->|Yes| ACTIVETRIAGE{No serial ready issue and triage candidate?}
+  ACTIVETRIAGE -->|Yes| TRIAGEPASS
+  ACTIVETRIAGE -->|No| WAITONE[Wait for one worker result]
   WAITONE --> READY
   ACTIVE -->|No| TRIAGE{Unblocked triage candidate?}
   TRIAGE -->|Yes| TRIAGEPASS[Run automated triage]
@@ -203,7 +219,14 @@ Live `--drain` runs a lane-aware scheduler. Gitflow and Trunk delivery stay in a
 single serial lane. Exploratory delivery issues are submitted oldest-first to a
 `ThreadPoolExecutor` with at most `--exploratory-concurrency` active workers.
 The scheduler preserves queue order within each lane and applies `--max-issues`
-to claimed attempts across both lanes.
+to claimed attempts across both lanes. When **Ready issue refresh** starts after
+a successful **Local integration** or Exploratory handoff, the scheduler pauses
+new issue claims until all pending refresh passes complete successfully. Running
+Exploratory workers are not cancelled; they may finish while the claim gate is
+closed. When no serial Gitflow or Trunk ready issue is claimable, the scheduler
+may run one automated triage pass while active Exploratory workers continue.
+That triage pass does not consume the `--max-issues` implementation-attempt
+budget.
 
 Drain or run the Operator loop without applying **Ready issue refresh** metadata
 updates:
@@ -275,7 +298,8 @@ python3 scripts/ralph.py --drain-promote-all --max-cycles 10
 ```
 
 Checkpointed Operator child runs forward `--exploratory-concurrency`; the
-default remains `2`.
+default remains `2`. Foreground `--drain-promote-all` runs the same scheduler
+directly.
 
 Launch the checkpointed Operator run in Codex-safe detached mode:
 
@@ -423,10 +447,15 @@ operator should start from a known repo state.
 ## Operator run
 
 `python3 scripts/ralph.py --drain-promote-all` runs the Operator orchestration
-loop. Each cycle records a compact checkpoint under
-`.ralph/operator-runs/.../operator-run.json` and links to the detailed child
-`.ralph/runs/.../ralph-run.json` manifest for the issue or **Promotion** that
-just crossed a boundary.
+loop. Ready work in each cycle is handed to the same lane-aware drain scheduler
+used by plain `--drain`: Gitflow and Trunk issue attempts remain serial, while
+eligible Exploratory issues run up to `--exploratory-concurrency` in parallel.
+The Operator records compact checkpoints under
+`.ralph/operator-runs/.../operator-run.json` and links each checkpoint to the
+detailed child `.ralph/runs/.../ralph-run.json` manifest for the issue or
+**Promotion** that just crossed a boundary. A single Operator cycle can record
+multiple issue success or failure checkpoints before the next **Promotion**
+checkpoint.
 
 Completed or stopped Operator runs also write
 `.ralph/operator-runs/.../operator-run-rollup.md` and
@@ -456,9 +485,10 @@ acceptance review** before blocked ready work can proceed. That checkpoint is
 comment, edit labels, close issues, or update **Integration targets**. It still
 stops with failed recovery guidance when `agent-running` or `agent-failed`
 issues remain, when ready issues are blocked by non-review work, when an issue
-or **Promotion** child manifest fails, or when `--max-cycles` is reached. The
-default cycle guard is 10; use `--max-cycles 0` only for explicit unlimited
-Operator runs.
+or **Promotion** child manifest fails, when the drain scheduler reports a fatal
+refresh, post-push metadata, or environment failure, or when `--max-cycles` is
+reached. The default cycle guard is 10; use `--max-cycles 0` only for explicit
+unlimited Operator runs.
 
 Checkpoints are recorded for:
 
@@ -469,6 +499,11 @@ Checkpoints are recorded for:
 - **Exploratory acceptance review** required
 - queue clean
 - stopped-by-guard
+
+The `before_promotion` checkpoint is written only after the scheduler pass has
+returned. That means active Exploratory workers have finished, implementation
+**Ready issue refresh** claim gates have opened, and child metadata updates have
+either completed or produced recorded recovery evidence.
 
 Detached mode is the Codex-safe path:
 
@@ -563,6 +598,10 @@ Key fields for inspection:
   artifact path, mutation results, recovery guidance, and failure state for
   implementation runs after successful **Local integration** or Exploratory
   handoff and for **Promotion** runs after verified issue closures.
+- `drain_scheduler.fatal_stop`: drain fatal-stop state for implementation runs,
+  including whether the live drain scheduler was enabled, whether the child
+  triggered or observed the stop, the fatal reason, error message, recovery log
+  path, and active Exploratory worker issue numbers.
 - `branch_sync`: Gitflow `main`-into-`dev` sync status, sync worktree path,
   merge or push log path, conflicted files, failure type, and recovery guidance
   when Ralph must stop before issue implementation.
@@ -1045,6 +1084,12 @@ When no unblocked `ready-for-agent` issue exists, Ralph asks Codex to run the
 `$shape-issues` published issues intentionally arrive here as `needs-triage`;
 the triage pass remains the step that applies category, state, and
 **Delivery mode** labels before any issue becomes drainable.
+In the live drain scheduler, serial Gitflow and Trunk ready issues keep
+priority over triage. If no serial ready issue is claimable, Ralph may run a
+triage pass while already active Exploratory workers continue in their
+worktrees. A triage failure keeps the existing triage failure behavior and, when
+Exploratory workers are active, Ralph waits for them to finish before surfacing
+the failure.
 
 Automated triage may label, comment, or close issues. Every triage comment must
 begin with:
@@ -1144,6 +1189,16 @@ not roll back the pushed **Integration target** commit or revert the
 already-completed issue metadata; operators inspect the manifest mutation
 results and reconcile only the failed GitHub Issue metadata before rerunning the
 drain.
+In live `--drain` mode, the scheduler treats the refresh as a claim gate. New
+claims stay paused while read-only analysis, metadata mutation, or queued
+parallel refresh passes are running. A successful refresh reopens the scheduler
+when the drain budget still permits more issue attempts; a refresh failure
+records `drain_scheduler.fatal_stop` in child run manifests and keeps new claims
+closed while active Exploratory workers settle.
+The checkpointed Operator path uses this same claim gate during its ready-work
+drain pass. It does not write `before_promotion` or start **Promotion** until
+the scheduler returns with no active Exploratory workers and no pending
+implementation refresh gate.
 Malformed or missing mutation JSON for selected candidates is a mutation failure:
 Ralph records `ready_issue_refresh.status: failed` and stops before scheduling
 further issue attempts.
@@ -1352,13 +1407,16 @@ review worktree is available; the original Promotion exception, manifest
 
 Implementation **Ready issue refresh** analysis or metadata mutation failures
 also stop the drain, but they do not imply the integrated issue metadata needs
-recovery. The manifest records the pushed **Integration target** commit,
+recovery. The scheduler prints a fatal drain stop, stops new claims, waits for
+active Exploratory workers, and records `drain_scheduler.fatal_stop` in child
+run manifests. The manifest records the pushed **Integration target** commit,
 completed integrated issue metadata, `ready_issue_refresh.status: failed`, and
 any candidate-level `ready_issue_refresh.mutation_results`. Operators inspect
 the analysis log, artifact path, and mutation results, then reconcile only
-failed GitHub Issue metadata before restarting the drain. Post-Promotion
-**Ready issue refresh** failures are warning-only: **Promotion** remains
-succeeded, the manifest records
+failed GitHub Issue metadata before restarting the drain. Post-push metadata
+failures and environment failures follow the same scheduler fatal-stop pattern
+for live parallel drains. Post-Promotion **Ready issue refresh** failures are
+warning-only: **Promotion** remains succeeded, the manifest records
 `ready_issue_refresh.status: failed_warning_only`, and operators reconcile only
 the affected GitHub Issue
 metadata before rerunning the drain.
@@ -1411,6 +1469,8 @@ container-backed **Integration test** dependencies.
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
   - `.agents/skills/shape-issues/SKILL.md`
+  - `.agents/skills/shape-issues/scripts/shape_issue_gate.py`
+  - `.agents/skills/shape-issues/scripts/codex_context_assessor.py`
   - `.agents/skills/shape-issues/scripts/publish_shape_issues.py`
   - `.agents/skills/ralph-curate/SKILL.md`
   - `.agents/skills/ralph-loop/SKILL.md`

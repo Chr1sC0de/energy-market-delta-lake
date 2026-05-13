@@ -1,6 +1,7 @@
 """Memory-bounded archive replay for source-table bronze Delta rebuilds."""
 
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from logging import Logger
@@ -20,12 +21,21 @@ from aemo_etl.factories.df_from_s3_keys.current_state import (
 from aemo_etl.factories.df_from_s3_keys.source_tables import (
     DFFromS3KeysSourceTableSpec,
 )
+from aemo_etl.maintenance.archive_source_planning import (
+    ArchiveObjectHead,
+    ArchiveSourceBatch,
+    ArchiveSourceObject,
+    ArchiveSourceRequirement,
+    ArchiveSourceSelectionPolicy,
+    match_archive_source_objects,
+    plan_archive_source_batches,
+    plan_archive_sources,
+)
 from aemo_etl.utils import (
     AEST,
     BYTES_TO_LAZYFRAME_REGISTER,
     get_from_s3,
     get_object_head_from_pages,
-    get_s3_object_keys_from_prefix_and_name_glob,
     get_s3_pagination,
 )
 
@@ -34,26 +44,8 @@ DEFAULT_MAX_BATCH_FILES: Final = 25
 ArchiveReplayMode = Literal["dry-run", "replace"]
 REPLAY_MODE_DRY_RUN: Final[ArchiveReplayMode] = "dry-run"
 REPLAY_MODE_REPLACE: Final[ArchiveReplayMode] = "replace"
-
-
-@dataclass(frozen=True, slots=True)
-class ArchiveObject:
-    """S3 archive object selected for replay."""
-
-    key: str
-    size: int
-
-
-@dataclass(frozen=True, slots=True)
-class ArchiveReplayBatch:
-    """One bounded batch of archive objects."""
-
-    objects: tuple[ArchiveObject, ...]
-
-    @property
-    def total_bytes(self) -> int:
-        """Return the total object size for this batch."""
-        return sum(object_.size for object_ in self.objects)
+ArchiveObject = ArchiveSourceObject
+ArchiveReplayBatch = ArchiveSourceBatch
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,32 +120,11 @@ def plan_archive_batches(
     max_batch_files: int = DEFAULT_MAX_BATCH_FILES,
 ) -> tuple[ArchiveReplayBatch, ...]:
     """Group archive objects into bounded replay batches."""
-    if max_batch_bytes <= 0:
-        raise ValueError("max_batch_bytes must be greater than zero")
-    if max_batch_files <= 0:
-        raise ValueError("max_batch_files must be greater than zero")
-
-    batches: list[ArchiveReplayBatch] = []
-    current_objects: list[ArchiveObject] = []
-    current_bytes = 0
-
-    for object_ in objects:
-        would_exceed_files = len(current_objects) >= max_batch_files
-        would_exceed_bytes = (
-            current_bytes + object_.size > max_batch_bytes and len(current_objects) > 0
-        )
-        if would_exceed_files or would_exceed_bytes:
-            batches.append(ArchiveReplayBatch(objects=tuple(current_objects)))
-            current_objects = []
-            current_bytes = 0
-
-        current_objects.append(object_)
-        current_bytes += object_.size
-
-    if current_objects:
-        batches.append(ArchiveReplayBatch(objects=tuple(current_objects)))
-
-    return tuple(batches)
+    return plan_archive_source_batches(
+        objects,
+        max_batch_bytes=max_batch_bytes,
+        max_batch_files=max_batch_files,
+    )
 
 
 def list_matching_archive_objects(
@@ -164,22 +135,32 @@ def list_matching_archive_objects(
     logger: Logger | None = None,
 ) -> tuple[ArchiveObject, ...]:
     """List archive objects matching a source-table glob pattern."""
+    return match_archive_source_objects(
+        _list_archive_object_heads(
+            s3_client,
+            archive_bucket=archive_bucket,
+            archive_prefix=spec.archive_prefix,
+            logger=logger,
+        ),
+        archive_prefix=spec.archive_prefix,
+        glob_pattern=spec.glob_pattern,
+    )
+
+
+def _list_archive_object_heads(
+    s3_client: S3Client,
+    *,
+    archive_bucket: str,
+    archive_prefix: str,
+    logger: Logger | None,
+) -> Mapping[str, ArchiveObjectHead]:
     pages = get_s3_pagination(
         s3_client,
         archive_bucket,
-        spec.archive_prefix,
+        archive_prefix,
         logger=logger,
     )
-    object_heads = get_object_head_from_pages(pages, logger=logger)
-    matching_keys = get_s3_object_keys_from_prefix_and_name_glob(
-        spec.archive_prefix,
-        spec.glob_pattern,
-        sorted(object_heads),
-    )
-    return tuple(
-        ArchiveObject(key=key, size=int(object_heads[key].get("Size", 0)))
-        for key in matching_keys
-    )
+    return get_object_head_from_pages(pages, logger=logger)
 
 
 def build_archive_replay_plans(
@@ -193,24 +174,38 @@ def build_archive_replay_plans(
     logger: Logger | None = None,
 ) -> tuple[ArchiveReplayPlan, ...]:
     """Build replay plans for selected source-table specs."""
-    return tuple(
-        ArchiveReplayPlan(
-            spec=spec,
-            archive_bucket=archive_bucket,
-            target_table_uri=spec.target_table_uri(aemo_bucket),
-            batches=plan_archive_batches(
-                list_matching_archive_objects(
-                    s3_client,
-                    archive_bucket=archive_bucket,
-                    spec=spec,
-                    logger=logger,
+    plans: list[ArchiveReplayPlan] = []
+    for spec in specs:
+        source_plan = plan_archive_sources(
+            _list_archive_object_heads(
+                s3_client,
+                archive_bucket=archive_bucket,
+                archive_prefix=spec.archive_prefix,
+                logger=logger,
+            ),
+            requirements=(
+                ArchiveSourceRequirement(
+                    kind="source-table",
+                    name=spec.table_id,
+                    archive_prefix=spec.archive_prefix,
+                    glob_pattern=spec.glob_pattern,
                 ),
+            ),
+            selection_policy=ArchiveSourceSelectionPolicy(
+                latest_count=None,
                 max_batch_bytes=max_batch_bytes,
                 max_batch_files=max_batch_files,
             ),
         )
-        for spec in specs
-    )
+        plans.append(
+            ArchiveReplayPlan(
+                spec=spec,
+                archive_bucket=archive_bucket,
+                target_table_uri=spec.target_table_uri(aemo_bucket),
+                batches=source_plan.batches,
+            )
+        )
+    return tuple(plans)
 
 
 def write_current_state_batch(

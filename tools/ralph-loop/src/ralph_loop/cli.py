@@ -445,6 +445,16 @@ class ReadyIssueRefreshFailure(RalphError):
         self.log_path = log_path
 
 
+def drain_fatal_stop_reason(error: Exception) -> str | None:
+    if isinstance(error, ReadyIssueRefreshFailure):
+        return "ready_issue_refresh_failure"
+    if isinstance(error, PostPushFailure):
+        return "post_push_failure"
+    if isinstance(error, EnvironmentFailure):
+        return "environment_failure"
+    return None
+
+
 @dataclass(frozen=True)
 class CompletedCommand:
     stdout: str
@@ -668,6 +678,63 @@ class ExploratoryLaneOrder:
 
 
 @dataclass(frozen=True)
+class ReadyIssueRefreshGateSnapshot:
+    active_issue_number: int | None
+    pending_issue_numbers: tuple[int, ...]
+
+    @property
+    def claims_paused(self) -> bool:
+        return self.active_issue_number is not None or bool(self.pending_issue_numbers)
+
+
+class ReadyIssueRefreshClaimGate:
+    """Pause drain scheduler claims while Ready issue refresh is in flight."""
+
+    def __init__(self) -> None:
+        self._active_issue_number: int | None = None
+        self._pending_issue_numbers: list[int] = []
+        self._condition = threading.Condition()
+
+    def snapshot(self) -> ReadyIssueRefreshGateSnapshot:
+        with self._condition:
+            return ReadyIssueRefreshGateSnapshot(
+                active_issue_number=self._active_issue_number,
+                pending_issue_numbers=tuple(self._pending_issue_numbers),
+            )
+
+    def begin(self, issue_number: int) -> None:
+        with self._condition:
+            self._pending_issue_numbers.append(issue_number)
+            self._condition.notify_all()
+            self._condition.wait_for(
+                lambda: (
+                    self._active_issue_number is None
+                    and self._pending_issue_numbers
+                    and self._pending_issue_numbers[0] == issue_number
+                )
+            )
+            self._pending_issue_numbers.pop(0)
+            self._active_issue_number = issue_number
+            self._condition.notify_all()
+
+    def finish(self, issue_number: int) -> None:
+        with self._condition:
+            if self._active_issue_number == issue_number:
+                self._active_issue_number = None
+            self._condition.notify_all()
+
+    def wait_until_open(self, *, timeout: float | None = None) -> bool:
+        with self._condition:
+            return self._condition.wait_for(
+                lambda: (
+                    self._active_issue_number is None
+                    and not self._pending_issue_numbers
+                ),
+                timeout=timeout,
+            )
+
+
+@dataclass(frozen=True)
 class LoopConfig:
     repo_root: Path
     repo: str
@@ -818,6 +885,17 @@ class RunManifest:
                 "mutation_results": [],
                 "recovery_guidance": None,
                 "failure": None,
+            },
+            "drain_scheduler": {
+                "enabled": config.drain and config.issue is None,
+                "fatal_stop": {
+                    "status": "not_triggered",
+                    "reason": None,
+                    "message": None,
+                    "log_path": None,
+                    "active_issue_numbers": [],
+                    "observed_at": None,
+                },
             },
             "commits": {},
             "integration_commit": None,
@@ -1494,6 +1572,28 @@ class RunManifest:
             results.append(entry)
         self.record_event(f"ready_issue_refresh_mutation_{status}", details=entry)
 
+    def record_drain_scheduler_fatal_stop(
+        self,
+        status: str,
+        *,
+        error: Exception,
+        active_issue_numbers: list[int] | tuple[int, ...] | None = None,
+    ) -> None:
+        scheduler = self.data.setdefault("drain_scheduler", {})
+        if not isinstance(scheduler, dict):
+            raise RalphError("Manifest drain_scheduler field is not an object.")
+        log_path = getattr(error, "log_path", None)
+        fatal_stop = {
+            "status": status,
+            "reason": drain_fatal_stop_reason(error) or "fatal_error",
+            "message": str(error),
+            "log_path": path_text(log_path if isinstance(log_path, Path) else None),
+            "active_issue_numbers": list(active_issue_numbers or []),
+            "observed_at": utc_now_text(),
+        }
+        scheduler["fatal_stop"] = fatal_stop
+        self.record_event(f"drain_scheduler_fatal_stop_{status}", details=fatal_stop)
+
     def record_promoted_issues(
         self,
         issues: list[tuple[Issue, str]],
@@ -1759,6 +1859,20 @@ class RunManifest:
                 str(log_path) for log_path in error.commit_check_log_paths
             ]
             failure["retry_commit_log_path"] = path_text(error.retry_commit_log_path)
+        if drain_fatal_stop_reason(error) is not None:
+            scheduler = self.data.setdefault("drain_scheduler", {})
+            if not isinstance(scheduler, dict):
+                raise RalphError("Manifest drain_scheduler field is not an object.")
+            if scheduler.get("enabled") is True:
+                failure["fatal_stop"] = True
+                scheduler["fatal_stop"] = {
+                    "status": "triggered",
+                    "reason": drain_fatal_stop_reason(error),
+                    "message": str(error),
+                    "log_path": path_text(log_path),
+                    "active_issue_numbers": [],
+                    "observed_at": utc_now_text(),
+                }
         self.data["failure"] = failure
         self.record_event("failed", status="failed", details=failure)
 
@@ -1964,6 +2078,7 @@ class OperatorRunManifest:
         message: str,
         child_manifest_path: Path | None = None,
         issue: Issue | None = None,
+        issue_payload: dict[str, Any] | None = None,
         details: dict[str, Any] | None = None,
         status: str | None = None,
         recovery_guidance: str | None = None,
@@ -1978,6 +2093,8 @@ class OperatorRunManifest:
             self.record_child_run(child_manifest_path)
         if issue is not None:
             entry["issue"] = issue_payload_for_operator(issue)
+        elif issue_payload is not None:
+            entry["issue"] = issue_payload
         if details is not None:
             entry["details"] = details
         self.data["last_checkpoint"] = entry
@@ -5524,6 +5641,7 @@ class RalphLoop:
         )
         self.git = GitClient(repo_root=config.repo_root, runner=runner)
         self.triaged_this_run: set[int] = set()
+        self._ready_issue_refresh_claim_gate = ReadyIssueRefreshClaimGate()
 
     def run(self) -> None:
         self._validate_tools()
@@ -5633,15 +5751,7 @@ class RalphLoop:
                         active_exploratory,
                         fatal_error,
                     )
-
-                if self._drain_attempt_budget_reached(attempts_started):
-                    emit(f"Reached --max-issues {self.config.max_issues}.")
-                    if active_exploratory:
-                        emit("Waiting for active Exploratory worker(s) to finish.")
-                    fatal_error = self._wait_for_exploratory_workers(active_exploratory)
-                    if fatal_error is not None:
-                        raise fatal_error
-                    return
+                self._wait_for_ready_issue_refresh_claim_gate(active_exploratory)
 
                 active_issue_numbers = {
                     candidate.issue.number for candidate in active_exploratory.values()
@@ -5662,6 +5772,22 @@ class RalphLoop:
                     for candidate in candidates
                     if candidate.delivery_plan.mode == EXPLORATORY_MODE
                 ]
+                attempt_budget_reached = self._drain_attempt_budget_reached(
+                    attempts_started
+                )
+
+                if attempt_budget_reached:
+                    if active_exploratory and self._run_scheduler_triage_if_available(
+                        active_exploratory
+                    ):
+                        continue
+                    emit(f"Reached --max-issues {self.config.max_issues}.")
+                    if active_exploratory:
+                        emit("Waiting for active Exploratory worker(s) to finish.")
+                    fatal_error = self._wait_for_exploratory_workers(active_exploratory)
+                    if fatal_error is not None:
+                        raise fatal_error
+                    return
 
                 made_progress = False
                 reserved_serial_candidate: ReadyImplementationCandidate | None = None
@@ -5705,12 +5831,15 @@ class RalphLoop:
                             active_exploratory,
                             error,
                         )
+                    self._wait_for_ready_issue_refresh_claim_gate(active_exploratory)
                     continue
 
                 if made_progress:
                     continue
 
                 if active_exploratory:
+                    if self._run_scheduler_triage_if_available(active_exploratory):
+                        continue
                     fatal_error = self._collect_exploratory_results(
                         active_exploratory,
                         wait_for_one=True,
@@ -5720,6 +5849,7 @@ class RalphLoop:
                             active_exploratory,
                             fatal_error,
                         )
+                    self._wait_for_ready_issue_refresh_claim_gate(active_exploratory)
                     continue
 
                 triage_issue = self._next_triage_issue()
@@ -5729,8 +5859,72 @@ class RalphLoop:
                 self._run_triage(triage_issue)
                 self.triaged_this_run.add(triage_issue.number)
 
+    def _run_scheduler_triage_if_available(
+        self,
+        active_exploratory: dict[
+            Future[RunManifest | None], ReadyImplementationCandidate
+        ],
+    ) -> bool:
+        triage_issue = self._next_triage_issue()
+        if triage_issue is None:
+            return False
+        try:
+            self._run_triage(triage_issue)
+        except RalphError as error:
+            if active_exploratory:
+                self._raise_after_exploratory_workers_finish(
+                    active_exploratory,
+                    error,
+                )
+            raise
+        self.triaged_this_run.add(triage_issue.number)
+        return True
+
     def _drain_attempt_budget_reached(self, attempts_started: int) -> bool:
         return self.config.max_issues > 0 and attempts_started >= self.config.max_issues
+
+    def _wait_for_ready_issue_refresh_claim_gate(
+        self,
+        active_exploratory: dict[
+            Future[RunManifest | None], ReadyImplementationCandidate
+        ],
+    ) -> None:
+        message_emitted = False
+        while self._ready_issue_refresh_claim_gate.snapshot().claims_paused:
+            if not message_emitted:
+                snapshot = self._ready_issue_refresh_claim_gate.snapshot()
+                details = []
+                if snapshot.active_issue_number is not None:
+                    details.append(f"active refresh #{snapshot.active_issue_number}")
+                if snapshot.pending_issue_numbers:
+                    pending = issue_reference_list(list(snapshot.pending_issue_numbers))
+                    details.append(f"pending refresh {pending}")
+                detail_text = "; ".join(details) if details else "refresh gate active"
+                emit(
+                    "Ready issue refresh gate is active; pausing new issue claims "
+                    f"until {detail_text} completes."
+                )
+                message_emitted = True
+            fatal_error = self._collect_exploratory_results(
+                active_exploratory,
+                wait_for_one=False,
+            )
+            if fatal_error is not None:
+                self._raise_after_exploratory_workers_finish(
+                    active_exploratory,
+                    fatal_error,
+                )
+            self._ready_issue_refresh_claim_gate.wait_until_open(timeout=0.05)
+
+        fatal_error = self._collect_exploratory_results(
+            active_exploratory,
+            wait_for_one=False,
+        )
+        if fatal_error is not None:
+            self._raise_after_exploratory_workers_finish(
+                active_exploratory,
+                fatal_error,
+            )
 
     def _handle_exploratory_candidate(
         self,
@@ -5748,6 +5942,7 @@ class RalphLoop:
         ],
         *,
         wait_for_one: bool,
+        fatal_stop_error: RalphError | None = None,
     ) -> RalphError | None:
         if not active_exploratory:
             return None
@@ -5763,7 +5958,16 @@ class RalphLoop:
         for future in done_futures:
             candidate = active_exploratory.pop(future)
             try:
-                future.result()
+                manifest = future.result()
+                if manifest is not None and fatal_stop_error is not None:
+                    active_issue_numbers = [
+                        item.issue.number for item in active_exploratory.values()
+                    ]
+                    manifest.record_drain_scheduler_fatal_stop(
+                        "observed",
+                        error=fatal_stop_error,
+                        active_issue_numbers=active_issue_numbers,
+                    )
             except EnvironmentFailure as error:
                 if first_fatal_error is None:
                     first_fatal_error = error
@@ -5779,12 +5983,15 @@ class RalphLoop:
         active_exploratory: dict[
             Future[RunManifest | None], ReadyImplementationCandidate
         ],
+        *,
+        fatal_stop_error: RalphError | None = None,
     ) -> RalphError | None:
         first_fatal_error: RalphError | None = None
         while active_exploratory:
             fatal_error = self._collect_exploratory_results(
                 active_exploratory,
                 wait_for_one=True,
+                fatal_stop_error=fatal_stop_error,
             )
             if first_fatal_error is None and fatal_error is not None:
                 first_fatal_error = fatal_error
@@ -5797,7 +6004,30 @@ class RalphLoop:
         ],
         error: RalphError,
     ) -> None:
-        self._wait_for_exploratory_workers(active_exploratory)
+        active_issue_numbers = [
+            candidate.issue.number for candidate in active_exploratory.values()
+        ]
+        active_count = len(active_issue_numbers)
+        reason = drain_fatal_stop_reason(error) or "fatal_error"
+        emit(
+            "Fatal drain stop: "
+            f"{reason}; stopping new issue claims and waiting for "
+            f"{active_count} active Exploratory worker(s).",
+            err=True,
+        )
+        if active_issue_numbers:
+            emit(
+                "Active Exploratory worker(s): "
+                f"{issue_reference_list(active_issue_numbers)}",
+                err=True,
+            )
+        log_path = getattr(error, "log_path", None)
+        if isinstance(log_path, Path):
+            emit(f"Recovery evidence log: {log_path}", err=True)
+        self._wait_for_exploratory_workers(
+            active_exploratory,
+            fatal_stop_error=error,
+        )
         raise error
 
     def _validate_clean_root_worktree_for_live_run(self) -> None:
@@ -6075,6 +6305,32 @@ class RalphLoop:
         )
         for candidate in candidates:
             emit(f"- #{candidate.number}: {candidate.title}")
+
+    def _uses_ready_issue_refresh_claim_gate(self) -> bool:
+        return self.config.drain and self.config.issue is None
+
+    def _run_with_ready_issue_refresh_claim_gate(
+        self,
+        issue: Issue,
+        refresh: Callable[[], None],
+    ) -> None:
+        if not self._uses_ready_issue_refresh_claim_gate():
+            refresh()
+            return
+
+        self._ready_issue_refresh_claim_gate.begin(issue.number)
+        emit(
+            "Ready issue refresh gate active for "
+            f"#{issue.number}; pausing new issue claims."
+        )
+        try:
+            refresh()
+        finally:
+            self._ready_issue_refresh_claim_gate.finish(issue.number)
+            emit(
+                "Ready issue refresh gate released for "
+                f"#{issue.number}; scheduler may claim again if the drain budget permits."
+            )
 
     def _run_ready_issue_refresh_analysis(
         self,
@@ -8984,15 +9240,18 @@ class RalphLoop:
             else:
                 raise ValueError(f"Unsupported delivery mode: {delivery_plan.mode}")
             if self.config.ready_issue_refresh_enabled:
-                self._run_ready_issue_refresh_analysis(
+                self._run_with_ready_issue_refresh_claim_gate(
                     issue,
-                    delivery_plan=delivery_plan,
-                    commit_sha=commit_sha,
-                    changed_files=changed_files,
-                    qa_results=qa_results,
-                    analysis_path=push_cwd,
-                    run_dir=run_dir,
-                    manifest=manifest,
+                    lambda: self._run_ready_issue_refresh_analysis(
+                        issue,
+                        delivery_plan=delivery_plan,
+                        commit_sha=commit_sha,
+                        changed_files=changed_files,
+                        qa_results=qa_results,
+                        analysis_path=push_cwd,
+                        run_dir=run_dir,
+                        manifest=manifest,
+                    ),
                 )
             self._cleanup_success_artifacts(
                 issue,
@@ -9027,14 +9286,17 @@ class RalphLoop:
                             "log_path": path_text(error.log_path),
                         },
                     )
-                manifest.record_failure(error, log_path=error.log_path)
             if pushed:
                 post_push_error = PostPushFailure(
                     f"Post-push issue metadata failed for #{issue.number}: {error}",
                     log_path=error.log_path,
                 )
+                if manifest is not None:
+                    manifest.record_failure(post_push_error, log_path=error.log_path)
                 emit(str(post_push_error), err=True)
                 raise post_push_error from error
+            if manifest is not None:
+                manifest.record_failure(error, log_path=error.log_path)
             issue_error = IssueFailure(str(error), log_path=error.log_path)
             if claimed:
                 self._mark_issue_failed(issue, issue_error, run_dir, manifest=manifest)
@@ -10363,8 +10625,12 @@ class RalphOperatorRun:
             self.manifest.record_cycle(cycle)
             ready_issue = self._next_ready_issue()
             if ready_issue is not None:
-                self._run_issue_checkpoint(ready_issue)
-                continue
+                self._run_drain_scheduler_checkpoint()
+                snapshot = self._queue_snapshot()
+                self.manifest.record_queue(snapshot)
+                if self._handle_post_drain_snapshot(snapshot):
+                    continue
+                return
             if snapshot.ready:
                 if snapshot_needs_exploratory_acceptance_review(snapshot):
                     self._stop_for_exploratory_acceptance_review(snapshot)
@@ -10422,6 +10688,111 @@ class RalphOperatorRun:
 
     def _next_ready_issue(self) -> Issue | None:
         return self.loop._next_ready_issue()
+
+    def _run_drain_scheduler_checkpoint(self) -> None:
+        before_paths = implementation_child_manifest_paths(self.config.log_root)
+        emit(
+            "Operator cycle: draining ready work with the parallel drain scheduler "
+            f"(--exploratory-concurrency {self.config.exploratory_concurrency})."
+        )
+        try:
+            self.loop._run_drain_scheduler()
+        except RalphError as error:
+            new_paths = self._record_drain_scheduler_child_checkpoints(before_paths)
+            guidance = operator_drain_scheduler_failure_guidance(error, new_paths)
+            self.manifest.record_failure(error, recovery_guidance=guidance)
+            raise
+        self._record_drain_scheduler_child_checkpoints(before_paths)
+
+    def _record_drain_scheduler_child_checkpoints(
+        self,
+        before_paths: set[Path],
+    ) -> list[Path]:
+        new_paths = sorted(
+            implementation_child_manifest_paths(self.config.log_root) - before_paths,
+            key=child_manifest_sort_key,
+        )
+        for manifest_path in new_paths:
+            self._record_drain_scheduler_child_checkpoint(manifest_path)
+        return new_paths
+
+    def _record_drain_scheduler_child_checkpoint(self, manifest_path: Path) -> None:
+        status = child_manifest_status(manifest_path)
+        issue_payload = child_manifest_issue_payload(manifest_path)
+        issue_number = (
+            issue_payload.get("number") if issue_payload is not None else None
+        )
+        issue_text = f"Issue #{issue_number}" if issue_number is not None else "Issue"
+        if status == "succeeded":
+            self.manifest.record_checkpoint(
+                "issue_succeeded",
+                message=f"{issue_text} completed.",
+                child_manifest_path=manifest_path,
+                issue_payload=issue_payload,
+            )
+            return
+
+        guidance = operator_issue_failure_guidance_from_payload(
+            issue_payload,
+            manifest_path,
+        )
+        self.manifest.record_checkpoint(
+            "issue_failed",
+            message=f"{issue_text} did not complete successfully.",
+            child_manifest_path=manifest_path,
+            issue_payload=issue_payload,
+            status="failed",
+            recovery_guidance=guidance,
+        )
+
+    def _handle_post_drain_snapshot(self, snapshot: OperatorQueueSnapshot) -> bool:
+        if snapshot.running:
+            self._stop_for_queue_condition(
+                "agent-running issue(s) remain from another Ralph run.",
+                snapshot=snapshot,
+            )
+            return False
+        if snapshot.failed:
+            self._stop_for_queue_condition(
+                "agent-failed issue(s) remain and need operator recovery.",
+                snapshot=snapshot,
+            )
+            return False
+        if snapshot.integrated:
+            self._run_promotion_checkpoint()
+            return True
+        if snapshot.queue_issue_count == 0:
+            self.manifest.clear_current()
+            self.manifest.record_checkpoint(
+                "queue_clean",
+                message=(
+                    "No open ready-for-agent, agent-integrated, agent-running, "
+                    "or agent-failed issues remain."
+                ),
+                status="succeeded",
+            )
+            emit("Operator run queue clean.")
+            return False
+        if snapshot.ready:
+            if self._next_ready_issue() is not None:
+                return True
+            if snapshot_needs_exploratory_acceptance_review(snapshot):
+                self._stop_for_exploratory_acceptance_review(snapshot)
+                return False
+            self._stop_for_queue_condition(
+                "ready-for-agent issue(s) remain, but none are currently unblocked.",
+                snapshot=snapshot,
+            )
+            return False
+        if snapshot.reviewing:
+            self._stop_for_exploratory_acceptance_review(snapshot)
+            return False
+
+        self._stop_for_queue_condition(
+            "Operator queue contained an unsupported issue state combination.",
+            snapshot=snapshot,
+        )
+        return False
 
     def _run_issue_checkpoint(self, issue: Issue) -> None:
         self.manifest.record_current_issue(issue)
@@ -10628,6 +10999,38 @@ def operator_issue_failure_guidance(issue: Issue, manifest_path: Path | None) ->
     return (
         f"Inspect issue #{issue.number} and child run manifest{manifest_text}. "
         "Resolve the failure or issue labels before restarting the Operator run."
+    )
+
+
+def operator_issue_failure_guidance_from_payload(
+    issue_payload: dict[str, Any] | None,
+    manifest_path: Path | None,
+) -> str:
+    issue_number = issue_payload.get("number") if issue_payload is not None else None
+    manifest_text = f" `{manifest_path}`" if manifest_path is not None else ""
+    if issue_number is None:
+        return (
+            f"Inspect the child run manifest{manifest_text}. Resolve the failure "
+            "or issue labels before restarting the Operator run."
+        )
+    return (
+        f"Inspect issue #{issue_number} and child run manifest{manifest_text}. "
+        "Resolve the failure or issue labels before restarting the Operator run."
+    )
+
+
+def operator_drain_scheduler_failure_guidance(
+    error: RalphError,
+    child_manifest_paths: list[Path],
+) -> str:
+    manifest_text = ""
+    if child_manifest_paths:
+        manifests = ", ".join(f"`{path}`" for path in child_manifest_paths)
+        manifest_text = f" Child implementation manifest(s): {manifests}."
+    return (
+        "The Operator drain scheduler stopped before Promotion. "
+        f"Resolve the scheduler failure, active issue metadata, or queue state "
+        f"before restarting the Operator run. Error: {error}.{manifest_text}"
     )
 
 
@@ -11516,6 +11919,22 @@ def latest_child_manifest_path(log_root: Path, *, prefix: str) -> Path | None:
     return candidates[-1]
 
 
+def implementation_child_manifest_paths(log_root: Path) -> set[Path]:
+    return set(log_root.glob(f"issue-*/{MANIFEST_NAME}"))
+
+
+def child_manifest_sort_key(manifest_path: Path) -> tuple[str, str]:
+    if not manifest_path.exists():
+        return ("", str(manifest_path))
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return ("", str(manifest_path))
+    if not isinstance(data, dict):
+        return ("", str(manifest_path))
+    return (str(data.get("started_at") or ""), str(manifest_path))
+
+
 def child_manifest_status(manifest_path: Path | None) -> str:
     if manifest_path is None or not manifest_path.exists():
         return "missing"
@@ -11526,6 +11945,18 @@ def child_manifest_status(manifest_path: Path | None) -> str:
     if not isinstance(data, dict):
         return "invalid"
     return str(data.get("status") or "unknown")
+
+
+def child_manifest_issue_payload(manifest_path: Path) -> dict[str, Any] | None:
+    if not manifest_path.exists():
+        return None
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    return operator_issue_payload_from_values(data.get("issue"))
 
 
 def post_promotion_followup_checkpoint_details(

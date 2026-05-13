@@ -189,7 +189,7 @@ The cache and `seed-run-manifest.json` are written under
 domain has fewer live archive objects than requested, refresh exits non-zero and
 records the shortfall in that manifest.
 
-To require the cached seed before the local compose `aemo-etl` service starts:
+To load the cached seed into LocalStack during local compose startup:
 
 ```bash
 cd backend-services
@@ -197,9 +197,12 @@ AEMO_ETL_E2E_SEED_ENABLED=1 podman-compose up --build -d
 ```
 
 `aemo-etl-seed-localstack` validates the cache, uploads the selected cached
-objects into LocalStack landing storage, and completes before Dagster starts.
-This load path only needs LocalStack credentials and does not read the live
-archive bucket.
+objects into LocalStack landing storage, and writes `seed-run-manifest.json`.
+The broader developer stack keeps its `podman-compose` dependency graph shallow
+so the stack can start reliably under Podman. Use
+`backend-services/scripts/aemo-etl-e2e run` when a strict seed-before-Dagster
+gate is required. This load path only needs LocalStack credentials and does not
+read the live archive bucket.
 
 For the isolated AEMO ETL **End-to-end test** stack, run the backend-services
 command instead of the broader fixed developer compose stack:

@@ -13,11 +13,13 @@ from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GATE_SCRIPT = REPO_ROOT / ".agents" / "skills" / "shape-issues" / "scripts" / "shape_issue_gate.py"
-HF_PROVIDER_SCRIPT = (
-    REPO_ROOT / ".agents" / "skills" / "shape-issues" / "scripts" / "hf_embed_jsonl.py"
-)
-FIXTURE_PROVIDER = (
-    REPO_ROOT / ".agents" / "skills" / "shape-issues" / "scripts" / "fixture_embed_jsonl.py"
+FIXTURE_ASSESSOR = (
+    REPO_ROOT
+    / ".agents"
+    / "skills"
+    / "shape-issues"
+    / "scripts"
+    / "fixture_context_assessor.py"
 )
 
 
@@ -56,13 +58,11 @@ APPROVAL_BODY = READY_BODY + """
 ## Operator approval evidence
 
 - Purpose: run `$shape-issues` gate against this issue bundle.
-- Model: `Qwen/Qwen3-Embedding-0.6B`.
-- Remote model code: prohibited; use `--no-trust-remote-code`.
-- Downloads: PyPI packages and Hugging Face model files are acceptable.
+- Provider: repo-local Issue context assessor.
 - Corpus scope: only the files listed in `## Context anchors`.
 - Output path: `.shape-issues/runs/example/`.
 - Prohibited: secrets, credentials, unlisted repo files, GitHub mutation, commits, pushes.
-- If the command, model, corpus, or trust settings differ, stop and ask the Operator again.
+- If the command, corpus, or sandbox settings differ, stop and ask the Operator again.
 """
 
 
@@ -192,18 +192,10 @@ def run_gate(bundle_path: Path, out_dir: Path, *extra_args: str) -> subprocess.C
         str(REPO_ROOT),
         "--out-dir",
         str(out_dir),
-        "--embedding-command",
-        f"{sys.executable} {FIXTURE_PROVIDER}",
-        "--provider-name",
+        "--context-assessor-command",
+        f"{sys.executable} {FIXTURE_ASSESSOR}",
+        "--context-assessor-name",
         "fixture",
-        "--model-id",
-        "fixture-hash",
-        "--corpus-path",
-        "scripts/ralph.py",
-        "--corpus-path",
-        "docs/agents/ralph-loop.md",
-        "--semantic-min-score",
-        "0.05",
         *extra_args,
     ]
     return subprocess.run(
@@ -226,7 +218,7 @@ def load_script_module(name: str, path: Path) -> ModuleType:
 
 
 class ShapeIssueGateTests(unittest.TestCase):
-    def test_gate_defaults_use_06b_safe_embedding_command(self) -> None:
+    def test_gate_defaults_use_codex_context_assessor_command(self) -> None:
         gate = load_script_module("shape_issue_gate_under_test", GATE_SCRIPT)
 
         with (
@@ -234,89 +226,13 @@ class ShapeIssueGateTests(unittest.TestCase):
             mock.patch.object(sys, "argv", ["shape_issue_gate.py", "bundle.json"]),
         ):
             args = gate.parse_args()
-            command = gate.default_embedding_command()
+            command = gate.default_context_assessor_command()
 
-        self.assertEqual(args.model_id, "Qwen/Qwen3-Embedding-0.6B")
-        self.assertIn("--model Qwen/Qwen3-Embedding-0.6B", command)
-        self.assertIn("--no-trust-remote-code", command)
-        self.assertIn("--batch-size 2", command)
-        self.assertIn("--device auto", command)
-        self.assertIn("--min-free-vram-gb 6", command)
-        self.assertNotIn("Qwen/Qwen3-Embedding-8B", command)
-
-    def test_hf_provider_defaults_use_06b_without_remote_code(self) -> None:
-        provider = load_script_module("hf_embed_jsonl_under_test", HF_PROVIDER_SCRIPT)
-
-        with mock.patch.object(sys, "argv", ["hf_embed_jsonl.py"]):
-            args = provider.parse_args()
-
-        self.assertEqual(args.model, "Qwen/Qwen3-Embedding-0.6B")
-        self.assertEqual(args.batch_size, 2)
-        self.assertEqual(args.device, "auto")
-        self.assertEqual(args.min_free_vram_gb, 6.0)
-        self.assertFalse(args.trust_remote_code)
-
-        with mock.patch.object(
-            sys,
-            "argv",
-            ["hf_embed_jsonl.py", "--trust-remote-code"],
-        ):
-            opted_in = provider.parse_args()
-        self.assertTrue(opted_in.trust_remote_code)
-
-    def test_hf_provider_auto_device_requires_enough_free_vram(self) -> None:
-        provider = load_script_module(
-            "hf_embed_jsonl_runtime_under_test",
-            HF_PROVIDER_SCRIPT,
-        )
-
-        class FakeCuda:
-            def __init__(
-                self,
-                *,
-                available: bool,
-                free_gb: float,
-                total_gb: float,
-            ) -> None:
-                self._available = available
-                self._free_bytes = int(free_gb * provider.BYTES_PER_GIB)
-                self._total_bytes = int(total_gb * provider.BYTES_PER_GIB)
-
-            def is_available(self) -> bool:
-                return self._available
-
-            def mem_get_info(self) -> tuple[int, int]:
-                return self._free_bytes, self._total_bytes
-
-            def current_device(self) -> int:
-                return 0
-
-        class FakeTorch:
-            def __init__(self, cuda: FakeCuda) -> None:
-                self.cuda = cuda
-
-        with mock.patch.object(sys, "argv", ["hf_embed_jsonl.py"]):
-            args = provider.parse_args()
-
-        high_vram = provider.select_runtime(
-            args,
-            FakeTorch(FakeCuda(available=True, free_gb=8.0, total_gb=12.0)),
-        )
-        low_vram = provider.select_runtime(
-            args,
-            FakeTorch(FakeCuda(available=True, free_gb=2.0, total_gb=12.0)),
-        )
-        no_cuda = provider.select_runtime(
-            args,
-            FakeTorch(FakeCuda(available=False, free_gb=0.0, total_gb=0.0)),
-        )
-
-        self.assertEqual(high_vram.device, "cuda:0")
-        self.assertIsNone(high_vram.fallback_reason)
-        self.assertEqual(low_vram.device, "cpu")
-        self.assertIn("below", low_vram.fallback_reason or "")
-        self.assertEqual(no_cuda.device, "cpu")
-        self.assertEqual(no_cuda.fallback_reason, "CUDA unavailable")
+        self.assertEqual(args.context_assessor_name, "codex")
+        self.assertIn("codex_context_assessor.py", command)
+        self.assertIn("--repo-root .", command)
+        self.assertFalse(hasattr(args, "embedding_command"))
+        self.assertFalse(hasattr(args, "semantic_min_score"))
 
     def test_ready_issue_passes_with_context_anchors(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -328,18 +244,23 @@ class ShapeIssueGateTests(unittest.TestCase):
             markdown = (tmp_path / "report.md").read_text(encoding="utf-8")
 
         self.assertRegex(report["bundle_digest"], r"^[0-9a-f]{64}$")
-        self.assertEqual(report["embedding"]["runtime_device"], "fixture")
-        self.assertEqual(report["embedding"]["batch_size"], 1)
-        self.assertFalse(report["embedding"]["provider_metadata"]["trust_remote_code"])
-        self.assertIn("- Runtime device: `fixture`", markdown)
-        self.assertIn("- Batch size: `1`", markdown)
+        self.assertNotIn("embedding", report)
+        self.assertNotIn("semantic_min_score", report["thresholds"])
+        self.assertEqual(report["context_assessor"]["provider"], "fixture")
+        self.assertRegex(report["context_assessor"]["corpus_digest"], r"^[0-9a-f]{64}$")
+        self.assertIn("## Issue Context Assessor", markdown)
+        self.assertIn("- Provider: `fixture`", markdown)
         issue = report["issues"][0]
         self.assertEqual(issue["action"], "ready")
         self.assertTrue(issue["ready"])
         self.assertEqual(issue["recommended_state_label"], "ready-for-agent")
         self.assertRegex(issue["source_digest"], r"^[0-9a-f]{64}$")
         self.assertEqual(issue["validation_reasons"], [])
-        self.assertGreaterEqual(issue["semantic"]["top_score"], 0.05)
+        self.assertEqual(issue["context_assessment"]["verdict"], "pass")
+        self.assertTrue(issue["context_assessment"]["passed"])
+        self.assertTrue(issue["context_assessment"]["cited_paths"])
+        self.assertNotIn("semantic", issue)
+        self.assertLessEqual(len(issue["context_corpus"]["rg_candidate_paths"]), 8)
 
     def test_operator_approval_evidence_is_reported_not_permission(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -352,12 +273,76 @@ class ShapeIssueGateTests(unittest.TestCase):
 
         evidence = report["issues"][0]["operator_approval_evidence"]
         self.assertTrue(evidence["present"])
-        self.assertIn("Qwen/Qwen3-Embedding-0.6B", evidence["body"])
+        self.assertIn("Issue context assessor", evidence["body"])
         self.assertIn(
             "Approval evidence is context only; it does not grant tool permission.",
             evidence["warnings"],
         )
         self.assertIn("Operator approval evidence: present", markdown)
+
+    def test_weak_context_assessment_needs_context(self) -> None:
+        body = READY_BODY + "\n\n<!-- fixture context verdict: weak -->\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            result = run_gate(write_bundle(tmp_path, body), tmp_path)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+
+        issue = report["issues"][0]
+        self.assertEqual(issue["context_assessment"]["verdict"], "weak")
+        self.assertEqual(issue["action"], "needs-context")
+        self.assertIn(
+            "Issue context assessor verdict weak: fixture marked the supplied context as weak",
+            issue["validation_reasons"],
+        )
+
+    def test_fail_context_assessment_needs_context(self) -> None:
+        body = READY_BODY + "\n\n<!-- fixture context verdict: fail -->\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            result = run_gate(write_bundle(tmp_path, body), tmp_path)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+
+        issue = report["issues"][0]
+        self.assertEqual(issue["context_assessment"]["verdict"], "fail")
+        self.assertEqual(issue["action"], "needs-context")
+
+    def test_invalid_assessor_cited_path_needs_context(self) -> None:
+        body = READY_BODY + "\n\n<!-- fixture invalid cited path -->\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            result = run_gate(write_bundle(tmp_path, body), tmp_path)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+
+        issue = report["issues"][0]
+        self.assertEqual(issue["action"], "needs-context")
+        self.assertFalse(issue["context_assessment"]["valid"])
+        self.assertIn(
+            "Issue context assessor evidence invalid: assessor cited paths outside supplied evidence: missing-from-supplied-evidence.md",
+            issue["validation_reasons"],
+        )
+
+    def test_stale_assessor_corpus_digest_needs_context(self) -> None:
+        body = READY_BODY + "\n\n<!-- fixture stale corpus digest -->\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            result = run_gate(write_bundle(tmp_path, body), tmp_path)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+
+        issue = report["issues"][0]
+        self.assertEqual(issue["action"], "needs-context")
+        self.assertFalse(issue["context_assessment"]["valid"])
+        self.assertIn(
+            "Issue context assessor evidence invalid: assessor corpus digest mismatch",
+            issue["validation_reasons"],
+        )
 
     def test_missing_anchor_categories_need_context(self) -> None:
         incomplete_body = READY_BODY.replace("- Symbol: `READY_LABEL`\n", "")
@@ -396,8 +381,6 @@ class ShapeIssueGateTests(unittest.TestCase):
             result = run_gate(
                 write_bundle(tmp_path, NEGATED_STIFF_BODY),
                 tmp_path,
-                "--semantic-min-score",
-                "0.0",
             )
             self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -418,8 +401,6 @@ class ShapeIssueGateTests(unittest.TestCase):
             result = run_gate(
                 write_bundle(tmp_path, ROOT_AGENT_BODY),
                 tmp_path,
-                "--semantic-min-score",
-                "0.0",
             )
             self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -478,10 +459,8 @@ class ShapeIssueGateTests(unittest.TestCase):
                 str(REPO_ROOT),
                 "--out-dir",
                 str(tmp_path),
-                "--embedding-command",
+                "--context-assessor-command",
                 f"{sys.executable} does-not-exist.py",
-                "--corpus-path",
-                "scripts/ralph.py",
             ]
             result = subprocess.run(
                 command,
@@ -492,7 +471,7 @@ class ShapeIssueGateTests(unittest.TestCase):
             )
 
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Embedding provider failed", result.stderr)
+        self.assertIn("Context assessor provider failed", result.stderr)
 
     def test_duplicate_issue_ids_stop_gate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

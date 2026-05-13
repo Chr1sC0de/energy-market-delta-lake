@@ -7,9 +7,14 @@ from dagster import (
     definitions,
 )
 
-from aemo_etl.configs import DEFAULT_SCHEDULE_STATUS
+from aemo_etl.configs import AEMO_BUCKET, DEFAULT_SCHEDULE_STATUS, LANDING_BUCKET
 from aemo_etl.factories.nemweb_public_files.definitions import (
-    nemweb_public_files_definitions_factory,
+    NEMWebPublicFilesSpec,
+    build_nemweb_public_files_definitions,
+)
+from aemo_etl.factories.nemweb_public_files.ops.nemweb_link_fetcher import (
+    default_file_filter,
+    default_folder_filter,
 )
 
 
@@ -44,38 +49,70 @@ def sttm_file_filter(_: OpExecutionContext, tag: bs4.Tag) -> bool:
 @definitions
 def defs() -> Definitions:
     return Definitions.merge(
-        nemweb_public_files_definitions_factory(
-            domain="vicgas",
-            table_name="bronze_nemweb_public_files_vicgas",
-            nemweb_relative_href="REPORTS/CURRENT/VicGas",
-            cron_schedule="*/30 * * * *",
-            n_executors=10,
-            file_filter=vicgas_file_filter,
-            group_name="integration",
-            default_status=DEFAULT_SCHEDULE_STATUS,
-            tags={"ecs/cpu": "512", "ecs/memory": "4096"},
+        build_nemweb_public_files_definitions(
+            NEMWebPublicFilesSpec(
+                domain="vicgas",
+                table_name="bronze_nemweb_public_files_vicgas",
+                nemweb_relative_href="REPORTS/CURRENT/VicGas",
+                cron_schedule="*/30 * * * *",
+                default_status=DEFAULT_SCHEDULE_STATUS,
+                n_executors=10,
+                folder_filter=default_folder_filter,
+                file_filter=vicgas_file_filter,
+                group_name="integration",
+                tags={"ecs/cpu": "512", "ecs/memory": "4096"},
+                process_retry=3,
+                initial=10,
+                exp_base=3,
+                max_retry_time=100,
+                table_bucket=AEMO_BUCKET,
+                landing_bucket=LANDING_BUCKET,
+                io_manager_key="aemo_deltalake_append_io_manager",
+                cached_link_ttl_seconds=900,
+            )
         ),
-        nemweb_public_files_definitions_factory(
-            domain="gbb",
-            table_name="bronze_nemweb_public_files_gbb",
-            nemweb_relative_href="REPORTS/CURRENT/GBB",
-            cron_schedule="*/30 * * * *",
-            n_executors=10,
-            folder_filter=gbb_folder_filter,
-            group_name="integration",
-            default_status=DEFAULT_SCHEDULE_STATUS,
-            tags={"ecs/cpu": "512", "ecs/memory": "4096"},
+        build_nemweb_public_files_definitions(
+            NEMWebPublicFilesSpec(
+                domain="gbb",
+                table_name="bronze_nemweb_public_files_gbb",
+                nemweb_relative_href="REPORTS/CURRENT/GBB",
+                cron_schedule="*/30 * * * *",
+                default_status=DEFAULT_SCHEDULE_STATUS,
+                n_executors=10,
+                folder_filter=gbb_folder_filter,
+                file_filter=default_file_filter,
+                group_name="integration",
+                tags={"ecs/cpu": "512", "ecs/memory": "4096"},
+                process_retry=3,
+                initial=10,
+                exp_base=3,
+                max_retry_time=100,
+                table_bucket=AEMO_BUCKET,
+                landing_bucket=LANDING_BUCKET,
+                io_manager_key="aemo_deltalake_append_io_manager",
+                cached_link_ttl_seconds=900,
+            )
         ),
-        nemweb_public_files_definitions_factory(
-            domain="sttm",
-            table_name="bronze_nemweb_public_files_sttm",
-            nemweb_relative_href="REPORTS/CURRENT/STTM",
-            cron_schedule="*/30 * * * *",
-            n_executors=10,
-            folder_filter=sttm_folder_filter,
-            file_filter=sttm_file_filter,
-            group_name="integration",
-            default_status=DEFAULT_SCHEDULE_STATUS,
-            tags={"ecs/cpu": "512", "ecs/memory": "4096"},
+        build_nemweb_public_files_definitions(
+            NEMWebPublicFilesSpec(
+                domain="sttm",
+                table_name="bronze_nemweb_public_files_sttm",
+                nemweb_relative_href="REPORTS/CURRENT/STTM",
+                cron_schedule="*/30 * * * *",
+                default_status=DEFAULT_SCHEDULE_STATUS,
+                n_executors=10,
+                folder_filter=sttm_folder_filter,
+                file_filter=sttm_file_filter,
+                group_name="integration",
+                tags={"ecs/cpu": "512", "ecs/memory": "4096"},
+                process_retry=3,
+                initial=10,
+                exp_base=3,
+                max_retry_time=100,
+                table_bucket=AEMO_BUCKET,
+                landing_bucket=LANDING_BUCKET,
+                io_manager_key="aemo_deltalake_append_io_manager",
+                cached_link_ttl_seconds=900,
+            )
         ),
     )

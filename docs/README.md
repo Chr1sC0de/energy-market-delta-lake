@@ -32,7 +32,7 @@ and behavior belong on the owning Subproject or repository page.
   [backend-services/README.md](../backend-services/README.md)
 - Authentication service:
   [backend-services/authentication/README.md](../backend-services/authentication/README.md)
-- Marimo notebook service:
+- Marimo notebook services:
   [backend-services/marimo/README.md](../backend-services/marimo/README.md)
 - AEMO ETL:
   [backend-services/dagster-user/aemo-etl/README.md](../backend-services/dagster-user/aemo-etl/README.md)
@@ -42,7 +42,7 @@ and behavior belong on the owning Subproject or repository page.
   [backend-services/dagster-user/aemo-etl/docs/architecture/ingestion_flows.md](../backend-services/dagster-user/aemo-etl/docs/architecture/ingestion_flows.md)
 - AEMO ETL gas model:
   [backend-services/dagster-user/aemo-etl/docs/gas_model/README.md](../backend-services/dagster-user/aemo-etl/docs/gas_model/README.md)
-- AWS Pulumi platform:
+- AWS Pulumi platform and Dagster code-location manifest:
   [infrastructure/aws-pulumi/README.md](../infrastructure/aws-pulumi/README.md)
 - AWS Pulumi component docs:
   [infrastructure/aws-pulumi/docs/README.md](../infrastructure/aws-pulumi/docs/README.md)
@@ -81,6 +81,7 @@ and behavior belong on the owning Subproject or repository page.
   - `backend-services/dagster-user/aemo-etl/docs/gas_model/README.md`
   - `infrastructure/aws-pulumi/README.md`
   - `infrastructure/aws-pulumi/docs/README.md`
+  - `backend-services/dagster-core/code-locations.aws.toml`
   - `tools/ralph-loop/README.md`
 - `sync.scope`: `router`
 - `sync.qa`:

@@ -12,7 +12,11 @@ too large for default Ralph drain.
 - Version 2 bundles may include publisher metadata such as `classification` and
   `blocked_by`; the gate ignores those fields and the publisher consumes them
   after the report is written.
-- The repo root supplies the context corpus from tracked files.
+- The repo root supplies the bounded evidence corpus. The gate assembles it
+  from declared `Path:` and `Doc:` anchors plus up to eight deterministic `rg`
+  candidate files per issue.
+- The **Issue context assessor** command reads one JSON request from stdin and
+  writes one JSON response to stdout.
 
 ## Readiness Rules
 
@@ -27,20 +31,20 @@ An issue can be reported as `ready` only when it has:
 - exactly one category label and one **Delivery mode** label
 - parseable anchors for paths/docs, symbols/constants, labels/targets, and
   QA/Test lane evidence
-- embedding matches between the issue query and repo corpus above the configured
-  semantic threshold
+- an **Issue context assessor** verdict of `pass` with cited paths and reasons
+  that refer only to supplied evidence
 - stiffness below the split threshold, unless an Operator override is recorded
 
 ## Stiffness Signals
 
 The gate treats these as step-size or stiffness signals:
 
-- multiple **Subprojects** or repo areas in anchors or semantic matches
+- multiple **Subprojects** or repo areas in anchors or supplied context evidence
 - Integration, End-to-end, Deployed, LocalStack, S3, Dagster, infrastructure,
   schema, **Promotion**, or cross-Subproject language
 - many acceptance criteria
 - vague blockers or placeholder context
-- semantic matches spread across many unrelated repo areas
+- supplied context evidence spread across many unrelated repo areas
 
 High stiffness recommends `split`. Medium stiffness remains visible in the
 report so the Operator can tune scope before publishing.
@@ -63,15 +67,16 @@ areas remain separate scoring surfaces.
 
 ## Outputs
 
-- `report.json`: machine-readable thresholds, model/provider metadata
-  including selected runtime device and batch size, bundle digest, issue
-  scores, actions, semantic matches, validation reasons,
+- `report.json`: machine-readable thresholds, **Issue context assessor**
+  provider metadata, recorded corpus digest, bundle digest, issue scores,
+  actions, `context_assessment`, bounded context evidence, validation reasons,
   declared/computed stiffness mismatch, ignored stiffness mentions, scoring
   surfaces, and any Operator approval evidence found in issue bodies. Each
   issue entry includes a `source_digest`; the top-level `bundle_digest` lets the
   publisher refuse stale bundle/report pairs.
 - `report.md`: Operator-readable evidence for the issue bundle, including the
-  embedding provider, model, selected runtime device, and batch size.
+  assessor provider, corpus digest, per-issue context verdicts, cited paths, and
+  stiffness evidence.
 
 Operator approval evidence is recorded only as context. It does not grant tool
 permission and must not bypass Codex escalation or sandbox review.
