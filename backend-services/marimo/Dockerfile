@@ -26,13 +26,14 @@ RUN uv export --format requirements-txt --no-dev >requirements.txt \
     && uv pip install . --system --prefix=/install \
     && rm -rf "$HOME/.cargo"
 
-# ── runtime ───────────────────────────────────────────────────────────────────
-FROM ${IMAGE} AS deploy
+# ── shared runtime ────────────────────────────────────────────────────────────
+FROM ${IMAGE} AS runtime
 
 COPY --from=builder /install/ /usr/local/
 
-ENV APP_DIR=/opt/marimo
-RUN mkdir -p ${APP_DIR}
+ENV APP_DIR=/opt/marimo \
+    MARIMO_NOTEBOOKS_DIR=/opt/marimo/notebooks
+RUN mkdir -p ${APP_DIR} /workspace/notebooks /workspace/issue-drafts
 WORKDIR ${APP_DIR}
 
 COPY src/marimoserver/ ./marimoserver/
@@ -40,4 +41,22 @@ COPY notebooks/ ./notebooks/
 
 EXPOSE 2718
 
+FROM runtime AS dashboard
+
+ENV MARIMO_WORKSPACE_KIND=dashboard
+
 CMD ["uvicorn", "marimoserver.main:app", "--host", "0.0.0.0", "--port", "2718"]
+
+# Compatibility alias for existing build scripts that still request deploy.
+FROM dashboard AS deploy
+
+FROM runtime AS codex-workspace
+
+ENV MARIMO_WORKSPACE_KIND=codex-research \
+    MARIMO_NOTEBOOKS_DIR=/workspace/notebooks \
+    MARIMO_WORKSPACE_ROOT=/workspace
+
+COPY research-workspace/ /workspace/
+WORKDIR /workspace
+
+CMD ["marimo", "edit", "/workspace/notebooks", "--headless", "--host", "0.0.0.0", "--port", "2718", "--no-token"]

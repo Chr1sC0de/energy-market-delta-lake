@@ -1,7 +1,7 @@
 # Authentication Service
 
 FastAPI service used behind Caddy to protect the admin Dagster UI and the
-local `marimo` notebook routes with an OIDC-backed browser session.
+local `marimo-dashboard` notebook routes with an OIDC-backed browser session.
 
 ## Table of contents
 
@@ -27,7 +27,7 @@ Current route groups implemented in [main.py](main.py):
   - `/dagster-webserver/admin/login`
   - `/oauth2/dagster-webserver/admin/authorize`
   - `/oauth2/dagster-webserver/admin/validate`
-- Marimo:
+- Marimo dashboard:
   - `/marimo/login`
   - `/oauth2/marimo/authorize`
   - `/oauth2/marimo/validate`
@@ -35,6 +35,10 @@ Current route groups implemented in [main.py](main.py):
 In the local compose stack, Caddy forwards these auth routes to the
 `authentication` container and uses the `*/validate` endpoints for
 `forward_auth` checks before proxying to the protected upstream.
+
+The local-only `marimo-codex-workspace` service is not routed through this auth
+service. It binds to `127.0.0.1:2719` for local research and remains outside
+deployed Codex execution scope.
 
 ## Required environment
 
@@ -58,7 +62,7 @@ rather than directly.
 ## Related docs
 
 - [Local backend-services stack](../README.md)
-- [Marimo notebook service](../marimo/README.md)
+- [Marimo notebook services](../marimo/README.md)
 - [Repository architecture](../../docs/repository/architecture.md)
 - [AWS Pulumi infrastructure](../../infrastructure/aws-pulumi/README.md)
 
