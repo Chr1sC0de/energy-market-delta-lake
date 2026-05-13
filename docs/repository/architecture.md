@@ -13,6 +13,12 @@ development and testing of that deployed platform.
 
 ## AWS deployed system
 
+The default deployed Dagster runtime uses ECS Fargate/Fargate Spot. Issue #126
+adds a default-off **Exploratory delivery** prototype for EC2-backed Dagster
+run-worker capacity; that path is documented under the AWS Pulumi runtime docs
+and is not part of the normal architecture unless an Operator enables the
+matching Pulumi config.
+
 ```mermaid
 flowchart LR
   subgraph Sources[External sources]

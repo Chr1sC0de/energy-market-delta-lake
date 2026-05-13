@@ -9,7 +9,7 @@ Authentication to ECR uses a short-lived token obtained via
 
 Backend-service layout (relative to repo root):
   backend-services/
-    dagster-core/          → webserver + daemon images (build target: deploy, arg: DAGSTER_DEPLOYMENT=aws)
+    dagster-core/          → webserver + daemon images (build target: deploy, arg: DAGSTER_DEPLOYMENT)
     dagster-user/aemo-etl/ → default user-code gRPC server
     authentication/        → FastAPI auth server
     caddy/                 → Caddy reverse proxy
@@ -33,6 +33,10 @@ from code_locations import (
 # is correct regardless of the working directory used to run `pulumi up`.
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _SERVICES = _REPO_ROOT / "backend-services"
+SUPPORTED_DAGSTER_CORE_DEPLOYMENTS = {
+    "aws",
+    "aws-ec2-run-workers-prototype",
+}
 
 LIFECYCLE_POLICY = json.dumps(
     {
@@ -60,13 +64,22 @@ class ECRComponentResource(pulumi.ComponentResource):
         name: str,
         code_locations: tuple[DagsterCodeLocation, ...] | None = None,
         docker_provider: docker.Provider | None = None,
+        dagster_core_deployment: str = "aws",
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
         """Create ECR repositories and image publishing resources."""
+        if dagster_core_deployment not in SUPPORTED_DAGSTER_CORE_DEPLOYMENTS:
+            supported = ", ".join(sorted(SUPPORTED_DAGSTER_CORE_DEPLOYMENTS))
+            raise ValueError(
+                f"Unsupported Dagster core deployment {dagster_core_deployment!r}; "
+                f"expected one of: {supported}"
+            )
+
         super().__init__(f"{name}:components:ecr", name, {}, opts)
         self.name = name
         self.child_opts = pulumi.ResourceOptions(parent=self)
         self.code_locations = code_locations or load_code_locations()
+        self.dagster_core_deployment = dagster_core_deployment
         # Provider used for all docker.Image build+push resources.
         self._docker_provider = docker_provider
 
@@ -96,7 +109,7 @@ class ECRComponentResource(pulumi.ComponentResource):
             repo=self.dagster_webserver,
             context=str(_SERVICES / "dagster-core"),
             target="deploy",
-            build_args={"DAGSTER_DEPLOYMENT": "aws"},
+            build_args={"DAGSTER_DEPLOYMENT": self.dagster_core_deployment},
             platform="linux/amd64",
         )
         self.dagster_webserver_image_uri = self._published_image_uri(
@@ -111,7 +124,7 @@ class ECRComponentResource(pulumi.ComponentResource):
             repo=self.dagster_daemon,
             context=str(_SERVICES / "dagster-core"),
             target="deploy",
-            build_args={"DAGSTER_DEPLOYMENT": "aws"},
+            build_args={"DAGSTER_DEPLOYMENT": self.dagster_core_deployment},
             platform="linux/amd64",
         )
         self.dagster_daemon_image_uri = self._published_image_uri(

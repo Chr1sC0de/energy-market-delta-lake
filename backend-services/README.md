@@ -87,9 +87,11 @@ backend-services/
 │   └── init.sh                    # Creates dagster_user and dagster DB
 ├── dagster-core/
 │   ├── Dockerfile                 # dagster-webserver / dagster-daemon image
-│   │                              # Accepts DAGSTER_DEPLOYMENT build arg (local | aws)
+│   │                              # Accepts DAGSTER_DEPLOYMENT build arg
 │   ├── dagster.local.yaml         # Instance config: DockerRunLauncher, LocalStack S3
 │   ├── dagster.aws.yaml           # Instance config: EcsRunLauncher, deployed AWS runtime
+│   ├── dagster.aws.ec2-run-workers.prototype.yaml
+│   │                              # Exploratory EC2-backed run-worker config
 │   ├── workspace.local.yaml       # gRPC code-location — local container network
 │   └── workspace.aws.yaml         # gRPC code-location — AWS network
 ├── marimo/
@@ -106,7 +108,7 @@ ______________________________________________________________________
 
 ## Deployment configuration
 
-The `dagster-core` image supports two deployment targets controlled by the
+The `dagster-core` image supports three deployment targets controlled by the
 `DAGSTER_DEPLOYMENT` build argument. The correct environment-specific YAML pair
 is baked into the image at build time as `dagster.yaml` and `workspace.yaml`.
 
@@ -114,6 +116,7 @@ is baked into the image at build time as `dagster.yaml` and `workspace.yaml`.
 |---|---|---|---|
 | `local` (default) | `dagster.local.yaml` | `workspace.local.yaml` | `DockerRunLauncher` (Podman) |
 | `aws` | `dagster.aws.yaml` | `workspace.aws.yaml` | `EcsRunLauncher` |
+| `aws-ec2-run-workers-prototype` | `dagster.aws.ec2-run-workers.prototype.yaml` | `workspace.aws.yaml` | `EcsRunLauncher` with EC2-backed run-worker task definitions |
 
 `compose.yaml` passes `DAGSTER_DEPLOYMENT=local` as a build arg for the two
 Dagster webservers and the daemon. To target AWS, update the build arg
@@ -126,6 +129,14 @@ interrupted, so Dagster run monitoring is enabled for AWS runs. The monitor
 polls every 120 seconds, allows 180 seconds for run start and cancellation, caps
 run runtime at 30 minutes, and marks unrecovered runs failed without automatic
 resume attempts so the failure alert sensor can publish to SNS.
+
+The `aws-ec2-run-workers-prototype` target is an **Exploratory delivery** image
+variant for issue #126. It keeps the same queued-run and monitoring settings
+but supplies an explicit EC2-compatible `EcsRunLauncher.task_definition`, uses
+`capacityProviderStrategy` for `dev-energy-market-run-worker-ec2`, and binpacks
+run-worker tasks by memory. The normal `aws` target remains the documented
+default unless an Operator deliberately pairs this image target with the AWS
+Pulumi EC2 run-worker capacity prototype.
 
 ______________________________________________________________________
 
@@ -762,6 +773,8 @@ developer-stack setting. It renders e2e Dagster config per run from the current
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
   - `backend-services/dagster-core/dagster.local.yaml`
   - `backend-services/dagster-core/dagster.aws.yaml`
+  - `backend-services/dagster-core/dagster.aws.ec2-run-workers.prototype.yaml`
+  - `backend-services/dagster-core/Dockerfile`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

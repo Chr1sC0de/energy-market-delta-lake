@@ -89,6 +89,9 @@ Detailed deployed platform behavior lives in the
 [AWS Pulumi Subproject docs](../../infrastructure/aws-pulumi/README.md),
 including the AWS code-location manifest that currently keeps `aemo-etl` as the
 default deployed Dagster gRPC location.
+The issue #126 EC2-backed run-worker path is an **Exploratory delivery**
+prototype in that Subproject; the normal AWS workflow still uses the Fargate
+runtime unless an Operator deliberately enables the prototype Pulumi config.
 
 ## Local development and testing workflow
 

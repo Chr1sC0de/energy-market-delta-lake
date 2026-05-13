@@ -41,6 +41,34 @@ def _tcp_socket_health_check_command(port: int) -> tuple[str, str]:
     )
 
 
+def _run_worker_prototype_environment(
+    shared: DagsterRuntimeTaskSharedInputs,
+    iam_roles: IamRolesComponentResource,
+) -> tuple[DagsterRuntimeEnvironmentVariable, ...]:
+    return (
+        DagsterRuntimeEnvironmentVariable(
+            name="AWS_DEFAULT_REGION",
+            value=shared.region,
+        ),
+        DagsterRuntimeEnvironmentVariable(
+            name="DAGSTER_ECS_LOG_GROUP_NAME",
+            value=shared.log_group_name,
+        ),
+        DagsterRuntimeEnvironmentVariable(
+            name="DAGSTER_RUN_WORKER_EXECUTION_ROLE_ARN",
+            value=iam_roles.daemon_execution_role.arn,
+        ),
+        DagsterRuntimeEnvironmentVariable(
+            name="DAGSTER_RUN_WORKER_TASK_ROLE_ARN",
+            value=iam_roles.daemon_task_role.arn,
+        ),
+        DagsterRuntimeEnvironmentVariable(
+            name="DAGSTER_POSTGRES_PASSWORD_PARAMETER_ARN",
+            value=shared.postgres_password_parameter_arn,
+        ),
+    )
+
+
 def _fargate_service(
     resource_name: str,
     cluster: aws.ecs.Cluster,
@@ -335,6 +363,17 @@ class DagsterWebserverServiceComponentResource(pulumi.ComponentResource):
                     command=_tcp_socket_health_check_command(3000)
                 ),
                 container_port=3000,
+                environment_after_postgres=(
+                    DagsterRuntimeEnvironmentVariable(
+                        name="AWS_S3_LOCKING_PROVIDER",
+                        value="dynamodb",
+                    ),
+                    DagsterRuntimeEnvironmentVariable(
+                        name="DAGSTER_GRPC_TIMEOUT_SECONDS",
+                        value="300",
+                    ),
+                    *_run_worker_prototype_environment(shared_task_inputs, iam_roles),
+                ),
                 child_opts=self.child_opts,
             ),
         )
@@ -420,6 +459,7 @@ class DagsterDaemonServiceComponentResource(pulumi.ComponentResource):
                         name="DAGSTER_GRPC_TIMEOUT_SECONDS",
                         value="300",
                     ),
+                    *_run_worker_prototype_environment(shared_task_inputs, iam_roles),
                 ),
                 child_opts=self.child_opts,
             ),

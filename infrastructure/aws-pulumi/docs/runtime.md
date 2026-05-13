@@ -10,6 +10,7 @@ hosts Dagster services in AWS.
 - [Code-location manifest prototype](#code-location-manifest-prototype)
 - [ECS runtime topology](#ecs-runtime-topology)
 - [Service profiles](#service-profiles)
+- [EC2 run-worker capacity prototype](#ec2-run-worker-capacity-prototype)
 - [Component summary](#component-summary)
 - [Implementation notes](#implementation-notes)
 - [Related docs](#related-docs)
@@ -149,21 +150,98 @@ The default Secrets Manager tag lookup is disabled because this deployment
 injects required runtime secrets through ECS task-definition secrets and SSM
 SecureString parameters instead.
 
+## EC2 run-worker capacity prototype
+
+Issue #126 adds a default-off **Exploratory delivery** path for EC2-backed
+Dagster run workers. The normal `aws` Dagster image target and long-running ECS
+services remain on `FARGATE_SPOT`; the prototype is active only when both of
+these Pulumi config values are set before preview or deployment:
+
+```bash
+pulumi config set dagster_core_deployment aws-ec2-run-workers-prototype
+pulumi config set enable_ec2_run_worker_capacity_prototype true
+```
+
+Prototype resources:
+
+- `EcsClusterComponentResource` can add a `dev-energy-market-run-worker-ec2`
+  ECS capacity provider backed by an empty EC2 Auto Scaling group.
+- The Auto Scaling group starts with `min_size=0`, `desired_capacity=0`, and
+  `max_size=2`, so it has no idle EC2 instance cost until ECS managed scaling
+  requests capacity.
+- The launch template uses the Amazon Linux 2023 ECS-optimized AMI SSM
+  parameter, `t3.medium`, an encrypted 30 GiB `gp3` root volume, IMDSv2, the
+  private subnet, and the existing Dagster daemon security group for egress.
+- The Auto Scaling group carries the `AmazonECSManaged=true` tag required for
+  ECS managed scaling.
+- `IamRolesComponentResource` creates an ECS container-instance instance profile
+  with `AmazonEC2ContainerServiceforEC2Role` and `AmazonSSMManagedInstanceCore`.
+
+Prototype run-worker task placement:
+
+- `backend-services/dagster-core/dagster.aws.ec2-run-workers.prototype.yaml`
+  supplies an explicit `EcsRunLauncher.task_definition` with
+  `requires_compatibilities: ["EC2"]`. This is required because inheriting the
+  daemon task definition would keep run workers Fargate-only.
+- The prototype image passes daemon role ARNs, the ECS log group name, and the
+  Postgres SSM parameter ARN through webserver and daemon environment variables
+  so Dagster can register run-worker task definitions without hard-coded ARNs.
+- `run_task_kwargs.capacityProviderStrategy` targets
+  `dev-energy-market-run-worker-ec2`; `placementStrategy` binpacks by memory.
+- The launcher still inherits the current ECS task network configuration, so
+  run workers use the private subnet and the Dagster daemon security group.
+
+Prototype scaling and cost assumptions:
+
+- ECS managed scaling is enabled with `target_capacity=100`, step size `1..2`,
+  and a 60 second instance warmup. Pending EC2-compatible run-worker tasks
+  should therefore drive ASG scale-out up to two `t3.medium` instances.
+- A `t3.medium` has 2 vCPU and 4 GiB memory, so it is sized for the default
+  256 CPU / 2048 MiB run-worker profile and not for existing 8192 MiB job-tagged
+  rebuild runs. Those tagged jobs still override `ecs/run_task_kwargs` to
+  `FARGATE_SPOT`; moving them to EC2 would need a larger capacity provider.
+- Idle prototype cost should be zero for EC2 instances because desired capacity
+  is zero. Active cost is bounded by at most two `t3.medium` instances plus
+  their 30 GiB `gp3` root volumes while tasks are pending or running. Operators
+  should verify current regional prices in the AWS Pricing Calculator before any
+  deployed test.
+
+Rollback path:
+
+1. Set `dagster_core_deployment` back to `aws` and deploy so new webserver and
+   daemon images use `dagster.aws.yaml`.
+1. After no run workers target `dev-energy-market-run-worker-ec2`, set
+   `enable_ec2_run_worker_capacity_prototype` to `false` and preview removal of
+   the launch template, Auto Scaling group, capacity provider, and ECS
+   cluster-capacity-provider association.
+1. Confirm the cluster capacity providers are back to `FARGATE` and
+   `FARGATE_SPOT`; long-running service capacity-provider strategies should not
+   change during rollback.
+
+Exploratory handoff recommendation: create a follow-up **Exploratory delivery**
+issue for an explicitly approved deployed smoke test before shaping any Gitflow
+implementation issue. Static code and component tests prove the configuration
+surface is present and default-off, but this branch does not prove live EC2
+placement, image pull, task startup latency, or scale-in behavior because issue
+`#126` did not approve deployed changes.
+
 ## Component summary
 
 | Component | Key resources | Purpose |
 |---|---|---|
 | `ECRComponentResource` | ECR repos, lifecycle policies, docker build+push resources | Publish deployable images from repo source |
-| `EcsClusterComponentResource` | ECS cluster, CloudWatch log group, capacity providers | Shared compute substrate for Dagster runtime |
+| `EcsClusterComponentResource` | ECS cluster, CloudWatch log group, Fargate providers, optional EC2 run-worker provider | Shared compute substrate for Dagster runtime |
 | `ecs_services.py` components | task definitions, ECS services, Cloud Map service registrations | Run Dagster webserver, daemon, and user-code containers |
 | `code_locations.py` | manifest parser, workspace renderer, resource-name helpers | Keep user-code images, workspaces, services, and live checks aligned |
 
 ## Implementation notes
 
 - The webserver and daemon images both come from `backend-services/dagster-core`
-  built with `DAGSTER_DEPLOYMENT=aws`.
+  built with `DAGSTER_DEPLOYMENT=aws` by default.
 - The AWS core image renders `workspace.aws.yaml` from the manifest during the
   Docker build before copying it to `workspace.yaml`.
+- The issue #126 **Exploratory delivery** prototype can swap only that build
+  argument to `aws-ec2-run-workers-prototype`.
 - ECS services use digest-pinned image URIs rather than mutable `:latest` tags
   at runtime.
 - ECS task definitions inject the Postgres password through ECS `secrets`
@@ -196,11 +274,13 @@ SecureString parameters instead.
   - `infrastructure/aws-pulumi/components/dagster_runtime_task.py`
   - `infrastructure/aws-pulumi/components/ecs_cluster.py`
   - `infrastructure/aws-pulumi/components/ecs_services.py`
+  - `infrastructure/aws-pulumi/components/iam_roles.py`
   - `backend-services/dagster-core/code-locations.aws.toml`
   - `backend-services/dagster-core/Dockerfile`
+  - `backend-services/dagster-core/dagster.aws.yaml`
+  - `backend-services/dagster-core/dagster.aws.ec2-run-workers.prototype.yaml`
   - `backend-services/dagster-core/render_aws_workspace.py`
   - `backend-services/dagster-core/workspace.aws.yaml`
-  - `backend-services/dagster-core/dagster.aws.yaml`
   - `infrastructure/aws-pulumi/tests/fixtures/code-locations-two-location.toml`
   - `infrastructure/aws-pulumi/tests/unit/test_code_locations.py`
 - `sync.scope`: `architecture`
