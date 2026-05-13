@@ -1,15 +1,14 @@
 # Marimo Notebook Services
 
-Local Marimo Subproject used in the backend-services compose stack. It provides
-a curated dashboard image and a separate local-only Marimo-Codex research
-workspace image against the same LocalStack-backed data flows used by the rest
-of the repo.
+Marimo Subproject used by the backend-services compose stack and the deployed
+AWS dashboard. It provides a curated dashboard image and a separate local-only
+Marimo-Codex research workspace image.
 
 ## Table of contents
 
 - [What it does](#what-it-does)
 - [Image split](#image-split)
-- [Local table explorer](#local-table-explorer)
+- [Table explorer](#table-explorer)
 - [Gas market dashboard](#gas-market-dashboard)
 - [Local usage](#local-usage)
 - [Validation](#validation)
@@ -27,15 +26,15 @@ The dashboard app in [src/marimoserver/main.py](src/marimoserver/main.py):
   notebook head
 - applies a MIME-type fix middleware for `woff` and `woff2` assets
 
-In the local compose stack, Caddy proxies `/marimo*` traffic to
+In local compose and AWS, Caddy proxies `/marimo*` traffic to
 `marimo-dashboard`. Most notebook routes are protected by the authentication
-service, while static asset and websocket paths are proxied through directly.
-Caddy still serves `/theme.css` from its static root, so notebook pages can use
-the same palette as the root portfolio page.
+service, while `/marimo/health`, static asset paths, and websocket paths are
+proxied through directly. Caddy still serves `/theme.css` from its static root,
+so notebook pages can use the same palette as the root portfolio page.
 
 ## Image split
 
-[Dockerfile](Dockerfile) exposes two local image targets:
+[Dockerfile](Dockerfile) exposes two image targets:
 
 - `dashboard`: used by the `marimo-dashboard` compose service. It runs the
   FastAPI wrapper, mounts [notebooks/](notebooks/) read-only, and keeps Codex
@@ -46,33 +45,42 @@ the same palette as the root portfolio page.
   includes [research-workspace/AGENTS.md](research-workspace/AGENTS.md) for
   local notebook research, data access boundaries, and issue-draft generation.
 
-Both targets are local-first. The research workspace is for human-operated local
-Marimo-Codex research only; compose does not launch unattended Codex, and
-deployed Codex execution is deferred until a security review approves identity,
-network, filesystem, secret, audit, and rollback controls.
+The curated dashboard image is deployed to AWS on a private EC2 instance behind
+Caddy. The research workspace is for human-operated local Marimo-Codex research
+only; compose does not launch unattended Codex, and deployed Codex execution is
+deferred until a security review approves identity, network, filesystem, secret,
+audit, and rollback controls.
 
-## Local table explorer
+## Table explorer
 
-[notebooks/local_table_explorer.py](notebooks/local_table_explorer.py) discovers
-the compose-local `dev-energy-market-*` LocalStack buckets, overlays the local
-Dagster GraphQL table asset catalogue, and shows bucket health, table assets,
-storage status, catalogue controls, and cached inspection for selected live
-tables.
+[notebooks/table_explorer.py](notebooks/table_explorer.py) discovers configured
+S3-compatible buckets, overlays the Dagster GraphQL table asset catalogue, and
+shows bucket health, table assets, storage status, catalogue controls, and
+cached inspection for selected live tables.
 
 The explorer reads the same AWS settings passed to the Marimo service by
 compose: `AWS_ENDPOINT_URL`, `AWS_DEFAULT_REGION`, `AWS_ACCESS_KEY_ID`,
 `AWS_SECRET_ACCESS_KEY`, and `AWS_ALLOW_HTTP`. It also reads
 `DAGSTER_GRAPHQL_URL`, defaulting inside compose to
-`http://dagster-webserver-guest:3000/graphql`. The compose services pass the
-same default with a shell override so local operators can point Marimo at a
-different reachable Dagster GraphQL endpoint without editing the notebook.
+`http://dagster-webserver-guest:3000/dagster-webserver/guest/graphql`. The
+compose services pass the same path-prefixed default with a shell override so
+local operators can point Marimo at a different reachable Dagster GraphQL
+endpoint without editing the notebook.
 
-It always checks the default local buckets:
+In local compose, it checks the default local buckets:
 
 - `dev-energy-market-aemo`
 - `dev-energy-market-landing`
 - `dev-energy-market-archive`
 - `dev-energy-market-io-manager`
+
+In AWS, Pulumi sets `DEVELOPMENT_LOCATION=aws`, `MARIMO_TABLE_BUCKETS`, and
+`MARIMO_FULL_TABLE_SCAN_ENABLED=false`. The deployed dashboard uses instance
+profile credentials, checks only the AEMO and IO-manager buckets, caps discovery
+at 10,000 objects per bucket, and loads at most 100 preview rows per selected
+table. It does not request account-wide S3 bucket listing permission in AWS.
+Global text search, sort, and selected-column statistics are disabled in that
+bounded mode because they require a full table scan.
 
 Prefixes with `_delta_log/` are classified as Delta tables. Prefixes with one or
 more parquet files are classified as parquet tables. When GraphQL is reachable,
@@ -86,13 +94,14 @@ continues in storage-only mode. Empty buckets render bucket health and an empty
 state instead of raising notebook exceptions.
 
 The catalogue controls filter by asset group, layer or domain, live status, and
-free-text asset search. For a selected live LocalStack table, the preview
+free-text asset search. For a selected live table, the preview
 controls support row limit, column picker, sort column and direction, text
 search, exact row count, selected-column null counts, selected-column distinct
-counts, and preview rows. The notebook caches the selected table scan for the
-Marimo session, so changing preview controls does not repeatedly read the same
-table from LocalStack. Use **Refresh table scan** after materializing or
-re-seeding data.
+counts, and preview rows when full table scans are enabled. In AWS, the preview
+is deliberately bounded and reports preview rows loaded instead of an exact row
+count. The notebook caches the selected table scan for the Marimo session, so
+changing preview controls does not repeatedly read the same table. Use
+**Refresh table scan** after materializing or reloading data.
 
 Unmaterialized assets and empty local tables show materialization guidance
 instead of a traceback. In a fresh compose stack, LocalStack may contain empty
@@ -104,8 +113,8 @@ are seeded.
 
 The default notebook,
 [notebooks/sample_energy_market.py](notebooks/sample_energy_market.py), is a
-local gas market overview dashboard over curated `silver.gas_model` outputs. It
-reads Delta tables from:
+gas market overview dashboard over curated `silver.gas_model` outputs. It
+reads Parquet datasets from:
 
 ```text
 s3://<AEMO_BUCKET>/silver/gas_model/<table>
@@ -118,8 +127,12 @@ variables available to the Marimo service:
 - `DEVELOPMENT_ENVIRONMENT` and `NAME_PREFIX`, used to derive the default
   `<environment>-<name-prefix>-aemo` bucket
 - `AWS_ENDPOINT_URL`, `AWS_DEFAULT_REGION`, `AWS_ACCESS_KEY_ID`,
-  `AWS_SECRET_ACCESS_KEY`, and `AWS_ALLOW_HTTP`, passed through to Delta Lake
-  storage options
+  `AWS_SECRET_ACCESS_KEY`, and `AWS_ALLOW_HTTP`, passed through to Polars S3
+  storage options when set
+
+In AWS mode, the dashboard omits LocalStack endpoint and static credential
+options, uses the EC2 instance profile, and limits each loaded table to the
+preview row cap.
 
 It gives first-look sections for:
 
@@ -131,8 +144,8 @@ It gives first-look sections for:
 - source coverage from the `source_system`, `source_table`, and
   `source_tables` columns on loaded `gas_model` outputs
 
-When LocalStack has no seeded or materialized gas_model tables yet, the notebook
-renders section empty states instead of surfacing Delta read tracebacks.
+When storage has no seeded or materialized `gas_model` tables yet, the notebook
+renders section empty states instead of surfacing Parquet read tracebacks.
 
 ## Local usage
 
@@ -150,16 +163,16 @@ The implementation also accepts `MARIMO_NOTEBOOKS_DIR` if you need to point the
 server at a different notebook directory.
 
 With the local backend stack running, open the Marimo index through Caddy and
-choose `local_table_explorer` or `sample_energy_market`:
+choose `table_explorer` or `sample_energy_market`:
 
 ```text
 http://localhost/marimo
 ```
 
-The table explorer is compose-first. Start the stack from
+The table explorer is compose-first for local development. Start the stack from
 [../compose.yaml](../compose.yaml), wait for `localstack`, `aemo-etl`, both
 Dagster webservers, and `marimo-dashboard` to be healthy, then open
-`/marimo` and choose `local_table_explorer`. The explorer can list Dagster table
+`/marimo` and choose `table_explorer`. The explorer can list Dagster table
 assets before local data exists, but previews require materialized LocalStack
 tables. Materialize the target assets from the Dagster UI or a local Dagster
 launch, then refresh the table scan in the notebook.
@@ -176,7 +189,7 @@ Use the same pattern for the local table explorer:
 
 ```bash
 cd backend-services/marimo
-AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/local_table_explorer.py
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/table_explorer.py
 ```
 
 When running the table explorer outside compose, set `DAGSTER_GRAPHQL_URL` to a
@@ -222,7 +235,7 @@ prek run -a
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/notebooks/head.html`
   - `backend-services/marimo/notebooks/sample_energy_market.py`
-  - `backend-services/marimo/notebooks/local_table_explorer.py`
+  - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/compose.yaml`
   - `backend-services/caddy/Caddyfile`
   - `backend-services/caddy/theme.css`

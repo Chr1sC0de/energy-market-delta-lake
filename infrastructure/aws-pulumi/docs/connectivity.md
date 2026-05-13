@@ -29,6 +29,7 @@ flowchart LR
         ECS[ECS tasks]
         PG[Postgres EC2]
         AUTH[FastAPI auth EC2]
+        MARIMO[Marimo dashboard EC2]
     end
 
     subgraph EndpointSG[VPC endpoint security group]
@@ -55,6 +56,10 @@ flowchart LR
     ECS --> DDB
     AUTH --> ECRAPI
     AUTH --> ECRDKR
+    MARIMO --> ECRAPI
+    MARIMO --> ECRDKR
+    MARIMO --> SSM
+    MARIMO --> S3
     PG --> SSM
     ECRAPI --- EPSG
     ECRDKR --- EPSG
@@ -79,6 +84,7 @@ flowchart LR
     BASTION[Bastion SG]
     CADDY[Caddy SG]
     AUTH[FastAPI auth SG]
+    MARIMO[Marimo dashboard SG]
     WEB[Dagster webserver SG]
     USERCODE[Dagster user-code SG]
     DAEMON[Dagster daemon SG]
@@ -88,7 +94,9 @@ flowchart LR
     ADMIN -->|SSH 22| CADDY
     INTERNET[Internet] -->|HTTP 80 / HTTPS 443| CADDY
     CADDY -->|8000| AUTH
+    CADDY -->|2718| MARIMO
     CADDY -->|3000| WEB
+    MARIMO -->|3000| WEB
     BASTION -->|3000| WEB
     WEB -->|4000| USERCODE
     DAEMON -->|4000| USERCODE
@@ -104,7 +112,7 @@ flowchart LR
 | Component | Key resources | Purpose |
 |---|---|---|
 | `VpcEndpointsComponentResource` | endpoint SG, 4 interface endpoints, 2 gateway endpoints | Keep AWS API access inside the VPC where possible |
-| `SecurityGroupsComponentResource` | 7 service security groups plus explicit ingress/egress rules | Encode allowed operator access and service-to-service paths |
+| `SecurityGroupsComponentResource` | 8 service security groups plus explicit ingress/egress rules | Encode allowed operator access and service-to-service paths |
 
 ## Traffic rules
 
@@ -114,7 +122,10 @@ flowchart LR
   configuration loading.
 - FastAPI auth is private and only accepts traffic from Caddy plus SSH from the
   bastion host.
-- Dagster webservers accept port `3000` from Caddy and the bastion host.
+- Marimo dashboard is private, has no SSH ingress, and accepts port `2718` only
+  from Caddy.
+- Dagster webservers accept port `3000` from Caddy, Marimo dashboard, and the
+  bastion host.
 - Dagster user-code accepts gRPC port `4000` only from the webserver and
   daemon.
 - Postgres accepts port `5432` from the Dagster ECS services plus the bastion
@@ -135,6 +146,7 @@ flowchart LR
 - `sync.sources`:
   - `infrastructure/aws-pulumi/components/vpc_endpoints.py`
   - `infrastructure/aws-pulumi/components/security_groups.py`
+  - `infrastructure/aws-pulumi/components/marimo.py`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`

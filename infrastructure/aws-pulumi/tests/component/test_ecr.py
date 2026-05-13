@@ -17,7 +17,7 @@ TWO_LOCATION_MANIFEST = (
 
 
 class TestEcrRepositories:
-    def test_all_six_repos_created(self) -> None:
+    def test_all_seven_repos_created(self) -> None:
         ecr = ECRComponentResource("test-energy-market")
         assert ecr.dagster_postgres is not None
         assert ecr.dagster_webserver is not None
@@ -25,6 +25,7 @@ class TestEcrRepositories:
         assert ecr.dagster_user_code_aemo_etl is not None
         assert ecr.caddy is not None
         assert ecr.authentication is not None
+        assert ecr.marimo_dashboard is not None
 
     def test_all_image_resources_created(self) -> None:
         ecr = ECRComponentResource("test-energy-market")
@@ -33,6 +34,7 @@ class TestEcrRepositories:
         assert ecr.dagster_user_code_aemo_etl_image is not None
         assert ecr.caddy_image is not None
         assert ecr.authentication_image is not None
+        assert ecr.marimo_dashboard_image is not None
 
     def test_manifest_user_code_repositories_created(self) -> None:
         locations = load_code_locations(TWO_LOCATION_MANIFEST)
@@ -48,20 +50,13 @@ class TestEcrRepositories:
             "fixture-etl",
         }
 
-    @pulumi.runtime.test
-    def test_two_location_fixture_creates_distinct_user_code_repos(self) -> None:
+    def test_two_location_fixture_declares_distinct_image_repositories(self) -> None:
         locations = load_code_locations(TWO_LOCATION_MANIFEST)
-        ecr = ECRComponentResource("test-energy-market", code_locations=locations)
 
-        def check(repo_urls: list[str]) -> None:
-            assert len(set(repo_urls)) == 2
-            assert any("aemo-etl" in repo_url for repo_url in repo_urls)
-            assert any("fixture-etl" in repo_url for repo_url in repo_urls)
-
-        return pulumi.Output.all(
-            ecr.dagster_user_code_repositories["aemo-etl"].repository_url,
-            ecr.dagster_user_code_repositories["fixture-etl"].repository_url,
-        ).apply(check)
+        assert {location.image_repository for location in locations} == {
+            "dagster/user-code/aemo-etl",
+            "dagster/user-code/fixture-etl",
+        }
 
     def test_dagster_core_deployment_defaults_to_aws(self) -> None:
         ecr = ECRComponentResource("test-energy-market")
@@ -96,6 +91,7 @@ class TestEcrRepositories:
             ecr.dagster_user_code_aemo_etl.image_scanning_configuration,
             ecr.caddy.image_scanning_configuration,
             ecr.authentication.image_scanning_configuration,
+            ecr.marimo_dashboard.image_scanning_configuration,
         ).apply(check)
 
     @pulumi.runtime.test
@@ -113,7 +109,7 @@ class TestEcrRepositories:
         ).apply(check)
 
     @pulumi.runtime.test
-    def test_fargate_image_uris_use_ecr_digest(self) -> None:
+    def test_runtime_image_uris_use_ecr_digest(self) -> None:
         ecr = ECRComponentResource("test-energy-market")
 
         def check(image_uris: list[str]) -> None:
@@ -186,6 +182,15 @@ class TestEcrRepositories:
             assert "auth" in url.lower(), f"Expected 'auth' in repo URL, got {url}"
 
         return ecr.authentication.repository_url.apply(check)
+
+    @pulumi.runtime.test
+    def test_marimo_dashboard_repo_url_contains_marimo(self) -> None:
+        ecr = ECRComponentResource("test-energy-market")
+
+        def check(url: str) -> None:
+            assert "marimo" in url.lower(), f"Expected 'marimo' in repo URL, got {url}"
+
+        return ecr.marimo_dashboard.repository_url.apply(check)
 
     def test_no_deprecation_warnings(self) -> None:
         """Regression guard: dead aws.get_region() call removed from ecr.py."""

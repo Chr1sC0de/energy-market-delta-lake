@@ -2,6 +2,7 @@
 
 from collections.abc import Iterable, Mapping
 from io import BytesIO
+from typing import Self
 
 import polars as pl
 import pytest
@@ -84,8 +85,10 @@ class FakeS3Client:
         self._list_errors_by_bucket = (
             {} if list_errors_by_bucket is None else list_errors_by_bucket
         )
+        self.list_buckets_calls = 0
 
     def list_buckets(self) -> Mapping[str, object]:
+        self.list_buckets_calls += 1
         if self._list_error is not None:
             raise self._list_error
         return {
@@ -132,6 +135,7 @@ def test_discover_table_explorer_config_uses_compose_env() -> None:
         }
     )
 
+    assert config.runtime_location == "local"
     assert config.default_buckets == DEFAULT_LOCAL_BUCKETS
     assert config.bucket_prefix == "dev-energy-market-"
     assert config.s3_client_kwargs() == {
@@ -149,6 +153,8 @@ def test_discover_table_explorer_config_uses_compose_env() -> None:
         "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
     }
     assert config.dagster_graphql_url == "http://dagster.local/graphql"
+    assert config.full_table_scan_enabled is True
+    assert config.max_preview_rows == 10_000
 
 
 def test_discover_table_explorer_config_treats_blanks_as_unset() -> None:
@@ -168,7 +174,62 @@ def test_discover_table_explorer_config_treats_blanks_as_unset() -> None:
     assert config.aws_access_key_id == "test"
     assert config.aws_secret_access_key == "test"
     assert config.aws_allow_http == "true"
-    assert config.dagster_graphql_url == "http://dagster-webserver-guest:3000/graphql"
+    assert (
+        config.dagster_graphql_url
+        == "http://dagster-webserver-guest:3000/dagster-webserver/guest/graphql"
+    )
+
+
+def test_discover_table_explorer_config_uses_aws_runtime_defaults() -> None:
+    config = discover_table_explorer_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "MARIMO_TABLE_BUCKETS": "prod-aemo, prod-io-manager",
+            "AWS_DEFAULT_REGION": "ap-southeast-2",
+            "DAGSTER_GRAPHQL_URL": (
+                "http://webserver-guest.dagster:3000/dagster-webserver/guest/graphql"
+            ),
+        }
+    )
+
+    assert config.runtime_location == "aws"
+    assert config.default_buckets == ("prod-aemo", "prod-io-manager")
+    assert config.aws_endpoint_url is None
+    assert config.aws_access_key_id is None
+    assert config.aws_secret_access_key is None
+    assert config.aws_allow_http == "false"
+    assert config.s3_client_kwargs() == {"region_name": "ap-southeast-2"}
+    assert config.delta_storage_options() == {
+        "AWS_REGION": "ap-southeast-2",
+        "AWS_ALLOW_HTTP": "false",
+        "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
+    }
+    assert (
+        config.dagster_graphql_url
+        == "http://webserver-guest.dagster:3000/dagster-webserver/guest/graphql"
+    )
+    assert config.full_table_scan_enabled is False
+    assert config.max_preview_rows == 100
+
+
+def test_discover_table_explorer_config_uses_aws_bucket_fallbacks() -> None:
+    config = discover_table_explorer_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "IO_MANAGER_BUCKET": "prod-energy-market-io-manager",
+            "MARIMO_MAX_PREVIEW_ROWS": "not-an-int",
+            "MARIMO_FULL_TABLE_SCAN_ENABLED": "yes",
+        }
+    )
+
+    assert config.aws_runtime is True
+    assert config.default_buckets == (
+        "prod-energy-market-aemo",
+        "prod-energy-market-io-manager",
+    )
+    assert config.max_preview_rows == 100
+    assert config.full_table_scan_enabled is True
 
 
 def test_create_s3_client_uses_configured_endpoint(
@@ -516,6 +577,37 @@ def test_discover_storage_uses_defaults_when_bucket_listing_fails() -> None:
     assert discovery.tables == ()
 
 
+def test_discover_storage_skips_account_bucket_listing_in_aws_runtime() -> None:
+    config = discover_table_explorer_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "MARIMO_TABLE_BUCKETS": "prod-energy-market-aemo,prod-energy-market-io-manager",
+        }
+    )
+    fake_client = FakeS3Client(
+        list_error=RuntimeError("list all buckets denied"),
+        pages_by_bucket={
+            "prod-energy-market-aemo": [
+                {"Contents": [{"Key": "silver/gas/part-000.parquet"}]}
+            ],
+            "prod-energy-market-io-manager": [{"Contents": []}],
+        },
+    )
+
+    discovery = discover_storage(config, s3_client=fake_client)
+
+    assert fake_client.list_buckets_calls == 0
+    assert discovery.bucket_listing_error is None
+    assert [bucket.name for bucket in discovery.buckets] == [
+        "prod-energy-market-aemo",
+        "prod-energy-market-io-manager",
+    ]
+    assert all(bucket.is_default for bucket in discovery.buckets)
+    assert [table.table_id for table in discovery.tables] == [
+        "prod-energy-market-aemo/silver/gas"
+    ]
+
+
 def test_classify_table_prefixes_handles_root_tables_and_case() -> None:
     root_tables = classify_table_prefixes(
         "bucket",
@@ -569,6 +661,38 @@ def test_read_delta_table_delegates_to_polars(
     assert captured == [(table.uri, config.delta_storage_options())]
 
 
+def test_read_delta_table_honours_row_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = discover_table_explorer_config({})
+    table = TablePrefix(
+        bucket="dev-energy-market-aemo",
+        prefix="silver/gas",
+        table_format=TableFormat.DELTA,
+        parquet_files=(),
+    )
+    captured: list[tuple[str, dict[str, str]] | int] = []
+
+    class FakeLazyFrame:
+        def head(self, row_limit: int) -> Self:
+            captured.append(row_limit)
+            return self
+
+        def collect(self) -> pl.DataFrame:
+            return pl.DataFrame({"id": [1]})
+
+    def scan_delta(uri: str, storage_options: dict[str, str]) -> FakeLazyFrame:
+        captured.append((uri, storage_options))
+        return FakeLazyFrame()
+
+    monkeypatch.setattr("marimoserver.table_explorer.pl.scan_delta", scan_delta)
+
+    dataframe = read_delta_table(table, config, row_limit=5)
+
+    assert dataframe.to_dict(as_series=False) == {"id": [1]}
+    assert captured == [(table.uri, config.delta_storage_options()), 5]
+
+
 def test_read_parquet_table_reads_discovered_files() -> None:
     table = TablePrefix(
         bucket="dev-energy-market-landing",
@@ -601,6 +725,34 @@ def test_read_parquet_table_reads_discovered_files() -> None:
     }
 
 
+def test_read_parquet_table_honours_row_limit() -> None:
+    table = TablePrefix(
+        bucket="dev-energy-market-landing",
+        prefix="bronze/prices",
+        table_format=TableFormat.PARQUET,
+        parquet_files=(
+            "bronze/prices/part-000.parquet",
+            "bronze/prices/part-001.parquet",
+        ),
+    )
+    fake_client = FakeS3Client(
+        objects_by_key={
+            (
+                "dev-energy-market-landing",
+                "bronze/prices/part-000.parquet",
+            ): _parquet_bytes(pl.DataFrame({"id": [1, 2]})),
+            (
+                "dev-energy-market-landing",
+                "bronze/prices/part-001.parquet",
+            ): _parquet_bytes(pl.DataFrame({"id": [3, 4]})),
+        }
+    )
+
+    dataframe = read_parquet_table(table, fake_client, row_limit=3)
+
+    assert dataframe.to_dict(as_series=False) == {"id": [1, 2, 3]}
+
+
 def test_read_parquet_table_returns_empty_frame_without_files() -> None:
     table = TablePrefix(
         bucket="dev-energy-market-landing",
@@ -626,9 +778,11 @@ def test_inspect_table_loads_delta_schema_count_and_preview(
     def fake_read_delta_table(
         table_arg: TablePrefix,
         config_arg: TableExplorerConfig,
+        row_limit: int | None = None,
     ) -> pl.DataFrame:
         assert table_arg == table
         assert config_arg == config
+        assert row_limit is None
         return pl.DataFrame({"id": [1, 2], "name": ["a", "b"]})
 
     monkeypatch.setattr(explorer, "read_delta_table", fake_read_delta_table)
@@ -638,11 +792,50 @@ def test_inspect_table_loads_delta_schema_count_and_preview(
     assert inspection.available
     assert inspection.error is None
     assert inspection.row_count == 2
+    assert inspection.is_limited is False
     assert [(column.name, column.dtype) for column in inspection.schema] == [
         ("id", "Int64"),
         ("name", "String"),
     ]
     assert inspection.preview.to_dict(as_series=False) == {"id": [1], "name": ["a"]}
+
+
+def test_load_table_dataframe_limits_aws_preview(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = discover_table_explorer_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "MARIMO_TABLE_BUCKETS": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "7",
+        }
+    )
+    table = TablePrefix(
+        bucket="prod-energy-market-aemo",
+        prefix="silver/gas",
+        table_format=TableFormat.DELTA,
+        parquet_files=(),
+    )
+    captured: list[int | None] = []
+
+    def fake_read_delta_table(
+        table_arg: TablePrefix,
+        config_arg: TableExplorerConfig,
+        row_limit: int | None = None,
+    ) -> pl.DataFrame:
+        assert table_arg == table
+        assert config_arg == config
+        captured.append(row_limit)
+        return pl.DataFrame({"id": list(range(10))})
+
+    monkeypatch.setattr(explorer, "read_delta_table", fake_read_delta_table)
+
+    scan = explorer.load_table_dataframe(table, config)
+
+    assert scan.available
+    assert scan.is_limited is True
+    assert scan.row_limit == 7
+    assert captured == [7]
 
 
 def test_inspect_table_loads_parquet_with_injected_s3_client() -> None:
@@ -711,6 +904,8 @@ def test_cached_table_scan_reuses_scan_until_refresh_token_changes(
         return TableScan(
             table=table_arg,
             dataframe=pl.DataFrame({"scan": [calls[-1]]}),
+            is_limited=False,
+            row_limit=None,
             error=None,
         )
 
@@ -744,6 +939,8 @@ def test_explore_table_scan_applies_column_sort_text_and_stats() -> None:
                 "region": ["VIC", "NSW", "VIC"],
             }
         ),
+        is_limited=False,
+        row_limit=None,
         error=None,
     )
 
@@ -775,6 +972,48 @@ def test_explore_table_scan_applies_column_sort_text_and_stats() -> None:
     ] == [("id", 0, 3), ("name", 1, 2)]
 
 
+def test_explore_table_scan_disables_global_operations_for_limited_scan() -> None:
+    table = TablePrefix(
+        bucket="prod-energy-market-aemo",
+        prefix="silver/gas",
+        table_format=TableFormat.PARQUET,
+        parquet_files=("silver/gas/part-000.parquet",),
+    )
+    scan = TableScan(
+        table=table,
+        dataframe=pl.DataFrame(
+            {
+                "id": [2, 1, 3],
+                "name": ["Beta", None, "alpha"],
+                "region": ["VIC", "NSW", "VIC"],
+            }
+        ),
+        is_limited=True,
+        row_limit=100,
+        error=None,
+    )
+
+    exploration = explore_table_scan(
+        scan,
+        TableQuery(
+            row_limit=2,
+            columns=("id", "name"),
+            sort_column="id",
+            text_search="alpha",
+        ),
+    )
+
+    assert exploration.available
+    assert exploration.is_limited is True
+    assert exploration.row_count == 3
+    assert exploration.filtered_row_count == 3
+    assert exploration.preview.to_dict(as_series=False) == {
+        "id": [2, 1],
+        "name": ["Beta", None],
+    }
+    assert exploration.column_statistics == ()
+
+
 def test_explore_table_scan_handles_empty_tables_without_error() -> None:
     table = TablePrefix(
         bucket="dev-energy-market-aemo",
@@ -784,7 +1023,13 @@ def test_explore_table_scan_handles_empty_tables_without_error() -> None:
     )
 
     exploration = explore_table_scan(
-        TableScan(table=table, dataframe=pl.DataFrame(), error=None),
+        TableScan(
+            table=table,
+            dataframe=pl.DataFrame(),
+            is_limited=False,
+            row_limit=None,
+            error=None,
+        ),
         TableQuery(),
     )
 
@@ -804,7 +1049,13 @@ def test_explore_table_scan_returns_scan_errors() -> None:
     )
 
     exploration = explore_table_scan(
-        TableScan(table=table, dataframe=pl.DataFrame({"id": [1]}), error="boom"),
+        TableScan(
+            table=table,
+            dataframe=pl.DataFrame({"id": [1]}),
+            is_limited=False,
+            row_limit=None,
+            error="boom",
+        ),
         TableQuery(),
     )
 

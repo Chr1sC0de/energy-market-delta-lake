@@ -75,6 +75,28 @@ class TestCaddyServerComponent:
 
         return caddy.instance.root_block_device.apply(check)
 
+    @pulumi.runtime.test
+    def test_user_data_sets_marimo_backend(self) -> None:
+        vpc, ecr, auth, sgs = _make_deps()
+        caddy = CaddyServerComponentResource("test-energy-market", vpc, ecr, auth, sgs)
+
+        def check(user_data: str) -> None:
+            assert "-e MARIMO_SERVER=marimo-dashboard.dagster:2718" in user_data
+
+        return caddy.user_data.apply(check)
+
+    @pulumi.runtime.test
+    def test_user_data_uses_digest_pinned_caddy_image(self) -> None:
+        vpc, ecr, auth, sgs = _make_deps()
+        caddy = CaddyServerComponentResource("test-energy-market", vpc, ecr, auth, sgs)
+
+        def check(user_data: str) -> None:
+            assert "@sha256:" in user_data
+            assert "caddy:latest" not in user_data
+            assert 'docker pull "$IMAGE_URI"' in user_data
+
+        return caddy.user_data.apply(check)
+
     def test_no_deprecation_warnings(self) -> None:
         """Regression guard: region.region must be used, not region.name."""
         vpc, ecr, auth, sgs = _make_deps()

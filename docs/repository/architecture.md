@@ -37,6 +37,10 @@ flowchart LR
     USERCODE[aemo-etl manifest default]
   end
 
+  subgraph Analytics[Analytics]
+    MARIMO[Marimo dashboard]
+  end
+
   subgraph Data[State and storage]
     S3[(S3 buckets)]
     PG[(PostgreSQL)]
@@ -56,12 +60,15 @@ flowchart LR
   C --> AUTH
   C --> ADMIN
   C --> GUEST
+  C --> MARIMO
   AUTH --> ADMIN
   ADMIN --> USERCODE
   GUEST --> USERCODE
+  MARIMO --> GUEST
   DAEMON --> USERCODE
   USERCODE --> S3
   DAEMON --> S3
+  MARIMO --> S3
   USERCODE --> DDB
   ADMIN --> PG
   GUEST --> PG
@@ -76,6 +83,7 @@ flowchart LR
   ECS --> USERCODE
   CM --> ADMIN
   CM --> GUEST
+  CM --> MARIMO
   CM --> USERCODE
 ```
 
@@ -114,11 +122,13 @@ flowchart LR
 ```
 
 This local stack is intentionally broader than the deployed stack in some areas.
-For example, `marimo-dashboard` and `marimo-codex-workspace` are part of local
-compose but are not provisioned by the current Pulumi deployment. The dashboard
-serves curated notebooks through Caddy, while the Marimo-Codex workspace is
-bound to localhost for human-operated research and issue-draft preparation.
-Deployed Codex execution remains deferred pending security review. The optional
+The `marimo-dashboard` service is also deployed by Pulumi as a private EC2
+instance behind Caddy, but `marimo-codex-workspace` remains local-only. The
+deployed dashboard serves curated notebooks through Caddy, reads the private
+guest Dagster GraphQL endpoint, and has read-only access to curated AEMO and
+IO-manager buckets. The Marimo-Codex workspace is bound to localhost for
+human-operated research and issue-draft preparation. Deployed Codex execution
+remains deferred pending security review. The optional
 Archive seed loader is also local-only: it can load a cached seed under
 `backend-services/.e2e/aemo-etl` into LocalStack during local compose startup.
 Strict seed-before-Dagster gating belongs to the isolated **End-to-end test**
@@ -189,8 +199,8 @@ without making local development performance claims.
 - `backend-services/caddy`
   - provides the reverse-proxy image and routing rules
 - `backend-services/marimo`
-  - local notebook-oriented Subproject with separate dashboard and
-    Marimo-Codex research workspace images used in the test/dev harness
+  - notebook-oriented Subproject with a curated dashboard image used locally
+    and in AWS, plus a local-only Marimo-Codex research workspace image
 
 ## Related docs
 
@@ -205,6 +215,7 @@ without making local development performance claims.
 - `sync.sources`:
   - `docs/README.md`
   - `infrastructure/aws-pulumi/__main__.py`
+  - `infrastructure/aws-pulumi/components/marimo.py`
   - `backend-services/dagster-core/code-locations.aws.toml`
   - `infrastructure/aws-pulumi/code_locations.py`
   - `backend-services/compose.yaml`
@@ -212,6 +223,9 @@ without making local development performance claims.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/caddy/Caddyfile`
+  - `backend-services/marimo/src/marimoserver/main.py`
+  - `backend-services/marimo/src/marimoserver/table_explorer.py`
+  - `backend-services/marimo/notebooks/table_explorer.py`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`

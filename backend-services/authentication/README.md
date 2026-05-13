@@ -1,7 +1,7 @@
 # Authentication Service
 
-FastAPI service used behind Caddy to protect the admin Dagster UI and the
-local `marimo-dashboard` notebook routes with an OIDC-backed browser session.
+FastAPI service used behind Caddy to protect the admin Dagster UI and
+`marimo-dashboard` notebook routes with an OIDC-backed browser session.
 
 ## Table of contents
 
@@ -32,9 +32,9 @@ Current route groups implemented in [main.py](main.py):
   - `/oauth2/marimo/authorize`
   - `/oauth2/marimo/validate`
 
-In the local compose stack, Caddy forwards these auth routes to the
-`authentication` container and uses the `*/validate` endpoints for
-`forward_auth` checks before proxying to the protected upstream.
+In local compose and AWS, Caddy forwards these auth routes to the
+`authentication` service and uses the `*/validate` endpoints for `forward_auth`
+checks before proxying to the protected upstream.
 
 The local-only `marimo-codex-workspace` service is not routed through this auth
 service. It binds to `127.0.0.1:2719` for local research and remains outside
@@ -52,6 +52,16 @@ The service reads these environment variables:
 
 `WEBSITE_ROOT_URL` is normalized to an HTTPS, slash-free base URL before the
 service redirects the browser back to `/dagster-webserver/admin` or `/marimo`.
+
+The configured Cognito app client must allow callback URLs that match the
+external auth callback routes for each protected surface:
+
+- `<WEBSITE_ROOT_URL>/oauth2/dagster-webserver/admin/authorize`
+- `<WEBSITE_ROOT_URL>/oauth2/marimo/authorize`
+
+For local browser auth testing, also allow the same two callback paths under
+`https://localhost`. If the Marimo callback is missing, Cognito returns
+`redirect_mismatch` when users open `/marimo` without an existing admin session.
 
 ## Local usage
 

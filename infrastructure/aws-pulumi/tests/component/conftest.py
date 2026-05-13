@@ -14,6 +14,7 @@ from collections.abc import Callable
 
 import pulumi
 import pulumi.runtime
+import pulumi_aws as aws
 import pytest
 
 
@@ -33,6 +34,19 @@ os.environ["DEVELOPMENT_LOCATION"] = "aws"
 
 MockOutputs = dict[str, object]
 ResourceOutputAugmenter = Callable[[pulumi.runtime.MockResourceArgs, MockOutputs], None]
+
+
+class _MockEcrImage:
+    """Small stand-in for the sync ECR image data source used by components."""
+
+    image_digest = "sha256:testdigest"
+
+
+def _mock_get_ecr_image(**_kwargs: object) -> _MockEcrImage:
+    return _MockEcrImage()
+
+
+aws.ecr.get_image = _mock_get_ecr_image  # type: ignore[assignment]
 
 
 def _augment_vpc_outputs(
@@ -73,8 +87,12 @@ def _augment_docker_image_outputs(
     args: pulumi.runtime.MockResourceArgs,
     outputs: MockOutputs,
 ) -> None:
-    image_name = outputs.get("imageName") or outputs.get("image_name")
-    outputs.setdefault("repoDigest", f"{image_name}@sha256:testdigest")
+    repo_digest = (
+        f"123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/{args.name}"
+        "@sha256:testdigest"
+    )
+    outputs.setdefault("repoDigest", repo_digest)
+    outputs.setdefault("repo_digest", repo_digest)
 
 
 def _augment_s3_bucket_outputs(

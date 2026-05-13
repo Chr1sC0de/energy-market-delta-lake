@@ -36,6 +36,7 @@ Detailed subsystem documentation for the deployed AWS platform defined in
 | `DagsterUserCodeServiceComponentResource` | [runtime.md](runtime.md) |
 | `DagsterWebserverServiceComponentResource` | [runtime.md](runtime.md) |
 | `DagsterDaemonServiceComponentResource` | [runtime.md](runtime.md) |
+| `MarimoDashboardComponentResource` | [runtime.md](runtime.md), [edge-and-access.md](edge-and-access.md) |
 | `BastionHostComponentResource` | [edge-and-access.md](edge-and-access.md) |
 | `FastAPIAuthComponentResource` | [edge-and-access.md](edge-and-access.md) |
 | `CaddyServerComponentResource` | [edge-and-access.md](edge-and-access.md) |
@@ -60,6 +61,7 @@ boundary are described in [runtime.md](runtime.md).
   - `infrastructure/aws-pulumi/code_locations.py`
   - `infrastructure/aws-pulumi/components/vpc.py`
   - `infrastructure/aws-pulumi/components/ecr.py`
+  - `infrastructure/aws-pulumi/components/marimo.py`
   - `infrastructure/aws-pulumi/components/ecs_cluster.py`
   - `infrastructure/aws-pulumi/components/ecs_services.py`
   - `infrastructure/aws-pulumi/docs/security-audit.md`

@@ -48,7 +48,7 @@ def _(config, mo, pl):
         {
             "setting": [
                 "AEMO bucket",
-                "Delta root",
+                "Parquet root",
                 "AWS endpoint",
                 "AWS region",
                 "Environment",
@@ -57,7 +57,7 @@ def _(config, mo, pl):
             "value": [
                 config.aemo_bucket,
                 f"s3://{config.aemo_bucket}/silver/gas_model",
-                config.aws_endpoint_url,
+                config.aws_endpoint_url or "(default AWS)",
                 config.aws_region,
                 config.development_environment,
                 config.name_prefix,
@@ -71,7 +71,7 @@ def _(config, mo, pl):
                 """
                 ## Configuration
 
-                The dashboard uses the same local S3-compatible settings as the
+                The dashboard uses the same S3-compatible settings as the
                 Marimo service. Bucket discovery prefers `AEMO_BUCKET` when it is
                 set, otherwise it derives the bucket from
                 `DEVELOPMENT_ENVIRONMENT` and `NAME_PREFIX`.
@@ -191,14 +191,14 @@ def _(pl):  # noqa: C901
         return f"""
         ## {title}
 
-        **No local data is available for this section yet.**
+        **No data is available for this section yet.**
 
         The dashboard checked these `silver.gas_model` outputs:
 
         {table_list}
 
-        Materialize the gas_model assets in Dagster or seed LocalStack with
-        curated outputs, then refresh this notebook.
+        Materialize the gas_model assets in Dagster or load the curated outputs,
+        then refresh this notebook.
         """
 
     def section_stack(mo, title, load, description):

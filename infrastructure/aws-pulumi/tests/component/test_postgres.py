@@ -89,7 +89,7 @@ class TestPostgresComponent:
             assert "0.0.0.0/0 md5" not in user_data
             assert "10.0.0.0/16 scram-sha-256" in user_data
 
-        return pg.instance.user_data.apply(check)
+        return pg.user_data.apply(check)
 
     def test_no_deprecation_warnings(self) -> None:
         vpc, sgs = _make_deps()

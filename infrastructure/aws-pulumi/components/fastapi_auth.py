@@ -164,8 +164,11 @@ class FastAPIAuthComponentResource(pulumi.ComponentResource):
     def _setup_instance(self) -> None:
         region = aws.get_region()
 
-        user_data = pulumi.Output.all(
-            repo_uri=self.ecr.authentication.repository_url,
+        self.user_data = pulumi.Output.all(
+            image_uri=self.ecr._published_image_uri(
+                self.ecr.authentication,
+                self.ecr.authentication_image,
+            ),
             region=region.region,
             cognito_client_id_param=self.cognito_parameter_names["client_id"],
             cognito_server_metadata_url_param=self.cognito_parameter_names[
@@ -199,11 +202,12 @@ class FastAPIAuthComponentResource(pulumi.ComponentResource):
                 COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL="$(ssm_value '{a["cognito_server_metadata_url_param"]}')"
                 COGNITO_TOKEN_SIGNING_KEY_URL="$(ssm_value '{a["cognito_token_signing_key_url_param"]}')"
                 COGNITO_DAGSTER_AUTH_CLIENT_SECRET="$(ssm_value '{a["cognito_client_secret_param"]}')"
+                IMAGE_URI="{a["image_uri"]}"
 
                 aws ecr get-login-password --region {a["region"]} | \\
-                    docker login --username AWS --password-stdin {a["repo_uri"].split("/")[0]}
+                    docker login --username AWS --password-stdin "${{IMAGE_URI%%/*}}"
                 for attempt in $(seq 1 30); do
-                    if docker pull {a["repo_uri"]}:latest; then
+                    if docker pull "$IMAGE_URI"; then
                         break
                     fi
                     if [ "$attempt" -eq 30 ]; then
@@ -221,7 +225,7 @@ class FastAPIAuthComponentResource(pulumi.ComponentResource):
                     -e COGNITO_TOKEN_SIGNING_KEY_URL="$COGNITO_TOKEN_SIGNING_KEY_URL" \\
                     -e COGNITO_DAGSTER_AUTH_CLIENT_SECRET="$COGNITO_DAGSTER_AUTH_CLIENT_SECRET" \\
                     -e WEBSITE_ROOT_URL={a["website_root_url"]} \\
-                    {a["repo_uri"]}:latest \\
+                    "$IMAGE_URI" \\
                     uvicorn main:app --host 0.0.0.0 --port 8000
             """)  # ty:ignore[invalid-argument-type]
         )  # ty:ignore[missing-argument]
@@ -239,7 +243,7 @@ class FastAPIAuthComponentResource(pulumi.ComponentResource):
                 http_tokens="required",
             ),
             root_block_device=aws.ec2.InstanceRootBlockDeviceArgs(encrypted=True),
-            user_data=user_data,
+            user_data=self.user_data,
             user_data_replace_on_change=True,
             tags={
                 "dagster/service": "fastapi-authentication-server",

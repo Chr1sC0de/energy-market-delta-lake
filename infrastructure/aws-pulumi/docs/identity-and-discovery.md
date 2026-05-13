@@ -18,6 +18,7 @@ network.
 
 - `IamRolesComponentResource`
 - `ServiceDiscoveryComponentResource`
+- `MarimoDashboardComponentResource`
 
 ## IAM role model
 
@@ -28,6 +29,8 @@ flowchart TB
         BASTIONPROFILE[Bastion instance profile]
         ECSINSTANCEROLE[ECS container-instance role]
         ECSINSTANCEPROFILE[ECS container-instance profile]
+        MARIMOROLE[Marimo dashboard role]
+        MARIMOPROFILE[Marimo dashboard instance profile]
     end
 
     subgraph ECSRoles[ECS task roles]
@@ -47,6 +50,10 @@ flowchart TB
 
     BASTIONROLE --> SSM
     BASTIONPROFILE --> BASTIONROLE
+    MARIMOPROFILE --> MARIMOROLE
+    MARIMOROLE --> SSM
+    MARIMOROLE --> ECRPOLICY
+    MARIMOROLE --> S3
     ECSINSTANCEPROFILE --> ECSINSTANCEROLE
     ECSINSTANCEROLE --> ECSINSTANCEPOLICY
     ECSINSTANCEROLE --> SSM
@@ -76,10 +83,12 @@ flowchart LR
         UCODE[aemo-etl manifest default]
         ADMIN[webserver-admin]
         GUEST[webserver-guest]
+        MARIMO[marimo-dashboard]
     end
 
     subgraph Callers[Private callers]
         CADDY[Caddy]
+        MARIMOHOST[Marimo dashboard]
         WEB[Dagster webservers]
         DAEMON[Dagster daemon]
     end
@@ -88,9 +97,12 @@ flowchart LR
     DAEMON --> UCODE
     CADDY --> ADMIN
     CADDY --> GUEST
+    CADDY --> MARIMO
+    MARIMOHOST --> GUEST
     NAMESPACE --> UCODE
     NAMESPACE --> ADMIN
     NAMESPACE --> GUEST
+    NAMESPACE --> MARIMO
 ```
 
 The namespace is private to the VPC and currently backs:
@@ -98,6 +110,7 @@ The namespace is private to the VPC and currently backs:
 - `aemo-etl.dagster:4000`
 - `webserver-admin.dagster:3000`
 - `webserver-guest.dagster:3000`
+- `marimo-dashboard.dagster:2718`
 
 The daemon is not registered because it does not accept inbound traffic.
 
@@ -117,11 +130,15 @@ definitions before a human accepts a broader production interface.
 |---|---|---|
 | `IamRolesComponentResource` | 2 EC2 instance profiles, 2 ECS execution roles, 2 ECS task roles | Separate bootstrap permissions from runtime permissions |
 | `ServiceDiscoveryComponentResource` | 1 Cloud Map private DNS namespace | Give private service names to the ECS runtime |
+| `MarimoDashboardComponentResource` | EC2 instance profile, S3 read policy, Cloud Map service and instance | Run the private curated Marimo dashboard |
 
 ## Permission boundaries
 
 - The bastion host gets SSM-centric EC2 permissions through an instance
   profile.
+- The Marimo dashboard host gets ECR read, SSM managed-instance access, and
+  read-only S3 access to the curated AEMO and IO-manager buckets through its
+  component-owned instance profile.
 - The optional issue #126 EC2 run-worker capacity prototype uses a separate ECS
   container-instance profile with `AmazonEC2ContainerServiceforEC2Role` for ECS
   agent registration and `AmazonSSMManagedInstanceCore` for operator access
@@ -158,6 +175,8 @@ definitions before a human accepts a broader production interface.
   - `infrastructure/aws-pulumi/code_locations.py`
   - `infrastructure/aws-pulumi/components/ecs_services.py`
   - `infrastructure/aws-pulumi/components/iam_roles.py`
+  - `infrastructure/aws-pulumi/components/marimo.py`
+  - `infrastructure/aws-pulumi/components/s3_buckets.py`
   - `infrastructure/aws-pulumi/components/service_discovery.py`
 - `sync.scope`: `architecture`
 - `sync.qa`:

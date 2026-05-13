@@ -24,6 +24,7 @@ class TestSecurityGroupsCreation:
         assert reg.dagster_postgres is not None
         assert reg.caddy_instance is not None
         assert reg.fastapi_auth is not None
+        assert reg.marimo_dashboard is not None
 
     @pulumi.runtime.test
     def test_bastion_sg_name_contains_bastion(self) -> None:
@@ -99,6 +100,18 @@ class TestSecurityGroupsCreation:
             )
 
         return sgs.register.fastapi_auth.name.apply(check)
+
+    @pulumi.runtime.test
+    def test_marimo_dashboard_sg_name(self) -> None:
+        vpc = _make_vpc()
+        sgs = SecurityGroupsComponentResource("test-energy-market", vpc)
+
+        def check(name: str) -> None:
+            assert "marimo" in name.lower(), (
+                f"Expected 'marimo' in SG resource name, got {name}"
+            )
+
+        return sgs.register.marimo_dashboard.name.apply(check)
 
     def test_no_deprecation_warnings(self) -> None:
         vpc = _make_vpc()

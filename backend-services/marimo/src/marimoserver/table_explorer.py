@@ -1,4 +1,4 @@
-"""LocalStack-backed table discovery helpers for the Marimo table explorer."""
+"""Table discovery helpers for the Marimo table explorer."""
 
 from collections.abc import Hashable, Iterable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
@@ -34,8 +34,11 @@ DEFAULT_AWS_ACCESS_KEY_ID = "test"
 DEFAULT_AWS_SECRET_ACCESS_KEY = "test"
 DEFAULT_AWS_ALLOW_HTTP = "true"
 DEFAULT_DISCOVERY_OBJECT_LIMIT = 10_000
+DEFAULT_AWS_PREVIEW_ROWS = 100
+DEFAULT_LOCAL_PREVIEW_ROWS = 10_000
 DEFAULT_PREVIEW_ROWS = 25
 DEFAULT_ROW_LIMIT = 25
+AWS_DEVELOPMENT_LOCATION = "aws"
 
 
 @runtime_checkable
@@ -89,36 +92,50 @@ class TableAvailability(StrEnum):
 
 @dataclass(frozen=True)
 class TableExplorerConfig:
-    """Environment-derived settings for compose-local table exploration."""
+    """Environment-derived settings for table exploration."""
 
+    runtime_location: str
     default_buckets: tuple[str, ...]
     bucket_prefix: str
-    aws_endpoint_url: str
+    aws_endpoint_url: str | None
     aws_region: str
-    aws_access_key_id: str
-    aws_secret_access_key: str
+    aws_access_key_id: str | None
+    aws_secret_access_key: str | None
     aws_allow_http: str
     dagster_graphql_url: str
+    max_preview_rows: int
+    full_table_scan_enabled: bool
+
+    @property
+    def aws_runtime(self) -> bool:
+        """Return whether the explorer is running in AWS deployment mode."""
+        return self.runtime_location == AWS_DEVELOPMENT_LOCATION
 
     def s3_client_kwargs(self) -> dict[str, str]:
         """Return boto3 S3 client keyword arguments."""
-        return {
-            "endpoint_url": self.aws_endpoint_url,
-            "region_name": self.aws_region,
-            "aws_access_key_id": self.aws_access_key_id,
-            "aws_secret_access_key": self.aws_secret_access_key,
-        }
+        kwargs = {"region_name": self.aws_region}
+        if self.aws_endpoint_url is not None:
+            kwargs["endpoint_url"] = self.aws_endpoint_url
+        if self.aws_access_key_id is not None:
+            kwargs["aws_access_key_id"] = self.aws_access_key_id
+        if self.aws_secret_access_key is not None:
+            kwargs["aws_secret_access_key"] = self.aws_secret_access_key
+        return kwargs
 
     def delta_storage_options(self) -> dict[str, str]:
         """Return Delta Lake storage options for the configured S3 endpoint."""
-        return {
-            "AWS_ENDPOINT_URL": self.aws_endpoint_url,
+        options = {
             "AWS_REGION": self.aws_region,
-            "AWS_ACCESS_KEY_ID": self.aws_access_key_id,
-            "AWS_SECRET_ACCESS_KEY": self.aws_secret_access_key,
             "AWS_ALLOW_HTTP": self.aws_allow_http,
             "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
         }
+        if self.aws_endpoint_url is not None:
+            options["AWS_ENDPOINT_URL"] = self.aws_endpoint_url
+        if self.aws_access_key_id is not None:
+            options["AWS_ACCESS_KEY_ID"] = self.aws_access_key_id
+        if self.aws_secret_access_key is not None:
+            options["AWS_SECRET_ACCESS_KEY"] = self.aws_secret_access_key
+        return options
 
 
 @dataclass(frozen=True)
@@ -211,12 +228,13 @@ class ColumnSchema:
 
 @dataclass(frozen=True)
 class TableInspection:
-    """Loaded schema, exact row count, and preview for one table."""
+    """Loaded schema, row count, and preview for one table."""
 
     table: TablePrefix
     schema: tuple[ColumnSchema, ...]
     row_count: int
     preview: pl.DataFrame
+    is_limited: bool
     error: str | None
 
     @property
@@ -227,10 +245,12 @@ class TableInspection:
 
 @dataclass(frozen=True)
 class TableScan:
-    """A full table scan cached for a notebook session."""
+    """A loaded table scan cached for a notebook session."""
 
     table: TablePrefix
     dataframe: pl.DataFrame
+    is_limited: bool
+    row_limit: int | None
     error: str | None
 
     @property
@@ -269,6 +289,7 @@ class TableExploration:
     filtered_row_count: int
     preview: pl.DataFrame
     column_statistics: tuple[ColumnStatistic, ...]
+    is_limited: bool
     error: str | None
 
     @property
@@ -298,30 +319,55 @@ def discover_table_explorer_config(
 ) -> TableExplorerConfig:
     """Discover table explorer settings from the Marimo service environment."""
     settings = os.environ if environ is None else environ
+    runtime_location = _setting(settings, "DEVELOPMENT_LOCATION", "local").lower()
+    aws_runtime = runtime_location == AWS_DEVELOPMENT_LOCATION
+    default_buckets = (
+        _configured_bucket_names(settings, "MARIMO_TABLE_BUCKETS")
+        if aws_runtime
+        else DEFAULT_LOCAL_BUCKETS
+    )
+    if aws_runtime and not default_buckets:
+        default_buckets = _aws_curated_bucket_names(settings)
+
     return TableExplorerConfig(
-        default_buckets=DEFAULT_LOCAL_BUCKETS,
+        runtime_location=runtime_location,
+        default_buckets=default_buckets,
         bucket_prefix=DEFAULT_BUCKET_PREFIX,
-        aws_endpoint_url=_setting(
+        aws_endpoint_url=_optional_setting(
             settings,
             "AWS_ENDPOINT_URL",
-            DEFAULT_AWS_ENDPOINT_URL,
+            None if aws_runtime else DEFAULT_AWS_ENDPOINT_URL,
         ),
         aws_region=_setting(settings, "AWS_DEFAULT_REGION", DEFAULT_AWS_REGION),
-        aws_access_key_id=_setting(
+        aws_access_key_id=_optional_setting(
             settings,
             "AWS_ACCESS_KEY_ID",
-            DEFAULT_AWS_ACCESS_KEY_ID,
+            None if aws_runtime else DEFAULT_AWS_ACCESS_KEY_ID,
         ),
-        aws_secret_access_key=_setting(
+        aws_secret_access_key=_optional_setting(
             settings,
             "AWS_SECRET_ACCESS_KEY",
-            DEFAULT_AWS_SECRET_ACCESS_KEY,
+            None if aws_runtime else DEFAULT_AWS_SECRET_ACCESS_KEY,
         ),
-        aws_allow_http=_setting(settings, "AWS_ALLOW_HTTP", DEFAULT_AWS_ALLOW_HTTP),
+        aws_allow_http=_setting(
+            settings,
+            "AWS_ALLOW_HTTP",
+            "false" if aws_runtime else DEFAULT_AWS_ALLOW_HTTP,
+        ),
         dagster_graphql_url=_setting(
             settings,
             "DAGSTER_GRAPHQL_URL",
             DEFAULT_DAGSTER_GRAPHQL_URL,
+        ),
+        max_preview_rows=_positive_int_setting(
+            settings,
+            "MARIMO_MAX_PREVIEW_ROWS",
+            DEFAULT_AWS_PREVIEW_ROWS if aws_runtime else DEFAULT_LOCAL_PREVIEW_ROWS,
+        ),
+        full_table_scan_enabled=_bool_setting(
+            settings,
+            "MARIMO_FULL_TABLE_SCAN_ENABLED",
+            not aws_runtime,
         ),
     )
 
@@ -342,10 +388,14 @@ def discover_storage(
 ) -> StorageDiscovery:
     """Discover default and local dev buckets plus table-like prefixes."""
     client = create_s3_client(config) if s3_client is None else s3_client
-    discovered_bucket_names, bucket_listing_error = _discover_bucket_names(
-        client,
-        config.bucket_prefix,
-    )
+    if config.aws_runtime:
+        discovered_bucket_names: set[str] = set()
+        bucket_listing_error = None
+    else:
+        discovered_bucket_names, bucket_listing_error = _discover_bucket_names(
+            client,
+            config.bucket_prefix,
+        )
     bucket_names = _ordered_bucket_names(
         config.default_buckets, discovered_bucket_names
     )
@@ -490,23 +540,38 @@ def classify_table_prefixes(
 def read_delta_table(
     table: TablePrefix,
     config: TableExplorerConfig,
+    row_limit: int | None = None,
 ) -> pl.DataFrame:
     """Read a Delta table into a Polars DataFrame."""
-    return pl.read_delta(table.uri, storage_options=config.delta_storage_options())
+    storage_options = config.delta_storage_options()
+    if row_limit is None:
+        return pl.read_delta(table.uri, storage_options=storage_options)
+    return (
+        pl.scan_delta(table.uri, storage_options=storage_options)
+        .head(row_limit)
+        .collect()
+    )
 
 
 def read_parquet_table(
     table: TablePrefix,
     s3_client: S3Client,
+    row_limit: int | None = None,
 ) -> pl.DataFrame:
     """Read discovered parquet files into a Polars DataFrame."""
     dataframes: list[pl.DataFrame] = []
+    remaining_rows = row_limit
     for key in table.parquet_files:
         response = s3_client.get_object(Bucket=table.bucket, Key=key)
         body = response["Body"]
         if not isinstance(body, S3Body):
             raise TypeError("S3 response Body must provide read()")
-        dataframes.append(pl.read_parquet(BytesIO(body.read())))
+        dataframe = pl.read_parquet(BytesIO(body.read()), n_rows=remaining_rows)
+        dataframes.append(dataframe)
+        if remaining_rows is not None:
+            remaining_rows -= dataframe.height
+            if remaining_rows <= 0:
+                break
 
     if not dataframes:
         return pl.DataFrame()
@@ -527,6 +592,7 @@ def inspect_table(
             schema=(),
             row_count=0,
             preview=pl.DataFrame(),
+            is_limited=False,
             error=scan.error,
         )
 
@@ -536,6 +602,7 @@ def inspect_table(
         schema=_schema_from_dataframe(dataframe),
         row_count=dataframe.height,
         preview=dataframe.head(preview_rows),
+        is_limited=scan.is_limited,
         error=None,
     )
 
@@ -545,21 +612,30 @@ def load_table_dataframe(
     config: TableExplorerConfig,
     s3_client: S3Client | None = None,
 ) -> TableScan:
-    """Load a full table DataFrame for notebook-session caching."""
+    """Load a table DataFrame for notebook-session caching."""
+    row_limit = None if config.full_table_scan_enabled else config.max_preview_rows
     try:
         if table.table_format is TableFormat.DELTA:
-            dataframe = read_delta_table(table, config)
+            dataframe = read_delta_table(table, config, row_limit=row_limit)
         else:
             client = create_s3_client(config) if s3_client is None else s3_client
-            dataframe = read_parquet_table(table, client)
+            dataframe = read_parquet_table(table, client, row_limit=row_limit)
     except Exception as error:
         return TableScan(
             table=table,
             dataframe=pl.DataFrame(),
+            is_limited=False,
+            row_limit=None,
             error=_compact_error(error),
         )
 
-    return TableScan(table=table, dataframe=dataframe, error=None)
+    return TableScan(
+        table=table,
+        dataframe=dataframe,
+        is_limited=row_limit is not None,
+        row_limit=row_limit,
+        error=None,
+    )
 
 
 def cached_table_scan(
@@ -587,13 +663,18 @@ def explore_table_scan(scan: TableScan, query: TableQuery) -> TableExploration:
             filtered_row_count=0,
             preview=pl.DataFrame(),
             column_statistics=(),
+            is_limited=scan.is_limited,
             error=scan.error,
         )
 
     dataframe = scan.dataframe
     selected_columns = _selected_columns(dataframe, query.columns)
-    filtered = _filter_text(dataframe, selected_columns, query.text_search)
-    if query.sort_column in dataframe.columns:
+    filtered = (
+        dataframe
+        if scan.is_limited
+        else _filter_text(dataframe, selected_columns, query.text_search)
+    )
+    if not scan.is_limited and query.sort_column in dataframe.columns:
         filtered = filtered.sort(
             query.sort_column,
             descending=query.sort_descending,
@@ -607,7 +688,10 @@ def explore_table_scan(scan: TableScan, query: TableQuery) -> TableExploration:
         row_count=dataframe.height,
         filtered_row_count=filtered.height,
         preview=filtered.select(preview_columns).head(_normalized_row_limit(query)),
-        column_statistics=_column_statistics(dataframe, preview_columns),
+        column_statistics=()
+        if scan.is_limited
+        else _column_statistics(dataframe, preview_columns),
+        is_limited=scan.is_limited,
         error=None,
     )
 
@@ -840,15 +924,20 @@ def _table_scan_cache_key(
     config: TableExplorerConfig,
     refresh_token: Hashable,
 ) -> TableScanCacheKey:
+    config_values = {
+        "DEVELOPMENT_LOCATION": config.runtime_location,
+        "AWS_ENDPOINT_URL": config.aws_endpoint_url,
+        "AWS_REGION": config.aws_region,
+        "AWS_ACCESS_KEY_ID": config.aws_access_key_id,
+        "AWS_SECRET_ACCESS_KEY": config.aws_secret_access_key,
+        "AWS_ALLOW_HTTP": config.aws_allow_http,
+        "MARIMO_MAX_PREVIEW_ROWS": str(config.max_preview_rows),
+        "MARIMO_FULL_TABLE_SCAN_ENABLED": str(config.full_table_scan_enabled),
+    }
     config_fingerprint = tuple(
         sorted(
-            {
-                "AWS_ENDPOINT_URL": config.aws_endpoint_url,
-                "AWS_REGION": config.aws_region,
-                "AWS_ACCESS_KEY_ID": config.aws_access_key_id,
-                "AWS_SECRET_ACCESS_KEY": config.aws_secret_access_key,
-                "AWS_ALLOW_HTTP": config.aws_allow_http,
-            }.items()
+            (key, "" if value is None else str(value))
+            for key, value in config_values.items()
         )
     )
     return (
@@ -945,6 +1034,62 @@ def _setting(environ: Mapping[str, str], name: str, default: str) -> str:
     if value == "":
         return default
     return value
+
+
+def _optional_setting(
+    environ: Mapping[str, str],
+    name: str,
+    default: str | None,
+) -> str | None:
+    value = environ.get(name)
+    if value is None:
+        return default
+    stripped = value.strip()
+    if stripped == "":
+        return default
+    return stripped
+
+
+def _configured_bucket_names(
+    environ: Mapping[str, str],
+    name: str,
+) -> tuple[str, ...]:
+    raw_value = environ.get(name, "")
+    return tuple(
+        dict.fromkeys(
+            bucket.strip() for bucket in raw_value.split(",") if bucket.strip()
+        )
+    )
+
+
+def _aws_curated_bucket_names(environ: Mapping[str, str]) -> tuple[str, ...]:
+    buckets = [
+        _optional_setting(environ, "AEMO_BUCKET", None),
+        _optional_setting(environ, "IO_MANAGER_BUCKET", None),
+    ]
+    return tuple(bucket for bucket in buckets if bucket is not None)
+
+
+def _positive_int_setting(
+    environ: Mapping[str, str],
+    name: str,
+    default: int,
+) -> int:
+    value = environ.get(name)
+    if value is None or value.strip() == "":
+        return default
+    try:
+        parsed = int(value)
+    except ValueError:
+        return default
+    return max(1, parsed)
+
+
+def _bool_setting(environ: Mapping[str, str], name: str, default: bool) -> bool:
+    value = environ.get(name)
+    if value is None or value.strip() == "":
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _compact_error(error: Exception) -> str:
