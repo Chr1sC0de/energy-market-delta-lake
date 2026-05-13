@@ -57,11 +57,22 @@ from components.service_discovery import ServiceDiscoveryComponentResource
 from components.vpc import VpcComponentResource
 from components.vpc_endpoints import VpcEndpointsComponentResource
 from configs import NAME
+from dagster_core_deployment import (
+    DEFAULT_DAGSTER_CORE_DEPLOYMENT,
+    validate_dagster_core_deployment_config,
+)
 
 _config = pulumi.Config()
-_dagster_core_deployment = _config.get("dagster_core_deployment") or "aws"
-_enable_ec2_run_worker_capacity_prototype = (
+_dagster_core_deployment = (
+    _config.get("dagster_core_deployment") or DEFAULT_DAGSTER_CORE_DEPLOYMENT
+)
+_ec2_capacity_prototype_enabled = (
     _config.get_bool("enable_ec2_run_worker_capacity_prototype") or False
+)
+validate_dagster_core_deployment_config(
+    dagster_core_deployment=_dagster_core_deployment,
+    enable_ec2_run_worker_capacity_prototype=_ec2_capacity_prototype_enabled,
+    stack_name=NAME,
 )
 
 # ── Docker provider ───────────────────────────────────────────────────────────
@@ -110,7 +121,7 @@ ecs_cluster = EcsClusterComponentResource(
     NAME,
     vpc,
     security_groups,
-    enable_ec2_run_worker_capacity_prototype=_enable_ec2_run_worker_capacity_prototype,
+    enable_ec2_run_worker_capacity_prototype=_ec2_capacity_prototype_enabled,
     run_worker_instance_profile_arn=iam_roles.ecs_instance_profile.arn,
 )
 

@@ -168,7 +168,9 @@ is rendered from the code-location manifest before `workspace.yaml` is copied
 into place. The issue #126 **Exploratory delivery** prototype can set
 `dagster_core_deployment` to
 `aws-ec2-run-workers-prototype` so only the webserver and daemon images switch
-to the EC2 run-worker `EcsRunLauncher` config.
+to the EC2 run-worker `EcsRunLauncher` config. Pulumi rejects that image target
+unless `enable_ec2_run_worker_capacity_prototype=true` is set in the same
+preview or deployment.
 
 ## Runtime behavior
 
@@ -218,6 +220,14 @@ This project reads a small set of important config values:
     - defaults to `false`
     - set to `true` only when previewing or deploying the matching EC2-backed
       ECS capacity provider
+- The two prototype values are a strict pair:
+  - the EC2 run-worker image target without the EC2 capacity prototype fails
+    before Pulumi constructs resources
+  - the EC2 capacity prototype without the EC2 run-worker image target also
+    fails, so unused capacity-provider previews are rejected
+  - the current prototype is dev-only because the baked Dagster config targets
+    `dev-energy-market-run-worker-ec2`; any other `ENVIRONMENT`-derived stack
+    prefix fails until the provider name is made dynamic
 
 The stack name prefix resolves to `"{ENVIRONMENT}-energy-market"`.
 
@@ -330,6 +340,7 @@ system's services and Dagster workflows.
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `infrastructure/aws-pulumi/__main__.py`
+  - `infrastructure/aws-pulumi/dagster_core_deployment.py`
   - `backend-services/dagster-core/code-locations.aws.toml`
   - `backend-services/dagster-core/Dockerfile`
   - `backend-services/dagster-core/render_aws_workspace.py`
@@ -351,9 +362,11 @@ system's services and Dagster workflows.
   - `infrastructure/aws-pulumi/scripts/redeploy-user-code`
   - `infrastructure/aws-pulumi/scripts/run-integration-tests`
   - `infrastructure/aws-pulumi/tests/component/test_ecr.py`
+  - `infrastructure/aws-pulumi/tests/component/test_ecs_cluster.py`
   - `infrastructure/aws-pulumi/tests/component/test_ecs_services.py`
   - `infrastructure/aws-pulumi/tests/deployed/conftest.py`
   - `infrastructure/aws-pulumi/tests/deployed/test_integration.py`
+  - `infrastructure/aws-pulumi/tests/unit/test_dagster_core_deployment.py`
   - `infrastructure/aws-pulumi/Pulumi.dev-ausenergymarket.yaml`
   - `backend-services/dagster-core/Dockerfile`
   - `backend-services/dagster-core/dagster.aws.ec2-run-workers.prototype.yaml`

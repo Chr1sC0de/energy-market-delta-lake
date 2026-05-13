@@ -7,13 +7,13 @@ import pulumi
 
 from components.ecs_cluster import (
     RUN_WORKER_EC2_ASG_MAX_SIZE,
-    RUN_WORKER_EC2_CAPACITY_PROVIDER_SUFFIX,
     RUN_WORKER_EC2_INSTANCE_TYPE,
     RUN_WORKER_EC2_ROOT_VOLUME_GB,
     EcsClusterComponentResource,
 )
 from components.security_groups import SecurityGroupsComponentResource
 from components.vpc import VpcComponentResource
+from dagster_core_deployment import RUN_WORKER_EC2_CAPACITY_PROVIDER_SUFFIX
 
 
 def _make_deps() -> tuple[VpcComponentResource, SecurityGroupsComponentResource]:

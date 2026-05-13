@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+from dagster_core_deployment import EC2_RUN_WORKERS_PROTOTYPE_CAPACITY_PROVIDER_NAME
+
 
 def _dagster_core_config(filename: str) -> str:
     return (
@@ -9,7 +11,7 @@ def _dagster_core_config(filename: str) -> str:
         / "backend-services"
         / "dagster-core"
         / filename
-    ).read_text()
+    ).read_text(encoding="utf-8")
 
 
 def _dagster_core_aws_config() -> str:
@@ -51,7 +53,10 @@ def test_dagster_core_has_ec2_run_workers_prototype_target() -> None:
 def test_dagster_core_ec2_run_workers_prototype_uses_capacity_provider() -> None:
     config = _dagster_core_ec2_run_workers_prototype_config()
 
-    assert 'capacityProvider: "dev-energy-market-run-worker-ec2"' in config
+    assert (
+        f'capacityProvider: "{EC2_RUN_WORKERS_PROTOTYPE_CAPACITY_PROVIDER_NAME}"'
+        in config
+    )
     assert 'capacityProvider: "FARGATE_SPOT"' not in config
     assert 'requires_compatibilities:\n        - "EC2"' in config
     assert 'type: "binpack"' in config

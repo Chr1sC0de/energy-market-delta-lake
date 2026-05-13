@@ -28,15 +28,15 @@ from code_locations import (
     default_code_location,
     load_code_locations,
 )
+from dagster_core_deployment import (
+    DEFAULT_DAGSTER_CORE_DEPLOYMENT,
+    SUPPORTED_DAGSTER_CORE_DEPLOYMENTS,
+)
 
 # Resolve the backend-services directory relative to this file so the path
 # is correct regardless of the working directory used to run `pulumi up`.
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _SERVICES = _REPO_ROOT / "backend-services"
-SUPPORTED_DAGSTER_CORE_DEPLOYMENTS = {
-    "aws",
-    "aws-ec2-run-workers-prototype",
-}
 
 LIFECYCLE_POLICY = json.dumps(
     {
@@ -64,7 +64,7 @@ class ECRComponentResource(pulumi.ComponentResource):
         name: str,
         code_locations: tuple[DagsterCodeLocation, ...] | None = None,
         docker_provider: docker.Provider | None = None,
-        dagster_core_deployment: str = "aws",
+        dagster_core_deployment: str = DEFAULT_DAGSTER_CORE_DEPLOYMENT,
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
         """Create ECR repositories and image publishing resources."""
