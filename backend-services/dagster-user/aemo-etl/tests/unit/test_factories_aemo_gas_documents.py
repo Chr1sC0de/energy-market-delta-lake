@@ -12,12 +12,15 @@ from requests import HTTPError, Response
 
 from aemo_etl.factories.aemo_gas_documents.assets import (
     AEMO_GAS_DOCUMENTS_PREFIX,
+    AEMO_GAS_DOCUMENT_REQUEST_HEADERS,
+    AEMO_GAS_DOCUMENT_REQUEST_TIMEOUT_SECONDS,
     DELTA_MERGE_OPTIONS,
     AEMOGasDocumentSourceWriteResult,
     _land_pdf_once,
     land_aemo_gas_document_observations,
     _stable_hash,
     records_to_lazyframe,
+    request_get_aemo_gas_document,
     scrape_and_land_aemo_gas_document_sources,
     write_aemo_gas_document_sources_batch,
 )
@@ -82,6 +85,22 @@ def _request_getter(
         return responses[url]
 
     return _get
+
+
+def test_request_get_aemo_gas_document_uses_browser_compatible_headers(
+    mocker: MockerFixture,
+) -> None:
+    get = mocker.patch("aemo_etl.factories.aemo_gas_documents.assets.requests.get")
+    get.return_value = _response(url=_PDF_URL, content=_PDF_BYTES)
+
+    response = request_get_aemo_gas_document(_PDF_URL)
+
+    assert response.content == _PDF_BYTES
+    get.assert_called_once_with(
+        _PDF_URL,
+        headers=AEMO_GAS_DOCUMENT_REQUEST_HEADERS,
+        timeout=AEMO_GAS_DOCUMENT_REQUEST_TIMEOUT_SECONDS,
+    )
 
 
 def test_discover_observations_classifies_pdf_non_pdf_and_review_links() -> None:

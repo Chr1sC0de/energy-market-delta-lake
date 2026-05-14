@@ -197,7 +197,7 @@ sequenceDiagram
     Discovery->>Manifest: Write non-empty manifest and validation report JSON
     Schedule->>Docs: Run daily
     Docs->>Manifest: Load source-page and media-link observations
-    Docs->>AEMO: Download media rows with should_download=true
+    Docs->>AEMO: Download media rows with browser-compatible headers
     Docs->>Docs: Classify include, exclude, and needs_human_review observations
     Docs->>Docs: Record runtime download failures without PDF bytes
     Docs->>Landing: Write included PDF bytes by content_sha256
@@ -214,7 +214,8 @@ Trigger and output notes:
   direct `https://www.aemo.com.au/-/media/...` media-link observations, so the
   default asset path can download included PDFs without revisiting source pages.
   The manual `aemo-refresh-gas-document-media-manifest` CLI performs source-page
-  discovery with Playwright, validates direct media URLs, records validation
+  discovery with Playwright, validates direct media URLs with the same
+  browser-compatible request headers as the daily asset, records validation
   status, HTTP metadata, resolved URLs, and validation errors in the discovery
   report, holds failed validation rows in the manifest with
   `should_download=false`, and preserves existing manifest entries when a source
@@ -227,8 +228,8 @@ Trigger and output notes:
   `bronze_aemo_gas_document_sources` without landing PDF bytes. Failed
   validation rows are not requested by the daily asset path until a later
   manifest refresh marks them downloadable. If a manifest row marked
-  `should_download=true` fails during daily materialization, the asset records a
-  metadata-only row with the failure reason and increments
+  `should_download=true` still fails during daily materialization, the asset
+  records a metadata-only row with the failure reason and increments
   `failed_download_count`.
 - This flow stops at landing/archive plus bronze metadata. It has no wiki,
   embedding, vector-store, or PDF text-extraction side effects.

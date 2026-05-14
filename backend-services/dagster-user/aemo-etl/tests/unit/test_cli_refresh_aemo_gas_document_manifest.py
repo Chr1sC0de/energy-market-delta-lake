@@ -17,6 +17,9 @@ from aemo_etl.cli.refresh_aemo_gas_document_manifest import (
     refresh_aemo_gas_document_media_manifest,
     validate_media_url,
 )
+from aemo_etl.factories.aemo_gas_documents.assets import (
+    AEMO_GAS_DOCUMENT_REQUEST_HEADERS,
+)
 from aemo_etl.factories.aemo_gas_documents.models import (
     AEMOGasDocumentMediaValidation,
     AEMOGasDocumentSourcePage,
@@ -318,7 +321,12 @@ def test_validate_media_url_uses_default_streaming_getter(
 
     validation = validate_media_url(_PDF_URL, request_timeout=4.5)
 
-    get.assert_called_once_with(_PDF_URL, timeout=4.5, stream=True)
+    get.assert_called_once_with(
+        _PDF_URL,
+        headers=AEMO_GAS_DOCUMENT_REQUEST_HEADERS,
+        timeout=4.5,
+        stream=True,
+    )
     assert validation.ok is True
     assert validation.status_code == 200
     assert validation.content_length == 42

@@ -21,12 +21,12 @@ from aemo_etl.configs import DEFAULT_SCHEDULE_STATUS
 from aemo_etl.factories.aemo_gas_documents.assets import (
     BRONZE_AEMO_GAS_DOCUMENT_SOURCES_TABLE_NAME,
     aemo_gas_document_sources_asset_factory,
+    request_get_aemo_gas_document,
 )
 from aemo_etl.factories.aemo_gas_documents.models import (
     DEFAULT_AEMO_GAS_DOCUMENT_SOURCE_PAGES,
     AEMOGasDocumentSourcePage,
 )
-from aemo_etl.utils import request_get
 
 
 def aemo_gas_document_sources_definitions_factory(
@@ -54,7 +54,7 @@ def aemo_gas_document_sources_definitions_factory(
         reraise=True,
     )
     def request_getter_with_retries(path: str) -> Response:
-        return request_get(path)
+        return request_get_aemo_gas_document(path)
 
     asset_tags = dict(tags or {})
     asset = aemo_gas_document_sources_asset_factory(

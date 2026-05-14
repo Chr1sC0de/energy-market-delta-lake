@@ -106,11 +106,11 @@ uses `factories/aemo_gas_documents` to load a checked-in package media manifest,
 record included, excluded, and `needs_human_review` source-page or direct
 `https://www.aemo.com.au/-/media/...` media-link observations, land
 direct-media PDF bytes under `LANDING_BUCKET/bronze/aemo_gas_documents` only
-when the manifest row has `should_download=true`, write the metadata Delta
-table, and archive landed PDFs under
+when the manifest row has `should_download=true` using browser-compatible
+request headers, write the metadata Delta table, and archive landed PDFs under
 `ARCHIVE_BUCKET/bronze/aemo_gas_documents` only after that metadata write
 succeeds. If a direct-media request that was downloadable during manifest
-refresh fails during the daily materialization, the asset records a
+refresh still fails during the daily materialization, the asset records a
 metadata-only row and increments `failed_download_count` instead of failing the
 run. Source-page HTML discovery is a manual Playwright CLI workflow, so the
 daily asset path does not fetch AEMO source-page HTML. It does not extract PDF

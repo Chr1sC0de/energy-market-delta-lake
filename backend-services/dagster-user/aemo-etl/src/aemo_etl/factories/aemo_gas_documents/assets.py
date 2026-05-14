@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from io import BytesIO
 from typing import Unpack, cast
 
+import requests
 from botocore.exceptions import ClientError
 from dagster import (
     AssetExecutionContext,
@@ -59,6 +60,18 @@ DELTA_MERGE_OPTIONS = {
     "source_alias": "source",
     "target_alias": "target",
 }
+AEMO_GAS_DOCUMENT_REQUEST_HEADERS: Mapping[str, str] = {
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/125.0 Safari/537.36"
+    ),
+    "Accept": (
+        "text/html,application/xhtml+xml,application/pdf,"
+        "application/xml;q=0.9,*/*;q=0.8"
+    ),
+    "Accept-Language": "en-AU,en;q=0.9",
+}
+AEMO_GAS_DOCUMENT_REQUEST_TIMEOUT_SECONDS = 60
 
 type AEMOGasDocumentObservationLoader = Callable[
     [datetime],
@@ -205,6 +218,20 @@ def _content_length(headers: Mapping[str, str], content: bytes) -> int:
         return int(content_length)
     except ValueError:
         return len(content)
+
+
+def request_get_aemo_gas_document(path: str) -> Response:
+    """Run an AEMO gas document GET with browser-compatible request headers."""
+    return request_get(path, getter=_aemo_gas_document_get)
+
+
+def _aemo_gas_document_get(path: str) -> Response:
+    response: Response = requests.get(
+        path,
+        headers=AEMO_GAS_DOCUMENT_REQUEST_HEADERS,
+        timeout=AEMO_GAS_DOCUMENT_REQUEST_TIMEOUT_SECONDS,
+    )
+    return response
 
 
 def _record_surrogate_key(
@@ -426,7 +453,7 @@ def scrape_and_land_aemo_gas_document_sources(
     *,
     s3_client: S3Client,
     source_pages: Iterable[AEMOGasDocumentSourcePage],
-    request_getter: Callable[[str], Response] = request_get,
+    request_getter: Callable[[str], Response] = request_get_aemo_gas_document,
     landing_bucket: str = LANDING_BUCKET,
     archive_bucket: str = ARCHIVE_BUCKET,
     observed_at: datetime | None = None,
@@ -450,7 +477,7 @@ def land_aemo_gas_document_observations(
     *,
     s3_client: S3Client,
     observations: Iterable[AEMOGasDocumentPendingObservation],
-    request_getter: Callable[[str], Response] = request_get,
+    request_getter: Callable[[str], Response] = request_get_aemo_gas_document,
     landing_bucket: str = LANDING_BUCKET,
     archive_bucket: str = ARCHIVE_BUCKET,
     logger: object | None = None,

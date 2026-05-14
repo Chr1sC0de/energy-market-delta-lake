@@ -179,7 +179,7 @@ def test_definitions_factory_default_getter_uses_retrying_request_get(
 ) -> None:
     page_url = "https://www.aemo.com.au/energy-systems/gas/default-getter"
     request_get = mocker.patch(
-        "aemo_etl.factories.aemo_gas_documents.definitions.request_get",
+        "aemo_etl.factories.aemo_gas_documents.definitions.request_get_aemo_gas_document",
         return_value=_response(
             url=page_url,
             text="<html><body><h1>Default getter</h1></body></html>",
