@@ -92,6 +92,8 @@ flowchart LR
   IO-manager buckets.
 - The Caddy host:
   - pulls the digest-pinned `dagster/caddy` image from ECR
+  - serves the Astro-generated root portfolio and shared `/theme.css` asset
+    before proxying application routes
   - mounts a dedicated encrypted EBS volume at `/mnt/caddy-certs`
   - persists certificate state under `/data`
   - creates a Route 53 A record for `ausenergymarketdata.com`
@@ -116,6 +118,10 @@ flowchart LR
   - `infrastructure/aws-pulumi/components/marimo.py`
   - `infrastructure/aws-pulumi/components/caddy.py`
   - `backend-services/caddy/Caddyfile`
+  - `backend-services/caddy/Dockerfile`
+  - `backend-services/caddy/package.json`
+  - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/public/theme.css`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`

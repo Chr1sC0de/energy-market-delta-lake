@@ -22,15 +22,16 @@ The dashboard app in [src/marimoserver/main.py](src/marimoserver/main.py):
 - discovers `*.py` notebooks from `notebooks/`
 - mounts each notebook as a marimo sub-app under `/marimo/<notebook-name>`
 - serves a simple index page at `/marimo`
-- links the Caddy-served shared theme at `/theme.css` for the index and sample
+- links the Caddy-served shared theme at `/theme.css` for the index and
   notebook head
 - applies a MIME-type fix middleware for `woff` and `woff2` assets
 
 In local compose and AWS, Caddy proxies `/marimo*` traffic to
 `marimo-dashboard`. Most notebook routes are protected by the authentication
 service, while `/marimo/health`, static asset paths, and websocket paths are
-proxied through directly. Caddy still serves `/theme.css` from its static root,
-so notebook pages can use the same palette as the root portfolio page.
+proxied through directly. Caddy still serves the Astro-generated `/theme.css`
+from its static root, so notebook pages can use the same palette as the root
+portfolio page.
 
 ## Image split
 
@@ -238,7 +239,7 @@ prek run -a
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/compose.yaml`
   - `backend-services/caddy/Caddyfile`
-  - `backend-services/caddy/theme.css`
+  - `backend-services/caddy/public/theme.css`
 - `sync.scope`: `interface`
 - `sync.qa`:
   - `git diff --name-only`

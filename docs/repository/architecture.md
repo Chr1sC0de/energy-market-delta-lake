@@ -197,7 +197,7 @@ without making local development performance claims.
 - `backend-services/authentication`
   - implements the OIDC/session bridge used in front of protected routes
 - `backend-services/caddy`
-  - provides the reverse-proxy image and routing rules
+  - provides the reverse-proxy image, root Astro portfolio, and routing rules
 - `backend-services/marimo`
   - notebook-oriented Subproject with a curated dashboard image used locally
     and in AWS, plus a local-only Marimo-Codex research workspace image
@@ -223,6 +223,10 @@ without making local development performance claims.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/caddy/Caddyfile`
+  - `backend-services/caddy/Dockerfile`
+  - `backend-services/caddy/package.json`
+  - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/public/theme.css`
   - `backend-services/marimo/src/marimoserver/main.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/notebooks/table_explorer.py`

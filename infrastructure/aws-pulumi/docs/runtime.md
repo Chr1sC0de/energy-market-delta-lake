@@ -72,6 +72,10 @@ scan-on-push on each repository, and exposes digest-pinned image URIs for the
 ECS task definitions and EC2 service bootstraps that need deterministic image
 availability.
 
+The Caddy build context runs the Astro portfolio build during the Docker build
+and copies the generated static files into Caddy's `/var/www/html` root before
+the image is pushed.
+
 ## Code-location manifest prototype
 
 The issue #153 **Exploratory branch** trials
@@ -323,6 +327,10 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
+  - `backend-services/caddy/Dockerfile`
+  - `backend-services/caddy/package.json`
+  - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/public/theme.css`
   - `backend-services/dagster-core/code-locations.aws.toml`
   - `backend-services/dagster-core/Dockerfile`
   - `backend-services/dagster-core/dagster.aws.yaml`

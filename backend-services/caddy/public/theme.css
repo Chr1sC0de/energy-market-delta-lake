@@ -1,0 +1,27 @@
+:root {
+  --emdl-ink-rgb: 27 35 36;
+  --emdl-muted-rgb: 86 99 101;
+  --emdl-paper-rgb: 246 248 243;
+  --emdl-panel-rgb: 255 255 255;
+  --emdl-line-rgb: 207 219 214;
+  --emdl-blue-rgb: 22 103 145;
+  --emdl-green-rgb: 62 122 84;
+  --emdl-amber-rgb: 178 104 42;
+  --emdl-red-rgb: 158 72 57;
+  --emdl-slate-rgb: 53 67 72;
+  --emdl-service-band-rgb: 238 244 241;
+
+  --emdl-ink: rgb(var(--emdl-ink-rgb));
+  --emdl-muted: rgb(var(--emdl-muted-rgb));
+  --emdl-paper: rgb(var(--emdl-paper-rgb));
+  --emdl-panel: rgb(var(--emdl-panel-rgb));
+  --emdl-line: rgb(var(--emdl-line-rgb));
+  --emdl-blue: rgb(var(--emdl-blue-rgb));
+  --emdl-green: rgb(var(--emdl-green-rgb));
+  --emdl-amber: rgb(var(--emdl-amber-rgb));
+  --emdl-red: rgb(var(--emdl-red-rgb));
+  --emdl-slate: rgb(var(--emdl-slate-rgb));
+  --emdl-service-band: rgb(var(--emdl-service-band-rgb));
+  --emdl-shadow: 0 18px 46px rgb(var(--emdl-ink-rgb) / 0.1);
+  --emdl-soft-shadow: 0 8px 28px rgb(var(--emdl-ink-rgb) / 0.08);
+}
