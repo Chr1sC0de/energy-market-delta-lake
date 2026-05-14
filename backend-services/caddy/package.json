@@ -1,0 +1,20 @@
+{
+  "name": "@energy-market-delta-lake/caddy-portfolio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "ASTRO_TELEMETRY_DISABLED=1 astro dev --host 0.0.0.0",
+    "build": "ASTRO_TELEMETRY_DISABLED=1 astro build",
+    "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview --host 0.0.0.0"
+  },
+  "devDependencies": {
+    "astro": "^6.3.2"
+  },
+  "dependencies": {
+    "@astrojs/react": "^5.0.5",
+    "@xyflow/react": "^12.10.2",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
+  }
+}
