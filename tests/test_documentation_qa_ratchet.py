@@ -42,6 +42,7 @@ IGNORED_DISCOVERY_DIRS = frozenset(
         ".venv",
         "__pycache__",
         "generated",
+        "node_modules",
         "specs",
         "vendor",
     }
@@ -57,6 +58,7 @@ DOC_DISCOVERY_REQUIRED_EXCLUSIONS = frozenset(
         ".ruff_cache",
         "__pycache__",
         "generated",
+        "node_modules",
         "vendor",
         "specs",
     }

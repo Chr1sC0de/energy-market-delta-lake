@@ -11,7 +11,7 @@ Use this page as the agent documentation map. The imperative policy lives in
   [OPERATOR.md](../../OPERATOR.md)
 - Canonical language:
   [CONTEXT.md](../../CONTEXT.md)
-- Documentation sync policy:
+- **Documentation sync** policy:
   [docs/repository/documentation-sync.md](../repository/documentation-sync.md)
 
 ## Ralph and issue work
@@ -30,6 +30,8 @@ Use this page as the agent documentation map. The imperative policy lives in
 
 ## Skills
 
+- **Agent skills** are reusable local workflow instruction bundles invoked as
+  `$skill-name`.
 - Use `$shape-issues` before `$ralph-triage` to turn shaped plans into
   tracer-bullet issue drafts with context anchors, QA plans, **Issue context
   assessor** evidence, and stiffness scoring. Version 2 may publish explicitly
