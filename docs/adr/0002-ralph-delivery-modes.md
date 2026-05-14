@@ -146,6 +146,8 @@ follow-up contract or needs triage evidence.
 - `sync.sources`:
   - `scripts/ralph.py`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/src/ralph_loop/state.py`
+  - `tools/ralph-loop/src/ralph_loop/workflow.py`
   - `docs/agents/ralph-loop.md`
   - `CONTEXT.md`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`

@@ -80,6 +80,8 @@ close the issue with normal issue evidence.
 - `sync.sources`:
   - `scripts/ralph.py`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/src/ralph_loop/state.py`
+  - `tools/ralph-loop/src/ralph_loop/workflow.py`
   - `CONTEXT.md`
   - `OPERATOR.md`
   - `docs/agents/ralph-loop.md`

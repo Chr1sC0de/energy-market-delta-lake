@@ -307,6 +307,8 @@ These commands support the intended flow:
   - `tools/ralph-loop/README.md`
   - `tools/ralph-loop/pyproject.toml`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/src/ralph_loop/state.py`
+  - `tools/ralph-loop/src/ralph_loop/workflow.py`
   - `tools/ralph-loop/tests/unit/test_ralph.py`
   - `tools/ralph-loop/uv.lock`
   - `scripts/check_shell_script_headers.py`

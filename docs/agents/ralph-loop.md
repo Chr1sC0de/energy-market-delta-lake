@@ -1,11 +1,13 @@
 # Ralph Loop
 
 This page documents the repo-local Ralph loop. The compatibility command stays
-at `scripts/ralph.py`; the packaged Typer CLI and loop implementation live in
-`tools/ralph-loop/src/ralph_loop/cli.py`. The loop uses GitHub Issues as the
-queue, Codex as the implementation and triage worker, repo **Test lane**
-commands as the validation boundary, and **Local integration**, Exploratory
-handoff, plus **Promotion** as the success paths after QA.
+at `scripts/ralph.py`; the packaged Typer CLI, side-effect adapters, and loop
+controller live in `tools/ralph-loop/src/ralph_loop/cli.py`, with pure workflow
+helpers in `tools/ralph-loop/src/ralph_loop/workflow.py` and manifest state
+helpers in `tools/ralph-loop/src/ralph_loop/state.py`. The loop uses GitHub
+Issues as the queue, Codex as the implementation and triage worker, repo
+**Test lane** commands as the validation boundary, and **Local integration**,
+Exploratory handoff, plus **Promotion** as the success paths after QA.
 
 ## Table of contents
 
@@ -1467,6 +1469,8 @@ container-backed **Integration test** dependencies.
   - `tools/ralph-loop/README.md`
   - `tools/ralph-loop/pyproject.toml`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/src/ralph_loop/state.py`
+  - `tools/ralph-loop/src/ralph_loop/workflow.py`
   - `tools/ralph-loop/tests/unit/test_ralph.py`
   - `CONTEXT.md`
   - `OPERATOR.md`
