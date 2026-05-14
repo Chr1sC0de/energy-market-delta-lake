@@ -167,6 +167,8 @@ for the decision that keeps **Exploratory branches** outside automatic
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
   - `scripts/ralph.py`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/src/ralph_loop/state.py`
+  - `tools/ralph-loop/src/ralph_loop/workflow.py`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

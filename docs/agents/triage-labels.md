@@ -106,6 +106,8 @@ records why **Exploratory branches** stay outside automatic **Promotion**.
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
   - `scripts/ralph.py`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/src/ralph_loop/state.py`
+  - `tools/ralph-loop/src/ralph_loop/workflow.py`
   - `.agents/skills/ralph-curate/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`
   - `.agents/skills/ralph-loop/SKILL.md`

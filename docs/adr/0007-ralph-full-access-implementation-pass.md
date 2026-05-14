@@ -57,6 +57,8 @@ existing phase-limited **Sandboxed issue access**.
 - `sync.sources`:
   - `scripts/ralph.py`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/src/ralph_loop/state.py`
+  - `tools/ralph-loop/src/ralph_loop/workflow.py`
   - `tools/ralph-loop/tests/unit/test_ralph.py`
   - `CONTEXT.md`
   - `OPERATOR.md`

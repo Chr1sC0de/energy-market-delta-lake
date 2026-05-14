@@ -16,6 +16,8 @@ from typing import Any
 from unittest.mock import patch
 
 from ralph_loop import cli as ralph
+from ralph_loop import state as ralph_state
+from ralph_loop import workflow as ralph_workflow
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -1678,6 +1680,12 @@ class ParallelSchedulerOperatorRun(ScriptedOperatorRun):
 
 
 class RalphHelperTests(unittest.TestCase):
+    def test_cli_reexports_extracted_workflow_and_state_helpers(self) -> None:
+        self.assertIs(ralph.resolve_delivery_plan, ralph_workflow.resolve_delivery_plan)
+        self.assertIs(ralph.parse_blockers, ralph_workflow.parse_blockers)
+        self.assertIs(ralph.RunManifest, ralph_state.RunManifest)
+        self.assertIs(ralph.OperatorRunManifest, ralph_state.OperatorRunManifest)
+
     def test_parse_repo_slug_accepts_common_github_remote_forms(self) -> None:
         cases = {
             "git@github.com:Owner/repo.git": "Owner/repo",

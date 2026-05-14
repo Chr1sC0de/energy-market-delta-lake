@@ -21,7 +21,11 @@ make run-prek
 
 ## Layout
 
-- `src/ralph_loop/cli.py`: Ralph CLI and loop implementation
+- `src/ralph_loop/cli.py`: Ralph CLI, side-effect adapters, loop controller,
+  and compatibility re-exports
+- `src/ralph_loop/workflow.py`: pure label, Delivery mode, QA selection,
+  comment, and recovery policy helpers
+- `src/ralph_loop/state.py`: Ralph run and Operator manifest state helpers
 - `tests/unit/`: Ralph unit tests
 - `.pre-commit-config.yaml`: Subproject `prek` hook surface
 
@@ -38,6 +42,8 @@ make run-prek
   - `tools/ralph-loop/Makefile`
   - `tools/ralph-loop/pyproject.toml`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/src/ralph_loop/state.py`
+  - `tools/ralph-loop/src/ralph_loop/workflow.py`
   - `tools/ralph-loop/tests/unit/test_ralph.py`
   - `tools/ralph-loop/uv.lock`
 - `sync.scope`: `operations`

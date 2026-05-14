@@ -69,6 +69,8 @@ recovery guidance in the **Promotion** manifest and review artifact.
 - `sync.sources`:
   - `scripts/ralph.py`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/src/ralph_loop/state.py`
+  - `tools/ralph-loop/src/ralph_loop/workflow.py`
   - `docs/agents/ralph-loop.md`
   - `CONTEXT.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`

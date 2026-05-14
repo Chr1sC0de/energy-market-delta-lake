@@ -59,6 +59,8 @@ integrated commit or rewriting the **Integration target**.
 - `sync.sources`:
   - `scripts/ralph.py`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/src/ralph_loop/state.py`
+  - `tools/ralph-loop/src/ralph_loop/workflow.py`
   - `docs/agents/ralph-loop.md`
   - `CONTEXT.md`
 - `sync.scope`: `operations`
