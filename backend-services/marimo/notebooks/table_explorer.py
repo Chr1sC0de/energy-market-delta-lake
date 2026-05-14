@@ -49,10 +49,10 @@ def _():
 @app.cell
 def _(mo):
     mo.md("""
-    # Local Table Explorer
+    # Table Explorer
 
-    Inspect the local Dagster table asset catalogue and LocalStack-backed Delta
-    or parquet table prefixes from the compose buckets.
+    Inspect the Dagster table asset catalogue and configured Delta or parquet
+    table prefixes.
     """)
     return
 
@@ -226,25 +226,31 @@ def _(config, mo, pl):
     config_frame = pl.DataFrame(
         {
             "setting": [
+                "Runtime",
                 "AWS endpoint",
                 "AWS region",
                 "AWS access key",
                 "Dagster GraphQL",
-                "Default buckets",
+                "Configured buckets",
+                "Full table scan",
+                "Preview row cap",
             ],
             "value": [
-                config.aws_endpoint_url,
+                config.runtime_location,
+                config.aws_endpoint_url or "(default AWS)",
                 config.aws_region,
-                config.aws_access_key_id,
+                config.aws_access_key_id or "(instance profile)",
                 config.dagster_graphql_url,
                 ", ".join(config.default_buckets),
+                str(config.full_table_scan_enabled),
+                str(config.max_preview_rows),
             ],
         }
     )
 
     mo.vstack(
         [
-            mo.md("## Local AWS Configuration"),
+            mo.md("## Configuration"),
             mo.ui.table(config_frame, selection=None),
         ]
     )
@@ -280,7 +286,7 @@ def _(catalogue, mo):
                 Dagster GraphQL is unavailable at `{catalogue.url}`: `{catalogue.error}`.
 
                 Storage discovery and live table preview still work for materialized
-                LocalStack prefixes.
+                table prefixes.
                 """
             ),
             kind="warn",
@@ -405,7 +411,7 @@ def _(
 
             No table assets or materialized table prefixes were found.
 
-            Materialize assets, seed LocalStack, or start the local Dagster webserver,
+            Materialize assets or confirm the configured buckets and Dagster webserver,
             then refresh this notebook.
             """)
     else:
@@ -510,18 +516,18 @@ def _(TableAvailability, mo):
 
         if entry.status == TableAvailability.UNMATERIALIZED:
             reason = (
-                "Dagster knows this asset, but LocalStack has no materialized "
+                "Dagster knows this asset, but storage has no materialized "
                 "table prefix for it yet."
             )
         elif entry.status == TableAvailability.MISSING:
             reason = (
                 "Dagster has materialization metadata, but the expected "
-                "LocalStack table prefix is not present."
+                "table prefix is not present."
             )
         elif table is not None and error is None:
-            reason = "The selected LocalStack table exists but has no preview rows."
+            reason = "The selected table exists but has no preview rows."
         else:
-            reason = "The selected table cannot be previewed from LocalStack yet."
+            reason = "The selected table cannot be previewed from storage yet."
 
         error_detail = "" if error is None else f"\n\nScan detail: `{error}`"
         return mo.callout(
@@ -529,9 +535,8 @@ def _(TableAvailability, mo):
                 f"""
                 {reason}
 
-                Materialize the asset in Dagster, or seed LocalStack with the
-                required curated outputs, then refresh the table scan before
-                expecting preview rows.
+                Materialize the asset in Dagster, or load the required curated
+                outputs, then refresh the table scan before expecting preview rows.
                 {error_detail}
                 """
             ),
@@ -566,18 +571,19 @@ def _(
 
 
 @app.cell
-def _(DEFAULT_ROW_LIMIT, mo, table_scan):
+def _(DEFAULT_ROW_LIMIT, config, mo, table_scan):
     if (
         table_scan is not None
         and table_scan.error is None
         and table_scan.dataframe.columns
     ):
         column_options = tuple(table_scan.dataframe.columns)
+        max_row_limit = config.max_preview_rows if table_scan.is_limited else 10_000
         row_limit = mo.ui.number(
             start=1,
-            stop=10_000,
+            stop=max_row_limit,
             step=1,
-            value=DEFAULT_ROW_LIMIT,
+            value=min(DEFAULT_ROW_LIMIT, max_row_limit),
             label="Row limit",
         )
         column_picker = mo.ui.multiselect(
@@ -586,33 +592,49 @@ def _(DEFAULT_ROW_LIMIT, mo, table_scan):
             label="Columns",
             full_width=True,
         )
-        sort_column_picker = mo.ui.dropdown(
-            options={"No sort": "", **{column: column for column in column_options}},
-            value="",
-            searchable=True,
-            label="Sort column",
-            full_width=True,
-        )
-        sort_direction_picker = mo.ui.dropdown(
-            options=("Ascending", "Descending"),
-            value="Ascending",
-            label="Sort direction",
-        )
-        text_search = mo.ui.text(
-            placeholder="Search selected columns",
-            label="Text search",
-            full_width=True,
-        )
-        exploration_controls = mo.vstack(
-            [
-                mo.md("## Preview Controls"),
-                row_limit,
-                column_picker,
-                sort_column_picker,
-                sort_direction_picker,
-                text_search,
-            ]
-        )
+        control_items = [mo.md("## Preview Controls"), row_limit, column_picker]
+        if table_scan.is_limited:
+            sort_column_picker = None
+            sort_direction_picker = None
+            text_search = None
+            control_items.append(
+                mo.callout(
+                    mo.md(
+                        "This deployment loads a bounded preview, so text search, "
+                        "sorting, and column statistics are disabled."
+                    ),
+                    kind="neutral",
+                )
+            )
+        else:
+            sort_column_picker = mo.ui.dropdown(
+                options={
+                    "No sort": "",
+                    **{column: column for column in column_options},
+                },
+                value="",
+                searchable=True,
+                label="Sort column",
+                full_width=True,
+            )
+            sort_direction_picker = mo.ui.dropdown(
+                options=("Ascending", "Descending"),
+                value="Ascending",
+                label="Sort direction",
+            )
+            text_search = mo.ui.text(
+                placeholder="Search selected columns",
+                label="Text search",
+                full_width=True,
+            )
+            control_items.extend(
+                [
+                    sort_column_picker,
+                    sort_direction_picker,
+                    text_search,
+                ]
+            )
+        exploration_controls = mo.vstack(control_items)
     else:
         row_limit = None
         column_picker = None
@@ -689,6 +711,14 @@ def _(
                 text_search=text_search_value,
             ),
         )
+        row_count_label = (
+            "Preview rows loaded" if exploration.is_limited else "Exact rows"
+        )
+        filtered_count_line = (
+            ""
+            if exploration.is_limited
+            else f"- Rows after text search: `{exploration.filtered_row_count}`"
+        )
 
         sections = [
             mo.md(
@@ -696,8 +726,8 @@ def _(
                 ### `{selected_table.display_name}`
 
                 - Format: `{selected_table.table_format.value}`
-                - Exact rows: `{exploration.row_count}`
-                - Rows after text search: `{exploration.filtered_row_count}`
+                - {row_count_label}: `{exploration.row_count}`
+                {filtered_count_line}
                 - URI: `{selected_table.uri}`
                 """
             ),

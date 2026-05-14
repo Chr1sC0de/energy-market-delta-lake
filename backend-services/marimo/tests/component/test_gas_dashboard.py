@@ -1,6 +1,7 @@
 """Component tests for the gas market dashboard helper surface."""
 
 from collections.abc import Mapping
+from typing import Self
 
 import polars as pl
 import pytest
@@ -11,32 +12,62 @@ from marimoserver.gas_dashboard import (
     GasTableSpec,
     discover_dashboard_config,
     load_gas_model_tables,
-    read_delta_table,
+    read_parquet_table,
     table_load_by_name,
 )
 
 
-def test_read_delta_table_delegates_to_polars(
+def test_read_parquet_table_delegates_to_polars(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: list[tuple[str, dict[str, str]]] = []
 
-    def read_delta(uri: str, storage_options: dict[str, str]) -> pl.DataFrame:
+    class FakeLazyFrame:
+        def collect(self) -> pl.DataFrame:
+            return pl.DataFrame({"source_system": ["GBB"]})
+
+    def scan_parquet(uri: str, storage_options: dict[str, str]) -> FakeLazyFrame:
         captured.append((uri, storage_options))
-        return pl.DataFrame({"source_system": ["GBB"]})
+        return FakeLazyFrame()
 
-    monkeypatch.setattr(pl, "read_delta", read_delta)
+    monkeypatch.setattr(pl, "scan_parquet", scan_parquet)
 
-    dataframe = read_delta_table("s3://bucket/table", {"A": "B"})
+    dataframe = read_parquet_table("s3://bucket/table", {"A": "B"})
 
     assert dataframe.to_dict(as_series=False) == {"source_system": ["GBB"]}
-    assert captured == [("s3://bucket/table", {"A": "B"})]
+    assert captured == [("s3://bucket/table/*.parquet", {"A": "B"})]
+
+
+def test_read_parquet_table_honours_row_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[tuple[str, dict[str, str]] | int] = []
+
+    class FakeLazyFrame:
+        def head(self, row_limit: int) -> Self:
+            captured.append(row_limit)
+            return self
+
+        def collect(self) -> pl.DataFrame:
+            return pl.DataFrame({"source_system": ["GBB"]})
+
+    def scan_parquet(uri: str, storage_options: dict[str, str]) -> FakeLazyFrame:
+        captured.append((uri, storage_options))
+        return FakeLazyFrame()
+
+    monkeypatch.setattr(pl, "scan_parquet", scan_parquet)
+
+    dataframe = read_parquet_table("s3://bucket/table", {"A": "B"}, row_limit=5)
+
+    assert dataframe.to_dict(as_series=False) == {"source_system": ["GBB"]}
+    assert captured == [("s3://bucket/table/*.parquet", {"A": "B"}), 5]
 
 
 def test_discover_dashboard_config_derives_default_aemo_bucket() -> None:
     config = discover_dashboard_config({})
 
     assert config.development_environment == "dev"
+    assert config.runtime_location == "local"
     assert config.name_prefix == "energy-market"
     assert config.aemo_bucket == "dev-energy-market-aemo"
     assert config.table_uri("silver_gas_fact_market_price") == (
@@ -69,6 +100,7 @@ def test_discover_dashboard_config_uses_explicit_environment() -> None:
         "AWS_ALLOW_HTTP": "false",
         "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
     }
+    assert config.full_table_scan_enabled is True
 
 
 def test_discover_dashboard_config_treats_blank_values_as_unset() -> None:
@@ -86,6 +118,46 @@ def test_discover_dashboard_config_treats_blank_values_as_unset() -> None:
     assert config.aws_endpoint_url == "http://localstack:4566"
 
 
+def test_discover_dashboard_config_uses_aws_runtime_defaults() -> None:
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "DEVELOPMENT_ENVIRONMENT": "prod",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "AWS_DEFAULT_REGION": "ap-southeast-2",
+        }
+    )
+
+    assert config.runtime_location == "aws"
+    assert config.development_environment == "prod"
+    assert config.aemo_bucket == "prod-energy-market-aemo"
+    assert config.aws_endpoint_url is None
+    assert config.aws_access_key_id is None
+    assert config.aws_secret_access_key is None
+    assert config.aws_allow_http == "false"
+    assert config.storage_options() == {
+        "AWS_REGION": "ap-southeast-2",
+        "AWS_ALLOW_HTTP": "false",
+        "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
+    }
+    assert config.full_table_scan_enabled is False
+    assert config.max_preview_rows == 100
+
+
+def test_discover_dashboard_config_accepts_runtime_overrides() -> None:
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "MARIMO_MAX_PREVIEW_ROWS": "not-an-int",
+            "MARIMO_FULL_TABLE_SCAN_ENABLED": "true",
+        }
+    )
+
+    assert config.aws_runtime is True
+    assert config.max_preview_rows == 100
+    assert config.full_table_scan_enabled is True
+
+
 def test_gas_model_specs_cover_required_dashboard_sections() -> None:
     sections = {spec.section for spec in GAS_MODEL_TABLES}
     table_names = {spec.table_name for spec in GAS_MODEL_TABLES}
@@ -98,8 +170,8 @@ def test_gas_model_specs_cover_required_dashboard_sections() -> None:
     assert "silver_gas_fact_capacity_outlook" in table_names
 
 
-def test_load_gas_model_tables_passes_configured_uri_and_storage() -> None:
-    captured: list[tuple[str, Mapping[str, str]]] = []
+def test_load_gas_model_tables_passes_configured_uri_storage_and_limit() -> None:
+    captured: list[tuple[str, Mapping[str, str], int | None]] = []
     config = _dashboard_config()
     specs = [
         GasTableSpec(
@@ -109,8 +181,12 @@ def test_load_gas_model_tables_passes_configured_uri_and_storage() -> None:
         )
     ]
 
-    def reader(uri: str, storage_options: Mapping[str, str]) -> pl.DataFrame:
-        captured.append((uri, storage_options))
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        captured.append((uri, storage_options, row_limit))
         return pl.DataFrame({"source_system": ["STTM"]})
 
     loads = load_gas_model_tables(config, specs=specs, reader=reader)
@@ -122,8 +198,40 @@ def test_load_gas_model_tables_passes_configured_uri_and_storage() -> None:
         (
             "s3://dev-energy-market-aemo/silver/gas_model/silver_gas_fact_market_price",
             config.storage_options(),
+            None,
         )
     ]
+
+
+def test_load_gas_model_tables_limits_aws_reads() -> None:
+    captured: list[int | None] = []
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "17",
+        }
+    )
+    specs = [
+        GasTableSpec(
+            section="Prices",
+            label="Market prices",
+            table_name="silver_gas_fact_market_price",
+        )
+    ]
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        captured.append(row_limit)
+        return pl.DataFrame({"source_system": ["STTM"]})
+
+    loads = load_gas_model_tables(config, specs=specs, reader=reader)
+
+    assert loads[0].available
+    assert captured == [17]
 
 
 def test_load_gas_model_tables_returns_empty_state_detail_on_read_error() -> None:
@@ -136,7 +244,11 @@ def test_load_gas_model_tables_returns_empty_state_detail_on_read_error() -> Non
         )
     ]
 
-    def reader(uri: str, storage_options: Mapping[str, str]) -> pl.DataFrame:
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
         raise RuntimeError("no delta log found\ntraceback detail")
 
     loads = load_gas_model_tables(config, specs=specs, reader=reader)
@@ -162,7 +274,11 @@ def test_load_gas_model_tables_handles_empty_exception_message() -> None:
         def __str__(self) -> str:
             return ""
 
-    def reader(uri: str, storage_options: Mapping[str, str]) -> pl.DataFrame:
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
         raise EmptyMessageError
 
     loads = load_gas_model_tables(config, specs=specs, reader=reader)
@@ -177,7 +293,11 @@ def test_table_load_by_name_returns_matching_load() -> None:
         GasTableSpec(section="Schedules", label="Schedules", table_name="schedules"),
     ]
 
-    def reader(uri: str, storage_options: Mapping[str, str]) -> pl.DataFrame:
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
         return pl.DataFrame({"source_system": ["STTM"]})
 
     loads = load_gas_model_tables(config, specs=specs, reader=reader)

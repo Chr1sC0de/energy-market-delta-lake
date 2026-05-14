@@ -77,6 +77,7 @@
     # Protected Marimo routes
     @protectedMarimo {
         path /marimo*
+        not path /marimo/health
         not path /marimo/login*
         not header Connection *Upgrade*
         not path /marimo/*/assets/* /marimo/*/favicon.ico /marimo/*/favicon.* /marimo/*/manifest.json /marimo/*/apple-touch-icon.png

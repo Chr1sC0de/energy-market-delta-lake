@@ -2,11 +2,9 @@
 
 from collections.abc import Mapping
 from datetime import date, datetime, timezone
-from io import BytesIO
 from pathlib import Path
 import socket
 
-import boto3
 import polars as pl
 import pytest
 
@@ -121,16 +119,20 @@ def test_load_gbb_map_tables_can_short_circuit_unreachable_local_s3() -> None:
     assert loads[0].error == "S3 endpoint unavailable"
 
 
-def test_read_gbb_map_table_prefers_delta_reader(
+def test_read_gbb_map_table_delegates_to_parquet_reader(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured: list[tuple[str, dict[str, str]]] = []
+    captured: list[tuple[str, dict[str, str], int | None]] = []
 
-    def reader(uri: str, storage_options: Mapping[str, str]) -> pl.DataFrame:
-        captured.append((uri, dict(storage_options)))
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None = None,
+    ) -> pl.DataFrame:
+        captured.append((uri, dict(storage_options), row_limit))
         return pl.DataFrame({"source_system": ["GBB"]})
 
-    monkeypatch.setattr(map_helpers, "read_delta_table", reader)
+    monkeypatch.setattr(map_helpers, "read_parquet_table", reader)
 
     frame = map_helpers.read_gbb_map_table(
         "s3://bucket/silver/gas_model/table",
@@ -142,12 +144,12 @@ def test_read_gbb_map_table_prefers_delta_reader(
         (
             "s3://bucket/silver/gas_model/table",
             {"AWS_REGION": "ap-southeast-2"},
+            None,
         )
     ]
 
 
-def test_read_gbb_map_table_falls_back_to_local_parquet_prefix(
-    monkeypatch: pytest.MonkeyPatch,
+def test_read_gbb_map_table_reads_local_parquet_prefix(
     tmp_path: Path,
 ) -> None:
     table_dir = tmp_path / "silver_gas_dim_facility"
@@ -156,112 +158,27 @@ def test_read_gbb_map_table_falls_back_to_local_parquet_prefix(
         table_dir / "part-00000.parquet"
     )
 
-    def reader(uri: str, storage_options: Mapping[str, str]) -> pl.DataFrame:
-        raise RuntimeError("missing _delta_log")
-
-    monkeypatch.setattr(map_helpers, "read_delta_table", reader)
-
-    frame = map_helpers.read_gbb_map_table(table_dir.as_uri(), {})
+    frame = map_helpers.read_gbb_map_table(str(table_dir), {})
 
     assert frame.to_dict(as_series=False) == {"source_facility_id": ["10"]}
 
 
-def test_read_parquet_prefix_reads_s3_parquet_objects(
+def test_read_gbb_map_table_reports_parquet_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class FakeBody:
-        def read(self) -> bytes:
-            return _parquet_bytes(pl.DataFrame({"source_location_id": ["20"]}))
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None = None,
+    ) -> pl.DataFrame:
+        raise FileNotFoundError("no parquet files found")
 
-    class FakePaginator:
-        def paginate(
-            self,
-            *,
-            Bucket: str,
-            Prefix: str,
-        ) -> list[Mapping[str, object]]:
-            assert Bucket == "bucket"
-            assert Prefix == "silver/gas_model/table/"
-            return [
-                {
-                    "Contents": [
-                        {"Key": "silver/gas_model/table/readme.txt"},
-                        {"Key": "silver/gas_model/table/part-00000.parquet"},
-                    ]
-                }
-            ]
+    monkeypatch.setattr(map_helpers, "read_parquet_table", reader)
 
-    class FakeClient:
-        def get_paginator(self, operation_name: str) -> FakePaginator:
-            assert operation_name == "list_objects_v2"
-            return FakePaginator()
-
-        def get_object(self, *, Bucket: str, Key: str) -> Mapping[str, object]:
-            assert Bucket == "bucket"
-            assert Key == "silver/gas_model/table/part-00000.parquet"
-            return {"Body": FakeBody()}
-
-    captured: dict[str, object] = {}
-
-    def client(service_name: str, **kwargs: object) -> FakeClient:
-        captured["service_name"] = service_name
-        captured["kwargs"] = kwargs
-        return FakeClient()
-
-    monkeypatch.setattr(boto3, "client", client)
-
-    frame = map_helpers._read_parquet_prefix(
-        "s3://bucket/silver/gas_model/table",
-        {
-            "AWS_ENDPOINT_URL": "http://localhost:4566",
-            "AWS_REGION": "ap-southeast-2",
-            "AWS_ACCESS_KEY_ID": "test",
-            "AWS_SECRET_ACCESS_KEY": "test",
-        },
-    )
-
-    assert frame.to_dict(as_series=False) == {"source_location_id": ["20"]}
-    assert captured == {
-        "service_name": "s3",
-        "kwargs": {
-            "endpoint_url": "http://localhost:4566",
-            "region_name": "ap-southeast-2",
-            "aws_access_key_id": "test",
-            "aws_secret_access_key": "test",
-        },
-    }
-
-
-def test_read_gbb_map_table_reports_delta_and_parquet_failure(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class EmptyPaginator:
-        def paginate(
-            self,
-            *,
-            Bucket: str,
-            Prefix: str,
-        ) -> list[Mapping[str, object]]:
-            return []
-
-    class EmptyClient:
-        def get_paginator(self, operation_name: str) -> EmptyPaginator:
-            return EmptyPaginator()
-
-    def client(service_name: str, **kwargs: object) -> EmptyClient:
-        return EmptyClient()
-
-    def reader(uri: str, storage_options: Mapping[str, str]) -> pl.DataFrame:
-        raise ValueError("missing _delta_log")
-
-    monkeypatch.setattr(boto3, "client", client)
-    monkeypatch.setattr(map_helpers, "read_delta_table", reader)
-
-    with pytest.raises(RuntimeError) as exc_info:
+    with pytest.raises(FileNotFoundError) as exc_info:
         map_helpers.read_gbb_map_table("s3://bucket/silver/gas_model/missing", {})
 
-    assert "Delta read failed: ValueError: missing _delta_log" in str(exc_info.value)
-    assert "parquet read failed: FileNotFoundError" in str(exc_info.value)
+    assert "no parquet files found" in str(exc_info.value)
 
 
 def test_check_gbb_map_s3_endpoint_handles_local_endpoint(
@@ -707,9 +624,3 @@ def _loads(
 
 def _timestamp() -> datetime:
     return datetime(2024, 1, 1, 12, tzinfo=timezone.utc)
-
-
-def _parquet_bytes(dataframe: pl.DataFrame) -> bytes:
-    buffer = BytesIO()
-    dataframe.write_parquet(buffer)
-    return buffer.getvalue()

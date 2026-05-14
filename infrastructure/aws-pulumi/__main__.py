@@ -13,11 +13,12 @@ Dependency order (mirrors AWS CDK app.py):
   10. Bastion host     (depends on VPC, security groups, IAM)
   11. ECS cluster      (depends on VPC, security groups)
   12. FastAPI auth server   (depends on VPC, ECR, security groups)
-  13. Caddy server          (depends on VPC, ECR, FastAPI auth, security groups)
-  14. ECS: user-code service    (depends on cluster, ECR, postgres, service-discovery, SGs)
-  15. ECS: webserver-admin      (depends on cluster, ECR, postgres, service-discovery, SGs, IAM)
-  16. ECS: webserver-guest      (same)
-  17. ECS: daemon               (depends on cluster, ECR, postgres, SGs, IAM)
+  13. Marimo dashboard      (depends on VPC, ECR, S3, Cloud Map, security groups)
+  14. Caddy server          (depends on VPC, ECR, FastAPI auth, Marimo, security groups)
+  15. ECS: user-code service    (depends on cluster, ECR, postgres, service-discovery, SGs)
+  16. ECS: webserver-admin      (depends on cluster, ECR, postgres, service-discovery, SGs, IAM)
+  17. ECS: webserver-guest      (same)
+  18. ECS: daemon               (depends on cluster, ECR, postgres, SGs, IAM)
 
 Docker socket
 -------------
@@ -50,6 +51,7 @@ from components.ecs_services import (
 )
 from components.fastapi_auth import FastAPIAuthComponentResource
 from components.iam_roles import IamRolesComponentResource
+from components.marimo import MarimoDashboardComponentResource
 from components.postgres import PostgresComponentResource
 from components.s3_buckets import S3BucketsComponentResource
 from components.security_groups import SecurityGroupsComponentResource
@@ -127,7 +129,23 @@ ecs_cluster = EcsClusterComponentResource(
 
 fastapi_auth = FastAPIAuthComponentResource(NAME, vpc, ecr, security_groups)
 
-caddy = CaddyServerComponentResource(NAME, vpc, ecr, fastapi_auth, security_groups)
+marimo_dashboard = MarimoDashboardComponentResource(
+    NAME,
+    vpc=vpc,
+    ecr=ecr,
+    security_groups=security_groups,
+    service_discovery=service_discovery,
+    s3_buckets=s3_buckets,
+)
+
+caddy = CaddyServerComponentResource(
+    NAME,
+    vpc=vpc,
+    ecr=ecr,
+    fastapi_auth=fastapi_auth,
+    security_groups=security_groups,
+    marimo_server=marimo_dashboard.endpoint,
+)
 
 dagster_user_code_services = {
     location.name: DagsterUserCodeServiceComponentResource(

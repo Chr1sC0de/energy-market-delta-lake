@@ -22,6 +22,7 @@ resource_name, and all boto3 clients) are defined in conftest.py.
 """
 
 import socket
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from urllib.parse import urlparse
@@ -215,6 +216,20 @@ class TestServiceDiscoveryRegistration:
             f"got {len(instances)}"
         )
 
+    def test_marimo_dashboard_cloud_map_registered(
+        self, servicediscovery_client: object, resource_name: str
+    ) -> None:
+        """marimo-dashboard must be discoverable via Cloud Map."""
+        response = servicediscovery_client.discover_instances(  # type: ignore[union-attr]
+            NamespaceName="dagster",
+            ServiceName="marimo-dashboard",
+        )
+        instances = response.get("Instances", [])
+        assert len(instances) >= 1, (
+            f"Expected at least 1 instance for marimo-dashboard.dagster, "
+            f"got {len(instances)}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Webpage and UI accessibility tests
@@ -302,6 +317,35 @@ def _get_with_route53_dns_fallback(
             return requests.get(url, timeout=timeout, allow_redirects=allow_redirects)
 
 
+def _eventually_get_with_route53_dns_fallback(
+    route53_client: object,
+    url: str,
+    *,
+    timeout: int,
+    allow_redirects: bool,
+    expected_statuses: set[int],
+    attempts: int = 36,
+    delay_seconds: int = 10,
+):
+    response = _get_with_route53_dns_fallback(
+        route53_client,
+        url,
+        timeout=timeout,
+        allow_redirects=allow_redirects,
+    )
+    for _ in range(1, attempts):
+        if response.status_code in expected_statuses:
+            return response
+        time.sleep(delay_seconds)
+        response = _get_with_route53_dns_fallback(
+            route53_client,
+            url,
+            timeout=timeout,
+            allow_redirects=allow_redirects,
+        )
+    return response
+
+
 class TestWebpageAccessibility:
     def test_caddy_admin_ui_reachable(
         self, deployed_enabled: None, route53_client: object, base_url: str
@@ -313,11 +357,12 @@ class TestWebpageAccessibility:
             pytest.skip("requests not installed")
 
         url = f"{base_url}/dagster-webserver/admin"
-        response = _get_with_route53_dns_fallback(
+        response = _eventually_get_with_route53_dns_fallback(
             route53_client,
             url,
             timeout=30,
             allow_redirects=False,
+            expected_statuses={200, 302},
         )
         assert response.status_code in {200, 302}, (
             f"Expected 200 or 302 from {url}, got {response.status_code}"
@@ -339,11 +384,12 @@ class TestWebpageAccessibility:
             pytest.skip("requests not installed")
 
         url = f"{base_url}/dagster-webserver/guest"
-        response = _get_with_route53_dns_fallback(
+        response = _eventually_get_with_route53_dns_fallback(
             route53_client,
             url,
             timeout=30,
             allow_redirects=False,
+            expected_statuses={200, 302, 307},
         )
         assert response.status_code in {200, 302, 307}, (
             f"Expected 200, 302, or 307 from {url}, got {response.status_code}"
@@ -368,6 +414,28 @@ class TestWebpageAccessibility:
         assert response.status_code < 500, (
             f"Expected non-5xx from {url}, got {response.status_code}"
         )
+
+    def test_marimo_health_reachable_without_auth(
+        self, deployed_enabled: None, route53_client: object, base_url: str
+    ) -> None:
+        """The Marimo health route must be reachable through Caddy."""
+        try:
+            import requests  # noqa: F401
+        except ImportError:
+            pytest.skip("requests not installed")
+
+        url = f"{base_url}/marimo/health"
+        response = _eventually_get_with_route53_dns_fallback(
+            route53_client,
+            url,
+            timeout=30,
+            allow_redirects=False,
+            expected_statuses={200},
+        )
+        assert response.status_code == 200, (
+            f"Expected 200 from {url}, got {response.status_code}"
+        )
+        assert response.json() == {"status": "ok"}
 
 
 # ---------------------------------------------------------------------------
@@ -474,6 +542,7 @@ def _expected_ec2_names(resource_name: str) -> set[str]:
         f"{resource_name}-caddy",
         f"{resource_name}-fastapi-auth",
         f"{resource_name}-fck-nat",
+        f"{resource_name}-marimo-dashboard",
         f"{resource_name}-postgres",
     }
 

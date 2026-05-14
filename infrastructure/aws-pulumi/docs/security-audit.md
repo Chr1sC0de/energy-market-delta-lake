@@ -29,7 +29,7 @@ deployed tests.
 | Medium | Daemon task role included unused Secrets Manager reads | Secrets Manager permissions were removed |
 | Medium | Dagster run-worker launches were blocked by incomplete ECS resource scope | The daemon can register and launch `dagster-*` and `run_*` task definitions, tag created ECS tasks during `RunTask`, and no longer performs the unused default Secrets Manager tag lookup |
 | Medium | ECS execution-role SSM access used wildcard resources | Execution roles can read only the Postgres password parameter |
-| Medium | EC2 hosts did not require IMDSv2 or encrypted root volumes | NAT, bastion, Postgres, FastAPI auth, Caddy, and optional run-worker ECS container instances now require IMDSv2 and encrypted roots |
+| Medium | EC2 hosts did not require IMDSv2 or encrypted root volumes | NAT, bastion, Postgres, FastAPI auth, Caddy, Marimo dashboard, and optional run-worker ECS container instances now require IMDSv2 and encrypted roots |
 | Medium | Postgres accepted `0.0.0.0/0 md5` in `pg_hba.conf` | Postgres now accepts the VPC CIDR with `scram-sha-256` |
 | Medium | ECR repositories disabled scan-on-push | All deployment ECR repositories now enable scan-on-push |
 | Medium | Administrator ingress accepted empty or broad values | `ADMINISTRATOR_IPS` now requires individual IPv4 addresses or `/32` CIDRs |
@@ -46,6 +46,7 @@ That workflow runs local Pulumi unit/component tests, the **Commit check**,
 `pulumi up`, deployed AWS tests, and a no-op preview. The deployed tests verify:
 
 - guest access at `/dagster-webserver/guest` returns `200`, `302`, or `307`
+- Marimo health at `/marimo/health` returns `200`
 - the exact required ECS Fargate services, including manifest-declared
   user-code services, exist, are `ACTIVE`, have
   `desiredCount >= 1`, `runningCount == desiredCount`, `pendingCount == 0`,
@@ -76,9 +77,10 @@ That workflow runs local Pulumi unit/component tests, the **Commit check**,
 
 ## Residual risks
 
-- ECR tags remain mutable because ECS runtime task definitions deploy
-  digest-pinned image URIs. A future supply-chain hardening pass can move the
-  repositories to immutable tags after confirming the Pulumi image-publish path.
+- ECR tags remain mutable because runtime task definitions and EC2 service
+  bootstraps deploy digest-pinned image URIs. A future supply-chain hardening
+  pass can move the repositories to immutable tags after confirming the Pulumi
+  image-publish path.
 - The deployed test suite verifies daemon permission health and service
   stability, but it does not wait for every newly launched run-worker job to
   complete successfully.
@@ -114,7 +116,9 @@ That workflow runs local Pulumi unit/component tests, the **Commit check**,
   - `infrastructure/aws-pulumi/components/ecs_services.py`
   - `infrastructure/aws-pulumi/components/fastapi_auth.py`
   - `infrastructure/aws-pulumi/components/iam_roles.py`
+  - `infrastructure/aws-pulumi/components/marimo.py`
   - `infrastructure/aws-pulumi/components/postgres.py`
+  - `infrastructure/aws-pulumi/components/s3_buckets.py`
   - `infrastructure/aws-pulumi/components/security_groups.py`
   - `infrastructure/aws-pulumi/components/vpc.py`
   - `infrastructure/aws-pulumi/scripts/redeploy-user-code`
@@ -126,6 +130,7 @@ That workflow runs local Pulumi unit/component tests, the **Commit check**,
   - `infrastructure/aws-pulumi/tests/component/test_ecs_services.py`
   - `infrastructure/aws-pulumi/tests/component/test_fastapi_auth.py`
   - `infrastructure/aws-pulumi/tests/component/test_iam_roles.py`
+  - `infrastructure/aws-pulumi/tests/component/test_marimo.py`
   - `infrastructure/aws-pulumi/tests/component/test_postgres.py`
   - `infrastructure/aws-pulumi/tests/component/test_vpc.py`
   - `infrastructure/aws-pulumi/tests/deployed/conftest.py`

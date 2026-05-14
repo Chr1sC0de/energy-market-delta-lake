@@ -1,4 +1,4 @@
-"""Stdlib Dagster GraphQL helpers for local Marimo notebooks."""
+"""Stdlib Dagster GraphQL helpers for Marimo notebooks."""
 
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -7,7 +7,9 @@ from typing import Protocol
 from urllib.request import Request, urlopen
 
 
-DEFAULT_DAGSTER_GRAPHQL_URL = "http://dagster-webserver-guest:3000/graphql"
+DEFAULT_DAGSTER_GRAPHQL_URL = (
+    "http://dagster-webserver-guest:3000/dagster-webserver/guest/graphql"
+)
 DEFAULT_DAGSTER_GRAPHQL_TIMEOUT_SECONDS = 3
 
 DAGSTER_TABLE_ASSETS_QUERY = """

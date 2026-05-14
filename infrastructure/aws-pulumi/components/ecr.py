@@ -8,12 +8,13 @@ Authentication to ECR uses a short-lived token obtained via
 `aws.ecr.get_authorization_token()` — no static credentials needed.
 
 Backend-service layout (relative to repo root):
-  backend-services/
-    dagster-core/          → webserver + daemon images (build target: deploy, arg: DAGSTER_DEPLOYMENT)
-    dagster-user/aemo-etl/ → default user-code gRPC server
-    authentication/        → FastAPI auth server
-    caddy/                 → Caddy reverse proxy
-    postgres/              → Postgres sidecar (not deployed to ECS, kept for local dev)
+    backend-services/
+      dagster-core/          → webserver + daemon images
+      dagster-user/aemo-etl/ → default user-code gRPC server
+      marimo/                → curated dashboard image
+      authentication/        → FastAPI auth server
+      caddy/                 → Caddy reverse proxy
+      postgres/              → Postgres sidecar, kept for local dev
 """
 
 import json
@@ -158,6 +159,16 @@ class ECRComponentResource(pulumi.ComponentResource):
             platform="linux/amd64",
         )
 
+        # ── marimo dashboard ─────────────────────────────────────────────────
+        self.marimo_dashboard = self._make_repo(f"{name}/dagster/marimo-dashboard")
+        self.marimo_dashboard_image = self._build_image(
+            resource_name=f"{name}-dagster-marimo-dashboard-image",
+            repo=self.marimo_dashboard,
+            context=str(_SERVICES / "marimo"),
+            target="dashboard",
+            platform="linux/amd64",
+        )
+
         self.register_outputs({})
 
     # ── helpers ───────────────────────────────────────────────────────────────
@@ -263,12 +274,17 @@ class ECRComponentResource(pulumi.ComponentResource):
         repo: aws.ecr.Repository,
         image: docker.Image,
     ) -> pulumi.Output[str]:
-        ecr_image = aws.ecr.get_image_output(
-            repository_name=repo.name,
-            image_tag="latest",
-            opts=pulumi.InvokeOutputOptions(depends_on=[image]),
-        )
+        """Return the ECR digest-pinned image URI after the image is pushed."""
         return pulumi.Output.all(
+            repo_name=repo.name,
             repo_url=repo.repository_url,
-            image_digest=ecr_image.image_digest,
-        ).apply(lambda a: f"{a['repo_url']}@{a['image_digest']}")  # ty:ignore[missing-argument, invalid-argument-type]
+            # The Docker provider's repoDigest can be a local image digest under
+            # Podman's Docker-compatible API. Use it only to order the ECR
+            # lookup after the push, then read the registry manifest digest.
+            _pushed_image=image.repo_digest,
+        ).apply(
+            lambda a: (
+                f"{a['repo_url']}@"
+                f"{aws.ecr.get_image(repository_name=a['repo_name'], image_tag='latest').image_digest}"
+            )
+        )  # ty:ignore[missing-argument, invalid-argument-type]

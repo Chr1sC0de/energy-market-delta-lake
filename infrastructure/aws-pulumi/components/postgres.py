@@ -170,7 +170,7 @@ class PostgresComponentResource(pulumi.ComponentResource):
         )
 
     def _setup_instance(self) -> None:
-        user_data = pulumi.Output.all(
+        self.user_data = pulumi.Output.all(
             vpc_cidr=self.vpc.vpc.cidr_block,
             region=aws.get_region().region,
         ).apply(
@@ -237,7 +237,7 @@ class PostgresComponentResource(pulumi.ComponentResource):
                 http_tokens="required",
             ),
             root_block_device=aws.ec2.InstanceRootBlockDeviceArgs(encrypted=True),
-            user_data=user_data,
+            user_data=self.user_data,
             user_data_replace_on_change=True,
             tags={"dagster/service": "postgres", "Name": f"{self.name}-postgres"},
             opts=pulumi.ResourceOptions(

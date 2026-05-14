@@ -1,0 +1,76 @@
+# Deploy Marimo Dashboard On Private EC2
+
+The repository now needs the curated Marimo dashboard in the AWS deployment, but
+the Marimo-Codex research workspace remains local-only pending a separate
+security review.
+
+## Decision
+
+Deploy only the curated `marimo-dashboard` image to AWS. The dashboard runs on a
+private `t3.small` EC2 instance in the VPC private subnet, with no public IP and
+no SSH key. Operators use SSM Session Manager for host access.
+
+Caddy remains the only public ingress. It proxies `/marimo*` to the Cloud Map
+name `marimo-dashboard.dagster:2718`. Notebook routes stay behind the existing
+FastAPI auth `forward_auth` flow, while `/marimo/health` returns only
+`{"status":"ok"}` without authentication for deployed health checks.
+
+The dashboard instance pulls the digest-pinned ECR image built from
+`backend-services/marimo` target `dashboard`. It uses an instance profile with
+ECR read, SSM managed-instance access, and read-only S3 access to the curated
+AEMO and IO-manager buckets. It does not receive static AWS keys. The deployed
+runtime sets `DEVELOPMENT_LOCATION=aws`,
+`DAGSTER_GRAPHQL_URL=http://webserver-guest.dagster:3000/dagster-webserver/guest/graphql`,
+`MARIMO_FULL_TABLE_SCAN_ENABLED=false`, and `MARIMO_MAX_PREVIEW_ROWS=100`.
+
+## Considered options
+
+- Keep Marimo local-only: avoids new AWS resources but leaves the deployed
+  dashboard route nonfunctional.
+- Deploy Marimo on ECS Fargate: matches Dagster service placement but adds ECS
+  service/task-definition surface for a state-light notebook host and complicates
+  operator access.
+- Deploy the curated dashboard on private EC2: keeps a small, inspectable runtime
+  boundary, supports SSM operator access, and matches the current EC2 access
+  pattern used by Caddy and auth without exposing another public host.
+- Deploy the Marimo-Codex workspace too: rejected for this slice because
+  unattended Codex execution requires identity, filesystem, network, secret,
+  audit, and rollback controls beyond the dashboard requirement.
+
+## Consequences
+
+The AWS deployment now includes a private Marimo dashboard endpoint and Caddy
+route. The dashboard is stateless: notebook files come from the image, and table
+data comes from S3 and Dagster GraphQL. Image changes produce digest changes
+that update EC2 user data.
+
+AWS-mode table previews are bounded. The table explorer still lists configured
+buckets and Dagster table assets, but it disables full-table sort, text search,
+and selected-column statistics because those require loading full tables into
+memory. Local compose keeps full LocalStack table scans for development.
+
+The local-only Marimo-Codex workspace stays out of Pulumi and remains bound to
+`127.0.0.1:2719` in compose.
+
+## Sync metadata
+
+- `sync.owner`: `docs`
+- `sync.sources`:
+  - `infrastructure/aws-pulumi/__main__.py`
+  - `infrastructure/aws-pulumi/components/marimo.py`
+  - `infrastructure/aws-pulumi/components/caddy.py`
+  - `infrastructure/aws-pulumi/components/ecr.py`
+  - `infrastructure/aws-pulumi/components/security_groups.py`
+  - `infrastructure/aws-pulumi/components/service_discovery.py`
+  - `backend-services/caddy/Caddyfile`
+  - `backend-services/marimo/Dockerfile`
+  - `backend-services/marimo/src/marimoserver/main.py`
+  - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
+  - `backend-services/marimo/src/marimoserver/table_explorer.py`
+  - `backend-services/marimo/notebooks/sample_energy_market.py`
+  - `backend-services/marimo/notebooks/table_explorer.py`
+- `sync.scope`: `architecture`
+- `sync.qa`:
+  - `git diff --name-only`
+  - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure`
+  - `verify routes, IAM permissions, Cloud Map names, env vars, and notebook limits`

@@ -1,15 +1,13 @@
 """Helpers for a local Marimo replica of the AEMO GBB interactive map."""
 
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from html import escape
-from io import BytesIO
 import socket
-from typing import Literal, Protocol, cast
-from urllib.parse import unquote, urlparse
+from typing import Literal
+from urllib.parse import urlparse
 
-import boto3
 from plotly.graph_objs._figure import Figure
 from plotly.graph_objs._scattergeo import Scattergeo
 import plotly.io as pio
@@ -17,7 +15,7 @@ import polars as pl
 
 from marimoserver.gas_dashboard import (
     GasDashboardConfig,
-    read_delta_table,
+    read_parquet_table,
 )
 
 AEMO_GBB_INTERACTIVE_MAP_URL = (
@@ -41,34 +39,6 @@ GeoCoordinate = tuple[float, float]
 LOCAL_S3_ENDPOINT_HOSTS = frozenset(("localhost", "127.0.0.1", "localstack"))
 LOCAL_S3_ENDPOINT_TIMEOUT_SECONDS = 0.35
 GBB_MAP_BOUNDS: tuple[GeoCoordinate, GeoCoordinate] = ((-43.8, 136.4), (-10.2, 154.5))
-
-
-class S3Body(Protocol):
-    """Readable body returned by the subset of boto3 S3 used here."""
-
-    def read(self) -> bytes:
-        """Read object bytes."""
-        ...
-
-
-class S3Paginator(Protocol):
-    """Paginator protocol for S3 list_objects_v2."""
-
-    def paginate(self, *, Bucket: str, Prefix: str) -> Iterable[Mapping[str, object]]:
-        """Yield S3 list pages for a bucket prefix."""
-        ...
-
-
-class S3Client(Protocol):
-    """Small boto3 S3 client surface used by the map parquet fallback."""
-
-    def get_paginator(self, operation_name: str) -> S3Paginator:
-        """Return a paginator for an S3 operation."""
-        ...
-
-    def get_object(self, *, Bucket: str, Key: str) -> Mapping[str, object]:
-        """Return an S3 object body."""
-        ...
 
 
 @dataclass(frozen=True)
@@ -543,18 +513,8 @@ def load_gbb_map_tables(
 
 
 def read_gbb_map_table(uri: str, storage_options: Mapping[str, str]) -> pl.DataFrame:
-    """Read a GBB map table stored as Delta or a parquet prefix."""
-    try:
-        return read_delta_table(uri, storage_options)
-    except Exception as delta_error:
-        try:
-            return _read_parquet_prefix(uri, storage_options)
-        except Exception as parquet_error:
-            message = (
-                f"Delta read failed: {_compact_error(delta_error)}; "
-                f"parquet read failed: {_compact_error(parquet_error)}"
-            )
-            raise RuntimeError(message) from parquet_error
+    """Read a GBB map table stored as a gas_model parquet prefix."""
+    return read_parquet_table(uri, storage_options)
 
 
 def build_gbb_map_model(
@@ -1731,72 +1691,3 @@ def _compact_error(error: Exception) -> str:
             "unreachable or the table prefix is missing"
         )
     return f"{error.__class__.__name__}: {message[0]}"
-
-
-def _read_parquet_prefix(
-    uri: str,
-    storage_options: Mapping[str, str],
-) -> pl.DataFrame:
-    parsed_uri = urlparse(uri)
-    if parsed_uri.scheme == "s3":
-        return _read_s3_parquet_prefix(
-            parsed_uri.netloc,
-            parsed_uri.path.lstrip("/"),
-            storage_options,
-        )
-
-    path = unquote(parsed_uri.path) if parsed_uri.scheme == "file" else uri
-    return pl.read_parquet(f"{path.rstrip('/')}/*.parquet")
-
-
-def _read_s3_parquet_prefix(
-    bucket: str,
-    prefix: str,
-    storage_options: Mapping[str, str],
-) -> pl.DataFrame:
-    client = _create_s3_client(storage_options)
-    keys = _list_s3_parquet_keys(client, bucket, prefix)
-    if not keys:
-        raise FileNotFoundError(f"no parquet files found under s3://{bucket}/{prefix}")
-
-    dataframes: list[pl.DataFrame] = []
-    for key in keys:
-        response = client.get_object(Bucket=bucket, Key=key)
-        body = cast(S3Body, response["Body"])
-        dataframes.append(pl.read_parquet(BytesIO(body.read())))
-
-    return pl.concat(dataframes, how="diagonal_relaxed")
-
-
-def _create_s3_client(storage_options: Mapping[str, str]) -> S3Client:
-    kwargs = {
-        "region_name": storage_options.get("AWS_REGION", ""),
-        "aws_access_key_id": storage_options.get("AWS_ACCESS_KEY_ID", ""),
-        "aws_secret_access_key": storage_options.get("AWS_SECRET_ACCESS_KEY", ""),
-    }
-    endpoint_url = storage_options.get("AWS_ENDPOINT_URL", "").strip()
-    if endpoint_url != "":
-        kwargs["endpoint_url"] = endpoint_url
-
-    client: S3Client = boto3.client(  # type: ignore[no-untyped-call]
-        "s3",
-        **kwargs,
-    )
-    return client
-
-
-def _list_s3_parquet_keys(
-    client: S3Client,
-    bucket: str,
-    prefix: str,
-) -> tuple[str, ...]:
-    paginator = client.get_paginator("list_objects_v2")
-    pages = paginator.paginate(Bucket=bucket, Prefix=f"{prefix.rstrip('/')}/")
-    keys: list[str] = []
-    for page in pages:
-        contents = cast(Iterable[Mapping[str, object]], page.get("Contents", ()))
-        for item in contents:
-            key = item.get("Key")
-            if isinstance(key, str) and key.endswith(".parquet"):
-                keys.append(key)
-    return tuple(sorted(keys))

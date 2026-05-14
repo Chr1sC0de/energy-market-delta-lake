@@ -4,8 +4,8 @@ Serves marimo notebooks from the ``notebooks/`` directory using marimo's
 built-in ASGI integration (``marimo.create_asgi_app``).  A ``/health``
 endpoint is exposed for container healthchecks.
 
-The app is designed to be served behind a reverse proxy (Caddy) which
-forwards ``/marimo*`` traffic to this service.
+The app is designed to be served behind a reverse proxy (Caddy) under the
+``/marimo`` prefix, matching the mounted notebook paths inside the container.
 
 Notebook discovery uses ``with_app`` in a loop so each ``.py`` file in
 the notebooks directory is mounted at ``/marimo/<stem>``.  A
@@ -86,6 +86,7 @@ app.add_middleware(MimeTypeFixMiddleware)  # type: ignore[arg-type]
 
 
 @app.get("/health")
+@app.get("/marimo/health")
 async def health() -> JSONResponse:
     """Liveness / readiness probe for container orchestrators."""
     return JSONResponse(content={"status": "ok"})

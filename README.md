@@ -21,7 +21,8 @@ Subproject docs for detailed commands, defaults, diagrams, and behavior.
   Dagster assets, sensors, resources, ETL internals, and **End-to-end test**
   defaults.
 - [infrastructure/aws-pulumi](infrastructure/aws-pulumi/README.md): deployed
-  AWS platform, Dagster code-location manifest, and cloud validation.
+  AWS platform, Marimo dashboard, Dagster code-location manifest, and cloud
+  validation.
 - [tools/ralph-loop](tools/ralph-loop/README.md): packaged Ralph issue loop
   CLI, unit tests, and **Commit check** surface.
 

@@ -33,22 +33,6 @@
             outline-offset: 4px;
         }
 
-        .skip-link {
-            position: absolute;
-            left: 1rem;
-            top: 1rem;
-            z-index: 10;
-            padding: 0.6rem 0.8rem;
-            background: var(--emdl-ink);
-            color: var(--emdl-panel);
-            border-radius: 6px;
-            transform: translateY(-180%);
-        }
-
-        .skip-link:focus {
-            transform: translateY(0);
-        }
-
         .portfolio-hero {
             min-height: 88svh;
             padding: 2rem 1.5rem 2.75rem;
@@ -62,8 +46,7 @@
                 var(--emdl-paper);
         }
 
-        .hero-inner,
-        .section-inner {
+        .hero-inner {
             width: min(1160px, 100%);
             margin: 0 auto;
         }
@@ -251,115 +234,12 @@
             background: transparent;
         }
 
-        .case-band {
-            padding: 3rem 1.5rem;
-            background: var(--emdl-panel);
-            border-bottom: 1px solid var(--emdl-line);
-        }
-
-        .section-heading {
-            max-width: 760px;
-            margin-bottom: 1.6rem;
-        }
-
-        .section-heading h2 {
-            margin-bottom: 0.55rem;
-            font-size: 1.85rem;
-            line-height: 1.15;
-            letter-spacing: 0;
-        }
-
-        .section-heading p {
-            color: var(--emdl-muted);
-            font-size: 1rem;
-        }
-
-        .capability-grid,
-        .service-grid {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 1rem;
-        }
-
-        .capability,
-        .service-card {
-            padding: 1.15rem;
-            border: 1px solid var(--emdl-line);
-            border-radius: 8px;
-            background: var(--emdl-panel);
-        }
-
-        .capability h3,
-        .service-card h3 {
-            margin-bottom: 0.5rem;
-            font-size: 1.05rem;
-            line-height: 1.25;
-            letter-spacing: 0;
-        }
-
-        .capability p,
-        .service-card p {
-            margin-bottom: 0;
-            color: var(--emdl-muted);
-            font-size: 0.95rem;
-        }
-
-        .service-band {
-            padding: 3rem 1.5rem;
-            background: var(--emdl-service-band);
-        }
-
-        .service-card {
-            display: flex;
-            flex-direction: column;
-            min-height: 12rem;
-            background: rgb(var(--emdl-panel-rgb) / 0.86);
-        }
-
-        .service-card .access {
-            width: fit-content;
-            margin-bottom: 0.85rem;
-            padding: 0.24rem 0.52rem;
-            border-radius: 999px;
-            color: var(--emdl-panel);
-            background: var(--emdl-green);
-            font-size: 0.74rem;
-            font-weight: 800;
-            text-transform: uppercase;
-        }
-
-        .service-card .access-protected {
-            background: var(--emdl-red);
-        }
-
-        .service-card .access-local {
-            background: var(--emdl-amber);
-            color: var(--emdl-ink);
-        }
-
-        .service-link {
-            margin-top: auto;
-            padding-top: 1rem;
-            color: var(--emdl-blue);
-            font-weight: 800;
-            overflow-wrap: anywhere;
-        }
-
-        .boundary-note {
-            max-width: 760px;
-            margin: 1.5rem 0 0;
-            color: var(--emdl-muted);
-            font-size: 0.94rem;
-        }
-
         @media (max-width: 980px) {
             h1 {
                 font-size: 3rem;
             }
 
-            .flow-track,
-            .capability-grid,
-            .service-grid {
+            .flow-track {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
 
@@ -396,29 +276,17 @@
                 text-align: left;
             }
 
-            .flow-track,
-            .capability-grid,
-            .service-grid {
+            .flow-track {
                 grid-template-columns: 1fr;
             }
 
             .flow-node {
                 min-height: 0;
             }
-
-            .case-band,
-            .service-band {
-                padding: 2.25rem 1rem;
-            }
-
-            .section-heading h2 {
-                font-size: 1.55rem;
-            }
         }
     </style>
 </head>
 <body>
-    <a class="skip-link" href="#services">Skip to service links</a>
     <main>
         <section class="portfolio-hero" aria-labelledby="page-title">
             <div class="hero-inner">
@@ -431,7 +299,6 @@
                     <a class="button button-primary" href="/dagster-webserver/guest">Dagster guest <span>public demo</span></a>
                     <a class="button" href="/dagster-webserver/admin">Dagster admin <span>protected</span></a>
                     <a class="button" href="/marimo">Marimo <span>protected</span></a>
-                    <a class="button" href="http://127.0.0.1:2719">Marimo-Codex <span>local</span></a>
                 </nav>
 
                 <div class="flow" aria-label="Platform data flow from source files to service access">
@@ -476,67 +343,6 @@
                         </article>
                     </div>
                 </div>
-            </div>
-        </section>
-
-        <section class="case-band" aria-labelledby="capabilities-title">
-            <div class="section-inner">
-                <div class="section-heading">
-                    <h2 id="capabilities-title">What the repository demonstrates</h2>
-                    <p>These claims are limited to behavior documented in the repository: local and AWS-oriented service boundaries, Dagster data assets, storage resources, and protected route handling.</p>
-                </div>
-                <div class="capability-grid">
-                    <article class="capability">
-                        <h3>Source-to-lake ingestion</h3>
-                        <p>Source discovery, unzipper flows, bronze ingestion, and archive handling move selected AEMO and NEMWeb inputs toward Delta-backed current-state tables.</p>
-                    </article>
-                    <article class="capability">
-                        <h3>Orchestrated data platform</h3>
-                        <p>Dagster webservers, daemon, PostgreSQL state, and the aemo-etl code location form the runtime boundary for assets, schedules, sensors, and jobs.</p>
-                    </article>
-                    <article class="capability">
-                        <h3>Exploration and access</h3>
-                        <p>Caddy exposes the static root page, the guest Dagster route, protected operator routes, and the local Marimo notebook service without adding another frontend runtime.</p>
-                    </article>
-                </div>
-            </div>
-        </section>
-
-        <section id="services" class="service-band" aria-labelledby="services-title">
-            <div class="section-inner">
-                <div class="section-heading">
-                    <h2 id="services-title">Service entrypoints</h2>
-                    <p>The links below preserve the existing route prefixes and access boundaries used by the Caddy configuration.</p>
-                </div>
-                <div class="service-grid">
-                    <article class="service-card">
-                        <span class="access">Public demo</span>
-                        <h3>Dagster guest</h3>
-                        <p>Guest Dagster UI and GraphQL path for browsing the project dataflow surface.</p>
-                        <a class="service-link" href="/dagster-webserver/guest">/dagster-webserver/guest</a>
-                    </article>
-                    <article class="service-card">
-                        <span class="access access-protected">Protected operator</span>
-                        <h3>Dagster admin</h3>
-                        <p>OIDC/session-protected Dagster admin route handled by the authentication service before proxying to Dagster.</p>
-                        <a class="service-link" href="/dagster-webserver/admin">/dagster-webserver/admin</a>
-                    </article>
-                    <article class="service-card">
-                        <span class="access access-protected">Protected operator</span>
-                        <h3>Marimo notebooks</h3>
-                        <p>Authentication-protected notebook index for local exploration against the same S3-compatible data paths.</p>
-                        <a class="service-link" href="/marimo">/marimo</a>
-                    </article>
-                    <article class="service-card">
-                        <span class="access access-local">Local only</span>
-                        <h3>Marimo-Codex workspace</h3>
-                        <p>Host-bound research workspace for human-operated local notebook exploration and issue-draft preparation.</p>
-                        <a class="service-link" href="http://127.0.0.1:2719">127.0.0.1:2719</a>
-                    </article>
-                </div>
-                <p class="boundary-note">
-                    This static page does not change Caddy routing, the authentication service, service ports, route prefixes, localhost-only workspace exposure, or container wiring.
-                </p>
             </div>
         </section>
     </main>
