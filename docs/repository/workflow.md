@@ -202,8 +202,8 @@ Operator runs, **Promotion**, and **Post-promotion review** behavior.
 
 ## Documentation maintenance
 
-For the doc-sync contract, searchable `sync.sources` metadata, and the required
-`git diff` to `rg` to QA flow, use
+For the **Documentation sync** contract, searchable `sync.sources` metadata,
+and the required `git diff` to `rg` to QA flow, use
 [documentation-sync.md](documentation-sync.md).
 
 ## Sync metadata

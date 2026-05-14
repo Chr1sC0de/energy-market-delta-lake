@@ -7,11 +7,12 @@ Use repo canonical terms from [CONTEXT.md](CONTEXT.md), especially
 **Subproject**, **Test lane**, **Fast check**, **Commit check**, **Push check**,
 **Local integration**, **Delivery mode**, **Integration target**,
 **Sandboxed issue access**, **Full-access implementation pass**,
-**Ready issue refresh**, **Exploratory acceptance review**, and **Promotion**.
+**Ready issue refresh**, **Operator workflow**, **Documentation sync**,
+**Agent skill**, **Exploratory acceptance review**, and **Promotion**.
 
 ## Canonical Path
 
-Run the Ralph skill cycle in this order:
+Run the Ralph **Agent skill** cycle in this order:
 
 ```text
 $grill-with-docs -> optional $to-prd -> $shape-issues -> $ralph-triage -> $ralph-loop drain -> review dev -> $ralph-loop promote

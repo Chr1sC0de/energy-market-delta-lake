@@ -44,6 +44,7 @@ runtime-only paths:
 - `.ruff_cache/`
 - `__pycache__/`
 - `generated/`
+- `node_modules/`
 - `vendor/`
 - `specs/`
 
@@ -159,7 +160,7 @@ way:
 - #65: `OPERATOR.md` remains the human **Operator workflow** entrypoint, and
   `README.md`, `docs/README.md`, and `docs/agents/README.md` route operators to
   it instead of duplicating the full workflow.
-- #66: `OPERATOR.md` remains under documentation sync through this page's
+- #66: `OPERATOR.md` remains under **Documentation sync** through this page's
   maintained-doc scope and its own sync metadata.
 - #59 and #139: docs-only AEMO ETL and Marimo changes remain aligned with
   Ralph QA selection by keeping docs-only paths on the root doc **Commit check**
