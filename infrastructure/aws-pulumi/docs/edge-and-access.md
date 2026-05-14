@@ -2,7 +2,7 @@
 
 This page documents the EC2-based access layer around the private Dagster
 runtime: the bastion host for operators, the FastAPI auth host, and the public
-Caddy reverse proxy.
+Caddy reverse proxy, and the private Marimo dashboard reached through Caddy.
 
 ## Table of contents
 
@@ -17,6 +17,7 @@ Caddy reverse proxy.
 
 - `BastionHostComponentResource`
 - `FastAPIAuthComponentResource`
+- `MarimoDashboardComponentResource`
 - `CaddyServerComponentResource`
 
 ## Public request flow
@@ -29,12 +30,14 @@ flowchart LR
     AUTH[FastAPI auth EC2]
     ADMIN[webserver-admin.dagster:3000]
     GUEST[webserver-guest.dagster:3000]
+    MARIMO[marimo-dashboard.dagster:2718]
 
     USER --> DNS
     DNS --> CADDY
     CADDY --> AUTH
     CADDY --> ADMIN
     CADDY --> GUEST
+    CADDY --> MARIMO
     AUTH --> ADMIN
 ```
 
@@ -43,6 +46,8 @@ The public edge is intentionally thin:
 - Caddy is the only internet-facing runtime host
 - FastAPI auth stays in the private subnet
 - Dagster webservers stay in ECS private networking behind Caddy
+- Marimo stays in the private subnet behind Caddy and exposes only a minimal
+  unauthenticated health route at `/marimo/health`
 - EC2 hosts require IMDSv2 and encrypted root volumes
 
 ## Operator access flow
@@ -53,6 +58,7 @@ flowchart LR
     BASTION[Bastion host]
     CADDY[Caddy host]
     AUTH[FastAPI auth host]
+    MARIMO[Marimo dashboard host]
     PG[(Postgres)]
     WEB[Dagster webserver]
 
@@ -61,6 +67,7 @@ flowchart LR
     BASTION -->|SSH 22| AUTH
     BASTION -->|5432| PG
     BASTION -->|3000| WEB
+    ADMINIPS -.->|SSM Session Manager| MARIMO
 ```
 
 ## Component summary
@@ -68,7 +75,8 @@ flowchart LR
 | Component | Placement | Key resources | Purpose |
 |---|---|---|---|
 | `BastionHostComponentResource` | public subnet | EC2 instance, EIP, SSH key pair, SSM params | controlled operator entry point |
-| `FastAPIAuthComponentResource` | private subnet | EC2 instance, ECR-read role, Docker bootstrap | OIDC/session bridge for protected routes |
+| `FastAPIAuthComponentResource` | private subnet | EC2 instance, ECR-read role, digest-pinned Docker bootstrap | OIDC/session bridge for protected routes |
+| `MarimoDashboardComponentResource` | private subnet | EC2 instance with encrypted 30 GiB `gp3` root volume, ECR-read and SSM role, Cloud Map service, read-only S3 policy | curated dashboard notebook service |
 | `CaddyServerComponentResource` | public subnet | EC2 instance, EIP, 1 GiB EBS volume, Route 53 record | public TLS termination and reverse proxy |
 
 ## Implementation notes
@@ -77,15 +85,22 @@ flowchart LR
   `IamRolesComponentResource` and stores its instance ID and key-pair ID in
   SSM.
 - The FastAPI auth host stores Cognito values in SSM SecureString parameters,
-  fetches them at boot, and passes them to the auth container without embedding
-  secret values in EC2 user data.
+  fetches them at boot, and passes them to the digest-pinned auth container
+  without embedding secret values in EC2 user data.
+- The Marimo dashboard host has no public IP and no SSH key. Operators use SSM
+  Session Manager, and the instance role can read only the curated AEMO and
+  IO-manager buckets.
 - The Caddy host:
-  - pulls the `dagster/caddy` image from ECR
+  - pulls the digest-pinned `dagster/caddy` image from ECR
+  - serves the Astro-generated root portfolio and shared `/theme.css` asset
+    before proxying application routes
   - mounts a dedicated encrypted EBS volume at `/mnt/caddy-certs`
   - persists certificate state under `/data`
   - creates a Route 53 A record for `ausenergymarketdata.com`
   - proxies to Cloud Map names for the private Dagster webservers and to the
     auth host private IP on port `8000`
+  - proxies `/marimo*` to `marimo-dashboard.dagster:2718`, with auth checks on
+    notebook routes and a direct `/marimo/health` probe
 
 ## Related docs
 
@@ -100,7 +115,13 @@ flowchart LR
 - `sync.sources`:
   - `infrastructure/aws-pulumi/components/bastion_host.py`
   - `infrastructure/aws-pulumi/components/fastapi_auth.py`
+  - `infrastructure/aws-pulumi/components/marimo.py`
   - `infrastructure/aws-pulumi/components/caddy.py`
+  - `backend-services/caddy/Caddyfile`
+  - `backend-services/caddy/Dockerfile`
+  - `backend-services/caddy/package.json`
+  - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/public/theme.css`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`

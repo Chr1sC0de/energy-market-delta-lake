@@ -1,7 +1,7 @@
 # Runtime
 
-This page covers the container build pipeline and the private ECS runtime that
-hosts Dagster services in AWS.
+This page covers the container build pipeline, the private ECS runtime that
+hosts Dagster services in AWS, and the private Marimo dashboard runtime.
 
 ## Table of contents
 
@@ -22,6 +22,7 @@ hosts Dagster services in AWS.
 - `DagsterUserCodeServiceComponentResource`
 - `DagsterWebserverServiceComponentResource`
 - `DagsterDaemonServiceComponentResource`
+- `MarimoDashboardComponentResource`
 
 ## Image build and publish flow
 
@@ -33,6 +34,7 @@ flowchart LR
         USERCODE[manifest-declared user code]
         AUTH[backend-services/authentication]
         CADDY[backend-services/caddy]
+        MARIMO[backend-services/marimo]
     end
 
     subgraph ECR[ECR repositories]
@@ -41,12 +43,14 @@ flowchart LR
         USERREPO[dagster/user-code/aemo-etl]
         AUTHREPO[dagster/authentication]
         CADDYREPO[dagster/caddy]
+        MARIMOREPO[dagster/marimo-dashboard]
     end
 
     subgraph ECS[ECS task definitions]
         WEBTASK[webserver tasks]
         DAEMONTASK[daemon task]
         USERTASK[user-code gRPC tasks]
+        MARIMOHOST[Marimo dashboard EC2]
     end
 
     MANIFEST --> CORE
@@ -56,14 +60,21 @@ flowchart LR
     USERCODE --> USERREPO
     AUTH --> AUTHREPO
     CADDY --> CADDYREPO
+    MARIMO --> MARIMOREPO
     WEBREPO --> WEBTASK
     DAEMONREPO --> DAEMONTASK
     USERREPO --> USERTASK
+    MARIMOREPO --> MARIMOHOST
 ```
 
 `ECRComponentResource` builds and pushes images during `pulumi up`, enables
 scan-on-push on each repository, and exposes digest-pinned image URIs for the
-ECS task definitions.
+ECS task definitions and EC2 service bootstraps that need deterministic image
+availability.
+
+The Caddy build context runs the Astro portfolio build during the Docker build
+and copies the generated static files into Caddy's `/var/www/html` root before
+the image is pushed.
 
 ## Code-location manifest prototype
 
@@ -94,6 +105,10 @@ flowchart LR
         UCODE[aemo-etl user code]
     end
 
+    subgraph PrivateEc2[Private EC2 runtime]
+        MARIMO[Marimo dashboard]
+    end
+
     LOGS[CloudWatch log group]
     PG[(Postgres)]
     DDB[(DynamoDB delta_log)]
@@ -103,6 +118,7 @@ flowchart LR
 
     WEBADMIN --> UCODE
     WEBGUEST --> UCODE
+    MARIMO --> WEBGUEST
     DAEMON --> UCODE
     WEBADMIN --> PG
     WEBGUEST --> PG
@@ -112,9 +128,11 @@ flowchart LR
     UCODE --> S3
     UCODE --> SNS
     DAEMON --> S3
+    MARIMO --> S3
     CM --> WEBADMIN
     CM --> WEBGUEST
     CM --> UCODE
+    CM --> MARIMO
     WEBADMIN --> LOGS
     WEBGUEST --> LOGS
     DAEMON --> LOGS
@@ -129,6 +147,7 @@ flowchart LR
 | webserver admin | 256 | 1024 | 3000 | `webserver-admin` | path prefix `/dagster-webserver/admin` |
 | webserver guest | 256 | 1024 | 3000 | `webserver-guest` | `--read-only`, path prefix `/dagster-webserver/guest` |
 | daemon | 256 | 1024 | none | none | background scheduler/sensor/orchestration process |
+| Marimo dashboard | 2 vCPU | 2 GiB | 2718 | `marimo-dashboard` | private EC2 `t3.small` host for curated notebooks |
 
 Cluster-level behavior:
 
@@ -247,6 +266,7 @@ placement, image pull, task startup latency, or scale-in behavior because issue
 | `ECRComponentResource` | ECR repos, lifecycle policies, docker build+push resources | Publish deployable images from repo source |
 | `EcsClusterComponentResource` | ECS cluster, CloudWatch log group, Fargate providers, optional EC2 run-worker provider | Shared compute substrate for Dagster runtime |
 | `ecs_services.py` components | task definitions, ECS services, Cloud Map service registrations | Run Dagster webserver, daemon, and user-code containers |
+| `MarimoDashboardComponentResource` | private EC2 instance with encrypted 30 GiB `gp3` root volume, Cloud Map registration, SSM-enabled instance profile, read-only S3 policy | Run the curated Marimo dashboard outside ECS |
 | `code_locations.py` | manifest parser, workspace renderer, resource-name helpers | Keep user-code images, workspaces, services, and live checks aligned |
 
 ## Implementation notes
@@ -260,15 +280,22 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   argument to `aws-ec2-run-workers-prototype`.
 - ECS services use digest-pinned image URIs rather than mutable `:latest` tags
   at runtime.
+- The Caddy, FastAPI auth, and Marimo dashboard EC2 user data also pull
+  digest-pinned image URIs, so image publish completion is part of the Pulumi
+  dependency graph before replacement bootstraps run.
 - ECS task definitions inject the Postgres password through ECS `secrets`
   backed by the SSM SecureString parameter, not through plain container
   environment variables.
 - Admin and guest webservers get separate task-definition families so revisions
   are not shared across the two variants.
 - Cloud Map registration is used only for the inbound-facing private services:
-  user code and both webservers.
+  user code, both webservers, and Marimo dashboard.
 - The daemon task does not register in Cloud Map because it only initiates
   outbound orchestration work.
+- The deployed Marimo dashboard runs with `DEVELOPMENT_LOCATION=aws`,
+  `MARIMO_FULL_TABLE_SCAN_ENABLED=false`, and `MARIMO_MAX_PREVIEW_ROWS=100`,
+  so table previews are bounded and use the instance profile instead of static
+  AWS credentials.
 - The user-code task receives `DAGSTER_FAILURE_ALERT_TOPIC_ARN` from Pulumi
   secret config and `DAGSTER_FAILURE_ALERT_BASE_URL` from public site config so
   the AEMO ETL failure sensor can publish alerts to a manually managed AWS SNS
@@ -293,6 +320,17 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   - `infrastructure/aws-pulumi/components/ecs_cluster.py`
   - `infrastructure/aws-pulumi/components/ecs_services.py`
   - `infrastructure/aws-pulumi/components/iam_roles.py`
+  - `infrastructure/aws-pulumi/components/marimo.py`
+  - `backend-services/marimo/Dockerfile`
+  - `backend-services/marimo/src/marimoserver/main.py`
+  - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
+  - `backend-services/marimo/src/marimoserver/table_explorer.py`
+  - `backend-services/marimo/notebooks/sample_energy_market.py`
+  - `backend-services/marimo/notebooks/table_explorer.py`
+  - `backend-services/caddy/Dockerfile`
+  - `backend-services/caddy/package.json`
+  - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/public/theme.css`
   - `backend-services/dagster-core/code-locations.aws.toml`
   - `backend-services/dagster-core/Dockerfile`
   - `backend-services/dagster-core/dagster.aws.yaml`

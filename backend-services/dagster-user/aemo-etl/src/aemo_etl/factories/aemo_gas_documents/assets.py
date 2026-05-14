@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from io import BytesIO
 from typing import Unpack, cast
 
+import requests
 from botocore.exceptions import ClientError
 from dagster import (
     AssetExecutionContext,
@@ -19,7 +20,7 @@ from dagster import (
 from dagster._core.definitions.metadata import RawMetadataValue
 from dagster_aws.s3 import S3Resource
 from polars import Datetime, Int64, LazyFrame, Schema, String
-from requests import Response
+from requests import RequestException, Response
 from types_boto3_s3 import S3Client
 
 from aemo_etl.configs import AEMO_BUCKET, ARCHIVE_BUCKET, DAGSTER_URI, LANDING_BUCKET
@@ -59,6 +60,18 @@ DELTA_MERGE_OPTIONS = {
     "source_alias": "source",
     "target_alias": "target",
 }
+AEMO_GAS_DOCUMENT_REQUEST_HEADERS: Mapping[str, str] = {
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/125.0 Safari/537.36"
+    ),
+    "Accept": (
+        "text/html,application/xhtml+xml,application/pdf,"
+        "application/xml;q=0.9,*/*;q=0.8"
+    ),
+    "Accept-Language": "en-AU,en;q=0.9",
+}
+AEMO_GAS_DOCUMENT_REQUEST_TIMEOUT_SECONDS = 60
 
 type AEMOGasDocumentObservationLoader = Callable[
     [datetime],
@@ -163,6 +176,7 @@ class AEMOGasDocumentScrapeResult:
     included_pdf_count: int
     excluded_observation_count: int
     needs_human_review_observation_count: int
+    failed_download_count: int
 
 
 def _stable_hash(parts: Iterable[object]) -> str:
@@ -204,6 +218,20 @@ def _content_length(headers: Mapping[str, str], content: bytes) -> int:
         return int(content_length)
     except ValueError:
         return len(content)
+
+
+def request_get_aemo_gas_document(path: str) -> Response:
+    """Run an AEMO gas document GET with browser-compatible request headers."""
+    return request_get(path, getter=_aemo_gas_document_get)
+
+
+def _aemo_gas_document_get(path: str) -> Response:
+    response: Response = requests.get(
+        path,
+        headers=AEMO_GAS_DOCUMENT_REQUEST_HEADERS,
+        timeout=AEMO_GAS_DOCUMENT_REQUEST_TIMEOUT_SECONDS,
+    )
+    return response
 
 
 def _record_surrogate_key(
@@ -331,6 +359,21 @@ def _with_source_content_hash(
     return replace(record, source_content_hash=_record_source_content_hash(record))
 
 
+def _download_failed_record(
+    observation: AEMOGasDocumentPendingObservation,
+    *,
+    error: RequestException,
+) -> AEMOGasDocumentSourceRecord:
+    """Build a metadata-only row for an included PDF that failed to download."""
+    return _empty_record(
+        replace(
+            observation,
+            should_download=False,
+            exclude_reason=f"Download failed during materialization: {error}",
+        )
+    )
+
+
 def _downloaded_record(
     observation: AEMOGasDocumentPendingObservation,
     *,
@@ -410,7 +453,7 @@ def scrape_and_land_aemo_gas_document_sources(
     *,
     s3_client: S3Client,
     source_pages: Iterable[AEMOGasDocumentSourcePage],
-    request_getter: Callable[[str], Response] = request_get,
+    request_getter: Callable[[str], Response] = request_get_aemo_gas_document,
     landing_bucket: str = LANDING_BUCKET,
     archive_bucket: str = ARCHIVE_BUCKET,
     observed_at: datetime | None = None,
@@ -434,9 +477,10 @@ def land_aemo_gas_document_observations(
     *,
     s3_client: S3Client,
     observations: Iterable[AEMOGasDocumentPendingObservation],
-    request_getter: Callable[[str], Response] = request_get,
+    request_getter: Callable[[str], Response] = request_get_aemo_gas_document,
     landing_bucket: str = LANDING_BUCKET,
     archive_bucket: str = ARCHIVE_BUCKET,
+    logger: object | None = None,
 ) -> AEMOGasDocumentScrapeResult:
     """Land included PDF bytes and return metadata for pending observations."""
     records: list[AEMOGasDocumentSourceRecord] = []
@@ -445,6 +489,7 @@ def land_aemo_gas_document_observations(
     included_pdf_count = 0
     excluded_observation_count = 0
     needs_human_review_observation_count = 0
+    failed_download_count = 0
 
     for observation in observations:
         if observation.include_decision == "exclude":
@@ -456,7 +501,19 @@ def land_aemo_gas_document_observations(
             records.append(_empty_record(observation))
             continue
 
-        response = request_getter(observation.source_url)
+        try:
+            response = request_getter(observation.source_url)
+        except RequestException as e:
+            failed_download_count += 1
+            if logger is not None and hasattr(logger, "warning"):
+                logger.warning(
+                    "recording AEMO gas document download failure for %s: %s",
+                    observation.source_url,
+                    e,
+                )
+            records.append(_download_failed_record(observation, error=e))
+            continue
+
         content = response.content
         content_sha256 = hashlib.sha256(content).hexdigest()
         key = _pdf_key(content_sha256)
@@ -488,6 +545,7 @@ def land_aemo_gas_document_observations(
         included_pdf_count=included_pdf_count,
         excluded_observation_count=excluded_observation_count,
         needs_human_review_observation_count=needs_human_review_observation_count,
+        failed_download_count=failed_download_count,
     )
 
 
@@ -604,6 +662,7 @@ def _asset_metadata(
         "needs_human_review_observation_count": (
             scrape_result.needs_human_review_observation_count
         ),
+        "failed_download_count": scrape_result.failed_download_count,
         "landed_pdf_count": len(scrape_result.landed_keys),
         "archived_pdf_count": len(archived_keys),
         "archived_keys": MetadataValue.json(archived_keys),
@@ -672,6 +731,7 @@ def aemo_gas_document_sources_asset_factory(
             request_getter=request_getter,
             landing_bucket=landing_bucket,
             archive_bucket=archive_bucket,
+            logger=context.log,
         )
         batch = records_to_lazyframe(
             scrape_result.records,

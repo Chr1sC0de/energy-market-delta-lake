@@ -37,11 +37,13 @@ class TestLocalMarimoImageSplit:
             "marimo-codex-workspace",
         )
 
+        assert "      DEVELOPMENT_LOCATION: local" in dashboard
         assert "      MARIMO_WORKSPACE_KIND: dashboard" in dashboard
         assert "      MARIMO_NOTEBOOKS_DIR: /opt/marimo/notebooks" in dashboard
         assert (
             "      DAGSTER_GRAPHQL_URL: "
-            "${DAGSTER_GRAPHQL_URL:-http://dagster-webserver-guest:3000/graphql}"
+            "${DAGSTER_GRAPHQL_URL:-"
+            "http://dagster-webserver-guest:3000/dagster-webserver/guest/graphql}"
         ) in dashboard
         assert "      - ./marimo/notebooks:/opt/marimo/notebooks:ro" in dashboard
 
@@ -49,12 +51,14 @@ class TestLocalMarimoImageSplit:
         compose = _read(BACKEND_SERVICES_DIR / "compose.yaml")
         workspace = _service_block(compose, "marimo-codex-workspace", "authentication")
 
+        assert "      DEVELOPMENT_LOCATION: local" in workspace
         assert "      MARIMO_WORKSPACE_KIND: codex-research" in workspace
         assert "      MARIMO_WORKSPACE_ROOT: /workspace" in workspace
         assert "      MARIMO_NOTEBOOKS_DIR: /workspace/notebooks" in workspace
         assert (
             "      DAGSTER_GRAPHQL_URL: "
-            "${DAGSTER_GRAPHQL_URL:-http://dagster-webserver-guest:3000/graphql}"
+            "${DAGSTER_GRAPHQL_URL:-"
+            "http://dagster-webserver-guest:3000/dagster-webserver/guest/graphql}"
         ) in workspace
         assert "      - ./marimo/research-workspace:/workspace" in workspace
 

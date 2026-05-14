@@ -89,7 +89,19 @@ class TestFastAPIAuthComponent:
             for parameter_name in auth.cognito_parameter_names.values():
                 assert parameter_name in user_data
 
-        return auth.instance.user_data.apply(check)
+        return auth.user_data.apply(check)
+
+    @pulumi.runtime.test
+    def test_user_data_uses_digest_pinned_auth_image(self) -> None:
+        vpc, ecr, sgs = _make_deps()
+        auth = FastAPIAuthComponentResource("test-energy-market", vpc, ecr, sgs)
+
+        def check(user_data: str) -> None:
+            assert "@sha256:" in user_data
+            assert "authentication:latest" not in user_data
+            assert 'docker pull "$IMAGE_URI"' in user_data
+
+        return auth.user_data.apply(check)
 
     def test_no_deprecation_warnings(self) -> None:
         """Regression guard: region.region must be used, not region.name."""

@@ -15,6 +15,9 @@ from urllib.parse import urlparse
 import requests
 from requests import Response
 
+from aemo_etl.factories.aemo_gas_documents.assets import (
+    AEMO_GAS_DOCUMENT_REQUEST_HEADERS,
+)
 from aemo_etl.factories.aemo_gas_documents.manifest import (
     DISCOVERY_REPORT_FILENAME,
     MANIFEST_FILENAME,
@@ -345,7 +348,7 @@ def validate_media_url(
     request_timeout: float = DEFAULT_REQUEST_TIMEOUT_SECONDS,
     request_getter: Callable[[str, float], Response] | None = None,
 ) -> AEMOGasDocumentMediaValidation:
-    """Validate one direct media URL with a normal HTTP GET request."""
+    """Validate one direct media URL with a browser-compatible HTTP GET request."""
     response: Response | None = None
     try:
         if request_getter is None:
@@ -505,7 +508,12 @@ def _media_validator_for_timeout(request_timeout: float) -> MediaValidator:
 
 
 def _request_media_url(source_url: str, request_timeout: float) -> Response:
-    return requests.get(source_url, timeout=request_timeout, stream=True)
+    return requests.get(
+        source_url,
+        headers=AEMO_GAS_DOCUMENT_REQUEST_HEADERS,
+        timeout=request_timeout,
+        stream=True,
+    )
 
 
 def _media_validation_from_response(

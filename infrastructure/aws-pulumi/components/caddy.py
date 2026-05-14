@@ -34,6 +34,7 @@ class CaddyServerComponentResource(pulumi.ComponentResource):
         ecr: ECRComponentResource,
         fastapi_auth: FastAPIAuthComponentResource,
         security_groups: SecurityGroupsComponentResource,
+        marimo_server: pulumi.Input[str] = "marimo-dashboard.dagster:2718",
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
         """Create the Caddy reverse-proxy component."""
@@ -43,6 +44,7 @@ class CaddyServerComponentResource(pulumi.ComponentResource):
         self.ecr = ecr
         self.fastapi_auth = fastapi_auth
         self.security_groups = security_groups
+        self.marimo_server = marimo_server
         self.child_opts = pulumi.ResourceOptions(parent=self)
 
         # Read config
@@ -138,11 +140,15 @@ class CaddyServerComponentResource(pulumi.ComponentResource):
     def _setup_instance(self) -> None:
         region = aws.get_region()
 
-        user_data = pulumi.Output.all(
-            repo_uri=self.ecr.caddy.repository_url,
+        self.user_data = pulumi.Output.all(
+            image_uri=self.ecr._published_image_uri(
+                self.ecr.caddy,
+                self.ecr.caddy_image,
+            ),
             region=region.region,
             auth_ip=self.fastapi_auth.instance.private_ip,
             developer_email=self._developer_email,
+            marimo_server=self.marimo_server,
         ).apply(
             lambda a: dedent(f"""\
                 #!/bin/bash
@@ -199,10 +205,11 @@ class CaddyServerComponentResource(pulumi.ComponentResource):
                 chown 1000:1000 "$MOUNT_POINT/data"
 
                 # ECR login and pull
+                IMAGE_URI="{a["image_uri"]}"
                 aws ecr get-login-password --region {a["region"]} | \\
-                    docker login --username AWS --password-stdin {a["repo_uri"].split("/")[0]}
+                    docker login --username AWS --password-stdin "${{IMAGE_URI%%/*}}"
                 for attempt in $(seq 1 30); do
-                    if docker pull {a["repo_uri"]}:latest; then
+                    if docker pull "$IMAGE_URI"; then
                         break
                     fi
                     if [ "$attempt" -eq 30 ]; then
@@ -224,7 +231,8 @@ class CaddyServerComponentResource(pulumi.ComponentResource):
                     -e DEVELOPER_EMAIL={a["developer_email"]} \\
                     -e DAGSTER_WEBSERVER_ADMIN=webserver-admin.dagster:3000 \\
                     -e DAGSTER_WEBSERVER_GUEST=webserver-guest.dagster:3000 \\
-                    {a["repo_uri"]}:latest
+                    -e MARIMO_SERVER={a["marimo_server"]} \\
+                    "$IMAGE_URI"
             """)  # ty:ignore[invalid-argument-type]
         )  # ty:ignore[missing-argument]
 
@@ -241,7 +249,7 @@ class CaddyServerComponentResource(pulumi.ComponentResource):
                 http_tokens="required",
             ),
             root_block_device=aws.ec2.InstanceRootBlockDeviceArgs(encrypted=True),
-            user_data=user_data,
+            user_data=self.user_data,
             user_data_replace_on_change=True,
             availability_zone=self.vpc.availability_zone,
             tags={

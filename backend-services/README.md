@@ -31,9 +31,9 @@ architecture is defined in `infrastructure/aws-pulumi/`.
 | `dagster-webserver-guest` | Guest Dagster UI + GraphQL API | internal |
 | `dagster-daemon` | Schedule, sensor, and run queue processor | — |
 | `authentication` | OIDC/session bridge for protected routes | internal |
-| `marimo-dashboard` | Curated local Marimo dashboard service | internal |
+| `marimo-dashboard` | Curated Marimo dashboard service | internal |
 | `marimo-codex-workspace` | Local-only Marimo-Codex research workspace | `127.0.0.1:2719` |
-| `caddy` | Local reverse proxy and public entrypoint | `80`, `443` |
+| `caddy` | Local reverse proxy, Astro portfolio, and public entrypoint | `80`, `443` |
 
 ______________________________________________________________________
 
@@ -206,7 +206,7 @@ becoming healthy.
 ```text
 NAMES                    STATUS                   PORTS
 postgres                 Up 30 seconds (healthy)  0.0.0.0:5432->5432/tcp
-localstack               Up 30 seconds (healthy)  0.0.0.0:4566->4566/tcp
+localstack               Up 30 seconds (healthy)  127.0.0.1:4566->4566/tcp
 aemo-etl                 Up 20 seconds (healthy)
 dagster-webserver-admin  Up 20 seconds
 dagster-webserver-guest  Up 20 seconds
@@ -223,12 +223,13 @@ Navigate to <https://localhost> in your browser.
 
 Useful routes:
 
+- `/` for the Astro portfolio page with AI workflow and infrastructure diagrams
 - `/dagster-webserver/guest` for the guest Dagster UI
 - `/dagster-webserver/admin` for the protected admin Dagster UI
-- `/marimo` for curated local Marimo dashboards through Caddy, including the
-  LocalStack table explorer. The table explorer lists the Dagster table asset
-  catalogue, filters by group, layer or domain, status, and search text, and
-  previews only materialized LocalStack tables.
+- `/marimo` for curated Marimo dashboards through Caddy, including the table
+  explorer. The table explorer lists the Dagster table asset catalogue, filters
+  by group, layer or domain, status, and search text, and previews only
+  materialized tables.
 - `http://127.0.0.1:2719` for the local-only Marimo-Codex research workspace
 
 The `aemo-etl` code location should appear in Dagster under
@@ -259,6 +260,7 @@ them before starting the stack.
 | `AWS_DEFAULT_REGION` | `ap-southeast-2` | AWS region |
 | `AWS_ACCESS_KEY_ID` | `test` | Dummy credential accepted by LocalStack |
 | `AWS_SECRET_ACCESS_KEY` | `test` | Dummy credential accepted by LocalStack |
+| `DEVELOPMENT_LOCATION` | `local` | Marks local-only runtime behavior for compose services that have AWS-aware code paths |
 | `DAGSTER_FAILURE_ALERT_TOPIC_ARN` | empty | Optional SNS topic ARN for failed-run alert fan-out |
 | `DAGSTER_FAILURE_ALERT_BASE_URL` | `https://localhost/dagster-webserver/admin` | Dagster UI base URL included in failed-run alerts |
 | `AEMO_ETL_E2E_SEED_ENABLED` | `0` | Set to `1` to load cached Archive objects into LocalStack during local stack startup |
@@ -269,7 +271,7 @@ ______________________________________________________________________
 
 ## Local Marimo images
 
-The Marimo Subproject builds two local images from `marimo/Dockerfile`:
+The Marimo Subproject builds two images from `marimo/Dockerfile`:
 
 - `dashboard`: the curated dashboard image used by `marimo-dashboard`. It runs
   the FastAPI wrapper, reads notebooks from `marimo/notebooks/`, and mounts that
@@ -280,7 +282,8 @@ The Marimo Subproject builds two local images from `marimo/Dockerfile`:
   `marimo/research-workspace/AGENTS.md` guidance for notebook research, local
   data boundaries, and issue-draft generation.
 
-Both images are local-first. The workspace has LocalStack mock AWS environment
+The dashboard image is also deployed by the AWS Pulumi stack on a private EC2
+instance behind Caddy. The workspace has LocalStack mock AWS environment
 variables and a localhost-only port binding. It must not be used as evidence
 that deployed Codex execution is approved; deployed enablement is deferred until
 a dedicated security review covers identity, secrets, network egress,
@@ -304,15 +307,15 @@ the DynamoDB `delta_log` table used for Delta locking:
 Bucket names are derived from the defaults in `aemo_etl/configs.py`
 (`DEVELOPMENT_ENVIRONMENT=dev`, `NAME_PREFIX=energy-market`).
 
-The Marimo `local_table_explorer` notebook lists these buckets, reports empty
-bucket health, overlays the local Dagster GraphQL table asset catalogue from
+The Marimo `table_explorer` notebook lists these buckets, reports empty bucket
+health, overlays the local Dagster GraphQL table asset catalogue from
 `DAGSTER_GRAPHQL_URL`, filters by group, layer or domain, status, and search
 text, and can inspect discovered Delta or parquet table prefixes after assets
 have been materialized or LocalStack has been seeded. In compose,
 `DAGSTER_GRAPHQL_URL` defaults to
-`http://dagster-webserver-guest:3000/graphql`, so the notebook can list
-unmaterialized table assets from Dagster while still falling back to
-storage-only discovery when GraphQL is unavailable. Preview controls reuse a
+`http://dagster-webserver-guest:3000/dagster-webserver/guest/graphql`, so the
+notebook can list unmaterialized table assets from Dagster while still falling
+back to storage-only discovery when GraphQL is unavailable. Preview controls reuse a
 cached table scan for row limits, selected columns, sort order, text search, and
 selected-column statistics.
 
@@ -774,7 +777,7 @@ developer-stack setting. It renders e2e Dagster config per run from the current
   - `backend-services/localstack/init-s3.sh`
   - `backend-services/marimo/src/marimoserver/dagster_graphql.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
-  - `backend-services/marimo/notebooks/local_table_explorer.py`
+  - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/scripts/aemo-etl-e2e`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
@@ -782,6 +785,10 @@ developer-stack setting. It renders e2e Dagster config per run from the current
   - `backend-services/dagster-core/dagster.aws.yaml`
   - `backend-services/dagster-core/dagster.aws.ec2-run-workers.prototype.yaml`
   - `backend-services/dagster-core/Dockerfile`
+  - `backend-services/caddy/Dockerfile`
+  - `backend-services/caddy/package.json`
+  - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/public/theme.css`
   - `infrastructure/aws-pulumi/dagster_core_deployment.py`
 - `sync.scope`: `operations`
 - `sync.qa`:

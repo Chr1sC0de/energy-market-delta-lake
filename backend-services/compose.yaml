@@ -67,6 +67,8 @@ services:
     restart: on-failure
     networks:
       - dagster_network
+    ports:
+      - "127.0.0.1:4566:4566"
     environment:
       SERVICES: s3,dynamodb
       AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
@@ -178,6 +180,7 @@ services:
     networks:
       - dagster_network
     environment:
+      DEVELOPMENT_LOCATION: local
       MARIMO_WORKSPACE_KIND: dashboard
       MARIMO_NOTEBOOKS_DIR: /opt/marimo/notebooks
       AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL}
@@ -185,7 +188,7 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_ALLOW_HTTP: true
-      DAGSTER_GRAPHQL_URL: ${DAGSTER_GRAPHQL_URL:-http://dagster-webserver-guest:3000/graphql}
+      DAGSTER_GRAPHQL_URL: ${DAGSTER_GRAPHQL_URL:-http://dagster-webserver-guest:3000/dagster-webserver/guest/graphql}
     volumes:
       - ./marimo/notebooks:/opt/marimo/notebooks:ro
     healthcheck:
@@ -214,6 +217,7 @@ services:
     ports:
       - "127.0.0.1:2719:2718"
     environment:
+      DEVELOPMENT_LOCATION: local
       MARIMO_WORKSPACE_KIND: codex-research
       MARIMO_WORKSPACE_ROOT: /workspace
       MARIMO_NOTEBOOKS_DIR: /workspace/notebooks
@@ -222,7 +226,7 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_ALLOW_HTTP: true
-      DAGSTER_GRAPHQL_URL: ${DAGSTER_GRAPHQL_URL:-http://dagster-webserver-guest:3000/graphql}
+      DAGSTER_GRAPHQL_URL: ${DAGSTER_GRAPHQL_URL:-http://dagster-webserver-guest:3000/dagster-webserver/guest/graphql}
     volumes:
       - ./marimo/research-workspace:/workspace
     healthcheck:

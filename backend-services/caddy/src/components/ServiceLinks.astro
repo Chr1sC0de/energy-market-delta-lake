@@ -1,0 +1,43 @@
+---
+const services = [
+  {
+    href: "/dagster-webserver/guest",
+    label: "Dagster guest",
+    detail: "Public asset graph and run surface",
+    state: "public demo",
+    tone: "blue",
+    icon: "DG",
+  },
+  {
+    href: "/dagster-webserver/admin",
+    label: "Dagster admin",
+    detail: "Operator UI behind browser auth",
+    state: "protected",
+    tone: "amber",
+    icon: "DA",
+  },
+  {
+    href: "/marimo",
+    label: "Marimo",
+    detail: "Curated notebooks and table explorer",
+    state: "protected",
+    tone: "green",
+    icon: "MO",
+  },
+];
+---
+
+<nav class="service-links" aria-label="Primary service links">
+  {
+    services.map((service) => (
+      <a class={`service-link service-link-${service.tone}`} href={service.href}>
+        <span class="service-icon" aria-hidden="true">{service.icon}</span>
+        <span class="service-copy">
+          <strong>{service.label}</strong>
+          <small>{service.detail}</small>
+        </span>
+        <span class="service-state">{service.state}</span>
+      </a>
+    ))
+  }
+</nav>

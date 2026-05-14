@@ -30,6 +30,7 @@ From `__main__.py`, the stack builds these layers:
 - data services: S3 buckets, DynamoDB `delta_log`, PostgreSQL, and a bastion host
 - container platform: ECR repositories and image builds, ECS cluster, Cloud Map
 - public services: Caddy reverse proxy and FastAPI authentication service
+- analytics service: private Marimo dashboard EC2 instance
 - Dagster services:
   - `aemo-etl` user-code gRPC service
   - Dagster webserver admin
@@ -55,6 +56,7 @@ flowchart LR
     G[Dagster webserver guest ECS service]
     D[Dagster daemon ECS service]
     UCODE[aemo-etl user-code ECS service]
+    MO[Marimo dashboard EC2 instance]
     P[(PostgreSQL EC2)]
     B[(S3 buckets)]
     L[(DynamoDB delta_log)]
@@ -73,12 +75,15 @@ flowchart LR
   C --> A
   C --> W
   C --> G
+  C --> MO
   A --> W
   W --> UCODE
   G --> UCODE
+  MO --> G
   D --> UCODE
   UCODE --> B
   D --> B
+  MO --> B
   UCODE --> L
   W --> P
   G --> P
@@ -86,6 +91,7 @@ flowchart LR
   M --> UCODE
   M --> W
   M --> G
+  M --> MO
   V --> SG
   SG --> ECS
   IAM --> ECS
@@ -108,6 +114,7 @@ The dependency order in `__main__.py` is deliberate:
 1. `BastionHostComponentResource`
 1. `EcsClusterComponentResource`
 1. `FastAPIAuthComponentResource`
+1. `MarimoDashboardComponentResource`
 1. `CaddyServerComponentResource`
 1. `DagsterUserCodeServiceComponentResource`
 1. `DagsterWebserverServiceComponentResource` for admin
@@ -141,13 +148,18 @@ security boundary to audit. Current controls include:
 - administrator SSH ingress is limited to validated IPv4 `/32` CIDRs from
   `ADMINISTRATOR_IPS`
 - EC2 hosts require IMDSv2 and encrypted root volumes
+- the Marimo dashboard instance has no public IP, no SSH key, and is operated
+  through SSM Session Manager
 - Cognito and Postgres secrets are stored in SSM SecureString parameters and
   fetched at boot/task start instead of being embedded directly in EC2 user
   data or ECS plain environment variables
 - ECS task execution roles can read only the required Postgres password
   parameter, and task roles scope `iam:PassRole` to the Dagster run-worker
   roles
-- ECR repositories keep digest-pinned runtime deploys and enable scan-on-push
+- ECR repositories keep digest-pinned runtime deploys, including EC2 service
+  bootstraps, and enable scan-on-push
+- the Marimo dashboard instance role can read only the curated AEMO and
+  IO-manager buckets and cannot write S3 objects
 
 The latest audit record is [docs/security-audit.md](docs/security-audit.md).
 
@@ -160,7 +172,8 @@ repository:
 - `backend-services/dagster-user/aemo-etl` for the default gRPC user-code
   service declared in `backend-services/dagster-core/code-locations.aws.toml`
 - `backend-services/authentication` for the auth service
-- `backend-services/caddy` for the public reverse proxy
+- `backend-services/caddy` for the public reverse proxy and Astro portfolio
+- `backend-services/marimo` for the curated Marimo dashboard image
 
 The Pulumi deployment uses the AWS-targeted Dagster configuration by building
 `dagster-core` with `DAGSTER_DEPLOYMENT=aws` by default. Both AWS-targeted
@@ -177,11 +190,17 @@ preview or deployment.
 
 Key deployed behaviors visible in the infrastructure code:
 
-- Caddy runs on a public EC2 instance and proxies to:
+- Caddy runs on a public EC2 instance, serves the Astro portfolio at the root
+  URL, and proxies to:
   - `webserver-admin.dagster:3000`
   - `webserver-guest.dagster:3000`
+  - `marimo-dashboard.dagster:2718`
   - the FastAPI auth service
 - Dagster services run as ECS Fargate services in private subnets
+- the curated Marimo dashboard runs on a private `t3.small` EC2 instance with
+  an encrypted 30 GiB `gp3` root volume, uses its instance profile for S3
+  reads, exposes `/marimo/health` through Caddy, and loads bounded table
+  previews instead of full table scans
 - An issue #126 **Exploratory delivery** path can add EC2-backed run-worker
   capacity behind explicit Pulumi config, but the default runtime remains
   Fargate/Fargate Spot
@@ -210,6 +229,12 @@ This project reads a small set of important config values:
   - `aws-pulumi:cognito_client_secret`
   - `aws-pulumi:website_root_url`
   - `aws-pulumi:developer_email`
+
+  The Cognito app client referenced by those secrets is managed outside this
+  Pulumi stack. Its allowed callback URLs must include
+  `<website_root_url>/oauth2/dagster-webserver/admin/authorize` and
+  `<website_root_url>/oauth2/marimo/authorize`; keep the `https://localhost`
+  equivalents when local browser auth testing is required.
 - Optional Pulumi secret for Dagster failed-run alerts:
   - `aws-pulumi:dagster_failure_alert_topic_arn`
 - Optional issue #126 EC2 run-worker prototype config:
@@ -345,6 +370,10 @@ system's services and Dagster workflows.
   - `backend-services/dagster-core/code-locations.aws.toml`
   - `backend-services/dagster-core/Dockerfile`
   - `backend-services/dagster-core/render_aws_workspace.py`
+  - `backend-services/caddy/Dockerfile`
+  - `backend-services/caddy/package.json`
+  - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/public/theme.css`
   - `infrastructure/aws-pulumi/configs.py`
   - `infrastructure/aws-pulumi/code_locations.py`
   - `infrastructure/aws-pulumi/components/bastion_host.py`
@@ -354,9 +383,19 @@ system's services and Dagster workflows.
   - `infrastructure/aws-pulumi/components/ecs_services.py`
   - `infrastructure/aws-pulumi/components/fastapi_auth.py`
   - `infrastructure/aws-pulumi/components/iam_roles.py`
+  - `infrastructure/aws-pulumi/components/marimo.py`
   - `infrastructure/aws-pulumi/components/postgres.py`
+  - `infrastructure/aws-pulumi/components/s3_buckets.py`
   - `infrastructure/aws-pulumi/components/security_groups.py`
+  - `infrastructure/aws-pulumi/components/service_discovery.py`
   - `infrastructure/aws-pulumi/components/vpc.py`
+  - `backend-services/marimo/Dockerfile`
+  - `backend-services/marimo/src/marimoserver/main.py`
+  - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
+  - `backend-services/marimo/src/marimoserver/table_explorer.py`
+  - `backend-services/marimo/notebooks/sample_energy_market.py`
+  - `backend-services/marimo/notebooks/table_explorer.py`
+  - `backend-services/caddy/Caddyfile`
   - `infrastructure/aws-pulumi/.pre-commit-config.yaml`
   - `infrastructure/aws-pulumi/pyproject.toml`
   - `infrastructure/aws-pulumi/scripts/setup_secrets`

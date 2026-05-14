@@ -117,10 +117,10 @@ Local workflow notes:
 - LocalStack stands in for AWS-managed storage services during local validation.
 - Caddy remains the local front door so auth and routing behavior can be tested.
 - `marimo-dashboard` is available locally for curated notebooks through Caddy,
-  while `marimo-codex-workspace` is a separate localhost-only research service
-  for human-operated notebook exploration and issue-draft preparation. Both are
-  local-first and are not part of the Pulumi-deployed stack; deployed Codex
-  execution remains deferred pending security review.
+  and the same curated dashboard image is deployed by Pulumi behind the AWS
+  Caddy route. `marimo-codex-workspace` is a separate localhost-only research
+  service for human-operated notebook exploration and issue-draft preparation;
+  deployed Codex execution remains deferred pending security review.
 - The isolated AEMO ETL **End-to-end test** stack belongs to the
   `backend-services/dagster-user/aemo-etl` Subproject and is operated through
   `backend-services/scripts/aemo-etl-e2e`; its run manifest records timing,
@@ -222,8 +222,13 @@ For the doc-sync contract, searchable `sync.sources` metadata, and the required
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/compose.yaml`
+  - `backend-services/marimo/Dockerfile`
+  - `backend-services/marimo/src/marimoserver/main.py`
+  - `backend-services/marimo/src/marimoserver/table_explorer.py`
+  - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/scripts/aemo-etl-e2e`
   - `infrastructure/aws-pulumi/__main__.py`
+  - `infrastructure/aws-pulumi/components/marimo.py`
   - `backend-services/dagster-core/code-locations.aws.toml`
   - `infrastructure/aws-pulumi/code_locations.py`
   - `docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md`

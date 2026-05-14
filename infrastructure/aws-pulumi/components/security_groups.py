@@ -23,6 +23,7 @@ class SecurityGroupRegister:
     dagster_postgres: aws.ec2.SecurityGroup
     caddy_instance: aws.ec2.SecurityGroup
     fastapi_auth: aws.ec2.SecurityGroup
+    marimo_dashboard: aws.ec2.SecurityGroup
 
 
 class SecurityGroupsComponentResource(pulumi.ComponentResource):
@@ -50,6 +51,7 @@ class SecurityGroupsComponentResource(pulumi.ComponentResource):
             dagster_postgres=self._make_sg("dagster-postgres"),
             caddy_instance=self._make_sg("caddy-instance"),
             fastapi_auth=self._make_sg("fastapi-auth"),
+            marimo_dashboard=self._make_sg("marimo-dashboard"),
         )
 
         # ── configure each group ─────────────────────────────────────────────
@@ -60,6 +62,7 @@ class SecurityGroupsComponentResource(pulumi.ComponentResource):
         self._setup_dagster_postgres()
         self._setup_caddy_instance()
         self._setup_fastapi_auth()
+        self._setup_marimo_dashboard()
 
         # All groups get allow-all egress
         for sg in vars(self.register).values():
@@ -149,9 +152,13 @@ class SecurityGroupsComponentResource(pulumi.ComponentResource):
 
     def _setup_dagster_webserver(self) -> None:
         sg = self.register.dagster_webserver
-        # Port 3000 from bastion (for direct access) and from caddy (reverse proxy)
+        # Port 3000 from bastion, Caddy, and Marimo's private GraphQL client.
         for idx, source_sg in enumerate(
-            [self.register.bastion_host, self.register.caddy_instance]
+            [
+                self.register.bastion_host,
+                self.register.caddy_instance,
+                self.register.marimo_dashboard,
+            ]
         ):
             self._tcp_ingress_from_sg(
                 f"{self.name}-dagster-webserver-3000-src{idx}",
@@ -246,4 +253,14 @@ class SecurityGroupsComponentResource(pulumi.ComponentResource):
             self.register.bastion_host,
             22,
             "SSH from bastion host",
+        )
+
+    def _setup_marimo_dashboard(self) -> None:
+        sg = self.register.marimo_dashboard
+        self._tcp_ingress_from_sg(
+            f"{self.name}-marimo-dashboard-2718",
+            sg,
+            self.register.caddy_instance,
+            2718,
+            "Marimo dashboard port 2718 from Caddy",
         )

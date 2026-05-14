@@ -1,4 +1,4 @@
-"""Helpers for the local gas market overview marimo dashboard."""
+"""Helpers for the gas market overview marimo dashboard."""
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -13,41 +13,55 @@ DEFAULT_AWS_REGION = "ap-southeast-4"
 DEFAULT_AWS_ACCESS_KEY_ID = "test"
 DEFAULT_AWS_SECRET_ACCESS_KEY = "test"
 DEFAULT_AWS_ALLOW_HTTP = "true"
+DEFAULT_AWS_PREVIEW_ROWS = 100
+AWS_DEVELOPMENT_LOCATION = "aws"
 SILVER_GAS_MODEL_PREFIX = "silver/gas_model"
 
 
 @dataclass(frozen=True)
 class GasDashboardConfig:
-    """Environment-derived settings used to read local gas model Delta tables."""
+    """Environment-derived settings used to read gas model Parquet tables."""
 
+    runtime_location: str
     development_environment: str
     name_prefix: str
     aemo_bucket: str
-    aws_endpoint_url: str
+    aws_endpoint_url: str | None
     aws_region: str
-    aws_access_key_id: str
-    aws_secret_access_key: str
+    aws_access_key_id: str | None
+    aws_secret_access_key: str | None
     aws_allow_http: str
+    max_preview_rows: int
+    full_table_scan_enabled: bool
+
+    @property
+    def aws_runtime(self) -> bool:
+        """Return whether the dashboard is running in AWS deployment mode."""
+        return self.runtime_location == AWS_DEVELOPMENT_LOCATION
 
     def table_uri(self, table_name: str) -> str:
-        """Return the Delta table URI for a silver gas_model table."""
+        """Return the Parquet dataset URI for a silver gas_model table."""
         return f"s3://{self.aemo_bucket}/{SILVER_GAS_MODEL_PREFIX}/{table_name}"
 
     def storage_options(self) -> dict[str, str]:
-        """Return Delta Lake storage options for the configured S3 endpoint."""
-        return {
-            "AWS_ENDPOINT_URL": self.aws_endpoint_url,
+        """Return Polars S3 storage options for the configured endpoint."""
+        options = {
             "AWS_REGION": self.aws_region,
-            "AWS_ACCESS_KEY_ID": self.aws_access_key_id,
-            "AWS_SECRET_ACCESS_KEY": self.aws_secret_access_key,
             "AWS_ALLOW_HTTP": self.aws_allow_http,
             "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
         }
+        if self.aws_endpoint_url is not None:
+            options["AWS_ENDPOINT_URL"] = self.aws_endpoint_url
+        if self.aws_access_key_id is not None:
+            options["AWS_ACCESS_KEY_ID"] = self.aws_access_key_id
+        if self.aws_secret_access_key is not None:
+            options["AWS_SECRET_ACCESS_KEY"] = self.aws_secret_access_key
+        return options
 
 
 @dataclass(frozen=True)
 class GasTableSpec:
-    """A gas_model output table included in the local dashboard."""
+    """A gas_model output table included in the dashboard."""
 
     section: str
     label: str
@@ -71,7 +85,7 @@ class GasTableLoad:
         return self.dataframe is not None and not self.dataframe.is_empty()
 
 
-DeltaReader = Callable[[str, Mapping[str, str]], pl.DataFrame]
+TableReader = Callable[[str, Mapping[str, str], int | None], pl.DataFrame]
 
 GAS_MODEL_TABLES: tuple[GasTableSpec, ...] = (
     GasTableSpec(
@@ -210,6 +224,8 @@ def discover_dashboard_config(
 ) -> GasDashboardConfig:
     """Discover dashboard settings from the Marimo service environment."""
     settings = os.environ if environ is None else environ
+    runtime_location = _setting(settings, "DEVELOPMENT_LOCATION", "local").lower()
+    aws_runtime = runtime_location == AWS_DEVELOPMENT_LOCATION
     name_prefix = _setting(settings, "NAME_PREFIX", DEFAULT_NAME_PREFIX)
     development_environment = _setting(
         settings,
@@ -223,47 +239,71 @@ def discover_dashboard_config(
     )
 
     return GasDashboardConfig(
+        runtime_location=runtime_location,
         development_environment=development_environment,
         name_prefix=name_prefix,
         aemo_bucket=aemo_bucket,
-        aws_endpoint_url=_setting(
+        aws_endpoint_url=_optional_setting(
             settings,
             "AWS_ENDPOINT_URL",
-            DEFAULT_AWS_ENDPOINT_URL,
+            None if aws_runtime else DEFAULT_AWS_ENDPOINT_URL,
         ),
         aws_region=_setting(settings, "AWS_DEFAULT_REGION", DEFAULT_AWS_REGION),
-        aws_access_key_id=_setting(
+        aws_access_key_id=_optional_setting(
             settings,
             "AWS_ACCESS_KEY_ID",
-            DEFAULT_AWS_ACCESS_KEY_ID,
+            None if aws_runtime else DEFAULT_AWS_ACCESS_KEY_ID,
         ),
-        aws_secret_access_key=_setting(
+        aws_secret_access_key=_optional_setting(
             settings,
             "AWS_SECRET_ACCESS_KEY",
-            DEFAULT_AWS_SECRET_ACCESS_KEY,
+            None if aws_runtime else DEFAULT_AWS_SECRET_ACCESS_KEY,
         ),
-        aws_allow_http=_setting(settings, "AWS_ALLOW_HTTP", DEFAULT_AWS_ALLOW_HTTP),
+        aws_allow_http=_setting(
+            settings,
+            "AWS_ALLOW_HTTP",
+            "false" if aws_runtime else DEFAULT_AWS_ALLOW_HTTP,
+        ),
+        max_preview_rows=_positive_int_setting(
+            settings,
+            "MARIMO_MAX_PREVIEW_ROWS",
+            DEFAULT_AWS_PREVIEW_ROWS,
+        ),
+        full_table_scan_enabled=_bool_setting(
+            settings,
+            "MARIMO_FULL_TABLE_SCAN_ENABLED",
+            not aws_runtime,
+        ),
     )
 
 
-def read_delta_table(uri: str, storage_options: Mapping[str, str]) -> pl.DataFrame:
-    """Read one Delta table using Polars and delta-rs storage options."""
-    return pl.read_delta(uri, storage_options=dict(storage_options))
+def read_parquet_table(
+    uri: str,
+    storage_options: Mapping[str, str],
+    row_limit: int | None = None,
+) -> pl.DataFrame:
+    """Read one gas_model Parquet dataset using Polars storage options."""
+    options = dict(storage_options)
+    scan = pl.scan_parquet(_parquet_dataset_glob(uri), storage_options=options)
+    if row_limit is not None:
+        scan = scan.head(row_limit)
+    return scan.collect()
 
 
 def load_gas_model_tables(
     config: GasDashboardConfig,
     specs: Sequence[GasTableSpec] = GAS_MODEL_TABLES,
-    reader: DeltaReader = read_delta_table,
+    reader: TableReader = read_parquet_table,
 ) -> list[GasTableLoad]:
     """Load configured gas_model tables, returning unavailable entries on errors."""
     storage_options = config.storage_options()
+    row_limit = None if config.full_table_scan_enabled else config.max_preview_rows
     loads: list[GasTableLoad] = []
 
     for spec in specs:
         uri = config.table_uri(spec.table_name)
         try:
-            dataframe = reader(uri, storage_options)
+            dataframe = reader(uri, storage_options, row_limit)
         except Exception as error:
             loads.append(
                 GasTableLoad(
@@ -303,6 +343,46 @@ def _setting(environ: Mapping[str, str], name: str, default: str) -> str:
     if value == "":
         return default
     return value
+
+
+def _optional_setting(
+    environ: Mapping[str, str],
+    name: str,
+    default: str | None,
+) -> str | None:
+    value = environ.get(name)
+    if value is None:
+        return default
+    stripped = value.strip()
+    if stripped == "":
+        return default
+    return stripped
+
+
+def _positive_int_setting(
+    environ: Mapping[str, str],
+    name: str,
+    default: int,
+) -> int:
+    value = environ.get(name)
+    if value is None or value.strip() == "":
+        return default
+    try:
+        parsed = int(value)
+    except ValueError:
+        return default
+    return max(1, parsed)
+
+
+def _bool_setting(environ: Mapping[str, str], name: str, default: bool) -> bool:
+    value = environ.get(name)
+    if value is None or value.strip() == "":
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _parquet_dataset_glob(uri: str) -> str:
+    return f"{uri.rstrip('/')}/*.parquet"
 
 
 def _compact_error(error: Exception) -> str:

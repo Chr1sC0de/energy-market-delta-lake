@@ -16,6 +16,8 @@ class ServiceDiscoveryComponentResource(pulumi.ComponentResource):
       aemo-etl        → port 4000
       webserver-admin → port 3000
       webserver-guest → port 3000
+    Services registered by private EC2 instances:
+      marimo-dashboard → port 2718
     """
 
     namespace: aws.servicediscovery.PrivateDnsNamespace

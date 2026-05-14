@@ -26,9 +26,12 @@ The project materializes Dagster assets defined under `src/aemo_etl/defs` to bui
   media manifest, records included, excluded, and `needs_human_review`
   source-page and direct `https://www.aemo.com.au/-/media/...` media-link
   observations, lands only media rows whose manifest `should_download` is true
-  under `LANDING_BUCKET/bronze/aemo_gas_documents`, and archives those bytes
-  under `ARCHIVE_BUCKET/bronze/aemo_gas_documents` after the metadata table
-  write.
+  under `LANDING_BUCKET/bronze/aemo_gas_documents` using browser-compatible
+  request headers, and archives those bytes under
+  `ARCHIVE_BUCKET/bronze/aemo_gas_documents` after the metadata table write. If
+  a previously downloadable direct-media request still fails during the daily
+  materialization, the asset records that observation without PDF bytes and
+  reports it through `failed_download_count`.
 - `download_vicgas_public_report_zip_files_job` and
   `download_sttm_day_zip_files_job` can be launched manually to bootstrap or
   backfill VicGas `PublicRptsNN.zip` and STTM `DAYNN.ZIP` bundles into landing
@@ -149,6 +152,7 @@ sequenceDiagram
     Discover->>Landing: Save discovered files
     Manifest->>Docs: Load source-page and media-link observations
     Docs->>Source: Download included direct media URLs
+    Docs->>Docs: Record failed downloads without PDF bytes
     Docs->>Landing: Save included PDF bytes
     Docs->>Archive: Move included PDF bytes after metadata write
     Landing->>Unzip: Zip files detected by unzipper sensor
@@ -303,10 +307,11 @@ LocalStack runs can load that cache without live archive access.
 `aemo-refresh-gas-document-media-manifest` is the manual discovery workflow for
 the AEMO gas document asset. It uses Playwright Chromium to visit configured
 source pages, writes the checked-in media manifest and discovery report, and
-validates direct media URLs with normal HTTP requests. The checked-in manifest
-is expected to be non-empty, and the discovery report records validation status,
-HTTP status code, content type, content length, resolved URL, and validation
-errors. Direct media rows with failed validation are retained in the manifest
+validates direct media URLs with the same browser-compatible request headers
+used by the daily asset. The checked-in manifest is expected to be non-empty,
+and the discovery report records validation status, HTTP status code, content
+type, content length, resolved URL, and validation errors. Direct media rows
+with failed validation are retained in the manifest
 with `should_download=false`; the daily asset path records their metadata rows
 without issuing media GETs or landing bytes, while rows with passing validation
 remain downloadable. If a source page is blocked or unreadable, the refresh
