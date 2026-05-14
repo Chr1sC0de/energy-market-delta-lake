@@ -9,11 +9,29 @@ Covers:
   - app_names is populated correctly from the notebooks directory
 """
 
-from fastapi.testclient import TestClient
+import asyncio
+
+import httpx
 
 # conftest.py sets MARIMO_NOTEBOOKS_DIR before this import.
 from marimoserver.main import NOTEBOOKS_DIR, app, app_names
 from tests.component.conftest import TEST_NOTEBOOKS_DIR
+
+
+def get_response(path: str) -> httpx.Response:
+    """Return an in-process ASGI response for the Marimo wrapper app."""
+    return asyncio.run(get_response_async(path))
+
+
+async def get_response_async(path: str) -> httpx.Response:
+    """Return an in-process ASGI response without TestClient lifespan blocking."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+    ) as client:
+        return await client.get(path)
+
 
 # ---------------------------------------------------------------------------
 # TestHealthEndpoint
@@ -22,8 +40,7 @@ from tests.component.conftest import TEST_NOTEBOOKS_DIR
 
 class TestHealthEndpoint:
     def test_health_returns_200(self) -> None:
-        client = TestClient(app, raise_server_exceptions=False)
-        response = client.get("/health")
+        response = get_response("/health")
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
 
@@ -61,19 +78,16 @@ class TestAppDiscovery:
 
 class TestIndexPage:
     def test_index_returns_html(self) -> None:
-        client = TestClient(app, raise_server_exceptions=False)
-        response = client.get("/marimo")
+        response = get_response("/marimo")
         assert response.status_code == 200
         assert "text/html" in response.headers.get("content-type", "")
 
     def test_index_lists_notebooks(self) -> None:
-        client = TestClient(app, raise_server_exceptions=False)
-        response = client.get("/marimo")
+        response = get_response("/marimo")
         assert "test_notebook" in response.text
 
     def test_index_uses_shared_theme(self) -> None:
-        client = TestClient(app, raise_server_exceptions=False)
-        response = client.get("/marimo")
+        response = get_response("/marimo")
         assert '<link rel="stylesheet" href="/theme.css">' in response.text
         assert "var(--emdl-blue" in response.text
         assert "#1a73e8" not in response.text
@@ -87,10 +101,9 @@ class TestIndexPage:
 class TestMarimoMount:
     def test_notebook_route_serves_content(self) -> None:
         """
-        The test_notebook should be accessible at /test_notebook/.
+        The test_notebook should be accessible at /marimo/test_notebook/.
         Marimo returns 200 with HTML for a valid notebook path.
         """
-        client = TestClient(app, raise_server_exceptions=False)
-        response = client.get("/marimo/test_notebook/")
+        response = get_response("/marimo/test_notebook/")
         assert response.status_code == 200
         assert "text/html" in response.headers.get("content-type", "")

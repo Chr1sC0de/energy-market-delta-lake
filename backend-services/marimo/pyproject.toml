@@ -18,6 +18,7 @@ dependencies = [
   "deltalake>=1.4.2",
   "fastapi[standard]>=0.135.1",
   "marimo>=0.13",
+  "plotly>=6.7",
   "polars>=1.38.1",
   "uvicorn>=0.42",
 ]

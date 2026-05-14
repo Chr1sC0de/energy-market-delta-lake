@@ -11,6 +11,7 @@ of the repo.
 - [Image split](#image-split)
 - [Local table explorer](#local-table-explorer)
 - [Gas market dashboard](#gas-market-dashboard)
+- [GBB interactive map](#gbb-interactive-map)
 - [Local usage](#local-usage)
 - [Validation](#validation)
 - [Related docs](#related-docs)
@@ -134,6 +135,43 @@ It gives first-look sections for:
 When LocalStack has no seeded or materialized gas_model tables yet, the notebook
 renders section empty states instead of surfacing Delta read tracebacks.
 
+## GBB interactive map
+
+[notebooks/gbb_interactive_map.py](notebooks/gbb_interactive_map.py) provides a
+local Marimo replica of the AEMO GBB interactive map over curated
+`silver.gas_model` outputs. The supporting helper in
+[src/marimoserver/gbb_interactive_map.py](src/marimoserver/gbb_interactive_map.py)
+loads facility, location, connection-point, actual-flow, nomination-forecast,
+and capacity-outlook tables from:
+
+```text
+s3://<AEMO_BUCKET>/silver/gas_model/<table>
+```
+
+The notebook renders a Plotly `Scattergeo` map using Plotly's built-in
+geographic base, approximate pipeline routes, and overlays for summary,
+pipeline, production, and storage views. The coordinate catalogue is display
+metadata in the Marimo helper, not authoritative GIS standing data. Pipeline
+flow direction follows AEMO's documented GBB map rule shape: past gas days use
+`silver_gas_fact_facility_flow_storage`, while the current gas day and future
+gas days use `silver_gas_fact_nomination_forecast`. Capacity comes from
+`silver_gas_fact_capacity_outlook`. The map still renders if LocalStack has no
+materialized inputs; the notebook shows a compact input warning, keeps the
+table-level diagnostics in an accordion, and falls back to standing pipeline
+metadata. Direct notebook runs preflight the local S3 endpoint so an offline
+LocalStack instance becomes a fast degraded state instead of six slow table read
+attempts.
+
+During development, keep the notebook pointed at LocalStack and hydrate the
+required `silver/gas_model` table prefixes there instead of reading live S3 from
+the notebook process. Use
+[scripts/sync-gbb-map-s3-to-localstack.sh](scripts/sync-gbb-map-s3-to-localstack.sh)
+to mirror the six GBB map input table prefixes from live S3 into a local cache,
+then upload that cache into the LocalStack AEMO bucket. The helper reads Delta
+tables first and falls back to parquet-prefix snapshots, matching the current
+`gas_model` outputs. Subsequent development runs can reload from the cache
+without live S3 access.
+
 ## Local usage
 
 The services are started by [../compose.yaml](../compose.yaml).
@@ -150,7 +188,7 @@ The implementation also accepts `MARIMO_NOTEBOOKS_DIR` if you need to point the
 server at a different notebook directory.
 
 With the local backend stack running, open the Marimo index through Caddy and
-choose `local_table_explorer` or `sample_energy_market`:
+choose `local_table_explorer`, `sample_energy_market`, or `gbb_interactive_map`:
 
 ```text
 http://localhost/marimo
@@ -178,6 +216,34 @@ Use the same pattern for the local table explorer:
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/local_table_explorer.py
 ```
+
+Use the same pattern for the GBB interactive map:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gbb_interactive_map.py
+```
+
+If the GBB map inputs are missing from LocalStack, refresh or load the local
+GBB map cache before opening the notebook:
+
+```bash
+cd backend-services/marimo
+scripts/sync-gbb-map-s3-to-localstack.sh --from live
+```
+
+Use cached data for repeat offline development:
+
+```bash
+cd backend-services/marimo
+scripts/sync-gbb-map-s3-to-localstack.sh --from cache
+```
+
+`--from live` requires normal AWS credentials for the source bucket and writes
+the mirrored table prefixes under
+`backend-services/.e2e/marimo-gbb-map/aemo`. Both modes upload only the table
+prefixes used by `gbb_interactive_map.py` into
+`s3://dev-energy-market-aemo/silver/gas_model/...` on LocalStack by default.
 
 When running the table explorer outside compose, set `DAGSTER_GRAPHQL_URL` to a
 reachable Dagster GraphQL endpoint if you want the catalogue overlay. Leaving it
@@ -215,13 +281,17 @@ prek run -a
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `backend-services/marimo/src/marimoserver/main.py`
+  - `backend-services/marimo/pyproject.toml`
   - `backend-services/marimo/Dockerfile`
+  - `backend-services/marimo/scripts/sync-gbb-map-s3-to-localstack.sh`
   - `backend-services/marimo/research-workspace/AGENTS.md`
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
+  - `backend-services/marimo/src/marimoserver/gbb_interactive_map.py`
   - `backend-services/marimo/src/marimoserver/dagster_graphql.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/notebooks/head.html`
   - `backend-services/marimo/notebooks/sample_energy_market.py`
+  - `backend-services/marimo/notebooks/gbb_interactive_map.py`
   - `backend-services/marimo/notebooks/local_table_explorer.py`
   - `backend-services/compose.yaml`
   - `backend-services/caddy/Caddyfile`

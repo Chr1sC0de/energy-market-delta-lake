@@ -5,11 +5,10 @@ built-in ASGI integration (``marimo.create_asgi_app``).  A ``/health``
 endpoint is exposed for container healthchecks.
 
 The app is designed to be served behind a reverse proxy (Caddy) which
-strips the ``/marimo`` prefix before forwarding traffic here, so all
-routes inside the container are rooted at ``/``.
+forwards ``/marimo*`` traffic to this service.
 
 Notebook discovery uses ``with_app`` in a loop so each ``.py`` file in
-the notebooks directory is mounted at ``/<stem>``.  A
+the notebooks directory is mounted at ``/marimo/<stem>``.  A
 ``with_dynamic_directory`` approach would be preferable for hot-reload,
 but marimo does not support ``path="/"`` for dynamic directories.
 """
@@ -102,7 +101,7 @@ if NOTEBOOKS_DIR.is_dir():
     for notebook in sorted(NOTEBOOKS_DIR.iterdir()):
         if notebook.suffix == ".py":
             name = notebook.stem
-            server = server.with_app(path=f"/marimo/{name}", root=str(notebook))
+            server = server.with_app(path=f"/{name}", root=str(notebook))
             app_names.append(name)
 
 
@@ -110,7 +109,7 @@ if NOTEBOOKS_DIR.is_dir():
 async def index() -> HTMLResponse:
     """Landing page listing all available notebooks."""
     items = "\n".join(
-        f'        <li><a href="marimo/{name}/">{name}</a></li>' for name in app_names
+        f'        <li><a href="/marimo/{name}/">{name}</a></li>' for name in app_names
     )
     html = f"""\
 <!DOCTYPE html>
@@ -146,4 +145,4 @@ async def index() -> HTMLResponse:
     return HTMLResponse(content=html)
 
 
-app.mount("/", server.build())
+app.mount("/marimo", server.build())

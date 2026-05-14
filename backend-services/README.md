@@ -206,7 +206,7 @@ becoming healthy.
 ```text
 NAMES                    STATUS                   PORTS
 postgres                 Up 30 seconds (healthy)  0.0.0.0:5432->5432/tcp
-localstack               Up 30 seconds (healthy)  0.0.0.0:4566->4566/tcp
+localstack               Up 30 seconds (healthy)  127.0.0.1:4566->4566/tcp
 aemo-etl                 Up 20 seconds (healthy)
 dagster-webserver-admin  Up 20 seconds
 dagster-webserver-guest  Up 20 seconds

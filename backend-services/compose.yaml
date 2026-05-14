@@ -67,6 +67,8 @@ services:
     restart: on-failure
     networks:
       - dagster_network
+    ports:
+      - "127.0.0.1:4566:4566"
     environment:
       SERVICES: s3,dynamodb
       AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
