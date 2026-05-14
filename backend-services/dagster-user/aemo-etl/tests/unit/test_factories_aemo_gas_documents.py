@@ -8,7 +8,7 @@ import polars as pl
 import pytest
 from botocore.exceptions import ClientError
 from pytest_mock import MockerFixture
-from requests import Response
+from requests import HTTPError, Response
 
 from aemo_etl.factories.aemo_gas_documents.assets import (
     AEMO_GAS_DOCUMENTS_PREFIX,
@@ -757,6 +757,71 @@ def test_land_manifest_observations_downloads_only_direct_media_urls() -> None:
     assert result.included_pdf_count == 1
     assert result.excluded_observation_count == 0
     assert len(result.records) == 2
+
+
+def test_land_manifest_observations_records_runtime_download_failures() -> None:
+    observations = observations_from_manifest_payload(
+        {
+            "schema_version": 1,
+            "generated_at": "2026-05-10T00:00:00Z",
+            "source_pages": [
+                {
+                    "corpus_source": "example",
+                    "source_page_url": _PAGE_URL,
+                    "source_page_title": "Example Gas Page",
+                    "include_decision": "include",
+                }
+            ],
+            "media_links": [
+                {
+                    "corpus_source": "example",
+                    "source_page_url": _PAGE_URL,
+                    "source_link_text": "Gas Guide v2.1",
+                    "source_url": _PDF_URL,
+                    "include_decision": "include",
+                }
+            ],
+        },
+        observed_at=_OBSERVED_AT,
+    )
+    requested_urls: list[str] = []
+    s3_client = MagicMock()
+    logger = MagicMock()
+
+    def _get(url: str) -> Response:
+        requested_urls.append(url)
+        response = _response(url=url, text="blocked")
+        response.status_code = 403
+        raise HTTPError("403 Client Error: Forbidden for url", response=response)
+
+    result = land_aemo_gas_document_observations(
+        s3_client=s3_client,
+        observations=observations,
+        request_getter=_get,
+        landing_bucket="landing",
+        archive_bucket="archive",
+        logger=logger,
+    )
+
+    failed_record = next(
+        record for record in result.records if record.source_url == _PDF_URL
+    )
+
+    assert requested_urls == [_PDF_URL]
+    assert result.failed_download_count == 1
+    assert result.included_pdf_count == 0
+    assert result.landed_keys == []
+    assert failed_record.content_sha256 is None
+    assert failed_record.target_s3_key is None
+    assert failed_record.exclude_reason == (
+        "Download failed during materialization: 403 Client Error: Forbidden for url"
+    )
+    logger.warning.assert_called_once()
+    warning_args = logger.warning.call_args.args
+    assert warning_args[0] == "recording AEMO gas document download failure for %s: %s"
+    assert warning_args[1] == _PDF_URL
+    assert str(warning_args[2]) == "403 Client Error: Forbidden for url"
+    s3_client.upload_fileobj.assert_not_called()
 
 
 def test_scrape_and_land_deduplicates_landed_pdf_bytes() -> None:

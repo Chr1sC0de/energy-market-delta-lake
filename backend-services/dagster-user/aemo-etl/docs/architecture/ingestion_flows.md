@@ -199,6 +199,7 @@ sequenceDiagram
     Docs->>Manifest: Load source-page and media-link observations
     Docs->>AEMO: Download media rows with should_download=true
     Docs->>Docs: Classify include, exclude, and needs_human_review observations
+    Docs->>Docs: Record runtime download failures without PDF bytes
     Docs->>Landing: Write included PDF bytes by content_sha256
     Docs->>DeltaDocs: Merge bronze_aemo_gas_document_sources metadata rows
     Docs->>Archive: Copy landed PDFs after metadata write, then delete from landing
@@ -225,7 +226,10 @@ Trigger and output notes:
   plus failed direct-media validation source-link observations, are retained in
   `bronze_aemo_gas_document_sources` without landing PDF bytes. Failed
   validation rows are not requested by the daily asset path until a later
-  manifest refresh marks them downloadable.
+  manifest refresh marks them downloadable. If a manifest row marked
+  `should_download=true` fails during daily materialization, the asset records a
+  metadata-only row with the failure reason and increments
+  `failed_download_count`.
 - This flow stops at landing/archive plus bronze metadata. It has no wiki,
   embedding, vector-store, or PDF text-extraction side effects.
 

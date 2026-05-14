@@ -395,8 +395,11 @@ discovery report records validation status, HTTP status code, content type,
 content length, resolved URL, and validation errors. Failed direct-media
 validation rows stay in the manifest with `should_download=false`; the daily
 asset path records those rows without requesting the failed media URL or landing
-bytes. Source-page discovery is refreshed manually with a Playwright-backed CLI
-so regular Dagster runs do not depend on source-page HTML availability.
+bytes. If a row marked `should_download=true` later fails during daily
+materialization, the asset records a metadata-only row with the failure reason
+and reports it through `failed_download_count`. Source-page discovery is
+refreshed manually with a Playwright-backed CLI so regular Dagster runs do not
+depend on source-page HTML availability.
 
 Run commands from this Subproject:
 
