@@ -10,8 +10,8 @@ repo, especially **Subproject**, **Test lane**, **Fast check**, **Commit check**
 **Push check**, **Local integration**, **Delivery mode**, **Integration target**,
 **Exploratory delivery**, **Exploratory branch**, **Sandboxed issue access**,
 **Full-access implementation pass**, **Ready issue refresh**, **Operator
-workflow**, **Issue context assessor**, **Exploratory acceptance review**,
-**Promotion**, and
+workflow**, **Documentation sync**, **Agent skill**, **Issue context assessor**,
+**Exploratory acceptance review**, **Promotion**, and
 **Post-promotion review**.
 
 Repo-wide ADRs live in `docs/adr/`. Create ADRs only when a decision is hard to

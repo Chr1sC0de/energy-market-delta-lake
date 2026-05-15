@@ -33,7 +33,11 @@ The portfolio source lives under [src/](src/):
   runtime detail modal.
 - [src/components/AutomationWorkflowFlow.tsx](src/components/AutomationWorkflowFlow.tsx)
   renders the high-level React Flow view for human decisions and AI execution,
-  with a low-level Ralph loop detail modal.
+  with a master-detail selector for goal setting, build/check work,
+  **Documentation sync**, **Test lane** evidence, and human approval. Each
+  selector opens a focused detail modal with overview and deep dive tabs,
+  including links to repo-local **Agent skills**, Operator docs, maintained-doc
+  policy, QA policy docs, and **Delivery mode** context for approval.
 - [src/components/InfrastructureDiagram.astro](src/components/InfrastructureDiagram.astro)
   renders the recruiter-facing tech stack section grouped by capability area.
 - [public/theme.css](public/theme.css) is copied to `/theme.css` during the

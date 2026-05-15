@@ -93,6 +93,17 @@ The human workflow for shaping work, preparing GitHub Issues, draining Ralph,
 reviewing `dev`, and running **Promotion**.
 _Avoid_: Agent loop, Ralph internals
 
+**Documentation sync**:
+The maintained-doc workflow that maps changed repo paths to docs through
+`sync.sources`, updates matched docs or records no-change decisions, and
+validates metadata, links, anchors, and routes through doc QA and the relevant
+**Commit check**.
+_Avoid_: Doc sync, best-effort docs update
+
+**Agent skill**:
+A reusable local workflow instruction bundle invoked as `$skill-name`.
+_Avoid_: AI skill, generic AI capability
+
 **Issue context assessor**:
 The bounded `$shape-issues` gate provider that judges whether each draft issue's
 declared `Path:` and `Doc:` anchors plus deterministic `rg` evidence snippets
@@ -210,6 +221,14 @@ _Avoid_: Implemented gap, ignored report
   scheduler metadata updates have settled.
 - The **Operator workflow** is the human entrypoint; Ralph internals remain on
   the agent-facing Ralph documentation page.
+- **Documentation sync** is not a **Test lane**. It is a maintained-doc
+  contract validated through doc QA and the relevant **Commit check**.
+- **Documentation sync** runs when changed repo paths match maintained doc
+  `sync.sources`, or when a change introduces new behavior that needs maintained
+  doc coverage.
+- An **Agent skill** can support the **Operator workflow** or Ralph internals,
+  but it is not itself a **Delivery mode**, **Test lane**, or **Integration
+  target**.
 - The **Issue context assessor** is part of the in-development
   `$shape-issues` workflow. Replacing the earlier draft coverage mechanism does
   not require an ADR because it does not establish a durable repo architecture
@@ -264,6 +283,10 @@ _Avoid_: Implemented gap, ignored report
 > issue must anchor `.agents/` paths, the operator must pass the explicit flag,
 > and Ralph must verify the resulting diff stays inside the issue anchors before
 > any QA or **Local integration**."
+>
+> **Dev:** "Is `$shape-issues` an AI capability or an **Agent skill**?"
+> **Domain expert:** "It is an **Agent skill**: a reusable local workflow
+> instruction bundle invoked by name inside the **Operator workflow**."
 
 ## Flagged ambiguities
 
@@ -291,6 +314,9 @@ _Avoid_: Implemented gap, ignored report
 - "operator runbook" and "agent loop" were used together for Ralph operation.
   Resolved: use **Operator workflow** for the human entrypoint and keep Ralph
   internals on the agent-facing Ralph documentation page.
+- "AI skill" was used for repo-local workflow instructions. Resolved: use
+  **Agent skill** because skills are reusable local instruction bundles invoked
+  as `$skill-name`, not generic model abilities.
 - "post-promotion check" could imply a pre-push gate. Resolved: use
   **Post-promotion review** for the default review agent pass that runs after
   **Promotion** attempts where possible.
