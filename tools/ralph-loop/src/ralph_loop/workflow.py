@@ -485,9 +485,23 @@ class ReadyIssueRefreshFailure(RalphError):
         self.log_path = log_path
 
 
+class RalphSelfUpdateRestartRequired(RalphError):
+    """A Ralph loop self-update was integrated and the Operator must restart."""
+
+    def __init__(self, *, manifest_path: Path, changed_files: list[str]) -> None:
+        self.manifest_path = manifest_path
+        self.changed_files = tuple(changed_files)
+        super().__init__(
+            "Ralph loop self-update integrated; restart the Operator before "
+            "claiming more issues."
+        )
+
+
 def drain_fatal_stop_reason(error: Exception) -> str | None:
     if isinstance(error, ReadyIssueRefreshFailure):
         return "ready_issue_refresh_failure"
+    if isinstance(error, RalphSelfUpdateRestartRequired):
+        return "ralph_self_update_restart_required"
     if isinstance(error, PostPushFailure):
         return "post_push_failure"
     if isinstance(error, EnvironmentFailure):
@@ -2400,6 +2414,34 @@ def has_ralph_loop_change(changed_files: list[str]) -> bool:
         path == RALPH_SCRIPT_PATH or path.startswith(RALPH_LOOP_PREFIX)
         for path in changed_files
     )
+
+
+def manifest_changed_files(data: dict[str, Any]) -> list[str]:
+    changed_files = data.get("changed_files")
+    if not isinstance(changed_files, list):
+        return []
+    return list(
+        normalized_changed_file_inventory(
+            [str(path) for path in changed_files if str(path).strip() != ""]
+        )
+    )
+
+
+def implementation_manifest_has_integrated_ralph_loop_change(
+    data: dict[str, Any],
+) -> bool:
+    if str(data.get("run_kind") or "") != "implementation":
+        return False
+    if str(data.get("status") or "") != "succeeded":
+        return False
+    if str(data.get("delivery_mode") or "") == EXPLORATORY_MODE:
+        return False
+    integration_commit = data.get("integration_commit")
+    if not isinstance(integration_commit, dict):
+        return False
+    if str(integration_commit.get("sha") or "") == "":
+        return False
+    return has_ralph_loop_change(manifest_changed_files(data))
 
 
 def has_root_python_workflow_change(changed_files: list[str]) -> bool:
