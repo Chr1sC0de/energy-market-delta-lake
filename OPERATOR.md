@@ -248,7 +248,10 @@ successful Promotion metadata updates, **Post-promotion review**, follow-up
 creation, and **Ready issue refresh** have completed. It records the deployment
 command path, exit status, log path, **Deployed test** evidence, and full-tier
 idempotency evidence in both the Operator manifest and the Promotion child
-manifest.
+manifest. If that checkpointed deployment command or its **Deployed test**
+evidence fails, Ralph runs a deploy-failure analysis pass over redacted command
+logs and Promotion metadata, then creates or downgrades a focused deploy-repair
+GitHub Issue through the same validated Ralph-owned issue creation boundary.
 
 The deployment tiers are:
 
@@ -272,7 +275,19 @@ deployable subset. Ralph reports the Agent workflow paths as non-triggering
 context so operators can see why those paths did not raise the deployment tier.
 The **AWS/Pulumi credential boundary** keeps deployed workflow credentials in
 the operator/Ralph outer loop; sandboxed Codex subprocesses and
-**Post-promotion review** do not receive AWS or Pulumi credentials.
+**Post-promotion review** do not receive AWS or Pulumi credentials. The
+deploy-failure analysis subprocess also receives no AWS or Pulumi credentials
+and is explicitly prohibited from running AWS, Pulumi, or deployment commands
+or mutating GitHub Issues directly.
+
+Deploy-repair issues created after deployment failure are `bug` issues with
+exactly one **Delivery mode** label and `ready-for-agent` when the analyzer
+draft satisfies the ready contract. Incomplete drafts are created with
+`needs-triage` plus validation evidence instead. Duplicate
+`ralph-deploy-repair:...` source markers are skipped on rerun. Inspect
+`deploy_repair_issues` in the Promotion child manifest and the
+`deploy_repair_issue_creation` checkpoint in the Operator manifest before
+manually creating repair work.
 
 Unverified **Promotion** commits in the range are mandatory
 **Post-promotion review** context only. They do not require explicit issue
@@ -332,9 +347,10 @@ Completed or stopped runs write `operator-run-rollup.md` and
 `operator-run-rollup.json` beside `operator-run.json`. Read the Markdown rollup
 first for the full drain-and-**Promotion** summary: succeeded and failed issues,
 manual recoveries, **Local integration** commits, **Promotion** commits, QA
-surfaces, **Post-promotion review** follow-ups, final queue state, and the stop
-or failure reason. Runs that stop for **Exploratory acceptance review** also
-write `exploratory-acceptance-review.md` and
+surfaces, **Post-promotion review** follow-ups, deployment execution,
+deploy-repair issue creation, final queue state, and the stop or failure
+reason. Runs that stop for **Exploratory acceptance review** also write
+`exploratory-acceptance-review.md` and
 `exploratory-acceptance-review.json` beside the rollup. Use the JSON rollup for
 tooling or status-oriented review without tailing child Codex JSONL or rich
 command logs.

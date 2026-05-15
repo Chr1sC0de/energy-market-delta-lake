@@ -68,8 +68,13 @@ code-location topology changes stay on the full deployed AWS workflow because
 they can affect resources outside the targeted user-code redeploy.
 
 Direct `$ralph-loop promote` remains report-only. The checkpointed Operator path
-now adds the bounded deployment executor, but it does not add retries or a
-separate credential preflight beyond the invoked AWS/Pulumi command failures
+now adds the bounded deployment executor and a failure-only deploy-repair issue
+creation pass. When the checkpointed deployment command or its **Deployed test**
+evidence fails, Ralph analyzes redacted deployment evidence without AWS/Pulumi
+credentials, validates structured repair drafts, creates valid `bug`
+`ready-for-agent` issues with exactly one **Delivery mode** label, and
+downgrades incomplete drafts to `needs-triage`. It still does not add retries or
+a separate credential preflight beyond the invoked AWS/Pulumi command failures
 recorded in the manifests.
 
 ## Sync metadata

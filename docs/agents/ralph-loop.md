@@ -486,9 +486,9 @@ first review surface for the full drain-and-**Promotion** run; the JSON rollup
 is the stable tooling surface for issue outcomes, manual recoveries, **Local
 integration** commits, **Promotion** commits, QA surfaces,
 **Post-promotion review** follow-ups, post-Promotion deployment execution,
-final queue state, and stop or failure reasons. Both rollups record the
-underlying child `.ralph/runs/.../ralph-run.json` paths without tailing child
-Codex JSONL or rich command logs.
+deploy-repair issue creation, final queue state, and stop or failure reasons.
+Both rollups record the underlying child `.ralph/runs/.../ralph-run.json` paths
+without tailing child Codex JSONL or rich command logs.
 When open `agent-reviewing` issues remain and no unblocked ready work can
 proceed, the Operator run also writes `exploratory-acceptance-review.md` and
 `exploratory-acceptance-review.json` under the same run directory.
@@ -521,6 +521,7 @@ Checkpoints are recorded for:
 - **Post-promotion review** follow-up creation
 - post-Promotion **Ready issue refresh**
 - deployment skipped, started, succeeded, or failed
+- deploy-repair issue creation after failed deployment
 - **Exploratory acceptance review** required
 - queue clean
 - stopped-by-guard
@@ -622,6 +623,10 @@ Key fields for inspection:
   deployable paths, non-triggering **Agent workflow changes**, and other
   non-triggering paths. Direct Promotion records this field and prints the
   recommendation without running AWS or Pulumi commands.
+- `deploy_repair_issues`: deploy-failure analysis status, Markdown artifact
+  path, created issue URLs, duplicate source-marker skips, validation downgrades
+  to `needs-triage`, warning-only creation failures, and recovery guidance for
+  checkpointed Operator deployment failures.
 - `post_promotion_review`: enabled state, skip reason, warning-only review
   status, review log path, and Markdown artifact path for **Promotion** runs.
 - `post_promotion_followups`: enabled state, created issue URLs, duplicate
@@ -1009,6 +1014,22 @@ command. `user_code_redeploy` runs
 `infrastructure/aws-pulumi/scripts/run-integration-tests --with-idempotency`
 from that **Subproject**, so the same log is the **Deployed test** evidence and
 the full-tier idempotency evidence.
+
+If a checkpointed Operator deployment command or its **Deployed test** evidence
+fails, Ralph runs a deploy-failure analysis pass before recording the terminal
+deployment failure checkpoint. The analyzer receives redacted command-log
+evidence, the changed-file deployment classification, Promotion metadata, the
+selected deployment tier, and deployed-test failure summaries. Its prompt
+prohibits repo edits, commits, pushes, AWS commands, Pulumi commands,
+deployment commands, direct GitHub Issue mutation, and secret exposure. Ralph
+then validates structured deploy-repair drafts from the analysis artifact.
+Valid drafts are created as `bug` issues with exactly one **Delivery mode**
+label and `ready-for-agent`; invalid or incomplete drafts are created with
+`needs-triage` and validation evidence. Duplicate
+`ralph-deploy-repair:...` source markers are skipped on rerun. The Promotion
+child manifest records the `deploy_repair_issues` outcome, and the Operator
+manifest records a `deploy_repair_issue_creation` checkpoint before
+`deployment_failed`.
 
 Ralph runs the aggregate matching **Push check** QA from the source worktree.
 When the promoted range includes non-doc runtime files under

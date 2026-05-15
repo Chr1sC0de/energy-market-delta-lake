@@ -23,8 +23,12 @@ receive phase-scoped issue access; **Full-access implementation pass** runs for
 receive read-only issue commands. After successful **Promotion**, Ralph may
 create structured actionable follow-up issues from the review artifact through
 its validated create-only helper; the review agent still cannot directly create,
-comment, edit, close, or reopen arbitrary GitHub Issues. Git push auth is
-separate;
+comment, edit, close, or reopen arbitrary GitHub Issues. When checkpointed
+Operator deployment fails, Ralph may also create validated deploy-repair issues
+from a deploy-failure analysis artifact. That analyzer receives redacted
+deployment evidence, read-only issue commands, and no AWS or Pulumi
+credentials; it cannot run AWS, Pulumi, or deployment commands or mutate GitHub
+Issues directly. Git push auth is separate;
 **Local integration**, Exploratory handoff, **Integration target** pushes, and
 **Promotion** stay outside the sandbox.
 
@@ -78,6 +82,13 @@ files; later duplicate-search or create failures record their phase, exit code,
 stderr summary, and stdout summary in `publish-manifest.json`. `$ralph-triage`
 remains responsible for category, state, and **Delivery mode** labels before
 Ralph drain.
+
+Deploy-repair issues created from failed deployment evidence use a separate
+`ralph-deploy-repair:...` source marker namespace for duplicate detection.
+Valid deploy-repair drafts are created with `bug`, exactly one **Delivery
+mode** label, and `ready-for-agent`. Invalid or incomplete drafts are still
+created, but only with `needs-triage` and Ralph validation evidence in the
+issue body.
 
 Runtime labels such as `agent-running`, `agent-integrated`, `agent-merged`,
 `agent-failed`, and `agent-reviewing` block repeat implementation and automated

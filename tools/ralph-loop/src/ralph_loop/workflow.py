@@ -20,6 +20,7 @@ READY_ISSUE_REFRESH_PROMPT_COMMENT_LIMIT = 5
 READY_ISSUE_REFRESH_ANALYSIS_ARTIFACT_NAME = "ready-issue-refresh-analysis.md"
 READY_ISSUE_REFRESH_MUTATION_PLAN_HEADING = "Candidate Issue Mutation Plan"
 READY_ISSUE_REFRESH_MUTATIONS_KEY = "ready_issue_refresh_mutations"
+DEPLOY_FAILURE_ANALYSIS_ARTIFACT_NAME = "deploy-failure-analysis.md"
 
 READY_LABEL = "ready-for-agent"
 NEEDS_TRIAGE_LABEL = "needs-triage"
@@ -118,6 +119,8 @@ SANDBOX_READ_WRITE_GH_ISSUE_COMMANDS = (
 )
 SANDBOX_ALLOWED_GH_ISSUE_COMMANDS = SANDBOX_READ_WRITE_GH_ISSUE_COMMANDS
 POST_PROMOTION_FOLLOWUP_MARKER_PREFIX = "ralph-post-promotion-followup"
+DEPLOY_REPAIR_MARKER_PREFIX = "ralph-deploy-repair"
+DEPLOY_FAILURE_LOG_MAX_CHARS = 16_000
 SANDBOX_CODEX_ENV_INCLUDE_ONLY = (
     "PATH",
     "HOME",
@@ -187,6 +190,12 @@ TRIAGE_STOP_LABELS = frozenset(
 
 REQUIRED_ISSUE_SECTIONS = ("What to build", "Acceptance criteria", "Blocked by")
 EXPLORATORY_REQUIRED_ISSUE_SECTIONS = ("Review focus",)
+DEPLOY_REPAIR_REQUIRED_ISSUE_SECTIONS = (
+    *REQUIRED_ISSUE_SECTIONS,
+    "Current context",
+    "Context anchors",
+    "QA/deploy verification plan",
+)
 AEMO_ETL_PREFIX = "backend-services/dagster-user/aemo-etl/"
 MARIMO_PREFIX = "backend-services/marimo/"
 RALPH_LOOP_PREFIX = "tools/ralph-loop/"
@@ -543,6 +552,35 @@ class PostPromotionFollowupContext:
     promotion_sha: str
     run_dir: Path
     artifact_path: Path
+
+
+@dataclass(frozen=True)
+class DeployRepairDraft:
+    title: str
+    body: str
+    labels: tuple[str, ...]
+    finding_id: str
+
+
+@dataclass(frozen=True)
+class DeployRepairValidation:
+    ready: bool
+    labels: tuple[str, ...]
+    reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class DeployRepairContext:
+    repo: str
+    source_branch: str
+    target_branch: str
+    source_revision: str
+    promotion_sha: str
+    deployment_tier: str
+    command_path: str | None
+    run_dir: Path
+    artifact_path: Path
+    log_path: Path | None
 
 
 @dataclass(frozen=True)
@@ -1193,6 +1231,233 @@ def post_promotion_followup_issue_body(
     return "\n".join(lines)
 
 
+def deploy_repair_draft_from_payload(
+    payload: dict[str, Any],
+    *,
+    index: int,
+) -> DeployRepairDraft:
+    title = str(payload.get("title") or "").strip()
+    body = str(payload.get("body") or "").strip()
+    finding_id = str(
+        payload.get("finding_id")
+        or payload.get("id")
+        or slugify(title)
+        or f"draft-{index}"
+    ).strip()
+    if finding_id == "":
+        finding_id = f"draft-{index}"
+    return DeployRepairDraft(
+        title=title,
+        body=body,
+        labels=parse_label_values(payload.get("labels")),
+        finding_id=finding_id,
+    )
+
+
+def deploy_repair_drafts_from_markdown(markdown: str) -> list[DeployRepairDraft]:
+    section = section_body(markdown, "Deploy Repair GitHub Issue Drafts")
+    if section is None:
+        section = section_body(markdown, "Deploy-repair GitHub Issue Drafts")
+    if section is None or section.strip() == "":
+        return []
+
+    payloads: list[dict[str, Any]] = []
+    json_blocks = markdown_json_code_blocks(section)
+    if not json_blocks:
+        json_blocks = [section.strip()]
+    for block in json_blocks:
+        try:
+            payload = json.loads(block)
+        except json.JSONDecodeError:
+            continue
+        payloads.extend(followup_payloads_from_json(payload))
+
+    return [
+        deploy_repair_draft_from_payload(payload, index=index)
+        for index, payload in enumerate(payloads, start=1)
+    ]
+
+
+def validate_deploy_repair_draft(
+    draft: DeployRepairDraft,
+) -> DeployRepairValidation:
+    reasons: list[str] = []
+    if draft.title == "":
+        reasons.append("Title is missing.")
+    if draft.body == "":
+        reasons.append("Body is missing.")
+
+    missing = missing_required_sections(
+        draft.body,
+        required_sections=DEPLOY_REPAIR_REQUIRED_ISSUE_SECTIONS,
+    )
+    if missing:
+        reasons.append(f"Missing required issue section(s): {', '.join(missing)}.")
+
+    label_set = frozenset(draft.labels)
+    category_labels = sorted(label_set.intersection(CATEGORY_LABELS))
+    delivery_labels = sorted(label_set.intersection(DELIVERY_LABELS))
+    if category_labels != ["bug"]:
+        reasons.append(
+            "Expected deploy-repair category label `bug`; found "
+            f"{', '.join(category_labels) if category_labels else 'none'}."
+        )
+    if len(delivery_labels) != 1:
+        reasons.append(
+            "Expected exactly one Delivery mode label "
+            f"({', '.join(sorted(DELIVERY_LABELS))}); found "
+            f"{', '.join(delivery_labels) if delivery_labels else 'none'}."
+        )
+
+    allowed_labels = CATEGORY_LABELS.union(DELIVERY_LABELS, {READY_LABEL})
+    unsupported_labels = sorted(label_set - allowed_labels)
+    if unsupported_labels:
+        reasons.append(f"Unsupported label(s): {', '.join(unsupported_labels)}.")
+
+    if reasons:
+        return DeployRepairValidation(
+            ready=False,
+            labels=(NEEDS_TRIAGE_LABEL,),
+            reasons=tuple(reasons),
+        )
+
+    labels = tuple(sorted({READY_LABEL, "bug", delivery_labels[0]}))
+    return DeployRepairValidation(ready=True, labels=labels, reasons=())
+
+
+def deploy_repair_source_marker(
+    context: DeployRepairContext,
+    draft: DeployRepairDraft,
+    *,
+    index: int,
+) -> str:
+    finding_key = slugify(draft.finding_id or draft.title or f"draft-{index}")
+    return (
+        f"{DEPLOY_REPAIR_MARKER_PREFIX}:"
+        f"{context.promotion_sha}:{context.deployment_tier}:{finding_key}"
+    )
+
+
+def deploy_repair_issue_title(
+    draft: DeployRepairDraft,
+    *,
+    index: int,
+) -> str:
+    if draft.title != "":
+        return draft.title
+    return f"Deploy repair needs triage: {draft.finding_id or f'draft-{index}'}"
+
+
+def deploy_repair_issue_body(
+    draft: DeployRepairDraft,
+    validation: DeployRepairValidation,
+    *,
+    context: DeployRepairContext,
+    marker: str,
+) -> str:
+    body = draft.body.strip() or "_No structured draft body was provided._"
+    missing_sections = missing_required_sections(
+        body,
+        required_sections=DEPLOY_REPAIR_REQUIRED_ISSUE_SECTIONS,
+    )
+    if missing_sections:
+        body_lines = [body]
+        for heading in missing_sections:
+            body_lines.extend(
+                [
+                    "",
+                    f"## {heading}",
+                    "",
+                    "_Ralph validation placeholder: the analyzer draft omitted this section._",
+                ]
+            )
+        body = "\n".join(body_lines)
+    lines = [body, ""]
+    if not validation.ready:
+        lines.extend(
+            [
+                "## Ralph validation evidence",
+                "",
+                (
+                    "Ralph created this deploy-repair issue as "
+                    f"`{NEEDS_TRIAGE_LABEL}` because the draft did not satisfy "
+                    "the ready deploy-repair issue contract."
+                ),
+                "",
+                *[f"- {reason}" for reason in validation.reasons],
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
+            "## Ralph source",
+            "",
+            f"- Source marker: `{marker}`",
+            f"- Source branch: `{context.source_branch}`",
+            f"- Source revision: `{context.source_revision}`",
+            f"- Integration target: `{context.target_branch}`",
+            f"- Promotion commit: `{context.promotion_sha}`",
+            f"- Deployment tier: `{context.deployment_tier}`",
+            f"- Deployment command: `{context.command_path or 'not recorded'}`",
+            f"- Promotion run: `{context.run_dir}`",
+            f"- Deployment log: `{context.log_path or 'not recorded'}`",
+            f"- Analysis artifact: `{context.artifact_path}`",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def redact_deploy_failure_evidence(value: str) -> str:
+    redacted = value
+    redacted = re.sub(
+        r"(?i)\b(A3T[A-Z0-9]|AKIA|ASIA)[A-Z0-9]{12,}\b",
+        "[REDACTED_AWS_ACCESS_KEY]",
+        redacted,
+    )
+    secret_names = (
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "AWS_SECURITY_TOKEN",
+        "AWS_PROFILE",
+        "PULUMI_ACCESS_TOKEN",
+        "PULUMI_CONFIG_PASSPHRASE",
+        "PULUMI_BACKEND_URL",
+    )
+    for name in secret_names:
+        redacted = re.sub(
+            rf"(?im)(\b{re.escape(name)}\b\s*[:=]\s*)([^\s\"']+)",
+            r"\1[REDACTED]",
+            redacted,
+        )
+        redacted = re.sub(
+            rf"(?im)([\"']{re.escape(name)}[\"']\s*:\s*[\"'])(.*?)([\"'])",
+            r"\1[REDACTED]\3",
+            redacted,
+        )
+
+    redacted = re.sub(
+        r"(?im)(\b(?:password|passwd|secret|token)\b\s*[:=]\s*)([^\s\"']+)",
+        r"\1[REDACTED]",
+        redacted,
+    )
+    redacted = re.sub(
+        r"(?im)([\"'](?:password|passwd|secret|token)[\"']\s*:\s*[\"'])(.*?)([\"'])",
+        r"\1[REDACTED]\3",
+        redacted,
+    )
+
+    if len(redacted) > DEPLOY_FAILURE_LOG_MAX_CHARS:
+        omitted = len(redacted) - DEPLOY_FAILURE_LOG_MAX_CHARS
+        redacted = (
+            f"[... omitted {omitted} earlier redacted characters ...]\n"
+            f"{redacted[-DEPLOY_FAILURE_LOG_MAX_CHARS:]}"
+        )
+    return redacted
+
+
 def ready_issue_refresh_required_mutation_payloads_from_json(
     value: Any,
 ) -> list[dict[str, Any]]:
@@ -1613,6 +1878,22 @@ def append_post_promotion_followup_recovery_guidance(
     )
     artifact_path.write_text(
         existing.rstrip() + "\n" + "\n".join(lines) + "\n", encoding="utf-8"
+    )
+
+
+def deploy_repair_issue_recovery_guidance(
+    failures: list[dict[str, Any]],
+    *,
+    run_dir: Path,
+) -> str:
+    count = len(failures)
+    plural = "s" if count != 1 else ""
+    return (
+        f"Ralph could not complete {count} deploy-repair issue creation step{plural} "
+        "after the checkpointed deployment failed. Inspect "
+        f"`{run_dir / MANIFEST_NAME}` under `deploy_repair_issues.failures`, "
+        "then create or triage the missing deploy-repair issue manually using the "
+        "recorded source marker to avoid duplicates."
     )
 
 

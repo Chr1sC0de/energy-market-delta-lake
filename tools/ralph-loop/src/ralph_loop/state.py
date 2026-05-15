@@ -249,6 +249,17 @@ class RunManifest:
                     "argument": POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_IDEMPOTENCY_ARG,
                 },
             },
+            "deploy_repair_issues": {
+                "enabled": True,
+                "status": "not_started",
+                "log_path": None,
+                "artifact_path": None,
+                "created": [],
+                "duplicates": [],
+                "validation_downgrades": [],
+                "failures": [],
+                "recovery_guidance": None,
+            },
             "promotion_commit": None,
             "local_branch_fast_forwards": {
                 "source_branch": {
@@ -461,6 +472,41 @@ class RunManifest:
         if full_tier_idempotency_evidence is not None:
             execution["full_tier_idempotency_evidence"] = full_tier_idempotency_evidence
         self.record_event(f"deployment_execution_{status}", details=dict(execution))
+
+    def record_deploy_repair_issues(
+        self,
+        status: str,
+        *,
+        log_path: Path | None = None,
+        artifact_path: Path | None = None,
+        created: list[dict[str, Any]] | None = None,
+        duplicates: list[dict[str, Any]] | None = None,
+        validation_downgrades: list[dict[str, Any]] | None = None,
+        failures: list[dict[str, Any]] | None = None,
+        reason: str | None = None,
+        recovery_guidance: str | None = None,
+    ) -> None:
+        repairs = self.data.setdefault("deploy_repair_issues", {})
+        if not isinstance(repairs, dict):
+            raise RalphError("Manifest deploy_repair_issues field is not an object.")
+        repairs["status"] = status
+        if log_path is not None or "log_path" not in repairs:
+            repairs["log_path"] = path_text(log_path)
+        if artifact_path is not None or "artifact_path" not in repairs:
+            repairs["artifact_path"] = path_text(artifact_path)
+        if created is not None:
+            repairs["created"] = created
+        if duplicates is not None:
+            repairs["duplicates"] = duplicates
+        if validation_downgrades is not None:
+            repairs["validation_downgrades"] = validation_downgrades
+        if failures is not None:
+            repairs["failures"] = failures
+        if reason is not None:
+            repairs["reason"] = reason
+        if recovery_guidance is not None:
+            repairs["recovery_guidance"] = recovery_guidance
+        self.record_event(f"deploy_repair_issues_{status}", details=dict(repairs))
 
     def record_commit(self, name: str, sha: str) -> None:
         commits = self.data.setdefault("commits", {})
@@ -1848,6 +1894,13 @@ def build_operator_run_rollup(
         for deployment in [operator_rollup_deployment_entry(promotion)]
         if deployment is not None
     ]
+    deploy_repair_issues = [
+        repair
+        for promotion in promotion_entries
+        if promotion.get("deploy_repair_issues") is not None
+        for repair in [operator_rollup_deploy_repair_entry(promotion)]
+        if repair is not None
+    ]
     qa_surfaces = [
         surface
         for source in child_sources
@@ -1908,6 +1961,7 @@ def build_operator_run_rollup(
             "local_integrations": len(local_integrations),
             "promotions": len(promotion_entries),
             "deployment_executions": len(deployment_executions),
+            "deploy_repair_issue_phases": len(deploy_repair_issues),
             "manual_recoveries": len(manual_recoveries),
             "qa_surfaces": len(qa_surfaces),
             "post_promotion_followups": len(post_promotion_followups),
@@ -1919,6 +1973,7 @@ def build_operator_run_rollup(
         "local_integrations": local_integrations,
         "promotions": promotion_entries,
         "deployment_executions": deployment_executions,
+        "deploy_repair_issues": deploy_repair_issues,
         "qa_surfaces": qa_surfaces,
         "post_promotion_followups": post_promotion_followups,
         "exploratory_acceptance_review": data.get("exploratory_acceptance_review"),
@@ -2259,6 +2314,10 @@ def operator_promotion_rollup_entry(
     deployment_execution = (
         deployment_execution if isinstance(deployment_execution, dict) else None
     )
+    deploy_repair_issues = child_data.get("deploy_repair_issues")
+    deploy_repair_issues = (
+        deploy_repair_issues if isinstance(deploy_repair_issues, dict) else None
+    )
     review = child_data.get("post_promotion_review")
     review = review if isinstance(review, dict) else None
     metadata = child_data.get("github_metadata")
@@ -2297,6 +2356,7 @@ def operator_promotion_rollup_entry(
         "post_promotion_review": review,
         "post_promotion_followups": followups,
         "deployment_execution": deployment_execution,
+        "deploy_repair_issues": deploy_repair_issues,
         "failure": child_data.get("failure"),
     }
 
@@ -2423,6 +2483,40 @@ def operator_rollup_deployment_entry(
     }
 
 
+def operator_rollup_deploy_repair_entry(
+    promotion: dict[str, Any],
+) -> dict[str, Any] | None:
+    repairs = promotion.get("deploy_repair_issues")
+    if not isinstance(repairs, dict):
+        return None
+    status = str(repairs.get("status") or "")
+    if status in {"", "not_started"}:
+        return None
+    return {
+        "status": status,
+        "created": repairs.get("created")
+        if isinstance(repairs.get("created"), list)
+        else [],
+        "duplicates": (
+            repairs.get("duplicates")
+            if isinstance(repairs.get("duplicates"), list)
+            else []
+        ),
+        "validation_downgrades": (
+            repairs.get("validation_downgrades")
+            if isinstance(repairs.get("validation_downgrades"), list)
+            else []
+        ),
+        "failures": (
+            repairs.get("failures") if isinstance(repairs.get("failures"), list) else []
+        ),
+        "recovery_guidance": repairs.get("recovery_guidance"),
+        "manifest_path": promotion.get("manifest_path"),
+        "artifact_path": repairs.get("artifact_path"),
+        "log_path": repairs.get("log_path"),
+    }
+
+
 def operator_rollup_final_queue(data: dict[str, Any]) -> dict[str, Any]:
     queue = data.get("queue")
     queue = queue if isinstance(queue, dict) else {}
@@ -2492,6 +2586,10 @@ def render_operator_run_rollup_markdown(rollup: dict[str, Any]) -> str:
         "## Deployment",
         "",
         *operator_rollup_deployment_markdown_lines(rollup["deployment_executions"]),
+        "",
+        "## Deploy Repair Issues",
+        "",
+        *operator_rollup_deploy_repair_markdown_lines(rollup["deploy_repair_issues"]),
         "",
         "## QA Surfaces",
         "",
@@ -2586,6 +2684,7 @@ def operator_rollup_promotion_markdown_lines(
             + f" - `{entry.get('status')}`; Promotion commit `{commit_text}`"
             + f"; QA `{entry.get('qa', {}).get('status')}`"
             + f"; Deployment `{operator_rollup_nested_status(entry, 'deployment_execution') or 'not_started'}`"
+            + f"; Deploy repair `{operator_rollup_nested_status(entry, 'deploy_repair_issues') or 'not_started'}`"
             + f"; Post-promotion follow-ups `{followups.get('status')}` "
             + f"(created={len(created)}, failures={len(failures)})"
             + f"; manifest {markdown_path_link(entry.get('manifest_path'))}"
@@ -2619,6 +2718,37 @@ def operator_rollup_deployment_markdown_lines(
             + f"; command `{command_path}`"
             + f"; exit `{entry.get('exit_status')}`"
             + f"; log {log_path}"
+        )
+    return lines
+
+
+def operator_rollup_deploy_repair_markdown_lines(
+    entries: list[dict[str, Any]],
+) -> list[str]:
+    if not entries:
+        return ["- None"]
+    lines: list[str] = []
+    for entry in entries:
+        created = entry.get("created") if isinstance(entry.get("created"), list) else []
+        duplicates = (
+            entry.get("duplicates") if isinstance(entry.get("duplicates"), list) else []
+        )
+        downgrades = (
+            entry.get("validation_downgrades")
+            if isinstance(entry.get("validation_downgrades"), list)
+            else []
+        )
+        failures = (
+            entry.get("failures") if isinstance(entry.get("failures"), list) else []
+        )
+        lines.append(
+            "- "
+            + f"`{entry.get('status')}`"
+            + f"; created `{len(created)}`"
+            + f"; duplicates `{len(duplicates)}`"
+            + f"; validation downgrades `{len(downgrades)}`"
+            + f"; failures `{len(failures)}`"
+            + f"; artifact {markdown_path_link(entry.get('artifact_path'))}"
         )
     return lines
 

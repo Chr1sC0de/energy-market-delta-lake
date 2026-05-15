@@ -11,6 +11,10 @@ issues keep read-only issue access. The **Post-promotion review** pass also gets
 read-only issue access and cannot create issues directly, comment, label, close,
 reopen, or edit issues. After a successful **Promotion**, Ralph may create
 structured follow-up issues through its own validated create-only helper.
+After a checkpointed Operator deployment failure, Ralph may likewise create
+deploy-repair issues from a read-only deploy-failure analysis artifact. That
+analysis subprocess receives redacted evidence only, keeps read-only issue
+commands, and does not receive AWS or Pulumi credentials.
 
 ## Considered options
 
@@ -62,6 +66,16 @@ validation evidence. Each created issue receives a deterministic source marker
 based on the **Promotion** commit and finding ID so reruns skip duplicates.
 Helper failures after `main` is pushed are warning-only and recorded with
 recovery guidance in the **Promotion** manifest and review artifact.
+
+Deploy-failure analysis uses the same read-only issue access boundary as
+**Post-promotion review** and **Ready issue refresh**, but it also strips AWS
+and Pulumi environment variables from the Codex subprocess. The prompt
+prohibits repo edits, commits, pushes, AWS commands, Pulumi commands,
+deployment commands, direct GitHub Issue mutation, and secret exposure. Ralph's
+outer loop validates each deploy-repair draft before issue creation, creates
+valid drafts with `bug`, exactly one **Delivery mode** label, and
+`ready-for-agent`, creates incomplete drafts with `needs-triage` validation
+evidence, and skips duplicate `ralph-deploy-repair:...` source markers.
 
 ## Sync metadata
 
