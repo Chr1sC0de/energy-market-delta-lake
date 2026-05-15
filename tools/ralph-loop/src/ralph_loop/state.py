@@ -127,6 +127,19 @@ class RunManifest:
                 "out_of_scope_files": [],
                 "recovery_guidance": None,
             },
+            "issue_completion_review": {
+                "enabled": True,
+                "required": False,
+                "status": "not_started",
+                "reasons": [],
+                "deployment_classification": None,
+                "high_stiffness_evidence": [],
+                "log_path": None,
+                "artifact_path": None,
+                "attempts": [],
+                "repair_attempts": [],
+                "failure": None,
+            },
             "ready_issue_refresh": {
                 "enabled": config.ready_issue_refresh_enabled,
                 "status": "not_started",
@@ -584,6 +597,103 @@ class RunManifest:
         if error is not None:
             review["error"] = error
         self.record_event(f"post_promotion_review_{status}", details=dict(review))
+
+    def record_issue_completion_review(
+        self,
+        status: str,
+        *,
+        trigger: IssueCompletionReviewTrigger | None = None,
+        log_path: Path | None = None,
+        artifact_path: Path | None = None,
+        review_attempt: int | None = None,
+        result: str | None = None,
+        findings: str | None = None,
+        repair_attempt: int | None = None,
+        error: str | None = None,
+    ) -> None:
+        review = self.data.setdefault("issue_completion_review", {})
+        if not isinstance(review, dict):
+            raise RalphError("Manifest issue_completion_review field is not an object.")
+        review["status"] = status
+        if trigger is not None:
+            trigger_payload = trigger.to_manifest()
+            review["required"] = trigger.required
+            review["reasons"] = trigger_payload["reasons"]
+            review["deployment_classification"] = trigger_payload[
+                "deployment_classification"
+            ]
+            review["high_stiffness_evidence"] = trigger_payload[
+                "high_stiffness_evidence"
+            ]
+        if log_path is not None or "log_path" not in review:
+            review["log_path"] = path_text(log_path)
+        if artifact_path is not None or "artifact_path" not in review:
+            review["artifact_path"] = path_text(artifact_path)
+        if error is not None:
+            review["failure"] = {
+                "message": error,
+                "log_path": path_text(log_path),
+                "artifact_path": path_text(artifact_path),
+            }
+        elif status not in {"failed", "failed_exhausted", "failed_invalid_result"}:
+            review["failure"] = None
+
+        if review_attempt is not None:
+            attempts = review.setdefault("attempts", [])
+            if not isinstance(attempts, list):
+                raise RalphError(
+                    "Manifest issue_completion_review.attempts field is not a list."
+                )
+            entry: dict[str, Any] = {
+                "attempt": review_attempt,
+                "status": status,
+                "log_path": path_text(log_path),
+                "artifact_path": path_text(artifact_path),
+            }
+            if result is not None:
+                entry["result"] = result
+            if findings is not None:
+                entry["findings"] = findings
+            if error is not None:
+                entry["error"] = error
+            replaced = False
+            for index, existing in enumerate(attempts):
+                if (
+                    isinstance(existing, dict)
+                    and existing.get("attempt") == review_attempt
+                ):
+                    attempts[index] = {**existing, **entry}
+                    replaced = True
+                    break
+            if not replaced:
+                attempts.append(entry)
+
+        if repair_attempt is not None:
+            repairs = review.setdefault("repair_attempts", [])
+            if not isinstance(repairs, list):
+                raise RalphError(
+                    "Manifest issue_completion_review.repair_attempts field is not a list."
+                )
+            entry = {
+                "attempt": repair_attempt,
+                "status": status,
+                "log_path": path_text(log_path),
+            }
+            if error is not None:
+                entry["error"] = error
+            replaced = False
+            for index, existing in enumerate(repairs):
+                if (
+                    isinstance(existing, dict)
+                    and existing.get("attempt") == repair_attempt
+                ):
+                    repairs[index] = {**existing, **entry}
+                    replaced = True
+                    break
+            if not replaced:
+                repairs.append(entry)
+
+        self.record_event(f"issue_completion_review_{status}", details=dict(review))
 
     def record_post_promotion_followups(
         self,

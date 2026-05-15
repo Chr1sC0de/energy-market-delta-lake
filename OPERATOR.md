@@ -7,9 +7,10 @@ Use repo canonical terms from [CONTEXT.md](CONTEXT.md), especially
 **Subproject**, **Test lane**, **Fast check**, **Commit check**, **Push check**,
 **Local integration**, **Delivery mode**, **Integration target**,
 **Sandboxed issue access**, **Full-access implementation pass**,
-**Ready issue refresh**, **Operator workflow**, **Documentation sync**,
-**Agent skill**, **Agent workflow change**, **Exploratory acceptance review**,
-**Promotion**, **Post-Promotion deployment classification**, and
+**Issue completion review**, **Ready issue refresh**, **Operator workflow**,
+**Documentation sync**, **Agent skill**, **Agent workflow change**,
+**Exploratory acceptance review**, **Promotion**,
+**Post-Promotion deployment classification**, and
 **AWS/Pulumi credential boundary**.
 
 ## Canonical Path
@@ -59,9 +60,15 @@ exploratory change whose `## Review focus` says why it should publish a durable
 Use `$ralph-loop drain` to let Ralph implement ready issues. Ralph owns
 worktrees, deterministic QA, **Local integration** for Gitflow or Trunk
 delivery, Exploratory branch handoff, **Integration target** pushes, and
-GitHub issue metadata after validation. After a successful **Local
-integration** or Exploratory handoff, **Ready issue refresh** reconciles the
-open issue queue before Ralph claims the next `ready-for-agent` issue.
+GitHub issue metadata after validation. For deployable paths, **Agent workflow
+changes**, **Trunk delivery**, or high-stiffness issue evidence, Ralph runs an
+automated **Issue completion review** after QA and before any **Integration
+target** update or Exploratory handoff. If that review finds incomplete work,
+Ralph feeds the findings back into remaining Codex attempts, reruns QA, and
+reruns the review; exhausted findings fail the issue without **Local
+integration**. After a successful **Local integration** or Exploratory handoff,
+**Ready issue refresh** reconciles the open issue queue before Ralph claims the
+next `ready-for-agent` issue.
 
 For unattended queue cleanup after `dev` review, prefer the checkpointed
 Operator run path. It drains ready work through the same lane-aware scheduler as
@@ -145,7 +152,8 @@ Use `--max-issues` for the drain-level claimed issue budget. Plain `--drain`
 claims at most 10 implementation issues by default, and `--max-issues 0` means
 unlimited drain. Use `--max-codex-attempts` for the per-issue Codex
 implementation budget. It defaults to 5 total Codex attempts per claimed issue,
-including the initial implementation and retries after Codex or QA failures.
+including the initial implementation, retries after Codex or QA failures, and
+repair attempts after failing **Issue completion review** findings.
 
 ## Review Dev
 

@@ -21,6 +21,9 @@ READY_ISSUE_REFRESH_ANALYSIS_ARTIFACT_NAME = "ready-issue-refresh-analysis.md"
 READY_ISSUE_REFRESH_MUTATION_PLAN_HEADING = "Candidate Issue Mutation Plan"
 READY_ISSUE_REFRESH_MUTATIONS_KEY = "ready_issue_refresh_mutations"
 DEPLOY_FAILURE_ANALYSIS_ARTIFACT_NAME = "deploy-failure-analysis.md"
+ISSUE_COMPLETION_REVIEW_ARTIFACT_NAME = "issue-completion-review.md"
+ISSUE_COMPLETION_REVIEW_FAILURE_TYPE = "issue_completion_review_failed"
+HIGH_STIFFNESS_SCORE_THRESHOLD = 70
 
 READY_LABEL = "ready-for-agent"
 NEEDS_TRIAGE_LABEL = "needs-triage"
@@ -425,6 +428,38 @@ class FormatterRewriteRecoveryFailure(IssueFailure):
         )
 
 
+class IssueCompletionReviewFailure(IssueFailure):
+    """Automated Issue completion review found incomplete issue work."""
+
+    def __init__(
+        self,
+        *,
+        issue_number: int,
+        findings: str,
+        artifact_path: Path | None,
+        log_path: Path | None,
+    ) -> None:
+        self.findings = findings
+        self.artifact_path = artifact_path
+        artifact_line = (
+            f"\nReview artifact: {artifact_path}" if artifact_path is not None else ""
+        )
+        message = (
+            f"Issue completion review failed for #{issue_number}."
+            f"{artifact_line}\n\nFindings:\n\n{findings.strip() or '<none recorded>'}"
+        )
+        super().__init__(
+            message,
+            log_path=log_path,
+            failure_type=ISSUE_COMPLETION_REVIEW_FAILURE_TYPE,
+            recovery_guidance=(
+                "Inspect the preserved implementation worktree, review artifact, "
+                "and QA logs, then rerun Ralph for the issue after repairing the "
+                "incomplete work."
+            ),
+        )
+
+
 class EnvironmentFailure(IssueFailure):
     """A local environment failure that should stop the drain."""
 
@@ -664,6 +699,22 @@ class PostPromotionDeploymentClassification:
             "full_workflow_paths": list(self.full_workflow_paths),
             "agent_workflow_paths": list(self.agent_workflow_paths),
             "non_triggering_paths": list(self.non_triggering_paths),
+        }
+
+
+@dataclass(frozen=True)
+class IssueCompletionReviewTrigger:
+    required: bool
+    reasons: tuple[str, ...]
+    deployment_classification: PostPromotionDeploymentClassification
+    high_stiffness_evidence: tuple[str, ...]
+
+    def to_manifest(self) -> dict[str, Any]:
+        return {
+            "required": self.required,
+            "reasons": list(self.reasons),
+            "deployment_classification": self.deployment_classification.to_manifest(),
+            "high_stiffness_evidence": list(self.high_stiffness_evidence),
         }
 
 
@@ -2236,6 +2287,52 @@ def classify_post_promotion_deployment(
         full_workflow_paths=full_workflow_paths,
         agent_workflow_paths=agent_workflow_paths,
         non_triggering_paths=non_triggering_paths,
+    )
+
+
+def declared_high_stiffness_evidence(markdown: str) -> tuple[str, ...]:
+    section = section_body(markdown, "Stiffness estimate")
+    evidence: list[str] = []
+    if section is not None and re.search(r"\bhigh\b", section, flags=re.IGNORECASE):
+        evidence.append("Declared `Stiffness estimate` is high.")
+
+    for match in re.finditer(
+        r"(?im)\bstiffness(?:\s+summary)?\s*:\s*`?(?P<score>\d{1,3})`?"
+        r"(?:\s*\((?P<level>[^)]+)\))?",
+        markdown,
+    ):
+        score = int(match.group("score"))
+        level = (match.group("level") or "").strip().lower()
+        if score >= HIGH_STIFFNESS_SCORE_THRESHOLD or level == "high":
+            evidence.append(match.group(0).strip())
+
+    return tuple(dict.fromkeys(evidence))
+
+
+def issue_completion_review_trigger(
+    *,
+    issue: Issue,
+    delivery_plan: DeliveryPlan,
+    changed_files: list[str],
+) -> IssueCompletionReviewTrigger:
+    classification = classify_post_promotion_deployment(changed_files)
+    reasons: list[str] = []
+    if classification.deployable_paths:
+        reasons.append("deployable changed paths")
+    if classification.agent_workflow_paths:
+        reasons.append("Agent workflow changes")
+    if delivery_plan.mode == TRUNK_MODE:
+        reasons.append("Trunk delivery")
+
+    high_stiffness_evidence = declared_high_stiffness_evidence(issue.body)
+    if high_stiffness_evidence:
+        reasons.append("high-stiffness issue evidence")
+
+    return IssueCompletionReviewTrigger(
+        required=bool(reasons),
+        reasons=tuple(dict.fromkeys(reasons)),
+        deployment_classification=classification,
+        high_stiffness_evidence=high_stiffness_evidence,
     )
 
 

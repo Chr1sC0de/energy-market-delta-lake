@@ -14,6 +14,11 @@ therefore must not silently run deployed workflow commands.
 The checkpointed **Operator workflow** can own those credentials in the Ralph
 outer loop after **Promotion** cleanup has completed.
 
+The same pure path classifier can also identify risky issue attempts before
+**Local integration**. That pre-integration use is a review trigger only:
+**Issue completion review** may run for deployable changed paths, but it still
+does not run AWS, Pulumi, or deployment scripts.
+
 ## Decision
 
 Ralph records **Post-Promotion deployment classification** from the Promotion
@@ -36,6 +41,8 @@ classifies from the deployable subset and reports the Agent workflow paths as
 non-triggering context. Direct `$ralph-loop promote` records the decision under
 `deployment_classification` in the Promotion manifest and prints the
 recommendation, but does not invoke AWS, Pulumi, or deployment scripts.
+Issue attempts reuse the same classification snapshot in the implementation
+manifest when **Issue completion review** is required by deployable paths.
 
 The checkpointed Operator path consumes the recorded decision after successful
 Promotion metadata updates, **Post-promotion review**, follow-up creation, and

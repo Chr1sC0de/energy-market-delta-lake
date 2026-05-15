@@ -4767,6 +4767,18 @@ class RalphLoop:
                     "Implementation branch has no diff against current base."
                 )
 
+            changed_files, qa_results = self._run_issue_completion_review_with_repair(
+                issue,
+                delivery_plan=delivery_plan,
+                changed_files=changed_files,
+                qa_results=qa_results,
+                worktree_path=worktree_path,
+                run_dir=run_dir,
+                manifest=manifest,
+                access_plan=access_plan,
+                base_ref=f"origin/{base_branch}",
+            )
+
             if delivery_plan.mode == EXPLORATORY_MODE:
                 commit_sha = self.git.rev_parse("HEAD", cwd=worktree_path)
                 manifest.record_integration_commit(
@@ -5565,6 +5577,333 @@ class RalphLoop:
             )
             return [*qa_results, *recovery_results]
         return qa_results
+
+    def _codex_attempt_count(self, manifest: RunManifest) -> int:
+        attempts = manifest.data.get("codex_attempts")
+        if not isinstance(attempts, list):
+            return 0
+        attempt_numbers = [
+            int(attempt.get("attempt"))
+            for attempt in attempts
+            if isinstance(attempt, dict) and isinstance(attempt.get("attempt"), int)
+        ]
+        return max(attempt_numbers, default=0)
+
+    def _run_issue_completion_review_with_repair(
+        self,
+        issue: Issue,
+        *,
+        delivery_plan: DeliveryPlan,
+        changed_files: list[str],
+        qa_results: list[QAResult],
+        worktree_path: Path,
+        run_dir: Path,
+        manifest: RunManifest,
+        access_plan: ImplementationAccessPlan,
+        base_ref: str,
+    ) -> tuple[list[str], list[QAResult]]:
+        trigger = issue_completion_review_trigger(
+            issue=issue,
+            delivery_plan=delivery_plan,
+            changed_files=changed_files,
+        )
+        if not trigger.required:
+            manifest.record_issue_completion_review(
+                "skipped_not_required",
+                trigger=trigger,
+            )
+            return changed_files, qa_results
+
+        manifest.record_issue_completion_review("required", trigger=trigger)
+        review_attempt = 1
+        pending_findings: str | None = None
+        pending_artifact_path: Path | None = None
+        pending_log_path: Path | None = None
+        current_changed_files = list(changed_files)
+        current_qa_results = list(qa_results)
+        while True:
+            if pending_findings is None:
+                result, findings, artifact_path, log_path = (
+                    self._run_issue_completion_review(
+                        issue,
+                        delivery_plan=delivery_plan,
+                        changed_files=current_changed_files,
+                        qa_results=current_qa_results,
+                        worktree_path=worktree_path,
+                        run_dir=run_dir,
+                        manifest=manifest,
+                        trigger=trigger,
+                        review_attempt=review_attempt,
+                    )
+                )
+                if result == "pass":
+                    return current_changed_files, current_qa_results
+                pending_findings = findings
+                pending_artifact_path = artifact_path
+                pending_log_path = log_path
+
+            last_failure = IssueCompletionReviewFailure(
+                issue_number=issue.number,
+                findings=pending_findings,
+                artifact_path=pending_artifact_path,
+                log_path=pending_log_path,
+            )
+            next_attempt = self._codex_attempt_count(manifest) + 1
+            if next_attempt > self.config.max_codex_attempts:
+                manifest.record_issue_completion_review(
+                    "failed_exhausted",
+                    trigger=trigger,
+                    log_path=pending_log_path,
+                    artifact_path=pending_artifact_path,
+                    error=str(last_failure),
+                )
+                raise last_failure
+
+            emit(
+                f"#{issue.number}: Issue completion review failed; running "
+                f"Codex repair attempt {next_attempt}"
+            )
+            try:
+                repair_qa_results = self._run_issue_completion_review_repair_attempt(
+                    issue,
+                    changed_files=current_changed_files,
+                    qa_results=current_qa_results,
+                    findings=pending_findings,
+                    artifact_path=pending_artifact_path,
+                    worktree_path=worktree_path,
+                    run_dir=run_dir,
+                    manifest=manifest,
+                    access_plan=access_plan,
+                    attempt=next_attempt,
+                )
+            except EnvironmentFailure:
+                raise
+            except FullAccessImplementationScopeFailure:
+                raise
+            except (CommandFailure, IssueFailure) as error:
+                log_path = getattr(error, "log_path", None)
+                repair_failure_findings = "\n\n".join(
+                    [
+                        pending_findings,
+                        f"Repair attempt {next_attempt} failed before review rerun:",
+                        user_facing_error(error),
+                    ]
+                )
+                manifest.record_issue_completion_review(
+                    "repair_failed",
+                    repair_attempt=next_attempt,
+                    log_path=log_path if isinstance(log_path, Path) else None,
+                    error=str(error),
+                )
+                if next_attempt >= self.config.max_codex_attempts:
+                    exhausted_failure = IssueCompletionReviewFailure(
+                        issue_number=issue.number,
+                        findings=repair_failure_findings,
+                        artifact_path=pending_artifact_path,
+                        log_path=pending_log_path,
+                    )
+                    manifest.record_issue_completion_review(
+                        "failed_exhausted",
+                        trigger=trigger,
+                        log_path=pending_log_path,
+                        artifact_path=pending_artifact_path,
+                        error=str(exhausted_failure),
+                    )
+                    raise exhausted_failure from error
+                pending_findings = repair_failure_findings
+                continue
+            current_qa_results.extend(repair_qa_results)
+            if self.git.has_uncommitted_changes(cwd=worktree_path):
+                manifest.record_event(
+                    "committing_issue_completion_review_repair",
+                    details={"attempt": next_attempt},
+                )
+                self.git.commit_all(
+                    cwd=worktree_path,
+                    message=(
+                        "Apply Issue completion review repairs for issue "
+                        f"#{issue.number}: {issue.title}"
+                    ),
+                    run_dir=run_dir,
+                    log_prefix=f"issue-completion-review-repair-{next_attempt}",
+                )
+            current_changed_files = self.git.changed_files_against(
+                cwd=worktree_path,
+                base_ref=base_ref,
+            )
+            manifest.record_changed_files(
+                current_changed_files,
+                stage="issue_completion_review_repair_changes_detected",
+            )
+            if not current_changed_files:
+                raise IssueFailure(
+                    "Issue completion review repair left no changed files to publish."
+                )
+            pending_findings = None
+            pending_artifact_path = None
+            pending_log_path = None
+            review_attempt += 1
+
+    def _run_issue_completion_review(
+        self,
+        issue: Issue,
+        *,
+        delivery_plan: DeliveryPlan,
+        changed_files: list[str],
+        qa_results: list[QAResult],
+        worktree_path: Path,
+        run_dir: Path,
+        manifest: RunManifest,
+        trigger: IssueCompletionReviewTrigger,
+        review_attempt: int,
+    ) -> tuple[str, str, Path, Path]:
+        suffix = "" if review_attempt == 1 else f"-{review_attempt}"
+        artifact_path = run_dir / (
+            ISSUE_COMPLETION_REVIEW_ARTIFACT_NAME
+            if review_attempt == 1
+            else f"issue-completion-review-{review_attempt}.md"
+        )
+        log_path = run_dir / f"codex-issue-completion-review{suffix}.jsonl"
+        emit(f"#{issue.number}: running Issue completion review")
+        manifest.record_issue_completion_review(
+            "running",
+            trigger=trigger,
+            log_path=log_path,
+            artifact_path=artifact_path,
+            review_attempt=review_attempt,
+        )
+        result = self._run_codex(
+            issue_completion_review_prompt(
+                repo=self.config.repo,
+                issue=issue,
+                delivery_plan=delivery_plan,
+                changed_files=changed_files,
+                qa_results=qa_results,
+                run_dir=run_dir,
+                trigger=trigger,
+            ),
+            worktree_path,
+            log_path,
+            phase=f"#{issue.number}: Issue completion review",
+            manifest=manifest,
+            allowed_issue_commands=SANDBOX_READ_ONLY_GH_ISSUE_COMMANDS,
+            output_last_message=artifact_path,
+        )
+        review_markdown = codex_markdown_from_artifact(
+            artifact_path,
+            stdout=result.stdout,
+        )
+        if not self.runner.dry_run:
+            artifact_path.write_text(review_markdown + "\n", encoding="utf-8")
+        try:
+            review_result = issue_completion_review_result(review_markdown)
+        except IssueFailure as error:
+            manifest.record_issue_completion_review(
+                "failed_invalid_result",
+                trigger=trigger,
+                log_path=log_path,
+                artifact_path=artifact_path,
+                review_attempt=review_attempt,
+                error=str(error),
+            )
+            raise IssueFailure(
+                str(error),
+                log_path=log_path,
+                failure_type=error.failure_type,
+                recovery_guidance=error.recovery_guidance,
+            ) from error
+        findings = issue_completion_review_findings(review_markdown)
+        status = "passed" if review_result == "pass" else "failed"
+        manifest.record_issue_completion_review(
+            status,
+            trigger=trigger,
+            log_path=log_path,
+            artifact_path=artifact_path,
+            review_attempt=review_attempt,
+            result=review_result,
+            findings=findings,
+        )
+        if review_result == "pass":
+            emit(f"#{issue.number}: Issue completion review passed")
+        else:
+            emit(f"#{issue.number}: Issue completion review found incomplete work")
+        return review_result, findings, artifact_path, log_path
+
+    def _run_issue_completion_review_repair_attempt(
+        self,
+        issue: Issue,
+        *,
+        changed_files: list[str],
+        qa_results: list[QAResult],
+        findings: str,
+        artifact_path: Path | None,
+        worktree_path: Path,
+        run_dir: Path,
+        manifest: RunManifest,
+        access_plan: ImplementationAccessPlan,
+        attempt: int,
+    ) -> list[QAResult]:
+        codex_log = run_dir / f"codex-implementation-{attempt}.jsonl"
+        manifest.record_codex_attempt(attempt, status="running", log_path=codex_log)
+        try:
+            self._run_codex(
+                issue_completion_review_repair_prompt(
+                    issue=issue,
+                    changed_files=changed_files,
+                    qa_results=qa_results,
+                    findings=findings,
+                    artifact_path=artifact_path,
+                ),
+                worktree_path,
+                codex_log,
+                phase=(
+                    f"#{issue.number}: Codex Issue completion review repair "
+                    f"attempt {attempt}"
+                ),
+                manifest=manifest,
+                allowed_issue_commands=(
+                    SANDBOX_READ_ONLY_GH_ISSUE_COMMANDS
+                    if access_plan.full_access_required
+                    else SANDBOX_ALLOWED_GH_ISSUE_COMMANDS
+                ),
+                sandbox_mode=(
+                    FULL_ACCESS_CODEX_SANDBOX
+                    if access_plan.full_access_required
+                    else WORKSPACE_WRITE_CODEX_SANDBOX
+                ),
+            )
+        except CommandFailure as error:
+            manifest.record_codex_attempt(
+                attempt,
+                status="failed",
+                log_path=error.log_path or codex_log,
+                error=str(error),
+            )
+            manifest.record_issue_completion_review(
+                "repair_failed",
+                repair_attempt=attempt,
+                log_path=error.log_path or codex_log,
+                error=str(error),
+            )
+            raise
+        manifest.record_codex_attempt(attempt, status="completed", log_path=codex_log)
+        manifest.record_issue_completion_review(
+            "repair_completed",
+            repair_attempt=attempt,
+            log_path=codex_log,
+        )
+        self._validate_full_access_implementation_diff(
+            access_plan,
+            worktree_path,
+            manifest,
+        )
+        return self._run_qa(
+            issue,
+            worktree_path,
+            run_dir,
+            log_prefix=qa_log_prefix_for_codex_attempt(attempt),
+            manifest=manifest,
+        )
 
     def _recover_formatter_rewritten_commit(
         self,
@@ -9247,6 +9586,168 @@ def retry_implementation_prompt(
     if ready_issue_refresh_notes:
         prompt = f"{prompt}\n\n{ready_issue_refresh_prompt_section(ready_issue_refresh_notes)}"
     return f"{prompt}\n\nFailure detail:\n\n{detail}".strip()
+
+
+def issue_completion_review_prompt(
+    *,
+    repo: str,
+    issue: Issue,
+    delivery_plan: DeliveryPlan,
+    changed_files: list[str],
+    qa_results: list[QAResult],
+    run_dir: Path,
+    trigger: IssueCompletionReviewTrigger,
+) -> str:
+    changed_lines = markdown_bullet_lines(changed_files)
+    qa_lines = ready_issue_refresh_qa_evidence_lines(qa_results)
+    trigger_lines = "\n".join(f"- {reason}" for reason in trigger.reasons) or "- None"
+    classification_text = json.dumps(
+        trigger.deployment_classification.to_manifest(),
+        indent=2,
+        sort_keys=True,
+    )
+    return textwrap.dedent(
+        f"""
+        Run an Issue completion review for GitHub issue #{issue.number} in {repo}.
+
+        Work in this repository worktree only. Follow AGENTS.md and the repo's
+        canonical terms, especially Subproject, Test lane, Fast check, Commit
+        check, Push check, Local integration, Delivery mode, Integration
+        target, and Issue completion review.
+
+        Do not edit repo files, commit, push, create issues directly, comment,
+        label, close, reopen, or edit GitHub Issues. You may read GitHub Issues
+        with `gh auth status`, `gh issue view`, `gh issue list`, and
+        `gh issue status` only. Report findings in the command output only;
+        Ralph will save your final Markdown report as
+        `{ISSUE_COMPLETION_REVIEW_ARTIFACT_NAME}`.
+
+        Review whether the implementation fully satisfies the issue contract
+        after QA passed and before Ralph updates the Integration target, pushes
+        trunk, or performs Exploratory handoff. Prioritize concrete incomplete
+        work, missed acceptance criteria, wrong changed files, insufficient QA
+        evidence, and risks in deployable or Agent workflow paths. If the work
+        is complete, say so clearly.
+
+        Your final response must be a Markdown report with these sections:
+
+        # Issue completion review
+
+        ## Review result
+
+        Write exactly one of: `pass` or `fail`.
+
+        ## Findings
+
+        For `fail`, list concrete repair findings with file paths, commands, or
+        issue acceptance criteria. For `pass`, write `No blocking findings.`
+
+        ## Residual risk
+
+        Issue details:
+
+        - Issue: `#{issue.number} {issue.title}`
+        - URL: {issue.url}
+        - Delivery mode: `{delivery_plan.mode}`
+        - Integration target: `{delivery_plan.target_branch}`
+        - Run logs: `{run_dir}`
+        - Run manifest: `{run_dir / MANIFEST_NAME}`
+
+        Review trigger reasons:
+
+        {trigger_lines}
+
+        Deployment classifier:
+
+        ```json
+        {classification_text}
+        ```
+
+        Changed files:
+
+        {changed_lines}
+
+        QA evidence:
+
+        {qa_lines}
+
+        Issue body:
+
+        {issue.body}
+        """
+    ).strip()
+
+
+def issue_completion_review_repair_prompt(
+    *,
+    issue: Issue,
+    changed_files: list[str],
+    qa_results: list[QAResult],
+    findings: str,
+    artifact_path: Path | None,
+) -> str:
+    changed_lines = markdown_bullet_lines(changed_files)
+    qa_lines = ready_issue_refresh_qa_evidence_lines(qa_results)
+    artifact_text = str(artifact_path) if artifact_path is not None else "not recorded"
+    return textwrap.dedent(
+        f"""
+        Repair GitHub issue #{issue.number} after Issue completion review findings.
+
+        The implementation passed QA, but the automated Issue completion review
+        found incomplete work. Fix the findings in the current worktree. Do not
+        commit, push, or edit GitHub labels/comments.
+
+        Issue URL: {issue.url}
+
+        Issue body:
+
+        {issue.body}
+
+        Changed files before repair:
+
+        {changed_lines}
+
+        QA evidence before repair:
+
+        {qa_lines}
+
+        Review artifact: `{artifact_text}`
+
+        Review findings:
+
+        {findings.strip() or "<none recorded>"}
+        """
+    ).strip()
+
+
+def issue_completion_review_result(markdown: str) -> str:
+    section = section_body(markdown, "Review result")
+    if section is None:
+        raise IssueFailure(
+            "Issue completion review did not include `## Review result`.",
+            failure_type="issue_completion_review_invalid_result",
+        )
+    first_line = ""
+    for line in section.splitlines():
+        stripped = line.strip().strip("`").lower()
+        if stripped:
+            first_line = stripped
+            break
+    if re.fullmatch(r"pass(?:ed)?\.?", first_line):
+        return "pass"
+    if re.fullmatch(r"fail(?:ed)?\.?", first_line):
+        return "fail"
+    raise IssueFailure(
+        "Issue completion review result must be exactly `pass` or `fail`.",
+        failure_type="issue_completion_review_invalid_result",
+    )
+
+
+def issue_completion_review_findings(markdown: str) -> str:
+    findings = section_body(markdown, "Findings")
+    if findings is not None and findings.strip() != "":
+        return findings.strip()
+    return markdown.strip()
 
 
 def triage_prompt(issue: Issue, repo: str) -> str:
