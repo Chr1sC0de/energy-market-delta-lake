@@ -11,6 +11,8 @@ The repository also needs a clear credential boundary. Promotion runs inside
 Ralph's outer loop, but sandboxed Codex subprocesses and **Post-promotion
 review** do not own AWS or Pulumi credentials. Direct `$ralph-loop promote`
 therefore must not silently run deployed workflow commands.
+The checkpointed **Operator workflow** can own those credentials in the Ralph
+outer loop after **Promotion** cleanup has completed.
 
 ## Decision
 
@@ -27,7 +29,7 @@ classifier is pure and path based:
 - `full_deployed_workflow`: Pulumi, service runtime, image, Dagster core, auth,
   Caddy, Marimo, code-location topology, or mixed deployed-platform paths
   changed. The recommendation is
-  `infrastructure/aws-pulumi/scripts/run-integration-tests`.
+  `infrastructure/aws-pulumi/scripts/run-integration-tests --with-idempotency`.
 
 When a Promotion mixes **Agent workflow changes** with deployable paths, Ralph
 classifies from the deployable subset and reports the Agent workflow paths as
@@ -35,11 +37,22 @@ non-triggering context. Direct `$ralph-loop promote` records the decision under
 `deployment_classification` in the Promotion manifest and prints the
 recommendation, but does not invoke AWS, Pulumi, or deployment scripts.
 
+The checkpointed Operator path consumes the recorded decision after successful
+Promotion metadata updates, **Post-promotion review**, follow-up creation, and
+post-Promotion **Ready issue refresh**. It records `deployment_execution` in
+the Promotion child manifest and a deployment checkpoint in the Operator
+manifest. `no_deployment` skips command execution. `user_code_redeploy` runs
+`infrastructure/aws-pulumi/scripts/redeploy-user-code`. The
+`full_deployed_workflow` tier runs
+`infrastructure/aws-pulumi/scripts/run-integration-tests --with-idempotency` so
+the log carries both **Deployed test** evidence and full-tier idempotency
+evidence.
+
 The **AWS/Pulumi credential boundary** remains in the operator/Ralph outer loop:
-deployment commands may run only when an operator or future Ralph outer-loop
-automation explicitly owns the AWS and Pulumi credentials. Sandboxed Codex
-subprocesses and **Post-promotion review** remain outside that credential
-boundary.
+deployment commands may run only when the checkpointed Operator path or another
+explicit Ralph outer-loop automation owns the AWS and Pulumi credentials.
+Sandboxed Codex subprocesses and **Post-promotion review** remain outside that
+credential boundary.
 
 ## Consequences
 
@@ -54,9 +67,10 @@ service runtime, image, Dagster core, auth, Caddy, Marimo, Pulumi, and
 code-location topology changes stay on the full deployed AWS workflow because
 they can affect resources outside the targeted user-code redeploy.
 
-This ADR does not add automatic deployment execution. A future ADR can define a
-Ralph-owned deployment executor, credential checks, retry behavior, and
-manifest evidence for AWS/Pulumi command execution.
+Direct `$ralph-loop promote` remains report-only. The checkpointed Operator path
+now adds the bounded deployment executor, but it does not add retries or a
+separate credential preflight beyond the invoked AWS/Pulumi command failures
+recorded in the manifests.
 
 ## Sync metadata
 

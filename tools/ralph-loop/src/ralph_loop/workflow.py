@@ -191,6 +191,7 @@ MARIMO_PREFIX = "backend-services/marimo/"
 RALPH_LOOP_PREFIX = "tools/ralph-loop/"
 RALPH_SCRIPT_PATH = "scripts/ralph.py"
 BACKEND_SERVICES_PREFIX = "backend-services/"
+AWS_PULUMI_PREFIX = "infrastructure/aws-pulumi/"
 POST_PROMOTION_DEPLOYMENT_NO_DEPLOY = "no_deployment"
 POST_PROMOTION_DEPLOYMENT_USER_CODE = "user_code_redeploy"
 POST_PROMOTION_DEPLOYMENT_FULL = "full_deployed_workflow"
@@ -200,6 +201,7 @@ POST_PROMOTION_DEPLOYMENT_REDEPLOY_USER_CODE_COMMAND = (
 POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_COMMAND = (
     "infrastructure/aws-pulumi/scripts/run-integration-tests"
 )
+POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_IDEMPOTENCY_ARG = "--with-idempotency"
 AEMO_ETL_E2E_SCRIPT_PATH = "backend-services/scripts/aemo-etl-e2e"
 AEMO_ETL_E2E_QA_NAME = "aemo-etl End-to-end test"
 AEMO_ETL_E2E_TEST_LANE = "AEMO ETL End-to-end test"
@@ -622,6 +624,30 @@ class PostPromotionDeploymentClassification:
             "full_workflow_paths": list(self.full_workflow_paths),
             "agent_workflow_paths": list(self.agent_workflow_paths),
             "non_triggering_paths": list(self.non_triggering_paths),
+        }
+
+
+@dataclass(frozen=True)
+class PostPromotionDeploymentCommand:
+    tier: str
+    name: str
+    command_path: str
+    args: tuple[str, ...]
+    cwd: Path
+    log_name: str
+    records_deployed_tests: bool
+    records_idempotency: bool
+
+    def to_manifest(self) -> dict[str, Any]:
+        return {
+            "tier": self.tier,
+            "name": self.name,
+            "command_path": self.command_path,
+            "command": list(self.args),
+            "cwd": str(self.cwd),
+            "log_name": self.log_name,
+            "records_deployed_tests": self.records_deployed_tests,
+            "records_idempotency": self.records_idempotency,
         }
 
 
@@ -1879,7 +1905,8 @@ def classify_post_promotion_deployment(
             ),
             recommended_action=(
                 "Run the full deployed AWS workflow from the AWS Pulumi Subproject: "
-                f"`{POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_COMMAND}`."
+                f"`{POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_COMMAND} "
+                f"{POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_IDEMPOTENCY_ARG}`."
             ),
             deployable_paths=deployable_paths,
             user_code_redeploy_paths=user_code_paths,
@@ -1926,6 +1953,44 @@ def classify_post_promotion_deployment(
         agent_workflow_paths=agent_workflow_paths,
         non_triggering_paths=non_triggering_paths,
     )
+
+
+def post_promotion_deployment_command(
+    classification: PostPromotionDeploymentClassification,
+    *,
+    repo_root: Path,
+) -> PostPromotionDeploymentCommand | None:
+    aws_pulumi_cwd = repo_root / AWS_PULUMI_PREFIX.rstrip("/")
+    if classification.tier == POST_PROMOTION_DEPLOYMENT_NO_DEPLOY:
+        return None
+    if classification.tier == POST_PROMOTION_DEPLOYMENT_USER_CODE:
+        return PostPromotionDeploymentCommand(
+            tier=classification.tier,
+            name="Dagster user-code redeploy",
+            command_path=POST_PROMOTION_DEPLOYMENT_REDEPLOY_USER_CODE_COMMAND,
+            args=(
+                str(repo_root / POST_PROMOTION_DEPLOYMENT_REDEPLOY_USER_CODE_COMMAND),
+            ),
+            cwd=aws_pulumi_cwd,
+            log_name="deployment-user-code-redeploy.log",
+            records_deployed_tests=False,
+            records_idempotency=False,
+        )
+    if classification.tier == POST_PROMOTION_DEPLOYMENT_FULL:
+        return PostPromotionDeploymentCommand(
+            tier=classification.tier,
+            name="full deployed AWS workflow",
+            command_path=POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_COMMAND,
+            args=(
+                str(repo_root / POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_COMMAND),
+                POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_IDEMPOTENCY_ARG,
+            ),
+            cwd=aws_pulumi_cwd,
+            log_name="deployment-full-deployed-workflow.log",
+            records_deployed_tests=True,
+            records_idempotency=True,
+        )
+    raise RalphError(f"Unknown Post-Promotion deployment tier: {classification.tier}")
 
 
 def has_protected_aemo_etl_change(changed_files: list[str]) -> bool:

@@ -66,7 +66,9 @@ then runs **Promotion** when `agent-integrated` issues remain. Promotion starts
 only after active Exploratory workers, implementation **Ready issue refresh**
 gates, and scheduler metadata updates have settled. The Operator lets
 successful **Post-promotion review** create validated follow-up GitHub Issues,
-and repeats until no open `ready-for-agent`, `agent-integrated`,
+applies post-Promotion **Ready issue refresh**, then runs or skips the
+checkpointed deployment action selected by **Post-Promotion deployment
+classification**. It repeats until no open `ready-for-agent`, `agent-integrated`,
 `agent-reviewing`, `agent-running`, or `agent-failed` issues remain. When no
 unblocked ready issue can proceed and open `agent-reviewing` issues remain, the
 Operator run stops as `needs_review` and writes an **Exploratory acceptance
@@ -229,21 +231,29 @@ Direct `$ralph-loop promote` also records
 **Post-Promotion deployment classification** in the Promotion manifest and
 prints the recommended deployment action. This is report-only: direct Promotion
 does not run AWS or Pulumi commands.
+The checkpointed Operator run path uses the same recorded classifier only after
+successful Promotion metadata updates, **Post-promotion review**, follow-up
+creation, and **Ready issue refresh** have completed. It records the deployment
+command path, exit status, log path, **Deployed test** evidence, and full-tier
+idempotency evidence in both the Operator manifest and the Promotion child
+manifest.
 
 The deployment tiers are:
 
 - `no_deployment`: no AWS deployment is recommended. A Promotion containing
   only **Agent workflow changes** always lands here with a skip reason.
 - `user_code_redeploy`: deployed AEMO ETL user-code runtime paths changed and
-  no full deployed AWS workflow path changed. Run
+  no full deployed AWS workflow path changed. The checkpointed Operator runs
   `infrastructure/aws-pulumi/scripts/redeploy-user-code` from the AWS Pulumi
-  **Subproject** only after confirming the operator shell owns the needed AWS
-  and Pulumi credentials.
+  **Subproject**; for direct Promotion, run that command manually only after
+  confirming the operator shell owns the needed AWS and Pulumi credentials.
 - `full_deployed_workflow`: Pulumi, service runtime, image, Dagster core, auth,
   Caddy, Marimo, code-location topology, or mixed deployed-platform paths
-  changed. Run `infrastructure/aws-pulumi/scripts/run-integration-tests` from
-  the AWS Pulumi **Subproject** only after confirming the operator shell owns
-  the needed AWS and Pulumi credentials.
+  changed. The checkpointed Operator runs
+  `infrastructure/aws-pulumi/scripts/run-integration-tests --with-idempotency`
+  from the AWS Pulumi **Subproject**; for direct Promotion, run that command
+  manually only after confirming the operator shell owns the needed AWS and
+  Pulumi credentials.
 
 Mixed **Agent workflow change** and deployable paths are classified from the
 deployable subset. Ralph reports the Agent workflow paths as non-triggering

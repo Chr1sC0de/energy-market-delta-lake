@@ -467,9 +467,10 @@ Completed or stopped Operator runs also write
 first review surface for the full drain-and-**Promotion** run; the JSON rollup
 is the stable tooling surface for issue outcomes, manual recoveries, **Local
 integration** commits, **Promotion** commits, QA surfaces,
-**Post-promotion review** follow-ups, final queue state, and stop or failure
-reasons. Both rollups record the underlying child `.ralph/runs/.../ralph-run.json`
-paths without tailing child Codex JSONL or rich command logs.
+**Post-promotion review** follow-ups, post-Promotion deployment execution,
+final queue state, and stop or failure reasons. Both rollups record the
+underlying child `.ralph/runs/.../ralph-run.json` paths without tailing child
+Codex JSONL or rich command logs.
 When open `agent-reviewing` issues remain and no unblocked ready work can
 proceed, the Operator run also writes `exploratory-acceptance-review.md` and
 `exploratory-acceptance-review.json` under the same run directory.
@@ -500,6 +501,8 @@ Checkpoints are recorded for:
 - before **Promotion**
 - **Promotion** success or failure
 - **Post-promotion review** follow-up creation
+- post-Promotion **Ready issue refresh**
+- deployment skipped, started, succeeded, or failed
 - **Exploratory acceptance review** required
 - queue clean
 - stopped-by-guard
@@ -508,6 +511,9 @@ The `before_promotion` checkpoint is written only after the scheduler pass has
 returned. That means active Exploratory workers have finished, implementation
 **Ready issue refresh** claim gates have opened, and child metadata updates have
 either completed or produced recorded recovery evidence.
+Deployment checkpoints are written only after successful Promotion metadata
+updates, **Post-promotion review**, follow-up creation, and post-Promotion
+**Ready issue refresh** have completed in the Promotion child run.
 
 Detached mode is the Codex-safe path:
 
@@ -944,7 +950,13 @@ actionable work.
 Immediately after recording the Promotion changed-file inventory, Ralph records
 `deployment_classification` in the **Promotion** manifest and prints the
 recommended deployment action. Direct `$ralph-loop promote` never runs the
-deployment command. The classifier uses three tiers:
+deployment command. The checkpointed Operator path consumes the same recorded
+classification only after successful Promotion metadata updates,
+**Post-promotion review**, follow-up creation, and **Ready issue refresh** have
+completed. It records `deployment_execution` in the Promotion child manifest
+and records the matching Operator checkpoint with command path, command
+arguments, cwd, log path, exit status, **Deployed test** evidence, and full-tier
+idempotency evidence. The classifier uses three tiers:
 
 - `no_deployment`: no AWS deployment is recommended. A Promotion containing
   only **Agent workflow changes** records this tier with a clear skip reason.
@@ -954,7 +966,7 @@ deployment command. The classifier uses three tiers:
 - `full_deployed_workflow`: Pulumi, service runtime, image, Dagster core, auth,
   Caddy, Marimo, code-location topology, or mixed deployed-platform paths
   changed. The recommendation is
-  `infrastructure/aws-pulumi/scripts/run-integration-tests`.
+  `infrastructure/aws-pulumi/scripts/run-integration-tests --with-idempotency`.
 
 When a Promotion mixes **Agent workflow changes** with deployable paths, Ralph
 classifies only the deployable subset and reports the Agent workflow paths as
@@ -963,6 +975,15 @@ workflow credentials in the operator/Ralph outer loop: sandboxed Codex
 subprocesses and **Post-promotion review** receive no AWS or Pulumi
 credentials, and direct Promotion only reports the command an operator should
 run later from the AWS Pulumi **Subproject**.
+
+For checkpointed Operator runs, `no_deployment` records
+`deployment_execution.status: skipped_no_deployment` and runs no AWS or Pulumi
+command. `user_code_redeploy` runs
+`infrastructure/aws-pulumi/scripts/redeploy-user-code` from the AWS Pulumi
+**Subproject**. `full_deployed_workflow` runs
+`infrastructure/aws-pulumi/scripts/run-integration-tests --with-idempotency`
+from that **Subproject**, so the same log is the **Deployed test** evidence and
+the full-tier idempotency evidence.
 
 Ralph runs the aggregate matching **Push check** QA from the source worktree.
 When the promoted range includes non-doc runtime files under

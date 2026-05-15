@@ -6357,6 +6357,8 @@ class RalphOperatorRun:
             child_manifest_path=manifest_path,
         )
         self._record_post_promotion_followup_checkpoint(manifest_path)
+        self._record_post_promotion_ready_issue_refresh_checkpoint(manifest_path)
+        self._run_post_promotion_deployment_checkpoint(child_manifest)
         self.manifest.clear_current()
 
     def _record_post_promotion_followup_checkpoint(self, manifest_path: Path) -> None:
@@ -6371,6 +6373,159 @@ class RalphOperatorRun:
             ),
             child_manifest_path=manifest_path,
             details=details,
+        )
+
+    def _record_post_promotion_ready_issue_refresh_checkpoint(
+        self, manifest_path: Path
+    ) -> None:
+        details = post_promotion_ready_issue_refresh_checkpoint_details(manifest_path)
+        if not details:
+            return
+        self.manifest.record_checkpoint(
+            "post_promotion_ready_issue_refresh",
+            message=(
+                "Post-promotion Ready issue refresh phase completed with "
+                f"status {details['status']}."
+            ),
+            child_manifest_path=manifest_path,
+            details=details,
+        )
+
+    def _run_post_promotion_deployment_checkpoint(
+        self, child_manifest: RunManifest
+    ) -> None:
+        classification = post_promotion_deployment_classification_from_manifest(
+            child_manifest.data
+        )
+        command = post_promotion_deployment_command(
+            classification,
+            repo_root=self.config.repo_root,
+        )
+        if command is None:
+            details = deployment_execution_skip_details(classification)
+            child_manifest.record_deployment_execution(
+                "skipped_no_deployment",
+                tier=classification.tier,
+                reason=classification.reason,
+                deployed_test_evidence=details["deployed_test_evidence"],
+                full_tier_idempotency_evidence=details[
+                    "full_tier_idempotency_evidence"
+                ],
+            )
+            self.manifest.record_checkpoint(
+                "deployment_skipped",
+                message=f"Post-promotion deployment skipped: {classification.reason}",
+                child_manifest_path=child_manifest.path,
+                details=child_manifest.data["deployment_execution"],
+            )
+            return
+
+        log_path = child_manifest.path.parent / command.log_name
+        self.manifest.record_current_deployment(
+            tier=classification.tier,
+            command_path=command.command_path,
+            child_manifest_path=child_manifest.path,
+        )
+        child_manifest.record_deployment_execution(
+            "running",
+            tier=classification.tier,
+            reason=classification.reason,
+            command_path=command.command_path,
+            command=command.args,
+            cwd=command.cwd,
+            log_path=log_path,
+            deployed_test_evidence=deployment_deployed_test_evidence(
+                command,
+                status="running",
+                log_path=log_path,
+            ),
+            full_tier_idempotency_evidence=deployment_idempotency_evidence(
+                command,
+                status="running",
+                log_path=log_path,
+            ),
+        )
+        self.manifest.record_checkpoint(
+            "deployment_started",
+            message=f"Starting post-promotion deployment tier {classification.tier}.",
+            child_manifest_path=child_manifest.path,
+            details=child_manifest.data["deployment_execution"],
+        )
+        emit(
+            "Operator cycle: running post-Promotion deployment "
+            f"{classification.tier}: {format_command(command.args)}"
+        )
+        try:
+            self.runner.run(
+                list(command.args),
+                cwd=command.cwd,
+                log_path=log_path,
+                phase=f"post-Promotion deployment: {command.name}",
+                execute_in_dry_run=False,
+            )
+        except CommandFailure as error:
+            child_manifest.record_deployment_execution(
+                "failed",
+                tier=classification.tier,
+                reason=classification.reason,
+                command_path=command.command_path,
+                command=command.args,
+                cwd=command.cwd,
+                log_path=error.log_path or log_path,
+                exit_status=error.returncode,
+                error=str(error),
+                deployed_test_evidence=deployment_deployed_test_evidence(
+                    command,
+                    status="failed",
+                    log_path=error.log_path or log_path,
+                ),
+                full_tier_idempotency_evidence=deployment_idempotency_evidence(
+                    command,
+                    status="failed",
+                    log_path=error.log_path or log_path,
+                ),
+            )
+            guidance = operator_deployment_failure_guidance(child_manifest.path)
+            self.manifest.record_checkpoint(
+                "deployment_failed",
+                message=f"Post-promotion deployment tier {classification.tier} failed.",
+                child_manifest_path=child_manifest.path,
+                status="failed",
+                recovery_guidance=guidance,
+                details=child_manifest.data["deployment_execution"],
+            )
+            self.manifest.record_failure(
+                error,
+                recovery_guidance=guidance,
+                child_manifest_path=child_manifest.path,
+            )
+            raise RalphError(guidance) from error
+
+        child_manifest.record_deployment_execution(
+            "succeeded",
+            tier=classification.tier,
+            reason=classification.reason,
+            command_path=command.command_path,
+            command=command.args,
+            cwd=command.cwd,
+            log_path=log_path,
+            exit_status=0,
+            deployed_test_evidence=deployment_deployed_test_evidence(
+                command,
+                status="passed",
+                log_path=log_path,
+            ),
+            full_tier_idempotency_evidence=deployment_idempotency_evidence(
+                command,
+                status="passed",
+                log_path=log_path,
+            ),
+        )
+        self.manifest.record_checkpoint(
+            "deployment_succeeded",
+            message=f"Post-promotion deployment tier {classification.tier} completed.",
+            child_manifest_path=child_manifest.path,
+            details=child_manifest.data["deployment_execution"],
         )
 
     def _stop_for_queue_condition(
@@ -7388,6 +7543,145 @@ def post_promotion_followup_checkpoint_details(
     }
 
 
+def post_promotion_ready_issue_refresh_checkpoint_details(
+    manifest_path: Path,
+) -> dict[str, Any] | None:
+    if not manifest_path.exists():
+        return None
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    refresh = data.get("ready_issue_refresh")
+    if not isinstance(refresh, dict):
+        return None
+    status = str(refresh.get("status") or "")
+    if status in {"", "not_started"}:
+        return None
+    candidates = refresh.get("candidate_issues")
+    mutations = refresh.get("mutation_results")
+    return {
+        "status": status,
+        "enabled": refresh.get("enabled"),
+        "candidate_issue_count": len(candidates) if isinstance(candidates, list) else 0,
+        "mutation_result_count": len(mutations) if isinstance(mutations, list) else 0,
+        "failure": refresh.get("failure"),
+        "recovery_guidance": refresh.get("recovery_guidance"),
+        "log_path": refresh.get("log_path"),
+        "artifact_path": refresh.get("artifact_path"),
+    }
+
+
+def post_promotion_deployment_classification_from_manifest(
+    data: dict[str, Any],
+) -> PostPromotionDeploymentClassification:
+    value = data.get("deployment_classification")
+    if not isinstance(value, dict):
+        raise RalphError(
+            "Promotion manifest does not include deployment_classification."
+        )
+    if value.get("status") != "classified":
+        raise RalphError(
+            "Promotion manifest deployment_classification is not classified."
+        )
+    return PostPromotionDeploymentClassification(
+        tier=str(value.get("tier") or ""),
+        reason=str(value.get("reason") or ""),
+        recommended_action=str(value.get("recommended_action") or ""),
+        deployable_paths=tuple(
+            str(path) for path in value.get("deployable_paths") or []
+        ),
+        user_code_redeploy_paths=tuple(
+            str(path) for path in value.get("user_code_redeploy_paths") or []
+        ),
+        full_workflow_paths=tuple(
+            str(path) for path in value.get("full_workflow_paths") or []
+        ),
+        agent_workflow_paths=tuple(
+            str(path) for path in value.get("agent_workflow_paths") or []
+        ),
+        non_triggering_paths=tuple(
+            str(path) for path in value.get("non_triggering_paths") or []
+        ),
+    )
+
+
+def deployment_deployed_test_evidence(
+    command: PostPromotionDeploymentCommand,
+    *,
+    status: str,
+    log_path: Path,
+) -> dict[str, Any]:
+    if not command.records_deployed_tests:
+        return {
+            "status": "not_applicable",
+            "reason": "The user-code redeploy tier does not run Deployed tests.",
+            "log_path": path_text(log_path),
+            "command_path": command.command_path,
+        }
+    return {
+        "status": status,
+        "log_path": path_text(log_path),
+        "command_path": command.command_path,
+        "command": list(command.args),
+    }
+
+
+def deployment_idempotency_evidence(
+    command: PostPromotionDeploymentCommand,
+    *,
+    status: str,
+    log_path: Path,
+) -> dict[str, Any]:
+    argument = POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_IDEMPOTENCY_ARG
+    if not command.records_idempotency:
+        return {
+            "status": "not_applicable",
+            "reason": "The user-code redeploy tier does not run full-tier idempotency.",
+            "log_path": path_text(log_path),
+            "command_path": command.command_path,
+            "argument": argument,
+        }
+    return {
+        "status": status if argument in command.args else "missing_argument",
+        "log_path": path_text(log_path),
+        "command_path": command.command_path,
+        "command": list(command.args),
+        "argument": argument,
+    }
+
+
+def deployment_execution_skip_details(
+    classification: PostPromotionDeploymentClassification,
+) -> dict[str, Any]:
+    return {
+        "deployed_test_evidence": {
+            "status": "not_applicable",
+            "reason": classification.reason,
+            "log_path": None,
+            "command_path": None,
+        },
+        "full_tier_idempotency_evidence": {
+            "status": "not_applicable",
+            "reason": classification.reason,
+            "log_path": None,
+            "command_path": None,
+            "argument": POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_IDEMPOTENCY_ARG,
+        },
+    }
+
+
+def operator_deployment_failure_guidance(manifest_path: Path | None) -> str:
+    manifest_text = f" `{manifest_path}`" if manifest_path is not None else ""
+    return (
+        f"Inspect the Promotion child run manifest{manifest_text} and deployment "
+        "command log. Restore the deployed AWS workflow or rerun the Operator run "
+        "after fixing the deployment failure."
+    )
+
+
 def manifest_path_for_run(run_dir: Path) -> Path:
     if run_dir.name == MANIFEST_NAME:
         return run_dir
@@ -7719,6 +8013,10 @@ def operator_current_summary(data: dict[str, Any]) -> str:
         source_branch = str(current.get("source_branch") or "unknown")
         target_branch = str(current.get("target_branch") or "unknown")
         return f"Promotion {source_branch} -> {target_branch}"
+    if kind == "deployment":
+        tier = str(current.get("tier") or "unknown")
+        command_path = str(current.get("command_path") or "no command")
+        return f"deployment {tier}: {command_path}"
     return kind or "unknown"
 
 
