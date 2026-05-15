@@ -253,6 +253,27 @@ way:
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md), with the
   automatic-Promotion boundary in ADR
   [0005](../adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md).
+- #165: Checkpointed Operator deployment failures may create deploy-repair
+  GitHub Issues only through Ralph-owned deploy-failure analysis and validated
+  create-only issue creation. The analyzer receives redacted deployment
+  evidence, no AWS or Pulumi credentials, and cannot mutate GitHub Issues
+  directly. Valid drafts become `bug` issues with exactly one **Delivery mode**
+  label and `ready-for-agent`; incomplete drafts are downgraded to
+  `needs-triage` with validation evidence. The contract lives in
+  [OPERATOR.md](../../OPERATOR.md),
+  [docs/agents/issue-tracker.md](../agents/issue-tracker.md),
+  [docs/agents/ralph-loop.md](../agents/ralph-loop.md), and ADR
+  [0009](../adr/0009-ralph-post-promotion-deployment-classification.md).
+- #168: Ralph owns the risk-based **Issue completion review** gate after
+  implementation QA and before **Local integration**, Trunk push, or
+  Exploratory handoff. The gate receives read-only GitHub Issue access, records
+  review artifacts in the issue run, feeds failing findings into remaining
+  Codex repair attempts, reruns selected QA and review after repair, and fails
+  without updating an **Integration target** when the attempt budget is
+  exhausted. The canonical term lives in [CONTEXT.md](../../CONTEXT.md), and
+  the operational contract lives in [OPERATOR.md](../../OPERATOR.md),
+  [docs/agents/issue-tracker.md](../agents/issue-tracker.md), and
+  [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
 
 ## Search commands
 
@@ -283,13 +304,16 @@ These commands support the intended flow:
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `AGENTS.md`
+  - `CONTEXT.md`
   - `OPERATOR.md`
   - `README.md`
   - `docs/README.md`
   - `docs/agents/README.md`
+  - `docs/agents/issue-tracker.md`
   - `docs/agents/ralph-loop.md`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
+  - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
   - `tests/test_documentation_qa_ratchet.py`
   - `.pre-commit-config.yaml`
   - `backend-services/.pre-commit-config.yaml`

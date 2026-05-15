@@ -9,10 +9,11 @@ should read the root context first and use its canonical language across the
 repo, especially **Subproject**, **Test lane**, **Fast check**, **Commit check**,
 **Push check**, **Local integration**, **Delivery mode**, **Integration target**,
 **Exploratory delivery**, **Exploratory branch**, **Sandboxed issue access**,
-**Full-access implementation pass**, **Ready issue refresh**, **Operator
-workflow**, **Documentation sync**, **Agent skill**, **Issue context assessor**,
-**Exploratory acceptance review**, **Promotion**, and
-**Post-promotion review**, **Post-Promotion deployment classification**, and
+**Full-access implementation pass**, **Issue completion review**,
+**Ready issue refresh**, **Operator workflow**,
+**Documentation sync**, **Agent skill**, **Issue context assessor**,
+**Exploratory acceptance review**, **Promotion**, **Post-promotion review**,
+**Post-Promotion deployment classification**, and
 **AWS/Pulumi credential boundary**.
 
 Repo-wide ADRs live in `docs/adr/`. Create ADRs only when a decision is hard to

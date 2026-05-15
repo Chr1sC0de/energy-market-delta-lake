@@ -6,9 +6,10 @@ and behavior belong on the owning Subproject or repository page.
 
 ## By task
 
-- Shape, drain, review `dev`, handle **Exploratory acceptance review**, run
-  **Promotion**, review **Post-Promotion deployment classification**, or inspect
-  a checkpointed Operator run:
+- Shape, drain, handle **Issue completion review** findings, review `dev`,
+  handle **Exploratory acceptance review**, run **Promotion**, review
+  **Post-Promotion deployment classification**, inspect deploy-repair issue
+  creation, or inspect a checkpointed Operator run:
   [OPERATOR.md](../OPERATOR.md)
 - Return to the root router:
   [README.md](../README.md)

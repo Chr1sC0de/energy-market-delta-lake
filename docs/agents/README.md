@@ -17,10 +17,11 @@ Use this page as the agent documentation map. The imperative policy lives in
 ## Ralph and issue work
 
 - Ralph internals, **Local integration**, **Delivery mode**, **Integration
-  target**, **Full-access implementation pass**, **Ready issue refresh**,
-  **Exploratory acceptance review**, **Promotion**, and
+  target**, **Full-access implementation pass**, **Issue completion review**,
+  **Ready issue refresh**, **Exploratory acceptance review**, **Promotion**, and
   **Post-promotion review**, including **Post-Promotion deployment
-  classification** and checkpointed Operator runs:
+  classification**, deploy-repair issue creation after failed checkpointed
+  deployment evidence, and checkpointed Operator runs:
   [ralph-loop.md](ralph-loop.md)
 - GitHub Issue queue rules:
   [issue-tracker.md](issue-tracker.md)
@@ -54,9 +55,10 @@ Use this page as the agent documentation map. The imperative policy lives in
   `## Review focus` explains the needed **Exploratory branch** review.
 - Use `$ralph-loop` to drain ready issues, launch checkpointed Operator runs,
   publish **Exploratory branches** for Exploratory handoff, inspect failures,
-  handle **Exploratory acceptance review**, and run **Promotion**. Human review
-  accepts Exploratory work by moving it to `agent-integrated`, or rejects it by
-  moving it to `ready-for-human`.
+  handle **Issue completion review** failures, handle **Exploratory acceptance
+  review**, and run **Promotion**. Human review accepts Exploratory work by
+  moving it to `agent-integrated`, or rejects it by moving it to
+  `ready-for-human`.
   The backing CLI is packaged in
   [tools/ralph-loop](../../tools/ralph-loop/README.md), while the compatibility
   command remains `python3 scripts/ralph.py`.
