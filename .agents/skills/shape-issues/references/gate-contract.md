@@ -78,5 +78,15 @@ areas remain separate scoring surfaces.
   assessor provider, corpus digest, per-issue context verdicts, cited paths, and
   stiffness evidence.
 
+## Publication Policy
+
+The publisher treats `report.json` `context_assessor.provider` as part of the
+publish contract. Reports from the fixture assessor may be previewed with
+`--dry-run` without any extra flag, but non-dry-run GitHub Issue publication
+must use `--allow-fixture-publish`. When that override is used, the publisher
+records the fixture provider in `publish-manifest.json` and in the final issue
+body so `$ralph-triage` and later reviewers can see that readiness came from
+fixture evidence rather than the live **Issue context assessor**.
+
 Operator approval evidence is recorded only as context. It does not grant tool
 permission and must not bypass Codex escalation or sandbox review.

@@ -90,7 +90,9 @@ Use [OPERATOR.md](../../OPERATOR.md) for the first-class **Operator workflow**.
 `$shape-issues` shapes tracer-bullet issue drafts, gates implementation drafts,
 checks **Issue context assessor** evidence and stiffness, and may publish
 explicitly confirmed gate-passing outputs as `needs-triage` issues only. It
-does not move issues to `ready-for-agent`.
+does not move issues to `ready-for-agent`. Fixture-gated reports can preview
+with `--dry-run`, but non-dry-run publication requires
+`--allow-fixture-publish` and records fixture provenance.
 `$ralph-triage` prepares GitHub Issues for drain by setting category, state, and
 **Delivery mode** labels. `$ralph-loop` owns the backing script commands,
 including `$ralph-loop drain` and `$ralph-loop promote`.

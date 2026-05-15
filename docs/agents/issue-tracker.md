@@ -66,8 +66,11 @@ after the body; normal comments and triage comments are not included.
 confirmation of a passing gate report. Those created issues enter the board as
 `needs-triage` only, with source markers for duplicate detection. `$shape-issues`
 does not move issues to `ready-for-agent`, and it must not edit, comment on,
-close, reopen, or relabel existing issues. `$ralph-triage` remains responsible
-for category, state, and **Delivery mode** labels before Ralph drain.
+close, reopen, or relabel existing issues. Fixture-gated reports can preview
+with `--dry-run`, but non-dry-run publication requires
+`--allow-fixture-publish` and records fixture provenance in the manifest and
+issue body. `$ralph-triage` remains responsible for category, state, and
+**Delivery mode** labels before Ralph drain.
 
 Runtime labels such as `agent-running`, `agent-integrated`, `agent-merged`,
 `agent-failed`, and `agent-reviewing` block repeat implementation and automated

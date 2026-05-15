@@ -126,6 +126,7 @@ def write_bundle_and_report(
     *,
     issues: list[dict[str, Any]],
     actions: dict[str, str],
+    assessor_provider: str | None = None,
 ) -> tuple[Path, Path]:
     bundle_path = tmp_path / "bundle.json"
     report_path = tmp_path / "report.json"
@@ -142,24 +143,28 @@ def write_bundle_and_report(
     )
     parsed_bundle = publisher.parse_bundle(bundle_path)
     issue_by_id = {issue.issue_id: issue for issue in parsed_bundle.issues}
-    report_path.write_text(
-        json.dumps(
+    report_payload: dict[str, Any] = {
+        "summary": "Publish shaped issue drafts.",
+        "bundle_digest": parsed_bundle.source_digest,
+        "issues": [
             {
-                "summary": "Publish shaped issue drafts.",
-                "bundle_digest": parsed_bundle.source_digest,
-                "issues": [
-                    {
-                        "id": issue_id,
-                        "title": issue_id,
-                        "action": action,
-                        "ready": action in {"ready", "exploratory"},
-                        "recommended_labels": ["ready-for-agent"],
-                        "source_digest": issue_by_id[issue_id].source_digest,
-                    }
-                    for issue_id, action in actions.items()
-                ],
+                "id": issue_id,
+                "title": issue_id,
+                "action": action,
+                "ready": action in {"ready", "exploratory"},
+                "recommended_labels": ["ready-for-agent"],
+                "source_digest": issue_by_id[issue_id].source_digest,
             }
-        ),
+            for issue_id, action in actions.items()
+        ],
+    }
+    if assessor_provider is not None:
+        report_payload["context_assessor"] = {
+            "provider": assessor_provider,
+            "schema_version": "shape-issues-context-assessor-v1",
+        }
+    report_path.write_text(
+        json.dumps(report_payload),
         encoding="utf-8",
     )
     return bundle_path, report_path
@@ -212,6 +217,7 @@ def publish_config(
     *,
     confirm_publish: bool = True,
     dry_run: bool = True,
+    allow_fixture_publish: bool = False,
 ) -> Any:
     return publisher.PublishConfig(
         bundle_path=bundle_path,
@@ -222,6 +228,7 @@ def publish_config(
         confirm_publish=confirm_publish,
         dry_run=dry_run,
         gh_binary="gh",
+        allow_fixture_publish=allow_fixture_publish,
     )
 
 
@@ -338,6 +345,91 @@ class ShapeIssuesPublishTests(unittest.TestCase):
         )
 
         self.assertEqual(manifest["issues"][0]["state"], "dry-run")
+        self.assertEqual(manifest["context_assessor"]["provider"], "fixture")
+        self.assertEqual(
+            manifest["fixture_publish"],
+            {"allow_fixture_publish": False, "dry_run": True},
+        )
+        body = Path(manifest["issues"][0]["body_path"]).read_text(encoding="utf-8")
+        self.assertIn("Issue context assessor provider: `fixture`", body)
+        self.assertIn("Fixture publish policy: `--dry-run` preview", body)
+
+    def test_fixture_gate_non_dry_run_requires_explicit_override(self) -> None:
+        bundle_path, report_path = write_bundle_and_report(
+            self.tmp_path,
+            issues=[issue_payload("first", "First issue")],
+            actions={"first": "ready"},
+            assessor_provider="fixture",
+        )
+
+        with self.assertRaisesRegex(publisher.PublishError, "--allow-fixture-publish"):
+            publisher.publish(
+                publish_config(
+                    self.tmp_path,
+                    bundle_path,
+                    report_path,
+                    dry_run=False,
+                )
+            )
+
+        self.assertEqual(FakeGithubClient.created, [])
+        self.assertFalse((self.tmp_path / "publish-manifest.json").exists())
+
+    def test_fixture_gate_override_records_manifest_and_body_provenance(self) -> None:
+        bundle_path, report_path = write_bundle_and_report(
+            self.tmp_path,
+            issues=[issue_payload("first", "First issue")],
+            actions={"first": "ready"},
+            assessor_provider="fixture",
+        )
+
+        manifest = publisher.publish(
+            publish_config(
+                self.tmp_path,
+                bundle_path,
+                report_path,
+                dry_run=False,
+                allow_fixture_publish=True,
+            )
+        )
+
+        self.assertEqual(manifest["issues"][0]["state"], "created")
+        self.assertEqual(manifest["context_assessor"]["provider"], "fixture")
+        self.assertEqual(
+            manifest["fixture_publish"],
+            {"allow_fixture_publish": True, "dry_run": False},
+        )
+        self.assertEqual(len(FakeGithubClient.created), 1)
+        body = FakeGithubClient.created[0]["body_path"].read_text(encoding="utf-8")
+        self.assertIn("Issue context assessor provider: `fixture`", body)
+        self.assertIn(
+            "Fixture publish policy: published with `--allow-fixture-publish`",
+            body,
+        )
+
+    def test_live_assessor_non_dry_run_publish_does_not_need_fixture_override(self) -> None:
+        bundle_path, report_path = write_bundle_and_report(
+            self.tmp_path,
+            issues=[issue_payload("first", "First issue")],
+            actions={"first": "ready"},
+            assessor_provider="codex",
+        )
+
+        manifest = publisher.publish(
+            publish_config(
+                self.tmp_path,
+                bundle_path,
+                report_path,
+                dry_run=False,
+            )
+        )
+
+        self.assertEqual(manifest["issues"][0]["state"], "created")
+        self.assertNotIn("context_assessor", manifest)
+        self.assertNotIn("fixture_publish", manifest)
+        body = FakeGithubClient.created[0]["body_path"].read_text(encoding="utf-8")
+        self.assertNotIn("Issue context assessor provider:", body)
+        self.assertNotIn("Fixture publish policy:", body)
 
     def test_refuses_duplicate_gate_report_ids(self) -> None:
         bundle_path, report_path = write_bundle_and_report(

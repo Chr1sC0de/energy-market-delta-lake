@@ -18,6 +18,7 @@ from typing import Any
 NEEDS_TRIAGE_LABEL = "needs-triage"
 PUBLISHABLE_ACTIONS = frozenset({"ready", "exploratory"})
 SOURCE_MARKER_PREFIX = "shape-issues-source"
+FIXTURE_ASSESSOR_PROVIDER = "fixture"
 SECTION_PATTERN_TEMPLATE = (
     r"(?ims)^#{{1,6}}\s+{heading}\s*$\n"
     r"(?P<body>.*?)(?=^#{{1,6}}\s+\S|\Z)"
@@ -59,6 +60,7 @@ class GateIssue:
 @dataclass(frozen=True)
 class GateReport:
     bundle_digest: str | None
+    context_assessor_provider: str | None
     issues: dict[str, GateIssue]
 
 
@@ -79,6 +81,7 @@ class PublishConfig:
     confirm_publish: bool
     dry_run: bool
     gh_binary: str
+    allow_fixture_publish: bool = False
 
 
 class GithubClient:
@@ -303,8 +306,20 @@ def parse_gate_report(path: Path) -> GateReport:
         )
     return GateReport(
         bundle_digest=optional_string(payload.get("bundle_digest")),
+        context_assessor_provider=parse_context_assessor_provider(payload),
         issues=issues,
     )
+
+
+def parse_context_assessor_provider(payload: dict[str, Any]) -> str | None:
+    raw_assessor = payload.get("context_assessor")
+    if not isinstance(raw_assessor, dict):
+        return None
+    return optional_string(raw_assessor.get("provider"))
+
+
+def is_fixture_assessor_provider(provider: str | None) -> bool:
+    return provider is not None and provider.lower() == FIXTURE_ASSESSOR_PROVIDER
 
 
 def source_marker(bundle_path: Path, issue: IssueDraft) -> str:
@@ -365,13 +380,44 @@ def bundle_reference(bundle_path: Path) -> str:
     return str(Path(bundle_path.parent.name) / bundle_path.name)
 
 
-def append_source_section(markdown: str, *, marker: str, bundle_path: Path) -> str:
-    source_body = "\n".join(
-        [
-            f"- Source marker: `{marker}`",
-            f"- Bundle: `{bundle_reference(bundle_path)}`",
-        ]
+def fixture_provenance_lines(
+    *,
+    context_assessor_provider: str | None,
+    dry_run: bool,
+    allow_fixture_publish: bool,
+) -> tuple[str, ...]:
+    if not is_fixture_assessor_provider(context_assessor_provider):
+        return ()
+    publish_policy = "`--dry-run` preview"
+    if not dry_run and allow_fixture_publish:
+        publish_policy = "published with `--allow-fixture-publish`"
+    return (
+        f"- Issue context assessor provider: `{context_assessor_provider}`",
+        f"- Fixture publish policy: {publish_policy}",
     )
+
+
+def append_source_section(
+    markdown: str,
+    *,
+    marker: str,
+    bundle_path: Path,
+    context_assessor_provider: str | None,
+    dry_run: bool,
+    allow_fixture_publish: bool,
+) -> str:
+    lines = [
+        f"- Source marker: `{marker}`",
+        f"- Bundle: `{bundle_reference(bundle_path)}`",
+    ]
+    lines.extend(
+        fixture_provenance_lines(
+            context_assessor_provider=context_assessor_provider,
+            dry_run=dry_run,
+            allow_fixture_publish=allow_fixture_publish,
+        )
+    )
+    source_body = "\n".join(lines)
     return replace_section(markdown, "Shape Issues source", source_body)
 
 
@@ -381,13 +427,23 @@ def final_issue_body(
     references: dict[str, IssueReference],
     marker: str,
     bundle_path: Path,
+    context_assessor_provider: str | None,
+    dry_run: bool,
+    allow_fixture_publish: bool,
 ) -> str:
     body = replace_section(
         issue.body,
         "Blocked by",
         final_blocked_by_section(issue, references),
     )
-    body = append_source_section(body, marker=marker, bundle_path=bundle_path)
+    body = append_source_section(
+        body,
+        marker=marker,
+        bundle_path=bundle_path,
+        context_assessor_provider=context_assessor_provider,
+        dry_run=dry_run,
+        allow_fixture_publish=allow_fixture_publish,
+    )
     validate_final_blockers(issue, body, references)
     return body
 
@@ -435,6 +491,8 @@ def validate_publishable(
     report: GateReport,
     *,
     confirm_publish: bool,
+    dry_run: bool,
+    allow_fixture_publish: bool,
     bundle_path: Path,
 ) -> None:
     if not confirm_publish:
@@ -458,6 +516,16 @@ def validate_publishable(
     unknown_blockers = sorted(blocked_ids - known_ids)
     if unknown_blockers:
         raise PublishError(f"Unknown blocked_by issue id(s): {', '.join(unknown_blockers)}.")
+
+    if (
+        is_fixture_assessor_provider(report.context_assessor_provider)
+        and not dry_run
+        and not allow_fixture_publish
+    ):
+        raise PublishError(
+            "Refusing to publish fixture-gated report without "
+            "--allow-fixture-publish. Use --dry-run for previews."
+        )
 
     for issue in issues:
         report_issue = report_issues[issue.issue_id]
@@ -580,6 +648,8 @@ def publish(config: PublishConfig) -> dict[str, Any]:
         bundle,
         report,
         confirm_publish=config.confirm_publish,
+        dry_run=config.dry_run,
+        allow_fixture_publish=config.allow_fixture_publish,
         bundle_path=config.bundle_path,
     )
     issues = bundle.issues
@@ -600,6 +670,14 @@ def publish(config: PublishConfig) -> dict[str, Any]:
         "repo": config.repo,
         "summary": bundle.summary,
     }
+    if is_fixture_assessor_provider(report.context_assessor_provider):
+        manifest["context_assessor"] = {
+            "provider": report.context_assessor_provider,
+        }
+        manifest["fixture_publish"] = {
+            "allow_fixture_publish": config.allow_fixture_publish,
+            "dry_run": config.dry_run,
+        }
     write_manifest(manifest_path, manifest)
 
     github = GithubClient(
@@ -619,6 +697,9 @@ def publish(config: PublishConfig) -> dict[str, Any]:
                 references=references,
                 marker=marker,
                 bundle_path=config.bundle_path,
+                context_assessor_provider=report.context_assessor_provider,
+                dry_run=config.dry_run,
+                allow_fixture_publish=config.allow_fixture_publish,
             )
             body_path.write_text(body, encoding="utf-8")
 
@@ -710,6 +791,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--out-dir", type=Path, default=None)
     parser.add_argument("--confirm-publish", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--allow-fixture-publish",
+        action="store_true",
+        help=(
+            "Allow non-dry-run publication of reports gated by the fixture "
+            "Issue context assessor."
+        ),
+    )
     parser.add_argument("--gh-binary", default="gh")
     return parser.parse_args(argv)
 
@@ -728,6 +817,7 @@ def main(argv: list[str] | None = None) -> None:
         confirm_publish=args.confirm_publish,
         dry_run=args.dry_run,
         gh_binary=args.gh_binary,
+        allow_fixture_publish=args.allow_fixture_publish,
     )
     try:
         manifest = publish(config)

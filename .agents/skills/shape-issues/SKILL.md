@@ -230,9 +230,28 @@ python3 .agents/skills/shape-issues/scripts/publish_shape_issues.py \
   --dry-run
 ```
 
+Reports gated with `scripts/fixture_context_assessor.py` are dry-run only by
+default. Non-dry-run fixture publication requires the Operator to pass the
+explicit override:
+
+```bash
+python3 .agents/skills/shape-issues/scripts/publish_shape_issues.py \
+  .shape-issues/runs/<slug>/bundle.json \
+  --repo Chr1sC0de/energy-market-delta-lake \
+  --confirm-publish \
+  --allow-fixture-publish
+```
+
+Fixture publication with the override records the fixture assessor provider in
+`publish-manifest.json` and in each generated final issue body. Live
+Codex-backed **Issue context assessor** publication does not require this
+override.
+
 The publisher:
 
 - refuses to run without `--confirm-publish`
+- refuses fixture-gated non-dry-run publication without
+  `--allow-fixture-publish`
 - refuses gate actions other than `ready` and `exploratory`
 - refuses missing, `human-decision`, or mismatched classifications
 - refuses when `bundle.json` content no longer matches `report.json`

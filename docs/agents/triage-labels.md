@@ -21,7 +21,9 @@ If state labels conflict, stop and ask the maintainer before making further
 changes.
 Issues published by `$shape-issues` v2 intentionally start with
 `needs-triage` only; `$ralph-triage` owns category, state, and **Delivery mode**
-labels before an issue enters the ready queue.
+labels before an issue enters the ready queue. Fixture-gated non-dry-run
+publication requires `--allow-fixture-publish` and leaves fixture provenance for
+triage review.
 
 ## Ralph runtime labels
 
