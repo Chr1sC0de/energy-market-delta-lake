@@ -531,6 +531,7 @@ Checkpoints are recorded for:
 - deployment skipped, started, succeeded, or failed
 - deploy-repair issue creation after failed deployment
 - deploy-repair cycle limit reached
+- Ralph loop self-update restart required
 - **Exploratory acceptance review** required
 - queue clean
 - stopped-by-guard
@@ -539,6 +540,12 @@ The `before_promotion` checkpoint is written only after the scheduler pass has
 returned. That means active Exploratory workers have finished, implementation
 **Ready issue refresh** claim gates have opened, and child metadata updates have
 either completed or produced recorded recovery evidence.
+If a successful Gitflow or Trunk child implementation manifest changed
+`scripts/ralph.py` or `tools/ralph-loop/**`, the Operator records
+`ralph_self_update_restart_required` and stops before **Promotion** or another
+issue claim. The running process does not try to apply newly integrated Ralph
+loop code in-place; restart the Operator command from a clean root worktree so
+later issue claims use the updated review gates and workflow code.
 Deployment checkpoints are written only after successful Promotion metadata
 updates, **Post-promotion review**, follow-up creation, and post-Promotion
 **Ready issue refresh** have completed in the Promotion child run.
@@ -1586,6 +1593,13 @@ warning-only: **Promotion** remains succeeded, the manifest records
 `ready_issue_refresh.status: failed_warning_only`, and operators reconcile only
 the affected GitHub Issue
 metadata before rerunning the drain.
+
+Ralph loop self-updates stop the checkpointed Operator after the successful
+child **Local integration** evidence is recorded. The Operator checkpoint is
+`ralph_self_update_restart_required`; it includes the child
+`ralph-run.json`, changed Ralph loop paths, and recovery guidance. Restart the
+Operator from a clean root worktree before any more issue claims or
+**Promotion** so the new process imports the updated Ralph loop code.
 
 Gitflow branch-sync conflicts and stale `agent-sync-main-into-dev` worktrees
 also stop the drain. Ralph records the sync worktree path, relevant log path,

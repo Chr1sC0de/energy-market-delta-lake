@@ -1907,6 +1907,89 @@ class ParallelSchedulerOperatorRun(ScriptedOperatorRun):
         super()._run_promotion_checkpoint()
 
 
+class SelfUpdateGuardLoop(ralph.RalphLoop):
+    def __init__(
+        self,
+        config: ralph.LoopConfig,
+        runner: FakeRunner,
+        *,
+        issues: list[ralph.Issue],
+        changed_files_by_issue: dict[int, list[str]],
+    ) -> None:
+        super().__init__(config, runner)
+        self.issues = issues
+        self.changed_files_by_issue = changed_files_by_issue
+        self.handled_issue_numbers: list[int] = []
+        self._stop_after_ralph_loop_self_update = True
+
+    def _ready_implementation_candidate_plans(
+        self,
+        *,
+        exclude_issue_numbers: set[int],
+    ) -> list[ralph.ReadyImplementationCandidate]:
+        candidates: list[ralph.ReadyImplementationCandidate] = []
+        for issue in self.issues:
+            if issue.number in self.handled_issue_numbers:
+                continue
+            if issue.number in exclude_issue_numbers:
+                continue
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=self.config.delivery_mode,
+                target_branch=self.config.target_branch,
+            )
+            candidates.append(ralph.ReadyImplementationCandidate(issue, delivery_plan))
+        return candidates
+
+    def _handle_implementation(self, issue: ralph.Issue) -> ralph.RunManifest:
+        self.handled_issue_numbers.append(issue.number)
+        manifest_path = write_child_manifest(
+            self.config.log_root,
+            name=f"issue-{issue.number}-self-update-guard",
+            run_kind="implementation",
+            status="succeeded",
+            issue=issue,
+            integration_commit=f"local-integration-{issue.number}",
+            changed_files=self.changed_files_by_issue.get(
+                issue.number,
+                ["README.md"],
+            ),
+        )
+        return ralph.load_run_manifest(manifest_path.parent)
+
+
+class SelfUpdateGuardOperatorRun(ScriptedOperatorRun):
+    def __init__(
+        self,
+        config: ralph.LoopConfig,
+        runner: FakeRunner,
+        *,
+        run_dir: Path,
+        max_cycles: int,
+        snapshots: list[ralph.OperatorQueueSnapshot],
+        issues: list[ralph.Issue],
+        changed_files_by_issue: dict[int, list[str]],
+    ) -> None:
+        super().__init__(
+            config,
+            runner,
+            run_dir=run_dir,
+            max_cycles=max_cycles,
+            snapshots=snapshots,
+        )
+        self.guard_loop = SelfUpdateGuardLoop(
+            config,
+            runner,
+            issues=issues,
+            changed_files_by_issue=changed_files_by_issue,
+        )
+        self.loop = self.guard_loop
+        self.github = self.guard_loop.github
+
+    def _run_drain_scheduler_checkpoint(self) -> None:
+        ralph.RalphOperatorRun._run_drain_scheduler_checkpoint(self)
+
+
 class PromotionClassificationGit:
     def __init__(self, changed_files: list[str]) -> None:
         self.changed_files = changed_files
@@ -6223,6 +6306,65 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertIn("Promotion commit `promotion-1-sha`", markdown)
         self.assertIn("- clean=yes", markdown)
 
+    def test_operator_stops_after_ralph_loop_self_update_before_next_claim(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                drain=True,
+                delivery_mode=ralph.GITFLOW_MODE,
+            )
+            self_update_issue = make_issue(
+                {ralph.READY_LABEL, ralph.DELIVERY_GITFLOW_LABEL},
+                IMPLEMENTATION_BODY,
+                number=173,
+                title="Update Ralph loop",
+            )
+            next_issue = make_issue(
+                {ralph.READY_LABEL, ralph.DELIVERY_GITFLOW_LABEL},
+                IMPLEMENTATION_BODY,
+                number=174,
+                title="Next ready work",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = SelfUpdateGuardOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=3,
+                snapshots=[operator_snapshot(ready=[self_update_issue, next_issue])],
+                issues=[self_update_issue, next_issue],
+                changed_files_by_issue={
+                    173: ["tools/ralph-loop/src/ralph_loop/cli.py"],
+                    174: ["README.md"],
+                },
+            )
+
+            with self.assertRaises(ralph.RalphSelfUpdateRestartRequired):
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    operator.run()
+
+            manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+
+        checkpoints = [entry["checkpoint"] for entry in manifest["checkpoints"]]
+        self.assertEqual(operator.guard_loop.handled_issue_numbers, [173])
+        self.assertEqual(checkpoints.count("issue_succeeded"), 1)
+        self.assertIn("ralph_self_update_restart_required", checkpoints)
+        self.assertNotIn("before_promotion", checkpoints)
+        self.assertEqual(manifest["status"], "failed")
+        self.assertIn(
+            "restart the Operator command",
+            manifest["recovery_guidance"],
+        )
+        self.assertIn(
+            "tools/ralph-loop/src/ralph_loop/cli.py",
+            manifest["recovery_guidance"],
+        )
+
     def test_operator_records_parallel_scheduler_issue_checkpoints_before_promotion(
         self,
     ) -> None:
@@ -9628,7 +9770,8 @@ Build it.
             fail_commands={ls_remote: 2},
         )
         with tempfile.TemporaryDirectory() as tmp:
-            loop = make_loop(Path(tmp), runner, delivery_mode=ralph.GITFLOW_MODE)
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.GITFLOW_MODE)
             issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
             output = io.StringIO()
 
@@ -9636,6 +9779,17 @@ Build it.
                 loop._handle_implementation(issue)
 
             commands = [call.args for call in runner.calls]
+            review_call = next(
+                call
+                for call in runner.calls
+                if call.input_text is not None
+                and "Run an Issue completion review" in call.input_text
+            )
+            review_index = runner.calls.index(review_call)
+            merge_index = commands.index(
+                ("git", "merge", "--squash", "agent/issue-42-implement-thing")
+            )
+            self.assertLess(review_index, merge_index)
             self.assertIn(
                 ("git", "push", "origin", "origin/main:refs/heads/dev"), commands
             )
@@ -9671,6 +9825,29 @@ Build it.
             self.assertIn("Ralph Gitflow integration completed.", comment)
             self.assertIn("Target branch: `dev`", comment)
             self.assertIn("will stay open until Ralph promotes `dev`", comment)
+            manifest = load_run_manifest(tmp_path)
+            review_artifact = next(
+                (tmp_path / "logs").glob("issue-42-*/issue-completion-review.md")
+            )
+            review_log = next(
+                (tmp_path / "logs").glob(
+                    "issue-42-*/codex-issue-completion-review.jsonl"
+                )
+            )
+            self.assertEqual(manifest["issue_completion_review"]["status"], "passed")
+            self.assertIs(manifest["issue_completion_review"]["required"], True)
+            self.assertEqual(
+                manifest["issue_completion_review"]["reasons"],
+                ["Agent workflow changes"],
+            )
+            self.assertEqual(
+                manifest["issue_completion_review"]["artifact_path"],
+                str(review_artifact),
+            )
+            self.assertEqual(
+                manifest["issue_completion_review"]["log_path"],
+                str(review_log),
+            )
 
     def test_exploratory_implementation_pushes_handoff_branch_and_marks_reviewing(
         self,

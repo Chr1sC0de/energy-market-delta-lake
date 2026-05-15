@@ -954,6 +954,7 @@ class RalphLoop:
         self.git = GitClient(repo_root=config.repo_root, runner=runner)
         self.triaged_this_run: set[int] = set()
         self._ready_issue_refresh_claim_gate = ReadyIssueRefreshClaimGate()
+        self._stop_after_ralph_loop_self_update = False
 
     def run(self) -> None:
         self._validate_tools()
@@ -1126,7 +1127,10 @@ class RalphLoop:
 
                 if reserved_serial_candidate is not None:
                     try:
-                        self._handle_implementation(reserved_serial_candidate.issue)
+                        manifest = self._handle_implementation(
+                            reserved_serial_candidate.issue
+                        )
+                        self._raise_if_ralph_loop_self_update_requires_restart(manifest)
                     except EnvironmentFailure as error:
                         self._raise_after_exploratory_workers_finish(
                             active_exploratory,
@@ -1170,6 +1174,18 @@ class RalphLoop:
                     return
                 self._run_triage(triage_issue)
                 self.triaged_this_run.add(triage_issue.number)
+
+    def _raise_if_ralph_loop_self_update_requires_restart(
+        self, manifest: RunManifest | None
+    ) -> None:
+        if not self._stop_after_ralph_loop_self_update or manifest is None:
+            return
+        if not implementation_manifest_has_integrated_ralph_loop_change(manifest.data):
+            return
+        raise RalphSelfUpdateRestartRequired(
+            manifest_path=manifest.path,
+            changed_files=manifest_changed_files(manifest.data),
+        )
 
     def _run_scheduler_triage_if_available(
         self,
@@ -6565,6 +6581,7 @@ class RalphOperatorRun:
         self.run_dir = run_dir
         self.max_cycles = max_cycles
         self.loop = RalphLoop(config, runner)
+        self.loop._stop_after_ralph_loop_self_update = True
         self.github = self.loop.github
         self.manifest = OperatorRunManifest.start(
             run_dir=run_dir,
@@ -6761,6 +6778,9 @@ class RalphOperatorRun:
         )
         try:
             self.loop._run_drain_scheduler()
+        except RalphSelfUpdateRestartRequired as error:
+            self._record_drain_scheduler_child_checkpoints(before_paths)
+            self._stop_for_ralph_self_update_restart(error)
         except RalphError as error:
             new_paths = self._record_drain_scheduler_child_checkpoints(before_paths)
             guidance = operator_drain_scheduler_failure_guidance(error, new_paths)
@@ -6911,6 +6931,9 @@ class RalphOperatorRun:
                 issue=issue,
             )
             self.manifest.clear_current()
+            self._stop_if_child_manifest_requires_ralph_self_update_restart(
+                manifest_path
+            )
             return
 
         guidance = operator_issue_failure_guidance(issue, manifest_path)
@@ -6928,6 +6951,47 @@ class RalphOperatorRun:
             child_manifest_path=manifest_path,
         )
         raise RalphError(guidance)
+
+    def _stop_if_child_manifest_requires_ralph_self_update_restart(
+        self, manifest_path: Path | None
+    ) -> None:
+        if manifest_path is None:
+            return
+        data = child_manifest_data(manifest_path)
+        if data is None:
+            return
+        if not implementation_manifest_has_integrated_ralph_loop_change(data):
+            return
+        self._stop_for_ralph_self_update_restart(
+            RalphSelfUpdateRestartRequired(
+                manifest_path=manifest_path,
+                changed_files=manifest_changed_files(data),
+            )
+        )
+
+    def _stop_for_ralph_self_update_restart(
+        self, error: RalphSelfUpdateRestartRequired
+    ) -> None:
+        guidance = operator_ralph_self_update_restart_guidance(error)
+        self.manifest.clear_current()
+        self.manifest.record_checkpoint(
+            "ralph_self_update_restart_required",
+            message=(
+                "Ralph loop self-update integrated; restart the Operator before "
+                "more issue claims or Promotion."
+            ),
+            child_manifest_path=error.manifest_path,
+            status="failed",
+            recovery_guidance=guidance,
+            details={"changed_files": list(error.changed_files)},
+        )
+        self.manifest.record_failure(
+            error,
+            recovery_guidance=guidance,
+            child_manifest_path=error.manifest_path,
+        )
+        emit(guidance, err=True)
+        raise error
 
     def _run_promotion_checkpoint(self) -> None:
         source_branch = self.config.source_branch
@@ -7312,6 +7376,27 @@ def operator_issue_failure_guidance(issue: Issue, manifest_path: Path | None) ->
     return (
         f"Inspect issue #{issue.number} and child run manifest{manifest_text}. "
         "Resolve the failure or issue labels before restarting the Operator run."
+    )
+
+
+def operator_ralph_self_update_restart_guidance(
+    error: RalphSelfUpdateRestartRequired,
+) -> str:
+    ralph_paths = [
+        path for path in error.changed_files if has_ralph_loop_change([path])
+    ]
+    paths_text = (
+        ", ".join(f"`{path}`" for path in ralph_paths)
+        if ralph_paths
+        else "<not recorded>"
+    )
+    return (
+        "A completed issue changed Ralph loop code through Local integration. "
+        "The running Operator process cannot safely load newly integrated Ralph "
+        "loop code in-place. Inspect child run manifest "
+        f"`{error.manifest_path}`, then restart the Operator command from a "
+        "clean root worktree before claiming another issue or running Promotion. "
+        f"Ralph loop path(s): {paths_text}."
     )
 
 
@@ -8195,14 +8280,19 @@ def implementation_child_manifest_paths(log_root: Path) -> set[Path]:
     return set(log_root.glob(f"issue-*/{MANIFEST_NAME}"))
 
 
-def child_manifest_sort_key(manifest_path: Path) -> tuple[str, str]:
-    if not manifest_path.exists():
-        return ("", str(manifest_path))
+def child_manifest_data(manifest_path: Path | None) -> dict[str, Any] | None:
+    if manifest_path is None or not manifest_path.exists():
+        return None
     try:
         data = json.loads(manifest_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
-        return ("", str(manifest_path))
-    if not isinstance(data, dict):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def child_manifest_sort_key(manifest_path: Path) -> tuple[str, str]:
+    data = child_manifest_data(manifest_path)
+    if data is None:
         return ("", str(manifest_path))
     return (str(data.get("started_at") or ""), str(manifest_path))
 
@@ -8210,23 +8300,15 @@ def child_manifest_sort_key(manifest_path: Path) -> tuple[str, str]:
 def child_manifest_status(manifest_path: Path | None) -> str:
     if manifest_path is None or not manifest_path.exists():
         return "missing"
-    try:
-        data = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return "invalid"
-    if not isinstance(data, dict):
+    data = child_manifest_data(manifest_path)
+    if data is None:
         return "invalid"
     return str(data.get("status") or "unknown")
 
 
 def child_manifest_issue_payload(manifest_path: Path) -> dict[str, Any] | None:
-    if not manifest_path.exists():
-        return None
-    try:
-        data = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(data, dict):
+    data = child_manifest_data(manifest_path)
+    if data is None:
         return None
     return operator_issue_payload_from_values(data.get("issue"))
 
