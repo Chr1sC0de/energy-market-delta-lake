@@ -5563,80 +5563,35 @@ class RalphLoop:
             issue,
             ready_issue_refresh_notes=refresh_notes,
         )
-        first_log = run_dir / "codex-implementation-1.jsonl"
-        first_codex_completed = False
-        try:
-            emit(f"#{issue.number}: running Codex implementation attempt 1")
-            manifest.record_codex_attempt(1, status="running", log_path=first_log)
-            self._run_codex(
-                first_prompt,
-                worktree_path,
-                first_log,
-                phase=f"#{issue.number}: Codex implementation attempt 1",
-                manifest=manifest,
-                allowed_issue_commands=(
-                    SANDBOX_READ_ONLY_GH_ISSUE_COMMANDS
-                    if access_plan.full_access_required
-                    else SANDBOX_ALLOWED_GH_ISSUE_COMMANDS
-                ),
-                sandbox_mode=(
-                    FULL_ACCESS_CODEX_SANDBOX
-                    if access_plan.full_access_required
-                    else WORKSPACE_WRITE_CODEX_SANDBOX
-                ),
-            )
-            manifest.record_codex_attempt(1, status="completed", log_path=first_log)
-            first_codex_completed = True
-            self._validate_full_access_implementation_diff(
-                access_plan,
-                worktree_path,
-                manifest,
-            )
-            return self._run_qa(
-                issue, worktree_path, run_dir, log_prefix="qa", manifest=manifest
-            )
-        except EnvironmentFailure:
-            if not first_codex_completed:
-                manifest.record_codex_attempt(1, status="failed", log_path=first_log)
-            raise
-        except FullAccessImplementationScopeFailure:
-            raise
-        except (CommandFailure, IssueFailure) as first_error:
-            if first_codex_completed:
-                manifest.record_event(
-                    "implementation_attempt_1_failed",
-                    details={"error": str(first_error)},
-                )
+        last_error: CommandFailure | IssueFailure | None = None
+        for attempt in range(1, self.config.max_codex_attempts + 1):
+            if attempt == 1:
+                prompt = first_prompt
+                emit(f"#{issue.number}: running Codex implementation attempt 1")
             else:
-                first_log_path = (
-                    first_error.log_path
-                    if isinstance(first_error, IssueFailure)
-                    else None
+                if last_error is None:
+                    raise RalphError(
+                        "Cannot build a retry prompt without prior failure evidence."
+                    )
+                prompt = retry_implementation_prompt(
+                    issue,
+                    last_error,
+                    ready_issue_refresh_notes=refresh_notes,
                 )
-                if isinstance(first_error, CommandFailure):
-                    first_log_path = first_error.log_path
-                manifest.record_codex_attempt(
-                    1,
-                    status="failed",
-                    log_path=first_log_path or first_log,
-                    error=str(first_error),
+                emit(
+                    f"#{issue.number}: attempt {attempt - 1} failed; running "
+                    f"Codex implementation attempt {attempt}"
                 )
-            emit(
-                f"#{issue.number}: attempt 1 failed; running Codex implementation attempt 2"
-            )
-            retry_prompt = retry_implementation_prompt(
-                issue,
-                first_error,
-                ready_issue_refresh_notes=refresh_notes,
-            )
-            retry_log = run_dir / "codex-implementation-2.jsonl"
-            manifest.record_codex_attempt(2, status="running", log_path=retry_log)
+
+            codex_log = run_dir / f"codex-implementation-{attempt}.jsonl"
+            codex_completed = False
+            manifest.record_codex_attempt(attempt, status="running", log_path=codex_log)
             try:
                 self._run_codex(
-                    retry_prompt,
+                    prompt,
                     worktree_path,
-                    retry_log,
-                    phase=f"#{issue.number}: Codex implementation attempt 2",
+                    codex_log,
+                    phase=f"#{issue.number}: Codex implementation attempt {attempt}",
                     manifest=manifest,
                     allowed_issue_commands=(
                         SANDBOX_READ_ONLY_GH_ISSUE_COMMANDS
@@ -5649,27 +5604,62 @@ class RalphLoop:
                         else WORKSPACE_WRITE_CODEX_SANDBOX
                     ),
                 )
-            except CommandFailure as retry_error:
                 manifest.record_codex_attempt(
-                    2,
-                    status="failed",
-                    log_path=retry_error.log_path or retry_log,
-                    error=str(retry_error),
+                    attempt, status="completed", log_path=codex_log
                 )
+                codex_completed = True
+                self._validate_full_access_implementation_diff(
+                    access_plan,
+                    worktree_path,
+                    manifest,
+                )
+                return self._run_qa(
+                    issue,
+                    worktree_path,
+                    run_dir,
+                    log_prefix=qa_log_prefix_for_codex_attempt(attempt),
+                    manifest=manifest,
+                )
+            except EnvironmentFailure as error:
+                if not codex_completed:
+                    manifest.record_codex_attempt(
+                        attempt,
+                        status="failed",
+                        log_path=error.log_path or codex_log,
+                        error=str(error),
+                    )
                 raise
-            manifest.record_codex_attempt(2, status="completed", log_path=retry_log)
-            self._validate_full_access_implementation_diff(
-                access_plan,
-                worktree_path,
-                manifest,
-            )
-            return self._run_qa(
-                issue,
-                worktree_path,
-                run_dir,
-                log_prefix="qa-retry",
-                manifest=manifest,
-            )
+            except FullAccessImplementationScopeFailure:
+                raise
+            except (CommandFailure, IssueFailure) as error:
+                last_error = error
+                if codex_completed:
+                    manifest.record_event(
+                        f"implementation_attempt_{attempt}_failed",
+                        details={"error": str(error)},
+                    )
+                else:
+                    log_path = (
+                        error.log_path
+                        if isinstance(error, (CommandFailure, IssueFailure))
+                        else None
+                    )
+                    manifest.record_codex_attempt(
+                        attempt,
+                        status="failed",
+                        log_path=log_path or codex_log,
+                        error=str(error),
+                    )
+                if attempt >= self.config.max_codex_attempts:
+                    emit(
+                        f"#{issue.number}: attempt {attempt} failed; exhausted "
+                        f"--max-codex-attempts {self.config.max_codex_attempts}"
+                    )
+                    raise
+
+        raise RalphError(
+            f"Codex implementation attempt budget was exhausted for #{issue.number}."
+        )
 
     def _run_codex(
         self,
@@ -9159,6 +9149,14 @@ def user_facing_error(error: Exception) -> str:
     return str(error)
 
 
+def qa_log_prefix_for_codex_attempt(attempt: int) -> str:
+    if attempt == 1:
+        return "qa"
+    if attempt == 2:
+        return "qa-retry"
+    return f"qa-retry-{attempt}"
+
+
 def build_config(args: CliArgs, runner: CommandRunner) -> LoopConfig:
     repo_root = discover_repo_root(runner).resolve()
     repo = args.repo or discover_repo_slug(runner, repo_root)
@@ -9196,6 +9194,7 @@ def build_config(args: CliArgs, runner: CommandRunner) -> LoopConfig:
         issue=args.issue,
         drain=args.drain or args.drain_promote_all,
         max_issues=args.max_issues,
+        max_codex_attempts=args.max_codex_attempts,
         exploratory_concurrency=args.exploratory_concurrency,
         dry_run=args.dry_run,
         allow_dirty_worktree=args.allow_dirty_worktree,
@@ -9220,6 +9219,8 @@ def operator_child_command(args: CliArgs, run_dir: Path) -> list[str]:
         args.source_branch,
         "--max-issues",
         str(args.max_issues),
+        "--max-codex-attempts",
+        str(args.max_codex_attempts),
         "--exploratory-concurrency",
         str(args.exploratory_concurrency),
         "--issue-limit",
@@ -9476,11 +9477,22 @@ def typer_options(
         typer.Option(
             "--max-issues",
             help=(
-                "Maximum implementation attempts in --drain mode. "
+                "Maximum claimed implementation issues in --drain mode. "
                 f"Defaults to {DEFAULT_DRAIN_BUDGET}. Use 0 for unlimited."
             ),
         ),
     ] = DEFAULT_DRAIN_BUDGET,
+    max_codex_attempts: Annotated[
+        int,
+        typer.Option(
+            "--max-codex-attempts",
+            help=(
+                "Maximum Codex implementation attempts per issue, including "
+                "QA repair attempts. "
+                f"Defaults to {DEFAULT_CODEX_ATTEMPT_BUDGET}."
+            ),
+        ),
+    ] = DEFAULT_CODEX_ATTEMPT_BUDGET,
     exploratory_concurrency: Annotated[
         int,
         typer.Option(
@@ -9646,6 +9658,8 @@ def validate_cli_args(args: CliArgs) -> None:
         cli_error("--operator-run-dir is reserved for foreground Operator child runs.")
     if args.max_cycles < 0:
         cli_error("--max-cycles must be 0 or greater.")
+    if args.max_codex_attempts < 1:
+        cli_error("--max-codex-attempts must be 1 or greater.")
     if args.exploratory_concurrency < 1:
         cli_error("--exploratory-concurrency must be 1 or greater.")
 

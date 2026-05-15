@@ -22,6 +22,7 @@ def path_text(path: Path | None) -> str | None:
 
 def run_configuration_payload(config: LoopConfig) -> dict[str, Any]:
     return {
+        "max_codex_attempts": config.max_codex_attempts,
         "exploratory_concurrency": config.exploratory_concurrency,
     }
 

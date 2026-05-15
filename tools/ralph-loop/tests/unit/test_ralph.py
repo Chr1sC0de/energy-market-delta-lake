@@ -721,6 +721,7 @@ def make_loop(
     issue: int | None = None,
     drain: bool = False,
     max_issues: int = ralph.DEFAULT_DRAIN_BUDGET,
+    max_codex_attempts: int = ralph.DEFAULT_CODEX_ATTEMPT_BUDGET,
     exploratory_concurrency: int = ralph.DEFAULT_EXPLORATORY_CONCURRENCY,
     dry_run: bool = False,
     allow_dirty_worktree: bool = False,
@@ -750,6 +751,7 @@ def make_loop(
         issue=issue,
         drain=drain,
         max_issues=max_issues,
+        max_codex_attempts=max_codex_attempts,
         exploratory_concurrency=exploratory_concurrency,
         dry_run=dry_run,
         allow_dirty_worktree=allow_dirty_worktree,
@@ -761,6 +763,32 @@ def make_loop(
     )
     runner.dry_run = dry_run
     return ralph.RalphLoop(config, runner)
+
+
+def implementation_attempt_context(
+    tmp_path: Path,
+    loop: ralph.RalphLoop,
+    issue: ralph.Issue,
+):
+    delivery_plan = ralph.resolve_delivery_plan(
+        issue,
+        default_mode=loop.config.delivery_mode,
+        target_branch=loop.config.target_branch,
+    )
+    branch, worktree_path, integration_path = loop._branch_and_worktrees(issue)
+    worktree_path.mkdir(parents=True)
+    run_dir = tmp_path / "logs" / "issue-42-test"
+    manifest = ralph.RunManifest.for_implementation(
+        run_dir=run_dir,
+        issue=issue,
+        delivery_plan=delivery_plan,
+        branch=branch,
+        worktree_path=worktree_path,
+        integration_path=integration_path,
+        config=loop.config,
+    )
+    access_plan = ralph.issue_implementation_access_plan(issue)
+    return worktree_path, run_dir, manifest, access_plan
 
 
 def write_recovery_manifest(
@@ -3718,6 +3746,10 @@ Build it.
             config.exploratory_concurrency,
             ralph.DEFAULT_EXPLORATORY_CONCURRENCY,
         )
+        self.assertEqual(
+            config.max_codex_attempts,
+            ralph.DEFAULT_CODEX_ATTEMPT_BUDGET,
+        )
 
     def test_parse_args_help_describes_default_drain_budget(self) -> None:
         output = io.StringIO()
@@ -3734,6 +3766,8 @@ Build it.
         self.assertIn("--ready-issue-refresh", help_text)
         self.assertIn("--skip-ready-issue-refresh", help_text)
         self.assertIn("--allow-full-access-implementation", help_text)
+        self.assertIn("--max-codex-attempts", help_text)
+        self.assertIn("Defaults to 5", help_text)
         self.assertIn("--exploratory-concurrency", help_text)
         self.assertIn("Defaults to 2", help_text)
         self.assertIn("exploratory", help_text)
@@ -3748,6 +3782,15 @@ Build it.
         self.assertIn(
             "--exploratory-concurrency must be 1 or greater", output.getvalue()
         )
+
+    def test_parse_args_rejects_max_codex_attempts_below_one(self) -> None:
+        output = io.StringIO()
+
+        with redirect_stderr(output), self.assertRaises(SystemExit) as caught:
+            ralph.parse_args(["--max-codex-attempts", "0"])
+
+        self.assertEqual(caught.exception.code, 2)
+        self.assertIn("--max-codex-attempts must be 1 or greater", output.getvalue())
 
     def test_build_config_records_exploratory_concurrency(self) -> None:
         runner = FakeRunner(
@@ -3766,11 +3809,33 @@ Build it.
 
         self.assertEqual(config.exploratory_concurrency, 4)
 
-    def test_run_manifests_record_exploratory_concurrency_configuration(self) -> None:
+    def test_build_config_records_max_codex_attempts(self) -> None:
+        runner = FakeRunner(
+            command_outputs={
+                ("git", "rev-parse", "--show-toplevel"): ["/work/repo\n"],
+                ("git", "config", "--get", "remote.origin.url"): [
+                    "git@github.com:example/repo.git\n"
+                ],
+            }
+        )
+
+        config = ralph.build_config(
+            ralph.parse_args(["--max-codex-attempts", "7"]),
+            runner,
+        )
+
+        self.assertEqual(config.max_codex_attempts, 7)
+
+    def test_run_manifests_record_configuration(self) -> None:
         runner = FakeRunner()
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            loop = make_loop(tmp_path, runner, exploratory_concurrency=5)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                max_codex_attempts=7,
+                exploratory_concurrency=5,
+            )
             issue = make_issue({ralph.READY_LABEL}, IMPLEMENTATION_BODY)
             delivery_plan = ralph.resolve_delivery_plan(
                 issue,
@@ -3808,6 +3873,7 @@ Build it.
 
         for payload in payloads:
             self.assertEqual(payload["configuration"]["exploratory_concurrency"], 5)
+            self.assertEqual(payload["configuration"]["max_codex_attempts"], 7)
 
     def test_build_config_enables_ready_issue_refresh_for_drain_by_default(
         self,
@@ -5949,6 +6015,8 @@ class RalphOperatorRunTests(unittest.TestCase):
                     "--detach",
                     "--max-cycles",
                     "3",
+                    "--max-codex-attempts",
+                    "7",
                     "--exploratory-concurrency",
                     "4",
                     "--skip-post-promotion-followups",
@@ -5976,12 +6044,15 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertIn("--operator-run-dir", child_command)
         self.assertIn("--max-cycles", child_command)
         self.assertIn("3", child_command)
+        self.assertIn("--max-codex-attempts", child_command)
+        self.assertIn("7", child_command)
         self.assertIn("--exploratory-concurrency", child_command)
         self.assertIn("4", child_command)
         self.assertIn("--skip-post-promotion-followups", child_command)
         self.assertIn("--allow-full-access-implementation", child_command)
         self.assertEqual(manifest["last_checkpoint"]["checkpoint"], "detached_launched")
         self.assertEqual(manifest["detached"]["pid"], 321)
+        self.assertEqual(manifest["configuration"]["max_codex_attempts"], 7)
         self.assertEqual(manifest["configuration"]["exploratory_concurrency"], 4)
 
     def test_operator_docs_include_codex_safe_command_strings(self) -> None:
@@ -7347,6 +7418,167 @@ Build it.
             self.assertIn("scenario `full-gas-model`", comment)
             self.assertIn("target progress `37/37 materialized`", comment)
             self.assertIn("asset checks `144`", comment)
+
+    def test_codex_failures_retry_until_configured_attempt_budget_succeeds(
+        self,
+    ) -> None:
+        runner = FakeRunner(status_outputs=[" M scripts/ralph.py\n"])
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, max_codex_attempts=3)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            worktree_path, run_dir, manifest, access_plan = (
+                implementation_attempt_context(tmp_path, loop, issue)
+            )
+            codex_command = tuple(ralph.codex_exec_command(worktree_path))
+            runner.fail_command_attempts[codex_command] = [
+                (1, "first codex failure"),
+                (1, "second codex failure"),
+            ]
+
+            with redirect_stdout(io.StringIO()):
+                loop._implement_with_retry(
+                    issue,
+                    worktree_path,
+                    run_dir,
+                    manifest,
+                    access_plan=access_plan,
+                )
+
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        codex_calls = [
+            call for call in runner.calls if call.args[:2] == ("codex", "exec")
+        ]
+        prompts = [call.input_text for call in codex_calls]
+        log_names = [
+            call.log_path.name for call in codex_calls if call.log_path is not None
+        ]
+        self.assertEqual(len(codex_calls), 3)
+        self.assertNotIn("Failure detail:", prompts[0])
+        self.assertIn("first codex failure", prompts[1])
+        self.assertIn("second codex failure", prompts[2])
+        self.assertEqual(
+            log_names,
+            [
+                "codex-implementation-1.jsonl",
+                "codex-implementation-2.jsonl",
+                "codex-implementation-3.jsonl",
+            ],
+        )
+        self.assertEqual(
+            [attempt["status"] for attempt in manifest_payload["codex_attempts"]],
+            ["failed", "failed", "completed"],
+        )
+        self.assertEqual(manifest_payload["qa_results"][0]["status"], "passed")
+
+    def test_qa_failures_consume_codex_attempt_budget_and_retry_until_success(
+        self,
+    ) -> None:
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n"] * 3,
+            fail_command_attempts={
+                ("make", "run-prek"): [
+                    (1, "first QA failure"),
+                    (1, "second QA failure"),
+                ]
+            },
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, max_codex_attempts=3)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            worktree_path, run_dir, manifest, access_plan = (
+                implementation_attempt_context(tmp_path, loop, issue)
+            )
+
+            with redirect_stdout(io.StringIO()):
+                loop._implement_with_retry(
+                    issue,
+                    worktree_path,
+                    run_dir,
+                    manifest,
+                    access_plan=access_plan,
+                )
+
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        codex_calls = [
+            call for call in runner.calls if call.args[:2] == ("codex", "exec")
+        ]
+        qa_calls = [call for call in runner.calls if call.args == ("make", "run-prek")]
+        prompts = [call.input_text for call in codex_calls]
+        qa_log_names = [
+            call.log_path.name for call in qa_calls if call.log_path is not None
+        ]
+
+        self.assertEqual(len(codex_calls), 3)
+        self.assertEqual(len(qa_calls), 3)
+        self.assertIn("first QA failure", prompts[1])
+        self.assertIn("second QA failure", prompts[2])
+        self.assertEqual(
+            qa_log_names,
+            [
+                "qa-1-ralph-loop-commit-check.log",
+                "qa-retry-1-ralph-loop-commit-check.log",
+                "qa-retry-3-1-ralph-loop-commit-check.log",
+            ],
+        )
+        self.assertEqual(
+            [attempt["status"] for attempt in manifest_payload["codex_attempts"]],
+            ["completed", "completed", "completed"],
+        )
+        self.assertEqual(
+            [result["status"] for result in manifest_payload["qa_results"]],
+            ["failed", "failed", "passed"],
+        )
+
+    def test_qa_failure_exhausts_configured_codex_attempt_budget(self) -> None:
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n"] * 2,
+            fail_command_attempts={
+                ("make", "run-prek"): [
+                    (1, "first QA failure"),
+                    (1, "second QA failure"),
+                ]
+            },
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, max_codex_attempts=2)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            worktree_path, run_dir, manifest, access_plan = (
+                implementation_attempt_context(tmp_path, loop, issue)
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output), self.assertRaises(ralph.CommandFailure):
+                loop._implement_with_retry(
+                    issue,
+                    worktree_path,
+                    run_dir,
+                    manifest,
+                    access_plan=access_plan,
+                )
+
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        codex_calls = [
+            call for call in runner.calls if call.args[:2] == ("codex", "exec")
+        ]
+        prompts = [call.input_text for call in codex_calls]
+
+        self.assertEqual(len(codex_calls), 2)
+        self.assertIn("first QA failure", prompts[1])
+        self.assertIn("exhausted --max-codex-attempts 2", output.getvalue())
+        self.assertEqual(
+            [attempt["status"] for attempt in manifest_payload["codex_attempts"]],
+            ["completed", "completed"],
+        )
+        self.assertEqual(
+            [result["status"] for result in manifest_payload["qa_results"]],
+            ["failed", "failed"],
+        )
 
     def test_agents_issue_without_full_access_flag_stops_before_claim(self) -> None:
         runner = FakeRunner()
@@ -9113,7 +9345,8 @@ Build it.
     def test_failed_qa_persists_failed_manifest_state(self) -> None:
         qa_command = ("make", "run-prek")
         runner = FakeRunner(
-            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            status_outputs=[" M scripts/ralph.py\n"]
+            * ralph.DEFAULT_CODEX_ATTEMPT_BUDGET,
             rev_parse_outputs=["base-sha\n"],
             fail_commands={qa_command},
         )
@@ -9146,7 +9379,7 @@ Build it.
             " M backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py\n"
         )
         runner = FakeRunner(
-            status_outputs=[changed_file, changed_file],
+            status_outputs=[changed_file] * ralph.DEFAULT_CODEX_ATTEMPT_BUDGET,
             rev_parse_outputs=["base-sha\n"],
             fail_commands={qa_command},
         )

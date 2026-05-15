@@ -135,6 +135,12 @@ those implementation subprocesses as a **Full-access implementation pass**, keep
 their GitHub Issue commands read-only, and hard-stops before QA if the resulting
 diff changes files outside the issue's `## Context anchors`.
 
+Use `--max-issues` for the drain-level claimed issue budget. Plain `--drain`
+claims at most 10 implementation issues by default, and `--max-issues 0` means
+unlimited drain. Use `--max-codex-attempts` for the per-issue Codex
+implementation budget. It defaults to 5 total Codex attempts per claimed issue,
+including the initial implementation and retries after Codex or QA failures.
+
 ## Review Dev
 
 Before `$ralph-loop promote`, review the **Integration target** that will be

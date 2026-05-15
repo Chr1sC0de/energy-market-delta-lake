@@ -59,14 +59,21 @@ Ralph drains agent-ready GitHub issues through a guarded local loop:
 
 The loop stops when the queue has no unblocked implementation or triage
 candidates, or when `--max-issues` is reached. A plain `--drain` run defaults
-to 10 implementation attempts; `--max-issues 0` is the explicit unlimited drain
-mode.
-`--max-issues` counts claimed implementation attempts across the serial and
+to 10 claimed implementation issues; `--max-issues 0` is the explicit unlimited
+drain mode.
+`--max-issues` counts claimed implementation issues across the serial and
 Exploratory lanes. When the cap is reached, Ralph stops scheduling new issue
-attempts and waits for already active Exploratory workers to finish. Automated
-triage remains outside this implementation-attempt budget; if active
-Exploratory workers are already running and no serial ready issue is claimable,
-Ralph may run a triage pass before waiting for those workers.
+claims and waits for already active Exploratory workers to finish. Automated
+triage remains outside this claimed-issue budget; if active Exploratory workers
+are already running and no serial ready issue is claimable, Ralph may run a
+triage pass before waiting for those workers.
+
+`--max-codex-attempts` is a separate per-issue Codex implementation budget. It
+defaults to `5` total attempts for each claimed issue, including the initial
+implementation attempt and retries after Codex or QA failures. Retry prompts
+include the previous failure detail. Future review-repair attempts should draw
+from the same per-issue budget. Full-access implementation passes that change
+files outside the issue's context anchors still fail immediately without retry.
 
 The checkpointed Operator run path wraps the issue and **Promotion** commands
 for unattended cleanup. It uses the same lane-aware drain scheduler as plain
@@ -131,7 +138,7 @@ flowchart TD
   STAGE --> REFRESH[Run Ready issue refresh]
   CLOSE --> REFRESH
   REVIEW --> REFRESH
-  REFRESH --> LIMIT{Max implementation attempts reached?}
+  REFRESH --> LIMIT{Max claimed issues reached?}
   LIMIT -->|No| READY
   LIMIT -->|Yes| BUDGETTRIAGE{Active Exploratory workers and triage candidate?}
   BUDGETTRIAGE -->|Yes| TRIAGEPASS
@@ -215,7 +222,7 @@ to two eligible Exploratory candidates, using each issue's resolved
 Exploratory preview bound; the default is `2` and the minimum is `1`.
 Targeted `--issue` dry runs still preview only that issue.
 
-Drain up to 10 implementation attempts:
+Drain up to 10 claimed implementation issues:
 
 ```bash
 python3 scripts/ralph.py --drain
@@ -225,14 +232,13 @@ Live `--drain` runs a lane-aware scheduler. Gitflow and Trunk delivery stay in a
 single serial lane. Exploratory delivery issues are submitted oldest-first to a
 `ThreadPoolExecutor` with at most `--exploratory-concurrency` active workers.
 The scheduler preserves queue order within each lane and applies `--max-issues`
-to claimed attempts across both lanes. When **Ready issue refresh** starts after
-a successful **Local integration** or Exploratory handoff, the scheduler pauses
+to claimed issues across both lanes. When **Ready issue refresh** starts after a
+successful **Local integration** or Exploratory handoff, the scheduler pauses
 new issue claims until all pending refresh passes complete successfully. Running
 Exploratory workers are not cancelled; they may finish while the claim gate is
 closed. When no serial Gitflow or Trunk ready issue is claimable, the scheduler
 may run one automated triage pass while active Exploratory workers continue.
-That triage pass does not consume the `--max-issues` implementation-attempt
-budget.
+That triage pass does not consume the `--max-issues` claimed-issue budget.
 
 Drain or run the Operator loop without applying **Ready issue refresh** metadata
 updates:
@@ -263,6 +269,12 @@ Drain until only blocked or non-actionable issues remain:
 
 ```bash
 python3 scripts/ralph.py --drain --max-issues 0
+```
+
+Use a different per-issue Codex attempt budget:
+
+```bash
+python3 scripts/ralph.py --drain --max-codex-attempts 3
 ```
 
 Implement one specific issue:
@@ -806,6 +818,13 @@ issue refresh audit prefix, preserving their chronological order. Normal
 maintainer comments and automated triage comments are excluded. If comment
 fetching fails, Ralph fails the issue before starting the Codex implementation
 subprocess instead of running with incomplete refresh context.
+
+For each claimed issue, Ralph runs at most `--max-codex-attempts` Codex
+implementation attempts. The default is `5`. Each attempt writes
+`codex-implementation-N.jsonl`; retry attempts use prompts that include the
+previous Codex or QA failure evidence, then rerun Codex before QA. QA retry logs
+keep the existing `qa` and `qa-retry` names for the first two attempts and add
+ordered retry prefixes for later attempts.
 
 After QA passes, Ralph commits the implementation branch. If the implementation
 commit hook attempt rewrites tracked files, Ralph records

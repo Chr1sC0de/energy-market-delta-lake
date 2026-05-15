@@ -57,6 +57,7 @@ DEFAULT_GITFLOW_BRANCH = "dev"
 DEFAULT_TRUNK_BRANCH = "main"
 DEFAULT_EXPLORATORY_BRANCH_PREFIX = "agent/exploratory"
 DEFAULT_DRAIN_BUDGET = 10
+DEFAULT_CODEX_ATTEMPT_BUDGET = 5
 DEFAULT_EXPLORATORY_CONCURRENCY = 2
 DEFAULT_OPERATOR_MAX_CYCLES = 10
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30.0
@@ -274,6 +275,7 @@ class CliArgs:
     continue_exploratory_acceptance: str | None = None
     drain: bool = False
     max_issues: int = DEFAULT_DRAIN_BUDGET
+    max_codex_attempts: int = DEFAULT_CODEX_ATTEMPT_BUDGET
     exploratory_concurrency: int = DEFAULT_EXPLORATORY_CONCURRENCY
     dry_run: bool = False
     allow_dirty_worktree: bool = False
@@ -790,6 +792,7 @@ class LoopConfig:
     issue: int | None
     drain: bool
     max_issues: int
+    max_codex_attempts: int
     exploratory_concurrency: int
     dry_run: bool
     allow_dirty_worktree: bool
