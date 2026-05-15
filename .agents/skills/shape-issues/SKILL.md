@@ -265,6 +265,8 @@ The publisher:
 - refuses to run without `--confirm-publish`
 - refuses fixture-gated non-dry-run publication without
   `--allow-fixture-publish`
+- runs a non-dry-run GitHub CLI preflight before writing final body files or
+  `publish-manifest.json`
 - refuses gate actions other than `ready` and `exploratory`
 - refuses missing, `human-decision`, or mismatched classifications
 - refuses when `bundle.json` content no longer matches `report.json`
@@ -278,8 +280,10 @@ The publisher:
   `/issues/N` references before dependent issues are created
 
 If publication fails partway through, inspect `publish-manifest.json` and rerun
-the same command after fixing the cause. Existing source markers make reruns
-skip issues that were already created.
+the same command after fixing the cause. GitHub CLI failures during duplicate
+search or issue creation record the failing phase, exit code, stderr summary,
+and stdout summary in the manifest and terminal error. Existing source markers
+make reruns skip issues that were already created.
 
 ## Gate Actions
 

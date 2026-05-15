@@ -54,6 +54,14 @@ class ShapeIssuesSkillContractTests(unittest.TestCase):
         self.assertIn("never mutates existing issues", text)
         self.assertIn("source markers", text)
 
+    def test_skill_documents_publisher_preflight_and_github_failure_diagnostics(self) -> None:
+        text = SKILL_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("non-dry-run GitHub CLI preflight", text)
+        self.assertIn("before writing final body files", text)
+        self.assertIn("failing phase, exit code, stderr summary", text)
+        self.assertIn("stdout summary", text)
+
     def test_skill_documents_followup_command_guardrail(self) -> None:
         text = SKILL_PATH.read_text(encoding="utf-8")
 

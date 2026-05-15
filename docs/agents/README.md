@@ -42,7 +42,8 @@ Use this page as the agent documentation map. The imperative policy lives in
   `$shape-issues` plan continue issue-draft execution; direct implementation
   requires `$ralph-loop` or an explicit named GitHub Issue request.
   Fixture-gated reports can preview with `--dry-run`, but non-dry-run
-  publication requires `--allow-fixture-publish` and records fixture provenance.
+  publication requires `--allow-fixture-publish`, preflights `gh`
+  authentication and repository access, and records fixture provenance.
 - Use `$ralph-curate` to review open GitHub Issues against the current branch
   and propose stale, satisfied, blocked, or mislabeled issue updates.
 - Use `$ralph-issue-refresh` to reconcile ready issues after **Local

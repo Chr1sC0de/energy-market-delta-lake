@@ -72,8 +72,12 @@ verbs after a `$shape-issues` plan keep creating, gating, or publishing issue
 drafts; direct implementation requires `$ralph-loop` or an explicit named
 GitHub Issue request. Fixture-gated reports can preview with `--dry-run`, but
 non-dry-run publication requires `--allow-fixture-publish` and records fixture
-provenance in the manifest and issue body. `$ralph-triage` remains responsible
-for category, state, and **Delivery mode** labels before Ralph drain.
+provenance in the manifest and issue body. Non-dry-run publication preflights
+`gh`, authentication, and target repository access before writing final body
+files; later duplicate-search or create failures record their phase, exit code,
+stderr summary, and stdout summary in `publish-manifest.json`. `$ralph-triage`
+remains responsible for category, state, and **Delivery mode** labels before
+Ralph drain.
 
 Runtime labels such as `agent-running`, `agent-integrated`, `agent-merged`,
 `agent-failed`, and `agent-reviewing` block repeat implementation and automated

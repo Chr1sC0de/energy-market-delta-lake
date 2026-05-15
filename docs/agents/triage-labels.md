@@ -22,8 +22,8 @@ changes.
 Issues published by `$shape-issues` v2 intentionally start with
 `needs-triage` only; `$ralph-triage` owns category, state, and **Delivery mode**
 labels before an issue enters the ready queue. Fixture-gated non-dry-run
-publication requires `--allow-fixture-publish` and leaves fixture provenance for
-triage review.
+publication requires `--allow-fixture-publish`; all non-dry-run publication
+preflights `gh` auth and target repository access before issue creation.
 
 ## Ralph runtime labels
 

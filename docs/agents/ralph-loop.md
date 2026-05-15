@@ -102,7 +102,8 @@ also writes pre-publication review Markdown at `issue-drafts.md` and
 Follow-up verbs after a `$shape-issues` plan stay in issue-draft execution;
 direct implementation requires `$ralph-loop` or an explicit named GitHub Issue
 request. Fixture-gated reports can preview with `--dry-run`, but non-dry-run
-publication requires `--allow-fixture-publish` and records fixture provenance.
+publication requires `--allow-fixture-publish`, preflights `gh`
+authentication and repository access, and records fixture provenance.
 `$ralph-triage` prepares GitHub Issues for drain by setting category, state, and
 **Delivery mode** labels. `$ralph-loop` owns the backing script commands,
 including `$ralph-loop drain` and `$ralph-loop promote`.

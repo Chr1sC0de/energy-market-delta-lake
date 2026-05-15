@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 
 PUBLISHER_PATH = (
@@ -67,6 +68,10 @@ Run `python3 -m unittest tests/test_shape_issues_publish.py`.
 class FakeGithubClient:
     existing_by_marker: dict[str, Any] = {}
     created: list[dict[str, Any]] = []
+    preflight_calls = 0
+    preflight_failure: publisher.GithubCommandError | None = None
+    find_failure: publisher.GithubCommandError | None = None
+    create_failures_by_title: dict[str, publisher.GithubCommandError] = {}
     next_number = 40
 
     def __init__(self, *, repo: str, repo_root: Path, gh_binary: str) -> None:
@@ -78,12 +83,25 @@ class FakeGithubClient:
     def reset(cls) -> None:
         cls.existing_by_marker = {}
         cls.created = []
+        cls.preflight_calls = 0
+        cls.preflight_failure = None
+        cls.find_failure = None
+        cls.create_failures_by_title = {}
         cls.next_number = 40
 
+    def preflight(self) -> None:
+        self.__class__.preflight_calls += 1
+        if self.__class__.preflight_failure is not None:
+            raise self.__class__.preflight_failure
+
     def find_issue_by_source_marker(self, marker: str) -> Any:
+        if self.__class__.find_failure is not None:
+            raise self.__class__.find_failure
         return self.existing_by_marker.get(marker)
 
     def create_issue(self, *, title: str, body_path: Path, labels: tuple[str, ...]) -> Any:
+        if title in self.__class__.create_failures_by_title:
+            raise self.__class__.create_failures_by_title[title]
         self.__class__.next_number += 1
         number = self.__class__.next_number
         reference = publisher.IssueReference(
@@ -232,6 +250,34 @@ def publish_config(
     )
 
 
+def completed_process(
+    args: list[str],
+    *,
+    stdout: str = "",
+    stderr: str = "",
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess(args=args, returncode=0, stdout=stdout, stderr=stderr)
+
+
+def command_error(
+    phase: str,
+    *,
+    exit_code: int = 2,
+    stderr: str = "command stderr",
+    stdout: str = "command stdout",
+) -> publisher.GithubCommandError:
+    failure = publisher.GithubCommandFailure(
+        phase=phase,
+        exit_code=exit_code,
+        stderr_summary=stderr,
+        stdout_summary=stdout,
+    )
+    return publisher.GithubCommandError(
+        failure,
+        publisher.format_github_command_failure(failure, guidance="test guidance."),
+    )
+
+
 class ShapeIssuesPublishTests(unittest.TestCase):
     def setUp(self) -> None:
         self.original_github_client = publisher.GithubClient
@@ -243,6 +289,85 @@ class ShapeIssuesPublishTests(unittest.TestCase):
     def tearDown(self) -> None:
         publisher.GithubClient = self.original_github_client
         self.tempdir.cleanup()
+
+    def test_github_preflight_missing_gh_message_is_actionable(self) -> None:
+        client = self.original_github_client(
+            repo="example/repo",
+            repo_root=self.tmp_path,
+            gh_binary="missing-gh",
+        )
+
+        with mock.patch.object(
+            publisher.subprocess,
+            "run",
+            side_effect=FileNotFoundError("missing-gh"),
+        ):
+            with self.assertRaisesRegex(publisher.PublishError, "Install GitHub CLI") as context:
+                client.preflight()
+
+        message = str(context.exception)
+        self.assertIn("preflight-gh", message)
+        self.assertIn("exit code unavailable", message)
+        self.assertIn("stderr summary: <empty>", message)
+        self.assertIn("stdout summary: <empty>", message)
+
+    def test_github_preflight_auth_failure_message_is_actionable(self) -> None:
+        client = self.original_github_client(
+            repo="example/repo",
+            repo_root=self.tmp_path,
+            gh_binary="gh",
+        )
+
+        def fake_run(args: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+            if args[1] == "--version":
+                return completed_process(args, stdout="gh version 2")
+            raise subprocess.CalledProcessError(
+                1,
+                args,
+                output="auth stdout",
+                stderr="not logged in",
+            )
+
+        with mock.patch.object(publisher.subprocess, "run", side_effect=fake_run):
+            with self.assertRaises(publisher.PublishError) as context:
+                client.preflight()
+
+        message = str(context.exception)
+        self.assertIn("preflight-auth", message)
+        self.assertIn("exit code 1", message)
+        self.assertIn("gh auth login", message)
+        self.assertIn("stderr summary: not logged in", message)
+        self.assertIn("stdout summary: auth stdout", message)
+
+    def test_github_preflight_repository_failure_message_is_actionable(self) -> None:
+        client = self.original_github_client(
+            repo="example/repo",
+            repo_root=self.tmp_path,
+            gh_binary="gh",
+        )
+
+        def fake_run(args: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+            if args[1] == "--version":
+                return completed_process(args, stdout="gh version 2")
+            if args[1:3] == ["auth", "status"]:
+                return completed_process(args, stderr="Logged in")
+            raise subprocess.CalledProcessError(
+                1,
+                args,
+                output="repo stdout",
+                stderr="could not resolve repository",
+            )
+
+        with mock.patch.object(publisher.subprocess, "run", side_effect=fake_run):
+            with self.assertRaises(publisher.PublishError) as context:
+                client.preflight()
+
+        message = str(context.exception)
+        self.assertIn("preflight-repository", message)
+        self.assertIn("exit code 1", message)
+        self.assertIn("--repo example/repo", message)
+        self.assertIn("stderr summary: could not resolve repository", message)
+        self.assertIn("stdout summary: repo stdout", message)
 
     def test_refuses_without_confirmation(self) -> None:
         bundle_path, report_path = write_bundle_and_report(
@@ -431,6 +556,118 @@ class ShapeIssuesPublishTests(unittest.TestCase):
         self.assertNotIn("Issue context assessor provider:", body)
         self.assertNotIn("Fixture publish policy:", body)
 
+    def test_preflight_failure_happens_before_body_files_or_manifest(self) -> None:
+        bundle_path, report_path = write_bundle_and_report(
+            self.tmp_path,
+            issues=[issue_payload("first", "First issue")],
+            actions={"first": "ready"},
+        )
+        FakeGithubClient.preflight_failure = command_error(
+            publisher.PREFLIGHT_AUTH_PHASE,
+            exit_code=1,
+            stderr="not logged in",
+            stdout="",
+        )
+
+        with self.assertRaisesRegex(publisher.PublishError, "preflight-auth") as context:
+            publisher.publish(
+                publish_config(
+                    self.tmp_path,
+                    bundle_path,
+                    report_path,
+                    dry_run=False,
+                )
+            )
+
+        self.assertIn("before writing publish body files", str(context.exception))
+        self.assertEqual(FakeGithubClient.preflight_calls, 1)
+        self.assertFalse((self.tmp_path / "publish-bodies").exists())
+        self.assertFalse((self.tmp_path / "publish-manifest.json").exists())
+
+    def test_duplicate_search_failure_records_github_diagnostics(self) -> None:
+        bundle_path, report_path = write_bundle_and_report(
+            self.tmp_path,
+            issues=[issue_payload("first", "First issue")],
+            actions={"first": "ready"},
+        )
+        FakeGithubClient.find_failure = command_error(
+            publisher.DUPLICATE_SEARCH_PHASE,
+            exit_code=7,
+            stderr="duplicate stderr",
+            stdout="duplicate stdout",
+        )
+
+        with self.assertRaisesRegex(publisher.PublishError, "duplicate-search") as context:
+            publisher.publish(
+                publish_config(
+                    self.tmp_path,
+                    bundle_path,
+                    report_path,
+                    dry_run=False,
+                )
+            )
+
+        message = str(context.exception)
+        self.assertIn("exit code 7", message)
+        self.assertIn("stderr summary: duplicate stderr", message)
+        self.assertIn("stdout summary: duplicate stdout", message)
+        manifest = json.loads((self.tmp_path / "publish-manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["recovery"], (
+            "Inspect publish-manifest.json, keep any created issues, then rerun "
+            "the publisher with the same bundle. Source markers will skip duplicates."
+        ))
+        failed = manifest["issues"][0]
+        self.assertEqual(failed["state"], "failed")
+        self.assertEqual(
+            failed["gh_failure"],
+            {
+                "exit_code": 7,
+                "phase": "duplicate-search",
+                "stderr_summary": "duplicate stderr",
+                "stdout_summary": "duplicate stdout",
+            },
+        )
+
+    def test_issue_create_failure_records_github_diagnostics(self) -> None:
+        bundle_path, report_path = write_bundle_and_report(
+            self.tmp_path,
+            issues=[issue_payload("first", "First issue")],
+            actions={"first": "ready"},
+        )
+        FakeGithubClient.create_failures_by_title["First issue"] = command_error(
+            publisher.ISSUE_CREATE_PHASE,
+            exit_code=8,
+            stderr="create stderr",
+            stdout="create stdout",
+        )
+
+        with self.assertRaisesRegex(publisher.PublishError, "issue-create") as context:
+            publisher.publish(
+                publish_config(
+                    self.tmp_path,
+                    bundle_path,
+                    report_path,
+                    dry_run=False,
+                )
+            )
+
+        message = str(context.exception)
+        self.assertIn("exit code 8", message)
+        self.assertIn("stderr summary: create stderr", message)
+        self.assertIn("stdout summary: create stdout", message)
+        manifest = json.loads((self.tmp_path / "publish-manifest.json").read_text(encoding="utf-8"))
+        failed = manifest["issues"][0]
+        self.assertEqual(failed["state"], "failed")
+        self.assertEqual(
+            failed["gh_failure"],
+            {
+                "exit_code": 8,
+                "phase": "issue-create",
+                "stderr_summary": "create stderr",
+                "stdout_summary": "create stdout",
+            },
+        )
+
     def test_refuses_duplicate_gate_report_ids(self) -> None:
         bundle_path, report_path = write_bundle_and_report(
             self.tmp_path,
@@ -547,6 +784,67 @@ class ShapeIssuesPublishTests(unittest.TestCase):
         self.assertEqual(manifest["issues"][0]["state"], "duplicate")
         self.assertEqual(manifest["issues"][0]["number"], 77)
         self.assertEqual(FakeGithubClient.created, [])
+
+    def test_partial_publication_rerun_uses_source_marker_recovery(self) -> None:
+        bundle_path, report_path = write_bundle_and_report(
+            self.tmp_path,
+            issues=[
+                issue_payload("dependent", "Dependent issue", blocked_by=["blocker"]),
+                issue_payload("blocker", "Blocker issue"),
+            ],
+            actions={"dependent": "ready", "blocker": "ready"},
+        )
+        FakeGithubClient.create_failures_by_title["Dependent issue"] = command_error(
+            publisher.ISSUE_CREATE_PHASE,
+            exit_code=8,
+            stderr="create stderr",
+            stdout="create stdout",
+        )
+
+        with self.assertRaisesRegex(publisher.PublishError, "issue-create"):
+            publisher.publish(
+                publish_config(
+                    self.tmp_path,
+                    bundle_path,
+                    report_path,
+                    dry_run=False,
+                )
+            )
+
+        failed_manifest = json.loads(
+            (self.tmp_path / "publish-manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            [entry["state"] for entry in failed_manifest["issues"]],
+            ["created", "failed"],
+        )
+        created_entry = failed_manifest["issues"][0]
+        FakeGithubClient.existing_by_marker[created_entry["source_marker"]] = (
+            publisher.IssueReference(
+                number=created_entry["number"],
+                title=created_entry["title"],
+                url=created_entry["url"],
+            )
+        )
+        FakeGithubClient.create_failures_by_title = {}
+
+        recovered_manifest = publisher.publish(
+            publish_config(
+                self.tmp_path,
+                bundle_path,
+                report_path,
+                dry_run=False,
+            )
+        )
+
+        self.assertEqual(
+            [entry["state"] for entry in recovered_manifest["issues"]],
+            ["duplicate", "created"],
+        )
+        self.assertEqual(
+            [call["title"] for call in FakeGithubClient.created],
+            ["Blocker issue", "Dependent issue"],
+        )
 
     def test_blockers_publish_first_and_rewrite_blocked_by_references(self) -> None:
         bundle_path, report_path = write_bundle_and_report(
