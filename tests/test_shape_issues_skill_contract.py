@@ -54,6 +54,28 @@ class ShapeIssuesSkillContractTests(unittest.TestCase):
         self.assertIn("never mutates existing issues", text)
         self.assertIn("source markers", text)
 
+    def test_skill_documents_followup_command_guardrail(self) -> None:
+        text = SKILL_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("Follow-up Command Guardrail", text)
+        self.assertIn("`proceed`, `continue`, `do it`, or `implement the plan`", text)
+        self.assertIn("mean `$shape-issues`\nexecution", text)
+        self.assertIn("create or update the bundle, run the gate", text)
+        self.assertIn("must not be interpreted as\ndirect implementation edits", text)
+        self.assertIn("Direct implementation requires `$ralph-loop`", text)
+        self.assertIn("specific GitHub Issue, such as `implement issue #123`", text)
+
+    def test_gate_review_markdown_artifacts_are_documented(self) -> None:
+        skill = SKILL_PATH.read_text(encoding="utf-8")
+        gate_contract = GATE_CONTRACT_PATH.read_text(encoding="utf-8")
+
+        for text in (skill, gate_contract):
+            self.assertIn("`issue-drafts.md`", text)
+            self.assertIn("`issue-drafts/<issue-id>.md`", text)
+        self.assertIn("pre-publication review Markdown", gate_contract)
+        self.assertIn("blocker references by draft id", gate_contract)
+        self.assertIn("full draft body", gate_contract)
+
     def test_fixture_publish_policy_is_documented_in_contracts(self) -> None:
         gate_contract = GATE_CONTRACT_PATH.read_text(encoding="utf-8")
         context_assessors = CONTEXT_ASSESSORS_PATH.read_text(encoding="utf-8")

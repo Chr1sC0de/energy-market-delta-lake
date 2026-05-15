@@ -77,6 +77,14 @@ areas remain separate scoring surfaces.
 - `report.md`: Operator-readable evidence for the issue bundle, including the
   assessor provider, corpus digest, per-issue context verdicts, cited paths, and
   stiffness evidence.
+- `issue-drafts.md`: pre-publication review Markdown in publisher order. It
+  includes each draft title, labels, blocker references by draft id, gate
+  action, stiffness summary, **Issue context assessor** status, deterministic
+  source-marker information, and the full draft body.
+- `issue-drafts/<issue-id>.md`: one per-draft review file using the stable draft
+  id in the file name. Each file includes the same reviewer metadata plus source
+  marker, bundle reference, source digest, and full draft body so the Operator
+  can connect it back to `bundle.json` before publication.
 
 ## Publication Policy
 

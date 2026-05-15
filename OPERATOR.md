@@ -33,11 +33,15 @@ straight from shaped plan to GitHub Issues.
 
 Use `$shape-issues` to draft independently grabbable GitHub Issues with
 tracer-bullet slices, context anchors, QA plans, **Issue context assessor**
-evidence, and stiffness scoring. It writes `.shape-issues/runs/.../report.md`
-and `report.json`; after explicit Operator confirmation it may publish the
-gated outputs as `needs-triage` issues. `$shape-issues` does not move issues to
+evidence, and stiffness scoring. It writes `.shape-issues/runs/.../report.md`,
+`report.json`, `issue-drafts.md`, and per-draft `issue-drafts/*.md` review
+files; after explicit Operator confirmation it may publish the gated outputs as
+`needs-triage` issues. `$shape-issues` does not move issues to
 `ready-for-agent` and must not edit, comment on, close, reopen, or relabel
-existing GitHub Issues. Each implementation draft must include
+existing GitHub Issues. After a `$shape-issues` plan, follow-up verbs such as
+`proceed`, `continue`, or `implement the plan` stay in the issue-draft workflow;
+direct implementation requires `$ralph-loop` or an explicit named GitHub Issue
+request such as `implement issue #123`. Each implementation draft must include
 `## What to build`, `## Acceptance criteria`, and `## Blocked by` before it can
 be triaged toward `ready-for-agent`. Exploratory delivery drafts must also
 include `## Review focus` stating the human judgment the durable

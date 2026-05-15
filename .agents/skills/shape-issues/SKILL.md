@@ -39,10 +39,22 @@ on, close, reopen, or relabel existing GitHub Issues.
    assessor** provider.
 8. Revise the drafts until AFK slices have `action: ready` and Exploratory
    implementation slices have `action: exploratory`.
-9. Present the Markdown report, issue drafts, and any report-only
-   `human-decision` slices to the Operator.
+9. Present `report.md`, `issue-drafts.md`, the per-draft files under
+   `issue-drafts/`, and any report-only `human-decision` slices to the
+   Operator.
 10. Publish only if the Operator explicitly says the gated outputs are ready to
     publish, then run `scripts/publish_shape_issues.py --confirm-publish`.
+
+## Follow-up Command Guardrail
+
+After a `$shape-issues` plan or slice breakdown, follow-up verbs such as
+`proceed`, `continue`, `do it`, or `implement the plan` mean `$shape-issues`
+execution: create or update the bundle, run the gate, present review Markdown,
+or publish explicitly confirmed issue drafts. They must not be interpreted as
+direct implementation edits to repository files.
+
+Direct implementation requires `$ralph-loop` or an explicit request to implement
+a specific GitHub Issue, such as `implement issue #123`.
 
 ## Slice Classes
 
@@ -206,7 +218,8 @@ deterministic `rg` candidate files. Use
 `scripts/fixture_context_assessor.py` only for deterministic tests and dry
 contract examples.
 
-The gate writes `report.md` and `report.json`. Runtime outputs under
+The gate writes `report.md`, `report.json`, `issue-drafts.md`, and one
+`issue-drafts/<issue-id>.md` review file per draft. Runtime outputs under
 `.shape-issues/` are ignored by git.
 
 ## Publish Command

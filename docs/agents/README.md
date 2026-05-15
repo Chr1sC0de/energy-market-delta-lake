@@ -35,10 +35,14 @@ Use this page as the agent documentation map. The imperative policy lives in
   `$skill-name`.
 - Use `$shape-issues` before `$ralph-triage` to turn shaped plans into
   tracer-bullet issue drafts with context anchors, QA plans, **Issue context
-  assessor** evidence, and stiffness scoring. Version 2 may publish explicitly
-  confirmed gated outputs as `needs-triage` issues only. Fixture-gated reports
-  can preview with `--dry-run`, but non-dry-run publication requires
-  `--allow-fixture-publish` and records fixture provenance.
+  assessor** evidence, and stiffness scoring. The gate writes `report.md`,
+  `report.json`, `issue-drafts.md`, and per-draft `issue-drafts/*.md` review
+  files before publication. Version 2 may publish explicitly confirmed gated
+  outputs as `needs-triage` issues only. Follow-up verbs after a
+  `$shape-issues` plan continue issue-draft execution; direct implementation
+  requires `$ralph-loop` or an explicit named GitHub Issue request.
+  Fixture-gated reports can preview with `--dry-run`, but non-dry-run
+  publication requires `--allow-fixture-publish` and records fixture provenance.
 - Use `$ralph-curate` to review open GitHub Issues against the current branch
   and propose stale, satisfied, blocked, or mislabeled issue updates.
 - Use `$ralph-issue-refresh` to reconcile ready issues after **Local

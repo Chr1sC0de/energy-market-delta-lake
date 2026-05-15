@@ -63,14 +63,17 @@ comments with the Ready issue refresh audit prefix in a separate prompt section
 after the body; normal comments and triage comments are not included.
 
 `$shape-issues` v2 may create new GitHub Issues only after explicit Operator
-confirmation of a passing gate report. Those created issues enter the board as
-`needs-triage` only, with source markers for duplicate detection. `$shape-issues`
-does not move issues to `ready-for-agent`, and it must not edit, comment on,
-close, reopen, or relabel existing issues. Fixture-gated reports can preview
-with `--dry-run`, but non-dry-run publication requires
-`--allow-fixture-publish` and records fixture provenance in the manifest and
-issue body. `$ralph-triage` remains responsible for category, state, and
-**Delivery mode** labels before Ralph drain.
+confirmation of a passing gate report and pre-publication review Markdown:
+`issue-drafts.md` plus one `issue-drafts/*.md` file per draft. Those created
+issues enter the board as `needs-triage` only, with source markers for duplicate
+detection. `$shape-issues` does not move issues to `ready-for-agent`, and it
+must not edit, comment on, close, reopen, or relabel existing issues. Follow-up
+verbs after a `$shape-issues` plan keep creating, gating, or publishing issue
+drafts; direct implementation requires `$ralph-loop` or an explicit named
+GitHub Issue request. Fixture-gated reports can preview with `--dry-run`, but
+non-dry-run publication requires `--allow-fixture-publish` and records fixture
+provenance in the manifest and issue body. `$ralph-triage` remains responsible
+for category, state, and **Delivery mode** labels before Ralph drain.
 
 Runtime labels such as `agent-running`, `agent-integrated`, `agent-merged`,
 `agent-failed`, and `agent-reviewing` block repeat implementation and automated

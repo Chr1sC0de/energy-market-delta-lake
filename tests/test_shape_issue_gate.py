@@ -13,6 +13,14 @@ from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GATE_SCRIPT = REPO_ROOT / ".agents" / "skills" / "shape-issues" / "scripts" / "shape_issue_gate.py"
+PUBLISHER_SCRIPT = (
+    REPO_ROOT
+    / ".agents"
+    / "skills"
+    / "shape-issues"
+    / "scripts"
+    / "publish_shape_issues.py"
+)
 FIXTURE_ASSESSOR = (
     REPO_ROOT
     / ".agents"
@@ -183,6 +191,40 @@ def write_bundle(tmp_path: Path, body: str, *, overrides: dict[str, str] | None 
     return bundle_path
 
 
+def write_blocked_bundle(tmp_path: Path) -> Path:
+    bundle = {
+        "summary": "Shape Ralph issue work.",
+        "shared_context": ["Ralph issue drafts need durable context anchors."],
+        "operator_overrides": {},
+        "issues": [
+            {
+                "id": "dependent",
+                "title": "Dependent issue",
+                "classification": "afk",
+                "blocked_by": ["blocker"],
+                "body": READY_BODY.replace(
+                    "Harden Ralph ready issue handling",
+                    "Harden dependent Ralph issue handling",
+                ),
+                "labels": ["enhancement", "delivery-gitflow"],
+            },
+            {
+                "id": "blocker",
+                "title": "Blocker issue",
+                "classification": "afk",
+                "body": READY_BODY.replace(
+                    "Harden Ralph ready issue handling",
+                    "Harden blocker Ralph issue handling",
+                ),
+                "labels": ["enhancement", "delivery-gitflow"],
+            },
+        ],
+    }
+    bundle_path = tmp_path / "bundle.json"
+    bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+    return bundle_path
+
+
 def run_gate(bundle_path: Path, out_dir: Path, *extra_args: str) -> subprocess.CompletedProcess[str]:
     command = [
         sys.executable,
@@ -261,6 +303,97 @@ class ShapeIssueGateTests(unittest.TestCase):
         self.assertTrue(issue["context_assessment"]["cited_paths"])
         self.assertNotIn("semantic", issue)
         self.assertLessEqual(len(issue["context_corpus"]["rg_candidate_paths"]), 8)
+
+    def test_gate_writes_issue_draft_review_markdown(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            bundle_path = write_bundle(tmp_path, READY_BODY)
+            result = run_gate(bundle_path, tmp_path)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            combined_path = tmp_path / "issue-drafts.md"
+            draft_path = tmp_path / "issue-drafts" / "harden-ready-issue.md"
+            combined = combined_path.read_text(encoding="utf-8")
+            draft = draft_path.read_text(encoding="utf-8")
+
+        self.assertIn("# Shape Issues Draft Review", combined)
+        self.assertIn(
+            "### harden-ready-issue: Harden Ralph ready issue handling",
+            combined,
+        )
+        self.assertIn("- Labels: `delivery-gitflow`, `enhancement`", combined)
+        self.assertIn("- Blocked by draft ids: None", combined)
+        self.assertIn("- Gate action: `ready`", combined)
+        self.assertIn("- Stiffness summary:", combined)
+        self.assertIn("- Issue context assessor: `pass`", combined)
+        self.assertIn("## What to build", combined)
+        self.assertIn("# Harden Ralph ready issue handling", draft)
+        self.assertIn("## Shape Issues source", draft)
+        self.assertIn("shape-issues-source", draft)
+        self.assertIn("- Source digest:", draft)
+        self.assertIn("## Draft body", draft)
+        self.assertIn(READY_BODY.strip(), draft)
+
+    def test_issue_draft_markdown_uses_publication_order_and_draft_blockers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            result = run_gate(write_blocked_bundle(tmp_path), tmp_path)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            combined = (tmp_path / "issue-drafts.md").read_text(encoding="utf-8")
+            blocker = (tmp_path / "issue-drafts" / "blocker.md").read_text(
+                encoding="utf-8"
+            )
+            dependent = (tmp_path / "issue-drafts" / "dependent.md").read_text(
+                encoding="utf-8"
+            )
+
+        self.assertLess(
+            combined.index("### blocker: Blocker issue"),
+            combined.index("### dependent: Dependent issue"),
+        )
+        self.assertIn("- Blocked by draft ids: `blocker`", combined)
+        self.assertIn("- Publication order: `1`", blocker)
+        self.assertIn("- Publication order: `2`", dependent)
+        self.assertIn("## What to build", blocker)
+        self.assertIn("## What to build", dependent)
+
+    def test_issue_draft_source_lines_match_publisher_source_lines(self) -> None:
+        gate = load_script_module("shape_issue_gate_rendering_under_test", GATE_SCRIPT)
+        publisher = load_script_module(
+            "shape_issues_publisher_rendering_under_test",
+            PUBLISHER_SCRIPT,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            bundle_path = write_bundle(tmp_path, READY_BODY)
+            result = run_gate(bundle_path, tmp_path)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            gate_issue = gate.parse_bundle(bundle_path).issues[0]
+            publisher_issue = publisher.parse_bundle(bundle_path).issues[0]
+            marker = publisher.source_marker(bundle_path, publisher_issue)
+            final_body = publisher.final_issue_body(
+                publisher_issue,
+                references={},
+                marker=marker,
+                bundle_path=bundle_path,
+                context_assessor_provider="codex",
+                dry_run=True,
+                allow_fixture_publish=False,
+            )
+            draft = (
+                tmp_path / "issue-drafts" / "harden-ready-issue.md"
+            ).read_text(encoding="utf-8")
+
+        self.assertEqual(gate.source_marker(bundle_path, gate_issue), marker)
+        for line in (
+            f"- Source marker: `{marker}`",
+            f"- Bundle: `{publisher.bundle_reference(bundle_path)}`",
+        ):
+            self.assertIn(line, draft)
+            self.assertIn(line, final_body)
 
     def test_operator_approval_evidence_is_reported_not_permission(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
