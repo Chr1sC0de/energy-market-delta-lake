@@ -1463,6 +1463,7 @@ class OperatorRunManifest:
         paths["repo_root"] = str(config.repo_root)
         paths["run_dir"] = str(run_dir)
         paths["child_run_root"] = str(config.log_root)
+        ensure_operator_deploy_repair_state(data)
         manifest = cls(path, data)
         manifest.record_event("started", status="running")
         return manifest
@@ -1578,6 +1579,101 @@ class OperatorRunManifest:
                 "tier": tier,
                 "command_path": command_path,
                 "child_manifest_path": str(child_manifest_path),
+            },
+        )
+
+    def deploy_repair_target(self) -> dict[str, Any] | None:
+        state = ensure_operator_deploy_repair_state(self.data)
+        target = state.get("target_issue")
+        if state.get("status") != "active" or not isinstance(target, dict):
+            return None
+        return target
+
+    def deploy_repair_cycle_count(self) -> int:
+        state = ensure_operator_deploy_repair_state(self.data)
+        return operator_manifest_int(state.get("cycle_count"), default=0)
+
+    def deploy_repair_cycle_limit(self) -> int:
+        state = ensure_operator_deploy_repair_state(self.data)
+        return operator_manifest_int(
+            state.get("cycle_limit"),
+            default=DEFAULT_DEPLOY_REPAIR_CYCLE_LIMIT,
+        )
+
+    def can_start_deploy_repair_cycle(self) -> bool:
+        return self.deploy_repair_cycle_count() < self.deploy_repair_cycle_limit()
+
+    def record_deploy_repair_target(
+        self,
+        issue_entry: dict[str, Any],
+        *,
+        child_manifest_path: Path | None,
+    ) -> None:
+        issue = deploy_repair_target_payload(issue_entry)
+        state = ensure_operator_deploy_repair_state(self.data)
+        cycle = self.deploy_repair_cycle_count() + 1
+        state["status"] = "active"
+        state["target_issue"] = issue
+        state["cycle_count"] = cycle
+        state["cycle_limit"] = self.deploy_repair_cycle_limit()
+        history = state.setdefault("history", [])
+        if not isinstance(history, list):
+            history = []
+            state["history"] = history
+        history.append(
+            {
+                "timestamp": utc_now_text(),
+                "event": "target_recorded",
+                "cycle": cycle,
+                "issue": issue,
+                "child_manifest_path": path_text(child_manifest_path),
+            }
+        )
+        if child_manifest_path is not None:
+            self.record_child_run(child_manifest_path)
+        self.record_event(
+            "deploy_repair_target_recorded",
+            details={
+                "cycle": cycle,
+                "cycle_limit": state["cycle_limit"],
+                "issue": issue,
+                "child_manifest_path": path_text(child_manifest_path),
+            },
+        )
+
+    def clear_deploy_repair_target(
+        self,
+        *,
+        child_manifest_path: Path | None,
+        reason: str,
+    ) -> None:
+        state = ensure_operator_deploy_repair_state(self.data)
+        target = state.get("target_issue")
+        if state.get("status") != "active" or not isinstance(target, dict):
+            return
+        state["status"] = "inactive"
+        state["target_issue"] = None
+        history = state.setdefault("history", [])
+        if not isinstance(history, list):
+            history = []
+            state["history"] = history
+        history.append(
+            {
+                "timestamp": utc_now_text(),
+                "event": "target_cleared",
+                "reason": reason,
+                "issue": target,
+                "child_manifest_path": path_text(child_manifest_path),
+            }
+        )
+        if child_manifest_path is not None:
+            self.record_child_run(child_manifest_path)
+        self.record_event(
+            "deploy_repair_target_cleared",
+            details={
+                "reason": reason,
+                "issue": target,
+                "child_manifest_path": path_text(child_manifest_path),
             },
         )
 
@@ -1700,6 +1796,51 @@ def issue_payload_for_operator(issue: Issue) -> dict[str, Any]:
         "title": issue.title,
         "url": issue.url,
         "labels": sorted(issue.labels),
+    }
+
+
+def operator_manifest_int(value: Any, *, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def ensure_operator_deploy_repair_state(data: dict[str, Any]) -> dict[str, Any]:
+    state = data.setdefault("deploy_repair", {})
+    if not isinstance(state, dict):
+        state = {}
+        data["deploy_repair"] = state
+    state.setdefault("status", "inactive")
+    state.setdefault("target_issue", None)
+    state["cycle_count"] = operator_manifest_int(state.get("cycle_count"), default=0)
+    state["cycle_limit"] = operator_manifest_int(
+        state.get("cycle_limit"),
+        default=DEFAULT_DEPLOY_REPAIR_CYCLE_LIMIT,
+    )
+    history = state.setdefault("history", [])
+    if not isinstance(history, list):
+        state["history"] = []
+    return state
+
+
+def deploy_repair_target_payload(entry: dict[str, Any]) -> dict[str, Any]:
+    issue_number = operator_manifest_int(entry.get("number"), default=0)
+    if issue_number <= 0:
+        raise RalphError("Deploy-repair target entry does not include an issue number.")
+    labels_value = entry.get("labels")
+    labels = (
+        sorted(str(label) for label in labels_value if isinstance(label, str))
+        if isinstance(labels_value, list)
+        else []
+    )
+    return {
+        "number": issue_number,
+        "title": str(entry.get("title") or f"Deploy-repair issue #{issue_number}"),
+        "url": entry.get("url"),
+        "labels": labels,
+        "source_marker": entry.get("source_marker"),
+        "validation_status": entry.get("validation_status"),
     }
 
 
@@ -2051,6 +2192,9 @@ def build_operator_run_rollup(
             "max_cycles": data.get("max_cycles"),
             "run_dir": str(operator_manifest_path.parent),
             "manifest_path": str(operator_manifest_path),
+            "deploy_repair": data.get("deploy_repair")
+            if isinstance(data.get("deploy_repair"), dict)
+            else None,
             "recovery_guidance": data.get("recovery_guidance"),
             "failure": data.get("failure"),
         },

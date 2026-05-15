@@ -26,7 +26,8 @@ make run-prek
 - `src/ralph_loop/workflow.py`: pure label, Delivery mode, QA selection,
   comment, **Issue completion review** trigger, deployment
   classification/execution selection, and recovery policy helpers
-- `src/ralph_loop/state.py`: Ralph run and Operator manifest state helpers
+- `src/ralph_loop/state.py`: Ralph run and Operator manifest state helpers,
+  including checkpointed deploy-repair target state
 - `tests/unit/`: Ralph unit tests
 - `.pre-commit-config.yaml`: Subproject `prek` hook surface
 

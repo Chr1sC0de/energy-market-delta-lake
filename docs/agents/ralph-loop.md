@@ -530,6 +530,7 @@ Checkpoints are recorded for:
 - post-Promotion **Ready issue refresh**
 - deployment skipped, started, succeeded, or failed
 - deploy-repair issue creation after failed deployment
+- deploy-repair cycle limit reached
 - **Exploratory acceptance review** required
 - queue clean
 - stopped-by-guard
@@ -541,6 +542,19 @@ either completed or produced recorded recovery evidence.
 Deployment checkpoints are written only after successful Promotion metadata
 updates, **Post-promotion review**, follow-up creation, and post-Promotion
 **Ready issue refresh** have completed in the Promotion child run.
+
+Deploy-repair targeting is stored in the Operator manifest under
+`deploy_repair`, not in GitHub priority labels. When deployment failure analysis
+creates a valid ready deploy-repair issue, the Operator records it as
+`deploy_repair.target_issue`, increments `deploy_repair.cycle_count`, and runs
+that issue directly on the next implementation step before unrelated
+`ready-for-agent` issues. The targeted issue still goes through normal
+implementation, QA, **Issue completion review**, **Local integration**,
+**Promotion**, metadata updates, and deployment retry. After the repaired
+Promotion deploys successfully, the Operator clears `deploy_repair.target_issue`
+and resumes normal oldest-first queue order. A single Operator run starts at
+most two automated deploy-repair cycles; the next deployment failure stops with
+recovery guidance and preserved child logs.
 
 Detached mode is the Codex-safe path:
 
@@ -1048,7 +1062,7 @@ from that **Subproject**, so the same log is the **Deployed test** evidence and
 the full-tier idempotency evidence.
 
 If a checkpointed Operator deployment command or its **Deployed test** evidence
-fails, Ralph runs a deploy-failure analysis pass before recording the terminal
+fails, Ralph runs a deploy-failure analysis pass before recording the
 deployment failure checkpoint. The analyzer receives redacted command-log
 evidence, the changed-file deployment classification, Promotion metadata, the
 selected deployment tier, and deployed-test failure summaries. Its prompt
@@ -1062,6 +1076,16 @@ label and `ready-for-agent`; invalid or incomplete drafts are created with
 child manifest records the `deploy_repair_issues` outcome, and the Operator
 manifest records a `deploy_repair_issue_creation` checkpoint before
 `deployment_failed`.
+
+If that outcome contains a valid created issue with `bug`, exactly one
+**Delivery mode** label, and `ready-for-agent`, the checkpointed Operator treats
+the deployment failure as recoverable within the current run. It records the
+created issue as the current deploy-repair target, selects that issue before
+older unrelated ready work, and retries deployment only after the repair has
+completed normal **Local integration** and **Promotion**. Successful deployment
+clears the target state. The Operator caps this automation at two deploy-repair
+cycles per run; a later failure records `deploy_repair_cycle_limit_reached` and
+stops with recovery guidance instead of targeting more repair work.
 
 Ralph runs the aggregate matching **Push check** QA from the source worktree.
 When the promoted range includes non-doc runtime files under

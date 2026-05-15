@@ -434,13 +434,14 @@ def make_issue(
     *,
     number: int = 42,
     title: str = "Implement thing",
+    created_at: datetime | None = None,
 ):
     return ralph.Issue(
         number=number,
         title=title,
         body=body,
         labels=frozenset(labels),
-        created_at=datetime(2026, 4, 30, tzinfo=UTC),
+        created_at=created_at or datetime(2026, 4, 30, tzinfo=UTC),
         updated_at=datetime(2026, 4, 30, tzinfo=UTC),
         url=f"https://github.com/example/repo/issues/{number}",
         comments=0,
@@ -1064,13 +1065,14 @@ def issue_payload(
     number: int,
     labels: list[str],
     body: str = IMPLEMENTATION_BODY,
+    created_at: str = "2026-04-30T00:00:00Z",
 ) -> dict[str, Any]:
     return {
         "number": number,
         "title": f"Issue {number}",
         "body": body,
         "labels": [{"name": label} for label in labels],
-        "createdAt": "2026-04-30T00:00:00Z",
+        "createdAt": created_at,
         "updatedAt": "2026-04-30T00:00:00Z",
         "url": f"https://github.com/example/repo/issues/{number}",
         "comments": [],
@@ -2176,12 +2178,105 @@ class PromotionDeploymentOperatorRun(ralph.RalphOperatorRun):
         return None
 
 
+class TargetedDeploymentOperatorRun(PromotionDeploymentOperatorRun):
+    def __init__(
+        self,
+        config: ralph.LoopConfig,
+        runner: FakeRunner,
+        *,
+        run_dir: Path,
+        max_cycles: int,
+        snapshots: list[ralph.OperatorQueueSnapshot],
+        changed_files: list[str],
+    ) -> None:
+        super().__init__(
+            config,
+            runner,
+            run_dir=run_dir,
+            max_cycles=max_cycles,
+            snapshots=snapshots,
+            changed_files=changed_files,
+        )
+        self.current_snapshot: ralph.OperatorQueueSnapshot | None = None
+        self.issue_runs = 0
+        self.scheduler_runs = 0
+        self.implemented_issue_numbers: list[int] = []
+
+    def _queue_snapshot(self) -> ralph.OperatorQueueSnapshot:
+        snapshot = super()._queue_snapshot()
+        self.current_snapshot = snapshot
+        return snapshot
+
+    def _next_ready_issue(self) -> ralph.Issue | None:
+        if self.current_snapshot is None or not self.current_snapshot.ready:
+            return None
+        return self.current_snapshot.ready[0]
+
+    def _run_drain_scheduler_checkpoint(self) -> None:
+        self.scheduler_runs += 1
+        if self.current_snapshot is None:
+            return
+        for issue in self.current_snapshot.ready:
+            self._run_issue_checkpoint(issue)
+
+    def _run_issue_checkpoint(self, issue: ralph.Issue) -> None:
+        self.issue_runs += 1
+        self.implemented_issue_numbers.append(issue.number)
+        self.manifest.record_current_issue(issue)
+        manifest_path = write_child_manifest(
+            self.config.log_root,
+            name=f"issue-{issue.number}-targeted-{self.issue_runs}",
+            run_kind="implementation",
+            status="succeeded",
+            issue=issue,
+            integration_commit=f"local-integration-{issue.number}-{self.issue_runs}",
+        )
+        self.manifest.record_checkpoint(
+            "issue_succeeded",
+            message=f"Issue #{issue.number} completed.",
+            child_manifest_path=manifest_path,
+            issue=issue,
+        )
+        self.manifest.clear_current()
+
+
 class RalphHelperTests(unittest.TestCase):
     def test_cli_reexports_extracted_workflow_and_state_helpers(self) -> None:
         self.assertIs(ralph.resolve_delivery_plan, ralph_workflow.resolve_delivery_plan)
         self.assertIs(ralph.parse_blockers, ralph_workflow.parse_blockers)
         self.assertIs(ralph.RunManifest, ralph_state.RunManifest)
         self.assertIs(ralph.OperatorRunManifest, ralph_state.OperatorRunManifest)
+
+    def test_next_ready_issue_remains_oldest_first_without_deploy_repair_state(
+        self,
+    ) -> None:
+        runner = FakeRunner(
+            command_outputs={
+                issue_list_command(): [
+                    json.dumps(
+                        [
+                            issue_payload(
+                                77,
+                                [ralph.READY_LABEL],
+                                created_at="2026-05-02T00:00:00Z",
+                            ),
+                            issue_payload(
+                                76,
+                                [ralph.READY_LABEL],
+                                created_at="2026-05-01T00:00:00Z",
+                            ),
+                        ]
+                    )
+                ]
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(Path(tmp), runner, drain=True)
+            issue = loop._next_ready_issue()
+
+        self.assertIsNotNone(issue)
+        assert issue is not None
+        self.assertEqual(issue.number, 76)
 
     def test_post_promotion_deployment_classifier_skips_agent_workflow_only(
         self,
@@ -5900,14 +5995,139 @@ class RalphOperatorRunTests(unittest.TestCase):
             ],
             "ready",
         )
-        self.assertIn(
-            "deploy_repair_issues",
-            manifest["recovery_guidance"],
-        )
+        self.assertEqual(manifest["deploy_repair"]["status"], "active")
+        self.assertEqual(manifest["deploy_repair"]["target_issue"]["number"], 99)
+        self.assertEqual(manifest["deploy_repair"]["cycle_count"], 1)
         self.assertEqual(
             rollup["deploy_repair_issues"][0]["created"][0]["number"],
             99,
         )
+
+    def test_operator_targets_active_deploy_repair_before_unrelated_ready_issue(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            unrelated_issue = make_issue(
+                {ralph.READY_LABEL},
+                IMPLEMENTATION_BODY,
+                number=40,
+                title="Older unrelated work",
+            )
+            repair_issue = make_issue(
+                {ralph.READY_LABEL, ralph.DELIVERY_GITFLOW_LABEL},
+                IMPLEMENTATION_BODY,
+                number=99,
+                title="Repair deployment",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = TargetedDeploymentOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=6,
+                snapshots=[
+                    operator_snapshot(ready=[unrelated_issue, repair_issue]),
+                    operator_snapshot(
+                        integrated=[
+                            make_issue(
+                                {ralph.AGENT_INTEGRATED_LABEL},
+                                IMPLEMENTATION_BODY,
+                                number=99,
+                                title="Repair deployment",
+                            )
+                        ]
+                    ),
+                    operator_snapshot(ready=[unrelated_issue]),
+                    operator_snapshot(),
+                ],
+                changed_files=[
+                    "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"
+                ],
+            )
+            operator.manifest.record_deploy_repair_target(
+                {
+                    "number": 99,
+                    "title": "Repair deployment",
+                    "url": "https://github.com/example/repo/issues/99",
+                    "labels": [
+                        "bug",
+                        ralph.DELIVERY_GITFLOW_LABEL,
+                        ralph.READY_LABEL,
+                    ],
+                    "source_marker": "ralph-deploy-repair:seed",
+                    "validation_status": "ready",
+                },
+                child_manifest_path=None,
+            )
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                operator.run()
+
+            manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+
+        self.assertEqual(operator.implemented_issue_numbers, [99, 40])
+        self.assertEqual(operator.scheduler_runs, 1)
+        self.assertEqual(manifest["deploy_repair"]["status"], "inactive")
+        self.assertIsNone(manifest["deploy_repair"]["target_issue"])
+        self.assertEqual(manifest["deploy_repair"]["cycle_count"], 1)
+
+    def test_operator_stops_after_two_automated_deploy_repair_cycles(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            probe_runner = FakeRunner()
+            loop = make_loop(tmp_path, probe_runner, drain=True)
+            expected_command = (
+                str(
+                    loop.config.repo_root
+                    / ralph.POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_COMMAND
+                ),
+                ralph.POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_IDEMPOTENCY_ARG,
+            )
+            runner = FakeRunner(fail_commands={expected_command})
+            integrated_issue = make_issue(
+                {ralph.AGENT_INTEGRATED_LABEL},
+                IMPLEMENTATION_BODY,
+                number=101,
+                title="Second repair integrated",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = PromotionDeploymentOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=2,
+                snapshots=[operator_snapshot(integrated=[integrated_issue])],
+                changed_files=["infrastructure/aws-pulumi/components/ecs_services.py"],
+            )
+            operator.manifest.data["deploy_repair"] = {
+                "status": "active",
+                "target_issue": {
+                    "number": 101,
+                    "title": "Second repair integrated",
+                    "url": "https://github.com/example/repo/issues/101",
+                    "labels": ["bug", ralph.DELIVERY_GITFLOW_LABEL, ralph.READY_LABEL],
+                    "source_marker": "ralph-deploy-repair:second",
+                    "validation_status": "ready",
+                },
+                "cycle_count": 2,
+                "cycle_limit": ralph.DEFAULT_DEPLOY_REPAIR_CYCLE_LIMIT,
+                "history": [],
+            }
+
+            with self.assertRaises(ralph.RalphError):
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    operator.run()
+
+            manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+
+        checkpoints = [entry["checkpoint"] for entry in manifest["checkpoints"]]
+        self.assertIn("deploy_repair_cycle_limit_reached", checkpoints)
+        self.assertEqual(manifest["deploy_repair"]["cycle_count"], 2)
+        self.assertIn("cycle limit", manifest["recovery_guidance"])
+        self.assertIn("#99", manifest["recovery_guidance"])
 
     def test_operator_foreground_repeats_drain_promotion_until_queue_clean(
         self,

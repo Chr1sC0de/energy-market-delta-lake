@@ -52,6 +52,11 @@ commands only. Runtime labels including `agent-reviewing` block repeat
 implementation, **Ready issue refresh** candidate selection, and automated
 triage reconsideration.
 
+Deploy-repair targeting does not add a priority label. Valid deploy-repair
+issues still use the normal `bug`, one **Delivery mode** label, and
+`ready-for-agent` contract; the checkpointed Operator manifest records any
+temporary repair target and clears it after a successful deployment retry.
+
 Human review owns the `agent-reviewing` transition. Accepted Exploratory review
 merges the durable **Exploratory branch** to `dev`, records
 `Ralph exploratory acceptance completed.` evidence with the accepted `dev`
