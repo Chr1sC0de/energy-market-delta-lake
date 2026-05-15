@@ -8,7 +8,9 @@ helpers in `tools/ralph-loop/src/ralph_loop/state.py`. The loop uses GitHub
 Issues as the queue, Codex as the implementation and triage worker, repo
 **Test lane** commands as the validation boundary, and **Local integration**,
 Exploratory handoff, plus **Promotion** as the success paths after QA.
-Promotion also records a deterministic **Post-Promotion deployment
+Risky implementation paths also pass an automated **Issue completion review**
+before Ralph updates an **Integration target** or publishes an Exploratory
+handoff. Promotion records a deterministic **Post-Promotion deployment
 classification** from the promoted changed-file inventory.
 
 ## Table of contents
@@ -40,20 +42,21 @@ Ralph drains agent-ready GitHub issues through a guarded local loop:
    delivery issues run in a bounded worker pool.
 4. Run `codex exec` to implement each claimed issue.
 5. Run deterministic local QA.
-6. For Gitflow or Trunk delivery, squash-merge validated work onto the latest
+6. Run **Issue completion review** when risk triggers require it.
+7. For Gitflow or Trunk delivery, squash-merge validated work onto the latest
    **Integration target** locally.
-7. In **Gitflow delivery**, push `dev`, comment evidence, mark
+8. In **Gitflow delivery**, push `dev`, comment evidence, mark
    `agent-integrated`, and leave the issue open for **Promotion**.
-8. In **Trunk delivery**, push `main`, comment evidence, mark `agent-merged`,
+9. In **Trunk delivery**, push `main`, comment evidence, mark `agent-merged`,
    and close the issue.
-9. In **Exploratory delivery**, push a durable **Exploratory branch** from
-   `origin/main`, comment evidence, mark `agent-reviewing`, and leave the issue
-   open for human review.
-10. Run **Ready issue refresh** when enabled under a scheduler claim gate after
+10. In **Exploratory delivery**, push a durable **Exploratory branch** from
+    `origin/main`, comment evidence, mark `agent-reviewing`, and leave the issue
+    open for human review.
+11. Run **Ready issue refresh** when enabled under a scheduler claim gate after
     each successful issue attempt. The gate pauses new claims while refresh
     analysis and metadata mutation run; already active Exploratory workers may
     finish.
-11. If no serial Gitflow or Trunk ready issue can be claimed, triage the next
+12. If no serial Gitflow or Trunk ready issue can be claimed, triage the next
     unblocked issue and rescan. In parallel drains, that triage pass may run
     while already active Exploratory workers continue.
 
@@ -71,9 +74,10 @@ triage pass before waiting for those workers.
 `--max-codex-attempts` is a separate per-issue Codex implementation budget. It
 defaults to `5` total attempts for each claimed issue, including the initial
 implementation attempt and retries after Codex or QA failures. Retry prompts
-include the previous failure detail. Future review-repair attempts should draw
-from the same per-issue budget. Full-access implementation passes that change
-files outside the issue's context anchors still fail immediately without retry.
+include the previous failure detail. **Issue completion review** repair attempts
+draw from the same per-issue budget. Full-access implementation passes that
+change files outside the issue's context anchors still fail immediately without
+retry.
 
 The checkpointed Operator run path wraps the issue and **Promotion** commands
 for unattended cleanup. It uses the same lane-aware drain scheduler as plain
@@ -132,7 +136,11 @@ flowchart TD
   CODEX --> SCOPE{Full-access diff inside anchors?}
   SCOPE -->|No| FAIL
   SCOPE -->|Yes| QA[Run selected Test lane QA]
-  QA --> DONE{Delivery mode?}
+  QA --> REVIEWGATE{Issue completion review required?}
+  REVIEWGATE -->|No| DONE{Delivery mode?}
+  REVIEWGATE -->|Pass| DONE
+  REVIEWGATE -->|Fail with attempts left| CODEX
+  REVIEWGATE -->|Fail exhausted| FAIL
   DONE -->|Gitflow or Trunk| INTEGRATE[Run Local integration]
   INTEGRATE --> DONE2{Delivery mode?}
   DONE -->|Exploratory| HANDOFF[Push Exploratory branch]
@@ -486,9 +494,9 @@ first review surface for the full drain-and-**Promotion** run; the JSON rollup
 is the stable tooling surface for issue outcomes, manual recoveries, **Local
 integration** commits, **Promotion** commits, QA surfaces,
 **Post-promotion review** follow-ups, post-Promotion deployment execution,
-final queue state, and stop or failure reasons. Both rollups record the
-underlying child `.ralph/runs/.../ralph-run.json` paths without tailing child
-Codex JSONL or rich command logs.
+deploy-repair issue creation, final queue state, and stop or failure reasons.
+Both rollups record the underlying child `.ralph/runs/.../ralph-run.json` paths
+without tailing child Codex JSONL or rich command logs.
 When open `agent-reviewing` issues remain and no unblocked ready work can
 proceed, the Operator run also writes `exploratory-acceptance-review.md` and
 `exploratory-acceptance-review.json` under the same run directory.
@@ -521,6 +529,7 @@ Checkpoints are recorded for:
 - **Post-promotion review** follow-up creation
 - post-Promotion **Ready issue refresh**
 - deployment skipped, started, succeeded, or failed
+- deploy-repair issue creation after failed deployment
 - **Exploratory acceptance review** required
 - queue clean
 - stopped-by-guard
@@ -562,7 +571,8 @@ acceptance review flow before rerunning drain or **Promotion**.
 Ralph writes command logs while subprocesses are still running. Long Codex
 implementation attempts write to `codex-implementation-N.jsonl`, triage writes
 to `codex-triage.jsonl`, read-only **Ready issue refresh** analysis writes to
-`codex-ready-issue-refresh-analysis.jsonl`, **Post-promotion review** writes to
+`codex-ready-issue-refresh-analysis.jsonl`, **Issue completion review** writes
+to `codex-issue-completion-review.jsonl`, **Post-promotion review** writes to
 `codex-post-promotion-review.jsonl`, QA writes to `qa-*` logs, and Git
 operations write to their named `git-*` logs under the current
 `.ralph/runs/...` run directory.
@@ -622,8 +632,15 @@ Key fields for inspection:
   deployable paths, non-triggering **Agent workflow changes**, and other
   non-triggering paths. Direct Promotion records this field and prints the
   recommendation without running AWS or Pulumi commands.
+- `deploy_repair_issues`: deploy-failure analysis status, Markdown artifact
+  path, created issue URLs, duplicate source-marker skips, validation downgrades
+  to `needs-triage`, warning-only creation failures, and recovery guidance for
+  checkpointed Operator deployment failures.
 - `post_promotion_review`: enabled state, skip reason, warning-only review
   status, review log path, and Markdown artifact path for **Promotion** runs.
+- `issue_completion_review`: trigger reasons, deployment classifier snapshot,
+  high-stiffness evidence, review log and Markdown artifact paths, per-review
+  attempt results, repair attempts, and failure state for implementation runs.
 - `post_promotion_followups`: enabled state, created issue URLs, duplicate
   source-marker skips, validation downgrades to `needs-triage`, warning-only
   creation failures, and recovery guidance for **Promotion** follow-ups.
@@ -845,6 +862,26 @@ After the implementation branch commit succeeds, Ralph fetches the branch's
 base and rebases if the base moved. A rebase triggers the selected QA commands
 again before **Local integration** or Exploratory handoff continues.
 
+After QA passes and the branch is current with its base, Ralph evaluates the
+**Issue completion review** triggers. Review runs when the final changed-file
+inventory includes deployable paths from the deployment classifier,
+**Agent workflow changes**, when the issue uses **Trunk delivery**, or when the
+issue body contains high-stiffness evidence. The review agent receives the issue
+contract, final changed files, QA evidence, **Delivery mode**, **Integration
+target**, run manifest path, and trigger reasons. It gets read-only GitHub Issue
+commands and writes `issue-completion-review.md` plus
+`codex-issue-completion-review.jsonl` in the implementation run directory.
+
+Passing **Issue completion review** allows **Local integration**, Trunk closure,
+or Exploratory handoff to continue. Failing review findings become the next
+Codex repair prompt alongside the issue contract, changed files, and QA
+evidence. Each repair consumes the next remaining `--max-codex-attempts`
+attempt, reruns selected QA, commits repair changes to the issue branch, and
+reruns review. If the attempt budget is exhausted, Ralph marks the issue
+`agent-failed`, preserves the worktrees and logs, records
+`issue_completion_review.status: failed_exhausted`, and does not update an
+**Integration target** or push an Exploratory handoff.
+
 For **Local integration**, Ralph creates a temporary detached integration
 worktree at latest target, runs `git merge --squash` from the issue branch,
 creates one integration commit, pushes it to the target, and posts completion
@@ -1009,6 +1046,22 @@ command. `user_code_redeploy` runs
 `infrastructure/aws-pulumi/scripts/run-integration-tests --with-idempotency`
 from that **Subproject**, so the same log is the **Deployed test** evidence and
 the full-tier idempotency evidence.
+
+If a checkpointed Operator deployment command or its **Deployed test** evidence
+fails, Ralph runs a deploy-failure analysis pass before recording the terminal
+deployment failure checkpoint. The analyzer receives redacted command-log
+evidence, the changed-file deployment classification, Promotion metadata, the
+selected deployment tier, and deployed-test failure summaries. Its prompt
+prohibits repo edits, commits, pushes, AWS commands, Pulumi commands,
+deployment commands, direct GitHub Issue mutation, and secret exposure. Ralph
+then validates structured deploy-repair drafts from the analysis artifact.
+Valid drafts are created as `bug` issues with exactly one **Delivery mode**
+label and `ready-for-agent`; invalid or incomplete drafts are created with
+`needs-triage` and validation evidence. Duplicate
+`ralph-deploy-repair:...` source markers are skipped on rerun. The Promotion
+child manifest records the `deploy_repair_issues` outcome, and the Operator
+manifest records a `deploy_repair_issue_creation` checkpoint before
+`deployment_failed`.
 
 Ralph runs the aggregate matching **Push check** QA from the source worktree.
 When the promoted range includes non-doc runtime files under
@@ -1333,9 +1386,11 @@ If an issue is stale but the correct update is unclear, refresh moves it to
 state already satisfies or obsoletes the issue, refresh closes it as completed
 with evidence. Unclear issues must not be closed as completed.
 
-**Ready issue refresh** is distinct from **Post-promotion review**. Refresh
-runs after **Local integration**, Exploratory handoff, or successful
-**Promotion** closure and may update issue metadata.
+**Ready issue refresh** is distinct from **Issue completion review** and
+**Post-promotion review**. **Issue completion review** is a pre-**Local
+integration** automated gate for one implemented issue and never mutates GitHub
+Issue metadata directly. Refresh runs after **Local integration**, Exploratory
+handoff, or successful **Promotion** closure and may update issue metadata.
 **Post-promotion review** runs after **Promotion**, uses read-only issue access,
 and reports structured follow-up issue drafts in the Promotion artifact. Only
 Ralph's validated create-only helper may turn those drafts into GitHub Issues
@@ -1522,6 +1577,13 @@ the implementation worktree for inspection. Operators should inspect
 **Commit check** logs, keep the staged formatter updates if they are correct,
 rerun the recorded **Commit check** from the owning **Subproject**, then rerun
 Ralph for the issue.
+
+Exhausted **Issue completion review** failures are issue failures before any
+**Integration target** update. Operators should inspect
+`issue_completion_review.attempts`, the review artifact path, repair attempt
+logs, and the preserved implementation worktree. Ralph has already rerun QA and
+review for every available repair attempt recorded in `codex_attempts`; rerun
+Ralph only after repairing the incomplete work or reshaping the issue.
 
 Full-access diff scope failures are issue failures and keep the implementation
 worktree for inspection. Operators should inspect

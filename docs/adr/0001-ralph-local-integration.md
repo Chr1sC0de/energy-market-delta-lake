@@ -3,8 +3,9 @@
 Ralph keeps GitHub Issues as the visible board and queue, but successful
 implementation work is integrated locally instead of opening a GitHub PR. This
 keeps the board useful for planning while making the AFK loop responsible for
-the whole validated path: squash-merge onto latest `origin/main`, push `main`,
-comment completion evidence, and close the issue.
+the whole validated path: implementation QA, any required **Issue completion
+review**, squash-merge onto latest `origin/main`, push `main`, comment
+completion evidence, and close the issue.
 
 ADR 0002 generalizes this trunk-only path with **Delivery modes**. The
 trunk-style behavior described here remains the **Trunk delivery** path.
@@ -25,16 +26,19 @@ a **Local integration** squash merge.
 ## Consequences
 
 Ralph must be conservative around git drift. Trunk delivery integrates against
-latest `origin/main`. Gitflow delivery keeps `origin/dev` current with
-`origin/main` before issue branches are created. That branch sync is a
+latest `origin/main` only after selected QA and any required **Issue completion
+review** pass. Gitflow delivery keeps `origin/dev` current with `origin/main`
+before issue branches are created. That branch sync is a
 pre-claim drain precondition: merge conflicts or stale branch-sync worktrees
 stop the drain with manifest recovery guidance instead of cascading unrelated
 issue failures. Ralph then rebases and reruns selected QA if the **Integration
-target** moves before squash-merging. Exploratory
-delivery fails clearly if the durable **Exploratory branch** already exists,
+target** moves before squash-merging, then reruns any required **Issue
+completion review** before updating the target. Exploratory delivery fails
+clearly if the durable **Exploratory branch** already exists,
 otherwise creates `agent/exploratory/issue-N-slug` from `origin/main` and
 pushes that validated branch for human review without running **Local
-integration**. If a
+integration**; any required **Issue completion review** also passes before that
+handoff. If a
 target branch is pushed but issue metadata cannot be updated, the drain stops
 because code and board state may no longer agree.
 Operators inspect that run with

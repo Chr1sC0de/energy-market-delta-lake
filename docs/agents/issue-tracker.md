@@ -19,12 +19,17 @@ or local `gh auth`, and a wrapper limits `gh` to phase-specific issue metadata
 commands. Implementation, triage, and **Ready issue refresh** passes may
 receive phase-scoped issue access; **Full-access implementation pass** runs for
 `.agents/` context-anchor issues keep read-only issue commands. The current
-**Ready issue refresh** analysis subprocess and **Post-promotion review** also
-receive read-only issue commands. After successful **Promotion**, Ralph may
+**Issue completion review**, **Ready issue refresh** analysis subprocess, and
+**Post-promotion review** also receive read-only issue commands. After
+successful **Promotion**, Ralph may
 create structured actionable follow-up issues from the review artifact through
 its validated create-only helper; the review agent still cannot directly create,
-comment, edit, close, or reopen arbitrary GitHub Issues. Git push auth is
-separate;
+comment, edit, close, or reopen arbitrary GitHub Issues. When checkpointed
+Operator deployment fails, Ralph may also create validated deploy-repair issues
+from a deploy-failure analysis artifact. That analyzer receives redacted
+deployment evidence, read-only issue commands, and no AWS or Pulumi
+credentials; it cannot run AWS, Pulumi, or deployment commands or mutate GitHub
+Issues directly. Git push auth is separate;
 **Local integration**, Exploratory handoff, **Integration target** pushes, and
 **Promotion** stay outside the sandbox.
 
@@ -62,6 +67,17 @@ recent Ready issue refresh comments exist, Ralph appends only the latest five
 comments with the Ready issue refresh audit prefix in a separate prompt section
 after the body; normal comments and triage comments are not included.
 
+After implementation QA passes, Ralph runs **Issue completion review** before
+**Local integration**, Trunk push, or Exploratory handoff when the changed files
+include deployable paths, **Agent workflow changes**, when the issue uses
+**Trunk delivery**, or when high-stiffness issue evidence is present. Passing
+review lets the normal delivery path continue. Failing review findings become a
+repair prompt for remaining `--max-codex-attempts` attempts; Ralph reruns QA and
+review after each repair. If the budget is exhausted, Ralph marks the issue
+`agent-failed`, preserves worktrees and logs, and does not update an
+**Integration target**. This gate is not human `dev` review, **Ready issue
+refresh**, or **Post-promotion review**.
+
 `$shape-issues` v2 may create new GitHub Issues only after explicit Operator
 confirmation of a passing gate report and pre-publication review Markdown:
 `issue-drafts.md` plus one `issue-drafts/*.md` file per draft. Those created
@@ -78,6 +94,13 @@ files; later duplicate-search or create failures record their phase, exit code,
 stderr summary, and stdout summary in `publish-manifest.json`. `$ralph-triage`
 remains responsible for category, state, and **Delivery mode** labels before
 Ralph drain.
+
+Deploy-repair issues created from failed deployment evidence use a separate
+`ralph-deploy-repair:...` source marker namespace for duplicate detection.
+Valid deploy-repair drafts are created with `bug`, exactly one **Delivery
+mode** label, and `ready-for-agent`. Invalid or incomplete drafts are still
+created, but only with `needs-triage` and Ralph validation evidence in the
+issue body.
 
 Runtime labels such as `agent-running`, `agent-integrated`, `agent-merged`,
 `agent-failed`, and `agent-reviewing` block repeat implementation and automated
@@ -145,9 +168,9 @@ failures are warning-only after successful **Promotion**.
 
 Use [ralph-loop.md](ralph-loop.md) for Ralph internals, including
 **Delivery mode**, **Local integration**, **Integration target**, **Promotion**,
-**Ready issue refresh**, checkpointed Operator runs, **Post-promotion review**,
-**Exploratory acceptance review**, run manifests, QA selection, and recovery
-behavior.
+**Issue completion review**, **Ready issue refresh**, checkpointed Operator
+runs, **Post-promotion review**, **Exploratory acceptance review**, run
+manifests, QA selection, and recovery behavior.
 Use [OPERATOR.md](../../OPERATOR.md) for the human **Operator workflow**.
 Use `$ralph-curate` when existing open issues need to be compared with the
 current branch before changing bodies, labels, blockers, or closure state.

@@ -14,6 +14,11 @@ therefore must not silently run deployed workflow commands.
 The checkpointed **Operator workflow** can own those credentials in the Ralph
 outer loop after **Promotion** cleanup has completed.
 
+The same pure path classifier can also identify risky issue attempts before
+**Local integration**. That pre-integration use is a review trigger only:
+**Issue completion review** may run for deployable changed paths, but it still
+does not run AWS, Pulumi, or deployment scripts.
+
 ## Decision
 
 Ralph records **Post-Promotion deployment classification** from the Promotion
@@ -36,6 +41,8 @@ classifies from the deployable subset and reports the Agent workflow paths as
 non-triggering context. Direct `$ralph-loop promote` records the decision under
 `deployment_classification` in the Promotion manifest and prints the
 recommendation, but does not invoke AWS, Pulumi, or deployment scripts.
+Issue attempts reuse the same classification snapshot in the implementation
+manifest when **Issue completion review** is required by deployable paths.
 
 The checkpointed Operator path consumes the recorded decision after successful
 Promotion metadata updates, **Post-promotion review**, follow-up creation, and
@@ -68,8 +75,13 @@ code-location topology changes stay on the full deployed AWS workflow because
 they can affect resources outside the targeted user-code redeploy.
 
 Direct `$ralph-loop promote` remains report-only. The checkpointed Operator path
-now adds the bounded deployment executor, but it does not add retries or a
-separate credential preflight beyond the invoked AWS/Pulumi command failures
+now adds the bounded deployment executor and a failure-only deploy-repair issue
+creation pass. When the checkpointed deployment command or its **Deployed test**
+evidence fails, Ralph analyzes redacted deployment evidence without AWS/Pulumi
+credentials, validates structured repair drafts, creates valid `bug`
+`ready-for-agent` issues with exactly one **Delivery mode** label, and
+downgrades incomplete drafts to `needs-triage`. It still does not add retries or
+a separate credential preflight beyond the invoked AWS/Pulumi command failures
 recorded in the manifests.
 
 ## Sync metadata

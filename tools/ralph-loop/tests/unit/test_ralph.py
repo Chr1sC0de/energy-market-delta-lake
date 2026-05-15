@@ -116,6 +116,87 @@ No blocking findings.
 ```
 """
 
+ISSUE_COMPLETION_REVIEW_PASS_MARKDOWN = """# Issue completion review
+
+## Review result
+
+pass
+
+## Findings
+
+No blocking findings.
+
+## Residual risk
+
+None.
+"""
+
+ISSUE_COMPLETION_REVIEW_FAIL_MARKDOWN = """# Issue completion review
+
+## Review result
+
+fail
+
+## Findings
+
+- `scripts/ralph.py` does not implement the requested review gate.
+
+## Residual risk
+
+The issue would be integrated incomplete.
+"""
+
+DEPLOY_REPAIR_BODY = """## What to build
+Repair the failed deployed workflow command so the Operator deployment checkpoint can complete.
+
+## Acceptance criteria
+- [ ] The failed deployment command completes successfully.
+- [ ] Deployed test evidence is recorded as passed.
+
+## Blocked by
+None
+
+## Current context
+The checkpointed Operator deployment failed after Promotion.
+
+## Context anchors
+- Path: `infrastructure/aws-pulumi/scripts/run-integration-tests`
+- Path: `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
+- Test lane: `Ralph loop Unit test`
+
+## QA/deploy verification plan
+- Run `make unit-test` from `tools/ralph-loop`.
+- Rerun the checkpointed Operator deployment after credentials are available to the outer loop.
+"""
+
+DEPLOY_FAILURE_ANALYSIS_MARKDOWN = """# Deploy Failure Analysis
+
+## Findings
+
+The checkpointed deployment command failed after Promotion.
+
+## Deploy Repair GitHub Issue Drafts
+
+```json
+[
+  {
+    "finding_id": "restore-operator-deployment",
+    "title": "Repair checkpointed Operator deployment failure",
+    "body": %s,
+    "labels": ["bug", "delivery-gitflow"]
+  }
+]
+```
+
+## Evidence
+
+- The deployment command returned exit code 1.
+
+## Open Questions
+
+None.
+""" % json.dumps(DEPLOY_REPAIR_BODY)
+
 READY_ISSUE_REFRESH_ANALYSIS_MARKDOWN = """# Ready Issue Refresh Analysis
 
 ## Summary
@@ -395,8 +476,11 @@ class FakeRunner:
         fail_command_attempts: dict[tuple[str, ...], list[tuple[int, str]]]
         | None = None,
         fail_post_promotion_review: bool = False,
+        issue_completion_review_markdowns: list[str] | None = None,
         fail_ready_issue_refresh_analysis: bool = False,
         ready_issue_refresh_analysis_markdown: str = READY_ISSUE_REFRESH_ANALYSIS_MARKDOWN,
+        fail_deploy_failure_analysis: bool = False,
+        deploy_failure_analysis_markdown: str = DEPLOY_FAILURE_ANALYSIS_MARKDOWN,
         fail_issue_create: bool = False,
     ) -> None:
         self.dry_run = False
@@ -407,10 +491,13 @@ class FakeRunner:
         self.command_outputs = command_outputs or {}
         self.fail_command_attempts = fail_command_attempts or {}
         self.fail_post_promotion_review = fail_post_promotion_review
+        self.issue_completion_review_markdowns = issue_completion_review_markdowns or []
         self.fail_ready_issue_refresh_analysis = fail_ready_issue_refresh_analysis
         self.ready_issue_refresh_analysis_markdown = (
             ready_issue_refresh_analysis_markdown
         )
+        self.fail_deploy_failure_analysis = fail_deploy_failure_analysis
+        self.deploy_failure_analysis_markdown = deploy_failure_analysis_markdown
         self.fail_issue_create = fail_issue_create
         self.created_issue_number = 99
         if isinstance(fail_commands, dict):
@@ -520,6 +607,18 @@ class FakeRunner:
         if command == ("gh", "auth", "token"):
             return ralph.CompletedCommand(stdout="fake-gh-token\n", stderr="")
         if command[:2] == ("codex", "exec") and input_text is not None:
+            if "Run an Issue completion review" in input_text:
+                markdown = (
+                    self.issue_completion_review_markdowns.pop(0)
+                    if self.issue_completion_review_markdowns
+                    else ISSUE_COMPLETION_REVIEW_PASS_MARKDOWN
+                )
+                return ralph.CompletedCommand(stdout=markdown, stderr="")
+            if (
+                "Repair GitHub issue" in input_text
+                and "Issue completion review" in input_text
+            ):
+                return ralph.CompletedCommand(stdout="", stderr="")
             if "Run a Post-promotion review" in input_text:
                 if self.fail_post_promotion_review:
                     raise ralph.CommandFailure(
@@ -546,6 +645,20 @@ class FakeRunner:
                     )
                 return ralph.CompletedCommand(
                     stdout=self.ready_issue_refresh_analysis_markdown,
+                    stderr="",
+                )
+            if "Run a deploy-failure analysis" in input_text:
+                if self.fail_deploy_failure_analysis:
+                    raise ralph.CommandFailure(
+                        args,
+                        cwd,
+                        1,
+                        "",
+                        "fake deploy failure analysis failure",
+                        log_path,
+                    )
+                return ralph.CompletedCommand(
+                    stdout=self.deploy_failure_analysis_markdown,
                     stderr="",
                 )
         return ralph.CompletedCommand(stdout="", stderr="")
@@ -789,6 +902,91 @@ def implementation_attempt_context(
     )
     access_plan = ralph.issue_implementation_access_plan(issue)
     return worktree_path, run_dir, manifest, access_plan
+
+
+def deploy_repair_test_context(
+    tmp_path: Path,
+    loop: ralph.RalphLoop,
+) -> tuple[
+    Path,
+    ralph.RunManifest,
+    ralph.PostPromotionDeploymentClassification,
+    ralph.PostPromotionDeploymentCommand,
+    ralph.CommandFailure,
+]:
+    run_dir = tmp_path / "logs" / "promote-deploy-failure"
+    run_dir.mkdir(parents=True)
+    source_path = tmp_path / "worktrees" / "source"
+    promote_path = tmp_path / "worktrees" / "promote"
+    manifest = ralph.RunManifest.for_promotion(
+        run_dir=run_dir,
+        source_branch="dev",
+        target_branch="main",
+        source_path=source_path,
+        promote_path=promote_path,
+        config=loop.config,
+    )
+    manifest.record_source_tree(
+        branch="dev",
+        revision="source-sha",
+        worktree_path=source_path,
+    )
+    manifest.record_changed_files(
+        ["infrastructure/aws-pulumi/components/ecs_services.py"],
+        stage="promotion_changes_detected",
+    )
+    classification = ralph.classify_post_promotion_deployment(
+        ["infrastructure/aws-pulumi/components/ecs_services.py"]
+    )
+    manifest.record_deployment_classification(classification)
+    manifest.record_promotion_commit("promotion-sha", branch="main")
+    command = ralph.post_promotion_deployment_command(
+        classification,
+        repo_root=loop.config.repo_root,
+    )
+    assert command is not None
+    log_path = run_dir / command.log_name
+    log_path.write_text(
+        "\n".join(
+            [
+                "$ run-integration-tests",
+                "AWS_SECRET_ACCESS_KEY=raw-secret-value",
+                "PULUMI_ACCESS_TOKEN=pulumi-secret-value",
+                "Deployed test failed: asset check failed",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    error = ralph.CommandFailure(
+        list(command.args),
+        command.cwd,
+        1,
+        "",
+        "Deployed test failed",
+        log_path,
+    )
+    manifest.record_deployment_execution(
+        "failed",
+        tier=classification.tier,
+        reason=classification.reason,
+        command_path=command.command_path,
+        command=command.args,
+        cwd=command.cwd,
+        log_path=log_path,
+        exit_status=1,
+        error=str(error),
+        deployed_test_evidence=ralph.deployment_deployed_test_evidence(
+            command,
+            status="failed",
+            log_path=log_path,
+        ),
+        full_tier_idempotency_evidence=ralph.deployment_idempotency_evidence(
+            command,
+            status="failed",
+            log_path=log_path,
+        ),
+    )
+    return run_dir, manifest, classification, command, error
 
 
 def write_recovery_manifest(
@@ -2109,6 +2307,75 @@ class RalphHelperTests(unittest.TestCase):
             classification.non_triggering_paths,
         )
 
+    def test_issue_completion_review_triggers_for_risk_signals(self) -> None:
+        delivery_plan = ralph.DeliveryPlan(
+            mode=ralph.GITFLOW_MODE,
+            target_branch="dev",
+            label=ralph.DELIVERY_GITFLOW_LABEL,
+            add_labels=(),
+            remove_labels=(),
+        )
+        issue = make_issue(
+            {"ready-for-agent"},
+            IMPLEMENTATION_BODY
+            + "\n## Stiffness estimate\n\nHigh. The slice is broad.\n",
+        )
+
+        trigger = ralph.issue_completion_review_trigger(
+            issue=issue,
+            delivery_plan=delivery_plan,
+            changed_files=[
+                "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py",
+                "docs/agents/ralph-loop.md",
+            ],
+        )
+
+        self.assertTrue(trigger.required)
+        self.assertEqual(
+            trigger.reasons,
+            (
+                "deployable changed paths",
+                "Agent workflow changes",
+                "high-stiffness issue evidence",
+            ),
+        )
+        self.assertEqual(
+            trigger.deployment_classification.deployable_paths,
+            ("backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py",),
+        )
+
+    def test_issue_completion_review_triggers_for_trunk_delivery(self) -> None:
+        trigger = ralph.issue_completion_review_trigger(
+            issue=make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY),
+            delivery_plan=ralph.DeliveryPlan(
+                mode=ralph.TRUNK_MODE,
+                target_branch="main",
+                label=ralph.DELIVERY_TRUNK_LABEL,
+                add_labels=(),
+                remove_labels=(),
+            ),
+            changed_files=["README.md"],
+        )
+
+        self.assertTrue(trigger.required)
+        self.assertEqual(trigger.reasons, ("Trunk delivery",))
+
+    def test_issue_completion_review_skips_low_risk_gitflow_change(self) -> None:
+        trigger = ralph.issue_completion_review_trigger(
+            issue=make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY),
+            delivery_plan=ralph.DeliveryPlan(
+                mode=ralph.GITFLOW_MODE,
+                target_branch="dev",
+                label=ralph.DELIVERY_GITFLOW_LABEL,
+                add_labels=(),
+                remove_labels=(),
+            ),
+            changed_files=["README.md"],
+        )
+
+        self.assertFalse(trigger.required)
+        self.assertEqual(trigger.reasons, ())
+
     def test_direct_promotion_records_and_prints_deployment_classification(
         self,
     ) -> None:
@@ -2430,6 +2697,92 @@ Build it.
         self.assertEqual(drafts[0].title, "Harden Promotion evidence checks")
         self.assertIn("## What to build", drafts[0].body)
         self.assertEqual(drafts[0].labels, ("delivery-gitflow", "enhancement"))
+
+    def test_deploy_repair_validation_requires_bug_ready_contract(self) -> None:
+        valid = ralph.DeployRepairDraft(
+            title="Repair deployment",
+            body=DEPLOY_REPAIR_BODY,
+            labels=("bug", "delivery-gitflow"),
+            finding_id="repair-deployment",
+        )
+        invalid = ralph.DeployRepairDraft(
+            title="Incomplete repair",
+            body="## What to build\nRepair it.\n",
+            labels=("enhancement", "delivery-gitflow"),
+            finding_id="incomplete-repair",
+        )
+
+        valid_result = ralph.validate_deploy_repair_draft(valid)
+        invalid_result = ralph.validate_deploy_repair_draft(invalid)
+
+        self.assertTrue(valid_result.ready)
+        self.assertEqual(
+            valid_result.labels,
+            ("bug", "delivery-gitflow", "ready-for-agent"),
+        )
+        self.assertFalse(invalid_result.ready)
+        self.assertEqual(invalid_result.labels, ("needs-triage",))
+        self.assertTrue(
+            any(
+                "Missing required issue section" in reason
+                for reason in invalid_result.reasons
+            )
+        )
+        self.assertTrue(
+            any(
+                "Expected deploy-repair category label `bug`" in reason
+                for reason in invalid_result.reasons
+            )
+        )
+
+    def test_deploy_repair_drafts_parse_structured_json_section(self) -> None:
+        drafts = ralph.deploy_repair_drafts_from_markdown(
+            DEPLOY_FAILURE_ANALYSIS_MARKDOWN
+        )
+
+        self.assertEqual(len(drafts), 1)
+        self.assertEqual(drafts[0].finding_id, "restore-operator-deployment")
+        self.assertEqual(
+            drafts[0].title, "Repair checkpointed Operator deployment failure"
+        )
+        self.assertIn("## QA/deploy verification plan", drafts[0].body)
+        self.assertEqual(drafts[0].labels, ("bug", "delivery-gitflow"))
+
+    def test_deploy_failure_analysis_prompt_redacts_and_prohibits_mutation(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, promote=True)
+            _, manifest, classification, command, _ = deploy_repair_test_context(
+                tmp_path,
+                loop,
+            )
+            redacted_log = ralph.redact_deploy_failure_evidence(
+                "AWS_SECRET_ACCESS_KEY=raw-secret-value\n"
+                "PULUMI_ACCESS_TOKEN=pulumi-secret-value\n"
+                "token=generic-secret\n"
+            )
+            prompt = ralph.deploy_failure_analysis_prompt(
+                repo=loop.config.repo,
+                classification=classification,
+                command=command,
+                manifest=manifest,
+                deployment_execution=manifest.data["deployment_execution"],
+                redacted_command_log=redacted_log,
+            )
+
+        self.assertNotIn("raw-secret-value", prompt)
+        self.assertNotIn("pulumi-secret-value", prompt)
+        self.assertNotIn("generic-secret", prompt)
+        self.assertIn("Do not edit repo files, commit, push", prompt)
+        self.assertIn("run AWS commands", prompt)
+        self.assertIn("run Pulumi", prompt)
+        self.assertIn("create GitHub Issues", prompt)
+        self.assertIn("Changed-file classification", prompt)
+        self.assertIn("Deployed-test failure summaries", prompt)
+        self.assertIn("Redacted command logs", prompt)
 
     def test_parse_blockers_reads_issue_references_from_blocked_by_section(
         self,
@@ -5479,6 +5832,83 @@ class RalphOperatorRunTests(unittest.TestCase):
             ralph.POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_COMMAND,
         )
 
+    def test_operator_deployment_failure_creates_deploy_repair_issue_and_records_manifests(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            probe_runner = FakeRunner()
+            loop = make_loop(tmp_path, probe_runner, drain=True)
+            expected_command = (
+                str(
+                    loop.config.repo_root
+                    / ralph.POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_COMMAND
+                ),
+                ralph.POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_IDEMPOTENCY_ARG,
+            )
+            runner = FakeRunner(fail_commands={expected_command})
+            integrated_issue = make_issue(
+                {ralph.AGENT_INTEGRATED_LABEL},
+                IMPLEMENTATION_BODY,
+                number=45,
+                title="Pulumi runtime change",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = PromotionDeploymentOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=2,
+                snapshots=[operator_snapshot(integrated=[integrated_issue])],
+                changed_files=["infrastructure/aws-pulumi/components/ecs_services.py"],
+            )
+
+            with self.assertRaises(ralph.RalphError):
+                with redirect_stdout(io.StringIO()):
+                    operator.run()
+
+            manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+            rollup = json.loads(
+                (run_dir / ralph.OPERATOR_ROLLUP_JSON_NAME).read_text(encoding="utf-8")
+            )
+            promotion_manifest_path = Path(
+                next(
+                    child["path"]
+                    for child in manifest["child_run_manifests"]
+                    if child["kind"] == "promotion"
+                )
+            )
+            promotion_manifest = json.loads(
+                promotion_manifest_path.read_text(encoding="utf-8")
+            )
+
+        checkpoints = [entry["checkpoint"] for entry in manifest["checkpoints"]]
+        self.assertIn("deploy_repair_issue_creation", checkpoints)
+        self.assertIn("deployment_failed", checkpoints)
+        self.assertLess(
+            checkpoints.index("deploy_repair_issue_creation"),
+            checkpoints.index("deployment_failed"),
+        )
+        self.assertEqual(promotion_manifest["deployment_execution"]["status"], "failed")
+        self.assertEqual(
+            promotion_manifest["deploy_repair_issues"]["status"],
+            "completed",
+        )
+        self.assertEqual(
+            promotion_manifest["deploy_repair_issues"]["created"][0][
+                "validation_status"
+            ],
+            "ready",
+        )
+        self.assertIn(
+            "deploy_repair_issues",
+            manifest["recovery_guidance"],
+        )
+        self.assertEqual(
+            rollup["deploy_repair_issues"][0]["created"][0]["number"],
+            99,
+        )
+
     def test_operator_foreground_repeats_drain_promotion_until_queue_clean(
         self,
     ) -> None:
@@ -7318,6 +7748,17 @@ Build it.
                 commands,
             )
             self.assertIn(("git", "push", "origin", "HEAD:main"), commands)
+            review_call = next(
+                call
+                for call in runner.calls
+                if call.input_text is not None
+                and "Run an Issue completion review" in call.input_text
+            )
+            review_index = runner.calls.index(review_call)
+            merge_index = commands.index(
+                ("git", "merge", "--squash", "agent/issue-42-implement-thing")
+            )
+            self.assertLess(review_index, merge_index)
             self.assertIn(
                 (
                     "gh",
@@ -7362,6 +7803,146 @@ Build it.
             )
             self.assertEqual(manifest["github_metadata"]["status"], "closed")
             self.assertEqual(manifest["qa_results"][0]["status"], "passed")
+            self.assertEqual(manifest["issue_completion_review"]["status"], "passed")
+            self.assertEqual(
+                manifest["issue_completion_review"]["reasons"],
+                ["Agent workflow changes", "Trunk delivery"],
+            )
+            self.assertEqual(
+                manifest["issue_completion_review"]["artifact_path"],
+                str(
+                    next(
+                        (Path(tmp) / "logs").glob(
+                            "issue-42-*/issue-completion-review.md"
+                        )
+                    )
+                ),
+            )
+
+    def test_issue_completion_review_failure_repairs_reruns_qa_and_review(
+        self,
+    ) -> None:
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n"] * 4,
+            diff_outputs=["scripts/ralph.py\n", "scripts/ralph.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            issue_completion_review_markdowns=[
+                ISSUE_COMPLETION_REVIEW_FAIL_MARKDOWN,
+                ISSUE_COMPLETION_REVIEW_PASS_MARKDOWN,
+            ],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, max_codex_attempts=2)
+
+            with redirect_stdout(io.StringIO()):
+                loop._handle_implementation(
+                    make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+                )
+
+            manifest = load_run_manifest(tmp_path)
+
+        review_calls = [
+            call
+            for call in runner.calls
+            if call.input_text is not None
+            and "Run an Issue completion review" in call.input_text
+        ]
+        repair_call = next(
+            call
+            for call in runner.calls
+            if call.input_text is not None
+            and "Repair GitHub issue #42 after Issue completion review findings"
+            in call.input_text
+        )
+        qa_calls = [call for call in runner.calls if call.args == ("make", "run-prek")]
+        commands = [call.args for call in runner.calls]
+
+        self.assertEqual(len(review_calls), 2)
+        self.assertIn(
+            "`scripts/ralph.py` does not implement the requested review gate",
+            repair_call.input_text,
+        )
+        self.assertEqual(len(qa_calls), 2)
+        self.assertIn(
+            (
+                "git",
+                "commit",
+                "-m",
+                "Apply Issue completion review repairs for issue #42: Implement thing",
+            ),
+            commands,
+        )
+        self.assertIn(("git", "push", "origin", "HEAD:main"), commands)
+        self.assertEqual(manifest["status"], "succeeded")
+        self.assertEqual(manifest["issue_completion_review"]["status"], "passed")
+        self.assertEqual(
+            [
+                attempt["result"]
+                for attempt in manifest["issue_completion_review"]["attempts"]
+            ],
+            ["fail", "pass"],
+        )
+        self.assertEqual(
+            [attempt["attempt"] for attempt in manifest["codex_attempts"]],
+            [1, 2],
+        )
+
+    def test_issue_completion_review_exhaustion_fails_before_local_integration(
+        self,
+    ) -> None:
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n"] * 2,
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n"],
+            issue_completion_review_markdowns=[ISSUE_COMPLETION_REVIEW_FAIL_MARKDOWN],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, max_codex_attempts=1)
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._handle_implementation(
+                    make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+                )
+
+            manifest = load_run_manifest(tmp_path)
+            comment = next(
+                tmp_path.glob("logs/issue-42-*/issue-42-comment.md")
+            ).read_text(encoding="utf-8")
+
+        commands = [call.args for call in runner.calls]
+        self.assertNotIn(
+            ("git", "merge", "--squash", "agent/issue-42-implement-thing"),
+            commands,
+        )
+        self.assertNotIn(("git", "push", "origin", "HEAD:main"), commands)
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "edit",
+                "42",
+                "-R",
+                "example/repo",
+                "--add-label",
+                "agent-failed",
+                "--remove-label",
+                "agent-running",
+                "--remove-label",
+                "ready-for-agent",
+            ),
+            commands,
+        )
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(
+            manifest["issue_completion_review"]["status"], "failed_exhausted"
+        )
+        self.assertEqual(
+            manifest["failure"]["type"],
+            ralph.ISSUE_COMPLETION_REVIEW_FAILURE_TYPE,
+        )
+        self.assertIn("Issue completion review failed", comment)
 
     def test_successful_e2e_retry_reports_durable_run_manifest_evidence(self) -> None:
         changed_path = (
@@ -11349,6 +11930,214 @@ None.
             "https://github.com/example/repo/issues/77",
         )
         self.assertEqual(manifest_payload["post_promotion_followups"]["created"], [])
+
+    def test_deploy_repair_valid_draft_creates_ready_issue_with_redacted_prompt(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, promote=True)
+            run_dir, manifest, classification, command, error = (
+                deploy_repair_test_context(tmp_path, loop)
+            )
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "AWS_SECRET_ACCESS_KEY": "operator-aws-secret",
+                    "PULUMI_ACCESS_TOKEN": "operator-pulumi-secret",
+                },
+                clear=False,
+            ):
+                with redirect_stdout(io.StringIO()):
+                    loop._run_deploy_repair_issues(
+                        classification=classification,
+                        command=command,
+                        deployment_error=error,
+                        deployment_log_path=error.log_path,
+                        run_dir=run_dir,
+                        manifest=manifest,
+                    )
+
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+            body_path = next(run_dir.glob("deploy-repair-*.md"))
+            body = body_path.read_text(encoding="utf-8")
+            prompt = (run_dir / "codex-deploy-failure-analysis.prompt.md").read_text(
+                encoding="utf-8"
+            )
+
+        create_command = next(
+            call.args
+            for call in runner.calls
+            if call.args[:3] == ("gh", "issue", "create")
+        )
+        codex_call = next(
+            call for call in runner.calls if call.args[:2] == ("codex", "exec")
+        )
+        self.assertIn("bug", create_command)
+        self.assertIn("delivery-gitflow", create_command)
+        self.assertIn("ready-for-agent", create_command)
+        self.assertIn("## QA/deploy verification plan", body)
+        self.assertIn("## Ralph source", body)
+        self.assertIn("ralph-deploy-repair:promotion-sha", body)
+        self.assertNotIn("raw-secret-value", prompt)
+        self.assertNotIn("pulumi-secret-value", prompt)
+        self.assertIsNotNone(codex_call.env)
+        assert codex_call.env is not None
+        self.assertNotIn("AWS_SECRET_ACCESS_KEY", codex_call.env)
+        self.assertNotIn("PULUMI_ACCESS_TOKEN", codex_call.env)
+        self.assertEqual(
+            manifest_payload["deploy_repair_issues"]["status"], "completed"
+        )
+        self.assertEqual(
+            manifest_payload["deploy_repair_issues"]["created"][0]["validation_status"],
+            "ready",
+        )
+
+    def test_deploy_repair_invalid_draft_creates_needs_triage_with_evidence(
+        self,
+    ) -> None:
+        invalid_markdown = """# Deploy Failure Analysis
+
+## Findings
+
+Incomplete draft.
+
+## Deploy Repair GitHub Issue Drafts
+
+```json
+[
+  {
+    "finding_id": "incomplete-deploy-repair",
+    "title": "Incomplete deploy repair",
+    "body": "## What to build\\nRepair it.\\n",
+    "labels": ["enhancement", "delivery-gitflow"]
+  }
+]
+```
+
+## Evidence
+
+- The command failed.
+
+## Open Questions
+
+None.
+"""
+        runner = FakeRunner(deploy_failure_analysis_markdown=invalid_markdown)
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, promote=True)
+            run_dir, manifest, classification, command, error = (
+                deploy_repair_test_context(tmp_path, loop)
+            )
+
+            with redirect_stdout(io.StringIO()):
+                loop._run_deploy_repair_issues(
+                    classification=classification,
+                    command=command,
+                    deployment_error=error,
+                    deployment_log_path=error.log_path,
+                    run_dir=run_dir,
+                    manifest=manifest,
+                )
+
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+            body_path = next(run_dir.glob("deploy-repair-*.md"))
+            body = body_path.read_text(encoding="utf-8")
+
+        create_command = next(
+            call.args
+            for call in runner.calls
+            if call.args[:3] == ("gh", "issue", "create")
+        )
+        self.assertIn("needs-triage", create_command)
+        self.assertNotIn("ready-for-agent", create_command)
+        self.assertNotIn("bug", create_command)
+        self.assertIn("## Ralph validation evidence", body)
+        self.assertIn("Missing required issue section", body)
+        self.assertIn("Expected deploy-repair category label `bug`", body)
+        self.assertIn("## QA/deploy verification plan", body)
+        self.assertIn("Ralph validation placeholder", body)
+        self.assertEqual(
+            manifest_payload["deploy_repair_issues"]["created"][0]["validation_status"],
+            "needs_triage",
+        )
+        self.assertEqual(
+            manifest_payload["deploy_repair_issues"]["validation_downgrades"][0][
+                "labels"
+            ],
+            ["needs-triage"],
+        )
+
+    def test_deploy_repair_dedupe_skips_existing_source_marker(self) -> None:
+        marker = (
+            "ralph-deploy-repair:"
+            "promotion-sha:full_deployed_workflow:restore-operator-deployment"
+        )
+        list_command = (
+            "gh",
+            "issue",
+            "list",
+            "-R",
+            "example/repo",
+            "--state",
+            "all",
+            "--limit",
+            "1",
+            "--search",
+            f'"{marker}" in:body',
+            "--json",
+            "number,title,url",
+        )
+        runner = FakeRunner(
+            command_outputs={
+                list_command: [
+                    json.dumps(
+                        [
+                            {
+                                "number": 88,
+                                "title": "Existing deploy repair",
+                                "url": "https://github.com/example/repo/issues/88",
+                            }
+                        ]
+                    )
+                ]
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, promote=True)
+            run_dir, manifest, classification, command, error = (
+                deploy_repair_test_context(tmp_path, loop)
+            )
+
+            with redirect_stdout(io.StringIO()):
+                loop._run_deploy_repair_issues(
+                    classification=classification,
+                    command=command,
+                    deployment_error=error,
+                    deployment_log_path=error.log_path,
+                    run_dir=run_dir,
+                    manifest=manifest,
+                )
+
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn(list_command, commands)
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "create") for command in commands)
+        )
+        self.assertEqual(
+            manifest_payload["deploy_repair_issues"]["status"], "completed"
+        )
+        self.assertEqual(
+            manifest_payload["deploy_repair_issues"]["duplicates"][0]["url"],
+            "https://github.com/example/repo/issues/88",
+        )
+        self.assertEqual(manifest_payload["deploy_repair_issues"]["created"], [])
 
     def test_promotion_no_changes_skips_post_promotion_review_agent(self) -> None:
         runner = FakeRunner(

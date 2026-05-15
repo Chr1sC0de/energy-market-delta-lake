@@ -80,6 +80,14 @@ read-only, and must leave a diff confined to the issue's context anchors before
 QA or **Local integration** can proceed.
 _Avoid_: Agent auto-escalation, unrestricted agent drain
 
+**Issue completion review**:
+The automated Ralph review gate that runs after implementation QA has passed
+and before **Local integration**, Trunk push, or Exploratory handoff for risky
+issue work. It triggers for deployable changed paths, **Agent workflow changes**,
+**Trunk delivery**, and high-stiffness issue evidence; failing findings feed
+Codex repair attempts from the same per-issue implementation budget.
+_Avoid_: Human dev review, Ready issue refresh, Post-promotion review
+
 **Ready issue refresh**:
 The Ralph queue-maintenance pass that reconciles open GitHub Issues after a
 successful **Local integration** or Exploratory handoff and before the next
@@ -220,9 +228,9 @@ _Avoid_: Implemented gap, ignored report
   current test refactor.
 - A **Commit check** runs the **Fast check** set.
 - A **Push check** may add local **Integration tests** to the **Fast check** set.
-- **Local integration** happens after Ralph implementation QA for **Trunk
-  delivery** and **Gitflow delivery**, before either issue closure or
-  **Promotion**.
+- **Local integration** happens after Ralph implementation QA and any required
+  **Issue completion review** for **Trunk delivery** and **Gitflow delivery**,
+  before either issue closure or **Promotion**.
 - **Local integration** is not a **Test lane**.
 - **Sandboxed issue access** may update GitHub Issue metadata when the Ralph
   phase grants write commands, but it must not update an **Integration target**.
@@ -235,6 +243,9 @@ _Avoid_: Implemented gap, ignored report
   `ready-for-agent` issue in a drain.
 - **Ready issue refresh** may mutate GitHub Issue metadata under its audit
   contract; it is not **Promotion** and is not **Post-promotion review**.
+- **Issue completion review** is a pre-**Local integration** automated gate on a
+  single implemented issue. It is not human `dev` review, it is not **Ready
+  issue refresh**, and it is not **Post-promotion review**.
 - A checkpointed **Operator workflow** drain uses the same lane-aware scheduler
   as plain drain: Gitflow and Trunk attempts stay serial, eligible
   **Exploratory delivery** attempts use the configured worker pool, and one
@@ -362,6 +373,9 @@ _Avoid_: Implemented gap, ignored report
   **Post-promotion review**. Resolved: use **Ready issue refresh** for
   post-**Local integration** or Exploratory handoff queue reconciliation before
   the next ready issue claim.
+- "completion review" could be confused with the human review of `dev` before
+  **Promotion**. Resolved: use **Issue completion review** only for Ralph's
+  automated pre-**Local integration** gate on risky issue work.
 - "post-Promotion deploy" could imply that direct `$ralph-loop promote` owns
   AWS credentials and runs deployment commands. Resolved: use
   **Post-Promotion deployment classification** for the report-only decision and

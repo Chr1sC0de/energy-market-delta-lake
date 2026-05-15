@@ -7,9 +7,10 @@ Use repo canonical terms from [CONTEXT.md](CONTEXT.md), especially
 **Subproject**, **Test lane**, **Fast check**, **Commit check**, **Push check**,
 **Local integration**, **Delivery mode**, **Integration target**,
 **Sandboxed issue access**, **Full-access implementation pass**,
-**Ready issue refresh**, **Operator workflow**, **Documentation sync**,
-**Agent skill**, **Agent workflow change**, **Exploratory acceptance review**,
-**Promotion**, **Post-Promotion deployment classification**, and
+**Issue completion review**, **Ready issue refresh**, **Operator workflow**,
+**Documentation sync**, **Agent skill**, **Agent workflow change**,
+**Exploratory acceptance review**, **Promotion**,
+**Post-Promotion deployment classification**, and
 **AWS/Pulumi credential boundary**.
 
 ## Canonical Path
@@ -59,9 +60,15 @@ exploratory change whose `## Review focus` says why it should publish a durable
 Use `$ralph-loop drain` to let Ralph implement ready issues. Ralph owns
 worktrees, deterministic QA, **Local integration** for Gitflow or Trunk
 delivery, Exploratory branch handoff, **Integration target** pushes, and
-GitHub issue metadata after validation. After a successful **Local
-integration** or Exploratory handoff, **Ready issue refresh** reconciles the
-open issue queue before Ralph claims the next `ready-for-agent` issue.
+GitHub issue metadata after validation. For deployable paths, **Agent workflow
+changes**, **Trunk delivery**, or high-stiffness issue evidence, Ralph runs an
+automated **Issue completion review** after QA and before any **Integration
+target** update or Exploratory handoff. If that review finds incomplete work,
+Ralph feeds the findings back into remaining Codex attempts, reruns QA, and
+reruns the review; exhausted findings fail the issue without **Local
+integration**. After a successful **Local integration** or Exploratory handoff,
+**Ready issue refresh** reconciles the open issue queue before Ralph claims the
+next `ready-for-agent` issue.
 
 For unattended queue cleanup after `dev` review, prefer the checkpointed
 Operator run path. It drains ready work through the same lane-aware scheduler as
@@ -145,7 +152,8 @@ Use `--max-issues` for the drain-level claimed issue budget. Plain `--drain`
 claims at most 10 implementation issues by default, and `--max-issues 0` means
 unlimited drain. Use `--max-codex-attempts` for the per-issue Codex
 implementation budget. It defaults to 5 total Codex attempts per claimed issue,
-including the initial implementation and retries after Codex or QA failures.
+including the initial implementation, retries after Codex or QA failures, and
+repair attempts after failing **Issue completion review** findings.
 
 ## Review Dev
 
@@ -248,7 +256,10 @@ successful Promotion metadata updates, **Post-promotion review**, follow-up
 creation, and **Ready issue refresh** have completed. It records the deployment
 command path, exit status, log path, **Deployed test** evidence, and full-tier
 idempotency evidence in both the Operator manifest and the Promotion child
-manifest.
+manifest. If that checkpointed deployment command or its **Deployed test**
+evidence fails, Ralph runs a deploy-failure analysis pass over redacted command
+logs and Promotion metadata, then creates or downgrades a focused deploy-repair
+GitHub Issue through the same validated Ralph-owned issue creation boundary.
 
 The deployment tiers are:
 
@@ -272,7 +283,19 @@ deployable subset. Ralph reports the Agent workflow paths as non-triggering
 context so operators can see why those paths did not raise the deployment tier.
 The **AWS/Pulumi credential boundary** keeps deployed workflow credentials in
 the operator/Ralph outer loop; sandboxed Codex subprocesses and
-**Post-promotion review** do not receive AWS or Pulumi credentials.
+**Post-promotion review** do not receive AWS or Pulumi credentials. The
+deploy-failure analysis subprocess also receives no AWS or Pulumi credentials
+and is explicitly prohibited from running AWS, Pulumi, or deployment commands
+or mutating GitHub Issues directly.
+
+Deploy-repair issues created after deployment failure are `bug` issues with
+exactly one **Delivery mode** label and `ready-for-agent` when the analyzer
+draft satisfies the ready contract. Incomplete drafts are created with
+`needs-triage` plus validation evidence instead. Duplicate
+`ralph-deploy-repair:...` source markers are skipped on rerun. Inspect
+`deploy_repair_issues` in the Promotion child manifest and the
+`deploy_repair_issue_creation` checkpoint in the Operator manifest before
+manually creating repair work.
 
 Unverified **Promotion** commits in the range are mandatory
 **Post-promotion review** context only. They do not require explicit issue
@@ -332,9 +355,10 @@ Completed or stopped runs write `operator-run-rollup.md` and
 `operator-run-rollup.json` beside `operator-run.json`. Read the Markdown rollup
 first for the full drain-and-**Promotion** summary: succeeded and failed issues,
 manual recoveries, **Local integration** commits, **Promotion** commits, QA
-surfaces, **Post-promotion review** follow-ups, final queue state, and the stop
-or failure reason. Runs that stop for **Exploratory acceptance review** also
-write `exploratory-acceptance-review.md` and
+surfaces, **Post-promotion review** follow-ups, deployment execution,
+deploy-repair issue creation, final queue state, and the stop or failure
+reason. Runs that stop for **Exploratory acceptance review** also write
+`exploratory-acceptance-review.md` and
 `exploratory-acceptance-review.json` beside the rollup. Use the JSON rollup for
 tooling or status-oriented review without tailing child Codex JSONL or rich
 command logs.
