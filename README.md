@@ -37,7 +37,8 @@ Subproject docs for detailed commands, defaults, diagrams, and behavior.
 - [docs/agents/ralph-loop.md](docs/agents/ralph-loop.md): Ralph internals,
   **Local integration**, **Delivery mode**, **Integration target**,
   **Ready issue refresh**, **Exploratory acceptance review**, checkpointed
-  Operator runs, **Promotion**, and **Post-promotion review** behavior.
+  Operator runs, **Promotion**, **Post-promotion review**, and
+  **Post-Promotion deployment classification** behavior.
 
 ## Sync metadata
 

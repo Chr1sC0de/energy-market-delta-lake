@@ -1679,12 +1679,379 @@ class ParallelSchedulerOperatorRun(ScriptedOperatorRun):
         super()._run_promotion_checkpoint()
 
 
+class PromotionClassificationGit:
+    def __init__(self, changed_files: list[str]) -> None:
+        self.changed_files = changed_files
+
+    def fetch_base(self, base: str, *, run_dir: Path) -> None:
+        pass
+
+    def rev_parse(self, ref: str, *, cwd: Path | None = None) -> str:
+        if ref == "HEAD":
+            return "promotion-sha"
+        if ref.startswith("origin/"):
+            return "source-sha"
+        return "sha"
+
+    def changed_files_between(self, *, base_ref: str, head_ref: str) -> list[str]:
+        return sorted(self.changed_files)
+
+    def promoted_source_commits(
+        self, *, base_ref: str, head_ref: str
+    ) -> list[ralph.PromotedSourceCommit]:
+        return []
+
+    def add_detached_worktree(
+        self,
+        *,
+        path: Path,
+        ref: str,
+        run_dir: Path,
+        log_name: str = "git-worktree-add-integration.log",
+    ) -> None:
+        path.mkdir(parents=True, exist_ok=False)
+
+    def merge_no_ff(
+        self,
+        *,
+        cwd: Path,
+        ref: str,
+        message: str,
+        run_dir: Path,
+        log_name: str = "git-merge-promotion.log",
+    ) -> None:
+        pass
+
+    def push_head(
+        self,
+        *,
+        cwd: Path,
+        branch: str,
+        run_dir: Path,
+        log_name: str | None = None,
+    ) -> None:
+        pass
+
+    def remove_worktree(self, path: Path, *, run_dir: Path, log_name: str) -> None:
+        path.rmdir()
+
+    def worktrees(self) -> list[ralph.GitWorktree]:
+        return []
+
+
+class PromotionClassificationProbeLoop(ralph.RalphLoop):
+    def __init__(
+        self,
+        config: ralph.LoopConfig,
+        runner: FakeRunner,
+        changed_files: list[str],
+    ) -> None:
+        super().__init__(config, runner)
+        self.git = PromotionClassificationGit(changed_files)
+
+    def _run_qa_commands(
+        self,
+        changed_files: list[str],
+        repo_root: Path,
+        run_dir: Path,
+        *,
+        log_prefix: str,
+        subject: str,
+        manifest: ralph.RunManifest | None = None,
+        issue_body: str | None = None,
+    ) -> list[ralph.QAResult]:
+        return []
+
+    def _run_promotion_gate_commands(
+        self,
+        changed_files: list[str],
+        repo_root: Path,
+        run_dir: Path,
+        *,
+        manifest: ralph.RunManifest,
+    ) -> list[ralph.QAResult]:
+        return []
+
+    def _verified_integrated_issues(
+        self,
+        *,
+        source_branch: str,
+        source_ref: str,
+        target_branch: str,
+    ) -> tuple[list[tuple[ralph.Issue, str]], list[ralph.PromotionIssueWarning]]:
+        return [], []
+
+    def _close_promoted_issues(
+        self,
+        integrated_issues: list[tuple[ralph.Issue, str]],
+        *,
+        promotion_sha: str,
+        source_branch: str,
+        target_branch: str,
+        changed_files: list[str],
+        qa_results: list[ralph.QAResult],
+        run_dir: Path,
+        manifest: ralph.RunManifest,
+    ) -> None:
+        pass
+
+    def _sync_source_branch_after_promotion(
+        self,
+        *,
+        source_branch: str,
+        target_branch: str,
+        promotion_sha: str,
+        promote_path: Path,
+        run_dir: Path,
+        manifest: ralph.RunManifest,
+    ) -> bool:
+        return False
+
+    def _run_post_promotion_review(
+        self,
+        *,
+        source_branch: str,
+        target_branch: str,
+        source_revision: str,
+        promotion_sha: str | None,
+        changed_files: list[str],
+        integrated_issues: list[tuple[ralph.Issue, str]],
+        promotion_commit_inventory: list[dict[str, Any]],
+        review_path: Path,
+        run_dir: Path,
+        manifest: ralph.RunManifest,
+        promotion_outcome: str,
+        promotion_error: str | None,
+    ) -> Path | None:
+        manifest.record_post_promotion_review(
+            "skipped_by_test", reason="Promotion classification probe."
+        )
+        return None
+
+    def _run_post_promotion_followups(
+        self,
+        *,
+        source_branch: str,
+        target_branch: str,
+        source_revision: str,
+        promotion_sha: str,
+        artifact_path: Path | None,
+        run_dir: Path,
+        manifest: ralph.RunManifest,
+    ) -> None:
+        manifest.record_post_promotion_followups(
+            "skipped_by_test", reason="Promotion classification probe."
+        )
+
+    def _run_post_promotion_ready_issue_refresh(
+        self,
+        *,
+        source_branch: str,
+        target_branch: str,
+        source_revision: str,
+        promotion_sha: str,
+        changed_files: list[str],
+        qa_results: list[ralph.QAResult],
+        promoted_issues: list[tuple[ralph.Issue, str]],
+        review_artifact_path: Path | None,
+        analysis_path: Path,
+        run_dir: Path,
+        manifest: ralph.RunManifest,
+    ) -> None:
+        manifest.record_ready_issue_refresh(
+            "skipped_by_test",
+            enabled=False,
+            reason="Promotion classification probe.",
+        )
+
+    def _fast_forward_checked_out_local_branches_after_promotion(
+        self,
+        *,
+        source_branch: str,
+        target_branch: str,
+        promotion_sha: str,
+        source_branch_synced: bool,
+        run_dir: Path,
+        manifest: ralph.RunManifest,
+    ) -> None:
+        pass
+
+
 class RalphHelperTests(unittest.TestCase):
     def test_cli_reexports_extracted_workflow_and_state_helpers(self) -> None:
         self.assertIs(ralph.resolve_delivery_plan, ralph_workflow.resolve_delivery_plan)
         self.assertIs(ralph.parse_blockers, ralph_workflow.parse_blockers)
         self.assertIs(ralph.RunManifest, ralph_state.RunManifest)
         self.assertIs(ralph.OperatorRunManifest, ralph_state.OperatorRunManifest)
+
+    def test_post_promotion_deployment_classifier_skips_agent_workflow_only(
+        self,
+    ) -> None:
+        classification = ralph.classify_post_promotion_deployment(
+            [
+                ".agents/skills/ralph-loop/SKILL.md",
+                "tools/ralph-loop/src/ralph_loop/cli.py",
+                "docs/agents/ralph-loop.md",
+            ]
+        )
+
+        self.assertEqual(
+            classification.tier,
+            ralph.POST_PROMOTION_DEPLOYMENT_NO_DEPLOY,
+        )
+        self.assertIn("Only Agent workflow changes", classification.reason)
+        self.assertEqual(
+            classification.agent_workflow_paths,
+            (
+                ".agents/skills/ralph-loop/SKILL.md",
+                "docs/agents/ralph-loop.md",
+                "tools/ralph-loop/src/ralph_loop/cli.py",
+            ),
+        )
+        self.assertEqual(classification.deployable_paths, ())
+
+    def test_post_promotion_deployment_classifier_selects_user_code_redeploy(
+        self,
+    ) -> None:
+        classification = ralph.classify_post_promotion_deployment(
+            [
+                "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py",
+                "backend-services/dagster-user/aemo-etl/Dockerfile",
+            ]
+        )
+
+        self.assertEqual(
+            classification.tier,
+            ralph.POST_PROMOTION_DEPLOYMENT_USER_CODE,
+        )
+        self.assertEqual(
+            classification.user_code_redeploy_paths,
+            (
+                "backend-services/dagster-user/aemo-etl/Dockerfile",
+                "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py",
+            ),
+        )
+        self.assertIn("redeploy-user-code", classification.recommended_action)
+        self.assertEqual(classification.full_workflow_paths, ())
+
+    def test_post_promotion_deployment_classifier_selects_full_workflow(
+        self,
+    ) -> None:
+        cases = {
+            "Pulumi": "infrastructure/aws-pulumi/__main__.py",
+            "service runtime": "backend-services/dagster-core/dagster.aws.yaml",
+            "image": "backend-services/authentication/Dockerfile",
+            "Dagster core": "backend-services/dagster-core/Dockerfile",
+            "auth": "backend-services/authentication/main.py",
+            "Caddy": "backend-services/caddy/Caddyfile",
+            "Marimo": "backend-services/marimo/src/marimoserver/main.py",
+            "code-location topology": (
+                "backend-services/dagster-core/code-locations.aws.toml"
+            ),
+        }
+
+        for label, path in cases.items():
+            with self.subTest(label=label):
+                classification = ralph.classify_post_promotion_deployment([path])
+
+                self.assertEqual(
+                    classification.tier,
+                    ralph.POST_PROMOTION_DEPLOYMENT_FULL,
+                )
+                self.assertEqual(classification.full_workflow_paths, (path,))
+                self.assertIn(
+                    "run-integration-tests", classification.recommended_action
+                )
+
+    def test_post_promotion_deployment_classifier_promotes_mixed_deployables_to_full(
+        self,
+    ) -> None:
+        classification = ralph.classify_post_promotion_deployment(
+            [
+                "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py",
+                "infrastructure/aws-pulumi/components/ecs_services.py",
+            ]
+        )
+
+        self.assertEqual(
+            classification.tier,
+            ralph.POST_PROMOTION_DEPLOYMENT_FULL,
+        )
+        self.assertEqual(
+            classification.deployable_paths,
+            (
+                "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py",
+                "infrastructure/aws-pulumi/components/ecs_services.py",
+            ),
+        )
+
+    def test_post_promotion_deployment_classifier_reports_agent_context(
+        self,
+    ) -> None:
+        classification = ralph.classify_post_promotion_deployment(
+            [
+                ".agents/skills/ralph-loop/SKILL.md",
+                "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py",
+            ]
+        )
+
+        self.assertEqual(
+            classification.tier,
+            ralph.POST_PROMOTION_DEPLOYMENT_USER_CODE,
+        )
+        self.assertEqual(
+            classification.agent_workflow_paths,
+            (".agents/skills/ralph-loop/SKILL.md",),
+        )
+        self.assertIn(
+            ".agents/skills/ralph-loop/SKILL.md",
+            classification.non_triggering_paths,
+        )
+
+    def test_direct_promotion_records_and_prints_deployment_classification(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            config = make_loop(tmp_path, runner, promote=True).config
+            loop = PromotionClassificationProbeLoop(
+                config,
+                runner,
+                [
+                    ".agents/skills/ralph-loop/SKILL.md",
+                    "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py",
+                ],
+            )
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                manifest = loop._promote()
+
+            payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        deployment = payload["deployment_classification"]
+        self.assertEqual(deployment["status"], "classified")
+        self.assertEqual(
+            deployment["tier"],
+            ralph.POST_PROMOTION_DEPLOYMENT_USER_CODE,
+        )
+        self.assertEqual(
+            deployment["agent_workflow_paths"],
+            [".agents/skills/ralph-loop/SKILL.md"],
+        )
+        self.assertIn("Post-Promotion deployment tier", stdout.getvalue())
+        self.assertIn("redeploy-user-code", stdout.getvalue())
+        deployment_commands = {
+            ralph.POST_PROMOTION_DEPLOYMENT_REDEPLOY_USER_CODE_COMMAND,
+            ralph.POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_COMMAND,
+        }
+        self.assertFalse(
+            any(
+                call.args and call.args[0] in deployment_commands
+                for call in runner.calls
+            )
+        )
 
     def test_parse_repo_slug_accepts_common_github_remote_forms(self) -> None:
         cases = {

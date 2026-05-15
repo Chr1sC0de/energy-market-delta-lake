@@ -3334,6 +3334,26 @@ class RalphLoop:
         )
         raise IssueFailure(message)
 
+    def _record_post_promotion_deployment_classification(
+        self, changed_files: list[str], manifest: RunManifest
+    ) -> PostPromotionDeploymentClassification:
+        classification = classify_post_promotion_deployment(changed_files)
+        manifest.record_deployment_classification(classification)
+        emit(f"Post-Promotion deployment tier: {classification.tier}")
+        emit(f"Deployment reason: {classification.reason}")
+        emit(f"Recommended deployment action: {classification.recommended_action}")
+        if classification.agent_workflow_paths:
+            emit(
+                "Agent workflow paths are non-triggering context: "
+                + ", ".join(classification.agent_workflow_paths)
+            )
+        if classification.non_triggering_paths:
+            emit(
+                "Non-triggering Promotion paths: "
+                + ", ".join(classification.non_triggering_paths)
+            )
+        return classification
+
     def _promote(self) -> RunManifest:
         source_branch = self.config.source_branch
         target_branch = self._promotion_target_branch()
@@ -3385,6 +3405,9 @@ class RalphLoop:
             )
             manifest.record_changed_files(
                 changed_files, stage="promotion_changes_detected"
+            )
+            self._record_post_promotion_deployment_classification(
+                changed_files, manifest
             )
             if not changed_files:
                 emit(f"No changes to promote from {source_branch} to {target_branch}.")

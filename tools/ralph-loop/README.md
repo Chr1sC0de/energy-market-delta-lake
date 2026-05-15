@@ -24,7 +24,7 @@ make run-prek
 - `src/ralph_loop/cli.py`: Ralph CLI, side-effect adapters, loop controller,
   and compatibility re-exports
 - `src/ralph_loop/workflow.py`: pure label, Delivery mode, QA selection,
-  comment, and recovery policy helpers
+  comment, deployment classification, and recovery policy helpers
 - `src/ralph_loop/state.py`: Ralph run and Operator manifest state helpers
 - `tests/unit/`: Ralph unit tests
 - `.pre-commit-config.yaml`: Subproject `prek` hook surface

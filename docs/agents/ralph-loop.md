@@ -8,6 +8,8 @@ helpers in `tools/ralph-loop/src/ralph_loop/state.py`. The loop uses GitHub
 Issues as the queue, Codex as the implementation and triage worker, repo
 **Test lane** commands as the validation boundary, and **Local integration**,
 Exploratory handoff, plus **Promotion** as the success paths after QA.
+Promotion also records a deterministic **Post-Promotion deployment
+classification** from the promoted changed-file inventory.
 
 ## Table of contents
 
@@ -591,6 +593,11 @@ Key fields for inspection:
   commit SHA, subject, and whether it matched verified issue evidence or
   remained an unverified **Promotion** commit. When one evidence commit maps to
   multiple issues, the inventory records every issue mapping.
+- `deployment_classification`: deterministic **Post-Promotion deployment
+  classification** with the selected tier, reason, recommended action,
+  deployable paths, non-triggering **Agent workflow changes**, and other
+  non-triggering paths. Direct Promotion records this field and prints the
+  recommendation without running AWS or Pulumi commands.
 - `post_promotion_review`: enabled state, skip reason, warning-only review
   status, review log path, and Markdown artifact path for **Promotion** runs.
 - `post_promotion_followups`: enabled state, created issue URLs, duplicate
@@ -933,6 +940,29 @@ association before **Promotion**, and do not create follow-up issues by
 themselves. Follow-up GitHub Issue drafts belong in the
 **Post-promotion review** artifact only when the review finds concrete
 actionable work.
+
+Immediately after recording the Promotion changed-file inventory, Ralph records
+`deployment_classification` in the **Promotion** manifest and prints the
+recommended deployment action. Direct `$ralph-loop promote` never runs the
+deployment command. The classifier uses three tiers:
+
+- `no_deployment`: no AWS deployment is recommended. A Promotion containing
+  only **Agent workflow changes** records this tier with a clear skip reason.
+- `user_code_redeploy`: only deployed AEMO ETL user-code runtime paths changed,
+  optionally with non-triggering context paths. The recommendation is
+  `infrastructure/aws-pulumi/scripts/redeploy-user-code`.
+- `full_deployed_workflow`: Pulumi, service runtime, image, Dagster core, auth,
+  Caddy, Marimo, code-location topology, or mixed deployed-platform paths
+  changed. The recommendation is
+  `infrastructure/aws-pulumi/scripts/run-integration-tests`.
+
+When a Promotion mixes **Agent workflow changes** with deployable paths, Ralph
+classifies only the deployable subset and reports the Agent workflow paths as
+non-triggering context. The **AWS/Pulumi credential boundary** keeps deployed
+workflow credentials in the operator/Ralph outer loop: sandboxed Codex
+subprocesses and **Post-promotion review** receive no AWS or Pulumi
+credentials, and direct Promotion only reports the command an operator should
+run later from the AWS Pulumi **Subproject**.
 
 Ralph runs the aggregate matching **Push check** QA from the source worktree.
 When the promoted range includes non-doc runtime files under
@@ -1481,6 +1511,7 @@ container-backed **Integration test** dependencies.
   - `docs/repository/documentation-sync.md`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
+  - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
   - `.agents/skills/shape-issues/SKILL.md`
   - `.agents/skills/shape-issues/scripts/shape_issue_gate.py`
   - `.agents/skills/shape-issues/scripts/codex_context_assessor.py`

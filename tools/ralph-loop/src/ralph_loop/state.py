@@ -215,6 +215,17 @@ class RunManifest:
                 "head_ref": None,
                 "commits": [],
             },
+            "deployment_classification": {
+                "status": "not_started",
+                "tier": None,
+                "reason": None,
+                "recommended_action": None,
+                "deployable_paths": [],
+                "user_code_redeploy_paths": [],
+                "full_workflow_paths": [],
+                "agent_workflow_paths": [],
+                "non_triggering_paths": [],
+            },
             "promotion_commit": None,
             "local_branch_fast_forwards": {
                 "source_branch": {
@@ -371,6 +382,20 @@ class RunManifest:
     def record_changed_files(self, changed_files: list[str], *, stage: str) -> None:
         self.data["changed_files"] = list(changed_files)
         self.record_event(stage, details={"count": len(changed_files)})
+
+    def record_deployment_classification(
+        self, classification: PostPromotionDeploymentClassification
+    ) -> None:
+        payload = {"status": "classified", **classification.to_manifest()}
+        self.data["deployment_classification"] = payload
+        self.record_event(
+            "deployment_classification_recorded",
+            details={
+                "tier": classification.tier,
+                "deployable_path_count": len(classification.deployable_paths),
+                "agent_workflow_path_count": len(classification.agent_workflow_paths),
+            },
+        )
 
     def record_commit(self, name: str, sha: str) -> None:
         commits = self.data.setdefault("commits", {})

@@ -8,7 +8,9 @@ Use repo canonical terms from [CONTEXT.md](CONTEXT.md), especially
 **Local integration**, **Delivery mode**, **Integration target**,
 **Sandboxed issue access**, **Full-access implementation pass**,
 **Ready issue refresh**, **Operator workflow**, **Documentation sync**,
-**Agent skill**, **Exploratory acceptance review**, and **Promotion**.
+**Agent skill**, **Agent workflow change**, **Exploratory acceptance review**,
+**Promotion**, **Post-Promotion deployment classification**, and
+**AWS/Pulumi credential boundary**.
 
 ## Canonical Path
 
@@ -223,6 +225,32 @@ verified in the promoted branch range. After successful **Promotion**, Ralph
 also fast-forwards clean checked-out local `dev` or `main` worktrees when the
 local branch can safely move to the Promotion commit; dirty or diverged local
 worktrees are left untouched with recovery guidance in the run manifest.
+Direct `$ralph-loop promote` also records
+**Post-Promotion deployment classification** in the Promotion manifest and
+prints the recommended deployment action. This is report-only: direct Promotion
+does not run AWS or Pulumi commands.
+
+The deployment tiers are:
+
+- `no_deployment`: no AWS deployment is recommended. A Promotion containing
+  only **Agent workflow changes** always lands here with a skip reason.
+- `user_code_redeploy`: deployed AEMO ETL user-code runtime paths changed and
+  no full deployed AWS workflow path changed. Run
+  `infrastructure/aws-pulumi/scripts/redeploy-user-code` from the AWS Pulumi
+  **Subproject** only after confirming the operator shell owns the needed AWS
+  and Pulumi credentials.
+- `full_deployed_workflow`: Pulumi, service runtime, image, Dagster core, auth,
+  Caddy, Marimo, code-location topology, or mixed deployed-platform paths
+  changed. Run `infrastructure/aws-pulumi/scripts/run-integration-tests` from
+  the AWS Pulumi **Subproject** only after confirming the operator shell owns
+  the needed AWS and Pulumi credentials.
+
+Mixed **Agent workflow change** and deployable paths are classified from the
+deployable subset. Ralph reports the Agent workflow paths as non-triggering
+context so operators can see why those paths did not raise the deployment tier.
+The **AWS/Pulumi credential boundary** keeps deployed workflow credentials in
+the operator/Ralph outer loop; sandboxed Codex subprocesses and
+**Post-promotion review** do not receive AWS or Pulumi credentials.
 
 Unverified **Promotion** commits in the range are mandatory
 **Post-promotion review** context only. They do not require explicit issue
@@ -312,6 +340,8 @@ Keep failed worktrees unless the maintainer asks for cleanup.
   - `tools/ralph-loop/README.md`
   - `tools/ralph-loop/pyproject.toml`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/src/ralph_loop/state.py`
+  - `tools/ralph-loop/src/ralph_loop/workflow.py`
   - `tools/ralph-loop/tests/unit/test_ralph.py`
   - `.agents/skills/ralph-loop/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`
@@ -320,6 +350,7 @@ Keep failed worktrees unless the maintainer asks for cleanup.
   - `backend-services/scripts/aemo-etl-e2e`
   - `docs/agents/issue-tracker.md`
   - `docs/agents/triage-labels.md`
+  - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
 - `sync.scope`: `operations`

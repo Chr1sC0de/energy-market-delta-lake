@@ -19,7 +19,8 @@ Use this page as the agent documentation map. The imperative policy lives in
 - Ralph internals, **Local integration**, **Delivery mode**, **Integration
   target**, **Full-access implementation pass**, **Ready issue refresh**,
   **Exploratory acceptance review**, **Promotion**, and
-  **Post-promotion review**, including checkpointed Operator runs:
+  **Post-promotion review**, including **Post-Promotion deployment
+  classification** and checkpointed Operator runs:
   [ralph-loop.md](ralph-loop.md)
 - GitHub Issue queue rules:
   [issue-tracker.md](issue-tracker.md)
@@ -77,6 +78,7 @@ Use this page as the agent documentation map. The imperative policy lives in
   - `docs/agents/domain.md`
   - `docs/repository/documentation-sync.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
+  - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

@@ -104,6 +104,13 @@ _Avoid_: Doc sync, best-effort docs update
 A reusable local workflow instruction bundle invoked as `$skill-name`.
 _Avoid_: AI skill, generic AI capability
 
+**Agent workflow change**:
+A change limited to repo-local agent instructions, Ralph loop code,
+issue-shaping skills, or operator documentation. Agent workflow changes can
+alter how Ralph works, but they do not change deployed AWS runtime resources by
+themselves.
+_Avoid_: Agent deployment change
+
 **Issue context assessor**:
 The bounded `$shape-issues` gate provider that judges whether each draft issue's
 declared `Path:` and `Doc:` anchors plus deterministic `rg` evidence snippets
@@ -168,6 +175,22 @@ review without changing the original Promotion outcome. Successful Promotions
 may then create structured actionable follow-up GitHub Issues through Ralph's
 validated create-only helper.
 _Avoid_: Promotion gate, pre-push review
+
+**Post-Promotion deployment classification**:
+The deterministic Ralph decision recorded from a **Promotion** changed-file
+inventory. It chooses `no_deployment`, `user_code_redeploy`, or
+`full_deployed_workflow`, reports non-triggering **Agent workflow changes** as
+context, and prints the recommended deployment action without running AWS or
+Pulumi commands.
+_Avoid_: Automatic deploy, deployment gate
+
+**AWS/Pulumi credential boundary**:
+The Ralph outer-loop boundary for deployed AWS workflow credentials. Direct
+**Promotion** may classify and recommend deployment, but AWS and Pulumi commands
+run only when an operator or future Ralph outer-loop automation explicitly owns
+those credentials; sandboxed Codex subprocesses and **Post-promotion review**
+do not receive them.
+_Avoid_: Sandbox AWS auth, implicit Pulumi deploy
 
 **Fit-plus-extend modeling**:
 A data-platform modeling policy where new source coverage reuses existing shared
@@ -255,6 +278,15 @@ _Avoid_: Implemented gap, ignored report
   through a validated create-only helper: valid drafts become
   `ready-for-agent`, invalid drafts become `needs-triage`, and helper failures
   are warning-only because `main` has already been pushed.
+- **Post-Promotion deployment classification** happens from the promoted
+  changed-file inventory. **Agent workflow changes** alone choose
+  `no_deployment`; deployed AEMO ETL user-code runtime paths choose
+  `user_code_redeploy`; deployed AWS platform, service runtime, image, Dagster
+  core, auth, Caddy, Marimo, Pulumi, or code-location topology paths choose
+  `full_deployed_workflow`.
+- The **AWS/Pulumi credential boundary** keeps deployment credentials outside
+  sandboxed Codex subprocesses. Direct **Promotion** records and prints a
+  deployment recommendation, but does not run AWS or Pulumi commands.
 - **Fit-plus-extend modeling** keeps shared data-platform tables aligned to
   domain grain: source rows join existing shared facts and dimensions where the
   meaning matches, and new shared facts are added only for distinct source
@@ -287,6 +319,12 @@ _Avoid_: Implemented gap, ignored report
 > **Dev:** "Is `$shape-issues` an AI capability or an **Agent skill**?"
 > **Domain expert:** "It is an **Agent skill**: a reusable local workflow
 > instruction bundle invoked by name inside the **Operator workflow**."
+>
+> **Dev:** "Did this **Promotion** deploy because Ralph changed itself?"
+> **Domain expert:** "No. A promoted **Agent workflow change** is
+> non-triggering context for **Post-Promotion deployment classification**.
+> Ralph records and prints `no_deployment` unless deployable AWS or AEMO ETL
+> user-code runtime paths are also in the changed-file inventory."
 
 ## Flagged ambiguities
 
@@ -324,6 +362,10 @@ _Avoid_: Implemented gap, ignored report
   **Post-promotion review**. Resolved: use **Ready issue refresh** for
   post-**Local integration** or Exploratory handoff queue reconciliation before
   the next ready issue claim.
+- "post-Promotion deploy" could imply that direct `$ralph-loop promote` owns
+  AWS credentials and runs deployment commands. Resolved: use
+  **Post-Promotion deployment classification** for the report-only decision and
+  **AWS/Pulumi credential boundary** for the operator-owned credential line.
 - "review branch" could imply a GitHub PR branch or a temporary worktree.
   Resolved: use **Exploratory branch** for the durable branch Ralph publishes
   during **Exploratory delivery**.
