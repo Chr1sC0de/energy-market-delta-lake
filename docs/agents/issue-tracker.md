@@ -102,6 +102,14 @@ mode** label, and `ready-for-agent`. Invalid or incomplete drafts are still
 created, but only with `needs-triage` and Ralph validation evidence in the
 issue body.
 
+Valid deploy-repair issues are targeted through checkpointed Operator state,
+not through a general priority-label vocabulary. While
+`deploy_repair.target_issue` is active in the Operator manifest, that issue is
+selected before unrelated ready work and then follows normal implementation,
+QA, **Local integration**, **Promotion**, and deployment retry. Once deployment
+passes, the Operator clears that state and the ready queue returns to
+oldest-first order.
+
 Runtime labels such as `agent-running`, `agent-integrated`, `agent-merged`,
 `agent-failed`, and `agent-reviewing` block repeat implementation and automated
 triage reconsideration. In particular, `agent-reviewing` means

@@ -6598,7 +6598,8 @@ class RalphOperatorRun:
                     snapshot=snapshot,
                 )
                 return
-            if snapshot.queue_issue_count == 0:
+            target_active = self.manifest.deploy_repair_target() is not None
+            if not target_active and snapshot.queue_issue_count == 0:
                 self.manifest.clear_current()
                 self.manifest.record_checkpoint(
                     "queue_clean",
@@ -6628,6 +6629,11 @@ class RalphOperatorRun:
 
             cycle += 1
             self.manifest.record_cycle(cycle)
+            active_deploy_repair_step = self._run_active_deploy_repair_step(snapshot)
+            if active_deploy_repair_step is not None:
+                if active_deploy_repair_step:
+                    continue
+                return
             ready_issue = self._next_ready_issue()
             if ready_issue is not None:
                 self._run_drain_scheduler_checkpoint()
@@ -6693,6 +6699,59 @@ class RalphOperatorRun:
 
     def _next_ready_issue(self) -> Issue | None:
         return self.loop._next_ready_issue()
+
+    def _run_active_deploy_repair_step(
+        self, snapshot: OperatorQueueSnapshot
+    ) -> bool | None:
+        target = self.manifest.deploy_repair_target()
+        if target is None:
+            return None
+
+        target_issue = self._targeted_deploy_repair_issue(snapshot, target=target)
+        if target_issue is not None:
+            self.manifest.record_event(
+                "deploy_repair_target_selected",
+                details={"issue": issue_payload_for_operator(target_issue)},
+            )
+            self._run_issue_checkpoint(target_issue)
+            snapshot = self._queue_snapshot()
+            self.manifest.record_queue(snapshot)
+            return self._handle_post_drain_snapshot(snapshot)
+
+        if snapshot.integrated:
+            self._run_promotion_checkpoint()
+            return True
+        if snapshot.reviewing:
+            self._stop_for_exploratory_acceptance_review(snapshot)
+            return False
+
+        number = target.get("number")
+        self._stop_for_queue_condition(
+            f"Targeted deploy-repair issue #{number} is not ready; "
+            "stopping before unrelated ready-for-agent work.",
+            snapshot=snapshot,
+        )
+        return False
+
+    def _targeted_deploy_repair_issue(
+        self,
+        snapshot: OperatorQueueSnapshot,
+        *,
+        target: dict[str, Any],
+    ) -> Issue | None:
+        try:
+            target_number = int(target.get("number"))
+        except (TypeError, ValueError):
+            return None
+        for issue in snapshot.ready:
+            if issue.number != target_number:
+                continue
+            if not is_ready_candidate(issue):
+                return None
+            if self.loop._has_open_blockers(issue):
+                return None
+            return issue
+        return None
 
     def _run_drain_scheduler_checkpoint(self) -> None:
         before_paths = implementation_child_manifest_paths(self.config.log_root)
@@ -6763,6 +6822,17 @@ class RalphOperatorRun:
                 snapshot=snapshot,
             )
             return False
+        if self.manifest.deploy_repair_target() is not None:
+            if snapshot.integrated:
+                self._run_promotion_checkpoint()
+                return True
+            if snapshot.queue_issue_count == 0:
+                self._stop_for_queue_condition(
+                    "Targeted deploy-repair issue is no longer open before "
+                    "deployment succeeded.",
+                    snapshot=snapshot,
+                )
+                return False
         if snapshot.integrated:
             self._run_promotion_checkpoint()
             return True
@@ -7069,6 +7139,62 @@ class RalphOperatorRun:
                 manifest=child_manifest,
             )
             self._record_deploy_repair_issue_checkpoint(child_manifest.path)
+            ready_repair_entries = deploy_repair_ready_created_issue_entries(
+                child_manifest.path
+            )
+            if ready_repair_entries:
+                if not self.manifest.can_start_deploy_repair_cycle():
+                    guidance = operator_deploy_repair_cycle_limit_guidance(
+                        manifest_path=child_manifest.path,
+                        ready_entries=ready_repair_entries,
+                        cycle_limit=self.manifest.deploy_repair_cycle_limit(),
+                    )
+                    self.manifest.record_checkpoint(
+                        "deploy_repair_cycle_limit_reached",
+                        message="Automated deploy-repair cycle limit reached.",
+                        child_manifest_path=child_manifest.path,
+                        status="failed",
+                        recovery_guidance=guidance,
+                        details={
+                            "cycle_count": self.manifest.deploy_repair_cycle_count(),
+                            "cycle_limit": self.manifest.deploy_repair_cycle_limit(),
+                            "ready_deploy_repair_issues": ready_repair_entries,
+                        },
+                    )
+                    self.manifest.record_failure(
+                        RalphError(guidance),
+                        recovery_guidance=guidance,
+                        child_manifest_path=child_manifest.path,
+                    )
+                    raise RalphError(guidance) from error
+
+                target_entry = ready_repair_entries[0]
+                self.manifest.record_deploy_repair_target(
+                    target_entry,
+                    child_manifest_path=child_manifest.path,
+                )
+                self.manifest.record_checkpoint(
+                    "deployment_failed",
+                    message=(
+                        "Post-promotion deployment tier "
+                        f"{classification.tier} failed; targeting deploy-repair "
+                        f"issue #{target_entry['number']} next."
+                    ),
+                    child_manifest_path=child_manifest.path,
+                    details={
+                        "deployment_execution": child_manifest.data[
+                            "deployment_execution"
+                        ],
+                        "deploy_repair_target": self.manifest.deploy_repair_target(),
+                    },
+                )
+                emit(
+                    "Post-promotion deployment failed; targeting deploy-repair "
+                    f"issue #{target_entry['number']} next.",
+                    err=True,
+                )
+                return
+
             guidance = operator_deployment_failure_guidance(child_manifest.path)
             self.manifest.record_checkpoint(
                 "deployment_failed",
@@ -7110,6 +7236,10 @@ class RalphOperatorRun:
             message=f"Post-promotion deployment tier {classification.tier} completed.",
             child_manifest_path=child_manifest.path,
             details=child_manifest.data["deployment_execution"],
+        )
+        self.manifest.clear_deploy_repair_target(
+            child_manifest_path=child_manifest.path,
+            reason="Post-promotion deployment succeeded.",
         )
 
     def _stop_for_queue_condition(
@@ -8187,6 +8317,49 @@ def deploy_repair_issue_checkpoint_details(
     }
 
 
+def deploy_repair_ready_created_issue_entries(
+    manifest_path: Path,
+) -> list[dict[str, Any]]:
+    if not manifest_path.exists():
+        return []
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, dict):
+        return []
+    repairs = data.get("deploy_repair_issues")
+    if not isinstance(repairs, dict):
+        return []
+    created = repairs.get("created")
+    if not isinstance(created, list):
+        return []
+
+    entries: list[dict[str, Any]] = []
+    for entry in created:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            issue_number = int(entry.get("number"))
+        except (TypeError, ValueError):
+            continue
+        labels_value = entry.get("labels")
+        labels = (
+            {str(label) for label in labels_value if isinstance(label, str)}
+            if isinstance(labels_value, list)
+            else set()
+        )
+        delivery_labels = labels.intersection(DELIVERY_LABELS)
+        if entry.get("validation_status") != "ready":
+            continue
+        if READY_LABEL not in labels or "bug" not in labels:
+            continue
+        if len(delivery_labels) != 1:
+            continue
+        entries.append({**entry, "number": issue_number, "labels": sorted(labels)})
+    return entries
+
+
 def post_promotion_deployment_classification_from_manifest(
     data: dict[str, Any],
 ) -> PostPromotionDeploymentClassification:
@@ -8293,6 +8466,29 @@ def operator_deployment_failure_guidance(manifest_path: Path | None) -> str:
         "command log. Review `deploy_repair_issues` for created or downgraded "
         "repair issues, restore the deployed AWS workflow, or rerun the Operator "
         "run after fixing the deployment failure."
+    )
+
+
+def operator_deploy_repair_cycle_limit_guidance(
+    *,
+    manifest_path: Path,
+    ready_entries: list[dict[str, Any]],
+    cycle_limit: int,
+) -> str:
+    issue_numbers = ", ".join(
+        f"#{entry['number']}" for entry in ready_entries if entry.get("number")
+    )
+    issue_text = (
+        f" Created ready deploy-repair issue(s): {issue_numbers}."
+        if issue_numbers
+        else ""
+    )
+    return (
+        f"Ralph reached the automated deploy-repair cycle limit ({cycle_limit}) "
+        "for this checkpointed Operator run. Inspect the Promotion child run "
+        f"manifest `{manifest_path}`, deployment command log, and "
+        "`deploy_repair_issues` before manually recovering or starting a new "
+        f"Operator run.{issue_text}"
     )
 
 
@@ -8689,6 +8885,19 @@ def inspect_operator_run_status(value: str, runner: CommandRunner) -> None:
     emit(f"Cycle: {data.get('cycle') or 0} / {data.get('max_cycles') or 'unknown'}")
     emit(f"Last checkpoint: {operator_last_checkpoint_summary(data)}")
     emit(f"Current: {operator_current_summary(data)}")
+    deploy_repair = data.get("deploy_repair")
+    if isinstance(deploy_repair, dict):
+        target = deploy_repair.get("target_issue")
+        target_text = "none"
+        if isinstance(target, dict) and target.get("number") is not None:
+            target_text = f"#{target.get('number')} {target.get('title') or ''}".strip()
+        emit(
+            "Deploy repair: "
+            f"{deploy_repair.get('status') or 'unknown'}; "
+            f"cycles={deploy_repair.get('cycle_count') or 0}/"
+            f"{deploy_repair.get('cycle_limit') or DEFAULT_DEPLOY_REPAIR_CYCLE_LIMIT}; "
+            f"target={target_text}"
+        )
     emit(f"Queue: {operator_queue_summary(data)}")
     child_runs = data.get("child_run_manifests")
     emit("Child run manifests:")

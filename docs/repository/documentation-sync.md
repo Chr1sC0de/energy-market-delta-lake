@@ -274,6 +274,13 @@ way:
   the operational contract lives in [OPERATOR.md](../../OPERATOR.md),
   [docs/agents/issue-tracker.md](../agents/issue-tracker.md), and
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
+- #166: Checkpointed Operator runs record valid deploy-repair issues in
+  `deploy_repair.target_issue`, select that issue before unrelated ready work,
+  clear the target after a successful deployment retry, and stop after two
+  automated deploy-repair cycles. The contract lives in
+  [OPERATOR.md](../../OPERATOR.md),
+  [docs/agents/issue-tracker.md](../agents/issue-tracker.md), and
+  [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
 
 ## Search commands
 

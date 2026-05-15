@@ -80,9 +80,14 @@ creation pass. When the checkpointed deployment command or its **Deployed test**
 evidence fails, Ralph analyzes redacted deployment evidence without AWS/Pulumi
 credentials, validates structured repair drafts, creates valid `bug`
 `ready-for-agent` issues with exactly one **Delivery mode** label, and
-downgrades incomplete drafts to `needs-triage`. It still does not add retries or
-a separate credential preflight beyond the invoked AWS/Pulumi command failures
-recorded in the manifests.
+downgrades incomplete drafts to `needs-triage`. Valid ready deploy-repair issues
+are targeted through checkpointed Operator state, not general priority labels.
+The targeted repair issue still follows normal implementation, **Local
+integration**, **Promotion**, and deployment retry; successful deployment clears
+the target state. One Operator run starts at most two automated deploy-repair
+cycles before stopping with recovery guidance and preserved logs. It still does
+not add a separate credential preflight beyond the invoked AWS/Pulumi command
+failures recorded in the manifests.
 
 ## Sync metadata
 

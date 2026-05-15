@@ -297,6 +297,17 @@ draft satisfies the ready contract. Incomplete drafts are created with
 `deploy_repair_issue_creation` checkpoint in the Operator manifest before
 manually creating repair work.
 
+When a valid ready deploy-repair issue is created, the checkpointed Operator
+records it under `deploy_repair.target_issue` and runs that issue as the next
+implementation step before unrelated `ready-for-agent` work. This is not a
+priority-label system; normal queue order remains oldest-first whenever
+`deploy_repair.status` is inactive. The targeted issue still uses normal Ralph
+implementation, QA, **Issue completion review**, **Local integration**,
+**Promotion**, metadata updates, and deployment retry. A successful deployment
+clears `deploy_repair.target_issue`. One Operator run targets at most two
+automated deploy-repair cycles; after that, it stops with recovery guidance and
+the Promotion child logs preserved.
+
 Unverified **Promotion** commits in the range are mandatory
 **Post-promotion review** context only. They do not require explicit issue
 association before **Promotion**, do not block **Promotion** by themselves, and
