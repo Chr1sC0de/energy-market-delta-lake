@@ -101,4 +101,7 @@ judge only the supplied JSON evidence.
 
 Use `scripts/fixture_context_assessor.py` for tests and dry contract examples.
 It is deterministic and standard-library only; it is not a quality substitute
-for the Codex-backed assessor.
+for the Codex-backed assessor. Fixture-gated reports may be published only as
+`--dry-run` previews unless the Operator passes `--allow-fixture-publish`; that
+override leaves fixture provenance in `publish-manifest.json` and the final
+issue body.

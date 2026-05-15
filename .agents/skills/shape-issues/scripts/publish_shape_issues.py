@@ -18,6 +18,13 @@ from typing import Any
 NEEDS_TRIAGE_LABEL = "needs-triage"
 PUBLISHABLE_ACTIONS = frozenset({"ready", "exploratory"})
 SOURCE_MARKER_PREFIX = "shape-issues-source"
+FIXTURE_ASSESSOR_PROVIDER = "fixture"
+COMMAND_SUMMARY_MAX_CHARS = 600
+PREFLIGHT_GH_PHASE = "preflight-gh"
+PREFLIGHT_AUTH_PHASE = "preflight-auth"
+PREFLIGHT_REPOSITORY_PHASE = "preflight-repository"
+DUPLICATE_SEARCH_PHASE = "duplicate-search"
+ISSUE_CREATE_PHASE = "issue-create"
 SECTION_PATTERN_TEMPLATE = (
     r"(?ims)^#{{1,6}}\s+{heading}\s*$\n"
     r"(?P<body>.*?)(?=^#{{1,6}}\s+\S|\Z)"
@@ -27,6 +34,28 @@ BLOCKER_PATTERN = re.compile(r"(?:#|/issues/)(?P<number>\d+)")
 
 class PublishError(Exception):
     """Raised when a shape-issues bundle cannot be safely published."""
+
+
+@dataclass(frozen=True)
+class GithubCommandFailure:
+    phase: str
+    exit_code: int | None
+    stderr_summary: str
+    stdout_summary: str
+
+    def to_manifest(self) -> dict[str, Any]:
+        return {
+            "exit_code": self.exit_code,
+            "phase": self.phase,
+            "stderr_summary": self.stderr_summary,
+            "stdout_summary": self.stdout_summary,
+        }
+
+
+class GithubCommandError(PublishError):
+    def __init__(self, failure: GithubCommandFailure, message: str) -> None:
+        super().__init__(message)
+        self.failure = failure
 
 
 @dataclass(frozen=True)
@@ -59,6 +88,7 @@ class GateIssue:
 @dataclass(frozen=True)
 class GateReport:
     bundle_digest: str | None
+    context_assessor_provider: str | None
     issues: dict[str, GateIssue]
 
 
@@ -79,6 +109,7 @@ class PublishConfig:
     confirm_publish: bool
     dry_run: bool
     gh_binary: str
+    allow_fixture_publish: bool = False
 
 
 class GithubClient:
@@ -86,6 +117,42 @@ class GithubClient:
         self.repo = repo
         self.repo_root = repo_root
         self.gh_binary = gh_binary
+
+    def preflight(self) -> None:
+        self._run(
+            [self.gh_binary, "--version"],
+            phase=PREFLIGHT_GH_PHASE,
+            guidance=(
+                f"Install GitHub CLI or pass --gh-binary with the path to a working "
+                f"`{self.gh_binary}` executable."
+            ),
+        )
+        self._run(
+            [self.gh_binary, "auth", "status"],
+            phase=PREFLIGHT_AUTH_PHASE,
+            guidance="Run `gh auth login` or set a valid `GH_TOKEN`, then rerun the publisher.",
+        )
+        payload = self._json(
+            [
+                self.gh_binary,
+                "repo",
+                "view",
+                self.repo,
+                "--json",
+                "nameWithOwner",
+            ],
+            phase=PREFLIGHT_REPOSITORY_PHASE,
+            guidance=(
+                f"Check `--repo {self.repo}` and confirm the authenticated account can "
+                "query that repository."
+            ),
+        )
+        if not isinstance(payload, dict) or optional_string(payload.get("nameWithOwner")) is None:
+            raise PublishError(
+                "GitHub CLI preflight failed during "
+                f"{PREFLIGHT_REPOSITORY_PHASE}: repository query did not return "
+                "`nameWithOwner`."
+            )
 
     def find_issue_by_source_marker(self, marker: str) -> IssueReference | None:
         payload = self._json(
@@ -103,7 +170,12 @@ class GithubClient:
                 f'"{marker}" in:body',
                 "--json",
                 "number,title,url",
-            ]
+            ],
+            phase=DUPLICATE_SEARCH_PHASE,
+            guidance=(
+                f"Check GitHub CLI auth and read access for `{self.repo}`, then rerun "
+                "the publisher. Existing source markers will skip issues already created."
+            ),
         )
         if not isinstance(payload, list) or len(payload) == 0:
             return None
@@ -126,23 +198,100 @@ class GithubClient:
         ]
         for label in labels:
             args.extend(["--label", label])
-        result = self._run(args)
+        result = self._run(
+            args,
+            phase=ISSUE_CREATE_PHASE,
+            guidance=(
+                f"Check issue creation permissions for `{self.repo}` and the requested "
+                "labels, then rerun the publisher. Existing source markers will skip "
+                "issues already created."
+            ),
+        )
         return parse_issue_reference_from_create_stdout(result.stdout, title=title)
 
-    def _json(self, args: list[str]) -> Any:
-        result = self._run(args)
+    def _json(self, args: list[str], *, phase: str, guidance: str) -> Any:
+        result = self._run(args, phase=phase, guidance=guidance)
         if result.stdout.strip() == "":
             return None
         return json.loads(result.stdout)
 
-    def _run(self, args: list[str]) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            args,
-            cwd=self.repo_root,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+    def _run(
+        self,
+        args: list[str],
+        *,
+        phase: str,
+        guidance: str,
+    ) -> subprocess.CompletedProcess[str]:
+        try:
+            return subprocess.run(
+                args,
+                cwd=self.repo_root,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except FileNotFoundError as error:
+            failure = GithubCommandFailure(
+                phase=phase,
+                exit_code=None,
+                stderr_summary="",
+                stdout_summary="",
+            )
+            raise GithubCommandError(
+                failure,
+                format_github_command_failure(failure, guidance=guidance),
+            ) from error
+        except subprocess.CalledProcessError as error:
+            failure = github_command_failure_from_called_process(
+                phase=phase,
+                error=error,
+            )
+            raise GithubCommandError(
+                failure,
+                format_github_command_failure(failure, guidance=guidance),
+            ) from error
+
+
+def github_command_failure_from_called_process(
+    *,
+    phase: str,
+    error: subprocess.CalledProcessError,
+) -> GithubCommandFailure:
+    return GithubCommandFailure(
+        phase=phase,
+        exit_code=error.returncode,
+        stderr_summary=summarize_command_stream(error.stderr),
+        stdout_summary=summarize_command_stream(error.stdout),
+    )
+
+
+def summarize_command_stream(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        text = value.decode("utf-8", errors="replace")
+    else:
+        text = str(value)
+    lines = [line.strip() for line in text.strip().splitlines() if line.strip() != ""]
+    summary = "\n".join(lines)
+    if len(summary) <= COMMAND_SUMMARY_MAX_CHARS:
+        return summary
+    return summary[: COMMAND_SUMMARY_MAX_CHARS - 3].rstrip() + "..."
+
+
+def format_github_command_failure(
+    failure: GithubCommandFailure,
+    *,
+    guidance: str,
+) -> str:
+    exit_code = "unavailable" if failure.exit_code is None else str(failure.exit_code)
+    stderr_summary = failure.stderr_summary or "<empty>"
+    stdout_summary = failure.stdout_summary or "<empty>"
+    return (
+        "GitHub CLI command failed during "
+        f"{failure.phase} (exit code {exit_code}). {guidance} "
+        f"stderr summary: {stderr_summary} stdout summary: {stdout_summary}"
+    )
 
 
 def parse_string_list(value: Any) -> tuple[str, ...]:
@@ -303,8 +452,20 @@ def parse_gate_report(path: Path) -> GateReport:
         )
     return GateReport(
         bundle_digest=optional_string(payload.get("bundle_digest")),
+        context_assessor_provider=parse_context_assessor_provider(payload),
         issues=issues,
     )
+
+
+def parse_context_assessor_provider(payload: dict[str, Any]) -> str | None:
+    raw_assessor = payload.get("context_assessor")
+    if not isinstance(raw_assessor, dict):
+        return None
+    return optional_string(raw_assessor.get("provider"))
+
+
+def is_fixture_assessor_provider(provider: str | None) -> bool:
+    return provider is not None and provider.lower() == FIXTURE_ASSESSOR_PROVIDER
 
 
 def source_marker(bundle_path: Path, issue: IssueDraft) -> str:
@@ -365,13 +526,44 @@ def bundle_reference(bundle_path: Path) -> str:
     return str(Path(bundle_path.parent.name) / bundle_path.name)
 
 
-def append_source_section(markdown: str, *, marker: str, bundle_path: Path) -> str:
-    source_body = "\n".join(
-        [
-            f"- Source marker: `{marker}`",
-            f"- Bundle: `{bundle_reference(bundle_path)}`",
-        ]
+def fixture_provenance_lines(
+    *,
+    context_assessor_provider: str | None,
+    dry_run: bool,
+    allow_fixture_publish: bool,
+) -> tuple[str, ...]:
+    if not is_fixture_assessor_provider(context_assessor_provider):
+        return ()
+    publish_policy = "`--dry-run` preview"
+    if not dry_run and allow_fixture_publish:
+        publish_policy = "published with `--allow-fixture-publish`"
+    return (
+        f"- Issue context assessor provider: `{context_assessor_provider}`",
+        f"- Fixture publish policy: {publish_policy}",
     )
+
+
+def append_source_section(
+    markdown: str,
+    *,
+    marker: str,
+    bundle_path: Path,
+    context_assessor_provider: str | None,
+    dry_run: bool,
+    allow_fixture_publish: bool,
+) -> str:
+    lines = [
+        f"- Source marker: `{marker}`",
+        f"- Bundle: `{bundle_reference(bundle_path)}`",
+    ]
+    lines.extend(
+        fixture_provenance_lines(
+            context_assessor_provider=context_assessor_provider,
+            dry_run=dry_run,
+            allow_fixture_publish=allow_fixture_publish,
+        )
+    )
+    source_body = "\n".join(lines)
     return replace_section(markdown, "Shape Issues source", source_body)
 
 
@@ -381,13 +573,23 @@ def final_issue_body(
     references: dict[str, IssueReference],
     marker: str,
     bundle_path: Path,
+    context_assessor_provider: str | None,
+    dry_run: bool,
+    allow_fixture_publish: bool,
 ) -> str:
     body = replace_section(
         issue.body,
         "Blocked by",
         final_blocked_by_section(issue, references),
     )
-    body = append_source_section(body, marker=marker, bundle_path=bundle_path)
+    body = append_source_section(
+        body,
+        marker=marker,
+        bundle_path=bundle_path,
+        context_assessor_provider=context_assessor_provider,
+        dry_run=dry_run,
+        allow_fixture_publish=allow_fixture_publish,
+    )
     validate_final_blockers(issue, body, references)
     return body
 
@@ -435,6 +637,8 @@ def validate_publishable(
     report: GateReport,
     *,
     confirm_publish: bool,
+    dry_run: bool,
+    allow_fixture_publish: bool,
     bundle_path: Path,
 ) -> None:
     if not confirm_publish:
@@ -458,6 +662,16 @@ def validate_publishable(
     unknown_blockers = sorted(blocked_ids - known_ids)
     if unknown_blockers:
         raise PublishError(f"Unknown blocked_by issue id(s): {', '.join(unknown_blockers)}.")
+
+    if (
+        is_fixture_assessor_provider(report.context_assessor_provider)
+        and not dry_run
+        and not allow_fixture_publish
+    ):
+        raise PublishError(
+            "Refusing to publish fixture-gated report without "
+            "--allow-fixture-publish. Use --dry-run for previews."
+        )
 
     for issue in issues:
         report_issue = report_issues[issue.issue_id]
@@ -548,6 +762,7 @@ def manifest_entry(
     body_path: Path,
     reference: IssueReference | None = None,
     error: str | None = None,
+    gh_failure: GithubCommandFailure | None = None,
 ) -> dict[str, Any]:
     entry: dict[str, Any] = {
         "id": issue.issue_id,
@@ -566,6 +781,8 @@ def manifest_entry(
         entry["url"] = reference.url
     if error is not None:
         entry["error"] = error
+    if gh_failure is not None:
+        entry["gh_failure"] = gh_failure.to_manifest()
     return entry
 
 
@@ -580,11 +797,27 @@ def publish(config: PublishConfig) -> dict[str, Any]:
         bundle,
         report,
         confirm_publish=config.confirm_publish,
+        dry_run=config.dry_run,
+        allow_fixture_publish=config.allow_fixture_publish,
         bundle_path=config.bundle_path,
     )
     issues = bundle.issues
     report_issues = report.issues
     ordered = publication_order(issues)
+
+    github = GithubClient(
+        repo=config.repo,
+        repo_root=config.repo_root,
+        gh_binary=config.gh_binary,
+    )
+    if not config.dry_run:
+        try:
+            github.preflight()
+        except GithubCommandError as error:
+            raise PublishError(
+                "GitHub CLI preflight failed before writing publish body files: "
+                f"{error}"
+            ) from error
 
     config.out_dir.mkdir(parents=True, exist_ok=True)
     bodies_dir = config.out_dir / "publish-bodies"
@@ -600,13 +833,16 @@ def publish(config: PublishConfig) -> dict[str, Any]:
         "repo": config.repo,
         "summary": bundle.summary,
     }
+    if is_fixture_assessor_provider(report.context_assessor_provider):
+        manifest["context_assessor"] = {
+            "provider": report.context_assessor_provider,
+        }
+        manifest["fixture_publish"] = {
+            "allow_fixture_publish": config.allow_fixture_publish,
+            "dry_run": config.dry_run,
+        }
     write_manifest(manifest_path, manifest)
 
-    github = GithubClient(
-        repo=config.repo,
-        repo_root=config.repo_root,
-        gh_binary=config.gh_binary,
-    )
     references: dict[str, IssueReference] = {}
 
     for issue in ordered:
@@ -619,6 +855,9 @@ def publish(config: PublishConfig) -> dict[str, Any]:
                 references=references,
                 marker=marker,
                 bundle_path=config.bundle_path,
+                context_assessor_provider=report.context_assessor_provider,
+                dry_run=config.dry_run,
+                allow_fixture_publish=config.allow_fixture_publish,
             )
             body_path.write_text(body, encoding="utf-8")
 
@@ -642,7 +881,24 @@ def publish(config: PublishConfig) -> dict[str, Any]:
                 write_manifest(manifest_path, manifest)
                 continue
 
-            duplicate = github.find_issue_by_source_marker(marker)
+            try:
+                duplicate = github.find_issue_by_source_marker(marker)
+            except subprocess.CalledProcessError as error:
+                failure = github_command_failure_from_called_process(
+                    phase=DUPLICATE_SEARCH_PHASE,
+                    error=error,
+                )
+                raise GithubCommandError(
+                    failure,
+                    format_github_command_failure(
+                        failure,
+                        guidance=(
+                            f"Check GitHub CLI auth and read access for `{config.repo}`, "
+                            "then rerun the publisher. Existing source markers will skip "
+                            "issues already created."
+                        ),
+                    ),
+                ) from error
             if duplicate is not None:
                 references[issue.issue_id] = duplicate
                 manifest["issues"].append(
@@ -658,11 +914,28 @@ def publish(config: PublishConfig) -> dict[str, Any]:
                 write_manifest(manifest_path, manifest)
                 continue
 
-            created = github.create_issue(
-                title=issue.title,
-                body_path=body_path,
-                labels=(NEEDS_TRIAGE_LABEL,),
-            )
+            try:
+                created = github.create_issue(
+                    title=issue.title,
+                    body_path=body_path,
+                    labels=(NEEDS_TRIAGE_LABEL,),
+                )
+            except subprocess.CalledProcessError as error:
+                failure = github_command_failure_from_called_process(
+                    phase=ISSUE_CREATE_PHASE,
+                    error=error,
+                )
+                raise GithubCommandError(
+                    failure,
+                    format_github_command_failure(
+                        failure,
+                        guidance=(
+                            f"Check issue creation permissions for `{config.repo}` and "
+                            "the requested labels, then rerun the publisher. Existing "
+                            "source markers will skip issues already created."
+                        ),
+                    ),
+                ) from error
             references[issue.issue_id] = created
             manifest["issues"].append(
                 manifest_entry(
@@ -675,6 +948,28 @@ def publish(config: PublishConfig) -> dict[str, Any]:
                 )
             )
             write_manifest(manifest_path, manifest)
+        except GithubCommandError as error:
+            manifest["issues"].append(
+                manifest_entry(
+                    issue=issue,
+                    action=action,
+                    state="failed",
+                    marker=marker,
+                    body_path=body_path,
+                    error=str(error),
+                    gh_failure=error.failure,
+                )
+            )
+            manifest["recovery"] = (
+                "Inspect publish-manifest.json, keep any created issues, then rerun "
+                "the publisher with the same bundle. Source markers will skip duplicates."
+            )
+            write_manifest(manifest_path, manifest)
+            raise PublishError(
+                "Issue publishing failed during "
+                f"{error.failure.phase} after writing recovery details to "
+                f"{manifest_path}. {error}"
+            ) from error
         except (OSError, subprocess.CalledProcessError, json.JSONDecodeError, ValueError) as error:
             manifest["issues"].append(
                 manifest_entry(
@@ -710,6 +1005,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--out-dir", type=Path, default=None)
     parser.add_argument("--confirm-publish", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--allow-fixture-publish",
+        action="store_true",
+        help=(
+            "Allow non-dry-run publication of reports gated by the fixture "
+            "Issue context assessor."
+        ),
+    )
     parser.add_argument("--gh-binary", default="gh")
     return parser.parse_args(argv)
 
@@ -728,6 +1031,7 @@ def main(argv: list[str] | None = None) -> None:
         confirm_publish=args.confirm_publish,
         dry_run=args.dry_run,
         gh_binary=args.gh_binary,
+        allow_fixture_publish=args.allow_fixture_publish,
     )
     try:
         manifest = publish(config)

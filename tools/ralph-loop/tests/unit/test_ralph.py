@@ -721,6 +721,7 @@ def make_loop(
     issue: int | None = None,
     drain: bool = False,
     max_issues: int = ralph.DEFAULT_DRAIN_BUDGET,
+    max_codex_attempts: int = ralph.DEFAULT_CODEX_ATTEMPT_BUDGET,
     exploratory_concurrency: int = ralph.DEFAULT_EXPLORATORY_CONCURRENCY,
     dry_run: bool = False,
     allow_dirty_worktree: bool = False,
@@ -750,6 +751,7 @@ def make_loop(
         issue=issue,
         drain=drain,
         max_issues=max_issues,
+        max_codex_attempts=max_codex_attempts,
         exploratory_concurrency=exploratory_concurrency,
         dry_run=dry_run,
         allow_dirty_worktree=allow_dirty_worktree,
@@ -761,6 +763,32 @@ def make_loop(
     )
     runner.dry_run = dry_run
     return ralph.RalphLoop(config, runner)
+
+
+def implementation_attempt_context(
+    tmp_path: Path,
+    loop: ralph.RalphLoop,
+    issue: ralph.Issue,
+):
+    delivery_plan = ralph.resolve_delivery_plan(
+        issue,
+        default_mode=loop.config.delivery_mode,
+        target_branch=loop.config.target_branch,
+    )
+    branch, worktree_path, integration_path = loop._branch_and_worktrees(issue)
+    worktree_path.mkdir(parents=True)
+    run_dir = tmp_path / "logs" / "issue-42-test"
+    manifest = ralph.RunManifest.for_implementation(
+        run_dir=run_dir,
+        issue=issue,
+        delivery_plan=delivery_plan,
+        branch=branch,
+        worktree_path=worktree_path,
+        integration_path=integration_path,
+        config=loop.config,
+    )
+    access_plan = ralph.issue_implementation_access_plan(issue)
+    return worktree_path, run_dir, manifest, access_plan
 
 
 def write_recovery_manifest(
@@ -1679,12 +1707,452 @@ class ParallelSchedulerOperatorRun(ScriptedOperatorRun):
         super()._run_promotion_checkpoint()
 
 
+class PromotionClassificationGit:
+    def __init__(self, changed_files: list[str]) -> None:
+        self.changed_files = changed_files
+
+    def fetch_base(self, base: str, *, run_dir: Path) -> None:
+        pass
+
+    def rev_parse(self, ref: str, *, cwd: Path | None = None) -> str:
+        if ref == "HEAD":
+            return "promotion-sha"
+        if ref.startswith("origin/"):
+            return "source-sha"
+        return "sha"
+
+    def changed_files_between(self, *, base_ref: str, head_ref: str) -> list[str]:
+        return sorted(self.changed_files)
+
+    def promoted_source_commits(
+        self, *, base_ref: str, head_ref: str
+    ) -> list[ralph.PromotedSourceCommit]:
+        return []
+
+    def add_detached_worktree(
+        self,
+        *,
+        path: Path,
+        ref: str,
+        run_dir: Path,
+        log_name: str = "git-worktree-add-integration.log",
+    ) -> None:
+        path.mkdir(parents=True, exist_ok=False)
+
+    def merge_no_ff(
+        self,
+        *,
+        cwd: Path,
+        ref: str,
+        message: str,
+        run_dir: Path,
+        log_name: str = "git-merge-promotion.log",
+    ) -> None:
+        pass
+
+    def push_head(
+        self,
+        *,
+        cwd: Path,
+        branch: str,
+        run_dir: Path,
+        log_name: str | None = None,
+    ) -> None:
+        pass
+
+    def remove_worktree(self, path: Path, *, run_dir: Path, log_name: str) -> None:
+        path.rmdir()
+
+    def worktrees(self) -> list[ralph.GitWorktree]:
+        return []
+
+
+class PromotionClassificationProbeLoop(ralph.RalphLoop):
+    def __init__(
+        self,
+        config: ralph.LoopConfig,
+        runner: FakeRunner,
+        changed_files: list[str],
+    ) -> None:
+        super().__init__(config, runner)
+        self.git = PromotionClassificationGit(changed_files)
+
+    def _run_qa_commands(
+        self,
+        changed_files: list[str],
+        repo_root: Path,
+        run_dir: Path,
+        *,
+        log_prefix: str,
+        subject: str,
+        manifest: ralph.RunManifest | None = None,
+        issue_body: str | None = None,
+    ) -> list[ralph.QAResult]:
+        return []
+
+    def _run_promotion_gate_commands(
+        self,
+        changed_files: list[str],
+        repo_root: Path,
+        run_dir: Path,
+        *,
+        manifest: ralph.RunManifest,
+    ) -> list[ralph.QAResult]:
+        return []
+
+    def _verified_integrated_issues(
+        self,
+        *,
+        source_branch: str,
+        source_ref: str,
+        target_branch: str,
+    ) -> tuple[list[tuple[ralph.Issue, str]], list[ralph.PromotionIssueWarning]]:
+        return [], []
+
+    def _close_promoted_issues(
+        self,
+        integrated_issues: list[tuple[ralph.Issue, str]],
+        *,
+        promotion_sha: str,
+        source_branch: str,
+        target_branch: str,
+        changed_files: list[str],
+        qa_results: list[ralph.QAResult],
+        run_dir: Path,
+        manifest: ralph.RunManifest,
+    ) -> None:
+        pass
+
+    def _sync_source_branch_after_promotion(
+        self,
+        *,
+        source_branch: str,
+        target_branch: str,
+        promotion_sha: str,
+        promote_path: Path,
+        run_dir: Path,
+        manifest: ralph.RunManifest,
+    ) -> bool:
+        return False
+
+    def _run_post_promotion_review(
+        self,
+        *,
+        source_branch: str,
+        target_branch: str,
+        source_revision: str,
+        promotion_sha: str | None,
+        changed_files: list[str],
+        integrated_issues: list[tuple[ralph.Issue, str]],
+        promotion_commit_inventory: list[dict[str, Any]],
+        review_path: Path,
+        run_dir: Path,
+        manifest: ralph.RunManifest,
+        promotion_outcome: str,
+        promotion_error: str | None,
+    ) -> Path | None:
+        manifest.record_post_promotion_review(
+            "skipped_by_test", reason="Promotion classification probe."
+        )
+        return None
+
+    def _run_post_promotion_followups(
+        self,
+        *,
+        source_branch: str,
+        target_branch: str,
+        source_revision: str,
+        promotion_sha: str,
+        artifact_path: Path | None,
+        run_dir: Path,
+        manifest: ralph.RunManifest,
+    ) -> None:
+        manifest.record_post_promotion_followups(
+            "skipped_by_test", reason="Promotion classification probe."
+        )
+
+    def _run_post_promotion_ready_issue_refresh(
+        self,
+        *,
+        source_branch: str,
+        target_branch: str,
+        source_revision: str,
+        promotion_sha: str,
+        changed_files: list[str],
+        qa_results: list[ralph.QAResult],
+        promoted_issues: list[tuple[ralph.Issue, str]],
+        review_artifact_path: Path | None,
+        analysis_path: Path,
+        run_dir: Path,
+        manifest: ralph.RunManifest,
+    ) -> None:
+        manifest.record_ready_issue_refresh(
+            "skipped_by_test",
+            enabled=False,
+            reason="Promotion classification probe.",
+        )
+
+    def _fast_forward_checked_out_local_branches_after_promotion(
+        self,
+        *,
+        source_branch: str,
+        target_branch: str,
+        promotion_sha: str,
+        source_branch_synced: bool,
+        run_dir: Path,
+        manifest: ralph.RunManifest,
+    ) -> None:
+        pass
+
+
+class PromotionDeploymentProbeLoop(PromotionClassificationProbeLoop):
+    def _run_post_promotion_followups(
+        self,
+        *,
+        source_branch: str,
+        target_branch: str,
+        source_revision: str,
+        promotion_sha: str,
+        artifact_path: Path | None,
+        run_dir: Path,
+        manifest: ralph.RunManifest,
+    ) -> None:
+        manifest.record_post_promotion_followups(
+            "completed_no_drafts",
+            created=[],
+            duplicates=[],
+            validation_downgrades=[],
+            failures=[],
+            reason="Deployment checkpoint probe.",
+        )
+
+    def _run_post_promotion_ready_issue_refresh(
+        self,
+        *,
+        source_branch: str,
+        target_branch: str,
+        source_revision: str,
+        promotion_sha: str,
+        changed_files: list[str],
+        qa_results: list[ralph.QAResult],
+        promoted_issues: list[tuple[ralph.Issue, str]],
+        review_artifact_path: Path | None,
+        analysis_path: Path,
+        run_dir: Path,
+        manifest: ralph.RunManifest,
+    ) -> None:
+        manifest.record_ready_issue_refresh(
+            "completed",
+            enabled=True,
+            candidates=[],
+            log_path=run_dir / "codex-ready-issue-refresh-analysis.jsonl",
+            artifact_path=run_dir / ralph.READY_ISSUE_REFRESH_ANALYSIS_ARTIFACT_NAME,
+        )
+
+
+class PromotionDeploymentOperatorRun(ralph.RalphOperatorRun):
+    def __init__(
+        self,
+        config: ralph.LoopConfig,
+        runner: FakeRunner,
+        *,
+        run_dir: Path,
+        max_cycles: int,
+        snapshots: list[ralph.OperatorQueueSnapshot],
+        changed_files: list[str],
+    ) -> None:
+        super().__init__(config, runner, run_dir=run_dir, max_cycles=max_cycles)
+        self.snapshots = snapshots
+        self.loop = PromotionDeploymentProbeLoop(config, runner, changed_files)
+        self.github = self.loop.github
+
+    def _validate_operator_preflight(self) -> None:
+        pass
+
+    def _queue_snapshot(self) -> ralph.OperatorQueueSnapshot:
+        if not self.snapshots:
+            return operator_snapshot()
+        return self.snapshots.pop(0)
+
+    def _next_ready_issue(self) -> ralph.Issue | None:
+        return None
+
+
 class RalphHelperTests(unittest.TestCase):
     def test_cli_reexports_extracted_workflow_and_state_helpers(self) -> None:
         self.assertIs(ralph.resolve_delivery_plan, ralph_workflow.resolve_delivery_plan)
         self.assertIs(ralph.parse_blockers, ralph_workflow.parse_blockers)
         self.assertIs(ralph.RunManifest, ralph_state.RunManifest)
         self.assertIs(ralph.OperatorRunManifest, ralph_state.OperatorRunManifest)
+
+    def test_post_promotion_deployment_classifier_skips_agent_workflow_only(
+        self,
+    ) -> None:
+        classification = ralph.classify_post_promotion_deployment(
+            [
+                ".agents/skills/ralph-loop/SKILL.md",
+                "tools/ralph-loop/src/ralph_loop/cli.py",
+                "docs/agents/ralph-loop.md",
+            ]
+        )
+
+        self.assertEqual(
+            classification.tier,
+            ralph.POST_PROMOTION_DEPLOYMENT_NO_DEPLOY,
+        )
+        self.assertIn("Only Agent workflow changes", classification.reason)
+        self.assertEqual(
+            classification.agent_workflow_paths,
+            (
+                ".agents/skills/ralph-loop/SKILL.md",
+                "docs/agents/ralph-loop.md",
+                "tools/ralph-loop/src/ralph_loop/cli.py",
+            ),
+        )
+        self.assertEqual(classification.deployable_paths, ())
+
+    def test_post_promotion_deployment_classifier_selects_user_code_redeploy(
+        self,
+    ) -> None:
+        classification = ralph.classify_post_promotion_deployment(
+            [
+                "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py",
+                "backend-services/dagster-user/aemo-etl/Dockerfile",
+            ]
+        )
+
+        self.assertEqual(
+            classification.tier,
+            ralph.POST_PROMOTION_DEPLOYMENT_USER_CODE,
+        )
+        self.assertEqual(
+            classification.user_code_redeploy_paths,
+            (
+                "backend-services/dagster-user/aemo-etl/Dockerfile",
+                "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py",
+            ),
+        )
+        self.assertIn("redeploy-user-code", classification.recommended_action)
+        self.assertEqual(classification.full_workflow_paths, ())
+
+    def test_post_promotion_deployment_classifier_selects_full_workflow(
+        self,
+    ) -> None:
+        cases = {
+            "Pulumi": "infrastructure/aws-pulumi/__main__.py",
+            "service runtime": "backend-services/dagster-core/dagster.aws.yaml",
+            "image": "backend-services/authentication/Dockerfile",
+            "Dagster core": "backend-services/dagster-core/Dockerfile",
+            "auth": "backend-services/authentication/main.py",
+            "Caddy": "backend-services/caddy/Caddyfile",
+            "Marimo": "backend-services/marimo/src/marimoserver/main.py",
+            "code-location topology": (
+                "backend-services/dagster-core/code-locations.aws.toml"
+            ),
+        }
+
+        for label, path in cases.items():
+            with self.subTest(label=label):
+                classification = ralph.classify_post_promotion_deployment([path])
+
+                self.assertEqual(
+                    classification.tier,
+                    ralph.POST_PROMOTION_DEPLOYMENT_FULL,
+                )
+                self.assertEqual(classification.full_workflow_paths, (path,))
+                self.assertIn(
+                    "run-integration-tests", classification.recommended_action
+                )
+
+    def test_post_promotion_deployment_classifier_promotes_mixed_deployables_to_full(
+        self,
+    ) -> None:
+        classification = ralph.classify_post_promotion_deployment(
+            [
+                "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py",
+                "infrastructure/aws-pulumi/components/ecs_services.py",
+            ]
+        )
+
+        self.assertEqual(
+            classification.tier,
+            ralph.POST_PROMOTION_DEPLOYMENT_FULL,
+        )
+        self.assertEqual(
+            classification.deployable_paths,
+            (
+                "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py",
+                "infrastructure/aws-pulumi/components/ecs_services.py",
+            ),
+        )
+
+    def test_post_promotion_deployment_classifier_reports_agent_context(
+        self,
+    ) -> None:
+        classification = ralph.classify_post_promotion_deployment(
+            [
+                ".agents/skills/ralph-loop/SKILL.md",
+                "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py",
+            ]
+        )
+
+        self.assertEqual(
+            classification.tier,
+            ralph.POST_PROMOTION_DEPLOYMENT_USER_CODE,
+        )
+        self.assertEqual(
+            classification.agent_workflow_paths,
+            (".agents/skills/ralph-loop/SKILL.md",),
+        )
+        self.assertIn(
+            ".agents/skills/ralph-loop/SKILL.md",
+            classification.non_triggering_paths,
+        )
+
+    def test_direct_promotion_records_and_prints_deployment_classification(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            config = make_loop(tmp_path, runner, promote=True).config
+            loop = PromotionClassificationProbeLoop(
+                config,
+                runner,
+                [
+                    ".agents/skills/ralph-loop/SKILL.md",
+                    "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py",
+                ],
+            )
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                manifest = loop._promote()
+
+            payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        deployment = payload["deployment_classification"]
+        self.assertEqual(deployment["status"], "classified")
+        self.assertEqual(
+            deployment["tier"],
+            ralph.POST_PROMOTION_DEPLOYMENT_USER_CODE,
+        )
+        self.assertEqual(
+            deployment["agent_workflow_paths"],
+            [".agents/skills/ralph-loop/SKILL.md"],
+        )
+        self.assertIn("Post-Promotion deployment tier", stdout.getvalue())
+        self.assertIn("redeploy-user-code", stdout.getvalue())
+        deployment_commands = {
+            ralph.POST_PROMOTION_DEPLOYMENT_REDEPLOY_USER_CODE_COMMAND,
+            ralph.POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_COMMAND,
+        }
+        self.assertFalse(
+            any(
+                call.args and call.args[0] in deployment_commands
+                for call in runner.calls
+            )
+        )
 
     def test_parse_repo_slug_accepts_common_github_remote_forms(self) -> None:
         cases = {
@@ -3278,6 +3746,10 @@ Build it.
             config.exploratory_concurrency,
             ralph.DEFAULT_EXPLORATORY_CONCURRENCY,
         )
+        self.assertEqual(
+            config.max_codex_attempts,
+            ralph.DEFAULT_CODEX_ATTEMPT_BUDGET,
+        )
 
     def test_parse_args_help_describes_default_drain_budget(self) -> None:
         output = io.StringIO()
@@ -3294,6 +3766,8 @@ Build it.
         self.assertIn("--ready-issue-refresh", help_text)
         self.assertIn("--skip-ready-issue-refresh", help_text)
         self.assertIn("--allow-full-access-implementation", help_text)
+        self.assertIn("--max-codex-attempts", help_text)
+        self.assertIn("Defaults to 5", help_text)
         self.assertIn("--exploratory-concurrency", help_text)
         self.assertIn("Defaults to 2", help_text)
         self.assertIn("exploratory", help_text)
@@ -3308,6 +3782,15 @@ Build it.
         self.assertIn(
             "--exploratory-concurrency must be 1 or greater", output.getvalue()
         )
+
+    def test_parse_args_rejects_max_codex_attempts_below_one(self) -> None:
+        output = io.StringIO()
+
+        with redirect_stderr(output), self.assertRaises(SystemExit) as caught:
+            ralph.parse_args(["--max-codex-attempts", "0"])
+
+        self.assertEqual(caught.exception.code, 2)
+        self.assertIn("--max-codex-attempts must be 1 or greater", output.getvalue())
 
     def test_build_config_records_exploratory_concurrency(self) -> None:
         runner = FakeRunner(
@@ -3326,11 +3809,33 @@ Build it.
 
         self.assertEqual(config.exploratory_concurrency, 4)
 
-    def test_run_manifests_record_exploratory_concurrency_configuration(self) -> None:
+    def test_build_config_records_max_codex_attempts(self) -> None:
+        runner = FakeRunner(
+            command_outputs={
+                ("git", "rev-parse", "--show-toplevel"): ["/work/repo\n"],
+                ("git", "config", "--get", "remote.origin.url"): [
+                    "git@github.com:example/repo.git\n"
+                ],
+            }
+        )
+
+        config = ralph.build_config(
+            ralph.parse_args(["--max-codex-attempts", "7"]),
+            runner,
+        )
+
+        self.assertEqual(config.max_codex_attempts, 7)
+
+    def test_run_manifests_record_configuration(self) -> None:
         runner = FakeRunner()
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            loop = make_loop(tmp_path, runner, exploratory_concurrency=5)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                max_codex_attempts=7,
+                exploratory_concurrency=5,
+            )
             issue = make_issue({ralph.READY_LABEL}, IMPLEMENTATION_BODY)
             delivery_plan = ralph.resolve_delivery_plan(
                 issue,
@@ -3368,6 +3873,7 @@ Build it.
 
         for payload in payloads:
             self.assertEqual(payload["configuration"]["exploratory_concurrency"], 5)
+            self.assertEqual(payload["configuration"]["max_codex_attempts"], 7)
 
     def test_build_config_enables_ready_issue_refresh_for_drain_by_default(
         self,
@@ -4735,6 +5241,244 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
 
 
 class RalphOperatorRunTests(unittest.TestCase):
+    def test_operator_skips_post_promotion_deployment_when_classifier_has_no_deploy(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            integrated_issue = make_issue(
+                {ralph.AGENT_INTEGRATED_LABEL},
+                IMPLEMENTATION_BODY,
+                number=42,
+                title="Agent workflow change",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = PromotionDeploymentOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=2,
+                snapshots=[operator_snapshot(integrated=[integrated_issue])],
+                changed_files=[
+                    ".agents/skills/ralph-loop/SKILL.md",
+                    "tools/ralph-loop/src/ralph_loop/cli.py",
+                ],
+            )
+
+            with redirect_stdout(io.StringIO()):
+                operator.run()
+
+            manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+            promotion_manifest_path = Path(
+                next(
+                    child["path"]
+                    for child in manifest["child_run_manifests"]
+                    if child["kind"] == "promotion"
+                )
+            )
+            promotion_manifest = json.loads(
+                promotion_manifest_path.read_text(encoding="utf-8")
+            )
+
+        checkpoints = [entry["checkpoint"] for entry in manifest["checkpoints"]]
+        self.assertIn("deployment_skipped", checkpoints)
+        self.assertLess(
+            checkpoints.index("post_promotion_ready_issue_refresh"),
+            checkpoints.index("deployment_skipped"),
+        )
+        self.assertEqual(
+            promotion_manifest["deployment_execution"]["status"],
+            "skipped_no_deployment",
+        )
+        self.assertEqual(
+            promotion_manifest["deployment_execution"]["tier"],
+            ralph.POST_PROMOTION_DEPLOYMENT_NO_DEPLOY,
+        )
+        self.assertFalse(
+            any(
+                str(call.args[0]).endswith("redeploy-user-code")
+                or str(call.args[0]).endswith("run-integration-tests")
+                for call in runner.calls
+                if call.args
+            )
+        )
+
+    def test_operator_runs_user_code_redeploy_after_promotion_refresh(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            integrated_issue = make_issue(
+                {ralph.AGENT_INTEGRATED_LABEL},
+                IMPLEMENTATION_BODY,
+                number=43,
+                title="AEMO ETL runtime change",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = PromotionDeploymentOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=2,
+                snapshots=[operator_snapshot(integrated=[integrated_issue])],
+                changed_files=[
+                    "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py"
+                ],
+            )
+
+            with redirect_stdout(io.StringIO()):
+                operator.run()
+
+            manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+            promotion_manifest_path = Path(
+                next(
+                    child["path"]
+                    for child in manifest["child_run_manifests"]
+                    if child["kind"] == "promotion"
+                )
+            )
+            promotion_manifest = json.loads(
+                promotion_manifest_path.read_text(encoding="utf-8")
+            )
+
+        expected_command = (
+            loop.config.repo_root
+            / ralph.POST_PROMOTION_DEPLOYMENT_REDEPLOY_USER_CODE_COMMAND
+        )
+        deployment_calls = [
+            call
+            for call in runner.calls
+            if call.args and call.args[0] == str(expected_command)
+        ]
+        checkpoints = [entry["checkpoint"] for entry in manifest["checkpoints"]]
+        self.assertEqual(len(deployment_calls), 1)
+        self.assertEqual(
+            deployment_calls[0].cwd,
+            loop.config.repo_root / "infrastructure" / "aws-pulumi",
+        )
+        self.assertEqual(deployment_calls[0].execute_in_dry_run, False)
+        self.assertLess(
+            checkpoints.index("post_promotion_ready_issue_refresh"),
+            checkpoints.index("deployment_started"),
+        )
+        self.assertLess(
+            checkpoints.index("deployment_started"),
+            checkpoints.index("deployment_succeeded"),
+        )
+        deployment = promotion_manifest["deployment_execution"]
+        self.assertEqual(deployment["status"], "succeeded")
+        self.assertEqual(deployment["exit_status"], 0)
+        self.assertEqual(
+            deployment["command_path"],
+            ralph.POST_PROMOTION_DEPLOYMENT_REDEPLOY_USER_CODE_COMMAND,
+        )
+        self.assertEqual(
+            deployment["deployed_test_evidence"]["status"],
+            "not_applicable",
+        )
+
+    def test_operator_runs_full_deployed_workflow_with_idempotency_evidence(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            integrated_issue = make_issue(
+                {ralph.AGENT_INTEGRATED_LABEL},
+                IMPLEMENTATION_BODY,
+                number=44,
+                title="Pulumi runtime change",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = PromotionDeploymentOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=2,
+                snapshots=[operator_snapshot(integrated=[integrated_issue])],
+                changed_files=["infrastructure/aws-pulumi/components/ecs_services.py"],
+            )
+
+            with redirect_stdout(io.StringIO()):
+                operator.run()
+
+            manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+            rollup = json.loads(
+                (run_dir / ralph.OPERATOR_ROLLUP_JSON_NAME).read_text(encoding="utf-8")
+            )
+            promotion_manifest_path = Path(
+                next(
+                    child["path"]
+                    for child in manifest["child_run_manifests"]
+                    if child["kind"] == "promotion"
+                )
+            )
+            promotion_manifest = json.loads(
+                promotion_manifest_path.read_text(encoding="utf-8")
+            )
+
+        expected_command = (
+            loop.config.repo_root
+            / ralph.POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_COMMAND
+        )
+        deployment_calls = [
+            call
+            for call in runner.calls
+            if call.args and call.args[0] == str(expected_command)
+        ]
+        self.assertEqual(len(deployment_calls), 1)
+        self.assertIn(
+            ralph.POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_IDEMPOTENCY_ARG,
+            deployment_calls[0].args,
+        )
+        deployment = promotion_manifest["deployment_execution"]
+        self.assertEqual(deployment["status"], "succeeded")
+        self.assertEqual(
+            deployment["command_path"],
+            ralph.POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_COMMAND,
+        )
+        self.assertEqual(deployment["deployed_test_evidence"]["status"], "passed")
+        self.assertEqual(
+            deployment["full_tier_idempotency_evidence"]["status"],
+            "passed",
+        )
+        self.assertEqual(
+            deployment["full_tier_idempotency_evidence"]["argument"],
+            ralph.POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_IDEMPOTENCY_ARG,
+        )
+        operator_deployment_checkpoint = next(
+            checkpoint
+            for checkpoint in manifest["checkpoints"]
+            if checkpoint["checkpoint"] == "deployment_succeeded"
+        )
+        self.assertEqual(
+            operator_deployment_checkpoint["details"]["command_path"],
+            ralph.POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_COMMAND,
+        )
+        self.assertEqual(
+            operator_deployment_checkpoint["details"]["exit_status"],
+            0,
+        )
+        self.assertEqual(
+            operator_deployment_checkpoint["details"]["deployed_test_evidence"][
+                "status"
+            ],
+            "passed",
+        )
+        self.assertEqual(
+            manifest["last_checkpoint"]["checkpoint"],
+            "queue_clean",
+        )
+        self.assertEqual(
+            rollup["deployment_executions"][0]["command_path"],
+            ralph.POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_COMMAND,
+        )
+
     def test_operator_foreground_repeats_drain_promotion_until_queue_clean(
         self,
     ) -> None:
@@ -5271,6 +6015,8 @@ class RalphOperatorRunTests(unittest.TestCase):
                     "--detach",
                     "--max-cycles",
                     "3",
+                    "--max-codex-attempts",
+                    "7",
                     "--exploratory-concurrency",
                     "4",
                     "--skip-post-promotion-followups",
@@ -5298,12 +6044,15 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertIn("--operator-run-dir", child_command)
         self.assertIn("--max-cycles", child_command)
         self.assertIn("3", child_command)
+        self.assertIn("--max-codex-attempts", child_command)
+        self.assertIn("7", child_command)
         self.assertIn("--exploratory-concurrency", child_command)
         self.assertIn("4", child_command)
         self.assertIn("--skip-post-promotion-followups", child_command)
         self.assertIn("--allow-full-access-implementation", child_command)
         self.assertEqual(manifest["last_checkpoint"]["checkpoint"], "detached_launched")
         self.assertEqual(manifest["detached"]["pid"], 321)
+        self.assertEqual(manifest["configuration"]["max_codex_attempts"], 7)
         self.assertEqual(manifest["configuration"]["exploratory_concurrency"], 4)
 
     def test_operator_docs_include_codex_safe_command_strings(self) -> None:
@@ -6669,6 +7418,167 @@ Build it.
             self.assertIn("scenario `full-gas-model`", comment)
             self.assertIn("target progress `37/37 materialized`", comment)
             self.assertIn("asset checks `144`", comment)
+
+    def test_codex_failures_retry_until_configured_attempt_budget_succeeds(
+        self,
+    ) -> None:
+        runner = FakeRunner(status_outputs=[" M scripts/ralph.py\n"])
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, max_codex_attempts=3)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            worktree_path, run_dir, manifest, access_plan = (
+                implementation_attempt_context(tmp_path, loop, issue)
+            )
+            codex_command = tuple(ralph.codex_exec_command(worktree_path))
+            runner.fail_command_attempts[codex_command] = [
+                (1, "first codex failure"),
+                (1, "second codex failure"),
+            ]
+
+            with redirect_stdout(io.StringIO()):
+                loop._implement_with_retry(
+                    issue,
+                    worktree_path,
+                    run_dir,
+                    manifest,
+                    access_plan=access_plan,
+                )
+
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        codex_calls = [
+            call for call in runner.calls if call.args[:2] == ("codex", "exec")
+        ]
+        prompts = [call.input_text for call in codex_calls]
+        log_names = [
+            call.log_path.name for call in codex_calls if call.log_path is not None
+        ]
+        self.assertEqual(len(codex_calls), 3)
+        self.assertNotIn("Failure detail:", prompts[0])
+        self.assertIn("first codex failure", prompts[1])
+        self.assertIn("second codex failure", prompts[2])
+        self.assertEqual(
+            log_names,
+            [
+                "codex-implementation-1.jsonl",
+                "codex-implementation-2.jsonl",
+                "codex-implementation-3.jsonl",
+            ],
+        )
+        self.assertEqual(
+            [attempt["status"] for attempt in manifest_payload["codex_attempts"]],
+            ["failed", "failed", "completed"],
+        )
+        self.assertEqual(manifest_payload["qa_results"][0]["status"], "passed")
+
+    def test_qa_failures_consume_codex_attempt_budget_and_retry_until_success(
+        self,
+    ) -> None:
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n"] * 3,
+            fail_command_attempts={
+                ("make", "run-prek"): [
+                    (1, "first QA failure"),
+                    (1, "second QA failure"),
+                ]
+            },
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, max_codex_attempts=3)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            worktree_path, run_dir, manifest, access_plan = (
+                implementation_attempt_context(tmp_path, loop, issue)
+            )
+
+            with redirect_stdout(io.StringIO()):
+                loop._implement_with_retry(
+                    issue,
+                    worktree_path,
+                    run_dir,
+                    manifest,
+                    access_plan=access_plan,
+                )
+
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        codex_calls = [
+            call for call in runner.calls if call.args[:2] == ("codex", "exec")
+        ]
+        qa_calls = [call for call in runner.calls if call.args == ("make", "run-prek")]
+        prompts = [call.input_text for call in codex_calls]
+        qa_log_names = [
+            call.log_path.name for call in qa_calls if call.log_path is not None
+        ]
+
+        self.assertEqual(len(codex_calls), 3)
+        self.assertEqual(len(qa_calls), 3)
+        self.assertIn("first QA failure", prompts[1])
+        self.assertIn("second QA failure", prompts[2])
+        self.assertEqual(
+            qa_log_names,
+            [
+                "qa-1-ralph-loop-commit-check.log",
+                "qa-retry-1-ralph-loop-commit-check.log",
+                "qa-retry-3-1-ralph-loop-commit-check.log",
+            ],
+        )
+        self.assertEqual(
+            [attempt["status"] for attempt in manifest_payload["codex_attempts"]],
+            ["completed", "completed", "completed"],
+        )
+        self.assertEqual(
+            [result["status"] for result in manifest_payload["qa_results"]],
+            ["failed", "failed", "passed"],
+        )
+
+    def test_qa_failure_exhausts_configured_codex_attempt_budget(self) -> None:
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n"] * 2,
+            fail_command_attempts={
+                ("make", "run-prek"): [
+                    (1, "first QA failure"),
+                    (1, "second QA failure"),
+                ]
+            },
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, max_codex_attempts=2)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            worktree_path, run_dir, manifest, access_plan = (
+                implementation_attempt_context(tmp_path, loop, issue)
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output), self.assertRaises(ralph.CommandFailure):
+                loop._implement_with_retry(
+                    issue,
+                    worktree_path,
+                    run_dir,
+                    manifest,
+                    access_plan=access_plan,
+                )
+
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        codex_calls = [
+            call for call in runner.calls if call.args[:2] == ("codex", "exec")
+        ]
+        prompts = [call.input_text for call in codex_calls]
+
+        self.assertEqual(len(codex_calls), 2)
+        self.assertIn("first QA failure", prompts[1])
+        self.assertIn("exhausted --max-codex-attempts 2", output.getvalue())
+        self.assertEqual(
+            [attempt["status"] for attempt in manifest_payload["codex_attempts"]],
+            ["completed", "completed"],
+        )
+        self.assertEqual(
+            [result["status"] for result in manifest_payload["qa_results"]],
+            ["failed", "failed"],
+        )
 
     def test_agents_issue_without_full_access_flag_stops_before_claim(self) -> None:
         runner = FakeRunner()
@@ -8435,7 +9345,8 @@ Build it.
     def test_failed_qa_persists_failed_manifest_state(self) -> None:
         qa_command = ("make", "run-prek")
         runner = FakeRunner(
-            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            status_outputs=[" M scripts/ralph.py\n"]
+            * ralph.DEFAULT_CODEX_ATTEMPT_BUDGET,
             rev_parse_outputs=["base-sha\n"],
             fail_commands={qa_command},
         )
@@ -8468,7 +9379,7 @@ Build it.
             " M backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py\n"
         )
         runner = FakeRunner(
-            status_outputs=[changed_file, changed_file],
+            status_outputs=[changed_file] * ralph.DEFAULT_CODEX_ATTEMPT_BUDGET,
             rev_parse_outputs=["base-sha\n"],
             fail_commands={qa_command},
         )

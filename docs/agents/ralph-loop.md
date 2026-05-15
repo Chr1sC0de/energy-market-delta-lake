@@ -8,6 +8,8 @@ helpers in `tools/ralph-loop/src/ralph_loop/state.py`. The loop uses GitHub
 Issues as the queue, Codex as the implementation and triage worker, repo
 **Test lane** commands as the validation boundary, and **Local integration**,
 Exploratory handoff, plus **Promotion** as the success paths after QA.
+Promotion also records a deterministic **Post-Promotion deployment
+classification** from the promoted changed-file inventory.
 
 ## Table of contents
 
@@ -57,14 +59,21 @@ Ralph drains agent-ready GitHub issues through a guarded local loop:
 
 The loop stops when the queue has no unblocked implementation or triage
 candidates, or when `--max-issues` is reached. A plain `--drain` run defaults
-to 10 implementation attempts; `--max-issues 0` is the explicit unlimited drain
-mode.
-`--max-issues` counts claimed implementation attempts across the serial and
+to 10 claimed implementation issues; `--max-issues 0` is the explicit unlimited
+drain mode.
+`--max-issues` counts claimed implementation issues across the serial and
 Exploratory lanes. When the cap is reached, Ralph stops scheduling new issue
-attempts and waits for already active Exploratory workers to finish. Automated
-triage remains outside this implementation-attempt budget; if active
-Exploratory workers are already running and no serial ready issue is claimable,
-Ralph may run a triage pass before waiting for those workers.
+claims and waits for already active Exploratory workers to finish. Automated
+triage remains outside this claimed-issue budget; if active Exploratory workers
+are already running and no serial ready issue is claimable, Ralph may run a
+triage pass before waiting for those workers.
+
+`--max-codex-attempts` is a separate per-issue Codex implementation budget. It
+defaults to `5` total attempts for each claimed issue, including the initial
+implementation attempt and retries after Codex or QA failures. Retry prompts
+include the previous failure detail. Future review-repair attempts should draw
+from the same per-issue budget. Full-access implementation passes that change
+files outside the issue's context anchors still fail immediately without retry.
 
 The checkpointed Operator run path wraps the issue and **Promotion** commands
 for unattended cleanup. It uses the same lane-aware drain scheduler as plain
@@ -88,7 +97,13 @@ Use [OPERATOR.md](../../OPERATOR.md) for the first-class **Operator workflow**.
 `$shape-issues` shapes tracer-bullet issue drafts, gates implementation drafts,
 checks **Issue context assessor** evidence and stiffness, and may publish
 explicitly confirmed gate-passing outputs as `needs-triage` issues only. It
-does not move issues to `ready-for-agent`.
+also writes pre-publication review Markdown at `issue-drafts.md` and
+`issue-drafts/*.md`, and it does not move issues to `ready-for-agent`.
+Follow-up verbs after a `$shape-issues` plan stay in issue-draft execution;
+direct implementation requires `$ralph-loop` or an explicit named GitHub Issue
+request. Fixture-gated reports can preview with `--dry-run`, but non-dry-run
+publication requires `--allow-fixture-publish`, preflights `gh`
+authentication and repository access, and records fixture provenance.
 `$ralph-triage` prepares GitHub Issues for drain by setting category, state, and
 **Delivery mode** labels. `$ralph-loop` owns the backing script commands,
 including `$ralph-loop drain` and `$ralph-loop promote`.
@@ -127,7 +142,7 @@ flowchart TD
   STAGE --> REFRESH[Run Ready issue refresh]
   CLOSE --> REFRESH
   REVIEW --> REFRESH
-  REFRESH --> LIMIT{Max implementation attempts reached?}
+  REFRESH --> LIMIT{Max claimed issues reached?}
   LIMIT -->|No| READY
   LIMIT -->|Yes| BUDGETTRIAGE{Active Exploratory workers and triage candidate?}
   BUDGETTRIAGE -->|Yes| TRIAGEPASS
@@ -211,7 +226,7 @@ to two eligible Exploratory candidates, using each issue's resolved
 Exploratory preview bound; the default is `2` and the minimum is `1`.
 Targeted `--issue` dry runs still preview only that issue.
 
-Drain up to 10 implementation attempts:
+Drain up to 10 claimed implementation issues:
 
 ```bash
 python3 scripts/ralph.py --drain
@@ -221,14 +236,13 @@ Live `--drain` runs a lane-aware scheduler. Gitflow and Trunk delivery stay in a
 single serial lane. Exploratory delivery issues are submitted oldest-first to a
 `ThreadPoolExecutor` with at most `--exploratory-concurrency` active workers.
 The scheduler preserves queue order within each lane and applies `--max-issues`
-to claimed attempts across both lanes. When **Ready issue refresh** starts after
-a successful **Local integration** or Exploratory handoff, the scheduler pauses
+to claimed issues across both lanes. When **Ready issue refresh** starts after a
+successful **Local integration** or Exploratory handoff, the scheduler pauses
 new issue claims until all pending refresh passes complete successfully. Running
 Exploratory workers are not cancelled; they may finish while the claim gate is
 closed. When no serial Gitflow or Trunk ready issue is claimable, the scheduler
 may run one automated triage pass while active Exploratory workers continue.
-That triage pass does not consume the `--max-issues` implementation-attempt
-budget.
+That triage pass does not consume the `--max-issues` claimed-issue budget.
 
 Drain or run the Operator loop without applying **Ready issue refresh** metadata
 updates:
@@ -259,6 +273,12 @@ Drain until only blocked or non-actionable issues remain:
 
 ```bash
 python3 scripts/ralph.py --drain --max-issues 0
+```
+
+Use a different per-issue Codex attempt budget:
+
+```bash
+python3 scripts/ralph.py --drain --max-codex-attempts 3
 ```
 
 Implement one specific issue:
@@ -465,9 +485,10 @@ Completed or stopped Operator runs also write
 first review surface for the full drain-and-**Promotion** run; the JSON rollup
 is the stable tooling surface for issue outcomes, manual recoveries, **Local
 integration** commits, **Promotion** commits, QA surfaces,
-**Post-promotion review** follow-ups, final queue state, and stop or failure
-reasons. Both rollups record the underlying child `.ralph/runs/.../ralph-run.json`
-paths without tailing child Codex JSONL or rich command logs.
+**Post-promotion review** follow-ups, post-Promotion deployment execution,
+final queue state, and stop or failure reasons. Both rollups record the
+underlying child `.ralph/runs/.../ralph-run.json` paths without tailing child
+Codex JSONL or rich command logs.
 When open `agent-reviewing` issues remain and no unblocked ready work can
 proceed, the Operator run also writes `exploratory-acceptance-review.md` and
 `exploratory-acceptance-review.json` under the same run directory.
@@ -498,6 +519,8 @@ Checkpoints are recorded for:
 - before **Promotion**
 - **Promotion** success or failure
 - **Post-promotion review** follow-up creation
+- post-Promotion **Ready issue refresh**
+- deployment skipped, started, succeeded, or failed
 - **Exploratory acceptance review** required
 - queue clean
 - stopped-by-guard
@@ -506,6 +529,9 @@ The `before_promotion` checkpoint is written only after the scheduler pass has
 returned. That means active Exploratory workers have finished, implementation
 **Ready issue refresh** claim gates have opened, and child metadata updates have
 either completed or produced recorded recovery evidence.
+Deployment checkpoints are written only after successful Promotion metadata
+updates, **Post-promotion review**, follow-up creation, and post-Promotion
+**Ready issue refresh** have completed in the Promotion child run.
 
 Detached mode is the Codex-safe path:
 
@@ -591,6 +617,11 @@ Key fields for inspection:
   commit SHA, subject, and whether it matched verified issue evidence or
   remained an unverified **Promotion** commit. When one evidence commit maps to
   multiple issues, the inventory records every issue mapping.
+- `deployment_classification`: deterministic **Post-Promotion deployment
+  classification** with the selected tier, reason, recommended action,
+  deployable paths, non-triggering **Agent workflow changes**, and other
+  non-triggering paths. Direct Promotion records this field and prints the
+  recommendation without running AWS or Pulumi commands.
 - `post_promotion_review`: enabled state, skip reason, warning-only review
   status, review log path, and Markdown artifact path for **Promotion** runs.
 - `post_promotion_followups`: enabled state, created issue URLs, duplicate
@@ -792,6 +823,13 @@ maintainer comments and automated triage comments are excluded. If comment
 fetching fails, Ralph fails the issue before starting the Codex implementation
 subprocess instead of running with incomplete refresh context.
 
+For each claimed issue, Ralph runs at most `--max-codex-attempts` Codex
+implementation attempts. The default is `5`. Each attempt writes
+`codex-implementation-N.jsonl`; retry attempts use prompts that include the
+previous Codex or QA failure evidence, then rerun Codex before QA. QA retry logs
+keep the existing `qa` and `qa-retry` names for the first two attempts and add
+ordered retry prefixes for later attempts.
+
 After QA passes, Ralph commits the implementation branch. If the implementation
 commit hook attempt rewrites tracked files, Ralph records
 `formatter_recovery`, stages the formatter-modified paths, reruns the selected
@@ -933,6 +971,44 @@ association before **Promotion**, and do not create follow-up issues by
 themselves. Follow-up GitHub Issue drafts belong in the
 **Post-promotion review** artifact only when the review finds concrete
 actionable work.
+
+Immediately after recording the Promotion changed-file inventory, Ralph records
+`deployment_classification` in the **Promotion** manifest and prints the
+recommended deployment action. Direct `$ralph-loop promote` never runs the
+deployment command. The checkpointed Operator path consumes the same recorded
+classification only after successful Promotion metadata updates,
+**Post-promotion review**, follow-up creation, and **Ready issue refresh** have
+completed. It records `deployment_execution` in the Promotion child manifest
+and records the matching Operator checkpoint with command path, command
+arguments, cwd, log path, exit status, **Deployed test** evidence, and full-tier
+idempotency evidence. The classifier uses three tiers:
+
+- `no_deployment`: no AWS deployment is recommended. A Promotion containing
+  only **Agent workflow changes** records this tier with a clear skip reason.
+- `user_code_redeploy`: only deployed AEMO ETL user-code runtime paths changed,
+  optionally with non-triggering context paths. The recommendation is
+  `infrastructure/aws-pulumi/scripts/redeploy-user-code`.
+- `full_deployed_workflow`: Pulumi, service runtime, image, Dagster core, auth,
+  Caddy, Marimo, code-location topology, or mixed deployed-platform paths
+  changed. The recommendation is
+  `infrastructure/aws-pulumi/scripts/run-integration-tests --with-idempotency`.
+
+When a Promotion mixes **Agent workflow changes** with deployable paths, Ralph
+classifies only the deployable subset and reports the Agent workflow paths as
+non-triggering context. The **AWS/Pulumi credential boundary** keeps deployed
+workflow credentials in the operator/Ralph outer loop: sandboxed Codex
+subprocesses and **Post-promotion review** receive no AWS or Pulumi
+credentials, and direct Promotion only reports the command an operator should
+run later from the AWS Pulumi **Subproject**.
+
+For checkpointed Operator runs, `no_deployment` records
+`deployment_execution.status: skipped_no_deployment` and runs no AWS or Pulumi
+command. `user_code_redeploy` runs
+`infrastructure/aws-pulumi/scripts/redeploy-user-code` from the AWS Pulumi
+**Subproject**. `full_deployed_workflow` runs
+`infrastructure/aws-pulumi/scripts/run-integration-tests --with-idempotency`
+from that **Subproject**, so the same log is the **Deployed test** evidence and
+the full-tier idempotency evidence.
 
 Ralph runs the aggregate matching **Push check** QA from the source worktree.
 When the promoted range includes non-doc runtime files under
@@ -1481,6 +1557,7 @@ container-backed **Integration test** dependencies.
   - `docs/repository/documentation-sync.md`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
+  - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
   - `.agents/skills/shape-issues/SKILL.md`
   - `.agents/skills/shape-issues/scripts/shape_issue_gate.py`
   - `.agents/skills/shape-issues/scripts/codex_context_assessor.py`

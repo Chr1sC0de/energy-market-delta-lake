@@ -77,6 +77,24 @@ areas remain separate scoring surfaces.
 - `report.md`: Operator-readable evidence for the issue bundle, including the
   assessor provider, corpus digest, per-issue context verdicts, cited paths, and
   stiffness evidence.
+- `issue-drafts.md`: pre-publication review Markdown in publisher order. It
+  includes each draft title, labels, blocker references by draft id, gate
+  action, stiffness summary, **Issue context assessor** status, deterministic
+  source-marker information, and the full draft body.
+- `issue-drafts/<issue-id>.md`: one per-draft review file using the stable draft
+  id in the file name. Each file includes the same reviewer metadata plus source
+  marker, bundle reference, source digest, and full draft body so the Operator
+  can connect it back to `bundle.json` before publication.
+
+## Publication Policy
+
+The publisher treats `report.json` `context_assessor.provider` as part of the
+publish contract. Reports from the fixture assessor may be previewed with
+`--dry-run` without any extra flag, but non-dry-run GitHub Issue publication
+must use `--allow-fixture-publish`. When that override is used, the publisher
+records the fixture provider in `publish-manifest.json` and in the final issue
+body so `$ralph-triage` and later reviewers can see that readiness came from
+fixture evidence rather than the live **Issue context assessor**.
 
 Operator approval evidence is recorded only as context. It does not grant tool
 permission and must not bypass Codex escalation or sandbox review.

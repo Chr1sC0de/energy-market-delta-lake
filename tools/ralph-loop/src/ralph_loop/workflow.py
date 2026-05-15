@@ -57,6 +57,7 @@ DEFAULT_GITFLOW_BRANCH = "dev"
 DEFAULT_TRUNK_BRANCH = "main"
 DEFAULT_EXPLORATORY_BRANCH_PREFIX = "agent/exploratory"
 DEFAULT_DRAIN_BUDGET = 10
+DEFAULT_CODEX_ATTEMPT_BUDGET = 5
 DEFAULT_EXPLORATORY_CONCURRENCY = 2
 DEFAULT_OPERATOR_MAX_CYCLES = 10
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30.0
@@ -191,6 +192,17 @@ MARIMO_PREFIX = "backend-services/marimo/"
 RALPH_LOOP_PREFIX = "tools/ralph-loop/"
 RALPH_SCRIPT_PATH = "scripts/ralph.py"
 BACKEND_SERVICES_PREFIX = "backend-services/"
+AWS_PULUMI_PREFIX = "infrastructure/aws-pulumi/"
+POST_PROMOTION_DEPLOYMENT_NO_DEPLOY = "no_deployment"
+POST_PROMOTION_DEPLOYMENT_USER_CODE = "user_code_redeploy"
+POST_PROMOTION_DEPLOYMENT_FULL = "full_deployed_workflow"
+POST_PROMOTION_DEPLOYMENT_REDEPLOY_USER_CODE_COMMAND = (
+    "infrastructure/aws-pulumi/scripts/redeploy-user-code"
+)
+POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_COMMAND = (
+    "infrastructure/aws-pulumi/scripts/run-integration-tests"
+)
+POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_IDEMPOTENCY_ARG = "--with-idempotency"
 AEMO_ETL_E2E_SCRIPT_PATH = "backend-services/scripts/aemo-etl-e2e"
 AEMO_ETL_E2E_QA_NAME = "aemo-etl End-to-end test"
 AEMO_ETL_E2E_TEST_LANE = "AEMO ETL End-to-end test"
@@ -263,6 +275,7 @@ class CliArgs:
     continue_exploratory_acceptance: str | None = None
     drain: bool = False
     max_issues: int = DEFAULT_DRAIN_BUDGET
+    max_codex_attempts: int = DEFAULT_CODEX_ATTEMPT_BUDGET
     exploratory_concurrency: int = DEFAULT_EXPLORATORY_CONCURRENCY
     dry_run: bool = False
     allow_dirty_worktree: bool = False
@@ -593,6 +606,54 @@ class QACommand:
 
 
 @dataclass(frozen=True)
+class PostPromotionDeploymentClassification:
+    tier: str
+    reason: str
+    recommended_action: str
+    deployable_paths: tuple[str, ...]
+    user_code_redeploy_paths: tuple[str, ...]
+    full_workflow_paths: tuple[str, ...]
+    agent_workflow_paths: tuple[str, ...]
+    non_triggering_paths: tuple[str, ...]
+
+    def to_manifest(self) -> dict[str, Any]:
+        return {
+            "tier": self.tier,
+            "reason": self.reason,
+            "recommended_action": self.recommended_action,
+            "deployable_paths": list(self.deployable_paths),
+            "user_code_redeploy_paths": list(self.user_code_redeploy_paths),
+            "full_workflow_paths": list(self.full_workflow_paths),
+            "agent_workflow_paths": list(self.agent_workflow_paths),
+            "non_triggering_paths": list(self.non_triggering_paths),
+        }
+
+
+@dataclass(frozen=True)
+class PostPromotionDeploymentCommand:
+    tier: str
+    name: str
+    command_path: str
+    args: tuple[str, ...]
+    cwd: Path
+    log_name: str
+    records_deployed_tests: bool
+    records_idempotency: bool
+
+    def to_manifest(self) -> dict[str, Any]:
+        return {
+            "tier": self.tier,
+            "name": self.name,
+            "command_path": self.command_path,
+            "command": list(self.args),
+            "cwd": str(self.cwd),
+            "log_name": self.log_name,
+            "records_deployed_tests": self.records_deployed_tests,
+            "records_idempotency": self.records_idempotency,
+        }
+
+
+@dataclass(frozen=True)
 class QARunManifestEvidence:
     source_path: Path
     artifact_path: Path
@@ -731,6 +792,7 @@ class LoopConfig:
     issue: int | None
     drain: bool
     max_issues: int
+    max_codex_attempts: int
     exploratory_concurrency: int
     dry_run: bool
     allow_dirty_worktree: bool
@@ -1752,6 +1814,186 @@ def root_prek_needed(changed_file: str) -> bool:
             and not changed_file.startswith(MARIMO_PREFIX)
         )
     )
+
+
+def normalized_changed_file_inventory(changed_files: list[str]) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            {
+                changed_file.strip().removeprefix("./")
+                for changed_file in changed_files
+                if changed_file.strip() != ""
+            }
+        )
+    )
+
+
+def is_agent_workflow_path(changed_file: str) -> bool:
+    return (
+        changed_file in {"AGENTS.md", "CONTEXT.md", "OPERATOR.md", RALPH_SCRIPT_PATH}
+        or changed_file.startswith(".agents/")
+        or changed_file.startswith(".shape-issues/")
+        or changed_file.startswith("docs/agents/")
+        or changed_file.startswith(RALPH_LOOP_PREFIX)
+        or changed_file.startswith("docs/adr/0001-ralph-")
+        or changed_file.startswith("docs/adr/0002-ralph-")
+        or changed_file.startswith("docs/adr/0004-ralph-")
+        or changed_file.startswith("docs/adr/0005-ralph-")
+        or changed_file.startswith("docs/adr/0007-ralph-")
+        or changed_file.startswith("docs/adr/0009-ralph-")
+    )
+
+
+def is_deployed_aemo_etl_user_code_path(changed_file: str) -> bool:
+    if not changed_file.startswith(AEMO_ETL_PREFIX):
+        return False
+    if is_maintained_doc_path(changed_file):
+        return False
+    relative_path = changed_file.removeprefix(AEMO_ETL_PREFIX)
+    return relative_path.startswith("src/") or relative_path in {
+        ".dockerignore",
+        "Dockerfile",
+        "dagster.yaml",
+        "pyproject.toml",
+        "uv.lock",
+    }
+
+
+def is_deployed_platform_path(changed_file: str) -> bool:
+    if is_maintained_doc_path(changed_file):
+        return False
+    if changed_file.startswith("infrastructure/aws-pulumi/"):
+        return True
+    if changed_file.startswith("backend-services/dagster-core/"):
+        return True
+    if changed_file.startswith("backend-services/authentication/"):
+        return not changed_file.startswith("backend-services/authentication/tests/")
+    if changed_file.startswith("backend-services/caddy/"):
+        return True
+    if changed_file.startswith(MARIMO_PREFIX):
+        relative_path = changed_file.removeprefix(MARIMO_PREFIX)
+        return not (
+            relative_path.startswith("tests/")
+            or relative_path.startswith("research-workspace/")
+        )
+    return False
+
+
+def classify_post_promotion_deployment(
+    changed_files: list[str],
+) -> PostPromotionDeploymentClassification:
+    changed_inventory = normalized_changed_file_inventory(changed_files)
+    agent_workflow_paths = tuple(
+        path for path in changed_inventory if is_agent_workflow_path(path)
+    )
+    user_code_paths = tuple(
+        path for path in changed_inventory if is_deployed_aemo_etl_user_code_path(path)
+    )
+    full_workflow_paths = tuple(
+        path for path in changed_inventory if is_deployed_platform_path(path)
+    )
+    deployable_paths = tuple(sorted((*user_code_paths, *full_workflow_paths)))
+    triggering_paths = set(deployable_paths)
+    non_triggering_paths = tuple(
+        path for path in changed_inventory if path not in triggering_paths
+    )
+
+    if full_workflow_paths:
+        return PostPromotionDeploymentClassification(
+            tier=POST_PROMOTION_DEPLOYMENT_FULL,
+            reason=(
+                "Promotion changed deployed AWS platform, service runtime, image, "
+                "Dagster core, auth, Caddy, Marimo, Pulumi, or code-location "
+                "topology paths."
+            ),
+            recommended_action=(
+                "Run the full deployed AWS workflow from the AWS Pulumi Subproject: "
+                f"`{POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_COMMAND} "
+                f"{POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_IDEMPOTENCY_ARG}`."
+            ),
+            deployable_paths=deployable_paths,
+            user_code_redeploy_paths=user_code_paths,
+            full_workflow_paths=full_workflow_paths,
+            agent_workflow_paths=agent_workflow_paths,
+            non_triggering_paths=non_triggering_paths,
+        )
+
+    if user_code_paths:
+        return PostPromotionDeploymentClassification(
+            tier=POST_PROMOTION_DEPLOYMENT_USER_CODE,
+            reason=(
+                "Promotion changed deployed AEMO ETL user-code runtime paths and "
+                "no full deployed AWS workflow paths."
+            ),
+            recommended_action=(
+                "Run the Dagster user-code redeploy from the AWS Pulumi Subproject: "
+                f"`{POST_PROMOTION_DEPLOYMENT_REDEPLOY_USER_CODE_COMMAND}`."
+            ),
+            deployable_paths=deployable_paths,
+            user_code_redeploy_paths=user_code_paths,
+            full_workflow_paths=full_workflow_paths,
+            agent_workflow_paths=agent_workflow_paths,
+            non_triggering_paths=non_triggering_paths,
+        )
+
+    if changed_inventory and len(agent_workflow_paths) == len(changed_inventory):
+        reason = "Only Agent workflow changes were promoted; AWS deployment is skipped."
+    elif changed_inventory:
+        reason = (
+            "No deployed AWS runtime, image, Pulumi, or code-location topology "
+            "paths were promoted."
+        )
+    else:
+        reason = "No Promotion changed-file inventory was recorded."
+
+    return PostPromotionDeploymentClassification(
+        tier=POST_PROMOTION_DEPLOYMENT_NO_DEPLOY,
+        reason=reason,
+        recommended_action="No deployment. Skip AWS and Pulumi commands.",
+        deployable_paths=deployable_paths,
+        user_code_redeploy_paths=user_code_paths,
+        full_workflow_paths=full_workflow_paths,
+        agent_workflow_paths=agent_workflow_paths,
+        non_triggering_paths=non_triggering_paths,
+    )
+
+
+def post_promotion_deployment_command(
+    classification: PostPromotionDeploymentClassification,
+    *,
+    repo_root: Path,
+) -> PostPromotionDeploymentCommand | None:
+    aws_pulumi_cwd = repo_root / AWS_PULUMI_PREFIX.rstrip("/")
+    if classification.tier == POST_PROMOTION_DEPLOYMENT_NO_DEPLOY:
+        return None
+    if classification.tier == POST_PROMOTION_DEPLOYMENT_USER_CODE:
+        return PostPromotionDeploymentCommand(
+            tier=classification.tier,
+            name="Dagster user-code redeploy",
+            command_path=POST_PROMOTION_DEPLOYMENT_REDEPLOY_USER_CODE_COMMAND,
+            args=(
+                str(repo_root / POST_PROMOTION_DEPLOYMENT_REDEPLOY_USER_CODE_COMMAND),
+            ),
+            cwd=aws_pulumi_cwd,
+            log_name="deployment-user-code-redeploy.log",
+            records_deployed_tests=False,
+            records_idempotency=False,
+        )
+    if classification.tier == POST_PROMOTION_DEPLOYMENT_FULL:
+        return PostPromotionDeploymentCommand(
+            tier=classification.tier,
+            name="full deployed AWS workflow",
+            command_path=POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_COMMAND,
+            args=(
+                str(repo_root / POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_COMMAND),
+                POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_IDEMPOTENCY_ARG,
+            ),
+            cwd=aws_pulumi_cwd,
+            log_name="deployment-full-deployed-workflow.log",
+            records_deployed_tests=True,
+            records_idempotency=True,
+        )
+    raise RalphError(f"Unknown Post-Promotion deployment tier: {classification.tier}")
 
 
 def has_protected_aemo_etl_change(changed_files: list[str]) -> bool:

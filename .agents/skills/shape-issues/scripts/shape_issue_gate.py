@@ -50,6 +50,7 @@ TEXT_EXTENSIONS = frozenset(
 TEXT_FILE_NAMES = frozenset({"Makefile", "AGENTS.md", "CONTEXT.md", "OPERATOR.md"})
 CONTEXT_ASSESSOR_SCHEMA_VERSION = "shape-issues-context-assessor-v1"
 DEFAULT_CONTEXT_ASSESSOR_PROVIDER = "codex"
+SOURCE_MARKER_PREFIX = "shape-issues-source"
 DEFAULT_RG_CANDIDATE_FILES = 8
 MAX_SEARCH_TERMS = 24
 MAX_EVIDENCE_SNIPPETS_PER_FILE = 3
@@ -1401,6 +1402,247 @@ def report_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def bundle_reference(bundle_path: Path) -> str:
+    parts = bundle_path.parts
+    if ".shape-issues" in parts:
+        index = parts.index(".shape-issues")
+        return str(Path(*parts[index:]))
+    return str(Path(bundle_path.parent.name) / bundle_path.name)
+
+
+def source_marker(bundle_path: Path, issue: IssueDraft) -> str:
+    run_slug = slugify(bundle_path.parent.name) or "run"
+    issue_slug = slugify(issue.issue_id) or slugify(issue.title)
+    return f"{SOURCE_MARKER_PREFIX}:{run_slug}:{issue_slug}"
+
+
+def draft_markdown_file_name(issue: IssueDraft) -> str:
+    return f"{slugify(issue.issue_id) or 'issue'}.md"
+
+
+def publication_order(issues: tuple[IssueDraft, ...]) -> tuple[IssueDraft, ...]:
+    by_id = {issue.issue_id: issue for issue in issues}
+    permanent: set[str] = set()
+    temporary: set[str] = set()
+    ordered: list[IssueDraft] = []
+
+    def visit(issue_id: str) -> None:
+        if issue_id in permanent:
+            return
+        if issue_id in temporary:
+            raise GateError(f"blocked_by cycle includes issue {issue_id}.")
+        temporary.add(issue_id)
+        for blocker_id in by_id[issue_id].blocked_by:
+            if blocker_id in by_id:
+                visit(blocker_id)
+        temporary.remove(issue_id)
+        permanent.add(issue_id)
+        ordered.append(by_id[issue_id])
+
+    for issue in issues:
+        visit(issue.issue_id)
+    return tuple(ordered)
+
+
+def report_issues_by_id(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    issue_reports: dict[str, dict[str, Any]] = {}
+    for raw_issue in report["issues"]:
+        issue_reports[str(raw_issue["id"])] = raw_issue
+    return issue_reports
+
+
+def markdown_code_list(values: tuple[str, ...] | list[str]) -> str:
+    if len(values) == 0:
+        return "None"
+    return ", ".join(f"`{value}`" for value in values)
+
+
+def draft_review_metadata_lines(
+    issue: IssueDraft,
+    report_issue: dict[str, Any],
+    *,
+    order_index: int,
+    review_file: str | None = None,
+) -> list[str]:
+    context_assessment = report_issue["context_assessment"]
+    stiffness = report_issue["stiffness"]
+    blocked_by = markdown_code_list(list(issue.blocked_by))
+    lines = [
+        f"- Draft id: `{issue.issue_id}`",
+        f"- Publication order: `{order_index}`",
+        f"- Labels: {markdown_code_list(list(issue.labels))}",
+        f"- Blocked by draft ids: {blocked_by}",
+        f"- Gate action: `{report_issue['action']}`",
+        f"- Stiffness summary: `{stiffness['score']}` ({stiffness['level']})",
+        (
+            "- Issue context assessor: "
+            f"`{context_assessment['verdict']}` "
+            f"(passed: `{str(context_assessment['passed']).lower()}`, "
+            f"confidence: `{context_assessment['confidence']}`)"
+        ),
+    ]
+    declared_level = stiffness["declared_level"]
+    if declared_level is not None:
+        mismatch = str(stiffness["declared_mismatch"]).lower()
+        lines.append(
+            f"- Declared stiffness: `{declared_level}` (mismatch: `{mismatch}`)"
+        )
+    if review_file is not None:
+        lines.append(f"- Review file: `{review_file}`")
+    return lines
+
+
+def draft_source_lines(bundle_path: Path, issue: IssueDraft) -> list[str]:
+    return [
+        f"- Source marker: `{source_marker(bundle_path, issue)}`",
+        f"- Bundle: `{bundle_reference(bundle_path)}`",
+        f"- Source digest: `{issue.source_digest}`",
+    ]
+
+
+def per_draft_markdown(
+    issue: IssueDraft,
+    report_issue: dict[str, Any],
+    *,
+    bundle_path: Path,
+    order_index: int,
+) -> str:
+    lines = [
+        f"# {issue.title}",
+        "",
+        "## Review metadata",
+        "",
+        *draft_review_metadata_lines(
+            issue,
+            report_issue,
+            order_index=order_index,
+        ),
+        "",
+        "## Shape Issues source",
+        "",
+        *draft_source_lines(bundle_path, issue),
+        "",
+        "## Draft body",
+        "",
+        issue.body.strip(),
+        "",
+    ]
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def combined_issue_drafts_markdown(
+    bundle: Bundle,
+    report: dict[str, Any],
+    *,
+    bundle_path: Path,
+) -> str:
+    issue_reports = report_issues_by_id(report)
+    ordered = publication_order(bundle.issues)
+    lines = [
+        "# Shape Issues Draft Review",
+        "",
+        f"Summary: {bundle.summary or 'No summary provided.'}",
+        "",
+        "## Source",
+        "",
+        f"- Bundle: `{bundle_reference(bundle_path)}`",
+        f"- Bundle digest: `{bundle.source_digest}`",
+        "",
+        "## Drafts",
+        "",
+    ]
+    for order_index, issue in enumerate(ordered, start=1):
+        report_issue = issue_reports[issue.issue_id]
+        review_file = str(Path("issue-drafts") / draft_markdown_file_name(issue))
+        lines.extend(
+            [
+                f"### {issue.issue_id}: {issue.title}",
+                "",
+                "#### Review metadata",
+                "",
+                *draft_review_metadata_lines(
+                    issue,
+                    report_issue,
+                    order_index=order_index,
+                    review_file=review_file,
+                ),
+                "",
+                "#### Shape Issues source",
+                "",
+                *draft_source_lines(bundle_path, issue),
+                "",
+                "#### Draft body",
+                "",
+                issue.body.strip(),
+                "",
+            ]
+        )
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def ensure_unique_draft_file_names(issues: tuple[IssueDraft, ...]) -> None:
+    file_names = [draft_markdown_file_name(issue) for issue in issues]
+    duplicates = sorted(
+        {file_name for file_name in file_names if file_names.count(file_name) > 1}
+    )
+    if duplicates:
+        raise GateError(
+            "Duplicate generated issue draft file name(s): " + ", ".join(duplicates)
+        )
+
+
+def write_issue_draft_markdown(
+    bundle: Bundle,
+    report: dict[str, Any],
+    *,
+    bundle_path: Path,
+    out_dir: Path,
+) -> None:
+    ensure_unique_draft_file_names(bundle.issues)
+    issue_reports = report_issues_by_id(report)
+    ordered = publication_order(bundle.issues)
+    issue_drafts_dir = out_dir / "issue-drafts"
+    issue_drafts_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "issue-drafts.md").write_text(
+        combined_issue_drafts_markdown(
+            bundle,
+            report,
+            bundle_path=bundle_path,
+        ),
+        encoding="utf-8",
+    )
+    for order_index, issue in enumerate(ordered, start=1):
+        issue_drafts_dir.joinpath(draft_markdown_file_name(issue)).write_text(
+            per_draft_markdown(
+                issue,
+                issue_reports[issue.issue_id],
+                bundle_path=bundle_path,
+                order_index=order_index,
+            ),
+            encoding="utf-8",
+        )
+
+
+def write_gate_outputs(
+    bundle: Bundle,
+    report: dict[str, Any],
+    *,
+    bundle_path: Path,
+    out_dir: Path,
+) -> None:
+    (out_dir / "report.json").write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (out_dir / "report.md").write_text(report_markdown(report), encoding="utf-8")
+    write_issue_draft_markdown(
+        bundle,
+        report,
+        bundle_path=bundle_path,
+        out_dir=out_dir,
+    )
+
+
 def default_context_assessor_command() -> str:
     env_command = os.environ.get("SHAPE_ISSUES_CONTEXT_ASSESSOR_COMMAND")
     if env_command is not None and env_command.strip() != "":
@@ -1446,15 +1688,16 @@ def main() -> None:
             thresholds=thresholds,
             provider_name=args.context_assessor_name,
         )
+        write_gate_outputs(
+            bundle,
+            report,
+            bundle_path=args.bundle,
+            out_dir=out_dir,
+        )
     except (GateError, json.JSONDecodeError, OSError, ValueError) as error:
         sys.stderr.write(f"shape-issues gate failed: {error}\n")
         raise SystemExit(1)
 
-    (out_dir / "report.json").write_text(
-        json.dumps(report, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    (out_dir / "report.md").write_text(report_markdown(report), encoding="utf-8")
     sys.stdout.write(str(out_dir / "report.md") + "\n")
 
 

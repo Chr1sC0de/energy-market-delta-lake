@@ -12,7 +12,8 @@ repo, especially **Subproject**, **Test lane**, **Fast check**, **Commit check**
 **Full-access implementation pass**, **Ready issue refresh**, **Operator
 workflow**, **Documentation sync**, **Agent skill**, **Issue context assessor**,
 **Exploratory acceptance review**, **Promotion**, and
-**Post-promotion review**.
+**Post-promotion review**, **Post-Promotion deployment classification**, and
+**AWS/Pulumi credential boundary**.
 
 Repo-wide ADRs live in `docs/adr/`. Create ADRs only when a decision is hard to
 reverse, surprising without context, and the result of a real trade-off.
@@ -32,6 +33,7 @@ workflow change, so it does not require an ADR.
   - `docs/adr/0004-ralph-sandboxed-issue-access.md`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
+  - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

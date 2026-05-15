@@ -22,6 +22,7 @@ def path_text(path: Path | None) -> str | None:
 
 def run_configuration_payload(config: LoopConfig) -> dict[str, Any]:
     return {
+        "max_codex_attempts": config.max_codex_attempts,
         "exploratory_concurrency": config.exploratory_concurrency,
     }
 
@@ -215,6 +216,39 @@ class RunManifest:
                 "head_ref": None,
                 "commits": [],
             },
+            "deployment_classification": {
+                "status": "not_started",
+                "tier": None,
+                "reason": None,
+                "recommended_action": None,
+                "deployable_paths": [],
+                "user_code_redeploy_paths": [],
+                "full_workflow_paths": [],
+                "agent_workflow_paths": [],
+                "non_triggering_paths": [],
+            },
+            "deployment_execution": {
+                "status": "not_started",
+                "tier": None,
+                "reason": None,
+                "command_path": None,
+                "command": [],
+                "cwd": None,
+                "log_path": None,
+                "exit_status": None,
+                "error": None,
+                "deployed_test_evidence": {
+                    "status": "not_started",
+                    "log_path": None,
+                    "command_path": None,
+                },
+                "full_tier_idempotency_evidence": {
+                    "status": "not_started",
+                    "log_path": None,
+                    "command_path": None,
+                    "argument": POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_IDEMPOTENCY_ARG,
+                },
+            },
             "promotion_commit": None,
             "local_branch_fast_forwards": {
                 "source_branch": {
@@ -371,6 +405,62 @@ class RunManifest:
     def record_changed_files(self, changed_files: list[str], *, stage: str) -> None:
         self.data["changed_files"] = list(changed_files)
         self.record_event(stage, details={"count": len(changed_files)})
+
+    def record_deployment_classification(
+        self, classification: PostPromotionDeploymentClassification
+    ) -> None:
+        payload = {"status": "classified", **classification.to_manifest()}
+        self.data["deployment_classification"] = payload
+        self.record_event(
+            "deployment_classification_recorded",
+            details={
+                "tier": classification.tier,
+                "deployable_path_count": len(classification.deployable_paths),
+                "agent_workflow_path_count": len(classification.agent_workflow_paths),
+            },
+        )
+
+    def record_deployment_execution(
+        self,
+        status: str,
+        *,
+        tier: str,
+        reason: str | None = None,
+        command_path: str | None = None,
+        command: list[str] | tuple[str, ...] | None = None,
+        cwd: Path | None = None,
+        log_path: Path | None = None,
+        exit_status: int | None = None,
+        error: str | None = None,
+        deployed_test_evidence: dict[str, Any] | None = None,
+        full_tier_idempotency_evidence: dict[str, Any] | None = None,
+    ) -> None:
+        execution = self.data.setdefault("deployment_execution", {})
+        if not isinstance(execution, dict):
+            raise RalphError("Manifest deployment_execution field is not an object.")
+        execution["status"] = status
+        execution["tier"] = tier
+        if reason is not None:
+            execution["reason"] = reason
+        if command_path is not None:
+            execution["command_path"] = command_path
+        if command is not None:
+            execution["command"] = list(command)
+        if cwd is not None:
+            execution["cwd"] = str(cwd)
+        if log_path is not None or "log_path" not in execution:
+            execution["log_path"] = path_text(log_path)
+        if exit_status is not None or "exit_status" not in execution:
+            execution["exit_status"] = exit_status
+        if error is not None:
+            execution["error"] = error
+        elif status != "failed":
+            execution["error"] = None
+        if deployed_test_evidence is not None:
+            execution["deployed_test_evidence"] = deployed_test_evidence
+        if full_tier_idempotency_evidence is not None:
+            execution["full_tier_idempotency_evidence"] = full_tier_idempotency_evidence
+        self.record_event(f"deployment_execution_{status}", details=dict(execution))
 
     def record_commit(self, name: str, sha: str) -> None:
         commits = self.data.setdefault("commits", {})
@@ -1318,6 +1408,23 @@ class OperatorRunManifest:
             },
         )
 
+    def record_current_deployment(
+        self,
+        *,
+        tier: str,
+        command_path: str | None,
+        child_manifest_path: Path,
+    ) -> None:
+        self.record_event(
+            "running_deployment",
+            current={
+                "kind": "deployment",
+                "tier": tier,
+                "command_path": command_path,
+                "child_manifest_path": str(child_manifest_path),
+            },
+        )
+
     def clear_current(self) -> None:
         self.data["current"] = None
         self._write()
@@ -1734,6 +1841,13 @@ def build_operator_run_rollup(
     issue_entries = operator_rollup_issue_entries(data, child_sources)
     promotion_entries = operator_rollup_promotion_entries(data, child_sources)
     local_integrations = operator_rollup_local_integrations(issue_entries)
+    deployment_executions = [
+        deployment
+        for promotion in promotion_entries
+        if isinstance(promotion.get("deployment_execution"), dict)
+        for deployment in [operator_rollup_deployment_entry(promotion)]
+        if deployment is not None
+    ]
     qa_surfaces = [
         surface
         for source in child_sources
@@ -1793,6 +1907,7 @@ def build_operator_run_rollup(
             "failed_attempts": len(failed_attempts),
             "local_integrations": len(local_integrations),
             "promotions": len(promotion_entries),
+            "deployment_executions": len(deployment_executions),
             "manual_recoveries": len(manual_recoveries),
             "qa_surfaces": len(qa_surfaces),
             "post_promotion_followups": len(post_promotion_followups),
@@ -1803,6 +1918,7 @@ def build_operator_run_rollup(
         "manual_recoveries": manual_recoveries,
         "local_integrations": local_integrations,
         "promotions": promotion_entries,
+        "deployment_executions": deployment_executions,
         "qa_surfaces": qa_surfaces,
         "post_promotion_followups": post_promotion_followups,
         "exploratory_acceptance_review": data.get("exploratory_acceptance_review"),
@@ -2139,6 +2255,10 @@ def operator_promotion_rollup_entry(
     manifest_path = str(source.get("manifest_path") or "") if source is not None else ""
     followups = child_data.get("post_promotion_followups")
     followups = followups if isinstance(followups, dict) else None
+    deployment_execution = child_data.get("deployment_execution")
+    deployment_execution = (
+        deployment_execution if isinstance(deployment_execution, dict) else None
+    )
     review = child_data.get("post_promotion_review")
     review = review if isinstance(review, dict) else None
     metadata = child_data.get("github_metadata")
@@ -2176,6 +2296,7 @@ def operator_promotion_rollup_entry(
         "unverified_commits": operator_rollup_unverified_commits(inventory),
         "post_promotion_review": review,
         "post_promotion_followups": followups,
+        "deployment_execution": deployment_execution,
         "failure": child_data.get("failure"),
     }
 
@@ -2271,6 +2392,37 @@ def operator_rollup_followup_entry(promotion: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def operator_rollup_deployment_entry(
+    promotion: dict[str, Any],
+) -> dict[str, Any] | None:
+    execution = promotion.get("deployment_execution")
+    if not isinstance(execution, dict):
+        return None
+    status = str(execution.get("status") or "")
+    if status in {"", "not_started"}:
+        return None
+    return {
+        "status": status,
+        "tier": execution.get("tier"),
+        "reason": execution.get("reason"),
+        "command_path": execution.get("command_path"),
+        "command": (
+            execution.get("command")
+            if isinstance(execution.get("command"), list)
+            else []
+        ),
+        "cwd": execution.get("cwd"),
+        "log_path": execution.get("log_path"),
+        "exit_status": execution.get("exit_status"),
+        "deployed_test_evidence": execution.get("deployed_test_evidence"),
+        "full_tier_idempotency_evidence": execution.get(
+            "full_tier_idempotency_evidence"
+        ),
+        "error": execution.get("error"),
+        "manifest_path": promotion.get("manifest_path"),
+    }
+
+
 def operator_rollup_final_queue(data: dict[str, Any]) -> dict[str, Any]:
     queue = data.get("queue")
     queue = queue if isinstance(queue, dict) else {}
@@ -2336,6 +2488,10 @@ def render_operator_run_rollup_markdown(rollup: dict[str, Any]) -> str:
         "## Promotion",
         "",
         *operator_rollup_promotion_markdown_lines(rollup["promotions"]),
+        "",
+        "## Deployment",
+        "",
+        *operator_rollup_deployment_markdown_lines(rollup["deployment_executions"]),
         "",
         "## QA Surfaces",
         "",
@@ -2429,6 +2585,7 @@ def operator_rollup_promotion_markdown_lines(
             + f"`{entry.get('source_branch')}` -> `{entry.get('target_branch')}`"
             + f" - `{entry.get('status')}`; Promotion commit `{commit_text}`"
             + f"; QA `{entry.get('qa', {}).get('status')}`"
+            + f"; Deployment `{operator_rollup_nested_status(entry, 'deployment_execution') or 'not_started'}`"
             + f"; Post-promotion follow-ups `{followups.get('status')}` "
             + f"(created={len(created)}, failures={len(failures)})"
             + f"; manifest {markdown_path_link(entry.get('manifest_path'))}"
@@ -2444,6 +2601,25 @@ def operator_rollup_promotion_markdown_lines(
                 + operator_issue_title(issue)
                 + f" - `{recovery.get('metadata_status')}`"
             )
+    return lines
+
+
+def operator_rollup_deployment_markdown_lines(
+    entries: list[dict[str, Any]],
+) -> list[str]:
+    if not entries:
+        return ["- None"]
+    lines: list[str] = []
+    for entry in entries:
+        command_path = entry.get("command_path") or "none"
+        log_path = markdown_path_link(entry.get("log_path"))
+        lines.append(
+            "- "
+            + f"`{entry.get('tier')}` - `{entry.get('status')}`"
+            + f"; command `{command_path}`"
+            + f"; exit `{entry.get('exit_status')}`"
+            + f"; log {log_path}"
+        )
     return lines
 
 

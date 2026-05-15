@@ -77,8 +77,10 @@ Codex's approvals-and-sandbox bypass, keeps GitHub Issue commands read-only
 inside the subprocess, and fails before QA if the diff changes files outside
 the issue anchors.
 
-Plain `--drain` stops after 10 implementation attempts by default. Use
-`--max-issues 0` only for explicit unlimited drain mode.
+Plain `--drain` stops after 10 claimed implementation issues by default. Use
+`--max-issues 0` only for explicit unlimited drain mode. Use
+`--max-codex-attempts` for the separate per-issue Codex implementation budget;
+it defaults to 5 total attempts, including QA repair retries.
 
 Use `--target-branch <branch>` only when the maintainer explicitly wants a
 non-default **Integration target**.

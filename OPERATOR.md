@@ -8,7 +8,9 @@ Use repo canonical terms from [CONTEXT.md](CONTEXT.md), especially
 **Local integration**, **Delivery mode**, **Integration target**,
 **Sandboxed issue access**, **Full-access implementation pass**,
 **Ready issue refresh**, **Operator workflow**, **Documentation sync**,
-**Agent skill**, **Exploratory acceptance review**, and **Promotion**.
+**Agent skill**, **Agent workflow change**, **Exploratory acceptance review**,
+**Promotion**, **Post-Promotion deployment classification**, and
+**AWS/Pulumi credential boundary**.
 
 ## Canonical Path
 
@@ -31,11 +33,17 @@ straight from shaped plan to GitHub Issues.
 
 Use `$shape-issues` to draft independently grabbable GitHub Issues with
 tracer-bullet slices, context anchors, QA plans, **Issue context assessor**
-evidence, and stiffness scoring. It writes `.shape-issues/runs/.../report.md`
-and `report.json`; after explicit Operator confirmation it may publish the
-gated outputs as `needs-triage` issues. `$shape-issues` does not move issues to
-`ready-for-agent` and must not edit, comment on, close, reopen, or relabel
-existing GitHub Issues. Each implementation draft must include
+evidence, and stiffness scoring. It writes `.shape-issues/runs/.../report.md`,
+`report.json`, `issue-drafts.md`, and per-draft `issue-drafts/*.md` review
+files; after explicit Operator confirmation it may publish the gated outputs as
+`needs-triage` issues. Non-dry-run publication preflights `gh` auth and target
+repository access before writing final body files. `$shape-issues` does not
+move issues to `ready-for-agent` and must not edit, comment on, close, reopen,
+or relabel existing GitHub Issues. After a `$shape-issues` plan, follow-up
+verbs such as `proceed`, `continue`, or `implement the plan` stay in the
+issue-draft workflow; direct implementation requires `$ralph-loop` or an
+explicit named GitHub Issue request such as `implement issue #123`. Each
+implementation draft must include
 `## What to build`, `## Acceptance criteria`, and `## Blocked by` before it can
 be triaged toward `ready-for-agent`. Exploratory delivery drafts must also
 include `## Review focus` stating the human judgment the durable
@@ -64,7 +72,9 @@ then runs **Promotion** when `agent-integrated` issues remain. Promotion starts
 only after active Exploratory workers, implementation **Ready issue refresh**
 gates, and scheduler metadata updates have settled. The Operator lets
 successful **Post-promotion review** create validated follow-up GitHub Issues,
-and repeats until no open `ready-for-agent`, `agent-integrated`,
+applies post-Promotion **Ready issue refresh**, then runs or skips the
+checkpointed deployment action selected by **Post-Promotion deployment
+classification**. It repeats until no open `ready-for-agent`, `agent-integrated`,
 `agent-reviewing`, `agent-running`, or `agent-failed` issues remain. When no
 unblocked ready issue can proceed and open `agent-reviewing` issues remain, the
 Operator run stops as `needs_review` and writes an **Exploratory acceptance
@@ -130,6 +140,12 @@ passes `--allow-full-access-implementation`. With that flag, Ralph runs only
 those implementation subprocesses as a **Full-access implementation pass**, keeps
 their GitHub Issue commands read-only, and hard-stops before QA if the resulting
 diff changes files outside the issue's `## Context anchors`.
+
+Use `--max-issues` for the drain-level claimed issue budget. Plain `--drain`
+claims at most 10 implementation issues by default, and `--max-issues 0` means
+unlimited drain. Use `--max-codex-attempts` for the per-issue Codex
+implementation budget. It defaults to 5 total Codex attempts per claimed issue,
+including the initial implementation and retries after Codex or QA failures.
 
 ## Review Dev
 
@@ -223,6 +239,40 @@ verified in the promoted branch range. After successful **Promotion**, Ralph
 also fast-forwards clean checked-out local `dev` or `main` worktrees when the
 local branch can safely move to the Promotion commit; dirty or diverged local
 worktrees are left untouched with recovery guidance in the run manifest.
+Direct `$ralph-loop promote` also records
+**Post-Promotion deployment classification** in the Promotion manifest and
+prints the recommended deployment action. This is report-only: direct Promotion
+does not run AWS or Pulumi commands.
+The checkpointed Operator run path uses the same recorded classifier only after
+successful Promotion metadata updates, **Post-promotion review**, follow-up
+creation, and **Ready issue refresh** have completed. It records the deployment
+command path, exit status, log path, **Deployed test** evidence, and full-tier
+idempotency evidence in both the Operator manifest and the Promotion child
+manifest.
+
+The deployment tiers are:
+
+- `no_deployment`: no AWS deployment is recommended. A Promotion containing
+  only **Agent workflow changes** always lands here with a skip reason.
+- `user_code_redeploy`: deployed AEMO ETL user-code runtime paths changed and
+  no full deployed AWS workflow path changed. The checkpointed Operator runs
+  `infrastructure/aws-pulumi/scripts/redeploy-user-code` from the AWS Pulumi
+  **Subproject**; for direct Promotion, run that command manually only after
+  confirming the operator shell owns the needed AWS and Pulumi credentials.
+- `full_deployed_workflow`: Pulumi, service runtime, image, Dagster core, auth,
+  Caddy, Marimo, code-location topology, or mixed deployed-platform paths
+  changed. The checkpointed Operator runs
+  `infrastructure/aws-pulumi/scripts/run-integration-tests --with-idempotency`
+  from the AWS Pulumi **Subproject**; for direct Promotion, run that command
+  manually only after confirming the operator shell owns the needed AWS and
+  Pulumi credentials.
+
+Mixed **Agent workflow change** and deployable paths are classified from the
+deployable subset. Ralph reports the Agent workflow paths as non-triggering
+context so operators can see why those paths did not raise the deployment tier.
+The **AWS/Pulumi credential boundary** keeps deployed workflow credentials in
+the operator/Ralph outer loop; sandboxed Codex subprocesses and
+**Post-promotion review** do not receive AWS or Pulumi credentials.
 
 Unverified **Promotion** commits in the range are mandatory
 **Post-promotion review** context only. They do not require explicit issue
@@ -312,6 +362,8 @@ Keep failed worktrees unless the maintainer asks for cleanup.
   - `tools/ralph-loop/README.md`
   - `tools/ralph-loop/pyproject.toml`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/src/ralph_loop/state.py`
+  - `tools/ralph-loop/src/ralph_loop/workflow.py`
   - `tools/ralph-loop/tests/unit/test_ralph.py`
   - `.agents/skills/ralph-loop/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`
@@ -320,6 +372,7 @@ Keep failed worktrees unless the maintainer asks for cleanup.
   - `backend-services/scripts/aemo-etl-e2e`
   - `docs/agents/issue-tracker.md`
   - `docs/agents/triage-labels.md`
+  - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
 - `sync.scope`: `operations`

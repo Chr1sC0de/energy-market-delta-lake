@@ -3334,6 +3334,26 @@ class RalphLoop:
         )
         raise IssueFailure(message)
 
+    def _record_post_promotion_deployment_classification(
+        self, changed_files: list[str], manifest: RunManifest
+    ) -> PostPromotionDeploymentClassification:
+        classification = classify_post_promotion_deployment(changed_files)
+        manifest.record_deployment_classification(classification)
+        emit(f"Post-Promotion deployment tier: {classification.tier}")
+        emit(f"Deployment reason: {classification.reason}")
+        emit(f"Recommended deployment action: {classification.recommended_action}")
+        if classification.agent_workflow_paths:
+            emit(
+                "Agent workflow paths are non-triggering context: "
+                + ", ".join(classification.agent_workflow_paths)
+            )
+        if classification.non_triggering_paths:
+            emit(
+                "Non-triggering Promotion paths: "
+                + ", ".join(classification.non_triggering_paths)
+            )
+        return classification
+
     def _promote(self) -> RunManifest:
         source_branch = self.config.source_branch
         target_branch = self._promotion_target_branch()
@@ -3385,6 +3405,9 @@ class RalphLoop:
             )
             manifest.record_changed_files(
                 changed_files, stage="promotion_changes_detected"
+            )
+            self._record_post_promotion_deployment_classification(
+                changed_files, manifest
             )
             if not changed_files:
                 emit(f"No changes to promote from {source_branch} to {target_branch}.")
@@ -5540,80 +5563,35 @@ class RalphLoop:
             issue,
             ready_issue_refresh_notes=refresh_notes,
         )
-        first_log = run_dir / "codex-implementation-1.jsonl"
-        first_codex_completed = False
-        try:
-            emit(f"#{issue.number}: running Codex implementation attempt 1")
-            manifest.record_codex_attempt(1, status="running", log_path=first_log)
-            self._run_codex(
-                first_prompt,
-                worktree_path,
-                first_log,
-                phase=f"#{issue.number}: Codex implementation attempt 1",
-                manifest=manifest,
-                allowed_issue_commands=(
-                    SANDBOX_READ_ONLY_GH_ISSUE_COMMANDS
-                    if access_plan.full_access_required
-                    else SANDBOX_ALLOWED_GH_ISSUE_COMMANDS
-                ),
-                sandbox_mode=(
-                    FULL_ACCESS_CODEX_SANDBOX
-                    if access_plan.full_access_required
-                    else WORKSPACE_WRITE_CODEX_SANDBOX
-                ),
-            )
-            manifest.record_codex_attempt(1, status="completed", log_path=first_log)
-            first_codex_completed = True
-            self._validate_full_access_implementation_diff(
-                access_plan,
-                worktree_path,
-                manifest,
-            )
-            return self._run_qa(
-                issue, worktree_path, run_dir, log_prefix="qa", manifest=manifest
-            )
-        except EnvironmentFailure:
-            if not first_codex_completed:
-                manifest.record_codex_attempt(1, status="failed", log_path=first_log)
-            raise
-        except FullAccessImplementationScopeFailure:
-            raise
-        except (CommandFailure, IssueFailure) as first_error:
-            if first_codex_completed:
-                manifest.record_event(
-                    "implementation_attempt_1_failed",
-                    details={"error": str(first_error)},
-                )
+        last_error: CommandFailure | IssueFailure | None = None
+        for attempt in range(1, self.config.max_codex_attempts + 1):
+            if attempt == 1:
+                prompt = first_prompt
+                emit(f"#{issue.number}: running Codex implementation attempt 1")
             else:
-                first_log_path = (
-                    first_error.log_path
-                    if isinstance(first_error, IssueFailure)
-                    else None
+                if last_error is None:
+                    raise RalphError(
+                        "Cannot build a retry prompt without prior failure evidence."
+                    )
+                prompt = retry_implementation_prompt(
+                    issue,
+                    last_error,
+                    ready_issue_refresh_notes=refresh_notes,
                 )
-                if isinstance(first_error, CommandFailure):
-                    first_log_path = first_error.log_path
-                manifest.record_codex_attempt(
-                    1,
-                    status="failed",
-                    log_path=first_log_path or first_log,
-                    error=str(first_error),
+                emit(
+                    f"#{issue.number}: attempt {attempt - 1} failed; running "
+                    f"Codex implementation attempt {attempt}"
                 )
-            emit(
-                f"#{issue.number}: attempt 1 failed; running Codex implementation attempt 2"
-            )
-            retry_prompt = retry_implementation_prompt(
-                issue,
-                first_error,
-                ready_issue_refresh_notes=refresh_notes,
-            )
-            retry_log = run_dir / "codex-implementation-2.jsonl"
-            manifest.record_codex_attempt(2, status="running", log_path=retry_log)
+
+            codex_log = run_dir / f"codex-implementation-{attempt}.jsonl"
+            codex_completed = False
+            manifest.record_codex_attempt(attempt, status="running", log_path=codex_log)
             try:
                 self._run_codex(
-                    retry_prompt,
+                    prompt,
                     worktree_path,
-                    retry_log,
-                    phase=f"#{issue.number}: Codex implementation attempt 2",
+                    codex_log,
+                    phase=f"#{issue.number}: Codex implementation attempt {attempt}",
                     manifest=manifest,
                     allowed_issue_commands=(
                         SANDBOX_READ_ONLY_GH_ISSUE_COMMANDS
@@ -5626,27 +5604,62 @@ class RalphLoop:
                         else WORKSPACE_WRITE_CODEX_SANDBOX
                     ),
                 )
-            except CommandFailure as retry_error:
                 manifest.record_codex_attempt(
-                    2,
-                    status="failed",
-                    log_path=retry_error.log_path or retry_log,
-                    error=str(retry_error),
+                    attempt, status="completed", log_path=codex_log
                 )
+                codex_completed = True
+                self._validate_full_access_implementation_diff(
+                    access_plan,
+                    worktree_path,
+                    manifest,
+                )
+                return self._run_qa(
+                    issue,
+                    worktree_path,
+                    run_dir,
+                    log_prefix=qa_log_prefix_for_codex_attempt(attempt),
+                    manifest=manifest,
+                )
+            except EnvironmentFailure as error:
+                if not codex_completed:
+                    manifest.record_codex_attempt(
+                        attempt,
+                        status="failed",
+                        log_path=error.log_path or codex_log,
+                        error=str(error),
+                    )
                 raise
-            manifest.record_codex_attempt(2, status="completed", log_path=retry_log)
-            self._validate_full_access_implementation_diff(
-                access_plan,
-                worktree_path,
-                manifest,
-            )
-            return self._run_qa(
-                issue,
-                worktree_path,
-                run_dir,
-                log_prefix="qa-retry",
-                manifest=manifest,
-            )
+            except FullAccessImplementationScopeFailure:
+                raise
+            except (CommandFailure, IssueFailure) as error:
+                last_error = error
+                if codex_completed:
+                    manifest.record_event(
+                        f"implementation_attempt_{attempt}_failed",
+                        details={"error": str(error)},
+                    )
+                else:
+                    log_path = (
+                        error.log_path
+                        if isinstance(error, (CommandFailure, IssueFailure))
+                        else None
+                    )
+                    manifest.record_codex_attempt(
+                        attempt,
+                        status="failed",
+                        log_path=log_path or codex_log,
+                        error=str(error),
+                    )
+                if attempt >= self.config.max_codex_attempts:
+                    emit(
+                        f"#{issue.number}: attempt {attempt} failed; exhausted "
+                        f"--max-codex-attempts {self.config.max_codex_attempts}"
+                    )
+                    raise
+
+        raise RalphError(
+            f"Codex implementation attempt budget was exhausted for #{issue.number}."
+        )
 
     def _run_codex(
         self,
@@ -6334,6 +6347,8 @@ class RalphOperatorRun:
             child_manifest_path=manifest_path,
         )
         self._record_post_promotion_followup_checkpoint(manifest_path)
+        self._record_post_promotion_ready_issue_refresh_checkpoint(manifest_path)
+        self._run_post_promotion_deployment_checkpoint(child_manifest)
         self.manifest.clear_current()
 
     def _record_post_promotion_followup_checkpoint(self, manifest_path: Path) -> None:
@@ -6348,6 +6363,159 @@ class RalphOperatorRun:
             ),
             child_manifest_path=manifest_path,
             details=details,
+        )
+
+    def _record_post_promotion_ready_issue_refresh_checkpoint(
+        self, manifest_path: Path
+    ) -> None:
+        details = post_promotion_ready_issue_refresh_checkpoint_details(manifest_path)
+        if not details:
+            return
+        self.manifest.record_checkpoint(
+            "post_promotion_ready_issue_refresh",
+            message=(
+                "Post-promotion Ready issue refresh phase completed with "
+                f"status {details['status']}."
+            ),
+            child_manifest_path=manifest_path,
+            details=details,
+        )
+
+    def _run_post_promotion_deployment_checkpoint(
+        self, child_manifest: RunManifest
+    ) -> None:
+        classification = post_promotion_deployment_classification_from_manifest(
+            child_manifest.data
+        )
+        command = post_promotion_deployment_command(
+            classification,
+            repo_root=self.config.repo_root,
+        )
+        if command is None:
+            details = deployment_execution_skip_details(classification)
+            child_manifest.record_deployment_execution(
+                "skipped_no_deployment",
+                tier=classification.tier,
+                reason=classification.reason,
+                deployed_test_evidence=details["deployed_test_evidence"],
+                full_tier_idempotency_evidence=details[
+                    "full_tier_idempotency_evidence"
+                ],
+            )
+            self.manifest.record_checkpoint(
+                "deployment_skipped",
+                message=f"Post-promotion deployment skipped: {classification.reason}",
+                child_manifest_path=child_manifest.path,
+                details=child_manifest.data["deployment_execution"],
+            )
+            return
+
+        log_path = child_manifest.path.parent / command.log_name
+        self.manifest.record_current_deployment(
+            tier=classification.tier,
+            command_path=command.command_path,
+            child_manifest_path=child_manifest.path,
+        )
+        child_manifest.record_deployment_execution(
+            "running",
+            tier=classification.tier,
+            reason=classification.reason,
+            command_path=command.command_path,
+            command=command.args,
+            cwd=command.cwd,
+            log_path=log_path,
+            deployed_test_evidence=deployment_deployed_test_evidence(
+                command,
+                status="running",
+                log_path=log_path,
+            ),
+            full_tier_idempotency_evidence=deployment_idempotency_evidence(
+                command,
+                status="running",
+                log_path=log_path,
+            ),
+        )
+        self.manifest.record_checkpoint(
+            "deployment_started",
+            message=f"Starting post-promotion deployment tier {classification.tier}.",
+            child_manifest_path=child_manifest.path,
+            details=child_manifest.data["deployment_execution"],
+        )
+        emit(
+            "Operator cycle: running post-Promotion deployment "
+            f"{classification.tier}: {format_command(command.args)}"
+        )
+        try:
+            self.runner.run(
+                list(command.args),
+                cwd=command.cwd,
+                log_path=log_path,
+                phase=f"post-Promotion deployment: {command.name}",
+                execute_in_dry_run=False,
+            )
+        except CommandFailure as error:
+            child_manifest.record_deployment_execution(
+                "failed",
+                tier=classification.tier,
+                reason=classification.reason,
+                command_path=command.command_path,
+                command=command.args,
+                cwd=command.cwd,
+                log_path=error.log_path or log_path,
+                exit_status=error.returncode,
+                error=str(error),
+                deployed_test_evidence=deployment_deployed_test_evidence(
+                    command,
+                    status="failed",
+                    log_path=error.log_path or log_path,
+                ),
+                full_tier_idempotency_evidence=deployment_idempotency_evidence(
+                    command,
+                    status="failed",
+                    log_path=error.log_path or log_path,
+                ),
+            )
+            guidance = operator_deployment_failure_guidance(child_manifest.path)
+            self.manifest.record_checkpoint(
+                "deployment_failed",
+                message=f"Post-promotion deployment tier {classification.tier} failed.",
+                child_manifest_path=child_manifest.path,
+                status="failed",
+                recovery_guidance=guidance,
+                details=child_manifest.data["deployment_execution"],
+            )
+            self.manifest.record_failure(
+                error,
+                recovery_guidance=guidance,
+                child_manifest_path=child_manifest.path,
+            )
+            raise RalphError(guidance) from error
+
+        child_manifest.record_deployment_execution(
+            "succeeded",
+            tier=classification.tier,
+            reason=classification.reason,
+            command_path=command.command_path,
+            command=command.args,
+            cwd=command.cwd,
+            log_path=log_path,
+            exit_status=0,
+            deployed_test_evidence=deployment_deployed_test_evidence(
+                command,
+                status="passed",
+                log_path=log_path,
+            ),
+            full_tier_idempotency_evidence=deployment_idempotency_evidence(
+                command,
+                status="passed",
+                log_path=log_path,
+            ),
+        )
+        self.manifest.record_checkpoint(
+            "deployment_succeeded",
+            message=f"Post-promotion deployment tier {classification.tier} completed.",
+            child_manifest_path=child_manifest.path,
+            details=child_manifest.data["deployment_execution"],
         )
 
     def _stop_for_queue_condition(
@@ -7365,6 +7533,145 @@ def post_promotion_followup_checkpoint_details(
     }
 
 
+def post_promotion_ready_issue_refresh_checkpoint_details(
+    manifest_path: Path,
+) -> dict[str, Any] | None:
+    if not manifest_path.exists():
+        return None
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    refresh = data.get("ready_issue_refresh")
+    if not isinstance(refresh, dict):
+        return None
+    status = str(refresh.get("status") or "")
+    if status in {"", "not_started"}:
+        return None
+    candidates = refresh.get("candidate_issues")
+    mutations = refresh.get("mutation_results")
+    return {
+        "status": status,
+        "enabled": refresh.get("enabled"),
+        "candidate_issue_count": len(candidates) if isinstance(candidates, list) else 0,
+        "mutation_result_count": len(mutations) if isinstance(mutations, list) else 0,
+        "failure": refresh.get("failure"),
+        "recovery_guidance": refresh.get("recovery_guidance"),
+        "log_path": refresh.get("log_path"),
+        "artifact_path": refresh.get("artifact_path"),
+    }
+
+
+def post_promotion_deployment_classification_from_manifest(
+    data: dict[str, Any],
+) -> PostPromotionDeploymentClassification:
+    value = data.get("deployment_classification")
+    if not isinstance(value, dict):
+        raise RalphError(
+            "Promotion manifest does not include deployment_classification."
+        )
+    if value.get("status") != "classified":
+        raise RalphError(
+            "Promotion manifest deployment_classification is not classified."
+        )
+    return PostPromotionDeploymentClassification(
+        tier=str(value.get("tier") or ""),
+        reason=str(value.get("reason") or ""),
+        recommended_action=str(value.get("recommended_action") or ""),
+        deployable_paths=tuple(
+            str(path) for path in value.get("deployable_paths") or []
+        ),
+        user_code_redeploy_paths=tuple(
+            str(path) for path in value.get("user_code_redeploy_paths") or []
+        ),
+        full_workflow_paths=tuple(
+            str(path) for path in value.get("full_workflow_paths") or []
+        ),
+        agent_workflow_paths=tuple(
+            str(path) for path in value.get("agent_workflow_paths") or []
+        ),
+        non_triggering_paths=tuple(
+            str(path) for path in value.get("non_triggering_paths") or []
+        ),
+    )
+
+
+def deployment_deployed_test_evidence(
+    command: PostPromotionDeploymentCommand,
+    *,
+    status: str,
+    log_path: Path,
+) -> dict[str, Any]:
+    if not command.records_deployed_tests:
+        return {
+            "status": "not_applicable",
+            "reason": "The user-code redeploy tier does not run Deployed tests.",
+            "log_path": path_text(log_path),
+            "command_path": command.command_path,
+        }
+    return {
+        "status": status,
+        "log_path": path_text(log_path),
+        "command_path": command.command_path,
+        "command": list(command.args),
+    }
+
+
+def deployment_idempotency_evidence(
+    command: PostPromotionDeploymentCommand,
+    *,
+    status: str,
+    log_path: Path,
+) -> dict[str, Any]:
+    argument = POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_IDEMPOTENCY_ARG
+    if not command.records_idempotency:
+        return {
+            "status": "not_applicable",
+            "reason": "The user-code redeploy tier does not run full-tier idempotency.",
+            "log_path": path_text(log_path),
+            "command_path": command.command_path,
+            "argument": argument,
+        }
+    return {
+        "status": status if argument in command.args else "missing_argument",
+        "log_path": path_text(log_path),
+        "command_path": command.command_path,
+        "command": list(command.args),
+        "argument": argument,
+    }
+
+
+def deployment_execution_skip_details(
+    classification: PostPromotionDeploymentClassification,
+) -> dict[str, Any]:
+    return {
+        "deployed_test_evidence": {
+            "status": "not_applicable",
+            "reason": classification.reason,
+            "log_path": None,
+            "command_path": None,
+        },
+        "full_tier_idempotency_evidence": {
+            "status": "not_applicable",
+            "reason": classification.reason,
+            "log_path": None,
+            "command_path": None,
+            "argument": POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_IDEMPOTENCY_ARG,
+        },
+    }
+
+
+def operator_deployment_failure_guidance(manifest_path: Path | None) -> str:
+    manifest_text = f" `{manifest_path}`" if manifest_path is not None else ""
+    return (
+        f"Inspect the Promotion child run manifest{manifest_text} and deployment "
+        "command log. Restore the deployed AWS workflow or rerun the Operator run "
+        "after fixing the deployment failure."
+    )
+
+
 def manifest_path_for_run(run_dir: Path) -> Path:
     if run_dir.name == MANIFEST_NAME:
         return run_dir
@@ -7696,6 +8003,10 @@ def operator_current_summary(data: dict[str, Any]) -> str:
         source_branch = str(current.get("source_branch") or "unknown")
         target_branch = str(current.get("target_branch") or "unknown")
         return f"Promotion {source_branch} -> {target_branch}"
+    if kind == "deployment":
+        tier = str(current.get("tier") or "unknown")
+        command_path = str(current.get("command_path") or "no command")
+        return f"deployment {tier}: {command_path}"
     return kind or "unknown"
 
 
@@ -8838,6 +9149,14 @@ def user_facing_error(error: Exception) -> str:
     return str(error)
 
 
+def qa_log_prefix_for_codex_attempt(attempt: int) -> str:
+    if attempt == 1:
+        return "qa"
+    if attempt == 2:
+        return "qa-retry"
+    return f"qa-retry-{attempt}"
+
+
 def build_config(args: CliArgs, runner: CommandRunner) -> LoopConfig:
     repo_root = discover_repo_root(runner).resolve()
     repo = args.repo or discover_repo_slug(runner, repo_root)
@@ -8875,6 +9194,7 @@ def build_config(args: CliArgs, runner: CommandRunner) -> LoopConfig:
         issue=args.issue,
         drain=args.drain or args.drain_promote_all,
         max_issues=args.max_issues,
+        max_codex_attempts=args.max_codex_attempts,
         exploratory_concurrency=args.exploratory_concurrency,
         dry_run=args.dry_run,
         allow_dirty_worktree=args.allow_dirty_worktree,
@@ -8899,6 +9219,8 @@ def operator_child_command(args: CliArgs, run_dir: Path) -> list[str]:
         args.source_branch,
         "--max-issues",
         str(args.max_issues),
+        "--max-codex-attempts",
+        str(args.max_codex_attempts),
         "--exploratory-concurrency",
         str(args.exploratory_concurrency),
         "--issue-limit",
@@ -9155,11 +9477,22 @@ def typer_options(
         typer.Option(
             "--max-issues",
             help=(
-                "Maximum implementation attempts in --drain mode. "
+                "Maximum claimed implementation issues in --drain mode. "
                 f"Defaults to {DEFAULT_DRAIN_BUDGET}. Use 0 for unlimited."
             ),
         ),
     ] = DEFAULT_DRAIN_BUDGET,
+    max_codex_attempts: Annotated[
+        int,
+        typer.Option(
+            "--max-codex-attempts",
+            help=(
+                "Maximum Codex implementation attempts per issue, including "
+                "QA repair attempts. "
+                f"Defaults to {DEFAULT_CODEX_ATTEMPT_BUDGET}."
+            ),
+        ),
+    ] = DEFAULT_CODEX_ATTEMPT_BUDGET,
     exploratory_concurrency: Annotated[
         int,
         typer.Option(
@@ -9325,6 +9658,8 @@ def validate_cli_args(args: CliArgs) -> None:
         cli_error("--operator-run-dir is reserved for foreground Operator child runs.")
     if args.max_cycles < 0:
         cli_error("--max-cycles must be 0 or greater.")
+    if args.max_codex_attempts < 1:
+        cli_error("--max-codex-attempts must be 1 or greater.")
     if args.exploratory_concurrency < 1:
         cli_error("--exploratory-concurrency must be 1 or greater.")
 

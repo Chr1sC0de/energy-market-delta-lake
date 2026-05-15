@@ -105,6 +105,15 @@ and **Post-promotion review** prompt. Manual Gitflow recovery comments are
 verified only when they use the documented title plus `Commit:` line; otherwise
 Promotion warns and records the issue as
 `manual_recovery_commit_unparseable` without silently closing or forgetting it.
+Successful Promotions also record deterministic **Post-Promotion deployment
+classification** from the changed-file inventory. Agent workflow-only
+Promotions select `no_deployment`; deployed AEMO ETL user-code runtime changes
+select `user_code_redeploy`; deployed AWS platform, service runtime, image,
+Dagster core, auth, Caddy, Marimo, Pulumi, code-location topology, or mixed
+deployed-platform changes select `full_deployed_workflow`. Direct Promotion
+prints the recommendation but does not run AWS or Pulumi commands; ADR
+[0009](0009-ralph-post-promotion-deployment-classification.md) records that
+credential boundary.
 Successful Promotions with changed files run **Post-promotion review** by
 default after the `main` push, `dev` sync, and verified issue metadata updates.
 Failed or partial Promotion attempts with changed files also try
@@ -151,6 +160,7 @@ follow-up contract or needs triage evidence.
   - `docs/agents/ralph-loop.md`
   - `CONTEXT.md`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
+  - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

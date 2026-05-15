@@ -39,10 +39,22 @@ on, close, reopen, or relabel existing GitHub Issues.
    assessor** provider.
 8. Revise the drafts until AFK slices have `action: ready` and Exploratory
    implementation slices have `action: exploratory`.
-9. Present the Markdown report, issue drafts, and any report-only
-   `human-decision` slices to the Operator.
+9. Present `report.md`, `issue-drafts.md`, the per-draft files under
+   `issue-drafts/`, and any report-only `human-decision` slices to the
+   Operator.
 10. Publish only if the Operator explicitly says the gated outputs are ready to
     publish, then run `scripts/publish_shape_issues.py --confirm-publish`.
+
+## Follow-up Command Guardrail
+
+After a `$shape-issues` plan or slice breakdown, follow-up verbs such as
+`proceed`, `continue`, `do it`, or `implement the plan` mean `$shape-issues`
+execution: create or update the bundle, run the gate, present review Markdown,
+or publish explicitly confirmed issue drafts. They must not be interpreted as
+direct implementation edits to repository files.
+
+Direct implementation requires `$ralph-loop` or an explicit request to implement
+a specific GitHub Issue, such as `implement issue #123`.
 
 ## Slice Classes
 
@@ -206,7 +218,8 @@ deterministic `rg` candidate files. Use
 `scripts/fixture_context_assessor.py` only for deterministic tests and dry
 contract examples.
 
-The gate writes `report.md` and `report.json`. Runtime outputs under
+The gate writes `report.md`, `report.json`, `issue-drafts.md`, and one
+`issue-drafts/<issue-id>.md` review file per draft. Runtime outputs under
 `.shape-issues/` are ignored by git.
 
 ## Publish Command
@@ -230,9 +243,30 @@ python3 .agents/skills/shape-issues/scripts/publish_shape_issues.py \
   --dry-run
 ```
 
+Reports gated with `scripts/fixture_context_assessor.py` are dry-run only by
+default. Non-dry-run fixture publication requires the Operator to pass the
+explicit override:
+
+```bash
+python3 .agents/skills/shape-issues/scripts/publish_shape_issues.py \
+  .shape-issues/runs/<slug>/bundle.json \
+  --repo Chr1sC0de/energy-market-delta-lake \
+  --confirm-publish \
+  --allow-fixture-publish
+```
+
+Fixture publication with the override records the fixture assessor provider in
+`publish-manifest.json` and in each generated final issue body. Live
+Codex-backed **Issue context assessor** publication does not require this
+override.
+
 The publisher:
 
 - refuses to run without `--confirm-publish`
+- refuses fixture-gated non-dry-run publication without
+  `--allow-fixture-publish`
+- runs a non-dry-run GitHub CLI preflight before writing final body files or
+  `publish-manifest.json`
 - refuses gate actions other than `ready` and `exploratory`
 - refuses missing, `human-decision`, or mismatched classifications
 - refuses when `bundle.json` content no longer matches `report.json`
@@ -246,8 +280,10 @@ The publisher:
   `/issues/N` references before dependent issues are created
 
 If publication fails partway through, inspect `publish-manifest.json` and rerun
-the same command after fixing the cause. Existing source markers make reruns
-skip issues that were already created.
+the same command after fixing the cause. GitHub CLI failures during duplicate
+search or issue creation record the failing phase, exit code, stderr summary,
+and stdout summary in the manifest and terminal error. Existing source markers
+make reruns skip issues that were already created.
 
 ## Gate Actions
 
