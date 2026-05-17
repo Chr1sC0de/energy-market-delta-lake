@@ -14,6 +14,7 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
+  "boto3>=1.42.58",
   "click>=8.1",
   "deltalake>=1.4.2",
   "polars>=1.38.1",
@@ -25,6 +26,7 @@ dev = [
   "prek>=0.3.3",
   "pytest>=9.0.2",
   "ruff>=0.15.4",
+  "types-boto3[s3]>=1.42.58",
   "zuban>=0.6.1",
 ]
 

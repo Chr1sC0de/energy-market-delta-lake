@@ -31,6 +31,8 @@ dist/
 !tools/gas-market-knowledge-base/generated/**/*.yml
 
 # Raw PDF caches stay local to the Gas market knowledge base Subproject.
+tools/gas-market-knowledge-base/.cache/
+tools/gas-market-knowledge-base/.cache/pdfs/
 tools/gas-market-knowledge-base/.pdf-cache/
 tools/gas-market-knowledge-base/cache/
 tools/gas-market-knowledge-base/raw-pdfs/

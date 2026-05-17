@@ -24,7 +24,8 @@ ADR [0010](../adr/0010-gas-market-knowledge-base.md) records the planned
 `tools/gas-market-knowledge-base` **Subproject** and the first **Market
 context** corpus architecture. The
 [Subproject README](../../tools/gas-market-knowledge-base/README.md) owns the
-bronze source manifest command and generated-artifact policy.
+bronze source manifest command, archive PDF cache fetcher, and
+generated-artifact policy.
 
 ## Sync metadata
 
