@@ -114,6 +114,84 @@ def test_source_table_bronze_frame_from_bytes_stores_archive_source_file() -> No
     assert result["source_file"].to_list() == ["s3://archive/bronze/gbb/table.csv"]
 
 
+def test_source_table_bronze_frame_from_bytes_tolerates_missing_surrogate_sources() -> (
+    None
+):
+    df = source_table_bronze_frame_from_bytes(
+        s3_bucket="landing",
+        s3_key="bronze/sttm/int659_v1_bid_offer_rpt_1~260517013317.csv",
+        object_bytes=b"\0" * 32,
+        schema={
+            "gas_date": String,
+            "ingested_timestamp": Datetime("us", time_zone="UTC"),
+            "ingested_date": Datetime("us", time_zone="UTC"),
+            "surrogate_key": String,
+            "source_file": String,
+            SOURCE_CONTENT_HASH_COLUMN: String,
+        },
+        surrogate_key_sources=("gas_date",),
+        current_time=dt.datetime(2024, 1, 1, tzinfo=_AEST),
+        source_file_bucket="archive",
+    )
+
+    result = df.collect()
+
+    assert result.height == 0
+    assert result.columns[:6] == [
+        "gas_date",
+        "ingested_timestamp",
+        "ingested_date",
+        "surrogate_key",
+        "source_file",
+        SOURCE_CONTENT_HASH_COLUMN,
+    ]
+
+
+def test_source_table_bronze_frame_from_bytes_rejects_nonempty_missing_surrogate_source() -> (
+    None
+):
+    with pytest.raises(ValueError, match="missing from non-empty source frame"):
+        source_table_bronze_frame_from_bytes(
+            s3_bucket="landing",
+            s3_key="bronze/gbb/table.csv",
+            object_bytes=b"other_col\nvalue\n",
+            schema={
+                "gas_date": String,
+                "other_col": String,
+                "ingested_timestamp": Datetime("us", time_zone="UTC"),
+                "ingested_date": Datetime("us", time_zone="UTC"),
+                "surrogate_key": String,
+                "source_file": String,
+                SOURCE_CONTENT_HASH_COLUMN: String,
+            },
+            surrogate_key_sources=("gas_date",),
+            current_time=dt.datetime(2024, 1, 1, tzinfo=_AEST),
+            source_file_bucket="archive",
+        )
+
+
+def test_source_table_bronze_frame_from_bytes_rejects_undeclared_surrogate_source() -> (
+    None
+):
+    with pytest.raises(KeyError, match="surrogate_key_sources must be declared"):
+        source_table_bronze_frame_from_bytes(
+            s3_bucket="landing",
+            s3_key="bronze/gbb/table.csv",
+            object_bytes=b"other_col\nvalue\n",
+            schema={
+                "other_col": String,
+                "ingested_timestamp": Datetime("us", time_zone="UTC"),
+                "ingested_date": Datetime("us", time_zone="UTC"),
+                "surrogate_key": String,
+                "source_file": String,
+                SOURCE_CONTENT_HASH_COLUMN: String,
+            },
+            surrogate_key_sources=("business_col",),
+            current_time=dt.datetime(2024, 1, 1, tzinfo=_AEST),
+            source_file_bucket="archive",
+        )
+
+
 def test_source_table_bronze_frame_from_bytes_rejects_unknown_filetype() -> None:
     with pytest.raises(ValueError, match="not supported"):
         source_table_bronze_frame_from_bytes(

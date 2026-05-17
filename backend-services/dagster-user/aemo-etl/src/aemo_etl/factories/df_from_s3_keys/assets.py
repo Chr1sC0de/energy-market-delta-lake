@@ -21,7 +21,16 @@ from dagster import (
 )
 from dagster._core.definitions.asset_key import CoercibleToAssetKey
 from dagster_aws.s3 import S3Resource
-from polars import Expr, LazyFrame, String, col, lit, scan_delta, scan_parquet
+from polars import (
+    Expr,
+    LazyFrame,
+    String,
+    col,
+    len as pl_len,
+    lit,
+    scan_delta,
+    scan_parquet,
+)
 from polars._typing import PolarsDataType
 from types_boto3_s3 import S3Client
 
@@ -348,11 +357,11 @@ def _finalize_landing_objects(
     s3_archive_bucket: str,
     processed_keys: list[str],
     zero_byte_keys: list[str],
-    wrote_table: bool,
+    write_result: SourceTableBronzeWriteResult,
     logger: Logger,
 ) -> _LandingObjectFinalization:
     """Archive/defer processed keys and clean up zero-byte landing objects."""
-    if wrote_table:
+    if write_result.wrote_table or write_result.row_count == 0:
         archived_keys = _archive_processed_keys(
             s3_client=s3_client,
             s3_landing_bucket=s3_landing_bucket,
@@ -477,8 +486,31 @@ def source_table_bronze_frame_from_bytes(
         ingested_date=lit(current_time)
         .dt.replace_time_zone("UTC")
         .dt.replace(hour=0, minute=0, second=0, microsecond=0),
-        surrogate_key=get_surrogate_key(list(surrogate_key_sources)),
     )
+
+    parsed_schema = df.collect_schema()
+    missing_surrogate_columns = [
+        column for column in surrogate_key_sources if column not in parsed_schema
+    ]
+    missing_schema_sources = [
+        column for column in missing_surrogate_columns if column not in schema
+    ]
+    if missing_schema_sources:
+        raise KeyError(
+            "surrogate_key_sources must be declared in schema: "
+            f"{missing_schema_sources}"
+        )
+    if missing_surrogate_columns and df.limit(1).select(pl_len()).collect().item() > 0:
+        raise ValueError(
+            "surrogate_key_sources missing from non-empty source frame: "
+            f"{missing_surrogate_columns}"
+        )
+
+    df = df.with_columns(
+        lit(None).cast(schema[column]).alias(column)
+        for column in missing_surrogate_columns
+    )
+    df = df.with_columns(surrogate_key=get_surrogate_key(list(surrogate_key_sources)))
 
     for hook in postprocess_lazyframe_hooks:
         df = hook.process(s3_bucket, s3_key, df)
@@ -568,7 +600,7 @@ def bronze_df_from_s3_keys_asset_factory(
             s3_archive_bucket=s3_archive_bucket,
             processed_keys=staged_batch.processed_keys,
             zero_byte_keys=staged_batch.zero_byte_keys,
-            wrote_table=write_result.wrote_table,
+            write_result=write_result,
             logger=context.log,
         )
         return _bronze_materialize_result(

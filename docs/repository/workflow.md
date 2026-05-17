@@ -70,8 +70,9 @@ Production orchestration behavior:
 2. Unzipper sensors detect zip payloads, expand their members, and archive the
    original zip files after success.
 3. Event-driven bronze assets ingest matching landed files into Delta tables,
-   archive processed source files only after a table write, delete zero-byte
-   landing objects, and warn on skipped selected keys.
+   archive processed source files after a table write or when a zero-row
+   processed batch requires no table change, delete zero-byte landing objects,
+   and warn on skipped selected keys.
 4. Downstream silver and `gas_model` assets materialize through Dagster
    automation based on dependency updates. Manifest-backed STTM coverage uses
    the fit-plus-extend modeling policy in ADR

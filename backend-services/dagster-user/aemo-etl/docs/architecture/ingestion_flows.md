@@ -52,10 +52,10 @@ Trigger and output notes:
 - The first step is schedule-driven from `src/aemo_etl/defs/raw/nemweb_public_files.py`.
 - The unzip and bronze steps are sensor-driven from `src/aemo_etl/definitions.py`; that module also registers the failed-run alert sensor, which is not part of the ingestion data path shown here. Source-table bronze raw sensors select at most 128 MB (128,000,000 bytes) and 25 landing files per run request by default. Those caps are source-table batching defaults, not the full repo **Fast check** or **Push check** configuration. The source-table sensor suppresses repeated launches after a failed job at the same job tags, while allowing a retry after retry-relevant tags such as ECS CPU or memory change.
 - Outputs land in Delta tables under the AEMO bucket plus archived source files
-  under `ARCHIVE_BUCKET/bronze/gbb`. Processed source files are archived only
-  after a table write; zero-byte landing objects are deleted; missing,
-  unsupported, and deferred selected keys produce a non-blocking WARN asset
-  check.
+  under `ARCHIVE_BUCKET/bronze/gbb`. Processed source files are archived after a
+  table write or when a zero-row processed batch requires no table change;
+  zero-byte landing objects are deleted; missing, unsupported, and deferred
+  selected keys produce a non-blocking WARN asset check.
 
 ## VICGAS ingestion flow
 
@@ -108,9 +108,10 @@ Trigger and output notes:
   basename-only, case-insensitive, and defaults to all matching bundles.
 - The bronze assets merge current-state Delta rows by `surrogate_key` after
   collapsing each micro-batch to the maximum `source_file` per key, archive
-  processed source files only after a table write, delete zero-byte landing
-  objects, and warn on skipped selected keys; the silver assets overwrite the
-  current parquet snapshot.
+  processed source files after a table write or when a zero-row processed batch
+  requires no table change, delete zero-byte landing objects, and warn on
+  skipped selected keys; the silver assets overwrite the current parquet
+  snapshot.
 
 ## STTM ingestion flow
 
@@ -275,7 +276,7 @@ sequenceDiagram
 Trigger and output notes:
 
 - The bronze run can come from an event-driven sensor or from a manual asset launch with explicit `s3_keys`.
-- Bronze writes current-state Delta rows through explicit `df_from_s3_keys` ingestion logic. It archives processed landing files only after a table write, deletes zero-byte landing objects after the write helper returns normally, and emits `check_skipped_s3_keys` as a non-blocking WARN asset check for missing, unsupported, or deferred selected keys. Downstream silver assets and checks load existing bronze Delta tables through `aemo_deltalake_source_table_bronze_read_io_manager`; `df_from_s3_keys` silver uses `aemo_parquet_overwrite_io_manager`.
+- Bronze writes current-state Delta rows through explicit `df_from_s3_keys` ingestion logic. It archives processed landing files after a table write or when a zero-row processed batch requires no table change, deletes zero-byte landing objects after the write helper returns normally, and emits `check_skipped_s3_keys` as a non-blocking WARN asset check for missing, unsupported, or deferred selected keys. Downstream silver assets and checks load existing bronze Delta tables through `aemo_deltalake_source_table_bronze_read_io_manager`; `df_from_s3_keys` silver uses `aemo_parquet_overwrite_io_manager`.
 - Source-table bronze assets are current-state Delta tables, not append-history
   tables. Discovery/listing assets such as `bronze_nemweb_public_files_*` and
   extraction assets such as `unzipper_*` are separate ingestion roles.

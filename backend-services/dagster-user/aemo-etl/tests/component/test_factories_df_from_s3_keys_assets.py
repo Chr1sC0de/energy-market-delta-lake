@@ -419,7 +419,42 @@ def test_asset_writes_current_state_batch(mocker: MockerFixture) -> None:
     assert collected["col1"].to_list() == ["newer", "only"]
 
 
-def test_asset_defers_archive_when_current_state_write_skips(
+def test_asset_archives_zero_row_processed_file_when_current_state_write_skips(
+    mocker: MockerFixture,
+) -> None:
+    asset_def = _make_asset()
+
+    result, mock_s3_client = _call_asset_with_s3_client(
+        mocker,
+        asset_def,
+        s3_keys=["bronze/gbb/nul.csv"],
+        bytes_by_key={"bronze/gbb/nul.csv": b"\0" * 32},
+        writer_result=_SKIPPED_WRITE_RESULT,
+    )
+
+    assert isinstance(result, MaterializeResult)
+    check_result = _skipped_s3_keys_check(result)
+    assert check_result.passed is True
+    assert _metadata_int(check_result.metadata["deferred_processed_key_count"]) == 0
+    metadata = _result_metadata(result)
+    assert metadata["processed_file_count"] == 1
+    assert metadata["archived_file_count"] == 1
+    assert metadata["deferred_processed_file_count"] == 0
+    mock_s3_client.copy_object.assert_called_once_with(
+        CopySource={
+            "Bucket": "dev-energy-market-landing",
+            "Key": "bronze/gbb/nul.csv",
+        },
+        Bucket="dev-energy-market-archive",
+        Key="bronze/gbb/nul.csv",
+    )
+    mock_s3_client.delete_object.assert_called_once_with(
+        Bucket="dev-energy-market-landing",
+        Key="bronze/gbb/nul.csv",
+    )
+
+
+def test_asset_defers_archive_when_nonempty_current_state_write_skips(
     mocker: MockerFixture,
 ) -> None:
     asset_def = _make_asset()
@@ -429,7 +464,12 @@ def test_asset_defers_archive_when_current_state_write_skips(
         asset_def,
         s3_keys=["bronze/gbb/data.csv"],
         bytes_by_key={"bronze/gbb/data.csv": _CSV_BYTES},
-        writer_result=_SKIPPED_WRITE_RESULT,
+        writer_result=SourceTableBronzeWriteResult(
+            row_count=1,
+            target_exists_before_write=True,
+            wrote_table=False,
+            write_mode="skip",
+        ),
     )
 
     assert isinstance(result, MaterializeResult)
