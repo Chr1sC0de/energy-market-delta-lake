@@ -91,13 +91,19 @@ Run from this directory:
 
 ```bash
 make unit-test
+make docling-adapter-test
 make fast-test
 make run-prek
 ```
 
 `make unit-test` is the gas-market-knowledge-base **Unit test** lane.
-`make fast-test` currently aliases that lane until the Subproject has a wider
-**Fast check** surface. `make run-prek` is the Subproject **Commit check**.
+It uses fixtures and mocks, and does not run the real Docling adapter or depend
+on live HuggingFace/Docling model downloads. `make docling-adapter-test` is the
+Docling adapter **Test lane**. It runs `DoclingMarkdownExtractor` against a
+small generated PDF and may require local or downloadable Docling model
+artifacts. `make fast-test` currently aliases the **Unit test** lane until the
+Subproject has a wider **Fast check** surface. `make run-prek` is the
+Subproject **Commit check**.
 
 ## Generated Artifacts
 
@@ -133,6 +139,8 @@ artifact output rather than maintained router documentation.
 - `src/gas_market_knowledge_base/source_manifest.py`: bronze source manifest
   writer for AEMO gas document metadata rows.
 - `tests/unit/`: package import, command-surface, and manifest writer tests.
+- `tests/docling/`: real Docling adapter smoke tests that are intentionally
+  outside the **Unit test** lane.
 - `generated/bronze`, `generated/silver`, `generated/gold`: reserved text
   artifact roots.
 - `.pre-commit-config.yaml`: Subproject `prek` hook surface.
@@ -159,11 +167,13 @@ artifact output rather than maintained router documentation.
   - `tools/gas-market-knowledge-base/tests/unit/test_silver_chunks.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_silver_documents.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_source_manifest.py`
+  - `tools/gas-market-knowledge-base/tests/docling/test_silver_documents_docling.py`
   - `tools/gas-market-knowledge-base/uv.lock`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`
   - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure tools`
   - `make unit-test`
+  - `make docling-adapter-test`
   - `make run-prek`
-  - `verify generated-artifact roots, raw-PDF ignore policy, CLI help, source manifest fixture behavior, PDF cache fixture behavior, silver document extraction fixture behavior, chunk index validation, and no embedding or vector storage behavior`
+  - `verify generated-artifact roots, raw-PDF ignore policy, CLI help, source manifest fixture behavior, PDF cache fixture behavior, silver document extraction fixture behavior, real Docling adapter smoke lane, chunk index validation, and no embedding or vector storage behavior`
