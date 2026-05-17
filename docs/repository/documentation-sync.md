@@ -290,13 +290,12 @@ way:
   [docs/agents/issue-tracker.md](../agents/issue-tracker.md), and
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
 - #176 through #181: The first **Gas market knowledge base** route, ADR,
-  Subproject, bronze source manifest command, PDF archive cache fetcher, and
+  Subproject, bronze source manifest command, PDF archive cache fetcher,
   Docling-based silver document extraction, Docling Hybrid chunks, and silver
-  chunk index keep raw PDFs in S3 or the ignored `.cache/pdfs/` local cache,
-  place text artifacts under
-  `generated/{bronze,silver,gold}`, and treat cited gold
-  **Market context** pages as corpus artifacts rather than maintained router
-  docs. The decision lives in ADR
+  chunk index validation were introduced with raw PDFs kept in S3 or the
+  ignored `.cache/pdfs/` local cache. Text artifacts live under
+  `generated/{bronze,silver,gold}`, and cited gold **Market context** pages are
+  corpus artifacts rather than maintained router docs. The decision lives in ADR
   [0010](../adr/0010-gas-market-knowledge-base.md), and the Subproject policy
   lives in the
   [Subproject README](../../tools/gas-market-knowledge-base/README.md).

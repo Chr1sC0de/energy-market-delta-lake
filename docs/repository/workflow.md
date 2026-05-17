@@ -203,7 +203,8 @@ after failed checkpointed deployment evidence.
   [tools/gas-market-knowledge-base](../../tools/gas-market-knowledge-base/README.md)
   owns the bronze source manifest command, archive PDF cache fetcher,
   Docling-based silver document extraction, Docling Hybrid retrieval chunks,
-  generated-artifact roots, and raw-PDF ignore policy. ADR
+  silver chunk index validation, generated-artifact roots, and raw-PDF ignore
+  policy. ADR
   [0010](../adr/0010-gas-market-knowledge-base.md) records the corpus
   architecture for extraction, retrieval chunks, and cited **Market context**
   pages.
