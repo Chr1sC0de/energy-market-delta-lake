@@ -85,6 +85,12 @@ table change. Operators should inspect the skipped-key WARN asset check when
 selected files are missing, unsupported, or processed with non-empty rows but
 left in landing because no table write occurred.
 
+Source-table CSV parsing accepts either declared headers or schema-ordered
+headerless rows. Physical CSV lines containing NUL bytes are treated as corrupt
+input lines and dropped before `surrogate_key` and `source_content_hash` are
+calculated; if all lines drop, the object follows the zero-row processed-batch
+path above.
+
 No-delete-on-absence is intentional. If a source table later publishes a file
 that omits a previously seen `surrogate_key`, bronze keeps the existing row
 until a separate, explicit deletion design exists.

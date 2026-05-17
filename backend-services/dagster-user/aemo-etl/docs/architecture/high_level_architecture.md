@@ -148,6 +148,8 @@ The bronze asset:
 - receives S3 object keys from a sensor run config
 - reads bytes from landing storage
 - applies optional preprocessing hooks
+- parses headered CSV files or schema-ordered headerless CSV files, and drops
+  NUL-contaminated physical CSV lines before surrogate-key generation
 - collapses each micro-batch to current state by `surrogate_key`
 - merges current-state rows into the bronze Delta table in the AEMO bucket
 - archives processed source files after a table write or when a zero-row
@@ -169,9 +171,10 @@ bronze targets run from `bronze/sttm/bronze_int651_v1_ex_ante_market_price_rpt_1
 through `bronze/sttm/bronze_int691_v1_sttm_ctp_register_rpt_1`, excluding the
 landing-only `INT685` and `INT685B` gaps.
 
-The compact manifest declares every STTM report column as `String` and uses the
-normal ingestion metadata, `surrogate_key`, `source_file`, and
-`source_content_hash` conventions.
+The compact manifest declares every STTM report column as `String`, supplies the
+schema order used for headerless source CSVs, and uses the normal ingestion
+metadata, `surrogate_key`, `source_file`, and `source_content_hash`
+conventions.
 
 Source-table bronze semantics:
 

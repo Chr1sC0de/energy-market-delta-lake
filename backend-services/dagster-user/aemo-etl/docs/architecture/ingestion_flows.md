@@ -276,7 +276,7 @@ sequenceDiagram
 Trigger and output notes:
 
 - The bronze run can come from an event-driven sensor or from a manual asset launch with explicit `s3_keys`.
-- Bronze writes current-state Delta rows through explicit `df_from_s3_keys` ingestion logic. It archives processed landing files after a table write or when a zero-row processed batch requires no table change, deletes zero-byte landing objects after the write helper returns normally, and emits `check_skipped_s3_keys` as a non-blocking WARN asset check for missing, unsupported, or deferred selected keys. Downstream silver assets and checks load existing bronze Delta tables through `aemo_deltalake_source_table_bronze_read_io_manager`; `df_from_s3_keys` silver uses `aemo_parquet_overwrite_io_manager`.
+- Bronze writes current-state Delta rows through explicit `df_from_s3_keys` ingestion logic. It parses headered CSVs or schema-ordered headerless CSVs, drops NUL-contaminated physical CSV lines before surrogate-key generation, archives processed landing files after a table write or when a zero-row processed batch requires no table change, deletes zero-byte landing objects after the write helper returns normally, and emits `check_skipped_s3_keys` as a non-blocking WARN asset check for missing, unsupported, or deferred selected keys. Downstream silver assets and checks load existing bronze Delta tables through `aemo_deltalake_source_table_bronze_read_io_manager`; `df_from_s3_keys` silver uses `aemo_parquet_overwrite_io_manager`.
 - Source-table bronze assets are current-state Delta tables, not append-history
   tables. Discovery/listing assets such as `bronze_nemweb_public_files_*` and
   extraction assets such as `unzipper_*` are separate ingestion roles.

@@ -22,12 +22,14 @@ from dagster import (
 from dagster._core.definitions.asset_key import CoercibleToAssetKey
 from dagster_aws.s3 import S3Resource
 from polars import (
+    DataFrame,
     Expr,
     LazyFrame,
     String,
     col,
     len as pl_len,
     lit,
+    scan_csv,
     scan_delta,
     scan_parquet,
 )
@@ -461,6 +463,40 @@ def add_source_content_hash(df: LazyFrame, source_columns: list[str]) -> LazyFra
     )
 
 
+def _drop_nul_csv_lines(object_bytes: bytes) -> bytes:
+    """Return CSV bytes without physical lines contaminated by NUL bytes."""
+    if b"\0" not in object_bytes:
+        return object_bytes
+    return b"".join(
+        line for line in object_bytes.splitlines(keepends=True) if b"\0" not in line
+    )
+
+
+def _source_table_csv_lazyframe_from_bytes(
+    object_bytes: bytes, schema: Mapping[str, PolarsDataType]
+) -> LazyFrame:
+    """Scan source-table CSV bytes using declared columns when no header is present."""
+    source_schema = {
+        column: schema[column] for column in source_content_hash_columns(schema)
+    }
+    object_bytes = _drop_nul_csv_lines(object_bytes)
+    if not object_bytes.strip():
+        return DataFrame(schema=source_schema).lazy()
+
+    df = scan_csv(object_bytes, infer_schema_length=None)
+    parsed_schema = df.collect_schema()
+    if any(column in parsed_schema for column in source_schema):
+        return df
+
+    return scan_csv(
+        object_bytes,
+        has_header=False,
+        infer_schema_length=None,
+        new_columns=list(source_schema),
+        truncate_ragged_lines=True,
+    )
+
+
 def source_table_bronze_frame_from_bytes(
     *,
     s3_bucket: str,
@@ -481,7 +517,12 @@ def source_table_bronze_frame_from_bytes(
     for hook in postprocess_object_hooks:
         object_bytes = hook.process(s3_bucket, s3_key, object_bytes)
 
-    df = bytes_to_lazyframe(filetype, object_bytes).with_columns(
+    if filetype == "csv":
+        df = _source_table_csv_lazyframe_from_bytes(object_bytes, schema)
+    else:
+        df = bytes_to_lazyframe(filetype, object_bytes)
+
+    df = df.with_columns(
         ingested_timestamp=lit(current_time),
         ingested_date=lit(current_time)
         .dt.replace_time_zone("UTC")
