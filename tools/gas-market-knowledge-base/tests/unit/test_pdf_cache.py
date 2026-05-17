@@ -1,3 +1,4 @@
+import ast
 import hashlib
 import json
 from collections.abc import Mapping
@@ -12,6 +13,8 @@ from gas_market_knowledge_base.pdf_cache import (
     fetch_pdf_cache,
     pdf_cache_path,
 )
+
+SUBPROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class FakeArchiveReader(ArchiveObjectReader):
@@ -55,6 +58,42 @@ def _write_manifest(path: Path, rows: list[Mapping[str, object]]) -> None:
         "".join(f"{json.dumps(row, sort_keys=True)}\n" for row in rows),
         encoding="utf-8",
     )
+
+
+def test_pdf_cache_s3_stub_imports_are_type_checking_only() -> None:
+    source_path = SUBPROJECT_ROOT / "src/gas_market_knowledge_base/pdf_cache.py"
+    tree = ast.parse(source_path.read_text(encoding="utf-8"))
+
+    runtime_imports: list[str] = []
+    for statement in tree.body:
+        if _is_type_checking_guard(statement):
+            continue
+        runtime_imports.extend(_types_boto3_imports(statement))
+
+    assert runtime_imports == []
+
+
+def _is_type_checking_guard(statement: ast.stmt) -> bool:
+    return (
+        isinstance(statement, ast.If)
+        and isinstance(statement.test, ast.Name)
+        and statement.test.id == "TYPE_CHECKING"
+    )
+
+
+def _types_boto3_imports(statement: ast.stmt) -> list[str]:
+    imports: list[str] = []
+    if isinstance(statement, ast.Import):
+        imports.extend(
+            alias.name
+            for alias in statement.names
+            if alias.name.startswith("types_boto3_s3")
+        )
+    if isinstance(statement, ast.ImportFrom):
+        module = statement.module or ""
+        if module.startswith("types_boto3_s3"):
+            imports.append(module)
+    return imports
 
 
 def test_fetch_pdfs_reuses_valid_cache_entry(tmp_path: Path) -> None:

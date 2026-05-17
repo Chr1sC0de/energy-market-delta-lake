@@ -203,6 +203,8 @@ DEPLOY_REPAIR_REQUIRED_ISSUE_SECTIONS = (
 AEMO_ETL_PREFIX = "backend-services/dagster-user/aemo-etl/"
 MARIMO_PREFIX = "backend-services/marimo/"
 RALPH_LOOP_PREFIX = "tools/ralph-loop/"
+GAS_MARKET_KNOWLEDGE_BASE_PREFIX = "tools/gas-market-knowledge-base/"
+GAS_MARKET_KNOWLEDGE_BASE_README_PATH = f"{GAS_MARKET_KNOWLEDGE_BASE_PREFIX}README.md"
 RALPH_SCRIPT_PATH = "scripts/ralph.py"
 BACKEND_SERVICES_PREFIX = "backend-services/"
 AWS_PULUMI_PREFIX = "infrastructure/aws-pulumi/"
@@ -2393,9 +2395,9 @@ def resolve_delivery_plan(
 def is_maintained_doc_path(changed_file: str) -> bool:
     if not changed_file.endswith(".md"):
         return False
-    return changed_file == "README.md" or any(
-        changed_file.startswith(prefix) for prefix in MAINTAINED_DOC_PREFIXES
-    )
+    if changed_file in {"README.md", GAS_MARKET_KNOWLEDGE_BASE_README_PATH}:
+        return True
+    return any(changed_file.startswith(prefix) for prefix in MAINTAINED_DOC_PREFIXES)
 
 
 def root_prek_needed(changed_file: str) -> bool:
@@ -2658,6 +2660,12 @@ def has_marimo_runtime_change(changed_files: list[str]) -> bool:
     )
 
 
+def has_gas_market_knowledge_base_change(changed_files: list[str]) -> bool:
+    return any(
+        path.startswith(GAS_MARKET_KNOWLEDGE_BASE_PREFIX) for path in changed_files
+    )
+
+
 def has_ralph_loop_change(changed_files: list[str]) -> bool:
     return any(
         path == RALPH_SCRIPT_PATH or path.startswith(RALPH_LOOP_PREFIX)
@@ -2731,6 +2739,23 @@ def select_qa_commands(
                     "Marimo Component test",
                 ),
                 QACommand(("prek", "run", "-a"), marimo_root, "Marimo Commit check"),
+            ]
+        )
+
+    if has_gas_market_knowledge_base_change(changed_files):
+        gas_market_knowledge_base_root = repo_root / GAS_MARKET_KNOWLEDGE_BASE_PREFIX
+        commands.extend(
+            [
+                QACommand(
+                    ("make", "unit-test"),
+                    gas_market_knowledge_base_root,
+                    "Gas market knowledge base Unit test",
+                ),
+                QACommand(
+                    ("make", "run-prek"),
+                    gas_market_knowledge_base_root,
+                    "Gas market knowledge base Commit check",
+                ),
             ]
         )
 

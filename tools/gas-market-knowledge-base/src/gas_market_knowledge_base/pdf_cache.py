@@ -7,17 +7,19 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 from urllib.parse import ParseResult, unquote, urlparse
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
-from types_boto3_s3 import S3Client
 
 from gas_market_knowledge_base.source_manifest import (
     default_source_manifest_path,
     subproject_root,
 )
+
+if TYPE_CHECKING:
+    from types_boto3_s3 import S3Client
 
 PDF_CACHE_RELATIVE_PATH = Path(".cache/pdfs")
 _SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
@@ -47,7 +49,7 @@ class ArchiveObjectReader(ABC):
 class DefaultArchiveObjectReader(ArchiveObjectReader):
     """Read archive bytes from S3 or local fixture paths."""
 
-    def __init__(self, *, s3_client: S3Client | None = None) -> None:
+    def __init__(self, *, s3_client: "S3Client | None" = None) -> None:
         self._s3_client = s3_client
 
     def read_bytes(self, uri: str) -> bytes:
@@ -76,7 +78,7 @@ class DefaultArchiveObjectReader(ArchiveObjectReader):
         except (BotoCoreError, ClientError, KeyError) as e:
             raise ArchiveObjectReadError(str(e)) from e
 
-    def _get_s3_client(self) -> S3Client:
+    def _get_s3_client(self) -> "S3Client":
         if self._s3_client is None:
             self._s3_client = boto3.client("s3")
         return self._s3_client

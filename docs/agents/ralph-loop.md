@@ -1533,6 +1533,18 @@ Mixed docs/runtime Marimo changes run both the Marimo **Component test** and
 Marimo **Commit check** from `backend-services/marimo`, plus the root doc
 **Commit check**.
 
+For Gas market knowledge base changes, Ralph runs from the owning
+**Subproject**:
+
+```bash
+make unit-test
+make run-prek
+```
+
+Generated corpus Markdown under `tools/gas-market-knowledge-base/generated/` is
+artifact output rather than maintained router documentation, so it does not
+trigger the root doc **Commit check**.
+
 For root docs/config or cross-**Subproject** changes, Ralph runs:
 
 ```bash
@@ -1677,6 +1689,8 @@ container-backed **Integration test** dependencies.
   - `tools/ralph-loop/src/ralph_loop/state.py`
   - `tools/ralph-loop/src/ralph_loop/workflow.py`
   - `tools/ralph-loop/tests/unit/test_ralph.py`
+  - `tools/gas-market-knowledge-base/Makefile`
+  - `tools/gas-market-knowledge-base/README.md`
   - `CONTEXT.md`
   - `OPERATOR.md`
   - `AGENTS.md`
