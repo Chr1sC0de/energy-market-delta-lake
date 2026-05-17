@@ -2,9 +2,9 @@
 
 This Subproject is the repo-local **Gas market knowledge base** tool surface.
 It currently provides the Python package layout, bronze source manifest command,
-archive PDF cache fetcher, generated-artifact policy, and **Unit test** lane.
-It does not run Docling extraction, create retrieval chunks, or add gold
-**Market context** pages.
+archive PDF cache fetcher, Docling-based silver document extraction,
+generated-artifact policy, and **Unit test** lane. It does not create retrieval
+chunks or add gold **Market context** pages.
 
 The CLI is available inside this Subproject with `uv run`:
 
@@ -39,6 +39,22 @@ download validates against the manifest hash. Row-level failures such as missing
 archive URIs, fetch failures, or hash mismatches are reported and cause a
 non-zero exit.
 
+Extract silver document Markdown from the bronze manifest and cached PDFs:
+
+```bash
+uv run gas-market-kb extract-silver
+```
+
+The command reads `generated/bronze/source_manifest.jsonl`, validates cached
+PDF bytes in `.cache/pdfs/<content_sha256>.pdf`, converts each changed PDF to
+Markdown with Docling and OCR disabled, and writes deterministic document files
+under `generated/silver/documents/<document_identity>.md`. Each generated file
+starts with stable JSON frontmatter containing the manifest line, source
+document fields, `content_sha256`, and extraction settings hash. Existing
+outputs are skipped when the source hash and extraction settings hash still
+match. Failed conversions, missing or mismatched cached PDFs, and low-text
+extractions are reported as errors instead of writing empty Markdown pages.
+
 ## Local QA
 
 Run from this directory:
@@ -55,12 +71,12 @@ make run-prek
 
 ## Generated Artifacts
 
-Future corpus text artifacts belong under these generated roots:
+Corpus text artifacts belong under these generated roots:
 
-- `generated/bronze`: Docling Markdown extraction output and extraction
-  metadata tied to source document identity, plus the tracked
-  `source_manifest.jsonl` inventory used to plan extraction.
-- `generated/silver`: Docling Hybrid chunks prepared for retrieval.
+- `generated/bronze`: source manifest inventory used to plan extraction.
+- `generated/silver/documents`: Docling Markdown extraction output tied to
+  source document identity and `content_sha256`.
+- `generated/silver/chunks`: Docling Hybrid chunks prepared for retrieval.
 - `generated/gold`: cited, agent-authored **Market context** pages.
 
 Generated Markdown, JSON, JSONL, YAML, and text files under those roots may be
@@ -76,7 +92,11 @@ artifact output rather than maintained router documentation.
 ## Layout
 
 - `src/gas_market_knowledge_base/cli.py`: CLI entrypoint.
+- `src/gas_market_knowledge_base/docling_adapter.py`: Docling PDF-to-Markdown
+  adapter with OCR disabled for v1 extraction.
 - `src/gas_market_knowledge_base/pdf_cache.py`: archive PDF cache fetcher.
+- `src/gas_market_knowledge_base/silver_documents.py`: silver document
+  extraction planning, validation, frontmatter, and write behavior.
 - `src/gas_market_knowledge_base/source_manifest.py`: bronze source manifest
   writer for AEMO gas document metadata rows.
 - `tests/unit/`: package import, command-surface, and manifest writer tests.
@@ -96,10 +116,13 @@ artifact output rather than maintained router documentation.
   - `tools/gas-market-knowledge-base/pyproject.toml`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/__init__.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/cli.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/docling_adapter.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/pdf_cache.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/silver_documents.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/source_manifest.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_cli.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_pdf_cache.py`
+  - `tools/gas-market-knowledge-base/tests/unit/test_silver_documents.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_source_manifest.py`
   - `tools/gas-market-knowledge-base/uv.lock`
 - `sync.scope`: `operations`
@@ -108,4 +131,4 @@ artifact output rather than maintained router documentation.
   - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure tools`
   - `make unit-test`
   - `make run-prek`
-  - `verify generated-artifact roots, raw-PDF ignore policy, CLI help, source manifest fixture behavior, and PDF cache fixture behavior`
+  - `verify generated-artifact roots, raw-PDF ignore policy, CLI help, source manifest fixture behavior, PDF cache fixture behavior, and silver document extraction fixture behavior`

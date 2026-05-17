@@ -22,14 +22,15 @@ artifacts are added.
 
 AEMO ETL remains responsible for source-page discovery, direct-media download,
 bronze metadata, and archive storage. Raw PDF bytes stay in S3 or in a local
-cache used by the future tool. The repository must not commit raw PDFs.
+cache used by the knowledge-base tool. The repository must not commit raw PDFs.
 
-The future knowledge-base Subproject will track text artifacts under
+The knowledge-base Subproject tracks or reserves text artifacts under
 `generated/{bronze,silver,gold}`:
 
-- `generated/bronze`: Docling Markdown extraction output and extraction
-  metadata tied to the source document identity.
-- `generated/silver`: Docling Hybrid chunks prepared for retrieval.
+- `generated/bronze`: source manifest inventory used to plan extraction.
+- `generated/silver/documents`: Docling Markdown extraction output tied to the
+  source document identity and source hash.
+- `generated/silver/chunks`: Docling Hybrid chunks prepared for retrieval.
 - `generated/gold`: cited, agent-authored **Market context** pages.
 
 Docling is the accepted PDF-to-Markdown extraction tool. Docling Hybrid chunks

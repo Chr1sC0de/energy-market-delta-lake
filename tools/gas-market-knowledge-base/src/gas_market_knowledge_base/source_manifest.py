@@ -311,12 +311,11 @@ def _manifest_row(
 
 
 def _generated_paths(document_identity: str) -> dict[str, str]:
-    base_path = f"generated/bronze/documents/{document_identity}"
+    silver_document_base_path = f"generated/silver/documents/{document_identity}"
     silver_base_path = f"generated/silver/chunks/{document_identity}"
     gold_base_path = f"generated/gold/{document_identity}"
     return {
-        "bronze_markdown": f"{base_path}.md",
-        "bronze_metadata": f"{base_path}.metadata.json",
+        "silver_document_markdown": f"{silver_document_base_path}.md",
         "silver_chunks": f"{silver_base_path}.jsonl",
         "silver_metadata": f"{silver_base_path}.metadata.json",
         "gold_context": f"{gold_base_path}.md",
