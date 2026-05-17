@@ -89,6 +89,7 @@ DOCS_README_REQUIRED_TARGETS = frozenset(
         "infrastructure/aws-pulumi/README.md",
         "infrastructure/aws-pulumi/docs/README.md",
         "tools/ralph-loop/README.md",
+        "tools/gas-market-knowledge-base/README.md",
     }
 )
 AGENTS_README_REQUIRED_TARGETS = frozenset(
@@ -101,6 +102,7 @@ AGENTS_README_REQUIRED_TARGETS = frozenset(
         "docs/agents/issue-tracker.md",
         "docs/agents/ralph-loop.md",
         "docs/agents/triage-labels.md",
+        "tools/gas-market-knowledge-base/README.md",
     }
 )
 
@@ -286,6 +288,8 @@ def _is_maintained_doc_path(relative_path: Path) -> bool:
     if relative_path.parts[0] == "backend-services":
         return True
     if relative_path.parts[:2] == ("tools", "ralph-loop"):
+        return True
+    if relative_path == Path("tools/gas-market-knowledge-base/README.md"):
         return True
     return relative_path.parts[:2] == ("infrastructure", "aws-pulumi")
 
@@ -493,6 +497,18 @@ class DocumentationQaRatchetTests(unittest.TestCase):
                 self.assertNotEqual("", section)
                 for key in SYNC_METADATA_KEYS:
                     self.assertIn(f"- `{key}`:", section)
+
+    def test_generated_markdown_is_not_maintained_doc_scope(self) -> None:
+        generated_markdown_paths = (
+            Path("generated/example.md"),
+            Path("tools/gas-market-knowledge-base/generated/bronze/example.md"),
+            Path("tools/gas-market-knowledge-base/generated/silver/example.md"),
+            Path("tools/gas-market-knowledge-base/generated/gold/example.md"),
+        )
+
+        for relative_path in generated_markdown_paths:
+            with self.subTest(path=relative_path.as_posix()):
+                self.assertFalse(_is_maintained_doc_path(relative_path))
 
     def test_sync_source_paths_exist(self) -> None:
         for doc_path in _maintained_docs():

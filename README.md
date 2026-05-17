@@ -25,13 +25,11 @@ Subproject docs for detailed commands, defaults, diagrams, and behavior.
   validation.
 - [tools/ralph-loop](tools/ralph-loop/README.md): packaged Ralph issue loop
   CLI, unit tests, and **Commit check** surface.
-
-Planned **Subproject**:
-
-- `tools/gas-market-knowledge-base`: reserved by ADR
-  [0010](docs/adr/0010-gas-market-knowledge-base.md) for the future
-  **Gas market knowledge base**. This issue records the route and architecture
-  only; it does not add the Subproject implementation.
+- [tools/gas-market-knowledge-base](tools/gas-market-knowledge-base/README.md):
+  scaffolded **Gas market knowledge base** tooling, generated text artifact
+  roots, unit tests, and **Commit check** surface. ADR
+  [0010](docs/adr/0010-gas-market-knowledge-base.md) records the corpus
+  architecture.
 
 ## Repository docs
 
@@ -66,6 +64,7 @@ Planned **Subproject**:
   - `infrastructure/aws-pulumi/README.md`
   - `backend-services/dagster-core/code-locations.aws.toml`
   - `tools/ralph-loop/README.md`
+  - `tools/gas-market-knowledge-base/README.md`
 - `sync.scope`: `router`
 - `sync.qa`:
   - `git diff --name-only`

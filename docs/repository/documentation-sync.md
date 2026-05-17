@@ -27,6 +27,7 @@ The sync workflow applies to maintained Markdown files in these paths:
 - `infrastructure/aws-pulumi/**/*.md`
 - `backend-services/dagster-user/aemo-etl/**/*.md`
 - `tools/ralph-loop/**/*.md`
+- `tools/gas-market-knowledge-base/README.md`
 
 Each maintained doc must end with a visible `## Sync metadata` section.
 
@@ -53,11 +54,11 @@ migration docs should live under the maintained documentation paths above and
 carry sync metadata.
 
 ADR [0010](../adr/0010-gas-market-knowledge-base.md) reserves
-`generated/{bronze,silver,gold}` for future **Gas market knowledge base** corpus
+`generated/{bronze,silver,gold}` for **Gas market knowledge base** corpus
 artifacts. Those generated text artifacts are not maintained router docs under
-this workflow. Future **Subproject** docs for `tools/gas-market-knowledge-base`
-must add their own maintained-doc route and sync metadata when implementation
-creates that Subproject.
+this workflow. The `tools/gas-market-knowledge-base/README.md` Subproject doc
+is maintained, but generated Markdown under that Subproject's `generated/`
+tree remains reviewable corpus output rather than maintained documentation.
 
 ## Sync metadata contract
 
@@ -288,12 +289,14 @@ way:
   [OPERATOR.md](../../OPERATOR.md),
   [docs/agents/issue-tracker.md](../agents/issue-tracker.md), and
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
-- #176: The first **Gas market knowledge base** route and ADR record a planned
-  `tools/gas-market-knowledge-base` **Subproject** without creating the
-  implementation. Raw PDFs remain in S3 or local cache, future text artifacts
-  belong under `generated/{bronze,silver,gold}`, and cited gold **Market
-  context** pages are corpus artifacts rather than maintained router docs. The
-  decision lives in ADR [0010](../adr/0010-gas-market-knowledge-base.md).
+- #176 and #177: The first **Gas market knowledge base** route, ADR, and
+  scaffolded `tools/gas-market-knowledge-base` **Subproject** keep raw PDFs in
+  S3 or local cache, place future text artifacts under
+  `generated/{bronze,silver,gold}`, and treat cited gold **Market context**
+  pages as corpus artifacts rather than maintained router docs. The decision
+  lives in ADR [0010](../adr/0010-gas-market-knowledge-base.md), and the
+  scaffold policy lives in the
+  [Subproject README](../../tools/gas-market-knowledge-base/README.md).
 
 ## Search commands
 
@@ -337,6 +340,7 @@ These commands support the intended flow:
   - `docs/adr/0010-gas-market-knowledge-base.md`
   - `tests/test_documentation_qa_ratchet.py`
   - `.pre-commit-config.yaml`
+  - `.gitignore`
   - `backend-services/.pre-commit-config.yaml`
   - `backend-services/authentication/.pre-commit-config.yaml`
   - `backend-services/authentication/pyproject.toml`
@@ -357,6 +361,13 @@ These commands support the intended flow:
   - `tools/ralph-loop/src/ralph_loop/workflow.py`
   - `tools/ralph-loop/tests/unit/test_ralph.py`
   - `tools/ralph-loop/uv.lock`
+  - `tools/gas-market-knowledge-base/.pre-commit-config.yaml`
+  - `tools/gas-market-knowledge-base/Makefile`
+  - `tools/gas-market-knowledge-base/README.md`
+  - `tools/gas-market-knowledge-base/pyproject.toml`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/cli.py`
+  - `tools/gas-market-knowledge-base/tests/unit/test_cli.py`
+  - `tools/gas-market-knowledge-base/uv.lock`
   - `scripts/check_shell_script_headers.py`
   - `scripts/ralph.py`
 - `sync.scope`: `operations, tooling`

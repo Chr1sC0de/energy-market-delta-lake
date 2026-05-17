@@ -14,10 +14,11 @@ of git and keep AEMO ETL focused on ingestion.
 
 ## Decision
 
-Future implementation work will create a separate
-`tools/gas-market-knowledge-base` **Subproject**. This issue only records the
-language and architecture; it does not create that directory, add runtime code,
-or add generated corpus artifacts.
+Implementation work starts in a separate
+`tools/gas-market-knowledge-base` **Subproject**. The first scaffold provides
+the package layout, local command surface, generated-artifact policy, and
+**Unit test** lane before any PDF pipeline runtime code or generated corpus
+artifacts are added.
 
 AEMO ETL remains responsible for source-page discovery, direct-media download,
 bronze metadata, and archive storage. Raw PDF bytes stay in S3 or in a local
@@ -57,10 +58,10 @@ them as cited review artifacts rather than fully automated truth.
 
 ## Consequences
 
-Future implementation issues should add the new Subproject, its command
-surface, dependency files, local cache rules, generated corpus layout, and
-maintained docs in that Subproject. Until then, `tools/gas-market-knowledge-base`
-is a reserved planned path, not an implemented route.
+The scaffolded Subproject owns its local cache rules, generated corpus layout,
+placeholder command surface, dependency files, and maintained README. Future
+implementation issues should add the PDF extraction, chunking, citation, and
+review workflows without moving those side effects into AEMO ETL.
 
 AEMO ETL must not grow Docling dependencies or extraction side effects under
 this decision. `bronze_aemo_gas_document_sources` remains the boundary for
@@ -101,4 +102,4 @@ its own ADR.
   - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure tools`
   - `python3 -m unittest discover -s tests`
   - `prek run -a`
-  - `verify ADR links, planned Subproject language, and AEMO gas document boundaries`
+  - `verify ADR links, Subproject language, and AEMO gas document boundaries`
