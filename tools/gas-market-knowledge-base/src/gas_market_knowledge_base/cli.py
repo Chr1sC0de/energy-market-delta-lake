@@ -9,6 +9,15 @@ from gas_market_knowledge_base.pdf_cache import (
     default_pdf_cache_dir,
     fetch_pdf_cache,
 )
+from gas_market_knowledge_base.silver_chunks import (
+    HybridChunkExtractionError,
+    HybridChunkExtractor,
+    SilverChunkInputError,
+    build_silver_index,
+    default_silver_chunks_dir,
+    default_silver_index_path,
+    validate_silver_index,
+)
 from gas_market_knowledge_base.silver_documents import (
     DEFAULT_MIN_TEXT_CHARS,
     MarkdownExtractor,
@@ -208,8 +217,177 @@ def extract_silver(
     click.echo(summary)
 
 
+@main.command("build-index")
+@click.option(
+    "--manifest-path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=default_source_manifest_path(),
+    show_default=True,
+    help="Bronze source manifest JSONL path to read.",
+)
+@click.option(
+    "--cache-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=default_pdf_cache_dir(),
+    show_default=True,
+    help="Local PDF cache directory populated by fetch-pdfs.",
+)
+@click.option(
+    "--document-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=default_silver_documents_dir(),
+    show_default=True,
+    help="Silver document Markdown directory produced by extract-silver.",
+)
+@click.option(
+    "--chunk-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=default_silver_chunks_dir(),
+    show_default=True,
+    help="Silver chunk Markdown directory to write.",
+)
+@click.option(
+    "--index-path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=default_silver_index_path(),
+    show_default=True,
+    help="Silver chunk index JSONL path to write.",
+)
+@click.option(
+    "--min-text-chars",
+    type=click.IntRange(min=1),
+    default=DEFAULT_MIN_TEXT_CHARS,
+    show_default=True,
+    help="Minimum extracted text setting used by extract-silver.",
+)
+def build_index(
+    manifest_path: Path,
+    cache_dir: Path,
+    document_dir: Path,
+    chunk_dir: Path,
+    index_path: Path,
+    min_text_chars: int,
+) -> None:
+    """Build silver Docling Hybrid chunks and the retrieval index."""
+    try:
+        result = build_silver_index(
+            extractor=_default_hybrid_chunk_extractor(),
+            manifest_path=manifest_path,
+            cache_dir=cache_dir,
+            document_dir=document_dir,
+            chunk_dir=chunk_dir,
+            index_path=index_path,
+            min_text_chars=min_text_chars,
+        )
+    except (SilverChunkInputError, SilverExtractionInputError) as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1) from e
+    except HybridChunkExtractionError as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1) from e
+
+    summary = (
+        f"summary: manifest_rows={result.manifest_row_count} "
+        f"source_documents={result.source_document_count} "
+        f"chunks={result.chunk_count} "
+        f"errors={result.error_count}"
+    )
+    if result.errors:
+        click.echo(
+            f"Error: build-index found {result.error_count} problem(s)", err=True
+        )
+        for error in result.errors:
+            click.echo(f"- {error}", err=True)
+        click.echo(summary, err=True)
+        raise SystemExit(1)
+
+    click.echo(f"wrote silver chunks to {result.chunk_dir}")
+    click.echo(f"wrote silver chunk index to {result.index_path}")
+    click.echo(summary)
+
+
+@main.command("validate")
+@click.option(
+    "--manifest-path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=default_source_manifest_path(),
+    show_default=True,
+    help="Bronze source manifest JSONL path to read.",
+)
+@click.option(
+    "--document-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=default_silver_documents_dir(),
+    show_default=True,
+    help="Silver document Markdown directory produced by extract-silver.",
+)
+@click.option(
+    "--chunk-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=default_silver_chunks_dir(),
+    show_default=True,
+    help="Silver chunk Markdown directory to validate.",
+)
+@click.option(
+    "--index-path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=default_silver_index_path(),
+    show_default=True,
+    help="Silver chunk index JSONL path to validate.",
+)
+@click.option(
+    "--min-text-chars",
+    type=click.IntRange(min=1),
+    default=DEFAULT_MIN_TEXT_CHARS,
+    show_default=True,
+    help="Minimum extracted text setting used by extract-silver.",
+)
+def validate(
+    manifest_path: Path,
+    document_dir: Path,
+    chunk_dir: Path,
+    index_path: Path,
+    min_text_chars: int,
+) -> None:
+    """Validate silver chunk Markdown and retrieval index consistency."""
+    try:
+        result = validate_silver_index(
+            manifest_path=manifest_path,
+            document_dir=document_dir,
+            chunk_dir=chunk_dir,
+            index_path=index_path,
+            min_text_chars=min_text_chars,
+        )
+    except (SilverChunkInputError, SilverExtractionInputError) as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1) from e
+
+    summary = (
+        f"summary: manifest_rows={result.manifest_row_count} "
+        f"index_rows={result.index_row_count} "
+        f"chunk_files={result.chunk_file_count} "
+        f"errors={result.error_count}"
+    )
+    if result.errors:
+        click.echo(f"Error: validate found {result.error_count} problem(s)", err=True)
+        for error in result.errors:
+            click.echo(f"- {error}", err=True)
+        click.echo(summary, err=True)
+        raise SystemExit(1)
+
+    click.echo(f"validated silver chunk index {result.index_path}")
+    click.echo(summary)
+
+
 def _default_markdown_extractor() -> MarkdownExtractor:
     # Docling imports large ML packages and adds about 5s to CLI startup.
     from gas_market_knowledge_base.docling_adapter import DoclingMarkdownExtractor
 
     return DoclingMarkdownExtractor()
+
+
+def _default_hybrid_chunk_extractor() -> HybridChunkExtractor:
+    # Docling imports large ML packages and may fetch tokenizer metadata.
+    from gas_market_knowledge_base.docling_adapter import DoclingHybridChunkExtractor
+
+    return DoclingHybridChunkExtractor()

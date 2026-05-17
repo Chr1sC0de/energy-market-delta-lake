@@ -236,8 +236,9 @@ Trigger and output notes:
   [0010](../../../../../docs/adr/0010-gas-market-knowledge-base.md) and the
   [Gas market knowledge base Subproject](../../../../../tools/gas-market-knowledge-base/README.md)
   keep the bronze source manifest command, archive PDF cache fetcher,
-  Docling-based silver document extraction, future Docling Hybrid chunks, and
-  cited **Market context** pages outside the AEMO ETL ingestion boundary.
+  Docling-based silver document extraction, Docling Hybrid chunks, silver chunk
+  index validation, and cited **Market context** pages outside the AEMO ETL
+  ingestion boundary.
 
 ## Raw-to-silver transformation flow
 

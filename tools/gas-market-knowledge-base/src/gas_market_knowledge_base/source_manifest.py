@@ -316,8 +316,8 @@ def _generated_paths(document_identity: str) -> dict[str, str]:
     gold_base_path = f"generated/gold/{document_identity}"
     return {
         "silver_document_markdown": f"{silver_document_base_path}.md",
-        "silver_chunks": f"{silver_base_path}.jsonl",
-        "silver_metadata": f"{silver_base_path}.metadata.json",
+        "silver_chunks": silver_base_path,
+        "silver_chunk_index": "generated/silver/index/chunks.jsonl",
         "gold_context": f"{gold_base_path}.md",
     }
 

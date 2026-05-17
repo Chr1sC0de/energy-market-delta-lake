@@ -289,10 +289,11 @@ way:
   [OPERATOR.md](../../OPERATOR.md),
   [docs/agents/issue-tracker.md](../agents/issue-tracker.md), and
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
-- #176 through #180: The first **Gas market knowledge base** route, ADR,
+- #176 through #181: The first **Gas market knowledge base** route, ADR,
   Subproject, bronze source manifest command, PDF archive cache fetcher, and
-  Docling-based silver document extraction keep raw PDFs in S3 or the ignored
-  `.cache/pdfs/` local cache, place text artifacts under
+  Docling-based silver document extraction, Docling Hybrid chunks, and silver
+  chunk index keep raw PDFs in S3 or the ignored `.cache/pdfs/` local cache,
+  place text artifacts under
   `generated/{bronze,silver,gold}`, and treat cited gold
   **Market context** pages as corpus artifacts rather than maintained router
   docs. The decision lives in ADR
@@ -370,10 +371,12 @@ These commands support the intended flow:
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/cli.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/docling_adapter.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/pdf_cache.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/silver_chunks.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/silver_documents.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/source_manifest.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_cli.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_pdf_cache.py`
+  - `tools/gas-market-knowledge-base/tests/unit/test_silver_chunks.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_silver_documents.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_source_manifest.py`
   - `tools/gas-market-knowledge-base/uv.lock`

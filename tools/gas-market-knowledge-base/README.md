@@ -3,8 +3,9 @@
 This Subproject is the repo-local **Gas market knowledge base** tool surface.
 It currently provides the Python package layout, bronze source manifest command,
 archive PDF cache fetcher, Docling-based silver document extraction,
-generated-artifact policy, and **Unit test** lane. It does not create retrieval
-chunks or add gold **Market context** pages.
+Docling Hybrid silver chunk generation, retrieval index validation,
+generated-artifact policy, and **Unit test** lane. It does not add gold
+**Market context** pages.
 
 The CLI is available inside this Subproject with `uv run`:
 
@@ -55,6 +56,35 @@ outputs are skipped when the source hash and extraction settings hash still
 match. Failed conversions, missing or mismatched cached PDFs, and low-text
 extractions are reported as errors instead of writing empty Markdown pages.
 
+Build silver Docling Hybrid chunks and the global retrieval index:
+
+```bash
+uv run gas-market-kb build-index
+```
+
+The command reads the bronze manifest, validates current silver document
+Markdown targets and cached PDF bytes, converts each PDF through Docling's
+structured document model, runs Docling Hybrid chunking, and writes per-chunk
+Markdown files under `generated/silver/chunks/<document_identity>/<chunk_id>.md`.
+Chunk IDs are derived from the source hash, extraction settings, and chunk
+content; duplicate chunks are disambiguated deterministically. Each chunk
+frontmatter records source hash, document title, corpus, document family,
+heading path,
+`source_document_markdown_path`, and citations metadata back to the full
+document and source manifest. The command also writes one JSONL row per chunk
+to `generated/silver/index/chunks.jsonl`.
+
+Validate silver document targets, chunks, and the retrieval index:
+
+```bash
+uv run gas-market-kb validate
+```
+
+Validation fails on missing silver document targets, missing chunk targets,
+duplicate chunk IDs, malformed frontmatter, missing citations metadata, body
+hash mismatches, chunk files not referenced by the index, or stale index rows.
+The command does not create embeddings or vector storage.
+
 ## Local QA
 
 Run from this directory:
@@ -77,6 +107,7 @@ Corpus text artifacts belong under these generated roots:
 - `generated/silver/documents`: Docling Markdown extraction output tied to
   source document identity and `content_sha256`.
 - `generated/silver/chunks`: Docling Hybrid chunks prepared for retrieval.
+- `generated/silver/index/chunks.jsonl`: one index row per silver chunk.
 - `generated/gold`: cited, agent-authored **Market context** pages.
 
 Generated Markdown, JSON, JSONL, YAML, and text files under those roots may be
@@ -93,8 +124,10 @@ artifact output rather than maintained router documentation.
 
 - `src/gas_market_knowledge_base/cli.py`: CLI entrypoint.
 - `src/gas_market_knowledge_base/docling_adapter.py`: Docling PDF-to-Markdown
-  adapter with OCR disabled for v1 extraction.
+  and Hybrid chunking adapters with OCR disabled for v1 extraction.
 - `src/gas_market_knowledge_base/pdf_cache.py`: archive PDF cache fetcher.
+- `src/gas_market_knowledge_base/silver_chunks.py`: silver chunk Markdown,
+  retrieval index, and validation behavior.
 - `src/gas_market_knowledge_base/silver_documents.py`: silver document
   extraction planning, validation, frontmatter, and write behavior.
 - `src/gas_market_knowledge_base/source_manifest.py`: bronze source manifest
@@ -118,10 +151,12 @@ artifact output rather than maintained router documentation.
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/cli.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/docling_adapter.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/pdf_cache.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/silver_chunks.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/silver_documents.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/source_manifest.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_cli.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_pdf_cache.py`
+  - `tools/gas-market-knowledge-base/tests/unit/test_silver_chunks.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_silver_documents.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_source_manifest.py`
   - `tools/gas-market-knowledge-base/uv.lock`
@@ -131,4 +166,4 @@ artifact output rather than maintained router documentation.
   - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure tools`
   - `make unit-test`
   - `make run-prek`
-  - `verify generated-artifact roots, raw-PDF ignore policy, CLI help, source manifest fixture behavior, PDF cache fixture behavior, and silver document extraction fixture behavior`
+  - `verify generated-artifact roots, raw-PDF ignore policy, CLI help, source manifest fixture behavior, PDF cache fixture behavior, silver document extraction fixture behavior, chunk index validation, and no embedding or vector storage behavior`

@@ -120,12 +120,9 @@ def test_source_manifest_filters_counts_and_sorts_fixture_rows(tmp_path: Path) -
             f"generated/silver/documents/gbb/gbb-alpha-guide/sha256-{'a' * 64}.md"
         ),
         "silver_chunks": (
-            f"generated/silver/chunks/gbb/gbb-alpha-guide/sha256-{'a' * 64}.jsonl"
+            f"generated/silver/chunks/gbb/gbb-alpha-guide/sha256-{'a' * 64}"
         ),
-        "silver_metadata": (
-            "generated/silver/chunks/gbb/gbb-alpha-guide/"
-            f"sha256-{'a' * 64}.metadata.json"
-        ),
+        "silver_chunk_index": "generated/silver/index/chunks.jsonl",
         "gold_context": (f"generated/gold/gbb/gbb-alpha-guide/sha256-{'a' * 64}.md"),
     }
     assert result.summary.as_dict() == {
