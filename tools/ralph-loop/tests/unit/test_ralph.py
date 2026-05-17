@@ -3760,6 +3760,41 @@ Build it.
             ],
         )
 
+    def test_select_qa_commands_for_gas_market_knowledge_base_changes(self) -> None:
+        commands = ralph.select_qa_commands(
+            [
+                "tools/gas-market-knowledge-base/src/"
+                "gas_market_knowledge_base/pdf_cache.py",
+                "tools/gas-market-knowledge-base/tests/unit/test_cli.py",
+            ],
+            Path("/repo"),
+        )
+
+        self.assertEqual(
+            [(command.name, command.args, command.cwd) for command in commands],
+            [
+                (
+                    "Gas market knowledge base Unit test",
+                    ("make", "unit-test"),
+                    Path("/repo/tools/gas-market-knowledge-base"),
+                ),
+                (
+                    "Gas market knowledge base Commit check",
+                    ("make", "run-prek"),
+                    Path("/repo/tools/gas-market-knowledge-base"),
+                ),
+            ],
+        )
+
+    def test_gas_market_knowledge_base_generated_markdown_is_not_maintained_doc(
+        self,
+    ) -> None:
+        self.assertFalse(
+            ralph.root_prek_needed(
+                "tools/gas-market-knowledge-base/generated/gold/context.md"
+            )
+        )
+
     def test_marimo_runtime_matching_uses_whole_subproject_prefix(self) -> None:
         self.assertTrue(
             ralph.has_marimo_runtime_change(

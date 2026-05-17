@@ -1,3 +1,5 @@
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -21,6 +23,32 @@ def test_cli_help_renders() -> None:
     assert "fetch-pdfs" in result.output
     assert "sync-manifest" in result.output
     assert "--version" in result.output
+
+
+def test_runtime_imports_do_not_require_s3_type_stubs() -> None:
+    script = """
+import builtins
+
+real_import = builtins.__import__
+
+def guarded_import(name, *args, **kwargs):
+    if name == "types_boto3_s3" or name.startswith("types_boto3_s3."):
+        raise ModuleNotFoundError(name)
+    return real_import(name, *args, **kwargs)
+
+builtins.__import__ = guarded_import
+
+import gas_market_knowledge_base.pdf_cache
+import gas_market_knowledge_base.cli
+"""
+
+    subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        cwd=SUBPROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
 
 
 def test_console_script_entrypoint_is_declared() -> None:
