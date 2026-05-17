@@ -199,6 +199,10 @@ after failed checkpointed deployment evidence.
   [backend-services/README.md](../../backend-services/README.md)
 - ETL definitions, dataset structure, and Dagster internals:
   [backend-services/dagster-user/aemo-etl/README.md](../../backend-services/dagster-user/aemo-etl/README.md)
+- Future **Gas market knowledge base** implementation:
+  ADR [0010](../adr/0010-gas-market-knowledge-base.md). The planned
+  **Subproject** path is `tools/gas-market-knowledge-base`, but this issue does
+  not add that route yet.
 - Repo-level documentation architecture:
   [docs/README.md](../README.md)
 
@@ -234,6 +238,7 @@ and the required `git diff` to `rg` to QA flow, use
   - `backend-services/dagster-core/code-locations.aws.toml`
   - `infrastructure/aws-pulumi/code_locations.py`
   - `docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md`
+  - `docs/adr/0010-gas-market-knowledge-base.md`
 - `sync.scope`: `behavior`
 - `sync.qa`:
   - `git diff --name-only`

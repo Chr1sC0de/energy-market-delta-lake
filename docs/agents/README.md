@@ -29,6 +29,10 @@ Use this page as the agent documentation map. The imperative policy lives in
   [triage-labels.md](triage-labels.md)
 - Domain doc layout:
   [domain.md](domain.md)
+- Planned **Gas market knowledge base** language and architecture:
+  ADR [0010](../adr/0010-gas-market-knowledge-base.md). The planned
+  Subproject path is `tools/gas-market-knowledge-base`; no implementation
+  route exists yet.
 
 ## Skills
 
@@ -88,6 +92,7 @@ Use this page as the agent documentation map. The imperative policy lives in
   - `docs/repository/documentation-sync.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
   - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
+  - `docs/adr/0010-gas-market-knowledge-base.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

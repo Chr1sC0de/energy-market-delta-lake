@@ -212,6 +212,21 @@ model as curated coverage because the repository lacks a usable source
 definition for its fields, grain, and meaning.
 _Avoid_: Implemented gap, ignored report
 
+**Gas market knowledge base**:
+The planned repo-level **Subproject** at `tools/gas-market-knowledge-base` for
+turning gas-market source documents into reviewable text artifacts for agents
+and operators. AEMO ETL keeps discovering and archiving source PDF bytes; the
+knowledge base owns PDF text extraction, retrieval chunks, and cited gold
+knowledge pages when that Subproject is implemented.
+_Avoid_: AEMO ETL wiki, vector store, PDF side effect
+
+**Market context**:
+A cited, agent-authored gold knowledge page that synthesizes gas-market source
+documents for a named market, artifact, concept, or workflow. It belongs to the
+**Gas market knowledge base** corpus and must cite the extracted text artifacts
+it uses.
+_Avoid_: Uncited summary, fully automated wiki page
+
 ## Relationships
 
 - A **Pytest subproject** is one kind of **Subproject**.
@@ -305,6 +320,11 @@ _Avoid_: Implemented gap, ignored report
 - A **Source-spec gap** may be discovered or landed, but it remains outside
   curated **Fit-plus-extend modeling** until a usable source definition is
   available.
+- The **Gas market knowledge base** is planned as a separate **Subproject**,
+  not as a side effect of AEMO ETL asset materialization.
+- **Market context** pages are gold corpus artifacts for cited explanation.
+  They are not source PDF bytes, silver retrieval chunks, or uncited generated
+  summaries.
 
 ## Example dialogue
 
@@ -387,3 +407,7 @@ _Avoid_: Implemented gap, ignored report
   considered for `gas_model` expansion. Resolved: use **Fit-plus-extend
   modeling** so matching grains enrich shared assets and distinct grains become
   new shared facts.
+- "wiki", "vector store", and "PDF extraction inside AEMO ETL" were considered
+  for the gas-market document corpus. Resolved: use **Gas market knowledge
+  base** for the planned separate Subproject, and use **Market context** for
+  cited gold pages authored from extracted text artifacts.

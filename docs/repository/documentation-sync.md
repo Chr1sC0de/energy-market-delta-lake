@@ -52,6 +52,13 @@ The removed legacy `specs/` tree stays out of scope. New maintained design or
 migration docs should live under the maintained documentation paths above and
 carry sync metadata.
 
+ADR [0010](../adr/0010-gas-market-knowledge-base.md) reserves
+`generated/{bronze,silver,gold}` for future **Gas market knowledge base** corpus
+artifacts. Those generated text artifacts are not maintained router docs under
+this workflow. Future **Subproject** docs for `tools/gas-market-knowledge-base`
+must add their own maintained-doc route and sync metadata when implementation
+creates that Subproject.
+
 ## Sync metadata contract
 
 Required keys:
@@ -281,6 +288,12 @@ way:
   [OPERATOR.md](../../OPERATOR.md),
   [docs/agents/issue-tracker.md](../agents/issue-tracker.md), and
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
+- #176: The first **Gas market knowledge base** route and ADR record a planned
+  `tools/gas-market-knowledge-base` **Subproject** without creating the
+  implementation. Raw PDFs remain in S3 or local cache, future text artifacts
+  belong under `generated/{bronze,silver,gold}`, and cited gold **Market
+  context** pages are corpus artifacts rather than maintained router docs. The
+  decision lives in ADR [0010](../adr/0010-gas-market-knowledge-base.md).
 
 ## Search commands
 
@@ -321,6 +334,7 @@ These commands support the intended flow:
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
   - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
+  - `docs/adr/0010-gas-market-knowledge-base.md`
   - `tests/test_documentation_qa_ratchet.py`
   - `.pre-commit-config.yaml`
   - `backend-services/.pre-commit-config.yaml`

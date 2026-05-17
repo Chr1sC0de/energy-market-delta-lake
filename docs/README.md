@@ -50,6 +50,10 @@ and behavior belong on the owning Subproject or repository page.
   [infrastructure/aws-pulumi/docs/README.md](../infrastructure/aws-pulumi/docs/README.md)
 - Ralph loop:
   [tools/ralph-loop/README.md](../tools/ralph-loop/README.md)
+- Planned Gas market knowledge base:
+  ADR [0010](adr/0010-gas-market-knowledge-base.md) reserves
+  `tools/gas-market-knowledge-base` as the planned **Subproject** for the
+  future **Gas market knowledge base**. No implementation route exists yet.
 
 ## Repository pages
 
@@ -85,6 +89,7 @@ and behavior belong on the owning Subproject or repository page.
   - `infrastructure/aws-pulumi/docs/README.md`
   - `backend-services/dagster-core/code-locations.aws.toml`
   - `tools/ralph-loop/README.md`
+  - `docs/adr/0010-gas-market-knowledge-base.md`
 - `sync.scope`: `router`
 - `sync.qa`:
   - `git diff --name-only`
