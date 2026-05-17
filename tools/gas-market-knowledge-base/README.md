@@ -1,16 +1,29 @@
 # Gas Market Knowledge Base
 
-This Subproject is the scaffold for the repo-local **Gas market knowledge
-base**. It currently provides the Python package layout, local command surface,
-generated-artifact policy, and **Unit test** lane. It does not read live S3,
-run Docling extraction, create retrieval chunks, or add gold **Market context**
-pages.
+This Subproject is the repo-local **Gas market knowledge base** tool surface.
+It currently provides the Python package layout, bronze source manifest command,
+generated-artifact policy, and **Unit test** lane. It does not download raw
+PDFs, run Docling extraction, create retrieval chunks, or add gold **Market
+context** pages.
 
-The placeholder command is available inside this Subproject with `uv run`:
+The CLI is available inside this Subproject with `uv run`:
 
 ```bash
 uv run gas-market-kb --help
 ```
+
+Build the tracked bronze source manifest from the AEMO gas document metadata
+table contract:
+
+```bash
+uv run gas-market-kb sync-manifest --environment dev
+```
+
+The default `dev` environment reads
+`s3://dev-energy-market-aemo/bronze/aemo_gas_documents/bronze_aemo_gas_document_sources`
+and writes `generated/bronze/source_manifest.jsonl`. Unit tests use fixture
+JSON or JSONL metadata rows through `--metadata-path` and do not read deployed
+resources.
 
 ## Local QA
 
@@ -31,15 +44,16 @@ make run-prek
 Future corpus text artifacts belong under these generated roots:
 
 - `generated/bronze`: Docling Markdown extraction output and extraction
-  metadata tied to source document identity.
+  metadata tied to source document identity, plus the tracked
+  `source_manifest.jsonl` inventory used to plan extraction.
 - `generated/silver`: Docling Hybrid chunks prepared for retrieval.
 - `generated/gold`: cited, agent-authored **Market context** pages.
 
-Generated Markdown, JSON, YAML, and text files under those roots may be tracked
-intentionally when future issues create reviewable corpus artifacts. Raw PDFs
-are not tracked. Source PDF bytes stay in S3-compatible archive storage or in a
-local cache such as `.pdf-cache/`, `cache/`, or `raw-pdfs/`, and repository
-ignore rules keep `*.pdf` files out of this Subproject.
+Generated Markdown, JSON, JSONL, YAML, and text files under those roots may be
+tracked intentionally when future issues create reviewable corpus artifacts.
+Raw PDFs are not tracked. Source PDF bytes stay in S3-compatible archive
+storage or in a local cache such as `.pdf-cache/`, `cache/`, or `raw-pdfs/`,
+and repository ignore rules keep `*.pdf` files out of this Subproject.
 
 The repository **Documentation sync** workflow excludes any `generated/` path
 from maintained-doc discovery, so generated corpus Markdown is reviewable
@@ -47,8 +61,10 @@ artifact output rather than maintained router documentation.
 
 ## Layout
 
-- `src/gas_market_knowledge_base/cli.py`: placeholder CLI entrypoint.
-- `tests/unit/`: package import and command-surface tests.
+- `src/gas_market_knowledge_base/cli.py`: CLI entrypoint.
+- `src/gas_market_knowledge_base/source_manifest.py`: bronze source manifest
+  writer for AEMO gas document metadata rows.
+- `tests/unit/`: package import, command-surface, and manifest writer tests.
 - `generated/bronze`, `generated/silver`, `generated/gold`: reserved text
   artifact roots.
 - `.pre-commit-config.yaml`: Subproject `prek` hook surface.
@@ -65,7 +81,9 @@ artifact output rather than maintained router documentation.
   - `tools/gas-market-knowledge-base/pyproject.toml`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/__init__.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/cli.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/source_manifest.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_cli.py`
+  - `tools/gas-market-knowledge-base/tests/unit/test_source_manifest.py`
   - `tools/gas-market-knowledge-base/uv.lock`
 - `sync.scope`: `operations`
 - `sync.qa`:
@@ -73,4 +91,4 @@ artifact output rather than maintained router documentation.
   - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure tools`
   - `make unit-test`
   - `make run-prek`
-  - `verify generated-artifact roots, raw-PDF ignore policy, and CLI help`
+  - `verify generated-artifact roots, raw-PDF ignore policy, CLI help, and source manifest fixture behavior`

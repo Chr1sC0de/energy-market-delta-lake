@@ -18,6 +18,7 @@ def test_cli_help_renders() -> None:
 
     assert result.exit_code == 0
     assert "Work with Gas market knowledge base artifacts." in result.output
+    assert "sync-manifest" in result.output
     assert "--version" in result.output
 
 

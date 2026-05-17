@@ -235,8 +235,9 @@ Trigger and output notes:
   embedding, vector-store, or PDF text-extraction side effects. ADR
   [0010](../../../../../docs/adr/0010-gas-market-knowledge-base.md) and the
   [Gas market knowledge base Subproject](../../../../../tools/gas-market-knowledge-base/README.md)
-  keep future Docling extraction, Docling Hybrid chunks, and cited **Market
-  context** pages outside the AEMO ETL ingestion boundary.
+  keep the bronze source manifest command, future Docling extraction, Docling
+  Hybrid chunks, and cited **Market context** pages outside the AEMO ETL
+  ingestion boundary.
 
 ## Raw-to-silver transformation flow
 

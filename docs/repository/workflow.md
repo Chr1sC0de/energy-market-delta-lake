@@ -199,12 +199,13 @@ after failed checkpointed deployment evidence.
   [backend-services/README.md](../../backend-services/README.md)
 - ETL definitions, dataset structure, and Dagster internals:
   [backend-services/dagster-user/aemo-etl/README.md](../../backend-services/dagster-user/aemo-etl/README.md)
-- **Gas market knowledge base** scaffold and future implementation:
+- **Gas market knowledge base** command surface and future implementation:
   [tools/gas-market-knowledge-base](../../tools/gas-market-knowledge-base/README.md)
-  owns the local command surface, generated-artifact roots, and raw-PDF ignore
-  policy. ADR [0010](../adr/0010-gas-market-knowledge-base.md) records the
-  still-future corpus architecture for extraction, retrieval chunks, and cited
-  **Market context** pages.
+  owns the bronze source manifest command, generated-artifact roots, and
+  raw-PDF ignore policy. ADR
+  [0010](../adr/0010-gas-market-knowledge-base.md) records the still-future
+  corpus architecture for extraction, retrieval chunks, and cited **Market
+  context** pages.
 - Repo-level documentation architecture:
   [docs/README.md](../README.md)
 

@@ -26,8 +26,8 @@ Subproject docs for detailed commands, defaults, diagrams, and behavior.
 - [tools/ralph-loop](tools/ralph-loop/README.md): packaged Ralph issue loop
   CLI, unit tests, and **Commit check** surface.
 - [tools/gas-market-knowledge-base](tools/gas-market-knowledge-base/README.md):
-  scaffolded **Gas market knowledge base** tooling, generated text artifact
-  roots, unit tests, and **Commit check** surface. ADR
+  **Gas market knowledge base** tooling, bronze source manifest command,
+  generated text artifact roots, unit tests, and **Commit check** surface. ADR
   [0010](docs/adr/0010-gas-market-knowledge-base.md) records the corpus
   architecture.
 
