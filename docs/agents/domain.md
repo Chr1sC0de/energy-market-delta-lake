@@ -26,7 +26,8 @@ context** corpus architecture. The
 [Subproject README](../../tools/gas-market-knowledge-base/README.md) owns the
 bronze source manifest command, archive PDF cache fetcher, Docling-based silver
 document extraction, Docling Hybrid silver chunk generation, silver chunk index
-validation, and generated-artifact policy.
+validation, gold **Market context** citation validation, seed glossary
+artifacts, and generated-artifact policy.
 
 ## Sync metadata
 
