@@ -202,18 +202,31 @@ without making local development performance claims.
   - notebook-oriented Subproject with a curated dashboard image used locally
     and in AWS, plus a local-only Marimo-Codex research workspace image
 
+Planned repository responsibility:
+
+- `tools/gas-market-knowledge-base`
+  - reserved by ADR
+    [0010](../adr/0010-gas-market-knowledge-base.md) as the planned
+    **Subproject** for the future **Gas market knowledge base**. It will own
+    Docling extraction, Docling Hybrid retrieval chunks, and cited gold
+    **Market context** pages when implementation issues add the Subproject.
+    This architecture page only records the planned boundary; the directory
+    does not exist yet.
+
 ## Related docs
 
 - [Documentation sync workflow](documentation-sync.md)
 - [Repository workflow](workflow.md)
 - [AWS Pulumi infrastructure](../../infrastructure/aws-pulumi/README.md)
 - [aemo-etl architecture](../../backend-services/dagster-user/aemo-etl/docs/architecture/high_level_architecture.md)
+- [ADR 0010: Gas market knowledge base](../adr/0010-gas-market-knowledge-base.md)
 
 ## Sync metadata
 
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `docs/README.md`
+  - `docs/adr/0010-gas-market-knowledge-base.md`
   - `infrastructure/aws-pulumi/__main__.py`
   - `infrastructure/aws-pulumi/components/marimo.py`
   - `backend-services/dagster-core/code-locations.aws.toml`

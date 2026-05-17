@@ -13,13 +13,16 @@ repo, especially **Subproject**, **Test lane**, **Fast check**, **Commit check**
 **Ready issue refresh**, **Operator workflow**,
 **Documentation sync**, **Agent skill**, **Issue context assessor**,
 **Exploratory acceptance review**, **Promotion**, **Post-promotion review**,
-**Post-Promotion deployment classification**, and
-**AWS/Pulumi credential boundary**.
+**Post-Promotion deployment classification**, **AWS/Pulumi credential
+boundary**, **Gas market knowledge base**, and **Market context**.
 
 Repo-wide ADRs live in `docs/adr/`. Create ADRs only when a decision is hard to
 reverse, surprising without context, and the result of a real trade-off.
 The **Issue context assessor** replacement is an in-development `$shape-issues`
 workflow change, so it does not require an ADR.
+ADR [0010](../adr/0010-gas-market-knowledge-base.md) records the planned
+`tools/gas-market-knowledge-base` **Subproject** and the first **Market
+context** corpus architecture; the Subproject is not implemented yet.
 
 ## Sync metadata
 
@@ -35,6 +38,7 @@ workflow change, so it does not require an ADR.
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
   - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
+  - `docs/adr/0010-gas-market-knowledge-base.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`
