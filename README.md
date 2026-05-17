@@ -29,6 +29,7 @@ Subproject docs for detailed commands, defaults, diagrams, and behavior.
   **Gas market knowledge base** tooling, bronze source manifest command,
   archive PDF cache fetcher, Docling-based silver document extraction,
   Docling Hybrid silver chunk generation, silver chunk index validation,
+  gold **Market context** citation validation, seed glossary artifacts,
   generated text artifact roots, unit tests, and **Commit check** surface. ADR
   [0010](docs/adr/0010-gas-market-knowledge-base.md) records the corpus
   architecture.

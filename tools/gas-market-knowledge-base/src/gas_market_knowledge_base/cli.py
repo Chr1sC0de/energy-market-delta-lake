@@ -4,6 +4,7 @@ from pathlib import Path
 
 import click
 
+from gas_market_knowledge_base.gold_context import validate_gold_context
 from gas_market_knowledge_base.pdf_cache import (
     PdfCacheInputError,
     default_pdf_cache_dir,
@@ -336,6 +337,14 @@ def build_index(
     help="Silver chunk index JSONL path to validate.",
 )
 @click.option(
+    "--gold-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    help=(
+        "Gold Market context directory to validate. Defaults to the generated/gold "
+        "directory beside --index-path."
+    ),
+)
+@click.option(
     "--min-text-chars",
     type=click.IntRange(min=1),
     default=DEFAULT_MIN_TEXT_CHARS,
@@ -347,11 +356,12 @@ def validate(
     document_dir: Path,
     chunk_dir: Path,
     index_path: Path,
+    gold_dir: Path | None,
     min_text_chars: int,
 ) -> None:
-    """Validate silver chunk Markdown and retrieval index consistency."""
+    """Validate silver chunks, retrieval index, and gold citations."""
     try:
-        result = validate_silver_index(
+        silver_result = validate_silver_index(
             manifest_path=manifest_path,
             document_dir=document_dir,
             chunk_dir=chunk_dir,
@@ -362,20 +372,26 @@ def validate(
         click.echo(f"Error: {e}", err=True)
         raise SystemExit(1) from e
 
+    gold_result = validate_gold_context(gold_dir=gold_dir, index_path=index_path)
+    errors = (*silver_result.errors, *gold_result.errors)
     summary = (
-        f"summary: manifest_rows={result.manifest_row_count} "
-        f"index_rows={result.index_row_count} "
-        f"chunk_files={result.chunk_file_count} "
-        f"errors={result.error_count}"
+        f"summary: manifest_rows={silver_result.manifest_row_count} "
+        f"index_rows={silver_result.index_row_count} "
+        f"chunk_files={silver_result.chunk_file_count} "
+        f"gold_pages={gold_result.page_count} "
+        f"gold_glossary_pages={gold_result.glossary_page_count} "
+        f"errors={len(errors)}"
     )
-    if result.errors:
-        click.echo(f"Error: validate found {result.error_count} problem(s)", err=True)
-        for error in result.errors:
+    if errors:
+        click.echo(f"Error: validate found {len(errors)} problem(s)", err=True)
+        for error in errors:
             click.echo(f"- {error}", err=True)
         click.echo(summary, err=True)
         raise SystemExit(1)
 
-    click.echo(f"validated silver chunk index {result.index_path}")
+    click.echo(f"validated silver chunk index {silver_result.index_path}")
+    if gold_result.page_count:
+        click.echo(f"validated gold Market context {gold_result.gold_dir}")
     click.echo(summary)
 
 

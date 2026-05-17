@@ -118,6 +118,12 @@ secret-scan tooling through:
 prek run -a
 ```
 
+The root Markdown hooks keep curated generated gold **Market context** Markdown
+lintable, but exclude
+`tools/gas-market-knowledge-base/generated/silver/**`. Silver artifacts are raw
+corpus extraction output, so `rumdl` and `rumdl-fmt` must not lint or rewrite
+them during the root **Commit check**.
+
 ## Documentation QA ratchets
 
 The documentation QA ratchet is staged by **Subproject** and enforced through
@@ -369,11 +375,13 @@ These commands support the intended flow:
   - `tools/gas-market-knowledge-base/pyproject.toml`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/cli.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/docling_adapter.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/gold_context.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/pdf_cache.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/silver_chunks.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/silver_documents.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/source_manifest.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_cli.py`
+  - `tools/gas-market-knowledge-base/tests/unit/test_gold_context.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_pdf_cache.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_silver_chunks.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_silver_documents.py`
