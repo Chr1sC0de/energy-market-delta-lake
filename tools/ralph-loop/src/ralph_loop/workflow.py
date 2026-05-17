@@ -3079,6 +3079,16 @@ def local_branch_fast_forward_recovery_command(
     )
 
 
+def local_branch_ref_fast_forward_recovery_command(
+    *,
+    repo_root: Path,
+    branch: str,
+) -> str:
+    return format_command(
+        ["git", "-C", str(repo_root), "fetch", "origin", f"{branch}:{branch}"]
+    )
+
+
 def dirty_root_worktree_message(repo_root: Path, status_output: str) -> str:
     paths = parse_git_status_paths(status_output)
     lines = [

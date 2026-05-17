@@ -11927,6 +11927,13 @@ Build it.
                             ]
                         )
                     ],
+                    (
+                        "git",
+                        "show-ref",
+                        "--verify",
+                        "--hash",
+                        "refs/heads/dev",
+                    ): ["dev-old\n"],
                 },
             )
             loop = make_loop(
@@ -11986,6 +11993,13 @@ Build it.
                             ]
                         )
                     ],
+                    (
+                        "git",
+                        "show-ref",
+                        "--verify",
+                        "--hash",
+                        "refs/heads/dev",
+                    ): ["dev-old\n"],
                 },
             )
             loop = make_loop(
@@ -12011,9 +12025,160 @@ Build it.
             "skipped_not_checked_out",
         )
         self.assertEqual(
+            manifest["local_branch_fast_forwards"]["source_branch"]["current_commit"],
+            "dev-old",
+        )
+        self.assertEqual(
+            manifest["local_branch_fast_forwards"]["source_branch"]["recovery_command"],
+            ralph.format_command(
+                ["git", "-C", str(repo_path), "fetch", "origin", "dev:dev"]
+            ),
+        )
+        self.assertEqual(
             manifest["local_branch_fast_forwards"]["integration_target"]["status"],
             "fast_forwarded",
         )
+
+    def test_promotion_ignores_detached_promotion_worktrees_for_local_branches(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo_path = tmp_path / "repo"
+            source_path = tmp_path / "worktrees" / "agent-promote-source-dev-to-main"
+            promote_path = tmp_path / "worktrees" / "agent-promote-dev-to-main"
+            runner = FakeRunner(
+                diff_outputs=["scripts/ralph.py\n"],
+                rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+                command_outputs={
+                    ("git", "worktree", "list", "--porcelain"): [
+                        "\n".join(
+                            [
+                                f"worktree {source_path}",
+                                "HEAD source-sha",
+                                "detached",
+                                "",
+                                f"worktree {promote_path}",
+                                "HEAD promotion-sha",
+                                "detached",
+                                "",
+                            ]
+                        )
+                    ],
+                    (
+                        "git",
+                        "show-ref",
+                        "--verify",
+                        "--hash",
+                        "refs/heads/dev",
+                    ): ["dev-old\n"],
+                    (
+                        "git",
+                        "show-ref",
+                        "--verify",
+                        "--hash",
+                        "refs/heads/main",
+                    ): ["main-old\n"],
+                },
+            )
+            loop = make_loop(
+                tmp_path,
+                runner,
+                promote=True,
+                skip_post_promotion_review=True,
+            )
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        fast_forward_calls = [
+            call
+            for call in runner.calls
+            if call.args == ("git", "merge", "--ff-only", "promotion-sha")
+        ]
+        self.assertEqual(fast_forward_calls, [])
+        local_fast_forwards = manifest["local_branch_fast_forwards"]
+        self.assertEqual(
+            local_fast_forwards["source_branch"]["status"],
+            "skipped_not_checked_out",
+        )
+        self.assertEqual(
+            local_fast_forwards["source_branch"]["current_commit"],
+            "dev-old",
+        )
+        self.assertEqual(
+            local_fast_forwards["source_branch"]["recovery_command"],
+            ralph.format_command(
+                ["git", "-C", str(repo_path), "fetch", "origin", "dev:dev"]
+            ),
+        )
+        self.assertEqual(
+            local_fast_forwards["integration_target"]["status"],
+            "skipped_not_checked_out",
+        )
+        self.assertEqual(
+            local_fast_forwards["integration_target"]["current_commit"],
+            "main-old",
+        )
+        self.assertEqual(
+            local_fast_forwards["integration_target"]["recovery_command"],
+            ralph.format_command(
+                ["git", "-C", str(repo_path), "fetch", "origin", "main:main"]
+            ),
+        )
+
+    def test_promotion_records_recovery_for_missing_local_branches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo_path = tmp_path / "repo"
+            runner = FakeRunner(
+                diff_outputs=["scripts/ralph.py\n"],
+                rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+                command_outputs={
+                    ("git", "worktree", "list", "--porcelain"): [""],
+                },
+            )
+            loop = make_loop(
+                tmp_path,
+                runner,
+                promote=True,
+                skip_post_promotion_review=True,
+            )
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        local_fast_forwards = manifest["local_branch_fast_forwards"]
+        for role, branch in (
+            ("source_branch", "dev"),
+            ("integration_target", "main"),
+        ):
+            self.assertEqual(
+                local_fast_forwards[role]["status"],
+                "skipped_missing_local_branch",
+            )
+            self.assertIsNone(local_fast_forwards[role]["current_commit"])
+            self.assertEqual(
+                local_fast_forwards[role]["target_commit"], "promotion-sha"
+            )
+            self.assertIn("does not exist", local_fast_forwards[role]["reason"])
+            self.assertEqual(
+                local_fast_forwards[role]["recovery_command"],
+                ralph.format_command(
+                    [
+                        "git",
+                        "-C",
+                        str(repo_path),
+                        "fetch",
+                        "origin",
+                        f"{branch}:{branch}",
+                    ]
+                ),
+            )
 
     def test_promotion_closes_manually_recovered_gitflow_issue_with_parseable_evidence(
         self,
@@ -13172,6 +13337,14 @@ None.
         self.assertEqual(
             manifest["post_promotion_followups"]["status"],
             "skipped_no_changes",
+        )
+        self.assertEqual(
+            manifest["local_branch_fast_forwards"]["source_branch"]["status"],
+            "skipped_no_promotion_changes",
+        )
+        self.assertEqual(
+            manifest["local_branch_fast_forwards"]["integration_target"]["status"],
+            "skipped_no_promotion_changes",
         )
         self.assertEqual(
             manifest["ready_issue_refresh"]["status"],

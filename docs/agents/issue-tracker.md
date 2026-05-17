@@ -73,6 +73,10 @@ operator-approved **Full-access implementation pass**. Without
 issue unchanged. With the flag, the implementation subprocess gets full
 filesystem access, read-only GitHub Issue commands, and a pre-QA diff guard that
 fails the issue if changed files leave the listed context anchors.
+This includes repo-local **Agent skill** additions or edits under
+`.agents/skills/`, such as `$repo-knowledge-base`; later Ralph implementation
+of those issues must run through an operator-approved **Full-access
+implementation pass**.
 
 Ralph implementation prompts treat the issue body as the primary contract. When
 recent Ready issue refresh comments exist, Ralph appends only the latest five
@@ -217,6 +221,7 @@ for the decision that keeps **Exploratory branches** outside automatic
   - `.agents/skills/ralph-triage/SKILL.md`
   - `.agents/skills/ralph-loop/SKILL.md`
   - `.agents/skills/ralph-issue-refresh/SKILL.md`
+  - `.agents/skills/repo-knowledge-base/SKILL.md`
   - `docs/agents/README.md`
   - `docs/agents/ralph-loop.md`
   - `docs/agents/triage-labels.md`
