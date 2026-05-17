@@ -81,6 +81,10 @@ This repo uses a single root `CONTEXT.md` for canonical language. See
   - `make unit-test` for the Ralph loop **Unit test** validation.
   - `make fast-test` for the Ralph loop fast pytest target.
   - `make run-prek` for the Ralph loop **Commit check** surface.
+- For `tools/gas-market-knowledge-base`, use:
+  - `make unit-test` for the Gas market knowledge base **Unit test** lane.
+  - `make fast-test` for the Gas market knowledge base fast pytest alias.
+  - `make run-prek` for the Gas market knowledge base **Commit check**.
 - Direct `uv run pytest path::test` commands are fine for narrowed debugging.
   Use the documented Subproject command surface again before treating a lane as
   validated.
@@ -94,7 +98,12 @@ This repo uses a single root `CONTEXT.md` for canonical language. See
 
 ## Doc sync
 
-- Scope: `README.md`, `docs/**/*.md`, maintained `backend-services/**/*.md`, `infrastructure/aws-pulumi/**/*.md`, `backend-services/dagster-user/aemo-etl/**/*.md`, `tools/ralph-loop/**/*.md`
+- Scope: `README.md`, `docs/**/*.md`, maintained `backend-services/**/*.md`,
+  `infrastructure/aws-pulumi/**/*.md`,
+  `backend-services/dagster-user/aemo-etl/**/*.md`,
+  `tools/ralph-loop/**/*.md`, `tools/gas-market-knowledge-base/README.md`
+- Generated Gas market knowledge base Markdown under `generated/` is corpus
+  artifact output, not maintained router documentation.
 - Out: `specs/`
 - Each maintained doc ends with `## Sync metadata`
 - Required keys: `sync.owner`, `sync.sources`, `sync.scope`, `sync.qa`
