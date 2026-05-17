@@ -37,6 +37,13 @@ Use this page as the agent documentation map. The imperative policy lives in
 
 - **Agent skills** are reusable local workflow instruction bundles invoked as
   `$skill-name`.
+- Use `$repo-knowledge-base` for repo-owned gas-market corpus questions,
+  generated bronze/silver/gold artifact lookup, generated chunk citation, and
+  cited gold **Market context** writing or review:
+  [SKILL.md](../../.agents/skills/repo-knowledge-base/SKILL.md). Factual
+  market claims must cite generated chunk evidence with `chunk_id` and source
+  hash details, and generated corpus Markdown stays outside maintained
+  **Documentation sync** router docs.
 - Use `$shape-issues` before `$ralph-triage` to turn shaped plans into
   tracer-bullet issue drafts with context anchors, QA plans, **Issue context
   assessor** evidence, and stiffness scoring. The gate writes `report.md`,
@@ -83,6 +90,7 @@ Use this page as the agent documentation map. The imperative policy lives in
   - `.agents/skills/ralph-loop/SKILL.md`
   - `.agents/skills/ralph-issue-refresh/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`
+  - `.agents/skills/repo-knowledge-base/SKILL.md`
   - `tools/ralph-loop/README.md`
   - `tools/gas-market-knowledge-base/README.md`
   - `docs/agents/ralph-loop.md`

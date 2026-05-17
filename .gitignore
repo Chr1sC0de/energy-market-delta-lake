@@ -14,6 +14,8 @@ dist/
 !.agents/skills/ralph-loop/SKILL.md
 !.agents/skills/ralph-triage
 !.agents/skills/ralph-triage/SKILL.md
+!.agents/skills/repo-knowledge-base
+!.agents/skills/repo-knowledge-base/SKILL.md
 !.gitkeep
 
 # Gas market knowledge base generated text artifacts are intentionally reviewable.
