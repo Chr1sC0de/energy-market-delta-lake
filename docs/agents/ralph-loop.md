@@ -1269,7 +1269,9 @@ not change the original Promotion success or failure status.
 If there are no Promotion changes, Ralph does not create Promotion worktrees or
 run the review agent; it prints a review skip note and records
 `post_promotion_review.status` and `post_promotion_followups.status` as
-`skipped_no_changes`.
+`skipped_no_changes`. It also records `local_branch_fast_forwards` entries as
+`skipped_no_promotion_changes` because there is no pushed Promotion commit to
+apply to local branch worktrees.
 
 ## Triage pass
 

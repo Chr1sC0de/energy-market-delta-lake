@@ -558,7 +558,7 @@ class RunManifest:
         *,
         branch: str,
         status: str,
-        target_commit: str,
+        target_commit: str | None,
         worktree_path: Path | None = None,
         current_commit: str | None = None,
         log_path: Path | None = None,

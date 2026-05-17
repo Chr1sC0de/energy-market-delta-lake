@@ -838,6 +838,21 @@ class GitClient:
         )
         return parse_git_worktree_list_porcelain(result.stdout)
 
+    def local_branch_commit(self, branch: str) -> str | None:
+        try:
+            result = self.runner.run(
+                ["git", "show-ref", "--verify", "--hash", f"refs/heads/{branch}"],
+                cwd=self.repo_root,
+            )
+        except CommandFailure as error:
+            if error.returncode == 1:
+                return None
+            raise
+        sha = result.stdout.strip()
+        if sha == "":
+            return None
+        return sha
+
     def add_paths(
         self,
         *,
@@ -3565,6 +3580,11 @@ class RalphLoop:
             if not changed_files:
                 emit(f"No changes to promote from {source_branch} to {target_branch}.")
                 emit("Post-promotion review skipped: no Promotion changes.")
+                self._record_local_branch_fast_forwards_skipped_no_promotion_changes(
+                    source_branch=source_branch,
+                    target_branch=target_branch,
+                    manifest=manifest,
+                )
                 manifest.record_post_promotion_review(
                     "skipped_no_changes",
                     reason="No Promotion changes were detected.",
@@ -3688,6 +3708,14 @@ class RalphLoop:
                 run_dir=run_dir,
                 manifest=manifest,
             )
+            self._fast_forward_checked_out_local_branches_after_promotion(
+                source_branch=source_branch,
+                target_branch=target_branch,
+                promotion_sha=promotion_sha,
+                source_branch_synced=source_branch_synced,
+                run_dir=run_dir,
+                manifest=manifest,
+            )
 
             self._close_promoted_issues(
                 integrated_issues,
@@ -3732,14 +3760,6 @@ class RalphLoop:
                 promoted_issues=integrated_issues,
                 review_artifact_path=review_artifact_path,
                 analysis_path=promote_path,
-                run_dir=run_dir,
-                manifest=manifest,
-            )
-            self._fast_forward_checked_out_local_branches_after_promotion(
-                source_branch=source_branch,
-                target_branch=target_branch,
-                promotion_sha=promotion_sha,
-                source_branch_synced=source_branch_synced,
                 run_dir=run_dir,
                 manifest=manifest,
             )
@@ -5458,6 +5478,26 @@ class RalphLoop:
         self.git.fetch_base(source_branch, run_dir=run_dir)
         return True
 
+    def _record_local_branch_fast_forwards_skipped_no_promotion_changes(
+        self,
+        *,
+        source_branch: str,
+        target_branch: str,
+        manifest: RunManifest,
+    ) -> None:
+        reason = "No Promotion changes were detected, so no Promotion commit exists."
+        for role, branch in (
+            ("source_branch", source_branch),
+            ("integration_target", target_branch),
+        ):
+            manifest.record_local_branch_fast_forward(
+                role,
+                branch=branch,
+                status="skipped_no_promotion_changes",
+                target_commit=None,
+                reason=reason,
+            )
+
     def _fast_forward_checked_out_local_branches_after_promotion(
         self,
         *,
@@ -5533,12 +5573,11 @@ class RalphLoop:
         manifest: RunManifest,
     ) -> None:
         if worktree is None:
-            manifest.record_local_branch_fast_forward(
-                role,
+            self._record_unchecked_out_local_branch_fast_forward_skip(
+                role=role,
                 branch=branch,
-                status="skipped_not_checked_out",
                 target_commit=target_commit,
-                reason=f"No checked-out local {branch} branch worktree was found.",
+                manifest=manifest,
             )
             return
 
@@ -5676,6 +5715,58 @@ class RalphLoop:
             worktree_path=worktree.path,
             current_commit=current_commit,
             log_path=log_path,
+        )
+
+    def _record_unchecked_out_local_branch_fast_forward_skip(
+        self,
+        *,
+        role: str,
+        branch: str,
+        target_commit: str,
+        manifest: RunManifest,
+    ) -> None:
+        recovery_command = local_branch_ref_fast_forward_recovery_command(
+            repo_root=self.config.repo_root,
+            branch=branch,
+        )
+        try:
+            current_commit = self.git.local_branch_commit(branch)
+        except CommandFailure as error:
+            reason = f"Could not inspect local {branch} branch before fast-forward."
+            manifest.record_local_branch_fast_forward(
+                role,
+                branch=branch,
+                status="failed",
+                target_commit=target_commit,
+                reason=reason,
+                recovery_command=recovery_command,
+                error=str(error),
+            )
+            emit(f"Local branch fast-forward warning: {reason} {error}", err=True)
+            return
+
+        if current_commit is None:
+            reason = f"Local {branch} branch does not exist."
+            manifest.record_local_branch_fast_forward(
+                role,
+                branch=branch,
+                status="skipped_missing_local_branch",
+                target_commit=target_commit,
+                current_commit=None,
+                reason=reason,
+                recovery_command=recovery_command,
+            )
+            return
+
+        reason = f"No checked-out local {branch} branch worktree was found."
+        manifest.record_local_branch_fast_forward(
+            role,
+            branch=branch,
+            status="skipped_not_checked_out",
+            target_commit=target_commit,
+            current_commit=current_commit,
+            reason=reason,
+            recovery_command=recovery_command,
         )
 
     def _branch_and_worktrees(
