@@ -4,6 +4,11 @@ from pathlib import Path
 
 import click
 
+from gas_market_knowledge_base.pdf_cache import (
+    PdfCacheInputError,
+    default_pdf_cache_dir,
+    fetch_pdf_cache,
+)
 from gas_market_knowledge_base.source_manifest import (
     DEFAULT_ENVIRONMENT,
     ManifestInputError,
@@ -83,3 +88,46 @@ def sync_manifest(
         "excluded_without_archive_storage="
         f"{summary.excluded_without_archive_storage_count}"
     )
+
+
+@main.command("fetch-pdfs")
+@click.option(
+    "--manifest-path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=default_source_manifest_path(),
+    show_default=True,
+    help="Bronze source manifest JSONL path to read.",
+)
+@click.option(
+    "--cache-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=default_pdf_cache_dir(),
+    show_default=True,
+    help="Ignored local PDF cache directory to populate.",
+)
+def fetch_pdfs(manifest_path: Path, cache_dir: Path) -> None:
+    """Populate the ignored local PDF cache from archive objects."""
+    try:
+        result = fetch_pdf_cache(manifest_path=manifest_path, cache_dir=cache_dir)
+    except PdfCacheInputError as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1) from e
+
+    summary = (
+        f"summary: manifest_rows={result.manifest_row_count} "
+        f"fetchable_rows={result.fetchable_row_count} "
+        f"downloaded={result.downloaded_count} "
+        f"refreshed={result.refreshed_count} "
+        f"reused={result.reused_count} "
+        f"invalid_cache_entries={result.invalid_cache_entry_count} "
+        f"errors={result.error_count}"
+    )
+    if result.errors:
+        click.echo(f"Error: fetch-pdfs found {result.error_count} problem(s)", err=True)
+        for error in result.errors:
+            click.echo(f"- {error}", err=True)
+        click.echo(summary, err=True)
+        raise SystemExit(1)
+
+    click.echo(f"cached PDFs in {result.cache_dir}")
+    click.echo(summary)

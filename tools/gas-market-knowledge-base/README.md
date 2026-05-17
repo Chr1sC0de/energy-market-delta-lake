@@ -2,9 +2,9 @@
 
 This Subproject is the repo-local **Gas market knowledge base** tool surface.
 It currently provides the Python package layout, bronze source manifest command,
-generated-artifact policy, and **Unit test** lane. It does not download raw
-PDFs, run Docling extraction, create retrieval chunks, or add gold **Market
-context** pages.
+archive PDF cache fetcher, generated-artifact policy, and **Unit test** lane.
+It does not run Docling extraction, create retrieval chunks, or add gold
+**Market context** pages.
 
 The CLI is available inside this Subproject with `uv run`:
 
@@ -24,6 +24,20 @@ The default `dev` environment reads
 and writes `generated/bronze/source_manifest.jsonl`. Unit tests use fixture
 JSON or JSONL metadata rows through `--metadata-path` and do not read deployed
 resources.
+
+Populate the ignored local PDF cache from manifest archive objects:
+
+```bash
+uv run gas-market-kb fetch-pdfs
+```
+
+The command reads `generated/bronze/source_manifest.jsonl`, fetches each
+`archive_uri`, validates downloaded bytes against `content_sha256`, and writes
+deterministic cache files to `.cache/pdfs/<content_sha256>.pdf`. Valid existing
+cache files are reused. Invalid cache files are replaced only after a fresh
+download validates against the manifest hash. Row-level failures such as missing
+archive URIs, fetch failures, or hash mismatches are reported and cause a
+non-zero exit.
 
 ## Local QA
 
@@ -52,8 +66,8 @@ Future corpus text artifacts belong under these generated roots:
 Generated Markdown, JSON, JSONL, YAML, and text files under those roots may be
 tracked intentionally when future issues create reviewable corpus artifacts.
 Raw PDFs are not tracked. Source PDF bytes stay in S3-compatible archive
-storage or in a local cache such as `.pdf-cache/`, `cache/`, or `raw-pdfs/`,
-and repository ignore rules keep `*.pdf` files out of this Subproject.
+storage or in the ignored local `.cache/pdfs/` cache, and repository ignore
+rules keep `*.pdf` files out of this Subproject.
 
 The repository **Documentation sync** workflow excludes any `generated/` path
 from maintained-doc discovery, so generated corpus Markdown is reviewable
@@ -62,6 +76,7 @@ artifact output rather than maintained router documentation.
 ## Layout
 
 - `src/gas_market_knowledge_base/cli.py`: CLI entrypoint.
+- `src/gas_market_knowledge_base/pdf_cache.py`: archive PDF cache fetcher.
 - `src/gas_market_knowledge_base/source_manifest.py`: bronze source manifest
   writer for AEMO gas document metadata rows.
 - `tests/unit/`: package import, command-surface, and manifest writer tests.
@@ -81,8 +96,10 @@ artifact output rather than maintained router documentation.
   - `tools/gas-market-knowledge-base/pyproject.toml`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/__init__.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/cli.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/pdf_cache.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/source_manifest.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_cli.py`
+  - `tools/gas-market-knowledge-base/tests/unit/test_pdf_cache.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_source_manifest.py`
   - `tools/gas-market-knowledge-base/uv.lock`
 - `sync.scope`: `operations`
@@ -91,4 +108,4 @@ artifact output rather than maintained router documentation.
   - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure tools`
   - `make unit-test`
   - `make run-prek`
-  - `verify generated-artifact roots, raw-PDF ignore policy, CLI help, and source manifest fixture behavior`
+  - `verify generated-artifact roots, raw-PDF ignore policy, CLI help, source manifest fixture behavior, and PDF cache fixture behavior`
