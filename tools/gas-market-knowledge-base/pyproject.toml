@@ -42,6 +42,10 @@ lint.pycodestyle.max-line-length = 120
 [tool.pytest]
 ini_options.testpaths = [ "tests" ]
 ini_options.markers = [
+  """\
+  docling_adapter: real Docling adapter smoke coverage against generated PDFs; may require local or downloadable \
+  Docling model artifacts\
+  """,
   "unit: pure or mocked tests without framework runtime or external resources",
 ]
 

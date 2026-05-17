@@ -379,6 +379,7 @@ These commands support the intended flow:
   - `tools/gas-market-knowledge-base/tests/unit/test_silver_chunks.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_silver_documents.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_source_manifest.py`
+  - `tools/gas-market-knowledge-base/tests/docling/test_silver_documents_docling.py`
   - `tools/gas-market-knowledge-base/uv.lock`
   - `scripts/check_shell_script_headers.py`
   - `scripts/ralph.py`

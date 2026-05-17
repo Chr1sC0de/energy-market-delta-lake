@@ -1,7 +1,11 @@
-.PHONY: unit-test fast-test run-prek
+.PHONY: unit-test docling-adapter-test fast-test run-prek
 
 unit-test:
 	uv run pytest tests/unit -q
+
+# Real Docling adapter smoke; excluded from Unit test and Commit check lanes.
+docling-adapter-test:
+	uv run pytest tests/docling -q
 
 fast-test: unit-test
 
