@@ -39,7 +39,8 @@ Ralph drains agent-ready GitHub issues through a guarded local loop:
 2. Resolve each issue **Delivery mode** and **Integration target** before lane
    selection.
 3. Keep Gitflow and Trunk delivery in a serial lane while eligible Exploratory
-   delivery issues run in a bounded worker pool.
+   delivery issues run in a bounded worker pool. Exploratory issues that request
+   an **Operator smoke** use an exclusive serial lane.
 4. Run `codex exec` to implement each claimed issue.
 5. Run deterministic local QA.
 6. Run **Issue completion review** when risk triggers require it.
@@ -50,8 +51,9 @@ Ralph drains agent-ready GitHub issues through a guarded local loop:
 9. In **Trunk delivery**, push `main`, comment evidence, mark `agent-merged`,
    and close the issue.
 10. In **Exploratory delivery**, push a durable **Exploratory branch** from
-    `origin/main`, comment evidence, mark `agent-reviewing`, and leave the issue
-    open for human review.
+    `origin/main`. If the issue requests an **Operator smoke**, run it from the
+    Ralph-owned outer loop after the push. Then comment evidence, mark
+    `agent-reviewing`, and leave the issue open for human review.
 11. Run **Ready issue refresh** when enabled under a scheduler claim gate after
     each successful issue attempt. The gate pauses new claims while refresh
     analysis and metadata mutation run; already active Exploratory workers may
@@ -120,7 +122,7 @@ be reconciled against current branch state.
 flowchart TD
   START[Start drain] --> PREFLIGHT[Validate tools, root worktree, GitHub auth, sandboxed issue access, and labels]
   PREFLIGHT --> READY[Resolve unblocked ready-for-agent candidates through Delivery mode helpers]
-  READY --> SERIAL{Serial Gitflow/Trunk candidate?}
+  READY --> SERIAL{Serial Gitflow/Trunk or Operator smoke candidate?}
   READY --> EXPLORERS[Fill Exploratory worker pool up to exploratory concurrency]
   SERIAL -->|Yes| ACCESS{Issue anchors .agents paths?}
   EXPLORERS --> ACCESS
@@ -144,7 +146,11 @@ flowchart TD
   DONE -->|Gitflow or Trunk| INTEGRATE[Run Local integration]
   INTEGRATE --> DONE2{Delivery mode?}
   DONE -->|Exploratory| HANDOFF[Push Exploratory branch]
-  HANDOFF --> REVIEW[Comment evidence and mark agent-reviewing]
+  HANDOFF --> SMOKE{Operator smoke requested?}
+  SMOKE -->|Yes| SMOKERUN[Run allowlisted smoke from Ralph outer loop]
+  SMOKERUN -->|Fail or timeout| FAIL
+  SMOKERUN -->|Pass| REVIEW[Comment evidence and mark agent-reviewing]
+  SMOKE -->|No| REVIEW
   DONE2 -->|Gitflow| STAGE[Comment evidence and mark agent-integrated]
   DONE2 -->|Trunk| CLOSE[Comment evidence, mark agent-merged, close issue]
   STAGE --> REFRESH[Run Ready issue refresh]
@@ -228,11 +234,13 @@ Dry-run the drain queue preview:
 python3 scripts/ralph.py --drain --dry-run
 ```
 
-`--drain --dry-run` previews the next serial Gitflow or trunk candidate plus up
-to two eligible Exploratory candidates, using each issue's resolved
-**Delivery mode**. Set `--exploratory-concurrency N` to change that
+`--drain --dry-run` previews the next serial Gitflow, trunk, or Operator-smoke
+candidate plus up to two eligible Exploratory candidates, using each issue's
+resolved **Delivery mode**. Set `--exploratory-concurrency N` to change that
 Exploratory preview bound; the default is `2` and the minimum is `1`.
-Targeted `--issue` dry runs still preview only that issue.
+Targeted `--issue` dry runs still preview only that issue. When a previewed
+issue has a valid `## Operator smoke`, dry run prints the selected smoke id,
+command path, cwd, and timeout without executing the command.
 
 Drain up to 10 claimed implementation issues:
 
@@ -243,13 +251,16 @@ python3 scripts/ralph.py --drain
 Live `--drain` runs a lane-aware scheduler. Gitflow and Trunk delivery stay in a
 single serial lane. Exploratory delivery issues are submitted oldest-first to a
 `ThreadPoolExecutor` with at most `--exploratory-concurrency` active workers.
-The scheduler preserves queue order within each lane and applies `--max-issues`
-to claimed issues across both lanes. When **Ready issue refresh** starts after a
+Exploratory issues with `## Operator smoke` are excluded from that worker pool:
+Ralph waits for active issue workers to finish, claims the smoke issue in the
+serial lane, and does not overlap it with another implementation worker. The
+scheduler preserves queue order within each lane and applies `--max-issues`
+to claimed issues across all lanes. When **Ready issue refresh** starts after a
 successful **Local integration** or Exploratory handoff, the scheduler pauses
 new issue claims until all pending refresh passes complete successfully. Running
 Exploratory workers are not cancelled; they may finish while the claim gate is
-closed. When no serial Gitflow or Trunk ready issue is claimable, the scheduler
-may run one automated triage pass while active Exploratory workers continue.
+closed. When no serial ready issue is claimable, the scheduler may run one
+automated triage pass while active Exploratory workers continue.
 That triage pass does not consume the `--max-issues` claimed-issue budget.
 
 Drain or run the Operator loop without applying **Ready issue refresh** metadata
@@ -670,6 +681,10 @@ Key fields for inspection:
   artifact path, mutation results, recovery guidance, and failure state for
   implementation runs after successful **Local integration** or Exploratory
   handoff and for **Promotion** runs after verified issue closures.
+- `operator_smoke`: requested **Operator smoke** state for Exploratory delivery
+  runs, including smoke id, allowlisted command path, command args, cwd, log
+  path, timeout, copied evidence path when the smoke emits `run manifest:`, exit
+  status, status, and error.
 - `drain_scheduler.fatal_stop`: drain fatal-stop state for implementation runs,
   including whether the live drain scheduler was enabled, whether the child
   triggered or observed the stop, the fatal reason, error message, recovery log
@@ -816,6 +831,13 @@ An Exploratory delivery issue must also have `## Review focus`, stating the
 human judgment the durable **Exploratory branch** needs. Missing
 `## Review focus` marks the issue `agent-failed` before Ralph creates an
 implementation worktree, invokes Codex, or publishes an Exploratory handoff.
+Exploratory delivery issues may additionally include `## Operator smoke` with
+`Smoke id: <id>`, `Timeout: <seconds>`, and credential-boundary prose. Ralph
+validates that section before implementation. Unknown smoke ids fail before
+command execution, and smoke sections on non-Exploratory issues fail the issue
+contract. The first allowlisted id is `ec2-run-worker-placement`, mapped to
+`infrastructure/aws-pulumi/scripts/run-ec2-run-worker-smoke` with cwd
+`infrastructure/aws-pulumi` in the issue worktree.
 
 If any referenced blocker in `Blocked by` is still open, Ralph skips the issue.
 If the issue contract is malformed, Ralph marks the issue `agent-failed` and
@@ -911,8 +933,12 @@ Trunk integration marks the issue `agent-merged` and closes it. Gitflow
 integration marks the issue `agent-integrated` and leaves it open for
 **Promotion**. Exploratory handoff skips the detached integration worktree and
 squash merge: Ralph pushes the validated **Exploratory branch** to origin,
-marks the issue `agent-reviewing`, and leaves it open for human review. Ralph
-does not open a GitHub draft PR.
+then runs any requested allowlisted **Operator smoke** from the Ralph-owned
+outer loop before marking the issue `agent-reviewing`. Smoke success evidence
+is included in the handoff comment. Smoke failure or timeout comments failure
+evidence, marks the issue `agent-failed`, preserves the worktree, logs, and
+branch for review, and does not apply `agent-reviewing`. Ralph does not open a
+GitHub draft PR.
 
 Human review owns the next Exploratory state decision. The Operator records
 explicit `accept`, `hold`, or `reject` decisions in a JSON artifact:
@@ -1058,6 +1084,9 @@ workflow credentials in the operator/Ralph outer loop: sandboxed Codex
 subprocesses and **Post-promotion review** receive no AWS or Pulumi
 credentials, and direct Promotion only reports the command an operator should
 run later from the AWS Pulumi **Subproject**.
+The same boundary applies to allowlisted **Operator smoke** commands for
+Exploratory delivery: implementation subprocesses may prepare scripts and docs,
+but AWS and Pulumi credentials stay in Ralph's operator-owned outer loop.
 
 For checkpointed Operator runs, `no_deployment` records
 `deployment_execution.status: skipped_no_deployment` and runs no AWS or Pulumi

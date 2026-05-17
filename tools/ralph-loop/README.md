@@ -22,13 +22,15 @@ make run-prek
 ## Layout
 
 - `src/ralph_loop/cli.py`: Ralph CLI, side-effect adapters, loop controller,
-  deploy-repair issue creation, and compatibility re-exports
+  operator-smoke execution, deploy-repair issue creation, and compatibility
+  re-exports
 - `src/ralph_loop/workflow.py`: pure label, **Delivery mode**, QA selection,
-  comment, **Issue completion review** trigger, deployment
+  comment, **Issue completion review** trigger, Operator smoke request,
+  deployment
   classification/execution selection, and recovery policy helpers
 - `src/ralph_loop/state.py`: Ralph run and Operator manifest state helpers,
-  including **Issue completion review**, deploy-repair issue state, and
-  checkpointed deploy-repair target state
+  including **Issue completion review**, Operator smoke evidence,
+  deploy-repair issue state, and checkpointed deploy-repair target state
 - `tests/unit/`: Ralph unit tests
 - `.pre-commit-config.yaml`: Subproject `prek` hook surface
 

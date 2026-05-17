@@ -151,6 +151,18 @@ class RunManifest:
                 "recovery_guidance": None,
                 "failure": None,
             },
+            "operator_smoke": {
+                "status": "not_requested",
+                "smoke_id": None,
+                "command_path": None,
+                "command_args": [],
+                "cwd": None,
+                "log_path": None,
+                "timeout": None,
+                "evidence_path": None,
+                "exit_status": None,
+                "error": None,
+            },
             "drain_scheduler": {
                 "enabled": config.drain and config.issue is None,
                 "fatal_stop": {
@@ -1025,6 +1037,39 @@ class RunManifest:
         if reason is not None:
             refresh["reason"] = reason
         self.record_event(f"ready_issue_refresh_{status}", details=dict(refresh))
+
+    def record_operator_smoke(
+        self,
+        status: str,
+        *,
+        command: OperatorSmokeCommand | None = None,
+        result: OperatorSmokeResult | None = None,
+        log_path: Path | None = None,
+        evidence_path: Path | None = None,
+        exit_status: int | None = None,
+        error: str | None = None,
+    ) -> None:
+        smoke = self.data.setdefault("operator_smoke", {})
+        if not isinstance(smoke, dict):
+            raise RalphError("Manifest operator_smoke field is not an object.")
+
+        if result is not None:
+            smoke.update(result.to_manifest())
+        elif command is not None:
+            smoke.update(command.to_manifest(log_path=log_path))
+
+        smoke["status"] = status
+        if log_path is not None or "log_path" not in smoke:
+            smoke["log_path"] = path_text(log_path)
+        if evidence_path is not None or "evidence_path" not in smoke:
+            smoke["evidence_path"] = path_text(evidence_path)
+        if exit_status is not None or "exit_status" not in smoke:
+            smoke["exit_status"] = exit_status
+        if error is not None:
+            smoke["error"] = error
+        elif status not in {"failed", "timed_out"}:
+            smoke["error"] = None
+        self.record_event(f"operator_smoke_{status}", details=dict(smoke))
 
     def record_ready_issue_refresh_mutation(
         self,
@@ -1961,6 +2006,40 @@ def capture_qa_run_manifest_evidence(
     )
 
 
+def capture_operator_smoke_evidence_path(
+    *,
+    log_path: Path,
+    cwd: Path,
+    run_dir: Path,
+) -> Path | None:
+    if not log_path.exists():
+        return None
+    log_text = log_path.read_text(encoding="utf-8")
+    source_path = latest_run_manifest_path_from_log(log_text, cwd=cwd)
+    if source_path is None:
+        return None
+
+    if source_path.exists() and source_path.is_file():
+        suffix = source_path.suffix or ".txt"
+        artifact_path = run_dir / f"{log_path.stem}-evidence{suffix}"
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        if source_path.resolve() != artifact_path.resolve():
+            shutil.copy2(source_path, artifact_path)
+        return artifact_path
+
+    artifact_path = run_dir / f"{log_path.stem}-evidence.json"
+    write_json_artifact(
+        artifact_path,
+        {
+            "source_path": str(source_path),
+            "source_available": False,
+            "log_path": str(log_path),
+            "artifact_kind": "operator_smoke_log_extract",
+        },
+    )
+    return artifact_path
+
+
 def json_object_from_path(path: Path) -> dict[str, Any] | None:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -2152,6 +2231,12 @@ def build_operator_run_rollup(
         for repair in [operator_rollup_deploy_repair_entry(promotion)]
         if repair is not None
     ]
+    operator_smokes = [
+        smoke
+        for entry in [*issue_entries["succeeded"], *issue_entries["failed"]]
+        for smoke in [operator_rollup_operator_smoke_entry(entry)]
+        if smoke is not None
+    ]
     qa_surfaces = [
         surface
         for source in child_sources
@@ -2216,6 +2301,7 @@ def build_operator_run_rollup(
             "promotions": len(promotion_entries),
             "deployment_executions": len(deployment_executions),
             "deploy_repair_issue_phases": len(deploy_repair_issues),
+            "operator_smokes": len(operator_smokes),
             "manual_recoveries": len(manual_recoveries),
             "qa_surfaces": len(qa_surfaces),
             "post_promotion_followups": len(post_promotion_followups),
@@ -2228,6 +2314,7 @@ def build_operator_run_rollup(
         "promotions": promotion_entries,
         "deployment_executions": deployment_executions,
         "deploy_repair_issues": deploy_repair_issues,
+        "operator_smokes": operator_smokes,
         "qa_surfaces": qa_surfaces,
         "post_promotion_followups": post_promotion_followups,
         "exploratory_acceptance_review": data.get("exploratory_acceptance_review"),
@@ -2403,6 +2490,9 @@ def operator_issue_rollup_entry(
             child_data.get("integration_commit")
         ),
         "qa": operator_rollup_qa_summary(child_data),
+        "operator_smoke": child_data.get("operator_smoke")
+        if isinstance(child_data.get("operator_smoke"), dict)
+        else None,
         "ready_issue_refresh_status": operator_rollup_nested_status(
             child_data, "ready_issue_refresh"
         ),
@@ -2411,6 +2501,35 @@ def operator_issue_rollup_entry(
     if child_source is not None and child_source.get("manifest_error") is not None:
         entry["manifest_error"] = child_source.get("manifest_error")
     return entry
+
+
+def operator_rollup_operator_smoke_entry(
+    issue_entry: dict[str, Any],
+) -> dict[str, Any] | None:
+    smoke = issue_entry.get("operator_smoke")
+    if not isinstance(smoke, dict):
+        return None
+    status = str(smoke.get("status") or "")
+    if status in {"", "not_requested"}:
+        return None
+    return {
+        "issue": issue_entry.get("issue"),
+        "status": status,
+        "smoke_id": smoke.get("smoke_id"),
+        "command_path": smoke.get("command_path"),
+        "command_args": (
+            smoke.get("command_args")
+            if isinstance(smoke.get("command_args"), list)
+            else []
+        ),
+        "cwd": smoke.get("cwd"),
+        "log_path": smoke.get("log_path"),
+        "timeout": smoke.get("timeout"),
+        "evidence_path": smoke.get("evidence_path"),
+        "exit_status": smoke.get("exit_status"),
+        "error": smoke.get("error"),
+        "manifest_path": issue_entry.get("manifest_path"),
+    }
 
 
 def normalized_commit_payload(value: Any) -> dict[str, Any] | None:
@@ -2845,6 +2964,10 @@ def render_operator_run_rollup_markdown(rollup: dict[str, Any]) -> str:
         "",
         *operator_rollup_deploy_repair_markdown_lines(rollup["deploy_repair_issues"]),
         "",
+        "## Operator Smokes",
+        "",
+        *operator_rollup_operator_smoke_markdown_lines(rollup["operator_smokes"]),
+        "",
         "## QA Surfaces",
         "",
         *operator_rollup_qa_markdown_lines(rollup["qa_surfaces"]),
@@ -3003,6 +3126,27 @@ def operator_rollup_deploy_repair_markdown_lines(
             + f"; validation downgrades `{len(downgrades)}`"
             + f"; failures `{len(failures)}`"
             + f"; artifact {markdown_path_link(entry.get('artifact_path'))}"
+        )
+    return lines
+
+
+def operator_rollup_operator_smoke_markdown_lines(
+    entries: list[dict[str, Any]],
+) -> list[str]:
+    if not entries:
+        return ["- None"]
+    lines: list[str] = []
+    for entry in entries:
+        issue = entry.get("issue") if isinstance(entry.get("issue"), dict) else {}
+        log_path = markdown_artifact_link(entry.get("log_path"), "smoke log")
+        lines.append(
+            "- "
+            + operator_issue_title(issue)
+            + f" - `{entry.get('status')}`"
+            + f"; smoke `{entry.get('smoke_id')}`"
+            + f"; command `{entry.get('command_path')}`"
+            + f"; exit `{entry.get('exit_status')}`"
+            + f"; log {log_path}"
         )
     return lines
 

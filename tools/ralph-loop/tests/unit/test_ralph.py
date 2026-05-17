@@ -68,6 +68,20 @@ None
 Review whether this branch should become the production workflow.
 """
 
+OPERATOR_SMOKE_BODY = (
+    EXPLORATORY_IMPLEMENTATION_BODY
+    + """
+## Operator smoke
+
+Smoke id: ec2-run-worker-placement
+Timeout: 120
+
+This smoke must run only from the Ralph outer loop with operator-owned
+AWS/Pulumi credentials. Sandboxed Codex implementation subprocesses must not
+receive AWS or Pulumi credentials.
+"""
+)
+
 
 def implementation_body_with_blockers(*blockers: int) -> str:
     blocked_by = (
@@ -463,6 +477,7 @@ class FakeCall:
     phase: str | None
     execute_in_dry_run: bool
     env: dict[str, str] | None
+    timeout_seconds: int | float | None
 
 
 class FakeRunner:
@@ -483,6 +498,7 @@ class FakeRunner:
         fail_deploy_failure_analysis: bool = False,
         deploy_failure_analysis_markdown: str = DEPLOY_FAILURE_ANALYSIS_MARKDOWN,
         fail_issue_create: bool = False,
+        timeout_commands: set[tuple[str, ...]] | None = None,
     ) -> None:
         self.dry_run = False
         self.calls: list[FakeCall] = []
@@ -500,6 +516,7 @@ class FakeRunner:
         self.fail_deploy_failure_analysis = fail_deploy_failure_analysis
         self.deploy_failure_analysis_markdown = deploy_failure_analysis_markdown
         self.fail_issue_create = fail_issue_create
+        self.timeout_commands = timeout_commands or set()
         self.created_issue_number = 99
         if isinstance(fail_commands, dict):
             self.fail_commands = fail_commands
@@ -516,6 +533,7 @@ class FakeRunner:
         phase: str | None = None,
         execute_in_dry_run: bool = True,
         env: dict[str, str] | None = None,
+        timeout_seconds: int | float | None = None,
     ):
         command = tuple(args)
         self.calls.append(
@@ -527,6 +545,7 @@ class FakeRunner:
                 phase=phase,
                 execute_in_dry_run=execute_in_dry_run,
                 env=env,
+                timeout_seconds=timeout_seconds,
             )
         )
         if log_path is not None:
@@ -552,6 +571,15 @@ class FakeRunner:
                 self.fail_commands[command],
                 "",
                 "fake failure",
+                log_path,
+            )
+        if command in self.timeout_commands:
+            raise ralph.CommandTimeout(
+                args,
+                cwd,
+                timeout_seconds or 0,
+                "",
+                "fake timeout",
                 log_path,
             )
         if command in self.command_outputs:
@@ -662,6 +690,33 @@ class FakeRunner:
                     stdout=self.deploy_failure_analysis_markdown,
                     stderr="",
                 )
+        if command and command[0].endswith("run-ec2-run-worker-smoke"):
+            evidence_path = cwd / ".ralph-operator-smoke-evidence.json"
+            evidence_path.parent.mkdir(parents=True, exist_ok=True)
+            evidence_path.write_text(
+                json.dumps(
+                    {"status": "success", "smoke_id": "ec2-run-worker-placement"}
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            if log_path is not None:
+                log_path.write_text(
+                    "\n".join(
+                        [
+                            f"$ {ralph.format_command(args)}",
+                            f"cwd: {cwd}",
+                            "exit: 0",
+                            "",
+                            "STDOUT:",
+                            f"run manifest: {evidence_path}",
+                            "",
+                            "STDERR:",
+                            "",
+                        ]
+                    ),
+                    encoding="utf-8",
+                )
         return ralph.CompletedCommand(stdout="", stderr="")
 
 
@@ -683,6 +738,7 @@ class E2EManifestRetryRunner(FakeRunner):
         phase: str | None = None,
         execute_in_dry_run: bool = True,
         env: dict[str, str] | None = None,
+        timeout_seconds: int | float | None = None,
     ):
         command = tuple(args)
         if command != self.e2e_command:
@@ -694,6 +750,7 @@ class E2EManifestRetryRunner(FakeRunner):
                 phase=phase,
                 execute_in_dry_run=execute_in_dry_run,
                 env=env,
+                timeout_seconds=timeout_seconds,
             )
 
         self.calls.append(
@@ -705,6 +762,7 @@ class E2EManifestRetryRunner(FakeRunner):
                 phase=phase,
                 execute_in_dry_run=execute_in_dry_run,
                 env=env,
+                timeout_seconds=timeout_seconds,
             )
         )
         self.e2e_attempts += 1
@@ -1350,7 +1408,9 @@ class LaneSchedulerProbeLoop(ralph.RalphLoop):
             default_mode=self.config.delivery_mode,
             target_branch=self.config.target_branch,
         )
-        is_exploratory = delivery_plan.mode == ralph.EXPLORATORY_MODE
+        is_exploratory = delivery_plan.mode == ralph.EXPLORATORY_MODE and not (
+            ralph.issue_requests_operator_smoke(issue)
+        )
         with self._lock:
             self._claimed_issue_numbers.add(issue.number)
             self.claimed_numbers.append(issue.number)
@@ -2830,6 +2890,50 @@ Build it.
             ),
             [],
         )
+
+    def test_operator_smoke_section_parses_valid_request(self) -> None:
+        request = ralph.parse_operator_smoke_request(OPERATOR_SMOKE_BODY)
+
+        self.assertIsNotNone(request)
+        assert request is not None
+        self.assertEqual(request.smoke_id, "ec2-run-worker-placement")
+        self.assertEqual(request.timeout_seconds, 120)
+        self.assertIn("operator-owned", request.prose)
+
+    def test_operator_smoke_rejects_unknown_smoke_id(self) -> None:
+        body = OPERATOR_SMOKE_BODY.replace(
+            "Smoke id: ec2-run-worker-placement",
+            "Smoke id: unknown-smoke",
+        )
+        issue = make_issue(
+            {ralph.DELIVERY_EXPLORATORY_LABEL},
+            body,
+        )
+        plan = ralph.resolve_delivery_plan(
+            issue,
+            default_mode=ralph.GITFLOW_MODE,
+            target_branch=None,
+        )
+
+        with self.assertRaises(ralph.IssueFailure) as context:
+            ralph.validate_operator_smoke_request(issue, delivery_plan=plan)
+
+        self.assertIn(
+            "Unknown Operator smoke id `unknown-smoke`", str(context.exception)
+        )
+
+    def test_operator_smoke_rejects_non_exploratory_delivery(self) -> None:
+        issue = make_issue({ralph.DELIVERY_GITFLOW_LABEL}, OPERATOR_SMOKE_BODY)
+        plan = ralph.resolve_delivery_plan(
+            issue,
+            default_mode=ralph.GITFLOW_MODE,
+            target_branch=None,
+        )
+
+        with self.assertRaises(ralph.IssueFailure) as context:
+            ralph.validate_operator_smoke_request(issue, delivery_plan=plan)
+
+        self.assertIn("only supported for Exploratory delivery", str(context.exception))
 
     def test_post_promotion_followup_validation_requires_ready_contract(self) -> None:
         valid = ralph.PostPromotionFollowupDraft(
@@ -4778,6 +4882,54 @@ Build it.
             any(command[:3] == ("gh", "issue", "close") for command in commands)
         )
 
+    def test_drain_dry_run_previews_operator_smoke_without_execution(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(
+                Path(tmp),
+                runner,
+                delivery_mode=ralph.EXPLORATORY_MODE,
+                drain=True,
+                exploratory_concurrency=2,
+                dry_run=True,
+            )
+            probe = DryRunPreviewLoop(
+                loop.config,
+                runner,
+                [
+                    make_issue(
+                        {ralph.READY_LABEL, ralph.DELIVERY_EXPLORATORY_LABEL},
+                        OPERATOR_SMOKE_BODY,
+                        number=41,
+                        title="Credentialed smoke",
+                    ),
+                    make_issue(
+                        {ralph.READY_LABEL, ralph.DELIVERY_EXPLORATORY_LABEL},
+                        EXPLORATORY_IMPLEMENTATION_BODY,
+                        number=42,
+                        title="Plain exploration",
+                    ),
+                ],
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                probe.run()
+
+        text = output.getvalue()
+        self.assertIn(
+            "DRY RUN: serial candidate #41: Credentialed smoke "
+            "(Delivery mode: exploratory, Integration target: "
+            "agent/exploratory/issue-41-credentialed-smoke)",
+            text,
+        )
+        self.assertIn("DRY RUN: Operator smoke `ec2-run-worker-placement`", text)
+        self.assertIn("run-ec2-run-worker-smoke", text)
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(
+            any("run-ec2-run-worker-smoke" in " ".join(command) for command in commands)
+        )
+
     def test_drain_scheduler_resolves_delivery_modes_before_lane_selection(
         self,
     ) -> None:
@@ -4823,6 +4975,67 @@ Build it.
 
         self.assertEqual(probe.serial_started, [42, 44])
         self.assertEqual(probe.exploratory_started, [41, 43])
+        self.assertEqual(probe.max_active_serial, 1)
+
+    def test_drain_scheduler_runs_operator_smoke_issue_in_exclusive_serial_lane(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(
+                Path(tmp),
+                runner,
+                delivery_mode=ralph.EXPLORATORY_MODE,
+                drain=True,
+                max_issues=2,
+                exploratory_concurrency=2,
+            )
+            probe = LaneSchedulerProbeLoop(
+                loop.config,
+                runner,
+                [
+                    make_issue(
+                        {ralph.READY_LABEL, ralph.DELIVERY_EXPLORATORY_LABEL},
+                        OPERATOR_SMOKE_BODY,
+                        number=41,
+                        title="Credentialed smoke",
+                    ),
+                    make_issue(
+                        {ralph.READY_LABEL, ralph.DELIVERY_EXPLORATORY_LABEL},
+                        EXPLORATORY_IMPLEMENTATION_BODY,
+                        number=42,
+                        title="Parallel exploration",
+                    ),
+                ],
+                blocked_issue_numbers={41, 42},
+            )
+            errors: list[BaseException] = []
+
+            def run_probe() -> None:
+                try:
+                    with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                        probe.run()
+                except BaseException as error:
+                    errors.append(error)
+
+            worker = threading.Thread(target=run_probe)
+            worker.start()
+            try:
+                self.assertTrue(probe.started_events[41].wait(timeout=1))
+                self.assertFalse(probe.started_events[42].wait(timeout=0.05))
+                probe.release_events[41].set()
+                self.assertTrue(probe.started_events[42].wait(timeout=1))
+            finally:
+                for event in probe.release_events.values():
+                    event.set()
+                worker.join(timeout=2)
+
+        self.assertFalse(worker.is_alive())
+        if errors:
+            raise errors[0]
+        self.assertEqual(probe.serial_started, [41])
+        self.assertEqual(probe.exploratory_started, [42])
+        self.assertEqual(probe.max_active_exploratory, 1)
         self.assertEqual(probe.max_active_serial, 1)
 
     def test_drain_scheduler_limits_exploratory_worker_pool(self) -> None:
@@ -6450,6 +6663,85 @@ class RalphOperatorRunTests(unittest.TestCase):
             [41, 42, 43],
         )
 
+    def test_operator_rollup_records_operator_smoke_status_and_log_path(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            issue = make_issue(
+                {ralph.DELIVERY_EXPLORATORY_LABEL},
+                OPERATOR_SMOKE_BODY,
+                number=42,
+                title="Credentialed smoke",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator_manifest = ralph.OperatorRunManifest.start(
+                run_dir=run_dir,
+                config=loop.config,
+                max_cycles=1,
+            )
+            child_run_dir = tmp_path / "logs" / "issue-42-smoke"
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=ralph.EXPLORATORY_MODE,
+                target_branch=None,
+            )
+            worktree_path = (
+                tmp_path / "worktrees" / "agent-exploratory-issue-42-credentialed-smoke"
+            )
+            child_manifest = ralph.RunManifest.for_implementation(
+                run_dir=child_run_dir,
+                issue=issue,
+                delivery_plan=delivery_plan,
+                branch=delivery_plan.target_branch,
+                worktree_path=worktree_path,
+                integration_path=None,
+                config=loop.config,
+            )
+            smoke_log = child_run_dir / "operator-smoke.log"
+            smoke_result = ralph.OperatorSmokeResult(
+                smoke_id="ec2-run-worker-placement",
+                command_path=ralph.OPERATOR_SMOKE_EC2_RUN_WORKER_PLACEMENT_COMMAND,
+                command_args=(
+                    str(
+                        worktree_path
+                        / ralph.OPERATOR_SMOKE_EC2_RUN_WORKER_PLACEMENT_COMMAND
+                    ),
+                ),
+                cwd=worktree_path / ralph.OPERATOR_SMOKE_EC2_RUN_WORKER_PLACEMENT_CWD,
+                log_path=smoke_log,
+                timeout_seconds=120,
+                evidence_path=child_run_dir / "operator-smoke-evidence.json",
+                exit_status=0,
+                status="succeeded",
+            )
+            child_manifest.record_operator_smoke("succeeded", result=smoke_result)
+            child_manifest.record_success()
+            operator_manifest.record_checkpoint(
+                "issue_succeeded",
+                message="Issue #42 completed.",
+                child_manifest_path=child_manifest.path,
+                issue=issue,
+            )
+            operator_manifest.record_queue(operator_snapshot())
+            operator_manifest.record_checkpoint(
+                "queue_clean",
+                message="No open ready-for-agent, agent-integrated, agent-running, or agent-failed issues remain.",
+                status="succeeded",
+            )
+            rollup = json.loads(
+                (run_dir / ralph.OPERATOR_ROLLUP_JSON_NAME).read_text(encoding="utf-8")
+            )
+            markdown = (run_dir / ralph.OPERATOR_ROLLUP_MARKDOWN_NAME).read_text(
+                encoding="utf-8"
+            )
+
+        self.assertEqual(rollup["summary"]["operator_smokes"], 1)
+        self.assertEqual(rollup["operator_smokes"][0]["status"], "succeeded")
+        self.assertEqual(rollup["operator_smokes"][0]["log_path"], str(smoke_log))
+        self.assertIn("## Operator Smokes", markdown)
+        self.assertIn(str(smoke_log), markdown)
+
     def test_operator_stops_needs_review_and_writes_exploratory_acceptance_review(
         self,
     ) -> None:
@@ -7859,6 +8151,33 @@ class CommandRunnerTests(unittest.TestCase):
             self.assertIn("STDOUT:\nbefore failure\n", log)
             self.assertIn("STDERR:\nfailure detail\n", log)
 
+    def test_command_runner_timeout_preserves_partial_log(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            log_path = tmp_path / "timeout.log"
+            runner = ralph.CommandRunner(dry_run=False, heartbeat_interval=0)
+            command = [
+                sys.executable,
+                "-c",
+                ("import time; print('before timeout', flush=True); time.sleep(1.0)"),
+            ]
+
+            with self.assertRaises(ralph.CommandTimeout) as caught:
+                runner.run(
+                    command,
+                    cwd=tmp_path,
+                    log_path=log_path,
+                    phase="timeout logging phase",
+                    timeout_seconds=0.3,
+                )
+
+            error = caught.exception
+            log = log_path.read_text(encoding="utf-8")
+            self.assertEqual(error.returncode, 124)
+            self.assertEqual(error.stdout, "before timeout\n")
+            self.assertIn("exit: 124", log)
+            self.assertIn("STDOUT:\nbefore timeout\n", log)
+
 
 class RalphLoopLocalIntegrationTests(unittest.TestCase):
     def test_malformed_issue_marks_failed_without_creating_worktree(self) -> None:
@@ -7970,6 +8289,38 @@ Build it.
         )
         self.assertEqual(manifest["github_metadata"]["status"], "failure_commented")
         self.assertIn("Review focus", manifest["failure"]["message"])
+
+    def test_unknown_operator_smoke_id_fails_with_issue_evidence_before_command(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        body = OPERATOR_SMOKE_BODY.replace(
+            "Smoke id: ec2-run-worker-placement",
+            "Smoke id: unknown-smoke",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.EXPLORATORY_MODE)
+            issue = make_issue({"ready-for-agent"}, body)
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._handle_implementation(issue)
+
+            comment_path = next(tmp_path.glob("logs/issue-42-*/issue-42-comment.md"))
+            comment = comment_path.read_text(encoding="utf-8")
+            manifest = load_run_manifest(tmp_path)
+
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(
+            any("run-ec2-run-worker-smoke" in " ".join(command) for command in commands)
+        )
+        self.assertFalse(any(command[:2] == ("codex", "exec") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("git", "worktree", "add") for command in commands)
+        )
+        self.assertIn("Unknown Operator smoke id `unknown-smoke`", comment)
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["operator_smoke"]["status"], "not_requested")
 
     def test_qa_commands_receive_fallback_runtime_env_and_record_manifest(self) -> None:
         runner = FakeRunner()
@@ -9939,6 +10290,221 @@ Build it.
             self.assertEqual(manifest["integration_target"], handoff_branch)
             self.assertEqual(manifest["branches"]["issue"], handoff_branch)
             self.assertEqual(manifest["github_metadata"]["status"], "marked_reviewing")
+
+    def test_exploratory_operator_smoke_runs_after_push_and_records_evidence(
+        self,
+    ) -> None:
+        handoff_branch = "agent/exploratory/issue-42-implement-thing"
+        ls_remote = (
+            "git",
+            "ls-remote",
+            "--exit-code",
+            "--heads",
+            "origin",
+            handoff_branch,
+        )
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            fail_commands={ls_remote: 2},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.EXPLORATORY_MODE)
+            issue = make_issue({"ready-for-agent"}, OPERATOR_SMOKE_BODY)
+
+            with redirect_stdout(io.StringIO()):
+                loop._handle_implementation(issue)
+
+            worktree_path = (
+                tmp_path / "worktrees" / "agent-exploratory-issue-42-implement-thing"
+            )
+            smoke_command = (
+                str(
+                    worktree_path
+                    / ralph.OPERATOR_SMOKE_EC2_RUN_WORKER_PLACEMENT_COMMAND
+                ),
+            )
+            commands = [call.args for call in runner.calls]
+            push_index = commands.index(
+                ("git", "push", "origin", f"HEAD:{handoff_branch}")
+            )
+            smoke_index = commands.index(smoke_command)
+            reviewing_index = commands.index(
+                (
+                    "gh",
+                    "issue",
+                    "edit",
+                    "42",
+                    "-R",
+                    "example/repo",
+                    "--add-label",
+                    "agent-reviewing",
+                    "--remove-label",
+                    "agent-running",
+                    "--remove-label",
+                    "agent-failed",
+                    "--remove-label",
+                    "agent-merged",
+                    "--remove-label",
+                    "agent-integrated",
+                )
+            )
+            comment_path = next(tmp_path.glob("logs/issue-42-*/issue-42-comment.md"))
+            comment = comment_path.read_text(encoding="utf-8")
+            manifest = load_run_manifest(tmp_path)
+
+        smoke_call = runner.calls[smoke_index]
+        self.assertLess(push_index, smoke_index)
+        self.assertLess(smoke_index, reviewing_index)
+        self.assertEqual(
+            smoke_call.cwd,
+            worktree_path / ralph.OPERATOR_SMOKE_EC2_RUN_WORKER_PLACEMENT_CWD,
+        )
+        self.assertEqual(smoke_call.timeout_seconds, 120)
+        self.assertEqual(manifest["operator_smoke"]["status"], "succeeded")
+        self.assertEqual(
+            manifest["operator_smoke"]["smoke_id"],
+            "ec2-run-worker-placement",
+        )
+        self.assertEqual(manifest["operator_smoke"]["exit_status"], 0)
+        self.assertIsNotNone(manifest["operator_smoke"]["evidence_path"])
+        self.assertIn("## Operator smoke", comment)
+        self.assertIn("Smoke id: `ec2-run-worker-placement`", comment)
+        self.assertIn(manifest["operator_smoke"]["evidence_path"], comment)
+
+    def test_operator_smoke_failure_marks_failed_without_reviewing_transition(
+        self,
+    ) -> None:
+        handoff_branch = "agent/exploratory/issue-42-implement-thing"
+        ls_remote = (
+            "git",
+            "ls-remote",
+            "--exit-code",
+            "--heads",
+            "origin",
+            handoff_branch,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            worktree_path = (
+                tmp_path / "worktrees" / "agent-exploratory-issue-42-implement-thing"
+            )
+            smoke_command = (
+                str(
+                    worktree_path
+                    / ralph.OPERATOR_SMOKE_EC2_RUN_WORKER_PLACEMENT_COMMAND
+                ),
+            )
+            runner = FakeRunner(
+                status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+                diff_outputs=["scripts/ralph.py\n"],
+                rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+                fail_commands={ls_remote: 2, smoke_command: 1},
+            )
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.EXPLORATORY_MODE)
+            issue = make_issue({"ready-for-agent"}, OPERATOR_SMOKE_BODY)
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._handle_implementation(issue)
+
+            comment_path = next(tmp_path.glob("logs/issue-42-*/issue-42-comment.md"))
+            comment = comment_path.read_text(encoding="utf-8")
+            manifest = load_run_manifest(tmp_path)
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn(("git", "push", "origin", f"HEAD:{handoff_branch}"), commands)
+        self.assertIn(smoke_command, commands)
+        self.assertFalse(
+            any(
+                command[:6] == ("gh", "issue", "edit", "42", "-R", "example/repo")
+                and "agent-reviewing" in command
+                for command in commands
+            )
+        )
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "edit",
+                "42",
+                "-R",
+                "example/repo",
+                "--add-label",
+                "agent-failed",
+                "--remove-label",
+                "agent-running",
+                "--remove-label",
+                "ready-for-agent",
+            ),
+            commands,
+        )
+        self.assertFalse(
+            any(command[:3] == ("git", "worktree", "remove") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("git", "branch", "-D") for command in commands)
+        )
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["operator_smoke"]["status"], "failed")
+        self.assertEqual(manifest["operator_smoke"]["exit_status"], 1)
+        self.assertEqual(manifest["failure"]["type"], ralph.OPERATOR_SMOKE_FAILURE_TYPE)
+        self.assertIn("Operator smoke `ec2-run-worker-placement` failed", comment)
+
+    def test_operator_smoke_timeout_records_timeout_without_reviewing_transition(
+        self,
+    ) -> None:
+        handoff_branch = "agent/exploratory/issue-42-implement-thing"
+        ls_remote = (
+            "git",
+            "ls-remote",
+            "--exit-code",
+            "--heads",
+            "origin",
+            handoff_branch,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            worktree_path = (
+                tmp_path / "worktrees" / "agent-exploratory-issue-42-implement-thing"
+            )
+            smoke_command = (
+                str(
+                    worktree_path
+                    / ralph.OPERATOR_SMOKE_EC2_RUN_WORKER_PLACEMENT_COMMAND
+                ),
+            )
+            runner = FakeRunner(
+                status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+                diff_outputs=["scripts/ralph.py\n"],
+                rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+                fail_commands={ls_remote: 2},
+                timeout_commands={smoke_command},
+            )
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.EXPLORATORY_MODE)
+            issue = make_issue({"ready-for-agent"}, OPERATOR_SMOKE_BODY)
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._handle_implementation(issue)
+
+            manifest = load_run_manifest(tmp_path)
+
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(
+            any(
+                command[:6] == ("gh", "issue", "edit", "42", "-R", "example/repo")
+                and "agent-reviewing" in command
+                for command in commands
+            )
+        )
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["operator_smoke"]["status"], "timed_out")
+        self.assertEqual(manifest["operator_smoke"]["exit_status"], 124)
+        self.assertEqual(
+            manifest["failure"]["type"],
+            ralph.OPERATOR_SMOKE_TIMEOUT_FAILURE_TYPE,
+        )
 
     def test_exploratory_implementation_fails_if_remote_branch_exists(self) -> None:
         handoff_branch = "agent/exploratory/issue-42-implement-thing"
