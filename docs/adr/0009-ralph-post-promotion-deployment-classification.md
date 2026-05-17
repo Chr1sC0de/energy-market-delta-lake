@@ -60,6 +60,10 @@ deployment commands may run only when the checkpointed Operator path or another
 explicit Ralph outer-loop automation owns the AWS and Pulumi credentials.
 Sandboxed Codex subprocesses and **Post-promotion review** remain outside that
 credential boundary.
+AFK issue QA for deployable infrastructure work may update local tests and
+future deployed-test expectations, but it does not run `pulumi up`, AWS CLI
+live checks, deployed tests, or
+`infrastructure/aws-pulumi/scripts/run-integration-tests`.
 
 ## Consequences
 

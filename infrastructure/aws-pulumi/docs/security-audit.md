@@ -22,7 +22,7 @@ deployed tests.
 
 | Severity | Finding | Remediation |
 |---|---|---|
-| High | Postgres password was embedded in ECS plain environment variables | ECS task definitions now use ECS `secrets` backed by the SSM SecureString parameter |
+| High | Postgres password was embedded in ECS plain environment variables | ECS task definitions now use ECS `secrets` backed by the SSM password parameter |
 | High | Postgres password was rendered into EC2 user data | Postgres bootstraps by fetching the password from SSM at boot |
 | High | Cognito values were rendered into FastAPI auth EC2 user data | FastAPI auth stores Cognito values in SSM SecureString parameters and fetches them at boot |
 | High | ECS task roles used wildcard `iam:PassRole` | PassRole is scoped to the Dagster daemon task and execution roles |
@@ -57,6 +57,13 @@ That workflow runs local Pulumi unit/component tests, the **Commit check**,
 - ECR repositories enable scan-on-push
 - required ECS task definitions use SSM-backed secrets for the Postgres
   password
+- the Postgres password parameter type is `String` only for
+  `dev-energy-market`; other resource names must remain `SecureString`
+
+AFK issue QA updates local component coverage and future deployed-test
+expectations, but does not run `pulumi up`, AWS CLI checks, deployed tests, or
+`scripts/run-integration-tests`. Those live checks belong to the checkpointed
+**Operator workflow** after **Promotion**.
 
 2026-05-11 dev evidence:
 
@@ -75,6 +82,10 @@ That workflow runs local Pulumi unit/component tests, the **Commit check**,
   deleted 171 historical run records, verified zero remaining records at that
   checkpoint, and was deregistered after completion
 
+The 2026-05-11 deployed evidence predates the dev-only SSM `String` exception.
+The next checkpointed **Operator workflow** after **Promotion** owns refreshing
+live proof for that parameter-type change.
+
 ## Residual risks
 
 - ECR tags remain mutable because runtime task definitions and EC2 service
@@ -86,6 +97,13 @@ That workflow runs local Pulumi unit/component tests, the **Commit check**,
   complete successfully.
 - SNS alert-topic creation remains manual. Pulumi scopes publish access when a
   topic ARN is configured.
+- `dev-energy-market` deliberately stores the Postgres password SSM parameter
+  as `String` when
+  `aws-pulumi:allow_dev_string_postgres_password_parameter=true` is present in
+  `Pulumi.dev-ausenergymarket.yaml`. This is weaker at-rest protection than
+  `SecureString`, remains dev-only, and does not change ECS delivery: task
+  definitions still inject `DAGSTER_POSTGRES_PASSWORD` only through ECS
+  `secrets`.
 - The issue #126 EC2 run-worker capacity provider is default-off Exploratory
   infrastructure. It adds an ECS container-instance profile and Auto Scaling
   group only when explicitly paired with the matching dev-only Dagster image
@@ -121,6 +139,7 @@ That workflow runs local Pulumi unit/component tests, the **Commit check**,
   - `infrastructure/aws-pulumi/components/s3_buckets.py`
   - `infrastructure/aws-pulumi/components/security_groups.py`
   - `infrastructure/aws-pulumi/components/vpc.py`
+  - `infrastructure/aws-pulumi/Pulumi.dev-ausenergymarket.yaml`
   - `infrastructure/aws-pulumi/scripts/redeploy-user-code`
   - `infrastructure/aws-pulumi/scripts/run-integration-tests`
   - `infrastructure/aws-pulumi/tests/component/conftest.py`

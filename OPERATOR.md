@@ -287,6 +287,11 @@ the operator/Ralph outer loop; sandboxed Codex subprocesses and
 deploy-failure analysis subprocess also receives no AWS or Pulumi credentials
 and is explicitly prohibited from running AWS, Pulumi, or deployment commands
 or mutating GitHub Issues directly.
+During AFK issue implementation, Codex may update deployed-test expectations
+for future validation, but it must not run `pulumi up`, AWS CLI live checks,
+deployed tests, or `scripts/run-integration-tests`. Those checks belong to the
+checkpointed Operator path after **Promotion** or to an explicit operator shell
+that owns the credentials.
 
 Deploy-repair issues created after deployment failure are `bug` issues with
 exactly one **Delivery mode** label and `ready-for-agent` when the analyzer

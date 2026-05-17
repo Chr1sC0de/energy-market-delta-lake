@@ -11,5 +11,6 @@ config:
     secure: v1:QWkFW2W4B+hYL5c8:/KHR5SLYvs5qS7fqJ7+gn7dM48yTm44fRSst7oDy/bu6hssj7CMVlyxAMTBJUheiujFExdg3u5CvD0Sf0JFXKKvPEm0=
   aws-pulumi:website_root_url: https://ausenergymarketdata.com
   aws-pulumi:developer_email: "chrisam1993@live.com"
+  aws-pulumi:allow_dev_string_postgres_password_parameter: true
   aws-pulumi:dagster_failure_alert_topic_arn:
     secure: v1:FMyLuiBLJcG3ru4U:GEvmQ3pCo0nNKWIyGn98nIkH30O6GonNTCVDyUJ2QSNz5p4i4/ZGnXHhJR8Evpa3IIjF935c9xYvC//hn/I3zxp9DktG3WeQi1Dk/qqqlRt9

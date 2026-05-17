@@ -3,8 +3,14 @@
 import warnings
 
 import pulumi
+import pytest
 
-from components.postgres import PostgresComponentResource
+from components.postgres import (
+    ALLOW_DEV_STRING_POSTGRES_PASSWORD_PARAMETER_CONFIG_KEY,
+    POSTGRES_PASSWORD_PARAMETER_TYPE_SECURE_STRING,
+    POSTGRES_PASSWORD_PARAMETER_TYPE_STRING,
+    PostgresComponentResource,
+)
 from components.security_groups import SecurityGroupsComponentResource
 from components.vpc import VpcComponentResource
 
@@ -12,6 +18,14 @@ from components.vpc import VpcComponentResource
 def _make_deps() -> tuple[VpcComponentResource, SecurityGroupsComponentResource]:
     vpc = VpcComponentResource("test-energy-market")
     sgs = SecurityGroupsComponentResource("test-energy-market", vpc)
+    return vpc, sgs
+
+
+def _make_named_deps(
+    name: str,
+) -> tuple[VpcComponentResource, SecurityGroupsComponentResource]:
+    vpc = VpcComponentResource(name)
+    sgs = SecurityGroupsComponentResource(name, vpc)
     return vpc, sgs
 
 
@@ -44,6 +58,52 @@ class TestPostgresComponent:
         pg = PostgresComponentResource("test-energy-market", vpc, sgs)
         assert "postgres/instance_private_dns" in pg.ssm_param_private_dns_name
         assert "test-energy-market" in pg.ssm_param_private_dns_name
+
+    @pulumi.runtime.test
+    def test_ssm_password_param_type_defaults_to_secure_string(self):
+        vpc, sgs = _make_deps()
+        pg = PostgresComponentResource("test-energy-market", vpc, sgs)
+
+        def check(parameter_type: str) -> None:
+            assert pg.ssm_param_password_type == (
+                POSTGRES_PASSWORD_PARAMETER_TYPE_SECURE_STRING
+            )
+            assert parameter_type == POSTGRES_PASSWORD_PARAMETER_TYPE_SECURE_STRING
+
+        return pg._password_parameter.type.apply(check)
+
+    @pulumi.runtime.test
+    def test_dev_opt_in_ssm_password_param_type_is_string(
+        self, set_component_config_values
+    ):
+        set_component_config_values(
+            {
+                f"aws-pulumi:{ALLOW_DEV_STRING_POSTGRES_PASSWORD_PARAMETER_CONFIG_KEY}": "true"
+            }
+        )
+        vpc, sgs = _make_named_deps("dev-energy-market")
+        pg = PostgresComponentResource("dev-energy-market", vpc, sgs)
+
+        def check(parameter_type: str) -> None:
+            assert pg.ssm_param_password_type == POSTGRES_PASSWORD_PARAMETER_TYPE_STRING
+            assert parameter_type == POSTGRES_PASSWORD_PARAMETER_TYPE_STRING
+
+        return pg._password_parameter.type.apply(check)
+
+    def test_non_dev_opt_in_ssm_password_param_type_is_rejected(
+        self, set_component_config_values
+    ) -> None:
+        set_component_config_values(
+            {
+                f"aws-pulumi:{ALLOW_DEV_STRING_POSTGRES_PASSWORD_PARAMETER_CONFIG_KEY}": "true"
+            }
+        )
+        vpc, sgs = _make_deps()
+        with pytest.raises(
+            ValueError,
+            match="dev-energy-market",
+        ):
+            PostgresComponentResource("test-energy-market", vpc, sgs)
 
     def test_private_dns_output_exists(self) -> None:
         vpc, sgs = _make_deps()
