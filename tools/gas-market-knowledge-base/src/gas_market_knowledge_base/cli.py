@@ -9,6 +9,13 @@ from gas_market_knowledge_base.pdf_cache import (
     default_pdf_cache_dir,
     fetch_pdf_cache,
 )
+from gas_market_knowledge_base.silver_documents import (
+    DEFAULT_MIN_TEXT_CHARS,
+    MarkdownExtractor,
+    SilverExtractionInputError,
+    default_silver_documents_dir,
+    extract_silver_documents,
+)
 from gas_market_knowledge_base.source_manifest import (
     DEFAULT_ENVIRONMENT,
     ManifestInputError,
@@ -131,3 +138,78 @@ def fetch_pdfs(manifest_path: Path, cache_dir: Path) -> None:
 
     click.echo(f"cached PDFs in {result.cache_dir}")
     click.echo(summary)
+
+
+@main.command("extract-silver")
+@click.option(
+    "--manifest-path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=default_source_manifest_path(),
+    show_default=True,
+    help="Bronze source manifest JSONL path to read.",
+)
+@click.option(
+    "--cache-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=default_pdf_cache_dir(),
+    show_default=True,
+    help="Local PDF cache directory populated by fetch-pdfs.",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=default_silver_documents_dir(),
+    show_default=True,
+    help="Silver document Markdown directory to write.",
+)
+@click.option(
+    "--min-text-chars",
+    type=click.IntRange(min=1),
+    default=DEFAULT_MIN_TEXT_CHARS,
+    show_default=True,
+    help="Minimum extracted non-whitespace text characters required per document.",
+)
+def extract_silver(
+    manifest_path: Path,
+    cache_dir: Path,
+    output_dir: Path,
+    min_text_chars: int,
+) -> None:
+    """Convert cached PDFs into silver document Markdown."""
+    try:
+        result = extract_silver_documents(
+            extractor=_default_markdown_extractor(),
+            manifest_path=manifest_path,
+            cache_dir=cache_dir,
+            output_dir=output_dir,
+            min_text_chars=min_text_chars,
+        )
+    except SilverExtractionInputError as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1) from e
+
+    summary = (
+        f"summary: manifest_rows={result.manifest_row_count} "
+        f"extractable_rows={result.extractable_row_count} "
+        f"extracted={result.extracted_count} "
+        f"skipped={result.skipped_count} "
+        f"errors={result.error_count}"
+    )
+    if result.errors:
+        click.echo(
+            f"Error: extract-silver found {result.error_count} problem(s)", err=True
+        )
+        for error in result.errors:
+            click.echo(f"- {error}", err=True)
+        click.echo(summary, err=True)
+        raise SystemExit(1)
+
+    click.echo(f"wrote silver documents to {result.output_dir}")
+    click.echo(summary)
+
+
+def _default_markdown_extractor() -> MarkdownExtractor:
+    # Docling imports large ML packages and adds about 5s to CLI startup.
+    from gas_market_knowledge_base.docling_adapter import DoclingMarkdownExtractor
+
+    return DoclingMarkdownExtractor()

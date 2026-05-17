@@ -27,8 +27,8 @@ Subproject docs for detailed commands, defaults, diagrams, and behavior.
   CLI, unit tests, and **Commit check** surface.
 - [tools/gas-market-knowledge-base](tools/gas-market-knowledge-base/README.md):
   **Gas market knowledge base** tooling, bronze source manifest command,
-  archive PDF cache fetcher, generated text artifact roots, unit tests, and
-  **Commit check** surface. ADR
+  archive PDF cache fetcher, silver document extraction, generated text artifact
+  roots, unit tests, and **Commit check** surface. ADR
   [0010](docs/adr/0010-gas-market-knowledge-base.md) records the corpus
   architecture.
 

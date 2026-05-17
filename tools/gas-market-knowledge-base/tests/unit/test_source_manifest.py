@@ -116,12 +116,8 @@ def test_source_manifest_filters_counts_and_sorts_fixture_rows(tmp_path: Path) -
     assert archive_uri.startswith("s3://dev-energy-market-archive/")
     assert manifest_rows[0]["content_length"] == 1234
     assert manifest_rows[0]["generated_paths"] == {
-        "bronze_markdown": (
-            f"generated/bronze/documents/gbb/gbb-alpha-guide/sha256-{'a' * 64}.md"
-        ),
-        "bronze_metadata": (
-            "generated/bronze/documents/gbb/gbb-alpha-guide/"
-            f"sha256-{'a' * 64}.metadata.json"
+        "silver_document_markdown": (
+            f"generated/silver/documents/gbb/gbb-alpha-guide/sha256-{'a' * 64}.md"
         ),
         "silver_chunks": (
             f"generated/silver/chunks/gbb/gbb-alpha-guide/sha256-{'a' * 64}.jsonl"
