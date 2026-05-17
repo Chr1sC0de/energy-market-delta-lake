@@ -58,10 +58,10 @@ them as cited review artifacts rather than fully automated truth.
 
 ## Consequences
 
-The scaffolded Subproject owns its local cache rules, generated corpus layout,
-placeholder command surface, dependency files, and maintained README. Future
-implementation issues should add the PDF extraction, chunking, citation, and
-review workflows without moving those side effects into AEMO ETL.
+The Subproject owns its local cache rules, generated corpus layout, command
+surface, dependency files, and maintained README. Future implementation issues
+should add the PDF extraction, chunking, citation, and review workflows without
+moving those side effects into AEMO ETL.
 
 AEMO ETL must not grow Docling dependencies or extraction side effects under
 this decision. `bronze_aemo_gas_document_sources` remains the boundary for

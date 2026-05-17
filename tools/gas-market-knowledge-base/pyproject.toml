@@ -15,6 +15,8 @@ classifiers = [
 ]
 dependencies = [
   "click>=8.1",
+  "deltalake>=1.4.2",
+  "polars>=1.38.1",
 ]
 scripts.gas-market-kb = "gas_market_knowledge_base.cli:main"
 

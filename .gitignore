@@ -24,6 +24,7 @@ dist/
 !tools/gas-market-knowledge-base/generated/gold/
 !tools/gas-market-knowledge-base/generated/**/.gitkeep
 !tools/gas-market-knowledge-base/generated/**/*.json
+!tools/gas-market-knowledge-base/generated/**/*.jsonl
 !tools/gas-market-knowledge-base/generated/**/*.md
 !tools/gas-market-knowledge-base/generated/**/*.txt
 !tools/gas-market-knowledge-base/generated/**/*.yaml

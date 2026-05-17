@@ -289,13 +289,13 @@ way:
   [OPERATOR.md](../../OPERATOR.md),
   [docs/agents/issue-tracker.md](../agents/issue-tracker.md), and
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
-- #176 and #177: The first **Gas market knowledge base** route, ADR, and
-  scaffolded `tools/gas-market-knowledge-base` **Subproject** keep raw PDFs in
-  S3 or local cache, place future text artifacts under
-  `generated/{bronze,silver,gold}`, and treat cited gold **Market context**
-  pages as corpus artifacts rather than maintained router docs. The decision
-  lives in ADR [0010](../adr/0010-gas-market-knowledge-base.md), and the
-  scaffold policy lives in the
+- #176 through #178: The first **Gas market knowledge base** route, ADR,
+  Subproject, and bronze source manifest command keep raw PDFs in S3 or local
+  cache, place future text artifacts under `generated/{bronze,silver,gold}`,
+  and treat cited gold **Market context** pages as corpus artifacts rather than
+  maintained router docs. The decision lives in ADR
+  [0010](../adr/0010-gas-market-knowledge-base.md), and the Subproject policy
+  lives in the
   [Subproject README](../../tools/gas-market-knowledge-base/README.md).
 
 ## Search commands
@@ -366,7 +366,9 @@ These commands support the intended flow:
   - `tools/gas-market-knowledge-base/README.md`
   - `tools/gas-market-knowledge-base/pyproject.toml`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/cli.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/source_manifest.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_cli.py`
+  - `tools/gas-market-knowledge-base/tests/unit/test_source_manifest.py`
   - `tools/gas-market-knowledge-base/uv.lock`
   - `scripts/check_shell_script_headers.py`
   - `scripts/ralph.py`
