@@ -11,6 +11,34 @@ import pulumi_tls as tls
 from components.security_groups import SecurityGroupsComponentResource
 from components.vpc import VpcComponentResource
 
+ALLOW_DEV_STRING_POSTGRES_PASSWORD_PARAMETER_CONFIG_KEY = (
+    "allow_dev_string_postgres_password_parameter"
+)
+DEV_STRING_POSTGRES_PASSWORD_PARAMETER_RESOURCE_NAME = "dev-energy-market"
+POSTGRES_PASSWORD_PARAMETER_TYPE_SECURE_STRING = "SecureString"
+POSTGRES_PASSWORD_PARAMETER_TYPE_STRING = "String"
+
+
+def _postgres_password_parameter_type(name: str) -> str:
+    allow_dev_string_parameter = (
+        pulumi.Config().get_bool(
+            ALLOW_DEV_STRING_POSTGRES_PASSWORD_PARAMETER_CONFIG_KEY
+        )
+        or False
+    )
+    if not allow_dev_string_parameter:
+        return POSTGRES_PASSWORD_PARAMETER_TYPE_SECURE_STRING
+
+    if name != DEV_STRING_POSTGRES_PASSWORD_PARAMETER_RESOURCE_NAME:
+        raise ValueError(
+            "aws-pulumi:allow_dev_string_postgres_password_parameter can only "
+            "be true for PostgresComponentResource name "
+            f"{DEV_STRING_POSTGRES_PASSWORD_PARAMETER_RESOURCE_NAME!r}; "
+            f"got {name!r}."
+        )
+
+    return POSTGRES_PASSWORD_PARAMETER_TYPE_STRING
+
 
 class PostgresComponentResource(pulumi.ComponentResource):
     """PostgreSQL EC2 instance for Dagster metadata storage.
@@ -19,13 +47,14 @@ class PostgresComponentResource(pulumi.ComponentResource):
     - t4g.nano (ARM) in the private subnet
     - Amazon Linux 2 ARM64
     - PostgreSQL 14 installed via user data
-    - Password stored in SSM as a SecureString
+    - Password stored in SSM as a SecureString by default
     - Private DNS name stored in SSM as a plain String
     """
 
     instance: aws.ec2.Instance
     ssm_param_password_name: str
     ssm_param_private_dns_name: str
+    ssm_param_password_type: str
     ssm_param_password_arn: pulumi.Output[str]
     # Direct Output references – use these in ECS task definitions to avoid
     # SSM data-source lookups that fail during `pulumi preview` before the
@@ -51,6 +80,7 @@ class PostgresComponentResource(pulumi.ComponentResource):
         self.ssm_param_private_dns_name = (
             f"/{name}/dagster/postgres/instance_private_dns"
         )
+        self.ssm_param_password_type = _postgres_password_parameter_type(name)
 
         self._setup_password()
         self._setup_iam_role()
@@ -85,7 +115,7 @@ class PostgresComponentResource(pulumi.ComponentResource):
         self._password_parameter = aws.ssm.Parameter(
             f"{self.name}-postgres-password-ssm",
             name=self.ssm_param_password_name,
-            type="SecureString",
+            type=self.ssm_param_password_type,
             value=self._password,
             opts=self.child_opts,
             overwrite=True,

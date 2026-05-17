@@ -233,9 +233,10 @@ Trigger and output notes:
   `failed_download_count`.
 - This flow stops at landing/archive plus bronze metadata. It has no wiki,
   embedding, vector-store, or PDF text-extraction side effects. ADR
-  [0010](../../../../../docs/adr/0010-gas-market-knowledge-base.md) reserves a
-  separate planned `tools/gas-market-knowledge-base` **Subproject** for future
-  Docling extraction, Docling Hybrid chunks, and cited **Market context** pages.
+  [0010](../../../../../docs/adr/0010-gas-market-knowledge-base.md) and the
+  [Gas market knowledge base Subproject](../../../../../tools/gas-market-knowledge-base/README.md)
+  keep future Docling extraction, Docling Hybrid chunks, and cited **Market
+  context** pages outside the AEMO ETL ingestion boundary.
 
 ## Raw-to-silver transformation flow
 
@@ -391,6 +392,7 @@ Delta lock table to verify included PDF bytes move from
   - `docs/adr/0003-bounded-current-state-bronze-source-tables.md`
   - `docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md`
   - `docs/adr/0010-gas-market-knowledge-base.md`
+  - `tools/gas-market-knowledge-base/README.md`
 - `sync.scope`: `behavior`
 - `sync.qa`:
   - `git diff --name-only`

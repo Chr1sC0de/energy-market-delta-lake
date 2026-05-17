@@ -521,13 +521,16 @@ class TestSsmParameters:
     def test_postgres_password_param_exists(
         self, ssm_client: object, resource_name: str
     ) -> None:
-        """The Postgres password SSM SecureString parameter must exist."""
+        """The Postgres password SSM parameter must use the expected type."""
         param_name = f"/{resource_name}/dagster/postgres/password"
         response = ssm_client.get_parameter(  # type: ignore[union-attr]
             Name=param_name, WithDecryption=False
         )
-        assert response["Parameter"]["Type"] == "SecureString", (
-            f"Expected SecureString type for {param_name!r}"
+        expected_type = (
+            "String" if resource_name == "dev-energy-market" else "SecureString"
+        )
+        assert response["Parameter"]["Type"] == expected_type, (
+            f"Expected {expected_type} type for {param_name!r}"
         )
 
 

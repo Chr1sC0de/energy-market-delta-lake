@@ -48,7 +48,10 @@ implementation draft must include
 `## What to build`, `## Acceptance criteria`, and `## Blocked by` before it can
 be triaged toward `ready-for-agent`. Exploratory delivery drafts must also
 include `## Review focus` stating the human judgment the durable
-**Exploratory branch** needs.
+**Exploratory branch** needs. Only `delivery-exploratory` drafts may request
+`## Operator smoke`; that section names an allowlisted smoke id, timeout, and
+credential-boundary prose for a deployed smoke that Ralph runs later from the
+operator-owned outer loop.
 
 Use `$ralph-triage` to prepare issues for drain. Triage sets exactly one
 category label, exactly one state label, and at most one **Delivery mode** label.
@@ -87,6 +90,10 @@ unblocked ready issue can proceed and open `agent-reviewing` issues remain, the
 Operator run stops as `needs_review` and writes an **Exploratory acceptance
 review** JSON and Markdown artifact under the Operator run directory instead of
 treating the queue as a generic failure.
+Exploratory issues with `## Operator smoke` are the serial exception to the
+worker pool: Ralph waits for active issue workers, pushes the durable
+**Exploratory branch**, runs the allowlisted smoke from the issue worktree, and
+only then marks `agent-reviewing` when the smoke succeeds.
 
 Codex should launch Operator runs detached, then stop polling child logs:
 
@@ -135,12 +142,13 @@ git push --dry-run origin HEAD:main
 ```
 
 Use `$ralph-loop dry-run drain` when the root worktree is dirty or when you only
-want to inspect Ralph's next serial Gitflow or trunk candidate plus bounded
-Exploratory candidates. `--exploratory-concurrency` controls the Exploratory
-preview and live worker-pool bound, including checkpointed Operator runs. It
-defaults to `2` and has a minimum of `1`. Targeted `--issue` dry runs still
-preview only that issue. Use dirty-worktree operation only when the operator
-explicitly accepts that risk.
+want to inspect Ralph's next serial Gitflow, trunk, or Operator-smoke candidate
+plus bounded Exploratory candidates. `--exploratory-concurrency` controls the
+Exploratory preview and live worker-pool bound, including checkpointed Operator
+runs. It defaults to `2` and has a minimum of `1`. Targeted `--issue` dry runs
+still preview only that issue. Dry runs also preview any selected
+**Operator smoke** command, cwd, and timeout without executing it. Use
+dirty-worktree operation only when the operator explicitly accepts that risk.
 
 Ready issues that anchor `.agents/` files stop before claim unless the operator
 passes `--allow-full-access-implementation`. With that flag, Ralph runs only
@@ -287,6 +295,15 @@ the operator/Ralph outer loop; sandboxed Codex subprocesses and
 deploy-failure analysis subprocess also receives no AWS or Pulumi credentials
 and is explicitly prohibited from running AWS, Pulumi, or deployment commands
 or mutating GitHub Issues directly.
+During AFK issue implementation, Codex may update deployed-test expectations
+for future validation, but it must not run `pulumi up`, AWS CLI live checks,
+deployed tests, or `scripts/run-integration-tests`. Those checks belong to the
+checkpointed Operator path after **Promotion** or to an explicit operator shell
+that owns the credentials.
+Allowlisted **Operator smoke** commands for Exploratory delivery use the same
+credential boundary: Codex implementation subprocesses may prepare the script
+or docs, but the deployed smoke command runs only from Ralph's operator-owned
+outer loop after the **Exploratory branch** is pushed.
 
 Deploy-repair issues created after deployment failure are `bug` issues with
 exactly one **Delivery mode** label and `ready-for-agent` when the analyzer

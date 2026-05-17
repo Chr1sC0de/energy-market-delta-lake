@@ -46,7 +46,7 @@ flowchart TB
     ECSAPI[ECS orchestration APIs]
     DDB[DynamoDB delta_log]
     S3[S3 data-lake buckets]
-    SSMPARAM[SSM SecureString parameters]
+    SSMPARAM[SSM password parameters]
 
     BASTIONROLE --> SSM
     BASTIONPROFILE --> BASTIONROLE
@@ -175,9 +175,11 @@ definitions before a human accepts a broader production interface.
   - `infrastructure/aws-pulumi/code_locations.py`
   - `infrastructure/aws-pulumi/components/ecs_services.py`
   - `infrastructure/aws-pulumi/components/iam_roles.py`
+  - `infrastructure/aws-pulumi/components/postgres.py`
   - `infrastructure/aws-pulumi/components/marimo.py`
   - `infrastructure/aws-pulumi/components/s3_buckets.py`
   - `infrastructure/aws-pulumi/components/service_discovery.py`
+  - `infrastructure/aws-pulumi/Pulumi.dev-ausenergymarket.yaml`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`

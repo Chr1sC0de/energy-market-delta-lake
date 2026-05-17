@@ -150,9 +150,13 @@ security boundary to audit. Current controls include:
 - EC2 hosts require IMDSv2 and encrypted root volumes
 - the Marimo dashboard instance has no public IP, no SSH key, and is operated
   through SSM Session Manager
-- Cognito and Postgres secrets are stored in SSM SecureString parameters and
-  fetched at boot/task start instead of being embedded directly in EC2 user
-  data or ECS plain environment variables
+- Cognito secrets and non-dev Postgres passwords are stored in SSM
+  SecureString parameters and fetched at boot/task start instead of being
+  embedded directly in EC2 user data or ECS plain environment variables
+- `dev-energy-market` may opt into an SSM `String` parameter for the Postgres
+  password with `aws-pulumi:allow_dev_string_postgres_password_parameter=true`;
+  this weakens at-rest protection for the dev password only, and
+  non-dev resource names are rejected if the flag is enabled
 - ECS task execution roles can read only the required Postgres password
   parameter, and task roles scope `iam:PassRole` to the Dagster run-worker
   roles
@@ -237,6 +241,18 @@ This project reads a small set of important config values:
   equivalents when local browser auth testing is required.
 - Optional Pulumi secret for Dagster failed-run alerts:
   - `aws-pulumi:dagster_failure_alert_topic_arn`
+- Dev-only Postgres password SSM parameter exception:
+  - `aws-pulumi:allow_dev_string_postgres_password_parameter`
+    - defaults to `false`
+    - set to `true` only in `Pulumi.dev-ausenergymarket.yaml` for
+      `dev-energy-market`
+    - stores `/{resource_name}/dagster/postgres/password` as SSM `String`
+      instead of `SecureString`, trading weaker at-rest protection for the dev
+      deployment only
+    - Pulumi rejects the flag for any Postgres component name other than
+      `dev-energy-market`
+    - ECS task definitions still receive `DAGSTER_POSTGRES_PASSWORD` through
+      ECS `secrets`, not plain container environment variables
 - Optional issue #126 EC2 run-worker prototype config:
   - `aws-pulumi:dagster_core_deployment`
     - defaults to `aws`
@@ -341,6 +357,12 @@ Run the deployed suite directly:
 PULUMI_INTEGRATION_TESTS=1 PULUMI_STACK=dev-ausenergymarket uv run pytest tests/deployed -v
 ```
 
+During AFK issue implementation, update component and deployed-test
+expectations when the infrastructure contract changes, but do not run
+`pulumi up`, AWS CLI live checks, deployed tests, or
+`scripts/run-integration-tests`. Live deployed validation belongs to the
+checkpointed **Operator workflow** after **Promotion**.
+
 ## Relationship to local development
 
 The local compose setup under `backend-services/` is not the canonical
@@ -404,6 +426,7 @@ system's services and Dagster workflows.
   - `infrastructure/aws-pulumi/tests/component/test_ecr.py`
   - `infrastructure/aws-pulumi/tests/component/test_ecs_cluster.py`
   - `infrastructure/aws-pulumi/tests/component/test_ecs_services.py`
+  - `infrastructure/aws-pulumi/tests/component/test_postgres.py`
   - `infrastructure/aws-pulumi/tests/deployed/conftest.py`
   - `infrastructure/aws-pulumi/tests/deployed/test_integration.py`
   - `infrastructure/aws-pulumi/tests/unit/test_dagster_core_deployment.py`

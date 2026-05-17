@@ -9,7 +9,10 @@ low-risk docs, tests, tooling, or script changes that can integrate directly to
 `main` and close immediately. **Exploratory delivery** publishes validated work
 to a durable **Exploratory branch**, marks the issue `agent-reviewing`, and
 leaves it open for human review; ready Exploratory issues must state that
-review need in `## Review focus`. Accepted Exploratory work can then be applied
+review need in `## Review focus`. Selected Exploratory issues may also request
+an allowlisted **Operator smoke** that runs from Ralph's operator-owned outer
+loop after branch push and before `agent-reviewing`. Accepted Exploratory work
+can then be applied
 from an explicit decision artifact: Ralph merges the reviewed branch to `dev`,
 runs selected merged-target QA, marks `agent-integrated` with acceptance
 evidence after the push succeeds, and leaves closure to later **Promotion**.
@@ -78,6 +81,10 @@ metadata updates have settled. Checkpointed Operator runs also keep
 `agent-reviewing` issues in a separate queue bucket and stop with `needs_review`
 when their **Exploratory acceptance review** decision is required before the
 queue can proceed.
+Exploratory issues that request **Operator smoke** are not eligible for the
+parallel worker pool: Ralph waits for active issue workers, claims the smoke
+issue in the serial lane, pushes the **Exploratory branch**, and only then runs
+the allowlisted smoke command from the issue worktree.
 When a **Promotion** range includes non-doc runtime files in the AEMO ETL
 **Subproject**, the AEMO ETL **End-to-end test** gate runs from the same
 isolated source worktree as the aggregate **Push check**, before any merge,

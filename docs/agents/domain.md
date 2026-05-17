@@ -22,7 +22,9 @@ The **Issue context assessor** replacement is an in-development `$shape-issues`
 workflow change, so it does not require an ADR.
 ADR [0010](../adr/0010-gas-market-knowledge-base.md) records the planned
 `tools/gas-market-knowledge-base` **Subproject** and the first **Market
-context** corpus architecture; the Subproject is not implemented yet.
+context** corpus architecture. The scaffolded
+[Subproject README](../../tools/gas-market-knowledge-base/README.md) owns the
+local command surface and generated-artifact policy.
 
 ## Sync metadata
 
@@ -39,6 +41,7 @@ context** corpus architecture; the Subproject is not implemented yet.
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
   - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
   - `docs/adr/0010-gas-market-knowledge-base.md`
+  - `tools/gas-market-knowledge-base/README.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

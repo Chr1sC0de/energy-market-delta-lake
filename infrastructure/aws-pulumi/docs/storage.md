@@ -87,10 +87,16 @@ All bucket names are prefixed by `"{ENVIRONMENT}-energy-market"`.
   `scram-sha-256` password auth for the VPC CIDR, creates `dagster_user`, and
   creates the `dagster` database.
 - Postgres writes two SSM parameters:
-  - password as `SecureString`
+  - password as `SecureString` by default
+  - password as SSM `String` only when
+    `aws-pulumi:allow_dev_string_postgres_password_parameter=true` and the
+    component name is exactly `dev-energy-market`
   - private DNS name as `String`
 - ECS services consume the Postgres private DNS as a Pulumi output and the
-  password as an ECS task secret backed by the SSM SecureString parameter.
+  password as an ECS task secret backed by the SSM password parameter. The
+  dev-only SSM `String` exception weakens at-rest protection for that dev
+  password, but it does not move `DAGSTER_POSTGRES_PASSWORD` into plain
+  container environment variables.
 
 ## Related docs
 
@@ -106,6 +112,8 @@ All bucket names are prefixed by `"{ENVIRONMENT}-energy-market"`.
   - `infrastructure/aws-pulumi/components/s3_buckets.py`
   - `infrastructure/aws-pulumi/components/dynamodb.py`
   - `infrastructure/aws-pulumi/components/postgres.py`
+  - `infrastructure/aws-pulumi/Pulumi.dev-ausenergymarket.yaml`
+  - `infrastructure/aws-pulumi/tests/component/test_postgres.py`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`

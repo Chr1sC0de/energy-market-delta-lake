@@ -10,7 +10,7 @@ as a side effect of importing any component.
 
 import asyncio
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 
 import pulumi
 import pulumi.runtime
@@ -34,6 +34,32 @@ os.environ["DEVELOPMENT_LOCATION"] = "aws"
 
 MockOutputs = dict[str, object]
 ResourceOutputAugmenter = Callable[[pulumi.runtime.MockResourceArgs, MockOutputs], None]
+ComponentConfigSetter = Callable[[dict[str, str] | None], None]
+
+DEFAULT_COMPONENT_CONFIG = {
+    "aws-pulumi:cognito_client_id": "test-cognito-client-id",
+    "aws-pulumi:cognito_server_metadata_url": "https://cognito.test.example.com/.well-known/openid-configuration",
+    "aws-pulumi:cognito_token_signing_key_url": "https://cognito.test.example.com/.well-known/jwks.json",
+    "aws-pulumi:cognito_client_secret": "test-cognito-client-secret",
+    "aws-pulumi:website_root_url": "https://test.ausenergymarketdata.com",
+    "aws-pulumi:developer_email": "test@example.com",
+    "aws-pulumi:dagster_failure_alert_topic_arn": "arn:aws:sns:ap-southeast-2:123456789012:dagster-failed-run-alerts",
+}
+
+COMPONENT_SECRET_KEYS = [
+    "aws-pulumi:cognito_client_id",
+    "aws-pulumi:cognito_server_metadata_url",
+    "aws-pulumi:cognito_token_signing_key_url",
+    "aws-pulumi:cognito_client_secret",
+    "aws-pulumi:dagster_failure_alert_topic_arn",
+]
+
+
+def set_component_config(extra_config: dict[str, str] | None = None) -> None:
+    config = dict(DEFAULT_COMPONENT_CONFIG)
+    if extra_config is not None:
+        config.update(extra_config)
+    pulumi.runtime.set_all_config(config, secret_keys=COMPONENT_SECRET_KEYS)
 
 
 class _MockEcrImage:
@@ -358,26 +384,17 @@ pulumi.runtime.set_mocks(
     preview=False,
 )
 
+
+@pytest.fixture
+def set_component_config_values() -> Iterator[ComponentConfigSetter]:
+    set_component_config()
+    yield set_component_config
+    set_component_config()
+
+
 # ---------------------------------------------------------------------------
 # 5. Inject all config values required by components that call pulumi.Config()
 #    FastAPIAuthComponentResource and CaddyServerComponentResource both read
 #    secrets from Pulumi config at construction time.
 # ---------------------------------------------------------------------------
-pulumi.runtime.set_all_config(
-    {
-        "aws-pulumi:cognito_client_id": "test-cognito-client-id",
-        "aws-pulumi:cognito_server_metadata_url": "https://cognito.test.example.com/.well-known/openid-configuration",
-        "aws-pulumi:cognito_token_signing_key_url": "https://cognito.test.example.com/.well-known/jwks.json",
-        "aws-pulumi:cognito_client_secret": "test-cognito-client-secret",
-        "aws-pulumi:website_root_url": "https://test.ausenergymarketdata.com",
-        "aws-pulumi:developer_email": "test@example.com",
-        "aws-pulumi:dagster_failure_alert_topic_arn": "arn:aws:sns:ap-southeast-2:123456789012:dagster-failed-run-alerts",
-    },
-    secret_keys=[
-        "aws-pulumi:cognito_client_id",
-        "aws-pulumi:cognito_server_metadata_url",
-        "aws-pulumi:cognito_token_signing_key_url",
-        "aws-pulumi:cognito_client_secret",
-        "aws-pulumi:dagster_failure_alert_topic_arn",
-    ],
-)
+set_component_config()

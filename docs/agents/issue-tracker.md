@@ -50,6 +50,18 @@ states the human judgment the durable **Exploratory branch** needs. Missing
 issue `agent-failed` with evidence before creating an implementation worktree
 or publishing an Exploratory handoff.
 
+Ready `delivery-exploratory` issues may also include `## Operator smoke` when
+the human review needs a credentialed deployed smoke after the durable
+**Exploratory branch** is pushed. The section supports `Smoke id: <id>`,
+`Timeout: <seconds>`, and credential-boundary prose for human review. Ralph
+validates the smoke id against a hardcoded allowlist before command execution;
+unknown smoke ids and smoke sections on non-Exploratory issues fail with issue
+evidence. The first allowlisted id is `ec2-run-worker-placement`, which runs
+`infrastructure/aws-pulumi/scripts/run-ec2-run-worker-smoke` from the AWS Pulumi
+**Subproject** in the issue worktree. These smokes run only from Ralph's
+operator-owned outer loop and do not grant AWS or Pulumi credentials to
+sandboxed Codex implementation subprocesses.
+
 `## Current context` is optional. **Ready issue refresh** may add or update it,
 but existing `ready-for-agent` issues do not need that section to stay ready.
 Refreshed issues that remain `ready-for-agent` must still contain the three
@@ -141,6 +153,10 @@ multiple issue checkpoints from serial Gitflow or Trunk attempts and bounded
 Exploratory workers before a **Promotion** checkpoint. Promotion starts only
 after active Exploratory workers and implementation **Ready issue refresh**
 claim gates have settled.
+Operator-smoke Exploratory issues are an exclusive serial lane exception: Ralph
+does not submit them to the Exploratory worker pool, waits for active issue
+workers to finish before claiming them, and does not overlap the smoke issue
+with another active implementation worker.
 
 After a successful drain-mode **Local integration**, Exploratory handoff, or
 successful **Promotion** verified issue closure, Ralph computes **Ready issue

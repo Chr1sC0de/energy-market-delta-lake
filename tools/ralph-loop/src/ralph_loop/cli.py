@@ -195,6 +195,7 @@ class CommandRunner:
         phase: str | None = None,
         execute_in_dry_run: bool = True,
         env: dict[str, str] | None = None,
+        timeout_seconds: int | float | None = None,
     ) -> CompletedCommand:
         if self.dry_run and not execute_in_dry_run:
             emit(f"DRY RUN: {format_command(args)}")
@@ -222,7 +223,21 @@ class CommandRunner:
                 cwd=cwd,
                 log_path=log_path,
                 phase=phase,
+                timeout_seconds=timeout_seconds,
             )
+        except CommandTimeout as error:
+            process.kill()
+            process.wait()
+            if log_path is not None:
+                write_command_log(
+                    log_path,
+                    args,
+                    cwd,
+                    error.stdout,
+                    error.stderr,
+                    error.returncode,
+                )
+            raise
         except BaseException:
             process.kill()
             process.wait()
@@ -255,6 +270,7 @@ class CommandRunner:
         cwd: Path,
         log_path: Path | None,
         phase: str | None,
+        timeout_seconds: int | float | None,
     ) -> tuple[str, str]:
         if process.stdout is None or process.stderr is None:
             raise RalphError("Subprocess output pipes were not created.")
@@ -269,12 +285,40 @@ class CommandRunner:
         outputs: dict[str, list[str]] = {"stdout": [], "stderr": []}
         phase_name = phase or format_command(args)
         next_heartbeat = self._next_heartbeat_deadline(log_path)
+        timeout_deadline = (
+            time.monotonic() + timeout_seconds
+            if timeout_seconds is not None and timeout_seconds > 0
+            else None
+        )
         try:
             while selector.get_map():
                 timeout = None
                 if next_heartbeat is not None:
                     timeout = max(0.0, next_heartbeat - time.monotonic())
+                if timeout_deadline is not None:
+                    command_timeout = max(0.0, timeout_deadline - time.monotonic())
+                    timeout = (
+                        command_timeout
+                        if timeout is None
+                        else min(
+                            timeout,
+                            command_timeout,
+                        )
+                    )
                 events = selector.select(timeout)
+                if (
+                    timeout_deadline is not None
+                    and time.monotonic() >= timeout_deadline
+                    and process.poll() is None
+                ):
+                    raise CommandTimeout(
+                        args,
+                        cwd,
+                        timeout_seconds,
+                        "".join(outputs["stdout"]),
+                        "".join(outputs["stderr"]),
+                        log_path,
+                    )
                 if not events:
                     if process.poll() is None:
                         self._emit_heartbeat(phase_name, log_path)
@@ -1010,12 +1054,18 @@ class RalphLoop:
                             f"DRY RUN: would implement "
                             f"#{ready_issue.number}: {ready_issue.title}"
                         )
-                        if self.config.ready_issue_refresh_enabled:
-                            delivery_plan = resolve_delivery_plan(
-                                ready_issue,
-                                default_mode=self.config.delivery_mode,
-                                target_branch=self.config.target_branch,
+                        delivery_plan = resolve_delivery_plan(
+                            ready_issue,
+                            default_mode=self.config.delivery_mode,
+                            target_branch=self.config.target_branch,
+                        )
+                        self._emit_operator_smoke_dry_run_preview(
+                            ReadyImplementationCandidate(
+                                issue=ready_issue,
+                                delivery_plan=delivery_plan,
                             )
+                        )
+                        if self.config.ready_issue_refresh_enabled:
                             self._report_ready_issue_refresh_dry_run(
                                 ready_issue,
                                 delivery_mode=delivery_plan.mode,
@@ -1076,7 +1126,7 @@ class RalphLoop:
                     (
                         candidate
                         for candidate in candidates
-                        if candidate.delivery_plan.mode != EXPLORATORY_MODE
+                        if self._candidate_uses_serial_issue_worker(candidate)
                     ),
                     None,
                 )
@@ -1084,6 +1134,7 @@ class RalphLoop:
                     candidate
                     for candidate in candidates
                     if candidate.delivery_plan.mode == EXPLORATORY_MODE
+                    and not issue_requests_operator_smoke(candidate.issue)
                 ]
                 attempt_budget_reached = self._drain_attempt_budget_reached(
                     attempts_started
@@ -1104,26 +1155,49 @@ class RalphLoop:
 
                 made_progress = False
                 reserved_serial_candidate: ReadyImplementationCandidate | None = None
+                serial_candidate_requires_exclusive_worker = (
+                    serial_candidate is not None
+                    and issue_requests_operator_smoke(serial_candidate.issue)
+                )
                 if serial_candidate is not None:
+                    if (
+                        serial_candidate_requires_exclusive_worker
+                        and active_exploratory
+                    ):
+                        emit(
+                            "Operator smoke issue "
+                            f"#{serial_candidate.issue.number} is waiting for active "
+                            "Exploratory worker(s) to finish before claim."
+                        )
+                        fatal_error = self._wait_for_exploratory_workers(
+                            active_exploratory
+                        )
+                        if fatal_error is not None:
+                            raise fatal_error
+                        continue
                     reserved_serial_candidate = serial_candidate
                     attempts_started += 1
                     made_progress = True
 
-                for candidate in exploratory_candidates:
-                    if len(active_exploratory) >= self.config.exploratory_concurrency:
-                        break
-                    if self._drain_attempt_budget_reached(attempts_started):
-                        break
-                    future = executor.submit(
-                        self._handle_exploratory_candidate,
-                        candidate,
-                        exploratory_order,
-                        next_exploratory_sequence,
-                    )
-                    active_exploratory[future] = candidate
-                    next_exploratory_sequence += 1
-                    attempts_started += 1
-                    made_progress = True
+                if not serial_candidate_requires_exclusive_worker:
+                    for candidate in exploratory_candidates:
+                        if (
+                            len(active_exploratory)
+                            >= self.config.exploratory_concurrency
+                        ):
+                            break
+                        if self._drain_attempt_budget_reached(attempts_started):
+                            break
+                        future = executor.submit(
+                            self._handle_exploratory_candidate,
+                            candidate,
+                            exploratory_order,
+                            next_exploratory_sequence,
+                        )
+                        active_exploratory[future] = candidate
+                        next_exploratory_sequence += 1
+                        attempts_started += 1
+                        made_progress = True
 
                 if reserved_serial_candidate is not None:
                     try:
@@ -1283,6 +1357,7 @@ class RalphLoop:
             )
 
         first_fatal_error: RalphError | None = None
+        completed_manifests: list[RunManifest] = []
         for future in done_futures:
             candidate = active_exploratory.pop(future)
             try:
@@ -1296,6 +1371,8 @@ class RalphLoop:
                         error=fatal_stop_error,
                         active_issue_numbers=active_issue_numbers,
                     )
+                elif manifest is not None:
+                    completed_manifests.append(manifest)
             except EnvironmentFailure as error:
                 if first_fatal_error is None:
                     first_fatal_error = error
@@ -1304,6 +1381,16 @@ class RalphLoop:
             except RalphError as error:
                 if first_fatal_error is None:
                     first_fatal_error = error
+        if first_fatal_error is not None:
+            active_issue_numbers = [
+                item.issue.number for item in active_exploratory.values()
+            ]
+            for manifest in completed_manifests:
+                manifest.record_drain_scheduler_fatal_stop(
+                    "observed",
+                    error=first_fatal_error,
+                    active_issue_numbers=active_issue_numbers,
+                )
         return first_fatal_error
 
     def _wait_for_exploratory_workers(
@@ -1444,6 +1531,14 @@ class RalphLoop:
             )
         return candidates
 
+    def _candidate_uses_serial_issue_worker(
+        self,
+        candidate: ReadyImplementationCandidate,
+    ) -> bool:
+        if candidate.delivery_plan.mode != EXPLORATORY_MODE:
+            return True
+        return issue_requests_operator_smoke(candidate.issue)
+
     def _drain_dry_run_candidates(
         self,
     ) -> tuple[
@@ -1457,7 +1552,9 @@ class RalphLoop:
         for candidate in self._ready_implementation_candidate_plans(
             exclude_issue_numbers=set()
         ):
-            if candidate.delivery_plan.mode == EXPLORATORY_MODE:
+            if candidate.delivery_plan.mode == EXPLORATORY_MODE and not (
+                issue_requests_operator_smoke(candidate.issue)
+            ):
                 eligible_exploratory_count += 1
                 if len(exploratory_candidates) < self.config.exploratory_concurrency:
                     exploratory_candidates.append(candidate)
@@ -1515,6 +1612,35 @@ class RalphLoop:
             f"{candidate.issue.title} "
             f"(Delivery mode: {candidate.delivery_plan.mode}, "
             f"Integration target: {candidate.delivery_plan.target_branch})"
+        )
+        self._emit_operator_smoke_dry_run_preview(candidate)
+
+    def _emit_operator_smoke_dry_run_preview(
+        self,
+        candidate: ReadyImplementationCandidate,
+    ) -> None:
+        if not issue_requests_operator_smoke(candidate.issue):
+            return
+        try:
+            request = validate_operator_smoke_request(
+                candidate.issue,
+                delivery_plan=candidate.delivery_plan,
+            )
+        except IssueFailure as error:
+            emit(f"DRY RUN: Operator smoke contract invalid: {error}")
+            return
+        if request is None:
+            return
+        _, worktree_path, _ = self._branch_and_worktrees(
+            candidate.issue,
+            delivery_plan=candidate.delivery_plan,
+        )
+        command = operator_smoke_command(request, repo_root=worktree_path)
+        emit(
+            "DRY RUN: Operator smoke "
+            f"`{command.smoke_id}` would run after Exploratory push: "
+            f"{format_command(command.args)} "
+            f"(cwd: {command.cwd}, timeout: {command.timeout_seconds}s)."
         )
 
     def _next_triage_issue(self) -> Issue | None:
@@ -4584,6 +4710,8 @@ class RalphLoop:
         worktree_path: Path | None = None
         integration_path: Path | None = None
         manifest: RunManifest | None = None
+        operator_smoke_request: OperatorSmokeRequest | None = None
+        operator_smoke_result: OperatorSmokeResult | None = None
         try:
             delivery_plan = resolve_delivery_plan(
                 issue,
@@ -4661,7 +4789,10 @@ class RalphLoop:
             manifest.record_metadata_status("claimed")
             emit(f"#{issue.number}: validating issue contract")
             manifest.record_event("validating_issue_contract")
-            self._validate_issue_contract(issue, delivery_plan=delivery_plan)
+            operator_smoke_request = self._validate_issue_contract(
+                issue,
+                delivery_plan=delivery_plan,
+            )
             manifest.record_event("issue_contract_validated")
             if preclaim_branch_sync:
                 manifest.record_event("integration_target_preclaim_verified")
@@ -4873,6 +5004,15 @@ class RalphLoop:
             )
             pushed = True
 
+            if operator_smoke_request is not None:
+                operator_smoke_result = self._run_operator_smoke(
+                    issue,
+                    operator_smoke_request,
+                    worktree_path=worktree_path,
+                    run_dir=run_dir,
+                    manifest=manifest,
+                )
+
             emit(f"#{issue.number}: commenting completion evidence")
             manifest.record_metadata_status("commenting_completion")
             self.github.comment_issue(
@@ -4884,6 +5024,7 @@ class RalphLoop:
                     qa_results,
                     run_dir,
                     delivery_plan=delivery_plan,
+                    operator_smoke=operator_smoke_result,
                 ),
                 run_dir=run_dir,
             )
@@ -5012,7 +5153,7 @@ class RalphLoop:
         issue: Issue,
         *,
         delivery_plan: DeliveryPlan,
-    ) -> None:
+    ) -> OperatorSmokeRequest | None:
         required_sections = required_issue_sections_for_delivery_mode(
             delivery_plan.mode
         )
@@ -5024,6 +5165,7 @@ class RalphLoop:
             raise IssueFailure(
                 f"Missing required issue section(s): {', '.join(missing)}"
             )
+        return validate_operator_smoke_request(issue, delivery_plan=delivery_plan)
 
     def _uses_preclaim_branch_sync(self, delivery_plan: DeliveryPlan) -> bool:
         return (
@@ -6292,6 +6434,107 @@ class RalphLoop:
                 qa_runtime_env=qa_runtime_env,
             ),
         )
+
+    def _run_operator_smoke(
+        self,
+        issue: Issue,
+        request: OperatorSmokeRequest,
+        *,
+        worktree_path: Path,
+        run_dir: Path,
+        manifest: RunManifest,
+    ) -> OperatorSmokeResult:
+        command = operator_smoke_command(request, repo_root=worktree_path)
+        log_path = run_dir / command.log_name
+        manifest.record_operator_smoke("running", command=command, log_path=log_path)
+        emit(
+            f"#{issue.number}: running Operator smoke {command.smoke_id}: "
+            f"{format_command(command.args)}"
+        )
+        try:
+            self.runner.run(
+                list(command.args),
+                cwd=command.cwd,
+                log_path=log_path,
+                phase=f"#{issue.number}: Operator smoke {command.smoke_id}",
+                execute_in_dry_run=False,
+                timeout_seconds=command.timeout_seconds,
+            )
+        except CommandTimeout as error:
+            evidence_path = capture_operator_smoke_evidence_path(
+                log_path=error.log_path or log_path,
+                cwd=command.cwd,
+                run_dir=run_dir,
+            )
+            result = OperatorSmokeResult(
+                smoke_id=command.smoke_id,
+                command_path=command.command_path,
+                command_args=command.args,
+                cwd=command.cwd,
+                log_path=error.log_path or log_path,
+                timeout_seconds=command.timeout_seconds,
+                evidence_path=evidence_path,
+                exit_status=error.returncode,
+                status="timed_out",
+                error=str(error),
+            )
+            manifest.record_operator_smoke("timed_out", result=result)
+            raise OperatorSmokeFailure(
+                issue_number=issue.number,
+                smoke_id=command.smoke_id,
+                status="timed out",
+                log_path=result.log_path,
+                evidence_path=result.evidence_path,
+                error=str(error),
+                timeout=True,
+            ) from error
+        except CommandFailure as error:
+            evidence_path = capture_operator_smoke_evidence_path(
+                log_path=error.log_path or log_path,
+                cwd=command.cwd,
+                run_dir=run_dir,
+            )
+            result = OperatorSmokeResult(
+                smoke_id=command.smoke_id,
+                command_path=command.command_path,
+                command_args=command.args,
+                cwd=command.cwd,
+                log_path=error.log_path or log_path,
+                timeout_seconds=command.timeout_seconds,
+                evidence_path=evidence_path,
+                exit_status=error.returncode,
+                status="failed",
+                error=str(error),
+            )
+            manifest.record_operator_smoke("failed", result=result)
+            raise OperatorSmokeFailure(
+                issue_number=issue.number,
+                smoke_id=command.smoke_id,
+                status="failed",
+                log_path=result.log_path,
+                evidence_path=result.evidence_path,
+                error=str(error),
+            ) from error
+
+        evidence_path = capture_operator_smoke_evidence_path(
+            log_path=log_path,
+            cwd=command.cwd,
+            run_dir=run_dir,
+        )
+        result = OperatorSmokeResult(
+            smoke_id=command.smoke_id,
+            command_path=command.command_path,
+            command_args=command.args,
+            cwd=command.cwd,
+            log_path=log_path,
+            timeout_seconds=command.timeout_seconds,
+            evidence_path=evidence_path,
+            exit_status=0,
+            status="succeeded",
+        )
+        manifest.record_operator_smoke("succeeded", result=result)
+        emit(f"#{issue.number}: Operator smoke passed {command.smoke_id}")
+        return result
 
     def _run_qa(
         self,

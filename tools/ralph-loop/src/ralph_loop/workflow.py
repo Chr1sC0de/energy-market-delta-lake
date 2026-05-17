@@ -216,6 +216,15 @@ POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_COMMAND = (
     "infrastructure/aws-pulumi/scripts/run-integration-tests"
 )
 POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_IDEMPOTENCY_ARG = "--with-idempotency"
+OPERATOR_SMOKE_SECTION = "Operator smoke"
+OPERATOR_SMOKE_EC2_RUN_WORKER_PLACEMENT_ID = "ec2-run-worker-placement"
+OPERATOR_SMOKE_EC2_RUN_WORKER_PLACEMENT_COMMAND = (
+    "infrastructure/aws-pulumi/scripts/run-ec2-run-worker-smoke"
+)
+OPERATOR_SMOKE_EC2_RUN_WORKER_PLACEMENT_CWD = "infrastructure/aws-pulumi"
+DEFAULT_OPERATOR_SMOKE_TIMEOUT_SECONDS = 15 * 60
+OPERATOR_SMOKE_FAILURE_TYPE = "operator_smoke_failed"
+OPERATOR_SMOKE_TIMEOUT_FAILURE_TYPE = "operator_smoke_timeout"
 AEMO_ETL_E2E_SCRIPT_PATH = "backend-services/scripts/aemo-etl-e2e"
 AEMO_ETL_E2E_QA_NAME = "aemo-etl End-to-end test"
 AEMO_ETL_E2E_TEST_LANE = "AEMO ETL End-to-end test"
@@ -358,6 +367,31 @@ class CommandFailure(RalphError):
         self.log_path = log_path
 
 
+class CommandTimeout(CommandFailure):
+    """A subprocess command exceeded its configured timeout."""
+
+    def __init__(
+        self,
+        command: list[str],
+        cwd: Path,
+        timeout_seconds: int | float,
+        stdout: str,
+        stderr: str,
+        log_path: Path | None,
+    ) -> None:
+        RalphError.__init__(
+            self,
+            f"Command timed out after {timeout_seconds:g}s: {format_command(command)}",
+        )
+        self.command = command
+        self.cwd = cwd
+        self.returncode = 124
+        self.stdout = stdout
+        self.stderr = stderr
+        self.log_path = log_path
+        self.timeout_seconds = timeout_seconds
+
+
 class IssueFailure(RalphError):
     """An issue-specific failure that should not stop the whole drain."""
 
@@ -459,6 +493,49 @@ class IssueCompletionReviewFailure(IssueFailure):
                 "incomplete work."
             ),
         )
+
+
+class OperatorSmokeFailure(IssueFailure):
+    """A requested Operator smoke failed after Exploratory branch publication."""
+
+    def __init__(
+        self,
+        *,
+        issue_number: int,
+        smoke_id: str,
+        status: str,
+        log_path: Path,
+        evidence_path: Path | None,
+        error: str,
+        timeout: bool = False,
+    ) -> None:
+        failure_type = (
+            OPERATOR_SMOKE_TIMEOUT_FAILURE_TYPE
+            if timeout
+            else OPERATOR_SMOKE_FAILURE_TYPE
+        )
+        guidance = (
+            "Inspect the preserved Exploratory worktree, remote review branch, "
+            "and Operator smoke log. Rerun the smoke from the Ralph outer loop "
+            "after credentials or deployed state are repaired."
+        )
+        evidence_line = (
+            f"\nOperator smoke evidence: `{evidence_path}`"
+            if evidence_path is not None
+            else ""
+        )
+        super().__init__(
+            (
+                f"Operator smoke `{smoke_id}` {status} for issue #{issue_number}: "
+                f"{error}\n\nOperator smoke log: `{log_path}`{evidence_line}\n"
+                f"Recovery guidance: {guidance}"
+            ),
+            log_path=log_path,
+            failure_type=failure_type,
+            recovery_guidance=guidance,
+        )
+        self.smoke_id = smoke_id
+        self.status = status
 
 
 class EnvironmentFailure(IssueFailure):
@@ -758,6 +835,86 @@ class PostPromotionDeploymentCommand:
 
 
 @dataclass(frozen=True)
+class OperatorSmokeSpec:
+    smoke_id: str
+    name: str
+    command_path: str
+    cwd_path: str
+    default_timeout_seconds: int
+    log_name: str
+
+
+@dataclass(frozen=True)
+class OperatorSmokeRequest:
+    smoke_id: str
+    timeout_seconds: int
+    prose: str
+
+
+@dataclass(frozen=True)
+class OperatorSmokeCommand:
+    smoke_id: str
+    name: str
+    command_path: str
+    args: tuple[str, ...]
+    cwd: Path
+    timeout_seconds: int
+    log_name: str
+
+    def to_manifest(self, *, log_path: Path | None = None) -> dict[str, Any]:
+        return {
+            "smoke_id": self.smoke_id,
+            "command_path": self.command_path,
+            "command_args": list(self.args),
+            "cwd": str(self.cwd),
+            "log_path": str(log_path) if log_path is not None else None,
+            "timeout": self.timeout_seconds,
+        }
+
+
+@dataclass(frozen=True)
+class OperatorSmokeResult:
+    smoke_id: str
+    command_path: str
+    command_args: tuple[str, ...]
+    cwd: Path
+    log_path: Path
+    timeout_seconds: int
+    evidence_path: Path | None
+    exit_status: int | None
+    status: str
+    error: str | None = None
+
+    def to_manifest(self) -> dict[str, Any]:
+        return {
+            "smoke_id": self.smoke_id,
+            "command_path": self.command_path,
+            "command_args": list(self.command_args),
+            "cwd": str(self.cwd),
+            "log_path": str(self.log_path),
+            "timeout": self.timeout_seconds,
+            "evidence_path": str(self.evidence_path)
+            if self.evidence_path is not None
+            else None,
+            "exit_status": self.exit_status,
+            "status": self.status,
+            "error": self.error,
+        }
+
+
+OPERATOR_SMOKE_SPECS: dict[str, OperatorSmokeSpec] = {
+    OPERATOR_SMOKE_EC2_RUN_WORKER_PLACEMENT_ID: OperatorSmokeSpec(
+        smoke_id=OPERATOR_SMOKE_EC2_RUN_WORKER_PLACEMENT_ID,
+        name="EC2 run-worker placement",
+        command_path=OPERATOR_SMOKE_EC2_RUN_WORKER_PLACEMENT_COMMAND,
+        cwd_path=OPERATOR_SMOKE_EC2_RUN_WORKER_PLACEMENT_CWD,
+        default_timeout_seconds=DEFAULT_OPERATOR_SMOKE_TIMEOUT_SECONDS,
+        log_name="operator-smoke-ec2-run-worker-placement.log",
+    )
+}
+
+
+@dataclass(frozen=True)
 class QARunManifestEvidence:
     source_path: Path
     artifact_path: Path
@@ -1018,6 +1175,98 @@ def missing_required_sections(
         if body is None or body.strip() == "":
             missing.append(heading)
     return missing
+
+
+def operator_smoke_section_body(markdown: str) -> str | None:
+    return section_body(markdown, OPERATOR_SMOKE_SECTION)
+
+
+def issue_requests_operator_smoke(issue: Issue) -> bool:
+    return operator_smoke_section_body(issue.body) is not None
+
+
+def parse_operator_smoke_request(markdown: str) -> OperatorSmokeRequest | None:
+    section = operator_smoke_section_body(markdown)
+    if section is None:
+        return None
+
+    smoke_id: str | None = None
+    timeout_seconds: int | None = None
+    prose_lines: list[str] = []
+    for line in section.splitlines():
+        match = re.match(r"^\s*(?P<field>Smoke id|Timeout):\s*(?P<value>.*?)\s*$", line)
+        if match is None:
+            prose_lines.append(line)
+            continue
+
+        field = match.group("field").lower()
+        value = match.group("value").strip().strip("`")
+        if field == "smoke id":
+            smoke_id = value
+        elif field == "timeout":
+            try:
+                timeout_seconds = int(value)
+            except ValueError as error:
+                raise IssueFailure(
+                    f"Operator smoke Timeout must be an integer number of seconds: {value!r}"
+                ) from error
+
+    if smoke_id is None or smoke_id == "":
+        raise IssueFailure("Operator smoke section is missing `Smoke id: <id>`.")
+    if timeout_seconds is None:
+        timeout_seconds = DEFAULT_OPERATOR_SMOKE_TIMEOUT_SECONDS
+    if timeout_seconds <= 0:
+        raise IssueFailure("Operator smoke Timeout must be greater than zero seconds.")
+
+    return OperatorSmokeRequest(
+        smoke_id=smoke_id,
+        timeout_seconds=timeout_seconds,
+        prose="\n".join(prose_lines).strip(),
+    )
+
+
+def validate_operator_smoke_request(
+    issue: Issue,
+    *,
+    delivery_plan: DeliveryPlan,
+) -> OperatorSmokeRequest | None:
+    request = parse_operator_smoke_request(issue.body)
+    if request is None:
+        return None
+    if delivery_plan.mode != EXPLORATORY_MODE:
+        raise IssueFailure(
+            "`## Operator smoke` is only supported for Exploratory delivery issues."
+        )
+    if request.smoke_id not in OPERATOR_SMOKE_SPECS:
+        allowed = ", ".join(sorted(OPERATOR_SMOKE_SPECS))
+        raise IssueFailure(
+            "Unknown Operator smoke id "
+            f"`{request.smoke_id}`. Allowed Operator smoke id(s): {allowed}."
+        )
+    return request
+
+
+def operator_smoke_command(
+    request: OperatorSmokeRequest,
+    *,
+    repo_root: Path,
+) -> OperatorSmokeCommand:
+    spec = OPERATOR_SMOKE_SPECS.get(request.smoke_id)
+    if spec is None:
+        allowed = ", ".join(sorted(OPERATOR_SMOKE_SPECS))
+        raise IssueFailure(
+            f"Unknown Operator smoke id `{request.smoke_id}`. "
+            f"Allowed Operator smoke id(s): {allowed}."
+        )
+    return OperatorSmokeCommand(
+        smoke_id=spec.smoke_id,
+        name=spec.name,
+        command_path=spec.command_path,
+        args=(str(repo_root / spec.command_path),),
+        cwd=repo_root / spec.cwd_path,
+        timeout_seconds=request.timeout_seconds,
+        log_name=spec.log_name,
+    )
 
 
 def normalize_context_anchor_path(raw_path: str) -> ContextAnchorPath | None:
@@ -3009,8 +3258,10 @@ def build_completion_comment(
     run_dir: Path,
     *,
     delivery_plan: DeliveryPlan,
+    operator_smoke: OperatorSmokeResult | None = None,
 ) -> str:
     qa_lines = qa_result_markdown_lines(qa_results)
+    smoke_lines = operator_smoke_markdown_lines(operator_smoke)
     changed_lines = [f"- `{path}`" for path in changed_files]
     if delivery_plan.mode == TRUNK_MODE:
         title = completion_comment_title(delivery_plan.mode)
@@ -3045,12 +3296,37 @@ def build_completion_comment(
             "",
             *qa_lines,
             "",
+            *smoke_lines,
             f"Run logs: `{run_dir}`",
             "",
             issue_state,
             "",
         ]
     )
+
+
+def operator_smoke_markdown_lines(
+    operator_smoke: OperatorSmokeResult | None,
+) -> list[str]:
+    if operator_smoke is None:
+        return []
+    evidence_text = (
+        f"`{operator_smoke.evidence_path}`"
+        if operator_smoke.evidence_path is not None
+        else "`not emitted`"
+    )
+    return [
+        "## Operator smoke",
+        "",
+        f"- Smoke id: `{operator_smoke.smoke_id}`",
+        f"- Status: `{operator_smoke.status}`",
+        f"- Command: `{format_command(operator_smoke.command_args)}`",
+        f"- Cwd: `{operator_smoke.cwd}`",
+        f"- Timeout: `{operator_smoke.timeout_seconds}` seconds",
+        f"- Log: `{operator_smoke.log_path}`",
+        f"- Evidence: {evidence_text}",
+        "",
+    ]
 
 
 def qa_result_markdown_lines(qa_results: list[QAResult]) -> list[str]:

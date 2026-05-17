@@ -60,6 +60,14 @@ deployment commands may run only when the checkpointed Operator path or another
 explicit Ralph outer-loop automation owns the AWS and Pulumi credentials.
 Sandboxed Codex subprocesses and **Post-promotion review** remain outside that
 credential boundary.
+Allowlisted **Operator smoke** commands for selected **Exploratory delivery**
+issues use the same boundary: Codex may prepare scripts and docs, but the
+credentialed deployed smoke runs only from Ralph's operator-owned outer loop
+after the **Exploratory branch** is pushed.
+AFK issue QA for deployable infrastructure work may update local tests and
+future deployed-test expectations, but it does not run `pulumi up`, AWS CLI
+live checks, deployed tests, or
+`infrastructure/aws-pulumi/scripts/run-integration-tests`.
 
 ## Consequences
 

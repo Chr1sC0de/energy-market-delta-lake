@@ -167,7 +167,11 @@ or orphaned run-worker tasks, poll ECS every 120 seconds, cap runtime at 30
 minutes, and mark unrecovered runs failed without automatic resume attempts.
 The default Secrets Manager tag lookup is disabled because this deployment
 injects required runtime secrets through ECS task-definition secrets and SSM
-SecureString parameters instead.
+password parameters instead. Non-dev Postgres passwords remain SSM
+`SecureString`; `dev-energy-market` can use SSM `String` only when
+`aws-pulumi:allow_dev_string_postgres_password_parameter=true` is set, which
+weakens at-rest protection for that dev parameter but keeps the value out of
+plain ECS environment variables.
 
 ## EC2 run-worker capacity prototype
 
@@ -284,8 +288,9 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   digest-pinned image URIs, so image publish completion is part of the Pulumi
   dependency graph before replacement bootstraps run.
 - ECS task definitions inject the Postgres password through ECS `secrets`
-  backed by the SSM SecureString parameter, not through plain container
-  environment variables.
+  backed by the SSM password parameter, not through plain container environment
+  variables. The backing parameter is `SecureString` by default and `String`
+  only for the gated `dev-energy-market` exception.
 - Admin and guest webservers get separate task-definition families so revisions
   are not shared across the two variants.
 - Cloud Map registration is used only for the inbound-facing private services:
@@ -317,6 +322,7 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   - `infrastructure/aws-pulumi/dagster_core_deployment.py`
   - `infrastructure/aws-pulumi/code_locations.py`
   - `infrastructure/aws-pulumi/components/dagster_runtime_task.py`
+  - `infrastructure/aws-pulumi/components/postgres.py`
   - `infrastructure/aws-pulumi/components/ecs_cluster.py`
   - `infrastructure/aws-pulumi/components/ecs_services.py`
   - `infrastructure/aws-pulumi/components/iam_roles.py`
@@ -337,7 +343,11 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   - `backend-services/dagster-core/dagster.aws.ec2-run-workers.prototype.yaml`
   - `backend-services/dagster-core/render_aws_workspace.py`
   - `backend-services/dagster-core/workspace.aws.yaml`
+  - `infrastructure/aws-pulumi/Pulumi.dev-ausenergymarket.yaml`
   - `infrastructure/aws-pulumi/tests/fixtures/code-locations-two-location.toml`
+  - `infrastructure/aws-pulumi/tests/component/test_ecs_services.py`
+  - `infrastructure/aws-pulumi/tests/component/test_postgres.py`
+  - `infrastructure/aws-pulumi/tests/deployed/test_integration.py`
   - `infrastructure/aws-pulumi/tests/unit/test_code_locations.py`
   - `infrastructure/aws-pulumi/tests/unit/test_dagster_core_deployment.py`
 - `sync.scope`: `architecture`
