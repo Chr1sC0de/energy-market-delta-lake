@@ -275,6 +275,23 @@ It gives first-look sections for:
 When storage has no seeded or materialized `gas_model` tables yet, the notebook
 renders section empty states instead of surfacing Parquet read tracebacks.
 
+## Market prices dashboard
+
+[notebooks/gas_market_prices.py](notebooks/gas_market_prices.py) is an
+analytical dashboard over
+`silver.gas_model.silver_gas_fact_market_price`. It uses the shared bounded gas
+model loader and session cache from
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py), then
+filters the loaded bounded preview by `price_type`, `source_system`, and
+`source_table`.
+
+The dashboard shows loaded price KPIs, latest `gas_date`, price-type and source
+summaries, available price measure columns, a recent loaded trend table,
+bounded observation previews, and Market price plus Schedule context links from
+the Marimo registry. Missing market-price data, unavailable Parquet prefixes,
+and filter combinations with no matches render dashboard empty states with the
+checked table, read policy, and refresh action.
+
 ## System notices dashboard
 
 [notebooks/system_notices.py](notebooks/system_notices.py) is an operational
@@ -371,8 +388,9 @@ server at a different notebook directory.
 
 With the local backend stack running, open the Marimo concept gallery through
 Caddy and choose an available card such as `data_readiness_overview`,
-`glossary_explorer`, `table_explorer`, `sample_energy_market`, or
-`system_notices`, `gas_quality_composition`, or `gbb_interactive_map`:
+`glossary_explorer`, `table_explorer`, `sample_energy_market`,
+`gas_market_prices`, `system_notices`, `gas_quality_composition`, or
+`gbb_interactive_map`:
 
 ```text
 http://localhost/marimo
@@ -427,6 +445,13 @@ Use the same pattern for the system notices dashboard:
 ```bash
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/system_notices.py
+```
+
+Use the same pattern for the market prices dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gas_market_prices.py
 ```
 
 Use the same pattern for the gas quality and composition dashboard:
@@ -527,6 +552,7 @@ prek run -a
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
+  - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/marimo/tests/component/conftest.py`
   - `backend-services/marimo/tests/component/test_dashboard_registry.py`

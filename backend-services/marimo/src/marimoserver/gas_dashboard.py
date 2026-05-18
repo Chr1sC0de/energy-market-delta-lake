@@ -63,6 +63,17 @@ SYSTEM_NOTICE_WINDOW_FILTER_OPTIONS = (
 )
 DEFAULT_SYSTEM_NOTICE_RECENT_DAYS = 14
 DEFAULT_SYSTEM_NOTICE_PREVIEW_ROWS = 50
+MARKET_PRICE_TABLE_NAME = "silver_gas_fact_market_price"
+MARKET_PRICE_PRICE_TYPE_FILTER_ALL = "All price types"
+MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL = "All source systems"
+MARKET_PRICE_SOURCE_TABLE_FILTER_ALL = "All source tables"
+DEFAULT_MARKET_PRICE_PREVIEW_ROWS = 50
+MARKET_PRICE_MEASURE_COLUMNS = (
+    "price_value_gst_ex",
+    "weighted_average_price_gst_ex",
+    "cumulative_price",
+    "administered_price",
+)
 GAS_QUALITY_TABLE_NAME = "silver_gas_fact_gas_quality"
 GAS_QUALITY_QUALITY_TYPE_FILTER_ALL = "All quality types"
 GAS_QUALITY_SOURCE_POINT_FILTER_ALL = "All source points"
@@ -144,25 +155,29 @@ class GasTableLoad:
         return self.row_limit is not None
 
 
-GAS_MODEL_TABLES: tuple[GasTableSpec, ...] = (
-    GasTableSpec(
-        section="Prices",
-        label="Market prices",
-        table_name="silver_gas_fact_market_price",
-        date_columns=("gas_date",),
-        preview_columns=(
-            "gas_date",
-            "source_system",
-            "source_table",
-            "price_type",
-            "schedule_type_id",
-            "source_location_id",
-            "price_value_gst_ex",
-            "weighted_average_price_gst_ex",
-            "cumulative_price",
-            "administered_price",
-        ),
+MARKET_PRICE_TABLE_SPEC = GasTableSpec(
+    section="Prices",
+    label="Market prices",
+    table_name=MARKET_PRICE_TABLE_NAME,
+    date_columns=("gas_date",),
+    preview_columns=(
+        "gas_date",
+        "source_system",
+        "source_table",
+        "price_type",
+        "schedule_type_id",
+        "schedule_interval",
+        "transmission_id",
+        "source_location_id",
+        "price_value_gst_ex",
+        "weighted_average_price_gst_ex",
+        "cumulative_price",
+        "administered_price",
     ),
+)
+
+GAS_MODEL_TABLES: tuple[GasTableSpec, ...] = (
+    MARKET_PRICE_TABLE_SPEC,
     GasTableSpec(
         section="Schedules",
         label="Schedule runs",
@@ -362,6 +377,72 @@ _SYSTEM_NOTICE_SOURCE_COVERAGE_SCHEMA = {
     "latest source update": pl.Datetime("us"),
     "latest ingest": pl.Datetime("us"),
 }
+_MARKET_PRICE_RAW_SCHEMA = {
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "source_table": pl.String,
+    "gas_date": pl.Date,
+    "price_type": pl.String,
+    "schedule_type_id": pl.String,
+    "schedule_interval": pl.String,
+    "transmission_id": pl.String,
+    "transmission_doc_id": pl.String,
+    "source_location_id": pl.String,
+    "price_value_gst_ex": pl.Float64,
+    "weighted_average_price_gst_ex": pl.Float64,
+    "cumulative_price": pl.Float64,
+    "administered_price": pl.Float64,
+    "source_last_updated": pl.String,
+    "source_last_updated_timestamp": pl.Datetime("us"),
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_MARKET_PRICE_KPI_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_MARKET_PRICE_TYPE_SUMMARY_SCHEMA = {
+    "source system": pl.String,
+    "source table": pl.String,
+    "price type": pl.String,
+    "observations": pl.UInt32,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
+    "available price measures": pl.String,
+    "avg price_value_gst_ex": pl.Float64,
+    "avg weighted_average_price_gst_ex": pl.Float64,
+    "latest cumulative_price": pl.Float64,
+    "latest administered_price": pl.Float64,
+}
+_MARKET_PRICE_TREND_SCHEMA = {
+    "gas date": pl.Date,
+    "source system": pl.String,
+    "price type": pl.String,
+    "observations": pl.UInt32,
+    "source tables": pl.UInt32,
+    "available price measures": pl.String,
+    "avg price_value_gst_ex": pl.Float64,
+    "avg weighted_average_price_gst_ex": pl.Float64,
+    "avg cumulative_price": pl.Float64,
+    "avg administered_price": pl.Float64,
+}
+_MARKET_PRICE_OBSERVATION_SCHEMA = {
+    "gas date": pl.Date,
+    "source system": pl.String,
+    "source table": pl.String,
+    "price type": pl.String,
+    "schedule type": pl.String,
+    "schedule interval": pl.String,
+    "transmission": pl.String,
+    "source location": pl.String,
+    "available price measures": pl.String,
+    "price_value_gst_ex": pl.Float64,
+    "weighted_average_price_gst_ex": pl.Float64,
+    "cumulative_price": pl.Float64,
+    "administered_price": pl.Float64,
+    "source updated": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
 _GAS_QUALITY_RAW_SCHEMA = {
     "source_system": pl.String,
     "source_table": pl.String,
@@ -553,6 +634,42 @@ def cached_load_system_notice_table(
     )[0]
 
 
+def load_market_price_table(
+    config: GasDashboardConfig,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Load the market price fact through the shared bounded table loader."""
+    return load_gas_model_tables(
+        config,
+        specs=(MARKET_PRICE_TABLE_SPEC,),
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        clock=clock,
+    )[0]
+
+
+def cached_load_market_price_table(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Return session-cached market price data for explicit-refresh dashboards."""
+    return cached_load_gas_model_tables(
+        config,
+        cache,
+        specs=(MARKET_PRICE_TABLE_SPEC,),
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        refresh_token=refresh_token,
+        clock=clock,
+    )[0]
+
+
 def load_gas_quality_table(
     config: GasDashboardConfig,
     reader: TableReader = read_parquet_table,
@@ -694,6 +811,344 @@ def table_load_by_name(
         if load.spec.table_name == table_name:
             return load
     return None
+
+
+def market_price_price_type_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return price-type filter options for the loaded market price preview."""
+    return _market_price_string_filter_options(
+        load,
+        "price_type",
+        MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
+    )
+
+
+def market_price_source_system_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return source-system filter options for the loaded market price preview."""
+    return _market_price_string_filter_options(
+        load,
+        "source_system",
+        MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
+    )
+
+
+def market_price_source_table_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return source-table filter options for the loaded market price preview."""
+    return _market_price_string_filter_options(
+        load,
+        "source_table",
+        MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
+    )
+
+
+def market_price_kpi_frame(
+    load: GasTableLoad | None,
+    price_type_filter: str = MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
+    source_system_filter: str = MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
+    source_table_filter: str = MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return first-viewport KPIs for loaded market price observations."""
+    dataframe = _filtered_market_price_dataframe(
+        load,
+        price_type_filter,
+        source_system_filter,
+        source_table_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_MARKET_PRICE_KPI_SCHEMA)
+
+    counts = dataframe.select(
+        pl.len().alias("loaded_observations"),
+        pl.col("price_type").drop_nulls().n_unique().alias("price_types"),
+        pl.col("source_system").drop_nulls().n_unique().alias("source_systems"),
+        pl.col("source_table").drop_nulls().n_unique().alias("source_tables"),
+        pl.col("gas_date").max().alias("latest_gas_date"),
+    ).row(0, named=True)
+    available_measures = _available_market_price_measures(dataframe)
+    row_limit = None if load is None else load.row_limit
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Loaded price rows",
+                "value": f"{counts['loaded_observations']:,}",
+                "detail": format_row_limit(row_limit),
+            },
+            {
+                "metric": "Price types",
+                "value": f"{counts['price_types']:,}",
+                "detail": "Distinct price_type values in the current view",
+            },
+            {
+                "metric": "Source systems",
+                "value": f"{counts['source_systems']:,}",
+                "detail": "Distinct source_system values in the current view",
+            },
+            {
+                "metric": "Source tables",
+                "value": f"{counts['source_tables']:,}",
+                "detail": "Distinct source_table values represented",
+            },
+            {
+                "metric": "Latest gas date",
+                "value": _format_optional_value(counts["latest_gas_date"]),
+                "detail": "Maximum gas_date in the loaded bounded rows",
+            },
+            {
+                "metric": "Available price measures",
+                "value": str(len(available_measures)),
+                "detail": _format_market_price_measure_names(available_measures),
+            },
+        ],
+        schema=_MARKET_PRICE_KPI_SCHEMA,
+    )
+
+
+def market_price_type_summary_frame(
+    load: GasTableLoad | None,
+    price_type_filter: str = MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
+    source_system_filter: str = MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
+    source_table_filter: str = MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return source and price-type summaries for loaded market price rows."""
+    dataframe = _filtered_market_price_dataframe(
+        load,
+        price_type_filter,
+        source_system_filter,
+        source_table_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_MARKET_PRICE_TYPE_SUMMARY_SCHEMA)
+
+    summary = (
+        dataframe.group_by("source_system", "source_table", "price_type")
+        .agg(
+            pl.len().alias("observations"),
+            pl.col("gas_date").min().alias("first gas date"),
+            pl.col("gas_date").max().alias("latest gas date"),
+            pl.col("price_value_gst_ex")
+            .mean()
+            .round(4)
+            .alias("avg price_value_gst_ex"),
+            pl.col("weighted_average_price_gst_ex")
+            .mean()
+            .round(4)
+            .alias("avg weighted_average_price_gst_ex"),
+            pl.col("cumulative_price")
+            .drop_nulls()
+            .last()
+            .alias("latest cumulative_price"),
+            pl.col("administered_price")
+            .drop_nulls()
+            .last()
+            .alias("latest administered_price"),
+            *_market_price_measure_count_expressions(),
+        )
+        .with_columns(_market_price_measure_count_label_expression())
+        .sort(
+            ["observations", "source_system", "source_table", "price_type"],
+            descending=[True, False, False, False],
+        )
+        .rename(
+            {
+                "source_system": "source system",
+                "source_table": "source table",
+                "price_type": "price type",
+            }
+        )
+    )
+    return summary.select([*list(_MARKET_PRICE_TYPE_SUMMARY_SCHEMA)])
+
+
+def market_price_trend_frame(
+    load: GasTableLoad | None,
+    price_type_filter: str = MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
+    source_system_filter: str = MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
+    source_table_filter: str = MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_MARKET_PRICE_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return a bounded recent trend table by gas date, source, and price type."""
+    dataframe = _filtered_market_price_dataframe(
+        load,
+        price_type_filter,
+        source_system_filter,
+        source_table_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_MARKET_PRICE_TREND_SCHEMA)
+
+    trend = (
+        dataframe.group_by("gas_date", "source_system", "price_type")
+        .agg(
+            pl.len().alias("observations"),
+            pl.col("source_table").drop_nulls().n_unique().alias("source tables"),
+            pl.col("price_value_gst_ex")
+            .mean()
+            .round(4)
+            .alias("avg price_value_gst_ex"),
+            pl.col("weighted_average_price_gst_ex")
+            .mean()
+            .round(4)
+            .alias("avg weighted_average_price_gst_ex"),
+            pl.col("cumulative_price").mean().round(4).alias("avg cumulative_price"),
+            pl.col("administered_price")
+            .mean()
+            .round(4)
+            .alias("avg administered_price"),
+            *_market_price_measure_count_expressions(),
+        )
+        .with_columns(_market_price_measure_count_label_expression())
+        .sort(
+            ["gas_date", "source_system", "price_type"],
+            descending=[True, False, False],
+            nulls_last=True,
+        )
+        .rename(
+            {
+                "gas_date": "gas date",
+                "source_system": "source system",
+                "price_type": "price type",
+            }
+        )
+        .head(max(1, preview_rows))
+    )
+    return trend.select([*list(_MARKET_PRICE_TREND_SCHEMA)])
+
+
+def market_price_observation_frame(
+    load: GasTableLoad | None,
+    price_type_filter: str = MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
+    source_system_filter: str = MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
+    source_table_filter: str = MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_MARKET_PRICE_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return filtered market price observations for bounded detail preview."""
+    dataframe = _filtered_market_price_dataframe(
+        load,
+        price_type_filter,
+        source_system_filter,
+        source_table_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_MARKET_PRICE_OBSERVATION_SCHEMA)
+
+    return (
+        dataframe.with_columns(_market_price_measure_value_label_expression())
+        .sort(
+            [
+                "gas_date",
+                "source_last_updated_timestamp",
+                "price_type",
+                "source_system",
+                "source_table",
+            ],
+            descending=[True, True, False, False, False],
+            nulls_last=True,
+        )
+        .select(
+            pl.col("gas_date").alias("gas date"),
+            pl.col("source_system").alias("source system"),
+            pl.col("source_table").alias("source table"),
+            pl.col("price_type").alias("price type"),
+            pl.col("schedule_type_id").alias("schedule type"),
+            pl.col("schedule_interval").alias("schedule interval"),
+            pl.col("transmission_id").alias("transmission"),
+            pl.col("source_location_id").alias("source location"),
+            pl.col("available price measures"),
+            pl.col("price_value_gst_ex"),
+            pl.col("weighted_average_price_gst_ex"),
+            pl.col("cumulative_price"),
+            pl.col("administered_price"),
+            pl.col("source_last_updated_timestamp").alias("source updated"),
+            pl.col("ingested_timestamp").alias("latest ingest"),
+        )
+        .head(max(1, preview_rows))
+    )
+
+
+def market_price_empty_state_markdown(load: GasTableLoad | None) -> str:
+    """Return useful empty-state copy for missing or unmatched market prices."""
+    table_label = _markdown_breakable_text(
+        "silver.gas_model.silver_gas_fact_market_price"
+    )
+    if load is None:
+        status_detail = "The dashboard did not receive a market price load result."
+        uri = table_label
+        read_policy = "No read policy was reported."
+    else:
+        if load.error is not None:
+            status_detail = f"Read detail: {_markdown_breakable_text(load.error)}"
+        elif load.dataframe is None or load.dataframe.is_empty():
+            status_detail = "The table loaded successfully but returned no rows."
+        else:
+            status_detail = (
+                "The current filters do not match any loaded market price rows."
+            )
+        uri = _markdown_breakable_text(load.uri)
+        read_policy = row_limit_message(load.row_limit)
+
+    return f"""
+    **No market price data is available for this view.**
+
+    The dashboard checked {uri}, which should contain {table_label} rows with
+    price type, source system, source table, gas date, schedule context fields,
+    and available price measures.
+
+    {status_detail}
+
+    {read_policy}
+
+    Materialize or seed the `silver.gas_model` market price asset, then use
+    **Refresh data**.
+    """
+
+
+def render_market_price_context_links(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render Market price dashboard links and related Schedule context state."""
+    candidate_entries = tuple(dashboard_registry() if entries is None else entries)
+    concept_ids = (
+        "gas-market-prices",
+        "gas-market-overview",
+        "schedule-context",
+        "gas-model-table-explorer",
+    )
+    rows = "\n".join(
+        _render_market_price_context_link(entry)
+        for entry in (
+            registry_entry_by_concept_id(concept_id, candidate_entries)
+            for concept_id in concept_ids
+        )
+        if entry is not None
+    )
+    if rows == "":
+        rows = (
+            '<li class="market-price-links__empty">'
+            "No Market price or Schedule context entries are registered."
+            "</li>"
+        )
+
+    return f"""\
+<style>
+{_market_price_context_links_css()}
+</style>
+<section class="market-price-links" aria-label="Market price context links">
+    <div>
+        <p class="market-price-links__eyebrow">Context links</p>
+        <h2>Market price and Schedule context</h2>
+    </div>
+    <ul>
+{rows}
+    </ul>
+</section>"""
 
 
 def gas_quality_quality_type_options(
@@ -1116,6 +1571,251 @@ def system_notice_empty_state_markdown(load: GasTableLoad | None) -> str:
     Materialize or seed the `silver.gas_model` system notice asset, then use
     **Refresh data**.
     """
+
+
+def _market_price_string_filter_options(
+    load: GasTableLoad | None,
+    column: str,
+    all_label: str,
+) -> tuple[str, ...]:
+    dataframe = _normalised_market_price_dataframe(load)
+    if dataframe.is_empty() or column not in dataframe.columns:
+        return (all_label,)
+
+    values = sorted(
+        str(value)
+        for value in dataframe.get_column(column)
+        .drop_nulls()
+        .cast(pl.String, strict=False)
+        .unique()
+        .to_list()
+        if value is not None
+    )
+    return (all_label, *values)
+
+
+def _filtered_market_price_dataframe(
+    load: GasTableLoad | None,
+    price_type_filter: str,
+    source_system_filter: str,
+    source_table_filter: str,
+) -> pl.DataFrame:
+    dataframe = _normalised_market_price_dataframe(load)
+    if dataframe.is_empty():
+        return dataframe
+
+    filtered = dataframe
+    if price_type_filter != MARKET_PRICE_PRICE_TYPE_FILTER_ALL:
+        filtered = filtered.filter(pl.col("price_type") == price_type_filter)
+    if source_system_filter != MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_system") == source_system_filter)
+    if source_table_filter != MARKET_PRICE_SOURCE_TABLE_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_table") == source_table_filter)
+    return filtered
+
+
+def _normalised_market_price_dataframe(load: GasTableLoad | None) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_MARKET_PRICE_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _MARKET_PRICE_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        pl.col("source_table").cast(pl.String, strict=False),
+        _normalise_date_column(dataframe, "gas_date"),
+        pl.col("price_type").cast(pl.String, strict=False),
+        pl.col("schedule_type_id").cast(pl.String, strict=False),
+        pl.col("schedule_interval").cast(pl.String, strict=False),
+        pl.col("transmission_id").cast(pl.String, strict=False),
+        pl.col("transmission_doc_id").cast(pl.String, strict=False),
+        pl.col("source_location_id").cast(pl.String, strict=False),
+        pl.col("price_value_gst_ex").cast(pl.Float64, strict=False),
+        pl.col("weighted_average_price_gst_ex").cast(pl.Float64, strict=False),
+        pl.col("cumulative_price").cast(pl.Float64, strict=False),
+        pl.col("administered_price").cast(pl.Float64, strict=False),
+        pl.col("source_last_updated").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "source_last_updated_timestamp"),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
+def _available_market_price_measures(dataframe: pl.DataFrame) -> tuple[str, ...]:
+    return tuple(
+        column
+        for column in MARKET_PRICE_MEASURE_COLUMNS
+        if column in dataframe.columns
+        and not dataframe.get_column(column).drop_nulls().is_empty()
+    )
+
+
+def _market_price_measure_count_expressions() -> tuple[pl.Expr, ...]:
+    return tuple(
+        pl.col(column).is_not_null().sum().alias(f"_{column}_rows")
+        for column in MARKET_PRICE_MEASURE_COLUMNS
+    )
+
+
+def _market_price_measure_count_label_expression() -> pl.Expr:
+    return (
+        pl.struct(
+            [pl.col(f"_{column}_rows") for column in MARKET_PRICE_MEASURE_COLUMNS]
+        )
+        .map_elements(
+            _format_market_price_measure_counts,
+            return_dtype=pl.String,
+        )
+        .alias("available price measures")
+    )
+
+
+def _market_price_measure_value_label_expression() -> pl.Expr:
+    return (
+        pl.struct([pl.col(column) for column in MARKET_PRICE_MEASURE_COLUMNS])
+        .map_elements(
+            _format_market_price_measure_values,
+            return_dtype=pl.String,
+        )
+        .alias("available price measures")
+    )
+
+
+def _format_market_price_measure_counts(values: Mapping[str, object]) -> str:
+    measures = tuple(
+        column
+        for column in MARKET_PRICE_MEASURE_COLUMNS
+        if _is_positive_count(values.get(f"_{column}_rows"))
+    )
+    return _format_market_price_measure_names(measures)
+
+
+def _format_market_price_measure_values(values: Mapping[str, object]) -> str:
+    measures = tuple(
+        column
+        for column in MARKET_PRICE_MEASURE_COLUMNS
+        if values.get(column) is not None
+    )
+    return _format_market_price_measure_names(measures)
+
+
+def _format_market_price_measure_names(measures: Sequence[str]) -> str:
+    if len(measures) == 0:
+        return "none"
+    return ", ".join(measures)
+
+
+def _is_positive_count(value: object) -> bool:
+    return isinstance(value, int | float) and value > 0
+
+
+def _render_market_price_context_link(entry: DashboardRegistryEntry) -> str:
+    status_label = _dashboard_entry_status_label(entry)
+    title = escape(entry.title)
+    route = entry.notebook_route
+    if entry.status.value == "available" and route is not None:
+        title_html = f'<a href="{escape(route, quote=True)}">{title}</a>'
+    else:
+        title_html = f"<span>{title}</span>"
+
+    return f"""\
+        <li data-dashboard-status="{escape(entry.status.value, quote=True)}">
+            {title_html}
+            <span>{escape(status_label)}</span>
+            <code>{escape(entry.concept_id)}</code>
+        </li>"""
+
+
+def _dashboard_entry_status_label(entry: DashboardRegistryEntry) -> str:
+    if entry.status.value == "available" and entry.notebook_route is not None:
+        return "Available dashboard"
+    if entry.status.value == "planned":
+        return "Planned dashboard"
+    return "Unavailable dashboard"
+
+
+def _market_price_context_links_css() -> str:
+    return """\
+.market-price-links {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+}
+
+.market-price-links__eyebrow {
+    margin: 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.74rem;
+    font-weight: 720;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.market-price-links h2 {
+    margin: 0.15rem 0 0;
+    font-size: 1.05rem;
+}
+
+.market-price-links ul {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.market-price-links li {
+    display: grid;
+    grid-template-columns: minmax(10rem, 1fr) auto auto;
+    gap: 0.65rem;
+    align-items: center;
+    min-width: 0;
+    padding: 0.55rem 0;
+    border-top: 1px solid var(--emdl-line, #cfdbd6);
+}
+
+.market-price-links li:first-child {
+    border-top: 0;
+}
+
+.market-price-links a {
+    color: var(--emdl-blue, #166791);
+    font-weight: 720;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+}
+
+.market-price-links span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.market-price-links li > span:nth-child(2) {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.market-price-links code {
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+    .market-price-links li {
+        grid-template-columns: 1fr;
+    }
+}
+"""
 
 
 def _gas_quality_string_filter_options(

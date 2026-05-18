@@ -138,6 +138,27 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
     },
     {
+        "concept_id": "gas-market-prices",
+        "title": "Gas Market Prices",
+        "description": (
+            "Available analytical dashboard for gas market price types, source "
+            "systems, source tables, latest gas dates, available price measures, "
+            "and Schedule context links from the curated market price fact."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "gas_market_prices",
+        "backing_assets": ("silver.gas_model.silver_gas_fact_market_price",),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md",
+        ),
+        "source_chunk_ids": (
+            "chunk-sttm-procedures-spa-requirements",
+            "chunk-sttm-procedures-spa-outputs",
+            "chunk-dwgm-operations-glossary-schedule",
+        ),
+    },
+    {
         "concept_id": "gbb-interactive-map",
         "title": "GBB Interactive Map",
         "description": (

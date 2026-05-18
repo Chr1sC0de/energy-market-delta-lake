@@ -13,6 +13,7 @@ from marimoserver.data_readiness import (
 )
 from marimoserver.gas_dashboard import (
     GAS_QUALITY_TABLE_SPEC,
+    MARKET_PRICE_TABLE_SPEC,
     GasTableSpec,
     SYSTEM_NOTICE_TABLE_SPEC,
     discover_dashboard_config,
@@ -21,7 +22,9 @@ from marimoserver.gas_dashboard import (
     gas_table_load_status_message,
     load_gas_quality_table,
     load_gas_model_tables,
+    load_market_price_table,
     load_system_notice_table,
+    market_price_empty_state_markdown,
     render_dashboard_context_panel,
     system_notice_empty_state_markdown,
 )
@@ -150,6 +153,34 @@ def test_gas_market_dashboard_bounded_loader_renders_empty_state() -> None:
     assert "Bounded preview reads are capped at `3` rows per table" in message
     assert status.row(0, named=True)["status"] == "Empty"
     assert status.row(0, named=True)["row limit"] == "Bounded preview: 3 rows max"
+
+
+def test_market_prices_dashboard_bounded_loader_renders_empty_state() -> None:
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "7",
+        }
+    )
+    captured_row_limits: list[int | None] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        captured_row_limits.append(row_limit)
+        return pl.DataFrame()
+
+    load = load_market_price_table(config, reader=reader)
+    empty_markdown = market_price_empty_state_markdown(load)
+
+    assert captured_row_limits == [7]
+    assert load.spec == MARKET_PRICE_TABLE_SPEC
+    assert not load.available
+    assert "No market price data is available" in empty_markdown
+    assert "Bounded preview reads are capped at `7` rows per table" in empty_markdown
 
 
 def test_system_notices_dashboard_bounded_loader_renders_empty_state() -> None:

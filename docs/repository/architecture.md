@@ -260,6 +260,7 @@ Gas market knowledge base responsibility:
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
+  - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
 - `sync.scope`: `architecture`
 - `sync.qa`:

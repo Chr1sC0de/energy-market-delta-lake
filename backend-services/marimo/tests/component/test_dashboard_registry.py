@@ -33,6 +33,17 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert "silver.gas_model.silver_gas_fact_market_price" in overview.backing_assets
     assert missing is None
 
+    prices = registry_entry_by_concept_id("gas-market-prices", entries)
+    assert prices is not None
+    assert prices.status is DashboardStatus.AVAILABLE
+    assert prices.notebook_name == "gas_market_prices"
+    assert prices.notebook_route == "/marimo/gas_market_prices/"
+    assert prices.backing_assets == ("silver.gas_model.silver_gas_fact_market_price",)
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md"
+        in prices.generated_gold_paths
+    )
+
     readiness = registry_entry_by_concept_id("data-readiness-overview", entries)
     assert readiness is not None
     assert readiness.status is DashboardStatus.AVAILABLE

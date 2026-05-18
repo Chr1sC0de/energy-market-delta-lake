@@ -97,6 +97,12 @@ the shared bounded loader and session cache, then filters and summarizes loaded
 notice rows without changing system notice ETL, ingestion, alerting, or AWS
 infrastructure.
 
+The market prices dashboard stays inside the same boundary. It reads the
+curated `silver.gas_model.silver_gas_fact_market_price` Parquet output through
+the shared bounded loader and session cache, then filters and summarizes loaded
+price rows without changing market price ETL, source ingestion, pricing
+semantics, or asset schemas.
+
 The gas quality and composition dashboard stays inside the same boundary. It
 reads the curated `silver.gas_model.silver_gas_fact_gas_quality` Parquet output
 through the shared bounded loader and session cache, then filters and
@@ -132,6 +138,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
+  - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/marimo/tests/component/test_dashboard_registry.py`
   - `backend-services/marimo/tests/component/test_main.py`

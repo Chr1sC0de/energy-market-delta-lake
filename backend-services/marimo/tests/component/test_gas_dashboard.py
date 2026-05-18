@@ -13,6 +13,11 @@ from marimoserver.gas_dashboard import (
     GAS_QUALITY_SOURCE_POINT_FILTER_ALL,
     GAS_QUALITY_TABLE_NAME,
     GAS_QUALITY_TABLE_SPEC,
+    MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
+    MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
+    MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
+    MARKET_PRICE_TABLE_NAME,
+    MARKET_PRICE_TABLE_SPEC,
     SYSTEM_NOTICE_CRITICAL_FILTER_ALL,
     SYSTEM_NOTICE_CRITICAL_FILTER_CRITICAL,
     SYSTEM_NOTICE_CRITICAL_FILTER_NON_CRITICAL,
@@ -26,6 +31,7 @@ from marimoserver.gas_dashboard import (
     GasTableSpec,
     cached_load_gas_quality_table,
     cached_load_gas_model_tables,
+    cached_load_market_price_table,
     cached_load_system_notice_table,
     discover_dashboard_config,
     gas_quality_empty_state_markdown,
@@ -37,11 +43,21 @@ from marimoserver.gas_dashboard import (
     gas_quality_type_summary_frame,
     gas_table_load_status_frame,
     gas_table_load_status_message,
+    load_market_price_table,
     load_gas_quality_table,
     load_gas_model_tables,
     load_system_notice_table,
+    market_price_empty_state_markdown,
+    market_price_kpi_frame,
+    market_price_observation_frame,
+    market_price_price_type_options,
+    market_price_source_system_options,
+    market_price_source_table_options,
+    market_price_trend_frame,
+    market_price_type_summary_frame,
     read_parquet_table,
     render_dashboard_context_panel,
+    render_market_price_context_links,
     system_notice_empty_state_markdown,
     system_notice_kpi_frame,
     system_notice_source_coverage_frame,
@@ -292,6 +308,326 @@ def test_cached_system_notice_table_loader_reuses_session_cache() -> None:
     assert cached_load.dataframe["source_notice_id"].to_list() == ["notice-1"]
     assert refreshed_load.dataframe is not None
     assert refreshed_load.dataframe["source_notice_id"].to_list() == ["notice-2"]
+
+
+def test_market_price_table_loader_uses_bounded_recent_view() -> None:
+    captured: list[int | None] = []
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "8",
+        }
+    )
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        captured.append(row_limit)
+        assert uri == (
+            "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_fact_market_price"
+        )
+        assert storage_options == config.storage_options()
+        return pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 1), date(2024, 1, 3)],
+                "price_type": ["Older", "Newer"],
+            }
+        )
+
+    load = load_market_price_table(config, reader=reader)
+
+    assert captured == [8]
+    assert load.spec == MARKET_PRICE_TABLE_SPEC
+    assert load.row_limit == 8
+    assert load.dataframe is not None
+    assert load.dataframe["price_type"].to_list() == ["Newer", "Older"]
+
+
+def test_cached_market_price_table_loader_reuses_session_cache() -> None:
+    calls: list[int] = []
+    config = _dashboard_config()
+    cache: GasModelSessionCache = {}
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        calls.append(len(calls) + 1)
+        return pl.DataFrame({"price_type": [f"price-{calls[-1]}"]})
+
+    first_load = cached_load_market_price_table(config, cache, reader=reader)
+    cached_load = cached_load_market_price_table(config, cache, reader=reader)
+    refreshed_load = cached_load_market_price_table(
+        config,
+        cache,
+        reader=reader,
+        refresh_token=1,
+    )
+
+    assert calls == [1, 2]
+    assert not first_load.cache_hit
+    assert cached_load.cache_hit
+    assert not refreshed_load.cache_hit
+    assert cached_load.dataframe is not None
+    assert cached_load.dataframe["price_type"].to_list() == ["price-1"]
+    assert refreshed_load.dataframe is not None
+    assert refreshed_load.dataframe["price_type"].to_list() == ["price-2"]
+
+
+def test_market_price_summaries_filters_and_context_links() -> None:
+    sttm_table = "silver.sttm.silver_int651_v1_ex_ante_market_price_rpt_1"
+    vicgas_table = "silver.vicgas.silver_int042_v4_weighted_average_daily_prices_1"
+    load = _market_price_load(
+        pl.DataFrame(
+            {
+                "gas_date": ["2024-01-02", "2024-01-01", "2024-01-02"],
+                "source_system": ["STTM", "STTM", "VICGAS"],
+                "source_table": [sttm_table, sttm_table, vicgas_table],
+                "price_type": [
+                    "ex_ante_market_price",
+                    "ex_ante_market_price",
+                    "weighted_average_daily",
+                ],
+                "schedule_type_id": ["ex_ante", "ex_ante", None],
+                "schedule_interval": ["1", "2", None],
+                "transmission_id": ["run-2", "run-1", None],
+                "source_location_id": ["SYD", "SYD", "VIC"],
+                "price_value_gst_ex": [12.0, 10.0, None],
+                "weighted_average_price_gst_ex": [None, None, 9.5],
+                "cumulative_price": [None, None, None],
+                "administered_price": [None, 20.0, None],
+                "source_last_updated_timestamp": [
+                    "2024-01-02 06:00:00",
+                    "2024-01-01 06:00:00",
+                    "2024-01-02 05:00:00",
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 2, 8),
+                    datetime(2024, 1, 1, 8),
+                    datetime(2024, 1, 2, 7),
+                ],
+            }
+        )
+    )
+
+    observations = market_price_observation_frame(
+        load,
+        "ex_ante_market_price",
+        "STTM",
+    )
+    kpis = market_price_kpi_frame(load)
+    type_summary = market_price_type_summary_frame(load)
+    trend = market_price_trend_frame(load)
+    context_links = render_market_price_context_links()
+    vicgas_observations = market_price_observation_frame(
+        load,
+        source_table_filter=vicgas_table,
+    )
+
+    assert market_price_price_type_options(load) == (
+        MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
+        "ex_ante_market_price",
+        "weighted_average_daily",
+    )
+    assert market_price_source_system_options(load) == (
+        MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
+        "STTM",
+        "VICGAS",
+    )
+    assert market_price_source_table_options(load) == (
+        MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
+        sttm_table,
+        vicgas_table,
+    )
+    assert observations.select(
+        "gas date",
+        "source system",
+        "source table",
+        "price type",
+        "schedule type",
+        "available price measures",
+        "price_value_gst_ex",
+        "administered_price",
+    ).to_dict(as_series=False) == {
+        "gas date": [date(2024, 1, 2), date(2024, 1, 1)],
+        "source system": ["STTM", "STTM"],
+        "source table": [sttm_table, sttm_table],
+        "price type": ["ex_ante_market_price", "ex_ante_market_price"],
+        "schedule type": ["ex_ante", "ex_ante"],
+        "available price measures": [
+            "price_value_gst_ex",
+            "price_value_gst_ex, administered_price",
+        ],
+        "price_value_gst_ex": [12.0, 10.0],
+        "administered_price": [None, 20.0],
+    }
+    assert kpis.to_dict(as_series=False) == {
+        "metric": [
+            "Loaded price rows",
+            "Price types",
+            "Source systems",
+            "Source tables",
+            "Latest gas date",
+            "Available price measures",
+        ],
+        "value": ["3", "2", "2", "2", "2024-01-02", "3"],
+        "detail": [
+            "Full table scan",
+            "Distinct price_type values in the current view",
+            "Distinct source_system values in the current view",
+            "Distinct source_table values represented",
+            "Maximum gas_date in the loaded bounded rows",
+            ("price_value_gst_ex, weighted_average_price_gst_ex, administered_price"),
+        ],
+    }
+    assert type_summary.select(
+        "source system",
+        "source table",
+        "price type",
+        "observations",
+        "latest gas date",
+        "available price measures",
+        "avg price_value_gst_ex",
+    ).to_dict(as_series=False) == {
+        "source system": ["STTM", "VICGAS"],
+        "source table": [sttm_table, vicgas_table],
+        "price type": ["ex_ante_market_price", "weighted_average_daily"],
+        "observations": [2, 1],
+        "latest gas date": [date(2024, 1, 2), date(2024, 1, 2)],
+        "available price measures": [
+            "price_value_gst_ex, administered_price",
+            "weighted_average_price_gst_ex",
+        ],
+        "avg price_value_gst_ex": [11.0, None],
+    }
+    assert trend.select(
+        "gas date",
+        "source system",
+        "price type",
+        "observations",
+        "available price measures",
+    ).to_dict(as_series=False) == {
+        "gas date": [date(2024, 1, 2), date(2024, 1, 2), date(2024, 1, 1)],
+        "source system": ["STTM", "VICGAS", "STTM"],
+        "price type": [
+            "ex_ante_market_price",
+            "weighted_average_daily",
+            "ex_ante_market_price",
+        ],
+        "observations": [1, 1, 1],
+        "available price measures": [
+            "price_value_gst_ex",
+            "weighted_average_price_gst_ex",
+            "price_value_gst_ex, administered_price",
+        ],
+    }
+    assert vicgas_observations["source table"].to_list() == [vicgas_table]
+    assert 'href="/marimo/gas_market_prices/"' in context_links
+    assert 'href="/marimo/sample_energy_market/"' in context_links
+    assert "Schedule Context" in context_links
+    assert "Planned dashboard" in context_links
+
+
+def test_market_price_helpers_cover_missing_data_and_filter_empty_state() -> None:
+    empty_load = _market_price_load(
+        pl.DataFrame(),
+        row_limit=4,
+    )
+    populated_load = _market_price_load(
+        pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 2)],
+                "source_system": ["STTM"],
+                "source_table": ["silver.sttm.market_price"],
+                "price_type": ["ex_ante_market_price"],
+                "price_value_gst_ex": [12.0],
+            }
+        )
+    )
+    missing_date_load = _market_price_load(
+        pl.DataFrame(
+            {
+                "source_system": ["STTM"],
+                "source_table": ["silver.sttm.market_price"],
+                "price_type": ["ex_ante_market_price"],
+                "price_value_gst_ex": [12.0],
+            }
+        )
+    )
+    no_measure_load = _market_price_load(
+        pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 2)],
+                "source_system": ["STTM"],
+                "source_table": ["silver.sttm.market_price"],
+                "price_type": ["ex_ante_market_price"],
+            }
+        )
+    )
+    error_load = GasTableLoad(
+        spec=MARKET_PRICE_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_market_price",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=4,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+    assert market_price_kpi_frame(empty_load).is_empty()
+    assert market_price_type_summary_frame(empty_load).is_empty()
+    assert market_price_trend_frame(empty_load).is_empty()
+    assert market_price_observation_frame(empty_load).is_empty()
+    assert market_price_price_type_options(empty_load) == (
+        MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
+    )
+    assert market_price_kpi_frame(
+        populated_load,
+        source_system_filter="VICGAS",
+    ).is_empty()
+    assert market_price_kpi_frame(missing_date_load).row(4, named=True) == {
+        "metric": "Latest gas date",
+        "value": "unknown",
+        "detail": "Maximum gas_date in the loaded bounded rows",
+    }
+    assert market_price_kpi_frame(no_measure_load).row(5, named=True) == {
+        "metric": "Available price measures",
+        "value": "0",
+        "detail": "none",
+    }
+
+    empty_markdown = market_price_empty_state_markdown(empty_load)
+    error_markdown = market_price_empty_state_markdown(error_load)
+    filtered_markdown = market_price_empty_state_markdown(populated_load)
+    missing_load_markdown = market_price_empty_state_markdown(None)
+    empty_context_links = render_market_price_context_links(entries=())
+    unmounted_entry = DashboardRegistryEntry(
+        concept_id="gas-market-prices",
+        title="Unmounted Prices",
+        description="Available entry without a mounted notebook route.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.silver_gas_fact_market_price",),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+    unmounted_context_links = render_market_price_context_links(
+        entries=(unmounted_entry,)
+    )
+
+    assert "No market price data is available" in empty_markdown
+    assert "silver.gas_model.silver_gas_fact_market_price" in empty_markdown
+    assert "Bounded preview reads are capped at `4` rows per table" in empty_markdown
+    assert "FileNotFoundError: no parquet files found" in error_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert "did not receive a market price load result" in missing_load_markdown
+    assert "No Market price or Schedule context entries" in empty_context_links
+    assert "Unavailable dashboard" in unmounted_context_links
 
 
 def test_gas_quality_table_loader_uses_bounded_recent_view() -> None:
@@ -1385,6 +1721,22 @@ def _gas_quality_load(
     return GasTableLoad(
         spec=GAS_QUALITY_TABLE_SPEC,
         uri=f"s3://bucket/silver/gas_model/{GAS_QUALITY_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _market_price_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=MARKET_PRICE_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{MARKET_PRICE_TABLE_NAME}",
         dataframe=dataframe,
         error=None,
         row_limit=row_limit,
