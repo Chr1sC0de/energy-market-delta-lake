@@ -84,6 +84,14 @@ runtime. Generated-gold paths and source chunk IDs are copied metadata only. In
 AWS mode this remains read-only, uses the existing dashboard image contents,
 and does not require a Docker build-context change.
 
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py) exposes
+`render_dashboard_context_panel()` for notebooks that need the same registry
+context in-page. The helper renders the concept summary, dashboard usage
+metadata, related concepts, generated-gold paths, source chunk IDs, and backing
+`silver.gas_model` assets from the registry without opening generated gold
+Markdown at runtime. The available roadmap notebooks call it with their
+registry concept IDs near the top of the notebook.
+
 ## Table explorer
 
 [notebooks/table_explorer.py](notebooks/table_explorer.py) discovers configured

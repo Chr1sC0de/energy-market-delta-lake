@@ -10,7 +10,10 @@ def _():
 
     import marimo as mo
 
-    from marimoserver.gas_dashboard import discover_dashboard_config
+    from marimoserver.gas_dashboard import (
+        discover_dashboard_config,
+        render_dashboard_context_panel,
+    )
     from marimoserver.gbb_interactive_map import (
         build_gbb_map_model,
         check_gbb_map_s3_endpoint,
@@ -33,8 +36,29 @@ def _():
         mo,
         normalize_gas_date,
         pipeline_records_frame,
+        render_dashboard_context_panel,
         render_gbb_map_html,
     )
+
+
+@app.cell
+def _(mo, render_dashboard_context_panel):
+    mo.vstack(
+        [
+            mo.md("""
+            # GBB Interactive Map
+
+            **Dashboard brief**: **Dashboard intent**: Operational. Operators
+            and analysts use this dashboard to inspect GBB facility topology,
+            pipeline flow, storage, production, nominations, and capacity
+            outlook inputs. Freshness and availability are reported from the
+            loaded map input tables; unavailable LocalStack data falls back to
+            static topology with diagnostics.
+            """),
+            mo.Html(render_dashboard_context_panel("gbb-interactive-map")),
+        ]
+    )
+    return
 
 
 @app.cell

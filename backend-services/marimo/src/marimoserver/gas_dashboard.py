@@ -2,10 +2,17 @@
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from html import escape
 import os
 
 import polars as pl
 
+from marimoserver.dashboard_registry import (
+    DashboardRegistryEntry,
+    DashboardRegistryError,
+    dashboard_registry,
+    registry_entry_by_concept_id,
+)
 from marimoserver.gas_model_loader import (
     SILVER_GAS_MODEL_PREFIX as SILVER_GAS_MODEL_PREFIX,
     GasModelReadRequest,
@@ -24,6 +31,7 @@ DEFAULT_AWS_SECRET_ACCESS_KEY = "test"
 DEFAULT_AWS_ALLOW_HTTP = "true"
 DEFAULT_AWS_PREVIEW_ROWS = 100
 AWS_DEVELOPMENT_LOCATION = "aws"
+DEFAULT_RELATED_CONTEXT_LIMIT = 6
 
 
 @dataclass(frozen=True)
@@ -327,6 +335,259 @@ def table_load_by_name(
         if load.spec.table_name == table_name:
             return load
     return None
+
+
+def render_dashboard_context_panel(
+    concept_id: str,
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+    related_limit: int = DEFAULT_RELATED_CONTEXT_LIMIT,
+) -> str:
+    """Render a cited Market context panel from the Marimo dashboard registry."""
+    candidate_entries = dashboard_registry() if entries is None else entries
+    entry = registry_entry_by_concept_id(concept_id, candidate_entries)
+    if entry is None:
+        raise DashboardRegistryError(
+            f"dashboard context panel concept not found: {concept_id}"
+        )
+
+    related_entries = _related_context_entries(
+        entry,
+        candidate_entries,
+        related_limit,
+    )
+    notebook_name = entry.notebook_name or ""
+    notebook_route = entry.notebook_route or ""
+
+    return f"""\
+<style>
+{_dashboard_context_panel_css()}
+</style>
+<section
+    class="dashboard-context-panel"
+    aria-labelledby="dashboard-context-title-{escape(entry.concept_id, quote=True)}"
+    data-concept-id="{escape(entry.concept_id, quote=True)}"
+    data-status="{escape(entry.status.value, quote=True)}"
+    data-notebook-name="{escape(notebook_name, quote=True)}"
+    data-notebook-route="{escape(notebook_route, quote=True)}"
+>
+    <div class="context-panel__header">
+        <p class="context-panel__eyebrow">Market context</p>
+        <h2 id="dashboard-context-title-{escape(entry.concept_id, quote=True)}">
+            {escape(entry.title)}
+        </h2>
+        <p>{escape(entry.description)}</p>
+    </div>
+    <dl class="context-panel__metadata" aria-label="Dashboard usage metadata">
+        {_definition_item("Concept ID", entry.concept_id)}
+        {_definition_item("Status", entry.status.value)}
+        {_definition_item("Audiences", ", ".join(audience.value for audience in entry.audiences))}
+        {_definition_item("Notebook", notebook_name or "No notebook recorded")}
+        {_definition_item("Route", notebook_route or "No notebook route recorded")}
+    </dl>
+    <div class="context-panel__grid">
+        {_render_context_list("generated-gold paths", entry.generated_gold_paths)}
+        {_render_context_list("source chunk IDs", entry.source_chunk_ids)}
+        {_render_context_list("backing assets", entry.backing_assets)}
+        {_render_related_context_list(related_entries)}
+    </div>
+</section>"""
+
+
+def _related_context_entries(
+    entry: DashboardRegistryEntry,
+    entries: Sequence[DashboardRegistryEntry],
+    limit: int,
+) -> tuple[DashboardRegistryEntry, ...]:
+    if limit <= 0:
+        return ()
+
+    scored_entries: list[tuple[int, str, DashboardRegistryEntry]] = []
+    entry_gold_paths = set(entry.generated_gold_paths)
+    entry_source_chunks = set(entry.source_chunk_ids)
+    entry_assets = set(entry.backing_assets)
+
+    for candidate in entries:
+        if candidate.concept_id == entry.concept_id:
+            continue
+
+        score = (
+            len(entry_gold_paths & set(candidate.generated_gold_paths)) * 3
+            + len(entry_assets & set(candidate.backing_assets)) * 2
+            + len(entry_source_chunks & set(candidate.source_chunk_ids))
+        )
+        if score == 0:
+            continue
+        scored_entries.append((score, candidate.title, candidate))
+
+    return tuple(
+        candidate
+        for _, _, candidate in sorted(
+            scored_entries,
+            key=lambda scored_entry: (-scored_entry[0], scored_entry[1]),
+        )[:limit]
+    )
+
+
+def _definition_item(label: str, value: str) -> str:
+    return f"""\
+        <div>
+            <dt>{escape(label)}</dt>
+            <dd>{escape(value)}</dd>
+        </div>"""
+
+
+def _render_context_list(title: str, values: Sequence[str]) -> str:
+    if len(values) == 0:
+        body = (
+            '<p class="context-panel__empty">'
+            f"No {escape(title)} recorded in the Marimo registry."
+            "</p>"
+        )
+    else:
+        body = "\n".join(
+            f"                <li><code>{escape(value)}</code></li>" for value in values
+        )
+        body = f"<ul>\n{body}\n            </ul>"
+
+    return f"""\
+        <section class="context-panel__section">
+            <h3>{escape(title)}</h3>
+            {body}
+        </section>"""
+
+
+def _render_related_context_list(
+    related_entries: Sequence[DashboardRegistryEntry],
+) -> str:
+    if len(related_entries) == 0:
+        body = (
+            '<p class="context-panel__empty">'
+            "No related concepts share generated-gold paths, source chunk IDs, "
+            "or backing assets in the Marimo registry."
+            "</p>"
+        )
+    else:
+        rows = "\n".join(
+            f"""\
+                <li>
+                    <span>{escape(entry.title)}</span>
+                    <code>{escape(entry.concept_id)}</code>
+                </li>"""
+            for entry in related_entries
+        )
+        body = f"<ul>\n{rows}\n            </ul>"
+
+    return f"""\
+        <section class="context-panel__section">
+            <h3>related concepts</h3>
+            {body}
+        </section>"""
+
+
+def _dashboard_context_panel_css() -> str:
+    return """\
+.dashboard-context-panel {
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    padding: 1rem;
+    background: var(--emdl-panel, #ffffff);
+    color: var(--emdl-ink, #1b2324);
+}
+
+.context-panel__header {
+    display: grid;
+    gap: 0.35rem;
+    margin-bottom: 0.9rem;
+}
+
+.context-panel__eyebrow {
+    margin: 0;
+    color: var(--emdl-green, #3e7a54);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.context-panel__header h2,
+.context-panel__section h3 {
+    margin: 0;
+    color: var(--emdl-slate, #354348);
+}
+
+.context-panel__header h2 {
+    font-size: 1.25rem;
+}
+
+.context-panel__header p,
+.context-panel__empty {
+    margin: 0;
+    color: var(--emdl-muted, #566365);
+}
+
+.context-panel__metadata {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: 0.7rem;
+    margin-bottom: 1rem;
+}
+
+.context-panel__metadata div {
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 6px;
+    padding: 0.55rem 0.65rem;
+    background: var(--emdl-service-band, #eef4f1);
+}
+
+.context-panel__metadata dt {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.context-panel__metadata dd {
+    margin: 0.2rem 0 0;
+    overflow-wrap: anywhere;
+}
+
+.context-panel__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    gap: 0.85rem;
+}
+
+.context-panel__section {
+    min-width: 0;
+}
+
+.context-panel__section h3 {
+    margin-bottom: 0.4rem;
+    font-size: 0.95rem;
+    text-transform: capitalize;
+}
+
+.context-panel__section ul {
+    display: grid;
+    gap: 0.35rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.context-panel__section li {
+    display: grid;
+    gap: 0.2rem;
+    min-width: 0;
+    border-left: 3px solid var(--emdl-blue, #166791);
+    padding: 0.35rem 0 0.35rem 0.55rem;
+    background: rgb(var(--emdl-line-rgb, 207 219 214) / 0.24);
+}
+
+.context-panel__section code {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}"""
 
 
 def _setting(environ: Mapping[str, str], name: str, default: str) -> str:

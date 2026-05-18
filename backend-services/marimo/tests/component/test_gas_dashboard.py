@@ -13,7 +13,14 @@ from marimoserver.gas_dashboard import (
     discover_dashboard_config,
     load_gas_model_tables,
     read_parquet_table,
+    render_dashboard_context_panel,
     table_load_by_name,
+)
+from marimoserver.dashboard_registry import (
+    DashboardAudience,
+    DashboardRegistryEntry,
+    DashboardRegistryError,
+    DashboardStatus,
 )
 from marimoserver.gas_model_loader import (
     GasModelReadRequest,
@@ -415,6 +422,63 @@ def test_table_load_by_name_returns_matching_load() -> None:
 
     assert table_load_by_name(loads, "schedules") == loads[1]
     assert table_load_by_name(loads, "missing") is None
+
+
+def test_render_dashboard_context_panel_covers_complete_concept() -> None:
+    html = render_dashboard_context_panel("gas-market-overview")
+    no_related_html = render_dashboard_context_panel(
+        "gas-market-overview",
+        related_limit=0,
+    )
+
+    assert "Gas Market Overview" in html
+    assert "generated-gold paths" in html
+    assert "source chunk IDs" in html
+    assert "backing assets" in html
+    assert "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md" in html
+    assert "chunk-gbb-guide-gas-day" in html
+    assert "silver.gas_model.silver_gas_fact_market_price" in html
+    assert "Gas Day Context" in html
+    assert "No related concepts share generated-gold paths" in no_related_html
+
+
+def test_render_dashboard_context_panel_handles_missing_optional_fields() -> None:
+    entry = DashboardRegistryEntry(
+        concept_id="minimal-context",
+        title="Minimal Context",
+        description="Registry entry with only required context metadata.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.PLANNED,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.minimal_table",),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+
+    html = render_dashboard_context_panel("minimal-context", entries=(entry,))
+
+    assert "Minimal Context" in html
+    assert "No generated-gold paths recorded in the Marimo registry." in html
+    assert "No source chunk IDs recorded in the Marimo registry." in html
+    assert "No notebook route recorded" in html
+    assert "silver.gas_model.minimal_table" in html
+
+
+def test_render_dashboard_context_panel_includes_dashboard_usage_metadata() -> None:
+    html = render_dashboard_context_panel("gbb-interactive-map")
+
+    assert 'data-concept-id="gbb-interactive-map"' in html
+    assert 'data-status="available"' in html
+    assert 'data-notebook-name="gbb_interactive_map"' in html
+    assert 'data-notebook-route="/marimo/gbb_interactive_map/"' in html
+    assert "<dt>Audiences</dt>" in html
+    assert "operator, analyst, stakeholder" in html
+    assert "/marimo/gbb_interactive_map/" in html
+
+
+def test_render_dashboard_context_panel_rejects_unknown_concept() -> None:
+    with pytest.raises(DashboardRegistryError, match="concept not found"):
+        render_dashboard_context_panel("missing-context")
 
 
 def _dashboard_config() -> GasDashboardConfig:

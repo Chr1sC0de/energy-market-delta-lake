@@ -12,6 +12,7 @@ def _():
     from marimoserver.gas_dashboard import (
         discover_dashboard_config,
         load_gas_model_tables,
+        render_dashboard_context_panel,
         table_load_by_name,
     )
 
@@ -20,18 +21,28 @@ def _():
         load_gas_model_tables,
         mo,
         pl,
+        render_dashboard_context_panel,
         table_load_by_name,
     )
 
 
 @app.cell
-def _(mo):
-    mo.md("""
-    # Local Gas Market Overview
+def _(mo, render_dashboard_context_panel):
+    mo.vstack(
+        [
+            mo.md("""
+            # Local Gas Market Overview
 
-    Dashboard over curated `silver.gas_model` outputs in the configured
-    AEMO bucket.
-    """)
+            **Dashboard brief**: **Dashboard intent**: Operational. Operators
+            and analysts use this dashboard to inspect curated gas market
+            prices, schedules, flow, capacity, and source coverage from
+            configured `silver.gas_model` tables. Freshness and row coverage
+            come from loaded table metadata; empty or missing LocalStack inputs
+            are shown as designed unavailable states.
+            """),
+            mo.Html(render_dashboard_context_panel("gas-market-overview")),
+        ]
+    )
     return
 
 
