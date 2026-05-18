@@ -6,6 +6,11 @@ import polars as pl
 import pytest
 
 from marimoserver.dashboard_registry import DashboardStatus
+from marimoserver.data_readiness import (
+    ReadinessState,
+    build_data_readiness_overview,
+    readiness_action_markdown,
+)
 from marimoserver.gas_dashboard import (
     GasTableSpec,
     discover_dashboard_config,
@@ -24,9 +29,12 @@ from marimoserver.table_explorer import (
     TableFormat,
     TablePrefix,
     TableQuery,
+    BucketStatus,
+    StorageDiscovery,
     discover_table_explorer_config,
     explore_table_scan,
 )
+from marimoserver.dagster_graphql import DagsterAssetCatalogue
 from tests.component.dashboard_smoke_harness import (
     CURATED_NOTEBOOKS_DIR,
     DashboardSmokeTarget,
@@ -192,3 +200,37 @@ def test_table_explorer_bounded_loader_renders_empty_scan(
     assert exploration.available
     assert exploration.preview.is_empty()
     assert exploration.row_count == 0
+
+
+def test_data_readiness_dashboard_renders_actionable_empty_states() -> None:
+    config = discover_table_explorer_config({})
+    discovery = StorageDiscovery(
+        buckets=(
+            BucketStatus(
+                name="dev-energy-market-aemo",
+                is_default=True,
+                discovered=False,
+                reachable=True,
+                object_count=0,
+                table_count=0,
+                truncated=False,
+                error=None,
+            ),
+        ),
+        tables=(),
+        bucket_listing_error=None,
+    )
+    catalogue = DagsterAssetCatalogue(
+        url="http://dagster/graphql",
+        assets=(),
+        error="connection refused",
+    )
+
+    overview = build_data_readiness_overview(config, discovery, catalogue, ())
+    action_markdown = readiness_action_markdown(overview)
+
+    assert overview.cards[0].state is ReadinessState.EMPTY
+    assert overview.cards[1].state is ReadinessState.EMPTY
+    assert overview.cards[2].state is ReadinessState.UNAVAILABLE
+    assert "Seed LocalStack or materialize" in action_markdown
+    assert "DAGSTER_GRAPHQL_URL" in action_markdown

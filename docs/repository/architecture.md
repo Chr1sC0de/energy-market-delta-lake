@@ -126,9 +126,11 @@ The `marimo-dashboard` service is also deployed by Pulumi as a private EC2
 instance behind Caddy, but `marimo-codex-workspace` remains local-only. The
 deployed dashboard serves curated notebooks through Caddy, reads the private
 guest Dagster GraphQL endpoint, and has read-only access to curated AEMO and
-IO-manager buckets. The Marimo-Codex workspace is bound to localhost for
-human-operated research and issue-draft preparation. Deployed Codex execution
-remains deferred pending security review. The optional
+IO-manager buckets. Its data readiness overview gives platform operators a
+first-stop check over those read-only S3 and Dagster GraphQL surfaces. The
+Marimo-Codex workspace is bound to localhost for human-operated research and
+issue-draft preparation. Deployed Codex execution remains deferred pending
+security review. The optional
 Archive seed loader is also local-only: it can load a cached seed under
 `backend-services/.e2e/aemo-etl` into LocalStack during local compose startup.
 Strict seed-before-Dagster gating belongs to the isolated **End-to-end test**
@@ -247,7 +249,9 @@ Gas market knowledge base responsibility:
   - `backend-services/caddy/public/theme.css`
   - `backend-services/marimo/src/marimoserver/main.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
+  - `backend-services/marimo/src/marimoserver/data_readiness.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
+  - `backend-services/marimo/notebooks/data_readiness_overview.py`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`

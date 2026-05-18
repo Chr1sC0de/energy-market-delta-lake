@@ -7,6 +7,7 @@ import pytest
 from marimoserver.dashboard_registry import (
     DASHBOARD_REGISTRY_RECORDS,
     ROADMAP_AUDIENCES,
+    DashboardAudience,
     DashboardRegistryError,
     DashboardStatus,
     dashboard_registry,
@@ -31,6 +32,15 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert overview.notebook_route == "/marimo/sample_energy_market/"
     assert "silver.gas_model.silver_gas_fact_market_price" in overview.backing_assets
     assert missing is None
+
+    readiness = registry_entry_by_concept_id("data-readiness-overview", entries)
+    assert readiness is not None
+    assert readiness.status is DashboardStatus.AVAILABLE
+    assert readiness.notebook_name == "data_readiness_overview"
+    assert readiness.notebook_route == "/marimo/data_readiness_overview/"
+    assert DashboardAudience.PLATFORM_OPERATIONS in readiness.audiences
+    assert DashboardAudience.OPERATOR in readiness.audiences
+    assert DashboardAudience.DATA_ENGINEER in readiness.audiences
 
 
 def test_dashboard_registry_payload_includes_required_fields() -> None:

@@ -81,6 +81,12 @@ The dashboard registry and concept gallery are part of the existing Marimo
 image contents. Adding or updating registry metadata does not require a
 separate Docker build context and does not add AWS write paths.
 
+The data readiness overview remains within that read-only dashboard boundary.
+It reuses the existing S3 discovery, Dagster GraphQL catalogue, and bounded-read
+helper surfaces to show platform operations readiness without changing Dagster
+asset definitions, ETL materialization behavior, LocalStack setup, or AWS
+infrastructure.
+
 Static asset optimization stays limited to immutable HTTP caching for
 content-hashed Marimo package assets. Extra preload changes, pre-serving
 packaged WASM, and auto-refresh timer behavior remain deferred until route or
@@ -103,10 +109,14 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
   - `backend-services/marimo/src/marimoserver/gas_model_loader.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
+  - `backend-services/marimo/src/marimoserver/data_readiness.py`
   - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
+  - `backend-services/marimo/notebooks/data_readiness_overview.py`
+  - `backend-services/marimo/tests/component/test_dashboard_registry.py`
   - `backend-services/marimo/tests/component/test_main.py`
   - `backend-services/marimo/tests/component/test_local_image_split.py`
+  - `backend-services/marimo/tests/component/test_data_readiness.py`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`

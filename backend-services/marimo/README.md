@@ -11,6 +11,7 @@ Marimo-Codex research workspace image.
 - [Image split](#image-split)
 - [Dashboard standard](#dashboard-standard)
 - [Dashboard registry](#dashboard-registry)
+- [Data readiness overview](#data-readiness-overview)
 - [Table explorer](#table-explorer)
 - [Gas market dashboard](#gas-market-dashboard)
 - [GBB interactive map](#gbb-interactive-map)
@@ -122,6 +123,28 @@ metadata, related concepts, generated-gold paths, source chunk IDs, and backing
 `silver.gas_model` assets from the registry without opening generated gold
 Markdown at runtime. The available roadmap notebooks call it with their
 registry concept IDs near the top of the notebook.
+
+## Data readiness overview
+
+[notebooks/data_readiness_overview.py](notebooks/data_readiness_overview.py)
+is the platform operations first-stop dashboard. It reuses the table explorer
+helpers instead of adding new data access paths:
+
+- configured S3 bucket discovery and bucket health from
+  [src/marimoserver/table_explorer.py](src/marimoserver/table_explorer.py)
+- discovered Delta and Parquet table prefixes
+- Dagster GraphQL table asset catalogue status and latest materialization
+  timestamps from
+  [src/marimoserver/dagster_graphql.py](src/marimoserver/dagster_graphql.py)
+- bounded-read policy from the shared gas model loader
+
+The notebook does not preview table contents. It summarizes readiness cards,
+bucket-level actions, table catalogue status counts, and Dagster
+materialization freshness. Missing LocalStack or AWS data, unavailable Dagster
+GraphQL, and bounded AWS preview mode render as empty or degraded dashboard
+states with operator actions rather than notebook tracebacks. Use the Gas Model
+Table Explorer when a readiness row needs schema, rows, column metadata, or a
+bounded storage preview.
 
 ## Table explorer
 
@@ -287,8 +310,8 @@ The implementation also accepts `MARIMO_NOTEBOOKS_DIR` if you need to point the
 server at a different notebook directory.
 
 With the local backend stack running, open the Marimo concept gallery through
-Caddy and choose an available card such as `table_explorer`,
-`sample_energy_market`, or `gbb_interactive_map`:
+Caddy and choose an available card such as `data_readiness_overview`,
+`table_explorer`, `sample_energy_market`, or `gbb_interactive_map`:
 
 ```text
 http://localhost/marimo
@@ -315,6 +338,13 @@ Use the same pattern for the local table explorer:
 ```bash
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/table_explorer.py
+```
+
+Use the same pattern for the data readiness overview:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/data_readiness_overview.py
 ```
 
 Use the same pattern for the GBB interactive map:
@@ -402,15 +432,19 @@ prek run -a
   - `backend-services/marimo/src/marimoserver/gbb_interactive_map.py`
   - `backend-services/marimo/src/marimoserver/dagster_graphql.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
+  - `backend-services/marimo/src/marimoserver/data_readiness.py`
   - `backend-services/marimo/notebooks/head.html`
   - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/marimo/notebooks/gbb_interactive_map.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
+  - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/tests/component/conftest.py`
+  - `backend-services/marimo/tests/component/test_dashboard_registry.py`
   - `backend-services/marimo/tests/component/test_main.py`
   - `backend-services/marimo/tests/component/test_local_image_split.py`
   - `backend-services/marimo/tests/component/dashboard_smoke_harness.py`
   - `backend-services/marimo/tests/component/test_dashboard_smoke.py`
+  - `backend-services/marimo/tests/component/test_data_readiness.py`
   - `backend-services/compose.yaml`
   - `backend-services/caddy/Caddyfile`
   - `backend-services/caddy/public/theme.css`

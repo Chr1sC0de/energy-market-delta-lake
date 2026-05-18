@@ -249,6 +249,7 @@ class TestNotebooksDir:
             "sample_energy_market",
             "gbb_interactive_map",
             "table_explorer",
+            "data_readiness_overview",
             "test_notebook",
         ):
             assert (NOTEBOOKS_DIR / f"{name}.py").is_file()
@@ -262,9 +263,12 @@ class TestNotebooksDir:
 class TestAppDiscovery:
     def test_app_names_contains_registry_notebooks(self) -> None:
         """Registry-backed notebooks should be discovered and added to app_names."""
-        assert {"sample_energy_market", "gbb_interactive_map", "table_explorer"} <= set(
-            app_names
-        )
+        assert {
+            "sample_energy_market",
+            "gbb_interactive_map",
+            "table_explorer",
+            "data_readiness_overview",
+        } <= set(app_names)
 
 
 # ---------------------------------------------------------------------------

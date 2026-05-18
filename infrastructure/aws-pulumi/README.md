@@ -206,9 +206,10 @@ Key deployed behaviors visible in the infrastructure code:
   reads, exposes `/marimo/health` and Marimo packaged asset routes through
   Caddy, serves the registry-backed `/marimo` concept gallery, returns
   immutable cache headers for content-hashed `/marimo/<notebook>/assets/*`
-  responses, and loads bounded table previews instead of full table scans, with
-  explicit refresh, session cache keys, load timing, and row-limit messages for
-  shared gas-model dashboard reads
+  responses, exposes the data readiness overview for platform operations, and
+  loads bounded table previews instead of full table scans, with explicit
+  refresh, session cache keys, load timing, and row-limit messages for shared
+  gas-model dashboard reads
 - An issue #126 **Exploratory delivery** path can add EC2-backed run-worker
   capacity behind explicit Pulumi config, but the default runtime remains
   Fargate/Fargate Spot
@@ -420,8 +421,10 @@ system's services and Dagster workflows.
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
   - `backend-services/marimo/src/marimoserver/gas_model_loader.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
+  - `backend-services/marimo/src/marimoserver/data_readiness.py`
   - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
+  - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/caddy/Caddyfile`
   - `infrastructure/aws-pulumi/.pre-commit-config.yaml`
   - `infrastructure/aws-pulumi/pyproject.toml`

@@ -302,12 +302,14 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   so table previews are bounded and use the instance profile instead of static
   AWS credentials. Curated gas-model dashboard reads use explicit refresh,
   session-level cache keys, load timing, and row-limit messages rather than
-  auto-refresh timers. Its `/marimo` entry route renders the registry-backed
-  concept gallery; available cards link to mounted notebooks and planned cards
-  remain non-link roadmap entries. Marimo packaged assets stay on
-  `/marimo/<notebook>/assets/*` routes, pass through Caddy to the dashboard, and
-  return immutable cache headers when the FastAPI wrapper serves them
-  successfully.
+  auto-refresh timers. The data readiness overview uses the same read-only S3
+  and Dagster GraphQL helper surfaces to summarize platform operations
+  readiness without adding AWS write paths. Its `/marimo` entry route renders
+  the registry-backed concept gallery; available cards link to mounted
+  notebooks and planned cards remain non-link roadmap entries. Marimo packaged
+  assets stay on `/marimo/<notebook>/assets/*` routes, pass through Caddy to
+  the dashboard, and return immutable cache headers when the FastAPI wrapper
+  serves them successfully.
 - The user-code task receives `DAGSTER_FAILURE_ALERT_TOPIC_ARN` from Pulumi
   secret config and `DAGSTER_FAILURE_ALERT_BASE_URL` from public site config so
   the AEMO ETL failure sensor can publish alerts to a manually managed AWS SNS
@@ -339,8 +341,10 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
   - `backend-services/marimo/src/marimoserver/gas_model_loader.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
+  - `backend-services/marimo/src/marimoserver/data_readiness.py`
   - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
+  - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/caddy/Dockerfile`
   - `backend-services/caddy/package.json`
   - `backend-services/caddy/src/pages/index.astro`

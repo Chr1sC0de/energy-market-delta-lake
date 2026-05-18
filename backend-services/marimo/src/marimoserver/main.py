@@ -179,6 +179,7 @@ _INDEX_CSS = """
         }
 
         #audience-all:checked ~ .filter-controls label[for="audience-all"],
+        #audience-platform-operations:checked ~ .filter-controls label[for="audience-platform-operations"],
         #audience-operator:checked ~ .filter-controls label[for="audience-operator"],
         #audience-analyst:checked ~ .filter-controls label[for="audience-analyst"],
         #audience-stakeholder:checked ~ .filter-controls label[for="audience-stakeholder"],
@@ -188,6 +189,7 @@ _INDEX_CSS = """
             background: var(--emdl-blue, #166791);
         }
 
+        #audience-platform-operations:checked ~ .dashboard-grid .dashboard-card:not(.audience-platform-operations),
         #audience-operator:checked ~ .dashboard-grid .dashboard-card:not(.audience-operator),
         #audience-analyst:checked ~ .dashboard-grid .dashboard-card:not(.audience-analyst),
         #audience-stakeholder:checked ~ .dashboard-grid .dashboard-card:not(.audience-stakeholder),

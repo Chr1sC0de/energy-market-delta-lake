@@ -20,6 +20,7 @@ class DashboardStatus(StrEnum):
 class DashboardAudience(StrEnum):
     """Roadmap audience tags used by the Marimo concept gallery."""
 
+    PLATFORM_OPERATIONS = "platform-operations"
     OPERATOR = "operator"
     ANALYST = "analyst"
     STAKEHOLDER = "stakeholder"
@@ -27,6 +28,7 @@ class DashboardAudience(StrEnum):
 
 
 ROADMAP_AUDIENCES: tuple[DashboardAudience, ...] = (
+    DashboardAudience.PLATFORM_OPERATIONS,
     DashboardAudience.OPERATOR,
     DashboardAudience.ANALYST,
     DashboardAudience.STAKEHOLDER,
@@ -194,6 +196,29 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "generated_gold_paths": (
             "tools/gas-market-knowledge-base/generated/gold/README.md",
         ),
+        "source_chunk_ids": (),
+    },
+    {
+        "concept_id": "data-readiness-overview",
+        "title": "Data Readiness Overview",
+        "description": (
+            "Available platform operations dashboard for configured S3 buckets, "
+            "discovered table prefixes, Dagster catalogue status, "
+            "materialization freshness, and bounded-read policy."
+        ),
+        "audiences": ("platform-operations", "operator", "data-engineer"),
+        "status": "available",
+        "notebook_name": "data_readiness_overview",
+        "backing_assets": (
+            "silver.gas_model.silver_gas_dim_date",
+            "silver.gas_model.silver_gas_dim_participant",
+            "silver.gas_model.silver_gas_dim_facility",
+            "silver.gas_model.silver_gas_fact_market_price",
+            "silver.gas_model.silver_gas_fact_schedule_run",
+            "silver.gas_model.silver_gas_fact_connection_point_flow",
+            "silver.gas_model.silver_gas_fact_capacity_outlook",
+        ),
+        "generated_gold_paths": (),
         "source_chunk_ids": (),
     },
     {
