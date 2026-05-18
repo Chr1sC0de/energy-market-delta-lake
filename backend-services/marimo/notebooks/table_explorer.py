@@ -1,7 +1,7 @@
 import marimo
 
 __generated_with = "0.21.1"
-app = marimo.App(width="full")
+app = marimo.App(width="full", html_head_file="head.html")
 
 
 @app.cell
@@ -9,6 +9,8 @@ def _():
     import marimo as mo
     import polars as pl
 
+    from marimoserver.gas_dashboard import render_dashboard_context_panel
+    from marimoserver.gas_model_loader import refresh_token_from_control
     from marimoserver.table_explorer import (
         DEFAULT_ROW_LIMIT,
         TableAvailability,
@@ -43,17 +45,28 @@ def _():
         mo,
         overlay_table_catalogue,
         pl,
+        render_dashboard_context_panel,
+        refresh_token_from_control,
     )
 
 
 @app.cell
-def _(mo):
-    mo.md("""
-    # Table Explorer
+def _(mo, render_dashboard_context_panel):
+    mo.vstack(
+        [
+            mo.md("""
+            # Table Explorer
 
-    Inspect the Dagster table asset catalogue and configured Delta or parquet
-    table prefixes.
-    """)
+            **Dashboard brief**: **Dashboard intent**: Analytical. Data
+            engineers and operators use this dashboard to inspect the Dagster
+            table asset catalogue, configured S3-compatible buckets, and
+            bounded table previews. Freshness comes from Dagster
+            materialization metadata when GraphQL is reachable; unavailable
+            GraphQL or empty storage is shown as degraded but readable state.
+            """),
+            mo.Html(render_dashboard_context_panel("gas-model-table-explorer")),
+        ]
+    )
     return
 
 
@@ -551,6 +564,7 @@ def _(
     cached_table_scan,
     config,
     refresh_scan_button,
+    refresh_token_from_control,
     selected_entry,
     table_scan_cache,
 ):
@@ -559,12 +573,11 @@ def _(
     if selected_entry is None or selected_table is None:
         table_scan = None
     else:
-        refresh_token = 0 if refresh_scan_button is None else refresh_scan_button.value
         table_scan = cached_table_scan(
             selected_table,
             config,
             table_scan_cache,
-            refresh_token=refresh_token,
+            refresh_token=refresh_token_from_control(refresh_scan_button),
         )
 
     return selected_table, table_scan

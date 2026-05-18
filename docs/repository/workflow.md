@@ -203,11 +203,11 @@ after failed checkpointed deployment evidence.
   [backend-services/dagster-user/aemo-etl/README.md](../../backend-services/dagster-user/aemo-etl/README.md)
 - **Gas market knowledge base** command surface and corpus implementation:
   [tools/gas-market-knowledge-base](../../tools/gas-market-knowledge-base/README.md)
-  owns the bronze source manifest command, archive PDF cache fetcher,
-  Docling-based silver document extraction, Docling Hybrid retrieval chunks,
-  silver chunk index validation, gold **Market context** citation validation,
-  seed glossary artifacts, generated-artifact roots, and raw-PDF ignore policy.
-  ADR
+  owns the bronze source manifest command, archive-prefix completeness audit,
+  archive PDF cache fetcher, Docling-based silver document extraction, Docling
+  Hybrid retrieval chunks, silver chunk index validation, gold
+  **Market context** citation validation, seed glossary artifacts,
+  generated-artifact roots, and raw-PDF ignore policy. ADR
   [0010](../adr/0010-gas-market-knowledge-base.md) records the corpus
   architecture for extraction, retrieval chunks, and cited **Market context**
   pages.

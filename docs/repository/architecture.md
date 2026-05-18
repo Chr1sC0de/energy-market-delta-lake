@@ -199,18 +199,19 @@ without making local development performance claims.
 - `backend-services/caddy`
   - provides the reverse-proxy image, root Astro portfolio, and routing rules
 - `backend-services/marimo`
-  - notebook-oriented Subproject with a curated dashboard image used locally
-    and in AWS, plus a local-only Marimo-Codex research workspace image
+  - notebook-oriented Subproject with a registry-backed `/marimo` concept
+    gallery, a curated dashboard image used locally and in AWS, plus a
+    local-only Marimo-Codex research workspace image
 
 Gas market knowledge base responsibility:
 
 - `tools/gas-market-knowledge-base`
   - provides the **Gas market knowledge base** Subproject, including the bronze
-    source manifest command, archive PDF cache fetcher, Docling-based silver
-    document extraction, Docling Hybrid retrieval chunks, silver chunk index
-    validation, gold **Market context** citation validation, seed glossary
-    artifacts, generated text artifact roots, raw-PDF ignore policy, unit tests,
-    and **Commit check** surface. ADR
+    source manifest command, archive-prefix completeness audit, archive PDF
+    cache fetcher, Docling-based silver document extraction, Docling Hybrid
+    retrieval chunks, silver chunk index validation, gold **Market context**
+    citation validation, seed glossary artifacts, generated text artifact roots,
+    raw-PDF ignore policy, unit tests, and **Commit check** surface. ADR
     [0010](../adr/0010-gas-market-knowledge-base.md) records the corpus
     architecture and the generated gold boundary.
 

@@ -4,6 +4,12 @@ from pathlib import Path
 
 import click
 
+from gas_market_knowledge_base.archive_audit import (
+    ArchiveAuditInputError,
+    ArchiveListingReadError,
+    audit_archive_prefix,
+    default_archive_prefix_uri,
+)
 from gas_market_knowledge_base.gold_context import validate_gold_context
 from gas_market_knowledge_base.pdf_cache import (
     PdfCacheInputError,
@@ -105,6 +111,67 @@ def sync_manifest(
         "excluded_without_archive_storage="
         f"{summary.excluded_without_archive_storage_count}"
     )
+
+
+@main.command("audit-archive-prefix")
+@click.option(
+    "--environment",
+    default=DEFAULT_ENVIRONMENT,
+    show_default=True,
+    help="AEMO deployment environment used for the default archive prefix.",
+)
+@click.option(
+    "--archive-prefix",
+    help="Override the source PDF archive prefix S3 URI.",
+)
+@click.option(
+    "--listing-path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help=(
+        "Fixture JSON or JSONL archive listing. When omitted, list the "
+        "archive prefix from S3."
+    ),
+)
+@click.option(
+    "--manifest-path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=default_source_manifest_path(),
+    show_default=True,
+    help="Bronze source manifest JSONL path to audit.",
+)
+def audit_archive_prefix_command(
+    environment: str,
+    archive_prefix: str | None,
+    listing_path: Path | None,
+    manifest_path: Path,
+) -> None:
+    """Audit archive-prefix PDF completeness against the source manifest."""
+    try:
+        effective_archive_prefix = archive_prefix or default_archive_prefix_uri(
+            environment
+        )
+        result = audit_archive_prefix(
+            manifest_path=manifest_path,
+            archive_prefix_uri=effective_archive_prefix,
+            listing_path=listing_path,
+        )
+    except (ArchiveAuditInputError, ArchiveListingReadError) as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1) from e
+
+    summary = result.summary_text()
+    if result.problem_count:
+        click.echo(
+            f"Error: audit-archive-prefix found {result.problem_count} problem(s)",
+            err=True,
+        )
+        for line in result.problem_lines():
+            click.echo(f"- {line}", err=True)
+        click.echo(summary, err=True)
+        raise SystemExit(1)
+
+    click.echo(f"audited archive prefix {result.archive_prefix_uri}")
+    click.echo(summary)
 
 
 @main.command("fetch-pdfs")

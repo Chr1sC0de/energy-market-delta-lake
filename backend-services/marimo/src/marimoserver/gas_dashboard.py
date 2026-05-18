@@ -1,18 +1,34 @@
 """Helpers for the gas market overview marimo dashboard."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass
+from html import escape
 import os
+from time import perf_counter
 
 import polars as pl
 
+from marimoserver.dashboard_registry import (
+    DashboardRegistryEntry,
+    DashboardRegistryError,
+    dashboard_registry,
+    registry_entry_by_concept_id,
+)
 from marimoserver.gas_model_loader import (
     SILVER_GAS_MODEL_PREFIX as SILVER_GAS_MODEL_PREFIX,
+    Clock,
     GasModelReadRequest,
+    GasModelSessionCache,
+    GasModelTableLoad,
     GasModelTableView,
     TableReader,
+    cache_status_label,
+    cached_gas_model_read_requests,
+    format_load_duration,
+    format_row_limit,
     load_gas_model_read_requests,
     read_parquet_table as read_parquet_table,
+    row_limit_message,
 )
 
 DEFAULT_NAME_PREFIX = "energy-market"
@@ -24,6 +40,7 @@ DEFAULT_AWS_SECRET_ACCESS_KEY = "test"
 DEFAULT_AWS_ALLOW_HTTP = "true"
 DEFAULT_AWS_PREVIEW_ROWS = 100
 AWS_DEVELOPMENT_LOCATION = "aws"
+DEFAULT_RELATED_CONTEXT_LIMIT = 6
 
 
 @dataclass(frozen=True)
@@ -87,6 +104,8 @@ class GasTableLoad:
     dataframe: pl.DataFrame | None
     error: str | None
     row_limit: int | None
+    load_duration_seconds: float
+    cache_hit: bool
 
     @property
     def available(self) -> bool:
@@ -294,9 +313,95 @@ def load_gas_model_tables(
     specs: Sequence[GasTableSpec] = GAS_MODEL_TABLES,
     reader: TableReader = read_parquet_table,
     view: GasModelTableView = GasModelTableView.SAMPLE,
+    *,
+    clock: Clock = perf_counter,
 ) -> list[GasTableLoad]:
     """Load configured gas_model tables, returning unavailable entries on errors."""
-    requests = tuple(
+    shared_loads = load_gas_model_read_requests(
+        config,
+        _gas_model_read_requests(specs, view),
+        reader=reader,
+        clock=clock,
+    )
+    return _gas_table_loads(specs, shared_loads)
+
+
+def cached_load_gas_model_tables(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    specs: Sequence[GasTableSpec] = GAS_MODEL_TABLES,
+    reader: TableReader = read_parquet_table,
+    view: GasModelTableView = GasModelTableView.SAMPLE,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Return session-cached gas_model tables for explicit-refresh dashboards."""
+    shared_loads = cached_gas_model_read_requests(
+        config,
+        _gas_model_read_requests(specs, view),
+        cache,
+        reader=reader,
+        refresh_token=refresh_token,
+        clock=clock,
+    )
+    return _gas_table_loads(specs, shared_loads)
+
+
+def gas_table_load_status_frame(loads: Sequence[GasTableLoad]) -> pl.DataFrame:
+    """Return dashboard table-load status with timing and row-limit detail."""
+    return pl.DataFrame(
+        [
+            {
+                "section": load.spec.section,
+                "table": load.spec.table_name,
+                "label": load.spec.label,
+                "status": _table_load_status(load),
+                "rows": 0 if load.dataframe is None else load.dataframe.height,
+                "row limit": format_row_limit(load.row_limit),
+                "load time": format_load_duration(load.load_duration_seconds),
+                "cache": cache_status_label(load.cache_hit),
+                "detail": load.error or "",
+                "uri": load.uri,
+            }
+            for load in loads
+        ]
+    )
+
+
+def gas_table_load_status_message(loads: Sequence[GasTableLoad]) -> str:
+    """Return consistent Markdown status copy for dashboard bounded table reads."""
+    if len(loads) == 0:
+        return "No `silver.gas_model` tables were requested."
+
+    available_count = sum(load.available for load in loads)
+    failed_count = sum(load.error is not None for load in loads)
+    cache_hit_count = sum(load.cache_hit for load in loads)
+    total_duration = sum(load.load_duration_seconds for load in loads)
+    row_limit = _common_row_limit(loads)
+
+    return "\n".join(
+        (
+            f"- Tables available: `{available_count}` of `{len(loads)}`",
+            f"- Read policy: {row_limit_message(row_limit)}",
+            (
+                f"- Load timing: `{format_load_duration(total_duration)}` "
+                f"across `{len(loads)}` table reads"
+            ),
+            (
+                f"- Session cache: `{cache_hit_count}` hits; use **Refresh data** "
+                "after source tables are materialized or reseeded"
+            ),
+            f"- Unavailable tables: `{failed_count}`",
+        )
+    )
+
+
+def _gas_model_read_requests(
+    specs: Sequence[GasTableSpec],
+    view: GasModelTableView,
+) -> tuple[GasModelReadRequest, ...]:
+    return tuple(
         GasModelReadRequest(
             table_name=spec.table_name,
             view=view,
@@ -304,8 +409,12 @@ def load_gas_model_tables(
         )
         for spec in specs
     )
-    shared_loads = load_gas_model_read_requests(config, requests, reader=reader)
 
+
+def _gas_table_loads(
+    specs: Sequence[GasTableSpec],
+    shared_loads: Sequence[GasModelTableLoad],
+) -> list[GasTableLoad]:
     return [
         GasTableLoad(
             spec=spec,
@@ -313,9 +422,26 @@ def load_gas_model_tables(
             dataframe=shared_load.dataframe,
             error=shared_load.error,
             row_limit=shared_load.row_limit,
+            load_duration_seconds=shared_load.load_duration_seconds,
+            cache_hit=shared_load.cache_hit,
         )
         for spec, shared_load in zip(specs, shared_loads, strict=True)
     ]
+
+
+def _table_load_status(load: GasTableLoad) -> str:
+    if load.error is not None:
+        return "Unavailable"
+    if load.available:
+        return "Available"
+    return "Empty"
+
+
+def _common_row_limit(loads: Sequence[GasTableLoad]) -> int | None:
+    row_limits = {load.row_limit for load in loads}
+    if len(row_limits) == 1:
+        return next(iter(row_limits))
+    return min(row_limit for row_limit in row_limits if row_limit is not None)
 
 
 def table_load_by_name(
@@ -327,6 +453,259 @@ def table_load_by_name(
         if load.spec.table_name == table_name:
             return load
     return None
+
+
+def render_dashboard_context_panel(
+    concept_id: str,
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+    related_limit: int = DEFAULT_RELATED_CONTEXT_LIMIT,
+) -> str:
+    """Render a cited Market context panel from the Marimo dashboard registry."""
+    candidate_entries = dashboard_registry() if entries is None else entries
+    entry = registry_entry_by_concept_id(concept_id, candidate_entries)
+    if entry is None:
+        raise DashboardRegistryError(
+            f"dashboard context panel concept not found: {concept_id}"
+        )
+
+    related_entries = _related_context_entries(
+        entry,
+        candidate_entries,
+        related_limit,
+    )
+    notebook_name = entry.notebook_name or ""
+    notebook_route = entry.notebook_route or ""
+
+    return f"""\
+<style>
+{_dashboard_context_panel_css()}
+</style>
+<section
+    class="dashboard-context-panel"
+    aria-labelledby="dashboard-context-title-{escape(entry.concept_id, quote=True)}"
+    data-concept-id="{escape(entry.concept_id, quote=True)}"
+    data-status="{escape(entry.status.value, quote=True)}"
+    data-notebook-name="{escape(notebook_name, quote=True)}"
+    data-notebook-route="{escape(notebook_route, quote=True)}"
+>
+    <div class="context-panel__header">
+        <p class="context-panel__eyebrow">Market context</p>
+        <h2 id="dashboard-context-title-{escape(entry.concept_id, quote=True)}">
+            {escape(entry.title)}
+        </h2>
+        <p>{escape(entry.description)}</p>
+    </div>
+    <dl class="context-panel__metadata" aria-label="Dashboard usage metadata">
+        {_definition_item("Concept ID", entry.concept_id)}
+        {_definition_item("Status", entry.status.value)}
+        {_definition_item("Audiences", ", ".join(audience.value for audience in entry.audiences))}
+        {_definition_item("Notebook", notebook_name or "No notebook recorded")}
+        {_definition_item("Route", notebook_route or "No notebook route recorded")}
+    </dl>
+    <div class="context-panel__grid">
+        {_render_context_list("generated-gold paths", entry.generated_gold_paths)}
+        {_render_context_list("source chunk IDs", entry.source_chunk_ids)}
+        {_render_context_list("backing assets", entry.backing_assets)}
+        {_render_related_context_list(related_entries)}
+    </div>
+</section>"""
+
+
+def _related_context_entries(
+    entry: DashboardRegistryEntry,
+    entries: Sequence[DashboardRegistryEntry],
+    limit: int,
+) -> tuple[DashboardRegistryEntry, ...]:
+    if limit <= 0:
+        return ()
+
+    scored_entries: list[tuple[int, str, DashboardRegistryEntry]] = []
+    entry_gold_paths = set(entry.generated_gold_paths)
+    entry_source_chunks = set(entry.source_chunk_ids)
+    entry_assets = set(entry.backing_assets)
+
+    for candidate in entries:
+        if candidate.concept_id == entry.concept_id:
+            continue
+
+        score = (
+            len(entry_gold_paths & set(candidate.generated_gold_paths)) * 3
+            + len(entry_assets & set(candidate.backing_assets)) * 2
+            + len(entry_source_chunks & set(candidate.source_chunk_ids))
+        )
+        if score == 0:
+            continue
+        scored_entries.append((score, candidate.title, candidate))
+
+    return tuple(
+        candidate
+        for _, _, candidate in sorted(
+            scored_entries,
+            key=lambda scored_entry: (-scored_entry[0], scored_entry[1]),
+        )[:limit]
+    )
+
+
+def _definition_item(label: str, value: str) -> str:
+    return f"""\
+        <div>
+            <dt>{escape(label)}</dt>
+            <dd>{escape(value)}</dd>
+        </div>"""
+
+
+def _render_context_list(title: str, values: Sequence[str]) -> str:
+    if len(values) == 0:
+        body = (
+            '<p class="context-panel__empty">'
+            f"No {escape(title)} recorded in the Marimo registry."
+            "</p>"
+        )
+    else:
+        body = "\n".join(
+            f"                <li><code>{escape(value)}</code></li>" for value in values
+        )
+        body = f"<ul>\n{body}\n            </ul>"
+
+    return f"""\
+        <section class="context-panel__section">
+            <h3>{escape(title)}</h3>
+            {body}
+        </section>"""
+
+
+def _render_related_context_list(
+    related_entries: Sequence[DashboardRegistryEntry],
+) -> str:
+    if len(related_entries) == 0:
+        body = (
+            '<p class="context-panel__empty">'
+            "No related concepts share generated-gold paths, source chunk IDs, "
+            "or backing assets in the Marimo registry."
+            "</p>"
+        )
+    else:
+        rows = "\n".join(
+            f"""\
+                <li>
+                    <span>{escape(entry.title)}</span>
+                    <code>{escape(entry.concept_id)}</code>
+                </li>"""
+            for entry in related_entries
+        )
+        body = f"<ul>\n{rows}\n            </ul>"
+
+    return f"""\
+        <section class="context-panel__section">
+            <h3>related concepts</h3>
+            {body}
+        </section>"""
+
+
+def _dashboard_context_panel_css() -> str:
+    return """\
+.dashboard-context-panel {
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    padding: 1rem;
+    background: var(--emdl-panel, #ffffff);
+    color: var(--emdl-ink, #1b2324);
+}
+
+.context-panel__header {
+    display: grid;
+    gap: 0.35rem;
+    margin-bottom: 0.9rem;
+}
+
+.context-panel__eyebrow {
+    margin: 0;
+    color: var(--emdl-green, #3e7a54);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.context-panel__header h2,
+.context-panel__section h3 {
+    margin: 0;
+    color: var(--emdl-slate, #354348);
+}
+
+.context-panel__header h2 {
+    font-size: 1.25rem;
+}
+
+.context-panel__header p,
+.context-panel__empty {
+    margin: 0;
+    color: var(--emdl-muted, #566365);
+}
+
+.context-panel__metadata {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: 0.7rem;
+    margin-bottom: 1rem;
+}
+
+.context-panel__metadata div {
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 6px;
+    padding: 0.55rem 0.65rem;
+    background: var(--emdl-service-band, #eef4f1);
+}
+
+.context-panel__metadata dt {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.context-panel__metadata dd {
+    margin: 0.2rem 0 0;
+    overflow-wrap: anywhere;
+}
+
+.context-panel__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    gap: 0.85rem;
+}
+
+.context-panel__section {
+    min-width: 0;
+}
+
+.context-panel__section h3 {
+    margin-bottom: 0.4rem;
+    font-size: 0.95rem;
+    text-transform: capitalize;
+}
+
+.context-panel__section ul {
+    display: grid;
+    gap: 0.35rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.context-panel__section li {
+    display: grid;
+    gap: 0.2rem;
+    min-width: 0;
+    border-left: 3px solid var(--emdl-blue, #166791);
+    padding: 0.35rem 0 0.35rem 0.55rem;
+    background: rgb(var(--emdl-line-rgb, 207 219 214) / 0.24);
+}
+
+.context-panel__section code {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}"""
 
 
 def _setting(environ: Mapping[str, str], name: str, default: str) -> str:

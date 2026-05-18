@@ -2,7 +2,8 @@
 
 This Subproject is the repo-local **Gas market knowledge base** tool surface.
 It currently provides the Python package layout, bronze source manifest command,
-archive PDF cache fetcher, Docling-based silver document extraction,
+archive-prefix completeness audit, archive PDF cache fetcher,
+Docling-based silver document extraction,
 Docling Hybrid silver chunk generation, retrieval index validation,
 gold **Market context** citation validation, generated-artifact policy, seed
 gold glossary artifacts, and **Unit test** lane.
@@ -25,6 +26,38 @@ The default `dev` environment reads
 and writes `generated/bronze/source_manifest.jsonl`. Unit tests use fixture
 JSON or JSONL metadata rows through `--metadata-path` and do not read deployed
 resources.
+
+Audit archive-prefix PDF completeness against the bronze source manifest:
+
+```bash
+uv run gas-market-kb audit-archive-prefix --environment dev
+```
+
+The default `dev` environment lists
+`s3://dev-energy-market-archive/bronze/aemo_gas_documents/` and compares PDF
+objects there with `generated/bronze/source_manifest.jsonl`. The audit reports
+the prefix PDF object total, manifest row total, unique manifest archive-object
+total, unique manifest hash total, missing archive PDFs, extra manifest rows,
+duplicate archive URIs, duplicate content hashes, and manifest row errors. It
+uses unique archive URIs and content hashes for object/hash totals, so duplicate
+metadata rows do not require duplicate downloaded PDFs.
+
+Use fixture mode for deterministic local coverage or evidence when credentials
+are unavailable:
+
+```bash
+uv run gas-market-kb audit-archive-prefix \
+  --archive-prefix s3://dev-energy-market-archive/bronze/aemo_gas_documents/ \
+  --listing-path fixtures/archive-listing.json
+```
+
+`--listing-path` accepts JSON arrays, JSONL rows, or an object with an
+`objects` array. Listing entries may be S3 URI strings, object keys, or objects
+with `uri`, `archive_uri`, `storage_uri`, or `key`. Non-PDF entries are ignored.
+Output is sorted and includes a stable `summary:` line for Ralph evidence
+comments. Run `make unit-test` for fixture coverage and `make run-prek` before
+handoff; if live credentials are available, run the command once without
+`--listing-path` and record the summary counts.
 
 Populate the ignored local PDF cache from manifest archive objects:
 
@@ -131,6 +164,8 @@ artifact output rather than maintained router documentation.
 
 ## Layout
 
+- `src/gas_market_knowledge_base/archive_audit.py`: archive-prefix completeness
+  audit against the bronze source manifest.
 - `src/gas_market_knowledge_base/cli.py`: CLI entrypoint.
 - `src/gas_market_knowledge_base/docling_adapter.py`: Docling PDF-to-Markdown
   and Hybrid chunking adapters with OCR disabled for v1 extraction.
@@ -161,6 +196,7 @@ artifact output rather than maintained router documentation.
   - `tools/gas-market-knowledge-base/Makefile`
   - `tools/gas-market-knowledge-base/pyproject.toml`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/__init__.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/archive_audit.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/cli.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/docling_adapter.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/gold_context.py`
@@ -168,6 +204,7 @@ artifact output rather than maintained router documentation.
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/silver_chunks.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/silver_documents.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/source_manifest.py`
+  - `tools/gas-market-knowledge-base/tests/unit/test_archive_audit.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_cli.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_gold_context.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_pdf_cache.py`
@@ -184,4 +221,4 @@ artifact output rather than maintained router documentation.
   - `make docling-adapter-test`
   - `make run-prek`
   - `uv run gas-market-kb validate`
-  - `verify generated-artifact roots, raw-PDF ignore policy, CLI help, source manifest fixture behavior, PDF cache fixture behavior, silver document extraction fixture behavior, real Docling adapter smoke lane, chunk index validation, gold citation validation, and no embedding or vector storage behavior`
+  - `verify generated-artifact roots, raw-PDF ignore policy, CLI help, source manifest fixture behavior, archive-prefix audit fixture behavior, PDF cache fixture behavior, silver document extraction fixture behavior, real Docling adapter smoke lane, chunk index validation, gold citation validation, and no embedding or vector storage behavior`

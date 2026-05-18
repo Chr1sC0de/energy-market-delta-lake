@@ -24,7 +24,8 @@ The dashboard app in [src/marimoserver/main.py](src/marimoserver/main.py):
 - exposes `/health` for container health checks
 - discovers `*.py` notebooks from `notebooks/`
 - mounts each notebook as a marimo sub-app under `/marimo/<notebook-name>`
-- serves a simple index page at `/marimo`
+- serves a concept gallery hub at `/marimo`, grouped by generated Market
+  context concept and filterable by audience tag
 - serves the code-local dashboard roadmap registry at
   `/marimo/dashboard-registry.json`
 - links the Caddy-served shared theme at `/theme.css` for the index and
@@ -73,12 +74,23 @@ parses structured records into typed entries with concept IDs, audience tags,
 planned or available status, notebook names and routes, backing
 `silver.gas_model` assets, generated-gold metadata paths, and source chunk IDs.
 
-The registry is served as JSON from `/marimo/dashboard-registry.json` so future
-Marimo notebooks can render a concept gallery or context panels without reading
-the Gas market knowledge base generated files at runtime. Generated-gold paths
-and source chunk IDs are copied metadata only. In AWS mode this remains
-read-only, uses the existing dashboard image contents, and does not require a
-Docker build-context change.
+The `/marimo` entry route renders this registry as a concept gallery hub.
+Available registry entries link only when their backing notebook is mounted in
+the current image. Planned entries stay visible as roadmap cards but do not
+emit notebook links. The same registry is served as JSON from
+`/marimo/dashboard-registry.json` so future Marimo notebooks can render context
+panels without reading the Gas market knowledge base generated files at
+runtime. Generated-gold paths and source chunk IDs are copied metadata only. In
+AWS mode this remains read-only, uses the existing dashboard image contents,
+and does not require a Docker build-context change.
+
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py) exposes
+`render_dashboard_context_panel()` for notebooks that need the same registry
+context in-page. The helper renders the concept summary, dashboard usage
+metadata, related concepts, generated-gold paths, source chunk IDs, and backing
+`silver.gas_model` assets from the registry without opening generated gold
+Markdown at runtime. The available roadmap notebooks call it with their
+registry concept IDs near the top of the notebook.
 
 ## Table explorer
 
@@ -168,8 +180,12 @@ Bounded `silver.gas_model` reads are centralized in
 Dashboard helpers request sample or recent views through that loader, so AWS
 keeps `MARIMO_FULL_TABLE_SCAN_ENABLED=false` preview behavior while local
 development can keep full-table scans where the Marimo config allows them.
-Missing or empty prefixes return table-level empty-state details instead of
-raising notebook tracebacks.
+The shared loader also owns explicit refresh tokens, per-session table-read
+caching, load timing, cache-hit labels, and row-limit messaging. The default
+gas market dashboard uses **Refresh data** to invalidate that session cache;
+display-control changes reuse cached reads while the source tables have not
+been refreshed. Missing or empty prefixes return table-level empty-state
+details instead of raising notebook tracebacks.
 
 It gives first-look sections for:
 
@@ -208,9 +224,12 @@ gas days use `silver_gas_fact_nomination_forecast`. Capacity comes from
 materialized inputs; the notebook shows a compact input warning, keeps the
 table-level diagnostics in an accordion, and falls back to standing pipeline
 metadata. The map uses the shared bounded `silver.gas_model` loader policy, so
-AWS-mode reads are capped by `MARIMO_MAX_PREVIEW_ROWS`. Direct notebook runs
-preflight the local S3 endpoint so an offline LocalStack instance becomes a
-fast degraded state instead of six slow table read attempts.
+AWS-mode reads are capped by `MARIMO_MAX_PREVIEW_ROWS`. For date-sensitive GBB
+fact tables, the selected gas day is applied before the preview cap so bounded
+AWS reads can still populate actual flow, nomination forecast, and capacity
+outlook views when matching rows exist. Direct notebook runs preflight the
+local S3 endpoint so an offline LocalStack instance becomes a fast degraded
+state instead of six slow table read attempts.
 
 During development, keep the notebook pointed at LocalStack and hydrate the
 required `silver/gas_model` table prefixes there instead of reading live S3 from
@@ -226,8 +245,8 @@ development runs can reload from the cache without live S3 access.
 The services are started by [../compose.yaml](../compose.yaml).
 
 Dashboard notebooks are mounted from [notebooks/](notebooks/) into
-`marimo-dashboard`, so adding a curated notebook there makes it available
-through the `/marimo` index.
+`marimo-dashboard`, so adding a curated notebook there and registering it as
+available makes it reachable from the `/marimo` concept gallery.
 
 Research notebooks and draft issue notes stay under
 [research-workspace/](research-workspace/) and are served by
@@ -236,8 +255,9 @@ Research notebooks and draft issue notes stay under
 The implementation also accepts `MARIMO_NOTEBOOKS_DIR` if you need to point the
 server at a different notebook directory.
 
-With the local backend stack running, open the Marimo index through Caddy and
-choose `table_explorer`, `sample_energy_market`, or `gbb_interactive_map`:
+With the local backend stack running, open the Marimo concept gallery through
+Caddy and choose an available card such as `table_explorer`,
+`sample_energy_market`, or `gbb_interactive_map`:
 
 ```text
 http://localhost/marimo
@@ -246,10 +266,10 @@ http://localhost/marimo
 The table explorer is compose-first for local development. Start the stack from
 [../compose.yaml](../compose.yaml), wait for `localstack`, `aemo-etl`, both
 Dagster webservers, and `marimo-dashboard` to be healthy, then open
-`/marimo` and choose `table_explorer`. The explorer can list Dagster table
-assets before local data exists, but previews require materialized LocalStack
-tables. Materialize the target assets from the Dagster UI or a local Dagster
-launch, then refresh the table scan in the notebook.
+`/marimo` and choose the Gas Model Table Explorer card. The explorer can list
+Dagster table assets before local data exists, but previews require
+materialized LocalStack tables. Materialize the target assets from the Dagster
+UI or a local Dagster launch, then refresh the table scan in the notebook.
 
 For direct notebook development from this Subproject, point the notebook at the
 host-exposed LocalStack endpoint:
@@ -302,7 +322,7 @@ require `AWS_ENDPOINT_URL` to point at the LocalStack endpoint that holds the
 materialized table data.
 
 Materialize the `gas_model` assets in Dagster, or seed LocalStack with curated
-outputs, then refresh the dashboard to see populated sections.
+outputs, then use **Refresh data** in the dashboard to see populated sections.
 
 ## Validation
 

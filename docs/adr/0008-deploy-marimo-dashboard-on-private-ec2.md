@@ -29,6 +29,10 @@ dashboard metadata, including generated-gold paths and source chunk IDs, but the
 deployed service does not read Gas market knowledge base generated files at
 runtime.
 
+The `/marimo` entry route renders the same registry as a concept gallery hub.
+Available dashboard cards link to mounted notebook routes, while planned
+dashboard cards stay visible without notebook links.
+
 ## Considered options
 
 - Keep Marimo local-only: avoids new AWS resources but leaves the deployed
@@ -51,19 +55,21 @@ data comes from S3 and Dagster GraphQL. Image changes produce digest changes
 that update EC2 user data.
 
 AWS-mode table previews are bounded. The shared `silver.gas_model` loader owns
-the sample and recent Parquet-prefix read policy for curated dashboard helpers,
-and the table explorer shares the same row-limit decision. The table explorer
-still lists configured buckets and Dagster table assets, but it disables
-full-table sort, text search, and selected-column statistics because those
-require loading full tables into memory. Local compose keeps full LocalStack
-table scans for development.
+the sample and recent Parquet-prefix read policy, explicit refresh tokens,
+session-level table-read cache keys, load timing, and row-limit messaging for
+curated dashboard helpers. The table explorer shares the same row-limit
+decision and refresh-token normalization. The table explorer still lists
+configured buckets and Dagster table assets, but it disables full-table sort,
+text search, and selected-column statistics because those require loading full
+tables into memory. Local compose keeps full LocalStack table scans for
+development.
 
 The local-only Marimo-Codex workspace stays out of Pulumi and remains bound to
 `127.0.0.1:2719` in compose.
 
-The dashboard registry is part of the existing Marimo image contents. Adding or
-updating registry metadata does not require a separate Docker build context and
-does not add AWS write paths.
+The dashboard registry and concept gallery are part of the existing Marimo
+image contents. Adding or updating registry metadata does not require a
+separate Docker build context and does not add AWS write paths.
 
 ## Sync metadata
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import mimetypes
 import os
+from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +26,14 @@ from fastapi import FastAPI
 from starlette.responses import HTMLResponse, JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from marimoserver.dashboard_registry import dashboard_registry_payload
+from marimoserver.dashboard_registry import (
+    ROADMAP_AUDIENCES,
+    DashboardAudience,
+    DashboardRegistryEntry,
+    DashboardStatus,
+    dashboard_registry as load_dashboard_registry,
+    dashboard_registry_payload,
+)
 
 NOTEBOOKS_DIR = Path(os.environ.get("MARIMO_NOTEBOOKS_DIR", "notebooks"))
 
@@ -34,6 +42,272 @@ NOTEBOOKS_DIR = Path(os.environ.get("MARIMO_NOTEBOOKS_DIR", "notebooks"))
 # back to text/plain which the browser rejects for font loading.
 mimetypes.add_type("font/woff2", ".woff2")
 mimetypes.add_type("font/woff", ".woff")
+
+_INDEX_CSS = """
+        :root {
+            color-scheme: light;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            color: var(--emdl-ink, #1b2324);
+            background: var(--emdl-paper, #f6f8f3);
+            font-family: ui-sans-serif, system-ui, -apple-system,
+                BlinkMacSystemFont, "Segoe UI", sans-serif;
+            line-height: 1.5;
+        }
+
+        main {
+            width: min(1180px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 48px 0 64px;
+        }
+
+        .hero {
+            display: grid;
+            gap: 18px;
+            margin-bottom: 28px;
+        }
+
+        .eyebrow {
+            margin: 0;
+            color: var(--emdl-green, #3e7a54);
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0;
+            text-transform: uppercase;
+        }
+
+        h1 {
+            max-width: 760px;
+            margin: 0;
+            color: var(--emdl-slate, #354348);
+            font-size: 3.4rem;
+            line-height: 1.02;
+            letter-spacing: 0;
+        }
+
+        .hero-copy {
+            max-width: 780px;
+            margin: 0;
+            color: var(--emdl-muted, #566365);
+            font-size: 1.05rem;
+        }
+
+        .summary {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            padding: 0;
+            margin: 4px 0 0;
+            list-style: none;
+        }
+
+        .summary li {
+            min-width: 150px;
+            padding: 10px 14px;
+            border: 1px solid var(--emdl-line, #cfdbd6);
+            border-radius: 8px;
+            background: var(--emdl-panel, #ffffff);
+            box-shadow: var(--emdl-soft-shadow, 0 8px 28px rgb(27 35 36 / 0.08));
+        }
+
+        .summary-value {
+            display: block;
+            font-size: 1.45rem;
+            font-weight: 760;
+            line-height: 1.1;
+        }
+
+        .summary-label {
+            display: block;
+            color: var(--emdl-muted, #566365);
+            font-size: 0.82rem;
+        }
+
+        .concept-nav {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 26px 0;
+        }
+
+        .concept-nav a,
+        .filter-controls label {
+            display: inline-flex;
+            align-items: center;
+            min-height: 36px;
+            padding: 7px 12px;
+            border: 1px solid var(--emdl-line, #cfdbd6);
+            border-radius: 999px;
+            color: var(--emdl-slate, #354348);
+            background: rgb(var(--emdl-panel-rgb, 255 255 255) / 0.86);
+            font-size: 0.9rem;
+            font-weight: 650;
+            text-decoration: none;
+        }
+
+        .concept-nav a:hover,
+        .filter-controls label:hover {
+            border-color: var(--emdl-blue, #166791);
+            color: var(--emdl-blue, #166791);
+        }
+
+        .gallery-shell {
+            position: relative;
+        }
+
+        .audience-filter {
+            position: absolute;
+            inline-size: 1px;
+            block-size: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .filter-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 18px;
+        }
+
+        #audience-all:checked ~ .filter-controls label[for="audience-all"],
+        #audience-operator:checked ~ .filter-controls label[for="audience-operator"],
+        #audience-analyst:checked ~ .filter-controls label[for="audience-analyst"],
+        #audience-stakeholder:checked ~ .filter-controls label[for="audience-stakeholder"],
+        #audience-data-engineer:checked ~ .filter-controls label[for="audience-data-engineer"] {
+            border-color: var(--emdl-blue, #166791);
+            color: var(--emdl-panel, #ffffff);
+            background: var(--emdl-blue, #166791);
+        }
+
+        #audience-operator:checked ~ .dashboard-grid .dashboard-card:not(.audience-operator),
+        #audience-analyst:checked ~ .dashboard-grid .dashboard-card:not(.audience-analyst),
+        #audience-stakeholder:checked ~ .dashboard-grid .dashboard-card:not(.audience-stakeholder),
+        #audience-data-engineer:checked ~ .dashboard-grid .dashboard-card:not(.audience-data-engineer) {
+            display: none;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+            gap: 16px;
+        }
+
+        .dashboard-card {
+            display: grid;
+            gap: 14px;
+            min-height: 340px;
+            padding: 20px;
+            border: 1px solid var(--emdl-line, #cfdbd6);
+            border-radius: 8px;
+            color: inherit;
+            background: var(--emdl-panel, #ffffff);
+            box-shadow: var(--emdl-soft-shadow, 0 8px 28px rgb(27 35 36 / 0.08));
+            text-decoration: none;
+        }
+
+        .dashboard-card--available:hover {
+            border-color: var(--emdl-blue, #166791);
+            box-shadow: var(--emdl-shadow, 0 18px 46px rgb(27 35 36 / 0.1));
+            transform: translateY(-1px);
+        }
+
+        .dashboard-card h2 {
+            margin: 0;
+            color: var(--emdl-slate, #354348);
+            font-size: 1.28rem;
+            line-height: 1.2;
+            letter-spacing: 0;
+        }
+
+        .dashboard-card p {
+            margin: 0;
+            color: var(--emdl-muted, #566365);
+        }
+
+        .card-topline,
+        .audience-tags,
+        .asset-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 7px;
+        }
+
+        .status-pill,
+        .audience-tag,
+        .asset-pill {
+            display: inline-flex;
+            align-items: center;
+            min-height: 28px;
+            padding: 4px 8px;
+            border-radius: 999px;
+            font-size: 0.76rem;
+            font-weight: 700;
+        }
+
+        .status-pill--available {
+            color: var(--emdl-green, #3e7a54);
+            background: rgb(var(--emdl-green-rgb, 62 122 84) / 0.13);
+        }
+
+        .status-pill--planned {
+            color: var(--emdl-amber, #b2682a);
+            background: rgb(var(--emdl-amber-rgb, 178 104 42) / 0.14);
+        }
+
+        .status-pill--unmounted {
+            color: var(--emdl-red, #9e4839);
+            background: rgb(var(--emdl-red-rgb, 158 72 57) / 0.12);
+        }
+
+        .audience-tag {
+            color: var(--emdl-slate, #354348);
+            background: var(--emdl-service-band, #eef4f1);
+        }
+
+        .asset-list {
+            padding: 0;
+            margin: 0;
+            list-style: none;
+        }
+
+        .asset-pill {
+            color: var(--emdl-muted, #566365);
+            background: rgb(var(--emdl-line-rgb, 207 219 214) / 0.34);
+        }
+
+        .dashboard-action {
+            align-self: end;
+            color: var(--emdl-blue, #166791);
+            font-weight: 760;
+        }
+
+        .dashboard-action--planned,
+        .dashboard-action--unmounted {
+            color: var(--emdl-muted, #566365);
+        }
+
+        @media (max-width: 640px) {
+            main {
+                width: min(100% - 24px, 1180px);
+                padding-top: 32px;
+            }
+
+            .dashboard-card {
+                min-height: auto;
+            }
+
+            h1 {
+                font-size: 2.25rem;
+            }
+        }
+"""
 
 
 # TODO: add test coverage for the following class
@@ -95,7 +369,7 @@ async def health() -> JSONResponse:
 
 
 @app.get("/marimo/dashboard-registry.json")
-async def dashboard_registry() -> JSONResponse:
+async def dashboard_registry_endpoint() -> JSONResponse:
     """Return the code-local dashboard roadmap registry."""
     return JSONResponse(content=dashboard_registry_payload())
 
@@ -116,9 +390,28 @@ if NOTEBOOKS_DIR.is_dir():
 
 @app.get("/marimo")
 async def index() -> HTMLResponse:
-    """Landing page listing all available notebooks."""
-    items = "\n".join(
-        f'        <li><a href="/marimo/{name}/">{name}</a></li>' for name in app_names
+    """Render the dashboard concept gallery hub."""
+    html = _render_index_html(mounted_notebook_names=set(app_names))
+    return HTMLResponse(content=html)
+
+
+def _render_index_html(mounted_notebook_names: set[str]) -> str:
+    entries = load_dashboard_registry()
+    available_count = sum(
+        1 for entry in entries if _notebook_href(entry, mounted_notebook_names)
+    )
+    planned_count = sum(
+        1 for entry in entries if entry.status is DashboardStatus.PLANNED
+    )
+    concept_links = "\n".join(_render_concept_link(entry) for entry in entries)
+    audience_inputs = "\n".join(
+        _render_audience_input(audience) for audience in ROADMAP_AUDIENCES
+    )
+    audience_labels = "\n".join(
+        _render_audience_label(audience) for audience in ROADMAP_AUDIENCES
+    )
+    cards = "\n".join(
+        _render_dashboard_card(entry, mounted_notebook_names) for entry in entries
     )
     html = f"""\
 <!DOCTYPE html>
@@ -126,32 +419,189 @@ async def index() -> HTMLResponse:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Marimo Notebooks</title>
+    <title>Marimo Concept Gallery</title>
     <link rel="stylesheet" href="/theme.css">
     <style>
-        body {{
-            max-width: 600px;
-            margin: 80px auto;
-            padding: 0 20px;
-            color: var(--emdl-ink, #1d2526);
-            background: var(--emdl-paper, #f6f8f3);
-            font-family: ui-sans-serif, system-ui, -apple-system,
-                BlinkMacSystemFont, "Segoe UI", sans-serif;
-            line-height: 1.5;
-        }}
-        h1 {{ color: var(--emdl-blue, #176b91); }}
-        a {{ color: var(--emdl-blue, #176b91); }}
+{_INDEX_CSS}
     </style>
 </head>
 <body>
-    <h1>Marimo Notebooks</h1>
-    <p>Available notebooks:</p>
-    <ul>
-{items}
-    </ul>
+    <main>
+        <section class="hero" aria-labelledby="gallery-title">
+            <p class="eyebrow">Generated Market context roadmap</p>
+            <h1 id="gallery-title">Marimo concept gallery</h1>
+            <p class="hero-copy">
+                Curated and planned gas-market dashboards aligned to generated
+                Market context concepts, audience tags, and backing
+                silver.gas_model assets.
+            </p>
+            <ul class="summary" aria-label="Dashboard roadmap summary">
+                <li>
+                    <span class="summary-value">{available_count}</span>
+                    <span class="summary-label">available notebooks</span>
+                </li>
+                <li>
+                    <span class="summary-value">{planned_count}</span>
+                    <span class="summary-label">planned concepts</span>
+                </li>
+                <li>
+                    <span class="summary-value">{len(entries)}</span>
+                    <span class="summary-label">registry concepts</span>
+                </li>
+            </ul>
+        </section>
+
+        <nav class="concept-nav" aria-label="Dashboard concepts">
+{concept_links}
+        </nav>
+
+        <section class="gallery-shell" aria-label="Dashboard cards">
+            <input
+                class="audience-filter"
+                type="radio"
+                id="audience-all"
+                name="audience-filter"
+                checked
+            >
+{audience_inputs}
+            <div class="filter-controls" aria-label="Audience filters">
+                <label for="audience-all">All audiences</label>
+{audience_labels}
+            </div>
+            <div class="dashboard-grid">
+{cards}
+            </div>
+        </section>
+    </main>
 </body>
 </html>"""
-    return HTMLResponse(content=html)
+    return html
+
+
+def _render_concept_link(entry: DashboardRegistryEntry) -> str:
+    return (
+        f'            <a href="#concept-{escape(entry.concept_id, quote=True)}">'
+        f"{escape(entry.title)}</a>"
+    )
+
+
+def _render_audience_input(audience: DashboardAudience) -> str:
+    audience_value = escape(audience.value, quote=True)
+    return f"""\
+            <input
+                class="audience-filter"
+                type="radio"
+                id="audience-{audience_value}"
+                name="audience-filter"
+            >"""
+
+
+def _render_audience_label(audience: DashboardAudience) -> str:
+    audience_value = escape(audience.value, quote=True)
+    audience_label = escape(_label_from_slug(audience.value))
+    return f'                <label for="audience-{audience_value}">{audience_label}</label>'
+
+
+def _render_dashboard_card(
+    entry: DashboardRegistryEntry,
+    mounted_notebook_names: set[str],
+) -> str:
+    href = _notebook_href(entry, mounted_notebook_names)
+    audience_classes = " ".join(
+        f"audience-{escape(audience.value, quote=True)}" for audience in entry.audiences
+    )
+    status_kind = _status_kind(entry, href)
+    card_class = f"dashboard-card dashboard-card--{status_kind} {audience_classes}"
+    attributes = (
+        f'class="{card_class}" '
+        f'id="concept-{escape(entry.concept_id, quote=True)}" '
+        f'data-concept-id="{escape(entry.concept_id, quote=True)}" '
+        f'data-status="{escape(entry.status.value, quote=True)}"'
+    )
+    body = _render_dashboard_card_body(entry, status_kind)
+
+    if href is not None:
+        return f'                <a {attributes} href="{escape(href, quote=True)}">\n{body}\n                </a>'
+
+    return f"                <article {attributes}>\n{body}\n                </article>"
+
+
+def _render_dashboard_card_body(
+    entry: DashboardRegistryEntry,
+    status_kind: str,
+) -> str:
+    audience_tags = "\n".join(
+        f'                    <span class="audience-tag">{escape(_label_from_slug(audience.value))}</span>'
+        for audience in entry.audiences
+    )
+    assets = "\n".join(
+        f'                    <li class="asset-pill">{escape(asset)}</li>'
+        for asset in entry.backing_assets[:3]
+    )
+    if len(entry.backing_assets) > 3:
+        assets = (
+            f"{assets}\n"
+            f'                    <li class="asset-pill">+{len(entry.backing_assets) - 3} more</li>'
+        )
+
+    return f"""\
+                    <div class="card-topline">
+                        <span class="status-pill status-pill--{escape(status_kind, quote=True)}">
+                            {escape(_status_label(status_kind))}
+                        </span>
+                    </div>
+                    <div>
+                        <h2>{escape(entry.title)}</h2>
+                        <p>{escape(entry.description)}</p>
+                    </div>
+                    <div class="audience-tags" aria-label="Audience tags">
+{audience_tags}
+                    </div>
+                    <ul class="asset-list" aria-label="Backing assets">
+{assets}
+                    </ul>
+                    <span class="dashboard-action dashboard-action--{escape(status_kind, quote=True)}">
+                        {escape(_action_label(status_kind))}
+                    </span>"""
+
+
+def _notebook_href(
+    entry: DashboardRegistryEntry,
+    mounted_notebook_names: set[str],
+) -> str | None:
+    if entry.status is not DashboardStatus.AVAILABLE:
+        return None
+    if entry.notebook_name not in mounted_notebook_names:
+        return None
+    return entry.notebook_route
+
+
+def _status_kind(entry: DashboardRegistryEntry, href: str | None) -> str:
+    if href is not None:
+        return "available"
+    if entry.status is DashboardStatus.PLANNED:
+        return "planned"
+    return "unmounted"
+
+
+def _status_label(status_kind: str) -> str:
+    if status_kind == "available":
+        return "Available"
+    if status_kind == "planned":
+        return "Planned"
+    return "Not mounted"
+
+
+def _action_label(status_kind: str) -> str:
+    if status_kind == "available":
+        return "Open notebook"
+    if status_kind == "planned":
+        return "Planned dashboard"
+    return "Notebook not present in this image"
+
+
+def _label_from_slug(value: str) -> str:
+    return value.replace("-", " ").title()
 
 
 app.mount("/marimo", server.build())

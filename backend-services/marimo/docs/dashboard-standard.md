@@ -32,6 +32,12 @@ constant used by the first-screen UI. It must state:
 Do not start a curated dashboard with a long methodology note. Put detailed
 methodology lower in the notebook or behind an accordion.
 
+When a curated dashboard has a Marimo dashboard registry concept, render the
+shared context panel near the top of the notebook. The panel should show the
+registry concept summary, dashboard usage metadata, related concepts,
+generated-gold paths, source chunk IDs, and backing `silver.gas_model` assets
+without reading generated gold Markdown at runtime.
+
 ## Dashboard intents
 
 Choose one primary intent before designing the dashboard:
@@ -70,6 +76,9 @@ main tool.
 
 - Every control must have a visible effect, a sensible default, and a known
   empty state.
+- Expensive bounded table reads should use explicit refresh controls and
+  session-level caches. Do not add auto-refresh timers by default; show load
+  timing and row-limit policy near the relevant data-health surface.
 - Prefer fewer controls that were exercised during development over broad
   control panels that were not reviewed.
 - Show degraded states as designed UI, not traceback text. Empty LocalStack
@@ -124,6 +133,7 @@ before duplicating one-off HTML across notebooks. The first helper surface
 should cover:
 
 - dashboard header and brief rendering
+- dashboard context panel
 - data-health strip or cards
 - KPI grid
 - status and degraded-state banners

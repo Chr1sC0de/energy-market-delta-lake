@@ -10,7 +10,10 @@ def _():
 
     import marimo as mo
 
-    from marimoserver.gas_dashboard import discover_dashboard_config
+    from marimoserver.gas_dashboard import (
+        discover_dashboard_config,
+        render_dashboard_context_panel,
+    )
     from marimoserver.gbb_interactive_map import (
         build_gbb_map_model,
         check_gbb_map_s3_endpoint,
@@ -33,8 +36,29 @@ def _():
         mo,
         normalize_gas_date,
         pipeline_records_frame,
+        render_dashboard_context_panel,
         render_gbb_map_html,
     )
+
+
+@app.cell
+def _(mo, render_dashboard_context_panel):
+    mo.vstack(
+        [
+            mo.md("""
+            # GBB Interactive Map
+
+            **Dashboard brief**: **Dashboard intent**: Operational. Operators
+            and analysts use this dashboard to inspect GBB facility topology,
+            pipeline flow, storage, production, nominations, and capacity
+            outlook inputs. Freshness and availability are reported from the
+            loaded map input tables; unavailable LocalStack data falls back to
+            static topology with diagnostics.
+            """),
+            mo.Html(render_dashboard_context_panel("gbb-interactive-map")),
+        ]
+    )
+    return
 
 
 @app.cell
@@ -52,24 +76,30 @@ def _(date, mo):
 
 
 @app.cell
-def _(check_gbb_map_s3_endpoint, discover_dashboard_config, load_gbb_map_tables):
+def _(
+    check_gbb_map_s3_endpoint,
+    discover_dashboard_config,
+    gas_date_picker,
+    load_gbb_map_tables,
+    normalize_gas_date,
+):
     config = discover_dashboard_config()
+    selected_gas_date = normalize_gas_date(gas_date_picker.value)
     loaded_map_tables = load_gbb_map_tables(
         config,
         endpoint_checker=check_gbb_map_s3_endpoint,
+        gas_date=selected_gas_date,
     )
-    return config, loaded_map_tables
+    return config, loaded_map_tables, selected_gas_date
 
 
 @app.cell
 def _(
     build_gbb_map_model,
-    gas_date_picker,
     loaded_map_tables,
-    normalize_gas_date,
+    selected_gas_date,
     view_picker,
 ):
-    selected_gas_date = normalize_gas_date(gas_date_picker.value)
     selected_view = view_picker.value
     map_model = build_gbb_map_model(loaded_map_tables, selected_gas_date)
     return map_model, selected_view

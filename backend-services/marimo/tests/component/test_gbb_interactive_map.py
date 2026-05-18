@@ -1,6 +1,7 @@
 """Component tests for the GBB interactive map helper surface."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
 import socket
@@ -130,6 +131,138 @@ def test_load_gbb_map_tables_can_short_circuit_unreachable_local_s3() -> None:
 
     assert calls == 0
     assert loads[0].error == "S3 endpoint unavailable"
+
+
+def test_load_gbb_map_tables_filters_actual_and_capacity_before_bounded_head(
+    tmp_path: Path,
+) -> None:
+    config = _LocalGbbMapConfig(tmp_path, max_preview_rows=1)
+    selected_gas_date = date(2024, 1, 2)
+    _write_gbb_map_tables(
+        tmp_path,
+        facilities=pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "source_facility_id": ["10"],
+                "facility_name": ["Carpentaria Gas Pipeline"],
+                "facility_short_name": ["CGP"],
+                "facility_type": ["PIPE"],
+                "facility_type_description": ["Pipeline"],
+            }
+        ),
+        locations=pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "source_location_id": ["20"],
+                "location_name": ["Ballera"],
+                "state": ["QLD"],
+            }
+        ),
+        actual_flow=pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 1), selected_gas_date],
+                "source_facility_id": ["10", "10"],
+                "source_location_id": ["20", "20"],
+                "demand_tj": [1.0, 2.0],
+                "supply_tj": [1.0, 9.0],
+                "transfer_in_tj": [0.0, 1.0],
+                "transfer_out_tj": [0.0, 3.0],
+                "held_in_storage_tj": [0.0, 0.0],
+                "source_last_updated_timestamp": [_timestamp(), _timestamp()],
+                "ingested_timestamp": [_timestamp(), _timestamp()],
+            }
+        ),
+        capacity=pl.DataFrame(
+            {
+                "source_facility_id": ["10", "10"],
+                "facility_name": [
+                    "Carpentaria Gas Pipeline",
+                    "Carpentaria Gas Pipeline",
+                ],
+                "capacity_quantity_tj": [3.0, 14.0],
+                "flow_direction": ["north", "north"],
+                "from_gas_date": [date(2024, 1, 1), selected_gas_date],
+                "to_gas_date": [date(2024, 1, 1), None],
+                "capacity_description": ["expired capacity", "selected capacity"],
+            }
+        ),
+    )
+
+    loads = load_gbb_map_tables(config, gas_date=selected_gas_date)
+    actual_load = _load_by_table(loads, "silver_gas_fact_facility_flow_storage")
+    capacity_load = _load_by_table(loads, "silver_gas_fact_capacity_outlook")
+    model = build_gbb_map_model(
+        loads,
+        gas_date=selected_gas_date,
+        today=date(2024, 1, 3),
+    )
+    cgp = _pipeline(model, "CGP")
+
+    assert actual_load.dataframe is not None
+    assert actual_load.dataframe["gas_date"].to_list() == [selected_gas_date]
+    assert capacity_load.dataframe is not None
+    assert capacity_load.dataframe["capacity_description"].to_list() == [
+        "selected capacity"
+    ]
+    assert cgp.flow_tj == 5.0
+    assert cgp.capacity_tj == 14.0
+    assert cgp.status == "Flow and capacity"
+
+
+def test_load_gbb_map_tables_filters_forecast_before_bounded_head(
+    tmp_path: Path,
+) -> None:
+    config = _LocalGbbMapConfig(tmp_path, max_preview_rows=1)
+    selected_gas_date = date(2024, 1, 2)
+    _write_gbb_map_tables(
+        tmp_path,
+        facilities=pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "source_facility_id": ["30"],
+                "facility_name": ["Roma - Brisbane Pipeline"],
+                "facility_short_name": ["RBP"],
+                "facility_type": ["PIPE"],
+                "facility_type_description": ["Pipeline"],
+            }
+        ),
+        locations=pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "source_location_id": ["40"],
+                "location_name": ["Brisbane"],
+                "state": ["QLD"],
+            }
+        ),
+        forecast=pl.DataFrame(
+            {
+                "source_system": ["GBB", "GBB"],
+                "gas_date": [date(2024, 1, 1), selected_gas_date],
+                "source_facility_id": ["30", "30"],
+                "source_location_id": ["40", "40"],
+                "demand_forecast_gj": [1_000.0, 88_000.0],
+                "supply_forecast_gj": [0.0, 0.0],
+                "transfer_in_forecast_gj": [0.0, 0.0],
+                "transfer_out_forecast_gj": [0.0, 0.0],
+                "source_last_updated_timestamp": [_timestamp(), _timestamp()],
+                "ingested_timestamp": [_timestamp(), _timestamp()],
+            }
+        ),
+    )
+
+    loads = load_gbb_map_tables(config, gas_date=selected_gas_date)
+    forecast_load = _load_by_table(loads, "silver_gas_fact_nomination_forecast")
+    model = build_gbb_map_model(
+        loads,
+        gas_date=selected_gas_date,
+        today=selected_gas_date,
+    )
+    rbp = _pipeline(model, "RBP")
+
+    assert forecast_load.dataframe is not None
+    assert forecast_load.dataframe["gas_date"].to_list() == [selected_gas_date]
+    assert rbp.flow_tj == 88.0
+    assert rbp.status == "Flow only"
 
 
 def test_read_gbb_map_table_delegates_to_parquet_reader(
@@ -565,6 +698,106 @@ def _pipeline(model: GbbMapModel, code: str) -> PipelineMapRecord:
         if record.code == code:
             return record
     raise AssertionError(f"missing pipeline record: {code}")
+
+
+def _load_by_table(
+    loads: Sequence[GbbMapTableLoad],
+    table_name: str,
+) -> GbbMapTableLoad:
+    for load in loads:
+        if load.spec.table_name == table_name:
+            return load
+    raise AssertionError(f"missing GBB map table load: {table_name}")
+
+
+@dataclass(frozen=True)
+class _LocalGbbMapConfig:
+    table_root: Path
+    max_preview_rows: int
+    full_table_scan_enabled: bool = False
+
+    def table_uri(self, table_name: str) -> str:
+        return str(self.table_root / table_name)
+
+    def storage_options(self) -> dict[str, str]:
+        return {}
+
+
+def _write_gbb_map_tables(
+    table_root: Path,
+    *,
+    facilities: pl.DataFrame,
+    locations: pl.DataFrame,
+    actual_flow: pl.DataFrame | None = None,
+    forecast: pl.DataFrame | None = None,
+    capacity: pl.DataFrame | None = None,
+) -> None:
+    frames = {
+        "silver_gas_dim_facility": facilities,
+        "silver_gas_dim_location": locations,
+        "silver_gas_dim_connection_point": pl.DataFrame({"source_system": ["GBB"]}),
+        "silver_gas_fact_facility_flow_storage": actual_flow
+        if actual_flow is not None
+        else _default_actual_flow_frame(),
+        "silver_gas_fact_nomination_forecast": forecast
+        if forecast is not None
+        else _default_forecast_frame(),
+        "silver_gas_fact_capacity_outlook": capacity
+        if capacity is not None
+        else _default_capacity_frame(),
+    }
+    for table_name, frame in frames.items():
+        table_dir = table_root / table_name
+        table_dir.mkdir(parents=True)
+        frame.write_parquet(table_dir / "part-00000.parquet")
+
+
+def _default_actual_flow_frame() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "gas_date": [date(1999, 1, 1)],
+            "source_facility_id": ["unused"],
+            "source_location_id": ["unused"],
+            "demand_tj": [0.0],
+            "supply_tj": [0.0],
+            "transfer_in_tj": [0.0],
+            "transfer_out_tj": [0.0],
+            "held_in_storage_tj": [0.0],
+            "source_last_updated_timestamp": [_timestamp()],
+            "ingested_timestamp": [_timestamp()],
+        }
+    )
+
+
+def _default_forecast_frame() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "source_system": ["GBB"],
+            "gas_date": [date(1999, 1, 1)],
+            "source_facility_id": ["unused"],
+            "source_location_id": ["unused"],
+            "demand_forecast_gj": [0.0],
+            "supply_forecast_gj": [0.0],
+            "transfer_in_forecast_gj": [0.0],
+            "transfer_out_forecast_gj": [0.0],
+            "source_last_updated_timestamp": [_timestamp()],
+            "ingested_timestamp": [_timestamp()],
+        }
+    )
+
+
+def _default_capacity_frame() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "source_facility_id": ["unused"],
+            "facility_name": ["unused"],
+            "capacity_quantity_tj": [0.0],
+            "flow_direction": ["north"],
+            "from_gas_date": [date(1999, 1, 1)],
+            "to_gas_date": [date(1999, 1, 1)],
+            "capacity_description": ["unused"],
+        }
+    )
 
 
 def _loads(

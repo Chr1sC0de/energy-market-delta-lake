@@ -10,36 +10,98 @@ def _():
     import polars as pl
 
     from marimoserver.gas_dashboard import (
+        cached_load_gas_model_tables,
         discover_dashboard_config,
-        load_gas_model_tables,
+        gas_table_load_status_frame,
+        gas_table_load_status_message,
+        render_dashboard_context_panel,
         table_load_by_name,
     )
+    from marimoserver.gas_model_loader import refresh_token_from_control
 
     return (
+        cached_load_gas_model_tables,
         discover_dashboard_config,
-        load_gas_model_tables,
+        gas_table_load_status_frame,
+        gas_table_load_status_message,
         mo,
         pl,
+        render_dashboard_context_panel,
+        refresh_token_from_control,
         table_load_by_name,
     )
 
 
 @app.cell
-def _(mo):
-    mo.md("""
-    # Local Gas Market Overview
+def _(mo, render_dashboard_context_panel):
+    mo.vstack(
+        [
+            mo.md("""
+            # Local Gas Market Overview
 
-    Dashboard over curated `silver.gas_model` outputs in the configured
-    AEMO bucket.
-    """)
+            **Dashboard brief**: **Dashboard intent**: Operational. Operators
+            and analysts use this dashboard to inspect curated gas market
+            prices, schedules, flow, capacity, and source coverage from
+            configured `silver.gas_model` tables. Freshness and row coverage
+            come from loaded table metadata; empty or missing LocalStack inputs
+            are shown as designed unavailable states.
+            """),
+            mo.Html(render_dashboard_context_panel("gas-market-overview")),
+        ]
+    )
     return
 
 
 @app.cell
-def _(discover_dashboard_config, load_gas_model_tables):
+def _():
+    gas_model_load_cache = {}
+    return gas_model_load_cache
+
+
+@app.cell
+def _(mo):
+    refresh_data_button = mo.ui.run_button(label="Refresh data")
+    mo.hstack([refresh_data_button], justify="start")
+    return refresh_data_button
+
+
+@app.cell
+def _(
+    cached_load_gas_model_tables,
+    discover_dashboard_config,
+    gas_model_load_cache,
+    refresh_data_button,
+    refresh_token_from_control,
+):
     config = discover_dashboard_config()
-    loaded_tables = load_gas_model_tables(config)
+    loaded_tables = cached_load_gas_model_tables(
+        config,
+        gas_model_load_cache,
+        refresh_token=refresh_token_from_control(refresh_data_button),
+    )
     return config, loaded_tables
+
+
+@app.cell
+def _(gas_table_load_status_frame, gas_table_load_status_message, loaded_tables, mo):
+    mo.vstack(
+        [
+            mo.callout(
+                mo.md(gas_table_load_status_message(loaded_tables)),
+                kind="neutral",
+            ),
+            mo.accordion(
+                {
+                    "Table read diagnostics": mo.ui.table(
+                        gas_table_load_status_frame(loaded_tables),
+                        selection=None,
+                    )
+                },
+                multiple=False,
+            ),
+        ]
+    )
+    return
 
 
 @app.cell
