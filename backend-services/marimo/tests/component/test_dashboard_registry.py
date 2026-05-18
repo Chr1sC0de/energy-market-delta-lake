@@ -53,6 +53,13 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     )
     assert glossary.source_chunk_ids == ()
 
+    notices = registry_entry_by_concept_id("gas-system-notices", entries)
+    assert notices is not None
+    assert notices.status is DashboardStatus.AVAILABLE
+    assert notices.notebook_name == "system_notices"
+    assert notices.notebook_route == "/marimo/system_notices/"
+    assert "silver.gas_model.silver_gas_fact_system_notice" in notices.backing_assets
+
 
 def test_dashboard_registry_payload_includes_required_fields() -> None:
     payload = dashboard_registry_payload()

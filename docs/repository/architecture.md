@@ -256,6 +256,7 @@ Gas market knowledge base responsibility:
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
+  - `backend-services/marimo/notebooks/system_notices.py`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`

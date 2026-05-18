@@ -1,6 +1,7 @@
 """Component tests for the gas market dashboard helper surface."""
 
 from collections.abc import Mapping
+from datetime import datetime, timedelta
 from typing import Self
 
 import polars as pl
@@ -8,16 +9,30 @@ import pytest
 
 from marimoserver.gas_dashboard import (
     GAS_MODEL_TABLES,
+    SYSTEM_NOTICE_CRITICAL_FILTER_ALL,
+    SYSTEM_NOTICE_CRITICAL_FILTER_CRITICAL,
+    SYSTEM_NOTICE_CRITICAL_FILTER_NON_CRITICAL,
+    SYSTEM_NOTICE_TABLE_NAME,
+    SYSTEM_NOTICE_TABLE_SPEC,
+    SYSTEM_NOTICE_WINDOW_FILTER_ACTIVE,
+    SYSTEM_NOTICE_WINDOW_FILTER_ALL,
+    SYSTEM_NOTICE_WINDOW_FILTER_RECENT,
     GasDashboardConfig,
     GasTableLoad,
     GasTableSpec,
     cached_load_gas_model_tables,
+    cached_load_system_notice_table,
     discover_dashboard_config,
     gas_table_load_status_frame,
     gas_table_load_status_message,
     load_gas_model_tables,
+    load_system_notice_table,
     read_parquet_table,
     render_dashboard_context_panel,
+    system_notice_empty_state_markdown,
+    system_notice_kpi_frame,
+    system_notice_source_coverage_frame,
+    system_notice_summary_frame,
     table_load_by_name,
 )
 from marimoserver.dashboard_registry import (
@@ -192,6 +207,293 @@ def test_gas_model_specs_cover_required_dashboard_sections() -> None:
     assert "silver_gas_fact_scheduled_quantity" in table_names
     assert "silver_gas_fact_connection_point_flow" in table_names
     assert "silver_gas_fact_capacity_outlook" in table_names
+
+
+def test_system_notice_table_loader_uses_bounded_recent_view() -> None:
+    captured: list[int | None] = []
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "3",
+        }
+    )
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        captured.append(row_limit)
+        assert uri == (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_system_notice"
+        )
+        assert storage_options == config.storage_options()
+        return pl.DataFrame(
+            {
+                "source_notice_id": ["older", "newer"],
+                "notice_start_timestamp": [
+                    datetime(2024, 1, 1, 1),
+                    datetime(2024, 1, 2, 1),
+                ],
+            }
+        )
+
+    load = load_system_notice_table(config, reader=reader)
+
+    assert captured == [3]
+    assert load.spec == SYSTEM_NOTICE_TABLE_SPEC
+    assert load.row_limit == 3
+    assert load.dataframe is not None
+    assert load.dataframe["source_notice_id"].to_list() == ["newer", "older"]
+
+
+def test_cached_system_notice_table_loader_reuses_session_cache() -> None:
+    calls: list[int] = []
+    config = _dashboard_config()
+    cache: GasModelSessionCache = {}
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        calls.append(len(calls) + 1)
+        return pl.DataFrame({"source_notice_id": [f"notice-{calls[-1]}"]})
+
+    first_load = cached_load_system_notice_table(config, cache, reader=reader)
+    cached_load = cached_load_system_notice_table(config, cache, reader=reader)
+    refreshed_load = cached_load_system_notice_table(
+        config,
+        cache,
+        reader=reader,
+        refresh_token=1,
+    )
+
+    assert calls == [1, 2]
+    assert not first_load.cache_hit
+    assert cached_load.cache_hit
+    assert not refreshed_load.cache_hit
+    assert cached_load.dataframe is not None
+    assert cached_load.dataframe["source_notice_id"].to_list() == ["notice-1"]
+    assert refreshed_load.dataframe is not None
+    assert refreshed_load.dataframe["source_notice_id"].to_list() == ["notice-2"]
+
+
+def test_system_notice_summary_filters_critical_and_notice_windows() -> None:
+    reference_time = datetime(2024, 1, 10, 12)
+    load = _system_notice_load(
+        pl.DataFrame(
+            {
+                "source_notice_id": [
+                    "active-critical",
+                    "old-critical",
+                    "recent-noncritical",
+                    "future-critical",
+                ],
+                "critical_notice": [True, True, False, True],
+                "notice_start_timestamp": [
+                    reference_time - timedelta(hours=2),
+                    reference_time - timedelta(days=30),
+                    reference_time - timedelta(days=1),
+                    reference_time + timedelta(days=1),
+                ],
+                "notice_end_timestamp": [
+                    reference_time + timedelta(hours=2),
+                    reference_time - timedelta(days=29),
+                    reference_time - timedelta(hours=1),
+                    reference_time + timedelta(days=2),
+                ],
+                "system_message": [
+                    "Linepack warning",
+                    "Expired constraint",
+                    "Recent information",
+                    "Upcoming warning",
+                ],
+                "system_email_message": [
+                    "Linepack email",
+                    "Expired email",
+                    "Recent email",
+                    "Upcoming email",
+                ],
+                "url_path": ["/active", "/old", "/recent", "/future"],
+                "source_system": ["VICGAS"] * 4,
+                "source_table": [
+                    "silver.vicgas.silver_int029a_v4_system_notices_1",
+                    "silver.vicgas.silver_int029a_v4_system_notices_1",
+                    "silver.vicgas.silver_int929a_v4_system_notices_1",
+                    "silver.vicgas.silver_int929a_v4_system_notices_1",
+                ],
+            }
+        )
+    )
+
+    active_critical = system_notice_summary_frame(
+        load,
+        SYSTEM_NOTICE_CRITICAL_FILTER_CRITICAL,
+        SYSTEM_NOTICE_WINDOW_FILTER_ACTIVE,
+        reference_time=reference_time,
+    )
+    recent_noncritical = system_notice_summary_frame(
+        load,
+        SYSTEM_NOTICE_CRITICAL_FILTER_NON_CRITICAL,
+        SYSTEM_NOTICE_WINDOW_FILTER_RECENT,
+        reference_time=reference_time,
+        recent_days=2,
+    )
+    no_active_noncritical = system_notice_summary_frame(
+        load,
+        SYSTEM_NOTICE_CRITICAL_FILTER_NON_CRITICAL,
+        SYSTEM_NOTICE_WINDOW_FILTER_ACTIVE,
+        reference_time=reference_time,
+    )
+    all_loaded_preview = system_notice_summary_frame(
+        load,
+        SYSTEM_NOTICE_CRITICAL_FILTER_ALL,
+        SYSTEM_NOTICE_WINDOW_FILTER_ALL,
+        reference_time=reference_time,
+        preview_rows=10,
+    )
+    active_recent_default = system_notice_summary_frame(
+        load,
+        reference_time=reference_time,
+        recent_days=2,
+        preview_rows=10,
+    )
+    source_coverage = system_notice_source_coverage_frame(
+        load,
+        reference_time=reference_time,
+    )
+    kpis = system_notice_kpi_frame(load, reference_time=reference_time, recent_days=2)
+
+    assert active_critical.to_dict(as_series=False) == {
+        "notice id": ["active-critical"],
+        "critical": [True],
+        "window": ["Active"],
+        "start": [reference_time - timedelta(hours=2)],
+        "end": [reference_time + timedelta(hours=2)],
+        "message": ["Linepack warning"],
+        "email message": ["Linepack email"],
+        "url": ["/active"],
+        "source system": ["VICGAS"],
+        "source table": ["silver.vicgas.silver_int029a_v4_system_notices_1"],
+    }
+    assert recent_noncritical["notice id"].to_list() == ["recent-noncritical"]
+    assert recent_noncritical["window"].to_list() == ["Ended"]
+    assert no_active_noncritical.is_empty()
+    assert all_loaded_preview["window"].to_list() == [
+        "Active",
+        "Upcoming",
+        "Ended",
+        "Ended",
+    ]
+    assert active_recent_default["notice id"].to_list() == [
+        "active-critical",
+        "future-critical",
+        "recent-noncritical",
+    ]
+    assert kpis.to_dict(as_series=False) == {
+        "metric": [
+            "Loaded notices",
+            "Critical notices",
+            "Active notices",
+            "Recent notices",
+            "Source tables",
+        ],
+        "value": ["4", "3", "1", "3", "2"],
+        "detail": [
+            "Full table scan",
+            "Rows where the critical flag is true",
+            "Active at 2024-01-10 12:00",
+            "Started or ended in the last 2 days",
+            "Distinct system notice source tables represented",
+        ],
+    }
+    assert source_coverage.select(
+        "source table", "notices", "critical notices"
+    ).to_dict(as_series=False) == {
+        "source table": [
+            "silver.vicgas.silver_int029a_v4_system_notices_1",
+            "silver.vicgas.silver_int929a_v4_system_notices_1",
+        ],
+        "notices": [2, 2],
+        "critical notices": [2, 1],
+    }
+
+
+def test_system_notice_kpis_and_empty_state_cover_missing_data() -> None:
+    empty_load = _system_notice_load(
+        pl.DataFrame(),
+        row_limit=4,
+    )
+    error_load = GasTableLoad(
+        spec=SYSTEM_NOTICE_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_system_notice",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=4,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+    assert system_notice_summary_frame(empty_load).is_empty()
+    assert system_notice_kpi_frame(empty_load).is_empty()
+    assert system_notice_source_coverage_frame(empty_load).is_empty()
+
+    empty_markdown = system_notice_empty_state_markdown(empty_load)
+    error_markdown = system_notice_empty_state_markdown(error_load)
+
+    assert "No system notice data is available for this view" in empty_markdown
+    assert "`silver.gas_model.silver_gas_fact_system_notice`" in empty_markdown
+    assert "Bounded preview reads are capped at `4` rows per table" in empty_markdown
+    assert "FileNotFoundError: no parquet files found" in error_markdown
+
+
+def test_system_notice_helpers_cover_default_reference_and_filter_empty_state() -> None:
+    load = _system_notice_load(
+        pl.DataFrame(
+            {
+                "source_notice_id": ["open-window"],
+                "critical_notice": [False],
+                "notice_start_timestamp": [None],
+                "notice_end_timestamp": [None],
+                "system_message": ["Window dates are not supplied"],
+            }
+        )
+    )
+    string_timestamp_load = _system_notice_load(
+        pl.DataFrame(
+            {
+                "source_notice_id": ["string-window"],
+                "critical_notice": [True],
+                "notice_start_timestamp": ["2024-01-01 00:00:00"],
+                "notice_end_timestamp": ["2024-01-02 00:00:00"],
+            }
+        )
+    )
+
+    default_kpis = system_notice_kpi_frame(load)
+    parsed_summary = system_notice_summary_frame(
+        string_timestamp_load,
+        window_filter=SYSTEM_NOTICE_WINDOW_FILTER_ALL,
+        reference_time=datetime(2024, 1, 1, 12),
+    )
+    filtered_empty_markdown = system_notice_empty_state_markdown(load)
+    missing_load_markdown = system_notice_empty_state_markdown(None)
+
+    assert default_kpis["metric"].to_list() == [
+        "Loaded notices",
+        "Critical notices",
+        "Active notices",
+        "Recent notices",
+        "Source tables",
+    ]
+    assert default_kpis["value"].to_list() == ["1", "0", "0", "0", "0"]
+    assert parsed_summary["start"].to_list() == [datetime(2024, 1, 1)]
+    assert parsed_summary["end"].to_list() == [datetime(2024, 1, 2)]
+    assert "current filters do not match" in filtered_empty_markdown
+    assert "did not receive a system notice load result" in missing_load_markdown
 
 
 def test_load_gas_model_tables_passes_configured_uri_storage_and_limit() -> None:
@@ -790,6 +1092,22 @@ def test_render_dashboard_context_panel_includes_dashboard_usage_metadata() -> N
 def test_render_dashboard_context_panel_rejects_unknown_concept() -> None:
     with pytest.raises(DashboardRegistryError, match="concept not found"):
         render_dashboard_context_panel("missing-context")
+
+
+def _system_notice_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=SYSTEM_NOTICE_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{SYSTEM_NOTICE_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
 
 
 def _dashboard_config() -> GasDashboardConfig:

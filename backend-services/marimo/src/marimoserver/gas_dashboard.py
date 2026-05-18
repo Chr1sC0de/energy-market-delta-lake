@@ -2,6 +2,7 @@
 
 from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from html import escape
 import os
 from time import perf_counter
@@ -41,6 +42,27 @@ DEFAULT_AWS_ALLOW_HTTP = "true"
 DEFAULT_AWS_PREVIEW_ROWS = 100
 AWS_DEVELOPMENT_LOCATION = "aws"
 DEFAULT_RELATED_CONTEXT_LIMIT = 6
+SYSTEM_NOTICE_TABLE_NAME = "silver_gas_fact_system_notice"
+SYSTEM_NOTICE_CRITICAL_FILTER_ALL = "All notices"
+SYSTEM_NOTICE_CRITICAL_FILTER_CRITICAL = "Critical only"
+SYSTEM_NOTICE_CRITICAL_FILTER_NON_CRITICAL = "Non-critical only"
+SYSTEM_NOTICE_CRITICAL_FILTER_OPTIONS = (
+    SYSTEM_NOTICE_CRITICAL_FILTER_ALL,
+    SYSTEM_NOTICE_CRITICAL_FILTER_CRITICAL,
+    SYSTEM_NOTICE_CRITICAL_FILTER_NON_CRITICAL,
+)
+SYSTEM_NOTICE_WINDOW_FILTER_ACTIVE_RECENT = "Active or recent"
+SYSTEM_NOTICE_WINDOW_FILTER_ACTIVE = "Active now"
+SYSTEM_NOTICE_WINDOW_FILTER_RECENT = "Recent starts"
+SYSTEM_NOTICE_WINDOW_FILTER_ALL = "All loaded notices"
+SYSTEM_NOTICE_WINDOW_FILTER_OPTIONS = (
+    SYSTEM_NOTICE_WINDOW_FILTER_ACTIVE_RECENT,
+    SYSTEM_NOTICE_WINDOW_FILTER_ACTIVE,
+    SYSTEM_NOTICE_WINDOW_FILTER_RECENT,
+    SYSTEM_NOTICE_WINDOW_FILTER_ALL,
+)
+DEFAULT_SYSTEM_NOTICE_RECENT_DAYS = 14
+DEFAULT_SYSTEM_NOTICE_PREVIEW_ROWS = 50
 
 
 @dataclass(frozen=True)
@@ -249,6 +271,70 @@ GAS_MODEL_TABLES: tuple[GasTableSpec, ...] = (
     ),
 )
 
+SYSTEM_NOTICE_TABLE_SPEC = GasTableSpec(
+    section="System notices",
+    label="System notices",
+    table_name=SYSTEM_NOTICE_TABLE_NAME,
+    date_columns=(
+        "notice_start_timestamp",
+        "notice_end_timestamp",
+        "source_last_updated_timestamp",
+        "ingested_timestamp",
+    ),
+    preview_columns=(
+        "source_notice_id",
+        "critical_notice",
+        "notice_start_timestamp",
+        "notice_end_timestamp",
+        "system_message",
+        "system_email_message",
+        "url_path",
+        "source_system",
+        "source_table",
+    ),
+)
+SYSTEM_NOTICE_TABLE_SPECS = (SYSTEM_NOTICE_TABLE_SPEC,)
+
+_SYSTEM_NOTICE_RAW_SCHEMA = {
+    "source_notice_id": pl.String,
+    "critical_notice": pl.Boolean,
+    "notice_start_timestamp": pl.Datetime("us"),
+    "notice_end_timestamp": pl.Datetime("us"),
+    "system_message": pl.String,
+    "system_email_message": pl.String,
+    "url_path": pl.String,
+    "source_system": pl.String,
+    "source_table": pl.String,
+    "source_last_updated_timestamp": pl.Datetime("us"),
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_SYSTEM_NOTICE_SUMMARY_SCHEMA = {
+    "notice id": pl.String,
+    "critical": pl.Boolean,
+    "window": pl.String,
+    "start": pl.Datetime("us"),
+    "end": pl.Datetime("us"),
+    "message": pl.String,
+    "email message": pl.String,
+    "url": pl.String,
+    "source system": pl.String,
+    "source table": pl.String,
+}
+_SYSTEM_NOTICE_KPI_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_SYSTEM_NOTICE_SOURCE_COVERAGE_SCHEMA = {
+    "source system": pl.String,
+    "source table": pl.String,
+    "notices": pl.UInt32,
+    "critical notices": pl.UInt32,
+    "active notices": pl.UInt32,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+
 
 def discover_dashboard_config(
     environ: Mapping[str, str] | None = None,
@@ -346,6 +432,42 @@ def cached_load_gas_model_tables(
         clock=clock,
     )
     return _gas_table_loads(specs, shared_loads)
+
+
+def load_system_notice_table(
+    config: GasDashboardConfig,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Load the system notice fact through the shared bounded table loader."""
+    return load_gas_model_tables(
+        config,
+        specs=SYSTEM_NOTICE_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        clock=clock,
+    )[0]
+
+
+def cached_load_system_notice_table(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Return session-cached system notice data for explicit-refresh dashboards."""
+    return cached_load_gas_model_tables(
+        config,
+        cache,
+        specs=SYSTEM_NOTICE_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        refresh_token=refresh_token,
+        clock=clock,
+    )[0]
 
 
 def gas_table_load_status_frame(loads: Sequence[GasTableLoad]) -> pl.DataFrame:
@@ -453,6 +575,332 @@ def table_load_by_name(
         if load.spec.table_name == table_name:
             return load
     return None
+
+
+def system_notice_summary_frame(
+    load: GasTableLoad | None,
+    critical_filter: str = SYSTEM_NOTICE_CRITICAL_FILTER_ALL,
+    window_filter: str = SYSTEM_NOTICE_WINDOW_FILTER_ACTIVE_RECENT,
+    *,
+    reference_time: datetime | None = None,
+    recent_days: int = DEFAULT_SYSTEM_NOTICE_RECENT_DAYS,
+    preview_rows: int = DEFAULT_SYSTEM_NOTICE_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return filtered system notice rows for the dashboard detail preview."""
+    dataframe = _normalised_system_notice_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_SYSTEM_NOTICE_SUMMARY_SCHEMA)
+
+    reference = _system_notice_reference_time(reference_time)
+    filtered = _filter_system_notice_dataframe(
+        dataframe,
+        critical_filter,
+        window_filter,
+        reference,
+        recent_days,
+    )
+    if filtered.is_empty():
+        return pl.DataFrame(schema=_SYSTEM_NOTICE_SUMMARY_SCHEMA)
+
+    return (
+        filtered.with_columns(
+            _system_notice_window_status_expression(reference).alias("_window_status"),
+            pl.col("critical_notice").fill_null(False).alias("_critical_sort"),
+            _system_notice_active_expression(reference).alias("_active_sort"),
+        )
+        .sort(
+            [
+                "_critical_sort",
+                "_active_sort",
+                "notice_start_timestamp",
+                "notice_end_timestamp",
+                "source_notice_id",
+            ],
+            descending=[True, True, True, True, False],
+            nulls_last=True,
+        )
+        .select(
+            pl.col("source_notice_id").alias("notice id"),
+            pl.col("critical_notice").fill_null(False).alias("critical"),
+            pl.col("_window_status").alias("window"),
+            pl.col("notice_start_timestamp").alias("start"),
+            pl.col("notice_end_timestamp").alias("end"),
+            pl.col("system_message").alias("message"),
+            pl.col("system_email_message").alias("email message"),
+            pl.col("url_path").alias("url"),
+            pl.col("source_system").alias("source system"),
+            pl.col("source_table").alias("source table"),
+        )
+        .head(max(1, preview_rows))
+    )
+
+
+def system_notice_kpi_frame(
+    load: GasTableLoad | None,
+    *,
+    reference_time: datetime | None = None,
+    recent_days: int = DEFAULT_SYSTEM_NOTICE_RECENT_DAYS,
+) -> pl.DataFrame:
+    """Return notice-count KPIs for the first dashboard viewport."""
+    dataframe = _normalised_system_notice_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_SYSTEM_NOTICE_KPI_SCHEMA)
+
+    reference = _system_notice_reference_time(reference_time)
+    recent_threshold = reference - timedelta(days=max(1, recent_days))
+    active_expression = _system_notice_active_expression(reference)
+    recent_expression = _system_notice_recent_expression(recent_threshold)
+    counts = dataframe.select(
+        pl.len().alias("loaded_notices"),
+        pl.col("critical_notice")
+        .fill_null(False)
+        .cast(pl.UInt32)
+        .sum()
+        .alias("critical_notices"),
+        active_expression.cast(pl.UInt32).sum().alias("active_notices"),
+        recent_expression.cast(pl.UInt32).sum().alias("recent_notices"),
+        pl.col("source_table").drop_nulls().n_unique().alias("source_tables"),
+    ).row(0, named=True)
+
+    row_limit = None if load is None else load.row_limit
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Loaded notices",
+                "value": f"{counts['loaded_notices']:,}",
+                "detail": format_row_limit(row_limit),
+            },
+            {
+                "metric": "Critical notices",
+                "value": f"{counts['critical_notices']:,}",
+                "detail": "Rows where the critical flag is true",
+            },
+            {
+                "metric": "Active notices",
+                "value": f"{counts['active_notices']:,}",
+                "detail": f"Active at {_format_reference_time(reference)}",
+            },
+            {
+                "metric": "Recent notices",
+                "value": f"{counts['recent_notices']:,}",
+                "detail": f"Started or ended in the last {max(1, recent_days)} days",
+            },
+            {
+                "metric": "Source tables",
+                "value": f"{counts['source_tables']:,}",
+                "detail": "Distinct system notice source tables represented",
+            },
+        ],
+        schema=_SYSTEM_NOTICE_KPI_SCHEMA,
+    )
+
+
+def system_notice_source_coverage_frame(
+    load: GasTableLoad | None,
+    *,
+    reference_time: datetime | None = None,
+) -> pl.DataFrame:
+    """Return source coverage for loaded system notice rows."""
+    dataframe = _normalised_system_notice_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_SYSTEM_NOTICE_SOURCE_COVERAGE_SCHEMA)
+
+    reference = _system_notice_reference_time(reference_time)
+    return (
+        dataframe.with_columns(
+            _system_notice_active_expression(reference).alias("_active_notice")
+        )
+        .group_by("source_system", "source_table")
+        .agg(
+            pl.len().alias("notices"),
+            pl.col("critical_notice")
+            .fill_null(False)
+            .cast(pl.UInt32)
+            .sum()
+            .alias("critical notices"),
+            pl.col("_active_notice").cast(pl.UInt32).sum().alias("active notices"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort(["notices", "source_table"], descending=[True, False])
+        .rename(
+            {
+                "source_system": "source system",
+                "source_table": "source table",
+            }
+        )
+    )
+
+
+def system_notice_empty_state_markdown(load: GasTableLoad | None) -> str:
+    """Return useful empty-state copy for missing or unmatched notice data."""
+    if load is None:
+        status_detail = "The dashboard did not receive a system notice load result."
+        uri = "`silver.gas_model.silver_gas_fact_system_notice`"
+        read_policy = "No read policy was reported."
+    else:
+        if load.error is not None:
+            status_detail = f"Read detail: `{load.error}`"
+        elif load.dataframe is None or load.dataframe.is_empty():
+            status_detail = "The table loaded successfully but returned no rows."
+        else:
+            status_detail = "The current filters do not match any loaded notice rows."
+        uri = f"`{load.uri}`"
+        read_policy = row_limit_message(load.row_limit)
+
+    return f"""
+    **No system notice data is available for this view.**
+
+    The dashboard checked {uri}, which should contain
+    `silver.gas_model.silver_gas_fact_system_notice` rows with notice IDs,
+    critical flags, active windows, messages, and URL paths.
+
+    {status_detail}
+
+    {read_policy}
+
+    Materialize or seed the `silver.gas_model` system notice asset, then use
+    **Refresh data**.
+    """
+
+
+def _normalised_system_notice_dataframe(load: GasTableLoad | None) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_SYSTEM_NOTICE_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _SYSTEM_NOTICE_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("source_notice_id").cast(pl.String, strict=False),
+        pl.col("critical_notice").cast(pl.Boolean, strict=False),
+        _normalise_timestamp_column(dataframe, "notice_start_timestamp"),
+        _normalise_timestamp_column(dataframe, "notice_end_timestamp"),
+        pl.col("system_message").cast(pl.String, strict=False),
+        pl.col("system_email_message").cast(pl.String, strict=False),
+        pl.col("url_path").cast(pl.String, strict=False),
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_table").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "source_last_updated_timestamp"),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
+def _normalise_timestamp_column(dataframe: pl.DataFrame, column: str) -> pl.Expr:
+    if dataframe.schema[column] == pl.String:
+        return (
+            pl.col(column)
+            .str.to_datetime(strict=False)
+            .cast(pl.Datetime("us"), strict=False)
+            .alias(column)
+        )
+    return pl.col(column).cast(pl.Datetime("us"), strict=False).alias(column)
+
+
+def _filter_system_notice_dataframe(
+    dataframe: pl.DataFrame,
+    critical_filter: str,
+    window_filter: str,
+    reference_time: datetime,
+    recent_days: int,
+) -> pl.DataFrame:
+    filtered = _filter_system_notice_critical(dataframe, critical_filter)
+    recent_threshold = reference_time - timedelta(days=max(1, recent_days))
+
+    if window_filter == SYSTEM_NOTICE_WINDOW_FILTER_ACTIVE:
+        return filtered.filter(_system_notice_active_expression(reference_time))
+    if window_filter == SYSTEM_NOTICE_WINDOW_FILTER_RECENT:
+        return filtered.filter(_system_notice_recent_start_expression(recent_threshold))
+    if window_filter == SYSTEM_NOTICE_WINDOW_FILTER_ALL:
+        return filtered
+    return filtered.filter(
+        _system_notice_active_expression(reference_time)
+        | _system_notice_recent_expression(recent_threshold)
+    )
+
+
+def _filter_system_notice_critical(
+    dataframe: pl.DataFrame,
+    critical_filter: str,
+) -> pl.DataFrame:
+    critical_expression = pl.col("critical_notice").fill_null(False)
+    if critical_filter == SYSTEM_NOTICE_CRITICAL_FILTER_CRITICAL:
+        return dataframe.filter(critical_expression)
+    if critical_filter == SYSTEM_NOTICE_CRITICAL_FILTER_NON_CRITICAL:
+        return dataframe.filter(~critical_expression)
+    return dataframe
+
+
+def _system_notice_active_expression(reference_time: datetime) -> pl.Expr:
+    reference = pl.lit(reference_time, dtype=pl.Datetime("us"))
+    has_window_boundary = (
+        pl.col("notice_start_timestamp").is_not_null()
+        | pl.col("notice_end_timestamp").is_not_null()
+    )
+    return (
+        has_window_boundary
+        & (
+            pl.col("notice_start_timestamp").is_null()
+            | (pl.col("notice_start_timestamp") <= reference)
+        )
+        & (
+            pl.col("notice_end_timestamp").is_null()
+            | (pl.col("notice_end_timestamp") >= reference)
+        )
+    )
+
+
+def _system_notice_recent_start_expression(recent_threshold: datetime) -> pl.Expr:
+    threshold = pl.lit(recent_threshold, dtype=pl.Datetime("us"))
+    return pl.col("notice_start_timestamp").is_not_null() & (
+        pl.col("notice_start_timestamp") >= threshold
+    )
+
+
+def _system_notice_recent_expression(recent_threshold: datetime) -> pl.Expr:
+    threshold = pl.lit(recent_threshold, dtype=pl.Datetime("us"))
+    return (
+        pl.col("notice_start_timestamp").is_not_null()
+        & (pl.col("notice_start_timestamp") >= threshold)
+    ) | (
+        pl.col("notice_end_timestamp").is_not_null()
+        & (pl.col("notice_end_timestamp") >= threshold)
+    )
+
+
+def _system_notice_window_status_expression(reference_time: datetime) -> pl.Expr:
+    reference = pl.lit(reference_time, dtype=pl.Datetime("us"))
+    return (
+        pl.when(_system_notice_active_expression(reference_time))
+        .then(pl.lit("Active"))
+        .when(
+            pl.col("notice_start_timestamp").is_not_null()
+            & (pl.col("notice_start_timestamp") > reference)
+        )
+        .then(pl.lit("Upcoming"))
+        .when(
+            pl.col("notice_end_timestamp").is_not_null()
+            & (pl.col("notice_end_timestamp") < reference)
+        )
+        .then(pl.lit("Ended"))
+        .otherwise(pl.lit("Window unknown"))
+    )
+
+
+def _system_notice_reference_time(reference_time: datetime | None) -> datetime:
+    if reference_time is not None:
+        return reference_time.replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
+def _format_reference_time(reference_time: datetime) -> str:
+    return reference_time.isoformat(sep=" ", timespec="minutes")
 
 
 def render_dashboard_context_panel(

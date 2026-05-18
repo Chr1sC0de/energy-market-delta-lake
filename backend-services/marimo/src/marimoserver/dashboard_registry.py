@@ -240,6 +240,21 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "source_chunk_ids": (),
     },
     {
+        "concept_id": "gas-system-notices",
+        "title": "Gas System Notices",
+        "description": (
+            "Available operational dashboard for critical gas system notices, "
+            "active or recent notice windows, message fields, URL paths, and "
+            "source coverage from the curated system notice fact."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "system_notices",
+        "backing_assets": ("silver.gas_model.silver_gas_fact_system_notice",),
+        "generated_gold_paths": (),
+        "source_chunk_ids": (),
+    },
+    {
         "concept_id": "gas-day-context",
         "title": "Gas Day Context",
         "description": (

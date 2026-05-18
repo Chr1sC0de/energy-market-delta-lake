@@ -307,6 +307,8 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   readiness without adding AWS write paths. The glossary explorer browses the
   packaged Marimo registry for generated-gold metadata paths, source chunk IDs,
   related concepts, and dashboard states without generated-file or table reads.
+  The gas system notices dashboard reads the curated system notice fact through
+  the same bounded helper surface and does not add AWS write paths.
   Its `/marimo` entry route renders the registry-backed concept gallery;
   available cards link to mounted notebooks and planned cards remain non-link
   roadmap entries. Marimo packaged assets stay on
@@ -350,6 +352,7 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
+  - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/caddy/Dockerfile`
   - `backend-services/caddy/package.json`
   - `backend-services/caddy/src/pages/index.astro`

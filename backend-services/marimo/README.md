@@ -15,6 +15,7 @@ Marimo-Codex research workspace image.
 - [Data readiness overview](#data-readiness-overview)
 - [Table explorer](#table-explorer)
 - [Gas market dashboard](#gas-market-dashboard)
+- [System notices dashboard](#system-notices-dashboard)
 - [GBB interactive map](#gbb-interactive-map)
 - [Local usage](#local-usage)
 - [Validation](#validation)
@@ -274,6 +275,22 @@ It gives first-look sections for:
 When storage has no seeded or materialized `gas_model` tables yet, the notebook
 renders section empty states instead of surfacing Parquet read tracebacks.
 
+## System notices dashboard
+
+[notebooks/system_notices.py](notebooks/system_notices.py) is an operational
+dashboard over `silver.gas_model.silver_gas_fact_system_notice`. It uses the
+shared bounded gas model loader and session cache from
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py) instead
+of adding notebook-local table reads.
+
+The dashboard shows critical notice counts, active and recent notice windows,
+notice IDs, critical flags, start and end timestamps, `system_message`,
+`system_email_message`, URL paths, and source coverage by source system and
+source table. Controls filter the loaded bounded preview by critical status and
+active/recent window. Missing notice data, unavailable Parquet prefixes, and
+filter combinations with no matches render dashboard empty states with the
+checked table, read policy, and refresh action.
+
 ## GBB interactive map
 
 [notebooks/gbb_interactive_map.py](notebooks/gbb_interactive_map.py) provides a
@@ -340,7 +357,7 @@ server at a different notebook directory.
 With the local backend stack running, open the Marimo concept gallery through
 Caddy and choose an available card such as `data_readiness_overview`,
 `glossary_explorer`, `table_explorer`, `sample_energy_market`, or
-`gbb_interactive_map`:
+`system_notices`, or `gbb_interactive_map`:
 
 ```text
 http://localhost/marimo
@@ -388,6 +405,13 @@ Use the same pattern for the GBB interactive map:
 ```bash
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gbb_interactive_map.py
+```
+
+Use the same pattern for the system notices dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/system_notices.py
 ```
 
 If the GBB map inputs are missing from LocalStack, refresh or load the local
@@ -480,12 +504,14 @@ prek run -a
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
+  - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/tests/component/conftest.py`
   - `backend-services/marimo/tests/component/test_dashboard_registry.py`
   - `backend-services/marimo/tests/component/test_main.py`
   - `backend-services/marimo/tests/component/test_local_image_split.py`
   - `backend-services/marimo/tests/component/dashboard_smoke_harness.py`
   - `backend-services/marimo/tests/component/test_dashboard_smoke.py`
+  - `backend-services/marimo/tests/component/test_gas_dashboard.py`
   - `backend-services/marimo/tests/component/test_glossary_explorer.py`
   - `backend-services/marimo/tests/component/test_data_readiness.py`
   - `backend-services/compose.yaml`

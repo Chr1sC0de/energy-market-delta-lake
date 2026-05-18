@@ -91,6 +91,12 @@ helper surfaces to show platform operations readiness without changing Dagster
 asset definitions, ETL materialization behavior, LocalStack setup, or AWS
 infrastructure.
 
+The system notices dashboard stays inside the same boundary. It reads the
+curated `silver.gas_model.silver_gas_fact_system_notice` Parquet output through
+the shared bounded loader and session cache, then filters and summarizes loaded
+notice rows without changing system notice ETL, ingestion, alerting, or AWS
+infrastructure.
+
 Static asset optimization stays limited to immutable HTTP caching for
 content-hashed Marimo package assets. Extra preload changes, pre-serving
 packaged WASM, and auto-refresh timer behavior remain deferred until route or
@@ -119,11 +125,13 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
+  - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/tests/component/test_dashboard_registry.py`
   - `backend-services/marimo/tests/component/test_main.py`
   - `backend-services/marimo/tests/component/test_local_image_split.py`
   - `backend-services/marimo/tests/component/test_data_readiness.py`
   - `backend-services/marimo/tests/component/test_dashboard_smoke.py`
+  - `backend-services/marimo/tests/component/test_gas_dashboard.py`
   - `backend-services/marimo/tests/component/test_glossary_explorer.py`
 - `sync.scope`: `architecture`
 - `sync.qa`:

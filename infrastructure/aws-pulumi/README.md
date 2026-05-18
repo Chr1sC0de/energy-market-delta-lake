@@ -207,7 +207,8 @@ Key deployed behaviors visible in the infrastructure code:
   Caddy, serves the registry-backed `/marimo` concept gallery, returns
   immutable cache headers for content-hashed `/marimo/<notebook>/assets/*`
   responses, exposes the data readiness overview for platform operations and
-  the registry-only glossary explorer for Market context metadata browsing, and
+  the registry-only glossary explorer for Market context metadata browsing,
+  exposes the gas system notices dashboard over curated system notice data, and
   loads bounded table previews instead of full table scans, with explicit
   refresh, session cache keys, load timing, and row-limit messages for shared
   gas-model dashboard reads
@@ -428,6 +429,7 @@ system's services and Dagster workflows.
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
+  - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/caddy/Caddyfile`
   - `infrastructure/aws-pulumi/.pre-commit-config.yaml`
   - `infrastructure/aws-pulumi/pyproject.toml`
