@@ -76,6 +76,9 @@ main tool.
 
 - Every control must have a visible effect, a sensible default, and a known
   empty state.
+- Expensive bounded table reads should use explicit refresh controls and
+  session-level caches. Do not add auto-refresh timers by default; show load
+  timing and row-limit policy near the relevant data-health surface.
 - Prefer fewer controls that were exercised during development over broad
   control panels that were not reviewed.
 - Show degraded states as designed UI, not traceback text. Empty LocalStack

@@ -180,8 +180,12 @@ Bounded `silver.gas_model` reads are centralized in
 Dashboard helpers request sample or recent views through that loader, so AWS
 keeps `MARIMO_FULL_TABLE_SCAN_ENABLED=false` preview behavior while local
 development can keep full-table scans where the Marimo config allows them.
-Missing or empty prefixes return table-level empty-state details instead of
-raising notebook tracebacks.
+The shared loader also owns explicit refresh tokens, per-session table-read
+caching, load timing, cache-hit labels, and row-limit messaging. The default
+gas market dashboard uses **Refresh data** to invalidate that session cache;
+display-control changes reuse cached reads while the source tables have not
+been refreshed. Missing or empty prefixes return table-level empty-state
+details instead of raising notebook tracebacks.
 
 It gives first-look sections for:
 
@@ -315,7 +319,7 @@ require `AWS_ENDPOINT_URL` to point at the LocalStack endpoint that holds the
 materialized table data.
 
 Materialize the `gas_model` assets in Dagster, or seed LocalStack with curated
-outputs, then refresh the dashboard to see populated sections.
+outputs, then use **Refresh data** in the dashboard to see populated sections.
 
 ## Validation
 

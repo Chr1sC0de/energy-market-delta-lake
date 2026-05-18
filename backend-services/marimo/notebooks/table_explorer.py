@@ -10,6 +10,7 @@ def _():
     import polars as pl
 
     from marimoserver.gas_dashboard import render_dashboard_context_panel
+    from marimoserver.gas_model_loader import refresh_token_from_control
     from marimoserver.table_explorer import (
         DEFAULT_ROW_LIMIT,
         TableAvailability,
@@ -45,6 +46,7 @@ def _():
         overlay_table_catalogue,
         pl,
         render_dashboard_context_panel,
+        refresh_token_from_control,
     )
 
 
@@ -562,6 +564,7 @@ def _(
     cached_table_scan,
     config,
     refresh_scan_button,
+    refresh_token_from_control,
     selected_entry,
     table_scan_cache,
 ):
@@ -570,12 +573,11 @@ def _(
     if selected_entry is None or selected_table is None:
         table_scan = None
     else:
-        refresh_token = 0 if refresh_scan_button is None else refresh_scan_button.value
         table_scan = cached_table_scan(
             selected_table,
             config,
             table_scan_cache,
-            refresh_token=refresh_token,
+            refresh_token=refresh_token_from_control(refresh_scan_button),
         )
 
     return selected_table, table_scan

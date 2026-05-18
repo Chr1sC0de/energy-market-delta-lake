@@ -1,9 +1,10 @@
 """Helpers for the gas market overview marimo dashboard."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass
 from html import escape
 import os
+from time import perf_counter
 
 import polars as pl
 
@@ -15,11 +16,19 @@ from marimoserver.dashboard_registry import (
 )
 from marimoserver.gas_model_loader import (
     SILVER_GAS_MODEL_PREFIX as SILVER_GAS_MODEL_PREFIX,
+    Clock,
     GasModelReadRequest,
+    GasModelSessionCache,
+    GasModelTableLoad,
     GasModelTableView,
     TableReader,
+    cache_status_label,
+    cached_gas_model_read_requests,
+    format_load_duration,
+    format_row_limit,
     load_gas_model_read_requests,
     read_parquet_table as read_parquet_table,
+    row_limit_message,
 )
 
 DEFAULT_NAME_PREFIX = "energy-market"
@@ -95,6 +104,8 @@ class GasTableLoad:
     dataframe: pl.DataFrame | None
     error: str | None
     row_limit: int | None
+    load_duration_seconds: float
+    cache_hit: bool
 
     @property
     def available(self) -> bool:
@@ -302,9 +313,95 @@ def load_gas_model_tables(
     specs: Sequence[GasTableSpec] = GAS_MODEL_TABLES,
     reader: TableReader = read_parquet_table,
     view: GasModelTableView = GasModelTableView.SAMPLE,
+    *,
+    clock: Clock = perf_counter,
 ) -> list[GasTableLoad]:
     """Load configured gas_model tables, returning unavailable entries on errors."""
-    requests = tuple(
+    shared_loads = load_gas_model_read_requests(
+        config,
+        _gas_model_read_requests(specs, view),
+        reader=reader,
+        clock=clock,
+    )
+    return _gas_table_loads(specs, shared_loads)
+
+
+def cached_load_gas_model_tables(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    specs: Sequence[GasTableSpec] = GAS_MODEL_TABLES,
+    reader: TableReader = read_parquet_table,
+    view: GasModelTableView = GasModelTableView.SAMPLE,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Return session-cached gas_model tables for explicit-refresh dashboards."""
+    shared_loads = cached_gas_model_read_requests(
+        config,
+        _gas_model_read_requests(specs, view),
+        cache,
+        reader=reader,
+        refresh_token=refresh_token,
+        clock=clock,
+    )
+    return _gas_table_loads(specs, shared_loads)
+
+
+def gas_table_load_status_frame(loads: Sequence[GasTableLoad]) -> pl.DataFrame:
+    """Return dashboard table-load status with timing and row-limit detail."""
+    return pl.DataFrame(
+        [
+            {
+                "section": load.spec.section,
+                "table": load.spec.table_name,
+                "label": load.spec.label,
+                "status": _table_load_status(load),
+                "rows": 0 if load.dataframe is None else load.dataframe.height,
+                "row limit": format_row_limit(load.row_limit),
+                "load time": format_load_duration(load.load_duration_seconds),
+                "cache": cache_status_label(load.cache_hit),
+                "detail": load.error or "",
+                "uri": load.uri,
+            }
+            for load in loads
+        ]
+    )
+
+
+def gas_table_load_status_message(loads: Sequence[GasTableLoad]) -> str:
+    """Return consistent Markdown status copy for dashboard bounded table reads."""
+    if len(loads) == 0:
+        return "No `silver.gas_model` tables were requested."
+
+    available_count = sum(load.available for load in loads)
+    failed_count = sum(load.error is not None for load in loads)
+    cache_hit_count = sum(load.cache_hit for load in loads)
+    total_duration = sum(load.load_duration_seconds for load in loads)
+    row_limit = _common_row_limit(loads)
+
+    return "\n".join(
+        (
+            f"- Tables available: `{available_count}` of `{len(loads)}`",
+            f"- Read policy: {row_limit_message(row_limit)}",
+            (
+                f"- Load timing: `{format_load_duration(total_duration)}` "
+                f"across `{len(loads)}` table reads"
+            ),
+            (
+                f"- Session cache: `{cache_hit_count}` hits; use **Refresh data** "
+                "after source tables are materialized or reseeded"
+            ),
+            f"- Unavailable tables: `{failed_count}`",
+        )
+    )
+
+
+def _gas_model_read_requests(
+    specs: Sequence[GasTableSpec],
+    view: GasModelTableView,
+) -> tuple[GasModelReadRequest, ...]:
+    return tuple(
         GasModelReadRequest(
             table_name=spec.table_name,
             view=view,
@@ -312,8 +409,12 @@ def load_gas_model_tables(
         )
         for spec in specs
     )
-    shared_loads = load_gas_model_read_requests(config, requests, reader=reader)
 
+
+def _gas_table_loads(
+    specs: Sequence[GasTableSpec],
+    shared_loads: Sequence[GasModelTableLoad],
+) -> list[GasTableLoad]:
     return [
         GasTableLoad(
             spec=spec,
@@ -321,9 +422,26 @@ def load_gas_model_tables(
             dataframe=shared_load.dataframe,
             error=shared_load.error,
             row_limit=shared_load.row_limit,
+            load_duration_seconds=shared_load.load_duration_seconds,
+            cache_hit=shared_load.cache_hit,
         )
         for spec, shared_load in zip(specs, shared_loads, strict=True)
     ]
+
+
+def _table_load_status(load: GasTableLoad) -> str:
+    if load.error is not None:
+        return "Unavailable"
+    if load.available:
+        return "Available"
+    return "Empty"
+
+
+def _common_row_limit(loads: Sequence[GasTableLoad]) -> int | None:
+    row_limits = {load.row_limit for load in loads}
+    if len(row_limits) == 1:
+        return next(iter(row_limits))
+    return min(row_limit for row_limit in row_limits if row_limit is not None)
 
 
 def table_load_by_name(

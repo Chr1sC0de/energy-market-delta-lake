@@ -300,7 +300,9 @@ placement, image pull, task startup latency, or scale-in behavior because issue
 - The deployed Marimo dashboard runs with `DEVELOPMENT_LOCATION=aws`,
   `MARIMO_FULL_TABLE_SCAN_ENABLED=false`, and `MARIMO_MAX_PREVIEW_ROWS=100`,
   so table previews are bounded and use the instance profile instead of static
-  AWS credentials. Its `/marimo` entry route renders the registry-backed
+  AWS credentials. Curated gas-model dashboard reads use explicit refresh,
+  session-level cache keys, load timing, and row-limit messages rather than
+  auto-refresh timers. Its `/marimo` entry route renders the registry-backed
   concept gallery; available cards link to mounted notebooks and planned cards
   remain non-link roadmap entries.
 - The user-code task receives `DAGSTER_FAILURE_ALERT_TOPIC_ARN` from Pulumi
