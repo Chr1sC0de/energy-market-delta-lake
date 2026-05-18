@@ -12,11 +12,14 @@ from marimoserver.data_readiness import (
     readiness_action_markdown,
 )
 from marimoserver.gas_dashboard import (
+    GAS_QUALITY_TABLE_SPEC,
     GasTableSpec,
     SYSTEM_NOTICE_TABLE_SPEC,
     discover_dashboard_config,
+    gas_quality_empty_state_markdown,
     gas_table_load_status_frame,
     gas_table_load_status_message,
+    load_gas_quality_table,
     load_gas_model_tables,
     load_system_notice_table,
     render_dashboard_context_panel,
@@ -175,6 +178,34 @@ def test_system_notices_dashboard_bounded_loader_renders_empty_state() -> None:
     assert not load.available
     assert "No system notice data is available for this view" in empty_markdown
     assert "Bounded preview reads are capped at `5` rows per table" in empty_markdown
+
+
+def test_gas_quality_dashboard_bounded_loader_renders_empty_state() -> None:
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "6",
+        }
+    )
+    captured_row_limits: list[int | None] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        captured_row_limits.append(row_limit)
+        return pl.DataFrame()
+
+    load = load_gas_quality_table(config, reader=reader)
+    empty_markdown = gas_quality_empty_state_markdown(load)
+
+    assert captured_row_limits == [6]
+    assert load.spec == GAS_QUALITY_TABLE_SPEC
+    assert not load.available
+    assert "No gas quality or composition data is available" in empty_markdown
+    assert "Bounded preview reads are capped at `6` rows per table" in empty_markdown
 
 
 def test_gbb_map_bounded_loader_renders_empty_state() -> None:

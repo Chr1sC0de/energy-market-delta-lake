@@ -309,7 +309,9 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   related concepts, and dashboard states without generated-file or table reads.
   The gas system notices dashboard reads the curated system notice fact through
   the same bounded helper surface and does not add AWS write paths.
-  Its `/marimo` entry route renders the registry-backed concept gallery;
+  The gas quality and composition dashboard reads the curated gas quality fact
+  through the same bounded helper surface and does not add AWS write paths.
+  The `/marimo` entry route renders the registry-backed concept gallery;
   available cards link to mounted notebooks and planned cards remain non-link
   roadmap entries. Marimo packaged assets stay on
   `/marimo/<notebook>/assets/*` routes, pass through Caddy to the dashboard,
@@ -353,6 +355,7 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
+  - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/caddy/Dockerfile`
   - `backend-services/caddy/package.json`
   - `backend-services/caddy/src/pages/index.astro`

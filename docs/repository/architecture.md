@@ -129,7 +129,9 @@ guest Dagster GraphQL endpoint, and has read-only access to curated AEMO and
 IO-manager buckets. Its data readiness overview gives platform operators a
 first-stop check over those read-only S3 and Dagster GraphQL surfaces. Its
 glossary explorer browses packaged registry metadata without reading generated
-gold Markdown or live S3 tables at runtime. The Marimo-Codex workspace is
+gold Markdown or live S3 tables at runtime. Its gas quality and system notice
+dashboards use the shared bounded gas-model loader for read-only fact previews
+and summaries. The Marimo-Codex workspace is
 bound to localhost for human-operated research and
 issue-draft preparation. Deployed Codex execution remains deferred pending
 security review. The optional
@@ -250,6 +252,7 @@ Gas market knowledge base responsibility:
   - `backend-services/caddy/src/pages/index.astro`
   - `backend-services/caddy/public/theme.css`
   - `backend-services/marimo/src/marimoserver/main.py`
+  - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/src/marimoserver/data_readiness.py`
   - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
@@ -257,6 +260,7 @@ Gas market knowledge base responsibility:
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
+  - `backend-services/marimo/notebooks/gas_quality_composition.py`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`

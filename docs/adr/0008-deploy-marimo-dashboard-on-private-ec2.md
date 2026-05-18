@@ -97,6 +97,12 @@ the shared bounded loader and session cache, then filters and summarizes loaded
 notice rows without changing system notice ETL, ingestion, alerting, or AWS
 infrastructure.
 
+The gas quality and composition dashboard stays inside the same boundary. It
+reads the curated `silver.gas_model.silver_gas_fact_gas_quality` Parquet output
+through the shared bounded loader and session cache, then filters and
+summarizes loaded quality and composition rows without changing gas quality ETL,
+schemas, source ingestion, or quality calculations.
+
 Static asset optimization stays limited to immutable HTTP caching for
 content-hashed Marimo package assets. Extra preload changes, pre-serving
 packaged WASM, and auto-refresh timer behavior remain deferred until route or
@@ -126,6 +132,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
+  - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/marimo/tests/component/test_dashboard_registry.py`
   - `backend-services/marimo/tests/component/test_main.py`
   - `backend-services/marimo/tests/component/test_local_image_split.py`

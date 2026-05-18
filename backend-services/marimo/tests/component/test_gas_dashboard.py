@@ -1,7 +1,7 @@
 """Component tests for the gas market dashboard helper surface."""
 
 from collections.abc import Mapping
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Self
 
 import polars as pl
@@ -9,6 +9,10 @@ import pytest
 
 from marimoserver.gas_dashboard import (
     GAS_MODEL_TABLES,
+    GAS_QUALITY_QUALITY_TYPE_FILTER_ALL,
+    GAS_QUALITY_SOURCE_POINT_FILTER_ALL,
+    GAS_QUALITY_TABLE_NAME,
+    GAS_QUALITY_TABLE_SPEC,
     SYSTEM_NOTICE_CRITICAL_FILTER_ALL,
     SYSTEM_NOTICE_CRITICAL_FILTER_CRITICAL,
     SYSTEM_NOTICE_CRITICAL_FILTER_NON_CRITICAL,
@@ -20,11 +24,20 @@ from marimoserver.gas_dashboard import (
     GasDashboardConfig,
     GasTableLoad,
     GasTableSpec,
+    cached_load_gas_quality_table,
     cached_load_gas_model_tables,
     cached_load_system_notice_table,
     discover_dashboard_config,
+    gas_quality_empty_state_markdown,
+    gas_quality_kpi_frame,
+    gas_quality_observation_frame,
+    gas_quality_quality_type_options,
+    gas_quality_source_coverage_frame,
+    gas_quality_source_point_options,
+    gas_quality_type_summary_frame,
     gas_table_load_status_frame,
     gas_table_load_status_message,
+    load_gas_quality_table,
     load_gas_model_tables,
     load_system_notice_table,
     read_parquet_table,
@@ -279,6 +292,260 @@ def test_cached_system_notice_table_loader_reuses_session_cache() -> None:
     assert cached_load.dataframe["source_notice_id"].to_list() == ["notice-1"]
     assert refreshed_load.dataframe is not None
     assert refreshed_load.dataframe["source_notice_id"].to_list() == ["notice-2"]
+
+
+def test_gas_quality_table_loader_uses_bounded_recent_view() -> None:
+    captured: list[int | None] = []
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "7",
+        }
+    )
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        captured.append(row_limit)
+        assert uri == (
+            "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_fact_gas_quality"
+        )
+        assert storage_options == config.storage_options()
+        return pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 1), date(2024, 1, 3)],
+                "quality_type": ["Older", "Newer"],
+            }
+        )
+
+    load = load_gas_quality_table(config, reader=reader)
+
+    assert captured == [7]
+    assert load.spec == GAS_QUALITY_TABLE_SPEC
+    assert load.row_limit == 7
+    assert load.dataframe is not None
+    assert load.dataframe["quality_type"].to_list() == ["Newer", "Older"]
+
+
+def test_cached_gas_quality_table_loader_reuses_session_cache() -> None:
+    calls: list[int] = []
+    config = _dashboard_config()
+    cache: GasModelSessionCache = {}
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        calls.append(len(calls) + 1)
+        return pl.DataFrame({"quality_type": [f"quality-{calls[-1]}"]})
+
+    first_load = cached_load_gas_quality_table(config, cache, reader=reader)
+    cached_load = cached_load_gas_quality_table(config, cache, reader=reader)
+    refreshed_load = cached_load_gas_quality_table(
+        config,
+        cache,
+        reader=reader,
+        refresh_token=1,
+    )
+
+    assert calls == [1, 2]
+    assert not first_load.cache_hit
+    assert cached_load.cache_hit
+    assert not refreshed_load.cache_hit
+    assert cached_load.dataframe is not None
+    assert cached_load.dataframe["quality_type"].to_list() == ["quality-1"]
+    assert refreshed_load.dataframe is not None
+    assert refreshed_load.dataframe["quality_type"].to_list() == ["quality-2"]
+
+
+def test_gas_quality_summaries_filters_and_source_coverage() -> None:
+    load = _gas_quality_load(
+        pl.DataFrame(
+            {
+                "gas_date": [
+                    "2024-01-02",
+                    "2024-01-01",
+                    "2024-01-01",
+                ],
+                "gas_interval": ["1", "2", None],
+                "source_point_id": ["MIRN-A", "MIRN-B", "ZONE-1"],
+                "point_name": ["Meter A", "Meter B", "Zone 1"],
+                "quality_type": ["Heating value", "Wobbe index", "methane"],
+                "unit": ["MJ/m3", "MJ/m3", "composition"],
+                "quantity": [39.2, 45.0, 0.89],
+                "source_system": ["VICGAS", "VICGAS", "VICGAS"],
+                "source_table": [
+                    "silver.vicgas.silver_int140_v5_gas_quality_data_1",
+                    "silver.vicgas.silver_int140_v5_gas_quality_data_1",
+                    "silver.vicgas.silver_int176_v4_gas_composition_data_1",
+                ],
+                "source_last_updated_timestamp": [
+                    "2024-01-02 06:00:00",
+                    "2024-01-01 06:00:00",
+                    "2024-01-01 07:00:00",
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 2, 8),
+                    datetime(2024, 1, 1, 8),
+                    datetime(2024, 1, 1, 9),
+                ],
+            }
+        )
+    )
+
+    observations = gas_quality_observation_frame(
+        load,
+        "Heating value",
+        "MIRN-A",
+    )
+    kpis = gas_quality_kpi_frame(load)
+    type_summary = gas_quality_type_summary_frame(load)
+    source_coverage = gas_quality_source_coverage_frame(load)
+
+    assert gas_quality_quality_type_options(load) == (
+        GAS_QUALITY_QUALITY_TYPE_FILTER_ALL,
+        "Heating value",
+        "Wobbe index",
+        "methane",
+    )
+    assert gas_quality_source_point_options(load) == (
+        GAS_QUALITY_SOURCE_POINT_FILTER_ALL,
+        "MIRN-A",
+        "MIRN-B",
+        "ZONE-1",
+    )
+    assert observations.to_dict(as_series=False) == {
+        "gas date": [date(2024, 1, 2)],
+        "gas interval": ["1"],
+        "source point": ["MIRN-A"],
+        "point name": ["Meter A"],
+        "quality type": ["Heating value"],
+        "unit": ["MJ/m3"],
+        "quantity": [39.2],
+        "source system": ["VICGAS"],
+        "source table": ["silver.vicgas.silver_int140_v5_gas_quality_data_1"],
+        "source updated": [datetime(2024, 1, 2, 6)],
+        "latest ingest": [datetime(2024, 1, 2, 8)],
+    }
+    assert kpis.to_dict(as_series=False) == {
+        "metric": [
+            "Loaded observations",
+            "Quality types",
+            "Units",
+            "Source points",
+            "Source tables",
+            "Latest gas date",
+        ],
+        "value": ["3", "3", "2", "3", "2", "2024-01-02"],
+        "detail": [
+            "Full table scan",
+            "Distinct quality_type values in the current view",
+            "Distinct unit values in the current view",
+            "Distinct source_point_id values in the current view",
+            "Distinct source_table values represented",
+            "Maximum gas_date in the loaded bounded rows",
+        ],
+    }
+    assert type_summary.select(
+        "quality type",
+        "unit",
+        "observations",
+        "source points",
+        "latest gas date",
+        "avg quantity",
+    ).to_dict(as_series=False) == {
+        "quality type": ["Heating value", "Wobbe index", "methane"],
+        "unit": ["MJ/m3", "MJ/m3", "composition"],
+        "observations": [1, 1, 1],
+        "source points": [1, 1, 1],
+        "latest gas date": [date(2024, 1, 2), date(2024, 1, 1), date(2024, 1, 1)],
+        "avg quantity": [39.2, 45.0, 0.89],
+    }
+    assert source_coverage.select(
+        "source table",
+        "observations",
+        "quality types",
+        "source points",
+        "latest gas date",
+    ).to_dict(as_series=False) == {
+        "source table": [
+            "silver.vicgas.silver_int140_v5_gas_quality_data_1",
+            "silver.vicgas.silver_int176_v4_gas_composition_data_1",
+        ],
+        "observations": [2, 1],
+        "quality types": [2, 1],
+        "source points": [2, 1],
+        "latest gas date": [date(2024, 1, 2), date(2024, 1, 1)],
+    }
+
+
+def test_gas_quality_helpers_cover_missing_data_and_filter_empty_state() -> None:
+    empty_load = _gas_quality_load(
+        pl.DataFrame(),
+        row_limit=4,
+    )
+    populated_load = _gas_quality_load(
+        pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 2)],
+                "source_point_id": ["MIRN-A"],
+                "quality_type": ["Heating value"],
+                "unit": ["MJ/m3"],
+                "quantity": [39.2],
+            }
+        )
+    )
+    missing_date_load = _gas_quality_load(
+        pl.DataFrame(
+            {
+                "source_point_id": ["MIRN-A"],
+                "quality_type": ["Heating value"],
+                "unit": ["MJ/m3"],
+                "quantity": [39.2],
+            }
+        )
+    )
+    error_load = GasTableLoad(
+        spec=GAS_QUALITY_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_gas_quality",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=4,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+    assert gas_quality_observation_frame(empty_load).is_empty()
+    assert gas_quality_type_summary_frame(empty_load).is_empty()
+    assert gas_quality_kpi_frame(empty_load).is_empty()
+    assert gas_quality_source_coverage_frame(empty_load).is_empty()
+    assert gas_quality_quality_type_options(empty_load) == (
+        GAS_QUALITY_QUALITY_TYPE_FILTER_ALL,
+    )
+    assert gas_quality_observation_frame(populated_load)["gas date"].to_list() == [
+        date(2024, 1, 2)
+    ]
+    assert gas_quality_kpi_frame(missing_date_load).row(5, named=True) == {
+        "metric": "Latest gas date",
+        "value": "unknown",
+        "detail": "Maximum gas_date in the loaded bounded rows",
+    }
+
+    empty_markdown = gas_quality_empty_state_markdown(empty_load)
+    error_markdown = gas_quality_empty_state_markdown(error_load)
+    filtered_markdown = gas_quality_empty_state_markdown(populated_load)
+    missing_load_markdown = gas_quality_empty_state_markdown(None)
+
+    assert "No gas quality or composition data is available" in empty_markdown
+    assert "silver.gas_model.silver_gas_fact_gas_quality" in empty_markdown
+    assert "Bounded preview reads are capped at `4` rows per table" in empty_markdown
+    assert "FileNotFoundError: no parquet files found" in error_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert "did not receive a gas quality load result" in missing_load_markdown
 
 
 def test_system_notice_summary_filters_critical_and_notice_windows() -> None:
@@ -1102,6 +1369,22 @@ def _system_notice_load(
     return GasTableLoad(
         spec=SYSTEM_NOTICE_TABLE_SPEC,
         uri=f"s3://bucket/silver/gas_model/{SYSTEM_NOTICE_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _gas_quality_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=GAS_QUALITY_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{GAS_QUALITY_TABLE_NAME}",
         dataframe=dataframe,
         error=None,
         row_limit=row_limit,

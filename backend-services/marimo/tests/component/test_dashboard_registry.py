@@ -60,6 +60,13 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert notices.notebook_route == "/marimo/system_notices/"
     assert "silver.gas_model.silver_gas_fact_system_notice" in notices.backing_assets
 
+    gas_quality = registry_entry_by_concept_id("gas-quality-composition", entries)
+    assert gas_quality is not None
+    assert gas_quality.status is DashboardStatus.AVAILABLE
+    assert gas_quality.notebook_name == "gas_quality_composition"
+    assert gas_quality.notebook_route == "/marimo/gas_quality_composition/"
+    assert "silver.gas_model.silver_gas_fact_gas_quality" in gas_quality.backing_assets
+
 
 def test_dashboard_registry_payload_includes_required_fields() -> None:
     payload = dashboard_registry_payload()

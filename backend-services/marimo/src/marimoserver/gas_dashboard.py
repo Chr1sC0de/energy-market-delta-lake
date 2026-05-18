@@ -63,6 +63,10 @@ SYSTEM_NOTICE_WINDOW_FILTER_OPTIONS = (
 )
 DEFAULT_SYSTEM_NOTICE_RECENT_DAYS = 14
 DEFAULT_SYSTEM_NOTICE_PREVIEW_ROWS = 50
+GAS_QUALITY_TABLE_NAME = "silver_gas_fact_gas_quality"
+GAS_QUALITY_QUALITY_TYPE_FILTER_ALL = "All quality types"
+GAS_QUALITY_SOURCE_POINT_FILTER_ALL = "All source points"
+DEFAULT_GAS_QUALITY_PREVIEW_ROWS = 50
 
 
 @dataclass(frozen=True)
@@ -294,6 +298,30 @@ SYSTEM_NOTICE_TABLE_SPEC = GasTableSpec(
     ),
 )
 SYSTEM_NOTICE_TABLE_SPECS = (SYSTEM_NOTICE_TABLE_SPEC,)
+GAS_QUALITY_TABLE_SPEC = GasTableSpec(
+    section="Quality and composition",
+    label="Gas quality and composition",
+    table_name=GAS_QUALITY_TABLE_NAME,
+    date_columns=(
+        "gas_date",
+        "source_last_updated_timestamp",
+        "ingested_timestamp",
+    ),
+    preview_columns=(
+        "gas_date",
+        "gas_interval",
+        "source_point_id",
+        "point_name",
+        "quality_type",
+        "unit",
+        "quantity",
+        "source_system",
+        "source_table",
+        "source_last_updated_timestamp",
+        "ingested_timestamp",
+    ),
+)
+GAS_QUALITY_TABLE_SPECS = (GAS_QUALITY_TABLE_SPEC,)
 
 _SYSTEM_NOTICE_RAW_SCHEMA = {
     "source_notice_id": pl.String,
@@ -331,6 +359,61 @@ _SYSTEM_NOTICE_SOURCE_COVERAGE_SCHEMA = {
     "notices": pl.UInt32,
     "critical notices": pl.UInt32,
     "active notices": pl.UInt32,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_GAS_QUALITY_RAW_SCHEMA = {
+    "source_system": pl.String,
+    "source_table": pl.String,
+    "gas_date": pl.Date,
+    "gas_interval": pl.String,
+    "source_point_id": pl.String,
+    "point_name": pl.String,
+    "quality_type": pl.String,
+    "unit": pl.String,
+    "quantity": pl.Float64,
+    "source_last_updated": pl.String,
+    "source_last_updated_timestamp": pl.Datetime("us"),
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_GAS_QUALITY_OBSERVATION_SCHEMA = {
+    "gas date": pl.Date,
+    "gas interval": pl.String,
+    "source point": pl.String,
+    "point name": pl.String,
+    "quality type": pl.String,
+    "unit": pl.String,
+    "quantity": pl.Float64,
+    "source system": pl.String,
+    "source table": pl.String,
+    "source updated": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_GAS_QUALITY_TYPE_SUMMARY_SCHEMA = {
+    "quality type": pl.String,
+    "unit": pl.String,
+    "observations": pl.UInt32,
+    "source points": pl.UInt32,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
+    "min quantity": pl.Float64,
+    "avg quantity": pl.Float64,
+    "max quantity": pl.Float64,
+}
+_GAS_QUALITY_KPI_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_GAS_QUALITY_SOURCE_COVERAGE_SCHEMA = {
+    "source system": pl.String,
+    "source table": pl.String,
+    "observations": pl.UInt32,
+    "quality types": pl.UInt32,
+    "units": pl.UInt32,
+    "source points": pl.UInt32,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
     "latest source update": pl.Datetime("us"),
     "latest ingest": pl.Datetime("us"),
 }
@@ -470,6 +553,42 @@ def cached_load_system_notice_table(
     )[0]
 
 
+def load_gas_quality_table(
+    config: GasDashboardConfig,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Load the gas quality fact through the shared bounded table loader."""
+    return load_gas_model_tables(
+        config,
+        specs=GAS_QUALITY_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        clock=clock,
+    )[0]
+
+
+def cached_load_gas_quality_table(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Return session-cached gas quality data for explicit-refresh dashboards."""
+    return cached_load_gas_model_tables(
+        config,
+        cache,
+        specs=GAS_QUALITY_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        refresh_token=refresh_token,
+        clock=clock,
+    )[0]
+
+
 def gas_table_load_status_frame(loads: Sequence[GasTableLoad]) -> pl.DataFrame:
     """Return dashboard table-load status with timing and row-limit detail."""
     return pl.DataFrame(
@@ -575,6 +694,241 @@ def table_load_by_name(
         if load.spec.table_name == table_name:
             return load
     return None
+
+
+def gas_quality_quality_type_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return quality-type filter options for the loaded gas quality preview."""
+    return _gas_quality_string_filter_options(
+        load,
+        "quality_type",
+        GAS_QUALITY_QUALITY_TYPE_FILTER_ALL,
+    )
+
+
+def gas_quality_source_point_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return source-point filter options for the loaded gas quality preview."""
+    return _gas_quality_string_filter_options(
+        load,
+        "source_point_id",
+        GAS_QUALITY_SOURCE_POINT_FILTER_ALL,
+    )
+
+
+def gas_quality_observation_frame(
+    load: GasTableLoad | None,
+    quality_type_filter: str = GAS_QUALITY_QUALITY_TYPE_FILTER_ALL,
+    source_point_filter: str = GAS_QUALITY_SOURCE_POINT_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_GAS_QUALITY_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return filtered gas quality and composition observations for preview."""
+    dataframe = _filtered_gas_quality_dataframe(
+        load,
+        quality_type_filter,
+        source_point_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_GAS_QUALITY_OBSERVATION_SCHEMA)
+
+    return (
+        dataframe.sort(
+            [
+                "gas_date",
+                "source_last_updated_timestamp",
+                "quality_type",
+                "source_point_id",
+                "gas_interval",
+            ],
+            descending=[True, True, False, False, False],
+            nulls_last=True,
+        )
+        .select(
+            pl.col("gas_date").alias("gas date"),
+            pl.col("gas_interval").alias("gas interval"),
+            pl.col("source_point_id").alias("source point"),
+            pl.col("point_name").alias("point name"),
+            pl.col("quality_type").alias("quality type"),
+            pl.col("unit"),
+            pl.col("quantity"),
+            pl.col("source_system").alias("source system"),
+            pl.col("source_table").alias("source table"),
+            pl.col("source_last_updated_timestamp").alias("source updated"),
+            pl.col("ingested_timestamp").alias("latest ingest"),
+        )
+        .head(max(1, preview_rows))
+    )
+
+
+def gas_quality_type_summary_frame(
+    load: GasTableLoad | None,
+    quality_type_filter: str = GAS_QUALITY_QUALITY_TYPE_FILTER_ALL,
+    source_point_filter: str = GAS_QUALITY_SOURCE_POINT_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return quality-type and unit summary metrics for loaded gas quality rows."""
+    dataframe = _filtered_gas_quality_dataframe(
+        load,
+        quality_type_filter,
+        source_point_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_GAS_QUALITY_TYPE_SUMMARY_SCHEMA)
+
+    return (
+        dataframe.group_by("quality_type", "unit")
+        .agg(
+            pl.len().alias("observations"),
+            pl.col("source_point_id").drop_nulls().n_unique().alias("source points"),
+            pl.col("gas_date").min().alias("first gas date"),
+            pl.col("gas_date").max().alias("latest gas date"),
+            pl.col("quantity").min().alias("min quantity"),
+            pl.col("quantity").mean().round(4).alias("avg quantity"),
+            pl.col("quantity").max().alias("max quantity"),
+        )
+        .sort(["observations", "quality_type", "unit"], descending=[True, False, False])
+        .rename(
+            {
+                "quality_type": "quality type",
+            }
+        )
+    )
+
+
+def gas_quality_kpi_frame(
+    load: GasTableLoad | None,
+    quality_type_filter: str = GAS_QUALITY_QUALITY_TYPE_FILTER_ALL,
+    source_point_filter: str = GAS_QUALITY_SOURCE_POINT_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return first-viewport KPIs for loaded gas quality observations."""
+    dataframe = _filtered_gas_quality_dataframe(
+        load,
+        quality_type_filter,
+        source_point_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_GAS_QUALITY_KPI_SCHEMA)
+
+    counts = dataframe.select(
+        pl.len().alias("loaded_observations"),
+        pl.col("quality_type").drop_nulls().n_unique().alias("quality_types"),
+        pl.col("unit").drop_nulls().n_unique().alias("units"),
+        pl.col("source_point_id").drop_nulls().n_unique().alias("source_points"),
+        pl.col("source_table").drop_nulls().n_unique().alias("source_tables"),
+        pl.col("gas_date").max().alias("latest_gas_date"),
+    ).row(0, named=True)
+
+    row_limit = None if load is None else load.row_limit
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Loaded observations",
+                "value": f"{counts['loaded_observations']:,}",
+                "detail": format_row_limit(row_limit),
+            },
+            {
+                "metric": "Quality types",
+                "value": f"{counts['quality_types']:,}",
+                "detail": "Distinct quality_type values in the current view",
+            },
+            {
+                "metric": "Units",
+                "value": f"{counts['units']:,}",
+                "detail": "Distinct unit values in the current view",
+            },
+            {
+                "metric": "Source points",
+                "value": f"{counts['source_points']:,}",
+                "detail": "Distinct source_point_id values in the current view",
+            },
+            {
+                "metric": "Source tables",
+                "value": f"{counts['source_tables']:,}",
+                "detail": "Distinct source_table values represented",
+            },
+            {
+                "metric": "Latest gas date",
+                "value": _format_optional_value(counts["latest_gas_date"]),
+                "detail": "Maximum gas_date in the loaded bounded rows",
+            },
+        ],
+        schema=_GAS_QUALITY_KPI_SCHEMA,
+    )
+
+
+def gas_quality_source_coverage_frame(
+    load: GasTableLoad | None,
+    quality_type_filter: str = GAS_QUALITY_QUALITY_TYPE_FILTER_ALL,
+    source_point_filter: str = GAS_QUALITY_SOURCE_POINT_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return source coverage for loaded gas quality and composition rows."""
+    dataframe = _filtered_gas_quality_dataframe(
+        load,
+        quality_type_filter,
+        source_point_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_GAS_QUALITY_SOURCE_COVERAGE_SCHEMA)
+
+    return (
+        dataframe.group_by("source_system", "source_table")
+        .agg(
+            pl.len().alias("observations"),
+            pl.col("quality_type").drop_nulls().n_unique().alias("quality types"),
+            pl.col("unit").drop_nulls().n_unique().alias("units"),
+            pl.col("source_point_id").drop_nulls().n_unique().alias("source points"),
+            pl.col("gas_date").min().alias("first gas date"),
+            pl.col("gas_date").max().alias("latest gas date"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort(["observations", "source_table"], descending=[True, False])
+        .rename(
+            {
+                "source_system": "source system",
+                "source_table": "source table",
+            }
+        )
+    )
+
+
+def gas_quality_empty_state_markdown(load: GasTableLoad | None) -> str:
+    """Return useful empty-state copy for missing or unmatched gas quality data."""
+    table_label = _markdown_breakable_text(
+        "silver.gas_model.silver_gas_fact_gas_quality"
+    )
+    if load is None:
+        status_detail = "The dashboard did not receive a gas quality load result."
+        uri = table_label
+        read_policy = "No read policy was reported."
+    else:
+        if load.error is not None:
+            status_detail = f"Read detail: {_markdown_breakable_text(load.error)}"
+        elif load.dataframe is None or load.dataframe.is_empty():
+            status_detail = "The table loaded successfully but returned no rows."
+        else:
+            status_detail = (
+                "The current filters do not match any loaded gas quality rows."
+            )
+        uri = _markdown_breakable_text(load.uri)
+        read_policy = row_limit_message(load.row_limit)
+
+    return f"""
+    **No gas quality or composition data is available for this view.**
+
+    The dashboard checked {uri}, which should contain {table_label} rows with
+    quality type, unit, quantity, gas date, gas interval, source point, and
+    source fields.
+
+    {status_detail}
+
+    {read_policy}
+
+    Materialize or seed the `silver.gas_model` gas quality asset, then use
+    **Refresh data**.
+    """
 
 
 def system_notice_summary_frame(
@@ -764,6 +1118,73 @@ def system_notice_empty_state_markdown(load: GasTableLoad | None) -> str:
     """
 
 
+def _gas_quality_string_filter_options(
+    load: GasTableLoad | None,
+    column: str,
+    all_label: str,
+) -> tuple[str, ...]:
+    dataframe = _normalised_gas_quality_dataframe(load)
+    if dataframe.is_empty() or column not in dataframe.columns:
+        return (all_label,)
+
+    values = sorted(
+        str(value)
+        for value in dataframe.get_column(column)
+        .drop_nulls()
+        .cast(pl.String, strict=False)
+        .unique()
+        .to_list()
+        if value is not None
+    )
+    return (all_label, *values)
+
+
+def _filtered_gas_quality_dataframe(
+    load: GasTableLoad | None,
+    quality_type_filter: str,
+    source_point_filter: str,
+) -> pl.DataFrame:
+    dataframe = _normalised_gas_quality_dataframe(load)
+    if dataframe.is_empty():
+        return dataframe
+
+    filtered = dataframe
+    if quality_type_filter != GAS_QUALITY_QUALITY_TYPE_FILTER_ALL:
+        filtered = filtered.filter(pl.col("quality_type") == quality_type_filter)
+    if source_point_filter != GAS_QUALITY_SOURCE_POINT_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_point_id") == source_point_filter)
+    return filtered
+
+
+def _normalised_gas_quality_dataframe(load: GasTableLoad | None) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_GAS_QUALITY_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _GAS_QUALITY_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_table").cast(pl.String, strict=False),
+        _normalise_date_column(dataframe, "gas_date"),
+        pl.col("gas_interval").cast(pl.String, strict=False),
+        pl.col("source_point_id").cast(pl.String, strict=False),
+        pl.col("point_name").cast(pl.String, strict=False),
+        pl.col("quality_type").cast(pl.String, strict=False),
+        pl.col("unit").cast(pl.String, strict=False),
+        pl.col("quantity").cast(pl.Float64, strict=False),
+        pl.col("source_last_updated").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "source_last_updated_timestamp"),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
 def _normalised_system_notice_dataframe(load: GasTableLoad | None) -> pl.DataFrame:
     if load is None or load.dataframe is None or load.dataframe.is_empty():
         return pl.DataFrame(schema=_SYSTEM_NOTICE_RAW_SCHEMA)
@@ -790,6 +1211,12 @@ def _normalised_system_notice_dataframe(load: GasTableLoad | None) -> pl.DataFra
         _normalise_timestamp_column(dataframe, "source_last_updated_timestamp"),
         _normalise_timestamp_column(dataframe, "ingested_timestamp"),
     )
+
+
+def _normalise_date_column(dataframe: pl.DataFrame, column: str) -> pl.Expr:
+    if dataframe.schema[column] == pl.String:
+        return pl.col(column).str.to_date(strict=False).alias(column)
+    return pl.col(column).cast(pl.Date, strict=False).alias(column)
 
 
 def _normalise_timestamp_column(dataframe: pl.DataFrame, column: str) -> pl.Expr:
@@ -901,6 +1328,17 @@ def _system_notice_reference_time(reference_time: datetime | None) -> datetime:
 
 def _format_reference_time(reference_time: datetime) -> str:
     return reference_time.isoformat(sep=" ", timespec="minutes")
+
+
+def _format_optional_value(value: object | None) -> str:
+    if value is None:
+        return "unknown"
+    return str(value)
+
+
+def _markdown_breakable_text(value: str) -> str:
+    escaped_value = escape(value)
+    return f'<span style="overflow-wrap:anywhere;">{escaped_value}</span>'
 
 
 def render_dashboard_context_panel(

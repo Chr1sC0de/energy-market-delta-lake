@@ -291,6 +291,21 @@ active/recent window. Missing notice data, unavailable Parquet prefixes, and
 filter combinations with no matches render dashboard empty states with the
 checked table, read policy, and refresh action.
 
+## Gas quality and composition dashboard
+
+[notebooks/gas_quality_composition.py](notebooks/gas_quality_composition.py)
+is an analytical dashboard over
+`silver.gas_model.silver_gas_fact_gas_quality`. It uses the shared bounded gas
+model loader and session cache from
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py), then
+filters the loaded bounded preview by `quality_type` and `source_point_id`.
+
+The dashboard shows loaded observation KPIs, quality-type and unit summaries,
+gas dates, gas intervals, source points, quantities, source-system fields, and
+source coverage by source system and source table. Missing gas-quality data,
+unavailable Parquet prefixes, and filter combinations with no matches render
+dashboard empty states with the checked table, read policy, and refresh action.
+
 ## GBB interactive map
 
 [notebooks/gbb_interactive_map.py](notebooks/gbb_interactive_map.py) provides a
@@ -357,7 +372,7 @@ server at a different notebook directory.
 With the local backend stack running, open the Marimo concept gallery through
 Caddy and choose an available card such as `data_readiness_overview`,
 `glossary_explorer`, `table_explorer`, `sample_energy_market`, or
-`system_notices`, or `gbb_interactive_map`:
+`system_notices`, `gas_quality_composition`, or `gbb_interactive_map`:
 
 ```text
 http://localhost/marimo
@@ -412,6 +427,13 @@ Use the same pattern for the system notices dashboard:
 ```bash
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/system_notices.py
+```
+
+Use the same pattern for the gas quality and composition dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gas_quality_composition.py
 ```
 
 If the GBB map inputs are missing from LocalStack, refresh or load the local
@@ -505,6 +527,7 @@ prek run -a
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
+  - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/marimo/tests/component/conftest.py`
   - `backend-services/marimo/tests/component/test_dashboard_registry.py`
   - `backend-services/marimo/tests/component/test_main.py`

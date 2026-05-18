@@ -227,9 +227,10 @@ Useful routes:
 - `/dagster-webserver/guest` for the guest Dagster UI
 - `/dagster-webserver/admin` for the protected admin Dagster UI
 - `/marimo` for curated Marimo dashboards through Caddy, including the table
-  explorer. The table explorer lists the Dagster table asset catalogue, filters
-  by group, layer or domain, status, and search text, and previews only
-  materialized tables.
+  explorer, data readiness overview, system notices, and gas quality and
+  composition dashboard. The table explorer lists the Dagster table asset
+  catalogue, filters by group, layer or domain, status, and search text, and
+  previews only materialized tables.
 - `http://127.0.0.1:2719` for the local-only Marimo-Codex research workspace
 
 The `aemo-etl` code location should appear in Dagster under
@@ -776,8 +777,14 @@ developer-stack setting. It renders e2e Dagster config per run from the current
   - `backend-services/marimo/research-workspace/AGENTS.md`
   - `backend-services/localstack/init-s3.sh`
   - `backend-services/marimo/src/marimoserver/dagster_graphql.py`
+  - `backend-services/marimo/src/marimoserver/dashboard_registry.py`
+  - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
+  - `backend-services/marimo/src/marimoserver/data_readiness.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
+  - `backend-services/marimo/notebooks/data_readiness_overview.py`
+  - `backend-services/marimo/notebooks/system_notices.py`
+  - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/scripts/aemo-etl-e2e`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`

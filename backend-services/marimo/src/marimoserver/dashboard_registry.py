@@ -255,6 +255,21 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "source_chunk_ids": (),
     },
     {
+        "concept_id": "gas-quality-composition",
+        "title": "Gas Quality And Composition",
+        "description": (
+            "Available analytical dashboard for gas quality and composition "
+            "observations, quality types, units, source points, quantities, "
+            "gas intervals, and source coverage from the curated gas quality fact."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "gas_quality_composition",
+        "backing_assets": ("silver.gas_model.silver_gas_fact_gas_quality",),
+        "generated_gold_paths": (),
+        "source_chunk_ids": (),
+    },
+    {
         "concept_id": "gas-day-context",
         "title": "Gas Day Context",
         "description": (
