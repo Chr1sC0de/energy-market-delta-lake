@@ -24,7 +24,8 @@ The dashboard app in [src/marimoserver/main.py](src/marimoserver/main.py):
 - exposes `/health` for container health checks
 - discovers `*.py` notebooks from `notebooks/`
 - mounts each notebook as a marimo sub-app under `/marimo/<notebook-name>`
-- serves a simple index page at `/marimo`
+- serves a concept gallery hub at `/marimo`, grouped by generated Market
+  context concept and filterable by audience tag
 - serves the code-local dashboard roadmap registry at
   `/marimo/dashboard-registry.json`
 - links the Caddy-served shared theme at `/theme.css` for the index and
@@ -73,12 +74,15 @@ parses structured records into typed entries with concept IDs, audience tags,
 planned or available status, notebook names and routes, backing
 `silver.gas_model` assets, generated-gold metadata paths, and source chunk IDs.
 
-The registry is served as JSON from `/marimo/dashboard-registry.json` so future
-Marimo notebooks can render a concept gallery or context panels without reading
-the Gas market knowledge base generated files at runtime. Generated-gold paths
-and source chunk IDs are copied metadata only. In AWS mode this remains
-read-only, uses the existing dashboard image contents, and does not require a
-Docker build-context change.
+The `/marimo` entry route renders this registry as a concept gallery hub.
+Available registry entries link only when their backing notebook is mounted in
+the current image. Planned entries stay visible as roadmap cards but do not
+emit notebook links. The same registry is served as JSON from
+`/marimo/dashboard-registry.json` so future Marimo notebooks can render context
+panels without reading the Gas market knowledge base generated files at
+runtime. Generated-gold paths and source chunk IDs are copied metadata only. In
+AWS mode this remains read-only, uses the existing dashboard image contents,
+and does not require a Docker build-context change.
 
 ## Table explorer
 
@@ -226,8 +230,8 @@ development runs can reload from the cache without live S3 access.
 The services are started by [../compose.yaml](../compose.yaml).
 
 Dashboard notebooks are mounted from [notebooks/](notebooks/) into
-`marimo-dashboard`, so adding a curated notebook there makes it available
-through the `/marimo` index.
+`marimo-dashboard`, so adding a curated notebook there and registering it as
+available makes it reachable from the `/marimo` concept gallery.
 
 Research notebooks and draft issue notes stay under
 [research-workspace/](research-workspace/) and are served by
@@ -236,8 +240,9 @@ Research notebooks and draft issue notes stay under
 The implementation also accepts `MARIMO_NOTEBOOKS_DIR` if you need to point the
 server at a different notebook directory.
 
-With the local backend stack running, open the Marimo index through Caddy and
-choose `table_explorer`, `sample_energy_market`, or `gbb_interactive_map`:
+With the local backend stack running, open the Marimo concept gallery through
+Caddy and choose an available card such as `table_explorer`,
+`sample_energy_market`, or `gbb_interactive_map`:
 
 ```text
 http://localhost/marimo
@@ -246,10 +251,10 @@ http://localhost/marimo
 The table explorer is compose-first for local development. Start the stack from
 [../compose.yaml](../compose.yaml), wait for `localstack`, `aemo-etl`, both
 Dagster webservers, and `marimo-dashboard` to be healthy, then open
-`/marimo` and choose `table_explorer`. The explorer can list Dagster table
-assets before local data exists, but previews require materialized LocalStack
-tables. Materialize the target assets from the Dagster UI or a local Dagster
-launch, then refresh the table scan in the notebook.
+`/marimo` and choose the Gas Model Table Explorer card. The explorer can list
+Dagster table assets before local data exists, but previews require
+materialized LocalStack tables. Materialize the target assets from the Dagster
+UI or a local Dagster launch, then refresh the table scan in the notebook.
 
 For direct notebook development from this Subproject, point the notebook at the
 host-exposed LocalStack endpoint:

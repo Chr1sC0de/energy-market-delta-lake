@@ -29,6 +29,10 @@ dashboard metadata, including generated-gold paths and source chunk IDs, but the
 deployed service does not read Gas market knowledge base generated files at
 runtime.
 
+The `/marimo` entry route renders the same registry as a concept gallery hub.
+Available dashboard cards link to mounted notebook routes, while planned
+dashboard cards stay visible without notebook links.
+
 ## Considered options
 
 - Keep Marimo local-only: avoids new AWS resources but leaves the deployed
@@ -61,9 +65,9 @@ table scans for development.
 The local-only Marimo-Codex workspace stays out of Pulumi and remains bound to
 `127.0.0.1:2719` in compose.
 
-The dashboard registry is part of the existing Marimo image contents. Adding or
-updating registry metadata does not require a separate Docker build context and
-does not add AWS write paths.
+The dashboard registry and concept gallery are part of the existing Marimo
+image contents. Adding or updating registry metadata does not require a
+separate Docker build context and does not add AWS write paths.
 
 ## Sync metadata
 

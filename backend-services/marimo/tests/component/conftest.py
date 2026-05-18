@@ -8,6 +8,7 @@ marimo notebook so that tests do not depend on the real notebooks/ folder.
 import os
 import tempfile
 import textwrap
+from pathlib import Path
 
 import pytest
 
@@ -21,7 +22,7 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 # Create a temp directory with a minimal valid marimo notebook before the
 # app module is imported.
 # ---------------------------------------------------------------------------
-_tmp_dir = tempfile.mkdtemp(prefix="marimo_test_notebooks_")
+_tmp_dir = Path(tempfile.mkdtemp(prefix="marimo_test_notebooks_"))
 
 _notebook_content = textwrap.dedent("""\
     import marimo
@@ -46,9 +47,17 @@ _notebook_content = textwrap.dedent("""\
         app.run()
 """)
 
-with open(os.path.join(_tmp_dir, "test_notebook.py"), "w") as f:
-    f.write(_notebook_content)
+for _notebook_name in (
+    "test_notebook",
+    "sample_energy_market",
+    "gbb_interactive_map",
+    "table_explorer",
+):
+    (_tmp_dir / f"{_notebook_name}.py").write_text(
+        _notebook_content,
+        encoding="utf-8",
+    )
 
-os.environ["MARIMO_NOTEBOOKS_DIR"] = _tmp_dir
+os.environ["MARIMO_NOTEBOOKS_DIR"] = str(_tmp_dir)
 
-TEST_NOTEBOOKS_DIR = _tmp_dir
+TEST_NOTEBOOKS_DIR = str(_tmp_dir)

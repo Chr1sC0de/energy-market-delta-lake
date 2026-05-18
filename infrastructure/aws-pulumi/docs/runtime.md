@@ -147,7 +147,7 @@ flowchart LR
 | webserver admin | 256 | 1024 | 3000 | `webserver-admin` | path prefix `/dagster-webserver/admin` |
 | webserver guest | 256 | 1024 | 3000 | `webserver-guest` | `--read-only`, path prefix `/dagster-webserver/guest` |
 | daemon | 256 | 1024 | none | none | background scheduler/sensor/orchestration process |
-| Marimo dashboard | 2 vCPU | 2 GiB | 2718 | `marimo-dashboard` | private EC2 `t3.small` host for curated notebooks |
+| Marimo dashboard | 2 vCPU | 2 GiB | 2718 | `marimo-dashboard` | private EC2 `t3.small` host for the `/marimo` concept gallery and curated notebooks |
 
 Cluster-level behavior:
 
@@ -300,7 +300,9 @@ placement, image pull, task startup latency, or scale-in behavior because issue
 - The deployed Marimo dashboard runs with `DEVELOPMENT_LOCATION=aws`,
   `MARIMO_FULL_TABLE_SCAN_ENABLED=false`, and `MARIMO_MAX_PREVIEW_ROWS=100`,
   so table previews are bounded and use the instance profile instead of static
-  AWS credentials.
+  AWS credentials. Its `/marimo` entry route renders the registry-backed
+  concept gallery; available cards link to mounted notebooks and planned cards
+  remain non-link roadmap entries.
 - The user-code task receives `DAGSTER_FAILURE_ALERT_TOPIC_ARN` from Pulumi
   secret config and `DAGSTER_FAILURE_ALERT_BASE_URL` from public site config so
   the AEMO ETL failure sensor can publish alerts to a manually managed AWS SNS

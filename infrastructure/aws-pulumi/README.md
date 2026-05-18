@@ -203,8 +203,9 @@ Key deployed behaviors visible in the infrastructure code:
 - Dagster services run as ECS Fargate services in private subnets
 - the curated Marimo dashboard runs on a private `t3.small` EC2 instance with
   an encrypted 30 GiB `gp3` root volume, uses its instance profile for S3
-  reads, exposes `/marimo/health` through Caddy, and loads bounded table
-  previews instead of full table scans
+  reads, exposes `/marimo/health` through Caddy, serves the registry-backed
+  `/marimo` concept gallery, and loads bounded table previews instead of full
+  table scans
 - An issue #126 **Exploratory delivery** path can add EC2-backed run-worker
   capacity behind explicit Pulumi config, but the default runtime remains
   Fargate/Fargate Spot

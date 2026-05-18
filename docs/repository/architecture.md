@@ -199,8 +199,9 @@ without making local development performance claims.
 - `backend-services/caddy`
   - provides the reverse-proxy image, root Astro portfolio, and routing rules
 - `backend-services/marimo`
-  - notebook-oriented Subproject with a curated dashboard image used locally
-    and in AWS, plus a local-only Marimo-Codex research workspace image
+  - notebook-oriented Subproject with a registry-backed `/marimo` concept
+    gallery, a curated dashboard image used locally and in AWS, plus a
+    local-only Marimo-Codex research workspace image
 
 Gas market knowledge base responsibility:
 
