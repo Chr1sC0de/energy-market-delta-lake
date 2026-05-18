@@ -15,6 +15,12 @@ from marimoserver.gas_dashboard import (
     read_parquet_table,
     table_load_by_name,
 )
+from marimoserver.gas_model_loader import (
+    GasModelReadRequest,
+    GasModelTableView,
+    load_gas_model_read_request,
+    load_gas_model_read_requests,
+)
 
 
 def test_read_parquet_table_delegates_to_polars(
@@ -232,6 +238,111 @@ def test_load_gas_model_tables_limits_aws_reads() -> None:
 
     assert loads[0].available
     assert captured == [17]
+    assert loads[0].row_limit == 17
+    assert loads[0].is_limited
+
+
+def test_load_gas_model_read_requests_cover_available_missing_and_empty() -> None:
+    config = _dashboard_config()
+    requests = (
+        GasModelReadRequest("available"),
+        GasModelReadRequest("missing"),
+        GasModelReadRequest("empty"),
+    )
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        assert row_limit is None
+        if uri.endswith("/missing"):
+            raise FileNotFoundError("no parquet files found")
+        if uri.endswith("/empty"):
+            return pl.DataFrame()
+        return pl.DataFrame({"source_system": ["STTM"]})
+
+    loads = load_gas_model_read_requests(config, requests, reader=reader)
+
+    assert loads[0].available
+    assert loads[0].table_name == "available"
+    assert loads[0].uri == "s3://dev-energy-market-aemo/silver/gas_model/available"
+    assert not loads[0].is_limited
+    assert not loads[1].available
+    assert loads[1].dataframe is None
+    assert loads[1].error == "FileNotFoundError: no parquet files found"
+    assert not loads[2].available
+    assert loads[2].dataframe is not None
+    assert loads[2].dataframe.is_empty()
+    assert loads[2].error is None
+
+
+def test_load_gas_model_read_request_keeps_recent_view_without_date_columns() -> None:
+    config = _dashboard_config()
+    request = GasModelReadRequest(
+        table_name="silver_gas_fact_market_price",
+        view=GasModelTableView.RECENT,
+        date_columns=("missing_date",),
+    )
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        return pl.DataFrame({"price": [10.0, 30.0]})
+
+    load = load_gas_model_read_request(config, request, reader=reader)
+
+    assert load.table_name == "silver_gas_fact_market_price"
+    assert load.available
+    assert load.dataframe is not None
+    assert load.dataframe.to_dict(as_series=False) == {"price": [10.0, 30.0]}
+
+
+def test_load_gas_model_read_requests_support_recent_bounded_aws_view() -> None:
+    captured: list[int | None] = []
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "2",
+        }
+    )
+    request = GasModelReadRequest(
+        table_name="silver_gas_fact_market_price",
+        view=GasModelTableView.RECENT,
+        date_columns=("gas_date",),
+    )
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        captured.append(row_limit)
+        assert uri == (
+            "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_fact_market_price"
+        )
+        assert storage_options == config.storage_options()
+        return pl.DataFrame(
+            {
+                "gas_date": ["2024-01-01", "2024-01-03"],
+                "price": [10.0, 30.0],
+            }
+        )
+
+    loads = load_gas_model_read_requests(config, (request,), reader=reader)
+
+    assert captured == [2]
+    assert loads[0].is_limited
+    assert loads[0].row_limit == 2
+    assert loads[0].dataframe is not None
+    assert loads[0].dataframe.to_dict(as_series=False) == {
+        "gas_date": ["2024-01-03", "2024-01-01"],
+        "price": [30.0, 10.0],
+    }
 
 
 def test_load_gas_model_tables_returns_empty_state_detail_on_read_error() -> None:

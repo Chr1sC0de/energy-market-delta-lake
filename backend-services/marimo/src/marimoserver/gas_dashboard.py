@@ -1,10 +1,19 @@
 """Helpers for the gas market overview marimo dashboard."""
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 import os
 
 import polars as pl
+
+from marimoserver.gas_model_loader import (
+    SILVER_GAS_MODEL_PREFIX as SILVER_GAS_MODEL_PREFIX,
+    GasModelReadRequest,
+    GasModelTableView,
+    TableReader,
+    load_gas_model_read_requests,
+    read_parquet_table as read_parquet_table,
+)
 
 DEFAULT_NAME_PREFIX = "energy-market"
 DEFAULT_DEVELOPMENT_ENVIRONMENT = "dev"
@@ -15,7 +24,6 @@ DEFAULT_AWS_SECRET_ACCESS_KEY = "test"
 DEFAULT_AWS_ALLOW_HTTP = "true"
 DEFAULT_AWS_PREVIEW_ROWS = 100
 AWS_DEVELOPMENT_LOCATION = "aws"
-SILVER_GAS_MODEL_PREFIX = "silver/gas_model"
 
 
 @dataclass(frozen=True)
@@ -78,14 +86,18 @@ class GasTableLoad:
     uri: str
     dataframe: pl.DataFrame | None
     error: str | None
+    row_limit: int | None
 
     @property
     def available(self) -> bool:
         """Return whether the table loaded and contains at least one row."""
         return self.dataframe is not None and not self.dataframe.is_empty()
 
+    @property
+    def is_limited(self) -> bool:
+        """Return whether the runtime applied a bounded preview row limit."""
+        return self.row_limit is not None
 
-TableReader = Callable[[str, Mapping[str, str], int | None], pl.DataFrame]
 
 GAS_MODEL_TABLES: tuple[GasTableSpec, ...] = (
     GasTableSpec(
@@ -277,54 +289,33 @@ def discover_dashboard_config(
     )
 
 
-def read_parquet_table(
-    uri: str,
-    storage_options: Mapping[str, str],
-    row_limit: int | None = None,
-) -> pl.DataFrame:
-    """Read one gas_model Parquet dataset using Polars storage options."""
-    options = dict(storage_options)
-    scan = pl.scan_parquet(_parquet_dataset_glob(uri), storage_options=options)
-    if row_limit is not None:
-        scan = scan.head(row_limit)
-    return scan.collect()
-
-
 def load_gas_model_tables(
     config: GasDashboardConfig,
     specs: Sequence[GasTableSpec] = GAS_MODEL_TABLES,
     reader: TableReader = read_parquet_table,
+    view: GasModelTableView = GasModelTableView.SAMPLE,
 ) -> list[GasTableLoad]:
     """Load configured gas_model tables, returning unavailable entries on errors."""
-    storage_options = config.storage_options()
-    row_limit = None if config.full_table_scan_enabled else config.max_preview_rows
-    loads: list[GasTableLoad] = []
-
-    for spec in specs:
-        uri = config.table_uri(spec.table_name)
-        try:
-            dataframe = reader(uri, storage_options, row_limit)
-        except Exception as error:
-            loads.append(
-                GasTableLoad(
-                    spec=spec,
-                    uri=uri,
-                    dataframe=None,
-                    error=_compact_error(error),
-                )
-            )
-            continue
-
-        loads.append(
-            GasTableLoad(
-                spec=spec,
-                uri=uri,
-                dataframe=dataframe,
-                error=None,
-            )
+    requests = tuple(
+        GasModelReadRequest(
+            table_name=spec.table_name,
+            view=view,
+            date_columns=spec.date_columns,
         )
+        for spec in specs
+    )
+    shared_loads = load_gas_model_read_requests(config, requests, reader=reader)
 
-    return loads
+    return [
+        GasTableLoad(
+            spec=spec,
+            uri=shared_load.uri,
+            dataframe=shared_load.dataframe,
+            error=shared_load.error,
+            row_limit=shared_load.row_limit,
+        )
+        for spec, shared_load in zip(specs, shared_loads, strict=True)
+    ]
 
 
 def table_load_by_name(
@@ -379,14 +370,3 @@ def _bool_setting(environ: Mapping[str, str], name: str, default: bool) -> bool:
     if value is None or value.strip() == "":
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _parquet_dataset_glob(uri: str) -> str:
-    return f"{uri.rstrip('/')}/*.parquet"
-
-
-def _compact_error(error: Exception) -> str:
-    message = str(error).strip().splitlines()
-    if not message:
-        return error.__class__.__name__
-    return f"{error.__class__.__name__}: {message[0]}"
