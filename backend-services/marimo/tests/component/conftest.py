@@ -12,10 +12,21 @@ from pathlib import Path
 
 import pytest
 
+from marimoserver.dashboard_registry import DashboardStatus, dashboard_registry
+
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     for item in items:
         item.add_marker(pytest.mark.component)
+
+
+def available_registry_notebook_names() -> tuple[str, ...]:
+    """Return available dashboard notebook names from the registry."""
+    return tuple(
+        entry.notebook_name
+        for entry in dashboard_registry()
+        if entry.status is DashboardStatus.AVAILABLE and entry.notebook_name is not None
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -47,12 +58,7 @@ _notebook_content = textwrap.dedent("""\
         app.run()
 """)
 
-for _notebook_name in (
-    "test_notebook",
-    "sample_energy_market",
-    "gbb_interactive_map",
-    "table_explorer",
-):
+for _notebook_name in ("test_notebook", *available_registry_notebook_names()):
     (_tmp_dir / f"{_notebook_name}.py").write_text(
         _notebook_content,
         encoding="utf-8",

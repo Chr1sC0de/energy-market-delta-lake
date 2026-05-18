@@ -332,6 +332,15 @@ From this Subproject, run the Marimo **Component test** lane:
 uv run pytest tests/component
 ```
 
+The Component test lane includes the curated dashboard smoke harness in
+[tests/component/test_dashboard_smoke.py](tests/component/test_dashboard_smoke.py).
+It enumerates available dashboards from the registry and
+[notebooks/](notebooks/), verifies their FastAPI Marimo wrapper routes return
+HTML, and checks stable context-panel plus empty or bounded-loader rendering for
+the current curated dashboard helpers. Future curated dashboard slices should
+add or update registry-backed notebooks and extend this harness when they add a
+new dashboard-specific loader surface.
+
 Run the Marimo **Commit check** surface before handing changes to Ralph:
 
 ```bash
@@ -366,6 +375,9 @@ prek run -a
   - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/marimo/notebooks/gbb_interactive_map.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
+  - `backend-services/marimo/tests/component/conftest.py`
+  - `backend-services/marimo/tests/component/dashboard_smoke_harness.py`
+  - `backend-services/marimo/tests/component/test_dashboard_smoke.py`
   - `backend-services/compose.yaml`
   - `backend-services/caddy/Caddyfile`
   - `backend-services/caddy/public/theme.css`
