@@ -368,6 +368,11 @@ as normal bronze ingestion: merge on `surrogate_key`, update matched rows only
 when `source_content_hash` changes, insert new keys, and retain target rows that
 are absent from the later batch.
 
+Archive replay uses the same source-table parser as live bronze ingestion:
+headered CSV files use their declared headers, headerless CSV files use the
+manifest schema order, and physical CSV lines containing NUL bytes are dropped
+before surrogate keys and `source_content_hash` are calculated.
+
 Treat `--replace` as explicit operator intent to rebuild the selected table from
 the selected archive scope. If the dry-run archive file list or target Delta URI
 does not match the intended rebuild, stop and correct the target selection,

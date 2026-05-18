@@ -8,6 +8,7 @@ Marimo-Codex research workspace image.
 
 - [What it does](#what-it-does)
 - [Image split](#image-split)
+- [Dashboard standard](#dashboard-standard)
 - [Table explorer](#table-explorer)
 - [Gas market dashboard](#gas-market-dashboard)
 - [GBB interactive map](#gbb-interactive-map)
@@ -52,6 +53,14 @@ Caddy. The research workspace is for human-operated local Marimo-Codex research
 only; compose does not launch unattended Codex, and deployed Codex execution is
 deferred until a security review approves identity, network, filesystem, secret,
 audit, and rollback controls.
+
+## Dashboard standard
+
+Curated notebooks under [notebooks/](notebooks/) follow the
+[Marimo dashboard standard](docs/dashboard-standard.md). The standard defines
+the required **Dashboard brief**, **Dashboard intent**, first-viewport data
+health, visual-first layout, Playwright development review evidence, and the
+future shared UI primitive surface.
 
 ## Table explorer
 
@@ -287,6 +296,7 @@ prek run -a
 - [Local backend-services stack](../README.md)
 - [Authentication service](../authentication/README.md)
 - [Gas-model ERDs](../dagster-user/aemo-etl/docs/gas_model/README.md)
+- [Marimo dashboard standard](docs/dashboard-standard.md)
 - [Repository workflow](../../docs/repository/workflow.md)
 
 ## Sync metadata
@@ -296,6 +306,7 @@ prek run -a
   - `backend-services/marimo/src/marimoserver/main.py`
   - `backend-services/marimo/pyproject.toml`
   - `backend-services/marimo/Dockerfile`
+  - `backend-services/marimo/docs/dashboard-standard.md`
   - `backend-services/marimo/scripts/sync-gbb-map-s3-to-localstack.sh`
   - `backend-services/marimo/research-workspace/AGENTS.md`
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`

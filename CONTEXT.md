@@ -227,6 +227,26 @@ documents for a named market, artifact, concept, or workflow. It belongs to the
 it uses.
 _Avoid_: Uncited summary, fully automated wiki page
 
+**Dashboard standard**:
+The maintained Marimo dashboard design and agent-development contract at
+`backend-services/marimo/docs/dashboard-standard.md`. It defines the required
+brief, intent, first-viewport, data-health, visual, interaction, Playwright
+review, and future shared-primitive expectations for curated Marimo dashboards.
+_Avoid_: Dashboard style guide, notebook preference list
+
+**Dashboard brief**:
+A short curated-dashboard statement of intended audience, job-to-be-done, data
+scope, freshness signal, and known data limits. It anchors the notebook design
+before controls, charts, maps, or tables are chosen.
+_Avoid_: Notebook intro, dashboard description
+
+**Dashboard intent**:
+The primary use category selected for a curated Marimo dashboard: Operational,
+Analytical, or Stakeholder. It controls the expected dashboard density,
+first-viewport shape, and balance between visual summaries, controls, and
+tables.
+_Avoid_: Dashboard type, user persona
+
 ## Relationships
 
 - A **Pytest subproject** is one kind of **Subproject**.

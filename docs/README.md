@@ -23,6 +23,8 @@ and behavior belong on the owning Subproject or repository page.
   [repository/documentation-sync.md](repository/documentation-sync.md)
 - Follow agent policy:
   [AGENTS.md](../AGENTS.md)
+- Build or review curated Marimo dashboards:
+  [backend-services/marimo/docs/dashboard-standard.md](../backend-services/marimo/docs/dashboard-standard.md)
 - Find agent workflow docs:
   [agents/README.md](agents/README.md)
 - Inspect ADRs:
@@ -36,6 +38,8 @@ and behavior belong on the owning Subproject or repository page.
   [backend-services/authentication/README.md](../backend-services/authentication/README.md)
 - Marimo notebook services:
   [backend-services/marimo/README.md](../backend-services/marimo/README.md)
+- Marimo dashboard standard:
+  [backend-services/marimo/docs/dashboard-standard.md](../backend-services/marimo/docs/dashboard-standard.md)
 - AEMO ETL:
   [backend-services/dagster-user/aemo-etl/README.md](../backend-services/dagster-user/aemo-etl/README.md)
 - AEMO ETL architecture:
@@ -79,6 +83,7 @@ and behavior belong on the owning Subproject or repository page.
   - `backend-services/README.md`
   - `backend-services/authentication/README.md`
   - `backend-services/marimo/README.md`
+  - `backend-services/marimo/docs/dashboard-standard.md`
   - `backend-services/dagster-user/aemo-etl/README.md`
   - `backend-services/dagster-user/aemo-etl/docs/architecture/high_level_architecture.md`
   - `backend-services/dagster-user/aemo-etl/docs/architecture/ingestion_flows.md`

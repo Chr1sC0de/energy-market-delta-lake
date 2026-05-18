@@ -2,6 +2,7 @@
 
 import datetime as dt
 from datetime import timezone
+from io import BytesIO
 
 import polars as pl
 from polars import Datetime, String
@@ -112,6 +113,181 @@ def test_source_table_bronze_frame_from_bytes_stores_archive_source_file() -> No
     result = df.collect()
 
     assert result["source_file"].to_list() == ["s3://archive/bronze/gbb/table.csv"]
+
+
+def test_source_table_bronze_frame_from_bytes_parses_parquet() -> None:
+    buffer = BytesIO()
+    pl.DataFrame({"business_col": ["value"]}).write_parquet(buffer)
+
+    df = source_table_bronze_frame_from_bytes(
+        s3_bucket="landing",
+        s3_key="bronze/gbb/table.parquet",
+        object_bytes=buffer.getvalue(),
+        schema={
+            "business_col": String,
+            "ingested_timestamp": Datetime("us", time_zone="UTC"),
+            "ingested_date": Datetime("us", time_zone="UTC"),
+            "surrogate_key": String,
+            "source_file": String,
+            SOURCE_CONTENT_HASH_COLUMN: String,
+        },
+        surrogate_key_sources=("business_col",),
+        current_time=dt.datetime(2024, 1, 1, tzinfo=_AEST),
+        source_file_bucket="archive",
+    )
+
+    result = df.collect()
+
+    assert result["business_col"].to_list() == ["value"]
+    assert result["surrogate_key"].null_count() == 0
+
+
+def test_source_table_bronze_frame_from_bytes_parses_headerless_csv() -> None:
+    df = source_table_bronze_frame_from_bytes(
+        s3_bucket="landing",
+        s3_key="bronze/sttm/int659_v1_bid_offer_rpt_1~260517013317.csv",
+        object_bytes=(b"2026-05-15,68602,3121782,9\n2026-05-15,68602,3121782,10\n"),
+        schema={
+            "gas_date": String,
+            "schedule_identifier": String,
+            "bid_offer_identifier": String,
+            "bid_offer_step_number": String,
+            "ingested_timestamp": Datetime("us", time_zone="UTC"),
+            "ingested_date": Datetime("us", time_zone="UTC"),
+            "surrogate_key": String,
+            "source_file": String,
+            SOURCE_CONTENT_HASH_COLUMN: String,
+        },
+        surrogate_key_sources=(
+            "gas_date",
+            "schedule_identifier",
+            "bid_offer_identifier",
+            "bid_offer_step_number",
+        ),
+        current_time=dt.datetime(2024, 1, 1, tzinfo=_AEST),
+        source_file_bucket="archive",
+    )
+
+    result = df.collect()
+
+    assert result["gas_date"].to_list() == ["2026-05-15", "2026-05-15"]
+    assert result["bid_offer_step_number"].to_list() == ["9", "10"]
+    assert result["surrogate_key"].null_count() == 0
+
+
+def test_source_table_bronze_frame_from_bytes_drops_nul_csv_lines() -> None:
+    df = source_table_bronze_frame_from_bytes(
+        s3_bucket="landing",
+        s3_key="bronze/sttm/int659_v1_bid_offer_rpt_1~260517013317.csv",
+        object_bytes=(
+            b"\0partial,3121782,9\n"
+            b"2026-05-15,68602,3121782,9\n"
+            b"2026-05-16,68603\0,3121783,10\n"
+            b"2026-05-17,68604,3121784,1\n"
+        ),
+        schema={
+            "gas_date": String,
+            "schedule_identifier": String,
+            "bid_offer_identifier": String,
+            "bid_offer_step_number": String,
+            "ingested_timestamp": Datetime("us", time_zone="UTC"),
+            "ingested_date": Datetime("us", time_zone="UTC"),
+            "surrogate_key": String,
+            "source_file": String,
+            SOURCE_CONTENT_HASH_COLUMN: String,
+        },
+        surrogate_key_sources=(
+            "gas_date",
+            "schedule_identifier",
+            "bid_offer_identifier",
+            "bid_offer_step_number",
+        ),
+        current_time=dt.datetime(2024, 1, 1, tzinfo=_AEST),
+        source_file_bucket="archive",
+    )
+
+    result = df.collect()
+
+    assert result["gas_date"].to_list() == ["2026-05-15", "2026-05-17"]
+    assert result["bid_offer_identifier"].to_list() == ["3121782", "3121784"]
+
+
+def test_source_table_bronze_frame_from_bytes_tolerates_missing_surrogate_sources() -> (
+    None
+):
+    df = source_table_bronze_frame_from_bytes(
+        s3_bucket="landing",
+        s3_key="bronze/sttm/int659_v1_bid_offer_rpt_1~260517013317.csv",
+        object_bytes=b"\0" * 32,
+        schema={
+            "gas_date": String,
+            "ingested_timestamp": Datetime("us", time_zone="UTC"),
+            "ingested_date": Datetime("us", time_zone="UTC"),
+            "surrogate_key": String,
+            "source_file": String,
+            SOURCE_CONTENT_HASH_COLUMN: String,
+        },
+        surrogate_key_sources=("gas_date",),
+        current_time=dt.datetime(2024, 1, 1, tzinfo=_AEST),
+        source_file_bucket="archive",
+    )
+
+    result = df.collect()
+
+    assert result.height == 0
+    assert result.columns[:6] == [
+        "gas_date",
+        "ingested_timestamp",
+        "ingested_date",
+        "surrogate_key",
+        "source_file",
+        SOURCE_CONTENT_HASH_COLUMN,
+    ]
+
+
+def test_source_table_bronze_frame_from_bytes_rejects_nonempty_missing_surrogate_source() -> (
+    None
+):
+    with pytest.raises(ValueError, match="missing from non-empty source frame"):
+        source_table_bronze_frame_from_bytes(
+            s3_bucket="landing",
+            s3_key="bronze/gbb/table.csv",
+            object_bytes=b"other_col\nvalue\n",
+            schema={
+                "gas_date": String,
+                "other_col": String,
+                "ingested_timestamp": Datetime("us", time_zone="UTC"),
+                "ingested_date": Datetime("us", time_zone="UTC"),
+                "surrogate_key": String,
+                "source_file": String,
+                SOURCE_CONTENT_HASH_COLUMN: String,
+            },
+            surrogate_key_sources=("gas_date",),
+            current_time=dt.datetime(2024, 1, 1, tzinfo=_AEST),
+            source_file_bucket="archive",
+        )
+
+
+def test_source_table_bronze_frame_from_bytes_rejects_undeclared_surrogate_source() -> (
+    None
+):
+    with pytest.raises(KeyError, match="surrogate_key_sources must be declared"):
+        source_table_bronze_frame_from_bytes(
+            s3_bucket="landing",
+            s3_key="bronze/gbb/table.csv",
+            object_bytes=b"other_col\nvalue\n",
+            schema={
+                "other_col": String,
+                "ingested_timestamp": Datetime("us", time_zone="UTC"),
+                "ingested_date": Datetime("us", time_zone="UTC"),
+                "surrogate_key": String,
+                "source_file": String,
+                SOURCE_CONTENT_HASH_COLUMN: String,
+            },
+            surrogate_key_sources=("business_col",),
+            current_time=dt.datetime(2024, 1, 1, tzinfo=_AEST),
+            source_file_bucket="archive",
+        )
 
 
 def test_source_table_bronze_frame_from_bytes_rejects_unknown_filetype() -> None:

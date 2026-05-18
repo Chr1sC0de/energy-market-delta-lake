@@ -101,8 +101,10 @@ to leave as review-only guidance:
 - every maintained doc has required `## Sync metadata`
 - every listed `sync.sources` path exists
 - internal Markdown file links and anchors resolve
-- `docs/README.md` covers the required human task and Subproject routes
-- `docs/agents/README.md` covers the required agent workflow routes
+- `docs/README.md` covers the required human task and Subproject routes,
+  including the Marimo **Dashboard standard**
+- `docs/agents/README.md` covers the required agent workflow routes, including
+  the Marimo **Dashboard standard**
 - moved repo-level docs do not leave stale references to old paths
 
 Run the automated doc QA with:

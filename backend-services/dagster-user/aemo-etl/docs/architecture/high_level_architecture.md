@@ -148,9 +148,12 @@ The bronze asset:
 - receives S3 object keys from a sensor run config
 - reads bytes from landing storage
 - applies optional preprocessing hooks
+- parses headered CSV files or schema-ordered headerless CSV files, and drops
+  NUL-contaminated physical CSV lines before surrogate-key generation
 - collapses each micro-batch to current state by `surrogate_key`
 - merges current-state rows into the bronze Delta table in the AEMO bucket
-- archives processed source files only after a table write
+- archives processed source files after a table write or when a zero-row
+  processed batch requires no table change
 - deletes zero-byte landing objects
 - reports missing, unsupported, and deferred selected keys with a
   non-blocking WARN asset check
@@ -168,9 +171,10 @@ bronze targets run from `bronze/sttm/bronze_int651_v1_ex_ante_market_price_rpt_1
 through `bronze/sttm/bronze_int691_v1_sttm_ctp_register_rpt_1`, excluding the
 landing-only `INT685` and `INT685B` gaps.
 
-The compact manifest declares every STTM report column as `String` and uses the
-normal ingestion metadata, `surrogate_key`, `source_file`, and
-`source_content_hash` conventions.
+The compact manifest declares every STTM report column as `String`, supplies the
+schema order used for headerless source CSVs, and uses the normal ingestion
+metadata, `surrogate_key`, `source_file`, and `source_content_hash`
+conventions.
 
 Source-table bronze semantics:
 
@@ -186,8 +190,10 @@ Source-table bronze semantics:
   is missing
 - unmatched source rows insert, and unmatched target rows stay in place, so
   absence from a later source file is not a delete signal
-- processed landing files move to archive only when the write helper reports a
-  table write; otherwise they remain in landing and the skipped-key check warns
+- processed landing files move to archive when the write helper reports a table
+  write, or when it reports a zero-row batch that leaves current state unchanged;
+  non-empty processed files remain in landing if no table write occurs and the
+  skipped-key check warns
 - zero-byte landing objects are deleted after the write helper returns normally
 - archived source files remain the replay source for rebuilding source-table
   bronze
