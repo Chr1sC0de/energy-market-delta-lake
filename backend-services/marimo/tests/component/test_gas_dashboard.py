@@ -8,6 +8,12 @@ import polars as pl
 import pytest
 
 from marimoserver.gas_dashboard import (
+    BID_STACK_FACILITY_FILTER_ALL,
+    BID_STACK_PARTICIPANT_FILTER_ALL,
+    BID_STACK_SOURCE_SYSTEM_FILTER_ALL,
+    BID_STACK_TABLE_NAME,
+    BID_STACK_TABLE_SPEC,
+    BID_STACK_ZONE_FILTER_ALL,
     GAS_MODEL_TABLES,
     GAS_QUALITY_QUALITY_TYPE_FILTER_ALL,
     GAS_QUALITY_SOURCE_POINT_FILTER_ALL,
@@ -33,6 +39,16 @@ from marimoserver.gas_dashboard import (
     GasDashboardConfig,
     GasTableLoad,
     GasTableSpec,
+    bid_stack_empty_state_markdown,
+    bid_stack_facility_options,
+    bid_stack_kpi_frame,
+    bid_stack_observation_frame,
+    bid_stack_participant_options,
+    bid_stack_source_summary_frame,
+    bid_stack_source_system_options,
+    bid_stack_step_summary_frame,
+    bid_stack_zone_options,
+    cached_load_bid_stack_table,
     cached_load_gas_quality_table,
     cached_load_gas_model_tables,
     cached_load_market_price_table,
@@ -49,6 +65,7 @@ from marimoserver.gas_dashboard import (
     gas_table_load_status_frame,
     gas_table_load_status_message,
     load_market_price_table,
+    load_bid_stack_table,
     load_gas_quality_table,
     load_gas_model_tables,
     load_schedule_run_table,
@@ -63,6 +80,7 @@ from marimoserver.gas_dashboard import (
     market_price_type_summary_frame,
     read_parquet_table,
     render_dashboard_context_panel,
+    render_bid_stack_context_links,
     render_market_price_context_links,
     render_schedule_run_context_links,
     schedule_run_empty_state_markdown,
@@ -983,6 +1001,359 @@ def test_schedule_run_helpers_cover_missing_data_and_filter_empty_state() -> Non
     assert "current filters do not match" in filtered_markdown
     assert "did not receive a schedule run load result" in missing_load_markdown
     assert "No Schedule, Gas Day, or Settlement context entries" in empty_context_links
+    assert "Unavailable dashboard" in unmounted_context_links
+
+
+def test_bid_stack_table_loader_uses_bounded_recent_view() -> None:
+    captured: list[int | None] = []
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "11",
+        }
+    )
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        captured.append(row_limit)
+        assert uri == (
+            "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_fact_bid_stack"
+        )
+        assert storage_options == config.storage_options()
+        return pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 1), date(2024, 1, 3)],
+                "bid_id": ["older", "newer"],
+            }
+        )
+
+    load = load_bid_stack_table(config, reader=reader)
+
+    assert captured == [11]
+    assert load.spec == BID_STACK_TABLE_SPEC
+    assert load.row_limit == 11
+    assert load.dataframe is not None
+    assert load.dataframe["bid_id"].to_list() == ["newer", "older"]
+
+
+def test_cached_bid_stack_table_loader_reuses_session_cache() -> None:
+    calls: list[int] = []
+    config = _dashboard_config()
+    cache: GasModelSessionCache = {}
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        calls.append(len(calls) + 1)
+        return pl.DataFrame({"bid_id": [f"bid-{calls[-1]}"]})
+
+    first_load = cached_load_bid_stack_table(config, cache, reader=reader)
+    cached_load = cached_load_bid_stack_table(config, cache, reader=reader)
+    refreshed_load = cached_load_bid_stack_table(
+        config,
+        cache,
+        reader=reader,
+        refresh_token=1,
+    )
+
+    assert calls == [1, 2]
+    assert not first_load.cache_hit
+    assert cached_load.cache_hit
+    assert not refreshed_load.cache_hit
+    assert cached_load.dataframe is not None
+    assert cached_load.dataframe["bid_id"].to_list() == ["bid-1"]
+    assert refreshed_load.dataframe is not None
+    assert refreshed_load.dataframe["bid_id"].to_list() == ["bid-2"]
+
+
+def test_bid_stack_summaries_filters_and_context_links() -> None:
+    sttm_table = "silver.sttm.silver_int659_v1_bid_offer_rpt_1"
+    vicgas_table = "silver.vicgas.silver_int314_v4_bid_stack_1"
+    load = _bid_stack_load(
+        pl.DataFrame(
+            {
+                "gas_date": ["2024-01-03", "2024-01-03", "2024-01-02"],
+                "source_system": ["STTM", "STTM", "VICGAS"],
+                "source_table": [sttm_table, sttm_table, vicgas_table],
+                "source_report_id": ["INT659", "INT659", "INT314"],
+                "participant_id": ["P1", "P1", "V1"],
+                "participant_name": ["Participant One", "Participant One", "Vic One"],
+                "source_hub_id": ["SYD", "SYD", None],
+                "source_hub_name": ["Sydney", "Sydney", None],
+                "source_facility_id": ["FAC1", "FAC1", None],
+                "facility_name": ["Pipeline A", "Pipeline A", None],
+                "source_point_id": ["FAC1", "FAC1", "MIRN-A"],
+                "schedule_identifier": ["SCH1", "SCH1", None],
+                "bid_id": ["BID-1", "BID-1", "BID-2"],
+                "bid_step": [1, 2, 1],
+                "bid_price": [9.5, 12.0, 8.0],
+                "bid_qty_gj": [100.0, 50.0, 30.0],
+                "step_qty_gj": [None, None, 30.0],
+                "offer_type": ["offer", "offer", "bid"],
+                "inject_withdraw": [None, None, "withdraw"],
+                "schedule_type": [None, None, "d-1"],
+                "schedule_time": [None, None, "06:00"],
+                "bid_cutoff_timestamp": [
+                    None,
+                    None,
+                    "2024-01-01 13:00:00",
+                ],
+                "source_last_updated_timestamp": [
+                    "2024-01-02 04:00:00",
+                    "2024-01-02 05:00:00",
+                    "2024-01-01 06:00:00",
+                ],
+                "source_surrogate_key": ["src-1", "src-2", "src-3"],
+                "source_file": ["sttm.csv", "sttm.csv", "vicgas.csv"],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 2, 6),
+                    datetime(2024, 1, 2, 7),
+                    datetime(2024, 1, 1, 7),
+                ],
+            }
+        )
+    )
+
+    observations = bid_stack_observation_frame(
+        load,
+        "P1",
+        "FAC1",
+        "SYD",
+        "STTM",
+    )
+    kpis = bid_stack_kpi_frame(load)
+    step_summary = bid_stack_step_summary_frame(load)
+    source_summary = bid_stack_source_summary_frame(load)
+    context_links = render_bid_stack_context_links()
+
+    assert bid_stack_participant_options(load) == (
+        BID_STACK_PARTICIPANT_FILTER_ALL,
+        "P1",
+        "V1",
+    )
+    assert bid_stack_facility_options(load) == (
+        BID_STACK_FACILITY_FILTER_ALL,
+        "FAC1",
+    )
+    assert bid_stack_zone_options(load) == (
+        BID_STACK_ZONE_FILTER_ALL,
+        "SYD",
+    )
+    assert bid_stack_source_system_options(load) == (
+        BID_STACK_SOURCE_SYSTEM_FILTER_ALL,
+        "STTM",
+        "VICGAS",
+    )
+    assert kpis.to_dict(as_series=False) == {
+        "metric": [
+            "Loaded bid stack rows",
+            "Source systems",
+            "Participants",
+            "Facilities",
+            "Zones",
+            "Bid steps",
+            "Bid price range",
+            "Loaded bid quantity",
+            "Accepted source identifiers",
+            "Latest gas date",
+        ],
+        "value": ["3", "2", "2", "1", "1", "2", "8 to 12", "180 GJ", "3", "2024-01-03"],
+        "detail": [
+            "Full table scan",
+            "Distinct source_system values in the current view",
+            "Distinct participant_id values represented",
+            "Distinct source_facility_id values represented",
+            "Distinct source_hub_id values represented",
+            "Distinct bid_step values represented",
+            "Minimum and maximum bid_price in the current view",
+            "Sum of bid_qty_gj in loaded bounded rows",
+            "Distinct source_surrogate_key values represented",
+            "Maximum gas_date in the loaded bounded rows",
+        ],
+    }
+    assert step_summary.select(
+        "source system",
+        "zone",
+        "facility",
+        "bid step",
+        "rows",
+        "participants",
+        "bid ids",
+        "min bid price",
+        "total bid quantity gj",
+        "total step quantity gj",
+        "latest gas date",
+    ).to_dict(as_series=False) == {
+        "source system": ["STTM", "STTM", "VICGAS"],
+        "zone": ["SYD", "SYD", None],
+        "facility": ["FAC1", "FAC1", None],
+        "bid step": [1, 2, 1],
+        "rows": [1, 1, 1],
+        "participants": [1, 1, 1],
+        "bid ids": [1, 1, 1],
+        "min bid price": [9.5, 12.0, 8.0],
+        "total bid quantity gj": [100.0, 50.0, 30.0],
+        "total step quantity gj": [0.0, 0.0, 30.0],
+        "latest gas date": [date(2024, 1, 3), date(2024, 1, 3), date(2024, 1, 2)],
+    }
+    assert source_summary.select(
+        "source system",
+        "source table",
+        "source report",
+        "rows",
+        "participants",
+        "facilities",
+        "zones",
+        "bid ids",
+        "bid steps",
+        "accepted source identifiers",
+        "source files",
+        "latest gas date",
+    ).to_dict(as_series=False) == {
+        "source system": ["STTM", "VICGAS"],
+        "source table": [sttm_table, vicgas_table],
+        "source report": ["INT659", "INT314"],
+        "rows": [2, 1],
+        "participants": [1, 1],
+        "facilities": [1, 0],
+        "zones": [1, 0],
+        "bid ids": [1, 1],
+        "bid steps": [2, 1],
+        "accepted source identifiers": [2, 1],
+        "source files": [1, 1],
+        "latest gas date": [date(2024, 1, 3), date(2024, 1, 2)],
+    }
+    assert observations.select(
+        "gas date",
+        "source system",
+        "source table",
+        "source report",
+        "participant",
+        "zone",
+        "facility",
+        "bid id",
+        "bid step",
+        "bid price",
+        "bid quantity gj",
+        "accepted source identifier",
+    ).to_dict(as_series=False) == {
+        "gas date": [date(2024, 1, 3), date(2024, 1, 3)],
+        "source system": ["STTM", "STTM"],
+        "source table": [sttm_table, sttm_table],
+        "source report": ["INT659", "INT659"],
+        "participant": ["P1", "P1"],
+        "zone": ["SYD", "SYD"],
+        "facility": ["FAC1", "FAC1"],
+        "bid id": ["BID-1", "BID-1"],
+        "bid step": [2, 1],
+        "bid price": [12.0, 9.5],
+        "bid quantity gj": [50.0, 100.0],
+        "accepted source identifier": ["src-2", "src-1"],
+    }
+    assert 'href="/marimo/gas_bid_offer_stack/"' in context_links
+    assert "Bid / Offer" in context_links
+    assert "Participant Context" in context_links
+    assert "Facility Context" in context_links
+    assert "Schedule Context" in context_links
+
+
+def test_bid_stack_helpers_cover_missing_data_and_filter_empty_state() -> None:
+    empty_load = _bid_stack_load(pl.DataFrame(), row_limit=4)
+    populated_load = _bid_stack_load(
+        pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 3)],
+                "source_system": ["STTM"],
+                "participant_id": ["P1"],
+                "source_facility_id": ["FAC1"],
+                "source_hub_id": ["SYD"],
+                "bid_id": ["BID-1"],
+                "bid_step": [1],
+                "bid_price": [9.5],
+                "bid_qty_gj": [100.0],
+                "source_surrogate_key": ["src-1"],
+            }
+        )
+    )
+    missing_date_load = _bid_stack_load(
+        pl.DataFrame(
+            {
+                "source_system": ["STTM"],
+                "participant_id": ["P1"],
+                "source_facility_id": ["FAC1"],
+                "source_hub_id": ["SYD"],
+                "bid_id": ["BID-1"],
+                "bid_step": [1],
+                "bid_price": [9.5],
+                "bid_qty_gj": [100.0],
+            }
+        )
+    )
+    error_load = GasTableLoad(
+        spec=BID_STACK_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_bid_stack",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=4,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+    assert bid_stack_kpi_frame(empty_load).is_empty()
+    assert bid_stack_step_summary_frame(empty_load).is_empty()
+    assert bid_stack_source_summary_frame(empty_load).is_empty()
+    assert bid_stack_observation_frame(empty_load).is_empty()
+    assert bid_stack_participant_options(empty_load) == (
+        BID_STACK_PARTICIPANT_FILTER_ALL,
+    )
+    assert bid_stack_facility_options(empty_load) == (BID_STACK_FACILITY_FILTER_ALL,)
+    assert bid_stack_zone_options(empty_load) == (BID_STACK_ZONE_FILTER_ALL,)
+    assert bid_stack_source_system_options(empty_load) == (
+        BID_STACK_SOURCE_SYSTEM_FILTER_ALL,
+    )
+    assert bid_stack_kpi_frame(
+        populated_load,
+        participant_filter="missing-participant",
+    ).is_empty()
+    assert bid_stack_kpi_frame(missing_date_load).row(9, named=True) == {
+        "metric": "Latest gas date",
+        "value": "unknown",
+        "detail": "Maximum gas_date in the loaded bounded rows",
+    }
+
+    empty_markdown = bid_stack_empty_state_markdown(empty_load)
+    error_markdown = bid_stack_empty_state_markdown(error_load)
+    filtered_markdown = bid_stack_empty_state_markdown(populated_load)
+    missing_load_markdown = bid_stack_empty_state_markdown(None)
+    empty_context_links = render_bid_stack_context_links(entries=())
+    unmounted_entry = DashboardRegistryEntry(
+        concept_id="bid-offer-context",
+        title="Unmounted Bid / Offer",
+        description="Available entry without a mounted notebook route.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.silver_gas_fact_bid_stack",),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+    unmounted_context_links = render_bid_stack_context_links(entries=(unmounted_entry,))
+
+    assert "No Bid / Offer stack data is available" in empty_markdown
+    assert "silver.gas_model.silver_gas_fact_bid_stack" in empty_markdown
+    assert "Bounded preview reads are capped at `4` rows per table" in empty_markdown
+    assert "FileNotFoundError: no parquet files found" in error_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert "did not receive a Bid / Offer stack load result" in missing_load_markdown
+    assert "No Bid / Offer, Participant, Facility, or Schedule context" in (
+        empty_context_links
+    )
     assert "Unavailable dashboard" in unmounted_context_links
 
 
@@ -2077,6 +2448,22 @@ def _gas_quality_load(
     return GasTableLoad(
         spec=GAS_QUALITY_TABLE_SPEC,
         uri=f"s3://bucket/silver/gas_model/{GAS_QUALITY_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _bid_stack_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=BID_STACK_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{BID_STACK_TABLE_NAME}",
         dataframe=dataframe,
         error=None,
         row_limit=row_limit,

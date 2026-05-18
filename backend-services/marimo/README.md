@@ -313,6 +313,23 @@ context links from the Marimo registry. Missing schedule-run data, unavailable
 Parquet prefixes, and filter combinations with no matches render dashboard
 empty states with the checked table, read policy, and refresh action.
 
+## Bid / Offer stack dashboard
+
+[notebooks/gas_bid_offer_stack.py](notebooks/gas_bid_offer_stack.py) is an
+analytical dashboard over
+`silver.gas_model.silver_gas_fact_bid_stack`. It uses the shared bounded gas
+model loader and session cache from
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py), then
+filters the loaded bounded preview by participant, facility, zone or hub, and
+`source_system`.
+
+The dashboard shows loaded Bid / Offer stack KPIs, bid-step price and quantity
+summaries, source-system and source-table coverage, accepted source identifier
+counts, bounded row previews, and Bid / Offer, Participant, Facility, and
+Schedule context links from the Marimo registry. Missing bid-stack data,
+unavailable Parquet prefixes, and filter combinations with no matches render
+dashboard empty states with the checked table, read policy, and refresh action.
+
 ## System notices dashboard
 
 [notebooks/system_notices.py](notebooks/system_notices.py) is an operational
@@ -411,7 +428,7 @@ With the local backend stack running, open the Marimo concept gallery through
 Caddy and choose an available card such as `data_readiness_overview`,
 `glossary_explorer`, `table_explorer`, `sample_energy_market`,
 `gas_market_prices`, `gas_schedule_runs`, `system_notices`,
-`gas_quality_composition`, or `gbb_interactive_map`:
+`gas_bid_offer_stack`, `gas_quality_composition`, or `gbb_interactive_map`:
 
 ```text
 http://localhost/marimo
@@ -480,6 +497,13 @@ Use the same pattern for the schedule runs dashboard:
 ```bash
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gas_schedule_runs.py
+```
+
+Use the same pattern for the Bid / Offer stack dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gas_bid_offer_stack.py
 ```
 
 Use the same pattern for the gas quality and composition dashboard:
@@ -582,6 +606,7 @@ prek run -a
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
+  - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/marimo/tests/component/conftest.py`
   - `backend-services/marimo/tests/component/test_dashboard_registry.py`

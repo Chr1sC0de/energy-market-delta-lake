@@ -208,7 +208,8 @@ Key deployed behaviors visible in the infrastructure code:
   immutable cache headers for content-hashed `/marimo/<notebook>/assets/*`
   responses, exposes the data readiness overview for platform operations and
   the registry-only glossary explorer for Market context metadata browsing,
-  exposes the gas system notices dashboard over curated system notice data, and
+  exposes the gas system notices and Bid / Offer stack dashboards over curated
+  gas-model facts, and
   loads bounded table previews instead of full table scans, with explicit
   refresh, session cache keys, load timing, and row-limit messages for shared
   gas-model dashboard reads
@@ -432,6 +433,7 @@ system's services and Dagster workflows.
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
+  - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/caddy/Caddyfile`
   - `infrastructure/aws-pulumi/.pre-commit-config.yaml`

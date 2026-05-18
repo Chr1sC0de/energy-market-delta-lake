@@ -12,15 +12,18 @@ from marimoserver.data_readiness import (
     readiness_action_markdown,
 )
 from marimoserver.gas_dashboard import (
+    BID_STACK_TABLE_SPEC,
     GAS_QUALITY_TABLE_SPEC,
     MARKET_PRICE_TABLE_SPEC,
     SCHEDULE_RUN_TABLE_SPEC,
     GasTableSpec,
     SYSTEM_NOTICE_TABLE_SPEC,
+    bid_stack_empty_state_markdown,
     discover_dashboard_config,
     gas_quality_empty_state_markdown,
     gas_table_load_status_frame,
     gas_table_load_status_message,
+    load_bid_stack_table,
     load_gas_quality_table,
     load_gas_model_tables,
     load_market_price_table,
@@ -212,6 +215,34 @@ def test_schedule_runs_dashboard_bounded_loader_renders_empty_state() -> None:
     assert not load.available
     assert "No schedule run data is available" in empty_markdown
     assert "Bounded preview reads are capped at `8` rows per table" in empty_markdown
+
+
+def test_bid_stack_dashboard_bounded_loader_renders_empty_state() -> None:
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "9",
+        }
+    )
+    captured_row_limits: list[int | None] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        captured_row_limits.append(row_limit)
+        return pl.DataFrame()
+
+    load = load_bid_stack_table(config, reader=reader)
+    empty_markdown = bid_stack_empty_state_markdown(load)
+
+    assert captured_row_limits == [9]
+    assert load.spec == BID_STACK_TABLE_SPEC
+    assert not load.available
+    assert "No Bid / Offer stack data is available" in empty_markdown
+    assert "Bounded preview reads are capped at `9` rows per table" in empty_markdown
 
 
 def test_system_notices_dashboard_bounded_loader_renders_empty_state() -> None:

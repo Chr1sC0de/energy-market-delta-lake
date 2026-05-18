@@ -79,6 +79,12 @@ SCHEDULE_RUN_GAS_DATE_FILTER_ALL = "All gas dates"
 SCHEDULE_RUN_SOURCE_SYSTEM_FILTER_ALL = "All source systems"
 SCHEDULE_RUN_SCHEDULE_TYPE_FILTER_ALL = "All schedule types"
 DEFAULT_SCHEDULE_RUN_PREVIEW_ROWS = 50
+BID_STACK_TABLE_NAME = "silver_gas_fact_bid_stack"
+BID_STACK_PARTICIPANT_FILTER_ALL = "All participants"
+BID_STACK_FACILITY_FILTER_ALL = "All facilities"
+BID_STACK_ZONE_FILTER_ALL = "All zones"
+BID_STACK_SOURCE_SYSTEM_FILTER_ALL = "All source systems"
+DEFAULT_BID_STACK_PREVIEW_ROWS = 50
 GAS_QUALITY_TABLE_NAME = "silver_gas_fact_gas_quality"
 GAS_QUALITY_QUALITY_TYPE_FILTER_ALL = "All quality types"
 GAS_QUALITY_SOURCE_POINT_FILTER_ALL = "All source points"
@@ -209,6 +215,41 @@ SCHEDULE_RUN_TABLE_SPEC = GasTableSpec(
         "approval_timestamp",
     ),
 )
+
+BID_STACK_TABLE_SPEC = GasTableSpec(
+    section="Bid / Offer",
+    label="Bid / Offer stack",
+    table_name=BID_STACK_TABLE_NAME,
+    date_columns=(
+        "gas_date",
+        "bid_cutoff_timestamp",
+        "source_last_updated_timestamp",
+        "ingested_timestamp",
+    ),
+    preview_columns=(
+        "gas_date",
+        "source_system",
+        "source_table",
+        "source_report_id",
+        "participant_id",
+        "participant_name",
+        "source_hub_id",
+        "source_hub_name",
+        "source_facility_id",
+        "facility_name",
+        "source_point_id",
+        "schedule_identifier",
+        "bid_id",
+        "bid_step",
+        "bid_price",
+        "bid_qty_gj",
+        "step_qty_gj",
+        "offer_type",
+        "inject_withdraw",
+        "source_surrogate_key",
+    ),
+)
+BID_STACK_TABLE_SPECS = (BID_STACK_TABLE_SPEC,)
 
 GAS_MODEL_TABLES: tuple[GasTableSpec, ...] = (
     MARKET_PRICE_TABLE_SPEC,
@@ -546,6 +587,101 @@ _SCHEDULE_RUN_OBSERVATION_SCHEMA = {
     "source updated": pl.Datetime("us"),
     "latest ingest": pl.Datetime("us"),
 }
+_BID_STACK_RAW_SCHEMA = {
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "source_table": pl.String,
+    "source_report_id": pl.String,
+    "gas_date": pl.Date,
+    "participant_id": pl.String,
+    "participant_name": pl.String,
+    "source_hub_id": pl.String,
+    "source_hub_name": pl.String,
+    "source_facility_id": pl.String,
+    "facility_name": pl.String,
+    "source_point_id": pl.String,
+    "schedule_identifier": pl.String,
+    "bid_id": pl.String,
+    "bid_step": pl.Int64,
+    "bid_price": pl.Float64,
+    "bid_qty_gj": pl.Float64,
+    "step_qty_gj": pl.Float64,
+    "offer_type": pl.String,
+    "inject_withdraw": pl.String,
+    "schedule_type": pl.String,
+    "schedule_time": pl.String,
+    "bid_cutoff_timestamp": pl.Datetime("us"),
+    "source_last_updated": pl.String,
+    "source_last_updated_timestamp": pl.Datetime("us"),
+    "source_surrogate_key": pl.String,
+    "source_file": pl.String,
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_BID_STACK_KPI_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_BID_STACK_STEP_SUMMARY_SCHEMA = {
+    "source system": pl.String,
+    "zone": pl.String,
+    "facility": pl.String,
+    "bid step": pl.Int64,
+    "rows": pl.UInt32,
+    "participants": pl.UInt32,
+    "bid ids": pl.UInt32,
+    "min bid price": pl.Float64,
+    "avg bid price": pl.Float64,
+    "max bid price": pl.Float64,
+    "total bid quantity gj": pl.Float64,
+    "total step quantity gj": pl.Float64,
+    "latest gas date": pl.Date,
+}
+_BID_STACK_SOURCE_SUMMARY_SCHEMA = {
+    "source system": pl.String,
+    "source table": pl.String,
+    "source report": pl.String,
+    "rows": pl.UInt32,
+    "participants": pl.UInt32,
+    "facilities": pl.UInt32,
+    "zones": pl.UInt32,
+    "bid ids": pl.UInt32,
+    "bid steps": pl.UInt32,
+    "accepted source identifiers": pl.UInt32,
+    "source files": pl.UInt32,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_BID_STACK_OBSERVATION_SCHEMA = {
+    "gas date": pl.Date,
+    "source system": pl.String,
+    "source table": pl.String,
+    "source report": pl.String,
+    "participant": pl.String,
+    "participant name": pl.String,
+    "zone": pl.String,
+    "zone name": pl.String,
+    "facility": pl.String,
+    "facility name": pl.String,
+    "source point": pl.String,
+    "schedule identifier": pl.String,
+    "bid id": pl.String,
+    "bid step": pl.Int64,
+    "bid price": pl.Float64,
+    "bid quantity gj": pl.Float64,
+    "step quantity gj": pl.Float64,
+    "offer type": pl.String,
+    "inject withdraw": pl.String,
+    "schedule type": pl.String,
+    "schedule time": pl.String,
+    "bid cutoff": pl.Datetime("us"),
+    "accepted source identifier": pl.String,
+    "source file": pl.String,
+    "source updated": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
 _GAS_QUALITY_RAW_SCHEMA = {
     "source_system": pl.String,
     "source_table": pl.String,
@@ -802,6 +938,42 @@ def cached_load_schedule_run_table(
         config,
         cache,
         specs=(SCHEDULE_RUN_TABLE_SPEC,),
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        refresh_token=refresh_token,
+        clock=clock,
+    )[0]
+
+
+def load_bid_stack_table(
+    config: GasDashboardConfig,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Load the Bid / Offer stack fact through the shared bounded table loader."""
+    return load_gas_model_tables(
+        config,
+        specs=BID_STACK_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        clock=clock,
+    )[0]
+
+
+def cached_load_bid_stack_table(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Return session-cached Bid / Offer stack data for explicit refreshes."""
+    return cached_load_gas_model_tables(
+        config,
+        cache,
+        specs=BID_STACK_TABLE_SPECS,
         reader=reader,
         view=GasModelTableView.RECENT,
         refresh_token=refresh_token,
@@ -1682,6 +1854,397 @@ def render_schedule_run_context_links(
 </section>"""
 
 
+def bid_stack_participant_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return participant filter options for the loaded Bid / Offer stack."""
+    return _bid_stack_string_filter_options(
+        load,
+        "participant_id",
+        BID_STACK_PARTICIPANT_FILTER_ALL,
+    )
+
+
+def bid_stack_facility_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return facility filter options for the loaded Bid / Offer stack."""
+    return _bid_stack_string_filter_options(
+        load,
+        "source_facility_id",
+        BID_STACK_FACILITY_FILTER_ALL,
+    )
+
+
+def bid_stack_zone_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return zone or hub filter options for the loaded Bid / Offer stack."""
+    return _bid_stack_string_filter_options(
+        load,
+        "source_hub_id",
+        BID_STACK_ZONE_FILTER_ALL,
+    )
+
+
+def bid_stack_source_system_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return source-system filter options for the loaded Bid / Offer stack."""
+    return _bid_stack_string_filter_options(
+        load,
+        "source_system",
+        BID_STACK_SOURCE_SYSTEM_FILTER_ALL,
+    )
+
+
+def bid_stack_kpi_frame(
+    load: GasTableLoad | None,
+    participant_filter: str = BID_STACK_PARTICIPANT_FILTER_ALL,
+    facility_filter: str = BID_STACK_FACILITY_FILTER_ALL,
+    zone_filter: str = BID_STACK_ZONE_FILTER_ALL,
+    source_system_filter: str = BID_STACK_SOURCE_SYSTEM_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return first-viewport KPIs for loaded Bid / Offer stack rows."""
+    dataframe = _filtered_bid_stack_dataframe(
+        load,
+        participant_filter,
+        facility_filter,
+        zone_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_BID_STACK_KPI_SCHEMA)
+
+    counts = dataframe.select(
+        pl.len().alias("loaded_rows"),
+        pl.col("source_system").drop_nulls().n_unique().alias("source_systems"),
+        pl.col("participant_id").drop_nulls().n_unique().alias("participants"),
+        pl.col("source_facility_id").drop_nulls().n_unique().alias("facilities"),
+        pl.col("source_hub_id").drop_nulls().n_unique().alias("zones"),
+        pl.col("bid_step").drop_nulls().n_unique().alias("bid_steps"),
+        pl.col("bid_price").min().alias("min_bid_price"),
+        pl.col("bid_price").max().alias("max_bid_price"),
+        pl.col("bid_qty_gj").sum().alias("total_bid_qty_gj"),
+        pl.col("source_surrogate_key")
+        .drop_nulls()
+        .n_unique()
+        .alias("source_identifiers"),
+        pl.col("gas_date").max().alias("latest_gas_date"),
+    ).row(0, named=True)
+    row_limit = None if load is None else load.row_limit
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Loaded bid stack rows",
+                "value": f"{counts['loaded_rows']:,}",
+                "detail": format_row_limit(row_limit),
+            },
+            {
+                "metric": "Source systems",
+                "value": f"{counts['source_systems']:,}",
+                "detail": "Distinct source_system values in the current view",
+            },
+            {
+                "metric": "Participants",
+                "value": f"{counts['participants']:,}",
+                "detail": "Distinct participant_id values represented",
+            },
+            {
+                "metric": "Facilities",
+                "value": f"{counts['facilities']:,}",
+                "detail": "Distinct source_facility_id values represented",
+            },
+            {
+                "metric": "Zones",
+                "value": f"{counts['zones']:,}",
+                "detail": "Distinct source_hub_id values represented",
+            },
+            {
+                "metric": "Bid steps",
+                "value": f"{counts['bid_steps']:,}",
+                "detail": "Distinct bid_step values represented",
+            },
+            {
+                "metric": "Bid price range",
+                "value": _format_numeric_range(
+                    counts["min_bid_price"],
+                    counts["max_bid_price"],
+                ),
+                "detail": "Minimum and maximum bid_price in the current view",
+            },
+            {
+                "metric": "Loaded bid quantity",
+                "value": _format_quantity(counts["total_bid_qty_gj"]),
+                "detail": "Sum of bid_qty_gj in loaded bounded rows",
+            },
+            {
+                "metric": "Accepted source identifiers",
+                "value": f"{counts['source_identifiers']:,}",
+                "detail": "Distinct source_surrogate_key values represented",
+            },
+            {
+                "metric": "Latest gas date",
+                "value": _format_optional_value(counts["latest_gas_date"]),
+                "detail": "Maximum gas_date in the loaded bounded rows",
+            },
+        ],
+        schema=_BID_STACK_KPI_SCHEMA,
+    )
+
+
+def bid_stack_step_summary_frame(
+    load: GasTableLoad | None,
+    participant_filter: str = BID_STACK_PARTICIPANT_FILTER_ALL,
+    facility_filter: str = BID_STACK_FACILITY_FILTER_ALL,
+    zone_filter: str = BID_STACK_ZONE_FILTER_ALL,
+    source_system_filter: str = BID_STACK_SOURCE_SYSTEM_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_BID_STACK_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return bid step, price, and quantity summaries for loaded rows."""
+    dataframe = _filtered_bid_stack_dataframe(
+        load,
+        participant_filter,
+        facility_filter,
+        zone_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_BID_STACK_STEP_SUMMARY_SCHEMA)
+
+    summary = (
+        dataframe.group_by(
+            "source_system",
+            "source_hub_id",
+            "source_facility_id",
+            "bid_step",
+        )
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("participant_id").drop_nulls().n_unique().alias("participants"),
+            pl.col("bid_id").drop_nulls().n_unique().alias("bid ids"),
+            pl.col("bid_price").min().alias("min bid price"),
+            pl.col("bid_price").mean().round(4).alias("avg bid price"),
+            pl.col("bid_price").max().alias("max bid price"),
+            pl.col("bid_qty_gj").sum().round(4).alias("total bid quantity gj"),
+            pl.col("step_qty_gj").sum().round(4).alias("total step quantity gj"),
+            pl.col("gas_date").max().alias("latest gas date"),
+        )
+        .sort(
+            ["latest gas date", "source_system", "source_hub_id", "bid_step"],
+            descending=[True, False, False, False],
+            nulls_last=True,
+        )
+        .rename(
+            {
+                "source_system": "source system",
+                "source_hub_id": "zone",
+                "source_facility_id": "facility",
+                "bid_step": "bid step",
+            }
+        )
+        .head(max(1, preview_rows))
+    )
+    return summary.select([*list(_BID_STACK_STEP_SUMMARY_SCHEMA)])
+
+
+def bid_stack_source_summary_frame(
+    load: GasTableLoad | None,
+    participant_filter: str = BID_STACK_PARTICIPANT_FILTER_ALL,
+    facility_filter: str = BID_STACK_FACILITY_FILTER_ALL,
+    zone_filter: str = BID_STACK_ZONE_FILTER_ALL,
+    source_system_filter: str = BID_STACK_SOURCE_SYSTEM_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return source-system and accepted source identifier coverage."""
+    dataframe = _filtered_bid_stack_dataframe(
+        load,
+        participant_filter,
+        facility_filter,
+        zone_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_BID_STACK_SOURCE_SUMMARY_SCHEMA)
+
+    summary = (
+        dataframe.group_by("source_system", "source_table", "source_report_id")
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("participant_id").drop_nulls().n_unique().alias("participants"),
+            pl.col("source_facility_id").drop_nulls().n_unique().alias("facilities"),
+            pl.col("source_hub_id").drop_nulls().n_unique().alias("zones"),
+            pl.col("bid_id").drop_nulls().n_unique().alias("bid ids"),
+            pl.col("bid_step").drop_nulls().n_unique().alias("bid steps"),
+            pl.col("source_surrogate_key")
+            .drop_nulls()
+            .n_unique()
+            .alias("accepted source identifiers"),
+            pl.col("source_file").drop_nulls().n_unique().alias("source files"),
+            pl.col("gas_date").min().alias("first gas date"),
+            pl.col("gas_date").max().alias("latest gas date"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort(
+            ["rows", "source_system", "source_table"], descending=[True, False, False]
+        )
+        .rename(
+            {
+                "source_system": "source system",
+                "source_table": "source table",
+                "source_report_id": "source report",
+            }
+        )
+    )
+    return summary.select([*list(_BID_STACK_SOURCE_SUMMARY_SCHEMA)])
+
+
+def bid_stack_observation_frame(
+    load: GasTableLoad | None,
+    participant_filter: str = BID_STACK_PARTICIPANT_FILTER_ALL,
+    facility_filter: str = BID_STACK_FACILITY_FILTER_ALL,
+    zone_filter: str = BID_STACK_ZONE_FILTER_ALL,
+    source_system_filter: str = BID_STACK_SOURCE_SYSTEM_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_BID_STACK_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return filtered Bid / Offer stack observations for bounded preview."""
+    dataframe = _filtered_bid_stack_dataframe(
+        load,
+        participant_filter,
+        facility_filter,
+        zone_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_BID_STACK_OBSERVATION_SCHEMA)
+
+    return (
+        dataframe.sort(
+            [
+                "gas_date",
+                "source_last_updated_timestamp",
+                "source_system",
+                "source_table",
+                "participant_id",
+                "source_facility_id",
+                "bid_step",
+            ],
+            descending=[True, True, False, False, False, False, False],
+            nulls_last=True,
+        )
+        .select(
+            pl.col("gas_date").alias("gas date"),
+            pl.col("source_system").alias("source system"),
+            pl.col("source_table").alias("source table"),
+            pl.col("source_report_id").alias("source report"),
+            pl.col("participant_id").alias("participant"),
+            pl.col("participant_name").alias("participant name"),
+            pl.col("source_hub_id").alias("zone"),
+            pl.col("source_hub_name").alias("zone name"),
+            pl.col("source_facility_id").alias("facility"),
+            pl.col("facility_name").alias("facility name"),
+            pl.col("source_point_id").alias("source point"),
+            pl.col("schedule_identifier").alias("schedule identifier"),
+            pl.col("bid_id").alias("bid id"),
+            pl.col("bid_step").alias("bid step"),
+            pl.col("bid_price").alias("bid price"),
+            pl.col("bid_qty_gj").alias("bid quantity gj"),
+            pl.col("step_qty_gj").alias("step quantity gj"),
+            pl.col("offer_type").alias("offer type"),
+            pl.col("inject_withdraw").alias("inject withdraw"),
+            pl.col("schedule_type").alias("schedule type"),
+            pl.col("schedule_time").alias("schedule time"),
+            pl.col("bid_cutoff_timestamp").alias("bid cutoff"),
+            pl.col("source_surrogate_key").alias("accepted source identifier"),
+            pl.col("source_file").alias("source file"),
+            pl.col("source_last_updated_timestamp").alias("source updated"),
+            pl.col("ingested_timestamp").alias("latest ingest"),
+        )
+        .head(max(1, preview_rows))
+    )
+
+
+def bid_stack_empty_state_markdown(load: GasTableLoad | None) -> str:
+    """Return useful empty-state copy for missing or unmatched bid stack data."""
+    table_label = _markdown_breakable_text("silver.gas_model.silver_gas_fact_bid_stack")
+    if load is None:
+        status_detail = "The dashboard did not receive a Bid / Offer stack load result."
+        uri = table_label
+        read_policy = "No read policy was reported."
+    else:
+        if load.error is not None:
+            status_detail = f"Read detail: {_markdown_breakable_text(load.error)}"
+        elif load.dataframe is None or load.dataframe.is_empty():
+            status_detail = "The table loaded successfully but returned no rows."
+        else:
+            status_detail = (
+                "The current filters do not match any loaded Bid / Offer stack rows."
+            )
+        uri = _markdown_breakable_text(load.uri)
+        read_policy = row_limit_message(load.row_limit)
+
+    return f"""
+    **No Bid / Offer stack data is available for this view.**
+
+    The dashboard checked {uri}, which should contain {table_label} rows with
+    participant, facility, zone, price, quantity, bid step, source system, and
+    accepted source identifier fields.
+
+    {status_detail}
+
+    {read_policy}
+
+    Materialize or seed the `silver.gas_model` Bid / Offer stack asset, then
+    use **Refresh data**.
+    """
+
+
+def render_bid_stack_context_links(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render Bid / Offer stack links to related market context panels."""
+    candidate_entries = tuple(dashboard_registry() if entries is None else entries)
+    concept_ids = (
+        "bid-offer-context",
+        "participant-context",
+        "facility-context",
+        "schedule-context",
+        "gas-model-table-explorer",
+    )
+    rows = "\n".join(
+        _render_bid_stack_context_link(entry)
+        for entry in (
+            registry_entry_by_concept_id(concept_id, candidate_entries)
+            for concept_id in concept_ids
+        )
+        if entry is not None
+    )
+    if rows == "":
+        rows = (
+            '<li class="bid-stack-links__empty">'
+            "No Bid / Offer, Participant, Facility, or Schedule context entries "
+            "are registered."
+            "</li>"
+        )
+
+    return f"""\
+<style>
+{_bid_stack_context_links_css()}
+</style>
+<section class="bid-stack-links" aria-label="Bid / Offer stack context links">
+    <div>
+        <p class="bid-stack-links__eyebrow">Context links</p>
+        <h2>Bid / Offer, Participant, Facility, and Schedule context</h2>
+    </div>
+    <ul>
+{rows}
+    </ul>
+</section>"""
+
+
 def gas_quality_quality_type_options(
     load: GasTableLoad | None,
 ) -> tuple[str, ...]:
@@ -2523,6 +3086,189 @@ def _schedule_run_context_links_css() -> str:
 """
 
 
+def _bid_stack_string_filter_options(
+    load: GasTableLoad | None,
+    column: str,
+    all_label: str,
+) -> tuple[str, ...]:
+    dataframe = _normalised_bid_stack_dataframe(load)
+    if dataframe.is_empty() or column not in dataframe.columns:
+        return (all_label,)
+
+    values = sorted(
+        str(value)
+        for value in dataframe.get_column(column)
+        .drop_nulls()
+        .cast(pl.String, strict=False)
+        .unique()
+        .to_list()
+        if value is not None
+    )
+    return (all_label, *values)
+
+
+def _filtered_bid_stack_dataframe(
+    load: GasTableLoad | None,
+    participant_filter: str,
+    facility_filter: str,
+    zone_filter: str,
+    source_system_filter: str,
+) -> pl.DataFrame:
+    dataframe = _normalised_bid_stack_dataframe(load)
+    if dataframe.is_empty():
+        return dataframe
+
+    filtered = dataframe
+    if participant_filter != BID_STACK_PARTICIPANT_FILTER_ALL:
+        filtered = filtered.filter(pl.col("participant_id") == participant_filter)
+    if facility_filter != BID_STACK_FACILITY_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_facility_id") == facility_filter)
+    if zone_filter != BID_STACK_ZONE_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_hub_id") == zone_filter)
+    if source_system_filter != BID_STACK_SOURCE_SYSTEM_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_system") == source_system_filter)
+    return filtered
+
+
+def _normalised_bid_stack_dataframe(load: GasTableLoad | None) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_BID_STACK_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _BID_STACK_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        pl.col("source_table").cast(pl.String, strict=False),
+        pl.col("source_report_id").cast(pl.String, strict=False),
+        _normalise_date_column(dataframe, "gas_date"),
+        pl.col("participant_id").cast(pl.String, strict=False),
+        pl.col("participant_name").cast(pl.String, strict=False),
+        pl.col("source_hub_id").cast(pl.String, strict=False),
+        pl.col("source_hub_name").cast(pl.String, strict=False),
+        pl.col("source_facility_id").cast(pl.String, strict=False),
+        pl.col("facility_name").cast(pl.String, strict=False),
+        pl.col("source_point_id").cast(pl.String, strict=False),
+        pl.col("schedule_identifier").cast(pl.String, strict=False),
+        pl.col("bid_id").cast(pl.String, strict=False),
+        pl.col("bid_step").cast(pl.Int64, strict=False),
+        pl.col("bid_price").cast(pl.Float64, strict=False),
+        pl.col("bid_qty_gj").cast(pl.Float64, strict=False),
+        pl.col("step_qty_gj").cast(pl.Float64, strict=False),
+        pl.col("offer_type").cast(pl.String, strict=False),
+        pl.col("inject_withdraw").cast(pl.String, strict=False),
+        pl.col("schedule_type").cast(pl.String, strict=False),
+        pl.col("schedule_time").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "bid_cutoff_timestamp"),
+        pl.col("source_last_updated").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "source_last_updated_timestamp"),
+        pl.col("source_surrogate_key").cast(pl.String, strict=False),
+        pl.col("source_file").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
+def _render_bid_stack_context_link(entry: DashboardRegistryEntry) -> str:
+    status_label = _dashboard_entry_status_label(entry)
+    title = escape(entry.title)
+    route = entry.notebook_route
+    if entry.status.value == "available" and route is not None:
+        title_html = f'<a href="{escape(route, quote=True)}">{title}</a>'
+    else:
+        title_html = f"<span>{title}</span>"
+
+    return f"""\
+        <li data-dashboard-status="{escape(entry.status.value, quote=True)}">
+            {title_html}
+            <span>{escape(status_label)}</span>
+            <code>{escape(entry.concept_id)}</code>
+        </li>"""
+
+
+def _bid_stack_context_links_css() -> str:
+    return """\
+.bid-stack-links {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+}
+
+.bid-stack-links__eyebrow {
+    margin: 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.74rem;
+    font-weight: 720;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.bid-stack-links h2 {
+    margin: 0.15rem 0 0;
+    font-size: 1.05rem;
+}
+
+.bid-stack-links ul {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.bid-stack-links li {
+    display: grid;
+    grid-template-columns: minmax(10rem, 1fr) auto auto;
+    gap: 0.65rem;
+    align-items: center;
+    min-width: 0;
+    padding: 0.55rem 0;
+    border-top: 1px solid var(--emdl-line, #cfdbd6);
+}
+
+.bid-stack-links li:first-child {
+    border-top: 0;
+}
+
+.bid-stack-links a {
+    color: var(--emdl-blue, #166791);
+    font-weight: 720;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+}
+
+.bid-stack-links span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.bid-stack-links li > span:nth-child(2) {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.bid-stack-links code {
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+    .bid-stack-links li {
+        grid-template-columns: 1fr;
+    }
+}
+"""
+
+
 def _gas_quality_string_filter_options(
     load: GasTableLoad | None,
     column: str,
@@ -2739,6 +3485,22 @@ def _format_optional_value(value: object | None) -> str:
     if value is None:
         return "unknown"
     return str(value)
+
+
+def _format_numeric_range(minimum: object | None, maximum: object | None) -> str:
+    return (
+        "unknown"
+        if minimum is None and maximum is None
+        else f"{_format_number(minimum)} to {_format_number(maximum)}"
+    )
+
+
+def _format_quantity(value: object | None) -> str:
+    return "unknown" if value is None else f"{_format_number(value)} GJ"
+
+
+def _format_number(value: object | None) -> str:
+    return "unknown" if not isinstance(value, int | float) else f"{value:,.4g}"
 
 
 def _markdown_breakable_text(value: str) -> str:

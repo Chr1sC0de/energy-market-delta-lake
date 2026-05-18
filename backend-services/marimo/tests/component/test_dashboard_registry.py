@@ -91,6 +91,13 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert gas_quality.notebook_route == "/marimo/gas_quality_composition/"
     assert "silver.gas_model.silver_gas_fact_gas_quality" in gas_quality.backing_assets
 
+    bid_stack = registry_entry_by_concept_id("bid-offer-context", entries)
+    assert bid_stack is not None
+    assert bid_stack.status is DashboardStatus.AVAILABLE
+    assert bid_stack.notebook_name == "gas_bid_offer_stack"
+    assert bid_stack.notebook_route == "/marimo/gas_bid_offer_stack/"
+    assert bid_stack.backing_assets == ("silver.gas_model.silver_gas_fact_bid_stack",)
+
 
 def test_dashboard_registry_payload_includes_required_fields() -> None:
     payload = dashboard_registry_payload()

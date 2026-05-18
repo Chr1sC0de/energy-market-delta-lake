@@ -449,17 +449,17 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
     },
     {
         "concept_id": "bid-offer-context",
-        "title": "Bid And Offer Context",
+        "title": "Bid / Offer Stack",
         "description": (
-            "Planned concept panel for bid stack steps, contingency gas offers, "
-            "and scheduling inputs."
+            "Available analytical dashboard for Bid / Offer stack steps, "
+            "participants, facilities, zones, prices, quantities, source "
+            "systems, and accepted source identifiers from the curated bid "
+            "stack fact."
         ),
-        "audiences": ("analyst", "stakeholder"),
-        "status": "planned",
-        "backing_assets": (
-            "silver.gas_model.silver_gas_fact_bid_stack",
-            "silver.gas_model.silver_gas_fact_sttm_contingency_gas_call",
-        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "gas_bid_offer_stack",
+        "backing_assets": ("silver.gas_model.silver_gas_fact_bid_stack",),
         "generated_gold_paths": (
             "tools/gas-market-knowledge-base/generated/gold/glossary/bid-offer.md",
         ),

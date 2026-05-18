@@ -228,9 +228,10 @@ Useful routes:
 - `/dagster-webserver/admin` for the protected admin Dagster UI
 - `/marimo` for curated Marimo dashboards through Caddy, including the table
   explorer, data readiness overview, market prices, schedule runs, system
-  notices, and gas quality and composition dashboard. The table explorer lists
-  the Dagster table asset catalogue, filters by group, layer or domain, status,
-  and search text, and previews only materialized tables.
+  notices, Bid / Offer stack, and gas quality and composition dashboard. The
+  table explorer lists the Dagster table asset catalogue, filters by group,
+  layer or domain, status, and search text, and previews only materialized
+  tables.
 - `http://127.0.0.1:2719` for the local-only Marimo-Codex research workspace
 
 The `aemo-etl` code location should appear in Dagster under
@@ -786,6 +787,7 @@ developer-stack setting. It renders e2e Dagster config per run from the current
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
+  - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/scripts/aemo-etl-e2e`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
