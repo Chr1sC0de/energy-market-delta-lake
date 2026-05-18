@@ -13,6 +13,8 @@ Use this page as the agent documentation map. The imperative policy lives in
   [CONTEXT.md](../../CONTEXT.md)
 - **Documentation sync** policy:
   [docs/repository/documentation-sync.md](../repository/documentation-sync.md)
+- Marimo **Dashboard standard** for curated dashboard work:
+  [backend-services/marimo/docs/dashboard-standard.md](../../backend-services/marimo/docs/dashboard-standard.md)
 
 ## Ralph and issue work
 
@@ -93,6 +95,7 @@ Use this page as the agent documentation map. The imperative policy lives in
   - `.agents/skills/repo-knowledge-base/SKILL.md`
   - `tools/ralph-loop/README.md`
   - `tools/gas-market-knowledge-base/README.md`
+  - `backend-services/marimo/docs/dashboard-standard.md`
   - `docs/agents/ralph-loop.md`
   - `docs/agents/issue-tracker.md`
   - `docs/agents/triage-labels.md`

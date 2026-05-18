@@ -61,6 +61,11 @@ This repo uses a single root `CONTEXT.md` for canonical language. See
 - Run relevant QA for the changed behavior and **Test lane**. Use `git add` and
   `prek` where it fits.
 - Sync maintained docs with impl/config changes.
+- For curated Marimo dashboard changes under `backend-services/marimo/notebooks/`,
+  read `backend-services/marimo/docs/dashboard-standard.md` first. Keep or add
+  the dashboard's **Dashboard brief**, choose the intended **Dashboard intent**,
+  preserve always-visible data health, and include Playwright development-review
+  evidence in the handoff when a local browser environment is available.
 
 ## Subproject QA
 

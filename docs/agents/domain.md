@@ -14,7 +14,8 @@ repo, especially **Subproject**, **Test lane**, **Fast check**, **Commit check**
 **Documentation sync**, **Agent skill**, **Issue context assessor**,
 **Exploratory acceptance review**, **Promotion**, **Post-promotion review**,
 **Post-Promotion deployment classification**, **AWS/Pulumi credential
-boundary**, **Gas market knowledge base**, and **Market context**.
+boundary**, **Gas market knowledge base**, **Market context**,
+**Dashboard standard**, **Dashboard brief**, and **Dashboard intent**.
 
 Repo-wide ADRs live in `docs/adr/`. Create ADRs only when a decision is hard to
 reverse, surprising without context, and the result of a real trade-off.
@@ -45,6 +46,7 @@ artifacts, and generated-artifact policy.
   - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
   - `docs/adr/0010-gas-market-knowledge-base.md`
   - `tools/gas-market-knowledge-base/README.md`
+  - `backend-services/marimo/docs/dashboard-standard.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

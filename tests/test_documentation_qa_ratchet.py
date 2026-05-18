@@ -82,6 +82,7 @@ DOCS_README_REQUIRED_TARGETS = frozenset(
         "backend-services/README.md",
         "backend-services/authentication/README.md",
         "backend-services/marimo/README.md",
+        "backend-services/marimo/docs/dashboard-standard.md",
         "backend-services/dagster-user/aemo-etl/README.md",
         "backend-services/dagster-user/aemo-etl/docs/architecture/high_level_architecture.md",
         "backend-services/dagster-user/aemo-etl/docs/architecture/ingestion_flows.md",
@@ -102,6 +103,7 @@ AGENTS_README_REQUIRED_TARGETS = frozenset(
         "docs/agents/issue-tracker.md",
         "docs/agents/ralph-loop.md",
         "docs/agents/triage-labels.md",
+        "backend-services/marimo/docs/dashboard-standard.md",
         "tools/gas-market-knowledge-base/README.md",
     }
 )
