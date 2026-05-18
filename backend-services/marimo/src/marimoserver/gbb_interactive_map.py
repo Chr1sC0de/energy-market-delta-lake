@@ -1,10 +1,11 @@
 """Helpers for a local Marimo replica of the AEMO GBB interactive map."""
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Hashable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from html import escape
 import socket
+from time import perf_counter
 from typing import Literal
 from urllib.parse import urlparse
 
@@ -15,8 +16,17 @@ import polars as pl
 
 from marimoserver.gas_model_loader import (
     GasModelReadConfig,
+    GasModelReadRequest,
+    GasModelSessionCache,
+    GasModelTableLoad,
     bounded_row_limit,
+    cache_status_label,
+    cached_gas_model_read_requests,
+    format_load_duration,
+    format_row_limit,
+    load_gas_model_read_requests,
     read_parquet_table,
+    row_limit_message,
 )
 
 AEMO_GBB_INTERACTIVE_MAP_URL = (
@@ -35,11 +45,18 @@ MapView = Literal["Summary", "Pipeline", "Production", "Storage"]
 FlowFormula = Literal["net", "demand"]
 EndpointChecker = Callable[[Mapping[str, str]], str | None]
 TableReader = Callable[[str, Mapping[str, str], int | None], pl.DataFrame]
+Clock = Callable[[], float]
 GeoCoordinate = tuple[float, float]
 
 LOCAL_S3_ENDPOINT_HOSTS = frozenset(("localhost", "127.0.0.1", "localstack"))
 LOCAL_S3_ENDPOINT_TIMEOUT_SECONDS = 0.35
 GBB_MAP_BOUNDS: tuple[GeoCoordinate, GeoCoordinate] = ((-43.8, 136.4), (-10.2, 154.5))
+GBB_MAP_CONTEXT_PANELS: tuple[tuple[str, str], ...] = (
+    ("Flow", "flow-context"),
+    ("Facility", "facility-context"),
+    ("Capacity", "capacity-context"),
+    ("Gas Day", "gas-day-context"),
+)
 
 
 @dataclass(frozen=True)
@@ -58,6 +75,9 @@ class GbbMapTableLoad:
     uri: str
     dataframe: pl.DataFrame | None
     error: str | None
+    row_limit: int | None = None
+    load_duration_seconds: float = 0.0
+    cache_hit: bool = False
 
     @property
     def available(self) -> bool:
@@ -467,60 +487,139 @@ def load_gbb_map_tables(
     reader: TableReader | None = None,
     endpoint_checker: EndpointChecker | None = None,
     gas_date: date | None = None,
+    *,
+    clock: Clock = perf_counter,
 ) -> list[GbbMapTableLoad]:
     """Load configured map input tables, returning unavailable entries on errors."""
-    storage_options = config.storage_options()
-    endpoint_error = None
-    if endpoint_checker is not None:
-        endpoint_error = endpoint_checker(storage_options)
+    endpoint_error = _gbb_map_endpoint_error(config, endpoint_checker)
     if endpoint_error is not None:
-        return [
-            GbbMapTableLoad(
-                spec=spec,
-                uri=config.table_uri(spec.table_name),
-                dataframe=None,
-                error=endpoint_error,
-            )
-            for spec in specs
-        ]
+        return _unavailable_gbb_map_loads(config, specs, endpoint_error)
 
+    shared_loads = load_gas_model_read_requests(
+        config,
+        _gbb_map_read_requests(specs),
+        reader=_gbb_map_reader(config, specs, reader, gas_date),
+        clock=clock,
+    )
+    return _gbb_map_table_loads(specs, shared_loads)
+
+
+def cached_load_gbb_map_tables(
+    config: GasModelReadConfig,
+    cache: GasModelSessionCache,
+    specs: Sequence[GbbMapTableSpec] = GBB_MAP_TABLES,
+    reader: TableReader | None = None,
+    endpoint_checker: EndpointChecker | None = None,
+    gas_date: date | None = None,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> list[GbbMapTableLoad]:
+    """Return session-cached GBB map tables for explicit-refresh dashboards."""
+    endpoint_error = _gbb_map_endpoint_error(config, endpoint_checker)
+    if endpoint_error is not None:
+        return _unavailable_gbb_map_loads(config, specs, endpoint_error)
+
+    shared_loads = cached_gas_model_read_requests(
+        config,
+        _gbb_map_read_requests(specs),
+        cache,
+        reader=_gbb_map_reader(config, specs, reader, gas_date),
+        refresh_token=(refresh_token, gas_date),
+        clock=clock,
+    )
+    return _gbb_map_table_loads(specs, shared_loads)
+
+
+def _gbb_map_endpoint_error(
+    config: GasModelReadConfig,
+    endpoint_checker: EndpointChecker | None,
+) -> str | None:
+    if endpoint_checker is None:
+        return None
+    return endpoint_checker(config.storage_options())
+
+
+def _unavailable_gbb_map_loads(
+    config: GasModelReadConfig,
+    specs: Sequence[GbbMapTableSpec],
+    error: str,
+) -> list[GbbMapTableLoad]:
     row_limit = bounded_row_limit(config)
-    loads: list[GbbMapTableLoad] = []
+    return [
+        GbbMapTableLoad(
+            spec=spec,
+            uri=config.table_uri(spec.table_name),
+            dataframe=None,
+            error=error,
+            row_limit=row_limit,
+        )
+        for spec in specs
+    ]
 
-    for spec in specs:
-        uri = config.table_uri(spec.table_name)
-        try:
-            if reader is None:
-                dataframe = read_gbb_map_table(
-                    uri,
-                    storage_options,
-                    row_limit,
-                    table_name=spec.table_name,
-                    gas_date=gas_date,
-                )
-            else:
-                dataframe = reader(uri, storage_options, row_limit)
-        except Exception as error:
-            loads.append(
-                GbbMapTableLoad(
-                    spec=spec,
-                    uri=uri,
-                    dataframe=None,
-                    error=_compact_error(error),
-                )
-            )
-            continue
 
-        loads.append(
-            GbbMapTableLoad(
-                spec=spec,
-                uri=uri,
-                dataframe=dataframe,
-                error=None,
-            )
+def _gbb_map_read_requests(
+    specs: Sequence[GbbMapTableSpec],
+) -> tuple[GasModelReadRequest, ...]:
+    return tuple(GasModelReadRequest(spec.table_name) for spec in specs)
+
+
+def _gbb_map_reader(
+    config: GasModelReadConfig,
+    specs: Sequence[GbbMapTableSpec],
+    reader: TableReader | None,
+    gas_date: date | None,
+) -> TableReader:
+    table_name_by_uri = {
+        config.table_uri(spec.table_name): spec.table_name for spec in specs
+    }
+
+    def read_table(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        if reader is not None:
+            return reader(uri, storage_options, row_limit)
+
+        return read_gbb_map_table(
+            uri,
+            storage_options,
+            row_limit,
+            table_name=table_name_by_uri.get(uri),
+            gas_date=gas_date,
         )
 
-    return loads
+    return read_table
+
+
+def _gbb_map_table_loads(
+    specs: Sequence[GbbMapTableSpec],
+    shared_loads: Sequence[GasModelTableLoad],
+) -> list[GbbMapTableLoad]:
+    return [
+        GbbMapTableLoad(
+            spec=spec,
+            uri=shared_load.uri,
+            dataframe=shared_load.dataframe,
+            error=_gbb_load_error(shared_load.error),
+            row_limit=shared_load.row_limit,
+            load_duration_seconds=shared_load.load_duration_seconds,
+            cache_hit=shared_load.cache_hit,
+        )
+        for spec, shared_load in zip(specs, shared_loads, strict=True)
+    ]
+
+
+def _gbb_load_error(error: str | None) -> str | None:
+    if error is None:
+        return None
+    if "Generic S3 error" in error:
+        return (
+            "OSError: S3 read failed; LocalStack may be unreachable or the table "
+            "prefix is missing"
+        )
+    return error
 
 
 def read_gbb_map_table(
@@ -637,12 +736,87 @@ def map_load_status_frame(loads: Sequence[GbbMapTableLoad]) -> pl.DataFrame:
                 "label": load.spec.label,
                 "status": "Available" if load.available else "Empty or missing",
                 "rows": 0 if load.dataframe is None else load.dataframe.height,
+                "row limit": format_row_limit(load.row_limit),
+                "load time": format_load_duration(load.load_duration_seconds),
+                "cache": cache_status_label(load.cache_hit),
                 "detail": load.error or "",
                 "uri": load.uri,
             }
             for load in loads
         ]
     )
+
+
+def map_load_status_message(loads: Sequence[GbbMapTableLoad]) -> str:
+    """Return consistent Markdown status copy for GBB map table reads."""
+    if len(loads) == 0:
+        return "No GBB map input tables were requested."
+
+    available_count = sum(load.available for load in loads)
+    failed_count = sum(load.error is not None for load in loads)
+    empty_count = sum(
+        load.dataframe is not None and load.dataframe.is_empty() for load in loads
+    )
+    cache_hit_count = sum(load.cache_hit for load in loads)
+    total_duration = sum(load.load_duration_seconds for load in loads)
+    row_limit = _common_row_limit(loads)
+    map_state = (
+        "degraded; static topology remains visible"
+        if available_count < len(loads)
+        else "live inputs available"
+    )
+
+    return "\n".join(
+        (
+            f"- Tables available: `{available_count}` of `{len(loads)}`",
+            f"- Map state: `{map_state}`",
+            f"- Read policy: {row_limit_message(row_limit)}",
+            (
+                f"- Load timing: `{format_load_duration(total_duration)}` "
+                f"across `{len(loads)}` table reads"
+            ),
+            (
+                f"- Session cache: `{cache_hit_count}` hits; use **Refresh data** "
+                "after LocalStack is seeded or source tables are rematerialized"
+            ),
+            f"- Empty tables: `{empty_count}`",
+            f"- Unavailable tables: `{failed_count}`",
+        )
+    )
+
+
+def map_load_status_summary(loads: Sequence[GbbMapTableLoad]) -> str:
+    """Return compact always-visible GBB map data-health copy."""
+    if len(loads) == 0:
+        return "No GBB map input tables were requested."
+
+    available_count = sum(load.available for load in loads)
+    failed_count = sum(load.error is not None for load in loads)
+    empty_count = sum(
+        load.dataframe is not None and load.dataframe.is_empty() for load in loads
+    )
+    cache_hit_count = sum(load.cache_hit for load in loads)
+    row_limit = _common_row_limit(loads)
+    map_state = "degraded; static topology visible"
+    if available_count == len(loads):
+        map_state = "live inputs available"
+
+    return (
+        f"{available_count}/{len(loads)} input tables available; "
+        f"map state: {map_state}; "
+        f"read policy: {format_row_limit(row_limit)}; "
+        f"cache hits: {cache_hit_count}; "
+        f"empty: {empty_count}; unavailable: {failed_count}."
+    )
+
+
+def _common_row_limit(loads: Sequence[GbbMapTableLoad]) -> int | None:
+    row_limits = {load.row_limit for load in loads}
+    if len(row_limits) == 1:
+        return next(iter(row_limits))
+
+    bounded_limits = [row_limit for row_limit in row_limits if row_limit is not None]
+    return min(bounded_limits)
 
 
 def render_gbb_map_html(model: GbbMapModel, active_view: MapView) -> str:

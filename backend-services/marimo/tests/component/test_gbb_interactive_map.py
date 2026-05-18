@@ -9,11 +9,19 @@ import socket
 import polars as pl
 import pytest
 
-from marimoserver.gas_dashboard import discover_dashboard_config
+from marimoserver.dashboard_registry import (
+    DashboardStatus,
+    registry_entry_by_concept_id,
+)
+from marimoserver.gas_dashboard import (
+    discover_dashboard_config,
+    render_dashboard_context_panel,
+)
 from marimoserver import gbb_interactive_map as map_helpers
 from marimoserver.gbb_interactive_map import (
     FLOW_SOURCE_ACTUAL,
     FLOW_SOURCE_FORECAST,
+    GBB_MAP_CONTEXT_PANELS,
     GBB_MAP_TABLES,
     MAP_PIPELINES,
     MAP_POINTS,
@@ -24,13 +32,17 @@ from marimoserver.gbb_interactive_map import (
     FacilityMapRecord,
     PipelineMapRecord,
     build_gbb_map_model,
+    cached_load_gbb_map_tables,
     check_gbb_map_s3_endpoint,
     load_gbb_map_tables,
     normalize_gas_date,
     map_load_status_frame,
+    map_load_status_message,
+    map_load_status_summary,
     pipeline_records_frame,
     render_gbb_map_html,
 )
+from marimoserver.gas_model_loader import GasModelSessionCache
 
 
 def test_gbb_map_specs_cover_required_inputs() -> None:
@@ -47,6 +59,32 @@ def test_gbb_map_specs_cover_required_inputs() -> None:
     assert {"Queensland", "New South Wales", "Victoria"} <= {
         region.label for region in MAP_REGIONS
     }
+
+
+def test_gbb_map_registry_entry_remains_available_from_concept_gallery() -> None:
+    entry = registry_entry_by_concept_id("gbb-interactive-map")
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "gbb_interactive_map"
+    assert entry.notebook_route == "/marimo/gbb_interactive_map/"
+
+
+def test_gbb_map_context_panels_cover_roadmap_concepts() -> None:
+    assert dict(GBB_MAP_CONTEXT_PANELS) == {
+        "Flow": "flow-context",
+        "Facility": "facility-context",
+        "Capacity": "capacity-context",
+        "Gas Day": "gas-day-context",
+    }
+
+    for label, concept_id in GBB_MAP_CONTEXT_PANELS:
+        html = render_dashboard_context_panel(concept_id)
+
+        assert 'class="dashboard-context-panel"' in html
+        assert f'data-concept-id="{concept_id}"' in html
+        assert 'data-status="planned"' in html
+        assert f"{label} Context" in html
 
 
 def test_normalize_gas_date_handles_marimo_date_values() -> None:
@@ -100,12 +138,175 @@ def test_load_gbb_map_tables_returns_error_status_detail() -> None:
         raise RuntimeError("missing delta log\ntraceback")
 
     loads = load_gbb_map_tables(config, specs=specs, reader=reader)
+    message = map_load_status_message(loads)
+    summary = map_load_status_summary(loads)
     status = map_load_status_frame(loads)
 
     assert not loads[0].available
     assert loads[0].error == "RuntimeError: missing delta log"
+    assert "Map state: `degraded; static topology remains visible`" in message
+    assert "Unavailable tables: `1`" in message
+    assert "map state: degraded; static topology visible" in summary
+    assert "unavailable: 1" in summary
     assert status.row(0, named=True)["status"] == "Empty or missing"
     assert "missing delta log" in status.row(0, named=True)["detail"]
+
+
+def test_gbb_map_load_status_reports_bounded_limit_cache_and_timing() -> None:
+    clock_values = iter((1.0, 1.125))
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "17",
+        }
+    )
+    specs = [GbbMapTableSpec("silver_gas_dim_facility", "Facilities")]
+
+    def clock() -> float:
+        return next(clock_values)
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert row_limit == 17
+        return pl.DataFrame()
+
+    loads = load_gbb_map_tables(
+        config,
+        specs=specs,
+        reader=reader,
+        clock=clock,
+    )
+    message = map_load_status_message(loads)
+    summary = map_load_status_summary(loads)
+    status = map_load_status_frame(loads)
+
+    assert (
+        "Bounded preview reads are capped at `17` rows per table by "
+        "`MARIMO_MAX_PREVIEW_ROWS`."
+    ) in message
+    assert "- Load timing: `125 ms` across `1` table reads" in message
+    assert "- Session cache: `0` hits; use **Refresh data**" in message
+    assert "read policy: Bounded preview: 17 rows max" in summary
+    assert "empty: 1; unavailable: 0" in summary
+    assert status.row(0, named=True)["row limit"] == "Bounded preview: 17 rows max"
+    assert status.row(0, named=True)["load time"] == "125 ms"
+    assert status.row(0, named=True)["cache"] == "Refreshed read"
+
+
+def test_cached_load_gbb_map_tables_reuses_cache_by_gas_day_and_refresh() -> None:
+    clock_values = iter((1.0, 1.01, 2.0, 2.02, 3.0, 3.03))
+    config = discover_dashboard_config({})
+    specs = [GbbMapTableSpec("silver_gas_dim_facility", "Facilities")]
+    cache: GasModelSessionCache = {}
+    calls: list[str] = []
+
+    def clock() -> float:
+        return next(clock_values)
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        calls.append(uri)
+        return pl.DataFrame({"read_version": [len(calls)]})
+
+    first_load = cached_load_gbb_map_tables(
+        config,
+        cache,
+        specs=specs,
+        reader=reader,
+        gas_date=date(2024, 1, 1),
+        clock=clock,
+    )[0]
+    cached_load = cached_load_gbb_map_tables(
+        config,
+        cache,
+        specs=specs,
+        reader=reader,
+        gas_date=date(2024, 1, 1),
+        clock=clock,
+    )[0]
+    changed_gas_day_load = cached_load_gbb_map_tables(
+        config,
+        cache,
+        specs=specs,
+        reader=reader,
+        gas_date=date(2024, 1, 2),
+        clock=clock,
+    )[0]
+    refreshed_load = cached_load_gbb_map_tables(
+        config,
+        cache,
+        specs=specs,
+        reader=reader,
+        gas_date=date(2024, 1, 2),
+        refresh_token=1,
+        clock=clock,
+    )[0]
+
+    assert len(calls) == 3
+    assert not first_load.cache_hit
+    assert cached_load.cache_hit
+    assert not changed_gas_day_load.cache_hit
+    assert not refreshed_load.cache_hit
+    assert cached_load.dataframe is not None
+    assert cached_load.dataframe.item() == 1
+    assert changed_gas_day_load.dataframe is not None
+    assert changed_gas_day_load.dataframe.item() == 2
+    assert refreshed_load.dataframe is not None
+    assert refreshed_load.dataframe.item() == 3
+
+
+def test_cached_load_gbb_map_tables_short_circuits_unreachable_local_s3() -> None:
+    config = discover_dashboard_config({})
+    specs = [GbbMapTableSpec("silver_gas_dim_facility", "Facilities")]
+    cache: GasModelSessionCache = {}
+    calls = 0
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal calls
+        calls += 1
+        return pl.DataFrame({"source_system": ["GBB"]})
+
+    loads = cached_load_gbb_map_tables(
+        config,
+        cache,
+        specs=specs,
+        reader=reader,
+        endpoint_checker=lambda storage_options: "S3 endpoint unavailable",
+    )
+
+    assert calls == 0
+    assert loads[0].error == "S3 endpoint unavailable"
+    assert loads[0].row_limit is None
+
+
+def test_load_gbb_map_tables_preserves_compact_s3_diagnostic() -> None:
+    config = discover_dashboard_config({})
+    specs = [GbbMapTableSpec("silver_gas_dim_facility", "Facilities")]
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        raise OSError("Kernel error -> Generic S3 error")
+
+    loads = load_gbb_map_tables(config, specs=specs, reader=reader)
+
+    assert loads[0].error == (
+        "OSError: S3 read failed; LocalStack may be unreachable or the table prefix "
+        "is missing"
+    )
 
 
 def test_load_gbb_map_tables_can_short_circuit_unreachable_local_s3() -> None:
@@ -677,6 +878,60 @@ def test_private_helper_edges() -> None:
     assert map_helpers._status_class("Flow only") == "gbb-status-partial"
     assert map_helpers._format_number(3.0) == "3"
     assert map_helpers._format_number(3.25) == "3.2"
+    assert map_load_status_message([]) == "No GBB map input tables were requested."
+    assert map_load_status_summary([]) == "No GBB map input tables were requested."
+    assert "map state: live inputs available" in map_load_status_summary(
+        [
+            GbbMapTableLoad(
+                spec=GbbMapTableSpec("available", "Available table"),
+                uri="s3://bucket/available",
+                dataframe=pl.DataFrame({"value": [1]}),
+                error=None,
+            )
+        ]
+    )
+    assert (
+        map_helpers._common_row_limit(
+            [
+                GbbMapTableLoad(
+                    spec=GbbMapTableSpec("full", "Full scan"),
+                    uri="s3://bucket/full",
+                    dataframe=pl.DataFrame(),
+                    error=None,
+                    row_limit=None,
+                ),
+                GbbMapTableLoad(
+                    spec=GbbMapTableSpec("bounded", "Bounded scan"),
+                    uri="s3://bucket/bounded",
+                    dataframe=pl.DataFrame(),
+                    error=None,
+                    row_limit=5,
+                ),
+            ]
+        )
+        == 5
+    )
+    assert (
+        map_helpers._common_row_limit(
+            [
+                GbbMapTableLoad(
+                    spec=GbbMapTableSpec("first", "First full scan"),
+                    uri="s3://bucket/first",
+                    dataframe=pl.DataFrame(),
+                    error=None,
+                    row_limit=None,
+                ),
+                GbbMapTableLoad(
+                    spec=GbbMapTableSpec("second", "Second full scan"),
+                    uri="s3://bucket/second",
+                    dataframe=pl.DataFrame(),
+                    error=None,
+                    row_limit=None,
+                ),
+            ]
+        )
+        is None
+    )
 
     class EmptyMessageError(Exception):
         def __str__(self) -> str:
@@ -686,6 +941,9 @@ def test_private_helper_edges() -> None:
     assert map_helpers._compact_error(OSError("Kernel error -> Generic S3 error")) == (
         "OSError: S3 read failed; LocalStack may be unreachable or the table prefix "
         "is missing"
+    )
+    assert map_helpers._compact_error(RuntimeError("missing table")) == (
+        "RuntimeError: missing table"
     )
     with pytest.raises(ValueError, match="unknown pipeline code"):
         map_helpers._path_spec_by_code("missing")

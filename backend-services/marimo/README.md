@@ -294,16 +294,24 @@ metadata in the Marimo helper, not authoritative GIS standing data. Pipeline
 flow direction follows AEMO's documented GBB map rule shape: past gas days use
 `silver_gas_fact_facility_flow_storage`, while the current gas day and future
 gas days use `silver_gas_fact_nomination_forecast`. Capacity comes from
-`silver_gas_fact_capacity_outlook`. The map still renders if LocalStack has no
-materialized inputs; the notebook shows a compact input warning, keeps the
-table-level diagnostics in an accordion, and falls back to standing pipeline
-metadata. The map uses the shared bounded `silver.gas_model` loader policy, so
-AWS-mode reads are capped by `MARIMO_MAX_PREVIEW_ROWS`. For date-sensitive GBB
-fact tables, the selected gas day is applied before the preview cap so bounded
-AWS reads can still populate actual flow, nomination forecast, and capacity
-outlook views when matching rows exist. Direct notebook runs preflight the
-local S3 endpoint so an offline LocalStack instance becomes a fast degraded
-state instead of six slow table read attempts.
+`silver_gas_fact_capacity_outlook`. The notebook renders the available GBB map
+registry context plus the shared Flow, Facility, Capacity, and Gas Day concept
+panels below the primary map work surface. Registry status, generated-gold
+paths, source chunk IDs, related concepts, and backing `silver.gas_model`
+assets come from the code-local registry rather than runtime reads from
+generated Markdown.
+
+The map still renders if LocalStack has no materialized inputs; the notebook
+shows first-viewport data health, keeps table-level diagnostics in an
+accordion, and falls back to standing pipeline metadata. The map uses the
+shared bounded `silver.gas_model` loader policy, explicit **Refresh data**
+control, and notebook session cache. Diagnostics report row-limit policy, load
+timing, cache hits, empty tables, unavailable tables, and source URIs. For
+date-sensitive GBB fact tables, the selected gas day is applied before the
+preview cap so bounded AWS reads can still populate actual flow, nomination
+forecast, and capacity outlook views when matching rows exist. Direct notebook
+runs preflight the local S3 endpoint so an offline LocalStack instance becomes
+a fast degraded state instead of six slow table read attempts.
 
 During development, keep the notebook pointed at LocalStack and hydrate the
 required `silver/gas_model` table prefixes there instead of reading live S3 from
