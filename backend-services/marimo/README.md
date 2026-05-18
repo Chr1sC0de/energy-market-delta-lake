@@ -9,6 +9,7 @@ Marimo-Codex research workspace image.
 - [What it does](#what-it-does)
 - [Image split](#image-split)
 - [Dashboard standard](#dashboard-standard)
+- [Dashboard registry](#dashboard-registry)
 - [Table explorer](#table-explorer)
 - [Gas market dashboard](#gas-market-dashboard)
 - [GBB interactive map](#gbb-interactive-map)
@@ -24,6 +25,8 @@ The dashboard app in [src/marimoserver/main.py](src/marimoserver/main.py):
 - discovers `*.py` notebooks from `notebooks/`
 - mounts each notebook as a marimo sub-app under `/marimo/<notebook-name>`
 - serves a simple index page at `/marimo`
+- serves the code-local dashboard roadmap registry at
+  `/marimo/dashboard-registry.json`
 - links the Caddy-served shared theme at `/theme.css` for the index and
   notebook head
 - applies a MIME-type fix middleware for `woff` and `woff2` assets
@@ -61,6 +64,21 @@ Curated notebooks under [notebooks/](notebooks/) follow the
 the required **Dashboard brief**, **Dashboard intent**, first-viewport data
 health, visual-first layout, Playwright development review evidence, and the
 future shared UI primitive surface.
+
+## Dashboard registry
+
+[src/marimoserver/dashboard_registry.py](src/marimoserver/dashboard_registry.py)
+defines the Marimo-local dashboard registry used by the dashboard roadmap. It
+parses structured records into typed entries with concept IDs, audience tags,
+planned or available status, notebook names and routes, backing
+`silver.gas_model` assets, generated-gold metadata paths, and source chunk IDs.
+
+The registry is served as JSON from `/marimo/dashboard-registry.json` so future
+Marimo notebooks can render a concept gallery or context panels without reading
+the Gas market knowledge base generated files at runtime. Generated-gold paths
+and source chunk IDs are copied metadata only. In AWS mode this remains
+read-only, uses the existing dashboard image contents, and does not require a
+Docker build-context change.
 
 ## Table explorer
 
@@ -304,6 +322,7 @@ prek run -a
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `backend-services/marimo/src/marimoserver/main.py`
+  - `backend-services/marimo/src/marimoserver/dashboard_registry.py`
   - `backend-services/marimo/pyproject.toml`
   - `backend-services/marimo/Dockerfile`
   - `backend-services/marimo/docs/dashboard-standard.md`

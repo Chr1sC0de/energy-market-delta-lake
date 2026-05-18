@@ -46,6 +46,22 @@ class TestHealthEndpoint:
         assert response.json() == {"status": "ok"}
 
 
+class TestDashboardRegistryEndpoint:
+    def test_dashboard_registry_returns_json_payload(self) -> None:
+        response = _get("/marimo/dashboard-registry.json")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("application/json")
+        payload = response.json()
+        assert payload["schema_version"] == 1
+        assert "operator" in payload["audiences"]
+        assert any(
+            entry["concept_id"] == "gas-market-overview"
+            and entry["notebook_route"] == "/marimo/sample_energy_market/"
+            for entry in payload["entries"]
+        )
+
+
 # ---------------------------------------------------------------------------
 # TestNotebooksDir
 # ---------------------------------------------------------------------------

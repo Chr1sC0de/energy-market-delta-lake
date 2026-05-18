@@ -1,0 +1,229 @@
+"""Component tests for the Marimo dashboard registry."""
+
+from pathlib import Path
+
+import pytest
+
+from marimoserver.dashboard_registry import (
+    DASHBOARD_REGISTRY_RECORDS,
+    ROADMAP_AUDIENCES,
+    DashboardRegistryError,
+    DashboardStatus,
+    dashboard_registry,
+    dashboard_registry_payload,
+    load_dashboard_registry,
+    registry_entry_by_concept_id,
+)
+
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
+def test_dashboard_registry_parses_structured_entries() -> None:
+    entries = dashboard_registry()
+
+    overview = registry_entry_by_concept_id("gas-market-overview", entries)
+    missing = registry_entry_by_concept_id("missing-concept", entries)
+
+    assert overview is not None
+    assert overview.status is DashboardStatus.AVAILABLE
+    assert overview.notebook_name == "sample_energy_market"
+    assert overview.notebook_route == "/marimo/sample_energy_market/"
+    assert "silver.gas_model.silver_gas_fact_market_price" in overview.backing_assets
+    assert missing is None
+
+
+def test_dashboard_registry_payload_includes_required_fields() -> None:
+    payload = dashboard_registry_payload()
+    entries = payload["entries"]
+
+    assert payload["schema_version"] == 1
+    assert payload["audiences"] == [audience.value for audience in ROADMAP_AUDIENCES]
+    assert isinstance(entries, list)
+    assert entries
+
+    required_fields = {
+        "concept_id",
+        "title",
+        "description",
+        "audiences",
+        "status",
+        "notebook_name",
+        "notebook_route",
+        "backing_assets",
+        "generated_gold_paths",
+        "source_chunks",
+        "source_chunk_ids",
+    }
+    assert required_fields <= set(entries[0])
+
+
+def test_dashboard_registry_covers_planned_and_available_status() -> None:
+    statuses = {entry.status for entry in dashboard_registry()}
+
+    assert statuses == {DashboardStatus.AVAILABLE, DashboardStatus.PLANNED}
+
+
+def test_dashboard_registry_covers_each_roadmap_audience() -> None:
+    audiences = {
+        audience for entry in dashboard_registry() for audience in entry.audiences
+    }
+
+    assert set(ROADMAP_AUDIENCES) <= audiences
+
+
+def test_dashboard_registry_keeps_gold_context_as_metadata_paths() -> None:
+    capacity = registry_entry_by_concept_id("capacity-context")
+
+    assert capacity is not None
+    assert capacity.status is DashboardStatus.PLANNED
+    assert capacity.notebook_route is None
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md"
+        in capacity.generated_gold_paths
+    )
+    assert "chunk-gbb-procedures-capacity-outlooks" in capacity.source_chunk_ids
+
+    for generated_path in capacity.generated_gold_paths:
+        assert (REPO_ROOT / generated_path).is_file()
+
+
+def test_dashboard_registry_parsing_rejects_missing_required_field() -> None:
+    record = dict(DASHBOARD_REGISTRY_RECORDS[0])
+    del record["concept_id"]
+
+    with pytest.raises(DashboardRegistryError, match="concept_id"):
+        load_dashboard_registry([record])
+
+
+def test_dashboard_registry_parsing_rejects_non_string_field() -> None:
+    record = dict(DASHBOARD_REGISTRY_RECORDS[0])
+    record["title"] = 5
+
+    with pytest.raises(DashboardRegistryError, match="title must be a string"):
+        load_dashboard_registry([record])
+
+
+def test_dashboard_registry_parsing_rejects_blank_required_field() -> None:
+    record = dict(DASHBOARD_REGISTRY_RECORDS[0])
+    record["title"] = "  "
+
+    with pytest.raises(DashboardRegistryError, match="title"):
+        load_dashboard_registry([record])
+
+
+def test_dashboard_registry_parsing_rejects_unknown_status() -> None:
+    record = dict(DASHBOARD_REGISTRY_RECORDS[0])
+    record["status"] = "draft"
+
+    with pytest.raises(DashboardRegistryError, match="unknown status"):
+        load_dashboard_registry([record])
+
+
+def test_dashboard_registry_parsing_rejects_unknown_audience() -> None:
+    record = dict(DASHBOARD_REGISTRY_RECORDS[0])
+    record["audiences"] = ("unknown-audience",)
+
+    with pytest.raises(DashboardRegistryError, match="unknown audience"):
+        load_dashboard_registry([record])
+
+
+def test_dashboard_registry_requires_available_notebooks() -> None:
+    record = dict(DASHBOARD_REGISTRY_RECORDS[0])
+    del record["notebook_name"]
+
+    with pytest.raises(DashboardRegistryError, match="available"):
+        load_dashboard_registry([record])
+
+
+def test_dashboard_registry_rejects_empty_records() -> None:
+    with pytest.raises(DashboardRegistryError, match="must contain entries"):
+        load_dashboard_registry([])
+
+
+def test_dashboard_registry_rejects_duplicate_concepts() -> None:
+    records = _registry_records()
+    records[1]["concept_id"] = records[0]["concept_id"]
+
+    with pytest.raises(DashboardRegistryError, match="duplicate concept_id"):
+        load_dashboard_registry(records)
+
+
+def test_dashboard_registry_requires_planned_and_available_entries() -> None:
+    record = dict(DASHBOARD_REGISTRY_RECORDS[0])
+
+    with pytest.raises(DashboardRegistryError, match="planned and available"):
+        load_dashboard_registry([record])
+
+
+def test_dashboard_registry_requires_each_roadmap_audience() -> None:
+    records = _registry_records()
+    for record in records:
+        audiences = record["audiences"]
+        assert isinstance(audiences, tuple)
+        record["audiences"] = tuple(
+            audience for audience in audiences if audience != "data-engineer"
+        )
+
+    with pytest.raises(DashboardRegistryError, match="audience coverage"):
+        load_dashboard_registry(records)
+
+
+def test_dashboard_registry_rejects_non_slug_concept_id() -> None:
+    records = _registry_records()
+    records[0]["concept_id"] = "bad slug"
+
+    with pytest.raises(DashboardRegistryError, match="slug-like"):
+        load_dashboard_registry(records)
+
+
+def test_dashboard_registry_rejects_non_gas_model_backing_asset() -> None:
+    records = _registry_records()
+    records[0]["backing_assets"] = ("bronze.gas_model.raw_table",)
+
+    with pytest.raises(DashboardRegistryError, match="outside silver.gas_model"):
+        load_dashboard_registry(records)
+
+
+def test_dashboard_registry_rejects_gold_paths_without_source_chunks() -> None:
+    records = _registry_records()
+    records[-1]["source_chunk_ids"] = ()
+
+    with pytest.raises(DashboardRegistryError, match="without source chunks"):
+        load_dashboard_registry(records)
+
+
+def test_dashboard_registry_rejects_empty_required_tuple() -> None:
+    record = dict(DASHBOARD_REGISTRY_RECORDS[0])
+    record["backing_assets"] = ()
+
+    with pytest.raises(DashboardRegistryError, match="must not be empty"):
+        load_dashboard_registry([record])
+
+
+def test_dashboard_registry_rejects_non_tuple_sequence_field() -> None:
+    record = dict(DASHBOARD_REGISTRY_RECORDS[0])
+    record["backing_assets"] = ["silver.gas_model.table"]
+
+    with pytest.raises(DashboardRegistryError, match="must be a tuple"):
+        load_dashboard_registry([record])
+
+
+def test_dashboard_registry_rejects_non_string_tuple_item() -> None:
+    record = dict(DASHBOARD_REGISTRY_RECORDS[0])
+    record["backing_assets"] = (5,)
+
+    with pytest.raises(DashboardRegistryError, match="must contain strings"):
+        load_dashboard_registry([record])
+
+
+def test_dashboard_registry_rejects_blank_tuple_item() -> None:
+    record = dict(DASHBOARD_REGISTRY_RECORDS[0])
+    record["backing_assets"] = (" ",)
+
+    with pytest.raises(DashboardRegistryError, match="contains a blank"):
+        load_dashboard_registry([record])
+
+
+def _registry_records() -> list[dict[str, object]]:
+    return [dict(record) for record in DASHBOARD_REGISTRY_RECORDS]

@@ -23,6 +23,12 @@ runtime sets `DEVELOPMENT_LOCATION=aws`,
 `DAGSTER_GRAPHQL_URL=http://webserver-guest.dagster:3000/dagster-webserver/guest/graphql`,
 `MARIMO_FULL_TABLE_SCAN_ENABLED=false`, and `MARIMO_MAX_PREVIEW_ROWS=100`.
 
+The dashboard service also exposes `/marimo/dashboard-registry.json` from
+Marimo-local code constants. The registry carries planned and available
+dashboard metadata, including generated-gold paths and source chunk IDs, but the
+deployed service does not read Gas market knowledge base generated files at
+runtime.
+
 ## Considered options
 
 - Keep Marimo local-only: avoids new AWS resources but leaves the deployed
@@ -52,6 +58,10 @@ memory. Local compose keeps full LocalStack table scans for development.
 The local-only Marimo-Codex workspace stays out of Pulumi and remains bound to
 `127.0.0.1:2719` in compose.
 
+The dashboard registry is part of the existing Marimo image contents. Adding or
+updating registry metadata does not require a separate Docker build context and
+does not add AWS write paths.
+
 ## Sync metadata
 
 - `sync.owner`: `docs`
@@ -65,6 +75,7 @@ The local-only Marimo-Codex workspace stays out of Pulumi and remains bound to
   - `backend-services/caddy/Caddyfile`
   - `backend-services/marimo/Dockerfile`
   - `backend-services/marimo/src/marimoserver/main.py`
+  - `backend-services/marimo/src/marimoserver/dashboard_registry.py`
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/notebooks/sample_energy_market.py`
