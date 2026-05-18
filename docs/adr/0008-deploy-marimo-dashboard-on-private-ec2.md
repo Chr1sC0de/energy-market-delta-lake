@@ -33,6 +33,16 @@ The `/marimo` entry route renders the same registry as a concept gallery hub.
 Available dashboard cards link to mounted notebook routes, while planned
 dashboard cards stay visible without notebook links.
 
+Caddy does not serve Marimo packaged static assets from its own static root. It
+keeps `/marimo/*/assets/*`, notebook favicons, notebook manifests,
+`/marimo/health`, and websocket upgrade requests outside Marimo `forward_auth`,
+then reverse-proxies those requests directly to `marimo-dashboard`. The Marimo
+FastAPI wrapper sets `Cache-Control: public, max-age=31536000, immutable` on
+successful `/marimo/<notebook>/assets/*` responses. Marimo-generated notebook
+HTML already emits preload hints for its packaged images and fonts plus
+`modulepreload` hints for JavaScript chunks, and current component evidence
+shows no WASM asset reference that justifies pre-serving packaged WASM.
+
 ## Considered options
 
 - Keep Marimo local-only: avoids new AWS resources but leaves the deployed
@@ -71,6 +81,11 @@ The dashboard registry and concept gallery are part of the existing Marimo
 image contents. Adding or updating registry metadata does not require a
 separate Docker build context and does not add AWS write paths.
 
+Static asset optimization stays limited to immutable HTTP caching for
+content-hashed Marimo package assets. Extra preload changes, pre-serving
+packaged WASM, and auto-refresh timer behavior remain deferred until route or
+browser evidence shows a specific cold-start bottleneck.
+
 ## Sync metadata
 
 - `sync.owner`: `docs`
@@ -90,6 +105,8 @@ separate Docker build context and does not add AWS write paths.
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
+  - `backend-services/marimo/tests/component/test_main.py`
+  - `backend-services/marimo/tests/component/test_local_image_split.py`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`

@@ -203,10 +203,12 @@ Key deployed behaviors visible in the infrastructure code:
 - Dagster services run as ECS Fargate services in private subnets
 - the curated Marimo dashboard runs on a private `t3.small` EC2 instance with
   an encrypted 30 GiB `gp3` root volume, uses its instance profile for S3
-  reads, exposes `/marimo/health` through Caddy, serves the registry-backed
-  `/marimo` concept gallery, and loads bounded table previews instead of full
-  table scans, with explicit refresh, session cache keys, load timing, and
-  row-limit messages for shared gas-model dashboard reads
+  reads, exposes `/marimo/health` and Marimo packaged asset routes through
+  Caddy, serves the registry-backed `/marimo` concept gallery, returns
+  immutable cache headers for content-hashed `/marimo/<notebook>/assets/*`
+  responses, and loads bounded table previews instead of full table scans, with
+  explicit refresh, session cache keys, load timing, and row-limit messages for
+  shared gas-model dashboard reads
 - An issue #126 **Exploratory delivery** path can add EC2-backed run-worker
   capacity behind explicit Pulumi config, but the default runtime remains
   Fargate/Fargate Spot

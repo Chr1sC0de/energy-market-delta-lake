@@ -119,10 +119,11 @@ Local workflow notes:
 - LocalStack stands in for AWS-managed storage services during local validation.
 - Caddy remains the local front door so auth and routing behavior can be tested.
 - `marimo-dashboard` is available locally for curated notebooks through Caddy,
-  and the same curated dashboard image is deployed by Pulumi behind the AWS
-  Caddy route. `marimo-codex-workspace` is a separate localhost-only research
-  service for human-operated notebook exploration and issue-draft preparation;
-  deployed Codex execution remains deferred pending security review.
+  including the Marimo packaged static asset route behavior, and the same
+  curated dashboard image is deployed by Pulumi behind the AWS Caddy route.
+  `marimo-codex-workspace` is a separate localhost-only research service for
+  human-operated notebook exploration and issue-draft preparation; deployed
+  Codex execution remains deferred pending security review.
 - The isolated AEMO ETL **End-to-end test** stack belongs to the
   `backend-services/dagster-user/aemo-etl` Subproject and is operated through
   `backend-services/scripts/aemo-etl-e2e`; its run manifest records timing,

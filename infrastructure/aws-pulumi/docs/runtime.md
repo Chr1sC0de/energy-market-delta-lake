@@ -304,7 +304,10 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   session-level cache keys, load timing, and row-limit messages rather than
   auto-refresh timers. Its `/marimo` entry route renders the registry-backed
   concept gallery; available cards link to mounted notebooks and planned cards
-  remain non-link roadmap entries.
+  remain non-link roadmap entries. Marimo packaged assets stay on
+  `/marimo/<notebook>/assets/*` routes, pass through Caddy to the dashboard, and
+  return immutable cache headers when the FastAPI wrapper serves them
+  successfully.
 - The user-code task receives `DAGSTER_FAILURE_ALERT_TOPIC_ARN` from Pulumi
   secret config and `DAGSTER_FAILURE_ALERT_BASE_URL` from public site config so
   the AEMO ETL failure sensor can publish alerts to a manually managed AWS SNS

@@ -18,7 +18,7 @@ from __future__ import annotations
 import mimetypes
 import os
 from html import escape
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import marimo
@@ -42,6 +42,8 @@ NOTEBOOKS_DIR = Path(os.environ.get("MARIMO_NOTEBOOKS_DIR", "notebooks"))
 # back to text/plain which the browser rejects for font loading.
 mimetypes.add_type("font/woff2", ".woff2")
 mimetypes.add_type("font/woff", ".woff")
+
+IMMUTABLE_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
 
 _INDEX_CSS = """
         :root {
@@ -310,17 +312,21 @@ _INDEX_CSS = """
 """
 
 
-# TODO: add test coverage for the following class
-class MimeTypeFixMiddleware:  # pragma: no cover
-    """Override incorrect MIME types for web font files.
+class StaticAssetHeadersMiddleware:
+    """Set stable response headers for Marimo packaged static assets.
 
     uvicorn's StaticFiles falls back to ``text/plain`` for ``.woff`` and
     ``.woff2`` on systems where the OS MIME database does not include these
     types.  Browsers refuse to apply fonts served with the wrong MIME type,
     causing the notebook UI to render with fallback fonts.
+
+    Marimo emits content-hashed JavaScript, CSS, image, and font asset paths
+    under each notebook route.  Those package assets can be cached immutably
+    while notebook HTML, registry JSON, manifests, and favicons stay outside
+    this cache rule.
     """
 
-    _OVERRIDES: dict[str, str] = {
+    _CONTENT_TYPE_OVERRIDES: dict[str, str] = {
         ".woff2": "font/woff2",
         ".woff": "font/woff",
     }
@@ -336,29 +342,42 @@ class MimeTypeFixMiddleware:  # pragma: no cover
             return
 
         path: str = scope.get("path", "")
-        suffix = Path(path).suffix.lower()
-        override = self._OVERRIDES.get(suffix)
+        suffix = PurePosixPath(path).suffix.lower()
+        content_type_override = self._CONTENT_TYPE_OVERRIDES.get(suffix)
+        cache_control = _cache_control_for_path(path)
 
-        if override is None:
+        if content_type_override is None and cache_control is None:
             await self.app(scope, receive, send)
             return
 
-        async def send_with_fixed_mime(message: Any) -> None:  # noqa: ANN401
+        async def send_with_static_asset_headers(message: Any) -> None:  # noqa: ANN401
             if message["type"] == "http.response.start":
-                headers = [
-                    (k, v)
-                    for k, v in message.get("headers", [])
-                    if k.lower() != b"content-type"
-                ]
-                headers.append((b"content-type", override.encode()))
+                headers = list(message.get("headers", []))
+                if content_type_override is not None and message.get("status") == 200:
+                    headers = [
+                        (k, v) for k, v in headers if k.lower() != b"content-type"
+                    ]
+                    headers.append((b"content-type", content_type_override.encode()))
+                if cache_control is not None and message.get("status") == 200:
+                    headers = [
+                        (k, v) for k, v in headers if k.lower() != b"cache-control"
+                    ]
+                    headers.append((b"cache-control", cache_control.encode()))
                 message = {**message, "headers": headers}
             await send(message)
 
-        await self.app(scope, receive, send_with_fixed_mime)
+        await self.app(scope, receive, send_with_static_asset_headers)
+
+
+def _cache_control_for_path(path: str) -> str | None:
+    parts = PurePosixPath(path).parts
+    if len(parts) >= 4 and parts[1] == "marimo" and parts[3] == "assets":
+        return IMMUTABLE_ASSET_CACHE_CONTROL
+    return None
 
 
 app = FastAPI(title="Marimo Notebook Server")
-app.add_middleware(MimeTypeFixMiddleware)  # type: ignore[arg-type]
+app.add_middleware(StaticAssetHeadersMiddleware)  # type: ignore[arg-type]
 
 
 @app.get("/health")
