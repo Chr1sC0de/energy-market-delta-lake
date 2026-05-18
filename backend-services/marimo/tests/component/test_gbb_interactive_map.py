@@ -62,12 +62,16 @@ def test_normalize_gas_date_handles_marimo_date_values() -> None:
 
 
 def test_load_gbb_map_tables_passes_configured_uri_and_storage() -> None:
-    captured: list[tuple[str, dict[str, str]]] = []
+    captured: list[tuple[str, dict[str, str], int | None]] = []
     config = discover_dashboard_config({})
     specs = [GbbMapTableSpec("silver_gas_dim_facility", "Facilities")]
 
-    def reader(uri: str, storage_options: Mapping[str, str]) -> pl.DataFrame:
-        captured.append((uri, dict(storage_options)))
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        captured.append((uri, dict(storage_options), row_limit))
         return pl.DataFrame({"source_system": ["GBB"]})
 
     loads = load_gbb_map_tables(config, specs=specs, reader=reader)
@@ -78,6 +82,7 @@ def test_load_gbb_map_tables_passes_configured_uri_and_storage() -> None:
         (
             "s3://dev-energy-market-aemo/silver/gas_model/silver_gas_dim_facility",
             config.storage_options(),
+            None,
         )
     ]
 
@@ -86,7 +91,11 @@ def test_load_gbb_map_tables_returns_error_status_detail() -> None:
     config = discover_dashboard_config({})
     specs = [GbbMapTableSpec("silver_gas_dim_facility", "Facilities")]
 
-    def reader(uri: str, storage_options: Mapping[str, str]) -> pl.DataFrame:
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
         raise RuntimeError("missing delta log\ntraceback")
 
     loads = load_gbb_map_tables(config, specs=specs, reader=reader)
@@ -103,7 +112,11 @@ def test_load_gbb_map_tables_can_short_circuit_unreachable_local_s3() -> None:
     specs = [GbbMapTableSpec("silver_gas_dim_facility", "Facilities")]
     calls = 0
 
-    def reader(uri: str, storage_options: Mapping[str, str]) -> pl.DataFrame:
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
         nonlocal calls
         calls += 1
         return pl.DataFrame({"source_system": ["GBB"]})
@@ -137,6 +150,7 @@ def test_read_gbb_map_table_delegates_to_parquet_reader(
     frame = map_helpers.read_gbb_map_table(
         "s3://bucket/silver/gas_model/table",
         {"AWS_REGION": "ap-southeast-2"},
+        row_limit=7,
     )
 
     assert frame.to_dict(as_series=False) == {"source_system": ["GBB"]}
@@ -144,7 +158,7 @@ def test_read_gbb_map_table_delegates_to_parquet_reader(
         (
             "s3://bucket/silver/gas_model/table",
             {"AWS_REGION": "ap-southeast-2"},
-            None,
+            7,
         )
     ]
 

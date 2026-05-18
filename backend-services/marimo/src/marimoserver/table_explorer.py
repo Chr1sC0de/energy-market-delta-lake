@@ -20,6 +20,10 @@ from marimoserver.dagster_graphql import (
     GraphQLExecutorProtocol,
     fetch_dagster_asset_catalogue,
 )
+from marimoserver.gas_model_loader import (
+    bounded_row_limit,
+    compact_error,
+)
 
 DEFAULT_LOCAL_BUCKETS: tuple[str, ...] = (
     "dev-energy-market-aemo",
@@ -613,7 +617,7 @@ def load_table_dataframe(
     s3_client: S3Client | None = None,
 ) -> TableScan:
     """Load a table DataFrame for notebook-session caching."""
-    row_limit = None if config.full_table_scan_enabled else config.max_preview_rows
+    row_limit = bounded_row_limit(config)
     try:
         if table.table_format is TableFormat.DELTA:
             dataframe = read_delta_table(table, config, row_limit=row_limit)
@@ -1093,7 +1097,4 @@ def _bool_setting(environ: Mapping[str, str], name: str, default: bool) -> bool:
 
 
 def _compact_error(error: Exception) -> str:
-    message = str(error).strip().splitlines()
-    if not message:
-        return error.__class__.__name__
-    return f"{error.__class__.__name__}: {message[0]}"
+    return compact_error(error)

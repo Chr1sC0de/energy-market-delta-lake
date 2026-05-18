@@ -330,6 +330,7 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   - `backend-services/marimo/Dockerfile`
   - `backend-services/marimo/src/marimoserver/main.py`
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
+  - `backend-services/marimo/src/marimoserver/gas_model_loader.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/marimo/notebooks/table_explorer.py`

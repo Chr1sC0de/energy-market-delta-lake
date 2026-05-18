@@ -23,6 +23,12 @@ runtime sets `DEVELOPMENT_LOCATION=aws`,
 `DAGSTER_GRAPHQL_URL=http://webserver-guest.dagster:3000/dagster-webserver/guest/graphql`,
 `MARIMO_FULL_TABLE_SCAN_ENABLED=false`, and `MARIMO_MAX_PREVIEW_ROWS=100`.
 
+The dashboard service also exposes `/marimo/dashboard-registry.json` from
+Marimo-local code constants. The registry carries planned and available
+dashboard metadata, including generated-gold paths and source chunk IDs, but the
+deployed service does not read Gas market knowledge base generated files at
+runtime.
+
 ## Considered options
 
 - Keep Marimo local-only: avoids new AWS resources but leaves the deployed
@@ -44,13 +50,20 @@ route. The dashboard is stateless: notebook files come from the image, and table
 data comes from S3 and Dagster GraphQL. Image changes produce digest changes
 that update EC2 user data.
 
-AWS-mode table previews are bounded. The table explorer still lists configured
-buckets and Dagster table assets, but it disables full-table sort, text search,
-and selected-column statistics because those require loading full tables into
-memory. Local compose keeps full LocalStack table scans for development.
+AWS-mode table previews are bounded. The shared `silver.gas_model` loader owns
+the sample and recent Parquet-prefix read policy for curated dashboard helpers,
+and the table explorer shares the same row-limit decision. The table explorer
+still lists configured buckets and Dagster table assets, but it disables
+full-table sort, text search, and selected-column statistics because those
+require loading full tables into memory. Local compose keeps full LocalStack
+table scans for development.
 
 The local-only Marimo-Codex workspace stays out of Pulumi and remains bound to
 `127.0.0.1:2719` in compose.
+
+The dashboard registry is part of the existing Marimo image contents. Adding or
+updating registry metadata does not require a separate Docker build context and
+does not add AWS write paths.
 
 ## Sync metadata
 
@@ -65,7 +78,9 @@ The local-only Marimo-Codex workspace stays out of Pulumi and remains bound to
   - `backend-services/caddy/Caddyfile`
   - `backend-services/marimo/Dockerfile`
   - `backend-services/marimo/src/marimoserver/main.py`
+  - `backend-services/marimo/src/marimoserver/dashboard_registry.py`
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
+  - `backend-services/marimo/src/marimoserver/gas_model_loader.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/marimo/notebooks/table_explorer.py`

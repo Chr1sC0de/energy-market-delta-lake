@@ -25,6 +25,8 @@ from fastapi import FastAPI
 from starlette.responses import HTMLResponse, JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from marimoserver.dashboard_registry import dashboard_registry_payload
+
 NOTEBOOKS_DIR = Path(os.environ.get("MARIMO_NOTEBOOKS_DIR", "notebooks"))
 
 # Ensure font MIME types are registered — Python's mimetypes module does not
@@ -90,6 +92,12 @@ app.add_middleware(MimeTypeFixMiddleware)  # type: ignore[arg-type]
 async def health() -> JSONResponse:
     """Liveness / readiness probe for container orchestrators."""
     return JSONResponse(content={"status": "ok"})
+
+
+@app.get("/marimo/dashboard-registry.json")
+async def dashboard_registry() -> JSONResponse:
+    """Return the code-local dashboard roadmap registry."""
+    return JSONResponse(content=dashboard_registry_payload())
 
 
 # ---------------------------------------------------------------------------

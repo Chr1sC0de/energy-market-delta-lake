@@ -164,6 +164,7 @@ Mixed maintained-doc and runtime dashboard changes also run the root
   - `backend-services/marimo/research-workspace/AGENTS.md`
   - `backend-services/marimo/src/marimoserver/main.py`
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
+  - `backend-services/marimo/src/marimoserver/gas_model_loader.py`
   - `backend-services/marimo/src/marimoserver/gbb_interactive_map.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/notebooks/head.html`

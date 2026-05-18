@@ -13,10 +13,8 @@ from plotly.graph_objs._scattergeo import Scattergeo
 import plotly.io as pio
 import polars as pl
 
-from marimoserver.gas_dashboard import (
-    GasDashboardConfig,
-    read_parquet_table,
-)
+from marimoserver.gas_dashboard import GasDashboardConfig
+from marimoserver.gas_model_loader import bounded_row_limit, read_parquet_table
 
 AEMO_GBB_INTERACTIVE_MAP_URL = (
     "https://www.aemo.com.au/energy-systems/gas/gas-bulletin-board-gbb/"
@@ -33,7 +31,7 @@ FLOW_SOURCE_FORECAST = "Nomination and Forecast"
 MapView = Literal["Summary", "Pipeline", "Production", "Storage"]
 FlowFormula = Literal["net", "demand"]
 EndpointChecker = Callable[[Mapping[str, str]], str | None]
-TableReader = Callable[[str, Mapping[str, str]], pl.DataFrame]
+TableReader = Callable[[str, Mapping[str, str], int | None], pl.DataFrame]
 GeoCoordinate = tuple[float, float]
 
 LOCAL_S3_ENDPOINT_HOSTS = frozenset(("localhost", "127.0.0.1", "localstack"))
@@ -483,12 +481,13 @@ def load_gbb_map_tables(
             for spec in specs
         ]
 
+    row_limit = bounded_row_limit(config)
     loads: list[GbbMapTableLoad] = []
 
     for spec in specs:
         uri = config.table_uri(spec.table_name)
         try:
-            dataframe = table_reader(uri, storage_options)
+            dataframe = table_reader(uri, storage_options, row_limit)
         except Exception as error:
             loads.append(
                 GbbMapTableLoad(
@@ -512,9 +511,13 @@ def load_gbb_map_tables(
     return loads
 
 
-def read_gbb_map_table(uri: str, storage_options: Mapping[str, str]) -> pl.DataFrame:
+def read_gbb_map_table(
+    uri: str,
+    storage_options: Mapping[str, str],
+    row_limit: int | None = None,
+) -> pl.DataFrame:
     """Read a GBB map table stored as a gas_model parquet prefix."""
-    return read_parquet_table(uri, storage_options)
+    return read_parquet_table(uri, storage_options, row_limit=row_limit)
 
 
 def build_gbb_map_model(

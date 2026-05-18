@@ -9,6 +9,7 @@ Marimo-Codex research workspace image.
 - [What it does](#what-it-does)
 - [Image split](#image-split)
 - [Dashboard standard](#dashboard-standard)
+- [Dashboard registry](#dashboard-registry)
 - [Table explorer](#table-explorer)
 - [Gas market dashboard](#gas-market-dashboard)
 - [GBB interactive map](#gbb-interactive-map)
@@ -24,6 +25,8 @@ The dashboard app in [src/marimoserver/main.py](src/marimoserver/main.py):
 - discovers `*.py` notebooks from `notebooks/`
 - mounts each notebook as a marimo sub-app under `/marimo/<notebook-name>`
 - serves a simple index page at `/marimo`
+- serves the code-local dashboard roadmap registry at
+  `/marimo/dashboard-registry.json`
 - links the Caddy-served shared theme at `/theme.css` for the index and
   notebook head
 - applies a MIME-type fix middleware for `woff` and `woff2` assets
@@ -61,6 +64,21 @@ Curated notebooks under [notebooks/](notebooks/) follow the
 the required **Dashboard brief**, **Dashboard intent**, first-viewport data
 health, visual-first layout, Playwright development review evidence, and the
 future shared UI primitive surface.
+
+## Dashboard registry
+
+[src/marimoserver/dashboard_registry.py](src/marimoserver/dashboard_registry.py)
+defines the Marimo-local dashboard registry used by the dashboard roadmap. It
+parses structured records into typed entries with concept IDs, audience tags,
+planned or available status, notebook names and routes, backing
+`silver.gas_model` assets, generated-gold metadata paths, and source chunk IDs.
+
+The registry is served as JSON from `/marimo/dashboard-registry.json` so future
+Marimo notebooks can render a concept gallery or context panels without reading
+the Gas market knowledge base generated files at runtime. Generated-gold paths
+and source chunk IDs are copied metadata only. In AWS mode this remains
+read-only, uses the existing dashboard image contents, and does not require a
+Docker build-context change.
 
 ## Table explorer
 
@@ -145,6 +163,14 @@ In AWS mode, the dashboard omits LocalStack endpoint and static credential
 options, uses the EC2 instance profile, and limits each loaded table to the
 preview row cap.
 
+Bounded `silver.gas_model` reads are centralized in
+[src/marimoserver/gas_model_loader.py](src/marimoserver/gas_model_loader.py).
+Dashboard helpers request sample or recent views through that loader, so AWS
+keeps `MARIMO_FULL_TABLE_SCAN_ENABLED=false` preview behavior while local
+development can keep full-table scans where the Marimo config allows them.
+Missing or empty prefixes return table-level empty-state details instead of
+raising notebook tracebacks.
+
 It gives first-look sections for:
 
 - prices from `silver_gas_fact_market_price`
@@ -181,9 +207,10 @@ gas days use `silver_gas_fact_nomination_forecast`. Capacity comes from
 `silver_gas_fact_capacity_outlook`. The map still renders if LocalStack has no
 materialized inputs; the notebook shows a compact input warning, keeps the
 table-level diagnostics in an accordion, and falls back to standing pipeline
-metadata. Direct notebook runs preflight the local S3 endpoint so an offline
-LocalStack instance becomes a fast degraded state instead of six slow table read
-attempts.
+metadata. The map uses the shared bounded `silver.gas_model` loader policy, so
+AWS-mode reads are capped by `MARIMO_MAX_PREVIEW_ROWS`. Direct notebook runs
+preflight the local S3 endpoint so an offline LocalStack instance becomes a
+fast degraded state instead of six slow table read attempts.
 
 During development, keep the notebook pointed at LocalStack and hydrate the
 required `silver/gas_model` table prefixes there instead of reading live S3 from
@@ -304,12 +331,14 @@ prek run -a
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `backend-services/marimo/src/marimoserver/main.py`
+  - `backend-services/marimo/src/marimoserver/dashboard_registry.py`
   - `backend-services/marimo/pyproject.toml`
   - `backend-services/marimo/Dockerfile`
   - `backend-services/marimo/docs/dashboard-standard.md`
   - `backend-services/marimo/scripts/sync-gbb-map-s3-to-localstack.sh`
   - `backend-services/marimo/research-workspace/AGENTS.md`
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
+  - `backend-services/marimo/src/marimoserver/gas_model_loader.py`
   - `backend-services/marimo/src/marimoserver/gbb_interactive_map.py`
   - `backend-services/marimo/src/marimoserver/dagster_graphql.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
