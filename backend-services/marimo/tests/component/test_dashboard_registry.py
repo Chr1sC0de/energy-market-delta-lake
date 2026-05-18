@@ -42,6 +42,17 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert DashboardAudience.OPERATOR in readiness.audiences
     assert DashboardAudience.DATA_ENGINEER in readiness.audiences
 
+    glossary = registry_entry_by_concept_id("glossary-explorer", entries)
+    assert glossary is not None
+    assert glossary.status is DashboardStatus.AVAILABLE
+    assert glossary.notebook_name == "glossary_explorer"
+    assert glossary.notebook_route == "/marimo/glossary_explorer/"
+    assert glossary.backing_assets == ()
+    assert glossary.generated_gold_paths == (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/README.md",
+    )
+    assert glossary.source_chunk_ids == ()
+
 
 def test_dashboard_registry_payload_includes_required_fields() -> None:
     payload = dashboard_registry_payload()
@@ -138,6 +149,14 @@ def test_dashboard_registry_parsing_rejects_unknown_audience() -> None:
         load_dashboard_registry([record])
 
 
+def test_dashboard_registry_parsing_rejects_empty_audience_tuple() -> None:
+    record = dict(DASHBOARD_REGISTRY_RECORDS[0])
+    record["audiences"] = ()
+
+    with pytest.raises(DashboardRegistryError, match="must not be empty"):
+        load_dashboard_registry([record])
+
+
 def test_dashboard_registry_requires_available_notebooks() -> None:
     record = dict(DASHBOARD_REGISTRY_RECORDS[0])
     del record["notebook_name"]
@@ -203,12 +222,28 @@ def test_dashboard_registry_rejects_gold_paths_without_source_chunks() -> None:
         load_dashboard_registry(records)
 
 
+def test_dashboard_registry_allows_index_gold_path_without_source_chunks() -> None:
+    records = _registry_records()
+    records[0]["concept_id"] = "index-context"
+    records[0]["generated_gold_paths"] = (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/README.md",
+    )
+    records[0]["source_chunk_ids"] = ()
+
+    entries = load_dashboard_registry(records)
+
+    index = registry_entry_by_concept_id("index-context", entries)
+    assert index is not None
+    assert index.generated_gold_paths == records[0]["generated_gold_paths"]
+    assert index.source_chunk_ids == ()
+
+
 def test_dashboard_registry_rejects_empty_required_tuple() -> None:
-    record = dict(DASHBOARD_REGISTRY_RECORDS[0])
-    record["backing_assets"] = ()
+    records = _registry_records()
+    records[0]["backing_assets"] = ()
 
     with pytest.raises(DashboardRegistryError, match="must not be empty"):
-        load_dashboard_registry([record])
+        load_dashboard_registry(records)
 
 
 def test_dashboard_registry_rejects_non_tuple_sequence_field() -> None:

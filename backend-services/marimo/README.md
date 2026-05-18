@@ -11,6 +11,7 @@ Marimo-Codex research workspace image.
 - [Image split](#image-split)
 - [Dashboard standard](#dashboard-standard)
 - [Dashboard registry](#dashboard-registry)
+- [Glossary explorer](#glossary-explorer)
 - [Data readiness overview](#data-readiness-overview)
 - [Table explorer](#table-explorer)
 - [Gas market dashboard](#gas-market-dashboard)
@@ -116,6 +117,10 @@ runtime. Generated-gold paths and source chunk IDs are copied metadata only. In
 AWS mode this remains read-only, uses the existing dashboard image contents,
 and does not require a Docker build-context change.
 
+Registry-backed dashboards that only browse registry metadata may have no
+backing `silver.gas_model` assets. The concept gallery renders those entries as
+registry metadata only instead of inventing table dependencies.
+
 [src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py) exposes
 `render_dashboard_context_panel()` for notebooks that need the same registry
 context in-page. The helper renders the concept summary, dashboard usage
@@ -123,6 +128,21 @@ metadata, related concepts, generated-gold paths, source chunk IDs, and backing
 `silver.gas_model` assets from the registry without opening generated gold
 Markdown at runtime. The available roadmap notebooks call it with their
 registry concept IDs near the top of the notebook.
+
+## Glossary explorer
+
+[notebooks/glossary_explorer.py](notebooks/glossary_explorer.py) is the
+registry-backed glossary browser. It uses
+[src/marimoserver/glossary_explorer.py](src/marimoserver/glossary_explorer.py)
+to list seeded glossary concepts from the Marimo-local dashboard registry and
+show each concept's generated-gold metadata path, source chunk IDs, inferred
+related concepts, and planned or available dashboard links.
+
+The dashboard does not read generated gold Markdown at runtime. Missing
+generated-gold paths or source chunk IDs render as validation-visible gaps
+inside the concept card rather than fallback prose. Its first viewport includes
+a registry health strip with source, freshness, concept count, scope,
+available-dashboard count, planned-dashboard count, and metadata-gap count.
 
 ## Data readiness overview
 
@@ -311,7 +331,8 @@ server at a different notebook directory.
 
 With the local backend stack running, open the Marimo concept gallery through
 Caddy and choose an available card such as `data_readiness_overview`,
-`table_explorer`, `sample_energy_market`, or `gbb_interactive_map`:
+`glossary_explorer`, `table_explorer`, `sample_energy_market`, or
+`gbb_interactive_map`:
 
 ```text
 http://localhost/marimo
@@ -345,6 +366,13 @@ Use the same pattern for the data readiness overview:
 ```bash
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/data_readiness_overview.py
+```
+
+Use the same pattern for the glossary explorer:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/glossary_explorer.py
 ```
 
 Use the same pattern for the GBB interactive map:
@@ -401,6 +429,10 @@ HTML, and checks stable context-panel plus empty or bounded-loader rendering for
 the current curated dashboard helpers. Future curated dashboard slices should
 add or update registry-backed notebooks and extend this harness when they add a
 new dashboard-specific loader surface.
+Glossary explorer coverage in
+[tests/component/test_glossary_explorer.py](tests/component/test_glossary_explorer.py)
+verifies concept listing, concept detail metadata, planned dashboard states,
+and validation-visible metadata gaps.
 
 Run the Marimo **Commit check** surface before handing changes to Ralph:
 
@@ -430,6 +462,7 @@ prek run -a
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
   - `backend-services/marimo/src/marimoserver/gas_model_loader.py`
   - `backend-services/marimo/src/marimoserver/gbb_interactive_map.py`
+  - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
   - `backend-services/marimo/src/marimoserver/dagster_graphql.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/src/marimoserver/data_readiness.py`
@@ -438,12 +471,14 @@ prek run -a
   - `backend-services/marimo/notebooks/gbb_interactive_map.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
+  - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/tests/component/conftest.py`
   - `backend-services/marimo/tests/component/test_dashboard_registry.py`
   - `backend-services/marimo/tests/component/test_main.py`
   - `backend-services/marimo/tests/component/test_local_image_split.py`
   - `backend-services/marimo/tests/component/dashboard_smoke_harness.py`
   - `backend-services/marimo/tests/component/test_dashboard_smoke.py`
+  - `backend-services/marimo/tests/component/test_glossary_explorer.py`
   - `backend-services/marimo/tests/component/test_data_readiness.py`
   - `backend-services/compose.yaml`
   - `backend-services/caddy/Caddyfile`

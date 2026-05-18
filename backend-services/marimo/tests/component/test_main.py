@@ -268,6 +268,7 @@ class TestAppDiscovery:
             "gbb_interactive_map",
             "table_explorer",
             "data_readiness_overview",
+            "glossary_explorer",
         } <= set(app_names)
 
 

@@ -127,8 +127,10 @@ instance behind Caddy, but `marimo-codex-workspace` remains local-only. The
 deployed dashboard serves curated notebooks through Caddy, reads the private
 guest Dagster GraphQL endpoint, and has read-only access to curated AEMO and
 IO-manager buckets. Its data readiness overview gives platform operators a
-first-stop check over those read-only S3 and Dagster GraphQL surfaces. The
-Marimo-Codex workspace is bound to localhost for human-operated research and
+first-stop check over those read-only S3 and Dagster GraphQL surfaces. Its
+glossary explorer browses packaged registry metadata without reading generated
+gold Markdown or live S3 tables at runtime. The Marimo-Codex workspace is
+bound to localhost for human-operated research and
 issue-draft preparation. Deployed Codex execution remains deferred pending
 security review. The optional
 Archive seed loader is also local-only: it can load a cached seed under
@@ -202,9 +204,9 @@ without making local development performance claims.
   - provides the reverse-proxy image, root Astro portfolio, and routing rules
 - `backend-services/marimo`
   - notebook-oriented Subproject with a registry-backed `/marimo` concept
-    gallery, immutable cache headers for packaged static assets, a curated
-    dashboard image used locally and in AWS, plus a local-only Marimo-Codex
-    research workspace image
+    gallery, registry-only glossary explorer, immutable cache headers for
+    packaged static assets, a curated dashboard image used locally and in AWS,
+    plus a local-only Marimo-Codex research workspace image
 
 Gas market knowledge base responsibility:
 
@@ -250,8 +252,10 @@ Gas market knowledge base responsibility:
   - `backend-services/marimo/src/marimoserver/main.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/src/marimoserver/data_readiness.py`
+  - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
+  - `backend-services/marimo/notebooks/glossary_explorer.py`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`

@@ -24,6 +24,10 @@ from marimoserver.gbb_interactive_map import (
     load_gbb_map_tables,
     map_load_status_frame,
 )
+from marimoserver.glossary_explorer import (
+    build_glossary_explorer,
+    render_glossary_explorer_html,
+)
 from marimoserver import table_explorer
 from marimoserver.table_explorer import (
     TableFormat,
@@ -96,6 +100,15 @@ def test_available_dashboard_context_panels_render_stable_html(
     assert f'data-notebook-name="{target.notebook_name}"' in html
     assert f'data-notebook-route="{target.route}"' in html
     assert "backing assets" in html
+
+
+def test_glossary_explorer_smoke_renders_planned_dashboard_states() -> None:
+    html = render_glossary_explorer_html(build_glossary_explorer())
+
+    assert 'data-concept-count="13"' in html
+    assert 'data-dashboard-status="planned"' in html
+    assert "Planned dashboard" in html
+    assert "No source chunk IDs recorded in the Marimo registry." not in html
 
 
 def test_gas_market_dashboard_bounded_loader_renders_empty_state() -> None:

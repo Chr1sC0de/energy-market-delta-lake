@@ -31,7 +31,9 @@ runtime.
 
 The `/marimo` entry route renders the same registry as a concept gallery hub.
 Available dashboard cards link to mounted notebook routes, while planned
-dashboard cards stay visible without notebook links.
+dashboard cards stay visible without notebook links. Registry-only notebooks
+such as the glossary explorer can browse Marimo-local Market context metadata
+without adding generated-file reads at runtime.
 
 Caddy does not serve Marimo packaged static assets from its own static root. It
 keeps `/marimo/*/assets/*`, notebook favicons, notebook manifests,
@@ -80,6 +82,8 @@ The local-only Marimo-Codex workspace stays out of Pulumi and remains bound to
 The dashboard registry and concept gallery are part of the existing Marimo
 image contents. Adding or updating registry metadata does not require a
 separate Docker build context and does not add AWS write paths.
+The glossary explorer stays inside the same boundary: it reads the packaged
+registry constants, not generated gold Markdown or live S3 tables.
 
 The data readiness overview remains within that read-only dashboard boundary.
 It reuses the existing S3 discovery, Dagster GraphQL catalogue, and bounded-read
@@ -110,13 +114,17 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/src/marimoserver/gas_model_loader.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/src/marimoserver/data_readiness.py`
+  - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
   - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
+  - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/tests/component/test_dashboard_registry.py`
   - `backend-services/marimo/tests/component/test_main.py`
   - `backend-services/marimo/tests/component/test_local_image_split.py`
   - `backend-services/marimo/tests/component/test_data_readiness.py`
+  - `backend-services/marimo/tests/component/test_dashboard_smoke.py`
+  - `backend-services/marimo/tests/component/test_glossary_explorer.py`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`

@@ -559,6 +559,10 @@ def _render_dashboard_card_body(
         f'                    <li class="asset-pill">{escape(asset)}</li>'
         for asset in entry.backing_assets[:3]
     )
+    if len(entry.backing_assets) == 0:
+        assets = (
+            '                    <li class="asset-pill">Registry metadata only</li>'
+        )
     if len(entry.backing_assets) > 3:
         assets = (
             f"{assets}\n"

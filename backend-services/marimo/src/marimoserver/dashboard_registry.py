@@ -38,6 +38,7 @@ ROADMAP_AUDIENCES: tuple[DashboardAudience, ...] = (
 type DashboardRegistryRecord = Mapping[str, object]
 
 _MISSING = object()
+_REGISTRY_BACKED_CONCEPT_IDS = frozenset({"glossary-explorer"})
 
 
 @dataclass(frozen=True)
@@ -219,6 +220,23 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_capacity_outlook",
         ),
         "generated_gold_paths": (),
+        "source_chunk_ids": (),
+    },
+    {
+        "concept_id": "glossary-explorer",
+        "title": "Glossary Explorer",
+        "description": (
+            "Available analytical dashboard for browsing generated glossary "
+            "concept metadata, cited source chunks, related concepts, and "
+            "planned or available dashboard states from the Marimo registry."
+        ),
+        "audiences": ("analyst", "stakeholder", "data-engineer"),
+        "status": "available",
+        "notebook_name": "glossary_explorer",
+        "backing_assets": (),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/README.md",
+        ),
         "source_chunk_ids": (),
     },
     {
@@ -568,7 +586,7 @@ def _entry_from_record(
         index,
     )
     notebook_name = _optional_str(record, "notebook_name", index)
-    backing_assets = _required_str_tuple(record, "backing_assets", index)
+    backing_assets = _str_tuple(record, "backing_assets", index)
     generated_gold_paths = _str_tuple(record, "generated_gold_paths", index)
     source_chunks = tuple(
         SourceChunkReference(chunk_id=chunk_id)
@@ -635,6 +653,14 @@ def _validate_entry(entry: DashboardRegistryEntry) -> None:
             f"dashboard registry concept_id is not slug-like: {entry.concept_id}"
         )
 
+    if (
+        len(entry.backing_assets) == 0
+        and entry.concept_id not in _REGISTRY_BACKED_CONCEPT_IDS
+    ):
+        raise DashboardRegistryError(
+            f"{entry.concept_id} backing_assets must not be empty"
+        )
+
     for asset in entry.backing_assets:
         if not asset.startswith("silver.gas_model."):
             raise DashboardRegistryError(
@@ -642,10 +668,14 @@ def _validate_entry(entry: DashboardRegistryEntry) -> None:
             )
 
     if entry.generated_gold_paths and not entry.source_chunks:
-        if entry.concept_id != "gas-model-table-explorer":
+        if not _generated_gold_paths_are_indexes(entry.generated_gold_paths):
             raise DashboardRegistryError(
                 f"{entry.concept_id} has generated gold paths without source chunks"
             )
+
+
+def _generated_gold_paths_are_indexes(paths: Sequence[str]) -> bool:
+    return all(path.endswith("/README.md") for path in paths)
 
 
 def _status_from_value(value: str, index: int) -> DashboardStatus:
