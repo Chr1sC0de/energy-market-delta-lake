@@ -207,11 +207,11 @@ Gas market knowledge base responsibility:
 
 - `tools/gas-market-knowledge-base`
   - provides the **Gas market knowledge base** Subproject, including the bronze
-    source manifest command, archive PDF cache fetcher, Docling-based silver
-    document extraction, Docling Hybrid retrieval chunks, silver chunk index
-    validation, gold **Market context** citation validation, seed glossary
-    artifacts, generated text artifact roots, raw-PDF ignore policy, unit tests,
-    and **Commit check** surface. ADR
+    source manifest command, archive-prefix completeness audit, archive PDF
+    cache fetcher, Docling-based silver document extraction, Docling Hybrid
+    retrieval chunks, silver chunk index validation, gold **Market context**
+    citation validation, seed glossary artifacts, generated text artifact roots,
+    raw-PDF ignore policy, unit tests, and **Commit check** surface. ADR
     [0010](../adr/0010-gas-market-knowledge-base.md) records the corpus
     architecture and the generated gold boundary.
 

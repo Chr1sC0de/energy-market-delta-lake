@@ -307,6 +307,11 @@ way:
   [0010](../adr/0010-gas-market-knowledge-base.md), and the Subproject policy
   lives in the
   [Subproject README](../../tools/gas-market-knowledge-base/README.md).
+- #241: The **Gas market knowledge base** Subproject added an archive-prefix
+  completeness audit for comparing configured archive PDF objects with
+  `generated/bronze/source_manifest.jsonl`, including fixture listing mode for
+  the **Unit test** lane. The command surface and QA expectation live in the
+  [Subproject README](../../tools/gas-market-knowledge-base/README.md).
 
 ## Search commands
 
@@ -375,6 +380,7 @@ These commands support the intended flow:
   - `tools/gas-market-knowledge-base/Makefile`
   - `tools/gas-market-knowledge-base/README.md`
   - `tools/gas-market-knowledge-base/pyproject.toml`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/archive_audit.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/cli.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/docling_adapter.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/gold_context.py`
@@ -382,6 +388,7 @@ These commands support the intended flow:
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/silver_chunks.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/silver_documents.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/source_manifest.py`
+  - `tools/gas-market-knowledge-base/tests/unit/test_archive_audit.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_cli.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_gold_context.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_pdf_cache.py`
