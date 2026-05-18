@@ -44,6 +44,19 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         in prices.generated_gold_paths
     )
 
+    schedule_runs = registry_entry_by_concept_id("gas-schedule-runs", entries)
+    assert schedule_runs is not None
+    assert schedule_runs.status is DashboardStatus.AVAILABLE
+    assert schedule_runs.notebook_name == "gas_schedule_runs"
+    assert schedule_runs.notebook_route == "/marimo/gas_schedule_runs/"
+    assert schedule_runs.backing_assets == (
+        "silver.gas_model.silver_gas_fact_schedule_run",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/settlement.md"
+        in schedule_runs.generated_gold_paths
+    )
+
     readiness = registry_entry_by_concept_id("data-readiness-overview", entries)
     assert readiness is not None
     assert readiness.status is DashboardStatus.AVAILABLE

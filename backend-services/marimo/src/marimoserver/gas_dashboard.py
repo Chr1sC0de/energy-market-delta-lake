@@ -41,7 +41,7 @@ DEFAULT_AWS_SECRET_ACCESS_KEY = "test"
 DEFAULT_AWS_ALLOW_HTTP = "true"
 DEFAULT_AWS_PREVIEW_ROWS = 100
 AWS_DEVELOPMENT_LOCATION = "aws"
-DEFAULT_RELATED_CONTEXT_LIMIT = 6
+DEFAULT_RELATED_CONTEXT_LIMIT = 8
 SYSTEM_NOTICE_TABLE_NAME = "silver_gas_fact_system_notice"
 SYSTEM_NOTICE_CRITICAL_FILTER_ALL = "All notices"
 SYSTEM_NOTICE_CRITICAL_FILTER_CRITICAL = "Critical only"
@@ -74,6 +74,11 @@ MARKET_PRICE_MEASURE_COLUMNS = (
     "cumulative_price",
     "administered_price",
 )
+SCHEDULE_RUN_TABLE_NAME = "silver_gas_fact_schedule_run"
+SCHEDULE_RUN_GAS_DATE_FILTER_ALL = "All gas dates"
+SCHEDULE_RUN_SOURCE_SYSTEM_FILTER_ALL = "All source systems"
+SCHEDULE_RUN_SCHEDULE_TYPE_FILTER_ALL = "All schedule types"
+DEFAULT_SCHEDULE_RUN_PREVIEW_ROWS = 50
 GAS_QUALITY_TABLE_NAME = "silver_gas_fact_gas_quality"
 GAS_QUALITY_QUALITY_TYPE_FILTER_ALL = "All quality types"
 GAS_QUALITY_SOURCE_POINT_FILTER_ALL = "All source points"
@@ -176,23 +181,38 @@ MARKET_PRICE_TABLE_SPEC = GasTableSpec(
     ),
 )
 
+SCHEDULE_RUN_TABLE_SPEC = GasTableSpec(
+    section="Schedules",
+    label="Schedule runs",
+    table_name=SCHEDULE_RUN_TABLE_NAME,
+    date_columns=(
+        "gas_date",
+        "gas_start_timestamp",
+        "bid_cutoff_timestamp",
+        "creation_timestamp",
+        "approval_timestamp",
+        "source_last_updated_timestamp",
+        "ingested_timestamp",
+    ),
+    preview_columns=(
+        "gas_date",
+        "source_system",
+        "source_table",
+        "schedule_type_id",
+        "forecast_demand_version",
+        "transmission_id",
+        "transmission_document_id",
+        "transmission_group_id",
+        "gas_start_timestamp",
+        "bid_cutoff_timestamp",
+        "creation_timestamp",
+        "approval_timestamp",
+    ),
+)
+
 GAS_MODEL_TABLES: tuple[GasTableSpec, ...] = (
     MARKET_PRICE_TABLE_SPEC,
-    GasTableSpec(
-        section="Schedules",
-        label="Schedule runs",
-        table_name="silver_gas_fact_schedule_run",
-        date_columns=("gas_date", "creation_timestamp", "approval_timestamp"),
-        preview_columns=(
-            "gas_date",
-            "source_system",
-            "source_table",
-            "schedule_type_id",
-            "transmission_id",
-            "forecast_demand_version",
-            "approval_timestamp",
-        ),
-    ),
+    SCHEDULE_RUN_TABLE_SPEC,
     GasTableSpec(
         section="Schedules",
         label="Scheduled quantities",
@@ -443,6 +463,89 @@ _MARKET_PRICE_OBSERVATION_SCHEMA = {
     "source updated": pl.Datetime("us"),
     "latest ingest": pl.Datetime("us"),
 }
+_SCHEDULE_RUN_RAW_SCHEMA = {
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "source_table": pl.String,
+    "gas_date": pl.Date,
+    "transmission_id": pl.String,
+    "transmission_document_id": pl.String,
+    "transmission_group_id": pl.String,
+    "schedule_type_id": pl.String,
+    "forecast_demand_version": pl.String,
+    "demand_type_id": pl.String,
+    "objective_function_value": pl.Float64,
+    "gas_start_timestamp": pl.Datetime("us"),
+    "bid_cutoff_timestamp": pl.Datetime("us"),
+    "creation_timestamp": pl.Datetime("us"),
+    "approval_timestamp": pl.Datetime("us"),
+    "source_last_updated": pl.String,
+    "source_last_updated_timestamp": pl.Datetime("us"),
+    "source_surrogate_key": pl.String,
+    "source_file": pl.String,
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_SCHEDULE_RUN_KPI_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_SCHEDULE_RUN_TYPE_SUMMARY_SCHEMA = {
+    "source system": pl.String,
+    "source table": pl.String,
+    "schedule type": pl.String,
+    "forecast demand version": pl.String,
+    "runs": pl.UInt32,
+    "gas days": pl.UInt32,
+    "transmissions": pl.UInt32,
+    "transmission documents": pl.UInt32,
+    "transmission groups": pl.UInt32,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
+    "latest creation": pl.Datetime("us"),
+    "latest approval": pl.Datetime("us"),
+}
+_SCHEDULE_RUN_TIMESTAMP_SUMMARY_SCHEMA = {
+    "gas date": pl.Date,
+    "source system": pl.String,
+    "schedule type": pl.String,
+    "runs": pl.UInt32,
+    "first gas start": pl.Datetime("us"),
+    "latest gas start": pl.Datetime("us"),
+    "latest bid cutoff": pl.Datetime("us"),
+    "latest creation": pl.Datetime("us"),
+    "latest approval": pl.Datetime("us"),
+}
+_SCHEDULE_RUN_SOURCE_COVERAGE_SCHEMA = {
+    "source system": pl.String,
+    "source table": pl.String,
+    "schedule runs": pl.UInt32,
+    "schedule types": pl.UInt32,
+    "forecast demand versions": pl.UInt32,
+    "gas days": pl.UInt32,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_SCHEDULE_RUN_OBSERVATION_SCHEMA = {
+    "gas date": pl.Date,
+    "source system": pl.String,
+    "source table": pl.String,
+    "schedule type": pl.String,
+    "forecast demand version": pl.String,
+    "demand type": pl.String,
+    "transmission": pl.String,
+    "transmission document": pl.String,
+    "transmission group": pl.String,
+    "objective function value": pl.Float64,
+    "gas start": pl.Datetime("us"),
+    "bid cutoff": pl.Datetime("us"),
+    "created": pl.Datetime("us"),
+    "approved": pl.Datetime("us"),
+    "source updated": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
 _GAS_QUALITY_RAW_SCHEMA = {
     "source_system": pl.String,
     "source_table": pl.String,
@@ -663,6 +766,42 @@ def cached_load_market_price_table(
         config,
         cache,
         specs=(MARKET_PRICE_TABLE_SPEC,),
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        refresh_token=refresh_token,
+        clock=clock,
+    )[0]
+
+
+def load_schedule_run_table(
+    config: GasDashboardConfig,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Load the schedule run fact through the shared bounded table loader."""
+    return load_gas_model_tables(
+        config,
+        specs=(SCHEDULE_RUN_TABLE_SPEC,),
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        clock=clock,
+    )[0]
+
+
+def cached_load_schedule_run_table(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Return session-cached schedule run data for explicit-refresh dashboards."""
+    return cached_load_gas_model_tables(
+        config,
+        cache,
+        specs=(SCHEDULE_RUN_TABLE_SPEC,),
         reader=reader,
         view=GasModelTableView.RECENT,
         refresh_token=refresh_token,
@@ -1144,6 +1283,398 @@ def render_market_price_context_links(
     <div>
         <p class="market-price-links__eyebrow">Context links</p>
         <h2>Market price and Schedule context</h2>
+    </div>
+    <ul>
+{rows}
+    </ul>
+</section>"""
+
+
+def schedule_run_gas_date_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return gas-date filter options for the loaded schedule run preview."""
+    dataframe = _normalised_schedule_run_dataframe(load)
+    if dataframe.is_empty():
+        return (SCHEDULE_RUN_GAS_DATE_FILTER_ALL,)
+
+    values = sorted(
+        str(value)
+        for value in dataframe.get_column("gas_date").drop_nulls().unique().to_list()
+        if value is not None
+    )
+    return (SCHEDULE_RUN_GAS_DATE_FILTER_ALL, *reversed(values))
+
+
+def schedule_run_source_system_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return source-system filter options for the loaded schedule run preview."""
+    return _schedule_run_string_filter_options(
+        load,
+        "source_system",
+        SCHEDULE_RUN_SOURCE_SYSTEM_FILTER_ALL,
+    )
+
+
+def schedule_run_schedule_type_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return schedule-type filter options for the loaded schedule run preview."""
+    return _schedule_run_string_filter_options(
+        load,
+        "schedule_type_id",
+        SCHEDULE_RUN_SCHEDULE_TYPE_FILTER_ALL,
+    )
+
+
+def schedule_run_kpi_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = SCHEDULE_RUN_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = SCHEDULE_RUN_SOURCE_SYSTEM_FILTER_ALL,
+    schedule_type_filter: str = SCHEDULE_RUN_SCHEDULE_TYPE_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return first-viewport KPIs for loaded schedule run rows."""
+    dataframe = _filtered_schedule_run_dataframe(
+        load,
+        gas_date_filter,
+        source_system_filter,
+        schedule_type_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_SCHEDULE_RUN_KPI_SCHEMA)
+
+    counts = dataframe.select(
+        pl.len().alias("loaded_runs"),
+        pl.col("schedule_type_id").drop_nulls().n_unique().alias("schedule_types"),
+        pl.col("source_system").drop_nulls().n_unique().alias("source_systems"),
+        pl.col("transmission_id").drop_nulls().n_unique().alias("transmissions"),
+        pl.col("forecast_demand_version")
+        .drop_nulls()
+        .n_unique()
+        .alias("forecast_demand_versions"),
+        pl.col("gas_date").max().alias("latest_gas_date"),
+        pl.col("approval_timestamp").max().alias("latest_approval"),
+    ).row(0, named=True)
+    row_limit = None if load is None else load.row_limit
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Loaded schedule runs",
+                "value": f"{counts['loaded_runs']:,}",
+                "detail": format_row_limit(row_limit),
+            },
+            {
+                "metric": "Schedule types",
+                "value": f"{counts['schedule_types']:,}",
+                "detail": "Distinct schedule_type_id values in the current view",
+            },
+            {
+                "metric": "Source systems",
+                "value": f"{counts['source_systems']:,}",
+                "detail": "Distinct source_system values in the current view",
+            },
+            {
+                "metric": "Transmissions",
+                "value": f"{counts['transmissions']:,}",
+                "detail": "Distinct transmission_id values in the current view",
+            },
+            {
+                "metric": "Forecast demand versions",
+                "value": f"{counts['forecast_demand_versions']:,}",
+                "detail": "Distinct forecast_demand_version values represented",
+            },
+            {
+                "metric": "Latest gas date",
+                "value": _format_optional_value(counts["latest_gas_date"]),
+                "detail": "Maximum gas_date in the loaded bounded rows",
+            },
+            {
+                "metric": "Latest approval",
+                "value": _format_optional_value(counts["latest_approval"]),
+                "detail": "Maximum approval_timestamp in the current view",
+            },
+        ],
+        schema=_SCHEDULE_RUN_KPI_SCHEMA,
+    )
+
+
+def schedule_run_type_summary_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = SCHEDULE_RUN_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = SCHEDULE_RUN_SOURCE_SYSTEM_FILTER_ALL,
+    schedule_type_filter: str = SCHEDULE_RUN_SCHEDULE_TYPE_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return schedule type, transmission, and forecast-version summaries."""
+    dataframe = _filtered_schedule_run_dataframe(
+        load,
+        gas_date_filter,
+        source_system_filter,
+        schedule_type_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_SCHEDULE_RUN_TYPE_SUMMARY_SCHEMA)
+
+    summary = (
+        dataframe.group_by(
+            "source_system",
+            "source_table",
+            "schedule_type_id",
+            "forecast_demand_version",
+        )
+        .agg(
+            pl.len().alias("runs"),
+            pl.col("gas_date").drop_nulls().n_unique().alias("gas days"),
+            pl.col("transmission_id").drop_nulls().n_unique().alias("transmissions"),
+            pl.col("transmission_document_id")
+            .drop_nulls()
+            .n_unique()
+            .alias("transmission documents"),
+            pl.col("transmission_group_id")
+            .drop_nulls()
+            .n_unique()
+            .alias("transmission groups"),
+            pl.col("gas_date").min().alias("first gas date"),
+            pl.col("gas_date").max().alias("latest gas date"),
+            pl.col("creation_timestamp").max().alias("latest creation"),
+            pl.col("approval_timestamp").max().alias("latest approval"),
+        )
+        .sort(
+            [
+                "runs",
+                "latest gas date",
+                "source_system",
+                "schedule_type_id",
+                "forecast_demand_version",
+            ],
+            descending=[True, True, False, False, False],
+            nulls_last=True,
+        )
+        .rename(
+            {
+                "source_system": "source system",
+                "source_table": "source table",
+                "schedule_type_id": "schedule type",
+                "forecast_demand_version": "forecast demand version",
+            }
+        )
+    )
+    return summary.select([*list(_SCHEDULE_RUN_TYPE_SUMMARY_SCHEMA)])
+
+
+def schedule_run_timestamp_summary_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = SCHEDULE_RUN_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = SCHEDULE_RUN_SOURCE_SYSTEM_FILTER_ALL,
+    schedule_type_filter: str = SCHEDULE_RUN_SCHEDULE_TYPE_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_SCHEDULE_RUN_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return bounded timestamp coverage by Gas Day, source, and schedule type."""
+    dataframe = _filtered_schedule_run_dataframe(
+        load,
+        gas_date_filter,
+        source_system_filter,
+        schedule_type_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_SCHEDULE_RUN_TIMESTAMP_SUMMARY_SCHEMA)
+
+    summary = (
+        dataframe.group_by("gas_date", "source_system", "schedule_type_id")
+        .agg(
+            pl.len().alias("runs"),
+            pl.col("gas_start_timestamp").min().alias("first gas start"),
+            pl.col("gas_start_timestamp").max().alias("latest gas start"),
+            pl.col("bid_cutoff_timestamp").max().alias("latest bid cutoff"),
+            pl.col("creation_timestamp").max().alias("latest creation"),
+            pl.col("approval_timestamp").max().alias("latest approval"),
+        )
+        .sort(
+            ["gas_date", "source_system", "schedule_type_id"],
+            descending=[True, False, False],
+            nulls_last=True,
+        )
+        .rename(
+            {
+                "gas_date": "gas date",
+                "source_system": "source system",
+                "schedule_type_id": "schedule type",
+            }
+        )
+        .head(max(1, preview_rows))
+    )
+    return summary.select([*list(_SCHEDULE_RUN_TIMESTAMP_SUMMARY_SCHEMA)])
+
+
+def schedule_run_source_coverage_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = SCHEDULE_RUN_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = SCHEDULE_RUN_SOURCE_SYSTEM_FILTER_ALL,
+    schedule_type_filter: str = SCHEDULE_RUN_SCHEDULE_TYPE_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return source coverage for loaded schedule run rows."""
+    dataframe = _filtered_schedule_run_dataframe(
+        load,
+        gas_date_filter,
+        source_system_filter,
+        schedule_type_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_SCHEDULE_RUN_SOURCE_COVERAGE_SCHEMA)
+
+    return (
+        dataframe.group_by("source_system", "source_table")
+        .agg(
+            pl.len().alias("schedule runs"),
+            pl.col("schedule_type_id").drop_nulls().n_unique().alias("schedule types"),
+            pl.col("forecast_demand_version")
+            .drop_nulls()
+            .n_unique()
+            .alias("forecast demand versions"),
+            pl.col("gas_date").drop_nulls().n_unique().alias("gas days"),
+            pl.col("gas_date").min().alias("first gas date"),
+            pl.col("gas_date").max().alias("latest gas date"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort(["schedule runs", "source_table"], descending=[True, False])
+        .rename(
+            {
+                "source_system": "source system",
+                "source_table": "source table",
+            }
+        )
+    )
+
+
+def schedule_run_observation_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = SCHEDULE_RUN_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = SCHEDULE_RUN_SOURCE_SYSTEM_FILTER_ALL,
+    schedule_type_filter: str = SCHEDULE_RUN_SCHEDULE_TYPE_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_SCHEDULE_RUN_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return filtered schedule run observations for bounded detail preview."""
+    dataframe = _filtered_schedule_run_dataframe(
+        load,
+        gas_date_filter,
+        source_system_filter,
+        schedule_type_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_SCHEDULE_RUN_OBSERVATION_SCHEMA)
+
+    return (
+        dataframe.sort(
+            [
+                "gas_date",
+                "approval_timestamp",
+                "creation_timestamp",
+                "source_system",
+                "schedule_type_id",
+                "transmission_id",
+            ],
+            descending=[True, True, True, False, False, False],
+            nulls_last=True,
+        )
+        .select(
+            pl.col("gas_date").alias("gas date"),
+            pl.col("source_system").alias("source system"),
+            pl.col("source_table").alias("source table"),
+            pl.col("schedule_type_id").alias("schedule type"),
+            pl.col("forecast_demand_version").alias("forecast demand version"),
+            pl.col("demand_type_id").alias("demand type"),
+            pl.col("transmission_id").alias("transmission"),
+            pl.col("transmission_document_id").alias("transmission document"),
+            pl.col("transmission_group_id").alias("transmission group"),
+            pl.col("objective_function_value").alias("objective function value"),
+            pl.col("gas_start_timestamp").alias("gas start"),
+            pl.col("bid_cutoff_timestamp").alias("bid cutoff"),
+            pl.col("creation_timestamp").alias("created"),
+            pl.col("approval_timestamp").alias("approved"),
+            pl.col("source_last_updated_timestamp").alias("source updated"),
+            pl.col("ingested_timestamp").alias("latest ingest"),
+        )
+        .head(max(1, preview_rows))
+    )
+
+
+def schedule_run_empty_state_markdown(load: GasTableLoad | None) -> str:
+    """Return useful empty-state copy for missing or unmatched schedule runs."""
+    table_label = _markdown_breakable_text(
+        "silver.gas_model.silver_gas_fact_schedule_run"
+    )
+    if load is None:
+        status_detail = "The dashboard did not receive a schedule run load result."
+        uri = table_label
+        read_policy = "No read policy was reported."
+    else:
+        if load.error is not None:
+            status_detail = f"Read detail: {_markdown_breakable_text(load.error)}"
+        elif load.dataframe is None or load.dataframe.is_empty():
+            status_detail = "The table loaded successfully but returned no rows."
+        else:
+            status_detail = (
+                "The current filters do not match any loaded schedule run rows."
+            )
+        uri = _markdown_breakable_text(load.uri)
+        read_policy = row_limit_message(load.row_limit)
+
+    return f"""
+    **No schedule run data is available for this view.**
+
+    The dashboard checked {uri}, which should contain {table_label} rows with
+    Gas Day, source system, schedule type, forecast demand version,
+    transmission identifiers, schedule timestamps, and source coverage fields.
+
+    {status_detail}
+
+    {read_policy}
+
+    Materialize or seed the `silver.gas_model` schedule run asset, then use
+    **Refresh data**.
+    """
+
+
+def render_schedule_run_context_links(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render Schedule run dashboard links to Schedule and Settlement context."""
+    candidate_entries = tuple(dashboard_registry() if entries is None else entries)
+    concept_ids = (
+        "gas-schedule-runs",
+        "gas-market-overview",
+        "schedule-context",
+        "gas-day-context",
+        "settlement-context",
+        "gas-model-table-explorer",
+    )
+    rows = "\n".join(
+        _render_schedule_run_context_link(entry)
+        for entry in (
+            registry_entry_by_concept_id(concept_id, candidate_entries)
+            for concept_id in concept_ids
+        )
+        if entry is not None
+    )
+    if rows == "":
+        rows = (
+            '<li class="schedule-run-links__empty">'
+            "No Schedule, Gas Day, or Settlement context entries are registered."
+            "</li>"
+        )
+
+    return f"""\
+<style>
+{_schedule_run_context_links_css()}
+</style>
+<section class="schedule-run-links" aria-label="Schedule run context links">
+    <div>
+        <p class="schedule-run-links__eyebrow">Context links</p>
+        <h2>Schedule run, Gas Day, and Settlement context</h2>
     </div>
     <ul>
 {rows}
@@ -1812,6 +2343,180 @@ def _market_price_context_links_css() -> str:
 
 @media (max-width: 760px) {
     .market-price-links li {
+        grid-template-columns: 1fr;
+    }
+}
+"""
+
+
+def _schedule_run_string_filter_options(
+    load: GasTableLoad | None,
+    column: str,
+    all_label: str,
+) -> tuple[str, ...]:
+    dataframe = _normalised_schedule_run_dataframe(load)
+    if dataframe.is_empty() or column not in dataframe.columns:
+        return (all_label,)
+
+    values = sorted(
+        str(value)
+        for value in dataframe.get_column(column)
+        .drop_nulls()
+        .cast(pl.String, strict=False)
+        .unique()
+        .to_list()
+        if value is not None
+    )
+    return (all_label, *values)
+
+
+def _filtered_schedule_run_dataframe(
+    load: GasTableLoad | None,
+    gas_date_filter: str,
+    source_system_filter: str,
+    schedule_type_filter: str,
+) -> pl.DataFrame:
+    dataframe = _normalised_schedule_run_dataframe(load)
+    if dataframe.is_empty():
+        return dataframe
+
+    filtered = dataframe
+    if gas_date_filter != SCHEDULE_RUN_GAS_DATE_FILTER_ALL:
+        filtered = filtered.filter(
+            pl.col("gas_date").cast(pl.String) == gas_date_filter
+        )
+    if source_system_filter != SCHEDULE_RUN_SOURCE_SYSTEM_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_system") == source_system_filter)
+    if schedule_type_filter != SCHEDULE_RUN_SCHEDULE_TYPE_FILTER_ALL:
+        filtered = filtered.filter(pl.col("schedule_type_id") == schedule_type_filter)
+    return filtered
+
+
+def _normalised_schedule_run_dataframe(load: GasTableLoad | None) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_SCHEDULE_RUN_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _SCHEDULE_RUN_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        pl.col("source_table").cast(pl.String, strict=False),
+        _normalise_date_column(dataframe, "gas_date"),
+        pl.col("transmission_id").cast(pl.String, strict=False),
+        pl.col("transmission_document_id").cast(pl.String, strict=False),
+        pl.col("transmission_group_id").cast(pl.String, strict=False),
+        pl.col("schedule_type_id").cast(pl.String, strict=False),
+        pl.col("forecast_demand_version").cast(pl.String, strict=False),
+        pl.col("demand_type_id").cast(pl.String, strict=False),
+        pl.col("objective_function_value").cast(pl.Float64, strict=False),
+        _normalise_timestamp_column(dataframe, "gas_start_timestamp"),
+        _normalise_timestamp_column(dataframe, "bid_cutoff_timestamp"),
+        _normalise_timestamp_column(dataframe, "creation_timestamp"),
+        _normalise_timestamp_column(dataframe, "approval_timestamp"),
+        pl.col("source_last_updated").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "source_last_updated_timestamp"),
+        pl.col("source_surrogate_key").cast(pl.String, strict=False),
+        pl.col("source_file").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
+def _render_schedule_run_context_link(entry: DashboardRegistryEntry) -> str:
+    status_label = _dashboard_entry_status_label(entry)
+    title = escape(entry.title)
+    route = entry.notebook_route
+    if entry.status.value == "available" and route is not None:
+        title_html = f'<a href="{escape(route, quote=True)}">{title}</a>'
+    else:
+        title_html = f"<span>{title}</span>"
+
+    return f"""\
+        <li data-dashboard-status="{escape(entry.status.value, quote=True)}">
+            {title_html}
+            <span>{escape(status_label)}</span>
+            <code>{escape(entry.concept_id)}</code>
+        </li>"""
+
+
+def _schedule_run_context_links_css() -> str:
+    return """\
+.schedule-run-links {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+}
+
+.schedule-run-links__eyebrow {
+    margin: 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.74rem;
+    font-weight: 720;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.schedule-run-links h2 {
+    margin: 0.15rem 0 0;
+    font-size: 1.05rem;
+}
+
+.schedule-run-links ul {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.schedule-run-links li {
+    display: grid;
+    grid-template-columns: minmax(10rem, 1fr) auto auto;
+    gap: 0.65rem;
+    align-items: center;
+    min-width: 0;
+    padding: 0.55rem 0;
+    border-top: 1px solid var(--emdl-line, #cfdbd6);
+}
+
+.schedule-run-links li:first-child {
+    border-top: 0;
+}
+
+.schedule-run-links a {
+    color: var(--emdl-blue, #166791);
+    font-weight: 720;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+}
+
+.schedule-run-links span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.schedule-run-links li > span:nth-child(2) {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.schedule-run-links code {
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+    .schedule-run-links li {
         grid-template-columns: 1fr;
     }
 }

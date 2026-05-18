@@ -18,6 +18,10 @@ from marimoserver.gas_dashboard import (
     MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
     MARKET_PRICE_TABLE_NAME,
     MARKET_PRICE_TABLE_SPEC,
+    SCHEDULE_RUN_GAS_DATE_FILTER_ALL,
+    SCHEDULE_RUN_SCHEDULE_TYPE_FILTER_ALL,
+    SCHEDULE_RUN_SOURCE_SYSTEM_FILTER_ALL,
+    SCHEDULE_RUN_TABLE_SPEC,
     SYSTEM_NOTICE_CRITICAL_FILTER_ALL,
     SYSTEM_NOTICE_CRITICAL_FILTER_CRITICAL,
     SYSTEM_NOTICE_CRITICAL_FILTER_NON_CRITICAL,
@@ -32,6 +36,7 @@ from marimoserver.gas_dashboard import (
     cached_load_gas_quality_table,
     cached_load_gas_model_tables,
     cached_load_market_price_table,
+    cached_load_schedule_run_table,
     cached_load_system_notice_table,
     discover_dashboard_config,
     gas_quality_empty_state_markdown,
@@ -46,6 +51,7 @@ from marimoserver.gas_dashboard import (
     load_market_price_table,
     load_gas_quality_table,
     load_gas_model_tables,
+    load_schedule_run_table,
     load_system_notice_table,
     market_price_empty_state_markdown,
     market_price_kpi_frame,
@@ -58,6 +64,16 @@ from marimoserver.gas_dashboard import (
     read_parquet_table,
     render_dashboard_context_panel,
     render_market_price_context_links,
+    render_schedule_run_context_links,
+    schedule_run_empty_state_markdown,
+    schedule_run_gas_date_options,
+    schedule_run_kpi_frame,
+    schedule_run_observation_frame,
+    schedule_run_schedule_type_options,
+    schedule_run_source_coverage_frame,
+    schedule_run_source_system_options,
+    schedule_run_timestamp_summary_frame,
+    schedule_run_type_summary_frame,
     system_notice_empty_state_markdown,
     system_notice_kpi_frame,
     system_notice_source_coverage_frame,
@@ -627,6 +643,346 @@ def test_market_price_helpers_cover_missing_data_and_filter_empty_state() -> Non
     assert "current filters do not match" in filtered_markdown
     assert "did not receive a market price load result" in missing_load_markdown
     assert "No Market price or Schedule context entries" in empty_context_links
+    assert "Unavailable dashboard" in unmounted_context_links
+
+
+def test_schedule_run_table_loader_uses_bounded_recent_view() -> None:
+    captured: list[int | None] = []
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "9",
+        }
+    )
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        captured.append(row_limit)
+        assert uri == (
+            "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_fact_schedule_run"
+        )
+        assert storage_options == config.storage_options()
+        return pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 1), date(2024, 1, 3)],
+                "schedule_type_id": ["Older", "Newer"],
+                "approval_timestamp": [
+                    datetime(2024, 1, 1, 6),
+                    datetime(2024, 1, 3, 6),
+                ],
+            }
+        )
+
+    load = load_schedule_run_table(config, reader=reader)
+
+    assert captured == [9]
+    assert load.spec == SCHEDULE_RUN_TABLE_SPEC
+    assert load.row_limit == 9
+    assert load.dataframe is not None
+    assert load.dataframe["schedule_type_id"].to_list() == ["Newer", "Older"]
+
+
+def test_cached_schedule_run_table_loader_reuses_session_cache() -> None:
+    calls: list[int] = []
+    config = _dashboard_config()
+    cache: GasModelSessionCache = {}
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        calls.append(len(calls) + 1)
+        return pl.DataFrame({"schedule_type_id": [f"schedule-{calls[-1]}"]})
+
+    first_load = cached_load_schedule_run_table(config, cache, reader=reader)
+    cached_load = cached_load_schedule_run_table(config, cache, reader=reader)
+    refreshed_load = cached_load_schedule_run_table(
+        config,
+        cache,
+        reader=reader,
+        refresh_token=1,
+    )
+
+    assert calls == [1, 2]
+    assert not first_load.cache_hit
+    assert cached_load.cache_hit
+    assert not refreshed_load.cache_hit
+    assert cached_load.dataframe is not None
+    assert cached_load.dataframe["schedule_type_id"].to_list() == ["schedule-1"]
+    assert refreshed_load.dataframe is not None
+    assert refreshed_load.dataframe["schedule_type_id"].to_list() == ["schedule-2"]
+
+
+def test_schedule_run_summaries_filters_and_context_links() -> None:
+    sttm_table = "silver.sttm.silver_int668_v1_schedule_log_rpt_1"
+    vicgas_table = "silver.vicgas.silver_int108_v4_scheduled_run_log_7_1"
+    load = _schedule_run_load(
+        pl.DataFrame(
+            {
+                "gas_date": ["2024-01-03", "2024-01-02", "2024-01-03"],
+                "source_system": ["STTM", "STTM", "VICGAS"],
+                "source_table": [sttm_table, sttm_table, vicgas_table],
+                "schedule_type_id": ["ex_ante", "provisional", "pricing"],
+                "forecast_demand_version": ["D-1", "D-2", "V1"],
+                "demand_type_id": [None, None, "daily"],
+                "transmission_id": ["S-2", "S-1", "V-1"],
+                "transmission_document_id": ["S-2", "S-1", "VDOC-1"],
+                "transmission_group_id": ["SYD", "ADL", "VIC"],
+                "objective_function_value": [None, None, 42.25],
+                "gas_start_timestamp": [
+                    "2024-01-03 00:00:00",
+                    "2024-01-02 00:00:00",
+                    "2024-01-03 06:00:00",
+                ],
+                "bid_cutoff_timestamp": [
+                    "2024-01-02 12:00:00",
+                    "2024-01-01 12:00:00",
+                    "2024-01-03 03:00:00",
+                ],
+                "creation_timestamp": [
+                    "2024-01-02 13:00:00",
+                    "2024-01-01 13:00:00",
+                    "2024-01-03 04:00:00",
+                ],
+                "approval_timestamp": [
+                    "2024-01-02 14:00:00",
+                    "2024-01-01 14:00:00",
+                    "2024-01-03 09:00:00",
+                ],
+                "source_last_updated_timestamp": [
+                    "2024-01-02 15:00:00",
+                    "2024-01-01 15:00:00",
+                    "2024-01-03 10:00:00",
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 2, 16),
+                    datetime(2024, 1, 1, 16),
+                    datetime(2024, 1, 3, 11),
+                ],
+            }
+        )
+    )
+
+    observations = schedule_run_observation_frame(
+        load,
+        "2024-01-03",
+        "STTM",
+        "ex_ante",
+    )
+    kpis = schedule_run_kpi_frame(load)
+    type_summary = schedule_run_type_summary_frame(load)
+    timestamp_summary = schedule_run_timestamp_summary_frame(load)
+    source_coverage = schedule_run_source_coverage_frame(load)
+    context_links = render_schedule_run_context_links()
+
+    assert schedule_run_gas_date_options(load) == (
+        SCHEDULE_RUN_GAS_DATE_FILTER_ALL,
+        "2024-01-03",
+        "2024-01-02",
+    )
+    assert schedule_run_source_system_options(load) == (
+        SCHEDULE_RUN_SOURCE_SYSTEM_FILTER_ALL,
+        "STTM",
+        "VICGAS",
+    )
+    assert schedule_run_schedule_type_options(load) == (
+        SCHEDULE_RUN_SCHEDULE_TYPE_FILTER_ALL,
+        "ex_ante",
+        "pricing",
+        "provisional",
+    )
+    assert kpis.to_dict(as_series=False) == {
+        "metric": [
+            "Loaded schedule runs",
+            "Schedule types",
+            "Source systems",
+            "Transmissions",
+            "Forecast demand versions",
+            "Latest gas date",
+            "Latest approval",
+        ],
+        "value": [
+            "3",
+            "3",
+            "2",
+            "3",
+            "3",
+            "2024-01-03",
+            "2024-01-03 09:00:00",
+        ],
+        "detail": [
+            "Full table scan",
+            "Distinct schedule_type_id values in the current view",
+            "Distinct source_system values in the current view",
+            "Distinct transmission_id values in the current view",
+            "Distinct forecast_demand_version values represented",
+            "Maximum gas_date in the loaded bounded rows",
+            "Maximum approval_timestamp in the current view",
+        ],
+    }
+    assert observations.select(
+        "gas date",
+        "source system",
+        "source table",
+        "schedule type",
+        "forecast demand version",
+        "transmission",
+        "transmission document",
+        "approved",
+    ).to_dict(as_series=False) == {
+        "gas date": [date(2024, 1, 3)],
+        "source system": ["STTM"],
+        "source table": [sttm_table],
+        "schedule type": ["ex_ante"],
+        "forecast demand version": ["D-1"],
+        "transmission": ["S-2"],
+        "transmission document": ["S-2"],
+        "approved": [datetime(2024, 1, 2, 14)],
+    }
+    assert type_summary.select(
+        "source system",
+        "source table",
+        "schedule type",
+        "forecast demand version",
+        "runs",
+        "transmissions",
+        "latest gas date",
+    ).to_dict(as_series=False) == {
+        "source system": ["STTM", "VICGAS", "STTM"],
+        "source table": [sttm_table, vicgas_table, sttm_table],
+        "schedule type": ["ex_ante", "pricing", "provisional"],
+        "forecast demand version": ["D-1", "V1", "D-2"],
+        "runs": [1, 1, 1],
+        "transmissions": [1, 1, 1],
+        "latest gas date": [date(2024, 1, 3), date(2024, 1, 3), date(2024, 1, 2)],
+    }
+    assert timestamp_summary.select(
+        "gas date",
+        "source system",
+        "schedule type",
+        "runs",
+        "latest approval",
+    ).to_dict(as_series=False) == {
+        "gas date": [date(2024, 1, 3), date(2024, 1, 3), date(2024, 1, 2)],
+        "source system": ["STTM", "VICGAS", "STTM"],
+        "schedule type": ["ex_ante", "pricing", "provisional"],
+        "runs": [1, 1, 1],
+        "latest approval": [
+            datetime(2024, 1, 2, 14),
+            datetime(2024, 1, 3, 9),
+            datetime(2024, 1, 1, 14),
+        ],
+    }
+    assert source_coverage.select(
+        "source system",
+        "source table",
+        "schedule runs",
+        "schedule types",
+        "forecast demand versions",
+        "latest gas date",
+    ).to_dict(as_series=False) == {
+        "source system": ["STTM", "VICGAS"],
+        "source table": [sttm_table, vicgas_table],
+        "schedule runs": [2, 1],
+        "schedule types": [2, 1],
+        "forecast demand versions": [2, 1],
+        "latest gas date": [date(2024, 1, 3), date(2024, 1, 3)],
+    }
+    assert 'href="/marimo/gas_schedule_runs/"' in context_links
+    assert "Schedule Context" in context_links
+    assert "Settlement Context" in context_links
+    assert "Gas Day Context" in context_links
+
+
+def test_schedule_run_helpers_cover_missing_data_and_filter_empty_state() -> None:
+    empty_load = _schedule_run_load(pl.DataFrame(), row_limit=5)
+    populated_load = _schedule_run_load(
+        pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 3)],
+                "source_system": ["STTM"],
+                "source_table": ["silver.sttm.schedule_log"],
+                "schedule_type_id": ["ex_ante"],
+                "forecast_demand_version": ["D-1"],
+                "transmission_id": ["S-2"],
+            }
+        )
+    )
+    missing_date_load = _schedule_run_load(
+        pl.DataFrame(
+            {
+                "source_system": ["STTM"],
+                "source_table": ["silver.sttm.schedule_log"],
+                "schedule_type_id": ["ex_ante"],
+            }
+        )
+    )
+    error_load = GasTableLoad(
+        spec=SCHEDULE_RUN_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_schedule_run",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=5,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+    assert schedule_run_kpi_frame(empty_load).is_empty()
+    assert schedule_run_type_summary_frame(empty_load).is_empty()
+    assert schedule_run_timestamp_summary_frame(empty_load).is_empty()
+    assert schedule_run_source_coverage_frame(empty_load).is_empty()
+    assert schedule_run_observation_frame(empty_load).is_empty()
+    assert schedule_run_gas_date_options(empty_load) == (
+        SCHEDULE_RUN_GAS_DATE_FILTER_ALL,
+    )
+    assert schedule_run_source_system_options(empty_load) == (
+        SCHEDULE_RUN_SOURCE_SYSTEM_FILTER_ALL,
+    )
+    assert schedule_run_schedule_type_options(empty_load) == (
+        SCHEDULE_RUN_SCHEDULE_TYPE_FILTER_ALL,
+    )
+    assert schedule_run_kpi_frame(
+        populated_load,
+        gas_date_filter="2024-01-04",
+    ).is_empty()
+    assert schedule_run_kpi_frame(missing_date_load).row(5, named=True) == {
+        "metric": "Latest gas date",
+        "value": "unknown",
+        "detail": "Maximum gas_date in the loaded bounded rows",
+    }
+
+    empty_markdown = schedule_run_empty_state_markdown(empty_load)
+    error_markdown = schedule_run_empty_state_markdown(error_load)
+    filtered_markdown = schedule_run_empty_state_markdown(populated_load)
+    missing_load_markdown = schedule_run_empty_state_markdown(None)
+    empty_context_links = render_schedule_run_context_links(entries=())
+    unmounted_entry = DashboardRegistryEntry(
+        concept_id="gas-schedule-runs",
+        title="Unmounted Schedule Runs",
+        description="Available entry without a mounted notebook route.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.silver_gas_fact_schedule_run",),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+    unmounted_context_links = render_schedule_run_context_links(
+        entries=(unmounted_entry,)
+    )
+
+    assert "No schedule run data is available" in empty_markdown
+    assert "silver.gas_model.silver_gas_fact_schedule_run" in empty_markdown
+    assert "Bounded preview reads are capped at `5` rows per table" in empty_markdown
+    assert "FileNotFoundError: no parquet files found" in error_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert "did not receive a schedule run load result" in missing_load_markdown
+    assert "No Schedule, Gas Day, or Settlement context entries" in empty_context_links
     assert "Unavailable dashboard" in unmounted_context_links
 
 
@@ -1737,6 +2093,22 @@ def _market_price_load(
     return GasTableLoad(
         spec=MARKET_PRICE_TABLE_SPEC,
         uri=f"s3://bucket/silver/gas_model/{MARKET_PRICE_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _schedule_run_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=SCHEDULE_RUN_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{SCHEDULE_RUN_TABLE_SPEC.table_name}",
         dataframe=dataframe,
         error=None,
         row_limit=row_limit,

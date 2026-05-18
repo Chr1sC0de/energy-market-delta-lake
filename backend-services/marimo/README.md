@@ -15,7 +15,10 @@ Marimo-Codex research workspace image.
 - [Data readiness overview](#data-readiness-overview)
 - [Table explorer](#table-explorer)
 - [Gas market dashboard](#gas-market-dashboard)
+- [Market prices dashboard](#market-prices-dashboard)
+- [Schedule runs dashboard](#schedule-runs-dashboard)
 - [System notices dashboard](#system-notices-dashboard)
+- [Gas quality and composition dashboard](#gas-quality-and-composition-dashboard)
 - [GBB interactive map](#gbb-interactive-map)
 - [Local usage](#local-usage)
 - [Validation](#validation)
@@ -292,6 +295,24 @@ the Marimo registry. Missing market-price data, unavailable Parquet prefixes,
 and filter combinations with no matches render dashboard empty states with the
 checked table, read policy, and refresh action.
 
+## Schedule runs dashboard
+
+[notebooks/gas_schedule_runs.py](notebooks/gas_schedule_runs.py) is an
+analytical dashboard over
+`silver.gas_model.silver_gas_fact_schedule_run`. It uses the shared bounded gas
+model loader and session cache from
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py), then
+filters the loaded bounded preview by Gas Day, `source_system`, and
+`schedule_type_id`.
+
+The dashboard shows loaded schedule-run KPIs, schedule type and transmission
+summaries, forecast demand version coverage, timestamp coverage for gas start,
+bid cutoff, creation, and approval fields, source coverage by source system and
+source table, bounded row previews, and Schedule, Gas Day, and Settlement
+context links from the Marimo registry. Missing schedule-run data, unavailable
+Parquet prefixes, and filter combinations with no matches render dashboard
+empty states with the checked table, read policy, and refresh action.
+
 ## System notices dashboard
 
 [notebooks/system_notices.py](notebooks/system_notices.py) is an operational
@@ -389,8 +410,8 @@ server at a different notebook directory.
 With the local backend stack running, open the Marimo concept gallery through
 Caddy and choose an available card such as `data_readiness_overview`,
 `glossary_explorer`, `table_explorer`, `sample_energy_market`,
-`gas_market_prices`, `system_notices`, `gas_quality_composition`, or
-`gbb_interactive_map`:
+`gas_market_prices`, `gas_schedule_runs`, `system_notices`,
+`gas_quality_composition`, or `gbb_interactive_map`:
 
 ```text
 http://localhost/marimo
@@ -452,6 +473,13 @@ Use the same pattern for the market prices dashboard:
 ```bash
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gas_market_prices.py
+```
+
+Use the same pattern for the schedule runs dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gas_schedule_runs.py
 ```
 
 Use the same pattern for the gas quality and composition dashboard:
@@ -553,6 +581,7 @@ prek run -a
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
+  - `backend-services/marimo/notebooks/gas_schedule_runs.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/marimo/tests/component/conftest.py`
   - `backend-services/marimo/tests/component/test_dashboard_registry.py`

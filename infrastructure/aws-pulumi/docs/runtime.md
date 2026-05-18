@@ -307,6 +307,10 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   readiness without adding AWS write paths. The glossary explorer browses the
   packaged Marimo registry for generated-gold metadata paths, source chunk IDs,
   related concepts, and dashboard states without generated-file or table reads.
+  The gas market prices dashboard reads the curated market price fact through
+  the same bounded helper surface and does not add AWS write paths.
+  The gas schedule runs dashboard reads the curated schedule run fact through
+  the same bounded helper surface and does not add AWS write paths.
   The gas system notices dashboard reads the curated system notice fact through
   the same bounded helper surface and does not add AWS write paths.
   The gas quality and composition dashboard reads the curated gas quality fact
@@ -356,6 +360,7 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
+  - `backend-services/marimo/notebooks/gas_schedule_runs.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/caddy/Dockerfile`
   - `backend-services/caddy/package.json`

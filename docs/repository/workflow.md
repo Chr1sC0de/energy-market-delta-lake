@@ -124,9 +124,9 @@ Local workflow notes:
   data readiness overview is the platform operations first-stop dashboard over
   configured S3 and Dagster GraphQL readiness. The glossary explorer is the
   registry-only Market context browser over generated-gold metadata paths,
-  source chunk IDs, related concepts, and dashboard states. Gas quality and
-  system notice dashboards use shared bounded gas-model reads for fact previews
-  and summaries. The
+  source chunk IDs, related concepts, and dashboard states. Market price,
+  schedule run, gas quality, and system notice dashboards use shared bounded
+  gas-model reads for fact previews and summaries. The
   `marimo-codex-workspace` service is a
   separate localhost-only research service for human-operated notebook
   exploration and issue-draft preparation; deployed Codex execution remains
@@ -255,6 +255,7 @@ and the required `git diff` to `rg` to QA flow, use
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
+  - `backend-services/marimo/notebooks/gas_schedule_runs.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/scripts/aemo-etl-e2e`
   - `infrastructure/aws-pulumi/__main__.py`
