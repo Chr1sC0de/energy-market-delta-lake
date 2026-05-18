@@ -79,6 +79,11 @@ SCHEDULE_RUN_GAS_DATE_FILTER_ALL = "All gas dates"
 SCHEDULE_RUN_SOURCE_SYSTEM_FILTER_ALL = "All source systems"
 SCHEDULE_RUN_SCHEDULE_TYPE_FILTER_ALL = "All schedule types"
 DEFAULT_SCHEDULE_RUN_PREVIEW_ROWS = 50
+SETTLEMENT_ACTIVITY_TABLE_NAME = "silver_gas_fact_settlement_activity"
+SETTLEMENT_ACTIVITY_GAS_DATE_FILTER_ALL = "All gas dates"
+SETTLEMENT_ACTIVITY_SOURCE_SYSTEM_FILTER_ALL = "All source systems"
+SETTLEMENT_ACTIVITY_ACTIVITY_TYPE_FILTER_ALL = "All activity types"
+DEFAULT_SETTLEMENT_ACTIVITY_PREVIEW_ROWS = 50
 BID_STACK_TABLE_NAME = "silver_gas_fact_bid_stack"
 BID_STACK_PARTICIPANT_FILTER_ALL = "All participants"
 BID_STACK_FACILITY_FILTER_ALL = "All facilities"
@@ -215,6 +220,33 @@ SCHEDULE_RUN_TABLE_SPEC = GasTableSpec(
         "approval_timestamp",
     ),
 )
+SETTLEMENT_ACTIVITY_TABLE_SPEC = GasTableSpec(
+    section="Settlement",
+    label="Settlement activity",
+    table_name=SETTLEMENT_ACTIVITY_TABLE_NAME,
+    date_columns=(
+        "gas_date",
+        "source_last_updated_timestamp",
+        "ingested_timestamp",
+    ),
+    preview_columns=(
+        "gas_date",
+        "source_system",
+        "source_table",
+        "settlement_version_id",
+        "activity_type",
+        "schedule_no",
+        "network_name",
+        "participant_name",
+        "amount_gst_ex",
+        "quantity_gj",
+        "percentage",
+        "source_last_updated_timestamp",
+        "source_file",
+        "source_surrogate_key",
+    ),
+)
+SETTLEMENT_ACTIVITY_TABLE_SPECS = (SETTLEMENT_ACTIVITY_TABLE_SPEC,)
 
 BID_STACK_TABLE_SPEC = GasTableSpec(
     section="Bid / Offer",
@@ -587,6 +619,86 @@ _SCHEDULE_RUN_OBSERVATION_SCHEMA = {
     "source updated": pl.Datetime("us"),
     "latest ingest": pl.Datetime("us"),
 }
+_SETTLEMENT_ACTIVITY_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "date_key": pl.String,
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "source_table": pl.String,
+    "gas_date": pl.Date,
+    "settlement_version_id": pl.String,
+    "activity_type": pl.String,
+    "schedule_no": pl.String,
+    "network_name": pl.String,
+    "participant_name": pl.String,
+    "amount_gst_ex": pl.Float64,
+    "quantity_gj": pl.Float64,
+    "percentage": pl.Float64,
+    "source_last_updated": pl.String,
+    "source_last_updated_timestamp": pl.Datetime("us"),
+    "source_surrogate_key": pl.String,
+    "source_file": pl.String,
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_SETTLEMENT_ACTIVITY_KPI_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_SETTLEMENT_ACTIVITY_SUMMARY_SCHEMA = {
+    "source system": pl.String,
+    "source table": pl.String,
+    "activity type": pl.String,
+    "settlement version": pl.String,
+    "rows": pl.UInt32,
+    "gas days": pl.UInt32,
+    "schedules": pl.UInt32,
+    "networks": pl.UInt32,
+    "participants": pl.UInt32,
+    "amount rows": pl.UInt32,
+    "total amount gst ex": pl.Float64,
+    "quantity rows": pl.UInt32,
+    "total quantity gj": pl.Float64,
+    "percentage rows": pl.UInt32,
+    "avg percentage": pl.Float64,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
+}
+_SETTLEMENT_ACTIVITY_SOURCE_COVERAGE_SCHEMA = {
+    "source system": pl.String,
+    "source table": pl.String,
+    "rows": pl.UInt32,
+    "activity types": pl.UInt32,
+    "settlement versions": pl.UInt32,
+    "schedules": pl.UInt32,
+    "networks": pl.UInt32,
+    "participants": pl.UInt32,
+    "amount rows": pl.UInt32,
+    "quantity rows": pl.UInt32,
+    "percentage rows": pl.UInt32,
+    "source files": pl.UInt32,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_SETTLEMENT_ACTIVITY_OBSERVATION_SCHEMA = {
+    "gas date": pl.Date,
+    "source system": pl.String,
+    "source table": pl.String,
+    "settlement version": pl.String,
+    "activity type": pl.String,
+    "schedule": pl.String,
+    "network": pl.String,
+    "participant": pl.String,
+    "amount_gst_ex": pl.Float64,
+    "quantity_gj": pl.Float64,
+    "percentage": pl.Float64,
+    "source updated": pl.Datetime("us"),
+    "source file": pl.String,
+    "source identifier": pl.String,
+    "latest ingest": pl.Datetime("us"),
+}
 _BID_STACK_RAW_SCHEMA = {
     "source_system": pl.String,
     "source_tables": pl.List(pl.String),
@@ -938,6 +1050,42 @@ def cached_load_schedule_run_table(
         config,
         cache,
         specs=(SCHEDULE_RUN_TABLE_SPEC,),
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        refresh_token=refresh_token,
+        clock=clock,
+    )[0]
+
+
+def load_settlement_activity_table(
+    config: GasDashboardConfig,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Load the settlement activity fact through the shared bounded table loader."""
+    return load_gas_model_tables(
+        config,
+        specs=SETTLEMENT_ACTIVITY_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        clock=clock,
+    )[0]
+
+
+def cached_load_settlement_activity_table(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Return session-cached settlement activity data for explicit refreshes."""
+    return cached_load_gas_model_tables(
+        config,
+        cache,
+        specs=SETTLEMENT_ACTIVITY_TABLE_SPECS,
         reader=reader,
         view=GasModelTableView.RECENT,
         refresh_token=refresh_token,
@@ -1847,6 +1995,401 @@ def render_schedule_run_context_links(
     <div>
         <p class="schedule-run-links__eyebrow">Context links</p>
         <h2>Schedule run, Gas Day, and Settlement context</h2>
+    </div>
+    <ul>
+{rows}
+    </ul>
+</section>"""
+
+
+def settlement_activity_gas_date_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return gas-date filter options for loaded settlement activity rows."""
+    dataframe = _normalised_settlement_activity_dataframe(load)
+    if dataframe.is_empty():
+        return (SETTLEMENT_ACTIVITY_GAS_DATE_FILTER_ALL,)
+
+    values = sorted(
+        str(value)
+        for value in dataframe.get_column("gas_date").drop_nulls().unique().to_list()
+        if value is not None
+    )
+    return (SETTLEMENT_ACTIVITY_GAS_DATE_FILTER_ALL, *reversed(values))
+
+
+def settlement_activity_source_system_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return source-system filter options for loaded settlement activity rows."""
+    return _settlement_activity_string_filter_options(
+        load,
+        "source_system",
+        SETTLEMENT_ACTIVITY_SOURCE_SYSTEM_FILTER_ALL,
+    )
+
+
+def settlement_activity_activity_type_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return activity-type filter options for loaded settlement activity rows."""
+    return _settlement_activity_string_filter_options(
+        load,
+        "activity_type",
+        SETTLEMENT_ACTIVITY_ACTIVITY_TYPE_FILTER_ALL,
+    )
+
+
+def settlement_activity_kpi_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = SETTLEMENT_ACTIVITY_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = SETTLEMENT_ACTIVITY_SOURCE_SYSTEM_FILTER_ALL,
+    activity_type_filter: str = SETTLEMENT_ACTIVITY_ACTIVITY_TYPE_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return first-viewport KPIs for loaded settlement activity rows."""
+    dataframe = _filtered_settlement_activity_dataframe(
+        load,
+        gas_date_filter,
+        source_system_filter,
+        activity_type_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_SETTLEMENT_ACTIVITY_KPI_SCHEMA)
+
+    counts = dataframe.select(
+        pl.len().alias("loaded_rows"),
+        pl.col("activity_type").drop_nulls().n_unique().alias("activity_types"),
+        pl.col("source_system").drop_nulls().n_unique().alias("source_systems"),
+        pl.col("settlement_version_id")
+        .drop_nulls()
+        .n_unique()
+        .alias("settlement_versions"),
+        pl.col("schedule_no").drop_nulls().n_unique().alias("schedules"),
+        pl.col("network_name").drop_nulls().n_unique().alias("networks"),
+        pl.col("participant_name").drop_nulls().n_unique().alias("participants"),
+        pl.col("amount_gst_ex").is_not_null().sum().alias("amount_rows"),
+        pl.col("amount_gst_ex").sum().round(4).alias("total_amount"),
+        pl.col("quantity_gj").is_not_null().sum().alias("quantity_rows"),
+        pl.col("quantity_gj").sum().round(4).alias("total_quantity"),
+        pl.col("percentage").is_not_null().sum().alias("percentage_rows"),
+        pl.col("percentage").min().alias("min_percentage"),
+        pl.col("percentage").max().alias("max_percentage"),
+        pl.col("gas_date").max().alias("latest_gas_date"),
+    ).row(0, named=True)
+    row_limit = None if load is None else load.row_limit
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Loaded settlement activity rows",
+                "value": f"{counts['loaded_rows']:,}",
+                "detail": format_row_limit(row_limit),
+            },
+            {
+                "metric": "Activity types",
+                "value": f"{counts['activity_types']:,}",
+                "detail": "Distinct activity_type values in the current view",
+            },
+            {
+                "metric": "Source systems",
+                "value": f"{counts['source_systems']:,}",
+                "detail": "Distinct source_system values in the current view",
+            },
+            {
+                "metric": "Settlement versions",
+                "value": f"{counts['settlement_versions']:,}",
+                "detail": "Distinct settlement_version_id values represented",
+            },
+            {
+                "metric": "Schedules",
+                "value": f"{counts['schedules']:,}",
+                "detail": "Distinct schedule_no values represented",
+            },
+            {
+                "metric": "Networks",
+                "value": f"{counts['networks']:,}",
+                "detail": "Distinct network_name values represented",
+            },
+            {
+                "metric": "Participants",
+                "value": f"{counts['participants']:,}",
+                "detail": "Distinct participant_name values represented",
+            },
+            {
+                "metric": "Amount GST ex",
+                "value": _format_measure_total(
+                    counts["total_amount"],
+                    counts["amount_rows"],
+                ),
+                "detail": (f"{counts['amount_rows']:,} populated amount_gst_ex rows"),
+            },
+            {
+                "metric": "Quantity",
+                "value": _format_measure_total(
+                    counts["total_quantity"],
+                    counts["quantity_rows"],
+                    suffix=" GJ",
+                ),
+                "detail": f"{counts['quantity_rows']:,} populated quantity_gj rows",
+            },
+            {
+                "metric": "Percentage range",
+                "value": _format_measure_range(
+                    counts["min_percentage"],
+                    counts["max_percentage"],
+                    counts["percentage_rows"],
+                ),
+                "detail": f"{counts['percentage_rows']:,} populated percentage rows",
+            },
+            {
+                "metric": "Latest gas date",
+                "value": _format_optional_value(counts["latest_gas_date"]),
+                "detail": "Maximum gas_date in the loaded bounded rows",
+            },
+        ],
+        schema=_SETTLEMENT_ACTIVITY_KPI_SCHEMA,
+    )
+
+
+def settlement_activity_summary_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = SETTLEMENT_ACTIVITY_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = SETTLEMENT_ACTIVITY_SOURCE_SYSTEM_FILTER_ALL,
+    activity_type_filter: str = SETTLEMENT_ACTIVITY_ACTIVITY_TYPE_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return activity, settlement-version, and populated-measure summaries."""
+    dataframe = _filtered_settlement_activity_dataframe(
+        load,
+        gas_date_filter,
+        source_system_filter,
+        activity_type_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_SETTLEMENT_ACTIVITY_SUMMARY_SCHEMA)
+
+    summary = (
+        dataframe.group_by(
+            "source_system",
+            "source_table",
+            "activity_type",
+            "settlement_version_id",
+        )
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("gas_date").drop_nulls().n_unique().alias("gas days"),
+            pl.col("schedule_no").drop_nulls().n_unique().alias("schedules"),
+            pl.col("network_name").drop_nulls().n_unique().alias("networks"),
+            pl.col("participant_name").drop_nulls().n_unique().alias("participants"),
+            pl.col("amount_gst_ex").is_not_null().sum().alias("amount rows"),
+            pl.col("amount_gst_ex").sum().round(4).alias("total amount gst ex"),
+            pl.col("quantity_gj").is_not_null().sum().alias("quantity rows"),
+            pl.col("quantity_gj").sum().round(4).alias("total quantity gj"),
+            pl.col("percentage").is_not_null().sum().alias("percentage rows"),
+            pl.col("percentage").mean().round(4).alias("avg percentage"),
+            pl.col("gas_date").min().alias("first gas date"),
+            pl.col("gas_date").max().alias("latest gas date"),
+        )
+        .sort(
+            [
+                "rows",
+                "latest gas date",
+                "source_system",
+                "activity_type",
+                "settlement_version_id",
+            ],
+            descending=[True, True, False, False, False],
+            nulls_last=True,
+        )
+        .rename(
+            {
+                "source_system": "source system",
+                "source_table": "source table",
+                "activity_type": "activity type",
+                "settlement_version_id": "settlement version",
+            }
+        )
+    )
+    return summary.select([*list(_SETTLEMENT_ACTIVITY_SUMMARY_SCHEMA)])
+
+
+def settlement_activity_source_coverage_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = SETTLEMENT_ACTIVITY_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = SETTLEMENT_ACTIVITY_SOURCE_SYSTEM_FILTER_ALL,
+    activity_type_filter: str = SETTLEMENT_ACTIVITY_ACTIVITY_TYPE_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return source coverage for loaded settlement activity rows."""
+    dataframe = _filtered_settlement_activity_dataframe(
+        load,
+        gas_date_filter,
+        source_system_filter,
+        activity_type_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_SETTLEMENT_ACTIVITY_SOURCE_COVERAGE_SCHEMA)
+
+    return (
+        dataframe.group_by("source_system", "source_table")
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("activity_type").drop_nulls().n_unique().alias("activity types"),
+            pl.col("settlement_version_id")
+            .drop_nulls()
+            .n_unique()
+            .alias("settlement versions"),
+            pl.col("schedule_no").drop_nulls().n_unique().alias("schedules"),
+            pl.col("network_name").drop_nulls().n_unique().alias("networks"),
+            pl.col("participant_name").drop_nulls().n_unique().alias("participants"),
+            pl.col("amount_gst_ex").is_not_null().sum().alias("amount rows"),
+            pl.col("quantity_gj").is_not_null().sum().alias("quantity rows"),
+            pl.col("percentage").is_not_null().sum().alias("percentage rows"),
+            pl.col("source_file").drop_nulls().n_unique().alias("source files"),
+            pl.col("gas_date").min().alias("first gas date"),
+            pl.col("gas_date").max().alias("latest gas date"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort(["rows", "source_table"], descending=[True, False])
+        .rename(
+            {
+                "source_system": "source system",
+                "source_table": "source table",
+            }
+        )
+    )
+
+
+def settlement_activity_observation_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = SETTLEMENT_ACTIVITY_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = SETTLEMENT_ACTIVITY_SOURCE_SYSTEM_FILTER_ALL,
+    activity_type_filter: str = SETTLEMENT_ACTIVITY_ACTIVITY_TYPE_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_SETTLEMENT_ACTIVITY_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return filtered settlement activity observations for bounded preview."""
+    dataframe = _filtered_settlement_activity_dataframe(
+        load,
+        gas_date_filter,
+        source_system_filter,
+        activity_type_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_SETTLEMENT_ACTIVITY_OBSERVATION_SCHEMA)
+
+    return (
+        dataframe.sort(
+            [
+                "gas_date",
+                "source_last_updated_timestamp",
+                "source_system",
+                "activity_type",
+                "settlement_version_id",
+                "schedule_no",
+            ],
+            descending=[True, True, False, False, False, False],
+            nulls_last=True,
+        )
+        .select(
+            pl.col("gas_date").alias("gas date"),
+            pl.col("source_system").alias("source system"),
+            pl.col("source_table").alias("source table"),
+            pl.col("settlement_version_id").alias("settlement version"),
+            pl.col("activity_type").alias("activity type"),
+            pl.col("schedule_no").alias("schedule"),
+            pl.col("network_name").alias("network"),
+            pl.col("participant_name").alias("participant"),
+            pl.col("amount_gst_ex"),
+            pl.col("quantity_gj"),
+            pl.col("percentage"),
+            pl.col("source_last_updated_timestamp").alias("source updated"),
+            pl.col("source_file").alias("source file"),
+            pl.col("source_surrogate_key").alias("source identifier"),
+            pl.col("ingested_timestamp").alias("latest ingest"),
+        )
+        .head(max(1, preview_rows))
+    )
+
+
+def settlement_activity_empty_state_markdown(load: GasTableLoad | None) -> str:
+    """Return useful empty-state copy for missing or unmatched settlement rows."""
+    table_label = _markdown_breakable_text(
+        "silver.gas_model.silver_gas_fact_settlement_activity"
+    )
+    if load is None:
+        status_detail = (
+            "The dashboard did not receive a settlement activity load result."
+        )
+        uri = table_label
+        read_policy = "No read policy was reported."
+    else:
+        if load.error is not None:
+            status_detail = f"Read detail: {_markdown_breakable_text(load.error)}"
+        elif load.dataframe is None or load.dataframe.is_empty():
+            status_detail = "The table loaded successfully but returned no rows."
+        else:
+            status_detail = (
+                "The current filters do not match any loaded settlement activity rows."
+            )
+        uri = _markdown_breakable_text(load.uri)
+        read_policy = row_limit_message(load.row_limit)
+
+    return f"""
+    **No settlement activity data is available for this view.**
+
+    The dashboard checked {uri}, which should contain {table_label} rows with
+    settlement version, activity type, schedule, network, participant, amount,
+    quantity, percentage, Gas Day, source-system, and source-table fields.
+
+    {status_detail}
+
+    {read_policy}
+
+    Materialize or seed the `silver.gas_model` settlement activity asset, then
+    use **Refresh data**.
+    """
+
+
+def render_settlement_activity_context_links(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render Settlement activity links to related Market context panels."""
+    candidate_entries = tuple(dashboard_registry() if entries is None else entries)
+    concept_ids = (
+        "settlement-context",
+        "allocation-context",
+        "participant-context",
+        "gas-day-context",
+        "schedule-context",
+        "gas-model-table-explorer",
+    )
+    rows = "\n".join(
+        _render_settlement_activity_context_link(entry)
+        for entry in (
+            registry_entry_by_concept_id(concept_id, candidate_entries)
+            for concept_id in concept_ids
+        )
+        if entry is not None
+    )
+    if rows == "":
+        rows = (
+            '<li class="settlement-activity-links__empty">'
+            "No Settlement, Allocation, Participant, Gas Day, or Schedule "
+            "context entries are registered."
+            "</li>"
+        )
+
+    return f"""\
+<style>
+{_settlement_activity_context_links_css()}
+</style>
+<section
+    class="settlement-activity-links"
+    aria-label="Settlement activity context links"
+>
+    <div>
+        <p class="settlement-activity-links__eyebrow">Context links</p>
+        <h2>Settlement, Allocation, Participant, Gas Day, and Schedule context</h2>
     </div>
     <ul>
 {rows}
@@ -3086,6 +3629,181 @@ def _schedule_run_context_links_css() -> str:
 """
 
 
+def _settlement_activity_string_filter_options(
+    load: GasTableLoad | None,
+    column: str,
+    all_label: str,
+) -> tuple[str, ...]:
+    dataframe = _normalised_settlement_activity_dataframe(load)
+    if dataframe.is_empty() or column not in dataframe.columns:
+        return (all_label,)
+
+    values = sorted(
+        str(value)
+        for value in dataframe.get_column(column)
+        .drop_nulls()
+        .cast(pl.String, strict=False)
+        .unique()
+        .to_list()
+        if value is not None
+    )
+    return (all_label, *values)
+
+
+def _filtered_settlement_activity_dataframe(
+    load: GasTableLoad | None,
+    gas_date_filter: str,
+    source_system_filter: str,
+    activity_type_filter: str,
+) -> pl.DataFrame:
+    dataframe = _normalised_settlement_activity_dataframe(load)
+    if dataframe.is_empty():
+        return dataframe
+
+    filtered = dataframe
+    if gas_date_filter != SETTLEMENT_ACTIVITY_GAS_DATE_FILTER_ALL:
+        filtered = filtered.filter(
+            pl.col("gas_date").cast(pl.String) == gas_date_filter
+        )
+    if source_system_filter != SETTLEMENT_ACTIVITY_SOURCE_SYSTEM_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_system") == source_system_filter)
+    if activity_type_filter != SETTLEMENT_ACTIVITY_ACTIVITY_TYPE_FILTER_ALL:
+        filtered = filtered.filter(pl.col("activity_type") == activity_type_filter)
+    return filtered
+
+
+def _normalised_settlement_activity_dataframe(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_SETTLEMENT_ACTIVITY_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _SETTLEMENT_ACTIVITY_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("surrogate_key").cast(pl.String, strict=False),
+        pl.col("date_key").cast(pl.String, strict=False),
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        pl.col("source_table").cast(pl.String, strict=False),
+        _normalise_date_column(dataframe, "gas_date"),
+        pl.col("settlement_version_id").cast(pl.String, strict=False),
+        pl.col("activity_type").cast(pl.String, strict=False),
+        pl.col("schedule_no").cast(pl.String, strict=False),
+        pl.col("network_name").cast(pl.String, strict=False),
+        pl.col("participant_name").cast(pl.String, strict=False),
+        pl.col("amount_gst_ex").cast(pl.Float64, strict=False),
+        pl.col("quantity_gj").cast(pl.Float64, strict=False),
+        pl.col("percentage").cast(pl.Float64, strict=False),
+        pl.col("source_last_updated").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "source_last_updated_timestamp"),
+        pl.col("source_surrogate_key").cast(pl.String, strict=False),
+        pl.col("source_file").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
+def _render_settlement_activity_context_link(entry: DashboardRegistryEntry) -> str:
+    status_label = _dashboard_entry_status_label(entry)
+    title = escape(entry.title)
+    route = entry.notebook_route
+    if entry.status.value == "available" and route is not None:
+        title_html = f'<a href="{escape(route, quote=True)}">{title}</a>'
+    else:
+        title_html = f"<span>{title}</span>"
+
+    return f"""\
+        <li data-dashboard-status="{escape(entry.status.value, quote=True)}">
+            {title_html}
+            <span>{escape(status_label)}</span>
+            <code>{escape(entry.concept_id)}</code>
+        </li>"""
+
+
+def _settlement_activity_context_links_css() -> str:
+    return """\
+.settlement-activity-links {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+}
+
+.settlement-activity-links__eyebrow {
+    margin: 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.74rem;
+    font-weight: 720;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.settlement-activity-links h2 {
+    margin: 0.15rem 0 0;
+    font-size: 1.05rem;
+}
+
+.settlement-activity-links ul {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.settlement-activity-links li {
+    display: grid;
+    grid-template-columns: minmax(10rem, 1fr) auto auto;
+    gap: 0.65rem;
+    align-items: center;
+    min-width: 0;
+    padding: 0.55rem 0;
+    border-top: 1px solid var(--emdl-line, #cfdbd6);
+}
+
+.settlement-activity-links li:first-child {
+    border-top: 0;
+}
+
+.settlement-activity-links a {
+    color: var(--emdl-blue, #166791);
+    font-weight: 720;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+}
+
+.settlement-activity-links span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.settlement-activity-links li > span:nth-child(2) {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.settlement-activity-links code {
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+    .settlement-activity-links li {
+        grid-template-columns: 1fr;
+    }
+}
+"""
+
+
 def _bid_stack_string_filter_options(
     load: GasTableLoad | None,
     column: str,
@@ -3493,6 +4211,27 @@ def _format_numeric_range(minimum: object | None, maximum: object | None) -> str
         if minimum is None and maximum is None
         else f"{_format_number(minimum)} to {_format_number(maximum)}"
     )
+
+
+def _format_measure_range(
+    minimum: object | None,
+    maximum: object | None,
+    populated_count: object | None,
+) -> str:
+    if not _is_positive_count(populated_count):
+        return "unknown"
+    return _format_numeric_range(minimum, maximum)
+
+
+def _format_measure_total(
+    value: object | None,
+    populated_count: object | None,
+    *,
+    suffix: str = "",
+) -> str:
+    if not _is_positive_count(populated_count):
+        return "unknown"
+    return f"{_format_number(value)}{suffix}"
 
 
 def _format_quantity(value: object | None) -> str:

@@ -130,8 +130,9 @@ IO-manager buckets. Its data readiness overview gives platform operators a
 first-stop check over those read-only S3 and Dagster GraphQL surfaces. Its
 glossary explorer browses packaged registry metadata without reading generated
 gold Markdown or live S3 tables at runtime. Its market price, schedule run,
-Bid / Offer stack, gas quality, and system notice dashboards use the shared
-bounded gas-model loader for read-only fact previews and summaries. The
+settlement activity, Bid / Offer stack, gas quality, and system notice
+dashboards use the shared bounded gas-model loader for read-only fact previews
+and summaries. The
 Marimo-Codex workspace is
 bound to localhost for human-operated research and
 issue-draft preparation. Deployed Codex execution remains deferred pending
@@ -263,6 +264,7 @@ Gas market knowledge base responsibility:
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
+  - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
 - `sync.scope`: `architecture`

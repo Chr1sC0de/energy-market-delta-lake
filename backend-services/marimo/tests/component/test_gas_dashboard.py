@@ -28,6 +28,11 @@ from marimoserver.gas_dashboard import (
     SCHEDULE_RUN_SCHEDULE_TYPE_FILTER_ALL,
     SCHEDULE_RUN_SOURCE_SYSTEM_FILTER_ALL,
     SCHEDULE_RUN_TABLE_SPEC,
+    SETTLEMENT_ACTIVITY_ACTIVITY_TYPE_FILTER_ALL,
+    SETTLEMENT_ACTIVITY_GAS_DATE_FILTER_ALL,
+    SETTLEMENT_ACTIVITY_SOURCE_SYSTEM_FILTER_ALL,
+    SETTLEMENT_ACTIVITY_TABLE_NAME,
+    SETTLEMENT_ACTIVITY_TABLE_SPEC,
     SYSTEM_NOTICE_CRITICAL_FILTER_ALL,
     SYSTEM_NOTICE_CRITICAL_FILTER_CRITICAL,
     SYSTEM_NOTICE_CRITICAL_FILTER_NON_CRITICAL,
@@ -53,6 +58,7 @@ from marimoserver.gas_dashboard import (
     cached_load_gas_model_tables,
     cached_load_market_price_table,
     cached_load_schedule_run_table,
+    cached_load_settlement_activity_table,
     cached_load_system_notice_table,
     discover_dashboard_config,
     gas_quality_empty_state_markdown,
@@ -69,6 +75,7 @@ from marimoserver.gas_dashboard import (
     load_gas_quality_table,
     load_gas_model_tables,
     load_schedule_run_table,
+    load_settlement_activity_table,
     load_system_notice_table,
     market_price_empty_state_markdown,
     market_price_kpi_frame,
@@ -83,6 +90,7 @@ from marimoserver.gas_dashboard import (
     render_bid_stack_context_links,
     render_market_price_context_links,
     render_schedule_run_context_links,
+    render_settlement_activity_context_links,
     schedule_run_empty_state_markdown,
     schedule_run_gas_date_options,
     schedule_run_kpi_frame,
@@ -92,6 +100,14 @@ from marimoserver.gas_dashboard import (
     schedule_run_source_system_options,
     schedule_run_timestamp_summary_frame,
     schedule_run_type_summary_frame,
+    settlement_activity_activity_type_options,
+    settlement_activity_empty_state_markdown,
+    settlement_activity_gas_date_options,
+    settlement_activity_kpi_frame,
+    settlement_activity_observation_frame,
+    settlement_activity_source_coverage_frame,
+    settlement_activity_source_system_options,
+    settlement_activity_summary_frame,
     system_notice_empty_state_markdown,
     system_notice_kpi_frame,
     system_notice_source_coverage_frame,
@@ -1001,6 +1017,369 @@ def test_schedule_run_helpers_cover_missing_data_and_filter_empty_state() -> Non
     assert "current filters do not match" in filtered_markdown
     assert "did not receive a schedule run load result" in missing_load_markdown
     assert "No Schedule, Gas Day, or Settlement context entries" in empty_context_links
+    assert "Unavailable dashboard" in unmounted_context_links
+
+
+def test_settlement_activity_table_loader_uses_bounded_recent_view() -> None:
+    captured: list[int | None] = []
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "10",
+        }
+    )
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        captured.append(row_limit)
+        assert uri == (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_settlement_activity"
+        )
+        assert storage_options == config.storage_options()
+        return pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 1), date(2024, 1, 3)],
+                "activity_type": ["older", "newer"],
+            }
+        )
+
+    load = load_settlement_activity_table(config, reader=reader)
+
+    assert captured == [10]
+    assert load.spec == SETTLEMENT_ACTIVITY_TABLE_SPEC
+    assert load.row_limit == 10
+    assert load.dataframe is not None
+    assert load.dataframe["activity_type"].to_list() == ["newer", "older"]
+
+
+def test_cached_settlement_activity_table_loader_reuses_session_cache() -> None:
+    calls: list[int] = []
+    config = _dashboard_config()
+    cache: GasModelSessionCache = {}
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        calls.append(len(calls) + 1)
+        return pl.DataFrame({"activity_type": [f"activity-{calls[-1]}"]})
+
+    first_load = cached_load_settlement_activity_table(config, cache, reader=reader)
+    cached_load = cached_load_settlement_activity_table(config, cache, reader=reader)
+    refreshed_load = cached_load_settlement_activity_table(
+        config,
+        cache,
+        reader=reader,
+        refresh_token=1,
+    )
+
+    assert calls == [1, 2]
+    assert not first_load.cache_hit
+    assert cached_load.cache_hit
+    assert not refreshed_load.cache_hit
+    assert cached_load.dataframe is not None
+    assert cached_load.dataframe["activity_type"].to_list() == ["activity-1"]
+    assert refreshed_load.dataframe is not None
+    assert refreshed_load.dataframe["activity_type"].to_list() == ["activity-2"]
+
+
+def test_settlement_activity_summaries_filters_and_context_links() -> None:
+    int312_table = "silver.vicgas.silver_int312_v4_settlements_activity_1"
+    int322_table = "silver.vicgas.silver_int322a_v4_uplift_breakdown_sett_1"
+    sttm_table = "silver.sttm.synthetic_settlement_activity"
+    load = _settlement_activity_load(
+        pl.DataFrame(
+            {
+                "gas_date": ["2024-01-03", "2024-01-02", "2024-01-03"],
+                "source_system": ["VICGAS", "VICGAS", "STTM"],
+                "source_table": [int312_table, int322_table, sttm_table],
+                "settlement_version_id": [None, "V1", "V2"],
+                "activity_type": [
+                    "settlements_activity",
+                    "uplift_breakdown_settlement",
+                    "monthly_cumulative_imbalance_position_long",
+                ],
+                "schedule_no": [None, "SCH-1", None],
+                "network_name": [None, None, "DWGM"],
+                "participant_name": [None, None, "Participant One"],
+                "amount_gst_ex": [100.0, 50.0, None],
+                "quantity_gj": [20.0, None, None],
+                "percentage": [2.5, None, None],
+                "source_last_updated_timestamp": [
+                    "2024-01-03 01:00:00",
+                    "2024-01-02 01:00:00",
+                    "2024-01-03 02:00:00",
+                ],
+                "source_file": ["int312.csv", "int322.csv", "sttm.csv"],
+                "source_surrogate_key": ["src-312", "src-322", "src-sttm"],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 3, 3),
+                    datetime(2024, 1, 2, 3),
+                    datetime(2024, 1, 3, 4),
+                ],
+            }
+        )
+    )
+
+    observations = settlement_activity_observation_frame(
+        load,
+        "2024-01-03",
+        "VICGAS",
+        "settlements_activity",
+    )
+    kpis = settlement_activity_kpi_frame(load)
+    summary = settlement_activity_summary_frame(load)
+    source_coverage = settlement_activity_source_coverage_frame(load)
+    context_links = render_settlement_activity_context_links()
+
+    assert settlement_activity_gas_date_options(load) == (
+        SETTLEMENT_ACTIVITY_GAS_DATE_FILTER_ALL,
+        "2024-01-03",
+        "2024-01-02",
+    )
+    assert settlement_activity_source_system_options(load) == (
+        SETTLEMENT_ACTIVITY_SOURCE_SYSTEM_FILTER_ALL,
+        "STTM",
+        "VICGAS",
+    )
+    assert settlement_activity_activity_type_options(load) == (
+        SETTLEMENT_ACTIVITY_ACTIVITY_TYPE_FILTER_ALL,
+        "monthly_cumulative_imbalance_position_long",
+        "settlements_activity",
+        "uplift_breakdown_settlement",
+    )
+    assert kpis.to_dict(as_series=False) == {
+        "metric": [
+            "Loaded settlement activity rows",
+            "Activity types",
+            "Source systems",
+            "Settlement versions",
+            "Schedules",
+            "Networks",
+            "Participants",
+            "Amount GST ex",
+            "Quantity",
+            "Percentage range",
+            "Latest gas date",
+        ],
+        "value": [
+            "3",
+            "3",
+            "2",
+            "2",
+            "1",
+            "1",
+            "1",
+            "150",
+            "20 GJ",
+            "2.5 to 2.5",
+            "2024-01-03",
+        ],
+        "detail": [
+            "Full table scan",
+            "Distinct activity_type values in the current view",
+            "Distinct source_system values in the current view",
+            "Distinct settlement_version_id values represented",
+            "Distinct schedule_no values represented",
+            "Distinct network_name values represented",
+            "Distinct participant_name values represented",
+            "2 populated amount_gst_ex rows",
+            "1 populated quantity_gj rows",
+            "1 populated percentage rows",
+            "Maximum gas_date in the loaded bounded rows",
+        ],
+    }
+    assert observations.select(
+        "gas date",
+        "source system",
+        "source table",
+        "settlement version",
+        "activity type",
+        "schedule",
+        "network",
+        "participant",
+        "amount_gst_ex",
+        "quantity_gj",
+        "percentage",
+        "source identifier",
+    ).to_dict(as_series=False) == {
+        "gas date": [date(2024, 1, 3)],
+        "source system": ["VICGAS"],
+        "source table": [int312_table],
+        "settlement version": [None],
+        "activity type": ["settlements_activity"],
+        "schedule": [None],
+        "network": [None],
+        "participant": [None],
+        "amount_gst_ex": [100.0],
+        "quantity_gj": [20.0],
+        "percentage": [2.5],
+        "source identifier": ["src-312"],
+    }
+    assert summary.select(
+        "source system",
+        "source table",
+        "activity type",
+        "settlement version",
+        "rows",
+        "schedules",
+        "networks",
+        "participants",
+        "total amount gst ex",
+        "total quantity gj",
+        "avg percentage",
+    ).to_dict(as_series=False) == {
+        "source system": ["STTM", "VICGAS", "VICGAS"],
+        "source table": [sttm_table, int312_table, int322_table],
+        "activity type": [
+            "monthly_cumulative_imbalance_position_long",
+            "settlements_activity",
+            "uplift_breakdown_settlement",
+        ],
+        "settlement version": ["V2", None, "V1"],
+        "rows": [1, 1, 1],
+        "schedules": [0, 0, 1],
+        "networks": [1, 0, 0],
+        "participants": [1, 0, 0],
+        "total amount gst ex": [0.0, 100.0, 50.0],
+        "total quantity gj": [0.0, 20.0, 0.0],
+        "avg percentage": [None, 2.5, None],
+    }
+    assert source_coverage.select(
+        "source system",
+        "source table",
+        "rows",
+        "activity types",
+        "settlement versions",
+        "amount rows",
+        "quantity rows",
+        "percentage rows",
+        "source files",
+    ).to_dict(as_series=False) == {
+        "source system": ["STTM", "VICGAS", "VICGAS"],
+        "source table": [sttm_table, int312_table, int322_table],
+        "rows": [1, 1, 1],
+        "activity types": [1, 1, 1],
+        "settlement versions": [1, 0, 1],
+        "amount rows": [0, 1, 1],
+        "quantity rows": [0, 1, 0],
+        "percentage rows": [0, 1, 0],
+        "source files": [1, 1, 1],
+    }
+    assert 'href="/marimo/gas_settlement_activity/"' in context_links
+    assert "Settlement Context" in context_links
+    assert "Allocation Context" in context_links
+    assert "Participant Context" in context_links
+    assert "Gas Day Context" in context_links
+
+
+def test_settlement_activity_helpers_cover_missing_data_and_filter_empty_state() -> (
+    None
+):
+    empty_load = _settlement_activity_load(pl.DataFrame(), row_limit=5)
+    populated_load = _settlement_activity_load(
+        pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 3)],
+                "source_system": ["VICGAS"],
+                "source_table": ["silver.vicgas.settlement_activity"],
+                "activity_type": ["settlements_activity"],
+                "amount_gst_ex": [100.0],
+            }
+        )
+    )
+    missing_date_load = _settlement_activity_load(
+        pl.DataFrame(
+            {
+                "source_system": ["VICGAS"],
+                "source_table": ["silver.vicgas.settlement_activity"],
+                "activity_type": ["settlements_activity"],
+                "amount_gst_ex": [100.0],
+            }
+        )
+    )
+    no_measure_load = _settlement_activity_load(
+        pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 3)],
+                "source_system": ["VICGAS"],
+                "activity_type": ["settlements_activity"],
+            }
+        )
+    )
+    error_load = GasTableLoad(
+        spec=SETTLEMENT_ACTIVITY_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_settlement_activity",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=5,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+    assert settlement_activity_kpi_frame(empty_load).is_empty()
+    assert settlement_activity_summary_frame(empty_load).is_empty()
+    assert settlement_activity_source_coverage_frame(empty_load).is_empty()
+    assert settlement_activity_observation_frame(empty_load).is_empty()
+    assert settlement_activity_gas_date_options(empty_load) == (
+        SETTLEMENT_ACTIVITY_GAS_DATE_FILTER_ALL,
+    )
+    assert settlement_activity_source_system_options(empty_load) == (
+        SETTLEMENT_ACTIVITY_SOURCE_SYSTEM_FILTER_ALL,
+    )
+    assert settlement_activity_activity_type_options(empty_load) == (
+        SETTLEMENT_ACTIVITY_ACTIVITY_TYPE_FILTER_ALL,
+    )
+    assert settlement_activity_kpi_frame(
+        populated_load,
+        gas_date_filter="2024-01-04",
+    ).is_empty()
+    assert settlement_activity_kpi_frame(missing_date_load).row(10, named=True) == {
+        "metric": "Latest gas date",
+        "value": "unknown",
+        "detail": "Maximum gas_date in the loaded bounded rows",
+    }
+    assert settlement_activity_kpi_frame(no_measure_load).row(7, named=True) == {
+        "metric": "Amount GST ex",
+        "value": "unknown",
+        "detail": "0 populated amount_gst_ex rows",
+    }
+
+    empty_markdown = settlement_activity_empty_state_markdown(empty_load)
+    error_markdown = settlement_activity_empty_state_markdown(error_load)
+    filtered_markdown = settlement_activity_empty_state_markdown(populated_load)
+    missing_load_markdown = settlement_activity_empty_state_markdown(None)
+    empty_context_links = render_settlement_activity_context_links(entries=())
+    unmounted_entry = DashboardRegistryEntry(
+        concept_id="settlement-context",
+        title="Unmounted Settlement",
+        description="Available entry without a mounted notebook route.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.silver_gas_fact_settlement_activity",),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+    unmounted_context_links = render_settlement_activity_context_links(
+        entries=(unmounted_entry,)
+    )
+
+    assert "No settlement activity data is available" in empty_markdown
+    assert "silver.gas_model.silver_gas_fact_settlement_activity" in empty_markdown
+    assert "Bounded preview reads are capped at `5` rows per table" in empty_markdown
+    assert "FileNotFoundError: no parquet files found" in error_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert "did not receive a settlement activity load result" in missing_load_markdown
+    assert "No Settlement, Allocation, Participant, Gas Day, or Schedule" in (
+        empty_context_links
+    )
     assert "Unavailable dashboard" in unmounted_context_links
 
 
@@ -2448,6 +2827,22 @@ def _gas_quality_load(
     return GasTableLoad(
         spec=GAS_QUALITY_TABLE_SPEC,
         uri=f"s3://bucket/silver/gas_model/{GAS_QUALITY_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _settlement_activity_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=SETTLEMENT_ACTIVITY_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{SETTLEMENT_ACTIVITY_TABLE_NAME}",
         dataframe=dataframe,
         error=None,
         row_limit=row_limit,

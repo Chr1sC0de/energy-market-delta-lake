@@ -57,6 +57,19 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         in schedule_runs.generated_gold_paths
     )
 
+    settlement = registry_entry_by_concept_id("settlement-context", entries)
+    assert settlement is not None
+    assert settlement.status is DashboardStatus.AVAILABLE
+    assert settlement.notebook_name == "gas_settlement_activity"
+    assert settlement.notebook_route == "/marimo/gas_settlement_activity/"
+    assert settlement.backing_assets == (
+        "silver.gas_model.silver_gas_fact_settlement_activity",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/settlement.md"
+        in settlement.generated_gold_paths
+    )
+
     readiness = registry_entry_by_concept_id("data-readiness-overview", entries)
     assert readiness is not None
     assert readiness.status is DashboardStatus.AVAILABLE

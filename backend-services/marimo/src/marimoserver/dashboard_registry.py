@@ -496,16 +496,15 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "concept_id": "settlement-context",
         "title": "Settlement Context",
         "description": (
-            "Planned concept panel for settlement components, activities, "
-            "market settlements, and capacity settlement amounts."
+            "Available analytical dashboard for settlement activities, "
+            "versions, activity types, schedules, networks, participants, "
+            "amounts, quantities, percentages, Gas Day filters, and source "
+            "coverage from the curated settlement activity fact."
         ),
         "audiences": ("analyst", "stakeholder"),
-        "status": "planned",
-        "backing_assets": (
-            "silver.gas_model.silver_gas_fact_sttm_market_settlement",
-            "silver.gas_model.silver_gas_fact_sttm_capacity_settlement",
-            "silver.gas_model.silver_gas_fact_settlement_activity",
-        ),
+        "status": "available",
+        "notebook_name": "gas_settlement_activity",
+        "backing_assets": ("silver.gas_model.silver_gas_fact_settlement_activity",),
         "generated_gold_paths": (
             "tools/gas-market-knowledge-base/generated/gold/glossary/settlement.md",
         ),
