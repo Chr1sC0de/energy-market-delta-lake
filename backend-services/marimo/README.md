@@ -224,9 +224,12 @@ gas days use `silver_gas_fact_nomination_forecast`. Capacity comes from
 materialized inputs; the notebook shows a compact input warning, keeps the
 table-level diagnostics in an accordion, and falls back to standing pipeline
 metadata. The map uses the shared bounded `silver.gas_model` loader policy, so
-AWS-mode reads are capped by `MARIMO_MAX_PREVIEW_ROWS`. Direct notebook runs
-preflight the local S3 endpoint so an offline LocalStack instance becomes a
-fast degraded state instead of six slow table read attempts.
+AWS-mode reads are capped by `MARIMO_MAX_PREVIEW_ROWS`. For date-sensitive GBB
+fact tables, the selected gas day is applied before the preview cap so bounded
+AWS reads can still populate actual flow, nomination forecast, and capacity
+outlook views when matching rows exist. Direct notebook runs preflight the
+local S3 endpoint so an offline LocalStack instance becomes a fast degraded
+state instead of six slow table read attempts.
 
 During development, keep the notebook pointed at LocalStack and hydrate the
 required `silver/gas_model` table prefixes there instead of reading live S3 from

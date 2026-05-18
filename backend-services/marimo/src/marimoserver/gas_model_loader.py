@@ -133,12 +133,15 @@ def read_parquet_table(
     uri: str,
     storage_options: Mapping[str, str],
     row_limit: int | None = None,
+    filter_expression: pl.Expr | None = None,
 ) -> pl.DataFrame:
     """Read one gas_model Parquet prefix using Polars storage options."""
     scan = pl.scan_parquet(
         _parquet_dataset_glob(uri),
         storage_options=dict(storage_options),
     )
+    if filter_expression is not None:
+        scan = scan.filter(filter_expression)
     if row_limit is not None:
         scan = scan.head(row_limit)
     return scan.collect()

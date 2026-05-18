@@ -13,8 +13,11 @@ from plotly.graph_objs._scattergeo import Scattergeo
 import plotly.io as pio
 import polars as pl
 
-from marimoserver.gas_dashboard import GasDashboardConfig
-from marimoserver.gas_model_loader import bounded_row_limit, read_parquet_table
+from marimoserver.gas_model_loader import (
+    GasModelReadConfig,
+    bounded_row_limit,
+    read_parquet_table,
+)
 
 AEMO_GBB_INTERACTIVE_MAP_URL = (
     "https://www.aemo.com.au/energy-systems/gas/gas-bulletin-board-gbb/"
@@ -459,14 +462,14 @@ def check_gbb_map_s3_endpoint(storage_options: Mapping[str, str]) -> str | None:
 
 
 def load_gbb_map_tables(
-    config: GasDashboardConfig,
+    config: GasModelReadConfig,
     specs: Sequence[GbbMapTableSpec] = GBB_MAP_TABLES,
     reader: TableReader | None = None,
     endpoint_checker: EndpointChecker | None = None,
+    gas_date: date | None = None,
 ) -> list[GbbMapTableLoad]:
     """Load configured map input tables, returning unavailable entries on errors."""
     storage_options = config.storage_options()
-    table_reader = read_gbb_map_table if reader is None else reader
     endpoint_error = None
     if endpoint_checker is not None:
         endpoint_error = endpoint_checker(storage_options)
@@ -487,7 +490,16 @@ def load_gbb_map_tables(
     for spec in specs:
         uri = config.table_uri(spec.table_name)
         try:
-            dataframe = table_reader(uri, storage_options, row_limit)
+            if reader is None:
+                dataframe = read_gbb_map_table(
+                    uri,
+                    storage_options,
+                    row_limit,
+                    table_name=spec.table_name,
+                    gas_date=gas_date,
+                )
+            else:
+                dataframe = reader(uri, storage_options, row_limit)
         except Exception as error:
             loads.append(
                 GbbMapTableLoad(
@@ -515,9 +527,37 @@ def read_gbb_map_table(
     uri: str,
     storage_options: Mapping[str, str],
     row_limit: int | None = None,
+    *,
+    table_name: str | None = None,
+    gas_date: date | None = None,
 ) -> pl.DataFrame:
     """Read a GBB map table stored as a gas_model parquet prefix."""
-    return read_parquet_table(uri, storage_options, row_limit=row_limit)
+    filter_expression = _gas_day_filter_expression(table_name, gas_date)
+    if filter_expression is None:
+        return read_parquet_table(uri, storage_options, row_limit=row_limit)
+    return read_parquet_table(
+        uri,
+        storage_options,
+        row_limit=row_limit,
+        filter_expression=filter_expression,
+    )
+
+
+def _gas_day_filter_expression(
+    table_name: str | None,
+    gas_date: date | None,
+) -> pl.Expr | None:
+    if gas_date is None:
+        return None
+    if table_name == "silver_gas_fact_facility_flow_storage":
+        return pl.col("gas_date") == gas_date
+    if table_name == "silver_gas_fact_nomination_forecast":
+        return (pl.col("source_system") == "GBB") & (pl.col("gas_date") == gas_date)
+    if table_name == "silver_gas_fact_capacity_outlook":
+        return (
+            pl.col("from_gas_date").is_null() | (pl.col("from_gas_date") <= gas_date)
+        ) & (pl.col("to_gas_date").is_null() | (pl.col("to_gas_date") >= gas_date))
+    return None
 
 
 def build_gbb_map_model(
