@@ -92,6 +92,19 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert DashboardAudience.OPERATOR in readiness.audiences
     assert DashboardAudience.DATA_ENGINEER in readiness.audiences
 
+    bounded_read = registry_entry_by_concept_id(
+        "aws-bounded-read-diagnostics",
+        entries,
+    )
+    assert bounded_read is not None
+    assert bounded_read.status is DashboardStatus.AVAILABLE
+    assert bounded_read.notebook_name == "aws_bounded_read_diagnostics"
+    assert bounded_read.notebook_route == "/marimo/aws_bounded_read_diagnostics/"
+    assert bounded_read.backing_assets == ()
+    assert DashboardAudience.PLATFORM_OPERATIONS in bounded_read.audiences
+    assert DashboardAudience.OPERATOR in bounded_read.audiences
+    assert DashboardAudience.DATA_ENGINEER in bounded_read.audiences
+
     catalogue_status = registry_entry_by_concept_id(
         "dagster-asset-catalogue-status",
         entries,

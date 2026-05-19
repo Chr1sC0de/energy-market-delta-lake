@@ -227,11 +227,12 @@ Useful routes:
 - `/dagster-webserver/guest` for the guest Dagster UI
 - `/dagster-webserver/admin` for the protected admin Dagster UI
 - `/marimo` for curated Marimo dashboards through Caddy, including the table
-  explorer, data readiness overview, market prices, schedule runs, settlement
-  activity, customer transfer and retail activity, system notices, Bid / Offer
-  stack, and gas quality and composition dashboard. The table explorer lists
-  the Dagster table asset catalogue, filters by group, layer or domain, status,
-  and search text, and previews only materialized tables.
+  explorer, data readiness overview, AWS bounded-read diagnostics, market
+  prices, schedule runs, settlement activity, customer transfer and retail
+  activity, system notices, Bid / Offer stack, and gas quality and composition
+  dashboard. The table explorer lists the Dagster table asset catalogue, filters
+  by group, layer or domain, status, and search text, and previews only
+  materialized tables.
 - `http://127.0.0.1:2719` for the local-only Marimo-Codex research workspace
 
 The `aemo-etl` code location should appear in Dagster under
@@ -780,11 +781,13 @@ developer-stack setting. It renders e2e Dagster config per run from the current
   - `backend-services/marimo/src/marimoserver/dagster_graphql.py`
   - `backend-services/marimo/src/marimoserver/dashboard_registry.py`
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
+  - `backend-services/marimo/src/marimoserver/bounded_read_diagnostics.py`
   - `backend-services/marimo/src/marimoserver/data_readiness.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/source_coverage_matrix.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
+  - `backend-services/marimo/notebooks/aws_bounded_read_diagnostics.py`
   - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
   - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/system_notices.py`

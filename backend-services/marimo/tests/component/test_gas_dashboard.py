@@ -8,6 +8,7 @@ from typing import Self
 import polars as pl
 import pytest
 
+from marimoserver.bounded_read_diagnostics import dashboard_read_behavior_frame
 from marimoserver.gas_dashboard import (
     BID_STACK_FACILITY_FILTER_ALL,
     BID_STACK_PARTICIPANT_FILTER_ALL,
@@ -167,6 +168,7 @@ from marimoserver.dagster_graphql import DagsterTableAsset
 from marimoserver.table_explorer import (
     CataloguedTable,
     TableAvailability,
+    discover_table_explorer_config,
     TableFormat,
     TablePrefix,
 )
@@ -311,6 +313,84 @@ def test_discover_dashboard_config_accepts_runtime_overrides() -> None:
     assert config.aws_runtime is True
     assert config.max_preview_rows == 100
     assert config.full_table_scan_enabled is True
+
+
+def test_dashboard_read_behavior_frame_renders_per_dashboard_policy() -> None:
+    environment = {
+        "DEVELOPMENT_LOCATION": "aws",
+        "AEMO_BUCKET": "prod-energy-market-aemo",
+        "MARIMO_TABLE_BUCKETS": "prod-energy-market-aemo, prod-energy-market-io",
+        "MARIMO_MAX_PREVIEW_ROWS": "42",
+    }
+    gas_config = discover_dashboard_config(environment)
+    table_config = discover_table_explorer_config(environment)
+
+    rows = {
+        row["dashboard"]: row
+        for row in dashboard_read_behavior_frame(gas_config, table_config).to_dicts()
+    }
+
+    assert rows["AWS Bounded Read Diagnostics"]["read behavior"] == (
+        "Configuration and registry metadata only"
+    )
+    assert rows["AWS Bounded Read Diagnostics"]["row policy"] == "No table-row reads"
+    assert rows["S3 Bucket Health"]["view"] == "Object listing"
+    assert rows["S3 Bucket Health"]["row policy"] == "10,000 objects per bucket"
+    assert rows["Gas Model Table Explorer"]["row policy"] == (
+        "Bounded preview: 42 rows max"
+    )
+    assert rows["Gas Market Prices"]["view"] == "Recent-only bounded view"
+    assert rows["Gas Market Prices"]["row policy"] == ("Bounded preview: 42 rows max")
+    assert rows["Source Coverage Matrix"]["view"] == "Forced bounded sample"
+    assert rows["Source Coverage Matrix"]["row policy"] == (
+        "Bounded preview: 42 rows max"
+    )
+
+
+def test_dashboard_read_behavior_frame_handles_unknown_available_dashboard() -> None:
+    gas_config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "MARIMO_MAX_PREVIEW_ROWS": "33",
+        }
+    )
+    table_config = discover_table_explorer_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "MARIMO_TABLE_BUCKETS": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "33",
+        }
+    )
+    custom_entry = DashboardRegistryEntry(
+        concept_id="custom-dashboard",
+        title="Custom Dashboard",
+        description="Custom available dashboard.",
+        audiences=(DashboardAudience.OPERATOR,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name="custom_dashboard",
+        backing_assets=(),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+
+    rows = dashboard_read_behavior_frame(
+        gas_config,
+        table_config,
+        entries=(custom_entry,),
+    ).to_dicts()
+
+    assert rows == [
+        {
+            "dashboard": "Custom Dashboard",
+            "route": "/marimo/custom_dashboard/",
+            "audience": "operator",
+            "read behavior": "Dashboard-specific read behavior",
+            "view": "See dashboard",
+            "row policy": "Bounded preview: 33 rows max",
+            "scope": "(none configured)",
+            "side effects": "Read-only",
+        }
+    ]
 
 
 def test_gas_model_specs_cover_required_dashboard_sections() -> None:

@@ -38,7 +38,13 @@ ROADMAP_AUDIENCES: tuple[DashboardAudience, ...] = (
 type DashboardRegistryRecord = Mapping[str, object]
 
 _MISSING = object()
-_REGISTRY_BACKED_CONCEPT_IDS = frozenset({"glossary-explorer", "s3-bucket-health"})
+_REGISTRY_BACKED_CONCEPT_IDS = frozenset(
+    {
+        "aws-bounded-read-diagnostics",
+        "glossary-explorer",
+        "s3-bucket-health",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -313,6 +319,21 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_connection_point_flow",
             "silver.gas_model.silver_gas_fact_capacity_outlook",
         ),
+        "generated_gold_paths": (),
+        "source_chunk_ids": (),
+    },
+    {
+        "concept_id": "aws-bounded-read-diagnostics",
+        "title": "AWS Bounded Read Diagnostics",
+        "description": (
+            "Available platform operations diagnostic view for runtime location, "
+            "endpoint mode, configured buckets, preview row caps, full-table-scan "
+            "state, and per-dashboard bounded-read behavior."
+        ),
+        "audiences": ("platform-operations", "operator", "data-engineer"),
+        "status": "available",
+        "notebook_name": "aws_bounded_read_diagnostics",
+        "backing_assets": (),
         "generated_gold_paths": (),
         "source_chunk_ids": (),
     },

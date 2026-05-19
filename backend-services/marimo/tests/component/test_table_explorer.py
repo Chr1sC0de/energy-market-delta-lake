@@ -8,6 +8,13 @@ import polars as pl
 import pytest
 
 from marimoserver import table_explorer as explorer
+from marimoserver.bounded_read_diagnostics import (
+    bounded_read_runtime_frame,
+    bounded_read_state_frame,
+    endpoint_mode_label,
+    render_bounded_read_summary_cards,
+)
+from marimoserver.gas_dashboard import discover_dashboard_config
 from marimoserver.table_explorer import (
     AssetCatalogueState,
     DEFAULT_LOCAL_BUCKETS,
@@ -247,6 +254,81 @@ def test_discover_table_explorer_config_uses_aws_bucket_fallbacks() -> None:
     )
     assert config.max_preview_rows == 100
     assert config.full_table_scan_enabled is True
+
+
+def test_bounded_read_diagnostics_render_local_runtime_configuration() -> None:
+    gas_config = discover_dashboard_config({})
+    table_config = discover_table_explorer_config({})
+
+    runtime_rows = {
+        row["setting"]: row
+        for row in bounded_read_runtime_frame(gas_config, table_config).to_dicts()
+    }
+    state_rows = {
+        row["state"]: row
+        for row in bounded_read_state_frame(gas_config, table_config).to_dicts()
+    }
+    summary_html = render_bounded_read_summary_cards(gas_config, table_config)
+
+    assert endpoint_mode_label(table_config) == "S3-compatible endpoint override"
+    assert runtime_rows["Runtime location"]["value"] == "local"
+    assert runtime_rows["Configured buckets"]["value"] == ", ".join(
+        DEFAULT_LOCAL_BUCKETS
+    )
+    assert runtime_rows["Table preview row cap"]["value"] == "10,000"
+    assert runtime_rows["Gas dashboard preview row cap"]["value"] == "100"
+    assert runtime_rows["Full-table-scan flag"]["value"] == "True"
+    assert runtime_rows["Active table explorer policy"]["value"] == "Full table scan"
+    assert runtime_rows["Active gas dashboard policy"]["value"] == "Full table scan"
+    assert state_rows["Bounded preview"]["active"] == "False"
+    assert state_rows["Full table scan"]["active"] == "True"
+    assert "local" in summary_html
+    assert "Full table scan" in summary_html
+    assert "S3-compatible endpoint override" in summary_html
+
+
+def test_bounded_read_diagnostics_render_aws_runtime_configuration() -> None:
+    environment = {
+        "DEVELOPMENT_LOCATION": "aws",
+        "AEMO_BUCKET": "prod-energy-market-aemo",
+        "MARIMO_TABLE_BUCKETS": "prod-energy-market-aemo, prod-energy-market-io",
+        "MARIMO_MAX_PREVIEW_ROWS": "125",
+        "MARIMO_FULL_TABLE_SCAN_ENABLED": "false",
+        "AWS_DEFAULT_REGION": "ap-southeast-2",
+    }
+    gas_config = discover_dashboard_config(environment)
+    table_config = discover_table_explorer_config(environment)
+
+    runtime_rows = {
+        row["setting"]: row
+        for row in bounded_read_runtime_frame(gas_config, table_config).to_dicts()
+    }
+    state_rows = {
+        row["state"]: row
+        for row in bounded_read_state_frame(gas_config, table_config).to_dicts()
+    }
+    summary_html = render_bounded_read_summary_cards(gas_config, table_config)
+
+    assert endpoint_mode_label(table_config) == "AWS service endpoints"
+    assert runtime_rows["Runtime location"]["value"] == "aws"
+    assert runtime_rows["Endpoint mode"]["value"] == "AWS service endpoints"
+    assert runtime_rows["Configured buckets"]["value"] == (
+        "prod-energy-market-aemo, prod-energy-market-io"
+    )
+    assert runtime_rows["Gas model AEMO bucket"]["value"] == "prod-energy-market-aemo"
+    assert runtime_rows["Table preview row cap"]["value"] == "125"
+    assert runtime_rows["Gas dashboard preview row cap"]["value"] == "125"
+    assert runtime_rows["Full-table-scan flag"]["value"] == "False"
+    assert runtime_rows["Active table explorer policy"]["value"] == (
+        "Bounded preview: 125 rows max"
+    )
+    assert runtime_rows["Active gas dashboard policy"]["value"] == (
+        "Bounded preview: 125 rows max"
+    )
+    assert state_rows["Bounded preview"]["active"] == "True"
+    assert state_rows["Full table scan"]["active"] == "False"
+    assert "AWS service endpoints" in summary_html
+    assert "Bounded preview: 125 rows max" in summary_html
 
 
 def test_create_s3_client_uses_configured_endpoint(

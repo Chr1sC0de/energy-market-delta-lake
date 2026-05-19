@@ -13,6 +13,7 @@ Marimo-Codex research workspace image.
 - [Dashboard registry](#dashboard-registry)
 - [Glossary explorer](#glossary-explorer)
 - [Data readiness overview](#data-readiness-overview)
+- [AWS bounded read diagnostics](#aws-bounded-read-diagnostics)
 - [Dagster asset catalogue status](#dagster-asset-catalogue-status)
 - [S3 bucket health](#s3-bucket-health)
 - [Table explorer](#table-explorer)
@@ -139,6 +140,11 @@ metadata, related concepts, generated-gold paths, source chunk IDs, and backing
 Markdown at runtime. The available roadmap notebooks call it with their
 registry concept IDs near the top of the notebook.
 
+[src/marimoserver/bounded_read_diagnostics.py](src/marimoserver/bounded_read_diagnostics.py)
+renders the AWS bounded-read diagnostic surface from environment-derived
+Marimo config and registry metadata only. It does not call S3 or Dagster
+GraphQL at runtime.
+
 ## Glossary explorer
 
 [notebooks/glossary_explorer.py](notebooks/glossary_explorer.py) is the
@@ -175,6 +181,22 @@ GraphQL, and bounded AWS preview mode render as empty or degraded dashboard
 states with operator actions rather than notebook tracebacks. Use the Gas Model
 Table Explorer when a readiness row needs schema, rows, column metadata, or a
 bounded storage preview.
+
+## AWS bounded read diagnostics
+
+[notebooks/aws_bounded_read_diagnostics.py](notebooks/aws_bounded_read_diagnostics.py)
+is the platform operations diagnostic dashboard for deployed bounded-read
+policy. It reuses
+[src/marimoserver/bounded_read_diagnostics.py](src/marimoserver/bounded_read_diagnostics.py),
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py), and
+[src/marimoserver/table_explorer.py](src/marimoserver/table_explorer.py)
+instead of adding new storage access paths.
+
+The dashboard shows runtime location, endpoint mode, configured buckets, AEMO
+gas-model bucket, preview row caps, `MARIMO_FULL_TABLE_SCAN_ENABLED`, active
+row policy, bounded-read state explanations, and per-dashboard read behavior.
+It is read-only config and registry metadata: it does not scan S3 tables, call
+Dagster GraphQL, write data, or auto-refresh.
 
 ## Dagster asset catalogue status
 
@@ -592,6 +614,13 @@ cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/dagster_asset_catalogue_status.py
 ```
 
+Use the same pattern for the AWS bounded read diagnostics dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/aws_bounded_read_diagnostics.py
+```
+
 Use the same pattern for the S3 bucket health dashboard:
 
 ```bash
@@ -740,6 +769,7 @@ prek run -a
   - `backend-services/marimo/scripts/sync-gbb-map-s3-to-localstack.sh`
   - `backend-services/marimo/research-workspace/AGENTS.md`
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
+  - `backend-services/marimo/src/marimoserver/bounded_read_diagnostics.py`
   - `backend-services/marimo/src/marimoserver/gas_model_loader.py`
   - `backend-services/marimo/src/marimoserver/gbb_interactive_map.py`
   - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
@@ -752,6 +782,7 @@ prek run -a
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/source_coverage_matrix.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
+  - `backend-services/marimo/notebooks/aws_bounded_read_diagnostics.py`
   - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
   - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
