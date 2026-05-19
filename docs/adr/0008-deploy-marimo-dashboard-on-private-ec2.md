@@ -30,6 +30,11 @@ dashboard metadata, including generated-gold paths and source chunk IDs, but the
 deployed service does not read Gas market knowledge base generated files at
 runtime.
 
+The curated image includes an S3 Bucket Health dashboard for configured
+S3-compatible bucket reachability, object scans, truncation, bucket errors, and
+Delta or Parquet table-prefix discovery. AWS mode checks the configured buckets
+only and does not require account-wide S3 bucket listing permission.
+
 The `/marimo` entry route renders the same registry as a concept gallery hub.
 Available dashboard cards link to mounted notebook routes, while planned
 dashboard cards stay visible without notebook links. Registry-only notebooks
@@ -85,12 +90,36 @@ image contents. Adding or updating registry metadata does not require a
 separate Docker build context and does not add AWS write paths.
 The glossary explorer stays inside the same boundary: it reads the packaged
 registry constants, not generated gold Markdown or live S3 tables.
+The concept-to-asset explorer stays inside that registry-only boundary. It maps
+Market context glossary concepts to registry backing assets, available
+dashboard routes, planned concept-gallery cards, and table explorer deep links
+without reading table rows, opening generated gold Markdown, or changing S3,
+Dagster, ETL, or AWS permissions.
 
 The data readiness overview remains within that read-only dashboard boundary.
 It reuses the existing S3 discovery, Dagster GraphQL catalogue, and bounded-read
 helper surfaces to show platform operations readiness without changing Dagster
 asset definitions, ETL materialization behavior, LocalStack setup, or AWS
 infrastructure.
+
+The table explorer remains inside the same read-only boundary while acting as
+the dashboard-roadmap workbench for selected table rows. It keeps existing
+bounded preview, GraphQL fallback, and storage-only behavior, and now links
+selected rows to the data readiness overview, AWS bounded-read diagnostics, and
+registry-backed concept-gallery metadata for mapped `silver.gas_model` assets.
+
+The AWS bounded-read diagnostics dashboard stays inside the same boundary. It
+renders runtime location, endpoint mode, configured buckets, preview row caps,
+full-table-scan state, bounded-read states, and per-dashboard read behavior
+from Marimo environment configuration and registry metadata only, without
+scanning S3 tables, calling Dagster GraphQL, changing AWS permissions, adding
+write paths, or adding auto-refresh behavior.
+
+The S3 Bucket Health dashboard stays inside the same boundary. It reuses the
+table explorer's configured-bucket S3 discovery and table-prefix classifier,
+then renders operator health states for reachable, empty, truncated, missing,
+and unavailable buckets without changing S3 write paths, LocalStack
+provisioning, bucket infrastructure, or ETL materialization behavior.
 
 The system notices dashboard stays inside the same boundary. It reads the
 curated `silver.gas_model.silver_gas_fact_system_notice` Parquet output through
@@ -135,6 +164,28 @@ through the shared bounded loader and session cache, then filters and
 summarizes loaded quality and composition rows without changing gas quality ETL,
 schemas, source ingestion, or quality calculations.
 
+The source coverage matrix dashboard stays inside the same boundary. It reads
+bounded rows from registry-backed `silver.gas_model` facts and dimensions,
+expands `source_table` and `source_tables` metadata where present, and renders
+missing source metadata as coverage gaps without changing ETL definitions,
+source ingestion, asset schemas, or AWS infrastructure.
+
+The Gas Day explainer dashboard stays inside the same boundary. It renders the
+registry-backed Gas Day context panel from copied generated-gold path and
+source chunk metadata, then reads bounded samples from registry-backed
+`silver.gas_model` assets to show date-field coverage and examples without
+changing ETL date modeling, generated glossary files, asset schemas, or AWS
+infrastructure.
+
+The Facility explainer dashboard stays inside the same boundary. It renders
+the registry-backed Facility context panel from copied generated-gold path and
+source chunk metadata, then reads bounded samples from
+`silver_gas_dim_facility`, `silver_gas_fact_facility_flow_storage`, and
+`silver_gas_fact_capacity_outlook` to show facility standing-data coverage and
+relationships to participant, zone, flow, storage, and capacity context without
+changing ETL facility modeling, generated glossary files, asset schemas, or AWS
+infrastructure.
+
 Static asset optimization stays limited to immutable HTTP caching for
 content-hashed Marimo package assets. Extra preload changes, pre-serving
 packaged WASM, and auto-refresh timer behavior remain deferred until route or
@@ -155,17 +206,28 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/src/marimoserver/main.py`
   - `backend-services/marimo/src/marimoserver/dashboard_registry.py`
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
+  - `backend-services/marimo/src/marimoserver/bounded_read_diagnostics.py`
   - `backend-services/marimo/src/marimoserver/gas_model_loader.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/src/marimoserver/data_readiness.py`
   - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
+  - `backend-services/marimo/src/marimoserver/concept_asset_explorer.py`
   - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
+  - `backend-services/marimo/notebooks/source_coverage_matrix.py`
+  - `backend-services/marimo/notebooks/gas_day_explainer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
+  - `backend-services/marimo/notebooks/aws_bounded_read_diagnostics.py`
+  - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
+  - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
+  - `backend-services/marimo/notebooks/concept_to_asset_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
+  - `backend-services/marimo/notebooks/facility_explainer.py`
+  - `backend-services/marimo/notebooks/participant_explainer.py`
+  - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
@@ -173,6 +235,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/tests/component/test_dashboard_registry.py`
   - `backend-services/marimo/tests/component/test_main.py`
   - `backend-services/marimo/tests/component/test_local_image_split.py`
+  - `backend-services/marimo/tests/component/test_table_explorer.py`
   - `backend-services/marimo/tests/component/test_data_readiness.py`
   - `backend-services/marimo/tests/component/test_dashboard_smoke.py`
   - `backend-services/marimo/tests/component/test_gas_dashboard.py`

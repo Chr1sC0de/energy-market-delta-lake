@@ -124,10 +124,19 @@ Local workflow notes:
   data readiness overview is the platform operations first-stop dashboard over
   configured S3 and Dagster GraphQL readiness. The glossary explorer is the
   registry-only Market context browser over generated-gold metadata paths,
-  source chunk IDs, related concepts, and dashboard states. Market price,
-  schedule run, settlement activity, Bid / Offer stack, gas quality, and system
+  source chunk IDs, related concepts, and dashboard states. The
+  concept-to-asset explorer is the registry-only map from Market context
+  glossary concepts to backing `silver.gas_model` assets, dashboard routes,
+  planned dashboard cards, and table explorer deep links. The Gas Day explainer
+  uses registry context metadata and bounded gas-model samples to show
+  date-field coverage across curated assets. The Hub / Zone explainer connects
+  generated context metadata to bounded `silver_gas_dim_zone` coverage and
+  source-qualified identifiers. Market price, schedule run, settlement
+  activity, customer transfer, Bid / Offer stack, gas quality, and system
   notice dashboards use shared bounded gas-model reads for fact previews and
-  summaries. The
+  summaries. The table explorer is the selected-table workbench for storage
+  inspection, readiness links, bounded-read diagnostics, and concept-gallery
+  metadata for mapped `silver.gas_model` assets. The
   `marimo-codex-workspace` service is a
   separate localhost-only research service for human-operated notebook
   exploration and issue-draft preparation; deployed Codex execution remains
@@ -251,12 +260,21 @@ and the required `git diff` to `rg` to QA flow, use
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/src/marimoserver/data_readiness.py`
   - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
+  - `backend-services/marimo/src/marimoserver/concept_asset_explorer.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
+  - `backend-services/marimo/notebooks/source_coverage_matrix.py`
+  - `backend-services/marimo/notebooks/gas_day_explainer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
+  - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
+  - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
+  - `backend-services/marimo/notebooks/concept_to_asset_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
+  - `backend-services/marimo/notebooks/facility_explainer.py`
+  - `backend-services/marimo/notebooks/participant_explainer.py`
+  - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`

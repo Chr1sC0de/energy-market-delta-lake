@@ -77,13 +77,19 @@ def test_gbb_map_context_panels_cover_roadmap_concepts() -> None:
         "Capacity": "capacity-context",
         "Gas Day": "gas-day-context",
     }
+    expected_statuses = {
+        "flow-context": DashboardStatus.PLANNED.value,
+        "facility-context": DashboardStatus.AVAILABLE.value,
+        "capacity-context": DashboardStatus.PLANNED.value,
+        "gas-day-context": DashboardStatus.AVAILABLE.value,
+    }
 
     for label, concept_id in GBB_MAP_CONTEXT_PANELS:
         html = render_dashboard_context_panel(concept_id)
 
         assert 'class="dashboard-context-panel"' in html
         assert f'data-concept-id="{concept_id}"' in html
-        assert 'data-status="planned"' in html
+        assert f'data-status="{expected_statuses[concept_id]}"' in html
         assert f"{label} Context" in html
 
 

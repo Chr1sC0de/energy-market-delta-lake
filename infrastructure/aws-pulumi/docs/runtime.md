@@ -306,9 +306,14 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   session-level cache keys, load timing, and row-limit messages rather than
   auto-refresh timers. The data readiness overview uses the same read-only S3
   and Dagster GraphQL helper surfaces to summarize platform operations
-  readiness without adding AWS write paths. The glossary explorer browses the
-  packaged Marimo registry for generated-gold metadata paths, source chunk IDs,
-  related concepts, and dashboard states without generated-file or table reads.
+  readiness without adding AWS write paths. The S3 Bucket Health dashboard
+  checks configured S3-compatible buckets and table-prefix discovery without
+  account-wide bucket listing or AWS write paths. The glossary explorer browses
+  the packaged Marimo registry for generated-gold metadata paths, source chunk
+  IDs, related concepts, and dashboard states without generated-file or table
+  reads. The table explorer links selected rows to readiness, bounded-read
+  diagnostics, and concept-gallery metadata for mapped `silver.gas_model`
+  assets while keeping previews bounded in AWS mode.
   The gas market prices dashboard reads the curated market price fact through
   the same bounded helper surface and does not add AWS write paths.
   The gas schedule runs dashboard reads the curated schedule run fact through
@@ -325,6 +330,12 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   the same bounded helper surface and does not add AWS write paths.
   The gas quality and composition dashboard reads the curated gas quality fact
   through the same bounded helper surface and does not add AWS write paths.
+  The Gas Day explainer reads bounded samples from registry-backed gas_model
+  assets to show date-field coverage and examples without adding AWS write
+  paths or changing ETL date modeling.
+  The Hub / Zone explainer reads bounded `silver_gas_dim_zone` samples through
+  the same helper surface to show source-system coverage and source-qualified
+  identifiers without adding AWS write paths.
   The `/marimo` entry route renders the registry-backed concept gallery;
   available cards link to mounted notebooks and planned cards remain non-link
   roadmap entries. Marimo packaged assets stay on
@@ -366,11 +377,18 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
   - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
+  - `backend-services/marimo/notebooks/source_coverage_matrix.py`
+  - `backend-services/marimo/notebooks/gas_day_explainer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
+  - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
+  - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
+  - `backend-services/marimo/notebooks/facility_explainer.py`
+  - `backend-services/marimo/notebooks/participant_explainer.py`
+  - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`

@@ -33,6 +33,19 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert "silver.gas_model.silver_gas_fact_market_price" in overview.backing_assets
     assert missing is None
 
+    source_coverage = registry_entry_by_concept_id("source-coverage-matrix", entries)
+    assert source_coverage is not None
+    assert source_coverage.status is DashboardStatus.AVAILABLE
+    assert source_coverage.notebook_name == "source_coverage_matrix"
+    assert source_coverage.notebook_route == "/marimo/source_coverage_matrix/"
+    assert DashboardAudience.DATA_ENGINEER in source_coverage.audiences
+    assert "silver.gas_model.silver_gas_dim_facility" in (
+        source_coverage.backing_assets
+    )
+    assert "silver.gas_model.silver_gas_fact_customer_transfer" in (
+        source_coverage.backing_assets
+    )
+
     prices = registry_entry_by_concept_id("gas-market-prices", entries)
     assert prices is not None
     assert prices.status is DashboardStatus.AVAILABLE
@@ -79,6 +92,45 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert DashboardAudience.OPERATOR in readiness.audiences
     assert DashboardAudience.DATA_ENGINEER in readiness.audiences
 
+    bounded_read = registry_entry_by_concept_id(
+        "aws-bounded-read-diagnostics",
+        entries,
+    )
+    assert bounded_read is not None
+    assert bounded_read.status is DashboardStatus.AVAILABLE
+    assert bounded_read.notebook_name == "aws_bounded_read_diagnostics"
+    assert bounded_read.notebook_route == "/marimo/aws_bounded_read_diagnostics/"
+    assert bounded_read.backing_assets == ()
+    assert DashboardAudience.PLATFORM_OPERATIONS in bounded_read.audiences
+    assert DashboardAudience.OPERATOR in bounded_read.audiences
+    assert DashboardAudience.DATA_ENGINEER in bounded_read.audiences
+
+    catalogue_status = registry_entry_by_concept_id(
+        "dagster-asset-catalogue-status",
+        entries,
+    )
+    assert catalogue_status is not None
+    assert catalogue_status.status is DashboardStatus.AVAILABLE
+    assert catalogue_status.notebook_name == "dagster_asset_catalogue_status"
+    assert catalogue_status.notebook_route == "/marimo/dagster_asset_catalogue_status/"
+    assert DashboardAudience.PLATFORM_OPERATIONS in catalogue_status.audiences
+    assert DashboardAudience.OPERATOR in catalogue_status.audiences
+    assert DashboardAudience.DATA_ENGINEER in catalogue_status.audiences
+    assert (
+        "silver.gas_model.silver_gas_fact_market_price"
+        in catalogue_status.backing_assets
+    )
+
+    storage_health = registry_entry_by_concept_id("s3-bucket-health", entries)
+    assert storage_health is not None
+    assert storage_health.status is DashboardStatus.AVAILABLE
+    assert storage_health.notebook_name == "s3_bucket_health"
+    assert storage_health.notebook_route == "/marimo/s3_bucket_health/"
+    assert storage_health.backing_assets == ()
+    assert DashboardAudience.PLATFORM_OPERATIONS in storage_health.audiences
+    assert DashboardAudience.OPERATOR in storage_health.audiences
+    assert DashboardAudience.DATA_ENGINEER in storage_health.audiences
+
     glossary = registry_entry_by_concept_id("glossary-explorer", entries)
     assert glossary is not None
     assert glossary.status is DashboardStatus.AVAILABLE
@@ -89,6 +141,18 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         "tools/gas-market-knowledge-base/generated/gold/glossary/README.md",
     )
     assert glossary.source_chunk_ids == ()
+
+    concept_asset = registry_entry_by_concept_id("concept-to-asset-explorer", entries)
+    assert concept_asset is not None
+    assert concept_asset.status is DashboardStatus.AVAILABLE
+    assert concept_asset.notebook_name == "concept_to_asset_explorer"
+    assert concept_asset.notebook_route == "/marimo/concept_to_asset_explorer/"
+    assert concept_asset.backing_assets == ()
+    assert concept_asset.generated_gold_paths == (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/README.md",
+    )
+    assert DashboardAudience.ANALYST in concept_asset.audiences
+    assert DashboardAudience.DATA_ENGINEER in concept_asset.audiences
 
     notices = registry_entry_by_concept_id("gas-system-notices", entries)
     assert notices is not None
@@ -122,6 +186,56 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert bid_stack.notebook_name == "gas_bid_offer_stack"
     assert bid_stack.notebook_route == "/marimo/gas_bid_offer_stack/"
     assert bid_stack.backing_assets == ("silver.gas_model.silver_gas_fact_bid_stack",)
+
+    participant = registry_entry_by_concept_id("participant-context", entries)
+    assert participant is not None
+    assert participant.status is DashboardStatus.AVAILABLE
+    assert participant.notebook_name == "participant_explainer"
+    assert participant.notebook_route == "/marimo/participant_explainer/"
+    assert participant.backing_assets == (
+        "silver.gas_model.silver_gas_dim_participant",
+        "silver.gas_model.silver_gas_participant_market_membership",
+        "silver.gas_model.silver_gas_dim_facility",
+        "silver.gas_model.silver_gas_fact_bid_stack",
+        "silver.gas_model.silver_gas_fact_settlement_activity",
+    )
+    assert participant.source_chunk_ids == (
+        "chunk-gbb-guide-participants-report",
+        "chunk-gbb-procedures-registration",
+        "chunk-sttm-procedures-settlement-terms",
+    )
+
+    facility = registry_entry_by_concept_id("facility-context", entries)
+    assert facility is not None
+    assert facility.status is DashboardStatus.AVAILABLE
+    assert facility.notebook_name == "facility_explainer"
+    assert facility.notebook_route == "/marimo/facility_explainer/"
+    assert facility.backing_assets == (
+        "silver.gas_model.silver_gas_dim_facility",
+        "silver.gas_model.silver_gas_fact_facility_flow_storage",
+        "silver.gas_model.silver_gas_fact_capacity_outlook",
+    )
+    assert facility.source_chunk_ids == (
+        "chunk-gbb-guide-nodes-facilities",
+        "chunk-gbb-procedures-facility-nameplate",
+    )
+
+    hub_zone = registry_entry_by_concept_id("hub-zone-context", entries)
+    assert hub_zone is not None
+    assert hub_zone.status is DashboardStatus.AVAILABLE
+    assert hub_zone.notebook_name == "hub_zone_explainer"
+    assert hub_zone.notebook_route == "/marimo/hub_zone_explainer/"
+    assert "silver.gas_model.silver_gas_dim_zone" in hub_zone.backing_assets
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md"
+        in hub_zone.generated_gold_paths
+    )
+    assert hub_zone.source_chunk_ids == (
+        "chunk-sttm-procedures-definitions",
+        "chunk-sttm-procedures-settlement-terms",
+        "chunk-dwgm-operations-glossary-schedule",
+        "chunk-dwgm-operations-capacity-certificates-modelling",
+    )
 
 
 def test_dashboard_registry_payload_includes_required_fields() -> None:

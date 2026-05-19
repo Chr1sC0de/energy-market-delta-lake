@@ -208,9 +208,12 @@ Key deployed behaviors visible in the infrastructure code:
   immutable cache headers for content-hashed `/marimo/<notebook>/assets/*`
   responses, exposes the data readiness overview for platform operations and
   the registry-only glossary explorer for Market context metadata browsing,
+  links table explorer rows to readiness, bounded-read diagnostics, and
+  concept-gallery metadata for mapped `silver.gas_model` assets,
   exposes the gas system notices, settlement activity, customer transfer and
-  retail activity, and Bid / Offer stack dashboards over curated gas-model
-  facts, runs with `MARIMO_OUTPUT_MAX_BYTES=16000000`,
+  retail activity, Bid / Offer stack, and Hub / Zone explainer dashboards over
+  curated gas-model facts and dimensions, runs with
+  `MARIMO_OUTPUT_MAX_BYTES=16000000`,
   `MARIMO_MAX_PREVIEW_ROWS=100`, and
   `MARIMO_FULL_TABLE_SCAN_ENABLED=false`, and loads bounded table previews
   instead of full table scans, with explicit
@@ -431,11 +434,18 @@ system's services and Dagster workflows.
   - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
   - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
+  - `backend-services/marimo/notebooks/source_coverage_matrix.py`
+  - `backend-services/marimo/notebooks/gas_day_explainer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
+  - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
+  - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
+  - `backend-services/marimo/notebooks/facility_explainer.py`
+  - `backend-services/marimo/notebooks/participant_explainer.py`
+  - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`

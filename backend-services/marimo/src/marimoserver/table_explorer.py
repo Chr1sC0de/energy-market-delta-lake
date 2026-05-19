@@ -4,15 +4,17 @@ from collections.abc import Hashable, Iterable, Mapping, MutableMapping, Sequenc
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from html import escape
 from io import BytesIO
 import os
 import posixpath
 from typing import Protocol, runtime_checkable
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import boto3
 import polars as pl
 
+from marimoserver.dashboard_registry import DashboardRegistryEntry, dashboard_registry
 from marimoserver.dagster_graphql import (
     DEFAULT_DAGSTER_GRAPHQL_URL,
     DagsterAssetCatalogue,
@@ -21,6 +23,7 @@ from marimoserver.dagster_graphql import (
     fetch_dagster_asset_catalogue,
 )
 from marimoserver.gas_model_loader import (
+    SILVER_GAS_MODEL_PREFIX,
     bounded_row_limit,
     compact_error,
 )
@@ -43,6 +46,11 @@ DEFAULT_LOCAL_PREVIEW_ROWS = 10_000
 DEFAULT_PREVIEW_ROWS = 25
 DEFAULT_ROW_LIMIT = 25
 AWS_DEVELOPMENT_LOCATION = "aws"
+CONCEPT_GALLERY_ROUTE = "/marimo"
+DATA_READINESS_ROUTE = "/marimo/data_readiness_overview/"
+AWS_BOUNDED_READ_DIAGNOSTICS_ROUTE = "/marimo/aws_bounded_read_diagnostics/"
+TABLE_EXPLORER_CONCEPT_ID = "gas-model-table-explorer"
+SILVER_GAS_MODEL_ASSET_PREFIX = "silver.gas_model."
 
 
 @runtime_checkable
@@ -94,6 +102,25 @@ class TableAvailability(StrEnum):
     GRAPHQL_UNAVAILABLE = "GraphQL unavailable"
 
 
+class BucketHealthState(StrEnum):
+    """Operator-facing S3-compatible bucket health state."""
+
+    REACHABLE = "Reachable"
+    EMPTY = "Empty"
+    TRUNCATED = "Truncated"
+    MISSING = "Missing"
+    UNAVAILABLE = "Unavailable"
+
+
+class AssetCatalogueState(StrEnum):
+    """Operator-facing Dagster asset catalogue dashboard state."""
+
+    READY = "Ready"
+    ATTENTION = "Needs attention"
+    EMPTY = "Empty"
+    UNAVAILABLE = "Unavailable"
+
+
 @dataclass(frozen=True)
 class TableExplorerConfig:
     """Environment-derived settings for table exploration."""
@@ -143,6 +170,22 @@ class TableExplorerConfig:
 
 
 @dataclass(frozen=True)
+class TableExplorerDeepLink:
+    """Table explorer query-parameter defaults from dashboard links."""
+
+    search: str
+    table_entry_id: str | None
+    asset_entry_id: str | None
+
+    @property
+    def requested_entry_id(self) -> str | None:
+        """Return the exact table catalogue entry requested by the URL."""
+        if self.table_entry_id is not None:
+            return self.table_entry_id
+        return self.asset_entry_id
+
+
+@dataclass(frozen=True)
 class BucketStatus:
     """Local bucket health and table-discovery summary."""
 
@@ -154,6 +197,89 @@ class BucketStatus:
     table_count: int
     truncated: bool
     error: str | None
+
+
+@dataclass(frozen=True)
+class BucketHealthSummary:
+    """Aggregate storage-health summary for the S3 bucket health dashboard."""
+
+    runtime_location: str
+    configured_bucket_count: int
+    checked_bucket_count: int
+    reachable_bucket_count: int
+    populated_bucket_count: int
+    empty_bucket_count: int
+    truncated_bucket_count: int
+    missing_bucket_count: int
+    unavailable_bucket_count: int
+    object_count: int
+    table_prefix_count: int
+    delta_table_prefix_count: int
+    parquet_table_prefix_count: int
+    discovery_object_limit: int
+    bucket_listing_error: str | None
+
+    @property
+    def degraded_bucket_count(self) -> int:
+        """Return the number of bucket rows needing operator attention."""
+        return (
+            self.empty_bucket_count
+            + self.truncated_bucket_count
+            + self.missing_bucket_count
+            + self.unavailable_bucket_count
+        )
+
+    @property
+    def aws_runtime(self) -> bool:
+        """Return whether the summary came from AWS deployment mode."""
+        return self.runtime_location == AWS_DEVELOPMENT_LOCATION
+
+
+@dataclass(frozen=True)
+class AssetCatalogueSummary:
+    """Aggregate Dagster GraphQL and table asset coverage for a dashboard."""
+
+    url: str
+    graphql_available: bool
+    graphql_error: str | None
+    table_asset_count: int
+    overlaid_table_count: int
+    local_table_prefix_count: int
+    live_count: int
+    unmaterialized_count: int
+    missing_count: int
+    graphql_unavailable_count: int
+    materialized_asset_count: int
+    materializable_asset_count: int
+    executable_asset_count: int
+    uri_asset_count: int
+    schema_asset_count: int
+    latest_materialization_timestamp: float | None
+
+    @property
+    def degraded_table_count(self) -> int:
+        """Return overlaid table rows needing operator attention."""
+        return (
+            self.unmaterialized_count
+            + self.missing_count
+            + self.graphql_unavailable_count
+        )
+
+    @property
+    def latest_materialization_label(self) -> str:
+        """Return a readable latest materialization timestamp."""
+        return format_materialization_timestamp(self.latest_materialization_timestamp)
+
+
+@dataclass(frozen=True)
+class AssetCatalogueStatusCard:
+    """One first-viewport status card for the asset catalogue dashboard."""
+
+    area: str
+    state: AssetCatalogueState
+    value: str
+    detail: str
+    action: str
 
 
 @dataclass(frozen=True)
@@ -220,6 +346,16 @@ class CataloguedTable:
         if self.table is not None:
             return self.table.uri
         return None
+
+
+@dataclass(frozen=True)
+class TableWorkbenchLink:
+    """One dashboard-roadmap navigation target for a selected table row."""
+
+    label: str
+    route: str
+    scope: str
+    detail: str
 
 
 @dataclass(frozen=True)
@@ -432,6 +568,606 @@ def discover_storage(
         tables=tuple(sorted(tables, key=lambda table: table.table_id)),
         bucket_listing_error=bucket_listing_error,
     )
+
+
+def bucket_health_state(bucket: BucketStatus) -> BucketHealthState:
+    """Return the operator-facing health state for one configured bucket."""
+    if bucket.error is not None:
+        if _bucket_error_is_missing(bucket.error):
+            return BucketHealthState.MISSING
+        return BucketHealthState.UNAVAILABLE
+    if bucket.truncated:
+        return BucketHealthState.TRUNCATED
+    if bucket.object_count == 0:
+        return BucketHealthState.EMPTY
+    return BucketHealthState.REACHABLE
+
+
+def build_bucket_health_summary(
+    config: TableExplorerConfig,
+    discovery: StorageDiscovery,
+    object_limit_per_bucket: int = DEFAULT_DISCOVERY_OBJECT_LIMIT,
+) -> BucketHealthSummary:
+    """Build aggregate storage-health metrics for the dashboard first viewport."""
+    states = [bucket_health_state(bucket) for bucket in discovery.buckets]
+    table_format_counts = _table_format_counts(discovery.tables)
+
+    return BucketHealthSummary(
+        runtime_location=config.runtime_location,
+        configured_bucket_count=len(config.default_buckets),
+        checked_bucket_count=len(discovery.buckets),
+        reachable_bucket_count=sum(
+            1 for bucket in discovery.buckets if bucket.reachable
+        ),
+        populated_bucket_count=sum(
+            1
+            for bucket in discovery.buckets
+            if bucket.reachable and bucket.object_count > 0
+        ),
+        empty_bucket_count=states.count(BucketHealthState.EMPTY),
+        truncated_bucket_count=states.count(BucketHealthState.TRUNCATED),
+        missing_bucket_count=states.count(BucketHealthState.MISSING),
+        unavailable_bucket_count=states.count(BucketHealthState.UNAVAILABLE),
+        object_count=sum(bucket.object_count for bucket in discovery.buckets),
+        table_prefix_count=len(discovery.tables),
+        delta_table_prefix_count=table_format_counts[TableFormat.DELTA],
+        parquet_table_prefix_count=table_format_counts[TableFormat.PARQUET],
+        discovery_object_limit=object_limit_per_bucket,
+        bucket_listing_error=discovery.bucket_listing_error,
+    )
+
+
+def s3_bucket_health_frame(discovery: StorageDiscovery) -> pl.DataFrame:
+    """Return bucket health rows for configured bucket operations."""
+    format_counts_by_bucket = _table_format_counts_by_bucket(discovery.tables)
+    rows: list[dict[str, object]] = []
+
+    for bucket in discovery.buckets:
+        state = bucket_health_state(bucket)
+        format_counts = format_counts_by_bucket.get(bucket.name, {})
+        rows.append(
+            {
+                "bucket": bucket.name,
+                "configured": bucket.is_default,
+                "discovered locally": bucket.discovered,
+                "status": state.value,
+                "objects scanned": bucket.object_count,
+                "table prefixes": bucket.table_count,
+                "Delta prefixes": format_counts.get(TableFormat.DELTA, 0),
+                "Parquet prefixes": format_counts.get(TableFormat.PARQUET, 0),
+                "truncated": bucket.truncated,
+                "detail": bucket.error or _bucket_detail(bucket),
+                "action": _bucket_health_action(state),
+            }
+        )
+
+    if rows:
+        return pl.DataFrame(rows)
+
+    return pl.DataFrame(
+        [
+            {
+                "bucket": "No configured buckets",
+                "configured": False,
+                "discovered locally": False,
+                "status": BucketHealthState.EMPTY.value,
+                "objects scanned": 0,
+                "table prefixes": 0,
+                "Delta prefixes": 0,
+                "Parquet prefixes": 0,
+                "truncated": False,
+                "detail": discovery.bucket_listing_error or "",
+                "action": (
+                    "Configure MARIMO_TABLE_BUCKETS or the default bucket "
+                    "environment, then refresh storage health."
+                ),
+            }
+        ]
+    )
+
+
+def table_prefix_discovery_frame(
+    tables: Sequence[TablePrefix],
+) -> pl.DataFrame:
+    """Return discovered Delta and Parquet table-like prefixes."""
+    rows = [
+        {
+            "bucket": table.bucket,
+            "prefix": table.prefix or "(bucket root)",
+            "format": table.table_format.value,
+            "parquet files": len(table.parquet_files),
+            "uri": table.uri,
+        }
+        for table in tables
+    ]
+    if rows:
+        return pl.DataFrame(rows)
+
+    return pl.DataFrame(
+        [
+            {
+                "bucket": "No table prefixes discovered",
+                "prefix": "",
+                "format": "",
+                "parquet files": 0,
+                "uri": "",
+            }
+        ]
+    )
+
+
+def filter_table_prefixes(
+    tables: Sequence[TablePrefix],
+    *,
+    buckets: Sequence[str] = (),
+    formats: Sequence[str | TableFormat] = (),
+    search: str = "",
+) -> tuple[TablePrefix, ...]:
+    """Filter discovered table prefixes for notebook controls."""
+    bucket_filters = {bucket.strip().lower() for bucket in buckets if bucket.strip()}
+    format_filters = {
+        _table_format_filter_value(table_format).lower()
+        for table_format in formats
+        if _table_format_filter_value(table_format) != ""
+    }
+    search_term = search.strip().lower()
+    filtered: list[TablePrefix] = []
+
+    for table in tables:
+        if bucket_filters and table.bucket.lower() not in bucket_filters:
+            continue
+        if format_filters and table.table_format.value.lower() not in format_filters:
+            continue
+        if search_term and search_term not in _table_prefix_search_text(table):
+            continue
+        filtered.append(table)
+
+    return tuple(filtered)
+
+
+def storage_health_action_markdown(summary: BucketHealthSummary) -> str:
+    """Return Markdown action guidance for degraded storage-health states."""
+    actions: list[str] = []
+
+    if summary.bucket_listing_error is not None:
+        actions.append(
+            "Bucket listing: local bucket enumeration failed; configured "
+            "bucket checks still ran where possible."
+        )
+    if summary.missing_bucket_count > 0:
+        actions.append(
+            "Missing buckets: provision the configured bucket or correct the "
+            "bucket environment value."
+        )
+    if summary.unavailable_bucket_count > 0:
+        actions.append(
+            "Unavailable buckets: check S3 endpoint reachability, credentials, "
+            "IAM permission, and bucket policy."
+        )
+    if summary.truncated_bucket_count > 0:
+        actions.append(
+            "Truncated buckets: object and table-prefix counts are capped by "
+            f"the `{summary.discovery_object_limit}` object discovery limit."
+        )
+    if summary.empty_bucket_count > 0:
+        actions.append(
+            "Empty buckets: seed LocalStack or materialize data before expecting "
+            "table prefixes."
+        )
+    if not actions and summary.table_prefix_count == 0:
+        actions.append(
+            "No table prefixes were discovered. Confirm data has been "
+            "materialized under Delta or Parquet table-like paths."
+        )
+
+    if not actions:
+        return "All checked buckets are reachable under the current configuration."
+    return "\n".join(f"- {action}" for action in actions)
+
+
+def render_storage_health_cards(summary: BucketHealthSummary) -> str:
+    """Render first-viewport storage-health KPI cards using repo theme tokens."""
+    listing_policy = (
+        "AWS mode checks configured buckets only; it does not list the account."
+        if summary.aws_runtime
+        else "Local mode checks configured buckets and discovers matching local buckets."
+    )
+    error_count = summary.missing_bucket_count + summary.unavailable_bucket_count
+    cards = (
+        _render_storage_health_card(
+            "Bucket reachability",
+            _summary_reachability_state(summary),
+            f"{summary.reachable_bucket_count}/{summary.checked_bucket_count}",
+            (f"{summary.configured_bucket_count} configured buckets. {listing_policy}"),
+        ),
+        _render_storage_health_card(
+            "Objects scanned",
+            _summary_object_state(summary),
+            _format_int(summary.object_count),
+            (
+                f"{summary.populated_bucket_count} populated, "
+                f"{summary.empty_bucket_count} empty, "
+                f"{summary.truncated_bucket_count} truncated."
+            ),
+        ),
+        _render_storage_health_card(
+            "Table prefixes",
+            _summary_table_state(summary),
+            _format_int(summary.table_prefix_count),
+            (
+                f"{summary.delta_table_prefix_count} Delta and "
+                f"{summary.parquet_table_prefix_count} Parquet prefixes."
+            ),
+        ),
+        _render_storage_health_card(
+            "Bucket errors",
+            _summary_error_state(summary),
+            _format_int(error_count),
+            (
+                f"{summary.missing_bucket_count} missing, "
+                f"{summary.unavailable_bucket_count} unavailable."
+            ),
+        ),
+    )
+    rendered_cards = "\n".join(cards)
+    return f"""\
+<style>
+{_storage_health_cards_css()}
+</style>
+<section class="storage-health-card-grid" aria-label="S3 bucket health summary">
+{rendered_cards}
+</section>"""
+
+
+def build_asset_catalogue_summary(
+    catalogue: DagsterAssetCatalogue,
+    table_catalogue: Sequence[CataloguedTable],
+) -> AssetCatalogueSummary:
+    """Build aggregate GraphQL and table-coverage metrics for the dashboard."""
+    status_counts = _catalogued_status_counts(table_catalogue)
+    timestamps = [
+        asset.latest_materialization_timestamp
+        for asset in catalogue.assets
+        if asset.latest_materialization_timestamp is not None
+    ]
+
+    return AssetCatalogueSummary(
+        url=catalogue.url,
+        graphql_available=catalogue.available,
+        graphql_error=catalogue.error,
+        table_asset_count=len(catalogue.assets),
+        overlaid_table_count=len(table_catalogue),
+        local_table_prefix_count=sum(
+            table.table is not None for table in table_catalogue
+        ),
+        live_count=status_counts[TableAvailability.LIVE],
+        unmaterialized_count=status_counts[TableAvailability.UNMATERIALIZED],
+        missing_count=status_counts[TableAvailability.MISSING],
+        graphql_unavailable_count=status_counts[TableAvailability.GRAPHQL_UNAVAILABLE],
+        materialized_asset_count=sum(
+            asset.latest_materialization_timestamp is not None
+            for asset in catalogue.assets
+        ),
+        materializable_asset_count=sum(
+            asset.is_materializable for asset in catalogue.assets
+        ),
+        executable_asset_count=sum(asset.is_executable for asset in catalogue.assets),
+        uri_asset_count=sum(asset.uri is not None for asset in catalogue.assets),
+        schema_asset_count=sum(bool(asset.columns) for asset in catalogue.assets),
+        latest_materialization_timestamp=max(timestamps) if timestamps else None,
+    )
+
+
+def asset_catalogue_status_cards(
+    summary: AssetCatalogueSummary,
+) -> tuple[AssetCatalogueStatusCard, ...]:
+    """Return first-viewport Dagster catalogue status cards."""
+    return (
+        _graphql_status_card(summary),
+        _table_coverage_card(summary),
+        _asset_metadata_card(summary),
+        _latest_materialization_card(summary),
+    )
+
+
+def asset_catalogue_action_markdown(summary: AssetCatalogueSummary) -> str:
+    """Return Markdown action guidance for catalogue dashboard degraded states."""
+    actions: list[str] = []
+
+    if not summary.graphql_available:
+        actions.append(
+            "Dagster GraphQL: confirm `DAGSTER_GRAPHQL_URL`, Dagster webserver "
+            "health, and reverse-proxy path. Storage-only table rows remain usable."
+        )
+    elif summary.table_asset_count == 0:
+        actions.append(
+            "Dagster GraphQL: no table assets were returned. Confirm Dagster "
+            "definitions expose table metadata."
+        )
+
+    if summary.missing_count > 0:
+        actions.append(
+            "Missing tables: check `dagster/uri` values and expected S3 table prefixes."
+        )
+    if summary.unmaterialized_count > 0:
+        actions.append(
+            "Unmaterialized assets: materialize or backfill the listed assets "
+            "before treating their storage as ready."
+        )
+    if (
+        summary.graphql_available
+        and summary.table_asset_count > 0
+        and summary.schema_asset_count < summary.table_asset_count
+    ):
+        actions.append(
+            "Schema metadata: review assets without column schema metadata if "
+            "operators need table-level lineage or validation detail."
+        )
+
+    if not actions:
+        return "Dagster GraphQL and table asset coverage are usable under the current configuration."
+    return "\n".join(f"- {action}" for action in actions)
+
+
+def render_asset_catalogue_status_cards(
+    summary: AssetCatalogueSummary,
+) -> str:
+    """Render first-viewport Dagster catalogue status cards."""
+    cards = asset_catalogue_status_cards(summary)
+    rendered_cards = "\n".join(_render_asset_catalogue_card(card) for card in cards)
+    return f"""\
+<style>
+{_asset_catalogue_cards_css()}
+</style>
+<section class="asset-catalogue-card-grid" aria-label="Dagster asset catalogue summary">
+{rendered_cards}
+</section>"""
+
+
+def table_asset_catalogue_frame(
+    table_catalogue: Sequence[CataloguedTable],
+) -> pl.DataFrame:
+    """Return overlaid Dagster asset and storage status rows."""
+    rows: list[dict[str, object]] = []
+    for entry in table_catalogue:
+        asset = entry.asset
+        table = entry.table
+        rows.append(
+            {
+                "asset key": "" if asset is None else asset.asset_id,
+                "group": catalogued_table_group(entry),
+                "kinds": "" if asset is None else ", ".join(asset.kinds),
+                "status": entry.status.value,
+                "materializable": ""
+                if asset is None
+                else _yes_no(asset.is_materializable),
+                "executable": "" if asset is None else _yes_no(asset.is_executable),
+                "latest materialization": ""
+                if asset is None
+                else format_materialization_timestamp(
+                    asset.latest_materialization_timestamp
+                ),
+                "uri": entry.uri or "",
+                "schema available": ""
+                if asset is None
+                else _yes_no(bool(asset.columns)),
+                "schema columns": 0 if asset is None else len(asset.columns),
+                "local storage": "" if table is None else "Available",
+                "bucket": "" if table is None else table.bucket,
+                "prefix": "" if table is None else table.prefix or "(bucket root)",
+                "format": "" if table is None else table.table_format.value,
+            }
+        )
+
+    if rows:
+        return pl.DataFrame(rows)
+
+    return pl.DataFrame(
+        [
+            {
+                "asset key": "No table assets or storage prefixes discovered",
+                "group": "",
+                "kinds": "",
+                "status": AssetCatalogueState.EMPTY.value,
+                "materializable": "",
+                "executable": "",
+                "latest materialization": "",
+                "uri": "",
+                "schema available": "",
+                "schema columns": 0,
+                "local storage": "",
+                "bucket": "",
+                "prefix": "",
+                "format": "",
+            }
+        ]
+    )
+
+
+def asset_schema_metadata_frame(
+    table_catalogue: Sequence[CataloguedTable],
+) -> pl.DataFrame:
+    """Return parsed Dagster table asset schema metadata rows."""
+    rows: list[dict[str, object]] = []
+    for entry in table_catalogue:
+        asset = entry.asset
+        if asset is None:
+            continue
+        for column in asset.columns:
+            rows.append(
+                {
+                    "asset key": asset.asset_id,
+                    "group": catalogued_table_group(entry),
+                    "column": column.name,
+                    "type": column.dtype,
+                    "description": column.description or "",
+                }
+            )
+
+    if rows:
+        return pl.DataFrame(rows)
+
+    return pl.DataFrame(
+        [
+            {
+                "asset key": "No schema metadata available",
+                "group": "",
+                "column": "",
+                "type": "",
+                "description": (
+                    "Dagster GraphQL returned no parsed column schema metadata "
+                    "for the current table asset filter."
+                ),
+            }
+        ]
+    )
+
+
+def table_workbench_navigation_links(
+    entry: CataloguedTable,
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> tuple[TableWorkbenchLink, ...]:
+    """Return dashboard-roadmap navigation links for a selected table row."""
+    matched_concepts = concept_gallery_entries_for_table(entry, entries)
+    links = [
+        TableWorkbenchLink(
+            label="Data readiness overview",
+            route=DATA_READINESS_ROUTE,
+            scope="readiness",
+            detail=_readiness_navigation_detail(entry),
+        ),
+        TableWorkbenchLink(
+            label="AWS bounded read diagnostics",
+            route=AWS_BOUNDED_READ_DIAGNOSTICS_ROUTE,
+            scope="bounded-read diagnostics",
+            detail=_bounded_read_navigation_detail(entry),
+        ),
+        TableWorkbenchLink(
+            label="Concept gallery",
+            route=_concept_gallery_anchor(TABLE_EXPLORER_CONCEPT_ID),
+            scope="dashboard roadmap",
+            detail=(
+                "Open the concept gallery card for this workbench and related "
+                "dashboard roadmap metadata."
+            ),
+        ),
+    ]
+
+    links.extend(
+        TableWorkbenchLink(
+            label=f"Concept: {concept.title}",
+            route=_concept_gallery_anchor(concept.concept_id),
+            scope="mapped silver.gas_model asset",
+            detail=_concept_navigation_detail(concept),
+        )
+        for concept in matched_concepts
+    )
+    return tuple(links)
+
+
+def concept_gallery_entries_for_table(
+    entry: CataloguedTable,
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> tuple[DashboardRegistryEntry, ...]:
+    """Return registry concepts that map to a selected silver.gas_model asset."""
+    mapped_asset = concept_gallery_asset_id(entry)
+    if mapped_asset is None:
+        return ()
+
+    candidate_entries = dashboard_registry() if entries is None else entries
+    return tuple(
+        concept
+        for concept in candidate_entries
+        if mapped_asset in concept.backing_assets
+    )
+
+
+def concept_gallery_asset_id(entry: CataloguedTable) -> str | None:
+    """Return the registry backing asset ID for a selected table row."""
+    if entry.asset is not None:
+        asset_id = _silver_gas_model_asset_id_from_asset_key(entry.asset.asset_key)
+        if asset_id is not None:
+            return asset_id
+
+    if entry.table is not None:
+        return _silver_gas_model_asset_id_from_prefix(entry.table.prefix)
+
+    if entry.uri is not None and (location := _s3_table_location(entry.uri)):
+        return _silver_gas_model_asset_id_from_prefix(location[1])
+
+    return None
+
+
+def concept_gallery_metadata_frame(
+    entry: CataloguedTable,
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> pl.DataFrame:
+    """Return concept-gallery metadata rows for a selected table row."""
+    mapped_asset = concept_gallery_asset_id(entry)
+    matched_entries = concept_gallery_entries_for_table(entry, entries)
+    rows = [
+        {
+            "mapped asset": mapped_asset or "",
+            "concept id": concept.concept_id,
+            "title": concept.title,
+            "status": concept.status.value,
+            "audiences": ", ".join(audience.value for audience in concept.audiences),
+            "concept gallery": _concept_gallery_anchor(concept.concept_id),
+            "notebook route": concept.notebook_route or "",
+            "generated-gold paths": "\n".join(concept.generated_gold_paths),
+            "source chunk ids": "\n".join(concept.source_chunk_ids),
+        }
+        for concept in matched_entries
+    ]
+
+    if rows:
+        return pl.DataFrame(rows)
+
+    return pl.DataFrame(
+        [
+            {
+                "mapped asset": mapped_asset or "",
+                "concept id": "No mapped concept-gallery metadata",
+                "title": "",
+                "status": "",
+                "audiences": "",
+                "concept gallery": _concept_gallery_anchor(TABLE_EXPLORER_CONCEPT_ID),
+                "notebook route": "",
+                "generated-gold paths": "",
+                "source chunk ids": "",
+            }
+        ]
+    )
+
+
+def render_table_workbench_navigation(
+    entry: CataloguedTable,
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render selected-table dashboard-roadmap navigation as HTML links."""
+    links = table_workbench_navigation_links(entry, entries)
+    rendered_links = "\n".join(_render_workbench_link(link) for link in links)
+    mapped_asset = concept_gallery_asset_id(entry)
+    mapped_asset_text = mapped_asset or "No mapped silver.gas_model asset"
+    concept_count = len(concept_gallery_entries_for_table(entry, entries))
+
+    return f"""\
+<style>
+{_table_workbench_navigation_css()}
+</style>
+<section class="table-workbench-nav" aria-label="Dashboard roadmap navigation">
+    <div class="table-workbench-nav__header">
+        <p class="table-workbench-nav__eyebrow">Dashboard roadmap workbench</p>
+        <h3>Linked diagnostics and concepts</h3>
+        <p>
+            Mapped asset: <code>{escape(mapped_asset_text)}</code>.
+            Concept-gallery matches: <strong>{concept_count}</strong>.
+        </p>
+    </div>
+    <div class="table-workbench-nav__grid">
+{rendered_links}
+    </div>
+</section>"""
 
 
 def discover_table_catalogue(
@@ -741,6 +1477,50 @@ def filter_catalogued_tables(
     return tuple(filtered)
 
 
+def table_explorer_deep_link_from_query(
+    query_params: Mapping[str, object],
+) -> TableExplorerDeepLink:
+    """Return table explorer defaults from URL query parameters."""
+    return TableExplorerDeepLink(
+        search=_query_param_text(query_params.get("search")),
+        table_entry_id=_query_param_entry_id(query_params.get("table")),
+        asset_entry_id=_query_param_entry_id(query_params.get("asset")),
+    )
+
+
+def include_deep_linked_catalogued_table(
+    tables: Sequence[CataloguedTable],
+    filtered_tables: Sequence[CataloguedTable],
+    requested_entry_id: str | None,
+) -> tuple[CataloguedTable, ...]:
+    """Include an exact deep-linked catalogue row in the filtered table list."""
+    filtered = tuple(filtered_tables)
+    if requested_entry_id is None:
+        return filtered
+    if catalogued_table_by_id(filtered, requested_entry_id) is not None:
+        return filtered
+
+    requested_table = catalogued_table_by_id(tables, requested_entry_id)
+    if requested_table is None:
+        return filtered
+    return (requested_table, *filtered)
+
+
+def default_catalogued_table_entry_id(
+    tables: Sequence[CataloguedTable],
+    requested_entry_id: str | None,
+) -> str | None:
+    """Return the table picker default entry ID for filtered catalogue rows."""
+    if not tables:
+        return None
+    if (
+        requested_entry_id is not None
+        and catalogued_table_by_id(tables, requested_entry_id) is not None
+    ):
+        return requested_entry_id
+    return tables[0].entry_id
+
+
 def catalogued_table_group(table: CataloguedTable) -> str:
     """Return the asset group filter value for an overlaid table row."""
     if table.asset is None:
@@ -796,6 +1576,596 @@ def format_materialization_timestamp(timestamp: float | None) -> str:
     if timestamp is None:
         return ""
     return datetime.fromtimestamp(timestamp, tz=UTC).isoformat()
+
+
+def _readiness_navigation_detail(entry: CataloguedTable) -> str:
+    if entry.status is TableAvailability.LIVE:
+        return "Review bucket, table, and Dagster readiness for this live row."
+    if entry.status is TableAvailability.UNMATERIALIZED:
+        return "Review why Dagster knows the asset before storage is materialized."
+    if entry.status is TableAvailability.MISSING:
+        return "Review the missing-storage readiness state and expected S3 prefix."
+    return "Review storage-only readiness while Dagster GraphQL is unavailable."
+
+
+def _bounded_read_navigation_detail(entry: CataloguedTable) -> str:
+    if entry.table is None:
+        return (
+            "Review row-limit policy before previewing this asset after it "
+            "materializes."
+        )
+    return (
+        "Review the active preview cap, full-table-scan flag, and per-dashboard "
+        "read behavior before interpreting loaded rows."
+    )
+
+
+def _concept_navigation_detail(concept: DashboardRegistryEntry) -> str:
+    notebook_route = concept.notebook_route
+    route_detail = (
+        "no mounted notebook route"
+        if notebook_route is None
+        else f"notebook route {notebook_route}"
+    )
+    return f"{concept.status.value} concept with {route_detail}."
+
+
+def _concept_gallery_anchor(concept_id: str) -> str:
+    return f"{CONCEPT_GALLERY_ROUTE}#concept-{quote(concept_id, safe='')}"
+
+
+def _render_workbench_link(link: TableWorkbenchLink) -> str:
+    return f"""\
+        <a
+            class="table-workbench-nav__link"
+            href="{escape(link.route, quote=True)}"
+            data-link-scope="{escape(link.scope, quote=True)}"
+        >
+            <span class="table-workbench-nav__label">{escape(link.label)}</span>
+            <span class="table-workbench-nav__scope">{escape(link.scope)}</span>
+            <span class="table-workbench-nav__detail">{escape(link.detail)}</span>
+        </a>"""
+
+
+def _table_workbench_navigation_css() -> str:
+    return """
+.table-workbench-nav {
+    display: grid;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+}
+
+.table-workbench-nav__header {
+    display: grid;
+    gap: 4px;
+}
+
+.table-workbench-nav__eyebrow {
+    margin: 0;
+    color: var(--emdl-green, #3e7a54);
+    font-size: 0.78rem;
+    font-weight: 760;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.table-workbench-nav h3,
+.table-workbench-nav p {
+    margin: 0;
+}
+
+.table-workbench-nav__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+    gap: 10px;
+}
+
+.table-workbench-nav__link {
+    display: grid;
+    gap: 6px;
+    min-height: 116px;
+    padding: 12px;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    color: inherit;
+    background: var(--emdl-paper, #f6f8f3);
+    text-decoration: none;
+}
+
+.table-workbench-nav__link:hover {
+    border-color: var(--emdl-blue, #166791);
+}
+
+.table-workbench-nav__label {
+    color: var(--emdl-blue, #166791);
+    font-weight: 760;
+}
+
+.table-workbench-nav__scope {
+    color: var(--emdl-green, #3e7a54);
+    font-size: 0.78rem;
+    font-weight: 760;
+    text-transform: uppercase;
+}
+
+.table-workbench-nav__detail {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.9rem;
+}
+"""
+
+
+def _silver_gas_model_asset_id_from_asset_key(
+    asset_key: Sequence[str],
+) -> str | None:
+    if len(asset_key) < 3 or tuple(asset_key[:2]) != ("silver", "gas_model"):
+        return None
+
+    table_name = ".".join(part for part in asset_key[2:] if part)
+    if table_name == "":
+        return None
+    return f"{SILVER_GAS_MODEL_ASSET_PREFIX}{table_name}"
+
+
+def _silver_gas_model_asset_id_from_prefix(prefix: str) -> str | None:
+    parts = _path_parts(prefix)
+    expected_prefix = tuple(SILVER_GAS_MODEL_PREFIX.split("/"))
+    if len(parts) < 3 or tuple(parts[:2]) != expected_prefix:
+        return None
+
+    return f"{SILVER_GAS_MODEL_ASSET_PREFIX}{parts[2]}"
+
+
+def _bucket_error_is_missing(error: str) -> bool:
+    normalized = error.casefold()
+    return (
+        "nosuchbucket" in normalized
+        or "not found" in normalized
+        or "notfound" in normalized
+        or "404" in normalized
+    )
+
+
+def _bucket_detail(bucket: BucketStatus) -> str:
+    if bucket.truncated:
+        return "Object listing reached the per-bucket discovery cap."
+    if bucket.reachable and bucket.object_count == 0:
+        return "Bucket is reachable but contains no listed objects."
+    if bucket.reachable:
+        return "Bucket is reachable."
+    return ""
+
+
+def _bucket_health_action(state: BucketHealthState) -> str:
+    if state is BucketHealthState.REACHABLE:
+        return "No action."
+    if state is BucketHealthState.EMPTY:
+        return "Seed LocalStack or materialize data before expecting table prefixes."
+    if state is BucketHealthState.TRUNCATED:
+        return "Review with the discovery cap in mind before trusting counts."
+    if state is BucketHealthState.MISSING:
+        return "Provision the bucket or correct the configured bucket name."
+    return "Check endpoint reachability, credentials, IAM permission, and policy."
+
+
+def _table_format_counts(
+    tables: Sequence[TablePrefix],
+) -> dict[TableFormat, int]:
+    counts = {table_format: 0 for table_format in TableFormat}
+    for table in tables:
+        counts[table.table_format] += 1
+    return counts
+
+
+def _table_format_counts_by_bucket(
+    tables: Sequence[TablePrefix],
+) -> dict[str, dict[TableFormat, int]]:
+    counts_by_bucket: dict[str, dict[TableFormat, int]] = {}
+    for table in tables:
+        if table.bucket not in counts_by_bucket:
+            counts_by_bucket[table.bucket] = {
+                table_format: 0 for table_format in TableFormat
+            }
+        counts_by_bucket[table.bucket][table.table_format] += 1
+    return counts_by_bucket
+
+
+def _table_format_filter_value(table_format: str | TableFormat) -> str:
+    if isinstance(table_format, TableFormat):
+        return table_format.value
+    return table_format.strip()
+
+
+def _table_prefix_search_text(table: TablePrefix) -> str:
+    return " ".join(
+        [
+            table.bucket,
+            table.prefix,
+            table.table_format.value,
+            table.uri,
+            " ".join(table.parquet_files),
+        ]
+    ).lower()
+
+
+def _summary_reachability_state(
+    summary: BucketHealthSummary,
+) -> BucketHealthState:
+    if summary.checked_bucket_count == 0:
+        return BucketHealthState.EMPTY
+    if summary.reachable_bucket_count == 0:
+        return BucketHealthState.UNAVAILABLE
+    if summary.truncated_bucket_count > 0:
+        return BucketHealthState.TRUNCATED
+    if summary.missing_bucket_count > 0 or summary.unavailable_bucket_count > 0:
+        return BucketHealthState.UNAVAILABLE
+    if summary.empty_bucket_count == summary.checked_bucket_count:
+        return BucketHealthState.EMPTY
+    return BucketHealthState.REACHABLE
+
+
+def _summary_object_state(summary: BucketHealthSummary) -> BucketHealthState:
+    if summary.truncated_bucket_count > 0:
+        return BucketHealthState.TRUNCATED
+    if summary.object_count == 0:
+        return BucketHealthState.EMPTY
+    return BucketHealthState.REACHABLE
+
+
+def _summary_table_state(summary: BucketHealthSummary) -> BucketHealthState:
+    if summary.truncated_bucket_count > 0:
+        return BucketHealthState.TRUNCATED
+    if summary.table_prefix_count == 0:
+        return BucketHealthState.EMPTY
+    return BucketHealthState.REACHABLE
+
+
+def _summary_error_state(summary: BucketHealthSummary) -> BucketHealthState:
+    if summary.missing_bucket_count > 0:
+        return BucketHealthState.MISSING
+    if summary.unavailable_bucket_count > 0 or summary.bucket_listing_error:
+        return BucketHealthState.UNAVAILABLE
+    return BucketHealthState.REACHABLE
+
+
+def _render_storage_health_card(
+    label: str,
+    state: BucketHealthState,
+    value: str,
+    detail: str,
+) -> str:
+    state_class = _bucket_state_css_class(state)
+    return f"""\
+    <article class="storage-health-card storage-health-card--{state_class}">
+        <div class="storage-health-card__topline">
+            <span>{escape(label)}</span>
+            <strong>{escape(state.value)}</strong>
+        </div>
+        <p class="storage-health-card__value">{escape(value)}</p>
+        <p>{escape(detail)}</p>
+    </article>"""
+
+
+def _bucket_state_css_class(state: BucketHealthState) -> str:
+    return state.value.lower().replace(" ", "-")
+
+
+def _format_int(value: int) -> str:
+    return f"{value:,}"
+
+
+def _storage_health_cards_css() -> str:
+    return """\
+.storage-health-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+    gap: 0.9rem;
+}
+
+.storage-health-card {
+    display: grid;
+    gap: 0.55rem;
+    min-width: 0;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-left-width: 5px;
+    border-radius: 8px;
+    padding: 0.9rem;
+    background: var(--emdl-panel, #ffffff);
+    color: var(--emdl-ink, #1b2324);
+}
+
+.storage-health-card--reachable {
+    border-left-color: var(--emdl-green, #3e7a54);
+}
+
+.storage-health-card--empty,
+.storage-health-card--truncated {
+    border-left-color: var(--emdl-amber, #b2682a);
+}
+
+.storage-health-card--missing,
+.storage-health-card--unavailable {
+    border-left-color: var(--emdl-red, #9e4839);
+}
+
+.storage-health-card__topline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.45rem;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.storage-health-card__topline strong {
+    color: var(--emdl-slate, #354348);
+}
+
+.storage-health-card__value {
+    margin: 0;
+    color: var(--emdl-slate, #354348);
+    font-size: 1.45rem;
+    font-weight: 760;
+    line-height: 1.1;
+}
+
+.storage-health-card p {
+    margin: 0;
+}"""
+
+
+def _graphql_status_card(summary: AssetCatalogueSummary) -> AssetCatalogueStatusCard:
+    if not summary.graphql_available:
+        return AssetCatalogueStatusCard(
+            area="Dagster GraphQL",
+            state=AssetCatalogueState.UNAVAILABLE,
+            value="Unavailable",
+            detail=summary.graphql_error or "Dagster GraphQL returned no detail.",
+            action="Restore GraphQL to classify storage prefixes against assets.",
+        )
+
+    if summary.table_asset_count == 0:
+        return AssetCatalogueStatusCard(
+            area="Dagster GraphQL",
+            state=AssetCatalogueState.EMPTY,
+            value="No table assets",
+            detail=f"GraphQL responded at {summary.url}, but no table assets matched.",
+            action="Confirm Dagster definitions expose table metadata.",
+        )
+
+    return AssetCatalogueStatusCard(
+        area="Dagster GraphQL",
+        state=AssetCatalogueState.READY,
+        value=f"{_format_int(summary.table_asset_count)} assets",
+        detail=f"GraphQL responded at {summary.url}.",
+        action="No action.",
+    )
+
+
+def _table_coverage_card(summary: AssetCatalogueSummary) -> AssetCatalogueStatusCard:
+    detail = (
+        f"{summary.live_count} live, "
+        f"{summary.unmaterialized_count} unmaterialized, "
+        f"{summary.missing_count} missing, "
+        f"{summary.graphql_unavailable_count} storage-only while GraphQL is unavailable."
+    )
+
+    if summary.overlaid_table_count == 0:
+        return AssetCatalogueStatusCard(
+            area="Table coverage",
+            state=AssetCatalogueState.EMPTY,
+            value="No rows",
+            detail="No Dagster table assets or local table prefixes were discovered.",
+            action="Materialize assets or seed table prefixes, then refresh.",
+        )
+
+    if summary.graphql_unavailable_count > 0:
+        return AssetCatalogueStatusCard(
+            area="Table coverage",
+            state=AssetCatalogueState.ATTENTION,
+            value=f"{_format_int(summary.local_table_prefix_count)} storage rows",
+            detail=detail,
+            action="Use storage-only rows, then restore GraphQL for asset classification.",
+        )
+
+    if summary.live_count == 0 or summary.degraded_table_count > 0:
+        return AssetCatalogueStatusCard(
+            area="Table coverage",
+            state=AssetCatalogueState.ATTENTION,
+            value=f"{summary.live_count}/{summary.overlaid_table_count} live",
+            detail=detail,
+            action="Review missing or unmaterialized table rows.",
+        )
+
+    return AssetCatalogueStatusCard(
+        area="Table coverage",
+        state=AssetCatalogueState.READY,
+        value=f"{summary.live_count}/{summary.overlaid_table_count} live",
+        detail=detail,
+        action="No action.",
+    )
+
+
+def _asset_metadata_card(summary: AssetCatalogueSummary) -> AssetCatalogueStatusCard:
+    if not summary.graphql_available:
+        return AssetCatalogueStatusCard(
+            area="Asset metadata",
+            state=AssetCatalogueState.UNAVAILABLE,
+            value="GraphQL unavailable",
+            detail="Group, kinds, URI, executable flags, and schema metadata are unavailable.",
+            action="Restore GraphQL to inspect Dagster asset metadata.",
+        )
+
+    if summary.table_asset_count == 0:
+        return AssetCatalogueStatusCard(
+            area="Asset metadata",
+            state=AssetCatalogueState.EMPTY,
+            value="No metadata",
+            detail="No table assets were returned for metadata summarization.",
+            action="Confirm table assets are present in Dagster.",
+        )
+
+    state = (
+        AssetCatalogueState.READY
+        if summary.schema_asset_count > 0 and summary.uri_asset_count > 0
+        else AssetCatalogueState.ATTENTION
+    )
+    return AssetCatalogueStatusCard(
+        area="Asset metadata",
+        state=state,
+        value=f"{summary.schema_asset_count}/{summary.table_asset_count} schemas",
+        detail=(
+            f"{summary.uri_asset_count} with URI, "
+            f"{summary.materializable_asset_count} materializable, "
+            f"{summary.executable_asset_count} executable."
+        ),
+        action="No action."
+        if state is AssetCatalogueState.READY
+        else "Review assets missing URI or schema metadata.",
+    )
+
+
+def _latest_materialization_card(
+    summary: AssetCatalogueSummary,
+) -> AssetCatalogueStatusCard:
+    if not summary.graphql_available:
+        return AssetCatalogueStatusCard(
+            area="Latest materialization",
+            state=AssetCatalogueState.UNAVAILABLE,
+            value="Unknown",
+            detail="GraphQL is unavailable, so materialization metadata cannot be read.",
+            action="Restore GraphQL to inspect materialization freshness.",
+        )
+
+    if summary.table_asset_count == 0:
+        return AssetCatalogueStatusCard(
+            area="Latest materialization",
+            state=AssetCatalogueState.EMPTY,
+            value="No assets",
+            detail="No table assets were returned.",
+            action="Confirm table assets are present in Dagster.",
+        )
+
+    if summary.latest_materialization_timestamp is None:
+        return AssetCatalogueStatusCard(
+            area="Latest materialization",
+            state=AssetCatalogueState.ATTENTION,
+            value="No materializations",
+            detail="GraphQL returned table assets without materialization timestamps.",
+            action="Materialize the expected table assets.",
+        )
+
+    return AssetCatalogueStatusCard(
+        area="Latest materialization",
+        state=AssetCatalogueState.READY,
+        value=summary.latest_materialization_label,
+        detail=f"{summary.materialized_asset_count}/{summary.table_asset_count} assets have materialization metadata.",
+        action="No action.",
+    )
+
+
+def _render_asset_catalogue_card(card: AssetCatalogueStatusCard) -> str:
+    state_class = _asset_catalogue_state_css_class(card.state)
+    return f"""\
+    <article class="asset-catalogue-card asset-catalogue-card--{state_class}">
+        <div class="asset-catalogue-card__topline">
+            <span>{escape(card.area)}</span>
+            <strong>{escape(card.state.value)}</strong>
+        </div>
+        <p class="asset-catalogue-card__value">{escape(card.value)}</p>
+        <p>{escape(card.detail)}</p>
+        <p class="asset-catalogue-card__action">{escape(card.action)}</p>
+    </article>"""
+
+
+def _asset_catalogue_state_css_class(state: AssetCatalogueState) -> str:
+    return state.value.lower().replace(" ", "-")
+
+
+def _asset_catalogue_cards_css() -> str:
+    return """\
+.asset-catalogue-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+    gap: 0.9rem;
+}
+
+.asset-catalogue-card {
+    display: grid;
+    gap: 0.55rem;
+    min-width: 0;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-left-width: 5px;
+    border-radius: 8px;
+    padding: 0.9rem;
+    background: var(--emdl-panel, #ffffff);
+    color: var(--emdl-ink, #1b2324);
+}
+
+.asset-catalogue-card--ready {
+    border-left-color: var(--emdl-green, #3e7a54);
+}
+
+.asset-catalogue-card--needs-attention,
+.asset-catalogue-card--empty {
+    border-left-color: var(--emdl-amber, #b2682a);
+}
+
+.asset-catalogue-card--unavailable {
+    border-left-color: var(--emdl-red, #9e4839);
+}
+
+.asset-catalogue-card__topline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.45rem;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.asset-catalogue-card__topline strong {
+    color: var(--emdl-slate, #354348);
+}
+
+.asset-catalogue-card__value {
+    margin: 0;
+    color: var(--emdl-slate, #354348);
+    font-size: 1.45rem;
+    font-weight: 760;
+    line-height: 1.1;
+}
+
+.asset-catalogue-card p {
+    margin: 0;
+}
+
+.asset-catalogue-card__action {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.9rem;
+}"""
+
+
+def _catalogued_status_counts(
+    table_catalogue: Sequence[CataloguedTable],
+) -> dict[TableAvailability, int]:
+    counts = {status: 0 for status in TableAvailability}
+    for table in table_catalogue:
+        counts[table.status] += 1
+    return counts
+
+
+def _yes_no(value: bool) -> str:
+    return "Yes" if value else "No"
 
 
 def _discover_bucket_names(
@@ -1004,6 +2374,23 @@ def _column_statistics(
             )
         )
     return tuple(statistics)
+
+
+def _query_param_entry_id(value: object) -> str | None:
+    text = _query_param_text(value)
+    if text == "":
+        return None
+    return text
+
+
+def _query_param_text(value: object) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, Sequence) and not isinstance(value, bytes | bytearray):
+        for item in value:
+            if isinstance(item, str) and item.strip():
+                return item.strip()
+    return ""
 
 
 def _status_filter_value(status: str | TableAvailability) -> str:

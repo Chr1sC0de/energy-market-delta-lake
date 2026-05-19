@@ -2,11 +2,20 @@
 
 from collections.abc import Mapping
 from datetime import date, datetime, timedelta
+from types import SimpleNamespace
 from typing import Self
 
 import polars as pl
 import pytest
 
+from marimoserver.bounded_read_diagnostics import dashboard_read_behavior_frame
+from marimoserver.concept_asset_explorer import (
+    build_concept_asset_explorer,
+    concept_mapping_by_title,
+    render_concept_asset_explorer_html,
+    table_name_from_asset_id,
+    table_explorer_route_for_asset,
+)
 from marimoserver.gas_dashboard import (
     BID_STACK_FACILITY_FILTER_ALL,
     BID_STACK_PARTICIPANT_FILTER_ALL,
@@ -20,15 +29,28 @@ from marimoserver.gas_dashboard import (
     CUSTOMER_TRANSFER_TABLE_NAME,
     CUSTOMER_TRANSFER_TABLE_SPEC,
     GAS_MODEL_TABLES,
+    GAS_DAY_CONTEXT_ID,
     GAS_QUALITY_QUALITY_TYPE_FILTER_ALL,
     GAS_QUALITY_SOURCE_POINT_FILTER_ALL,
     GAS_QUALITY_TABLE_NAME,
     GAS_QUALITY_TABLE_SPEC,
+    HUB_ZONE_CONTEXT_ID,
+    HUB_ZONE_DIM_TABLE_NAME,
+    HUB_ZONE_TABLE_SPECS,
+    FACILITY_CAPACITY_OUTLOOK_TABLE_NAME,
+    FACILITY_CONTEXT_ID,
+    FACILITY_DIM_TABLE_NAME,
+    FACILITY_FLOW_STORAGE_TABLE_NAME,
+    FACILITY_TABLE_SPECS,
     MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
     MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
     MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
     MARKET_PRICE_TABLE_NAME,
     MARKET_PRICE_TABLE_SPEC,
+    PARTICIPANT_CONTEXT_ID,
+    PARTICIPANT_DIM_TABLE_NAME,
+    PARTICIPANT_MARKET_MEMBERSHIP_TABLE_NAME,
+    PARTICIPANT_TABLE_SPECS,
     SCHEDULE_RUN_GAS_DATE_FILTER_ALL,
     SCHEDULE_RUN_SCHEDULE_TYPE_FILTER_ALL,
     SCHEDULE_RUN_SOURCE_SYSTEM_FILTER_ALL,
@@ -38,6 +60,10 @@ from marimoserver.gas_dashboard import (
     SETTLEMENT_ACTIVITY_SOURCE_SYSTEM_FILTER_ALL,
     SETTLEMENT_ACTIVITY_TABLE_NAME,
     SETTLEMENT_ACTIVITY_TABLE_SPEC,
+    SOURCE_COVERAGE_STATE_COVERED,
+    SOURCE_COVERAGE_STATE_EMPTY,
+    SOURCE_COVERAGE_STATE_GAP,
+    SOURCE_COVERAGE_STATE_UNAVAILABLE,
     SYSTEM_NOTICE_CRITICAL_FILTER_ALL,
     SYSTEM_NOTICE_CRITICAL_FILTER_CRITICAL,
     SYSTEM_NOTICE_CRITICAL_FILTER_NON_CRITICAL,
@@ -60,11 +86,16 @@ from marimoserver.gas_dashboard import (
     bid_stack_zone_options,
     cached_load_customer_transfer_table,
     cached_load_bid_stack_table,
+    cached_load_facility_context_tables,
+    cached_load_gas_day_tables,
+    cached_load_hub_zone_context_tables,
     cached_load_gas_quality_table,
     cached_load_gas_model_tables,
     cached_load_market_price_table,
+    cached_load_participant_context_tables,
     cached_load_schedule_run_table,
     cached_load_settlement_activity_table,
+    cached_load_source_coverage_tables,
     cached_load_system_notice_table,
     customer_transfer_daily_frame,
     customer_transfer_empty_state_markdown,
@@ -76,6 +107,11 @@ from marimoserver.gas_dashboard import (
     customer_transfer_source_system_options,
     customer_transfer_summary_frame,
     discover_dashboard_config,
+    facility_context_empty_state_markdown,
+    facility_dimension_coverage_frame,
+    facility_dimension_preview_frame,
+    facility_relationship_frame,
+    facility_table_specs,
     gas_quality_empty_state_markdown,
     gas_quality_kpi_frame,
     gas_quality_observation_frame,
@@ -83,13 +119,28 @@ from marimoserver.gas_dashboard import (
     gas_quality_source_coverage_frame,
     gas_quality_source_point_options,
     gas_quality_type_summary_frame,
+    gas_day_bounded_examples_frame,
+    gas_day_examples_empty_state_markdown,
+    gas_day_field_discovery_frame,
+    gas_day_kpi_frame,
+    gas_day_table_specs,
     gas_table_load_status_frame,
     gas_table_load_status_message,
+    hub_zone_context_empty_state_markdown,
+    hub_zone_dimension_coverage_frame,
+    hub_zone_identifier_preview_frame,
+    hub_zone_source_system_frame,
+    hub_zone_table_specs,
     load_market_price_table,
     load_bid_stack_table,
     load_customer_transfer_table,
+    load_facility_context_tables,
+    load_gas_day_tables,
+    load_hub_zone_context_tables,
     load_gas_quality_table,
     load_gas_model_tables,
+    load_participant_context_tables,
+    load_source_coverage_tables,
     load_schedule_run_table,
     load_settlement_activity_table,
     load_system_notice_table,
@@ -101,13 +152,24 @@ from marimoserver.gas_dashboard import (
     market_price_source_table_options,
     market_price_trend_frame,
     market_price_type_summary_frame,
+    participant_context_empty_state_markdown,
+    participant_dimension_coverage_frame,
+    participant_dimension_preview_frame,
+    participant_membership_coverage_frame,
+    participant_membership_preview_frame,
+    participant_related_market_fact_frame,
+    participant_table_specs,
     read_parquet_table,
     render_dashboard_context_panel,
     render_bid_stack_context_links,
     render_customer_transfer_context_links,
     render_market_price_context_links,
+    render_facility_context_links,
+    render_hub_zone_context_links,
+    render_participant_context_links,
     render_schedule_run_context_links,
     render_settlement_activity_context_links,
+    render_source_coverage_matrix_html,
     schedule_run_empty_state_markdown,
     schedule_run_gas_date_options,
     schedule_run_kpi_frame,
@@ -125,6 +187,11 @@ from marimoserver.gas_dashboard import (
     settlement_activity_source_coverage_frame,
     settlement_activity_source_system_options,
     settlement_activity_summary_frame,
+    source_coverage_empty_state_markdown,
+    source_coverage_kpi_frame,
+    source_coverage_matrix_frame,
+    source_coverage_table_specs_from_catalogue,
+    source_coverage_table_specs,
     system_notice_empty_state_markdown,
     system_notice_kpi_frame,
     system_notice_source_coverage_frame,
@@ -136,6 +203,8 @@ from marimoserver.dashboard_registry import (
     DashboardRegistryEntry,
     DashboardRegistryError,
     DashboardStatus,
+    SourceChunkReference,
+    registry_entry_by_concept_id,
 )
 from marimoserver.gas_model_loader import (
     GasModelSessionCache,
@@ -149,6 +218,14 @@ from marimoserver.gas_model_loader import (
     load_gas_model_read_request,
     load_gas_model_read_requests,
     row_limit_message,
+)
+from marimoserver.dagster_graphql import DagsterTableAsset
+from marimoserver.table_explorer import (
+    CataloguedTable,
+    TableAvailability,
+    discover_table_explorer_config,
+    TableFormat,
+    TablePrefix,
 )
 
 
@@ -293,6 +370,98 @@ def test_discover_dashboard_config_accepts_runtime_overrides() -> None:
     assert config.full_table_scan_enabled is True
 
 
+def test_dashboard_read_behavior_frame_renders_per_dashboard_policy() -> None:
+    environment = {
+        "DEVELOPMENT_LOCATION": "aws",
+        "AEMO_BUCKET": "prod-energy-market-aemo",
+        "MARIMO_TABLE_BUCKETS": "prod-energy-market-aemo, prod-energy-market-io",
+        "MARIMO_MAX_PREVIEW_ROWS": "42",
+    }
+    gas_config = discover_dashboard_config(environment)
+    table_config = discover_table_explorer_config(environment)
+
+    rows = {
+        row["dashboard"]: row
+        for row in dashboard_read_behavior_frame(gas_config, table_config).to_dicts()
+    }
+
+    assert rows["AWS Bounded Read Diagnostics"]["read behavior"] == (
+        "Configuration and registry metadata only"
+    )
+    assert rows["AWS Bounded Read Diagnostics"]["row policy"] == "No table-row reads"
+    assert rows["Concept-to-Asset Explorer"]["read behavior"] == (
+        "Registry metadata browser"
+    )
+    assert rows["Concept-to-Asset Explorer"]["row policy"] == "No table-row reads"
+    assert rows["S3 Bucket Health"]["view"] == "Object listing"
+    assert rows["S3 Bucket Health"]["row policy"] == "10,000 objects per bucket"
+    assert rows["Gas Model Table Explorer"]["row policy"] == (
+        "Bounded preview: 42 rows max"
+    )
+    assert rows["Gas Market Prices"]["view"] == "Recent-only bounded view"
+    assert rows["Gas Market Prices"]["row policy"] == ("Bounded preview: 42 rows max")
+    assert rows["Source Coverage Matrix"]["view"] == "Forced bounded sample"
+    assert rows["Source Coverage Matrix"]["row policy"] == (
+        "Bounded preview: 42 rows max"
+    )
+    assert rows["Gas Day Context"]["read behavior"] == (
+        "Registry-backed Gas Day date-field inspection"
+    )
+    assert rows["Gas Day Context"]["view"] == "Forced bounded sample"
+    assert rows["Gas Day Context"]["row policy"] == "Bounded preview: 42 rows max"
+    assert rows["Facility Context"]["read behavior"] == (
+        "Registry-backed Facility relationship inspection"
+    )
+    assert rows["Facility Context"]["view"] == "Forced bounded sample"
+    assert rows["Facility Context"]["row policy"] == "Bounded preview: 42 rows max"
+
+
+def test_dashboard_read_behavior_frame_handles_unknown_available_dashboard() -> None:
+    gas_config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "MARIMO_MAX_PREVIEW_ROWS": "33",
+        }
+    )
+    table_config = discover_table_explorer_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "MARIMO_TABLE_BUCKETS": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "33",
+        }
+    )
+    custom_entry = DashboardRegistryEntry(
+        concept_id="custom-dashboard",
+        title="Custom Dashboard",
+        description="Custom available dashboard.",
+        audiences=(DashboardAudience.OPERATOR,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name="custom_dashboard",
+        backing_assets=(),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+
+    rows = dashboard_read_behavior_frame(
+        gas_config,
+        table_config,
+        entries=(custom_entry,),
+    ).to_dicts()
+
+    assert rows == [
+        {
+            "dashboard": "Custom Dashboard",
+            "route": "/marimo/custom_dashboard/",
+            "audience": "operator",
+            "read behavior": "Dashboard-specific read behavior",
+            "view": "See dashboard",
+            "row policy": "Bounded preview: 33 rows max",
+            "scope": "(none configured)",
+            "side effects": "Read-only",
+        }
+    ]
+
+
 def test_gas_model_specs_cover_required_dashboard_sections() -> None:
     sections = {spec.section for spec in GAS_MODEL_TABLES}
     table_names = {spec.table_name for spec in GAS_MODEL_TABLES}
@@ -303,6 +472,162 @@ def test_gas_model_specs_cover_required_dashboard_sections() -> None:
     assert "silver_gas_fact_scheduled_quantity" in table_names
     assert "silver_gas_fact_connection_point_flow" in table_names
     assert "silver_gas_fact_capacity_outlook" in table_names
+
+
+def test_concept_asset_explorer_maps_concepts_to_assets_and_routes() -> None:
+    explorer = build_concept_asset_explorer()
+    flow = concept_mapping_by_title(explorer, "Flow")
+
+    assert flow is not None
+    assert flow.mapped
+    assert any(
+        asset.asset_id == "silver.gas_model.silver_gas_fact_connection_point_flow"
+        and asset.table_explorer_route
+        == (
+            "/marimo/table_explorer/?asset=asset%3Asilver%2Fgas_model%2F"
+            "silver_gas_fact_connection_point_flow"
+        )
+        for asset in flow.assets
+    )
+    assert any(
+        dashboard.title == "GBB Interactive Map"
+        and dashboard.navigation_route == "/marimo/gbb_interactive_map/"
+        for dashboard in flow.available_dashboards
+    )
+    assert any(
+        dashboard.concept_id == "flow-context"
+        and dashboard.navigation_route == "/marimo#concept-flow-context"
+        for dashboard in flow.planned_dashboards
+    )
+
+    html = render_concept_asset_explorer_html(explorer)
+
+    assert 'data-concept-count="13"' in html
+    assert 'data-coverage-state="mapped"' in html
+    assert 'data-link-scope="table explorer entry"' in html
+    assert "silver.gas_model.silver_gas_fact_connection_point_flow" in html
+
+
+def test_concept_asset_explorer_marks_unmapped_concepts_as_coverage_gaps() -> None:
+    empty_context = DashboardRegistryEntry(
+        concept_id="empty-context",
+        title="Empty Context",
+        description="Concept with citation metadata but no backing assets.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.PLANNED,
+        notebook_name=None,
+        backing_assets=(),
+        generated_gold_paths=(
+            "tools/gas-market-knowledge-base/generated/gold/glossary/empty.md",
+        ),
+        source_chunks=(SourceChunkReference("chunk-empty"),),
+    )
+
+    explorer = build_concept_asset_explorer((empty_context,))
+    html = render_concept_asset_explorer_html(explorer)
+
+    assert [concept.title for concept in explorer.unmapped_concepts] == ["Empty"]
+    assert explorer.unmapped_concepts[0].metadata_gaps == (
+        "No backing silver.gas_model assets are mapped to this concept.",
+    )
+    assert 'data-coverage-state="unmapped-concept"' in html
+    assert 'data-gap-kind="unmapped-concepts"' in html
+    assert "No backing silver.gas_model assets are mapped to this concept." in html
+
+
+def test_concept_asset_explorer_marks_unmapped_assets_as_coverage_gaps() -> None:
+    mapped_entry = DashboardRegistryEntry(
+        concept_id="flow-context",
+        title="Flow Context",
+        description="Flow concept with a mapped table asset.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.PLANNED,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.silver_gas_fact_connection_point_flow",),
+        generated_gold_paths=(
+            "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
+        ),
+        source_chunks=(),
+    )
+    unmapped_entry = DashboardRegistryEntry(
+        concept_id="gas-quality-composition",
+        title="Gas Quality And Composition",
+        description="Dashboard asset without generated glossary metadata.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name="gas_quality_composition",
+        backing_assets=("silver.gas_model.silver_gas_fact_gas_quality",),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+
+    explorer = build_concept_asset_explorer((mapped_entry, unmapped_entry))
+    flow = concept_mapping_by_title(explorer, "Flow")
+
+    assert flow is not None
+    assert [asset.asset_id for asset in flow.assets] == [
+        "silver.gas_model.silver_gas_fact_connection_point_flow"
+    ]
+    assert [asset.asset_id for asset in explorer.unmapped_assets] == [
+        "silver.gas_model.silver_gas_fact_gas_quality"
+    ]
+    assert explorer.unmapped_assets[0].table_explorer_route == (
+        "/marimo/table_explorer/?asset=asset%3Asilver%2Fgas_model%2F"
+        "silver_gas_fact_gas_quality"
+    )
+    assert table_explorer_route_for_asset("bronze.raw.table") is None
+    assert "silver.gas_model.silver_gas_fact_gas_quality" in (
+        render_concept_asset_explorer_html(explorer)
+    )
+
+
+def test_concept_asset_explorer_renders_missing_path_and_link_fallbacks() -> None:
+    fallback_entry = DashboardRegistryEntry(
+        concept_id="fallback-context",
+        title="Fallback Context",
+        description="Concept with a registry asset but missing citation metadata.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.PLANNED,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.",),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+
+    explorer = build_concept_asset_explorer((fallback_entry,))
+    html = render_concept_asset_explorer_html(explorer)
+
+    assert concept_mapping_by_title(explorer, "missing") is None
+    assert table_name_from_asset_id("silver.gas_model.") is None
+    assert explorer.unmapped_concepts == ()
+    assert explorer.unmapped_assets == ()
+    assert 'data-unmapped-concept-count="0"' in html
+    assert 'data-unmapped-asset-count="0"' in html
+    assert "No table explorer link" in html
+    assert "No generated-gold path recorded in the registry." in html
+
+
+def test_concept_asset_explorer_renders_unmapped_asset_without_table_link() -> None:
+    unmapped_entry = DashboardRegistryEntry(
+        concept_id="unsupported-dashboard",
+        title="Unsupported Dashboard",
+        description="Dashboard with a malformed asset ID fixture.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name="unsupported_dashboard",
+        backing_assets=("silver.gas_model.invalid/path",),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+
+    explorer = build_concept_asset_explorer((unmapped_entry,))
+    html = render_concept_asset_explorer_html(explorer)
+
+    assert explorer.concept_mappings == ()
+    assert table_name_from_asset_id("silver.gas_model.invalid/path") is None
+    assert [asset.table_explorer_route for asset in explorer.unmapped_assets] == [None]
+    assert 'data-unmapped-asset-count="1"' in html
+    assert "No table explorer link" in html
 
 
 def test_system_notice_table_loader_uses_bounded_recent_view() -> None:
@@ -2929,6 +3254,1359 @@ def test_refresh_token_from_control_handles_missing_and_unhashable_values() -> N
     assert refresh_token_from_control(refresh_control) == 2
 
 
+def test_participant_context_metadata_is_available_dashboard() -> None:
+    entry = registry_entry_by_concept_id(PARTICIPANT_CONTEXT_ID)
+    html = render_dashboard_context_panel(PARTICIPANT_CONTEXT_ID)
+    context_links = render_participant_context_links()
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "participant_explainer"
+    assert entry.notebook_route == "/marimo/participant_explainer/"
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/participant.md"
+        in entry.generated_gold_paths
+    )
+    assert entry.source_chunk_ids == (
+        "chunk-gbb-guide-participants-report",
+        "chunk-gbb-procedures-registration",
+        "chunk-sttm-procedures-settlement-terms",
+    )
+    assert "silver.gas_model.silver_gas_dim_participant" in entry.backing_assets
+    assert (
+        "silver.gas_model.silver_gas_participant_market_membership"
+        in entry.backing_assets
+    )
+    assert "silver.gas_model.silver_gas_fact_bid_stack" in entry.backing_assets
+    assert (
+        "silver.gas_model.silver_gas_fact_settlement_activity" in entry.backing_assets
+    )
+    assert "Participant Context" in html
+    assert "chunk-gbb-guide-participants-report" in html
+    assert 'data-status="available"' in html
+    assert 'href="/marimo/participant_explainer/"' in context_links
+    assert 'href="/marimo/gas_bid_offer_stack/"' in context_links
+    assert 'href="/marimo/gas_settlement_activity/"' in context_links
+    assert 'href="/marimo/facility_explainer/"' in context_links
+
+
+def test_participant_table_specs_and_loader_use_bounded_samples() -> None:
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "6",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    specs = participant_table_specs()
+    loads = load_participant_context_tables(config, reader=reader)
+
+    assert specs == PARTICIPANT_TABLE_SPECS
+    assert tuple(spec.table_name for spec in specs) == (
+        PARTICIPANT_DIM_TABLE_NAME,
+        PARTICIPANT_MARKET_MEMBERSHIP_TABLE_NAME,
+        FACILITY_DIM_TABLE_NAME,
+        BID_STACK_TABLE_NAME,
+        SETTLEMENT_ACTIVITY_TABLE_NAME,
+    )
+    assert len(loads) == len(specs)
+    assert {row_limit for _, row_limit in captured} == {6}
+    assert captured[0][0] == (
+        "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_dim_participant"
+    )
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert uri.endswith(f"/{PARTICIPANT_DIM_TABLE_NAME}")
+        assert storage_options == config.storage_options()
+        assert row_limit == 6
+        cached_calls += 1
+        return pl.DataFrame({"source_systems": [["GBB"]]})
+
+    first_cached = cached_load_participant_context_tables(
+        config,
+        cache,
+        specs=(PARTICIPANT_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_participant_context_tables(
+        config,
+        cache,
+        specs=(PARTICIPANT_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_participant_context_tables(
+        config,
+        cache,
+        specs=(PARTICIPANT_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 2
+    assert not first_cached[0].cache_hit
+    assert second_cached[0].cache_hit
+    assert not refreshed[0].cache_hit
+
+
+def test_participant_metadata_helpers_extract_dimension_memberships_and_facts() -> None:
+    participant_load = _participant_load(
+        PARTICIPANT_TABLE_SPECS[0],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["participant-key-1", "participant-key-2"],
+                "participant_identity_source": ["gbb_company_id", "sttm_code"],
+                "participant_identity_value": ["P1", "BETA"],
+                "canonical_participant_name": ["Alpha Energy", "Beta Gas"],
+                "registered_name": ["Alpha Energy Pty Ltd", "Beta Gas Ltd"],
+                "participant_type": ["trader", "retailer"],
+                "participant_status": ["active", "active"],
+                "source_systems": [["GBB", "STTM"], ["STTM"]],
+                "source_tables": [
+                    [
+                        "silver.gbb.silver_gasbb_participants_list",
+                        "silver.sttm.silver_int670_v1_registered_participants_rpt_1",
+                    ],
+                    ["silver.sttm.silver_int670_v1_registered_participants_rpt_1"],
+                ],
+                "source_company_ids": [["P1", "ALPHA"], ["BETA"]],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 1, 8),
+                    datetime(2024, 1, 1, 9),
+                ],
+            }
+        ),
+    )
+    membership_load = _participant_load(
+        PARTICIPANT_TABLE_SPECS[1],
+        pl.DataFrame(
+            {
+                "participant_key": [
+                    "participant-key-1",
+                    "participant-key-1",
+                    "participant-key-2",
+                ],
+                "source_system": ["GBB", "STTM", "STTM"],
+                "source_tables": [
+                    ["silver.gbb.silver_gasbb_participants_list"],
+                    ["silver.sttm.silver_int670_v1_registered_participants_rpt_1"],
+                    ["silver.sttm.silver_int670_v1_registered_participants_rpt_1"],
+                ],
+                "market_code": ["BB", "STTM", "STTM"],
+                "source_company_id": ["P1", "ALPHA", "BETA"],
+                "source_company_code": ["P1", "ALP", "BET"],
+                "source_hub_id": [None, "SYD", "ADL"],
+                "source_hub_name": [None, "Sydney", "Adelaide"],
+                "registration_type": ["BB Participant", "Trader", "Retailer"],
+                "registered_capacity": [None, "100", "50"],
+                "membership_status": ["active", "active", "active"],
+                "participant_identity_source": [
+                    "gbb_company_id",
+                    "sttm_code",
+                    "sttm_code",
+                ],
+                "participant_identity_value": ["P1", "ALPHA", "BETA"],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 2, 8),
+                    datetime(2024, 1, 2, 9),
+                    datetime(2024, 1, 2, 10),
+                ],
+            }
+        ),
+    )
+    facility_load = _participant_load(
+        PARTICIPANT_TABLE_SPECS[2],
+        pl.DataFrame(
+            {
+                "participant_key": ["participant-key-1", "unknown-key", None],
+                "source_system": ["GBB", "GBB", "STTM"],
+                "source_facility_id": ["FAC1", "FAC2", "FAC3"],
+                "facility_name": ["Facility One", "Facility Two", "Facility Three"],
+            }
+        ),
+    )
+    bid_stack_load = _participant_load(
+        PARTICIPANT_TABLE_SPECS[3],
+        pl.DataFrame(
+            {
+                "participant_id": ["P1", "UNKNOWN"],
+                "participant_name": ["Alpha Energy", "Unknown Trading"],
+                "source_system": ["STTM", "STTM"],
+            }
+        ),
+    )
+    settlement_load = _participant_load(
+        PARTICIPANT_TABLE_SPECS[4],
+        pl.DataFrame(
+            {
+                "participant_name": [
+                    "Alpha Energy",
+                    "Beta Gas Ltd",
+                    "Unknown Trading",
+                ],
+                "amount_gst_ex": [100.0, 50.0, 25.0],
+                "source_system": ["STTM", "STTM", "STTM"],
+            }
+        ),
+    )
+    loads = (
+        participant_load,
+        membership_load,
+        facility_load,
+        bid_stack_load,
+        settlement_load,
+    )
+
+    coverage = participant_dimension_coverage_frame(participant_load)
+    memberships = participant_membership_coverage_frame(membership_load)
+    relationships = participant_related_market_fact_frame(loads)
+    participant_preview = participant_dimension_preview_frame(participant_load)
+    membership_preview = participant_membership_preview_frame(membership_load)
+    coverage_values = {row["metric"]: row["value"] for row in coverage.to_dicts()}
+    membership_rows = {
+        (row["source system"], row["market code"], row["registration type"]): row
+        for row in memberships.to_dicts()
+    }
+    relationship_rows = {
+        row["related surface"]: row for row in relationships.to_dicts()
+    }
+
+    assert coverage_values == {
+        "Participant dimension rows": "2",
+        "Identity sources": "2",
+        "Canonical participants": "2",
+        "Registered names": "2",
+        "Participant types": "2",
+        "Participant statuses": "1",
+        "Source systems": "2",
+        "Source tables": "2",
+        "Source company ids": "3",
+    }
+    assert membership_rows[("GBB", "BB", "BB Participant")]["rows"] == 1
+    assert membership_rows[("STTM", "STTM", "Trader")]["participant keys"] == 1
+    assert membership_rows[("STTM", "STTM", "Retailer")]["hub ids"] == 1
+    assert relationship_rows["Market membership"]["matched participants"] == 2
+    assert relationship_rows["Facility"]["available rows"] == 2
+    assert relationship_rows["Facility"]["matched participants"] == 1
+    assert relationship_rows["Bid / Offer"]["participant references"] == 4
+    assert relationship_rows["Bid / Offer"]["matched participants"] == 2
+    assert relationship_rows["Settlement"]["participant references"] == 3
+    assert relationship_rows["Settlement"]["matched participants"] == 2
+    assert participant_preview.select(
+        "identity source",
+        "identity value",
+        "participant",
+        "registered name",
+        "participant type",
+        "participant status",
+        "source systems",
+        "source tables",
+        "source company ids",
+    ).to_dict(as_series=False) == {
+        "identity source": ["gbb_company_id", "sttm_code"],
+        "identity value": ["P1", "BETA"],
+        "participant": ["Alpha Energy", "Beta Gas"],
+        "registered name": ["Alpha Energy Pty Ltd", "Beta Gas Ltd"],
+        "participant type": ["trader", "retailer"],
+        "participant status": ["active", "active"],
+        "source systems": ["GBB, STTM", "STTM"],
+        "source tables": [
+            (
+                "silver.gbb.silver_gasbb_participants_list, "
+                "silver.sttm.silver_int670_v1_registered_participants_rpt_1"
+            ),
+            "silver.sttm.silver_int670_v1_registered_participants_rpt_1",
+        ],
+        "source company ids": ["P1, ALPHA", "BETA"],
+    }
+    assert membership_preview.select(
+        "source system",
+        "market code",
+        "participant key",
+        "company id",
+        "company code",
+        "hub",
+        "registration type",
+        "membership status",
+    ).to_dict(as_series=False) == {
+        "source system": ["GBB", "STTM", "STTM"],
+        "market code": ["BB", "STTM", "STTM"],
+        "participant key": [
+            "participant-key-1",
+            "participant-key-1",
+            "participant-key-2",
+        ],
+        "company id": ["P1", "ALPHA", "BETA"],
+        "company code": ["P1", "ALP", "BET"],
+        "hub": [None, "Sydney", "Adelaide"],
+        "registration type": ["BB Participant", "Trader", "Retailer"],
+        "membership status": ["active", "active", "active"],
+    }
+
+
+def test_participant_helpers_cover_empty_state_behavior() -> None:
+    unavailable_load = _participant_load(
+        PARTICIPANT_TABLE_SPECS[0],
+        None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=4,
+    )
+    empty_membership_load = _participant_load(
+        PARTICIPANT_TABLE_SPECS[1],
+        pl.DataFrame(),
+        row_limit=4,
+    )
+    loads = (unavailable_load, empty_membership_load)
+    partial_membership_load = _participant_load(
+        PARTICIPANT_TABLE_SPECS[1],
+        pl.DataFrame(
+            {
+                "participant_key": ["orphan-participant-key"],
+                "source_system": [None],
+                "market_code": [None],
+                "registration_type": [None],
+                "membership_status": [None],
+            }
+        ),
+        row_limit=4,
+    )
+    planned_entry = DashboardRegistryEntry(
+        concept_id=PARTICIPANT_CONTEXT_ID,
+        title="Participant Context",
+        description="Planned Participant context entry.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.PLANNED,
+        notebook_name=None,
+        backing_assets=(),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+
+    assert participant_dimension_coverage_frame(unavailable_load).is_empty()
+    assert participant_membership_coverage_frame(empty_membership_load).is_empty()
+    assert participant_dimension_preview_frame(unavailable_load).is_empty()
+    assert participant_membership_preview_frame(empty_membership_load).is_empty()
+    assert participant_related_market_fact_frame(loads).is_empty()
+    partial_membership = participant_membership_coverage_frame(partial_membership_load)
+    partial_relationships = participant_related_market_fact_frame(
+        (partial_membership_load,)
+    )
+
+    markdown = participant_context_empty_state_markdown(loads)
+    empty_markdown = participant_context_empty_state_markdown(())
+    empty_context_links = render_participant_context_links(entries=())
+    planned_context_links = render_participant_context_links(entries=(planned_entry,))
+
+    assert partial_membership.row(0, named=True) == {
+        "source system": None,
+        "market code": None,
+        "registration type": None,
+        "membership status": None,
+        "rows": 1,
+        "participant keys": 1,
+        "source company ids": 0,
+        "source company codes": 0,
+        "hub ids": 0,
+        "source tables": 0,
+        "latest ingest": None,
+    }
+    assert partial_relationships.row(0, named=True)["matched participants"] == 0
+    assert "No Participant metadata, membership, or related fact rows" in markdown
+    assert "`1` reads were unavailable and `1` reads returned no rows" in markdown
+    assert "Bounded preview reads are capped at `4` rows per table" in markdown
+    assert "No Participant context tables were requested" in empty_markdown
+    assert (
+        "No Participant, bid, settlement, facility, or table explorer entries "
+        "are registered."
+    ) in empty_context_links
+    assert "<span>Participant Context</span>" in planned_context_links
+
+
+def test_facility_context_metadata_is_available_dashboard() -> None:
+    entry = registry_entry_by_concept_id(FACILITY_CONTEXT_ID)
+    html = render_dashboard_context_panel(FACILITY_CONTEXT_ID)
+    context_links = render_facility_context_links()
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "facility_explainer"
+    assert entry.notebook_route == "/marimo/facility_explainer/"
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md"
+        in entry.generated_gold_paths
+    )
+    assert entry.source_chunk_ids == (
+        "chunk-gbb-guide-nodes-facilities",
+        "chunk-gbb-procedures-facility-nameplate",
+    )
+    assert "silver.gas_model.silver_gas_dim_facility" in entry.backing_assets
+    assert "Facility Context" in html
+    assert "chunk-gbb-guide-nodes-facilities" in html
+    assert 'data-status="available"' in html
+    assert 'href="/marimo/facility_explainer/"' in context_links
+    assert "GBB Interactive Map" in context_links
+    assert "Capacity Context" in context_links
+
+
+def test_facility_table_specs_and_loader_use_bounded_samples() -> None:
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "5",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    specs = facility_table_specs()
+    loads = load_facility_context_tables(config, reader=reader)
+
+    assert specs == FACILITY_TABLE_SPECS
+    assert tuple(spec.table_name for spec in specs) == (
+        FACILITY_DIM_TABLE_NAME,
+        FACILITY_FLOW_STORAGE_TABLE_NAME,
+        FACILITY_CAPACITY_OUTLOOK_TABLE_NAME,
+    )
+    assert len(loads) == len(specs)
+    assert {row_limit for _, row_limit in captured} == {5}
+    assert captured[0][0] == (
+        "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_dim_facility"
+    )
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert uri.endswith(f"/{FACILITY_DIM_TABLE_NAME}")
+        assert storage_options == config.storage_options()
+        assert row_limit == 5
+        cached_calls += 1
+        return pl.DataFrame({"source_system": ["GBB"]})
+
+    first_cached = cached_load_facility_context_tables(
+        config,
+        cache,
+        specs=(FACILITY_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_facility_context_tables(
+        config,
+        cache,
+        specs=(FACILITY_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_facility_context_tables(
+        config,
+        cache,
+        specs=(FACILITY_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 2
+    assert not first_cached[0].cache_hit
+    assert second_cached[0].cache_hit
+    assert not refreshed[0].cache_hit
+
+
+def test_facility_metadata_helpers_extract_dimension_and_relationships() -> None:
+    facility_load = _facility_load(
+        FACILITY_TABLE_SPECS[0],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["facility-key-1", "facility-key-2"],
+                "participant_key": ["participant-key-1", None],
+                "zone_key": ["zone-key-1", "zone-key-2"],
+                "source_system": ["GBB", "STTM"],
+                "source_tables": [
+                    ["silver.gbb.silver_gasbb_facilities"],
+                    ["silver.sttm.silver_int671_v1_hub_facility_definition_rpt_1"],
+                ],
+                "source_facility_id": ["10", "20"],
+                "facility_name": [
+                    "Carpentaria Gas Pipeline",
+                    "Sydney Hub Facility",
+                ],
+                "facility_short_name": ["CGP", "SYD"],
+                "facility_type": ["PIPE", "HUB"],
+                "operator_name": ["APA Group", None],
+                "capacity_effective_from_date": [date(2024, 1, 1), None],
+                "capacity_effective_to_date": [None, None],
+                "default_capacity": [45.0, None],
+                "maximum_capacity": [90.0, None],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 1, 8),
+                    datetime(2024, 1, 1, 9),
+                ],
+            }
+        ),
+    )
+    flow_load = _facility_load(
+        FACILITY_TABLE_SPECS[1],
+        pl.DataFrame(
+            {
+                "facility_key": [
+                    "facility-key-1",
+                    "facility-key-1",
+                    None,
+                    "facility-key-2",
+                ],
+                "source_system": ["GBB", "GBB", "GBB", "GBB"],
+                "gas_date": [
+                    date(2024, 1, 2),
+                    date(2024, 1, 2),
+                    date(2024, 1, 2),
+                    date(2024, 1, 2),
+                ],
+                "source_facility_id": ["10", "10", "99", None],
+                "demand_tj": [12.0, None, 3.0, 4.0],
+                "supply_tj": [None, None, None, None],
+                "transfer_in_tj": [None, None, None, None],
+                "transfer_out_tj": [None, None, None, None],
+                "held_in_storage_tj": [None, 8.0, None, None],
+            }
+        ),
+    )
+    capacity_load = _facility_load(
+        FACILITY_TABLE_SPECS[2],
+        pl.DataFrame(
+            {
+                "source_system": ["GBB", "GBB", "GBB"],
+                "source_table": [
+                    "silver.gbb.capacity",
+                    "silver.gbb.capacity",
+                    "silver.gbb.capacity",
+                ],
+                "source_facility_id": ["10", "20", "99"],
+                "facility_name": [
+                    "Carpentaria Gas Pipeline",
+                    "Sydney Hub Facility",
+                    "Unmatched Facility",
+                ],
+                "capacity_type": ["nameplate", "nameplate", "nameplate"],
+                "flow_direction": ["north", "injection", "south"],
+                "capacity_quantity_tj": [14.0, None, 20.0],
+            }
+        ),
+    )
+
+    coverage = facility_dimension_coverage_frame(facility_load)
+    relationships = facility_relationship_frame(
+        (facility_load, flow_load, capacity_load)
+    )
+    preview = facility_dimension_preview_frame(facility_load)
+    coverage_values = {row["metric"]: row["value"] for row in coverage.to_dicts()}
+    relationship_rows = {row["relationship"]: row for row in relationships.to_dicts()}
+
+    assert coverage_values == {
+        "Facility dimension rows": "2",
+        "Source systems": "2",
+        "Source tables": "2",
+        "Facility types": "2",
+        "Operators": "1",
+        "Participant links": "1",
+        "Zone links": "2",
+        "Capacity metadata rows": "1",
+    }
+    assert relationship_rows["Participant"]["available rows"] == 1
+    assert relationship_rows["Zone"]["available rows"] == 2
+    assert relationship_rows["Flow"]["available rows"] == 3
+    assert relationship_rows["Flow"]["matched facilities"] == 2
+    assert relationship_rows["Storage"]["available rows"] == 1
+    assert relationship_rows["Storage"]["matched facilities"] == 1
+    assert relationship_rows["Capacity"]["available rows"] == 2
+    assert relationship_rows["Capacity"]["matched facilities"] == 1
+    assert (
+        "1 facility dimension rows also carry standing capacity metadata"
+        in relationship_rows["Capacity"]["detail"]
+    )
+    assert preview.select(
+        "source system",
+        "source facility id",
+        "facility",
+        "facility type",
+        "operator",
+        "participant key",
+        "zone key",
+        "default capacity",
+        "maximum capacity",
+        "source tables",
+    ).to_dict(as_series=False) == {
+        "source system": ["GBB", "STTM"],
+        "source facility id": ["10", "20"],
+        "facility": ["Carpentaria Gas Pipeline", "Sydney Hub Facility"],
+        "facility type": ["PIPE", "HUB"],
+        "operator": ["APA Group", None],
+        "participant key": ["participant-key-1", None],
+        "zone key": ["zone-key-1", "zone-key-2"],
+        "default capacity": [45.0, None],
+        "maximum capacity": [90.0, None],
+        "source tables": [
+            "silver.gbb.silver_gasbb_facilities",
+            "silver.sttm.silver_int671_v1_hub_facility_definition_rpt_1",
+        ],
+    }
+
+
+def test_facility_helpers_cover_empty_state_behavior() -> None:
+    unavailable_load = _facility_load(
+        FACILITY_TABLE_SPECS[0],
+        None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=4,
+    )
+    empty_flow_load = _facility_load(
+        FACILITY_TABLE_SPECS[1],
+        pl.DataFrame(),
+        row_limit=4,
+    )
+    empty_capacity_load = _facility_load(
+        FACILITY_TABLE_SPECS[2],
+        pl.DataFrame(),
+        row_limit=4,
+    )
+    loads = (unavailable_load, empty_flow_load, empty_capacity_load)
+
+    assert facility_dimension_coverage_frame(unavailable_load).is_empty()
+    assert facility_relationship_frame(loads).is_empty()
+    assert facility_dimension_preview_frame(unavailable_load).is_empty()
+
+    markdown = facility_context_empty_state_markdown(loads)
+    empty_markdown = facility_context_empty_state_markdown(())
+    empty_context_links = render_facility_context_links(entries=())
+
+    assert "No Facility metadata or relationship rows are available" in markdown
+    assert "`1` reads were unavailable and `2` reads returned no rows" in markdown
+    assert "Bounded preview reads are capped at `4` rows per table" in markdown
+    assert "No Facility context tables were requested" in empty_markdown
+    assert (
+        "No Facility, flow, capacity, participant, zone, or table explorer entries "
+        "are registered."
+    ) in empty_context_links
+
+
+def test_hub_zone_context_metadata_is_available_dashboard() -> None:
+    entry = registry_entry_by_concept_id(HUB_ZONE_CONTEXT_ID)
+    html = render_dashboard_context_panel(HUB_ZONE_CONTEXT_ID)
+    context_links = render_hub_zone_context_links()
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "hub_zone_explainer"
+    assert entry.notebook_route == "/marimo/hub_zone_explainer/"
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md"
+        in entry.generated_gold_paths
+    )
+    assert entry.source_chunk_ids == (
+        "chunk-sttm-procedures-definitions",
+        "chunk-sttm-procedures-settlement-terms",
+        "chunk-dwgm-operations-glossary-schedule",
+        "chunk-dwgm-operations-capacity-certificates-modelling",
+    )
+    assert "silver.gas_model.silver_gas_dim_zone" in entry.backing_assets
+    assert "Hub / Zone Context" in html
+    assert "chunk-sttm-procedures-definitions" in html
+    assert "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md" in html
+    assert 'data-status="available"' in html
+    assert 'href="/marimo/hub_zone_explainer/"' in context_links
+    assert "Source Coverage Matrix" in context_links
+    assert "Bid / Offer Stack" in context_links
+
+
+def test_hub_zone_table_specs_and_loader_use_bounded_samples() -> None:
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "7",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    specs = hub_zone_table_specs()
+    loads = load_hub_zone_context_tables(config, reader=reader)
+
+    assert specs == HUB_ZONE_TABLE_SPECS
+    assert tuple(spec.table_name for spec in specs) == (HUB_ZONE_DIM_TABLE_NAME,)
+    assert len(loads) == 1
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_dim_zone",
+            7,
+        )
+    ]
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert uri.endswith(f"/{HUB_ZONE_DIM_TABLE_NAME}")
+        assert storage_options == config.storage_options()
+        assert row_limit == 7
+        cached_calls += 1
+        return pl.DataFrame({"source_system": ["STTM"]})
+
+    first_cached = cached_load_hub_zone_context_tables(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_hub_zone_context_tables(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_hub_zone_context_tables(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 2
+    assert not first_cached[0].cache_hit
+    assert second_cached[0].cache_hit
+    assert not refreshed[0].cache_hit
+
+
+def test_hub_zone_metadata_helpers_extract_source_qualified_identifiers() -> None:
+    load = _facility_load(
+        HUB_ZONE_TABLE_SPECS[0],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["zone-key-1", "zone-key-2", "zone-key-3"],
+                "source_system": ["STTM", "VICGAS", "GBB"],
+                "source_tables": [
+                    ["silver.sttm.silver_int671_v1_hub_facility_definition_rpt_1"],
+                    ["silver.vicgas.silver_int259_v4_pipe_segment_1"],
+                    [
+                        "silver.gbb.silver_gasbb_demand_zones_and_pipeline_connectionpoint_mapping"
+                    ],
+                ],
+                "zone_type": ["sttm_hub", "linepack_zone", "demand_zone"],
+                "source_zone_id": ["SYD", "5", "DZ1"],
+                "zone_name": ["Sydney Hub", "Linepack 5", "Demand Zone 1"],
+                "zone_description": ["Sydney Hub", None, "GBB demand zone"],
+                "source_surrogate_keys": [["sttm-1"], ["vic-1"], ["gbb-1", "gbb-2"]],
+                "source_files": [
+                    ["sttm.csv"],
+                    ["vicgas.csv"],
+                    ["gbb.csv", "gbb-extra.csv"],
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 1, 8),
+                    datetime(2024, 1, 1, 10),
+                    datetime(2024, 1, 1, 9),
+                ],
+            }
+        ),
+    )
+
+    coverage = hub_zone_dimension_coverage_frame(load)
+    sources = hub_zone_source_system_frame(load)
+    preview = hub_zone_identifier_preview_frame(load)
+    coverage_values = {row["metric"]: row["value"] for row in coverage.to_dicts()}
+    source_rows = {row["source system"]: row for row in sources.to_dicts()}
+
+    assert coverage_values == {
+        "Zone dimension rows": "3",
+        "Source systems": "3",
+        "Source tables": "3",
+        "Zone types": "3",
+        "STTM hubs": "1",
+        "DWGM/GBB zone rows": "2",
+        "Source-qualified identifiers": "3",
+        "Source files": "4",
+    }
+    assert source_rows["GBB"]["source zone ids"] == 1
+    assert source_rows["GBB"]["source files"] == 2
+    assert source_rows["STTM"]["zone types"] == 1
+    assert source_rows["VICGAS"]["source tables"] == 1
+    assert preview.select(
+        "source-qualified identifier",
+        "source system",
+        "zone type",
+        "source zone id",
+        "zone name",
+        "source tables",
+        "source files",
+    ).to_dict(as_series=False) == {
+        "source-qualified identifier": [
+            "GBB:demand_zone:DZ1",
+            "STTM:sttm_hub:SYD",
+            "VICGAS:linepack_zone:5",
+        ],
+        "source system": ["GBB", "STTM", "VICGAS"],
+        "zone type": ["demand_zone", "sttm_hub", "linepack_zone"],
+        "source zone id": ["DZ1", "SYD", "5"],
+        "zone name": ["Demand Zone 1", "Sydney Hub", "Linepack 5"],
+        "source tables": [
+            "silver.gbb.silver_gasbb_demand_zones_and_pipeline_connectionpoint_mapping",
+            "silver.sttm.silver_int671_v1_hub_facility_definition_rpt_1",
+            "silver.vicgas.silver_int259_v4_pipe_segment_1",
+        ],
+        "source files": ["gbb.csv, gbb-extra.csv", "sttm.csv", "vicgas.csv"],
+    }
+
+
+def test_hub_zone_helpers_fill_missing_columns_and_partial_identifiers() -> None:
+    load = _facility_load(
+        HUB_ZONE_TABLE_SPECS[0],
+        pl.DataFrame(
+            {
+                "source_system": ["STTM", "STTM"],
+                "zone_type": ["sttm_hub", "sttm_hub"],
+                "source_zone_id": ["", "SYD"],
+                "ingested_timestamp": [None, None],
+            }
+        ),
+    )
+
+    coverage = hub_zone_dimension_coverage_frame(load)
+    sources = hub_zone_source_system_frame(load)
+    preview = hub_zone_identifier_preview_frame(load)
+    coverage_values = {row["metric"]: row["value"] for row in coverage.to_dicts()}
+
+    assert coverage_values["Source tables"] == "0"
+    assert coverage_values["Source files"] == "0"
+    assert coverage_values["Source-qualified identifiers"] == "1"
+    assert sources.to_dicts() == [
+        {
+            "source system": "STTM",
+            "rows": 2,
+            "zone types": 1,
+            "source zone ids": 1,
+            "source tables": 0,
+            "source files": 0,
+            "latest ingest": None,
+        }
+    ]
+    assert preview.select(
+        "source-qualified identifier",
+        "source system",
+        "zone type",
+        "source zone id",
+    ).to_dict(as_series=False) == {
+        "source-qualified identifier": ["", "STTM:sttm_hub:SYD"],
+        "source system": ["STTM", "STTM"],
+        "zone type": ["sttm_hub", "sttm_hub"],
+        "source zone id": ["", "SYD"],
+    }
+
+
+def test_hub_zone_helpers_cover_empty_state_behavior() -> None:
+    unavailable_load = _facility_load(
+        HUB_ZONE_TABLE_SPECS[0],
+        None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=4,
+    )
+    empty_load = _facility_load(
+        HUB_ZONE_TABLE_SPECS[0],
+        pl.DataFrame(),
+        row_limit=4,
+    )
+
+    assert hub_zone_dimension_coverage_frame(unavailable_load).is_empty()
+    assert hub_zone_source_system_frame(unavailable_load).is_empty()
+    assert hub_zone_identifier_preview_frame(unavailable_load).is_empty()
+
+    unavailable_markdown = hub_zone_context_empty_state_markdown((unavailable_load,))
+    empty_markdown = hub_zone_context_empty_state_markdown((empty_load,))
+    no_table_markdown = hub_zone_context_empty_state_markdown(())
+    empty_context_links = render_hub_zone_context_links(entries=())
+
+    assert "No Hub / Zone metadata rows are available" in unavailable_markdown
+    assert "`1` reads were unavailable and `0` reads returned no rows" in (
+        unavailable_markdown
+    )
+    assert "Bounded preview reads are capped at `4` rows per table" in (
+        unavailable_markdown
+    )
+    assert "`0` reads were unavailable and `1` reads returned no rows" in empty_markdown
+    assert "No Hub / Zone context tables were requested" in no_table_markdown
+    assert (
+        "No Hub / Zone, Facility, flow, capacity, schedule, bid, or table "
+        "explorer entries are registered."
+    ) in empty_context_links
+
+
+def test_gas_day_context_metadata_is_available_dashboard() -> None:
+    entry = registry_entry_by_concept_id(GAS_DAY_CONTEXT_ID)
+    html = render_dashboard_context_panel(GAS_DAY_CONTEXT_ID)
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "gas_day_explainer"
+    assert entry.notebook_route == "/marimo/gas_day_explainer/"
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md"
+        in entry.generated_gold_paths
+    )
+    assert entry.source_chunk_ids == ("chunk-gbb-guide-gas-day",)
+    assert "Gas Day Context" in html
+    assert "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md" in html
+    assert "chunk-gbb-guide-gas-day" in html
+    assert 'data-status="available"' in html
+
+
+def test_gas_day_table_specs_use_current_registry_assets_and_known_dates() -> None:
+    specs = gas_day_table_specs()
+    specs_by_table = {spec.table_name: spec for spec in specs}
+
+    assert "silver_gas_dim_date" in specs_by_table
+    assert specs_by_table["silver_gas_fact_schedule_run"].date_columns == (
+        "gas_date",
+        "gas_start_timestamp",
+        "bid_cutoff_timestamp",
+        "creation_timestamp",
+        "approval_timestamp",
+        "source_last_updated_timestamp",
+        "ingested_timestamp",
+    )
+    assert specs_by_table["silver_gas_fact_capacity_outlook"].date_columns == (
+        "from_gas_date",
+        "to_gas_date",
+    )
+    assert specs_by_table["silver_gas_fact_customer_transfer"].date_columns == (
+        "gas_date",
+        "ingested_timestamp",
+    )
+
+
+def test_gas_day_loaders_force_bounded_samples_and_cache_reads() -> None:
+    config = _dashboard_config()
+    specs = (
+        GasTableSpec(
+            section="Facts",
+            label="Schedule runs",
+            table_name="silver_gas_fact_schedule_run",
+            date_columns=("gas_date",),
+        ),
+    )
+    captured: list[int | None] = []
+    calls: list[int] = []
+    cache: GasModelSessionCache = {}
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert uri == (
+            "s3://dev-energy-market-aemo/silver/gas_model/silver_gas_fact_schedule_run"
+        )
+        assert storage_options == config.storage_options()
+        captured.append(row_limit)
+        calls.append(len(calls) + 1)
+        return pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, calls[-1])],
+                "source_system": ["STTM"],
+            }
+        )
+
+    direct = load_gas_day_tables(config, specs=specs, reader=reader)
+    first_cached = cached_load_gas_day_tables(config, cache, specs=specs, reader=reader)
+    second_cached = cached_load_gas_day_tables(
+        config, cache, specs=specs, reader=reader
+    )
+    refreshed = cached_load_gas_day_tables(
+        config,
+        cache,
+        specs=specs,
+        reader=reader,
+        refresh_token=1,
+    )
+
+    assert captured == [100, 100, 100]
+    assert calls == [1, 2, 3]
+    assert direct[0].row_limit == 100
+    assert not first_cached[0].cache_hit
+    assert second_cached[0].cache_hit
+    assert not refreshed[0].cache_hit
+    assert second_cached[0].dataframe is not None
+    assert second_cached[0].dataframe["gas_date"].to_list() == [date(2024, 1, 2)]
+    assert refreshed[0].dataframe is not None
+    assert refreshed[0].dataframe["gas_date"].to_list() == [date(2024, 1, 3)]
+
+
+def test_gas_day_field_discovery_finds_gas_date_and_date_fields() -> None:
+    schedule_load = _source_coverage_load(
+        "silver_gas_fact_schedule_run",
+        pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 2), date(2024, 1, 3)],
+                "gas_start_timestamp": [
+                    datetime(2024, 1, 2, 6),
+                    datetime(2024, 1, 3, 6),
+                ],
+                "source_system": ["STTM", "STTM"],
+                "source_table": ["silver.sttm.schedule", "silver.sttm.schedule"],
+            }
+        ),
+    )
+    capacity_load = GasTableLoad(
+        spec=GasTableSpec(
+            section="Facts",
+            label="Capacity outlook",
+            table_name="silver_gas_fact_capacity_outlook",
+            date_columns=("from_gas_date", "to_gas_date"),
+        ),
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_capacity_outlook",
+        dataframe=pl.DataFrame(
+            {
+                "from_gas_date": [date(2024, 2, 1)],
+                "to_gas_date": [date(2024, 2, 3)],
+                "source_table": ["silver.gbb.capacity"],
+            }
+        ),
+        error=None,
+        row_limit=100,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+    unavailable_load = GasTableLoad(
+        spec=CUSTOMER_TRANSFER_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_customer_transfer",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=100,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+    discovery = gas_day_field_discovery_frame(
+        (schedule_load, capacity_load, unavailable_load)
+    )
+    rows = {
+        (row["table"], row["field"]): row
+        for row in discovery.to_dicts()
+        if row["field"]
+    }
+
+    assert rows[("silver_gas_fact_schedule_run", "gas_date")] == {
+        "asset": "silver.gas_model.silver_gas_fact_schedule_run",
+        "section": "Facts",
+        "table": "silver_gas_fact_schedule_run",
+        "field": "gas_date",
+        "field role": "Gas Day field",
+        "dtype": "Date",
+        "status": "Discovered",
+        "rows loaded": 2,
+        "populated values": 2,
+        "first value": "2024-01-02",
+        "latest value": "2024-01-03",
+        "row limit": "Bounded preview: 100 rows max",
+        "table explorer": (
+            "/marimo/table_explorer/?search=silver_gas_fact_schedule_run"
+        ),
+        "uri": "s3://bucket/silver/gas_model/silver_gas_fact_schedule_run",
+        "detail": "Field is present in the bounded table read.",
+    }
+    assert (
+        rows[("silver_gas_fact_schedule_run", "gas_start_timestamp")]["field role"]
+        == "Timestamp field"
+    )
+    assert (
+        rows[("silver_gas_fact_capacity_outlook", "from_gas_date")]["field role"]
+        == "Gas Day field"
+    )
+    assert rows[("silver_gas_fact_customer_transfer", "gas_date")]["status"] == (
+        "Unavailable"
+    )
+    assert (
+        "FileNotFoundError: no parquet files found"
+        in rows[("silver_gas_fact_customer_transfer", "gas_date")]["detail"]
+    )
+
+
+def test_gas_day_field_discovery_handles_empty_declared_and_missing_fields() -> None:
+    missing_load = _source_coverage_load(
+        "silver_gas_fact_fieldless",
+        pl.DataFrame({"source_system": ["GBB"]}),
+    )
+    empty_fieldless_load = _source_coverage_load(
+        "silver_gas_fact_empty_fieldless",
+        pl.DataFrame(),
+    )
+    date_field_load = _source_coverage_load(
+        "silver_gas_fact_report_dates",
+        pl.DataFrame({"report_date": [date(2024, 1, 4)]}),
+    )
+    empty_declared_load = GasTableLoad(
+        spec=GasTableSpec(
+            section="Facts",
+            label="Declared empty",
+            table_name="silver_gas_fact_declared_empty",
+            date_columns=("date_key",),
+        ),
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_declared_empty",
+        dataframe=pl.DataFrame(schema={"source_system": pl.String}),
+        error=None,
+        row_limit=100,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+    declared_only_load = GasTableLoad(
+        spec=GasTableSpec(
+            section="Facts",
+            label="Declared only",
+            table_name="silver_gas_fact_declared_only",
+            date_columns=("delivery_gas_date",),
+        ),
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_declared_only",
+        dataframe=pl.DataFrame({"source_system": ["STTM"]}),
+        error=None,
+        row_limit=100,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+    empty_value_load = _source_coverage_load(
+        "silver_gas_fact_empty_values",
+        pl.DataFrame({"gas_date": [None]}, schema={"gas_date": pl.Date}),
+    )
+    unavailable_fieldless_load = _source_coverage_load(
+        "silver_gas_fact_missing_prefix",
+        None,
+        error="FileNotFoundError: no parquet files found",
+    )
+
+    empty_discovery = gas_day_field_discovery_frame(())
+    discovery = gas_day_field_discovery_frame(
+        (
+            missing_load,
+            empty_fieldless_load,
+            date_field_load,
+            empty_declared_load,
+            declared_only_load,
+            empty_value_load,
+            unavailable_fieldless_load,
+        )
+    )
+    rows = {(row["table"], row["field role"]): row for row in discovery.to_dicts()}
+
+    assert empty_discovery.is_empty()
+    assert rows[("silver_gas_fact_fieldless", "No date field found")]["status"] == (
+        "Loaded"
+    )
+    assert (
+        rows[("silver_gas_fact_empty_fieldless", "No date field found")]["status"]
+        == "Empty"
+    )
+    assert rows[("silver_gas_fact_report_dates", "Date field")]["field"] == (
+        "report_date"
+    )
+    assert rows[("silver_gas_fact_declared_empty", "Date key")]["status"] == "Empty"
+    assert rows[("silver_gas_fact_declared_empty", "Date key")]["detail"] == (
+        "The table read returned no rows; field presence came from metadata."
+    )
+    assert rows[("silver_gas_fact_declared_only", "Gas Day field")]["status"] == (
+        "Declared only"
+    )
+    assert rows[("silver_gas_fact_declared_only", "Gas Day field")]["detail"] == (
+        "delivery_gas_date is declared for this dashboard but absent from loaded rows."
+    )
+    assert rows[("silver_gas_fact_empty_values", "Gas Day field")]["first value"] == ""
+    assert rows[("silver_gas_fact_empty_values", "Gas Day field")]["latest value"] == ""
+    assert (
+        rows[("silver_gas_fact_missing_prefix", "No date field found")]["status"]
+        == "Unavailable"
+    )
+
+
+def test_gas_day_bounded_examples_and_kpis_use_loaded_rows() -> None:
+    load = _source_coverage_load(
+        "silver_gas_fact_schedule_run",
+        pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 2), date(2024, 1, 3)],
+                "source_system": ["STTM", "VICGAS"],
+                "source_table": ["silver.sttm.schedule", "silver.vicgas.schedule"],
+                "schedule_type_id": ["ex_ante", "pricing"],
+                "transmission_id": ["S-1", "V-1"],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 2, 8),
+                    datetime(2024, 1, 3, 8),
+                ],
+            }
+        ),
+    )
+
+    examples = gas_day_bounded_examples_frame((load,), examples_per_field=1)
+    discovery = gas_day_field_discovery_frame((load,))
+    kpis = gas_day_kpi_frame((load,), discovery, examples)
+    kpi_rows = {row["metric"]: row for row in kpis.to_dicts()}
+
+    assert examples.select(
+        "table",
+        "field",
+        "field role",
+        "value",
+        "source system",
+        "source table",
+        "context",
+    ).to_dict(as_series=False) == {
+        "table": ["silver_gas_fact_schedule_run"],
+        "field": ["gas_date"],
+        "field role": ["Gas Day field"],
+        "value": ["2024-01-03"],
+        "source system": ["VICGAS"],
+        "source table": ["silver.vicgas.schedule"],
+        "context": [
+            (
+                "schedule_type_id=pricing; transmission_id=V-1; "
+                "ingested_timestamp=2024-01-03 08:00:00"
+            )
+        ],
+    }
+    assert kpi_rows["Gas Day fields"]["value"] == "1"
+    assert kpi_rows["Date fields with values"]["value"] == "2"
+    assert kpi_rows["Bounded examples"]["value"] == "1"
+    assert kpi_rows["Latest Gas Day"]["value"] == "2024-01-03"
+
+
+def test_gas_day_examples_fall_back_to_date_fields_and_source_tables() -> None:
+    timestamp_load = _source_coverage_load(
+        "silver_gas_fact_timestamps",
+        pl.DataFrame(
+            {
+                "ingested_timestamp": [
+                    datetime(2024, 1, 2, 8),
+                    datetime(2024, 1, 3, 8),
+                ],
+                "source_tables": [
+                    ["silver.gbb.old", "silver.gbb.extra"],
+                    ["silver.gbb.latest"],
+                ],
+                "quality_type": ["old", "latest"],
+            }
+        ),
+    )
+    missing_declared_load = GasTableLoad(
+        spec=GasTableSpec(
+            section="Facts",
+            label="Missing declared field",
+            table_name="silver_gas_fact_missing_declared",
+            date_columns=("gas_date",),
+        ),
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_missing_declared",
+        dataframe=pl.DataFrame({"source_system": ["STTM"]}),
+        error=None,
+        row_limit=100,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+    examples = gas_day_bounded_examples_frame(
+        (timestamp_load, missing_declared_load),
+        examples_per_field=1,
+    )
+    empty_kpis = gas_day_kpi_frame(
+        (),
+        gas_day_field_discovery_frame(()),
+        gas_day_bounded_examples_frame(()),
+    )
+
+    assert examples.select(
+        "table",
+        "field",
+        "field role",
+        "value",
+        "source table",
+        "context",
+    ).to_dict(as_series=False) == {
+        "table": ["silver_gas_fact_timestamps"],
+        "field": ["ingested_timestamp"],
+        "field role": ["Timestamp field"],
+        "value": ["2024-01-03 08:00:00"],
+        "source table": ["silver.gbb.latest"],
+        "context": ["quality_type=latest"],
+    }
+    assert empty_kpis.row(5, named=True) == {
+        "metric": "Latest Gas Day",
+        "value": "unknown",
+        "detail": "Maximum loaded value across populated Gas Day fields",
+    }
+
+
+def test_gas_day_examples_empty_state_covers_absent_data() -> None:
+    unavailable_load = _source_coverage_load(
+        "silver_gas_fact_schedule_run",
+        None,
+        error="FileNotFoundError: no parquet files found",
+    )
+    empty_load = _source_coverage_load(
+        "silver_gas_fact_customer_transfer",
+        pl.DataFrame(schema={"gas_date": pl.Date}),
+    )
+
+    examples = gas_day_bounded_examples_frame((unavailable_load, empty_load))
+    markdown = gas_day_examples_empty_state_markdown((unavailable_load, empty_load))
+
+    assert examples.is_empty()
+    assert "No Gas Day tables were requested" in gas_day_examples_empty_state_markdown(
+        ()
+    )
+    assert "No bounded Gas Day examples are available" in markdown
+    assert "`1` reads were unavailable and `1` reads returned" in markdown
+    assert "no rows or no populated date fields" in markdown
+    assert "Bounded preview reads are capped at `100` rows per table" in markdown
+
+
 def test_load_gas_model_read_requests_cover_available_missing_and_empty() -> None:
     config = _dashboard_config()
     requests = (
@@ -3104,6 +4782,688 @@ def test_table_load_by_name_returns_matching_load() -> None:
     assert table_load_by_name(loads, "missing") is None
 
 
+def test_source_coverage_table_specs_use_registry_backing_assets() -> None:
+    specs = source_coverage_table_specs()
+    table_names = {spec.table_name for spec in specs}
+
+    assert "silver_gas_fact_market_price" in table_names
+    assert "silver_gas_dim_facility" in table_names
+    assert "silver_gas_fact_customer_transfer" in table_names
+    assert len(table_names) == len(specs)
+
+
+def test_source_coverage_table_specs_skip_non_gas_model_and_label_sections() -> None:
+    entry = DashboardRegistryEntry(
+        concept_id="custom-context",
+        title="Custom",
+        description="Custom source coverage entry.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.PLANNED,
+        notebook_name=None,
+        backing_assets=(
+            "bronze.gas_model.raw",
+            "silver.gas_model.silver_gas_dim_date",
+            "silver.gas_model.silver_gas_fact_market_price",
+            "silver.gas_model.silver_gas_participant_market_membership",
+            "silver.gas_model.silver_gas_dim_date",
+        ),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+
+    specs = source_coverage_table_specs((entry,))
+    sections = {spec.table_name: spec.section for spec in specs}
+    labels = {spec.table_name: spec.label for spec in specs}
+
+    assert tuple(spec.table_name for spec in specs) == (
+        "silver_gas_dim_date",
+        "silver_gas_fact_market_price",
+        "silver_gas_participant_market_membership",
+    )
+    assert sections == {
+        "silver_gas_dim_date": "Dimensions",
+        "silver_gas_fact_market_price": "Facts",
+        "silver_gas_participant_market_membership": "Associations",
+    }
+    assert labels["silver_gas_fact_market_price"] == "Fact Market Price"
+
+
+def test_source_coverage_table_specs_from_catalogue_dedupes_discovered_rows() -> None:
+    dim_table = "silver_gas_dim_facility"
+    fact_table = "silver_gas_fact_market_price"
+    association_table = "silver_gas_participant_market_membership"
+    catalogue_rows = (
+        CataloguedTable(
+            entry_id=f"asset:silver/gas_model/{dim_table}",
+            status=TableAvailability.LIVE,
+            asset=DagsterTableAsset(
+                asset_key=("silver", "gas_model", dim_table),
+                group_name="gas_model",
+                kinds=("python", "parquet"),
+                description=None,
+                uri=f"s3://bucket/silver/gas_model/{dim_table}",
+                columns=(),
+                is_materializable=True,
+                is_executable=True,
+                latest_materialization_timestamp=None,
+            ),
+            table=None,
+        ),
+        CataloguedTable(
+            entry_id="",
+            status=TableAvailability.LIVE,
+            asset=None,
+            table=TablePrefix(
+                bucket="bucket",
+                prefix=f"silver/gas_model/{dim_table}",
+                table_format=TableFormat.PARQUET,
+                parquet_files=(f"silver/gas_model/{dim_table}/part-000.parquet",),
+            ),
+        ),
+        SimpleNamespace(uri=f"s3://bucket/silver/gas_model/{fact_table}"),
+        SimpleNamespace(uri=f"silver.gas_model.{association_table}"),
+        SimpleNamespace(uri="s3://bucket/bronze/gas_model/ignored"),
+    )
+
+    specs = source_coverage_table_specs_from_catalogue(catalogue_rows)
+
+    assert tuple(spec.table_name for spec in specs) == (
+        dim_table,
+        fact_table,
+        association_table,
+    )
+    assert {spec.table_name: spec.section for spec in specs} == {
+        dim_table: "Dimensions",
+        fact_table: "Facts",
+        association_table: "Associations",
+    }
+
+
+def test_source_coverage_loaders_use_shared_bounded_loader() -> None:
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "4",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    loads = load_source_coverage_tables(config, reader=reader)
+
+    assert loads
+    assert len(captured) == len(source_coverage_table_specs())
+    assert {row_limit for _, row_limit in captured} == {4}
+    assert captured[0][0].startswith("s3://prod-energy-market-aemo/silver/gas_model/")
+
+
+def test_cached_source_coverage_loader_uses_session_cache() -> None:
+    config = _dashboard_config()
+    spec = GasTableSpec(
+        section="Facts",
+        label="Market prices",
+        table_name="silver_gas_fact_market_price",
+    )
+    calls = 0
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal calls
+        assert row_limit == 100
+        calls += 1
+        return pl.DataFrame({"source_system": ["GBB"], "source_table": ["table"]})
+
+    cache: GasModelSessionCache = {}
+    first = cached_load_source_coverage_tables(
+        config,
+        cache,
+        specs=(spec,),
+        reader=reader,
+        refresh_token="same",
+    )
+    second = cached_load_source_coverage_tables(
+        config,
+        cache,
+        specs=(spec,),
+        reader=reader,
+        refresh_token="same",
+    )
+
+    assert calls == 1
+    assert not first[0].cache_hit
+    assert second[0].cache_hit
+
+
+def test_source_coverage_matrix_returns_empty_schema_for_no_loads() -> None:
+    matrix = source_coverage_matrix_frame(())
+    empty_markdown = source_coverage_empty_state_markdown(())
+
+    assert matrix.is_empty()
+    assert matrix.columns == [
+        "asset",
+        "section",
+        "table",
+        "source system",
+        "source table",
+        "coverage state",
+        "rows loaded",
+        "row limit",
+        "source fields",
+        "table explorer",
+        "asset metadata",
+        "uri",
+        "detail",
+    ]
+    assert "No source coverage tables were requested" in empty_markdown
+
+
+def test_source_coverage_matrix_summarizes_single_source_table_column() -> None:
+    load = _source_coverage_load(
+        "silver_gas_fact_market_price",
+        pl.DataFrame(
+            {
+                "source_system": ["GBB", "GBB", "STTM"],
+                "source_table": [
+                    "silver.gbb.price_report",
+                    "silver.gbb.price_report",
+                    "silver.sttm.price_report",
+                ],
+            }
+        ),
+    )
+
+    matrix = source_coverage_matrix_frame((load,))
+
+    assert matrix.to_dict(as_series=False)["coverage state"] == [
+        SOURCE_COVERAGE_STATE_COVERED,
+        SOURCE_COVERAGE_STATE_COVERED,
+    ]
+    assert matrix.select("source system", "source table", "rows loaded").to_dicts() == [
+        {
+            "source system": "GBB",
+            "source table": "silver.gbb.price_report",
+            "rows loaded": 2,
+        },
+        {
+            "source system": "STTM",
+            "source table": "silver.sttm.price_report",
+            "rows loaded": 1,
+        },
+    ]
+    assert matrix.row(0, named=True)["table explorer"] == (
+        "/marimo/table_explorer/?search=silver_gas_fact_market_price"
+    )
+
+
+def test_source_coverage_matrix_renders_unavailable_and_empty_states() -> None:
+    unavailable_load = _source_coverage_load(
+        "silver_gas_fact_market_price",
+        None,
+        error="RuntimeError: missing parquet",
+    )
+    empty_load = _source_coverage_load(
+        "silver_gas_fact_schedule_run",
+        pl.DataFrame(),
+    )
+
+    matrix = source_coverage_matrix_frame((unavailable_load, empty_load))
+    rows = matrix.select("table", "coverage state", "detail").to_dicts()
+    empty_markdown = source_coverage_empty_state_markdown(
+        (unavailable_load, empty_load)
+    )
+
+    assert rows == [
+        {
+            "table": "silver_gas_fact_market_price",
+            "coverage state": SOURCE_COVERAGE_STATE_UNAVAILABLE,
+            "detail": "Read detail: RuntimeError: missing parquet",
+        },
+        {
+            "table": "silver_gas_fact_schedule_run",
+            "coverage state": SOURCE_COVERAGE_STATE_EMPTY,
+            "detail": "The table read succeeded but returned no rows.",
+        },
+    ]
+    assert "1` reads were unavailable" in empty_markdown
+    assert "1` reads" in empty_markdown
+    assert "returned no rows" in empty_markdown
+
+
+def test_source_coverage_matrix_expands_source_tables_list_column() -> None:
+    load = _source_coverage_load(
+        "silver_gas_fact_schedule_run",
+        pl.DataFrame(
+            {
+                "source_system": ["VICGAS", "VICGAS"],
+                "source_tables": [
+                    [
+                        "silver.vicgas.schedule_header",
+                        "silver.vicgas.schedule_detail",
+                    ],
+                    ["silver.vicgas.schedule_header"],
+                ],
+            }
+        ),
+    )
+
+    matrix = source_coverage_matrix_frame((load,))
+
+    assert matrix.select("source table", "rows loaded").to_dicts() == [
+        {"source table": "silver.vicgas.schedule_header", "rows loaded": 2},
+        {"source table": "silver.vicgas.schedule_detail", "rows loaded": 1},
+    ]
+    assert set(matrix.get_column("source fields").to_list()) == {
+        "source_system, source_tables"
+    }
+
+
+def test_source_coverage_matrix_marks_missing_source_table_columns_as_gap() -> None:
+    load = _source_coverage_load(
+        "silver_gas_dim_facility",
+        pl.DataFrame(
+            {
+                "source_system": ["GBB", "GBB"],
+                "facility_id": ["F1", "F2"],
+            }
+        ),
+    )
+
+    matrix = source_coverage_matrix_frame((load,))
+    row = matrix.row(0, named=True)
+
+    assert row["coverage state"] == SOURCE_COVERAGE_STATE_GAP
+    assert row["source system"] == "GBB"
+    assert row["source table"] == "(missing source_table/source_tables column)"
+    assert row["rows loaded"] == 2
+    assert "Missing source_table/source_tables columns" in row["detail"]
+
+
+def test_source_coverage_matrix_marks_missing_source_fields_as_gap() -> None:
+    load = _source_coverage_load(
+        "silver_gas_dim_facility",
+        pl.DataFrame({"facility_id": ["F1"]}),
+    )
+
+    matrix = source_coverage_matrix_frame((load,))
+    row = matrix.row(0, named=True)
+
+    assert row["coverage state"] == SOURCE_COVERAGE_STATE_GAP
+    assert row["source system"] == "(missing source_system column)"
+    assert row["source table"] == "(missing source_table/source_tables column)"
+    assert row["source fields"] == "(none)"
+
+
+def test_source_coverage_matrix_marks_missing_and_empty_source_systems() -> None:
+    missing_system_load = _source_coverage_load(
+        "silver_gas_fact_market_price",
+        pl.DataFrame({"source_table": ["silver.gbb.price_report"]}),
+    )
+    empty_system_load = _source_coverage_load(
+        "silver_gas_fact_schedule_run",
+        pl.DataFrame(
+            {
+                "source_system": [""],
+                "source_table": ["silver.sttm.schedule_report"],
+            }
+        ),
+    )
+
+    matrix = source_coverage_matrix_frame((missing_system_load, empty_system_load))
+    rows = matrix.select("source system", "coverage state", "detail").to_dicts()
+
+    assert rows == [
+        {
+            "source system": "(missing source_system column)",
+            "coverage state": SOURCE_COVERAGE_STATE_GAP,
+            "detail": "Missing source_system column; source table values were present.",
+        },
+        {
+            "source system": "(empty source_system value)",
+            "coverage state": SOURCE_COVERAGE_STATE_GAP,
+            "detail": (
+                "source_system column is present but empty for these loaded rows."
+            ),
+        },
+    ]
+
+
+def test_source_coverage_matrix_marks_empty_source_table_values() -> None:
+    none_load = _source_coverage_load(
+        "silver_gas_fact_market_price",
+        pl.DataFrame({"source_system": ["GBB"], "source_table": [None]}),
+    )
+    nan_load = _source_coverage_load(
+        "silver_gas_fact_schedule_run",
+        pl.DataFrame({"source_system": ["STTM"], "source_table": [float("nan")]}),
+    )
+    numeric_load = _source_coverage_load(
+        "silver_gas_fact_capacity_outlook",
+        pl.DataFrame({"source_system": ["GBB"], "source_table": [123]}),
+    )
+
+    matrix = source_coverage_matrix_frame((none_load, nan_load, numeric_load))
+    rows = matrix.select(
+        "source system",
+        "source table",
+        "coverage state",
+        "rows loaded",
+    ).to_dicts()
+
+    assert rows == [
+        {
+            "source system": "GBB",
+            "source table": "(empty source_table/source_tables value)",
+            "coverage state": SOURCE_COVERAGE_STATE_GAP,
+            "rows loaded": 1,
+        },
+        {
+            "source system": "STTM",
+            "source table": "(empty source_table/source_tables value)",
+            "coverage state": SOURCE_COVERAGE_STATE_GAP,
+            "rows loaded": 1,
+        },
+        {
+            "source system": "GBB",
+            "source table": "123",
+            "coverage state": SOURCE_COVERAGE_STATE_COVERED,
+            "rows loaded": 1,
+        },
+    ]
+
+
+def test_source_coverage_matrix_links_catalogue_rows_when_available() -> None:
+    table_name = "silver_gas_fact_market_price"
+    load = _source_coverage_load(
+        table_name,
+        pl.DataFrame(
+            {
+                "source_system": ["STTM"],
+                "source_table": ["silver.sttm.price_report"],
+            }
+        ),
+    )
+    asset = DagsterTableAsset(
+        asset_key=("silver", "gas_model", table_name),
+        group_name="gas_model",
+        kinds=("python", "parquet"),
+        description=None,
+        uri=f"s3://dev-energy-market-aemo/silver/gas_model/{table_name}",
+        columns=(),
+        is_materializable=True,
+        is_executable=True,
+        latest_materialization_timestamp=None,
+    )
+    catalogue_row = CataloguedTable(
+        entry_id=f"asset:silver/gas_model/{table_name}",
+        status=TableAvailability.LIVE,
+        asset=asset,
+        table=None,
+    )
+
+    matrix = source_coverage_matrix_frame((load,), (catalogue_row, catalogue_row))
+    row = matrix.row(0, named=True)
+
+    assert row["table explorer"] == (
+        "/marimo/table_explorer/?table=asset%3Asilver%2Fgas_model%2F"
+        "silver_gas_fact_market_price"
+    )
+    assert row["asset metadata"] == (
+        "/marimo/table_explorer/?asset=asset%3Asilver%2Fgas_model%2F"
+        "silver_gas_fact_market_price"
+    )
+    assert row["uri"] == (
+        "s3://dev-energy-market-aemo/silver/gas_model/silver_gas_fact_market_price"
+    )
+
+
+def test_render_source_coverage_matrix_html_includes_deep_link_anchors() -> None:
+    table_name = "silver_gas_fact_market_price"
+    load = _source_coverage_load(
+        table_name,
+        pl.DataFrame(
+            {
+                "source_system": ["STTM"],
+                "source_table": ["silver.sttm.price_report"],
+            }
+        ),
+    )
+    catalogue_row = CataloguedTable(
+        entry_id=f"asset:silver/gas_model/{table_name}",
+        status=TableAvailability.LIVE,
+        asset=DagsterTableAsset(
+            asset_key=("silver", "gas_model", table_name),
+            group_name="gas_model",
+            kinds=("python", "parquet"),
+            description=None,
+            uri=f"s3://dev-energy-market-aemo/silver/gas_model/{table_name}",
+            columns=(),
+            is_materializable=True,
+            is_executable=True,
+            latest_materialization_timestamp=None,
+        ),
+        table=None,
+    )
+
+    matrix = source_coverage_matrix_frame((load,), (catalogue_row,))
+    html = render_source_coverage_matrix_html(matrix)
+
+    assert 'data-link-target="table-explorer"' in html
+    assert 'data-link-target="asset-metadata"' in html
+    assert (
+        'href="/marimo/table_explorer/?table=asset%3Asilver%2Fgas_model%2F'
+        'silver_gas_fact_market_price"'
+    ) in html
+    assert (
+        'href="/marimo/table_explorer/?asset=asset%3Asilver%2Fgas_model%2F'
+        'silver_gas_fact_market_price"'
+    ) in html
+    assert "Open table</a>" in html
+    assert "Open asset</a>" in html
+    assert "<button" not in html.lower()
+
+
+def test_render_source_coverage_matrix_html_escapes_values_and_missing_links() -> None:
+    matrix = pl.DataFrame(
+        [
+            {
+                "asset": "silver.gas_model.<unsafe>",
+                "section": "Facts",
+                "table": "<unsafe>",
+                "source system": "GBB",
+                "source table": "silver.gbb.<unsafe>",
+                "coverage state": SOURCE_COVERAGE_STATE_COVERED,
+                "rows loaded": 1,
+                "row limit": "100 rows",
+                "source fields": "source_system, source_table",
+                "table explorer": "javascript:alert(1)",
+                "asset metadata": "",
+                "uri": "s3://bucket/<unsafe>",
+                "detail": "1 < 2",
+            }
+        ]
+    )
+
+    html = render_source_coverage_matrix_html(matrix)
+
+    assert "&lt;unsafe&gt;" in html
+    assert "1 &lt; 2" in html
+    assert "<unsafe>" not in html
+    assert "javascript:alert" not in html
+    assert (
+        '<span class="source-coverage-matrix__missing-link">Unavailable</span>'
+    ) in html
+
+
+def test_render_source_coverage_matrix_html_handles_empty_and_overflow_rows() -> None:
+    empty_html = render_source_coverage_matrix_html(source_coverage_matrix_frame(()))
+    matrix = pl.DataFrame(
+        [
+            {
+                "asset": "silver.gas_model.first",
+                "section": "Facts",
+                "table": "first",
+                "source system": "GBB",
+                "source table": None,
+                "coverage state": SOURCE_COVERAGE_STATE_GAP,
+                "rows loaded": 1234,
+                "row limit": "100 rows",
+                "source fields": "(none)",
+                "table explorer": None,
+                "asset metadata": None,
+                "uri": "",
+                "detail": "Missing source table",
+            },
+            {
+                "asset": "silver.gas_model.second",
+                "section": "Facts",
+                "table": "second",
+                "source system": "STTM",
+                "source table": "silver.sttm.price_report",
+                "coverage state": SOURCE_COVERAGE_STATE_COVERED,
+                "rows loaded": 1,
+                "row limit": "100 rows",
+                "source fields": "source_system, source_table",
+                "table explorer": "/marimo/table_explorer/?search=second",
+                "asset metadata": "",
+                "uri": "s3://bucket/silver/gas_model/second",
+                "detail": "Covered",
+            },
+        ]
+    )
+
+    html = render_source_coverage_matrix_html(matrix, max_rows=1)
+
+    assert "No source coverage rows match the current filters." in empty_html
+    assert 'data-row-count="2"' in html
+    assert 'data-rendered-row-count="1"' in html
+    assert "1 additional rows are hidden by the dashboard display limit." in html
+    assert ">1,234</td>" in html
+    assert "Missing source table" in html
+    assert "silver.sttm.price_report" not in html
+    assert (
+        '<span class="source-coverage-matrix__missing-link">Unavailable</span>'
+    ) in html
+
+
+def test_source_coverage_matrix_uses_catalogue_uri_and_storage_fallbacks() -> None:
+    table_name = "silver_gas_fact_market_price"
+    load = _source_coverage_load(
+        table_name,
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "source_table": ["silver.gbb.price_report"],
+            }
+        ),
+    )
+    asset_uri_row = CataloguedTable(
+        entry_id=f"asset:bronze/{table_name}",
+        status=TableAvailability.LIVE,
+        asset=DagsterTableAsset(
+            asset_key=("bronze", table_name),
+            group_name="gas_model",
+            kinds=("python",),
+            description=None,
+            uri=f"s3://bucket/silver/gas_model/{table_name}",
+            columns=(),
+            is_materializable=True,
+            is_executable=True,
+            latest_materialization_timestamp=None,
+        ),
+        table=None,
+    )
+    storage_row = CataloguedTable(
+        entry_id="",
+        status=TableAvailability.LIVE,
+        asset=None,
+        table=TablePrefix(
+            bucket="bucket",
+            prefix=f"silver/gas_model/{table_name}",
+            table_format=TableFormat.PARQUET,
+            parquet_files=(f"silver/gas_model/{table_name}/part-000.parquet",),
+        ),
+    )
+    ignored_rows = (
+        SimpleNamespace(uri="s3://bucket/bronze/table"),
+        SimpleNamespace(uri="s3://bucket/silver/gas_model/"),
+    )
+    dotted_row = SimpleNamespace(
+        entry_id="dotted-row",
+        asset=None,
+        table=None,
+        uri=f"silver.gas_model.{table_name}",
+    )
+
+    asset_matrix = source_coverage_matrix_frame((load,), (asset_uri_row,))
+    storage_matrix = source_coverage_matrix_frame(
+        (load,),
+        (*ignored_rows, storage_row),
+    )
+    dotted_matrix = source_coverage_matrix_frame((load,), (dotted_row,))
+
+    assert asset_matrix.row(0, named=True)["uri"] == (
+        f"s3://bucket/silver/gas_model/{table_name}"
+    )
+    assert storage_matrix.row(0, named=True)["table explorer"] == (
+        "/marimo/table_explorer/"
+    )
+    assert storage_matrix.row(0, named=True)["asset metadata"] == ""
+    assert dotted_matrix.row(0, named=True)["table explorer"] == (
+        "/marimo/table_explorer/?table=dotted-row"
+    )
+
+
+def test_source_coverage_kpi_frame_counts_covered_sources_and_gaps() -> None:
+    covered_load = _source_coverage_load(
+        "silver_gas_fact_market_price",
+        pl.DataFrame(
+            {
+                "source_system": ["GBB", "STTM"],
+                "source_table": [
+                    "silver.gbb.price_report",
+                    "silver.sttm.price_report",
+                ],
+            }
+        ),
+    )
+    gap_load = _source_coverage_load(
+        "silver_gas_dim_facility",
+        pl.DataFrame({"source_system": ["GBB"], "facility_id": ["F1"]}),
+    )
+    matrix = source_coverage_matrix_frame((covered_load, gap_load))
+
+    kpis = source_coverage_kpi_frame((covered_load, gap_load), matrix)
+    values = {row["metric"]: row["value"] for row in kpis.to_dicts()}
+
+    assert values["Requested assets"] == "2"
+    assert values["Loaded assets"] == "2"
+    assert values["Assets with source coverage"] == "1"
+    assert values["Assets with coverage gaps"] == "1"
+    assert values["Source systems"] == "2"
+    assert values["Source tables"] == "2"
+
+
+def test_source_coverage_kpi_frame_handles_empty_matrix() -> None:
+    kpis = source_coverage_kpi_frame((), source_coverage_matrix_frame(()))
+    values = {row["metric"]: row["value"] for row in kpis.to_dicts()}
+
+    assert values["Requested assets"] == "0"
+    assert values["Assets with source coverage"] == "0"
+    assert values["Source systems"] == "0"
+
+
 def test_render_dashboard_context_panel_covers_complete_concept() -> None:
     html = render_dashboard_context_panel("gas-market-overview")
     no_related_html = render_dashboard_context_panel(
@@ -3159,6 +5519,63 @@ def test_render_dashboard_context_panel_includes_dashboard_usage_metadata() -> N
 def test_render_dashboard_context_panel_rejects_unknown_concept() -> None:
     with pytest.raises(DashboardRegistryError, match="concept not found"):
         render_dashboard_context_panel("missing-context")
+
+
+def _source_coverage_load(
+    table_name: str,
+    dataframe: pl.DataFrame | None,
+    *,
+    error: str | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=GasTableSpec(
+            section="Facts",
+            label=table_name,
+            table_name=table_name,
+        ),
+        uri=f"s3://bucket/silver/gas_model/{table_name}",
+        dataframe=dataframe,
+        error=error,
+        row_limit=100,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _participant_load(
+    spec: GasTableSpec,
+    dataframe: pl.DataFrame | None,
+    *,
+    error: str | None = None,
+    row_limit: int | None = 100,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=spec,
+        uri=f"s3://bucket/silver/gas_model/{spec.table_name}",
+        dataframe=dataframe,
+        error=error,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _facility_load(
+    spec: GasTableSpec,
+    dataframe: pl.DataFrame | None,
+    *,
+    error: str | None = None,
+    row_limit: int | None = 100,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=spec,
+        uri=f"s3://bucket/silver/gas_model/{spec.table_name}",
+        dataframe=dataframe,
+        error=error,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
 
 
 def _system_notice_load(

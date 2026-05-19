@@ -38,7 +38,14 @@ ROADMAP_AUDIENCES: tuple[DashboardAudience, ...] = (
 type DashboardRegistryRecord = Mapping[str, object]
 
 _MISSING = object()
-_REGISTRY_BACKED_CONCEPT_IDS = frozenset({"glossary-explorer"})
+_REGISTRY_BACKED_CONCEPT_IDS = frozenset(
+    {
+        "aws-bounded-read-diagnostics",
+        "concept-to-asset-explorer",
+        "glossary-explorer",
+        "s3-bucket-health",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -136,6 +143,54 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "chunk-sttm-procedures-definitions",
             "chunk-dwgm-operations-capacity-certificates-purpose",
         ),
+    },
+    {
+        "concept_id": "source-coverage-matrix",
+        "title": "Source Coverage Matrix",
+        "description": (
+            "Available analytical dashboard for source-system and source-table "
+            "coverage across registry-backed silver.gas_model facts and "
+            "dimensions, including explicit metadata gaps."
+        ),
+        "audiences": ("operator", "analyst", "data-engineer"),
+        "status": "available",
+        "notebook_name": "source_coverage_matrix",
+        "backing_assets": (
+            "silver.gas_model.silver_gas_dim_date",
+            "silver.gas_model.silver_gas_dim_participant",
+            "silver.gas_model.silver_gas_dim_facility",
+            "silver.gas_model.silver_gas_dim_location",
+            "silver.gas_model.silver_gas_dim_connection_point",
+            "silver.gas_model.silver_gas_dim_zone",
+            "silver.gas_model.silver_gas_participant_market_membership",
+            "silver.gas_model.silver_gas_fact_market_price",
+            "silver.gas_model.silver_gas_fact_schedule_run",
+            "silver.gas_model.silver_gas_fact_scheduled_quantity",
+            "silver.gas_model.silver_gas_fact_connection_point_flow",
+            "silver.gas_model.silver_gas_fact_facility_flow_storage",
+            "silver.gas_model.silver_gas_fact_nomination_forecast",
+            "silver.gas_model.silver_gas_fact_operational_meter_flow",
+            "silver.gas_model.silver_gas_fact_linepack",
+            "silver.gas_model.silver_gas_fact_linepack_balance",
+            "silver.gas_model.silver_gas_fact_capacity_outlook",
+            "silver.gas_model.silver_gas_fact_capacity_transaction",
+            "silver.gas_model.silver_gas_fact_capacity_auction",
+            "silver.gas_model.silver_gas_fact_sttm_capacity_settlement",
+            "silver.gas_model.silver_gas_fact_sttm_market_parameter",
+            "silver.gas_model.silver_gas_fact_bid_stack",
+            "silver.gas_model.silver_gas_fact_sttm_allocation_quantity",
+            "silver.gas_model.silver_gas_fact_sttm_allocation_limit",
+            "silver.gas_model.silver_gas_fact_sttm_default_allocation_notice",
+            "silver.gas_model.silver_gas_fact_settlement_activity",
+            "silver.gas_model.silver_gas_fact_sttm_mos_stack",
+            "silver.gas_model.silver_gas_fact_system_notice",
+            "silver.gas_model.silver_gas_fact_gas_quality",
+            "silver.gas_model.silver_gas_fact_customer_transfer",
+        ),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/README.md",
+        ),
+        "source_chunk_ids": (),
     },
     {
         "concept_id": "gas-market-prices",
@@ -269,6 +324,59 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "source_chunk_ids": (),
     },
     {
+        "concept_id": "aws-bounded-read-diagnostics",
+        "title": "AWS Bounded Read Diagnostics",
+        "description": (
+            "Available platform operations diagnostic view for runtime location, "
+            "endpoint mode, configured buckets, preview row caps, full-table-scan "
+            "state, and per-dashboard bounded-read behavior."
+        ),
+        "audiences": ("platform-operations", "operator", "data-engineer"),
+        "status": "available",
+        "notebook_name": "aws_bounded_read_diagnostics",
+        "backing_assets": (),
+        "generated_gold_paths": (),
+        "source_chunk_ids": (),
+    },
+    {
+        "concept_id": "dagster-asset-catalogue-status",
+        "title": "Dagster Asset Catalogue Status",
+        "description": (
+            "Available operational dashboard for Dagster GraphQL table asset "
+            "catalogue health, table coverage, latest materialization metadata, "
+            "URI coverage, executable flags, and schema metadata."
+        ),
+        "audiences": ("platform-operations", "operator", "data-engineer"),
+        "status": "available",
+        "notebook_name": "dagster_asset_catalogue_status",
+        "backing_assets": (
+            "silver.gas_model.silver_gas_dim_date",
+            "silver.gas_model.silver_gas_dim_participant",
+            "silver.gas_model.silver_gas_dim_facility",
+            "silver.gas_model.silver_gas_fact_market_price",
+            "silver.gas_model.silver_gas_fact_schedule_run",
+            "silver.gas_model.silver_gas_fact_connection_point_flow",
+            "silver.gas_model.silver_gas_fact_capacity_outlook",
+        ),
+        "generated_gold_paths": (),
+        "source_chunk_ids": (),
+    },
+    {
+        "concept_id": "s3-bucket-health",
+        "title": "S3 Bucket Health",
+        "description": (
+            "Available platform operations dashboard for configured "
+            "S3-compatible bucket reachability, object scans, truncation, "
+            "errors, and Delta or Parquet table-prefix discovery."
+        ),
+        "audiences": ("platform-operations", "operator", "data-engineer"),
+        "status": "available",
+        "notebook_name": "s3_bucket_health",
+        "backing_assets": (),
+        "generated_gold_paths": (),
+        "source_chunk_ids": (),
+    },
+    {
         "concept_id": "glossary-explorer",
         "title": "Glossary Explorer",
         "description": (
@@ -279,6 +387,23 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "audiences": ("analyst", "stakeholder", "data-engineer"),
         "status": "available",
         "notebook_name": "glossary_explorer",
+        "backing_assets": (),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/README.md",
+        ),
+        "source_chunk_ids": (),
+    },
+    {
+        "concept_id": "concept-to-asset-explorer",
+        "title": "Concept-to-Asset Explorer",
+        "description": (
+            "Available analytical dashboard for mapping Market context glossary "
+            "concepts to backing silver.gas_model assets, dashboard routes, "
+            "planned dashboard cards, and table explorer deep links."
+        ),
+        "audiences": ("analyst", "data-engineer", "stakeholder"),
+        "status": "available",
+        "notebook_name": "concept_to_asset_explorer",
         "backing_assets": (),
         "generated_gold_paths": (
             "tools/gas-market-knowledge-base/generated/gold/glossary/README.md",
@@ -335,15 +460,26 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "concept_id": "gas-day-context",
         "title": "Gas Day Context",
         "description": (
-            "Planned concept panel for gas-day coverage, date filtering, and "
-            "daily market alignment across facts."
+            "Available explainer dashboard for Gas Day glossary metadata, "
+            "date and gas-date field coverage, and bounded examples across "
+            "current curated gas_model assets."
         ),
-        "audiences": ("analyst", "stakeholder"),
-        "status": "planned",
+        "audiences": ("analyst", "stakeholder", "data-engineer"),
+        "status": "available",
+        "notebook_name": "gas_day_explainer",
         "backing_assets": (
             "silver.gas_model.silver_gas_dim_date",
             "silver.gas_model.silver_gas_fact_market_price",
             "silver.gas_model.silver_gas_fact_schedule_run",
+            "silver.gas_model.silver_gas_fact_scheduled_quantity",
+            "silver.gas_model.silver_gas_fact_connection_point_flow",
+            "silver.gas_model.silver_gas_fact_facility_flow_storage",
+            "silver.gas_model.silver_gas_fact_linepack",
+            "silver.gas_model.silver_gas_fact_capacity_outlook",
+            "silver.gas_model.silver_gas_fact_bid_stack",
+            "silver.gas_model.silver_gas_fact_settlement_activity",
+            "silver.gas_model.silver_gas_fact_customer_transfer",
+            "silver.gas_model.silver_gas_fact_gas_quality",
         ),
         "generated_gold_paths": (
             "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md",
@@ -354,14 +490,18 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "concept_id": "participant-context",
         "title": "Participant Context",
         "description": (
-            "Planned concept panel for registered participants, market "
-            "memberships, and settlement-facing participant lineage."
+            "Available explainer dashboard for Participant glossary metadata, "
+            "current participant standing data, market memberships, and "
+            "participant-facing bid, settlement, and facility relationships."
         ),
-        "audiences": ("data-engineer", "stakeholder"),
-        "status": "planned",
+        "audiences": ("analyst", "data-engineer", "stakeholder"),
+        "status": "available",
+        "notebook_name": "participant_explainer",
         "backing_assets": (
             "silver.gas_model.silver_gas_dim_participant",
             "silver.gas_model.silver_gas_participant_market_membership",
+            "silver.gas_model.silver_gas_dim_facility",
+            "silver.gas_model.silver_gas_fact_bid_stack",
             "silver.gas_model.silver_gas_fact_settlement_activity",
         ),
         "generated_gold_paths": (
@@ -377,11 +517,14 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "concept_id": "facility-context",
         "title": "Facility Context",
         "description": (
-            "Planned concept panel for facility standing data, operators, "
-            "flow/storage measures, and capacity registration context."
+            "Available explainer dashboard for Facility glossary metadata, "
+            "facility standing-data coverage, participant and zone keys, "
+            "flow/storage measures, capacity outlooks, and related dashboard "
+            "routes."
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
-        "status": "planned",
+        "status": "available",
+        "notebook_name": "facility_explainer",
         "backing_assets": (
             "silver.gas_model.silver_gas_dim_facility",
             "silver.gas_model.silver_gas_fact_facility_flow_storage",
@@ -397,13 +540,16 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
     },
     {
         "concept_id": "hub-zone-context",
-        "title": "Hub And Zone Context",
+        "title": "Hub / Zone Context",
         "description": (
-            "Planned concept panel for STTM hubs, DWGM zones, capacity zones, "
-            "and zone-scoped market parameters."
+            "Available explainer dashboard for generated Hub / Zone context, "
+            "source-qualified STTM hub and DWGM zone identifiers, current "
+            "silver_gas_dim_zone coverage, and downstream market-analysis "
+            "dashboards."
         ),
         "audiences": ("analyst", "stakeholder"),
-        "status": "planned",
+        "status": "available",
+        "notebook_name": "hub_zone_explainer",
         "backing_assets": (
             "silver.gas_model.silver_gas_dim_zone",
             "silver.gas_model.silver_gas_fact_capacity_auction",

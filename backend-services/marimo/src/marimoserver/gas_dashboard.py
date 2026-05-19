@@ -1,11 +1,13 @@
 """Helpers for the gas market overview marimo dashboard."""
 
 from collections.abc import Hashable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from html import escape
+from math import isnan
 import os
 from time import perf_counter
+from urllib.parse import quote
 
 import polars as pl
 
@@ -41,7 +43,9 @@ DEFAULT_AWS_SECRET_ACCESS_KEY = "test"
 DEFAULT_AWS_ALLOW_HTTP = "true"
 DEFAULT_AWS_PREVIEW_ROWS = 100
 AWS_DEVELOPMENT_LOCATION = "aws"
-DEFAULT_RELATED_CONTEXT_LIMIT = 8
+DEFAULT_RELATED_CONTEXT_LIMIT = 9
+GAS_DAY_CONTEXT_ID = "gas-day-context"
+DEFAULT_GAS_DAY_EXAMPLES_PER_FIELD = 3
 SYSTEM_NOTICE_TABLE_NAME = "silver_gas_fact_system_notice"
 SYSTEM_NOTICE_CRITICAL_FILTER_ALL = "All notices"
 SYSTEM_NOTICE_CRITICAL_FILTER_CRITICAL = "Critical only"
@@ -99,6 +103,46 @@ GAS_QUALITY_TABLE_NAME = "silver_gas_fact_gas_quality"
 GAS_QUALITY_QUALITY_TYPE_FILTER_ALL = "All quality types"
 GAS_QUALITY_SOURCE_POINT_FILTER_ALL = "All source points"
 DEFAULT_GAS_QUALITY_PREVIEW_ROWS = 50
+PARTICIPANT_CONTEXT_ID = "participant-context"
+PARTICIPANT_DIM_TABLE_NAME = "silver_gas_dim_participant"
+PARTICIPANT_MARKET_MEMBERSHIP_TABLE_NAME = "silver_gas_participant_market_membership"
+DEFAULT_PARTICIPANT_PREVIEW_ROWS = 50
+SOURCE_COVERAGE_TABLE_EXPLORER_ROUTE = "/marimo/table_explorer/"
+SOURCE_COVERAGE_STATE_COVERED = "Covered"
+SOURCE_COVERAGE_STATE_GAP = "Coverage gap"
+SOURCE_COVERAGE_STATE_EMPTY = "Empty"
+SOURCE_COVERAGE_STATE_UNAVAILABLE = "Unavailable"
+FACILITY_CONTEXT_ID = "facility-context"
+HUB_ZONE_CONTEXT_ID = "hub-zone-context"
+FACILITY_DIM_TABLE_NAME = "silver_gas_dim_facility"
+HUB_ZONE_DIM_TABLE_NAME = "silver_gas_dim_zone"
+FACILITY_FLOW_STORAGE_TABLE_NAME = "silver_gas_fact_facility_flow_storage"
+FACILITY_CAPACITY_OUTLOOK_TABLE_NAME = "silver_gas_fact_capacity_outlook"
+DEFAULT_FACILITY_PREVIEW_ROWS = 50
+DEFAULT_HUB_ZONE_PREVIEW_ROWS = 50
+_FACILITY_CAPACITY_METADATA_COLUMNS = (
+    "default_capacity",
+    "maximum_capacity",
+    "high_capacity_threshold",
+    "low_capacity_threshold",
+)
+_FACILITY_FLOW_MEASURE_COLUMNS = (
+    "demand_tj",
+    "supply_tj",
+    "transfer_in_tj",
+    "transfer_out_tj",
+)
+_FACILITY_STORAGE_MEASURE_COLUMNS = (
+    "held_in_storage_tj",
+    "cushion_gas_storage_tj",
+)
+
+_SOURCE_COVERAGE_MISSING_SOURCE_SYSTEM_COLUMN = "(missing source_system column)"
+_SOURCE_COVERAGE_EMPTY_SOURCE_SYSTEM_VALUE = "(empty source_system value)"
+_SOURCE_COVERAGE_MISSING_SOURCE_TABLE_COLUMN = (
+    "(missing source_table/source_tables column)"
+)
+_SOURCE_COVERAGE_EMPTY_SOURCE_TABLE_VALUE = "(empty source_table/source_tables value)"
 
 
 @dataclass(frozen=True)
@@ -174,6 +218,13 @@ class GasTableLoad:
     def is_limited(self) -> bool:
         """Return whether the runtime applied a bounded preview row limit."""
         return self.row_limit is not None
+
+
+@dataclass(frozen=True)
+class _SourceCoverageContext:
+    table_explorer_link: str
+    asset_metadata_link: str
+    uri: str
 
 
 MARKET_PRICE_TABLE_SPEC = GasTableSpec(
@@ -461,6 +512,146 @@ GAS_QUALITY_TABLE_SPEC = GasTableSpec(
     ),
 )
 GAS_QUALITY_TABLE_SPECS = (GAS_QUALITY_TABLE_SPEC,)
+
+FACILITY_TABLE_SPECS = (
+    GasTableSpec(
+        section="Dimensions",
+        label="Facility standing data",
+        table_name=FACILITY_DIM_TABLE_NAME,
+        date_columns=(
+            "operating_state_date",
+            "operator_change_date",
+            "capacity_effective_from_date",
+            "capacity_effective_to_date",
+            "ingested_timestamp",
+        ),
+        preview_columns=(
+            "source_system",
+            "source_facility_id",
+            "facility_name",
+            "facility_short_name",
+            "facility_type",
+            "facility_type_description",
+            "operator_name",
+            "participant_key",
+            "zone_key",
+            "default_capacity",
+            "maximum_capacity",
+        ),
+    ),
+    GasTableSpec(
+        section="Facts",
+        label="Facility flow and storage",
+        table_name=FACILITY_FLOW_STORAGE_TABLE_NAME,
+        date_columns=(
+            "gas_date",
+            "source_last_updated_timestamp",
+            "ingested_timestamp",
+        ),
+        preview_columns=(
+            "gas_date",
+            "source_system",
+            "source_facility_id",
+            "source_location_id",
+            "demand_tj",
+            "supply_tj",
+            "transfer_in_tj",
+            "transfer_out_tj",
+            "held_in_storage_tj",
+            "cushion_gas_storage_tj",
+        ),
+    ),
+    GasTableSpec(
+        section="Facts",
+        label="Capacity outlook",
+        table_name=FACILITY_CAPACITY_OUTLOOK_TABLE_NAME,
+        date_columns=(
+            "from_gas_date",
+            "to_gas_date",
+            "source_last_updated_timestamp",
+            "ingested_timestamp",
+        ),
+        preview_columns=(
+            "from_gas_date",
+            "to_gas_date",
+            "source_system",
+            "source_table",
+            "source_facility_id",
+            "facility_name",
+            "capacity_type",
+            "flow_direction",
+            "capacity_quantity_tj",
+            "capacity_description",
+        ),
+    ),
+)
+HUB_ZONE_TABLE_SPECS = (
+    GasTableSpec(
+        section="Dimensions",
+        label="Hub and zone standing data",
+        table_name=HUB_ZONE_DIM_TABLE_NAME,
+        date_columns=("ingested_timestamp",),
+        preview_columns=(
+            "source_system",
+            "source_tables",
+            "zone_type",
+            "source_zone_id",
+            "zone_name",
+            "zone_description",
+            "source_files",
+            "ingested_timestamp",
+        ),
+    ),
+)
+PARTICIPANT_DIM_TABLE_SPEC = GasTableSpec(
+    section="Dimensions",
+    label="Participant standing data",
+    table_name=PARTICIPANT_DIM_TABLE_NAME,
+    date_columns=("ingested_timestamp",),
+    preview_columns=(
+        "participant_identity_source",
+        "participant_identity_value",
+        "canonical_participant_name",
+        "registered_name",
+        "abn",
+        "acn",
+        "participant_type",
+        "participant_status",
+        "source_systems",
+        "source_tables",
+        "ingested_timestamp",
+    ),
+)
+PARTICIPANT_MARKET_MEMBERSHIP_TABLE_SPEC = GasTableSpec(
+    section="Associations",
+    label="Participant market membership",
+    table_name=PARTICIPANT_MARKET_MEMBERSHIP_TABLE_NAME,
+    date_columns=("ingested_timestamp",),
+    preview_columns=(
+        "participant_key",
+        "source_system",
+        "source_tables",
+        "market_code",
+        "source_company_id",
+        "source_company_code",
+        "source_hub_id",
+        "source_hub_name",
+        "registration_type",
+        "registered_capacity",
+        "membership_status",
+        "participant_identity_source",
+        "participant_identity_value",
+        "source_file",
+        "ingested_timestamp",
+    ),
+)
+PARTICIPANT_TABLE_SPECS = (
+    PARTICIPANT_DIM_TABLE_SPEC,
+    PARTICIPANT_MARKET_MEMBERSHIP_TABLE_SPEC,
+    FACILITY_TABLE_SPECS[0],
+    BID_STACK_TABLE_SPEC,
+    SETTLEMENT_ACTIVITY_TABLE_SPEC,
+)
 
 _SYSTEM_NOTICE_RAW_SCHEMA = {
     "source_notice_id": pl.String,
@@ -961,6 +1152,323 @@ _GAS_QUALITY_SOURCE_COVERAGE_SCHEMA = {
     "latest source update": pl.Datetime("us"),
     "latest ingest": pl.Datetime("us"),
 }
+_PARTICIPANT_DIM_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "participant_identity_source": pl.String,
+    "participant_identity_value": pl.String,
+    "canonical_participant_name": pl.String,
+    "registered_name": pl.String,
+    "abn": pl.String,
+    "acn": pl.String,
+    "participant_type": pl.String,
+    "participant_status": pl.String,
+    "source_systems": pl.List(pl.String),
+    "source_tables": pl.List(pl.String),
+    "source_company_ids": pl.List(pl.String),
+    "source_surrogate_keys": pl.List(pl.String),
+    "source_files": pl.List(pl.String),
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_PARTICIPANT_MARKET_MEMBERSHIP_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "participant_key": pl.String,
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "market_code": pl.String,
+    "source_company_id": pl.String,
+    "source_company_code": pl.String,
+    "source_hub_id": pl.String,
+    "source_hub_name": pl.String,
+    "registration_type": pl.String,
+    "registered_capacity": pl.String,
+    "membership_status": pl.String,
+    "participant_identity_source": pl.String,
+    "participant_identity_value": pl.String,
+    "source_surrogate_key": pl.String,
+    "source_file": pl.String,
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_PARTICIPANT_COVERAGE_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_PARTICIPANT_MEMBERSHIP_COVERAGE_SCHEMA = {
+    "source system": pl.String,
+    "market code": pl.String,
+    "registration type": pl.String,
+    "membership status": pl.String,
+    "rows": pl.UInt32,
+    "participant keys": pl.UInt32,
+    "source company ids": pl.UInt32,
+    "source company codes": pl.UInt32,
+    "hub ids": pl.UInt32,
+    "source tables": pl.UInt32,
+    "latest ingest": pl.Datetime("us"),
+}
+_PARTICIPANT_MARKET_FACT_SCHEMA = {
+    "related surface": pl.String,
+    "source table": pl.String,
+    "available rows": pl.UInt32,
+    "participant references": pl.UInt32,
+    "matched participants": pl.UInt32,
+    "detail": pl.String,
+}
+_PARTICIPANT_PREVIEW_SCHEMA = {
+    "identity source": pl.String,
+    "identity value": pl.String,
+    "participant": pl.String,
+    "registered name": pl.String,
+    "participant type": pl.String,
+    "participant status": pl.String,
+    "source systems": pl.String,
+    "source tables": pl.String,
+    "source company ids": pl.String,
+    "latest ingest": pl.Datetime("us"),
+}
+_PARTICIPANT_MEMBERSHIP_PREVIEW_SCHEMA = {
+    "source system": pl.String,
+    "market code": pl.String,
+    "participant key": pl.String,
+    "company id": pl.String,
+    "company code": pl.String,
+    "hub": pl.String,
+    "registration type": pl.String,
+    "registered capacity": pl.String,
+    "membership status": pl.String,
+    "identity source": pl.String,
+    "identity value": pl.String,
+    "source tables": pl.String,
+    "latest ingest": pl.Datetime("us"),
+}
+_FACILITY_DIM_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "participant_key": pl.String,
+    "zone_key": pl.String,
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "source_hub_id": pl.String,
+    "source_hub_name": pl.String,
+    "source_facility_id": pl.String,
+    "facility_name": pl.String,
+    "facility_short_name": pl.String,
+    "facility_type": pl.String,
+    "facility_type_description": pl.String,
+    "operating_state": pl.String,
+    "operating_state_date": pl.Date,
+    "operator_name": pl.String,
+    "source_operator_id": pl.String,
+    "operator_change_date": pl.Date,
+    "capacity_effective_from_date": pl.Date,
+    "capacity_effective_to_date": pl.Date,
+    "default_capacity": pl.Float64,
+    "maximum_capacity": pl.Float64,
+    "high_capacity_threshold": pl.Float64,
+    "low_capacity_threshold": pl.Float64,
+    "source_file": pl.String,
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_FACILITY_FLOW_STORAGE_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "facility_key": pl.String,
+    "location_key": pl.String,
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "gas_date": pl.Date,
+    "source_facility_id": pl.String,
+    "source_location_id": pl.String,
+    "demand_tj": pl.Float64,
+    "supply_tj": pl.Float64,
+    "transfer_in_tj": pl.Float64,
+    "transfer_out_tj": pl.Float64,
+    "held_in_storage_tj": pl.Float64,
+    "cushion_gas_storage_tj": pl.Float64,
+    "source_file": pl.String,
+    "source_last_updated_timestamp": pl.Datetime("us"),
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_FACILITY_CAPACITY_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "source_table": pl.String,
+    "source_facility_id": pl.String,
+    "facility_name": pl.String,
+    "capacity_type": pl.String,
+    "flow_direction": pl.String,
+    "from_gas_date": pl.Date,
+    "to_gas_date": pl.Date,
+    "capacity_quantity_tj": pl.Float64,
+    "capacity_description": pl.String,
+    "source_file": pl.String,
+    "source_last_updated_timestamp": pl.Datetime("us"),
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_FACILITY_COVERAGE_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_FACILITY_RELATIONSHIP_SCHEMA = {
+    "relationship": pl.String,
+    "source table": pl.String,
+    "available rows": pl.UInt32,
+    "facilities": pl.UInt32,
+    "matched facilities": pl.UInt32,
+    "detail": pl.String,
+}
+_FACILITY_PREVIEW_SCHEMA = {
+    "source system": pl.String,
+    "source facility id": pl.String,
+    "facility": pl.String,
+    "short name": pl.String,
+    "facility type": pl.String,
+    "operator": pl.String,
+    "participant key": pl.String,
+    "zone key": pl.String,
+    "default capacity": pl.Float64,
+    "maximum capacity": pl.Float64,
+    "capacity effective from": pl.Date,
+    "capacity effective to": pl.Date,
+    "source tables": pl.String,
+    "latest ingest": pl.Datetime("us"),
+}
+_HUB_ZONE_DIM_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "zone_type": pl.String,
+    "source_zone_id": pl.String,
+    "zone_name": pl.String,
+    "zone_description": pl.String,
+    "source_surrogate_keys": pl.List(pl.String),
+    "source_files": pl.List(pl.String),
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_HUB_ZONE_COVERAGE_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_HUB_ZONE_SOURCE_SYSTEM_SCHEMA = {
+    "source system": pl.String,
+    "rows": pl.UInt32,
+    "zone types": pl.UInt32,
+    "source zone ids": pl.UInt32,
+    "source tables": pl.UInt32,
+    "source files": pl.UInt32,
+    "latest ingest": pl.Datetime("us"),
+}
+_HUB_ZONE_IDENTIFIER_SCHEMA = {
+    "source-qualified identifier": pl.String,
+    "source system": pl.String,
+    "zone type": pl.String,
+    "source zone id": pl.String,
+    "zone name": pl.String,
+    "zone description": pl.String,
+    "source tables": pl.String,
+    "source files": pl.String,
+    "latest ingest": pl.Datetime("us"),
+}
+_SOURCE_COVERAGE_MATRIX_SCHEMA = {
+    "asset": pl.String,
+    "section": pl.String,
+    "table": pl.String,
+    "source system": pl.String,
+    "source table": pl.String,
+    "coverage state": pl.String,
+    "rows loaded": pl.UInt32,
+    "row limit": pl.String,
+    "source fields": pl.String,
+    "table explorer": pl.String,
+    "asset metadata": pl.String,
+    "uri": pl.String,
+    "detail": pl.String,
+}
+_SOURCE_COVERAGE_MATRIX_HTML_COLUMNS = (
+    "asset",
+    "section",
+    "source system",
+    "source table",
+    "coverage state",
+    "rows loaded",
+    "row limit",
+    "source fields",
+    "table explorer",
+    "asset metadata",
+    "uri",
+    "detail",
+)
+_SOURCE_COVERAGE_KPI_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_GAS_DAY_FIELD_DISCOVERY_SCHEMA = {
+    "asset": pl.String,
+    "section": pl.String,
+    "table": pl.String,
+    "field": pl.String,
+    "field role": pl.String,
+    "dtype": pl.String,
+    "status": pl.String,
+    "rows loaded": pl.UInt32,
+    "populated values": pl.UInt32,
+    "first value": pl.String,
+    "latest value": pl.String,
+    "row limit": pl.String,
+    "table explorer": pl.String,
+    "uri": pl.String,
+    "detail": pl.String,
+}
+_GAS_DAY_EXAMPLE_SCHEMA = {
+    "asset": pl.String,
+    "section": pl.String,
+    "table": pl.String,
+    "field": pl.String,
+    "field role": pl.String,
+    "value": pl.String,
+    "source system": pl.String,
+    "source table": pl.String,
+    "context": pl.String,
+    "row limit": pl.String,
+    "uri": pl.String,
+}
+_GAS_DAY_KPI_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_GAS_DAY_EXAMPLE_CONTEXT_COLUMNS = (
+    "price_type",
+    "schedule_type_id",
+    "forecast_demand_version",
+    "transmission_id",
+    "activity_type",
+    "market_code",
+    "source_facility_id",
+    "facility_name",
+    "source_connection_point_id",
+    "source_point_id",
+    "quality_type",
+    "gas_interval",
+    "ingested_timestamp",
+)
+_GAS_DAY_KNOWN_TABLE_SPECS = (
+    *GAS_MODEL_TABLES,
+    SYSTEM_NOTICE_TABLE_SPEC,
+    MARKET_PRICE_TABLE_SPEC,
+    SCHEDULE_RUN_TABLE_SPEC,
+    SETTLEMENT_ACTIVITY_TABLE_SPEC,
+    CUSTOMER_TRANSFER_TABLE_SPEC,
+    BID_STACK_TABLE_SPEC,
+    GAS_QUALITY_TABLE_SPEC,
+)
+_GAS_DAY_KNOWN_DATE_COLUMNS_BY_TABLE = {
+    spec.table_name: spec.date_columns
+    for spec in _GAS_DAY_KNOWN_TABLE_SPECS
+    if len(spec.date_columns) > 0
+}
 
 
 def discover_dashboard_config(
@@ -1313,6 +1821,141 @@ def cached_load_gas_quality_table(
     )[0]
 
 
+def participant_table_specs() -> tuple[GasTableSpec, ...]:
+    """Return Participant-oriented tables used by the explainer."""
+    return PARTICIPANT_TABLE_SPECS
+
+
+def load_participant_context_tables(
+    config: GasDashboardConfig,
+    specs: Sequence[GasTableSpec] | None = None,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Load Participant explainer tables through the shared bounded loader."""
+    requested_specs = PARTICIPANT_TABLE_SPECS if specs is None else specs
+    return load_gas_model_tables(
+        _source_coverage_bounded_config(config),
+        specs=requested_specs,
+        reader=reader,
+        view=GasModelTableView.SAMPLE,
+        clock=clock,
+    )
+
+
+def cached_load_participant_context_tables(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    specs: Sequence[GasTableSpec] | None = None,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Return cached Participant explainer table reads for explicit refreshes."""
+    requested_specs = PARTICIPANT_TABLE_SPECS if specs is None else specs
+    return cached_load_gas_model_tables(
+        _source_coverage_bounded_config(config),
+        cache,
+        specs=requested_specs,
+        reader=reader,
+        view=GasModelTableView.SAMPLE,
+        refresh_token=refresh_token,
+        clock=clock,
+    )
+
+
+def facility_table_specs() -> tuple[GasTableSpec, ...]:
+    """Return the facility-oriented tables used by the Facility explainer."""
+    return FACILITY_TABLE_SPECS
+
+
+def load_facility_context_tables(
+    config: GasDashboardConfig,
+    specs: Sequence[GasTableSpec] | None = None,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Load Facility explainer tables through the shared bounded loader."""
+    requested_specs = FACILITY_TABLE_SPECS if specs is None else specs
+    return load_gas_model_tables(
+        _source_coverage_bounded_config(config),
+        specs=requested_specs,
+        reader=reader,
+        view=GasModelTableView.SAMPLE,
+        clock=clock,
+    )
+
+
+def cached_load_facility_context_tables(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    specs: Sequence[GasTableSpec] | None = None,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Return cached Facility explainer table reads for explicit refreshes."""
+    requested_specs = FACILITY_TABLE_SPECS if specs is None else specs
+    return cached_load_gas_model_tables(
+        _source_coverage_bounded_config(config),
+        cache,
+        specs=requested_specs,
+        reader=reader,
+        view=GasModelTableView.SAMPLE,
+        refresh_token=refresh_token,
+        clock=clock,
+    )
+
+
+def hub_zone_table_specs() -> tuple[GasTableSpec, ...]:
+    """Return the Hub / Zone dimension tables used by the explainer."""
+    return HUB_ZONE_TABLE_SPECS
+
+
+def load_hub_zone_context_tables(
+    config: GasDashboardConfig,
+    specs: Sequence[GasTableSpec] | None = None,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Load Hub / Zone explainer tables through the shared bounded loader."""
+    requested_specs = HUB_ZONE_TABLE_SPECS if specs is None else specs
+    return load_gas_model_tables(
+        _source_coverage_bounded_config(config),
+        specs=requested_specs,
+        reader=reader,
+        view=GasModelTableView.SAMPLE,
+        clock=clock,
+    )
+
+
+def cached_load_hub_zone_context_tables(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    specs: Sequence[GasTableSpec] | None = None,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Return cached Hub / Zone explainer table reads for explicit refreshes."""
+    requested_specs = HUB_ZONE_TABLE_SPECS if specs is None else specs
+    return cached_load_gas_model_tables(
+        _source_coverage_bounded_config(config),
+        cache,
+        specs=requested_specs,
+        reader=reader,
+        view=GasModelTableView.SAMPLE,
+        refresh_token=refresh_token,
+        clock=clock,
+    )
+
+
 def gas_table_load_status_frame(loads: Sequence[GasTableLoad]) -> pl.DataFrame:
     """Return dashboard table-load status with timing and row-limit detail."""
     return pl.DataFrame(
@@ -1418,6 +2061,1386 @@ def table_load_by_name(
         if load.spec.table_name == table_name:
             return load
     return None
+
+
+def source_coverage_table_specs(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> tuple[GasTableSpec, ...]:
+    """Return unique gas_model table specs from the Marimo dashboard registry."""
+    candidate_entries = tuple(dashboard_registry() if entries is None else entries)
+    seen_table_names: set[str] = set()
+    specs: list[GasTableSpec] = []
+
+    for entry in candidate_entries:
+        for asset in entry.backing_assets:
+            table_name = _source_coverage_table_name_from_registry_asset(asset)
+            if table_name is None or table_name in seen_table_names:
+                continue
+            seen_table_names.add(table_name)
+            specs.append(
+                GasTableSpec(
+                    section=_source_coverage_section(table_name),
+                    label=_source_coverage_label(table_name),
+                    table_name=table_name,
+                )
+            )
+
+    return tuple(specs)
+
+
+def source_coverage_table_specs_from_catalogue(
+    table_catalogue: Sequence[object],
+) -> tuple[GasTableSpec, ...]:
+    """Return unique gas_model table specs from discovered catalogue rows."""
+    seen_table_names: set[str] = set()
+    specs: list[GasTableSpec] = []
+
+    for entry in table_catalogue:
+        table_name = _source_coverage_table_name_from_catalogue_entry(entry)
+        if table_name is None or table_name in seen_table_names:
+            continue
+        seen_table_names.add(table_name)
+        specs.append(
+            GasTableSpec(
+                section=_source_coverage_section(table_name),
+                label=_source_coverage_label(table_name),
+                table_name=table_name,
+            )
+        )
+
+    return tuple(specs)
+
+
+def load_source_coverage_tables(
+    config: GasDashboardConfig,
+    specs: Sequence[GasTableSpec] | None = None,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Load registry-backed gas_model tables for source coverage inspection."""
+    requested_specs = source_coverage_table_specs() if specs is None else specs
+    return load_gas_model_tables(
+        _source_coverage_bounded_config(config),
+        specs=requested_specs,
+        reader=reader,
+        view=GasModelTableView.SAMPLE,
+        clock=clock,
+    )
+
+
+def cached_load_source_coverage_tables(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    specs: Sequence[GasTableSpec] | None = None,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Return cached registry-backed gas_model source coverage reads."""
+    requested_specs = source_coverage_table_specs() if specs is None else specs
+    return cached_load_gas_model_tables(
+        _source_coverage_bounded_config(config),
+        cache,
+        specs=requested_specs,
+        reader=reader,
+        view=GasModelTableView.SAMPLE,
+        refresh_token=refresh_token,
+        clock=clock,
+    )
+
+
+def _source_coverage_bounded_config(config: GasDashboardConfig) -> GasDashboardConfig:
+    if not config.full_table_scan_enabled:
+        return config
+    return replace(config, full_table_scan_enabled=False)
+
+
+def source_coverage_matrix_frame(
+    loads: Sequence[GasTableLoad],
+    table_catalogue: Sequence[object] = (),
+) -> pl.DataFrame:
+    """Return source-system and source-table coverage by gas_model asset."""
+    context_by_table_name = _source_coverage_context_by_table_name(table_catalogue)
+    rows: list[dict[str, object]] = []
+
+    for load in loads:
+        context = context_by_table_name.get(load.spec.table_name)
+        rows.extend(_source_coverage_rows(load, context))
+
+    if rows:
+        return pl.DataFrame(rows, schema=_SOURCE_COVERAGE_MATRIX_SCHEMA)
+    return pl.DataFrame(schema=_SOURCE_COVERAGE_MATRIX_SCHEMA)
+
+
+def render_source_coverage_matrix_html(
+    matrix: pl.DataFrame,
+    *,
+    max_rows: int = 200,
+) -> str:
+    """Return source coverage rows as an HTML table with real deep-link anchors."""
+    row_limit = max(1, max_rows)
+    visible_rows = matrix.head(row_limit).to_dicts()
+    hidden_rows = max(0, matrix.height - len(visible_rows))
+    body_html = "\n".join(
+        _render_source_coverage_matrix_row(row) for row in visible_rows
+    )
+    if body_html == "":
+        body_html = (
+            '<tr><td colspan="12" class="source-coverage-matrix__empty">'
+            "No source coverage rows match the current filters."
+            "</td></tr>"
+        )
+
+    overflow_note = ""
+    if hidden_rows > 0:
+        overflow_note = (
+            '<p class="source-coverage-matrix__overflow">'
+            f"{hidden_rows:,} additional rows are hidden by the dashboard "
+            "display limit. Narrow the filters to inspect them."
+            "</p>"
+        )
+
+    return f"""\
+<style>
+{_source_coverage_matrix_css()}
+</style>
+<div
+    class="source-coverage-matrix"
+    data-row-count="{matrix.height}"
+    data-rendered-row-count="{len(visible_rows)}"
+>
+    <div class="source-coverage-matrix__scroller">
+        <table>
+            <thead>
+                <tr>
+                    {_render_source_coverage_matrix_headings()}
+                </tr>
+            </thead>
+            <tbody>
+                {body_html}
+            </tbody>
+        </table>
+    </div>
+    {overflow_note}
+</div>"""
+
+
+def source_coverage_kpi_frame(
+    loads: Sequence[GasTableLoad],
+    matrix: pl.DataFrame,
+) -> pl.DataFrame:
+    """Return first-viewport source coverage KPIs for loaded gas_model assets."""
+    covered_assets = _source_coverage_distinct_count(
+        matrix,
+        "asset",
+        coverage_state=SOURCE_COVERAGE_STATE_COVERED,
+    )
+    gap_assets = _source_coverage_distinct_count(
+        matrix,
+        "asset",
+        coverage_state=SOURCE_COVERAGE_STATE_GAP,
+    )
+    source_systems = _source_coverage_distinct_count(
+        matrix,
+        "source system",
+        coverage_state=SOURCE_COVERAGE_STATE_COVERED,
+        exclude_missing=True,
+    )
+    source_tables = _source_coverage_distinct_count(
+        matrix,
+        "source table",
+        coverage_state=SOURCE_COVERAGE_STATE_COVERED,
+        exclude_missing=True,
+    )
+    unavailable_assets = sum(load.error is not None for load in loads)
+    empty_assets = sum(
+        load.error is None and (load.dataframe is None or load.dataframe.is_empty())
+        for load in loads
+    )
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Requested assets",
+                "value": f"{len(loads):,}",
+                "detail": "Unique silver.gas_model table reads requested",
+            },
+            {
+                "metric": "Loaded assets",
+                "value": f"{sum(load.available for load in loads):,}",
+                "detail": "Tables with at least one loaded bounded row",
+            },
+            {
+                "metric": "Assets with source coverage",
+                "value": f"{covered_assets:,}",
+                "detail": "Assets with populated source-system and source-table values",
+            },
+            {
+                "metric": "Assets with coverage gaps",
+                "value": f"{gap_assets:,}",
+                "detail": "Assets missing source metadata columns or values",
+            },
+            {
+                "metric": "Source systems",
+                "value": f"{source_systems:,}",
+                "detail": "Distinct covered source_system values in loaded rows",
+            },
+            {
+                "metric": "Source tables",
+                "value": f"{source_tables:,}",
+                "detail": "Distinct covered source_table/source_tables values",
+            },
+            {
+                "metric": "Unavailable or empty assets",
+                "value": f"{unavailable_assets + empty_assets:,}",
+                "detail": (
+                    f"{unavailable_assets:,} unavailable reads and "
+                    f"{empty_assets:,} empty reads"
+                ),
+            },
+        ],
+        schema=_SOURCE_COVERAGE_KPI_SCHEMA,
+    )
+
+
+def source_coverage_empty_state_markdown(loads: Sequence[GasTableLoad]) -> str:
+    """Return empty-state copy for source coverage dashboards."""
+    if len(loads) == 0:
+        return """
+        **No source coverage tables were requested.**
+
+        The dashboard expected registry-backed `silver.gas_model` assets but
+        received no table specs. Check the Marimo dashboard registry.
+        """
+
+    failed_count = sum(load.error is not None for load in loads)
+    empty_count = sum(
+        load.error is None and (load.dataframe is None or load.dataframe.is_empty())
+        for load in loads
+    )
+    return f"""
+    **No source coverage rows are available.**
+
+    The dashboard checked `{len(loads)}` registry-backed `silver.gas_model`
+    assets. `{failed_count}` reads were unavailable and `{empty_count}` reads
+    returned no rows.
+
+    Materialize or seed the curated gas model outputs, then use
+    **Refresh data**.
+    """
+
+
+def participant_dimension_coverage_frame(load: GasTableLoad | None) -> pl.DataFrame:
+    """Return Participant dimension coverage metrics from bounded rows."""
+    dataframe = _normalised_participant_dimension_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_PARTICIPANT_COVERAGE_SCHEMA)
+
+    source_system_count = _participant_list_value_count(dataframe, "source_systems")
+    source_table_count = _participant_list_value_count(dataframe, "source_tables")
+    source_company_count = _participant_list_value_count(
+        dataframe,
+        "source_company_ids",
+    )
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Participant dimension rows",
+                "value": f"{dataframe.height:,}",
+                "detail": "Loaded bounded rows from silver_gas_dim_participant",
+            },
+            {
+                "metric": "Identity sources",
+                "value": (
+                    f"{_distinct_non_empty_count(dataframe, 'participant_identity_source'):,}"
+                ),
+                "detail": "Distinct participant_identity_source values represented",
+            },
+            {
+                "metric": "Canonical participants",
+                "value": (
+                    f"{_distinct_non_empty_count(dataframe, 'canonical_participant_name'):,}"
+                ),
+                "detail": "Distinct canonical_participant_name values represented",
+            },
+            {
+                "metric": "Registered names",
+                "value": f"{_distinct_non_empty_count(dataframe, 'registered_name'):,}",
+                "detail": "Distinct registered_name values where source data provides them",
+            },
+            {
+                "metric": "Participant types",
+                "value": f"{_distinct_non_empty_count(dataframe, 'participant_type'):,}",
+                "detail": "Distinct participant_type values in the dimension preview",
+            },
+            {
+                "metric": "Participant statuses",
+                "value": (
+                    f"{_distinct_non_empty_count(dataframe, 'participant_status'):,}"
+                ),
+                "detail": "Distinct participant_status values in the dimension preview",
+            },
+            {
+                "metric": "Source systems",
+                "value": f"{source_system_count:,}",
+                "detail": "Distinct lineage values carried in source_systems",
+            },
+            {
+                "metric": "Source tables",
+                "value": f"{source_table_count:,}",
+                "detail": "Distinct lineage values carried in source_tables",
+            },
+            {
+                "metric": "Source company ids",
+                "value": f"{source_company_count:,}",
+                "detail": "Distinct source_company_ids carried by participant rows",
+            },
+        ],
+        schema=_PARTICIPANT_COVERAGE_SCHEMA,
+    )
+
+
+def participant_membership_coverage_frame(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    """Return participant market membership coverage grouped by market metadata."""
+    dataframe = _normalised_participant_membership_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_PARTICIPANT_MEMBERSHIP_COVERAGE_SCHEMA)
+
+    rows: list[dict[str, object]] = []
+    groups = (
+        dataframe.select(
+            "source_system",
+            "market_code",
+            "registration_type",
+            "membership_status",
+        )
+        .unique()
+        .sort(
+            ["source_system", "market_code", "registration_type"],
+            nulls_last=True,
+        )
+        .to_dicts()
+    )
+    for group in groups:
+        subset = dataframe.filter(
+            _participant_group_expression("source_system", group["source_system"])
+            & _participant_group_expression("market_code", group["market_code"])
+            & _participant_group_expression(
+                "registration_type",
+                group["registration_type"],
+            )
+            & _participant_group_expression(
+                "membership_status",
+                group["membership_status"],
+            )
+        )
+        rows.append(
+            {
+                "source system": group["source_system"],
+                "market code": group["market_code"],
+                "registration type": group["registration_type"],
+                "membership status": group["membership_status"],
+                "rows": subset.height,
+                "participant keys": _distinct_non_empty_count(
+                    subset,
+                    "participant_key",
+                ),
+                "source company ids": _distinct_non_empty_count(
+                    subset,
+                    "source_company_id",
+                ),
+                "source company codes": _distinct_non_empty_count(
+                    subset,
+                    "source_company_code",
+                ),
+                "hub ids": _distinct_non_empty_count(subset, "source_hub_id"),
+                "source tables": _participant_list_value_count(
+                    subset,
+                    "source_tables",
+                ),
+                "latest ingest": _latest_ingest_timestamp(subset),
+            }
+        )
+
+    return pl.DataFrame(rows, schema=_PARTICIPANT_MEMBERSHIP_COVERAGE_SCHEMA)
+
+
+def participant_related_market_fact_frame(
+    loads: Sequence[GasTableLoad],
+) -> pl.DataFrame:
+    """Return participant-facing relationships to related market tables."""
+    participant_load = table_load_by_name(loads, PARTICIPANT_DIM_TABLE_NAME)
+    membership_load = table_load_by_name(
+        loads,
+        PARTICIPANT_MARKET_MEMBERSHIP_TABLE_NAME,
+    )
+    facility_load = table_load_by_name(loads, FACILITY_DIM_TABLE_NAME)
+    bid_stack_load = table_load_by_name(loads, BID_STACK_TABLE_NAME)
+    settlement_load = table_load_by_name(loads, SETTLEMENT_ACTIVITY_TABLE_NAME)
+
+    participants = _normalised_participant_dimension_dataframe(participant_load)
+    memberships = _normalised_participant_membership_dataframe(membership_load)
+    facilities = _normalised_facility_dimension_dataframe(facility_load)
+    bid_stack = _normalised_bid_stack_dataframe(bid_stack_load)
+    settlements = _normalised_settlement_activity_dataframe(settlement_load)
+
+    if (
+        participants.is_empty()
+        and memberships.is_empty()
+        and facilities.is_empty()
+        and bid_stack.is_empty()
+        and settlements.is_empty()
+    ):
+        return pl.DataFrame(schema=_PARTICIPANT_MARKET_FACT_SCHEMA)
+
+    participant_keys = _participant_reference_set(participants, "surrogate_key")
+    participant_identity_values = _participant_reference_set(
+        participants,
+        "participant_identity_value",
+    )
+    participant_names = _participant_name_set(participants)
+
+    rows = [
+        {
+            "related surface": "Market membership",
+            "source table": PARTICIPANT_MARKET_MEMBERSHIP_TABLE_NAME,
+            "available rows": memberships.height,
+            "participant references": _distinct_non_empty_count(
+                memberships,
+                "participant_key",
+            ),
+            "matched participants": _matched_reference_count(
+                memberships,
+                "participant_key",
+                participant_keys,
+            ),
+            "detail": (
+                "Bridge rows connecting participant_key to market_code, source "
+                "system, STTM hub, registration type, and membership status."
+            ),
+        },
+        {
+            "related surface": "Facility",
+            "source table": FACILITY_DIM_TABLE_NAME,
+            "available rows": _non_empty_string_count(facilities, "participant_key"),
+            "participant references": _distinct_non_empty_count(
+                facilities,
+                "participant_key",
+            ),
+            "matched participants": _matched_reference_count(
+                facilities,
+                "participant_key",
+                participant_keys,
+            ),
+            "detail": (
+                "Facility dimension rows with participant_key populated where "
+                "operator participant lineage is resolvable."
+            ),
+        },
+        {
+            "related surface": "Bid / Offer",
+            "source table": BID_STACK_TABLE_NAME,
+            "available rows": bid_stack.height,
+            "participant references": _bid_stack_participant_reference_count(
+                bid_stack,
+            ),
+            "matched participants": _matched_bid_stack_participant_count(
+                bid_stack,
+                participant_identity_values,
+                participant_names,
+            ),
+            "detail": (
+                "Bid / Offer stack rows carrying source participant ids and "
+                "participant names alongside facility, zone, price, and "
+                "quantity fields."
+            ),
+        },
+        {
+            "related surface": "Settlement",
+            "source table": SETTLEMENT_ACTIVITY_TABLE_NAME,
+            "available rows": settlements.height,
+            "participant references": _distinct_non_empty_count(
+                settlements,
+                "participant_name",
+            ),
+            "matched participants": _matched_reference_count(
+                settlements,
+                "participant_name",
+                participant_names,
+            ),
+            "detail": (
+                "Settlement activity rows carrying participant_name with "
+                "amount, quantity, percentage, schedule, and network context."
+            ),
+        },
+    ]
+    return pl.DataFrame(rows, schema=_PARTICIPANT_MARKET_FACT_SCHEMA)
+
+
+def participant_dimension_preview_frame(
+    load: GasTableLoad | None,
+    *,
+    preview_rows: int = DEFAULT_PARTICIPANT_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return a table-friendly preview of participant standing data."""
+    dataframe = _normalised_participant_dimension_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_PARTICIPANT_PREVIEW_SCHEMA)
+
+    rows: list[dict[str, object]] = []
+    for row in (
+        dataframe.sort(
+            [
+                "participant_identity_source",
+                "participant_identity_value",
+                "canonical_participant_name",
+            ],
+            nulls_last=True,
+        )
+        .head(max(1, preview_rows))
+        .to_dicts()
+    ):
+        rows.append(
+            {
+                "identity source": row.get("participant_identity_source"),
+                "identity value": row.get("participant_identity_value"),
+                "participant": row.get("canonical_participant_name"),
+                "registered name": row.get("registered_name"),
+                "participant type": row.get("participant_type"),
+                "participant status": row.get("participant_status"),
+                "source systems": ", ".join(
+                    _source_coverage_value_strings(row.get("source_systems"))
+                ),
+                "source tables": ", ".join(
+                    _source_coverage_value_strings(row.get("source_tables"))
+                ),
+                "source company ids": ", ".join(
+                    _source_coverage_value_strings(row.get("source_company_ids"))
+                ),
+                "latest ingest": row.get("ingested_timestamp"),
+            }
+        )
+    return pl.DataFrame(rows, schema=_PARTICIPANT_PREVIEW_SCHEMA)
+
+
+def participant_membership_preview_frame(
+    load: GasTableLoad | None,
+    *,
+    preview_rows: int = DEFAULT_PARTICIPANT_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return a table-friendly preview of participant market memberships."""
+    dataframe = _normalised_participant_membership_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_PARTICIPANT_MEMBERSHIP_PREVIEW_SCHEMA)
+
+    rows: list[dict[str, object]] = []
+    for row in (
+        dataframe.sort(
+            ["source_system", "market_code", "source_company_id"],
+            nulls_last=True,
+        )
+        .head(max(1, preview_rows))
+        .to_dicts()
+    ):
+        rows.append(
+            {
+                "source system": row.get("source_system"),
+                "market code": row.get("market_code"),
+                "participant key": row.get("participant_key"),
+                "company id": row.get("source_company_id"),
+                "company code": row.get("source_company_code"),
+                "hub": row.get("source_hub_name") or row.get("source_hub_id"),
+                "registration type": row.get("registration_type"),
+                "registered capacity": row.get("registered_capacity"),
+                "membership status": row.get("membership_status"),
+                "identity source": row.get("participant_identity_source"),
+                "identity value": row.get("participant_identity_value"),
+                "source tables": ", ".join(
+                    _source_coverage_value_strings(row.get("source_tables"))
+                ),
+                "latest ingest": row.get("ingested_timestamp"),
+            }
+        )
+    return pl.DataFrame(rows, schema=_PARTICIPANT_MEMBERSHIP_PREVIEW_SCHEMA)
+
+
+def participant_context_empty_state_markdown(loads: Sequence[GasTableLoad]) -> str:
+    """Return empty-state copy for the Participant explainer dashboard."""
+    if len(loads) == 0:
+        return """
+        **No Participant context tables were requested.**
+
+        The dashboard expected Participant-oriented `silver.gas_model` table
+        specs but received none. Check the Marimo dashboard registry and
+        Participant explainer configuration.
+        """
+
+    failed_count = sum(load.error is not None for load in loads)
+    empty_count = sum(
+        load.error is None and (load.dataframe is None or load.dataframe.is_empty())
+        for load in loads
+    )
+    read_policy = row_limit_message(_common_row_limit(loads))
+    read_detail = (
+        f"`{failed_count}` reads were unavailable and `{empty_count}` reads "
+        "returned no rows."
+    )
+    return f"""
+    **No Participant metadata, membership, or related fact rows are available.**
+
+    The dashboard checked `{len(loads)}` Participant-oriented
+    `silver.gas_model` assets, including `silver_gas_dim_participant`,
+    `silver_gas_participant_market_membership`, `silver_gas_dim_facility`,
+    `silver_gas_fact_bid_stack`, and `silver_gas_fact_settlement_activity`.
+    {read_detail}
+
+    {read_policy}
+
+    Materialize or seed the curated gas model outputs, then use
+    **Refresh data**.
+    """
+
+
+def render_participant_context_links(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render Participant links to related dashboards and concept panels."""
+    candidate_entries = tuple(dashboard_registry() if entries is None else entries)
+    concept_ids = (
+        PARTICIPANT_CONTEXT_ID,
+        "source-coverage-matrix",
+        "gas-model-table-explorer",
+        "bid-offer-context",
+        "settlement-context",
+        "facility-context",
+        "gas-customer-transfer-activity",
+    )
+    rows = "\n".join(
+        _render_participant_context_link(entry)
+        for entry in (
+            registry_entry_by_concept_id(concept_id, candidate_entries)
+            for concept_id in concept_ids
+        )
+        if entry is not None
+    )
+    if rows == "":
+        rows = (
+            '<li class="participant-links__empty">'
+            "No Participant, bid, settlement, facility, or table explorer "
+            "entries are registered."
+            "</li>"
+        )
+
+    return f"""\
+<style>
+{_participant_context_links_css()}
+</style>
+<section class="participant-links" aria-label="Participant context links">
+    <div>
+        <p class="participant-links__eyebrow">Context links</p>
+        <h2>Participant, membership, bid, settlement, and facility context</h2>
+    </div>
+    <ul>
+{rows}
+    </ul>
+</section>"""
+
+
+def facility_dimension_coverage_frame(load: GasTableLoad | None) -> pl.DataFrame:
+    """Return Facility dimension coverage metrics from bounded rows."""
+    dataframe = _normalised_facility_dimension_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_FACILITY_COVERAGE_SCHEMA)
+
+    participant_rows = _non_empty_string_count(dataframe, "participant_key")
+    zone_rows = _non_empty_string_count(dataframe, "zone_key")
+    capacity_rows = _capacity_metadata_row_count(dataframe)
+    source_table_count = _facility_source_table_count(dataframe)
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Facility dimension rows",
+                "value": f"{dataframe.height:,}",
+                "detail": "Loaded bounded rows from silver_gas_dim_facility",
+            },
+            {
+                "metric": "Source systems",
+                "value": f"{_distinct_non_empty_count(dataframe, 'source_system'):,}",
+                "detail": "Distinct source_system values represented",
+            },
+            {
+                "metric": "Source tables",
+                "value": f"{source_table_count:,}",
+                "detail": "Distinct source table values carried in source_tables",
+            },
+            {
+                "metric": "Facility types",
+                "value": (f"{_distinct_non_empty_count(dataframe, 'facility_type'):,}"),
+                "detail": "Distinct facility_type values in the dimension preview",
+            },
+            {
+                "metric": "Operators",
+                "value": f"{_distinct_non_empty_count(dataframe, 'operator_name'):,}",
+                "detail": "Distinct operator_name values where source data provides them",
+            },
+            {
+                "metric": "Participant links",
+                "value": f"{participant_rows:,}",
+                "detail": "Rows with participant_key populated",
+            },
+            {
+                "metric": "Zone links",
+                "value": f"{zone_rows:,}",
+                "detail": "Rows with zone_key populated",
+            },
+            {
+                "metric": "Capacity metadata rows",
+                "value": f"{capacity_rows:,}",
+                "detail": (
+                    "Rows with default, maximum, high-threshold, or "
+                    "low-threshold capacity populated"
+                ),
+            },
+        ],
+        schema=_FACILITY_COVERAGE_SCHEMA,
+    )
+
+
+def facility_relationship_frame(loads: Sequence[GasTableLoad]) -> pl.DataFrame:
+    """Return Facility relationships to dimensions and related facts."""
+    facility_load = table_load_by_name(loads, FACILITY_DIM_TABLE_NAME)
+    flow_load = table_load_by_name(loads, FACILITY_FLOW_STORAGE_TABLE_NAME)
+    capacity_load = table_load_by_name(loads, FACILITY_CAPACITY_OUTLOOK_TABLE_NAME)
+    facilities = _normalised_facility_dimension_dataframe(facility_load)
+    flow_storage = _normalised_facility_flow_storage_dataframe(flow_load)
+    capacity = _normalised_facility_capacity_dataframe(capacity_load)
+
+    if facilities.is_empty() and flow_storage.is_empty() and capacity.is_empty():
+        return pl.DataFrame(schema=_FACILITY_RELATIONSHIP_SCHEMA)
+
+    facility_ids = _facility_identifier_set(facilities, "source_facility_id")
+    facility_keys = _facility_identifier_set(facilities, "surrogate_key")
+    participant_rows = _non_empty_string_count(facilities, "participant_key")
+    zone_rows = _non_empty_string_count(facilities, "zone_key")
+    flow_rows = _facility_flow_rows(flow_storage)
+    storage_rows = _facility_storage_rows(flow_storage)
+    capacity_rows = capacity.filter(pl.col("capacity_quantity_tj").is_not_null())
+    capacity_metadata_rows = _capacity_metadata_row_count(facilities)
+
+    rows = [
+        {
+            "relationship": "Participant",
+            "source table": FACILITY_DIM_TABLE_NAME,
+            "available rows": participant_rows,
+            "facilities": _distinct_non_empty_count(facilities, "source_facility_id"),
+            "matched facilities": participant_rows,
+            "detail": (
+                "participant_key is populated on facility dimension rows where "
+                "operator participant lineage is resolvable."
+            ),
+        },
+        {
+            "relationship": "Zone",
+            "source table": FACILITY_DIM_TABLE_NAME,
+            "available rows": zone_rows,
+            "facilities": _distinct_non_empty_count(facilities, "source_facility_id"),
+            "matched facilities": zone_rows,
+            "detail": (
+                "zone_key is populated for hub-scoped facility rows where the "
+                "source can resolve a gas_model zone."
+            ),
+        },
+        {
+            "relationship": "Flow",
+            "source table": FACILITY_FLOW_STORAGE_TABLE_NAME,
+            "available rows": flow_rows.height,
+            "facilities": _distinct_non_empty_count(flow_rows, "source_facility_id"),
+            "matched facilities": _matched_facility_count(
+                flow_rows,
+                facility_ids,
+                facility_keys,
+            ),
+            "detail": (
+                "Rows with demand, supply, transfer-in, or transfer-out measures "
+                "from the facility flow/storage fact."
+            ),
+        },
+        {
+            "relationship": "Storage",
+            "source table": FACILITY_FLOW_STORAGE_TABLE_NAME,
+            "available rows": storage_rows.height,
+            "facilities": _distinct_non_empty_count(storage_rows, "source_facility_id"),
+            "matched facilities": _matched_facility_count(
+                storage_rows,
+                facility_ids,
+                facility_keys,
+            ),
+            "detail": (
+                "Rows with held-in-storage or cushion-gas storage measures from "
+                "the facility flow/storage fact."
+            ),
+        },
+        {
+            "relationship": "Capacity",
+            "source table": FACILITY_CAPACITY_OUTLOOK_TABLE_NAME,
+            "available rows": capacity_rows.height,
+            "facilities": _distinct_non_empty_count(
+                capacity_rows, "source_facility_id"
+            ),
+            "matched facilities": _matched_facility_count(
+                capacity_rows,
+                facility_ids,
+                facility_keys,
+            ),
+            "detail": (
+                "Capacity outlook rows with capacity_quantity_tj populated; "
+                f"{capacity_metadata_rows:,} facility dimension rows also carry "
+                "standing capacity metadata."
+            ),
+        },
+    ]
+    return pl.DataFrame(rows, schema=_FACILITY_RELATIONSHIP_SCHEMA)
+
+
+def facility_dimension_preview_frame(
+    load: GasTableLoad | None,
+    *,
+    preview_rows: int = DEFAULT_FACILITY_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return a table-friendly preview of facility standing data."""
+    dataframe = _normalised_facility_dimension_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_FACILITY_PREVIEW_SCHEMA)
+
+    rows: list[dict[str, object]] = []
+    for row in (
+        dataframe.sort(
+            ["source_system", "facility_type", "source_facility_id"],
+            nulls_last=True,
+        )
+        .head(max(1, preview_rows))
+        .to_dicts()
+    ):
+        rows.append(
+            {
+                "source system": row.get("source_system"),
+                "source facility id": row.get("source_facility_id"),
+                "facility": row.get("facility_name"),
+                "short name": row.get("facility_short_name"),
+                "facility type": row.get("facility_type"),
+                "operator": row.get("operator_name"),
+                "participant key": row.get("participant_key"),
+                "zone key": row.get("zone_key"),
+                "default capacity": row.get("default_capacity"),
+                "maximum capacity": row.get("maximum_capacity"),
+                "capacity effective from": row.get("capacity_effective_from_date"),
+                "capacity effective to": row.get("capacity_effective_to_date"),
+                "source tables": ", ".join(
+                    _source_coverage_value_strings(row.get("source_tables"))
+                ),
+                "latest ingest": row.get("ingested_timestamp"),
+            }
+        )
+    return pl.DataFrame(rows, schema=_FACILITY_PREVIEW_SCHEMA)
+
+
+def facility_context_empty_state_markdown(loads: Sequence[GasTableLoad]) -> str:
+    """Return empty-state copy for the Facility explainer dashboard."""
+    if len(loads) == 0:
+        return """
+        **No Facility context tables were requested.**
+
+        The dashboard expected Facility-oriented `silver.gas_model` table specs
+        but received none. Check the Marimo dashboard registry and Facility
+        explainer configuration.
+        """
+
+    failed_count = sum(load.error is not None for load in loads)
+    empty_count = sum(
+        load.error is None and (load.dataframe is None or load.dataframe.is_empty())
+        for load in loads
+    )
+    read_policy = row_limit_message(_common_row_limit(loads))
+    read_detail = (
+        f"`{failed_count}` reads were unavailable and `{empty_count}` reads "
+        "returned no rows."
+    )
+    return f"""
+    **No Facility metadata or relationship rows are available.**
+
+    The dashboard checked `{len(loads)}` Facility-oriented `silver.gas_model`
+    assets: `silver_gas_dim_facility`,
+    `silver_gas_fact_facility_flow_storage`, and
+    `silver_gas_fact_capacity_outlook`. {read_detail}
+
+    {read_policy}
+
+    Materialize or seed the curated gas model outputs, then use
+    **Refresh data**.
+    """
+
+
+def hub_zone_dimension_coverage_frame(load: GasTableLoad | None) -> pl.DataFrame:
+    """Return Hub / Zone dimension coverage metrics from bounded rows."""
+    dataframe = _normalised_hub_zone_dimension_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_HUB_ZONE_COVERAGE_SCHEMA)
+
+    sttm_hub_rows = _hub_zone_type_row_count(dataframe, "sttm_hub")
+    source_table_count = _hub_zone_list_value_count(dataframe, "source_tables")
+    source_file_count = _hub_zone_list_value_count(dataframe, "source_files")
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Zone dimension rows",
+                "value": f"{dataframe.height:,}",
+                "detail": "Loaded bounded rows from silver_gas_dim_zone",
+            },
+            {
+                "metric": "Source systems",
+                "value": f"{_distinct_non_empty_count(dataframe, 'source_system'):,}",
+                "detail": "Distinct source_system values represented",
+            },
+            {
+                "metric": "Source tables",
+                "value": f"{source_table_count:,}",
+                "detail": "Distinct source table values carried in source_tables",
+            },
+            {
+                "metric": "Zone types",
+                "value": f"{_distinct_non_empty_count(dataframe, 'zone_type'):,}",
+                "detail": "Distinct zone_type values in the dimension preview",
+            },
+            {
+                "metric": "STTM hubs",
+                "value": f"{sttm_hub_rows:,}",
+                "detail": "Rows where zone_type is sttm_hub",
+            },
+            {
+                "metric": "DWGM/GBB zone rows",
+                "value": f"{dataframe.height - sttm_hub_rows:,}",
+                "detail": "Non-STTM rows such as demand, linepack, HV, and TUOS zones",
+            },
+            {
+                "metric": "Source-qualified identifiers",
+                "value": f"{_hub_zone_source_qualified_count(dataframe):,}",
+                "detail": "Distinct source_system + zone_type + source_zone_id keys",
+            },
+            {
+                "metric": "Source files",
+                "value": f"{source_file_count:,}",
+                "detail": "Distinct lineage files carried in source_files",
+            },
+        ],
+        schema=_HUB_ZONE_COVERAGE_SCHEMA,
+    )
+
+
+def hub_zone_source_system_frame(load: GasTableLoad | None) -> pl.DataFrame:
+    """Return Hub / Zone coverage grouped by source_system."""
+    dataframe = _normalised_hub_zone_dimension_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_HUB_ZONE_SOURCE_SYSTEM_SCHEMA)
+
+    rows: list[dict[str, object]] = []
+    for source_system in _hub_zone_source_systems(dataframe):
+        subset = dataframe.filter(pl.col("source_system") == source_system)
+        rows.append(
+            {
+                "source system": source_system,
+                "rows": subset.height,
+                "zone types": _distinct_non_empty_count(subset, "zone_type"),
+                "source zone ids": _distinct_non_empty_count(
+                    subset,
+                    "source_zone_id",
+                ),
+                "source tables": _hub_zone_list_value_count(subset, "source_tables"),
+                "source files": _hub_zone_list_value_count(subset, "source_files"),
+                "latest ingest": _hub_zone_latest_ingest(subset),
+            }
+        )
+
+    return pl.DataFrame(rows, schema=_HUB_ZONE_SOURCE_SYSTEM_SCHEMA)
+
+
+def hub_zone_identifier_preview_frame(
+    load: GasTableLoad | None,
+    *,
+    preview_rows: int = DEFAULT_HUB_ZONE_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return source-qualified Hub / Zone identifiers for table display."""
+    dataframe = _normalised_hub_zone_dimension_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_HUB_ZONE_IDENTIFIER_SCHEMA)
+
+    rows: list[dict[str, object]] = []
+    for row in (
+        dataframe.sort(
+            ["source_system", "zone_type", "source_zone_id"],
+            nulls_last=True,
+        )
+        .head(max(1, preview_rows))
+        .to_dicts()
+    ):
+        rows.append(
+            {
+                "source-qualified identifier": _hub_zone_source_qualified_identifier(
+                    row
+                ),
+                "source system": row.get("source_system"),
+                "zone type": row.get("zone_type"),
+                "source zone id": row.get("source_zone_id"),
+                "zone name": row.get("zone_name"),
+                "zone description": row.get("zone_description"),
+                "source tables": ", ".join(
+                    _source_coverage_value_strings(row.get("source_tables"))
+                ),
+                "source files": ", ".join(
+                    _source_coverage_value_strings(row.get("source_files"))
+                ),
+                "latest ingest": row.get("ingested_timestamp"),
+            }
+        )
+
+    return pl.DataFrame(rows, schema=_HUB_ZONE_IDENTIFIER_SCHEMA)
+
+
+def hub_zone_context_empty_state_markdown(loads: Sequence[GasTableLoad]) -> str:
+    """Return empty-state copy for the Hub / Zone explainer dashboard."""
+    if len(loads) == 0:
+        return """
+        **No Hub / Zone context tables were requested.**
+
+        The dashboard expected the `silver_gas_dim_zone` table spec but
+        received none. Check the Marimo dashboard registry and Hub / Zone
+        explainer configuration.
+        """
+
+    failed_count = sum(load.error is not None for load in loads)
+    empty_count = sum(
+        load.error is None and (load.dataframe is None or load.dataframe.is_empty())
+        for load in loads
+    )
+    read_policy = row_limit_message(_common_row_limit(loads))
+    read_detail = (
+        f"`{failed_count}` reads were unavailable and `{empty_count}` reads "
+        "returned no rows."
+    )
+    return f"""
+    **No Hub / Zone metadata rows are available.**
+
+    The dashboard checked `silver.gas_model.silver_gas_dim_zone` for current
+    source-qualified hub and zone rows. {read_detail}
+
+    {read_policy}
+
+    Materialize or seed the curated gas model outputs, then use
+    **Refresh data**.
+    """
+
+
+def render_hub_zone_context_links(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render Hub / Zone links to related dashboards and concept panels."""
+    candidate_entries = tuple(dashboard_registry() if entries is None else entries)
+    concept_ids = (
+        HUB_ZONE_CONTEXT_ID,
+        "source-coverage-matrix",
+        "gas-model-table-explorer",
+        "facility-context",
+        "connection-point-context",
+        "flow-context",
+        "capacity-context",
+        "schedule-context",
+        "bid-offer-context",
+        "gbb-interactive-map",
+    )
+    rows = "\n".join(
+        _render_hub_zone_context_link(entry)
+        for entry in (
+            registry_entry_by_concept_id(concept_id, candidate_entries)
+            for concept_id in concept_ids
+        )
+        if entry is not None
+    )
+    if rows == "":
+        rows = (
+            '<li class="hub-zone-links__empty">'
+            "No Hub / Zone, Facility, flow, capacity, schedule, bid, or table "
+            "explorer entries are registered."
+            "</li>"
+        )
+
+    return f"""\
+<style>
+{_hub_zone_context_links_css()}
+</style>
+<section class="hub-zone-links" aria-label="Hub and Zone context links">
+    <div>
+        <p class="hub-zone-links__eyebrow">Context links</p>
+        <h2>Hub / Zone, source coverage, and downstream dashboards</h2>
+    </div>
+    <ul>
+{rows}
+    </ul>
+</section>"""
+
+
+def render_facility_context_links(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render Facility links to related dashboards and concept panels."""
+    candidate_entries = tuple(dashboard_registry() if entries is None else entries)
+    concept_ids = (
+        FACILITY_CONTEXT_ID,
+        "gbb-interactive-map",
+        "source-coverage-matrix",
+        "gas-model-table-explorer",
+        "participant-context",
+        "hub-zone-context",
+        "flow-context",
+        "capacity-context",
+        "connection-point-context",
+        "bid-offer-context",
+    )
+    rows = "\n".join(
+        _render_facility_context_link(entry)
+        for entry in (
+            registry_entry_by_concept_id(concept_id, candidate_entries)
+            for concept_id in concept_ids
+        )
+        if entry is not None
+    )
+    if rows == "":
+        rows = (
+            '<li class="facility-links__empty">'
+            "No Facility, flow, capacity, participant, zone, or table explorer "
+            "entries are registered."
+            "</li>"
+        )
+
+    return f"""\
+<style>
+{_facility_context_links_css()}
+</style>
+<section class="facility-links" aria-label="Facility context links">
+    <div>
+        <p class="facility-links__eyebrow">Context links</p>
+        <h2>Facility, flow, capacity, participant, and zone context</h2>
+    </div>
+    <ul>
+{rows}
+    </ul>
+</section>"""
+
+
+def gas_day_table_specs(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> tuple[GasTableSpec, ...]:
+    """Return current registry-backed gas_model specs for Gas Day inspection."""
+    specs = source_coverage_table_specs(entries)
+    return tuple(
+        replace(
+            spec,
+            date_columns=_GAS_DAY_KNOWN_DATE_COLUMNS_BY_TABLE.get(
+                spec.table_name,
+                (),
+            ),
+        )
+        for spec in specs
+    )
+
+
+def load_gas_day_tables(
+    config: GasDashboardConfig,
+    specs: Sequence[GasTableSpec] | None = None,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Load bounded registry-backed gas_model tables for Gas Day examples."""
+    requested_specs = gas_day_table_specs() if specs is None else specs
+    return load_gas_model_tables(
+        _source_coverage_bounded_config(config),
+        specs=requested_specs,
+        reader=reader,
+        view=GasModelTableView.SAMPLE,
+        clock=clock,
+    )
+
+
+def cached_load_gas_day_tables(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    specs: Sequence[GasTableSpec] | None = None,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Return cached bounded gas_model table reads for Gas Day examples."""
+    requested_specs = gas_day_table_specs() if specs is None else specs
+    return cached_load_gas_model_tables(
+        _source_coverage_bounded_config(config),
+        cache,
+        specs=requested_specs,
+        reader=reader,
+        view=GasModelTableView.SAMPLE,
+        refresh_token=refresh_token,
+        clock=clock,
+    )
+
+
+def gas_day_field_discovery_frame(loads: Sequence[GasTableLoad]) -> pl.DataFrame:
+    """Return date and gas-date field coverage across loaded gas_model assets."""
+    rows: list[dict[str, object]] = []
+    for load in loads:
+        fields = _gas_day_candidate_fields(load)
+        if len(fields) == 0:
+            rows.append(_gas_day_missing_field_row(load))
+            continue
+        rows.extend(_gas_day_field_row(load, field) for field in fields)
+
+    if rows:
+        return pl.DataFrame(rows, schema=_GAS_DAY_FIELD_DISCOVERY_SCHEMA)
+    return pl.DataFrame(schema=_GAS_DAY_FIELD_DISCOVERY_SCHEMA)
+
+
+def gas_day_kpi_frame(
+    loads: Sequence[GasTableLoad],
+    field_discovery: pl.DataFrame,
+    examples: pl.DataFrame,
+) -> pl.DataFrame:
+    """Return first-viewport Gas Day coverage KPIs."""
+    field_rows = field_discovery.to_dicts() if not field_discovery.is_empty() else []
+    gas_day_fields = [
+        row
+        for row in field_rows
+        if row["field role"] == "Gas Day field" and row["field"] != ""
+    ]
+    fields_with_values = [
+        row for row in field_rows if _is_positive_count(row["populated values"])
+    ]
+    latest_gas_day = _latest_gas_day_value(gas_day_fields)
+    unavailable_count = sum(load.error is not None for load in loads)
+    empty_count = sum(
+        load.error is None and (load.dataframe is None or load.dataframe.is_empty())
+        for load in loads
+    )
+    row_limit = _common_row_limit(loads) if len(loads) > 0 else None
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Curated assets checked",
+                "value": f"{len(loads):,}",
+                "detail": "Registry-backed silver.gas_model table reads requested",
+            },
+            {
+                "metric": "Loaded assets",
+                "value": f"{sum(load.available for load in loads):,}",
+                "detail": "Tables with at least one loaded bounded row",
+            },
+            {
+                "metric": "Gas Day fields",
+                "value": f"{len(gas_day_fields):,}",
+                "detail": "Fields named gas_date, from_gas_date, or to_gas_date",
+            },
+            {
+                "metric": "Date fields with values",
+                "value": f"{len(fields_with_values):,}",
+                "detail": "Date, timestamp, or date-key fields populated in the read",
+            },
+            {
+                "metric": "Bounded examples",
+                "value": f"{examples.height:,}",
+                "detail": "Example rows rendered from already bounded table reads",
+            },
+            {
+                "metric": "Latest Gas Day",
+                "value": latest_gas_day or "unknown",
+                "detail": "Maximum loaded value across populated Gas Day fields",
+            },
+            {
+                "metric": "Unavailable or empty assets",
+                "value": f"{unavailable_count + empty_count:,}",
+                "detail": (
+                    f"{unavailable_count:,} unavailable reads and "
+                    f"{empty_count:,} empty reads"
+                ),
+            },
+            {
+                "metric": "Read policy",
+                "value": format_row_limit(row_limit),
+                "detail": row_limit_message(row_limit),
+            },
+        ],
+        schema=_GAS_DAY_KPI_SCHEMA,
+    )
+
+
+def gas_day_bounded_examples_frame(
+    loads: Sequence[GasTableLoad],
+    *,
+    examples_per_field: int = DEFAULT_GAS_DAY_EXAMPLES_PER_FIELD,
+) -> pl.DataFrame:
+    """Return bounded example values for discovered date and gas-date fields."""
+    row_limit = max(1, examples_per_field)
+    rows: list[dict[str, object]] = []
+
+    for load in loads:
+        dataframe = load.dataframe
+        if load.error is not None or dataframe is None or dataframe.is_empty():
+            continue
+
+        for field in _gas_day_example_fields(load):
+            if field not in dataframe.columns:
+                continue
+            examples = _gas_day_field_examples(dataframe, field, row_limit)
+            rows.extend(_gas_day_example_row(load, field, row) for row in examples)
+
+    if rows:
+        return pl.DataFrame(rows, schema=_GAS_DAY_EXAMPLE_SCHEMA)
+    return pl.DataFrame(schema=_GAS_DAY_EXAMPLE_SCHEMA)
+
+
+def gas_day_examples_empty_state_markdown(loads: Sequence[GasTableLoad]) -> str:
+    """Return empty-state copy for absent Gas Day bounded examples."""
+    if len(loads) == 0:
+        return """
+        **No Gas Day tables were requested.**
+
+        The dashboard expected registry-backed `silver.gas_model` assets but
+        received no table specs. Check the Marimo dashboard registry.
+        """
+
+    failed_count = sum(load.error is not None for load in loads)
+    empty_count = sum(
+        load.error is None and (load.dataframe is None or load.dataframe.is_empty())
+        for load in loads
+    )
+    row_limit = _common_row_limit(loads)
+
+    return f"""
+    **No bounded Gas Day examples are available.**
+
+    The dashboard checked `{len(loads)}` registry-backed `silver.gas_model`
+    assets. `{failed_count}` reads were unavailable and `{empty_count}` reads returned
+    no rows or no populated date fields.
+
+    {row_limit_message(row_limit)}
+
+    Materialize or seed the curated gas model outputs, then use
+    **Refresh data**.
+    """
 
 
 def market_price_price_type_options(
@@ -3819,6 +5842,1219 @@ def system_notice_empty_state_markdown(load: GasTableLoad | None) -> str:
     """
 
 
+def _source_coverage_table_name_from_registry_asset(asset: str) -> str | None:
+    prefix = "silver.gas_model."
+    if asset.startswith(prefix):
+        return asset.removeprefix(prefix)
+    return None
+
+
+def _source_coverage_section(table_name: str) -> str:
+    if table_name.startswith("silver_gas_dim_"):
+        return "Dimensions"
+    if table_name.startswith("silver_gas_fact_"):
+        return "Facts"
+    return "Associations"
+
+
+def _source_coverage_label(table_name: str) -> str:
+    label = table_name.removeprefix("silver_gas_")
+    return label.replace("_", " ").title()
+
+
+def _source_coverage_context_by_table_name(
+    table_catalogue: Sequence[object],
+) -> dict[str, _SourceCoverageContext]:
+    contexts: dict[str, _SourceCoverageContext] = {}
+    for entry in table_catalogue:
+        table_name = _source_coverage_table_name_from_catalogue_entry(entry)
+        if table_name is None or table_name in contexts:
+            continue
+        contexts[table_name] = _source_coverage_context_from_catalogue_entry(entry)
+    return contexts
+
+
+def _source_coverage_context_from_catalogue_entry(
+    entry: object,
+) -> _SourceCoverageContext:
+    entry_id = _source_coverage_entry_id(entry)
+    has_asset = getattr(entry, "asset", None) is not None
+    uri = getattr(entry, "uri", None)
+    uri_text = uri if isinstance(uri, str) else ""
+
+    if entry_id == "":
+        table_link = SOURCE_COVERAGE_TABLE_EXPLORER_ROUTE
+        asset_link = ""
+    else:
+        encoded_entry_id = quote(entry_id, safe="")
+        table_link = f"{SOURCE_COVERAGE_TABLE_EXPLORER_ROUTE}?table={encoded_entry_id}"
+        asset_link = (
+            f"{SOURCE_COVERAGE_TABLE_EXPLORER_ROUTE}?asset={encoded_entry_id}"
+            if has_asset
+            else ""
+        )
+
+    return _SourceCoverageContext(
+        table_explorer_link=table_link,
+        asset_metadata_link=asset_link,
+        uri=uri_text,
+    )
+
+
+def _source_coverage_entry_id(entry: object) -> str:
+    entry_id = getattr(entry, "entry_id", "")
+    return entry_id if isinstance(entry_id, str) else ""
+
+
+def _source_coverage_table_name_from_catalogue_entry(
+    entry: object,
+) -> str | None:
+    for reference in _source_coverage_catalogue_references(entry):
+        table_name = _source_coverage_table_name_from_reference(reference)
+        if table_name is not None:
+            return table_name
+    return None
+
+
+def _source_coverage_catalogue_references(entry: object) -> tuple[str, ...]:
+    references: list[str] = []
+    asset = getattr(entry, "asset", None)
+    if asset is not None:
+        _append_source_coverage_reference(references, asset, "asset_id")
+        _append_source_coverage_reference(references, asset, "uri")
+
+    table = getattr(entry, "table", None)
+    if table is not None:
+        _append_source_coverage_reference(references, table, "prefix")
+        _append_source_coverage_reference(references, table, "uri")
+
+    _append_source_coverage_reference(references, entry, "uri")
+    return tuple(references)
+
+
+def _append_source_coverage_reference(
+    references: list[str],
+    source: object,
+    attribute: str,
+) -> None:
+    value = getattr(source, attribute, "")
+    if isinstance(value, str):
+        references.append(value)
+
+
+def _source_coverage_table_name_from_reference(reference: str) -> str | None:
+    dotted_prefix = "silver.gas_model."
+    if reference.startswith(dotted_prefix):
+        return reference.removeprefix(dotted_prefix).split(".", maxsplit=1)[0]
+
+    path_marker = "silver/gas_model/"
+    if path_marker not in reference:
+        return None
+
+    suffix = reference.split(path_marker, maxsplit=1)[1].strip("/")
+    if suffix == "":
+        return None
+    return suffix.split("/", maxsplit=1)[0]
+
+
+def _source_coverage_rows(
+    load: GasTableLoad,
+    context: _SourceCoverageContext | None,
+) -> list[dict[str, object]]:
+    dataframe = load.dataframe
+    if load.error is not None:
+        return [
+            _source_coverage_row(
+                load,
+                context,
+                source_system="",
+                source_table="",
+                coverage_state=SOURCE_COVERAGE_STATE_UNAVAILABLE,
+                rows_loaded=0,
+                source_fields="",
+                detail=f"Read detail: {load.error}",
+            )
+        ]
+
+    if dataframe is None or dataframe.is_empty():
+        return [
+            _source_coverage_row(
+                load,
+                context,
+                source_system="",
+                source_table="",
+                coverage_state=SOURCE_COVERAGE_STATE_EMPTY,
+                rows_loaded=0,
+                source_fields="",
+                detail="The table read succeeded but returned no rows.",
+            )
+        ]
+
+    source_fields = _source_coverage_field_label(dataframe)
+    counts, gap_details = _source_coverage_counts(dataframe)
+    rows = [
+        _source_coverage_row(
+            load,
+            context,
+            source_system=source_system,
+            source_table=source_table,
+            coverage_state=_source_coverage_state(source_system),
+            rows_loaded=count,
+            source_fields=source_fields,
+            detail=_source_coverage_detail(source_system),
+        )
+        for (source_system, source_table), count in sorted(
+            counts.items(),
+            key=_source_coverage_count_sort_key,
+        )
+    ]
+    rows.extend(
+        _source_coverage_row(
+            load,
+            context,
+            source_system=source_system,
+            source_table=source_table,
+            coverage_state=SOURCE_COVERAGE_STATE_GAP,
+            rows_loaded=count,
+            source_fields=source_fields,
+            detail=detail,
+        )
+        for (source_system, source_table, detail), count in sorted(
+            gap_details.items(),
+            key=_source_coverage_gap_sort_key,
+        )
+    )
+
+    return rows
+
+
+def _source_coverage_counts(
+    dataframe: pl.DataFrame,
+) -> tuple[dict[tuple[str, str], int], dict[tuple[str, str, str], int]]:
+    source_system_column_available = "source_system" in dataframe.columns
+    source_table_columns = tuple(
+        column
+        for column in ("source_table", "source_tables")
+        if column in dataframe.columns
+    )
+    counts: dict[tuple[str, str], int] = {}
+    gap_details: dict[tuple[str, str, str], int] = {}
+
+    for row in dataframe.to_dicts():
+        source_systems = _source_coverage_row_values(
+            row,
+            "source_system",
+            missing_label=_SOURCE_COVERAGE_MISSING_SOURCE_SYSTEM_COLUMN,
+            empty_label=_SOURCE_COVERAGE_EMPTY_SOURCE_SYSTEM_VALUE,
+            column_available=source_system_column_available,
+        )
+        source_tables = _source_coverage_source_table_values(row, source_table_columns)
+        for source_system in source_systems:
+            if source_tables:
+                for source_table in source_tables:
+                    key = (source_system, source_table)
+                    counts[key] = counts.get(key, 0) + 1
+                continue
+
+            source_table_label = (
+                _SOURCE_COVERAGE_MISSING_SOURCE_TABLE_COLUMN
+                if len(source_table_columns) == 0
+                else _SOURCE_COVERAGE_EMPTY_SOURCE_TABLE_VALUE
+            )
+            gap_key = (
+                source_system,
+                source_table_label,
+                _source_coverage_gap_detail(source_table_columns),
+            )
+            gap_details[gap_key] = gap_details.get(gap_key, 0) + 1
+
+    return counts, gap_details
+
+
+def _source_coverage_row_values(
+    row: Mapping[str, object],
+    column: str,
+    *,
+    missing_label: str,
+    empty_label: str,
+    column_available: bool,
+) -> tuple[str, ...]:
+    if not column_available:
+        return (missing_label,)
+
+    values = _source_coverage_value_strings(row.get(column))
+    if values:
+        return values
+    return (empty_label,)
+
+
+def _source_coverage_source_table_values(
+    row: Mapping[str, object],
+    source_table_columns: Sequence[str],
+) -> tuple[str, ...]:
+    values: list[str] = []
+    for column in source_table_columns:
+        values.extend(_source_coverage_value_strings(row.get(column)))
+    return tuple(dict.fromkeys(values))
+
+
+def _source_coverage_value_strings(value: object | None) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, float) and isnan(value):
+        return ()
+    if isinstance(value, str):
+        stripped = value.strip()
+        return (stripped,) if stripped else ()
+    if isinstance(value, Sequence) and not isinstance(value, bytes):
+        values: list[str] = []
+        for item in value:
+            values.extend(_source_coverage_value_strings(item))
+        return tuple(dict.fromkeys(values))
+
+    text = str(value).strip()
+    return (text,) if text else ()
+
+
+def _source_coverage_gap_detail(source_table_columns: Sequence[str]) -> str:
+    if len(source_table_columns) == 0:
+        return (
+            "Missing source_table/source_tables columns; cannot identify source "
+            "tables for these loaded rows."
+        )
+    return (
+        "source_table/source_tables columns are present but empty for these "
+        "loaded rows."
+    )
+
+
+def _source_coverage_state(source_system: str) -> str:
+    if source_system in {
+        _SOURCE_COVERAGE_MISSING_SOURCE_SYSTEM_COLUMN,
+        _SOURCE_COVERAGE_EMPTY_SOURCE_SYSTEM_VALUE,
+    }:
+        return SOURCE_COVERAGE_STATE_GAP
+    return SOURCE_COVERAGE_STATE_COVERED
+
+
+def _source_coverage_detail(source_system: str) -> str:
+    if source_system == _SOURCE_COVERAGE_MISSING_SOURCE_SYSTEM_COLUMN:
+        return "Missing source_system column; source table values were present."
+    if source_system == _SOURCE_COVERAGE_EMPTY_SOURCE_SYSTEM_VALUE:
+        return "source_system column is present but empty for these loaded rows."
+    return "source_system and source table metadata are populated in loaded rows."
+
+
+def _source_coverage_row(
+    load: GasTableLoad,
+    context: _SourceCoverageContext | None,
+    *,
+    source_system: str,
+    source_table: str,
+    coverage_state: str,
+    rows_loaded: int,
+    source_fields: str,
+    detail: str,
+) -> dict[str, object]:
+    return {
+        "asset": f"silver.gas_model.{load.spec.table_name}",
+        "section": load.spec.section,
+        "table": load.spec.table_name,
+        "source system": source_system,
+        "source table": source_table,
+        "coverage state": coverage_state,
+        "rows loaded": rows_loaded,
+        "row limit": format_row_limit(load.row_limit),
+        "source fields": source_fields,
+        "table explorer": _source_coverage_table_explorer_link(load, context),
+        "asset metadata": "" if context is None else context.asset_metadata_link,
+        "uri": load.uri if context is None or context.uri == "" else context.uri,
+        "detail": detail,
+    }
+
+
+def _source_coverage_table_explorer_link(
+    load: GasTableLoad,
+    context: _SourceCoverageContext | None,
+) -> str:
+    if context is not None and context.table_explorer_link != "":
+        return context.table_explorer_link
+    table_name = quote(load.spec.table_name, safe="")
+    return f"{SOURCE_COVERAGE_TABLE_EXPLORER_ROUTE}?search={table_name}"
+
+
+def _source_coverage_field_label(dataframe: pl.DataFrame) -> str:
+    fields = [
+        column
+        for column in ("source_system", "source_table", "source_tables")
+        if column in dataframe.columns
+    ]
+    if fields:
+        return ", ".join(fields)
+    return "(none)"
+
+
+def _source_coverage_count_sort_key(
+    item: tuple[tuple[str, str], int],
+) -> tuple[int, str, str]:
+    (source_system, source_table), count = item
+    return (-count, source_system, source_table)
+
+
+def _source_coverage_gap_sort_key(
+    item: tuple[tuple[str, str, str], int],
+) -> tuple[int, str, str, str]:
+    (source_system, source_table, detail), count = item
+    return (-count, source_system, source_table, detail)
+
+
+def _render_source_coverage_matrix_headings() -> str:
+    return "\n".join(
+        f'<th scope="col">{escape(column)}</th>'
+        for column in _SOURCE_COVERAGE_MATRIX_HTML_COLUMNS
+    )
+
+
+def _render_source_coverage_matrix_row(row: Mapping[str, object]) -> str:
+    cells = "\n".join(
+        _render_source_coverage_matrix_cell(row, column)
+        for column in _SOURCE_COVERAGE_MATRIX_HTML_COLUMNS
+    )
+    coverage_state = _source_coverage_matrix_text(row.get("coverage state"))
+    return f"""\
+<tr data-coverage-state="{escape(coverage_state, quote=True)}">
+    {cells}
+</tr>"""
+
+
+def _render_source_coverage_matrix_cell(
+    row: Mapping[str, object],
+    column: str,
+) -> str:
+    if column == "table explorer":
+        cell_html = _source_coverage_matrix_link(
+            row.get(column),
+            label="Open table",
+            target="table-explorer",
+            asset=row.get("asset"),
+        )
+        return f'<td class="source-coverage-matrix__link-cell">{cell_html}</td>'
+
+    if column == "asset metadata":
+        cell_html = _source_coverage_matrix_link(
+            row.get(column),
+            label="Open asset",
+            target="asset-metadata",
+            asset=row.get("asset"),
+        )
+        return f'<td class="source-coverage-matrix__link-cell">{cell_html}</td>'
+
+    text = _source_coverage_matrix_text(row.get(column))
+    return f"<td>{escape(text)}</td>"
+
+
+def _source_coverage_matrix_link(
+    value: object,
+    *,
+    label: str,
+    target: str,
+    asset: object,
+) -> str:
+    href = _source_coverage_matrix_href(value)
+    if href == "":
+        return '<span class="source-coverage-matrix__missing-link">Unavailable</span>'
+
+    asset_label = _source_coverage_matrix_text(asset)
+    aria_label = f"{label} for {asset_label}"
+    return (
+        '<a class="source-coverage-matrix__link" '
+        f'data-link-target="{escape(target, quote=True)}" '
+        f'href="{escape(href, quote=True)}" '
+        f'aria-label="{escape(aria_label, quote=True)}">'
+        f"{escape(label)}</a>"
+    )
+
+
+def _source_coverage_matrix_href(value: object | None) -> str:
+    if not isinstance(value, str):
+        return ""
+
+    href = value.strip()
+    if href.startswith(SOURCE_COVERAGE_TABLE_EXPLORER_ROUTE):
+        return href
+    return ""
+
+
+def _source_coverage_matrix_text(value: object | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return f"{value:,}"
+    return str(value)
+
+
+def _source_coverage_matrix_css() -> str:
+    return """\
+.source-coverage-matrix {
+    border: 1px solid var(--emdl-line);
+    border-radius: 8px;
+    background: var(--emdl-panel);
+    overflow: hidden;
+}
+
+.source-coverage-matrix__scroller {
+    overflow-x: auto;
+}
+
+.source-coverage-matrix table {
+    width: 100%;
+    min-width: 72rem;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.source-coverage-matrix th,
+.source-coverage-matrix td {
+    border-bottom: 1px solid var(--emdl-line);
+    padding: 0.55rem 0.65rem;
+    text-align: left;
+    vertical-align: top;
+}
+
+.source-coverage-matrix th {
+    color: var(--emdl-muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.source-coverage-matrix td {
+    color: var(--emdl-ink);
+    max-width: 20rem;
+    overflow-wrap: anywhere;
+}
+
+.source-coverage-matrix tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.source-coverage-matrix__link {
+    color: var(--emdl-blue);
+    font-weight: 700;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.source-coverage-matrix__link:hover {
+    text-decoration: underline;
+}
+
+.source-coverage-matrix__missing-link,
+.source-coverage-matrix__overflow,
+.source-coverage-matrix__empty {
+    color: var(--emdl-muted);
+}
+
+.source-coverage-matrix__overflow {
+    margin: 0;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid var(--emdl-line);
+    font-size: 0.85rem;
+}
+"""
+
+
+def _source_coverage_distinct_count(
+    matrix: pl.DataFrame,
+    column: str,
+    *,
+    coverage_state: str,
+    exclude_missing: bool = False,
+) -> int:
+    if matrix.is_empty() or column not in matrix.columns:
+        return 0
+
+    values = (
+        matrix.filter(pl.col("coverage state") == coverage_state)
+        .get_column(column)
+        .drop_nulls()
+        .cast(pl.String, strict=False)
+        .unique()
+        .to_list()
+    )
+    if exclude_missing:
+        values = [
+            value
+            for value in values
+            if isinstance(value, str) and not value.startswith("(")
+        ]
+    return len(values)
+
+
+def _normalised_participant_dimension_dataframe(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_PARTICIPANT_DIM_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _PARTICIPANT_DIM_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("surrogate_key").cast(pl.String, strict=False),
+        pl.col("participant_identity_source").cast(pl.String, strict=False),
+        pl.col("participant_identity_value").cast(pl.String, strict=False),
+        pl.col("canonical_participant_name").cast(pl.String, strict=False),
+        pl.col("registered_name").cast(pl.String, strict=False),
+        pl.col("abn").cast(pl.String, strict=False),
+        pl.col("acn").cast(pl.String, strict=False),
+        pl.col("participant_type").cast(pl.String, strict=False),
+        pl.col("participant_status").cast(pl.String, strict=False),
+        pl.col("source_systems").cast(pl.List(pl.String), strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        pl.col("source_company_ids").cast(pl.List(pl.String), strict=False),
+        pl.col("source_surrogate_keys").cast(pl.List(pl.String), strict=False),
+        pl.col("source_files").cast(pl.List(pl.String), strict=False),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
+def _normalised_participant_membership_dataframe(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_PARTICIPANT_MARKET_MEMBERSHIP_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _PARTICIPANT_MARKET_MEMBERSHIP_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("surrogate_key").cast(pl.String, strict=False),
+        pl.col("participant_key").cast(pl.String, strict=False),
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        pl.col("market_code").cast(pl.String, strict=False),
+        pl.col("source_company_id").cast(pl.String, strict=False),
+        pl.col("source_company_code").cast(pl.String, strict=False),
+        pl.col("source_hub_id").cast(pl.String, strict=False),
+        pl.col("source_hub_name").cast(pl.String, strict=False),
+        pl.col("registration_type").cast(pl.String, strict=False),
+        pl.col("registered_capacity").cast(pl.String, strict=False),
+        pl.col("membership_status").cast(pl.String, strict=False),
+        pl.col("participant_identity_source").cast(pl.String, strict=False),
+        pl.col("participant_identity_value").cast(pl.String, strict=False),
+        pl.col("source_surrogate_key").cast(pl.String, strict=False),
+        pl.col("source_file").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
+def _normalised_hub_zone_dimension_dataframe(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_HUB_ZONE_DIM_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _HUB_ZONE_DIM_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("surrogate_key").cast(pl.String, strict=False),
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        pl.col("zone_type").cast(pl.String, strict=False),
+        pl.col("source_zone_id").cast(pl.String, strict=False),
+        pl.col("zone_name").cast(pl.String, strict=False),
+        pl.col("zone_description").cast(pl.String, strict=False),
+        pl.col("source_surrogate_keys").cast(pl.List(pl.String), strict=False),
+        pl.col("source_files").cast(pl.List(pl.String), strict=False),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
+def _normalised_facility_dimension_dataframe(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_FACILITY_DIM_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _FACILITY_DIM_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("surrogate_key").cast(pl.String, strict=False),
+        pl.col("participant_key").cast(pl.String, strict=False),
+        pl.col("zone_key").cast(pl.String, strict=False),
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        pl.col("source_hub_id").cast(pl.String, strict=False),
+        pl.col("source_hub_name").cast(pl.String, strict=False),
+        pl.col("source_facility_id").cast(pl.String, strict=False),
+        pl.col("facility_name").cast(pl.String, strict=False),
+        pl.col("facility_short_name").cast(pl.String, strict=False),
+        pl.col("facility_type").cast(pl.String, strict=False),
+        pl.col("facility_type_description").cast(pl.String, strict=False),
+        pl.col("operating_state").cast(pl.String, strict=False),
+        _normalise_date_column(dataframe, "operating_state_date"),
+        pl.col("operator_name").cast(pl.String, strict=False),
+        pl.col("source_operator_id").cast(pl.String, strict=False),
+        _normalise_date_column(dataframe, "operator_change_date"),
+        _normalise_date_column(dataframe, "capacity_effective_from_date"),
+        _normalise_date_column(dataframe, "capacity_effective_to_date"),
+        pl.col("default_capacity").cast(pl.Float64, strict=False),
+        pl.col("maximum_capacity").cast(pl.Float64, strict=False),
+        pl.col("high_capacity_threshold").cast(pl.Float64, strict=False),
+        pl.col("low_capacity_threshold").cast(pl.Float64, strict=False),
+        pl.col("source_file").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
+def _normalised_facility_flow_storage_dataframe(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_FACILITY_FLOW_STORAGE_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _FACILITY_FLOW_STORAGE_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("surrogate_key").cast(pl.String, strict=False),
+        pl.col("facility_key").cast(pl.String, strict=False),
+        pl.col("location_key").cast(pl.String, strict=False),
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        _normalise_date_column(dataframe, "gas_date"),
+        pl.col("source_facility_id").cast(pl.String, strict=False),
+        pl.col("source_location_id").cast(pl.String, strict=False),
+        pl.col("demand_tj").cast(pl.Float64, strict=False),
+        pl.col("supply_tj").cast(pl.Float64, strict=False),
+        pl.col("transfer_in_tj").cast(pl.Float64, strict=False),
+        pl.col("transfer_out_tj").cast(pl.Float64, strict=False),
+        pl.col("held_in_storage_tj").cast(pl.Float64, strict=False),
+        pl.col("cushion_gas_storage_tj").cast(pl.Float64, strict=False),
+        pl.col("source_file").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "source_last_updated_timestamp"),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
+def _normalised_facility_capacity_dataframe(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_FACILITY_CAPACITY_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _FACILITY_CAPACITY_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("surrogate_key").cast(pl.String, strict=False),
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        pl.col("source_table").cast(pl.String, strict=False),
+        pl.col("source_facility_id").cast(pl.String, strict=False),
+        pl.col("facility_name").cast(pl.String, strict=False),
+        pl.col("capacity_type").cast(pl.String, strict=False),
+        pl.col("flow_direction").cast(pl.String, strict=False),
+        _normalise_date_column(dataframe, "from_gas_date"),
+        _normalise_date_column(dataframe, "to_gas_date"),
+        pl.col("capacity_quantity_tj").cast(pl.Float64, strict=False),
+        pl.col("capacity_description").cast(pl.String, strict=False),
+        pl.col("source_file").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "source_last_updated_timestamp"),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
+def _non_empty_string_count(dataframe: pl.DataFrame, column: str) -> int:
+    return dataframe.filter(_non_empty_string_expression(column)).height
+
+
+def _distinct_non_empty_count(dataframe: pl.DataFrame, column: str) -> int:
+    return (
+        dataframe.filter(_non_empty_string_expression(column))
+        .get_column(column)
+        .n_unique()
+    )
+
+
+def _non_empty_string_expression(column: str) -> pl.Expr:
+    value = pl.col(column).cast(pl.String, strict=False)
+    return value.is_not_null() & (value.str.strip_chars() != "")
+
+
+def _capacity_metadata_row_count(dataframe: pl.DataFrame) -> int:
+    return dataframe.filter(
+        pl.any_horizontal(
+            *(
+                pl.col(column).is_not_null()
+                for column in _FACILITY_CAPACITY_METADATA_COLUMNS
+            )
+        )
+    ).height
+
+
+def _facility_source_table_count(dataframe: pl.DataFrame) -> int:
+    values: set[str] = set()
+    for row in dataframe.select("source_tables").to_dicts():
+        values.update(_source_coverage_value_strings(row.get("source_tables")))
+    return len(values)
+
+
+def _hub_zone_list_value_count(dataframe: pl.DataFrame, column: str) -> int:
+    values: set[str] = set()
+    for row in dataframe.select(column).to_dicts():
+        values.update(_source_coverage_value_strings(row.get(column)))
+    return len(values)
+
+
+def _hub_zone_type_row_count(dataframe: pl.DataFrame, zone_type: str) -> int:
+    return dataframe.filter(pl.col("zone_type") == zone_type).height
+
+
+def _hub_zone_source_qualified_count(dataframe: pl.DataFrame) -> int:
+    identifiers = {
+        _hub_zone_source_qualified_identifier(row)
+        for row in dataframe.select(
+            "source_system",
+            "zone_type",
+            "source_zone_id",
+        ).to_dicts()
+    }
+    identifiers.discard("")
+    return len(identifiers)
+
+
+def _hub_zone_source_qualified_identifier(row: Mapping[str, object]) -> str:
+    source_system = str(row.get("source_system") or "").strip()
+    zone_type = str(row.get("zone_type") or "").strip()
+    source_zone_id = str(row.get("source_zone_id") or "").strip()
+    if source_system == "" or zone_type == "" or source_zone_id == "":
+        return ""
+    return f"{source_system}:{zone_type}:{source_zone_id}"
+
+
+def _hub_zone_source_systems(dataframe: pl.DataFrame) -> tuple[str, ...]:
+    values = (
+        dataframe.filter(_non_empty_string_expression("source_system"))
+        .get_column("source_system")
+        .cast(pl.String, strict=False)
+        .unique()
+        .sort()
+        .to_list()
+    )
+    return tuple(str(value) for value in values if value is not None)
+
+
+def _hub_zone_latest_ingest(dataframe: pl.DataFrame) -> datetime | None:
+    values = dataframe.get_column("ingested_timestamp").drop_nulls()
+    if values.is_empty():
+        return None
+    latest = values.max()
+    return latest if isinstance(latest, datetime) else None
+
+
+def _facility_identifier_set(dataframe: pl.DataFrame, column: str) -> set[str]:
+    return {
+        value
+        for value in (
+            dataframe.filter(_non_empty_string_expression(column))
+            .get_column(column)
+            .cast(pl.String, strict=False)
+            .to_list()
+        )
+        if isinstance(value, str) and value != ""
+    }
+
+
+def _facility_flow_rows(dataframe: pl.DataFrame) -> pl.DataFrame:
+    return dataframe.filter(
+        pl.any_horizontal(
+            *(pl.col(column).is_not_null() for column in _FACILITY_FLOW_MEASURE_COLUMNS)
+        )
+    )
+
+
+def _facility_storage_rows(dataframe: pl.DataFrame) -> pl.DataFrame:
+    return dataframe.filter(
+        pl.any_horizontal(
+            *(
+                pl.col(column).is_not_null()
+                for column in _FACILITY_STORAGE_MEASURE_COLUMNS
+            )
+        )
+    )
+
+
+def _matched_facility_count(
+    rows: pl.DataFrame,
+    facility_ids: set[str],
+    facility_keys: set[str],
+) -> int:
+    columns = [
+        column
+        for column in ("source_facility_id", "facility_key")
+        if column in rows.columns
+    ]
+    matched: set[str] = set()
+    for row in rows.select(columns).to_dicts():
+        source_facility_id = str(row.get("source_facility_id") or "").strip()
+        facility_key = str(row.get("facility_key") or "").strip()
+        if source_facility_id in facility_ids:
+            matched.add(f"source:{source_facility_id}")
+        elif facility_key in facility_keys:
+            matched.add(f"key:{facility_key}")
+    return len(matched)
+
+
+def _participant_list_value_count(dataframe: pl.DataFrame, column: str) -> int:
+    values: set[str] = set()
+    for row in dataframe.select(column).to_dicts():
+        values.update(_source_coverage_value_strings(row.get(column)))
+    return len(values)
+
+
+def _participant_group_expression(column: str, value: object | None) -> pl.Expr:
+    if value is None:
+        return pl.col(column).is_null()
+    return pl.col(column) == value
+
+
+def _latest_ingest_timestamp(dataframe: pl.DataFrame) -> datetime | None:
+    values = dataframe.get_column("ingested_timestamp").drop_nulls()
+    if values.is_empty():
+        return None
+    latest = values.max()
+    return latest if isinstance(latest, datetime) else None
+
+
+def _participant_reference_set(dataframe: pl.DataFrame, column: str) -> set[str]:
+    if dataframe.is_empty() or column not in dataframe.columns:
+        return set()
+
+    return {
+        value
+        for value in (
+            dataframe.filter(_non_empty_string_expression(column))
+            .get_column(column)
+            .cast(pl.String, strict=False)
+            .to_list()
+        )
+        if isinstance(value, str) and value != ""
+    }
+
+
+def _participant_name_set(dataframe: pl.DataFrame) -> set[str]:
+    names: set[str] = set()
+    for column in ("canonical_participant_name", "registered_name"):
+        names.update(_participant_reference_set(dataframe, column))
+    return names
+
+
+def _matched_reference_count(
+    dataframe: pl.DataFrame,
+    column: str,
+    reference_values: set[str],
+) -> int:
+    if not reference_values:
+        return 0
+    return len(_participant_reference_set(dataframe, column) & reference_values)
+
+
+def _bid_stack_participant_reference_count(dataframe: pl.DataFrame) -> int:
+    references = _participant_reference_set(dataframe, "participant_id")
+    references.update(_participant_reference_set(dataframe, "participant_name"))
+    return len(references)
+
+
+def _matched_bid_stack_participant_count(
+    dataframe: pl.DataFrame,
+    participant_identity_values: set[str],
+    participant_names: set[str],
+) -> int:
+    matched_ids = _participant_reference_set(dataframe, "participant_id") & (
+        participant_identity_values
+    )
+    matched_names = _participant_reference_set(dataframe, "participant_name") & (
+        participant_names
+    )
+    return len(matched_ids | matched_names)
+
+
+def _gas_day_candidate_fields(load: GasTableLoad) -> tuple[str, ...]:
+    fields: list[str] = list(load.spec.date_columns)
+    dataframe = load.dataframe
+    if dataframe is not None:
+        fields.extend(
+            column
+            for column in dataframe.columns
+            if _is_gas_day_candidate_column(column)
+        )
+    return tuple(dict.fromkeys(fields))
+
+
+def _gas_day_example_fields(load: GasTableLoad) -> tuple[str, ...]:
+    fields = _gas_day_candidate_fields(load)
+    gas_day_fields = tuple(
+        field for field in fields if _gas_day_field_role(field) == "Gas Day field"
+    )
+    return gas_day_fields if gas_day_fields else fields
+
+
+def _is_gas_day_candidate_column(column: str) -> bool:
+    normalised = column.lower()
+    return "date" in normalised or "timestamp" in normalised
+
+
+def _gas_day_missing_field_row(load: GasTableLoad) -> dict[str, object]:
+    rows_loaded = 0 if load.dataframe is None else load.dataframe.height
+    detail = load.error or "No date, timestamp, or date-key fields were discovered."
+    return {
+        "asset": f"silver.gas_model.{load.spec.table_name}",
+        "section": load.spec.section,
+        "table": load.spec.table_name,
+        "field": "",
+        "field role": "No date field found",
+        "dtype": "",
+        "status": _gas_day_load_status(load),
+        "rows loaded": rows_loaded,
+        "populated values": 0,
+        "first value": "",
+        "latest value": "",
+        "row limit": format_row_limit(load.row_limit),
+        "table explorer": _gas_day_table_explorer_link(load),
+        "uri": load.uri,
+        "detail": detail,
+    }
+
+
+def _gas_day_field_row(load: GasTableLoad, field: str) -> dict[str, object]:
+    dataframe = load.dataframe
+    rows_loaded = 0 if dataframe is None else dataframe.height
+    field_present = dataframe is not None and field in dataframe.columns
+    dtype = (
+        "" if not field_present or dataframe is None else str(dataframe.schema[field])
+    )
+    populated_values = (
+        _field_populated_count(dataframe, field)
+        if field_present and dataframe is not None
+        else 0
+    )
+    first_value, latest_value = (
+        _field_value_bounds(dataframe, field)
+        if field_present and dataframe is not None
+        else ("", "")
+    )
+
+    return {
+        "asset": f"silver.gas_model.{load.spec.table_name}",
+        "section": load.spec.section,
+        "table": load.spec.table_name,
+        "field": field,
+        "field role": _gas_day_field_role(field),
+        "dtype": dtype,
+        "status": _gas_day_field_status(load, field_present),
+        "rows loaded": rows_loaded,
+        "populated values": populated_values,
+        "first value": first_value,
+        "latest value": latest_value,
+        "row limit": format_row_limit(load.row_limit),
+        "table explorer": _gas_day_table_explorer_link(load),
+        "uri": load.uri,
+        "detail": _gas_day_field_detail(load, field, field_present),
+    }
+
+
+def _gas_day_field_role(field: str) -> str:
+    normalised = field.lower()
+    if normalised in {"gas_date", "from_gas_date", "to_gas_date"}:
+        return "Gas Day field"
+    if normalised.endswith("_gas_date"):
+        return "Gas Day field"
+    if normalised == "date_key" or normalised.endswith("_date_key"):
+        return "Date key"
+    if "timestamp" in normalised:
+        return "Timestamp field"
+    return "Date field"
+
+
+def _gas_day_load_status(load: GasTableLoad) -> str:
+    if load.error is not None:
+        return "Unavailable"
+    if load.dataframe is None or load.dataframe.is_empty():
+        return "Empty"
+    return "Loaded"
+
+
+def _gas_day_field_status(load: GasTableLoad, field_present: bool) -> str:
+    if load.error is not None:
+        return "Unavailable"
+    if load.dataframe is None or load.dataframe.is_empty():
+        return "Empty"
+    if field_present:
+        return "Discovered"
+    return "Declared only"
+
+
+def _gas_day_field_detail(
+    load: GasTableLoad,
+    field: str,
+    field_present: bool,
+) -> str:
+    if load.error is not None:
+        return load.error
+    if load.dataframe is None or load.dataframe.is_empty():
+        return "The table read returned no rows; field presence came from metadata."
+    if not field_present:
+        return f"{field} is declared for this dashboard but absent from loaded rows."
+    return "Field is present in the bounded table read."
+
+
+def _field_populated_count(dataframe: pl.DataFrame, field: str) -> int:
+    return dataframe.get_column(field).drop_nulls().len()
+
+
+def _field_value_bounds(
+    dataframe: pl.DataFrame,
+    field: str,
+) -> tuple[str, str]:
+    values = dataframe.get_column(field).drop_nulls()
+    if values.is_empty():
+        return "", ""
+
+    return _format_cell_value(values.min()), _format_cell_value(values.max())
+
+
+def _gas_day_field_examples(
+    dataframe: pl.DataFrame,
+    field: str,
+    row_limit: int,
+) -> list[dict[str, object]]:
+    selected_columns = _gas_day_example_columns(dataframe, field)
+    examples = (
+        dataframe.select(selected_columns)
+        .filter(pl.col(field).is_not_null())
+        .sort(field, descending=True, nulls_last=True)
+        .head(row_limit)
+    )
+    return examples.to_dicts()
+
+
+def _gas_day_example_columns(dataframe: pl.DataFrame, field: str) -> list[str]:
+    columns = [field]
+    for column in (
+        "source_system",
+        "source_table",
+        "source_tables",
+        *_GAS_DAY_EXAMPLE_CONTEXT_COLUMNS,
+    ):
+        if column in dataframe.columns and column not in columns:
+            columns.append(column)
+    return columns
+
+
+def _gas_day_example_row(
+    load: GasTableLoad,
+    field: str,
+    row: Mapping[str, object],
+) -> dict[str, object]:
+    return {
+        "asset": f"silver.gas_model.{load.spec.table_name}",
+        "section": load.spec.section,
+        "table": load.spec.table_name,
+        "field": field,
+        "field role": _gas_day_field_role(field),
+        "value": _format_cell_value(row.get(field)),
+        "source system": _format_cell_value(row.get("source_system")),
+        "source table": _gas_day_source_table_value(row),
+        "context": _gas_day_example_context(row, field),
+        "row limit": format_row_limit(load.row_limit),
+        "uri": load.uri,
+    }
+
+
+def _gas_day_source_table_value(row: Mapping[str, object]) -> str:
+    if "source_table" in row:
+        return _format_cell_value(row["source_table"])
+    return _format_cell_value(row.get("source_tables"))
+
+
+def _gas_day_example_context(row: Mapping[str, object], field: str) -> str:
+    labels: list[str] = []
+    excluded_columns = {field, "source_system", "source_table", "source_tables"}
+    for column in _GAS_DAY_EXAMPLE_CONTEXT_COLUMNS:
+        if column in excluded_columns:
+            continue
+        value = _format_cell_value(row.get(column))
+        if value:
+            labels.append(f"{column}={value}")
+    return "; ".join(labels)
+
+
+def _format_cell_value(value: object | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        return str(value)
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes):
+        return ", ".join(_format_cell_value(item) for item in value if item is not None)
+    return str(value)
+
+
+def _latest_gas_day_value(rows: Sequence[Mapping[str, object]]) -> str:
+    values = sorted(
+        str(value)
+        for row in rows
+        if (value := row.get("latest value")) not in {"", None}
+    )
+    if len(values) == 0:
+        return ""
+    return values[-1]
+
+
+def _gas_day_table_explorer_link(load: GasTableLoad) -> str:
+    table_name = quote(load.spec.table_name, safe="")
+    return f"{SOURCE_COVERAGE_TABLE_EXPLORER_ROUTE}?search={table_name}"
+
+
 def _market_price_string_filter_options(
     load: GasTableLoad | None,
     column: str,
@@ -4628,6 +7864,288 @@ def _filtered_bid_stack_dataframe(
     if source_system_filter != BID_STACK_SOURCE_SYSTEM_FILTER_ALL:
         filtered = filtered.filter(pl.col("source_system") == source_system_filter)
     return filtered
+
+
+def _render_participant_context_link(entry: DashboardRegistryEntry) -> str:
+    status_label = _dashboard_entry_status_label(entry)
+    title = escape(entry.title)
+    route = entry.notebook_route
+    if entry.status.value == "available" and route is not None:
+        title_html = f'<a href="{escape(route, quote=True)}">{title}</a>'
+    else:
+        title_html = f"<span>{title}</span>"
+
+    return f"""\
+        <li data-dashboard-status="{escape(entry.status.value, quote=True)}">
+            {title_html}
+            <span>{escape(status_label)}</span>
+            <code>{escape(entry.concept_id)}</code>
+        </li>"""
+
+
+def _participant_context_links_css() -> str:
+    return """\
+.participant-links {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+}
+
+.participant-links__eyebrow {
+    margin: 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.74rem;
+    font-weight: 720;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.participant-links h2 {
+    margin: 0.15rem 0 0;
+    font-size: 1.05rem;
+}
+
+.participant-links ul {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.participant-links li {
+    display: grid;
+    grid-template-columns: minmax(10rem, 1fr) auto auto;
+    gap: 0.65rem;
+    align-items: center;
+    min-width: 0;
+    padding: 0.55rem 0;
+    border-top: 1px solid var(--emdl-line, #cfdbd6);
+}
+
+.participant-links li:first-child {
+    border-top: 0;
+}
+
+.participant-links a {
+    color: var(--emdl-blue, #166791);
+    font-weight: 720;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+}
+
+.participant-links span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.participant-links li > span:nth-child(2) {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.participant-links code {
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+    .participant-links li {
+        grid-template-columns: 1fr;
+    }
+}
+"""
+
+
+def _render_facility_context_link(entry: DashboardRegistryEntry) -> str:
+    status_label = _dashboard_entry_status_label(entry)
+    title = escape(entry.title)
+    route = entry.notebook_route
+    if entry.status.value == "available" and route is not None:
+        title_html = f'<a href="{escape(route, quote=True)}">{title}</a>'
+    else:
+        title_html = f"<span>{title}</span>"
+
+    return f"""\
+        <li data-dashboard-status="{escape(entry.status.value, quote=True)}">
+            {title_html}
+            <span>{escape(status_label)}</span>
+            <code>{escape(entry.concept_id)}</code>
+        </li>"""
+
+
+def _render_hub_zone_context_link(entry: DashboardRegistryEntry) -> str:
+    status_label = _dashboard_entry_status_label(entry)
+    title = escape(entry.title)
+    route = entry.notebook_route
+    if entry.status.value == "available" and route is not None:
+        title_html = f'<a href="{escape(route, quote=True)}">{title}</a>'
+    else:
+        title_html = f"<span>{title}</span>"
+
+    return f"""\
+        <li data-dashboard-status="{escape(entry.status.value, quote=True)}">
+            {title_html}
+            <span>{escape(status_label)}</span>
+            <code>{escape(entry.concept_id)}</code>
+        </li>"""
+
+
+def _hub_zone_context_links_css() -> str:
+    return """\
+.hub-zone-links {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+}
+
+.hub-zone-links__eyebrow {
+    margin: 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.74rem;
+    font-weight: 720;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.hub-zone-links h2 {
+    margin: 0.15rem 0 0;
+    font-size: 1.05rem;
+}
+
+.hub-zone-links ul {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.hub-zone-links li {
+    display: grid;
+    grid-template-columns: minmax(10rem, 1fr) auto auto;
+    gap: 0.65rem;
+    align-items: center;
+    min-width: 0;
+    padding: 0.55rem 0;
+    border-top: 1px solid var(--emdl-line, #cfdbd6);
+}
+
+.hub-zone-links li:first-child {
+    border-top: 0;
+}
+
+.hub-zone-links a {
+    color: var(--emdl-blue, #166791);
+    font-weight: 720;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+}
+
+.hub-zone-links span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.hub-zone-links li > span:nth-child(2) {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.hub-zone-links code {
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+    .hub-zone-links li {
+        grid-template-columns: 1fr;
+    }
+}
+"""
+
+
+def _facility_context_links_css() -> str:
+    return """\
+.facility-links {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+}
+
+.facility-links__eyebrow {
+    margin: 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.74rem;
+    font-weight: 720;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.facility-links h2 {
+    margin: 0.15rem 0 0;
+    font-size: 1.05rem;
+}
+
+.facility-links ul {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.facility-links li {
+    display: grid;
+    grid-template-columns: minmax(10rem, 1fr) auto auto;
+    gap: 0.65rem;
+    align-items: center;
+    min-width: 0;
+    padding: 0.55rem 0;
+    border-top: 1px solid var(--emdl-line, #cfdbd6);
+}
+
+.facility-links li:first-child {
+    border-top: 0;
+}
+
+.facility-links a {
+    color: var(--emdl-blue, #166791);
+    font-weight: 720;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+}
+
+.facility-links span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.facility-links li > span:nth-child(2) {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.facility-links code {
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+    .facility-links li {
+        grid-template-columns: 1fr;
+    }
+}
+"""
 
 
 def _normalised_bid_stack_dataframe(load: GasTableLoad | None) -> pl.DataFrame:
