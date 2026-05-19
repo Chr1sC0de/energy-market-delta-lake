@@ -97,6 +97,12 @@ helper surfaces to show platform operations readiness without changing Dagster
 asset definitions, ETL materialization behavior, LocalStack setup, or AWS
 infrastructure.
 
+The table explorer remains inside the same read-only boundary while acting as
+the dashboard-roadmap workbench for selected table rows. It keeps existing
+bounded preview, GraphQL fallback, and storage-only behavior, and now links
+selected rows to the data readiness overview, AWS bounded-read diagnostics, and
+registry-backed concept-gallery metadata for mapped `silver.gas_model` assets.
+
 The AWS bounded-read diagnostics dashboard stays inside the same boundary. It
 renders runtime location, endpoint mode, configured buckets, preview row caps,
 full-table-scan state, bounded-read states, and per-dashboard read behavior

@@ -245,7 +245,10 @@ buckets, account-wide S3 bucket listing is skipped, discovery is capped at
 [notebooks/table_explorer.py](notebooks/table_explorer.py) discovers configured
 S3-compatible buckets, overlays the Dagster GraphQL table asset catalogue, and
 shows bucket health, table assets, storage status, catalogue controls, and
-cached inspection for selected live tables.
+cached inspection for selected live tables. The selected-table workbench also
+links to the data readiness overview, AWS bounded-read diagnostics, and the
+registry-backed concept gallery so operators can move from a table row to its
+readiness, preview-policy, and dashboard-roadmap context.
 
 The explorer reads the same AWS settings passed to the Marimo service by
 compose: `AWS_ENDPOINT_URL`, `AWS_DEFAULT_REGION`, `AWS_ACCESS_KEY_ID`,
@@ -278,9 +281,12 @@ been materialized in LocalStack yet. The table view distinguishes live,
 unmaterialized, missing, and GraphQL-unavailable rows. Selected GraphQL assets
 show asset key, group, kinds, description, `dagster/uri`, materializable and
 executable flags, latest materialization timestamp, and column metadata when
-Dagster provides it. If GraphQL is unavailable, the notebook warns clearly and
-continues in storage-only mode. Empty buckets render bucket health and an empty
-state instead of raising notebook exceptions.
+Dagster provides it. For mapped `silver.gas_model` assets, the explorer also
+surfaces Marimo concept-gallery metadata, including matching concept IDs,
+audience tags, notebook routes, generated-gold paths, source chunk IDs, and
+backing asset links from the dashboard registry. If GraphQL is unavailable, the
+notebook warns clearly and continues in storage-only mode. Empty buckets render
+bucket health and an empty state instead of raising notebook exceptions.
 
 The catalogue controls filter by asset group, layer or domain, live status, and
 free-text asset search. For a selected live table, the preview

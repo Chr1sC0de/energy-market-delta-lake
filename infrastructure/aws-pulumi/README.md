@@ -208,6 +208,8 @@ Key deployed behaviors visible in the infrastructure code:
   immutable cache headers for content-hashed `/marimo/<notebook>/assets/*`
   responses, exposes the data readiness overview for platform operations and
   the registry-only glossary explorer for Market context metadata browsing,
+  links table explorer rows to readiness, bounded-read diagnostics, and
+  concept-gallery metadata for mapped `silver.gas_model` assets,
   exposes the gas system notices, settlement activity, customer transfer and
   retail activity, and Bid / Offer stack dashboards over curated gas-model
   facts, runs with `MARIMO_OUTPUT_MAX_BYTES=16000000`,

@@ -19,6 +19,7 @@ def _():
         catalogued_table_by_id,
         catalogued_table_group,
         catalogued_table_layers_or_domains,
+        concept_gallery_metadata_frame,
         default_catalogued_table_entry_id,
         discover_table_catalogue,
         discover_storage,
@@ -28,6 +29,7 @@ def _():
         format_materialization_timestamp,
         include_deep_linked_catalogued_table,
         overlay_table_catalogue,
+        render_table_workbench_navigation,
         table_explorer_deep_link_from_query,
     )
 
@@ -39,6 +41,7 @@ def _():
         catalogued_table_by_id,
         catalogued_table_group,
         catalogued_table_layers_or_domains,
+        concept_gallery_metadata_frame,
         default_catalogued_table_entry_id,
         discover_table_catalogue,
         discover_storage,
@@ -51,6 +54,7 @@ def _():
         overlay_table_catalogue,
         pl,
         render_dashboard_context_panel,
+        render_table_workbench_navigation,
         refresh_token_from_control,
         table_explorer_deep_link_from_query,
     )
@@ -516,8 +520,10 @@ def _(
     asset_columns_frame,
     asset_metadata_frame,
     catalogued_table_by_id,
+    concept_gallery_metadata_frame,
     format_materialization_timestamp,
     mo,
+    render_table_workbench_navigation,
     table_catalogue,
     table_picker,
 ):
@@ -529,6 +535,7 @@ def _(
     else:
         asset_view_sections = [
             mo.md(f"### `{selected_entry.display_name}`"),
+            mo.Html(render_table_workbench_navigation(selected_entry)),
             mo.ui.table(
                 asset_metadata_frame(
                     selected_entry,
@@ -545,6 +552,13 @@ def _(
                     mo.ui.table(asset_columns, selection=None),
                 ]
             )
+        concept_gallery_metadata = concept_gallery_metadata_frame(selected_entry)
+        asset_view_sections.extend(
+            [
+                mo.md("#### Concept Gallery Metadata"),
+                mo.ui.table(concept_gallery_metadata, selection=None),
+            ]
+        )
         selected_asset_view = mo.vstack(asset_view_sections)
 
     selected_asset_view

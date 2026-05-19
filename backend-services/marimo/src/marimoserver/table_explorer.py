@@ -9,11 +9,12 @@ from io import BytesIO
 import os
 import posixpath
 from typing import Protocol, runtime_checkable
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import boto3
 import polars as pl
 
+from marimoserver.dashboard_registry import DashboardRegistryEntry, dashboard_registry
 from marimoserver.dagster_graphql import (
     DEFAULT_DAGSTER_GRAPHQL_URL,
     DagsterAssetCatalogue,
@@ -22,6 +23,7 @@ from marimoserver.dagster_graphql import (
     fetch_dagster_asset_catalogue,
 )
 from marimoserver.gas_model_loader import (
+    SILVER_GAS_MODEL_PREFIX,
     bounded_row_limit,
     compact_error,
 )
@@ -44,6 +46,11 @@ DEFAULT_LOCAL_PREVIEW_ROWS = 10_000
 DEFAULT_PREVIEW_ROWS = 25
 DEFAULT_ROW_LIMIT = 25
 AWS_DEVELOPMENT_LOCATION = "aws"
+CONCEPT_GALLERY_ROUTE = "/marimo"
+DATA_READINESS_ROUTE = "/marimo/data_readiness_overview/"
+AWS_BOUNDED_READ_DIAGNOSTICS_ROUTE = "/marimo/aws_bounded_read_diagnostics/"
+TABLE_EXPLORER_CONCEPT_ID = "gas-model-table-explorer"
+SILVER_GAS_MODEL_ASSET_PREFIX = "silver.gas_model."
 
 
 @runtime_checkable
@@ -339,6 +346,16 @@ class CataloguedTable:
         if self.table is not None:
             return self.table.uri
         return None
+
+
+@dataclass(frozen=True)
+class TableWorkbenchLink:
+    """One dashboard-roadmap navigation target for a selected table row."""
+
+    label: str
+    route: str
+    scope: str
+    detail: str
 
 
 @dataclass(frozen=True)
@@ -1006,6 +1023,153 @@ def asset_schema_metadata_frame(
     )
 
 
+def table_workbench_navigation_links(
+    entry: CataloguedTable,
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> tuple[TableWorkbenchLink, ...]:
+    """Return dashboard-roadmap navigation links for a selected table row."""
+    matched_concepts = concept_gallery_entries_for_table(entry, entries)
+    links = [
+        TableWorkbenchLink(
+            label="Data readiness overview",
+            route=DATA_READINESS_ROUTE,
+            scope="readiness",
+            detail=_readiness_navigation_detail(entry),
+        ),
+        TableWorkbenchLink(
+            label="AWS bounded read diagnostics",
+            route=AWS_BOUNDED_READ_DIAGNOSTICS_ROUTE,
+            scope="bounded-read diagnostics",
+            detail=_bounded_read_navigation_detail(entry),
+        ),
+        TableWorkbenchLink(
+            label="Concept gallery",
+            route=_concept_gallery_anchor(TABLE_EXPLORER_CONCEPT_ID),
+            scope="dashboard roadmap",
+            detail=(
+                "Open the concept gallery card for this workbench and related "
+                "dashboard roadmap metadata."
+            ),
+        ),
+    ]
+
+    links.extend(
+        TableWorkbenchLink(
+            label=f"Concept: {concept.title}",
+            route=_concept_gallery_anchor(concept.concept_id),
+            scope="mapped silver.gas_model asset",
+            detail=_concept_navigation_detail(concept),
+        )
+        for concept in matched_concepts
+    )
+    return tuple(links)
+
+
+def concept_gallery_entries_for_table(
+    entry: CataloguedTable,
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> tuple[DashboardRegistryEntry, ...]:
+    """Return registry concepts that map to a selected silver.gas_model asset."""
+    mapped_asset = concept_gallery_asset_id(entry)
+    if mapped_asset is None:
+        return ()
+
+    candidate_entries = dashboard_registry() if entries is None else entries
+    return tuple(
+        concept
+        for concept in candidate_entries
+        if mapped_asset in concept.backing_assets
+    )
+
+
+def concept_gallery_asset_id(entry: CataloguedTable) -> str | None:
+    """Return the registry backing asset ID for a selected table row."""
+    if entry.asset is not None:
+        asset_id = _silver_gas_model_asset_id_from_asset_key(entry.asset.asset_key)
+        if asset_id is not None:
+            return asset_id
+
+    if entry.table is not None:
+        return _silver_gas_model_asset_id_from_prefix(entry.table.prefix)
+
+    if entry.uri is not None and (location := _s3_table_location(entry.uri)):
+        return _silver_gas_model_asset_id_from_prefix(location[1])
+
+    return None
+
+
+def concept_gallery_metadata_frame(
+    entry: CataloguedTable,
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> pl.DataFrame:
+    """Return concept-gallery metadata rows for a selected table row."""
+    mapped_asset = concept_gallery_asset_id(entry)
+    matched_entries = concept_gallery_entries_for_table(entry, entries)
+    rows = [
+        {
+            "mapped asset": mapped_asset or "",
+            "concept id": concept.concept_id,
+            "title": concept.title,
+            "status": concept.status.value,
+            "audiences": ", ".join(audience.value for audience in concept.audiences),
+            "concept gallery": _concept_gallery_anchor(concept.concept_id),
+            "notebook route": concept.notebook_route or "",
+            "generated-gold paths": "\n".join(concept.generated_gold_paths),
+            "source chunk ids": "\n".join(concept.source_chunk_ids),
+        }
+        for concept in matched_entries
+    ]
+
+    if rows:
+        return pl.DataFrame(rows)
+
+    return pl.DataFrame(
+        [
+            {
+                "mapped asset": mapped_asset or "",
+                "concept id": "No mapped concept-gallery metadata",
+                "title": "",
+                "status": "",
+                "audiences": "",
+                "concept gallery": _concept_gallery_anchor(TABLE_EXPLORER_CONCEPT_ID),
+                "notebook route": "",
+                "generated-gold paths": "",
+                "source chunk ids": "",
+            }
+        ]
+    )
+
+
+def render_table_workbench_navigation(
+    entry: CataloguedTable,
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render selected-table dashboard-roadmap navigation as HTML links."""
+    links = table_workbench_navigation_links(entry, entries)
+    rendered_links = "\n".join(_render_workbench_link(link) for link in links)
+    mapped_asset = concept_gallery_asset_id(entry)
+    mapped_asset_text = mapped_asset or "No mapped silver.gas_model asset"
+    concept_count = len(concept_gallery_entries_for_table(entry, entries))
+
+    return f"""\
+<style>
+{_table_workbench_navigation_css()}
+</style>
+<section class="table-workbench-nav" aria-label="Dashboard roadmap navigation">
+    <div class="table-workbench-nav__header">
+        <p class="table-workbench-nav__eyebrow">Dashboard roadmap workbench</p>
+        <h3>Linked diagnostics and concepts</h3>
+        <p>
+            Mapped asset: <code>{escape(mapped_asset_text)}</code>.
+            Concept-gallery matches: <strong>{concept_count}</strong>.
+        </p>
+    </div>
+    <div class="table-workbench-nav__grid">
+{rendered_links}
+    </div>
+</section>"""
+
+
 def discover_table_catalogue(
     config: TableExplorerConfig,
     client: GraphQLExecutorProtocol | None = None,
@@ -1412,6 +1576,147 @@ def format_materialization_timestamp(timestamp: float | None) -> str:
     if timestamp is None:
         return ""
     return datetime.fromtimestamp(timestamp, tz=UTC).isoformat()
+
+
+def _readiness_navigation_detail(entry: CataloguedTable) -> str:
+    if entry.status is TableAvailability.LIVE:
+        return "Review bucket, table, and Dagster readiness for this live row."
+    if entry.status is TableAvailability.UNMATERIALIZED:
+        return "Review why Dagster knows the asset before storage is materialized."
+    if entry.status is TableAvailability.MISSING:
+        return "Review the missing-storage readiness state and expected S3 prefix."
+    return "Review storage-only readiness while Dagster GraphQL is unavailable."
+
+
+def _bounded_read_navigation_detail(entry: CataloguedTable) -> str:
+    if entry.table is None:
+        return (
+            "Review row-limit policy before previewing this asset after it "
+            "materializes."
+        )
+    return (
+        "Review the active preview cap, full-table-scan flag, and per-dashboard "
+        "read behavior before interpreting loaded rows."
+    )
+
+
+def _concept_navigation_detail(concept: DashboardRegistryEntry) -> str:
+    notebook_route = concept.notebook_route
+    route_detail = (
+        "no mounted notebook route"
+        if notebook_route is None
+        else f"notebook route {notebook_route}"
+    )
+    return f"{concept.status.value} concept with {route_detail}."
+
+
+def _concept_gallery_anchor(concept_id: str) -> str:
+    return f"{CONCEPT_GALLERY_ROUTE}#concept-{quote(concept_id, safe='')}"
+
+
+def _render_workbench_link(link: TableWorkbenchLink) -> str:
+    return f"""\
+        <a
+            class="table-workbench-nav__link"
+            href="{escape(link.route, quote=True)}"
+            data-link-scope="{escape(link.scope, quote=True)}"
+        >
+            <span class="table-workbench-nav__label">{escape(link.label)}</span>
+            <span class="table-workbench-nav__scope">{escape(link.scope)}</span>
+            <span class="table-workbench-nav__detail">{escape(link.detail)}</span>
+        </a>"""
+
+
+def _table_workbench_navigation_css() -> str:
+    return """
+.table-workbench-nav {
+    display: grid;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+}
+
+.table-workbench-nav__header {
+    display: grid;
+    gap: 4px;
+}
+
+.table-workbench-nav__eyebrow {
+    margin: 0;
+    color: var(--emdl-green, #3e7a54);
+    font-size: 0.78rem;
+    font-weight: 760;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.table-workbench-nav h3,
+.table-workbench-nav p {
+    margin: 0;
+}
+
+.table-workbench-nav__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+    gap: 10px;
+}
+
+.table-workbench-nav__link {
+    display: grid;
+    gap: 6px;
+    min-height: 116px;
+    padding: 12px;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    color: inherit;
+    background: var(--emdl-paper, #f6f8f3);
+    text-decoration: none;
+}
+
+.table-workbench-nav__link:hover {
+    border-color: var(--emdl-blue, #166791);
+}
+
+.table-workbench-nav__label {
+    color: var(--emdl-blue, #166791);
+    font-weight: 760;
+}
+
+.table-workbench-nav__scope {
+    color: var(--emdl-green, #3e7a54);
+    font-size: 0.78rem;
+    font-weight: 760;
+    text-transform: uppercase;
+}
+
+.table-workbench-nav__detail {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.9rem;
+}
+"""
+
+
+def _silver_gas_model_asset_id_from_asset_key(
+    asset_key: Sequence[str],
+) -> str | None:
+    if len(asset_key) < 3 or tuple(asset_key[:2]) != ("silver", "gas_model"):
+        return None
+
+    table_name = ".".join(part for part in asset_key[2:] if part)
+    if table_name == "":
+        return None
+    return f"{SILVER_GAS_MODEL_ASSET_PREFIX}{table_name}"
+
+
+def _silver_gas_model_asset_id_from_prefix(prefix: str) -> str | None:
+    parts = _path_parts(prefix)
+    expected_prefix = tuple(SILVER_GAS_MODEL_PREFIX.split("/"))
+    if len(parts) < 3 or tuple(parts[:2]) != expected_prefix:
+        return None
+
+    return f"{SILVER_GAS_MODEL_ASSET_PREFIX}{parts[2]}"
 
 
 def _bucket_error_is_missing(error: str) -> bool:

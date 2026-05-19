@@ -232,7 +232,9 @@ Useful routes:
   activity, system notices, Bid / Offer stack, and gas quality and composition
   dashboard. The table explorer lists the Dagster table asset catalogue, filters
   by group, layer or domain, status, and search text, and previews only
-  materialized tables.
+  materialized tables. Its selected-table workbench links onward to data
+  readiness, AWS bounded-read diagnostics, and concept-gallery metadata for
+  mapped `silver.gas_model` assets.
 - `http://127.0.0.1:2719` for the local-only Marimo-Codex research workspace
 
 The `aemo-etl` code location should appear in Dagster under
@@ -320,7 +322,9 @@ have been materialized or LocalStack has been seeded. In compose,
 notebook can list unmaterialized table assets from Dagster while still falling
 back to storage-only discovery when GraphQL is unavailable. Preview controls reuse a
 cached table scan for row limits, selected columns, sort order, text search, and
-selected-column statistics.
+selected-column statistics. The selected row also exposes links to readiness
+and bounded-read diagnostics plus dashboard registry metadata for matching
+`silver.gas_model` concept-gallery entries.
 
 ## Cached Archive seed
 

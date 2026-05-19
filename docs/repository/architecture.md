@@ -132,7 +132,9 @@ glossary explorer browses packaged registry metadata without reading generated
 gold Markdown or live S3 tables at runtime. Its market price, schedule run,
 settlement activity, Bid / Offer stack, gas quality, and system notice
 dashboards use the shared bounded gas-model loader for read-only fact previews
-and summaries. The
+and summaries. Its table explorer remains the selected-table workbench for
+storage inspection, readiness navigation, bounded-read diagnostics, and
+concept-gallery metadata for mapped `silver.gas_model` assets. The
 Marimo-Codex workspace is
 bound to localhost for human-operated research and
 issue-draft preparation. Deployed Codex execution remains deferred pending

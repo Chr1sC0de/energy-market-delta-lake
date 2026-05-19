@@ -127,7 +127,9 @@ Local workflow notes:
   source chunk IDs, related concepts, and dashboard states. Market price,
   schedule run, settlement activity, Bid / Offer stack, gas quality, and system
   notice dashboards use shared bounded gas-model reads for fact previews and
-  summaries. The
+  summaries. The table explorer is the selected-table workbench for storage
+  inspection, readiness links, bounded-read diagnostics, and concept-gallery
+  metadata for mapped `silver.gas_model` assets. The
   `marimo-codex-workspace` service is a
   separate localhost-only research service for human-operated notebook
   exploration and issue-draft preparation; deployed Codex execution remains

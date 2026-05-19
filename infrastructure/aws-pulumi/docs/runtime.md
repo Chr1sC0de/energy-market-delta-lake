@@ -311,7 +311,9 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   account-wide bucket listing or AWS write paths. The glossary explorer browses
   the packaged Marimo registry for generated-gold metadata paths, source chunk
   IDs, related concepts, and dashboard states without generated-file or table
-  reads.
+  reads. The table explorer links selected rows to readiness, bounded-read
+  diagnostics, and concept-gallery metadata for mapped `silver.gas_model`
+  assets while keeping previews bounded in AWS mode.
   The gas market prices dashboard reads the curated market price fact through
   the same bounded helper surface and does not add AWS write paths.
   The gas schedule runs dashboard reads the curated schedule run fact through

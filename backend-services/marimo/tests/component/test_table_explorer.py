@@ -16,8 +16,10 @@ from marimoserver.bounded_read_diagnostics import (
 )
 from marimoserver.gas_dashboard import discover_dashboard_config
 from marimoserver.table_explorer import (
+    AWS_BOUNDED_READ_DIAGNOSTICS_ROUTE,
     AssetCatalogueState,
     DEFAULT_LOCAL_BUCKETS,
+    DATA_READINESS_ROUTE,
     BucketHealthState,
     BucketStatus,
     CataloguedTable,
@@ -39,6 +41,9 @@ from marimoserver.table_explorer import (
     catalogued_table_group,
     catalogued_table_layers_or_domains,
     classify_table_prefixes,
+    concept_gallery_asset_id,
+    concept_gallery_entries_for_table,
+    concept_gallery_metadata_frame,
     create_s3_client,
     default_catalogued_table_entry_id,
     discover_table_catalogue,
@@ -55,9 +60,11 @@ from marimoserver.table_explorer import (
     read_parquet_table,
     render_asset_catalogue_status_cards,
     render_storage_health_cards,
+    render_table_workbench_navigation,
     s3_bucket_health_frame,
     storage_health_action_markdown,
     table_asset_catalogue_frame,
+    table_workbench_navigation_links,
     table_explorer_deep_link_from_query,
     table_prefix_discovery_frame,
     table_by_id,
@@ -748,6 +755,196 @@ def test_filter_catalogued_tables_combines_group_layer_status_and_search() -> No
     )
     assert filter_catalogued_tables(entries, statuses=("Missing",)) == (missing_entry,)
     assert filter_catalogued_tables(entries, search="storage only") == (storage_entry,)
+
+
+def test_table_workbench_navigation_links_readiness_bounded_and_concepts() -> None:
+    table_name = "silver_gas_fact_market_price"
+    table = TablePrefix(
+        bucket="dev-energy-market-aemo",
+        prefix=f"silver/gas_model/{table_name}",
+        table_format=TableFormat.PARQUET,
+        parquet_files=(f"silver/gas_model/{table_name}/part-000.parquet",),
+    )
+    entry = CataloguedTable(
+        entry_id=f"asset:silver/gas_model/{table_name}",
+        status=TableAvailability.LIVE,
+        asset=_asset(
+            ("silver", "gas_model", table_name),
+            uri=table.uri,
+            latest_materialization_timestamp=1_714_000_000,
+        ),
+        table=table,
+    )
+
+    links = table_workbench_navigation_links(entry)
+    routes_by_label = {link.label: link.route for link in links}
+    concept_ids = [
+        concept.concept_id for concept in concept_gallery_entries_for_table(entry)
+    ]
+    metadata_rows = concept_gallery_metadata_frame(entry).to_dicts()
+    html = render_table_workbench_navigation(entry)
+
+    assert concept_gallery_asset_id(entry) == (
+        "silver.gas_model.silver_gas_fact_market_price"
+    )
+    assert routes_by_label["Data readiness overview"] == DATA_READINESS_ROUTE
+    assert (
+        routes_by_label["AWS bounded read diagnostics"]
+        == AWS_BOUNDED_READ_DIAGNOSTICS_ROUTE
+    )
+    assert routes_by_label["Concept gallery"] == (
+        "/marimo#concept-gas-model-table-explorer"
+    )
+    assert "gas-model-table-explorer" in concept_ids
+    assert "data-readiness-overview" in concept_ids
+    assert {row["concept id"]: row["notebook route"] for row in metadata_rows}[
+        "data-readiness-overview"
+    ] == "/marimo/data_readiness_overview/"
+    assert 'href="/marimo/data_readiness_overview/"' in html
+    assert 'href="/marimo/aws_bounded_read_diagnostics/"' in html
+    assert 'href="/marimo#concept-gas-model-table-explorer"' in html
+    assert 'data-link-scope="mapped silver.gas_model asset"' in html
+
+
+def test_concept_gallery_metadata_maps_storage_prefixes_and_empty_states() -> None:
+    storage_entry = CataloguedTable(
+        entry_id="storage:dev-energy-market-aemo/silver/gas_model/silver_gas_dim_date",
+        status=TableAvailability.LIVE,
+        asset=None,
+        table=TablePrefix(
+            bucket="dev-energy-market-aemo",
+            prefix="silver/gas_model/silver_gas_dim_date",
+            table_format=TableFormat.PARQUET,
+            parquet_files=("silver/gas_model/silver_gas_dim_date/part-000.parquet",),
+        ),
+    )
+    unmapped_entry = CataloguedTable(
+        entry_id="storage:dev-energy-market-aemo/bronze/raw",
+        status=TableAvailability.LIVE,
+        asset=None,
+        table=TablePrefix(
+            bucket="dev-energy-market-aemo",
+            prefix="bronze/raw",
+            table_format=TableFormat.PARQUET,
+            parquet_files=("bronze/raw/part-000.parquet",),
+        ),
+    )
+
+    storage_rows = concept_gallery_metadata_frame(storage_entry).to_dicts()
+    unmapped_row = concept_gallery_metadata_frame(unmapped_entry).row(0, named=True)
+
+    assert concept_gallery_asset_id(storage_entry) == (
+        "silver.gas_model.silver_gas_dim_date"
+    )
+    assert "gas-model-table-explorer" in {row["concept id"] for row in storage_rows}
+    assert concept_gallery_asset_id(unmapped_entry) is None
+    assert unmapped_row["concept id"] == "No mapped concept-gallery metadata"
+    assert unmapped_row["concept gallery"] == (
+        "/marimo#concept-gas-model-table-explorer"
+    )
+
+
+def test_table_workbench_navigation_describes_degraded_statuses() -> None:
+    unmaterialized_entry = CataloguedTable(
+        entry_id="asset:silver/gas_model/unmaterialized",
+        status=TableAvailability.UNMATERIALIZED,
+        asset=_asset(
+            ("silver", "gas_model", "unmaterialized"),
+            uri=None,
+            latest_materialization_timestamp=None,
+        ),
+        table=None,
+    )
+    missing_entry = CataloguedTable(
+        entry_id="asset:silver/gas_model/missing",
+        status=TableAvailability.MISSING,
+        asset=_asset(
+            ("silver", "gas_model", "missing"),
+            uri="s3://dev-energy-market-aemo/silver/gas_model/missing",
+            latest_materialization_timestamp=1_714_000_000,
+        ),
+        table=None,
+    )
+    graphql_unavailable_entry = CataloguedTable(
+        entry_id="storage:dev-energy-market-aemo/silver/gas_model/live",
+        status=TableAvailability.GRAPHQL_UNAVAILABLE,
+        asset=None,
+        table=TablePrefix(
+            bucket="dev-energy-market-aemo",
+            prefix="silver/gas_model/live",
+            table_format=TableFormat.PARQUET,
+            parquet_files=("silver/gas_model/live/part-000.parquet",),
+        ),
+    )
+
+    unmaterialized_links = table_workbench_navigation_links(
+        unmaterialized_entry,
+        entries=(),
+    )
+    missing_links = table_workbench_navigation_links(missing_entry, entries=())
+    graphql_links = table_workbench_navigation_links(
+        graphql_unavailable_entry,
+        entries=(),
+    )
+
+    assert _link_detail(unmaterialized_links, "Data readiness overview") == (
+        "Review why Dagster knows the asset before storage is materialized."
+    )
+    assert _link_detail(missing_links, "Data readiness overview") == (
+        "Review the missing-storage readiness state and expected S3 prefix."
+    )
+    assert _link_detail(graphql_links, "Data readiness overview") == (
+        "Review storage-only readiness while Dagster GraphQL is unavailable."
+    )
+    assert (
+        _link_detail(
+            unmaterialized_links,
+            "AWS bounded read diagnostics",
+        )
+        == "Review row-limit policy before previewing this asset after it materializes."
+    )
+
+
+def test_concept_gallery_asset_id_uses_uri_fallback_and_rejects_invalid_keys() -> None:
+    uri_fallback_entry = CataloguedTable(
+        entry_id="asset:legacy/table",
+        status=TableAvailability.UNMATERIALIZED,
+        asset=_asset(
+            ("legacy", "table"),
+            uri=(
+                "s3://dev-energy-market-aemo/silver/gas_model/"
+                "silver_gas_fact_schedule_run"
+            ),
+            latest_materialization_timestamp=None,
+        ),
+        table=None,
+    )
+    invalid_key_entry = CataloguedTable(
+        entry_id="asset:bronze/raw/table",
+        status=TableAvailability.UNMATERIALIZED,
+        asset=_asset(
+            ("bronze", "raw", "table"),
+            uri=None,
+            latest_materialization_timestamp=None,
+        ),
+        table=None,
+    )
+    blank_table_name_entry = CataloguedTable(
+        entry_id="asset:silver/gas_model/",
+        status=TableAvailability.UNMATERIALIZED,
+        asset=_asset(
+            ("silver", "gas_model", ""),
+            uri=None,
+            latest_materialization_timestamp=None,
+        ),
+        table=None,
+    )
+
+    assert concept_gallery_asset_id(uri_fallback_entry) == (
+        "silver.gas_model.silver_gas_fact_schedule_run"
+    )
+    assert concept_gallery_asset_id(invalid_key_entry) is None
+    assert concept_gallery_asset_id(blank_table_name_entry) is None
 
 
 def test_table_explorer_deep_link_from_query_normalizes_url_defaults() -> None:
@@ -1721,6 +1918,13 @@ def test_compact_error_handles_empty_messages() -> None:
             return ""
 
     assert explorer._compact_error(EmptyMessageError()) == "EmptyMessageError"
+
+
+def _link_detail(links: tuple[explorer.TableWorkbenchLink, ...], label: str) -> str:
+    for link in links:
+        if link.label == label:
+            return link.detail
+    raise AssertionError(f"missing workbench link: {label}")
 
 
 class BadBodyS3Client(FakeS3Client):
