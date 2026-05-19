@@ -210,8 +210,10 @@ Key deployed behaviors visible in the infrastructure code:
   the registry-only glossary explorer for Market context metadata browsing,
   exposes the gas system notices, settlement activity, customer transfer and
   retail activity, and Bid / Offer stack dashboards over curated gas-model
-  facts, and
-  loads bounded table previews instead of full table scans, with explicit
+  facts, runs with `MARIMO_OUTPUT_MAX_BYTES=16000000`,
+  `MARIMO_MAX_PREVIEW_ROWS=100`, and
+  `MARIMO_FULL_TABLE_SCAN_ENABLED=false`, and loads bounded table previews
+  instead of full table scans, with explicit
   refresh, session cache keys, load timing, and row-limit messages for shared
   gas-model dashboard reads
 - An issue #126 **Exploratory delivery** path can add EC2-backed run-worker

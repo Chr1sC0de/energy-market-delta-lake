@@ -19,7 +19,7 @@ Marimo-Codex research workspace image.
 - [Schedule runs dashboard](#schedule-runs-dashboard)
 - [Settlement activity dashboard](#settlement-activity-dashboard)
 - [Customer transfer and retail activity dashboard](#customer-transfer-and-retail-activity-dashboard)
-- [Bid / Offer stack dashboard](#bid--offer-stack-dashboard)
+- [Bid-Offer stack dashboard](#bid-offer-stack-dashboard)
 - [System notices dashboard](#system-notices-dashboard)
 - [Gas quality and composition dashboard](#gas-quality-and-composition-dashboard)
 - [GBB interactive map](#gbb-interactive-map)
@@ -354,7 +354,7 @@ data, unavailable Parquet prefixes, and filter combinations with no matches
 render dashboard empty states with the checked table, read policy, and refresh
 action.
 
-## Bid / Offer stack dashboard
+## Bid-Offer stack dashboard
 
 [notebooks/gas_bid_offer_stack.py](notebooks/gas_bid_offer_stack.py) is an
 analytical dashboard over

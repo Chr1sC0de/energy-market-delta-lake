@@ -298,9 +298,11 @@ placement, image pull, task startup latency, or scale-in behavior because issue
 - The daemon task does not register in Cloud Map because it only initiates
   outbound orchestration work.
 - The deployed Marimo dashboard runs with `DEVELOPMENT_LOCATION=aws`,
+  `MARIMO_OUTPUT_MAX_BYTES=16000000`,
   `MARIMO_FULL_TABLE_SCAN_ENABLED=false`, and `MARIMO_MAX_PREVIEW_ROWS=100`,
-  so table previews are bounded and use the instance profile instead of static
-  AWS credentials. Curated gas-model dashboard reads use explicit refresh,
+  so current Plotly iframe output can render under a 16 MB cap, table previews
+  are bounded, and the dashboard uses the instance profile instead of static AWS
+  credentials. Curated gas-model dashboard reads use explicit refresh,
   session-level cache keys, load timing, and row-limit messages rather than
   auto-refresh timers. The data readiness overview uses the same read-only S3
   and Dagster GraphQL helper surfaces to summarize platform operations

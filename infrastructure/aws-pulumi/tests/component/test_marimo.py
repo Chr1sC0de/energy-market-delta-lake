@@ -145,6 +145,7 @@ class TestMarimoDashboardComponent:
             assert "MARIMO_TABLE_BUCKETS" in user_data
             assert "MARIMO_FULL_TABLE_SCAN_ENABLED=false" in user_data
             assert "MARIMO_MAX_PREVIEW_ROWS=100" in user_data
+            assert "MARIMO_OUTPUT_MAX_BYTES=16000000" in user_data
             assert (
                 "DAGSTER_GRAPHQL_URL=http://webserver-guest.dagster:3000/dagster-webserver/guest/graphql"
                 in user_data

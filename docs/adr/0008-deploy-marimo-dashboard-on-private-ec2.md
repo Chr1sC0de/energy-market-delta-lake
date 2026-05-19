@@ -21,6 +21,7 @@ ECR read, SSM managed-instance access, and read-only S3 access to the curated
 AEMO and IO-manager buckets. It does not receive static AWS keys. The deployed
 runtime sets `DEVELOPMENT_LOCATION=aws`,
 `DAGSTER_GRAPHQL_URL=http://webserver-guest.dagster:3000/dagster-webserver/guest/graphql`,
+`MARIMO_OUTPUT_MAX_BYTES=16000000`,
 `MARIMO_FULL_TABLE_SCAN_ENABLED=false`, and `MARIMO_MAX_PREVIEW_ROWS=100`.
 
 The dashboard service also exposes `/marimo/dashboard-registry.json` from
