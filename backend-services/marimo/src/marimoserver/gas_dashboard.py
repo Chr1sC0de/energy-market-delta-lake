@@ -84,6 +84,11 @@ SETTLEMENT_ACTIVITY_GAS_DATE_FILTER_ALL = "All gas dates"
 SETTLEMENT_ACTIVITY_SOURCE_SYSTEM_FILTER_ALL = "All source systems"
 SETTLEMENT_ACTIVITY_ACTIVITY_TYPE_FILTER_ALL = "All activity types"
 DEFAULT_SETTLEMENT_ACTIVITY_PREVIEW_ROWS = 50
+CUSTOMER_TRANSFER_TABLE_NAME = "silver_gas_fact_customer_transfer"
+CUSTOMER_TRANSFER_GAS_DATE_FILTER_ALL = "All gas dates"
+CUSTOMER_TRANSFER_MARKET_CODE_FILTER_ALL = "All market codes"
+CUSTOMER_TRANSFER_SOURCE_SYSTEM_FILTER_ALL = "All source systems"
+DEFAULT_CUSTOMER_TRANSFER_PREVIEW_ROWS = 50
 BID_STACK_TABLE_NAME = "silver_gas_fact_bid_stack"
 BID_STACK_PARTICIPANT_FILTER_ALL = "All participants"
 BID_STACK_FACILITY_FILTER_ALL = "All facilities"
@@ -247,6 +252,32 @@ SETTLEMENT_ACTIVITY_TABLE_SPEC = GasTableSpec(
     ),
 )
 SETTLEMENT_ACTIVITY_TABLE_SPECS = (SETTLEMENT_ACTIVITY_TABLE_SPEC,)
+
+CUSTOMER_TRANSFER_TABLE_SPEC = GasTableSpec(
+    section="Retail activity",
+    label="Customer transfers",
+    table_name=CUSTOMER_TRANSFER_TABLE_NAME,
+    date_columns=(
+        "gas_date",
+        "ingested_timestamp",
+    ),
+    preview_columns=(
+        "gas_date",
+        "market_code",
+        "source_system",
+        "source_table",
+        "transfers_lodged",
+        "transfers_completed",
+        "transfers_cancelled",
+        "int_transfers_lodged",
+        "int_transfers_completed",
+        "int_transfers_cancelled",
+        "greenfields_received",
+        "source_file",
+        "source_surrogate_key",
+    ),
+)
+CUSTOMER_TRANSFER_TABLE_SPECS = (CUSTOMER_TRANSFER_TABLE_SPEC,)
 
 BID_STACK_TABLE_SPEC = GasTableSpec(
     section="Bid / Offer",
@@ -699,6 +730,87 @@ _SETTLEMENT_ACTIVITY_OBSERVATION_SCHEMA = {
     "source identifier": pl.String,
     "latest ingest": pl.Datetime("us"),
 }
+_CUSTOMER_TRANSFER_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "date_key": pl.String,
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "source_table": pl.String,
+    "gas_date": pl.Date,
+    "market_code": pl.String,
+    "transfers_lodged": pl.Int64,
+    "transfers_completed": pl.Int64,
+    "transfers_cancelled": pl.Int64,
+    "int_transfers_lodged": pl.Int64,
+    "int_transfers_completed": pl.Int64,
+    "int_transfers_cancelled": pl.Int64,
+    "greenfields_received": pl.Int64,
+    "source_surrogate_key": pl.String,
+    "source_file": pl.String,
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_CUSTOMER_TRANSFER_KPI_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_CUSTOMER_TRANSFER_SUMMARY_SCHEMA = {
+    "market code": pl.String,
+    "source system": pl.String,
+    "source table": pl.String,
+    "rows": pl.UInt32,
+    "gas days": pl.UInt32,
+    "transfers lodged": pl.Int64,
+    "transfers completed": pl.Int64,
+    "transfers cancelled": pl.Int64,
+    "internal transfers lodged": pl.Int64,
+    "internal transfers completed": pl.Int64,
+    "internal transfers cancelled": pl.Int64,
+    "greenfields received": pl.Int64,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
+    "latest ingest": pl.Datetime("us"),
+}
+_CUSTOMER_TRANSFER_DAILY_SCHEMA = {
+    "gas date": pl.Date,
+    "market code": pl.String,
+    "rows": pl.UInt32,
+    "transfers lodged": pl.Int64,
+    "transfers completed": pl.Int64,
+    "transfers cancelled": pl.Int64,
+    "internal transfers lodged": pl.Int64,
+    "internal transfers completed": pl.Int64,
+    "internal transfers cancelled": pl.Int64,
+    "greenfields received": pl.Int64,
+}
+_CUSTOMER_TRANSFER_SOURCE_COVERAGE_SCHEMA = {
+    "source system": pl.String,
+    "source table": pl.String,
+    "rows": pl.UInt32,
+    "market codes": pl.UInt32,
+    "gas days": pl.UInt32,
+    "source files": pl.UInt32,
+    "source identifiers": pl.UInt32,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
+    "latest ingest": pl.Datetime("us"),
+}
+_CUSTOMER_TRANSFER_OBSERVATION_SCHEMA = {
+    "gas date": pl.Date,
+    "market code": pl.String,
+    "source system": pl.String,
+    "source table": pl.String,
+    "transfers_lodged": pl.Int64,
+    "transfers_completed": pl.Int64,
+    "transfers_cancelled": pl.Int64,
+    "int_transfers_lodged": pl.Int64,
+    "int_transfers_completed": pl.Int64,
+    "int_transfers_cancelled": pl.Int64,
+    "greenfields_received": pl.Int64,
+    "source file": pl.String,
+    "source identifier": pl.String,
+    "latest ingest": pl.Datetime("us"),
+}
 _BID_STACK_RAW_SCHEMA = {
     "source_system": pl.String,
     "source_tables": pl.List(pl.String),
@@ -1086,6 +1198,42 @@ def cached_load_settlement_activity_table(
         config,
         cache,
         specs=SETTLEMENT_ACTIVITY_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        refresh_token=refresh_token,
+        clock=clock,
+    )[0]
+
+
+def load_customer_transfer_table(
+    config: GasDashboardConfig,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Load the customer transfer fact through the shared bounded table loader."""
+    return load_gas_model_tables(
+        config,
+        specs=CUSTOMER_TRANSFER_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        clock=clock,
+    )[0]
+
+
+def cached_load_customer_transfer_table(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Return session-cached customer transfer data for explicit refreshes."""
+    return cached_load_gas_model_tables(
+        config,
+        cache,
+        specs=CUSTOMER_TRANSFER_TABLE_SPECS,
         reader=reader,
         view=GasModelTableView.RECENT,
         refresh_token=refresh_token,
@@ -2390,6 +2538,467 @@ def render_settlement_activity_context_links(
     <div>
         <p class="settlement-activity-links__eyebrow">Context links</p>
         <h2>Settlement, Allocation, Participant, Gas Day, and Schedule context</h2>
+    </div>
+    <ul>
+{rows}
+    </ul>
+</section>"""
+
+
+def customer_transfer_gas_date_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return gas-date filter options for loaded customer transfer rows."""
+    dataframe = _normalised_customer_transfer_dataframe(load)
+    if dataframe.is_empty():
+        return (CUSTOMER_TRANSFER_GAS_DATE_FILTER_ALL,)
+
+    values = sorted(
+        str(value)
+        for value in dataframe.get_column("gas_date").drop_nulls().unique().to_list()
+        if value is not None
+    )
+    return (CUSTOMER_TRANSFER_GAS_DATE_FILTER_ALL, *reversed(values))
+
+
+def customer_transfer_market_code_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return market-code filter options for loaded customer transfer rows."""
+    return _customer_transfer_string_filter_options(
+        load,
+        "market_code",
+        CUSTOMER_TRANSFER_MARKET_CODE_FILTER_ALL,
+    )
+
+
+def customer_transfer_source_system_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return source-system filter options for loaded customer transfer rows."""
+    return _customer_transfer_string_filter_options(
+        load,
+        "source_system",
+        CUSTOMER_TRANSFER_SOURCE_SYSTEM_FILTER_ALL,
+    )
+
+
+def customer_transfer_kpi_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = CUSTOMER_TRANSFER_GAS_DATE_FILTER_ALL,
+    market_code_filter: str = CUSTOMER_TRANSFER_MARKET_CODE_FILTER_ALL,
+    source_system_filter: str = CUSTOMER_TRANSFER_SOURCE_SYSTEM_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return first-viewport KPIs for loaded customer transfer rows."""
+    dataframe = _filtered_customer_transfer_dataframe(
+        load,
+        gas_date_filter,
+        market_code_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_CUSTOMER_TRANSFER_KPI_SCHEMA)
+
+    counts = dataframe.select(
+        pl.len().alias("loaded_rows"),
+        pl.col("market_code").drop_nulls().n_unique().alias("market_codes"),
+        pl.col("source_system").drop_nulls().n_unique().alias("source_systems"),
+        pl.col("transfers_lodged").is_not_null().sum().alias("lodged_rows"),
+        pl.col("transfers_lodged").sum().alias("transfers_lodged"),
+        pl.col("transfers_completed").is_not_null().sum().alias("completed_rows"),
+        pl.col("transfers_completed").sum().alias("transfers_completed"),
+        pl.col("transfers_cancelled").is_not_null().sum().alias("cancelled_rows"),
+        pl.col("transfers_cancelled").sum().alias("transfers_cancelled"),
+        pl.col("int_transfers_lodged")
+        .is_not_null()
+        .sum()
+        .alias("internal_lodged_rows"),
+        pl.col("int_transfers_lodged").sum().alias("internal_transfers_lodged"),
+        pl.col("int_transfers_completed")
+        .is_not_null()
+        .sum()
+        .alias("internal_completed_rows"),
+        pl.col("int_transfers_completed").sum().alias("internal_transfers_completed"),
+        pl.col("int_transfers_cancelled")
+        .is_not_null()
+        .sum()
+        .alias("internal_cancelled_rows"),
+        pl.col("int_transfers_cancelled").sum().alias("internal_transfers_cancelled"),
+        pl.col("greenfields_received").is_not_null().sum().alias("greenfield_rows"),
+        pl.col("greenfields_received").sum().alias("greenfields_received"),
+        pl.col("gas_date").max().alias("latest_gas_date"),
+    ).row(0, named=True)
+    row_limit = None if load is None else load.row_limit
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Loaded customer transfer rows",
+                "value": f"{counts['loaded_rows']:,}",
+                "detail": format_row_limit(row_limit),
+            },
+            {
+                "metric": "Market codes",
+                "value": f"{counts['market_codes']:,}",
+                "detail": "Distinct market_code values in the current view",
+            },
+            {
+                "metric": "Source systems",
+                "value": f"{counts['source_systems']:,}",
+                "detail": "Distinct source_system values in the current view",
+            },
+            {
+                "metric": "Transfers lodged",
+                "value": _format_measure_total(
+                    counts["transfers_lodged"],
+                    counts["lodged_rows"],
+                ),
+                "detail": f"{counts['lodged_rows']:,} populated transfers_lodged rows",
+            },
+            {
+                "metric": "Transfers completed",
+                "value": _format_measure_total(
+                    counts["transfers_completed"],
+                    counts["completed_rows"],
+                ),
+                "detail": (
+                    f"{counts['completed_rows']:,} populated transfers_completed rows"
+                ),
+            },
+            {
+                "metric": "Transfers cancelled",
+                "value": _format_measure_total(
+                    counts["transfers_cancelled"],
+                    counts["cancelled_rows"],
+                ),
+                "detail": (
+                    f"{counts['cancelled_rows']:,} populated transfers_cancelled rows"
+                ),
+            },
+            {
+                "metric": "Internal transfers lodged",
+                "value": _format_measure_total(
+                    counts["internal_transfers_lodged"],
+                    counts["internal_lodged_rows"],
+                ),
+                "detail": (
+                    f"{counts['internal_lodged_rows']:,} populated "
+                    "int_transfers_lodged rows"
+                ),
+            },
+            {
+                "metric": "Internal transfers completed",
+                "value": _format_measure_total(
+                    counts["internal_transfers_completed"],
+                    counts["internal_completed_rows"],
+                ),
+                "detail": (
+                    f"{counts['internal_completed_rows']:,} populated "
+                    "int_transfers_completed rows"
+                ),
+            },
+            {
+                "metric": "Internal transfers cancelled",
+                "value": _format_measure_total(
+                    counts["internal_transfers_cancelled"],
+                    counts["internal_cancelled_rows"],
+                ),
+                "detail": (
+                    f"{counts['internal_cancelled_rows']:,} populated "
+                    "int_transfers_cancelled rows"
+                ),
+            },
+            {
+                "metric": "Greenfields received",
+                "value": _format_measure_total(
+                    counts["greenfields_received"],
+                    counts["greenfield_rows"],
+                ),
+                "detail": (
+                    f"{counts['greenfield_rows']:,} populated greenfields_received rows"
+                ),
+            },
+            {
+                "metric": "Latest gas date",
+                "value": _format_optional_value(counts["latest_gas_date"]),
+                "detail": "Maximum gas_date in the loaded bounded rows",
+            },
+        ],
+        schema=_CUSTOMER_TRANSFER_KPI_SCHEMA,
+    )
+
+
+def customer_transfer_summary_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = CUSTOMER_TRANSFER_GAS_DATE_FILTER_ALL,
+    market_code_filter: str = CUSTOMER_TRANSFER_MARKET_CODE_FILTER_ALL,
+    source_system_filter: str = CUSTOMER_TRANSFER_SOURCE_SYSTEM_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return market-code customer transfer summaries."""
+    dataframe = _filtered_customer_transfer_dataframe(
+        load,
+        gas_date_filter,
+        market_code_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_CUSTOMER_TRANSFER_SUMMARY_SCHEMA)
+
+    summary = (
+        dataframe.group_by("market_code", "source_system", "source_table")
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("gas_date").drop_nulls().n_unique().alias("gas days"),
+            pl.col("transfers_lodged").sum().alias("transfers lodged"),
+            pl.col("transfers_completed").sum().alias("transfers completed"),
+            pl.col("transfers_cancelled").sum().alias("transfers cancelled"),
+            pl.col("int_transfers_lodged").sum().alias("internal transfers lodged"),
+            pl.col("int_transfers_completed")
+            .sum()
+            .alias("internal transfers completed"),
+            pl.col("int_transfers_cancelled")
+            .sum()
+            .alias("internal transfers cancelled"),
+            pl.col("greenfields_received").sum().alias("greenfields received"),
+            pl.col("gas_date").min().alias("first gas date"),
+            pl.col("gas_date").max().alias("latest gas date"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort(
+            ["transfers lodged", "latest gas date", "market_code"],
+            descending=[True, True, False],
+            nulls_last=True,
+        )
+        .rename(
+            {
+                "market_code": "market code",
+                "source_system": "source system",
+                "source_table": "source table",
+            }
+        )
+    )
+    return summary.select([*list(_CUSTOMER_TRANSFER_SUMMARY_SCHEMA)])
+
+
+def customer_transfer_daily_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = CUSTOMER_TRANSFER_GAS_DATE_FILTER_ALL,
+    market_code_filter: str = CUSTOMER_TRANSFER_MARKET_CODE_FILTER_ALL,
+    source_system_filter: str = CUSTOMER_TRANSFER_SOURCE_SYSTEM_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_CUSTOMER_TRANSFER_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return bounded daily transfer totals by Gas Day and market code."""
+    dataframe = _filtered_customer_transfer_dataframe(
+        load,
+        gas_date_filter,
+        market_code_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_CUSTOMER_TRANSFER_DAILY_SCHEMA)
+
+    daily = (
+        dataframe.group_by("gas_date", "market_code")
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("transfers_lodged").sum().alias("transfers lodged"),
+            pl.col("transfers_completed").sum().alias("transfers completed"),
+            pl.col("transfers_cancelled").sum().alias("transfers cancelled"),
+            pl.col("int_transfers_lodged").sum().alias("internal transfers lodged"),
+            pl.col("int_transfers_completed")
+            .sum()
+            .alias("internal transfers completed"),
+            pl.col("int_transfers_cancelled")
+            .sum()
+            .alias("internal transfers cancelled"),
+            pl.col("greenfields_received").sum().alias("greenfields received"),
+        )
+        .sort(
+            ["gas_date", "market_code"],
+            descending=[True, False],
+            nulls_last=True,
+        )
+        .rename(
+            {
+                "gas_date": "gas date",
+                "market_code": "market code",
+            }
+        )
+        .head(max(1, preview_rows))
+    )
+    return daily.select([*list(_CUSTOMER_TRANSFER_DAILY_SCHEMA)])
+
+
+def customer_transfer_source_coverage_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = CUSTOMER_TRANSFER_GAS_DATE_FILTER_ALL,
+    market_code_filter: str = CUSTOMER_TRANSFER_MARKET_CODE_FILTER_ALL,
+    source_system_filter: str = CUSTOMER_TRANSFER_SOURCE_SYSTEM_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return source coverage for loaded customer transfer rows."""
+    dataframe = _filtered_customer_transfer_dataframe(
+        load,
+        gas_date_filter,
+        market_code_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_CUSTOMER_TRANSFER_SOURCE_COVERAGE_SCHEMA)
+
+    return (
+        dataframe.group_by("source_system", "source_table")
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("market_code").drop_nulls().n_unique().alias("market codes"),
+            pl.col("gas_date").drop_nulls().n_unique().alias("gas days"),
+            pl.col("source_file").drop_nulls().n_unique().alias("source files"),
+            pl.col("source_surrogate_key")
+            .drop_nulls()
+            .n_unique()
+            .alias("source identifiers"),
+            pl.col("gas_date").min().alias("first gas date"),
+            pl.col("gas_date").max().alias("latest gas date"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort(["rows", "source_table"], descending=[True, False])
+        .rename(
+            {
+                "source_system": "source system",
+                "source_table": "source table",
+            }
+        )
+    )
+
+
+def customer_transfer_observation_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = CUSTOMER_TRANSFER_GAS_DATE_FILTER_ALL,
+    market_code_filter: str = CUSTOMER_TRANSFER_MARKET_CODE_FILTER_ALL,
+    source_system_filter: str = CUSTOMER_TRANSFER_SOURCE_SYSTEM_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_CUSTOMER_TRANSFER_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return filtered customer transfer observations for bounded preview."""
+    dataframe = _filtered_customer_transfer_dataframe(
+        load,
+        gas_date_filter,
+        market_code_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_CUSTOMER_TRANSFER_OBSERVATION_SCHEMA)
+
+    return (
+        dataframe.sort(
+            [
+                "gas_date",
+                "market_code",
+                "ingested_timestamp",
+                "source_system",
+                "source_table",
+            ],
+            descending=[True, False, True, False, False],
+            nulls_last=True,
+        )
+        .select(
+            pl.col("gas_date").alias("gas date"),
+            pl.col("market_code").alias("market code"),
+            pl.col("source_system").alias("source system"),
+            pl.col("source_table").alias("source table"),
+            pl.col("transfers_lodged"),
+            pl.col("transfers_completed"),
+            pl.col("transfers_cancelled"),
+            pl.col("int_transfers_lodged"),
+            pl.col("int_transfers_completed"),
+            pl.col("int_transfers_cancelled"),
+            pl.col("greenfields_received"),
+            pl.col("source_file").alias("source file"),
+            pl.col("source_surrogate_key").alias("source identifier"),
+            pl.col("ingested_timestamp").alias("latest ingest"),
+        )
+        .head(max(1, preview_rows))
+    )
+
+
+def customer_transfer_empty_state_markdown(load: GasTableLoad | None) -> str:
+    """Return useful empty-state copy for missing or unmatched transfer rows."""
+    table_label = _markdown_breakable_text(
+        "silver.gas_model.silver_gas_fact_customer_transfer"
+    )
+    if load is None:
+        status_detail = "The dashboard did not receive a customer transfer load result."
+        uri = table_label
+        read_policy = "No read policy was reported."
+    else:
+        if load.error is not None:
+            status_detail = f"Read detail: {_markdown_breakable_text(load.error)}"
+        elif load.dataframe is None or load.dataframe.is_empty():
+            status_detail = "The table loaded successfully but returned no rows."
+        else:
+            status_detail = (
+                "The current filters do not match any loaded customer transfer rows."
+            )
+        uri = _markdown_breakable_text(load.uri)
+        read_policy = row_limit_message(load.row_limit)
+
+    return f"""
+    **No customer transfer data is available for this view.**
+
+    The dashboard checked {uri}, which should contain {table_label} rows with
+    Gas Day, market code, transfers lodged, completed and cancelled, internal
+    transfer counts, greenfields received, source-system, and source-table
+    fields.
+
+    {status_detail}
+
+    {read_policy}
+
+    Materialize or seed the `silver.gas_model` customer transfer asset, then
+    use **Refresh data**.
+    """
+
+
+def render_customer_transfer_context_links(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render customer transfer links to related Market context panels."""
+    candidate_entries = tuple(dashboard_registry() if entries is None else entries)
+    concept_ids = (
+        "gas-customer-transfer-activity",
+        "gas-market-overview",
+        "participant-context",
+        "gas-day-context",
+        "settlement-context",
+        "gas-model-table-explorer",
+    )
+    rows = "\n".join(
+        _render_customer_transfer_context_link(entry)
+        for entry in (
+            registry_entry_by_concept_id(concept_id, candidate_entries)
+            for concept_id in concept_ids
+        )
+        if entry is not None
+    )
+    if rows == "":
+        rows = (
+            '<li class="customer-transfer-links__empty">'
+            "No Customer transfer, Participant, Gas Day, or Settlement context "
+            "entries are registered."
+            "</li>"
+        )
+
+    return f"""\
+<style>
+{_customer_transfer_context_links_css()}
+</style>
+<section
+    class="customer-transfer-links"
+    aria-label="Customer transfer context links"
+>
+    <div>
+        <p class="customer-transfer-links__eyebrow">Context links</p>
+        <h2>Customer transfer, Participant, Gas Day, and Settlement context</h2>
     </div>
     <ul>
 {rows}
@@ -3798,6 +4407,179 @@ def _settlement_activity_context_links_css() -> str:
 
 @media (max-width: 760px) {
     .settlement-activity-links li {
+        grid-template-columns: 1fr;
+    }
+}
+"""
+
+
+def _customer_transfer_string_filter_options(
+    load: GasTableLoad | None,
+    column: str,
+    all_label: str,
+) -> tuple[str, ...]:
+    dataframe = _normalised_customer_transfer_dataframe(load)
+    if dataframe.is_empty() or column not in dataframe.columns:
+        return (all_label,)
+
+    values = sorted(
+        str(value)
+        for value in dataframe.get_column(column)
+        .drop_nulls()
+        .cast(pl.String, strict=False)
+        .unique()
+        .to_list()
+        if value is not None
+    )
+    return (all_label, *values)
+
+
+def _filtered_customer_transfer_dataframe(
+    load: GasTableLoad | None,
+    gas_date_filter: str,
+    market_code_filter: str,
+    source_system_filter: str,
+) -> pl.DataFrame:
+    dataframe = _normalised_customer_transfer_dataframe(load)
+    if dataframe.is_empty():
+        return dataframe
+
+    filtered = dataframe
+    if gas_date_filter != CUSTOMER_TRANSFER_GAS_DATE_FILTER_ALL:
+        filtered = filtered.filter(
+            pl.col("gas_date").cast(pl.String) == gas_date_filter
+        )
+    if market_code_filter != CUSTOMER_TRANSFER_MARKET_CODE_FILTER_ALL:
+        filtered = filtered.filter(pl.col("market_code") == market_code_filter)
+    if source_system_filter != CUSTOMER_TRANSFER_SOURCE_SYSTEM_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_system") == source_system_filter)
+    return filtered
+
+
+def _normalised_customer_transfer_dataframe(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_CUSTOMER_TRANSFER_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _CUSTOMER_TRANSFER_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("surrogate_key").cast(pl.String, strict=False),
+        pl.col("date_key").cast(pl.String, strict=False),
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        pl.col("source_table").cast(pl.String, strict=False),
+        _normalise_date_column(dataframe, "gas_date"),
+        pl.col("market_code").cast(pl.String, strict=False),
+        pl.col("transfers_lodged").cast(pl.Int64, strict=False),
+        pl.col("transfers_completed").cast(pl.Int64, strict=False),
+        pl.col("transfers_cancelled").cast(pl.Int64, strict=False),
+        pl.col("int_transfers_lodged").cast(pl.Int64, strict=False),
+        pl.col("int_transfers_completed").cast(pl.Int64, strict=False),
+        pl.col("int_transfers_cancelled").cast(pl.Int64, strict=False),
+        pl.col("greenfields_received").cast(pl.Int64, strict=False),
+        pl.col("source_surrogate_key").cast(pl.String, strict=False),
+        pl.col("source_file").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
+def _render_customer_transfer_context_link(entry: DashboardRegistryEntry) -> str:
+    status_label = _dashboard_entry_status_label(entry)
+    title = escape(entry.title)
+    route = entry.notebook_route
+    if entry.status.value == "available" and route is not None:
+        title_html = f'<a href="{escape(route, quote=True)}">{title}</a>'
+    else:
+        title_html = f"<span>{title}</span>"
+
+    return f"""\
+        <li data-dashboard-status="{escape(entry.status.value, quote=True)}">
+            {title_html}
+            <span>{escape(status_label)}</span>
+            <code>{escape(entry.concept_id)}</code>
+        </li>"""
+
+
+def _customer_transfer_context_links_css() -> str:
+    return """\
+.customer-transfer-links {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+}
+
+.customer-transfer-links__eyebrow {
+    margin: 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.74rem;
+    font-weight: 720;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.customer-transfer-links h2 {
+    margin: 0.15rem 0 0;
+    font-size: 1.05rem;
+}
+
+.customer-transfer-links ul {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.customer-transfer-links li {
+    display: grid;
+    grid-template-columns: minmax(10rem, 1fr) auto auto;
+    gap: 0.65rem;
+    align-items: center;
+    min-width: 0;
+    padding: 0.55rem 0;
+    border-top: 1px solid var(--emdl-line, #cfdbd6);
+}
+
+.customer-transfer-links li:first-child {
+    border-top: 0;
+}
+
+.customer-transfer-links a {
+    color: var(--emdl-blue, #166791);
+    font-weight: 720;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+}
+
+.customer-transfer-links span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.customer-transfer-links li > span:nth-child(2) {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.customer-transfer-links code {
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+    .customer-transfer-links li {
         grid-template-columns: 1fr;
     }
 }

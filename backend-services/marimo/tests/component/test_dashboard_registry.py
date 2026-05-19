@@ -104,6 +104,18 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert gas_quality.notebook_route == "/marimo/gas_quality_composition/"
     assert "silver.gas_model.silver_gas_fact_gas_quality" in gas_quality.backing_assets
 
+    customer_transfer = registry_entry_by_concept_id(
+        "gas-customer-transfer-activity",
+        entries,
+    )
+    assert customer_transfer is not None
+    assert customer_transfer.status is DashboardStatus.AVAILABLE
+    assert customer_transfer.notebook_name == "gas_customer_transfer_activity"
+    assert customer_transfer.notebook_route == "/marimo/gas_customer_transfer_activity/"
+    assert customer_transfer.backing_assets == (
+        "silver.gas_model.silver_gas_fact_customer_transfer",
+    )
+
     bid_stack = registry_entry_by_concept_id("bid-offer-context", entries)
     assert bid_stack is not None
     assert bid_stack.status is DashboardStatus.AVAILABLE

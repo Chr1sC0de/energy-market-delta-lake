@@ -17,6 +17,9 @@ Marimo-Codex research workspace image.
 - [Gas market dashboard](#gas-market-dashboard)
 - [Market prices dashboard](#market-prices-dashboard)
 - [Schedule runs dashboard](#schedule-runs-dashboard)
+- [Settlement activity dashboard](#settlement-activity-dashboard)
+- [Customer transfer and retail activity dashboard](#customer-transfer-and-retail-activity-dashboard)
+- [Bid / Offer stack dashboard](#bid--offer-stack-dashboard)
 - [System notices dashboard](#system-notices-dashboard)
 - [Gas quality and composition dashboard](#gas-quality-and-composition-dashboard)
 - [GBB interactive map](#gbb-interactive-map)
@@ -332,6 +335,25 @@ data, unavailable Parquet prefixes, and filter combinations with no matches
 render dashboard empty states with the checked table, read policy, and refresh
 action.
 
+## Customer transfer and retail activity dashboard
+
+[notebooks/gas_customer_transfer_activity.py](notebooks/gas_customer_transfer_activity.py)
+is an analytical dashboard over
+`silver.gas_model.silver_gas_fact_customer_transfer`. It uses the shared
+bounded gas model loader and session cache from
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py), then
+filters the loaded bounded preview by Gas Day, `market_code`, and
+`source_system`.
+
+The dashboard shows loaded customer transfer KPIs, transfers lodged,
+completed, cancelled, internal transfer counts, greenfields received, market
+code summaries, Gas Day activity, source coverage by source system and source
+table, bounded row previews, and Customer transfer, Participant, Gas Day, and
+Settlement context links from the Marimo registry. Missing customer transfer
+data, unavailable Parquet prefixes, and filter combinations with no matches
+render dashboard empty states with the checked table, read policy, and refresh
+action.
+
 ## Bid / Offer stack dashboard
 
 [notebooks/gas_bid_offer_stack.py](notebooks/gas_bid_offer_stack.py) is an
@@ -447,8 +469,8 @@ With the local backend stack running, open the Marimo concept gallery through
 Caddy and choose an available card such as `data_readiness_overview`,
 `glossary_explorer`, `table_explorer`, `sample_energy_market`,
 `gas_market_prices`, `gas_schedule_runs`, `system_notices`,
-`gas_settlement_activity`, `gas_bid_offer_stack`, `gas_quality_composition`,
-or `gbb_interactive_map`:
+`gas_settlement_activity`, `gas_customer_transfer_activity`,
+`gas_bid_offer_stack`, `gas_quality_composition`, or `gbb_interactive_map`:
 
 ```text
 http://localhost/marimo
@@ -524,6 +546,13 @@ Use the same pattern for the settlement activity dashboard:
 ```bash
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gas_settlement_activity.py
+```
+
+Use the same pattern for the customer transfer and retail activity dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gas_customer_transfer_activity.py
 ```
 
 Use the same pattern for the Bid / Offer stack dashboard:
@@ -634,6 +663,7 @@ prek run -a
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
+  - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/marimo/tests/component/conftest.py`

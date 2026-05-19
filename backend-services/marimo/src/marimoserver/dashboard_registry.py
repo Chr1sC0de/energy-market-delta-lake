@@ -316,6 +316,22 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "source_chunk_ids": (),
     },
     {
+        "concept_id": "gas-customer-transfer-activity",
+        "title": "Customer Transfer And Retail Activity",
+        "description": (
+            "Available analytical dashboard for customer transfers lodged, "
+            "completed, cancelled, internal transfers, greenfields received, "
+            "market code, Gas Day filters, and source coverage from the "
+            "curated customer transfer fact."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "gas_customer_transfer_activity",
+        "backing_assets": ("silver.gas_model.silver_gas_fact_customer_transfer",),
+        "generated_gold_paths": (),
+        "source_chunk_ids": (),
+    },
+    {
         "concept_id": "gas-day-context",
         "title": "Gas Day Context",
         "description": (

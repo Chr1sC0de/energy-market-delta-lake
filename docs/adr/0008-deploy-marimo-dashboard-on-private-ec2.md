@@ -115,6 +115,13 @@ through the shared bounded loader and session cache, then filters and
 summarizes loaded settlement activity rows without changing settlement ETL,
 source ingestion, settlement semantics, or asset schemas.
 
+The customer transfer and retail activity dashboard stays inside the same
+boundary. It reads the curated
+`silver.gas_model.silver_gas_fact_customer_transfer` Parquet output through
+the shared bounded loader and session cache, then filters and summarizes
+loaded customer transfer rows without changing customer transfer ETL, source
+ingestion, market-code semantics, or asset schemas.
+
 The Bid / Offer stack dashboard stays inside the same boundary. It reads the
 curated `silver.gas_model.silver_gas_fact_bid_stack` Parquet output through the
 shared bounded loader and session cache, then filters and summarizes loaded bid
@@ -159,6 +166,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
+  - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/marimo/tests/component/test_dashboard_registry.py`

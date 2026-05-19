@@ -14,6 +14,11 @@ from marimoserver.gas_dashboard import (
     BID_STACK_TABLE_NAME,
     BID_STACK_TABLE_SPEC,
     BID_STACK_ZONE_FILTER_ALL,
+    CUSTOMER_TRANSFER_GAS_DATE_FILTER_ALL,
+    CUSTOMER_TRANSFER_MARKET_CODE_FILTER_ALL,
+    CUSTOMER_TRANSFER_SOURCE_SYSTEM_FILTER_ALL,
+    CUSTOMER_TRANSFER_TABLE_NAME,
+    CUSTOMER_TRANSFER_TABLE_SPEC,
     GAS_MODEL_TABLES,
     GAS_QUALITY_QUALITY_TYPE_FILTER_ALL,
     GAS_QUALITY_SOURCE_POINT_FILTER_ALL,
@@ -53,6 +58,7 @@ from marimoserver.gas_dashboard import (
     bid_stack_source_system_options,
     bid_stack_step_summary_frame,
     bid_stack_zone_options,
+    cached_load_customer_transfer_table,
     cached_load_bid_stack_table,
     cached_load_gas_quality_table,
     cached_load_gas_model_tables,
@@ -60,6 +66,15 @@ from marimoserver.gas_dashboard import (
     cached_load_schedule_run_table,
     cached_load_settlement_activity_table,
     cached_load_system_notice_table,
+    customer_transfer_daily_frame,
+    customer_transfer_empty_state_markdown,
+    customer_transfer_gas_date_options,
+    customer_transfer_kpi_frame,
+    customer_transfer_market_code_options,
+    customer_transfer_observation_frame,
+    customer_transfer_source_coverage_frame,
+    customer_transfer_source_system_options,
+    customer_transfer_summary_frame,
     discover_dashboard_config,
     gas_quality_empty_state_markdown,
     gas_quality_kpi_frame,
@@ -72,6 +87,7 @@ from marimoserver.gas_dashboard import (
     gas_table_load_status_message,
     load_market_price_table,
     load_bid_stack_table,
+    load_customer_transfer_table,
     load_gas_quality_table,
     load_gas_model_tables,
     load_schedule_run_table,
@@ -88,6 +104,7 @@ from marimoserver.gas_dashboard import (
     read_parquet_table,
     render_dashboard_context_panel,
     render_bid_stack_context_links,
+    render_customer_transfer_context_links,
     render_market_price_context_links,
     render_schedule_run_context_links,
     render_settlement_activity_context_links,
@@ -1378,6 +1395,347 @@ def test_settlement_activity_helpers_cover_missing_data_and_filter_empty_state()
     assert "current filters do not match" in filtered_markdown
     assert "did not receive a settlement activity load result" in missing_load_markdown
     assert "No Settlement, Allocation, Participant, Gas Day, or Schedule" in (
+        empty_context_links
+    )
+    assert "Unavailable dashboard" in unmounted_context_links
+
+
+def test_customer_transfer_table_loader_uses_bounded_recent_view() -> None:
+    captured: list[int | None] = []
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "12",
+        }
+    )
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        captured.append(row_limit)
+        assert uri == (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_customer_transfer"
+        )
+        assert storage_options == config.storage_options()
+        return pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 1), date(2024, 1, 3)],
+                "market_code": ["older", "newer"],
+            }
+        )
+
+    load = load_customer_transfer_table(config, reader=reader)
+
+    assert captured == [12]
+    assert load.spec == CUSTOMER_TRANSFER_TABLE_SPEC
+    assert load.row_limit == 12
+    assert load.dataframe is not None
+    assert load.dataframe["market_code"].to_list() == ["newer", "older"]
+
+
+def test_cached_customer_transfer_table_loader_reuses_session_cache() -> None:
+    calls: list[int] = []
+    config = _dashboard_config()
+    cache: GasModelSessionCache = {}
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        calls.append(len(calls) + 1)
+        return pl.DataFrame({"market_code": [f"market-{calls[-1]}"]})
+
+    first_load = cached_load_customer_transfer_table(config, cache, reader=reader)
+    cached_load = cached_load_customer_transfer_table(config, cache, reader=reader)
+    refreshed_load = cached_load_customer_transfer_table(
+        config,
+        cache,
+        reader=reader,
+        refresh_token=1,
+    )
+
+    assert calls == [1, 2]
+    assert not first_load.cache_hit
+    assert cached_load.cache_hit
+    assert not refreshed_load.cache_hit
+    assert cached_load.dataframe is not None
+    assert cached_load.dataframe["market_code"].to_list() == ["market-1"]
+    assert refreshed_load.dataframe is not None
+    assert refreshed_load.dataframe["market_code"].to_list() == ["market-2"]
+
+
+def test_customer_transfer_summaries_filters_and_context_links() -> None:
+    int311_table = "silver.vicgas.silver_int311_v5_customer_transfers_1"
+    load = _customer_transfer_load(
+        pl.DataFrame(
+            {
+                "gas_date": ["2024-01-03", "2024-01-02", "2024-01-03"],
+                "market_code": ["VIC", "VIC", "NSW"],
+                "source_system": ["VICGAS", "VICGAS", "VICGAS"],
+                "source_table": [int311_table, int311_table, int311_table],
+                "transfers_lodged": [10, 5, 3],
+                "transfers_completed": [8, 4, 1],
+                "transfers_cancelled": [2, 1, 0],
+                "int_transfers_lodged": [1, 2, 0],
+                "int_transfers_completed": [1, 1, 0],
+                "int_transfers_cancelled": [0, 1, 0],
+                "greenfields_received": [7, 4, 2],
+                "source_surrogate_key": ["src-vic-1", "src-vic-2", "src-nsw-1"],
+                "source_file": ["int311-a.csv", "int311-b.csv", "int311-a.csv"],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 3, 3),
+                    datetime(2024, 1, 2, 3),
+                    datetime(2024, 1, 3, 4),
+                ],
+            }
+        )
+    )
+
+    observations = customer_transfer_observation_frame(
+        load,
+        "2024-01-03",
+        "VIC",
+        "VICGAS",
+    )
+    kpis = customer_transfer_kpi_frame(load)
+    summary = customer_transfer_summary_frame(load)
+    daily = customer_transfer_daily_frame(load)
+    source_coverage = customer_transfer_source_coverage_frame(load)
+    context_links = render_customer_transfer_context_links()
+
+    assert customer_transfer_gas_date_options(load) == (
+        CUSTOMER_TRANSFER_GAS_DATE_FILTER_ALL,
+        "2024-01-03",
+        "2024-01-02",
+    )
+    assert customer_transfer_market_code_options(load) == (
+        CUSTOMER_TRANSFER_MARKET_CODE_FILTER_ALL,
+        "NSW",
+        "VIC",
+    )
+    assert customer_transfer_source_system_options(load) == (
+        CUSTOMER_TRANSFER_SOURCE_SYSTEM_FILTER_ALL,
+        "VICGAS",
+    )
+    assert kpis.to_dict(as_series=False) == {
+        "metric": [
+            "Loaded customer transfer rows",
+            "Market codes",
+            "Source systems",
+            "Transfers lodged",
+            "Transfers completed",
+            "Transfers cancelled",
+            "Internal transfers lodged",
+            "Internal transfers completed",
+            "Internal transfers cancelled",
+            "Greenfields received",
+            "Latest gas date",
+        ],
+        "value": ["3", "2", "1", "18", "13", "3", "3", "2", "1", "13", "2024-01-03"],
+        "detail": [
+            "Full table scan",
+            "Distinct market_code values in the current view",
+            "Distinct source_system values in the current view",
+            "3 populated transfers_lodged rows",
+            "3 populated transfers_completed rows",
+            "3 populated transfers_cancelled rows",
+            "3 populated int_transfers_lodged rows",
+            "3 populated int_transfers_completed rows",
+            "3 populated int_transfers_cancelled rows",
+            "3 populated greenfields_received rows",
+            "Maximum gas_date in the loaded bounded rows",
+        ],
+    }
+    assert observations.select(
+        "gas date",
+        "market code",
+        "source system",
+        "source table",
+        "transfers_lodged",
+        "transfers_completed",
+        "transfers_cancelled",
+        "int_transfers_lodged",
+        "greenfields_received",
+        "source identifier",
+    ).to_dict(as_series=False) == {
+        "gas date": [date(2024, 1, 3)],
+        "market code": ["VIC"],
+        "source system": ["VICGAS"],
+        "source table": [int311_table],
+        "transfers_lodged": [10],
+        "transfers_completed": [8],
+        "transfers_cancelled": [2],
+        "int_transfers_lodged": [1],
+        "greenfields_received": [7],
+        "source identifier": ["src-vic-1"],
+    }
+    assert summary.select(
+        "market code",
+        "source system",
+        "source table",
+        "rows",
+        "gas days",
+        "transfers lodged",
+        "transfers completed",
+        "transfers cancelled",
+        "internal transfers lodged",
+        "greenfields received",
+        "latest gas date",
+    ).to_dict(as_series=False) == {
+        "market code": ["VIC", "NSW"],
+        "source system": ["VICGAS", "VICGAS"],
+        "source table": [int311_table, int311_table],
+        "rows": [2, 1],
+        "gas days": [2, 1],
+        "transfers lodged": [15, 3],
+        "transfers completed": [12, 1],
+        "transfers cancelled": [3, 0],
+        "internal transfers lodged": [3, 0],
+        "greenfields received": [11, 2],
+        "latest gas date": [date(2024, 1, 3), date(2024, 1, 3)],
+    }
+    assert daily.select(
+        "gas date",
+        "market code",
+        "transfers lodged",
+        "transfers completed",
+        "transfers cancelled",
+        "internal transfers lodged",
+        "greenfields received",
+    ).to_dict(as_series=False) == {
+        "gas date": [date(2024, 1, 3), date(2024, 1, 3), date(2024, 1, 2)],
+        "market code": ["NSW", "VIC", "VIC"],
+        "transfers lodged": [3, 10, 5],
+        "transfers completed": [1, 8, 4],
+        "transfers cancelled": [0, 2, 1],
+        "internal transfers lodged": [0, 1, 2],
+        "greenfields received": [2, 7, 4],
+    }
+    assert source_coverage.select(
+        "source system",
+        "source table",
+        "rows",
+        "market codes",
+        "gas days",
+        "source files",
+        "source identifiers",
+    ).to_dict(as_series=False) == {
+        "source system": ["VICGAS"],
+        "source table": [int311_table],
+        "rows": [3],
+        "market codes": [2],
+        "gas days": [2],
+        "source files": [2],
+        "source identifiers": [3],
+    }
+    assert 'href="/marimo/gas_customer_transfer_activity/"' in context_links
+    assert "Customer Transfer And Retail Activity" in context_links
+    assert "Participant Context" in context_links
+    assert "Gas Day Context" in context_links
+    assert "Settlement Context" in context_links
+
+
+def test_customer_transfer_helpers_cover_missing_data_and_filter_empty_state() -> None:
+    empty_load = _customer_transfer_load(pl.DataFrame(), row_limit=6)
+    populated_load = _customer_transfer_load(
+        pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 3)],
+                "market_code": ["VIC"],
+                "source_system": ["VICGAS"],
+                "transfers_lodged": [10],
+            }
+        )
+    )
+    missing_date_load = _customer_transfer_load(
+        pl.DataFrame(
+            {
+                "market_code": ["VIC"],
+                "source_system": ["VICGAS"],
+                "transfers_lodged": [10],
+            }
+        )
+    )
+    no_measure_load = _customer_transfer_load(
+        pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 3)],
+                "market_code": ["VIC"],
+                "source_system": ["VICGAS"],
+            }
+        )
+    )
+    error_load = GasTableLoad(
+        spec=CUSTOMER_TRANSFER_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_customer_transfer",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=6,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+    assert customer_transfer_kpi_frame(empty_load).is_empty()
+    assert customer_transfer_summary_frame(empty_load).is_empty()
+    assert customer_transfer_daily_frame(empty_load).is_empty()
+    assert customer_transfer_source_coverage_frame(empty_load).is_empty()
+    assert customer_transfer_observation_frame(empty_load).is_empty()
+    assert customer_transfer_gas_date_options(empty_load) == (
+        CUSTOMER_TRANSFER_GAS_DATE_FILTER_ALL,
+    )
+    assert customer_transfer_market_code_options(empty_load) == (
+        CUSTOMER_TRANSFER_MARKET_CODE_FILTER_ALL,
+    )
+    assert customer_transfer_source_system_options(empty_load) == (
+        CUSTOMER_TRANSFER_SOURCE_SYSTEM_FILTER_ALL,
+    )
+    assert customer_transfer_kpi_frame(
+        populated_load,
+        gas_date_filter="2024-01-04",
+    ).is_empty()
+    assert customer_transfer_kpi_frame(missing_date_load).row(10, named=True) == {
+        "metric": "Latest gas date",
+        "value": "unknown",
+        "detail": "Maximum gas_date in the loaded bounded rows",
+    }
+    assert customer_transfer_kpi_frame(no_measure_load).row(3, named=True) == {
+        "metric": "Transfers lodged",
+        "value": "unknown",
+        "detail": "0 populated transfers_lodged rows",
+    }
+
+    empty_markdown = customer_transfer_empty_state_markdown(empty_load)
+    error_markdown = customer_transfer_empty_state_markdown(error_load)
+    filtered_markdown = customer_transfer_empty_state_markdown(populated_load)
+    missing_load_markdown = customer_transfer_empty_state_markdown(None)
+    empty_context_links = render_customer_transfer_context_links(entries=())
+    unmounted_entry = DashboardRegistryEntry(
+        concept_id="gas-customer-transfer-activity",
+        title="Unmounted Customer Transfer",
+        description="Available entry without a mounted notebook route.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.silver_gas_fact_customer_transfer",),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+    unmounted_context_links = render_customer_transfer_context_links(
+        entries=(unmounted_entry,)
+    )
+
+    assert "No customer transfer data is available" in empty_markdown
+    assert "silver.gas_model.silver_gas_fact_customer_transfer" in empty_markdown
+    assert "Bounded preview reads are capped at `6` rows per table" in empty_markdown
+    assert "FileNotFoundError: no parquet files found" in error_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert "did not receive a customer transfer load result" in missing_load_markdown
+    assert "No Customer transfer, Participant, Gas Day, or Settlement" in (
         empty_context_links
     )
     assert "Unavailable dashboard" in unmounted_context_links
@@ -2827,6 +3185,22 @@ def _gas_quality_load(
     return GasTableLoad(
         spec=GAS_QUALITY_TABLE_SPEC,
         uri=f"s3://bucket/silver/gas_model/{GAS_QUALITY_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _customer_transfer_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=CUSTOMER_TRANSFER_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{CUSTOMER_TRANSFER_TABLE_NAME}",
         dataframe=dataframe,
         error=None,
         row_limit=row_limit,

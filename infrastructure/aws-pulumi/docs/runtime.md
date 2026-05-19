@@ -314,6 +314,9 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   The gas settlement activity dashboard reads the curated settlement activity
   fact through the same bounded helper surface and does not add AWS write
   paths.
+  The customer transfer and retail activity dashboard reads the curated
+  customer transfer fact through the same bounded helper surface and does not
+  add AWS write paths.
   The gas Bid / Offer stack dashboard reads the curated bid stack fact through
   the same bounded helper surface and does not add AWS write paths.
   The gas system notices dashboard reads the curated system notice fact through
@@ -367,6 +370,7 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
+  - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/caddy/Dockerfile`
