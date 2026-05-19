@@ -743,8 +743,20 @@ Use `--inspect-run <run_dir>` first when a terminal shows a post-push metadata
 failure, a completed issue looks inconsistent in GitHub, or an AFK run needs a
 read-only summary. Inspection reads only `<run_dir>/ralph-run.json` and reports
 the issue, **Delivery mode**, **Integration target**, QA status, push status,
-metadata status, and recommended next action. It does not call `gh`, run git
-commands, edit labels, comment, close issues, or change refs.
+metadata status, Issue completion review status, requeue eligibility, and
+recommended next action. It does not call `gh`, run git commands, edit labels,
+comment, close issues, or change refs.
+
+For failed implementation runs with no recorded `integration_commit`,
+inspection classifies whether the run is eligible for future Ralph-owned
+requeue recovery. Eligible runs must have passed implementation QA, passed
+Issue completion review or skipped it because it was not required, and have no
+recorded **Integration target** push. Inspection distinguishes those safe
+pre-push failures from runs that already recorded an `integration_commit` or a
+pushed **Integration target**. The requeue section also prints the Ralph-owned
+worktree paths, local issue branch, label reconciliation evidence such as
+`agent-failed` and `ready-for-agent`, changed files, QA/review evidence, and
+the failure log that a future requeue command would need to reconcile.
 
 Use `--recover-run <run_dir>` only for implementation runs whose manifest
 records a published implementation commit. Recovery fetches the expected target

@@ -9058,6 +9058,32 @@ def ready_issue_refresh_status_value(manifest: RunManifest) -> str:
     return str(refresh.get("status") or "not_started")
 
 
+def issue_completion_review_status_value(manifest: RunManifest) -> str:
+    review = manifest.data.get("issue_completion_review")
+    if not isinstance(review, dict):
+        return "not_started"
+    return str(review.get("status") or "not_started")
+
+
+def issue_completion_review_summary(manifest: RunManifest) -> str:
+    review = manifest.data.get("issue_completion_review")
+    if not isinstance(review, dict):
+        return "not_started"
+    status = str(review.get("status") or "not_started")
+    result = str(review.get("result") or "")
+    if result:
+        return f"{status} ({result})"
+    attempts = review.get("attempts")
+    if isinstance(attempts, list):
+        for item in reversed(attempts):
+            if not isinstance(item, dict):
+                continue
+            attempt_result = str(item.get("result") or "")
+            if attempt_result:
+                return f"{status} ({attempt_result})"
+    return status
+
+
 def branch_sync_status_value(manifest: RunManifest) -> str:
     sync = manifest.data.get("branch_sync")
     if not isinstance(sync, dict):
@@ -9073,6 +9099,181 @@ def metadata_recovery_complete_status(mode: str) -> str:
     if mode == EXPLORATORY_MODE:
         return "marked_reviewing"
     raise ValueError(f"Unsupported delivery mode: {mode}")
+
+
+def manifest_has_recorded_integration_commit(manifest: RunManifest) -> bool:
+    return (
+        normalized_commit_payload(manifest.data.get("integration_commit")) is not None
+    )
+
+
+def qa_results_passed_for_requeue(manifest: RunManifest) -> bool:
+    results = manifest.data.get("qa_results")
+    if not isinstance(results, list) or not results:
+        return False
+    statuses = [
+        str(item.get("status") or "unknown")
+        for item in results
+        if isinstance(item, dict)
+    ]
+    return bool(statuses) and all(status == "passed" for status in statuses)
+
+
+def issue_completion_review_passed_for_requeue(manifest: RunManifest) -> bool:
+    status = issue_completion_review_status_value(manifest)
+    return status in {"passed", "skipped_not_required"}
+
+
+def manifest_branch_value(manifest: RunManifest, name: str) -> str:
+    branches = manifest.data.get("branches")
+    if not isinstance(branches, dict):
+        return "not_recorded"
+    value = str(branches.get(name) or "")
+    return value or "not_recorded"
+
+
+def manifest_path_value(manifest: RunManifest, name: str) -> str:
+    paths = manifest.data.get("paths")
+    if not isinstance(paths, dict):
+        return "not_recorded"
+    value = str(paths.get(name) or "")
+    return value or "not_recorded"
+
+
+def requeue_label_evidence(manifest: RunManifest) -> tuple[str, ...]:
+    metadata = manifest.data.get("github_metadata")
+    manifest_adds: list[str] = []
+    manifest_removals: list[str] = []
+    if isinstance(metadata, dict):
+        add_labels = metadata.get("add_labels")
+        if isinstance(add_labels, list):
+            manifest_adds = [str(label) for label in add_labels]
+        remove_labels = metadata.get("remove_labels")
+        if isinstance(remove_labels, list):
+            manifest_removals = [str(label) for label in remove_labels]
+
+    lines = [
+        (f"future requeue would add {READY_LABEL} and remove {AGENT_FAILED_LABEL}"),
+        (
+            "future requeue would confirm no stale runtime labels: "
+            f"{AGENT_RUNNING_LABEL}, {AGENT_INTEGRATED_LABEL}, "
+            f"{AGENT_MERGED_LABEL}, {AGENT_REVIEWING_LABEL}"
+        ),
+    ]
+    if manifest_adds or manifest_removals:
+        lines.append(
+            "manifest failure labeling evidence: "
+            f"added {', '.join(manifest_adds) or 'none'}; "
+            f"removed {', '.join(manifest_removals) or 'none'}"
+        )
+    delivery_mode = str(manifest.data.get("delivery_mode") or "")
+    if delivery_mode in DELIVERY_MODES:
+        lines.append(
+            f"future requeue would preserve {delivery_label_for_mode(delivery_mode)}"
+        )
+    return tuple(lines)
+
+
+def run_failure_summary(manifest: RunManifest) -> str:
+    failure = manifest.data.get("failure")
+    if not isinstance(failure, dict):
+        return "not_recorded"
+    message = str(failure.get("message") or "not_recorded")
+    log_path = str(failure.get("log_path") or "")
+    if log_path:
+        return f"{message} (log: {log_path})"
+    return message
+
+
+def issue_completion_review_evidence(manifest: RunManifest) -> str:
+    review = manifest.data.get("issue_completion_review")
+    if not isinstance(review, dict):
+        return "not_recorded"
+    parts = [issue_completion_review_summary(manifest)]
+    artifact_path = str(review.get("artifact_path") or "")
+    log_path = str(review.get("log_path") or "")
+    if artifact_path:
+        parts.append(f"artifact: {artifact_path}")
+    if log_path:
+        parts.append(f"log: {log_path}")
+    return "; ".join(parts)
+
+
+def changed_files_summary(manifest: RunManifest) -> str:
+    changed_files = manifest.data.get("changed_files")
+    if not isinstance(changed_files, list):
+        return "not_recorded"
+    count = len([path for path in changed_files if isinstance(path, str)])
+    if count == 0:
+        return "none"
+    preview = [str(path) for path in changed_files[:5] if isinstance(path, str)]
+    suffix = "" if count <= len(preview) else f", ... ({count} total)"
+    return ", ".join(preview) + suffix
+
+
+def requeue_eligibility(manifest: RunManifest) -> tuple[str, tuple[str, ...]]:
+    run_kind = str(manifest.data.get("run_kind") or "")
+    if run_kind != "implementation":
+        return (
+            "not applicable",
+            ("run is not an implementation manifest",),
+        )
+
+    reasons: list[str] = []
+    if str(manifest.data.get("status") or "") != "failed":
+        reasons.append("run status is not failed")
+    if manifest_has_recorded_integration_commit(manifest):
+        reasons.append("manifest already records integration_commit")
+
+    push_status = push_status_value(manifest)
+    if push_status == "pushed":
+        reasons.append("manifest records a pushed Integration target")
+    elif push_status != "not_started":
+        reasons.append(f"Integration target push status is {push_status}")
+
+    if not qa_results_passed_for_requeue(manifest):
+        reasons.append("implementation QA did not fully pass")
+    if not issue_completion_review_passed_for_requeue(manifest):
+        reasons.append("Issue completion review did not pass or was not skipped")
+
+    if reasons:
+        return ("not eligible", tuple(reasons))
+    return (
+        "eligible",
+        (
+            "implementation QA passed",
+            "Issue completion review passed or was not required",
+            "no integration_commit was recorded",
+            "no Integration target push was recorded",
+        ),
+    )
+
+
+def emit_requeue_inspection(manifest: RunManifest) -> None:
+    status, reasons = requeue_eligibility(manifest)
+    reason_text = "; ".join(reasons)
+    emit(f"Requeue eligibility: {status} ({reason_text})")
+    if str(manifest.data.get("run_kind") or "") != "implementation":
+        return
+
+    emit("Requeue reconciliation evidence:")
+    emit(
+        "- Ralph-owned worktrees: "
+        f"container={manifest_path_value(manifest, 'worktree_container')}; "
+        f"implementation={manifest_path_value(manifest, 'implementation_worktree')}; "
+        f"integration={manifest_path_value(manifest, 'integration_worktree')}; "
+        f"branch_sync={manifest_path_value(manifest, 'branch_sync_worktree')}"
+    )
+    emit(f"- Local issue branch: {manifest_branch_value(manifest, 'issue')}")
+    for line in requeue_label_evidence(manifest):
+        emit(f"- GitHub labels: {line}")
+    emit(f"- Run evidence: QA {qa_status_summary(manifest)}")
+    emit(
+        "- Run evidence: Issue completion review "
+        f"{issue_completion_review_evidence(manifest)}"
+    )
+    emit(f"- Run evidence: changed files {changed_files_summary(manifest)}")
+    emit(f"- Run evidence: failure {run_failure_summary(manifest)}")
 
 
 def recommended_run_action(manifest: RunManifest) -> str:
@@ -9101,6 +9302,15 @@ def recommended_run_action(manifest: RunManifest) -> str:
         return (
             "Resolve the failed branch sync on the recorded branch-sync worktree "
             "before rerunning Ralph drain."
+        )
+
+    eligibility_status, _eligibility_reasons = requeue_eligibility(manifest)
+    if eligibility_status == "eligible":
+        return (
+            "Run is eligible for future Ralph-owned requeue recovery after "
+            "reconciling the listed Ralph-owned worktrees, local issue branch, "
+            "and GitHub labels. --recover-run is not applicable because no "
+            "integration_commit was recorded."
         )
 
     try:
@@ -9160,7 +9370,9 @@ def inspect_run(run_dir: Path) -> None:
     emit(f"Branch sync status: {branch_sync_status_value(manifest)}")
     emit(f"Push status: {push_status_summary(manifest)}")
     emit(f"Metadata status: {metadata_status_value(manifest)}")
+    emit(f"Issue completion review status: {issue_completion_review_summary(manifest)}")
     emit(f"Ready issue refresh status: {ready_issue_refresh_status_value(manifest)}")
+    emit_requeue_inspection(manifest)
     if str(manifest.data.get("status") or "") == EXPLORATORY_ACCEPTANCE_CONFLICT_STATUS:
         acceptance_path = manifest_acceptance_worktree_path(manifest)
         emit(f"Paused acceptance worktree: {acceptance_path}")

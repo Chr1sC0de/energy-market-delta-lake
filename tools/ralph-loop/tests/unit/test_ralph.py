@@ -1103,6 +1103,110 @@ def write_recovery_manifest(
     return run_dir
 
 
+def write_failed_pre_push_requeue_manifest(tmp_path: Path) -> Path:
+    run_dir = tmp_path / "logs" / "issue-234-20260504T010203Z"
+    repo_root = tmp_path / "repo"
+    worktree_container = tmp_path / "worktrees"
+    implementation_worktree = worktree_container / "agent-issue-234"
+    integration_worktree = worktree_container / "agent-integrate-issue-234"
+    review_artifact = run_dir / "issue-completion-review.md"
+    review_log = run_dir / "codex-issue-completion-review.jsonl"
+    failure_log = run_dir / "integration-git-commit.log"
+    run_dir.mkdir(parents=True)
+    manifest = {
+        "schema_version": ralph.MANIFEST_SCHEMA_VERSION,
+        "run_kind": "implementation",
+        "status": "failed",
+        "stage": "failed",
+        "repo": "example/repo",
+        "issue": {
+            "number": 234,
+            "title": "Fix Marimo dashboard",
+            "url": "https://github.com/example/repo/issues/234",
+        },
+        "delivery_mode": ralph.GITFLOW_MODE,
+        "integration_target": ralph.DEFAULT_GITFLOW_BRANCH,
+        "branches": {
+            "issue": "agent/issue-234-fix-marimo-dashboard",
+            "integration_target": ralph.DEFAULT_GITFLOW_BRANCH,
+        },
+        "paths": {
+            "run_dir": str(run_dir),
+            "repo_root": str(repo_root),
+            "worktree_container": str(worktree_container),
+            "implementation_worktree": str(implementation_worktree),
+            "integration_worktree": str(integration_worktree),
+            "branch_sync_worktree": None,
+        },
+        "changed_files": [
+            "backend-services/marimo/notebooks/dashboard.py",
+            "backend-services/marimo/tests/component/test_dashboard.py",
+        ],
+        "qa_results": [
+            {
+                "name": "Marimo Component tests",
+                "command": ["uv", "run", "pytest", "tests/component"],
+                "cwd": str(repo_root / "backend-services" / "marimo"),
+                "log_path": str(run_dir / "qa-marimo-component.log"),
+                "status": "passed",
+            },
+            {
+                "name": "Marimo Commit check",
+                "command": ["prek", "run", "-a"],
+                "cwd": str(repo_root / "backend-services" / "marimo"),
+                "log_path": str(run_dir / "qa-marimo-prek.log"),
+                "status": "passed",
+            },
+            {
+                "name": "Root Commit check",
+                "command": ["prek", "run", "-a"],
+                "cwd": str(repo_root),
+                "log_path": str(run_dir / "qa-root-prek.log"),
+                "status": "passed",
+            },
+        ],
+        "issue_completion_review": {
+            "enabled": True,
+            "required": True,
+            "status": "passed",
+            "reasons": ["agent_workflow_change"],
+            "log_path": str(review_log),
+            "artifact_path": str(review_artifact),
+            "attempts": [
+                {
+                    "attempt": 1,
+                    "status": "passed",
+                    "log_path": str(review_log),
+                    "artifact_path": str(review_artifact),
+                    "result": "pass",
+                }
+            ],
+            "repair_attempts": [],
+            "failure": None,
+        },
+        "integration_commit": None,
+        "pushes": {},
+        "github_metadata": {
+            "status": "failure_commented",
+            "add_labels": [ralph.AGENT_FAILED_LABEL],
+            "remove_labels": [ralph.AGENT_RUNNING_LABEL, ralph.READY_LABEL],
+        },
+        "failure": {
+            "message": "Command failed: git commit",
+            "log_path": str(failure_log),
+        },
+        "events": [
+            {"stage": "committing_local_integration", "status": "running"},
+            {"stage": "failed", "status": "failed"},
+        ],
+    }
+    (run_dir / "ralph-run.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return run_dir
+
+
 def issue_view_output(*, labels: list[str] | None = None) -> str:
     return json.dumps(
         {
@@ -5941,7 +6045,61 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
         self.assertIn("QA status: passed (1/1)", text)
         self.assertIn("Push status: pushed (main @ abc1234)", text)
         self.assertIn("Metadata status: completion_commented", text)
+        self.assertIn("Requeue eligibility: not eligible", text)
+        self.assertIn("manifest already records integration_commit", text)
+        self.assertIn("manifest records a pushed Integration target", text)
         self.assertIn("--recover-run", text)
+
+    def test_inspect_run_reports_requeue_eligible_pre_push_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = write_failed_pre_push_requeue_manifest(tmp_path)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.inspect_run(run_dir)
+
+        text = output.getvalue()
+        self.assertIn("Issue: #234 Fix Marimo dashboard", text)
+        self.assertIn("Delivery mode: gitflow", text)
+        self.assertIn("Integration target: dev", text)
+        self.assertIn("QA status: passed (3/3)", text)
+        self.assertIn("Issue completion review status: passed (pass)", text)
+        self.assertIn("Push status: not_started", text)
+        self.assertIn("Requeue eligibility: eligible", text)
+        self.assertIn("implementation QA passed", text)
+        self.assertIn("no integration_commit was recorded", text)
+        self.assertIn("no Integration target push was recorded", text)
+        self.assertIn(
+            f"container={tmp_path / 'worktrees'}; "
+            f"implementation={tmp_path / 'worktrees' / 'agent-issue-234'}; "
+            f"integration={tmp_path / 'worktrees' / 'agent-integrate-issue-234'}",
+            text,
+        )
+        self.assertIn(
+            "Local issue branch: agent/issue-234-fix-marimo-dashboard",
+            text,
+        )
+        self.assertIn(
+            "GitHub labels: future requeue would add ready-for-agent and remove agent-failed",
+            text,
+        )
+        self.assertIn(
+            "manifest failure labeling evidence: added agent-failed; "
+            "removed agent-running, ready-for-agent",
+            text,
+        )
+        self.assertIn(
+            "GitHub labels: future requeue would preserve delivery-gitflow", text
+        )
+        self.assertIn(
+            "Run evidence: Issue completion review passed (pass); artifact:",
+            text,
+        )
+        self.assertIn("Run evidence: failure Command failed: git commit", text)
+        self.assertIn("integration-git-commit.log", text)
+        self.assertIn("--recover-run is not applicable", text)
+        self.assertNotIn("python3 scripts/ralph.py --recover-run", text)
 
     def test_inspect_run_reports_branch_sync_recovery_guidance(self) -> None:
         guidance = "Inspect `/worktrees/agent-sync-main-into-dev` before rerunning Ralph drain."
