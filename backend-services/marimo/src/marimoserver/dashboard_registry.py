@@ -38,7 +38,7 @@ ROADMAP_AUDIENCES: tuple[DashboardAudience, ...] = (
 type DashboardRegistryRecord = Mapping[str, object]
 
 _MISSING = object()
-_REGISTRY_BACKED_CONCEPT_IDS = frozenset({"glossary-explorer"})
+_REGISTRY_BACKED_CONCEPT_IDS = frozenset({"glossary-explorer", "s3-bucket-health"})
 
 
 @dataclass(frozen=True)
@@ -265,6 +265,21 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_connection_point_flow",
             "silver.gas_model.silver_gas_fact_capacity_outlook",
         ),
+        "generated_gold_paths": (),
+        "source_chunk_ids": (),
+    },
+    {
+        "concept_id": "s3-bucket-health",
+        "title": "S3 Bucket Health",
+        "description": (
+            "Available platform operations dashboard for configured "
+            "S3-compatible bucket reachability, object scans, truncation, "
+            "errors, and Delta or Parquet table-prefix discovery."
+        ),
+        "audiences": ("platform-operations", "operator", "data-engineer"),
+        "status": "available",
+        "notebook_name": "s3_bucket_health",
+        "backing_assets": (),
         "generated_gold_paths": (),
         "source_chunk_ids": (),
     },

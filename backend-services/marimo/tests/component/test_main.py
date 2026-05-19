@@ -250,6 +250,7 @@ class TestNotebooksDir:
             "gbb_interactive_map",
             "table_explorer",
             "data_readiness_overview",
+            "s3_bucket_health",
             "test_notebook",
         ):
             assert (NOTEBOOKS_DIR / f"{name}.py").is_file()
@@ -268,6 +269,7 @@ class TestAppDiscovery:
             "gbb_interactive_map",
             "table_explorer",
             "data_readiness_overview",
+            "s3_bucket_health",
             "glossary_explorer",
         } <= set(app_names)
 

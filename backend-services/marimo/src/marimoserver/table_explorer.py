@@ -4,6 +4,7 @@ from collections.abc import Hashable, Iterable, Mapping, MutableMapping, Sequenc
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from html import escape
 from io import BytesIO
 import os
 import posixpath
@@ -94,6 +95,16 @@ class TableAvailability(StrEnum):
     GRAPHQL_UNAVAILABLE = "GraphQL unavailable"
 
 
+class BucketHealthState(StrEnum):
+    """Operator-facing S3-compatible bucket health state."""
+
+    REACHABLE = "Reachable"
+    EMPTY = "Empty"
+    TRUNCATED = "Truncated"
+    MISSING = "Missing"
+    UNAVAILABLE = "Unavailable"
+
+
 @dataclass(frozen=True)
 class TableExplorerConfig:
     """Environment-derived settings for table exploration."""
@@ -154,6 +165,42 @@ class BucketStatus:
     table_count: int
     truncated: bool
     error: str | None
+
+
+@dataclass(frozen=True)
+class BucketHealthSummary:
+    """Aggregate storage-health summary for the S3 bucket health dashboard."""
+
+    runtime_location: str
+    configured_bucket_count: int
+    checked_bucket_count: int
+    reachable_bucket_count: int
+    populated_bucket_count: int
+    empty_bucket_count: int
+    truncated_bucket_count: int
+    missing_bucket_count: int
+    unavailable_bucket_count: int
+    object_count: int
+    table_prefix_count: int
+    delta_table_prefix_count: int
+    parquet_table_prefix_count: int
+    discovery_object_limit: int
+    bucket_listing_error: str | None
+
+    @property
+    def degraded_bucket_count(self) -> int:
+        """Return the number of bucket rows needing operator attention."""
+        return (
+            self.empty_bucket_count
+            + self.truncated_bucket_count
+            + self.missing_bucket_count
+            + self.unavailable_bucket_count
+        )
+
+    @property
+    def aws_runtime(self) -> bool:
+        """Return whether the summary came from AWS deployment mode."""
+        return self.runtime_location == AWS_DEVELOPMENT_LOCATION
 
 
 @dataclass(frozen=True)
@@ -432,6 +479,255 @@ def discover_storage(
         tables=tuple(sorted(tables, key=lambda table: table.table_id)),
         bucket_listing_error=bucket_listing_error,
     )
+
+
+def bucket_health_state(bucket: BucketStatus) -> BucketHealthState:
+    """Return the operator-facing health state for one configured bucket."""
+    if bucket.error is not None:
+        if _bucket_error_is_missing(bucket.error):
+            return BucketHealthState.MISSING
+        return BucketHealthState.UNAVAILABLE
+    if bucket.truncated:
+        return BucketHealthState.TRUNCATED
+    if bucket.object_count == 0:
+        return BucketHealthState.EMPTY
+    return BucketHealthState.REACHABLE
+
+
+def build_bucket_health_summary(
+    config: TableExplorerConfig,
+    discovery: StorageDiscovery,
+    object_limit_per_bucket: int = DEFAULT_DISCOVERY_OBJECT_LIMIT,
+) -> BucketHealthSummary:
+    """Build aggregate storage-health metrics for the dashboard first viewport."""
+    states = [bucket_health_state(bucket) for bucket in discovery.buckets]
+    table_format_counts = _table_format_counts(discovery.tables)
+
+    return BucketHealthSummary(
+        runtime_location=config.runtime_location,
+        configured_bucket_count=len(config.default_buckets),
+        checked_bucket_count=len(discovery.buckets),
+        reachable_bucket_count=sum(
+            1 for bucket in discovery.buckets if bucket.reachable
+        ),
+        populated_bucket_count=sum(
+            1
+            for bucket in discovery.buckets
+            if bucket.reachable and bucket.object_count > 0
+        ),
+        empty_bucket_count=states.count(BucketHealthState.EMPTY),
+        truncated_bucket_count=states.count(BucketHealthState.TRUNCATED),
+        missing_bucket_count=states.count(BucketHealthState.MISSING),
+        unavailable_bucket_count=states.count(BucketHealthState.UNAVAILABLE),
+        object_count=sum(bucket.object_count for bucket in discovery.buckets),
+        table_prefix_count=len(discovery.tables),
+        delta_table_prefix_count=table_format_counts[TableFormat.DELTA],
+        parquet_table_prefix_count=table_format_counts[TableFormat.PARQUET],
+        discovery_object_limit=object_limit_per_bucket,
+        bucket_listing_error=discovery.bucket_listing_error,
+    )
+
+
+def s3_bucket_health_frame(discovery: StorageDiscovery) -> pl.DataFrame:
+    """Return bucket health rows for configured bucket operations."""
+    format_counts_by_bucket = _table_format_counts_by_bucket(discovery.tables)
+    rows: list[dict[str, object]] = []
+
+    for bucket in discovery.buckets:
+        state = bucket_health_state(bucket)
+        format_counts = format_counts_by_bucket.get(bucket.name, {})
+        rows.append(
+            {
+                "bucket": bucket.name,
+                "configured": bucket.is_default,
+                "discovered locally": bucket.discovered,
+                "status": state.value,
+                "objects scanned": bucket.object_count,
+                "table prefixes": bucket.table_count,
+                "Delta prefixes": format_counts.get(TableFormat.DELTA, 0),
+                "Parquet prefixes": format_counts.get(TableFormat.PARQUET, 0),
+                "truncated": bucket.truncated,
+                "detail": bucket.error or _bucket_detail(bucket),
+                "action": _bucket_health_action(state),
+            }
+        )
+
+    if rows:
+        return pl.DataFrame(rows)
+
+    return pl.DataFrame(
+        [
+            {
+                "bucket": "No configured buckets",
+                "configured": False,
+                "discovered locally": False,
+                "status": BucketHealthState.EMPTY.value,
+                "objects scanned": 0,
+                "table prefixes": 0,
+                "Delta prefixes": 0,
+                "Parquet prefixes": 0,
+                "truncated": False,
+                "detail": discovery.bucket_listing_error or "",
+                "action": (
+                    "Configure MARIMO_TABLE_BUCKETS or the default bucket "
+                    "environment, then refresh storage health."
+                ),
+            }
+        ]
+    )
+
+
+def table_prefix_discovery_frame(
+    tables: Sequence[TablePrefix],
+) -> pl.DataFrame:
+    """Return discovered Delta and Parquet table-like prefixes."""
+    rows = [
+        {
+            "bucket": table.bucket,
+            "prefix": table.prefix or "(bucket root)",
+            "format": table.table_format.value,
+            "parquet files": len(table.parquet_files),
+            "uri": table.uri,
+        }
+        for table in tables
+    ]
+    if rows:
+        return pl.DataFrame(rows)
+
+    return pl.DataFrame(
+        [
+            {
+                "bucket": "No table prefixes discovered",
+                "prefix": "",
+                "format": "",
+                "parquet files": 0,
+                "uri": "",
+            }
+        ]
+    )
+
+
+def filter_table_prefixes(
+    tables: Sequence[TablePrefix],
+    *,
+    buckets: Sequence[str] = (),
+    formats: Sequence[str | TableFormat] = (),
+    search: str = "",
+) -> tuple[TablePrefix, ...]:
+    """Filter discovered table prefixes for notebook controls."""
+    bucket_filters = {bucket.strip().lower() for bucket in buckets if bucket.strip()}
+    format_filters = {
+        _table_format_filter_value(table_format).lower()
+        for table_format in formats
+        if _table_format_filter_value(table_format) != ""
+    }
+    search_term = search.strip().lower()
+    filtered: list[TablePrefix] = []
+
+    for table in tables:
+        if bucket_filters and table.bucket.lower() not in bucket_filters:
+            continue
+        if format_filters and table.table_format.value.lower() not in format_filters:
+            continue
+        if search_term and search_term not in _table_prefix_search_text(table):
+            continue
+        filtered.append(table)
+
+    return tuple(filtered)
+
+
+def storage_health_action_markdown(summary: BucketHealthSummary) -> str:
+    """Return Markdown action guidance for degraded storage-health states."""
+    actions: list[str] = []
+
+    if summary.bucket_listing_error is not None:
+        actions.append(
+            "Bucket listing: local bucket enumeration failed; configured "
+            "bucket checks still ran where possible."
+        )
+    if summary.missing_bucket_count > 0:
+        actions.append(
+            "Missing buckets: provision the configured bucket or correct the "
+            "bucket environment value."
+        )
+    if summary.unavailable_bucket_count > 0:
+        actions.append(
+            "Unavailable buckets: check S3 endpoint reachability, credentials, "
+            "IAM permission, and bucket policy."
+        )
+    if summary.truncated_bucket_count > 0:
+        actions.append(
+            "Truncated buckets: object and table-prefix counts are capped by "
+            f"the `{summary.discovery_object_limit}` object discovery limit."
+        )
+    if summary.empty_bucket_count > 0:
+        actions.append(
+            "Empty buckets: seed LocalStack or materialize data before expecting "
+            "table prefixes."
+        )
+    if not actions and summary.table_prefix_count == 0:
+        actions.append(
+            "No table prefixes were discovered. Confirm data has been "
+            "materialized under Delta or Parquet table-like paths."
+        )
+
+    if not actions:
+        return "All checked buckets are reachable under the current configuration."
+    return "\n".join(f"- {action}" for action in actions)
+
+
+def render_storage_health_cards(summary: BucketHealthSummary) -> str:
+    """Render first-viewport storage-health KPI cards using repo theme tokens."""
+    listing_policy = (
+        "AWS mode checks configured buckets only; it does not list the account."
+        if summary.aws_runtime
+        else "Local mode checks configured buckets and discovers matching local buckets."
+    )
+    error_count = summary.missing_bucket_count + summary.unavailable_bucket_count
+    cards = (
+        _render_storage_health_card(
+            "Bucket reachability",
+            _summary_reachability_state(summary),
+            f"{summary.reachable_bucket_count}/{summary.checked_bucket_count}",
+            (f"{summary.configured_bucket_count} configured buckets. {listing_policy}"),
+        ),
+        _render_storage_health_card(
+            "Objects scanned",
+            _summary_object_state(summary),
+            _format_int(summary.object_count),
+            (
+                f"{summary.populated_bucket_count} populated, "
+                f"{summary.empty_bucket_count} empty, "
+                f"{summary.truncated_bucket_count} truncated."
+            ),
+        ),
+        _render_storage_health_card(
+            "Table prefixes",
+            _summary_table_state(summary),
+            _format_int(summary.table_prefix_count),
+            (
+                f"{summary.delta_table_prefix_count} Delta and "
+                f"{summary.parquet_table_prefix_count} Parquet prefixes."
+            ),
+        ),
+        _render_storage_health_card(
+            "Bucket errors",
+            _summary_error_state(summary),
+            _format_int(error_count),
+            (
+                f"{summary.missing_bucket_count} missing, "
+                f"{summary.unavailable_bucket_count} unavailable."
+            ),
+        ),
+    )
+    rendered_cards = "\n".join(cards)
+    return f"""\
+<style>
+{_storage_health_cards_css()}
+</style>
+<section class="storage-health-card-grid" aria-label="S3 bucket health summary">
+{rendered_cards}
+</section>"""
 
 
 def discover_table_catalogue(
@@ -796,6 +1092,207 @@ def format_materialization_timestamp(timestamp: float | None) -> str:
     if timestamp is None:
         return ""
     return datetime.fromtimestamp(timestamp, tz=UTC).isoformat()
+
+
+def _bucket_error_is_missing(error: str) -> bool:
+    normalized = error.casefold()
+    return (
+        "nosuchbucket" in normalized
+        or "not found" in normalized
+        or "notfound" in normalized
+        or "404" in normalized
+    )
+
+
+def _bucket_detail(bucket: BucketStatus) -> str:
+    if bucket.truncated:
+        return "Object listing reached the per-bucket discovery cap."
+    if bucket.reachable and bucket.object_count == 0:
+        return "Bucket is reachable but contains no listed objects."
+    if bucket.reachable:
+        return "Bucket is reachable."
+    return ""
+
+
+def _bucket_health_action(state: BucketHealthState) -> str:
+    if state is BucketHealthState.REACHABLE:
+        return "No action."
+    if state is BucketHealthState.EMPTY:
+        return "Seed LocalStack or materialize data before expecting table prefixes."
+    if state is BucketHealthState.TRUNCATED:
+        return "Review with the discovery cap in mind before trusting counts."
+    if state is BucketHealthState.MISSING:
+        return "Provision the bucket or correct the configured bucket name."
+    return "Check endpoint reachability, credentials, IAM permission, and policy."
+
+
+def _table_format_counts(
+    tables: Sequence[TablePrefix],
+) -> dict[TableFormat, int]:
+    counts = {table_format: 0 for table_format in TableFormat}
+    for table in tables:
+        counts[table.table_format] += 1
+    return counts
+
+
+def _table_format_counts_by_bucket(
+    tables: Sequence[TablePrefix],
+) -> dict[str, dict[TableFormat, int]]:
+    counts_by_bucket: dict[str, dict[TableFormat, int]] = {}
+    for table in tables:
+        if table.bucket not in counts_by_bucket:
+            counts_by_bucket[table.bucket] = {
+                table_format: 0 for table_format in TableFormat
+            }
+        counts_by_bucket[table.bucket][table.table_format] += 1
+    return counts_by_bucket
+
+
+def _table_format_filter_value(table_format: str | TableFormat) -> str:
+    if isinstance(table_format, TableFormat):
+        return table_format.value
+    return table_format.strip()
+
+
+def _table_prefix_search_text(table: TablePrefix) -> str:
+    return " ".join(
+        [
+            table.bucket,
+            table.prefix,
+            table.table_format.value,
+            table.uri,
+            " ".join(table.parquet_files),
+        ]
+    ).lower()
+
+
+def _summary_reachability_state(
+    summary: BucketHealthSummary,
+) -> BucketHealthState:
+    if summary.checked_bucket_count == 0:
+        return BucketHealthState.EMPTY
+    if summary.reachable_bucket_count == 0:
+        return BucketHealthState.UNAVAILABLE
+    if summary.truncated_bucket_count > 0:
+        return BucketHealthState.TRUNCATED
+    if summary.missing_bucket_count > 0 or summary.unavailable_bucket_count > 0:
+        return BucketHealthState.UNAVAILABLE
+    if summary.empty_bucket_count == summary.checked_bucket_count:
+        return BucketHealthState.EMPTY
+    return BucketHealthState.REACHABLE
+
+
+def _summary_object_state(summary: BucketHealthSummary) -> BucketHealthState:
+    if summary.truncated_bucket_count > 0:
+        return BucketHealthState.TRUNCATED
+    if summary.object_count == 0:
+        return BucketHealthState.EMPTY
+    return BucketHealthState.REACHABLE
+
+
+def _summary_table_state(summary: BucketHealthSummary) -> BucketHealthState:
+    if summary.truncated_bucket_count > 0:
+        return BucketHealthState.TRUNCATED
+    if summary.table_prefix_count == 0:
+        return BucketHealthState.EMPTY
+    return BucketHealthState.REACHABLE
+
+
+def _summary_error_state(summary: BucketHealthSummary) -> BucketHealthState:
+    if summary.missing_bucket_count > 0:
+        return BucketHealthState.MISSING
+    if summary.unavailable_bucket_count > 0 or summary.bucket_listing_error:
+        return BucketHealthState.UNAVAILABLE
+    return BucketHealthState.REACHABLE
+
+
+def _render_storage_health_card(
+    label: str,
+    state: BucketHealthState,
+    value: str,
+    detail: str,
+) -> str:
+    state_class = _bucket_state_css_class(state)
+    return f"""\
+    <article class="storage-health-card storage-health-card--{state_class}">
+        <div class="storage-health-card__topline">
+            <span>{escape(label)}</span>
+            <strong>{escape(state.value)}</strong>
+        </div>
+        <p class="storage-health-card__value">{escape(value)}</p>
+        <p>{escape(detail)}</p>
+    </article>"""
+
+
+def _bucket_state_css_class(state: BucketHealthState) -> str:
+    return state.value.lower().replace(" ", "-")
+
+
+def _format_int(value: int) -> str:
+    return f"{value:,}"
+
+
+def _storage_health_cards_css() -> str:
+    return """\
+.storage-health-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+    gap: 0.9rem;
+}
+
+.storage-health-card {
+    display: grid;
+    gap: 0.55rem;
+    min-width: 0;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-left-width: 5px;
+    border-radius: 8px;
+    padding: 0.9rem;
+    background: var(--emdl-panel, #ffffff);
+    color: var(--emdl-ink, #1b2324);
+}
+
+.storage-health-card--reachable {
+    border-left-color: var(--emdl-green, #3e7a54);
+}
+
+.storage-health-card--empty,
+.storage-health-card--truncated {
+    border-left-color: var(--emdl-amber, #b2682a);
+}
+
+.storage-health-card--missing,
+.storage-health-card--unavailable {
+    border-left-color: var(--emdl-red, #9e4839);
+}
+
+.storage-health-card__topline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.45rem;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.storage-health-card__topline strong {
+    color: var(--emdl-slate, #354348);
+}
+
+.storage-health-card__value {
+    margin: 0;
+    color: var(--emdl-slate, #354348);
+    font-size: 1.45rem;
+    font-weight: 760;
+    line-height: 1.1;
+}
+
+.storage-health-card p {
+    margin: 0;
+}"""
 
 
 def _discover_bucket_names(

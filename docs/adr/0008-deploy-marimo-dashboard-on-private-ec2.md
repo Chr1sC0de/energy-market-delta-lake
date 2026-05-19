@@ -30,6 +30,11 @@ dashboard metadata, including generated-gold paths and source chunk IDs, but the
 deployed service does not read Gas market knowledge base generated files at
 runtime.
 
+The curated image includes an S3 Bucket Health dashboard for configured
+S3-compatible bucket reachability, object scans, truncation, bucket errors, and
+Delta or Parquet table-prefix discovery. AWS mode checks the configured buckets
+only and does not require account-wide S3 bucket listing permission.
+
 The `/marimo` entry route renders the same registry as a concept gallery hub.
 Available dashboard cards link to mounted notebook routes, while planned
 dashboard cards stay visible without notebook links. Registry-only notebooks
@@ -91,6 +96,12 @@ It reuses the existing S3 discovery, Dagster GraphQL catalogue, and bounded-read
 helper surfaces to show platform operations readiness without changing Dagster
 asset definitions, ETL materialization behavior, LocalStack setup, or AWS
 infrastructure.
+
+The S3 Bucket Health dashboard stays inside the same boundary. It reuses the
+table explorer's configured-bucket S3 discovery and table-prefix classifier,
+then renders operator health states for reachable, empty, truncated, missing,
+and unavailable buckets without changing S3 write paths, LocalStack
+provisioning, bucket infrastructure, or ETL materialization behavior.
 
 The system notices dashboard stays inside the same boundary. It reads the
 curated `silver.gas_model.silver_gas_fact_system_notice` Parquet output through
@@ -162,6 +173,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
+  - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
@@ -173,6 +185,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/tests/component/test_dashboard_registry.py`
   - `backend-services/marimo/tests/component/test_main.py`
   - `backend-services/marimo/tests/component/test_local_image_split.py`
+  - `backend-services/marimo/tests/component/test_table_explorer.py`
   - `backend-services/marimo/tests/component/test_data_readiness.py`
   - `backend-services/marimo/tests/component/test_dashboard_smoke.py`
   - `backend-services/marimo/tests/component/test_gas_dashboard.py`

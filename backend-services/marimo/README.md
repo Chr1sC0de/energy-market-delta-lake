@@ -13,6 +13,7 @@ Marimo-Codex research workspace image.
 - [Dashboard registry](#dashboard-registry)
 - [Glossary explorer](#glossary-explorer)
 - [Data readiness overview](#data-readiness-overview)
+- [S3 bucket health](#s3-bucket-health)
 - [Table explorer](#table-explorer)
 - [Gas market dashboard](#gas-market-dashboard)
 - [Market prices dashboard](#market-prices-dashboard)
@@ -172,6 +173,26 @@ GraphQL, and bounded AWS preview mode render as empty or degraded dashboard
 states with operator actions rather than notebook tracebacks. Use the Gas Model
 Table Explorer when a readiness row needs schema, rows, column metadata, or a
 bounded storage preview.
+
+## S3 bucket health
+
+[notebooks/s3_bucket_health.py](notebooks/s3_bucket_health.py) is the
+platform operations dashboard for configured S3-compatible bucket health and
+table-prefix discovery. It reuses
+[src/marimoserver/table_explorer.py](src/marimoserver/table_explorer.py)
+instead of adding notebook-local S3 access paths.
+
+The dashboard checks the configured AEMO, landing, archive, and IO-manager
+buckets, shows first-viewport reachability and object-scan KPIs, and renders
+bucket rows for reachable, empty, truncated, missing, and unavailable states.
+Table-prefix discovery distinguishes Delta prefixes with `_delta_log/` from
+Parquet table-like prefixes with parquet files, and the table-prefix controls
+filter by bucket, format, and prefix search.
+
+AWS mode keeps the same configured-bucket boundary as the table explorer:
+`MARIMO_TABLE_BUCKETS` or the AWS bucket environment defines the checked
+buckets, account-wide S3 bucket listing is skipped, discovery is capped at
+10,000 objects per bucket, and the dashboard remains read-only.
 
 ## Table explorer
 
@@ -474,7 +495,7 @@ controls, data reads, Plotly traces, or dashboard routes.
 
 With the local backend stack running, open the Marimo concept gallery through
 Caddy and choose an available card such as `data_readiness_overview`,
-`glossary_explorer`, `table_explorer`, `sample_energy_market`,
+`s3_bucket_health`, `glossary_explorer`, `table_explorer`, `sample_energy_market`,
 `gas_market_prices`, `gas_schedule_runs`, `system_notices`,
 `gas_settlement_activity`, `gas_customer_transfer_activity`,
 `gas_bid_offer_stack`, `gas_quality_composition`, or `gbb_interactive_map`:
@@ -511,6 +532,13 @@ Use the same pattern for the data readiness overview:
 ```bash
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/data_readiness_overview.py
+```
+
+Use the same pattern for the S3 bucket health dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/s3_bucket_health.py
 ```
 
 Use the same pattern for the glossary explorer:
@@ -665,6 +693,7 @@ prek run -a
   - `backend-services/marimo/notebooks/gbb_interactive_map.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
+  - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`

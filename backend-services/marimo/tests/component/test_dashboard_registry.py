@@ -79,6 +79,16 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert DashboardAudience.OPERATOR in readiness.audiences
     assert DashboardAudience.DATA_ENGINEER in readiness.audiences
 
+    storage_health = registry_entry_by_concept_id("s3-bucket-health", entries)
+    assert storage_health is not None
+    assert storage_health.status is DashboardStatus.AVAILABLE
+    assert storage_health.notebook_name == "s3_bucket_health"
+    assert storage_health.notebook_route == "/marimo/s3_bucket_health/"
+    assert storage_health.backing_assets == ()
+    assert DashboardAudience.PLATFORM_OPERATIONS in storage_health.audiences
+    assert DashboardAudience.OPERATOR in storage_health.audiences
+    assert DashboardAudience.DATA_ENGINEER in storage_health.audiences
+
     glossary = registry_entry_by_concept_id("glossary-explorer", entries)
     assert glossary is not None
     assert glossary.status is DashboardStatus.AVAILABLE

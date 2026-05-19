@@ -561,7 +561,8 @@ def _render_dashboard_card_body(
     )
     if len(entry.backing_assets) == 0:
         assets = (
-            '                    <li class="asset-pill">Registry metadata only</li>'
+            '                    <li class="asset-pill">'
+            "Registry or configuration metadata only</li>"
         )
     if len(entry.backing_assets) > 3:
         assets = (

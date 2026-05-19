@@ -306,9 +306,12 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   session-level cache keys, load timing, and row-limit messages rather than
   auto-refresh timers. The data readiness overview uses the same read-only S3
   and Dagster GraphQL helper surfaces to summarize platform operations
-  readiness without adding AWS write paths. The glossary explorer browses the
-  packaged Marimo registry for generated-gold metadata paths, source chunk IDs,
-  related concepts, and dashboard states without generated-file or table reads.
+  readiness without adding AWS write paths. The S3 Bucket Health dashboard
+  checks configured S3-compatible buckets and table-prefix discovery without
+  account-wide bucket listing or AWS write paths. The glossary explorer browses
+  the packaged Marimo registry for generated-gold metadata paths, source chunk
+  IDs, related concepts, and dashboard states without generated-file or table
+  reads.
   The gas market prices dashboard reads the curated market price fact through
   the same bounded helper surface and does not add AWS write paths.
   The gas schedule runs dashboard reads the curated schedule run fact through
@@ -367,6 +370,7 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
+  - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`

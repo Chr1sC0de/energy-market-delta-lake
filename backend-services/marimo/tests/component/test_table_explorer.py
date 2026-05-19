@@ -10,6 +10,7 @@ import pytest
 from marimoserver import table_explorer as explorer
 from marimoserver.table_explorer import (
     DEFAULT_LOCAL_BUCKETS,
+    BucketHealthState,
     BucketStatus,
     CataloguedTable,
     S3Client,
@@ -20,6 +21,8 @@ from marimoserver.table_explorer import (
     TableFormat,
     TablePrefix,
     TableScan,
+    bucket_health_state,
+    build_bucket_health_summary,
     cached_table_scan,
     catalogued_table_by_id,
     catalogued_table_group,
@@ -30,12 +33,17 @@ from marimoserver.table_explorer import (
     discover_storage,
     discover_table_explorer_config,
     explore_table_scan,
+    filter_table_prefixes,
     filter_catalogued_tables,
     format_materialization_timestamp,
     inspect_table,
     overlay_table_catalogue,
     read_delta_table,
     read_parquet_table,
+    render_storage_health_cards,
+    s3_bucket_health_frame,
+    storage_health_action_markdown,
+    table_prefix_discovery_frame,
     table_by_id,
 )
 from marimoserver.dagster_graphql import (
@@ -606,6 +614,268 @@ def test_discover_storage_skips_account_bucket_listing_in_aws_runtime() -> None:
     assert [table.table_id for table in discovery.tables] == [
         "prod-energy-market-aemo/silver/gas"
     ]
+    summary = build_bucket_health_summary(config, discovery)
+    html = render_storage_health_cards(summary)
+
+    assert summary.aws_runtime
+    assert "AWS mode checks configured buckets only" in html
+
+
+def test_s3_bucket_health_dashboard_helpers_cover_bucket_states() -> None:
+    delta_table = TablePrefix(
+        bucket="dev-energy-market-aemo",
+        prefix="silver/gas_model/delta",
+        table_format=TableFormat.DELTA,
+        parquet_files=("silver/gas_model/delta/part-000.parquet",),
+    )
+    parquet_table = TablePrefix(
+        bucket="dev-energy-market-archive",
+        prefix="archive/raw",
+        table_format=TableFormat.PARQUET,
+        parquet_files=("archive/raw/part-000.parquet",),
+    )
+    buckets = (
+        BucketStatus(
+            name="dev-energy-market-aemo",
+            is_default=True,
+            discovered=True,
+            reachable=True,
+            object_count=3,
+            table_count=1,
+            truncated=False,
+            error=None,
+        ),
+        BucketStatus(
+            name="dev-energy-market-landing",
+            is_default=True,
+            discovered=True,
+            reachable=True,
+            object_count=0,
+            table_count=0,
+            truncated=False,
+            error=None,
+        ),
+        BucketStatus(
+            name="dev-energy-market-archive",
+            is_default=True,
+            discovered=True,
+            reachable=True,
+            object_count=10_000,
+            table_count=1,
+            truncated=True,
+            error=None,
+        ),
+        BucketStatus(
+            name="dev-energy-market-io-manager",
+            is_default=True,
+            discovered=False,
+            reachable=False,
+            object_count=0,
+            table_count=0,
+            truncated=False,
+            error="ClientError: NoSuchBucket",
+        ),
+        BucketStatus(
+            name="dev-energy-market-denied",
+            is_default=False,
+            discovered=True,
+            reachable=False,
+            object_count=0,
+            table_count=0,
+            truncated=False,
+            error="ClientError: AccessDenied",
+        ),
+    )
+    discovery = StorageDiscovery(
+        buckets=buckets,
+        tables=(delta_table, parquet_table),
+        bucket_listing_error="ListBuckets denied",
+    )
+    config = discover_table_explorer_config({})
+
+    summary = build_bucket_health_summary(config, discovery)
+    bucket_frame = s3_bucket_health_frame(discovery)
+    prefix_frame = table_prefix_discovery_frame(discovery.tables)
+    filtered_prefixes = filter_table_prefixes(
+        discovery.tables,
+        buckets=("dev-energy-market-aemo",),
+        formats=(TableFormat.DELTA,),
+        search="silver",
+    )
+    action_markdown = storage_health_action_markdown(summary)
+    html = render_storage_health_cards(summary)
+
+    assert [bucket_health_state(bucket) for bucket in buckets] == [
+        BucketHealthState.REACHABLE,
+        BucketHealthState.EMPTY,
+        BucketHealthState.TRUNCATED,
+        BucketHealthState.MISSING,
+        BucketHealthState.UNAVAILABLE,
+    ]
+    assert summary.reachable_bucket_count == 3
+    assert summary.populated_bucket_count == 2
+    assert summary.empty_bucket_count == 1
+    assert summary.truncated_bucket_count == 1
+    assert summary.missing_bucket_count == 1
+    assert summary.unavailable_bucket_count == 1
+    assert summary.table_prefix_count == 2
+    assert summary.delta_table_prefix_count == 1
+    assert summary.parquet_table_prefix_count == 1
+    assert bucket_frame["status"].to_list() == [
+        BucketHealthState.REACHABLE.value,
+        BucketHealthState.EMPTY.value,
+        BucketHealthState.TRUNCATED.value,
+        BucketHealthState.MISSING.value,
+        BucketHealthState.UNAVAILABLE.value,
+    ]
+    assert bucket_frame["Delta prefixes"].to_list() == [1, 0, 0, 0, 0]
+    assert bucket_frame["Parquet prefixes"].to_list() == [0, 0, 1, 0, 0]
+    assert prefix_frame["format"].to_list() == [
+        TableFormat.DELTA.value,
+        TableFormat.PARQUET.value,
+    ]
+    assert filtered_prefixes == (delta_table,)
+    assert "Missing buckets" in action_markdown
+    assert "Truncated buckets" in action_markdown
+    assert 'class="storage-health-card storage-health-card--truncated"' in html
+    assert summary.degraded_bucket_count == 4
+
+
+def test_s3_bucket_health_dashboard_helpers_cover_empty_summary_branches() -> None:
+    config = discover_table_explorer_config({})
+    delta_table = TablePrefix(
+        bucket="dev-energy-market-aemo",
+        prefix="silver/gas_model/live",
+        table_format=TableFormat.DELTA,
+        parquet_files=("silver/gas_model/live/part-000.parquet",),
+    )
+    empty_discovery = StorageDiscovery(
+        buckets=(),
+        tables=(),
+        bucket_listing_error="ListBuckets denied",
+    )
+    ready_discovery = StorageDiscovery(
+        buckets=(
+            _bucket_status(
+                name="dev-energy-market-aemo",
+                reachable=True,
+                object_count=1,
+                table_count=1,
+            ),
+        ),
+        tables=(delta_table,),
+        bucket_listing_error=None,
+    )
+    no_table_discovery = StorageDiscovery(
+        buckets=(
+            _bucket_status(
+                name="dev-energy-market-aemo",
+                reachable=True,
+                object_count=1,
+                table_count=0,
+            ),
+        ),
+        tables=(),
+        bucket_listing_error=None,
+    )
+    all_empty_discovery = StorageDiscovery(
+        buckets=(
+            _bucket_status(
+                name="dev-energy-market-aemo",
+                reachable=True,
+                object_count=0,
+                table_count=0,
+            ),
+        ),
+        tables=(),
+        bucket_listing_error=None,
+    )
+    unavailable_discovery = StorageDiscovery(
+        buckets=(
+            _bucket_status(
+                name="dev-energy-market-aemo",
+                reachable=False,
+                object_count=0,
+                table_count=0,
+                error="ClientError: AccessDenied",
+            ),
+        ),
+        tables=(),
+        bucket_listing_error=None,
+    )
+    partial_unavailable_discovery = StorageDiscovery(
+        buckets=(
+            _bucket_status(
+                name="dev-energy-market-aemo",
+                reachable=True,
+                object_count=1,
+                table_count=1,
+            ),
+            _bucket_status(
+                name="dev-energy-market-landing",
+                reachable=False,
+                object_count=0,
+                table_count=0,
+                error="ClientError: AccessDenied",
+            ),
+        ),
+        tables=(delta_table,),
+        bucket_listing_error=None,
+    )
+    inconsistent_discovery = StorageDiscovery(
+        buckets=(
+            _bucket_status(
+                name="dev-energy-market-aemo",
+                reachable=False,
+                object_count=0,
+                table_count=0,
+            ),
+        ),
+        tables=(),
+        bucket_listing_error=None,
+    )
+
+    empty_summary = build_bucket_health_summary(config, empty_discovery)
+    ready_summary = build_bucket_health_summary(config, ready_discovery)
+    no_table_summary = build_bucket_health_summary(config, no_table_discovery)
+    all_empty_summary = build_bucket_health_summary(config, all_empty_discovery)
+    unavailable_summary = build_bucket_health_summary(config, unavailable_discovery)
+    partial_unavailable_summary = build_bucket_health_summary(
+        config,
+        partial_unavailable_discovery,
+    )
+
+    assert s3_bucket_health_frame(empty_discovery).row(0, named=True)["bucket"] == (
+        "No configured buckets"
+    )
+    assert table_prefix_discovery_frame(()).row(0, named=True)["bucket"] == (
+        "No table prefixes discovered"
+    )
+    assert filter_table_prefixes((delta_table,), formats=("Parquet",)) == ()
+    assert filter_table_prefixes((delta_table,), search="missing") == ()
+    assert storage_health_action_markdown(ready_summary) == (
+        "All checked buckets are reachable under the current configuration."
+    )
+    assert "No table prefixes were discovered" in storage_health_action_markdown(
+        no_table_summary
+    )
+    assert (
+        s3_bucket_health_frame(inconsistent_discovery).row(0, named=True)["detail"]
+        == ""
+    )
+    assert "storage-health-card--empty" in render_storage_health_cards(empty_summary)
+    assert "storage-health-card--empty" in render_storage_health_cards(
+        all_empty_summary
+    )
+    assert "storage-health-card--reachable" in render_storage_health_cards(
+        ready_summary
+    )
+    assert "storage-health-card--unavailable" in render_storage_health_cards(
+        unavailable_summary
+    )
+    assert "storage-health-card--unavailable" in render_storage_health_cards(
+        partial_unavailable_summary
+    )
 
 
 def test_classify_table_prefixes_handles_root_tables_and_case() -> None:
@@ -1096,6 +1366,27 @@ def _asset(
         is_materializable=True,
         is_executable=True,
         latest_materialization_timestamp=latest_materialization_timestamp,
+    )
+
+
+def _bucket_status(
+    *,
+    name: str,
+    reachable: bool,
+    object_count: int,
+    table_count: int,
+    error: str | None = None,
+    truncated: bool = False,
+) -> BucketStatus:
+    return BucketStatus(
+        name=name,
+        is_default=True,
+        discovered=True,
+        reachable=reachable,
+        object_count=object_count,
+        table_count=table_count,
+        truncated=truncated,
+        error=error,
     )
 
 
