@@ -12,6 +12,7 @@ Marimo-Codex research workspace image.
 - [Dashboard standard](#dashboard-standard)
 - [Dashboard registry](#dashboard-registry)
 - [Glossary explorer](#glossary-explorer)
+- [Concept-to-asset explorer](#concept-to-asset-explorer)
 - [Data readiness overview](#data-readiness-overview)
 - [AWS bounded read diagnostics](#aws-bounded-read-diagnostics)
 - [Dagster asset catalogue status](#dagster-asset-catalogue-status)
@@ -159,6 +160,24 @@ generated-gold paths or source chunk IDs render as validation-visible gaps
 inside the concept card rather than fallback prose. Its first viewport includes
 a registry health strip with source, freshness, concept count, scope,
 available-dashboard count, planned-dashboard count, and metadata-gap count.
+
+## Concept-to-asset explorer
+
+[notebooks/concept_to_asset_explorer.py](notebooks/concept_to_asset_explorer.py)
+is the registry-backed Market context to table explorer. It uses
+[src/marimoserver/concept_asset_explorer.py](src/marimoserver/concept_asset_explorer.py)
+to map generated-gold glossary concepts such as Flow, Capacity, Settlement,
+Facility, and Participant to backing `silver.gas_model` assets from the
+Marimo-local dashboard registry.
+
+The dashboard reads no table rows and does not open generated gold Markdown at
+runtime. Its first viewport shows registry health, mapped asset count,
+available dashboard count, planned dashboard count, and coverage-gap count.
+Concept cards link to mounted dashboard routes, planned concept-gallery cards,
+and Gas Model Table Explorer deep links where the registry asset can be
+resolved to a `silver/gas_model/<table>` entry. Concepts with no backing assets
+and registry assets without glossary concept coverage render as explicit
+coverage gaps.
 
 ## Data readiness overview
 
@@ -567,10 +586,11 @@ controls, data reads, Plotly traces, or dashboard routes.
 With the local backend stack running, open the Marimo concept gallery through
 Caddy and choose an available card such as `data_readiness_overview`,
 `dagster_asset_catalogue_status`, `s3_bucket_health`, `glossary_explorer`,
-`table_explorer`, `source_coverage_matrix`, `sample_energy_market`,
-`gas_market_prices`, `gas_schedule_runs`, `system_notices`,
-`gas_settlement_activity`, `gas_customer_transfer_activity`,
-`gas_bid_offer_stack`, `gas_quality_composition`, or `gbb_interactive_map`:
+`concept_to_asset_explorer`, `table_explorer`, `source_coverage_matrix`,
+`sample_energy_market`, `gas_market_prices`, `gas_schedule_runs`,
+`system_notices`, `gas_settlement_activity`,
+`gas_customer_transfer_activity`, `gas_bid_offer_stack`,
+`gas_quality_composition`, or `gbb_interactive_map`:
 
 ```text
 http://localhost/marimo
@@ -639,6 +659,13 @@ Use the same pattern for the glossary explorer:
 ```bash
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/glossary_explorer.py
+```
+
+Use the same pattern for the concept-to-asset explorer:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/concept_to_asset_explorer.py
 ```
 
 Use the same pattern for the GBB interactive map:
@@ -748,6 +775,10 @@ Glossary explorer coverage in
 [tests/component/test_glossary_explorer.py](tests/component/test_glossary_explorer.py)
 verifies concept listing, concept detail metadata, planned dashboard states,
 and validation-visible metadata gaps.
+Concept-to-asset explorer coverage in
+[tests/component/test_gas_dashboard.py](tests/component/test_gas_dashboard.py)
+verifies mapped concepts, table explorer deep links, unmapped concepts, and
+unmapped registry assets.
 
 Run the Marimo **Commit check** surface before handing changes to Ralph:
 
@@ -779,6 +810,7 @@ prek run -a
   - `backend-services/marimo/src/marimoserver/gas_model_loader.py`
   - `backend-services/marimo/src/marimoserver/gbb_interactive_map.py`
   - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
+  - `backend-services/marimo/src/marimoserver/concept_asset_explorer.py`
   - `backend-services/marimo/src/marimoserver/dagster_graphql.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/src/marimoserver/data_readiness.py`
@@ -792,6 +824,7 @@ prek run -a
   - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
   - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
+  - `backend-services/marimo/notebooks/concept_to_asset_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`

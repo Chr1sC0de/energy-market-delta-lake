@@ -9,6 +9,13 @@ import polars as pl
 import pytest
 
 from marimoserver.bounded_read_diagnostics import dashboard_read_behavior_frame
+from marimoserver.concept_asset_explorer import (
+    build_concept_asset_explorer,
+    concept_mapping_by_title,
+    render_concept_asset_explorer_html,
+    table_name_from_asset_id,
+    table_explorer_route_for_asset,
+)
 from marimoserver.gas_dashboard import (
     BID_STACK_FACILITY_FILTER_ALL,
     BID_STACK_PARTICIPANT_FILTER_ALL,
@@ -150,6 +157,7 @@ from marimoserver.dashboard_registry import (
     DashboardRegistryEntry,
     DashboardRegistryError,
     DashboardStatus,
+    SourceChunkReference,
 )
 from marimoserver.gas_model_loader import (
     GasModelSessionCache,
@@ -334,6 +342,10 @@ def test_dashboard_read_behavior_frame_renders_per_dashboard_policy() -> None:
         "Configuration and registry metadata only"
     )
     assert rows["AWS Bounded Read Diagnostics"]["row policy"] == "No table-row reads"
+    assert rows["Concept-to-Asset Explorer"]["read behavior"] == (
+        "Registry metadata browser"
+    )
+    assert rows["Concept-to-Asset Explorer"]["row policy"] == "No table-row reads"
     assert rows["S3 Bucket Health"]["view"] == "Object listing"
     assert rows["S3 Bucket Health"]["row policy"] == "10,000 objects per bucket"
     assert rows["Gas Model Table Explorer"]["row policy"] == (
@@ -403,6 +415,162 @@ def test_gas_model_specs_cover_required_dashboard_sections() -> None:
     assert "silver_gas_fact_scheduled_quantity" in table_names
     assert "silver_gas_fact_connection_point_flow" in table_names
     assert "silver_gas_fact_capacity_outlook" in table_names
+
+
+def test_concept_asset_explorer_maps_concepts_to_assets_and_routes() -> None:
+    explorer = build_concept_asset_explorer()
+    flow = concept_mapping_by_title(explorer, "Flow")
+
+    assert flow is not None
+    assert flow.mapped
+    assert any(
+        asset.asset_id == "silver.gas_model.silver_gas_fact_connection_point_flow"
+        and asset.table_explorer_route
+        == (
+            "/marimo/table_explorer/?asset=asset%3Asilver%2Fgas_model%2F"
+            "silver_gas_fact_connection_point_flow"
+        )
+        for asset in flow.assets
+    )
+    assert any(
+        dashboard.title == "GBB Interactive Map"
+        and dashboard.navigation_route == "/marimo/gbb_interactive_map/"
+        for dashboard in flow.available_dashboards
+    )
+    assert any(
+        dashboard.concept_id == "flow-context"
+        and dashboard.navigation_route == "/marimo#concept-flow-context"
+        for dashboard in flow.planned_dashboards
+    )
+
+    html = render_concept_asset_explorer_html(explorer)
+
+    assert 'data-concept-count="13"' in html
+    assert 'data-coverage-state="mapped"' in html
+    assert 'data-link-scope="table explorer entry"' in html
+    assert "silver.gas_model.silver_gas_fact_connection_point_flow" in html
+
+
+def test_concept_asset_explorer_marks_unmapped_concepts_as_coverage_gaps() -> None:
+    empty_context = DashboardRegistryEntry(
+        concept_id="empty-context",
+        title="Empty Context",
+        description="Concept with citation metadata but no backing assets.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.PLANNED,
+        notebook_name=None,
+        backing_assets=(),
+        generated_gold_paths=(
+            "tools/gas-market-knowledge-base/generated/gold/glossary/empty.md",
+        ),
+        source_chunks=(SourceChunkReference("chunk-empty"),),
+    )
+
+    explorer = build_concept_asset_explorer((empty_context,))
+    html = render_concept_asset_explorer_html(explorer)
+
+    assert [concept.title for concept in explorer.unmapped_concepts] == ["Empty"]
+    assert explorer.unmapped_concepts[0].metadata_gaps == (
+        "No backing silver.gas_model assets are mapped to this concept.",
+    )
+    assert 'data-coverage-state="unmapped-concept"' in html
+    assert 'data-gap-kind="unmapped-concepts"' in html
+    assert "No backing silver.gas_model assets are mapped to this concept." in html
+
+
+def test_concept_asset_explorer_marks_unmapped_assets_as_coverage_gaps() -> None:
+    mapped_entry = DashboardRegistryEntry(
+        concept_id="flow-context",
+        title="Flow Context",
+        description="Flow concept with a mapped table asset.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.PLANNED,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.silver_gas_fact_connection_point_flow",),
+        generated_gold_paths=(
+            "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
+        ),
+        source_chunks=(),
+    )
+    unmapped_entry = DashboardRegistryEntry(
+        concept_id="gas-quality-composition",
+        title="Gas Quality And Composition",
+        description="Dashboard asset without generated glossary metadata.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name="gas_quality_composition",
+        backing_assets=("silver.gas_model.silver_gas_fact_gas_quality",),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+
+    explorer = build_concept_asset_explorer((mapped_entry, unmapped_entry))
+    flow = concept_mapping_by_title(explorer, "Flow")
+
+    assert flow is not None
+    assert [asset.asset_id for asset in flow.assets] == [
+        "silver.gas_model.silver_gas_fact_connection_point_flow"
+    ]
+    assert [asset.asset_id for asset in explorer.unmapped_assets] == [
+        "silver.gas_model.silver_gas_fact_gas_quality"
+    ]
+    assert explorer.unmapped_assets[0].table_explorer_route == (
+        "/marimo/table_explorer/?asset=asset%3Asilver%2Fgas_model%2F"
+        "silver_gas_fact_gas_quality"
+    )
+    assert table_explorer_route_for_asset("bronze.raw.table") is None
+    assert "silver.gas_model.silver_gas_fact_gas_quality" in (
+        render_concept_asset_explorer_html(explorer)
+    )
+
+
+def test_concept_asset_explorer_renders_missing_path_and_link_fallbacks() -> None:
+    fallback_entry = DashboardRegistryEntry(
+        concept_id="fallback-context",
+        title="Fallback Context",
+        description="Concept with a registry asset but missing citation metadata.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.PLANNED,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.",),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+
+    explorer = build_concept_asset_explorer((fallback_entry,))
+    html = render_concept_asset_explorer_html(explorer)
+
+    assert concept_mapping_by_title(explorer, "missing") is None
+    assert table_name_from_asset_id("silver.gas_model.") is None
+    assert explorer.unmapped_concepts == ()
+    assert explorer.unmapped_assets == ()
+    assert 'data-unmapped-concept-count="0"' in html
+    assert 'data-unmapped-asset-count="0"' in html
+    assert "No table explorer link" in html
+    assert "No generated-gold path recorded in the registry." in html
+
+
+def test_concept_asset_explorer_renders_unmapped_asset_without_table_link() -> None:
+    unmapped_entry = DashboardRegistryEntry(
+        concept_id="unsupported-dashboard",
+        title="Unsupported Dashboard",
+        description="Dashboard with a malformed asset ID fixture.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name="unsupported_dashboard",
+        backing_assets=("silver.gas_model.invalid/path",),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+
+    explorer = build_concept_asset_explorer((unmapped_entry,))
+    html = render_concept_asset_explorer_html(explorer)
+
+    assert explorer.concept_mappings == ()
+    assert table_name_from_asset_id("silver.gas_model.invalid/path") is None
+    assert [asset.table_explorer_route for asset in explorer.unmapped_assets] == [None]
+    assert 'data-unmapped-asset-count="1"' in html
+    assert "No table explorer link" in html
 
 
 def test_system_notice_table_loader_uses_bounded_recent_view() -> None:

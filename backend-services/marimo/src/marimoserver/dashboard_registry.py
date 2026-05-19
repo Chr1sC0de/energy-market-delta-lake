@@ -41,6 +41,7 @@ _MISSING = object()
 _REGISTRY_BACKED_CONCEPT_IDS = frozenset(
     {
         "aws-bounded-read-diagnostics",
+        "concept-to-asset-explorer",
         "glossary-explorer",
         "s3-bucket-health",
     }
@@ -386,6 +387,23 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "audiences": ("analyst", "stakeholder", "data-engineer"),
         "status": "available",
         "notebook_name": "glossary_explorer",
+        "backing_assets": (),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/README.md",
+        ),
+        "source_chunk_ids": (),
+    },
+    {
+        "concept_id": "concept-to-asset-explorer",
+        "title": "Concept-to-Asset Explorer",
+        "description": (
+            "Available analytical dashboard for mapping Market context glossary "
+            "concepts to backing silver.gas_model assets, dashboard routes, "
+            "planned dashboard cards, and table explorer deep links."
+        ),
+        "audiences": ("analyst", "data-engineer", "stakeholder"),
+        "status": "available",
+        "notebook_name": "concept_to_asset_explorer",
         "backing_assets": (),
         "generated_gold_paths": (
             "tools/gas-market-knowledge-base/generated/gold/glossary/README.md",

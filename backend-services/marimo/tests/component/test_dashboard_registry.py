@@ -142,6 +142,18 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     )
     assert glossary.source_chunk_ids == ()
 
+    concept_asset = registry_entry_by_concept_id("concept-to-asset-explorer", entries)
+    assert concept_asset is not None
+    assert concept_asset.status is DashboardStatus.AVAILABLE
+    assert concept_asset.notebook_name == "concept_to_asset_explorer"
+    assert concept_asset.notebook_route == "/marimo/concept_to_asset_explorer/"
+    assert concept_asset.backing_assets == ()
+    assert concept_asset.generated_gold_paths == (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/README.md",
+    )
+    assert DashboardAudience.ANALYST in concept_asset.audiences
+    assert DashboardAudience.DATA_ENGINEER in concept_asset.audiences
+
     notices = registry_entry_by_concept_id("gas-system-notices", entries)
     assert notices is not None
     assert notices.status is DashboardStatus.AVAILABLE

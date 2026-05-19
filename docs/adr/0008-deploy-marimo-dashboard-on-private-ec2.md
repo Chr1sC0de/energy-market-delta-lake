@@ -90,6 +90,11 @@ image contents. Adding or updating registry metadata does not require a
 separate Docker build context and does not add AWS write paths.
 The glossary explorer stays inside the same boundary: it reads the packaged
 registry constants, not generated gold Markdown or live S3 tables.
+The concept-to-asset explorer stays inside that registry-only boundary. It maps
+Market context glossary concepts to registry backing assets, available
+dashboard routes, planned concept-gallery cards, and table explorer deep links
+without reading table rows, opening generated gold Markdown, or changing S3,
+Dagster, ETL, or AWS permissions.
 
 The data readiness overview remains within that read-only dashboard boundary.
 It reuses the existing S3 discovery, Dagster GraphQL catalogue, and bounded-read
@@ -190,6 +195,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/src/marimoserver/data_readiness.py`
   - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
+  - `backend-services/marimo/src/marimoserver/concept_asset_explorer.py`
   - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/source_coverage_matrix.py`
@@ -198,6 +204,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
   - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
+  - `backend-services/marimo/notebooks/concept_to_asset_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`

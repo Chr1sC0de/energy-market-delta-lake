@@ -184,6 +184,7 @@ Mixed maintained-doc and runtime dashboard changes also run the root
   - `backend-services/marimo/src/marimoserver/gas_model_loader.py`
   - `backend-services/marimo/src/marimoserver/gbb_interactive_map.py`
   - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
+  - `backend-services/marimo/src/marimoserver/concept_asset_explorer.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/src/marimoserver/data_readiness.py`
   - `backend-services/marimo/notebooks/head.html`
@@ -196,6 +197,7 @@ Mixed maintained-doc and runtime dashboard changes also run the root
   - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
   - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
+  - `backend-services/marimo/notebooks/concept_to_asset_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
