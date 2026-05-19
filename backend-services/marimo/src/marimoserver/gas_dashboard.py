@@ -109,10 +109,13 @@ SOURCE_COVERAGE_STATE_GAP = "Coverage gap"
 SOURCE_COVERAGE_STATE_EMPTY = "Empty"
 SOURCE_COVERAGE_STATE_UNAVAILABLE = "Unavailable"
 FACILITY_CONTEXT_ID = "facility-context"
+HUB_ZONE_CONTEXT_ID = "hub-zone-context"
 FACILITY_DIM_TABLE_NAME = "silver_gas_dim_facility"
+HUB_ZONE_DIM_TABLE_NAME = "silver_gas_dim_zone"
 FACILITY_FLOW_STORAGE_TABLE_NAME = "silver_gas_fact_facility_flow_storage"
 FACILITY_CAPACITY_OUTLOOK_TABLE_NAME = "silver_gas_fact_capacity_outlook"
 DEFAULT_FACILITY_PREVIEW_ROWS = 50
+DEFAULT_HUB_ZONE_PREVIEW_ROWS = 50
 _FACILITY_CAPACITY_METADATA_COLUMNS = (
     "default_capacity",
     "maximum_capacity",
@@ -575,6 +578,24 @@ FACILITY_TABLE_SPECS = (
             "flow_direction",
             "capacity_quantity_tj",
             "capacity_description",
+        ),
+    ),
+)
+HUB_ZONE_TABLE_SPECS = (
+    GasTableSpec(
+        section="Dimensions",
+        label="Hub and zone standing data",
+        table_name=HUB_ZONE_DIM_TABLE_NAME,
+        date_columns=("ingested_timestamp",),
+        preview_columns=(
+            "source_system",
+            "source_tables",
+            "zone_type",
+            "source_zone_id",
+            "zone_name",
+            "zone_description",
+            "source_files",
+            "ingested_timestamp",
         ),
     ),
 )
@@ -1170,6 +1191,43 @@ _FACILITY_PREVIEW_SCHEMA = {
     "source tables": pl.String,
     "latest ingest": pl.Datetime("us"),
 }
+_HUB_ZONE_DIM_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "zone_type": pl.String,
+    "source_zone_id": pl.String,
+    "zone_name": pl.String,
+    "zone_description": pl.String,
+    "source_surrogate_keys": pl.List(pl.String),
+    "source_files": pl.List(pl.String),
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_HUB_ZONE_COVERAGE_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_HUB_ZONE_SOURCE_SYSTEM_SCHEMA = {
+    "source system": pl.String,
+    "rows": pl.UInt32,
+    "zone types": pl.UInt32,
+    "source zone ids": pl.UInt32,
+    "source tables": pl.UInt32,
+    "source files": pl.UInt32,
+    "latest ingest": pl.Datetime("us"),
+}
+_HUB_ZONE_IDENTIFIER_SCHEMA = {
+    "source-qualified identifier": pl.String,
+    "source system": pl.String,
+    "zone type": pl.String,
+    "source zone id": pl.String,
+    "zone name": pl.String,
+    "zone description": pl.String,
+    "source tables": pl.String,
+    "source files": pl.String,
+    "latest ingest": pl.Datetime("us"),
+}
 _SOURCE_COVERAGE_MATRIX_SCHEMA = {
     "asset": pl.String,
     "section": pl.String,
@@ -1655,6 +1713,51 @@ def cached_load_facility_context_tables(
 ) -> list[GasTableLoad]:
     """Return cached Facility explainer table reads for explicit refreshes."""
     requested_specs = FACILITY_TABLE_SPECS if specs is None else specs
+    return cached_load_gas_model_tables(
+        _source_coverage_bounded_config(config),
+        cache,
+        specs=requested_specs,
+        reader=reader,
+        view=GasModelTableView.SAMPLE,
+        refresh_token=refresh_token,
+        clock=clock,
+    )
+
+
+def hub_zone_table_specs() -> tuple[GasTableSpec, ...]:
+    """Return the Hub / Zone dimension tables used by the explainer."""
+    return HUB_ZONE_TABLE_SPECS
+
+
+def load_hub_zone_context_tables(
+    config: GasDashboardConfig,
+    specs: Sequence[GasTableSpec] | None = None,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Load Hub / Zone explainer tables through the shared bounded loader."""
+    requested_specs = HUB_ZONE_TABLE_SPECS if specs is None else specs
+    return load_gas_model_tables(
+        _source_coverage_bounded_config(config),
+        specs=requested_specs,
+        reader=reader,
+        view=GasModelTableView.SAMPLE,
+        clock=clock,
+    )
+
+
+def cached_load_hub_zone_context_tables(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    specs: Sequence[GasTableSpec] | None = None,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Return cached Hub / Zone explainer table reads for explicit refreshes."""
+    requested_specs = HUB_ZONE_TABLE_SPECS if specs is None else specs
     return cached_load_gas_model_tables(
         _source_coverage_bounded_config(config),
         cache,
@@ -2275,6 +2378,214 @@ def facility_context_empty_state_markdown(loads: Sequence[GasTableLoad]) -> str:
     Materialize or seed the curated gas model outputs, then use
     **Refresh data**.
     """
+
+
+def hub_zone_dimension_coverage_frame(load: GasTableLoad | None) -> pl.DataFrame:
+    """Return Hub / Zone dimension coverage metrics from bounded rows."""
+    dataframe = _normalised_hub_zone_dimension_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_HUB_ZONE_COVERAGE_SCHEMA)
+
+    sttm_hub_rows = _hub_zone_type_row_count(dataframe, "sttm_hub")
+    source_table_count = _hub_zone_list_value_count(dataframe, "source_tables")
+    source_file_count = _hub_zone_list_value_count(dataframe, "source_files")
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Zone dimension rows",
+                "value": f"{dataframe.height:,}",
+                "detail": "Loaded bounded rows from silver_gas_dim_zone",
+            },
+            {
+                "metric": "Source systems",
+                "value": f"{_distinct_non_empty_count(dataframe, 'source_system'):,}",
+                "detail": "Distinct source_system values represented",
+            },
+            {
+                "metric": "Source tables",
+                "value": f"{source_table_count:,}",
+                "detail": "Distinct source table values carried in source_tables",
+            },
+            {
+                "metric": "Zone types",
+                "value": f"{_distinct_non_empty_count(dataframe, 'zone_type'):,}",
+                "detail": "Distinct zone_type values in the dimension preview",
+            },
+            {
+                "metric": "STTM hubs",
+                "value": f"{sttm_hub_rows:,}",
+                "detail": "Rows where zone_type is sttm_hub",
+            },
+            {
+                "metric": "DWGM/GBB zone rows",
+                "value": f"{dataframe.height - sttm_hub_rows:,}",
+                "detail": "Non-STTM rows such as demand, linepack, HV, and TUOS zones",
+            },
+            {
+                "metric": "Source-qualified identifiers",
+                "value": f"{_hub_zone_source_qualified_count(dataframe):,}",
+                "detail": "Distinct source_system + zone_type + source_zone_id keys",
+            },
+            {
+                "metric": "Source files",
+                "value": f"{source_file_count:,}",
+                "detail": "Distinct lineage files carried in source_files",
+            },
+        ],
+        schema=_HUB_ZONE_COVERAGE_SCHEMA,
+    )
+
+
+def hub_zone_source_system_frame(load: GasTableLoad | None) -> pl.DataFrame:
+    """Return Hub / Zone coverage grouped by source_system."""
+    dataframe = _normalised_hub_zone_dimension_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_HUB_ZONE_SOURCE_SYSTEM_SCHEMA)
+
+    rows: list[dict[str, object]] = []
+    for source_system in _hub_zone_source_systems(dataframe):
+        subset = dataframe.filter(pl.col("source_system") == source_system)
+        rows.append(
+            {
+                "source system": source_system,
+                "rows": subset.height,
+                "zone types": _distinct_non_empty_count(subset, "zone_type"),
+                "source zone ids": _distinct_non_empty_count(
+                    subset,
+                    "source_zone_id",
+                ),
+                "source tables": _hub_zone_list_value_count(subset, "source_tables"),
+                "source files": _hub_zone_list_value_count(subset, "source_files"),
+                "latest ingest": _hub_zone_latest_ingest(subset),
+            }
+        )
+
+    return pl.DataFrame(rows, schema=_HUB_ZONE_SOURCE_SYSTEM_SCHEMA)
+
+
+def hub_zone_identifier_preview_frame(
+    load: GasTableLoad | None,
+    *,
+    preview_rows: int = DEFAULT_HUB_ZONE_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return source-qualified Hub / Zone identifiers for table display."""
+    dataframe = _normalised_hub_zone_dimension_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_HUB_ZONE_IDENTIFIER_SCHEMA)
+
+    rows: list[dict[str, object]] = []
+    for row in (
+        dataframe.sort(
+            ["source_system", "zone_type", "source_zone_id"],
+            nulls_last=True,
+        )
+        .head(max(1, preview_rows))
+        .to_dicts()
+    ):
+        rows.append(
+            {
+                "source-qualified identifier": _hub_zone_source_qualified_identifier(
+                    row
+                ),
+                "source system": row.get("source_system"),
+                "zone type": row.get("zone_type"),
+                "source zone id": row.get("source_zone_id"),
+                "zone name": row.get("zone_name"),
+                "zone description": row.get("zone_description"),
+                "source tables": ", ".join(
+                    _source_coverage_value_strings(row.get("source_tables"))
+                ),
+                "source files": ", ".join(
+                    _source_coverage_value_strings(row.get("source_files"))
+                ),
+                "latest ingest": row.get("ingested_timestamp"),
+            }
+        )
+
+    return pl.DataFrame(rows, schema=_HUB_ZONE_IDENTIFIER_SCHEMA)
+
+
+def hub_zone_context_empty_state_markdown(loads: Sequence[GasTableLoad]) -> str:
+    """Return empty-state copy for the Hub / Zone explainer dashboard."""
+    if len(loads) == 0:
+        return """
+        **No Hub / Zone context tables were requested.**
+
+        The dashboard expected the `silver_gas_dim_zone` table spec but
+        received none. Check the Marimo dashboard registry and Hub / Zone
+        explainer configuration.
+        """
+
+    failed_count = sum(load.error is not None for load in loads)
+    empty_count = sum(
+        load.error is None and (load.dataframe is None or load.dataframe.is_empty())
+        for load in loads
+    )
+    read_policy = row_limit_message(_common_row_limit(loads))
+    read_detail = (
+        f"`{failed_count}` reads were unavailable and `{empty_count}` reads "
+        "returned no rows."
+    )
+    return f"""
+    **No Hub / Zone metadata rows are available.**
+
+    The dashboard checked `silver.gas_model.silver_gas_dim_zone` for current
+    source-qualified hub and zone rows. {read_detail}
+
+    {read_policy}
+
+    Materialize or seed the curated gas model outputs, then use
+    **Refresh data**.
+    """
+
+
+def render_hub_zone_context_links(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render Hub / Zone links to related dashboards and concept panels."""
+    candidate_entries = tuple(dashboard_registry() if entries is None else entries)
+    concept_ids = (
+        HUB_ZONE_CONTEXT_ID,
+        "source-coverage-matrix",
+        "gas-model-table-explorer",
+        "facility-context",
+        "connection-point-context",
+        "flow-context",
+        "capacity-context",
+        "schedule-context",
+        "bid-offer-context",
+        "gbb-interactive-map",
+    )
+    rows = "\n".join(
+        _render_hub_zone_context_link(entry)
+        for entry in (
+            registry_entry_by_concept_id(concept_id, candidate_entries)
+            for concept_id in concept_ids
+        )
+        if entry is not None
+    )
+    if rows == "":
+        rows = (
+            '<li class="hub-zone-links__empty">'
+            "No Hub / Zone, Facility, flow, capacity, schedule, bid, or table "
+            "explorer entries are registered."
+            "</li>"
+        )
+
+    return f"""\
+<style>
+{_hub_zone_context_links_css()}
+</style>
+<section class="hub-zone-links" aria-label="Hub and Zone context links">
+    <div>
+        <p class="hub-zone-links__eyebrow">Context links</p>
+        <h2>Hub / Zone, source coverage, and downstream dashboards</h2>
+    </div>
+    <ul>
+{rows}
+    </ul>
+</section>"""
 
 
 def render_facility_context_links(
@@ -5474,6 +5785,35 @@ def _source_coverage_distinct_count(
     return len(values)
 
 
+def _normalised_hub_zone_dimension_dataframe(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_HUB_ZONE_DIM_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _HUB_ZONE_DIM_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("surrogate_key").cast(pl.String, strict=False),
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        pl.col("zone_type").cast(pl.String, strict=False),
+        pl.col("source_zone_id").cast(pl.String, strict=False),
+        pl.col("zone_name").cast(pl.String, strict=False),
+        pl.col("zone_description").cast(pl.String, strict=False),
+        pl.col("source_surrogate_keys").cast(pl.List(pl.String), strict=False),
+        pl.col("source_files").cast(pl.List(pl.String), strict=False),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
 def _normalised_facility_dimension_dataframe(
     load: GasTableLoad | None,
 ) -> pl.DataFrame:
@@ -5621,6 +5961,59 @@ def _facility_source_table_count(dataframe: pl.DataFrame) -> int:
     for row in dataframe.select("source_tables").to_dicts():
         values.update(_source_coverage_value_strings(row.get("source_tables")))
     return len(values)
+
+
+def _hub_zone_list_value_count(dataframe: pl.DataFrame, column: str) -> int:
+    values: set[str] = set()
+    for row in dataframe.select(column).to_dicts():
+        values.update(_source_coverage_value_strings(row.get(column)))
+    return len(values)
+
+
+def _hub_zone_type_row_count(dataframe: pl.DataFrame, zone_type: str) -> int:
+    return dataframe.filter(pl.col("zone_type") == zone_type).height
+
+
+def _hub_zone_source_qualified_count(dataframe: pl.DataFrame) -> int:
+    identifiers = {
+        _hub_zone_source_qualified_identifier(row)
+        for row in dataframe.select(
+            "source_system",
+            "zone_type",
+            "source_zone_id",
+        ).to_dicts()
+    }
+    identifiers.discard("")
+    return len(identifiers)
+
+
+def _hub_zone_source_qualified_identifier(row: Mapping[str, object]) -> str:
+    source_system = str(row.get("source_system") or "").strip()
+    zone_type = str(row.get("zone_type") or "").strip()
+    source_zone_id = str(row.get("source_zone_id") or "").strip()
+    if source_system == "" or zone_type == "" or source_zone_id == "":
+        return ""
+    return f"{source_system}:{zone_type}:{source_zone_id}"
+
+
+def _hub_zone_source_systems(dataframe: pl.DataFrame) -> tuple[str, ...]:
+    values = (
+        dataframe.filter(_non_empty_string_expression("source_system"))
+        .get_column("source_system")
+        .cast(pl.String, strict=False)
+        .unique()
+        .sort()
+        .to_list()
+    )
+    return tuple(str(value) for value in values if value is not None)
+
+
+def _hub_zone_latest_ingest(dataframe: pl.DataFrame) -> datetime | None:
+    values = dataframe.get_column("ingested_timestamp").drop_nulls()
+    if values.is_empty():
+        return None
+    latest = values.max()
+    return latest if isinstance(latest, datetime) else None
 
 
 def _facility_identifier_set(dataframe: pl.DataFrame, column: str) -> set[str]:
@@ -6738,6 +7131,100 @@ def _render_facility_context_link(entry: DashboardRegistryEntry) -> str:
             <span>{escape(status_label)}</span>
             <code>{escape(entry.concept_id)}</code>
         </li>"""
+
+
+def _render_hub_zone_context_link(entry: DashboardRegistryEntry) -> str:
+    status_label = _dashboard_entry_status_label(entry)
+    title = escape(entry.title)
+    route = entry.notebook_route
+    if entry.status.value == "available" and route is not None:
+        title_html = f'<a href="{escape(route, quote=True)}">{title}</a>'
+    else:
+        title_html = f"<span>{title}</span>"
+
+    return f"""\
+        <li data-dashboard-status="{escape(entry.status.value, quote=True)}">
+            {title_html}
+            <span>{escape(status_label)}</span>
+            <code>{escape(entry.concept_id)}</code>
+        </li>"""
+
+
+def _hub_zone_context_links_css() -> str:
+    return """\
+.hub-zone-links {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+}
+
+.hub-zone-links__eyebrow {
+    margin: 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.74rem;
+    font-weight: 720;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.hub-zone-links h2 {
+    margin: 0.15rem 0 0;
+    font-size: 1.05rem;
+}
+
+.hub-zone-links ul {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.hub-zone-links li {
+    display: grid;
+    grid-template-columns: minmax(10rem, 1fr) auto auto;
+    gap: 0.65rem;
+    align-items: center;
+    min-width: 0;
+    padding: 0.55rem 0;
+    border-top: 1px solid var(--emdl-line, #cfdbd6);
+}
+
+.hub-zone-links li:first-child {
+    border-top: 0;
+}
+
+.hub-zone-links a {
+    color: var(--emdl-blue, #166791);
+    font-weight: 720;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+}
+
+.hub-zone-links span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.hub-zone-links li > span:nth-child(2) {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.hub-zone-links code {
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+    .hub-zone-links li {
+        grid-template-columns: 1fr;
+    }
+}
+"""
 
 
 def _facility_context_links_css() -> str:

@@ -333,6 +333,9 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   The Gas Day explainer reads bounded samples from registry-backed gas_model
   assets to show date-field coverage and examples without adding AWS write
   paths or changing ETL date modeling.
+  The Hub / Zone explainer reads bounded `silver_gas_dim_zone` samples through
+  the same helper surface to show source-system coverage and source-qualified
+  identifiers without adding AWS write paths.
   The `/marimo` entry route renders the registry-backed concept gallery;
   available cards link to mounted notebooks and planned cards remain non-link
   roadmap entries. Marimo packaged assets stay on
@@ -384,6 +387,7 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
   - `backend-services/marimo/notebooks/facility_explainer.py`
+  - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`

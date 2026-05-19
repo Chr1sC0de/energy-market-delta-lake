@@ -34,6 +34,9 @@ from marimoserver.gas_dashboard import (
     GAS_QUALITY_SOURCE_POINT_FILTER_ALL,
     GAS_QUALITY_TABLE_NAME,
     GAS_QUALITY_TABLE_SPEC,
+    HUB_ZONE_CONTEXT_ID,
+    HUB_ZONE_DIM_TABLE_NAME,
+    HUB_ZONE_TABLE_SPECS,
     FACILITY_CAPACITY_OUTLOOK_TABLE_NAME,
     FACILITY_CONTEXT_ID,
     FACILITY_DIM_TABLE_NAME,
@@ -81,6 +84,7 @@ from marimoserver.gas_dashboard import (
     cached_load_bid_stack_table,
     cached_load_facility_context_tables,
     cached_load_gas_day_tables,
+    cached_load_hub_zone_context_tables,
     cached_load_gas_quality_table,
     cached_load_gas_model_tables,
     cached_load_market_price_table,
@@ -117,11 +121,17 @@ from marimoserver.gas_dashboard import (
     gas_day_table_specs,
     gas_table_load_status_frame,
     gas_table_load_status_message,
+    hub_zone_context_empty_state_markdown,
+    hub_zone_dimension_coverage_frame,
+    hub_zone_identifier_preview_frame,
+    hub_zone_source_system_frame,
+    hub_zone_table_specs,
     load_market_price_table,
     load_bid_stack_table,
     load_customer_transfer_table,
     load_facility_context_tables,
     load_gas_day_tables,
+    load_hub_zone_context_tables,
     load_gas_quality_table,
     load_gas_model_tables,
     load_source_coverage_tables,
@@ -142,6 +152,7 @@ from marimoserver.gas_dashboard import (
     render_customer_transfer_context_links,
     render_market_price_context_links,
     render_facility_context_links,
+    render_hub_zone_context_links,
     render_schedule_run_context_links,
     render_settlement_activity_context_links,
     render_source_coverage_matrix_html,
@@ -3505,6 +3516,269 @@ def test_facility_helpers_cover_empty_state_behavior() -> None:
     assert (
         "No Facility, flow, capacity, participant, zone, or table explorer entries "
         "are registered."
+    ) in empty_context_links
+
+
+def test_hub_zone_context_metadata_is_available_dashboard() -> None:
+    entry = registry_entry_by_concept_id(HUB_ZONE_CONTEXT_ID)
+    html = render_dashboard_context_panel(HUB_ZONE_CONTEXT_ID)
+    context_links = render_hub_zone_context_links()
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "hub_zone_explainer"
+    assert entry.notebook_route == "/marimo/hub_zone_explainer/"
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md"
+        in entry.generated_gold_paths
+    )
+    assert entry.source_chunk_ids == (
+        "chunk-sttm-procedures-definitions",
+        "chunk-sttm-procedures-settlement-terms",
+        "chunk-dwgm-operations-glossary-schedule",
+        "chunk-dwgm-operations-capacity-certificates-modelling",
+    )
+    assert "silver.gas_model.silver_gas_dim_zone" in entry.backing_assets
+    assert "Hub / Zone Context" in html
+    assert "chunk-sttm-procedures-definitions" in html
+    assert "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md" in html
+    assert 'data-status="available"' in html
+    assert 'href="/marimo/hub_zone_explainer/"' in context_links
+    assert "Source Coverage Matrix" in context_links
+    assert "Bid / Offer Stack" in context_links
+
+
+def test_hub_zone_table_specs_and_loader_use_bounded_samples() -> None:
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "7",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    specs = hub_zone_table_specs()
+    loads = load_hub_zone_context_tables(config, reader=reader)
+
+    assert specs == HUB_ZONE_TABLE_SPECS
+    assert tuple(spec.table_name for spec in specs) == (HUB_ZONE_DIM_TABLE_NAME,)
+    assert len(loads) == 1
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_dim_zone",
+            7,
+        )
+    ]
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert uri.endswith(f"/{HUB_ZONE_DIM_TABLE_NAME}")
+        assert storage_options == config.storage_options()
+        assert row_limit == 7
+        cached_calls += 1
+        return pl.DataFrame({"source_system": ["STTM"]})
+
+    first_cached = cached_load_hub_zone_context_tables(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_hub_zone_context_tables(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_hub_zone_context_tables(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 2
+    assert not first_cached[0].cache_hit
+    assert second_cached[0].cache_hit
+    assert not refreshed[0].cache_hit
+
+
+def test_hub_zone_metadata_helpers_extract_source_qualified_identifiers() -> None:
+    load = _facility_load(
+        HUB_ZONE_TABLE_SPECS[0],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["zone-key-1", "zone-key-2", "zone-key-3"],
+                "source_system": ["STTM", "VICGAS", "GBB"],
+                "source_tables": [
+                    ["silver.sttm.silver_int671_v1_hub_facility_definition_rpt_1"],
+                    ["silver.vicgas.silver_int259_v4_pipe_segment_1"],
+                    [
+                        "silver.gbb.silver_gasbb_demand_zones_and_pipeline_connectionpoint_mapping"
+                    ],
+                ],
+                "zone_type": ["sttm_hub", "linepack_zone", "demand_zone"],
+                "source_zone_id": ["SYD", "5", "DZ1"],
+                "zone_name": ["Sydney Hub", "Linepack 5", "Demand Zone 1"],
+                "zone_description": ["Sydney Hub", None, "GBB demand zone"],
+                "source_surrogate_keys": [["sttm-1"], ["vic-1"], ["gbb-1", "gbb-2"]],
+                "source_files": [
+                    ["sttm.csv"],
+                    ["vicgas.csv"],
+                    ["gbb.csv", "gbb-extra.csv"],
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 1, 8),
+                    datetime(2024, 1, 1, 10),
+                    datetime(2024, 1, 1, 9),
+                ],
+            }
+        ),
+    )
+
+    coverage = hub_zone_dimension_coverage_frame(load)
+    sources = hub_zone_source_system_frame(load)
+    preview = hub_zone_identifier_preview_frame(load)
+    coverage_values = {row["metric"]: row["value"] for row in coverage.to_dicts()}
+    source_rows = {row["source system"]: row for row in sources.to_dicts()}
+
+    assert coverage_values == {
+        "Zone dimension rows": "3",
+        "Source systems": "3",
+        "Source tables": "3",
+        "Zone types": "3",
+        "STTM hubs": "1",
+        "DWGM/GBB zone rows": "2",
+        "Source-qualified identifiers": "3",
+        "Source files": "4",
+    }
+    assert source_rows["GBB"]["source zone ids"] == 1
+    assert source_rows["GBB"]["source files"] == 2
+    assert source_rows["STTM"]["zone types"] == 1
+    assert source_rows["VICGAS"]["source tables"] == 1
+    assert preview.select(
+        "source-qualified identifier",
+        "source system",
+        "zone type",
+        "source zone id",
+        "zone name",
+        "source tables",
+        "source files",
+    ).to_dict(as_series=False) == {
+        "source-qualified identifier": [
+            "GBB:demand_zone:DZ1",
+            "STTM:sttm_hub:SYD",
+            "VICGAS:linepack_zone:5",
+        ],
+        "source system": ["GBB", "STTM", "VICGAS"],
+        "zone type": ["demand_zone", "sttm_hub", "linepack_zone"],
+        "source zone id": ["DZ1", "SYD", "5"],
+        "zone name": ["Demand Zone 1", "Sydney Hub", "Linepack 5"],
+        "source tables": [
+            "silver.gbb.silver_gasbb_demand_zones_and_pipeline_connectionpoint_mapping",
+            "silver.sttm.silver_int671_v1_hub_facility_definition_rpt_1",
+            "silver.vicgas.silver_int259_v4_pipe_segment_1",
+        ],
+        "source files": ["gbb.csv, gbb-extra.csv", "sttm.csv", "vicgas.csv"],
+    }
+
+
+def test_hub_zone_helpers_fill_missing_columns_and_partial_identifiers() -> None:
+    load = _facility_load(
+        HUB_ZONE_TABLE_SPECS[0],
+        pl.DataFrame(
+            {
+                "source_system": ["STTM", "STTM"],
+                "zone_type": ["sttm_hub", "sttm_hub"],
+                "source_zone_id": ["", "SYD"],
+                "ingested_timestamp": [None, None],
+            }
+        ),
+    )
+
+    coverage = hub_zone_dimension_coverage_frame(load)
+    sources = hub_zone_source_system_frame(load)
+    preview = hub_zone_identifier_preview_frame(load)
+    coverage_values = {row["metric"]: row["value"] for row in coverage.to_dicts()}
+
+    assert coverage_values["Source tables"] == "0"
+    assert coverage_values["Source files"] == "0"
+    assert coverage_values["Source-qualified identifiers"] == "1"
+    assert sources.to_dicts() == [
+        {
+            "source system": "STTM",
+            "rows": 2,
+            "zone types": 1,
+            "source zone ids": 1,
+            "source tables": 0,
+            "source files": 0,
+            "latest ingest": None,
+        }
+    ]
+    assert preview.select(
+        "source-qualified identifier",
+        "source system",
+        "zone type",
+        "source zone id",
+    ).to_dict(as_series=False) == {
+        "source-qualified identifier": ["", "STTM:sttm_hub:SYD"],
+        "source system": ["STTM", "STTM"],
+        "zone type": ["sttm_hub", "sttm_hub"],
+        "source zone id": ["", "SYD"],
+    }
+
+
+def test_hub_zone_helpers_cover_empty_state_behavior() -> None:
+    unavailable_load = _facility_load(
+        HUB_ZONE_TABLE_SPECS[0],
+        None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=4,
+    )
+    empty_load = _facility_load(
+        HUB_ZONE_TABLE_SPECS[0],
+        pl.DataFrame(),
+        row_limit=4,
+    )
+
+    assert hub_zone_dimension_coverage_frame(unavailable_load).is_empty()
+    assert hub_zone_source_system_frame(unavailable_load).is_empty()
+    assert hub_zone_identifier_preview_frame(unavailable_load).is_empty()
+
+    unavailable_markdown = hub_zone_context_empty_state_markdown((unavailable_load,))
+    empty_markdown = hub_zone_context_empty_state_markdown((empty_load,))
+    no_table_markdown = hub_zone_context_empty_state_markdown(())
+    empty_context_links = render_hub_zone_context_links(entries=())
+
+    assert "No Hub / Zone metadata rows are available" in unavailable_markdown
+    assert "`1` reads were unavailable and `0` reads returned no rows" in (
+        unavailable_markdown
+    )
+    assert "Bounded preview reads are capped at `4` rows per table" in (
+        unavailable_markdown
+    )
+    assert "`0` reads were unavailable and `1` reads returned no rows" in empty_markdown
+    assert "No Hub / Zone context tables were requested" in no_table_markdown
+    assert (
+        "No Hub / Zone, Facility, flow, capacity, schedule, bid, or table "
+        "explorer entries are registered."
     ) in empty_context_links
 
 

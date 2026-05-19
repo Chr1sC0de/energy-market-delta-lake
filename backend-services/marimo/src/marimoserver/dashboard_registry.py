@@ -536,13 +536,16 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
     },
     {
         "concept_id": "hub-zone-context",
-        "title": "Hub And Zone Context",
+        "title": "Hub / Zone Context",
         "description": (
-            "Planned concept panel for STTM hubs, DWGM zones, capacity zones, "
-            "and zone-scoped market parameters."
+            "Available explainer dashboard for generated Hub / Zone context, "
+            "source-qualified STTM hub and DWGM zone identifiers, current "
+            "silver_gas_dim_zone coverage, and downstream market-analysis "
+            "dashboards."
         ),
         "audiences": ("analyst", "stakeholder"),
-        "status": "planned",
+        "status": "available",
+        "notebook_name": "hub_zone_explainer",
         "backing_assets": (
             "silver.gas_model.silver_gas_dim_zone",
             "silver.gas_model.silver_gas_fact_capacity_auction",

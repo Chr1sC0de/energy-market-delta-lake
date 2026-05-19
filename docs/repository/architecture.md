@@ -136,7 +136,9 @@ rows. Its market price, schedule run, settlement activity, customer transfer,
 Bid / Offer stack, gas quality, and system notice dashboards use the shared
 bounded gas-model loader for read-only fact previews and summaries. Its Gas Day
 explainer uses registry context metadata and bounded gas-model samples to show
-date-field coverage across curated assets. Its table explorer remains
+date-field coverage across curated assets. Its Hub / Zone explainer uses the
+same bounded loader to show current `silver_gas_dim_zone` coverage and
+source-qualified identifiers. Its table explorer remains
 the selected-table workbench for storage inspection, readiness navigation,
 bounded-read diagnostics, and concept-gallery metadata for mapped
 `silver.gas_model` assets. The
@@ -278,6 +280,7 @@ Gas market knowledge base responsibility:
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
   - `backend-services/marimo/notebooks/facility_explainer.py`
+  - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`

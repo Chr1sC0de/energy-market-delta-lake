@@ -211,8 +211,9 @@ Key deployed behaviors visible in the infrastructure code:
   links table explorer rows to readiness, bounded-read diagnostics, and
   concept-gallery metadata for mapped `silver.gas_model` assets,
   exposes the gas system notices, settlement activity, customer transfer and
-  retail activity, and Bid / Offer stack dashboards over curated gas-model
-  facts, runs with `MARIMO_OUTPUT_MAX_BYTES=16000000`,
+  retail activity, Bid / Offer stack, and Hub / Zone explainer dashboards over
+  curated gas-model facts and dimensions, runs with
+  `MARIMO_OUTPUT_MAX_BYTES=16000000`,
   `MARIMO_MAX_PREVIEW_ROWS=100`, and
   `MARIMO_FULL_TABLE_SCAN_ENABLED=false`, and loads bounded table previews
   instead of full table scans, with explicit
@@ -443,6 +444,7 @@ system's services and Dagster workflows.
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
   - `backend-services/marimo/notebooks/facility_explainer.py`
+  - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`

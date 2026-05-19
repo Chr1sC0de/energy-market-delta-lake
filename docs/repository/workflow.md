@@ -129,10 +129,12 @@ Local workflow notes:
   glossary concepts to backing `silver.gas_model` assets, dashboard routes,
   planned dashboard cards, and table explorer deep links. The Gas Day explainer
   uses registry context metadata and bounded gas-model samples to show
-  date-field coverage across curated assets. Market price, schedule run,
-  settlement activity, customer transfer, Bid / Offer stack, gas quality, and
-  system notice dashboards use shared bounded gas-model reads for fact previews
-  and summaries. The table explorer is the selected-table workbench for storage
+  date-field coverage across curated assets. The Hub / Zone explainer connects
+  generated context metadata to bounded `silver_gas_dim_zone` coverage and
+  source-qualified identifiers. Market price, schedule run, settlement
+  activity, customer transfer, Bid / Offer stack, gas quality, and system
+  notice dashboards use shared bounded gas-model reads for fact previews and
+  summaries. The table explorer is the selected-table workbench for storage
   inspection, readiness links, bounded-read diagnostics, and concept-gallery
   metadata for mapped `silver.gas_model` assets. The
   `marimo-codex-workspace` service is a
@@ -271,6 +273,7 @@ and the required `git diff` to `rg` to QA flow, use
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
   - `backend-services/marimo/notebooks/facility_explainer.py`
+  - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`

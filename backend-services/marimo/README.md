@@ -20,6 +20,7 @@ Marimo-Codex research workspace image.
 - [Table explorer](#table-explorer)
 - [Source coverage matrix](#source-coverage-matrix)
 - [Gas Day explainer dashboard](#gas-day-explainer-dashboard)
+- [Hub / Zone explainer dashboard](#hub--zone-explainer-dashboard)
 - [Gas market dashboard](#gas-market-dashboard)
 - [Market prices dashboard](#market-prices-dashboard)
 - [Schedule runs dashboard](#schedule-runs-dashboard)
@@ -360,6 +361,23 @@ other date fields only when a table has no Gas Day field. Empty reads,
 unavailable Parquet prefixes, and missing populated date fields render designed
 empty states with the checked assets, read policy, and refresh action.
 
+## Hub / Zone explainer dashboard
+
+[notebooks/hub_zone_explainer.py](notebooks/hub_zone_explainer.py) is an
+analytical dashboard for the Hub / Zone concept. It renders the
+registry-backed context panel with the generated-gold path and source chunk IDs
+copied from the Gas market knowledge base, then loads a bounded
+`silver.gas_model.silver_gas_dim_zone` sample through the shared gas model
+loader.
+
+The dashboard summarizes current zone dimension coverage by source system,
+source table, `zone_type`, STTM hub rows, DWGM/GBB zone rows, and lineage file
+counts. Its identifier preview makes the current source-qualified grain visible
+as `source_system + zone_type + source_zone_id`, preserving the distinction
+between STTM hubs and source-specific zones. Empty reads and unavailable
+Parquet prefixes render designed empty states with the checked asset, read
+policy, and refresh action.
+
 ## Gas market dashboard
 
 The default notebook,
@@ -608,7 +626,7 @@ Caddy and choose an available card such as `data_readiness_overview`,
 `sample_energy_market`, `gas_market_prices`, `gas_schedule_runs`,
 `system_notices`, `gas_settlement_activity`,
 `gas_customer_transfer_activity`, `gas_bid_offer_stack`,
-`gas_quality_composition`, or `gbb_interactive_map`:
+`gas_quality_composition`, `hub_zone_explainer`, or `gbb_interactive_map`:
 
 ```text
 http://localhost/marimo
@@ -698,6 +716,13 @@ Use the same pattern for the Facility explainer dashboard:
 ```bash
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/facility_explainer.py
+```
+
+Use the same pattern for the Hub / Zone explainer dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/hub_zone_explainer.py
 ```
 
 Use the same pattern for the system notices dashboard:
@@ -855,6 +880,7 @@ prek run -a
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
   - `backend-services/marimo/notebooks/facility_explainer.py`
+  - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`

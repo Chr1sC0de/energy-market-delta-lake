@@ -229,12 +229,14 @@ Useful routes:
 - `/marimo` for curated Marimo dashboards through Caddy, including the table
   explorer, data readiness overview, AWS bounded-read diagnostics, market
   prices, schedule runs, settlement activity, customer transfer and retail
-  activity, system notices, Bid / Offer stack, and gas quality and composition
-  dashboard. The table explorer lists the Dagster table asset catalogue, filters
-  by group, layer or domain, status, and search text, and previews only
-  materialized tables. Its selected-table workbench links onward to data
-  readiness, AWS bounded-read diagnostics, and concept-gallery metadata for
-  mapped `silver.gas_model` assets.
+  activity, system notices, Bid / Offer stack, gas quality and composition, and
+  Hub / Zone explainer dashboards. The Hub / Zone explainer connects generated
+  Market context metadata to bounded `silver_gas_dim_zone` coverage and
+  source-qualified identifiers. The table explorer lists the Dagster table
+  asset catalogue, filters by group, layer or domain, status, and search text,
+  and previews only materialized tables. Its selected-table workbench links
+  onward to data readiness, AWS bounded-read diagnostics, and concept-gallery
+  metadata for mapped `silver.gas_model` assets.
 - `http://127.0.0.1:2719` for the local-only Marimo-Codex research workspace
 
 The `aemo-etl` code location should appear in Dagster under
@@ -801,6 +803,7 @@ developer-stack setting. It renders e2e Dagster config per run from the current
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
   - `backend-services/marimo/notebooks/facility_explainer.py`
+  - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`

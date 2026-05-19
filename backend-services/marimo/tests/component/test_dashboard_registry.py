@@ -202,6 +202,23 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         "chunk-gbb-procedures-facility-nameplate",
     )
 
+    hub_zone = registry_entry_by_concept_id("hub-zone-context", entries)
+    assert hub_zone is not None
+    assert hub_zone.status is DashboardStatus.AVAILABLE
+    assert hub_zone.notebook_name == "hub_zone_explainer"
+    assert hub_zone.notebook_route == "/marimo/hub_zone_explainer/"
+    assert "silver.gas_model.silver_gas_dim_zone" in hub_zone.backing_assets
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md"
+        in hub_zone.generated_gold_paths
+    )
+    assert hub_zone.source_chunk_ids == (
+        "chunk-sttm-procedures-definitions",
+        "chunk-sttm-procedures-settlement-terms",
+        "chunk-dwgm-operations-glossary-schedule",
+        "chunk-dwgm-operations-capacity-certificates-modelling",
+    )
+
 
 def test_dashboard_registry_payload_includes_required_fields() -> None:
     payload = dashboard_registry_payload()
