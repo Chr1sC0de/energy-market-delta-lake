@@ -387,6 +387,7 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
   - `backend-services/marimo/notebooks/facility_explainer.py`
+  - `backend-services/marimo/notebooks/participant_explainer.py`
   - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`

@@ -47,6 +47,10 @@ from marimoserver.gas_dashboard import (
     MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
     MARKET_PRICE_TABLE_NAME,
     MARKET_PRICE_TABLE_SPEC,
+    PARTICIPANT_CONTEXT_ID,
+    PARTICIPANT_DIM_TABLE_NAME,
+    PARTICIPANT_MARKET_MEMBERSHIP_TABLE_NAME,
+    PARTICIPANT_TABLE_SPECS,
     SCHEDULE_RUN_GAS_DATE_FILTER_ALL,
     SCHEDULE_RUN_SCHEDULE_TYPE_FILTER_ALL,
     SCHEDULE_RUN_SOURCE_SYSTEM_FILTER_ALL,
@@ -88,6 +92,7 @@ from marimoserver.gas_dashboard import (
     cached_load_gas_quality_table,
     cached_load_gas_model_tables,
     cached_load_market_price_table,
+    cached_load_participant_context_tables,
     cached_load_schedule_run_table,
     cached_load_settlement_activity_table,
     cached_load_source_coverage_tables,
@@ -134,6 +139,7 @@ from marimoserver.gas_dashboard import (
     load_hub_zone_context_tables,
     load_gas_quality_table,
     load_gas_model_tables,
+    load_participant_context_tables,
     load_source_coverage_tables,
     load_schedule_run_table,
     load_settlement_activity_table,
@@ -146,6 +152,13 @@ from marimoserver.gas_dashboard import (
     market_price_source_table_options,
     market_price_trend_frame,
     market_price_type_summary_frame,
+    participant_context_empty_state_markdown,
+    participant_dimension_coverage_frame,
+    participant_dimension_preview_frame,
+    participant_membership_coverage_frame,
+    participant_membership_preview_frame,
+    participant_related_market_fact_frame,
+    participant_table_specs,
     read_parquet_table,
     render_dashboard_context_panel,
     render_bid_stack_context_links,
@@ -153,6 +166,7 @@ from marimoserver.gas_dashboard import (
     render_market_price_context_links,
     render_facility_context_links,
     render_hub_zone_context_links,
+    render_participant_context_links,
     render_schedule_run_context_links,
     render_settlement_activity_context_links,
     render_source_coverage_matrix_html,
@@ -3240,6 +3254,394 @@ def test_refresh_token_from_control_handles_missing_and_unhashable_values() -> N
     assert refresh_token_from_control(refresh_control) == 2
 
 
+def test_participant_context_metadata_is_available_dashboard() -> None:
+    entry = registry_entry_by_concept_id(PARTICIPANT_CONTEXT_ID)
+    html = render_dashboard_context_panel(PARTICIPANT_CONTEXT_ID)
+    context_links = render_participant_context_links()
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "participant_explainer"
+    assert entry.notebook_route == "/marimo/participant_explainer/"
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/participant.md"
+        in entry.generated_gold_paths
+    )
+    assert entry.source_chunk_ids == (
+        "chunk-gbb-guide-participants-report",
+        "chunk-gbb-procedures-registration",
+        "chunk-sttm-procedures-settlement-terms",
+    )
+    assert "silver.gas_model.silver_gas_dim_participant" in entry.backing_assets
+    assert (
+        "silver.gas_model.silver_gas_participant_market_membership"
+        in entry.backing_assets
+    )
+    assert "silver.gas_model.silver_gas_fact_bid_stack" in entry.backing_assets
+    assert (
+        "silver.gas_model.silver_gas_fact_settlement_activity" in entry.backing_assets
+    )
+    assert "Participant Context" in html
+    assert "chunk-gbb-guide-participants-report" in html
+    assert 'data-status="available"' in html
+    assert 'href="/marimo/participant_explainer/"' in context_links
+    assert 'href="/marimo/gas_bid_offer_stack/"' in context_links
+    assert 'href="/marimo/gas_settlement_activity/"' in context_links
+    assert 'href="/marimo/facility_explainer/"' in context_links
+
+
+def test_participant_table_specs_and_loader_use_bounded_samples() -> None:
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "6",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    specs = participant_table_specs()
+    loads = load_participant_context_tables(config, reader=reader)
+
+    assert specs == PARTICIPANT_TABLE_SPECS
+    assert tuple(spec.table_name for spec in specs) == (
+        PARTICIPANT_DIM_TABLE_NAME,
+        PARTICIPANT_MARKET_MEMBERSHIP_TABLE_NAME,
+        FACILITY_DIM_TABLE_NAME,
+        BID_STACK_TABLE_NAME,
+        SETTLEMENT_ACTIVITY_TABLE_NAME,
+    )
+    assert len(loads) == len(specs)
+    assert {row_limit for _, row_limit in captured} == {6}
+    assert captured[0][0] == (
+        "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_dim_participant"
+    )
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert uri.endswith(f"/{PARTICIPANT_DIM_TABLE_NAME}")
+        assert storage_options == config.storage_options()
+        assert row_limit == 6
+        cached_calls += 1
+        return pl.DataFrame({"source_systems": [["GBB"]]})
+
+    first_cached = cached_load_participant_context_tables(
+        config,
+        cache,
+        specs=(PARTICIPANT_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_participant_context_tables(
+        config,
+        cache,
+        specs=(PARTICIPANT_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_participant_context_tables(
+        config,
+        cache,
+        specs=(PARTICIPANT_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 2
+    assert not first_cached[0].cache_hit
+    assert second_cached[0].cache_hit
+    assert not refreshed[0].cache_hit
+
+
+def test_participant_metadata_helpers_extract_dimension_memberships_and_facts() -> None:
+    participant_load = _participant_load(
+        PARTICIPANT_TABLE_SPECS[0],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["participant-key-1", "participant-key-2"],
+                "participant_identity_source": ["gbb_company_id", "sttm_code"],
+                "participant_identity_value": ["P1", "BETA"],
+                "canonical_participant_name": ["Alpha Energy", "Beta Gas"],
+                "registered_name": ["Alpha Energy Pty Ltd", "Beta Gas Ltd"],
+                "participant_type": ["trader", "retailer"],
+                "participant_status": ["active", "active"],
+                "source_systems": [["GBB", "STTM"], ["STTM"]],
+                "source_tables": [
+                    [
+                        "silver.gbb.silver_gasbb_participants_list",
+                        "silver.sttm.silver_int670_v1_registered_participants_rpt_1",
+                    ],
+                    ["silver.sttm.silver_int670_v1_registered_participants_rpt_1"],
+                ],
+                "source_company_ids": [["P1", "ALPHA"], ["BETA"]],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 1, 8),
+                    datetime(2024, 1, 1, 9),
+                ],
+            }
+        ),
+    )
+    membership_load = _participant_load(
+        PARTICIPANT_TABLE_SPECS[1],
+        pl.DataFrame(
+            {
+                "participant_key": [
+                    "participant-key-1",
+                    "participant-key-1",
+                    "participant-key-2",
+                ],
+                "source_system": ["GBB", "STTM", "STTM"],
+                "source_tables": [
+                    ["silver.gbb.silver_gasbb_participants_list"],
+                    ["silver.sttm.silver_int670_v1_registered_participants_rpt_1"],
+                    ["silver.sttm.silver_int670_v1_registered_participants_rpt_1"],
+                ],
+                "market_code": ["BB", "STTM", "STTM"],
+                "source_company_id": ["P1", "ALPHA", "BETA"],
+                "source_company_code": ["P1", "ALP", "BET"],
+                "source_hub_id": [None, "SYD", "ADL"],
+                "source_hub_name": [None, "Sydney", "Adelaide"],
+                "registration_type": ["BB Participant", "Trader", "Retailer"],
+                "registered_capacity": [None, "100", "50"],
+                "membership_status": ["active", "active", "active"],
+                "participant_identity_source": [
+                    "gbb_company_id",
+                    "sttm_code",
+                    "sttm_code",
+                ],
+                "participant_identity_value": ["P1", "ALPHA", "BETA"],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 2, 8),
+                    datetime(2024, 1, 2, 9),
+                    datetime(2024, 1, 2, 10),
+                ],
+            }
+        ),
+    )
+    facility_load = _participant_load(
+        PARTICIPANT_TABLE_SPECS[2],
+        pl.DataFrame(
+            {
+                "participant_key": ["participant-key-1", "unknown-key", None],
+                "source_system": ["GBB", "GBB", "STTM"],
+                "source_facility_id": ["FAC1", "FAC2", "FAC3"],
+                "facility_name": ["Facility One", "Facility Two", "Facility Three"],
+            }
+        ),
+    )
+    bid_stack_load = _participant_load(
+        PARTICIPANT_TABLE_SPECS[3],
+        pl.DataFrame(
+            {
+                "participant_id": ["P1", "UNKNOWN"],
+                "participant_name": ["Alpha Energy", "Unknown Trading"],
+                "source_system": ["STTM", "STTM"],
+            }
+        ),
+    )
+    settlement_load = _participant_load(
+        PARTICIPANT_TABLE_SPECS[4],
+        pl.DataFrame(
+            {
+                "participant_name": [
+                    "Alpha Energy",
+                    "Beta Gas Ltd",
+                    "Unknown Trading",
+                ],
+                "amount_gst_ex": [100.0, 50.0, 25.0],
+                "source_system": ["STTM", "STTM", "STTM"],
+            }
+        ),
+    )
+    loads = (
+        participant_load,
+        membership_load,
+        facility_load,
+        bid_stack_load,
+        settlement_load,
+    )
+
+    coverage = participant_dimension_coverage_frame(participant_load)
+    memberships = participant_membership_coverage_frame(membership_load)
+    relationships = participant_related_market_fact_frame(loads)
+    participant_preview = participant_dimension_preview_frame(participant_load)
+    membership_preview = participant_membership_preview_frame(membership_load)
+    coverage_values = {row["metric"]: row["value"] for row in coverage.to_dicts()}
+    membership_rows = {
+        (row["source system"], row["market code"], row["registration type"]): row
+        for row in memberships.to_dicts()
+    }
+    relationship_rows = {
+        row["related surface"]: row for row in relationships.to_dicts()
+    }
+
+    assert coverage_values == {
+        "Participant dimension rows": "2",
+        "Identity sources": "2",
+        "Canonical participants": "2",
+        "Registered names": "2",
+        "Participant types": "2",
+        "Participant statuses": "1",
+        "Source systems": "2",
+        "Source tables": "2",
+        "Source company ids": "3",
+    }
+    assert membership_rows[("GBB", "BB", "BB Participant")]["rows"] == 1
+    assert membership_rows[("STTM", "STTM", "Trader")]["participant keys"] == 1
+    assert membership_rows[("STTM", "STTM", "Retailer")]["hub ids"] == 1
+    assert relationship_rows["Market membership"]["matched participants"] == 2
+    assert relationship_rows["Facility"]["available rows"] == 2
+    assert relationship_rows["Facility"]["matched participants"] == 1
+    assert relationship_rows["Bid / Offer"]["participant references"] == 4
+    assert relationship_rows["Bid / Offer"]["matched participants"] == 2
+    assert relationship_rows["Settlement"]["participant references"] == 3
+    assert relationship_rows["Settlement"]["matched participants"] == 2
+    assert participant_preview.select(
+        "identity source",
+        "identity value",
+        "participant",
+        "registered name",
+        "participant type",
+        "participant status",
+        "source systems",
+        "source tables",
+        "source company ids",
+    ).to_dict(as_series=False) == {
+        "identity source": ["gbb_company_id", "sttm_code"],
+        "identity value": ["P1", "BETA"],
+        "participant": ["Alpha Energy", "Beta Gas"],
+        "registered name": ["Alpha Energy Pty Ltd", "Beta Gas Ltd"],
+        "participant type": ["trader", "retailer"],
+        "participant status": ["active", "active"],
+        "source systems": ["GBB, STTM", "STTM"],
+        "source tables": [
+            (
+                "silver.gbb.silver_gasbb_participants_list, "
+                "silver.sttm.silver_int670_v1_registered_participants_rpt_1"
+            ),
+            "silver.sttm.silver_int670_v1_registered_participants_rpt_1",
+        ],
+        "source company ids": ["P1, ALPHA", "BETA"],
+    }
+    assert membership_preview.select(
+        "source system",
+        "market code",
+        "participant key",
+        "company id",
+        "company code",
+        "hub",
+        "registration type",
+        "membership status",
+    ).to_dict(as_series=False) == {
+        "source system": ["GBB", "STTM", "STTM"],
+        "market code": ["BB", "STTM", "STTM"],
+        "participant key": [
+            "participant-key-1",
+            "participant-key-1",
+            "participant-key-2",
+        ],
+        "company id": ["P1", "ALPHA", "BETA"],
+        "company code": ["P1", "ALP", "BET"],
+        "hub": [None, "Sydney", "Adelaide"],
+        "registration type": ["BB Participant", "Trader", "Retailer"],
+        "membership status": ["active", "active", "active"],
+    }
+
+
+def test_participant_helpers_cover_empty_state_behavior() -> None:
+    unavailable_load = _participant_load(
+        PARTICIPANT_TABLE_SPECS[0],
+        None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=4,
+    )
+    empty_membership_load = _participant_load(
+        PARTICIPANT_TABLE_SPECS[1],
+        pl.DataFrame(),
+        row_limit=4,
+    )
+    loads = (unavailable_load, empty_membership_load)
+    partial_membership_load = _participant_load(
+        PARTICIPANT_TABLE_SPECS[1],
+        pl.DataFrame(
+            {
+                "participant_key": ["orphan-participant-key"],
+                "source_system": [None],
+                "market_code": [None],
+                "registration_type": [None],
+                "membership_status": [None],
+            }
+        ),
+        row_limit=4,
+    )
+    planned_entry = DashboardRegistryEntry(
+        concept_id=PARTICIPANT_CONTEXT_ID,
+        title="Participant Context",
+        description="Planned Participant context entry.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.PLANNED,
+        notebook_name=None,
+        backing_assets=(),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+
+    assert participant_dimension_coverage_frame(unavailable_load).is_empty()
+    assert participant_membership_coverage_frame(empty_membership_load).is_empty()
+    assert participant_dimension_preview_frame(unavailable_load).is_empty()
+    assert participant_membership_preview_frame(empty_membership_load).is_empty()
+    assert participant_related_market_fact_frame(loads).is_empty()
+    partial_membership = participant_membership_coverage_frame(partial_membership_load)
+    partial_relationships = participant_related_market_fact_frame(
+        (partial_membership_load,)
+    )
+
+    markdown = participant_context_empty_state_markdown(loads)
+    empty_markdown = participant_context_empty_state_markdown(())
+    empty_context_links = render_participant_context_links(entries=())
+    planned_context_links = render_participant_context_links(entries=(planned_entry,))
+
+    assert partial_membership.row(0, named=True) == {
+        "source system": None,
+        "market code": None,
+        "registration type": None,
+        "membership status": None,
+        "rows": 1,
+        "participant keys": 1,
+        "source company ids": 0,
+        "source company codes": 0,
+        "hub ids": 0,
+        "source tables": 0,
+        "latest ingest": None,
+    }
+    assert partial_relationships.row(0, named=True)["matched participants"] == 0
+    assert "No Participant metadata, membership, or related fact rows" in markdown
+    assert "`1` reads were unavailable and `1` reads returned no rows" in markdown
+    assert "Bounded preview reads are capped at `4` rows per table" in markdown
+    assert "No Participant context tables were requested" in empty_markdown
+    assert (
+        "No Participant, bid, settlement, facility, or table explorer entries "
+        "are registered."
+    ) in empty_context_links
+    assert "<span>Participant Context</span>" in planned_context_links
+
+
 def test_facility_context_metadata_is_available_dashboard() -> None:
     entry = registry_entry_by_concept_id(FACILITY_CONTEXT_ID)
     html = render_dashboard_context_panel(FACILITY_CONTEXT_ID)
@@ -5135,6 +5537,24 @@ def _source_coverage_load(
         dataframe=dataframe,
         error=error,
         row_limit=100,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _participant_load(
+    spec: GasTableSpec,
+    dataframe: pl.DataFrame | None,
+    *,
+    error: str | None = None,
+    row_limit: int | None = 100,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=spec,
+        uri=f"s3://bucket/silver/gas_model/{spec.table_name}",
+        dataframe=dataframe,
+        error=error,
+        row_limit=row_limit,
         load_duration_seconds=0.01,
         cache_hit=False,
     )

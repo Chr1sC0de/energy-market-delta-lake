@@ -20,6 +20,7 @@ Marimo-Codex research workspace image.
 - [Table explorer](#table-explorer)
 - [Source coverage matrix](#source-coverage-matrix)
 - [Gas Day explainer dashboard](#gas-day-explainer-dashboard)
+- [Participant explainer dashboard](#participant-explainer-dashboard)
 - [Hub / Zone explainer dashboard](#hub--zone-explainer-dashboard)
 - [Gas market dashboard](#gas-market-dashboard)
 - [Market prices dashboard](#market-prices-dashboard)
@@ -361,6 +362,29 @@ other date fields only when a table has no Gas Day field. Empty reads,
 unavailable Parquet prefixes, and missing populated date fields render designed
 empty states with the checked assets, read policy, and refresh action.
 
+## Participant explainer dashboard
+
+[notebooks/participant_explainer.py](notebooks/participant_explainer.py) is an
+analytical dashboard for the Participant concept. It renders the
+registry-backed context panel with the generated-gold path and source chunk IDs
+copied from the Gas market knowledge base, then loads bounded samples from
+`silver.gas_model.silver_gas_dim_participant`,
+`silver.gas_model.silver_gas_participant_market_membership`,
+`silver.gas_model.silver_gas_dim_facility`,
+`silver.gas_model.silver_gas_fact_bid_stack`, and
+`silver.gas_model.silver_gas_fact_settlement_activity` through the shared gas
+model loader.
+
+The dashboard summarizes participant dimension coverage, market membership
+coverage by source system, market code, registration type, and membership
+status, and participant-facing market facts that connect Participant to
+Facility, Bid / Offer, and Settlement dashboards. Its previews make the current
+participant identity grain and membership grain visible while preserving
+bounded-read health, cache status, load timing, row-limit policy, source chunk
+IDs, and generated-gold metadata. Empty reads and unavailable Parquet prefixes
+render designed empty states with the checked assets, read policy, and refresh
+action.
+
 ## Hub / Zone explainer dashboard
 
 [notebooks/hub_zone_explainer.py](notebooks/hub_zone_explainer.py) is an
@@ -626,7 +650,8 @@ Caddy and choose an available card such as `data_readiness_overview`,
 `sample_energy_market`, `gas_market_prices`, `gas_schedule_runs`,
 `system_notices`, `gas_settlement_activity`,
 `gas_customer_transfer_activity`, `gas_bid_offer_stack`,
-`gas_quality_composition`, `hub_zone_explainer`, or `gbb_interactive_map`:
+`gas_quality_composition`, `facility_explainer`, `participant_explainer`,
+`hub_zone_explainer`, or `gbb_interactive_map`:
 
 ```text
 http://localhost/marimo
@@ -716,6 +741,13 @@ Use the same pattern for the Facility explainer dashboard:
 ```bash
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/facility_explainer.py
+```
+
+Use the same pattern for the Participant explainer dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/participant_explainer.py
 ```
 
 Use the same pattern for the Hub / Zone explainer dashboard:
@@ -880,6 +912,7 @@ prek run -a
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
   - `backend-services/marimo/notebooks/facility_explainer.py`
+  - `backend-services/marimo/notebooks/participant_explainer.py`
   - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`

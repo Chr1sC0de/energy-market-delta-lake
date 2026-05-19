@@ -187,6 +187,24 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert bid_stack.notebook_route == "/marimo/gas_bid_offer_stack/"
     assert bid_stack.backing_assets == ("silver.gas_model.silver_gas_fact_bid_stack",)
 
+    participant = registry_entry_by_concept_id("participant-context", entries)
+    assert participant is not None
+    assert participant.status is DashboardStatus.AVAILABLE
+    assert participant.notebook_name == "participant_explainer"
+    assert participant.notebook_route == "/marimo/participant_explainer/"
+    assert participant.backing_assets == (
+        "silver.gas_model.silver_gas_dim_participant",
+        "silver.gas_model.silver_gas_participant_market_membership",
+        "silver.gas_model.silver_gas_dim_facility",
+        "silver.gas_model.silver_gas_fact_bid_stack",
+        "silver.gas_model.silver_gas_fact_settlement_activity",
+    )
+    assert participant.source_chunk_ids == (
+        "chunk-gbb-guide-participants-report",
+        "chunk-gbb-procedures-registration",
+        "chunk-sttm-procedures-settlement-terms",
+    )
+
     facility = registry_entry_by_concept_id("facility-context", entries)
     assert facility is not None
     assert facility.status is DashboardStatus.AVAILABLE

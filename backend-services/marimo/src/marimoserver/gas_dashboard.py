@@ -103,6 +103,10 @@ GAS_QUALITY_TABLE_NAME = "silver_gas_fact_gas_quality"
 GAS_QUALITY_QUALITY_TYPE_FILTER_ALL = "All quality types"
 GAS_QUALITY_SOURCE_POINT_FILTER_ALL = "All source points"
 DEFAULT_GAS_QUALITY_PREVIEW_ROWS = 50
+PARTICIPANT_CONTEXT_ID = "participant-context"
+PARTICIPANT_DIM_TABLE_NAME = "silver_gas_dim_participant"
+PARTICIPANT_MARKET_MEMBERSHIP_TABLE_NAME = "silver_gas_participant_market_membership"
+DEFAULT_PARTICIPANT_PREVIEW_ROWS = 50
 SOURCE_COVERAGE_TABLE_EXPLORER_ROUTE = "/marimo/table_explorer/"
 SOURCE_COVERAGE_STATE_COVERED = "Covered"
 SOURCE_COVERAGE_STATE_GAP = "Coverage gap"
@@ -598,6 +602,55 @@ HUB_ZONE_TABLE_SPECS = (
             "ingested_timestamp",
         ),
     ),
+)
+PARTICIPANT_DIM_TABLE_SPEC = GasTableSpec(
+    section="Dimensions",
+    label="Participant standing data",
+    table_name=PARTICIPANT_DIM_TABLE_NAME,
+    date_columns=("ingested_timestamp",),
+    preview_columns=(
+        "participant_identity_source",
+        "participant_identity_value",
+        "canonical_participant_name",
+        "registered_name",
+        "abn",
+        "acn",
+        "participant_type",
+        "participant_status",
+        "source_systems",
+        "source_tables",
+        "ingested_timestamp",
+    ),
+)
+PARTICIPANT_MARKET_MEMBERSHIP_TABLE_SPEC = GasTableSpec(
+    section="Associations",
+    label="Participant market membership",
+    table_name=PARTICIPANT_MARKET_MEMBERSHIP_TABLE_NAME,
+    date_columns=("ingested_timestamp",),
+    preview_columns=(
+        "participant_key",
+        "source_system",
+        "source_tables",
+        "market_code",
+        "source_company_id",
+        "source_company_code",
+        "source_hub_id",
+        "source_hub_name",
+        "registration_type",
+        "registered_capacity",
+        "membership_status",
+        "participant_identity_source",
+        "participant_identity_value",
+        "source_file",
+        "ingested_timestamp",
+    ),
+)
+PARTICIPANT_TABLE_SPECS = (
+    PARTICIPANT_DIM_TABLE_SPEC,
+    PARTICIPANT_MARKET_MEMBERSHIP_TABLE_SPEC,
+    FACILITY_TABLE_SPECS[0],
+    BID_STACK_TABLE_SPEC,
+    SETTLEMENT_ACTIVITY_TABLE_SPEC,
 )
 
 _SYSTEM_NOTICE_RAW_SCHEMA = {
@@ -1097,6 +1150,95 @@ _GAS_QUALITY_SOURCE_COVERAGE_SCHEMA = {
     "first gas date": pl.Date,
     "latest gas date": pl.Date,
     "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_PARTICIPANT_DIM_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "participant_identity_source": pl.String,
+    "participant_identity_value": pl.String,
+    "canonical_participant_name": pl.String,
+    "registered_name": pl.String,
+    "abn": pl.String,
+    "acn": pl.String,
+    "participant_type": pl.String,
+    "participant_status": pl.String,
+    "source_systems": pl.List(pl.String),
+    "source_tables": pl.List(pl.String),
+    "source_company_ids": pl.List(pl.String),
+    "source_surrogate_keys": pl.List(pl.String),
+    "source_files": pl.List(pl.String),
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_PARTICIPANT_MARKET_MEMBERSHIP_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "participant_key": pl.String,
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "market_code": pl.String,
+    "source_company_id": pl.String,
+    "source_company_code": pl.String,
+    "source_hub_id": pl.String,
+    "source_hub_name": pl.String,
+    "registration_type": pl.String,
+    "registered_capacity": pl.String,
+    "membership_status": pl.String,
+    "participant_identity_source": pl.String,
+    "participant_identity_value": pl.String,
+    "source_surrogate_key": pl.String,
+    "source_file": pl.String,
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_PARTICIPANT_COVERAGE_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_PARTICIPANT_MEMBERSHIP_COVERAGE_SCHEMA = {
+    "source system": pl.String,
+    "market code": pl.String,
+    "registration type": pl.String,
+    "membership status": pl.String,
+    "rows": pl.UInt32,
+    "participant keys": pl.UInt32,
+    "source company ids": pl.UInt32,
+    "source company codes": pl.UInt32,
+    "hub ids": pl.UInt32,
+    "source tables": pl.UInt32,
+    "latest ingest": pl.Datetime("us"),
+}
+_PARTICIPANT_MARKET_FACT_SCHEMA = {
+    "related surface": pl.String,
+    "source table": pl.String,
+    "available rows": pl.UInt32,
+    "participant references": pl.UInt32,
+    "matched participants": pl.UInt32,
+    "detail": pl.String,
+}
+_PARTICIPANT_PREVIEW_SCHEMA = {
+    "identity source": pl.String,
+    "identity value": pl.String,
+    "participant": pl.String,
+    "registered name": pl.String,
+    "participant type": pl.String,
+    "participant status": pl.String,
+    "source systems": pl.String,
+    "source tables": pl.String,
+    "source company ids": pl.String,
+    "latest ingest": pl.Datetime("us"),
+}
+_PARTICIPANT_MEMBERSHIP_PREVIEW_SCHEMA = {
+    "source system": pl.String,
+    "market code": pl.String,
+    "participant key": pl.String,
+    "company id": pl.String,
+    "company code": pl.String,
+    "hub": pl.String,
+    "registration type": pl.String,
+    "registered capacity": pl.String,
+    "membership status": pl.String,
+    "identity source": pl.String,
+    "identity value": pl.String,
+    "source tables": pl.String,
     "latest ingest": pl.Datetime("us"),
 }
 _FACILITY_DIM_RAW_SCHEMA = {
@@ -1679,6 +1821,51 @@ def cached_load_gas_quality_table(
     )[0]
 
 
+def participant_table_specs() -> tuple[GasTableSpec, ...]:
+    """Return Participant-oriented tables used by the explainer."""
+    return PARTICIPANT_TABLE_SPECS
+
+
+def load_participant_context_tables(
+    config: GasDashboardConfig,
+    specs: Sequence[GasTableSpec] | None = None,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Load Participant explainer tables through the shared bounded loader."""
+    requested_specs = PARTICIPANT_TABLE_SPECS if specs is None else specs
+    return load_gas_model_tables(
+        _source_coverage_bounded_config(config),
+        specs=requested_specs,
+        reader=reader,
+        view=GasModelTableView.SAMPLE,
+        clock=clock,
+    )
+
+
+def cached_load_participant_context_tables(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    specs: Sequence[GasTableSpec] | None = None,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Return cached Participant explainer table reads for explicit refreshes."""
+    requested_specs = PARTICIPANT_TABLE_SPECS if specs is None else specs
+    return cached_load_gas_model_tables(
+        _source_coverage_bounded_config(config),
+        cache,
+        specs=requested_specs,
+        reader=reader,
+        view=GasModelTableView.SAMPLE,
+        refresh_token=refresh_token,
+        clock=clock,
+    )
+
+
 def facility_table_specs() -> tuple[GasTableSpec, ...]:
     """Return the facility-oriented tables used by the Facility explainer."""
     return FACILITY_TABLE_SPECS
@@ -2143,6 +2330,425 @@ def source_coverage_empty_state_markdown(loads: Sequence[GasTableLoad]) -> str:
     Materialize or seed the curated gas model outputs, then use
     **Refresh data**.
     """
+
+
+def participant_dimension_coverage_frame(load: GasTableLoad | None) -> pl.DataFrame:
+    """Return Participant dimension coverage metrics from bounded rows."""
+    dataframe = _normalised_participant_dimension_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_PARTICIPANT_COVERAGE_SCHEMA)
+
+    source_system_count = _participant_list_value_count(dataframe, "source_systems")
+    source_table_count = _participant_list_value_count(dataframe, "source_tables")
+    source_company_count = _participant_list_value_count(
+        dataframe,
+        "source_company_ids",
+    )
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Participant dimension rows",
+                "value": f"{dataframe.height:,}",
+                "detail": "Loaded bounded rows from silver_gas_dim_participant",
+            },
+            {
+                "metric": "Identity sources",
+                "value": (
+                    f"{_distinct_non_empty_count(dataframe, 'participant_identity_source'):,}"
+                ),
+                "detail": "Distinct participant_identity_source values represented",
+            },
+            {
+                "metric": "Canonical participants",
+                "value": (
+                    f"{_distinct_non_empty_count(dataframe, 'canonical_participant_name'):,}"
+                ),
+                "detail": "Distinct canonical_participant_name values represented",
+            },
+            {
+                "metric": "Registered names",
+                "value": f"{_distinct_non_empty_count(dataframe, 'registered_name'):,}",
+                "detail": "Distinct registered_name values where source data provides them",
+            },
+            {
+                "metric": "Participant types",
+                "value": f"{_distinct_non_empty_count(dataframe, 'participant_type'):,}",
+                "detail": "Distinct participant_type values in the dimension preview",
+            },
+            {
+                "metric": "Participant statuses",
+                "value": (
+                    f"{_distinct_non_empty_count(dataframe, 'participant_status'):,}"
+                ),
+                "detail": "Distinct participant_status values in the dimension preview",
+            },
+            {
+                "metric": "Source systems",
+                "value": f"{source_system_count:,}",
+                "detail": "Distinct lineage values carried in source_systems",
+            },
+            {
+                "metric": "Source tables",
+                "value": f"{source_table_count:,}",
+                "detail": "Distinct lineage values carried in source_tables",
+            },
+            {
+                "metric": "Source company ids",
+                "value": f"{source_company_count:,}",
+                "detail": "Distinct source_company_ids carried by participant rows",
+            },
+        ],
+        schema=_PARTICIPANT_COVERAGE_SCHEMA,
+    )
+
+
+def participant_membership_coverage_frame(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    """Return participant market membership coverage grouped by market metadata."""
+    dataframe = _normalised_participant_membership_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_PARTICIPANT_MEMBERSHIP_COVERAGE_SCHEMA)
+
+    rows: list[dict[str, object]] = []
+    groups = (
+        dataframe.select(
+            "source_system",
+            "market_code",
+            "registration_type",
+            "membership_status",
+        )
+        .unique()
+        .sort(
+            ["source_system", "market_code", "registration_type"],
+            nulls_last=True,
+        )
+        .to_dicts()
+    )
+    for group in groups:
+        subset = dataframe.filter(
+            _participant_group_expression("source_system", group["source_system"])
+            & _participant_group_expression("market_code", group["market_code"])
+            & _participant_group_expression(
+                "registration_type",
+                group["registration_type"],
+            )
+            & _participant_group_expression(
+                "membership_status",
+                group["membership_status"],
+            )
+        )
+        rows.append(
+            {
+                "source system": group["source_system"],
+                "market code": group["market_code"],
+                "registration type": group["registration_type"],
+                "membership status": group["membership_status"],
+                "rows": subset.height,
+                "participant keys": _distinct_non_empty_count(
+                    subset,
+                    "participant_key",
+                ),
+                "source company ids": _distinct_non_empty_count(
+                    subset,
+                    "source_company_id",
+                ),
+                "source company codes": _distinct_non_empty_count(
+                    subset,
+                    "source_company_code",
+                ),
+                "hub ids": _distinct_non_empty_count(subset, "source_hub_id"),
+                "source tables": _participant_list_value_count(
+                    subset,
+                    "source_tables",
+                ),
+                "latest ingest": _latest_ingest_timestamp(subset),
+            }
+        )
+
+    return pl.DataFrame(rows, schema=_PARTICIPANT_MEMBERSHIP_COVERAGE_SCHEMA)
+
+
+def participant_related_market_fact_frame(
+    loads: Sequence[GasTableLoad],
+) -> pl.DataFrame:
+    """Return participant-facing relationships to related market tables."""
+    participant_load = table_load_by_name(loads, PARTICIPANT_DIM_TABLE_NAME)
+    membership_load = table_load_by_name(
+        loads,
+        PARTICIPANT_MARKET_MEMBERSHIP_TABLE_NAME,
+    )
+    facility_load = table_load_by_name(loads, FACILITY_DIM_TABLE_NAME)
+    bid_stack_load = table_load_by_name(loads, BID_STACK_TABLE_NAME)
+    settlement_load = table_load_by_name(loads, SETTLEMENT_ACTIVITY_TABLE_NAME)
+
+    participants = _normalised_participant_dimension_dataframe(participant_load)
+    memberships = _normalised_participant_membership_dataframe(membership_load)
+    facilities = _normalised_facility_dimension_dataframe(facility_load)
+    bid_stack = _normalised_bid_stack_dataframe(bid_stack_load)
+    settlements = _normalised_settlement_activity_dataframe(settlement_load)
+
+    if (
+        participants.is_empty()
+        and memberships.is_empty()
+        and facilities.is_empty()
+        and bid_stack.is_empty()
+        and settlements.is_empty()
+    ):
+        return pl.DataFrame(schema=_PARTICIPANT_MARKET_FACT_SCHEMA)
+
+    participant_keys = _participant_reference_set(participants, "surrogate_key")
+    participant_identity_values = _participant_reference_set(
+        participants,
+        "participant_identity_value",
+    )
+    participant_names = _participant_name_set(participants)
+
+    rows = [
+        {
+            "related surface": "Market membership",
+            "source table": PARTICIPANT_MARKET_MEMBERSHIP_TABLE_NAME,
+            "available rows": memberships.height,
+            "participant references": _distinct_non_empty_count(
+                memberships,
+                "participant_key",
+            ),
+            "matched participants": _matched_reference_count(
+                memberships,
+                "participant_key",
+                participant_keys,
+            ),
+            "detail": (
+                "Bridge rows connecting participant_key to market_code, source "
+                "system, STTM hub, registration type, and membership status."
+            ),
+        },
+        {
+            "related surface": "Facility",
+            "source table": FACILITY_DIM_TABLE_NAME,
+            "available rows": _non_empty_string_count(facilities, "participant_key"),
+            "participant references": _distinct_non_empty_count(
+                facilities,
+                "participant_key",
+            ),
+            "matched participants": _matched_reference_count(
+                facilities,
+                "participant_key",
+                participant_keys,
+            ),
+            "detail": (
+                "Facility dimension rows with participant_key populated where "
+                "operator participant lineage is resolvable."
+            ),
+        },
+        {
+            "related surface": "Bid / Offer",
+            "source table": BID_STACK_TABLE_NAME,
+            "available rows": bid_stack.height,
+            "participant references": _bid_stack_participant_reference_count(
+                bid_stack,
+            ),
+            "matched participants": _matched_bid_stack_participant_count(
+                bid_stack,
+                participant_identity_values,
+                participant_names,
+            ),
+            "detail": (
+                "Bid / Offer stack rows carrying source participant ids and "
+                "participant names alongside facility, zone, price, and "
+                "quantity fields."
+            ),
+        },
+        {
+            "related surface": "Settlement",
+            "source table": SETTLEMENT_ACTIVITY_TABLE_NAME,
+            "available rows": settlements.height,
+            "participant references": _distinct_non_empty_count(
+                settlements,
+                "participant_name",
+            ),
+            "matched participants": _matched_reference_count(
+                settlements,
+                "participant_name",
+                participant_names,
+            ),
+            "detail": (
+                "Settlement activity rows carrying participant_name with "
+                "amount, quantity, percentage, schedule, and network context."
+            ),
+        },
+    ]
+    return pl.DataFrame(rows, schema=_PARTICIPANT_MARKET_FACT_SCHEMA)
+
+
+def participant_dimension_preview_frame(
+    load: GasTableLoad | None,
+    *,
+    preview_rows: int = DEFAULT_PARTICIPANT_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return a table-friendly preview of participant standing data."""
+    dataframe = _normalised_participant_dimension_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_PARTICIPANT_PREVIEW_SCHEMA)
+
+    rows: list[dict[str, object]] = []
+    for row in (
+        dataframe.sort(
+            [
+                "participant_identity_source",
+                "participant_identity_value",
+                "canonical_participant_name",
+            ],
+            nulls_last=True,
+        )
+        .head(max(1, preview_rows))
+        .to_dicts()
+    ):
+        rows.append(
+            {
+                "identity source": row.get("participant_identity_source"),
+                "identity value": row.get("participant_identity_value"),
+                "participant": row.get("canonical_participant_name"),
+                "registered name": row.get("registered_name"),
+                "participant type": row.get("participant_type"),
+                "participant status": row.get("participant_status"),
+                "source systems": ", ".join(
+                    _source_coverage_value_strings(row.get("source_systems"))
+                ),
+                "source tables": ", ".join(
+                    _source_coverage_value_strings(row.get("source_tables"))
+                ),
+                "source company ids": ", ".join(
+                    _source_coverage_value_strings(row.get("source_company_ids"))
+                ),
+                "latest ingest": row.get("ingested_timestamp"),
+            }
+        )
+    return pl.DataFrame(rows, schema=_PARTICIPANT_PREVIEW_SCHEMA)
+
+
+def participant_membership_preview_frame(
+    load: GasTableLoad | None,
+    *,
+    preview_rows: int = DEFAULT_PARTICIPANT_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return a table-friendly preview of participant market memberships."""
+    dataframe = _normalised_participant_membership_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_PARTICIPANT_MEMBERSHIP_PREVIEW_SCHEMA)
+
+    rows: list[dict[str, object]] = []
+    for row in (
+        dataframe.sort(
+            ["source_system", "market_code", "source_company_id"],
+            nulls_last=True,
+        )
+        .head(max(1, preview_rows))
+        .to_dicts()
+    ):
+        rows.append(
+            {
+                "source system": row.get("source_system"),
+                "market code": row.get("market_code"),
+                "participant key": row.get("participant_key"),
+                "company id": row.get("source_company_id"),
+                "company code": row.get("source_company_code"),
+                "hub": row.get("source_hub_name") or row.get("source_hub_id"),
+                "registration type": row.get("registration_type"),
+                "registered capacity": row.get("registered_capacity"),
+                "membership status": row.get("membership_status"),
+                "identity source": row.get("participant_identity_source"),
+                "identity value": row.get("participant_identity_value"),
+                "source tables": ", ".join(
+                    _source_coverage_value_strings(row.get("source_tables"))
+                ),
+                "latest ingest": row.get("ingested_timestamp"),
+            }
+        )
+    return pl.DataFrame(rows, schema=_PARTICIPANT_MEMBERSHIP_PREVIEW_SCHEMA)
+
+
+def participant_context_empty_state_markdown(loads: Sequence[GasTableLoad]) -> str:
+    """Return empty-state copy for the Participant explainer dashboard."""
+    if len(loads) == 0:
+        return """
+        **No Participant context tables were requested.**
+
+        The dashboard expected Participant-oriented `silver.gas_model` table
+        specs but received none. Check the Marimo dashboard registry and
+        Participant explainer configuration.
+        """
+
+    failed_count = sum(load.error is not None for load in loads)
+    empty_count = sum(
+        load.error is None and (load.dataframe is None or load.dataframe.is_empty())
+        for load in loads
+    )
+    read_policy = row_limit_message(_common_row_limit(loads))
+    read_detail = (
+        f"`{failed_count}` reads were unavailable and `{empty_count}` reads "
+        "returned no rows."
+    )
+    return f"""
+    **No Participant metadata, membership, or related fact rows are available.**
+
+    The dashboard checked `{len(loads)}` Participant-oriented
+    `silver.gas_model` assets, including `silver_gas_dim_participant`,
+    `silver_gas_participant_market_membership`, `silver_gas_dim_facility`,
+    `silver_gas_fact_bid_stack`, and `silver_gas_fact_settlement_activity`.
+    {read_detail}
+
+    {read_policy}
+
+    Materialize or seed the curated gas model outputs, then use
+    **Refresh data**.
+    """
+
+
+def render_participant_context_links(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render Participant links to related dashboards and concept panels."""
+    candidate_entries = tuple(dashboard_registry() if entries is None else entries)
+    concept_ids = (
+        PARTICIPANT_CONTEXT_ID,
+        "source-coverage-matrix",
+        "gas-model-table-explorer",
+        "bid-offer-context",
+        "settlement-context",
+        "facility-context",
+        "gas-customer-transfer-activity",
+    )
+    rows = "\n".join(
+        _render_participant_context_link(entry)
+        for entry in (
+            registry_entry_by_concept_id(concept_id, candidate_entries)
+            for concept_id in concept_ids
+        )
+        if entry is not None
+    )
+    if rows == "":
+        rows = (
+            '<li class="participant-links__empty">'
+            "No Participant, bid, settlement, facility, or table explorer "
+            "entries are registered."
+            "</li>"
+        )
+
+    return f"""\
+<style>
+{_participant_context_links_css()}
+</style>
+<section class="participant-links" aria-label="Participant context links">
+    <div>
+        <p class="participant-links__eyebrow">Context links</p>
+        <h2>Participant, membership, bid, settlement, and facility context</h2>
+    </div>
+    <ul>
+{rows}
+    </ul>
+</section>"""
 
 
 def facility_dimension_coverage_frame(load: GasTableLoad | None) -> pl.DataFrame:
@@ -5785,6 +6391,76 @@ def _source_coverage_distinct_count(
     return len(values)
 
 
+def _normalised_participant_dimension_dataframe(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_PARTICIPANT_DIM_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _PARTICIPANT_DIM_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("surrogate_key").cast(pl.String, strict=False),
+        pl.col("participant_identity_source").cast(pl.String, strict=False),
+        pl.col("participant_identity_value").cast(pl.String, strict=False),
+        pl.col("canonical_participant_name").cast(pl.String, strict=False),
+        pl.col("registered_name").cast(pl.String, strict=False),
+        pl.col("abn").cast(pl.String, strict=False),
+        pl.col("acn").cast(pl.String, strict=False),
+        pl.col("participant_type").cast(pl.String, strict=False),
+        pl.col("participant_status").cast(pl.String, strict=False),
+        pl.col("source_systems").cast(pl.List(pl.String), strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        pl.col("source_company_ids").cast(pl.List(pl.String), strict=False),
+        pl.col("source_surrogate_keys").cast(pl.List(pl.String), strict=False),
+        pl.col("source_files").cast(pl.List(pl.String), strict=False),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
+def _normalised_participant_membership_dataframe(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_PARTICIPANT_MARKET_MEMBERSHIP_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _PARTICIPANT_MARKET_MEMBERSHIP_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("surrogate_key").cast(pl.String, strict=False),
+        pl.col("participant_key").cast(pl.String, strict=False),
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        pl.col("market_code").cast(pl.String, strict=False),
+        pl.col("source_company_id").cast(pl.String, strict=False),
+        pl.col("source_company_code").cast(pl.String, strict=False),
+        pl.col("source_hub_id").cast(pl.String, strict=False),
+        pl.col("source_hub_name").cast(pl.String, strict=False),
+        pl.col("registration_type").cast(pl.String, strict=False),
+        pl.col("registered_capacity").cast(pl.String, strict=False),
+        pl.col("membership_status").cast(pl.String, strict=False),
+        pl.col("participant_identity_source").cast(pl.String, strict=False),
+        pl.col("participant_identity_value").cast(pl.String, strict=False),
+        pl.col("source_surrogate_key").cast(pl.String, strict=False),
+        pl.col("source_file").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
 def _normalised_hub_zone_dimension_dataframe(
     load: GasTableLoad | None,
 ) -> pl.DataFrame:
@@ -6067,6 +6743,80 @@ def _matched_facility_count(
         elif facility_key in facility_keys:
             matched.add(f"key:{facility_key}")
     return len(matched)
+
+
+def _participant_list_value_count(dataframe: pl.DataFrame, column: str) -> int:
+    values: set[str] = set()
+    for row in dataframe.select(column).to_dicts():
+        values.update(_source_coverage_value_strings(row.get(column)))
+    return len(values)
+
+
+def _participant_group_expression(column: str, value: object | None) -> pl.Expr:
+    if value is None:
+        return pl.col(column).is_null()
+    return pl.col(column) == value
+
+
+def _latest_ingest_timestamp(dataframe: pl.DataFrame) -> datetime | None:
+    values = dataframe.get_column("ingested_timestamp").drop_nulls()
+    if values.is_empty():
+        return None
+    latest = values.max()
+    return latest if isinstance(latest, datetime) else None
+
+
+def _participant_reference_set(dataframe: pl.DataFrame, column: str) -> set[str]:
+    if dataframe.is_empty() or column not in dataframe.columns:
+        return set()
+
+    return {
+        value
+        for value in (
+            dataframe.filter(_non_empty_string_expression(column))
+            .get_column(column)
+            .cast(pl.String, strict=False)
+            .to_list()
+        )
+        if isinstance(value, str) and value != ""
+    }
+
+
+def _participant_name_set(dataframe: pl.DataFrame) -> set[str]:
+    names: set[str] = set()
+    for column in ("canonical_participant_name", "registered_name"):
+        names.update(_participant_reference_set(dataframe, column))
+    return names
+
+
+def _matched_reference_count(
+    dataframe: pl.DataFrame,
+    column: str,
+    reference_values: set[str],
+) -> int:
+    if not reference_values:
+        return 0
+    return len(_participant_reference_set(dataframe, column) & reference_values)
+
+
+def _bid_stack_participant_reference_count(dataframe: pl.DataFrame) -> int:
+    references = _participant_reference_set(dataframe, "participant_id")
+    references.update(_participant_reference_set(dataframe, "participant_name"))
+    return len(references)
+
+
+def _matched_bid_stack_participant_count(
+    dataframe: pl.DataFrame,
+    participant_identity_values: set[str],
+    participant_names: set[str],
+) -> int:
+    matched_ids = _participant_reference_set(dataframe, "participant_id") & (
+        participant_identity_values
+    )
+    matched_names = _participant_reference_set(dataframe, "participant_name") & (
+        participant_names
+    )
+    return len(matched_ids | matched_names)
 
 
 def _gas_day_candidate_fields(load: GasTableLoad) -> tuple[str, ...]:
@@ -7114,6 +7864,100 @@ def _filtered_bid_stack_dataframe(
     if source_system_filter != BID_STACK_SOURCE_SYSTEM_FILTER_ALL:
         filtered = filtered.filter(pl.col("source_system") == source_system_filter)
     return filtered
+
+
+def _render_participant_context_link(entry: DashboardRegistryEntry) -> str:
+    status_label = _dashboard_entry_status_label(entry)
+    title = escape(entry.title)
+    route = entry.notebook_route
+    if entry.status.value == "available" and route is not None:
+        title_html = f'<a href="{escape(route, quote=True)}">{title}</a>'
+    else:
+        title_html = f"<span>{title}</span>"
+
+    return f"""\
+        <li data-dashboard-status="{escape(entry.status.value, quote=True)}">
+            {title_html}
+            <span>{escape(status_label)}</span>
+            <code>{escape(entry.concept_id)}</code>
+        </li>"""
+
+
+def _participant_context_links_css() -> str:
+    return """\
+.participant-links {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+}
+
+.participant-links__eyebrow {
+    margin: 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.74rem;
+    font-weight: 720;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.participant-links h2 {
+    margin: 0.15rem 0 0;
+    font-size: 1.05rem;
+}
+
+.participant-links ul {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.participant-links li {
+    display: grid;
+    grid-template-columns: minmax(10rem, 1fr) auto auto;
+    gap: 0.65rem;
+    align-items: center;
+    min-width: 0;
+    padding: 0.55rem 0;
+    border-top: 1px solid var(--emdl-line, #cfdbd6);
+}
+
+.participant-links li:first-child {
+    border-top: 0;
+}
+
+.participant-links a {
+    color: var(--emdl-blue, #166791);
+    font-weight: 720;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+}
+
+.participant-links span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.participant-links li > span:nth-child(2) {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.participant-links code {
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+    .participant-links li {
+        grid-template-columns: 1fr;
+    }
+}
+"""
 
 
 def _render_facility_context_link(entry: DashboardRegistryEntry) -> str:

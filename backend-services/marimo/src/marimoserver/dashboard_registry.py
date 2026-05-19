@@ -490,14 +490,18 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "concept_id": "participant-context",
         "title": "Participant Context",
         "description": (
-            "Planned concept panel for registered participants, market "
-            "memberships, and settlement-facing participant lineage."
+            "Available explainer dashboard for Participant glossary metadata, "
+            "current participant standing data, market memberships, and "
+            "participant-facing bid, settlement, and facility relationships."
         ),
-        "audiences": ("data-engineer", "stakeholder"),
-        "status": "planned",
+        "audiences": ("analyst", "data-engineer", "stakeholder"),
+        "status": "available",
+        "notebook_name": "participant_explainer",
         "backing_assets": (
             "silver.gas_model.silver_gas_dim_participant",
             "silver.gas_model.silver_gas_participant_market_membership",
+            "silver.gas_model.silver_gas_dim_facility",
+            "silver.gas_model.silver_gas_fact_bid_stack",
             "silver.gas_model.silver_gas_fact_settlement_activity",
         ),
         "generated_gold_paths": (
