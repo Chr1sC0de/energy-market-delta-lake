@@ -29,6 +29,7 @@ from marimoserver.gas_dashboard import (
     CUSTOMER_TRANSFER_TABLE_NAME,
     CUSTOMER_TRANSFER_TABLE_SPEC,
     GAS_MODEL_TABLES,
+    GAS_DAY_CONTEXT_ID,
     GAS_QUALITY_QUALITY_TYPE_FILTER_ALL,
     GAS_QUALITY_SOURCE_POINT_FILTER_ALL,
     GAS_QUALITY_TABLE_NAME,
@@ -73,6 +74,7 @@ from marimoserver.gas_dashboard import (
     bid_stack_zone_options,
     cached_load_customer_transfer_table,
     cached_load_bid_stack_table,
+    cached_load_gas_day_tables,
     cached_load_gas_quality_table,
     cached_load_gas_model_tables,
     cached_load_market_price_table,
@@ -97,11 +99,17 @@ from marimoserver.gas_dashboard import (
     gas_quality_source_coverage_frame,
     gas_quality_source_point_options,
     gas_quality_type_summary_frame,
+    gas_day_bounded_examples_frame,
+    gas_day_examples_empty_state_markdown,
+    gas_day_field_discovery_frame,
+    gas_day_kpi_frame,
+    gas_day_table_specs,
     gas_table_load_status_frame,
     gas_table_load_status_message,
     load_market_price_table,
     load_bid_stack_table,
     load_customer_transfer_table,
+    load_gas_day_tables,
     load_gas_quality_table,
     load_gas_model_tables,
     load_source_coverage_tables,
@@ -158,6 +166,7 @@ from marimoserver.dashboard_registry import (
     DashboardRegistryError,
     DashboardStatus,
     SourceChunkReference,
+    registry_entry_by_concept_id,
 )
 from marimoserver.gas_model_loader import (
     GasModelSessionCache,
@@ -357,6 +366,11 @@ def test_dashboard_read_behavior_frame_renders_per_dashboard_policy() -> None:
     assert rows["Source Coverage Matrix"]["row policy"] == (
         "Bounded preview: 42 rows max"
     )
+    assert rows["Gas Day Context"]["read behavior"] == (
+        "Registry-backed Gas Day date-field inspection"
+    )
+    assert rows["Gas Day Context"]["view"] == "Forced bounded sample"
+    assert rows["Gas Day Context"]["row policy"] == "Bounded preview: 42 rows max"
 
 
 def test_dashboard_read_behavior_frame_handles_unknown_available_dashboard() -> None:
@@ -3195,6 +3209,429 @@ def test_refresh_token_from_control_handles_missing_and_unhashable_values() -> N
 
     refresh_control.value = True
     assert refresh_token_from_control(refresh_control) == 2
+
+
+def test_gas_day_context_metadata_is_available_dashboard() -> None:
+    entry = registry_entry_by_concept_id(GAS_DAY_CONTEXT_ID)
+    html = render_dashboard_context_panel(GAS_DAY_CONTEXT_ID)
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "gas_day_explainer"
+    assert entry.notebook_route == "/marimo/gas_day_explainer/"
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md"
+        in entry.generated_gold_paths
+    )
+    assert entry.source_chunk_ids == ("chunk-gbb-guide-gas-day",)
+    assert "Gas Day Context" in html
+    assert "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md" in html
+    assert "chunk-gbb-guide-gas-day" in html
+    assert 'data-status="available"' in html
+
+
+def test_gas_day_table_specs_use_current_registry_assets_and_known_dates() -> None:
+    specs = gas_day_table_specs()
+    specs_by_table = {spec.table_name: spec for spec in specs}
+
+    assert "silver_gas_dim_date" in specs_by_table
+    assert specs_by_table["silver_gas_fact_schedule_run"].date_columns == (
+        "gas_date",
+        "gas_start_timestamp",
+        "bid_cutoff_timestamp",
+        "creation_timestamp",
+        "approval_timestamp",
+        "source_last_updated_timestamp",
+        "ingested_timestamp",
+    )
+    assert specs_by_table["silver_gas_fact_capacity_outlook"].date_columns == (
+        "from_gas_date",
+        "to_gas_date",
+    )
+    assert specs_by_table["silver_gas_fact_customer_transfer"].date_columns == (
+        "gas_date",
+        "ingested_timestamp",
+    )
+
+
+def test_gas_day_loaders_force_bounded_samples_and_cache_reads() -> None:
+    config = _dashboard_config()
+    specs = (
+        GasTableSpec(
+            section="Facts",
+            label="Schedule runs",
+            table_name="silver_gas_fact_schedule_run",
+            date_columns=("gas_date",),
+        ),
+    )
+    captured: list[int | None] = []
+    calls: list[int] = []
+    cache: GasModelSessionCache = {}
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert uri == (
+            "s3://dev-energy-market-aemo/silver/gas_model/silver_gas_fact_schedule_run"
+        )
+        assert storage_options == config.storage_options()
+        captured.append(row_limit)
+        calls.append(len(calls) + 1)
+        return pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, calls[-1])],
+                "source_system": ["STTM"],
+            }
+        )
+
+    direct = load_gas_day_tables(config, specs=specs, reader=reader)
+    first_cached = cached_load_gas_day_tables(config, cache, specs=specs, reader=reader)
+    second_cached = cached_load_gas_day_tables(
+        config, cache, specs=specs, reader=reader
+    )
+    refreshed = cached_load_gas_day_tables(
+        config,
+        cache,
+        specs=specs,
+        reader=reader,
+        refresh_token=1,
+    )
+
+    assert captured == [100, 100, 100]
+    assert calls == [1, 2, 3]
+    assert direct[0].row_limit == 100
+    assert not first_cached[0].cache_hit
+    assert second_cached[0].cache_hit
+    assert not refreshed[0].cache_hit
+    assert second_cached[0].dataframe is not None
+    assert second_cached[0].dataframe["gas_date"].to_list() == [date(2024, 1, 2)]
+    assert refreshed[0].dataframe is not None
+    assert refreshed[0].dataframe["gas_date"].to_list() == [date(2024, 1, 3)]
+
+
+def test_gas_day_field_discovery_finds_gas_date_and_date_fields() -> None:
+    schedule_load = _source_coverage_load(
+        "silver_gas_fact_schedule_run",
+        pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 2), date(2024, 1, 3)],
+                "gas_start_timestamp": [
+                    datetime(2024, 1, 2, 6),
+                    datetime(2024, 1, 3, 6),
+                ],
+                "source_system": ["STTM", "STTM"],
+                "source_table": ["silver.sttm.schedule", "silver.sttm.schedule"],
+            }
+        ),
+    )
+    capacity_load = GasTableLoad(
+        spec=GasTableSpec(
+            section="Facts",
+            label="Capacity outlook",
+            table_name="silver_gas_fact_capacity_outlook",
+            date_columns=("from_gas_date", "to_gas_date"),
+        ),
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_capacity_outlook",
+        dataframe=pl.DataFrame(
+            {
+                "from_gas_date": [date(2024, 2, 1)],
+                "to_gas_date": [date(2024, 2, 3)],
+                "source_table": ["silver.gbb.capacity"],
+            }
+        ),
+        error=None,
+        row_limit=100,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+    unavailable_load = GasTableLoad(
+        spec=CUSTOMER_TRANSFER_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_customer_transfer",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=100,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+    discovery = gas_day_field_discovery_frame(
+        (schedule_load, capacity_load, unavailable_load)
+    )
+    rows = {
+        (row["table"], row["field"]): row
+        for row in discovery.to_dicts()
+        if row["field"]
+    }
+
+    assert rows[("silver_gas_fact_schedule_run", "gas_date")] == {
+        "asset": "silver.gas_model.silver_gas_fact_schedule_run",
+        "section": "Facts",
+        "table": "silver_gas_fact_schedule_run",
+        "field": "gas_date",
+        "field role": "Gas Day field",
+        "dtype": "Date",
+        "status": "Discovered",
+        "rows loaded": 2,
+        "populated values": 2,
+        "first value": "2024-01-02",
+        "latest value": "2024-01-03",
+        "row limit": "Bounded preview: 100 rows max",
+        "table explorer": (
+            "/marimo/table_explorer/?search=silver_gas_fact_schedule_run"
+        ),
+        "uri": "s3://bucket/silver/gas_model/silver_gas_fact_schedule_run",
+        "detail": "Field is present in the bounded table read.",
+    }
+    assert (
+        rows[("silver_gas_fact_schedule_run", "gas_start_timestamp")]["field role"]
+        == "Timestamp field"
+    )
+    assert (
+        rows[("silver_gas_fact_capacity_outlook", "from_gas_date")]["field role"]
+        == "Gas Day field"
+    )
+    assert rows[("silver_gas_fact_customer_transfer", "gas_date")]["status"] == (
+        "Unavailable"
+    )
+    assert (
+        "FileNotFoundError: no parquet files found"
+        in rows[("silver_gas_fact_customer_transfer", "gas_date")]["detail"]
+    )
+
+
+def test_gas_day_field_discovery_handles_empty_declared_and_missing_fields() -> None:
+    missing_load = _source_coverage_load(
+        "silver_gas_fact_fieldless",
+        pl.DataFrame({"source_system": ["GBB"]}),
+    )
+    empty_fieldless_load = _source_coverage_load(
+        "silver_gas_fact_empty_fieldless",
+        pl.DataFrame(),
+    )
+    date_field_load = _source_coverage_load(
+        "silver_gas_fact_report_dates",
+        pl.DataFrame({"report_date": [date(2024, 1, 4)]}),
+    )
+    empty_declared_load = GasTableLoad(
+        spec=GasTableSpec(
+            section="Facts",
+            label="Declared empty",
+            table_name="silver_gas_fact_declared_empty",
+            date_columns=("date_key",),
+        ),
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_declared_empty",
+        dataframe=pl.DataFrame(schema={"source_system": pl.String}),
+        error=None,
+        row_limit=100,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+    declared_only_load = GasTableLoad(
+        spec=GasTableSpec(
+            section="Facts",
+            label="Declared only",
+            table_name="silver_gas_fact_declared_only",
+            date_columns=("delivery_gas_date",),
+        ),
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_declared_only",
+        dataframe=pl.DataFrame({"source_system": ["STTM"]}),
+        error=None,
+        row_limit=100,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+    empty_value_load = _source_coverage_load(
+        "silver_gas_fact_empty_values",
+        pl.DataFrame({"gas_date": [None]}, schema={"gas_date": pl.Date}),
+    )
+    unavailable_fieldless_load = _source_coverage_load(
+        "silver_gas_fact_missing_prefix",
+        None,
+        error="FileNotFoundError: no parquet files found",
+    )
+
+    empty_discovery = gas_day_field_discovery_frame(())
+    discovery = gas_day_field_discovery_frame(
+        (
+            missing_load,
+            empty_fieldless_load,
+            date_field_load,
+            empty_declared_load,
+            declared_only_load,
+            empty_value_load,
+            unavailable_fieldless_load,
+        )
+    )
+    rows = {(row["table"], row["field role"]): row for row in discovery.to_dicts()}
+
+    assert empty_discovery.is_empty()
+    assert rows[("silver_gas_fact_fieldless", "No date field found")]["status"] == (
+        "Loaded"
+    )
+    assert (
+        rows[("silver_gas_fact_empty_fieldless", "No date field found")]["status"]
+        == "Empty"
+    )
+    assert rows[("silver_gas_fact_report_dates", "Date field")]["field"] == (
+        "report_date"
+    )
+    assert rows[("silver_gas_fact_declared_empty", "Date key")]["status"] == "Empty"
+    assert rows[("silver_gas_fact_declared_empty", "Date key")]["detail"] == (
+        "The table read returned no rows; field presence came from metadata."
+    )
+    assert rows[("silver_gas_fact_declared_only", "Gas Day field")]["status"] == (
+        "Declared only"
+    )
+    assert rows[("silver_gas_fact_declared_only", "Gas Day field")]["detail"] == (
+        "delivery_gas_date is declared for this dashboard but absent from loaded rows."
+    )
+    assert rows[("silver_gas_fact_empty_values", "Gas Day field")]["first value"] == ""
+    assert rows[("silver_gas_fact_empty_values", "Gas Day field")]["latest value"] == ""
+    assert (
+        rows[("silver_gas_fact_missing_prefix", "No date field found")]["status"]
+        == "Unavailable"
+    )
+
+
+def test_gas_day_bounded_examples_and_kpis_use_loaded_rows() -> None:
+    load = _source_coverage_load(
+        "silver_gas_fact_schedule_run",
+        pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 2), date(2024, 1, 3)],
+                "source_system": ["STTM", "VICGAS"],
+                "source_table": ["silver.sttm.schedule", "silver.vicgas.schedule"],
+                "schedule_type_id": ["ex_ante", "pricing"],
+                "transmission_id": ["S-1", "V-1"],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 2, 8),
+                    datetime(2024, 1, 3, 8),
+                ],
+            }
+        ),
+    )
+
+    examples = gas_day_bounded_examples_frame((load,), examples_per_field=1)
+    discovery = gas_day_field_discovery_frame((load,))
+    kpis = gas_day_kpi_frame((load,), discovery, examples)
+    kpi_rows = {row["metric"]: row for row in kpis.to_dicts()}
+
+    assert examples.select(
+        "table",
+        "field",
+        "field role",
+        "value",
+        "source system",
+        "source table",
+        "context",
+    ).to_dict(as_series=False) == {
+        "table": ["silver_gas_fact_schedule_run"],
+        "field": ["gas_date"],
+        "field role": ["Gas Day field"],
+        "value": ["2024-01-03"],
+        "source system": ["VICGAS"],
+        "source table": ["silver.vicgas.schedule"],
+        "context": [
+            (
+                "schedule_type_id=pricing; transmission_id=V-1; "
+                "ingested_timestamp=2024-01-03 08:00:00"
+            )
+        ],
+    }
+    assert kpi_rows["Gas Day fields"]["value"] == "1"
+    assert kpi_rows["Date fields with values"]["value"] == "2"
+    assert kpi_rows["Bounded examples"]["value"] == "1"
+    assert kpi_rows["Latest Gas Day"]["value"] == "2024-01-03"
+
+
+def test_gas_day_examples_fall_back_to_date_fields_and_source_tables() -> None:
+    timestamp_load = _source_coverage_load(
+        "silver_gas_fact_timestamps",
+        pl.DataFrame(
+            {
+                "ingested_timestamp": [
+                    datetime(2024, 1, 2, 8),
+                    datetime(2024, 1, 3, 8),
+                ],
+                "source_tables": [
+                    ["silver.gbb.old", "silver.gbb.extra"],
+                    ["silver.gbb.latest"],
+                ],
+                "quality_type": ["old", "latest"],
+            }
+        ),
+    )
+    missing_declared_load = GasTableLoad(
+        spec=GasTableSpec(
+            section="Facts",
+            label="Missing declared field",
+            table_name="silver_gas_fact_missing_declared",
+            date_columns=("gas_date",),
+        ),
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_missing_declared",
+        dataframe=pl.DataFrame({"source_system": ["STTM"]}),
+        error=None,
+        row_limit=100,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+    examples = gas_day_bounded_examples_frame(
+        (timestamp_load, missing_declared_load),
+        examples_per_field=1,
+    )
+    empty_kpis = gas_day_kpi_frame(
+        (),
+        gas_day_field_discovery_frame(()),
+        gas_day_bounded_examples_frame(()),
+    )
+
+    assert examples.select(
+        "table",
+        "field",
+        "field role",
+        "value",
+        "source table",
+        "context",
+    ).to_dict(as_series=False) == {
+        "table": ["silver_gas_fact_timestamps"],
+        "field": ["ingested_timestamp"],
+        "field role": ["Timestamp field"],
+        "value": ["2024-01-03 08:00:00"],
+        "source table": ["silver.gbb.latest"],
+        "context": ["quality_type=latest"],
+    }
+    assert empty_kpis.row(5, named=True) == {
+        "metric": "Latest Gas Day",
+        "value": "unknown",
+        "detail": "Maximum loaded value across populated Gas Day fields",
+    }
+
+
+def test_gas_day_examples_empty_state_covers_absent_data() -> None:
+    unavailable_load = _source_coverage_load(
+        "silver_gas_fact_schedule_run",
+        None,
+        error="FileNotFoundError: no parquet files found",
+    )
+    empty_load = _source_coverage_load(
+        "silver_gas_fact_customer_transfer",
+        pl.DataFrame(schema={"gas_date": pl.Date}),
+    )
+
+    examples = gas_day_bounded_examples_frame((unavailable_load, empty_load))
+    markdown = gas_day_examples_empty_state_markdown((unavailable_load, empty_load))
+
+    assert examples.is_empty()
+    assert "No Gas Day tables were requested" in gas_day_examples_empty_state_markdown(
+        ()
+    )
+    assert "No bounded Gas Day examples are available" in markdown
+    assert "`1` reads were unavailable and `1` reads returned" in markdown
+    assert "no rows or no populated date fields" in markdown
+    assert "Bounded preview reads are capped at `100` rows per table" in markdown
 
 
 def test_load_gas_model_read_requests_cover_available_missing_and_empty() -> None:

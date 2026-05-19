@@ -44,6 +44,8 @@ DEFAULT_AWS_ALLOW_HTTP = "true"
 DEFAULT_AWS_PREVIEW_ROWS = 100
 AWS_DEVELOPMENT_LOCATION = "aws"
 DEFAULT_RELATED_CONTEXT_LIMIT = 9
+GAS_DAY_CONTEXT_ID = "gas-day-context"
+DEFAULT_GAS_DAY_EXAMPLES_PER_FIELD = 3
 SYSTEM_NOTICE_TABLE_NAME = "silver_gas_fact_system_notice"
 SYSTEM_NOTICE_CRITICAL_FILTER_ALL = "All notices"
 SYSTEM_NOTICE_CRITICAL_FILTER_CRITICAL = "Critical only"
@@ -1016,6 +1018,71 @@ _SOURCE_COVERAGE_KPI_SCHEMA = {
     "value": pl.String,
     "detail": pl.String,
 }
+_GAS_DAY_FIELD_DISCOVERY_SCHEMA = {
+    "asset": pl.String,
+    "section": pl.String,
+    "table": pl.String,
+    "field": pl.String,
+    "field role": pl.String,
+    "dtype": pl.String,
+    "status": pl.String,
+    "rows loaded": pl.UInt32,
+    "populated values": pl.UInt32,
+    "first value": pl.String,
+    "latest value": pl.String,
+    "row limit": pl.String,
+    "table explorer": pl.String,
+    "uri": pl.String,
+    "detail": pl.String,
+}
+_GAS_DAY_EXAMPLE_SCHEMA = {
+    "asset": pl.String,
+    "section": pl.String,
+    "table": pl.String,
+    "field": pl.String,
+    "field role": pl.String,
+    "value": pl.String,
+    "source system": pl.String,
+    "source table": pl.String,
+    "context": pl.String,
+    "row limit": pl.String,
+    "uri": pl.String,
+}
+_GAS_DAY_KPI_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_GAS_DAY_EXAMPLE_CONTEXT_COLUMNS = (
+    "price_type",
+    "schedule_type_id",
+    "forecast_demand_version",
+    "transmission_id",
+    "activity_type",
+    "market_code",
+    "source_facility_id",
+    "facility_name",
+    "source_connection_point_id",
+    "source_point_id",
+    "quality_type",
+    "gas_interval",
+    "ingested_timestamp",
+)
+_GAS_DAY_KNOWN_TABLE_SPECS = (
+    *GAS_MODEL_TABLES,
+    SYSTEM_NOTICE_TABLE_SPEC,
+    MARKET_PRICE_TABLE_SPEC,
+    SCHEDULE_RUN_TABLE_SPEC,
+    SETTLEMENT_ACTIVITY_TABLE_SPEC,
+    CUSTOMER_TRANSFER_TABLE_SPEC,
+    BID_STACK_TABLE_SPEC,
+    GAS_QUALITY_TABLE_SPEC,
+)
+_GAS_DAY_KNOWN_DATE_COLUMNS_BY_TABLE = {
+    spec.table_name: spec.date_columns
+    for spec in _GAS_DAY_KNOWN_TABLE_SPECS
+    if len(spec.date_columns) > 0
+}
 
 
 def discover_dashboard_config(
@@ -1738,6 +1805,207 @@ def source_coverage_empty_state_markdown(loads: Sequence[GasTableLoad]) -> str:
     The dashboard checked `{len(loads)}` registry-backed `silver.gas_model`
     assets. `{failed_count}` reads were unavailable and `{empty_count}` reads
     returned no rows.
+
+    Materialize or seed the curated gas model outputs, then use
+    **Refresh data**.
+    """
+
+
+def gas_day_table_specs(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> tuple[GasTableSpec, ...]:
+    """Return current registry-backed gas_model specs for Gas Day inspection."""
+    specs = source_coverage_table_specs(entries)
+    return tuple(
+        replace(
+            spec,
+            date_columns=_GAS_DAY_KNOWN_DATE_COLUMNS_BY_TABLE.get(
+                spec.table_name,
+                (),
+            ),
+        )
+        for spec in specs
+    )
+
+
+def load_gas_day_tables(
+    config: GasDashboardConfig,
+    specs: Sequence[GasTableSpec] | None = None,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Load bounded registry-backed gas_model tables for Gas Day examples."""
+    requested_specs = gas_day_table_specs() if specs is None else specs
+    return load_gas_model_tables(
+        _source_coverage_bounded_config(config),
+        specs=requested_specs,
+        reader=reader,
+        view=GasModelTableView.SAMPLE,
+        clock=clock,
+    )
+
+
+def cached_load_gas_day_tables(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    specs: Sequence[GasTableSpec] | None = None,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Return cached bounded gas_model table reads for Gas Day examples."""
+    requested_specs = gas_day_table_specs() if specs is None else specs
+    return cached_load_gas_model_tables(
+        _source_coverage_bounded_config(config),
+        cache,
+        specs=requested_specs,
+        reader=reader,
+        view=GasModelTableView.SAMPLE,
+        refresh_token=refresh_token,
+        clock=clock,
+    )
+
+
+def gas_day_field_discovery_frame(loads: Sequence[GasTableLoad]) -> pl.DataFrame:
+    """Return date and gas-date field coverage across loaded gas_model assets."""
+    rows: list[dict[str, object]] = []
+    for load in loads:
+        fields = _gas_day_candidate_fields(load)
+        if len(fields) == 0:
+            rows.append(_gas_day_missing_field_row(load))
+            continue
+        rows.extend(_gas_day_field_row(load, field) for field in fields)
+
+    if rows:
+        return pl.DataFrame(rows, schema=_GAS_DAY_FIELD_DISCOVERY_SCHEMA)
+    return pl.DataFrame(schema=_GAS_DAY_FIELD_DISCOVERY_SCHEMA)
+
+
+def gas_day_kpi_frame(
+    loads: Sequence[GasTableLoad],
+    field_discovery: pl.DataFrame,
+    examples: pl.DataFrame,
+) -> pl.DataFrame:
+    """Return first-viewport Gas Day coverage KPIs."""
+    field_rows = field_discovery.to_dicts() if not field_discovery.is_empty() else []
+    gas_day_fields = [
+        row
+        for row in field_rows
+        if row["field role"] == "Gas Day field" and row["field"] != ""
+    ]
+    fields_with_values = [
+        row for row in field_rows if _is_positive_count(row["populated values"])
+    ]
+    latest_gas_day = _latest_gas_day_value(gas_day_fields)
+    unavailable_count = sum(load.error is not None for load in loads)
+    empty_count = sum(
+        load.error is None and (load.dataframe is None or load.dataframe.is_empty())
+        for load in loads
+    )
+    row_limit = _common_row_limit(loads) if len(loads) > 0 else None
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Curated assets checked",
+                "value": f"{len(loads):,}",
+                "detail": "Registry-backed silver.gas_model table reads requested",
+            },
+            {
+                "metric": "Loaded assets",
+                "value": f"{sum(load.available for load in loads):,}",
+                "detail": "Tables with at least one loaded bounded row",
+            },
+            {
+                "metric": "Gas Day fields",
+                "value": f"{len(gas_day_fields):,}",
+                "detail": "Fields named gas_date, from_gas_date, or to_gas_date",
+            },
+            {
+                "metric": "Date fields with values",
+                "value": f"{len(fields_with_values):,}",
+                "detail": "Date, timestamp, or date-key fields populated in the read",
+            },
+            {
+                "metric": "Bounded examples",
+                "value": f"{examples.height:,}",
+                "detail": "Example rows rendered from already bounded table reads",
+            },
+            {
+                "metric": "Latest Gas Day",
+                "value": latest_gas_day or "unknown",
+                "detail": "Maximum loaded value across populated Gas Day fields",
+            },
+            {
+                "metric": "Unavailable or empty assets",
+                "value": f"{unavailable_count + empty_count:,}",
+                "detail": (
+                    f"{unavailable_count:,} unavailable reads and "
+                    f"{empty_count:,} empty reads"
+                ),
+            },
+            {
+                "metric": "Read policy",
+                "value": format_row_limit(row_limit),
+                "detail": row_limit_message(row_limit),
+            },
+        ],
+        schema=_GAS_DAY_KPI_SCHEMA,
+    )
+
+
+def gas_day_bounded_examples_frame(
+    loads: Sequence[GasTableLoad],
+    *,
+    examples_per_field: int = DEFAULT_GAS_DAY_EXAMPLES_PER_FIELD,
+) -> pl.DataFrame:
+    """Return bounded example values for discovered date and gas-date fields."""
+    row_limit = max(1, examples_per_field)
+    rows: list[dict[str, object]] = []
+
+    for load in loads:
+        dataframe = load.dataframe
+        if load.error is not None or dataframe is None or dataframe.is_empty():
+            continue
+
+        for field in _gas_day_example_fields(load):
+            if field not in dataframe.columns:
+                continue
+            examples = _gas_day_field_examples(dataframe, field, row_limit)
+            rows.extend(_gas_day_example_row(load, field, row) for row in examples)
+
+    if rows:
+        return pl.DataFrame(rows, schema=_GAS_DAY_EXAMPLE_SCHEMA)
+    return pl.DataFrame(schema=_GAS_DAY_EXAMPLE_SCHEMA)
+
+
+def gas_day_examples_empty_state_markdown(loads: Sequence[GasTableLoad]) -> str:
+    """Return empty-state copy for absent Gas Day bounded examples."""
+    if len(loads) == 0:
+        return """
+        **No Gas Day tables were requested.**
+
+        The dashboard expected registry-backed `silver.gas_model` assets but
+        received no table specs. Check the Marimo dashboard registry.
+        """
+
+    failed_count = sum(load.error is not None for load in loads)
+    empty_count = sum(
+        load.error is None and (load.dataframe is None or load.dataframe.is_empty())
+        for load in loads
+    )
+    row_limit = _common_row_limit(loads)
+
+    return f"""
+    **No bounded Gas Day examples are available.**
+
+    The dashboard checked `{len(loads)}` registry-backed `silver.gas_model`
+    assets. `{failed_count}` reads were unavailable and `{empty_count}` reads returned
+    no rows or no populated date fields.
+
+    {row_limit_message(row_limit)}
 
     Materialize or seed the curated gas model outputs, then use
     **Refresh data**.
@@ -4690,6 +4958,242 @@ def _source_coverage_distinct_count(
             if isinstance(value, str) and not value.startswith("(")
         ]
     return len(values)
+
+
+def _gas_day_candidate_fields(load: GasTableLoad) -> tuple[str, ...]:
+    fields: list[str] = list(load.spec.date_columns)
+    dataframe = load.dataframe
+    if dataframe is not None:
+        fields.extend(
+            column
+            for column in dataframe.columns
+            if _is_gas_day_candidate_column(column)
+        )
+    return tuple(dict.fromkeys(fields))
+
+
+def _gas_day_example_fields(load: GasTableLoad) -> tuple[str, ...]:
+    fields = _gas_day_candidate_fields(load)
+    gas_day_fields = tuple(
+        field for field in fields if _gas_day_field_role(field) == "Gas Day field"
+    )
+    return gas_day_fields if gas_day_fields else fields
+
+
+def _is_gas_day_candidate_column(column: str) -> bool:
+    normalised = column.lower()
+    return "date" in normalised or "timestamp" in normalised
+
+
+def _gas_day_missing_field_row(load: GasTableLoad) -> dict[str, object]:
+    rows_loaded = 0 if load.dataframe is None else load.dataframe.height
+    detail = load.error or "No date, timestamp, or date-key fields were discovered."
+    return {
+        "asset": f"silver.gas_model.{load.spec.table_name}",
+        "section": load.spec.section,
+        "table": load.spec.table_name,
+        "field": "",
+        "field role": "No date field found",
+        "dtype": "",
+        "status": _gas_day_load_status(load),
+        "rows loaded": rows_loaded,
+        "populated values": 0,
+        "first value": "",
+        "latest value": "",
+        "row limit": format_row_limit(load.row_limit),
+        "table explorer": _gas_day_table_explorer_link(load),
+        "uri": load.uri,
+        "detail": detail,
+    }
+
+
+def _gas_day_field_row(load: GasTableLoad, field: str) -> dict[str, object]:
+    dataframe = load.dataframe
+    rows_loaded = 0 if dataframe is None else dataframe.height
+    field_present = dataframe is not None and field in dataframe.columns
+    dtype = (
+        "" if not field_present or dataframe is None else str(dataframe.schema[field])
+    )
+    populated_values = (
+        _field_populated_count(dataframe, field)
+        if field_present and dataframe is not None
+        else 0
+    )
+    first_value, latest_value = (
+        _field_value_bounds(dataframe, field)
+        if field_present and dataframe is not None
+        else ("", "")
+    )
+
+    return {
+        "asset": f"silver.gas_model.{load.spec.table_name}",
+        "section": load.spec.section,
+        "table": load.spec.table_name,
+        "field": field,
+        "field role": _gas_day_field_role(field),
+        "dtype": dtype,
+        "status": _gas_day_field_status(load, field_present),
+        "rows loaded": rows_loaded,
+        "populated values": populated_values,
+        "first value": first_value,
+        "latest value": latest_value,
+        "row limit": format_row_limit(load.row_limit),
+        "table explorer": _gas_day_table_explorer_link(load),
+        "uri": load.uri,
+        "detail": _gas_day_field_detail(load, field, field_present),
+    }
+
+
+def _gas_day_field_role(field: str) -> str:
+    normalised = field.lower()
+    if normalised in {"gas_date", "from_gas_date", "to_gas_date"}:
+        return "Gas Day field"
+    if normalised.endswith("_gas_date"):
+        return "Gas Day field"
+    if normalised == "date_key" or normalised.endswith("_date_key"):
+        return "Date key"
+    if "timestamp" in normalised:
+        return "Timestamp field"
+    return "Date field"
+
+
+def _gas_day_load_status(load: GasTableLoad) -> str:
+    if load.error is not None:
+        return "Unavailable"
+    if load.dataframe is None or load.dataframe.is_empty():
+        return "Empty"
+    return "Loaded"
+
+
+def _gas_day_field_status(load: GasTableLoad, field_present: bool) -> str:
+    if load.error is not None:
+        return "Unavailable"
+    if load.dataframe is None or load.dataframe.is_empty():
+        return "Empty"
+    if field_present:
+        return "Discovered"
+    return "Declared only"
+
+
+def _gas_day_field_detail(
+    load: GasTableLoad,
+    field: str,
+    field_present: bool,
+) -> str:
+    if load.error is not None:
+        return load.error
+    if load.dataframe is None or load.dataframe.is_empty():
+        return "The table read returned no rows; field presence came from metadata."
+    if not field_present:
+        return f"{field} is declared for this dashboard but absent from loaded rows."
+    return "Field is present in the bounded table read."
+
+
+def _field_populated_count(dataframe: pl.DataFrame, field: str) -> int:
+    return dataframe.get_column(field).drop_nulls().len()
+
+
+def _field_value_bounds(
+    dataframe: pl.DataFrame,
+    field: str,
+) -> tuple[str, str]:
+    values = dataframe.get_column(field).drop_nulls()
+    if values.is_empty():
+        return "", ""
+
+    return _format_cell_value(values.min()), _format_cell_value(values.max())
+
+
+def _gas_day_field_examples(
+    dataframe: pl.DataFrame,
+    field: str,
+    row_limit: int,
+) -> list[dict[str, object]]:
+    selected_columns = _gas_day_example_columns(dataframe, field)
+    examples = (
+        dataframe.select(selected_columns)
+        .filter(pl.col(field).is_not_null())
+        .sort(field, descending=True, nulls_last=True)
+        .head(row_limit)
+    )
+    return examples.to_dicts()
+
+
+def _gas_day_example_columns(dataframe: pl.DataFrame, field: str) -> list[str]:
+    columns = [field]
+    for column in (
+        "source_system",
+        "source_table",
+        "source_tables",
+        *_GAS_DAY_EXAMPLE_CONTEXT_COLUMNS,
+    ):
+        if column in dataframe.columns and column not in columns:
+            columns.append(column)
+    return columns
+
+
+def _gas_day_example_row(
+    load: GasTableLoad,
+    field: str,
+    row: Mapping[str, object],
+) -> dict[str, object]:
+    return {
+        "asset": f"silver.gas_model.{load.spec.table_name}",
+        "section": load.spec.section,
+        "table": load.spec.table_name,
+        "field": field,
+        "field role": _gas_day_field_role(field),
+        "value": _format_cell_value(row.get(field)),
+        "source system": _format_cell_value(row.get("source_system")),
+        "source table": _gas_day_source_table_value(row),
+        "context": _gas_day_example_context(row, field),
+        "row limit": format_row_limit(load.row_limit),
+        "uri": load.uri,
+    }
+
+
+def _gas_day_source_table_value(row: Mapping[str, object]) -> str:
+    if "source_table" in row:
+        return _format_cell_value(row["source_table"])
+    return _format_cell_value(row.get("source_tables"))
+
+
+def _gas_day_example_context(row: Mapping[str, object], field: str) -> str:
+    labels: list[str] = []
+    excluded_columns = {field, "source_system", "source_table", "source_tables"}
+    for column in _GAS_DAY_EXAMPLE_CONTEXT_COLUMNS:
+        if column in excluded_columns:
+            continue
+        value = _format_cell_value(row.get(column))
+        if value:
+            labels.append(f"{column}={value}")
+    return "; ".join(labels)
+
+
+def _format_cell_value(value: object | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        return str(value)
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes):
+        return ", ".join(_format_cell_value(item) for item in value if item is not None)
+    return str(value)
+
+
+def _latest_gas_day_value(rows: Sequence[Mapping[str, object]]) -> str:
+    values = sorted(
+        str(value)
+        for row in rows
+        if (value := row.get("latest value")) not in {"", None}
+    )
+    if len(values) == 0:
+        return ""
+    return values[-1]
+
+
+def _gas_day_table_explorer_link(load: GasTableLoad) -> str:
+    table_name = quote(load.spec.table_name, safe="")
+    return f"{SOURCE_COVERAGE_TABLE_EXPLORER_ROUTE}?search={table_name}"
 
 
 def _market_price_string_filter_options(

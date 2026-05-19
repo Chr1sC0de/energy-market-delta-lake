@@ -460,15 +460,26 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "concept_id": "gas-day-context",
         "title": "Gas Day Context",
         "description": (
-            "Planned concept panel for gas-day coverage, date filtering, and "
-            "daily market alignment across facts."
+            "Available explainer dashboard for Gas Day glossary metadata, "
+            "date and gas-date field coverage, and bounded examples across "
+            "current curated gas_model assets."
         ),
-        "audiences": ("analyst", "stakeholder"),
-        "status": "planned",
+        "audiences": ("analyst", "stakeholder", "data-engineer"),
+        "status": "available",
+        "notebook_name": "gas_day_explainer",
         "backing_assets": (
             "silver.gas_model.silver_gas_dim_date",
             "silver.gas_model.silver_gas_fact_market_price",
             "silver.gas_model.silver_gas_fact_schedule_run",
+            "silver.gas_model.silver_gas_fact_scheduled_quantity",
+            "silver.gas_model.silver_gas_fact_connection_point_flow",
+            "silver.gas_model.silver_gas_fact_facility_flow_storage",
+            "silver.gas_model.silver_gas_fact_linepack",
+            "silver.gas_model.silver_gas_fact_capacity_outlook",
+            "silver.gas_model.silver_gas_fact_bid_stack",
+            "silver.gas_model.silver_gas_fact_settlement_activity",
+            "silver.gas_model.silver_gas_fact_customer_transfer",
+            "silver.gas_model.silver_gas_fact_gas_quality",
         ),
         "generated_gold_paths": (
             "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md",

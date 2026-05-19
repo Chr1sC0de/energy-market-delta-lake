@@ -791,6 +791,7 @@ developer-stack setting. It renders e2e Dagster config per run from the current
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/source_coverage_matrix.py`
+  - `backend-services/marimo/notebooks/gas_day_explainer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/aws_bounded_read_diagnostics.py`
   - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`

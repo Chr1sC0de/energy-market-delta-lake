@@ -127,10 +127,12 @@ Local workflow notes:
   source chunk IDs, related concepts, and dashboard states. The
   concept-to-asset explorer is the registry-only map from Market context
   glossary concepts to backing `silver.gas_model` assets, dashboard routes,
-  planned dashboard cards, and table explorer deep links. Market price,
-  schedule run, settlement activity, Bid / Offer stack, gas quality, and system
-  notice dashboards use shared bounded gas-model reads for fact previews and
-  summaries. The table explorer is the selected-table workbench for storage
+  planned dashboard cards, and table explorer deep links. The Gas Day explainer
+  uses registry context metadata and bounded gas-model samples to show
+  date-field coverage across curated assets. Market price, schedule run,
+  settlement activity, customer transfer, Bid / Offer stack, gas quality, and
+  system notice dashboards use shared bounded gas-model reads for fact previews
+  and summaries. The table explorer is the selected-table workbench for storage
   inspection, readiness links, bounded-read diagnostics, and concept-gallery
   metadata for mapped `silver.gas_model` assets. The
   `marimo-codex-workspace` service is a
@@ -259,6 +261,7 @@ and the required `git diff` to `rg` to QA flow, use
   - `backend-services/marimo/src/marimoserver/concept_asset_explorer.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/source_coverage_matrix.py`
+  - `backend-services/marimo/notebooks/gas_day_explainer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
   - `backend-services/marimo/notebooks/s3_bucket_health.py`

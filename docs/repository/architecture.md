@@ -132,9 +132,11 @@ glossary explorer browses packaged registry metadata without reading generated
 gold Markdown or live S3 tables at runtime. Its concept-to-asset explorer maps
 Market context glossary concepts to registry backing assets, dashboard routes,
 planned dashboard cards, and table explorer deep links without reading table
-rows. Its market price, schedule run, settlement activity, Bid / Offer stack,
-gas quality, and system notice dashboards use the shared bounded gas-model
-loader for read-only fact previews and summaries. Its table explorer remains
+rows. Its market price, schedule run, settlement activity, customer transfer,
+Bid / Offer stack, gas quality, and system notice dashboards use the shared
+bounded gas-model loader for read-only fact previews and summaries. Its Gas Day
+explainer uses registry context metadata and bounded gas-model samples to show
+date-field coverage across curated assets. Its table explorer remains
 the selected-table workbench for storage inspection, readiness navigation,
 bounded-read diagnostics, and concept-gallery metadata for mapped
 `silver.gas_model` assets. The
@@ -266,6 +268,7 @@ Gas market knowledge base responsibility:
   - `backend-services/marimo/src/marimoserver/concept_asset_explorer.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/source_coverage_matrix.py`
+  - `backend-services/marimo/notebooks/gas_day_explainer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
   - `backend-services/marimo/notebooks/s3_bucket_health.py`

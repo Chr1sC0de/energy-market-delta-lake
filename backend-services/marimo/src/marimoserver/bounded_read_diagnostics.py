@@ -14,6 +14,7 @@ from marimoserver.dashboard_registry import (
 from marimoserver.gas_dashboard import (
     GAS_MODEL_TABLES,
     GasDashboardConfig,
+    gas_day_table_specs,
     source_coverage_table_specs,
 )
 from marimoserver.gas_model_loader import (
@@ -293,17 +294,8 @@ def _dashboard_read_behavior_row(
             format_row_limit(bounded_row_limit(table_config)),
             "Configured table buckets",
         )
-    if concept_id == "source-coverage-matrix":
-        return _row(
-            entry,
-            route,
-            "Registry-backed source metadata inspection",
-            "Forced bounded sample",
-            format_row_limit(
-                bounded_row_limit(replace(gas_config, full_table_scan_enabled=False))
-            ),
-            f"{len(source_coverage_table_specs())} registry-backed gas_model tables",
-        )
+    if concept_id in {"source-coverage-matrix", "gas-day-context"}:
+        return _forced_bounded_registry_row(entry, route, gas_config)
     if concept_id == "gas-market-overview":
         return _row(
             entry,
@@ -339,6 +331,30 @@ def _dashboard_read_behavior_row(
         "See dashboard",
         format_row_limit(bounded_row_limit(gas_config)),
         _join_values(entry.backing_assets),
+    )
+
+
+def _forced_bounded_registry_row(
+    entry: DashboardRegistryEntry,
+    route: str,
+    gas_config: GasDashboardConfig,
+) -> dict[str, str]:
+    if entry.concept_id == "gas-day-context":
+        read_behavior = "Registry-backed Gas Day date-field inspection"
+        scope = f"{len(gas_day_table_specs())} registry-backed gas_model tables"
+    else:
+        read_behavior = "Registry-backed source metadata inspection"
+        scope = f"{len(source_coverage_table_specs())} registry-backed gas_model tables"
+
+    return _row(
+        entry,
+        route,
+        read_behavior,
+        "Forced bounded sample",
+        format_row_limit(
+            bounded_row_limit(replace(gas_config, full_table_scan_enabled=False))
+        ),
+        scope,
     )
 
 

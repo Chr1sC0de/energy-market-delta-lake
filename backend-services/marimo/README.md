@@ -19,6 +19,7 @@ Marimo-Codex research workspace image.
 - [S3 bucket health](#s3-bucket-health)
 - [Table explorer](#table-explorer)
 - [Source coverage matrix](#source-coverage-matrix)
+- [Gas Day explainer dashboard](#gas-day-explainer-dashboard)
 - [Gas market dashboard](#gas-market-dashboard)
 - [Market prices dashboard](#market-prices-dashboard)
 - [Schedule runs dashboard](#schedule-runs-dashboard)
@@ -341,6 +342,23 @@ The dashboard summarizes each asset by `source_system` and either scalar
 instead of disappearing from the matrix. Empty reads, unavailable Parquet
 prefixes, unavailable Dagster GraphQL metadata, and bounded AWS preview mode
 remain visible in the load diagnostics and coverage state columns.
+
+## Gas Day explainer dashboard
+
+[notebooks/gas_day_explainer.py](notebooks/gas_day_explainer.py) is an
+analytical dashboard for the Gas Day concept. It renders the registry-backed
+Gas Day context panel with the generated-gold path and source chunk ID copied
+from the Gas market knowledge base, then loads bounded samples from current
+registry-backed `silver.gas_model` assets through the shared gas model loader.
+
+The dashboard discovers date, timestamp, date-key, and gas-date fields from
+known dashboard metadata and the columns present in the bounded reads.
+`gas_date`, `from_gas_date`, and `to_gas_date` are highlighted as Gas Day
+fields, while related date and timestamp fields remain visible for alignment
+context. Bounded examples prefer populated Gas Day fields and fall back to
+other date fields only when a table has no Gas Day field. Empty reads,
+unavailable Parquet prefixes, and missing populated date fields render designed
+empty states with the checked assets, read policy, and refresh action.
 
 ## Gas market dashboard
 
@@ -819,6 +837,7 @@ prek run -a
   - `backend-services/marimo/notebooks/gbb_interactive_map.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/source_coverage_matrix.py`
+  - `backend-services/marimo/notebooks/gas_day_explainer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/aws_bounded_read_diagnostics.py`
   - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
