@@ -196,6 +196,7 @@ class MarimoDashboardComponentResource(pulumi.ComponentResource):
                     -e MARIMO_NOTEBOOKS_DIR=/opt/marimo/notebooks \\
                     -e MARIMO_TABLE_BUCKETS="$MARIMO_TABLE_BUCKETS" \\
                     -e MARIMO_MAX_PREVIEW_ROWS=100 \\
+                    -e MARIMO_OUTPUT_MAX_BYTES=16000000 \\
                     -e MARIMO_FULL_TABLE_SCAN_ENABLED=false \\
                     -e AEMO_BUCKET="$AEMO_BUCKET" \\
                     -e IO_MANAGER_BUCKET="$IO_MANAGER_BUCKET" \\

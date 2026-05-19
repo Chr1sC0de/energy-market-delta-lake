@@ -5,6 +5,7 @@ from pathlib import Path
 
 MARIMO_DIR = Path(__file__).resolve().parents[2]
 BACKEND_SERVICES_DIR = MARIMO_DIR.parent
+MARIMO_OUTPUT_MAX_BYTES_ENV = "      MARIMO_OUTPUT_MAX_BYTES: 16000000"
 
 
 def _read(path: Path) -> str:
@@ -15,6 +16,12 @@ def _service_block(compose: str, service_name: str, next_service_name: str) -> s
     start = compose.index(f"  {service_name}:")
     end = compose.index(f"  {next_service_name}:", start)
     return compose[start:end]
+
+
+def _caddy_matcher_block(caddyfile: str, matcher_name: str) -> str:
+    start = caddyfile.index(f"    {matcher_name} {{")
+    end = caddyfile.index("    }", start)
+    return caddyfile[start:end]
 
 
 class TestLocalMarimoImageSplit:
@@ -40,6 +47,7 @@ class TestLocalMarimoImageSplit:
         assert "      DEVELOPMENT_LOCATION: local" in dashboard
         assert "      MARIMO_WORKSPACE_KIND: dashboard" in dashboard
         assert "      MARIMO_NOTEBOOKS_DIR: /opt/marimo/notebooks" in dashboard
+        assert MARIMO_OUTPUT_MAX_BYTES_ENV in dashboard
         assert (
             "      DAGSTER_GRAPHQL_URL: "
             "${DAGSTER_GRAPHQL_URL:-"
@@ -55,6 +63,7 @@ class TestLocalMarimoImageSplit:
         assert "      MARIMO_WORKSPACE_KIND: codex-research" in workspace
         assert "      MARIMO_WORKSPACE_ROOT: /workspace" in workspace
         assert "      MARIMO_NOTEBOOKS_DIR: /workspace/notebooks" in workspace
+        assert MARIMO_OUTPUT_MAX_BYTES_ENV in workspace
         assert (
             "      DAGSTER_GRAPHQL_URL: "
             "${DAGSTER_GRAPHQL_URL:-"
@@ -86,3 +95,14 @@ class TestLocalMarimoImageSplit:
         assert "Do not access deployed AWS services" in agents
         assert "Write proposed issue drafts under `issue-drafts/`" in agents
         assert "Deployed Codex execution is deferred" in agents
+
+    def test_caddy_proxies_marimo_static_assets_without_auth(self) -> None:
+        caddyfile = _read(BACKEND_SERVICES_DIR / "caddy" / "Caddyfile")
+        protected_marimo = _caddy_matcher_block(caddyfile, "@protectedMarimo")
+
+        assert "not path /marimo/health" in protected_marimo
+        assert "not header Connection *Upgrade*" in protected_marimo
+        assert "not path /marimo/*/assets/*" in protected_marimo
+        assert "/marimo/*/favicon.ico" in protected_marimo
+        assert "/marimo/*/manifest.json" in protected_marimo
+        assert "reverse_proxy /marimo* {$MARIMO_SERVER}" in caddyfile

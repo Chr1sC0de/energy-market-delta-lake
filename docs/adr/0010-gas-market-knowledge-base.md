@@ -72,6 +72,9 @@ The `generated/` corpus is intentionally separate from maintained repository
 docs. Future **Market context** pages can be tracked artifacts under
 `generated/gold`, but router docs and Subproject docs still need normal
 **Documentation sync** metadata outside that generated corpus.
+Runtime dashboards may copy generated-gold paths and source chunk IDs into
+their own registries as citation metadata, but generated gold Markdown remains
+read-only corpus output rather than a dashboard runtime dependency.
 
 Embeddings or vector storage can be added later only after the extracted text
 and Docling Hybrid chunks exist. A future irreversible storage choice should get

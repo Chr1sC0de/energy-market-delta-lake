@@ -7,6 +7,7 @@ import pytest
 from marimoserver.dashboard_registry import (
     DASHBOARD_REGISTRY_RECORDS,
     ROADMAP_AUDIENCES,
+    DashboardAudience,
     DashboardRegistryError,
     DashboardStatus,
     dashboard_registry,
@@ -31,6 +32,96 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert overview.notebook_route == "/marimo/sample_energy_market/"
     assert "silver.gas_model.silver_gas_fact_market_price" in overview.backing_assets
     assert missing is None
+
+    prices = registry_entry_by_concept_id("gas-market-prices", entries)
+    assert prices is not None
+    assert prices.status is DashboardStatus.AVAILABLE
+    assert prices.notebook_name == "gas_market_prices"
+    assert prices.notebook_route == "/marimo/gas_market_prices/"
+    assert prices.backing_assets == ("silver.gas_model.silver_gas_fact_market_price",)
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md"
+        in prices.generated_gold_paths
+    )
+
+    schedule_runs = registry_entry_by_concept_id("gas-schedule-runs", entries)
+    assert schedule_runs is not None
+    assert schedule_runs.status is DashboardStatus.AVAILABLE
+    assert schedule_runs.notebook_name == "gas_schedule_runs"
+    assert schedule_runs.notebook_route == "/marimo/gas_schedule_runs/"
+    assert schedule_runs.backing_assets == (
+        "silver.gas_model.silver_gas_fact_schedule_run",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/settlement.md"
+        in schedule_runs.generated_gold_paths
+    )
+
+    settlement = registry_entry_by_concept_id("settlement-context", entries)
+    assert settlement is not None
+    assert settlement.status is DashboardStatus.AVAILABLE
+    assert settlement.notebook_name == "gas_settlement_activity"
+    assert settlement.notebook_route == "/marimo/gas_settlement_activity/"
+    assert settlement.backing_assets == (
+        "silver.gas_model.silver_gas_fact_settlement_activity",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/settlement.md"
+        in settlement.generated_gold_paths
+    )
+
+    readiness = registry_entry_by_concept_id("data-readiness-overview", entries)
+    assert readiness is not None
+    assert readiness.status is DashboardStatus.AVAILABLE
+    assert readiness.notebook_name == "data_readiness_overview"
+    assert readiness.notebook_route == "/marimo/data_readiness_overview/"
+    assert DashboardAudience.PLATFORM_OPERATIONS in readiness.audiences
+    assert DashboardAudience.OPERATOR in readiness.audiences
+    assert DashboardAudience.DATA_ENGINEER in readiness.audiences
+
+    glossary = registry_entry_by_concept_id("glossary-explorer", entries)
+    assert glossary is not None
+    assert glossary.status is DashboardStatus.AVAILABLE
+    assert glossary.notebook_name == "glossary_explorer"
+    assert glossary.notebook_route == "/marimo/glossary_explorer/"
+    assert glossary.backing_assets == ()
+    assert glossary.generated_gold_paths == (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/README.md",
+    )
+    assert glossary.source_chunk_ids == ()
+
+    notices = registry_entry_by_concept_id("gas-system-notices", entries)
+    assert notices is not None
+    assert notices.status is DashboardStatus.AVAILABLE
+    assert notices.notebook_name == "system_notices"
+    assert notices.notebook_route == "/marimo/system_notices/"
+    assert "silver.gas_model.silver_gas_fact_system_notice" in notices.backing_assets
+
+    gas_quality = registry_entry_by_concept_id("gas-quality-composition", entries)
+    assert gas_quality is not None
+    assert gas_quality.status is DashboardStatus.AVAILABLE
+    assert gas_quality.notebook_name == "gas_quality_composition"
+    assert gas_quality.notebook_route == "/marimo/gas_quality_composition/"
+    assert "silver.gas_model.silver_gas_fact_gas_quality" in gas_quality.backing_assets
+
+    customer_transfer = registry_entry_by_concept_id(
+        "gas-customer-transfer-activity",
+        entries,
+    )
+    assert customer_transfer is not None
+    assert customer_transfer.status is DashboardStatus.AVAILABLE
+    assert customer_transfer.notebook_name == "gas_customer_transfer_activity"
+    assert customer_transfer.notebook_route == "/marimo/gas_customer_transfer_activity/"
+    assert customer_transfer.backing_assets == (
+        "silver.gas_model.silver_gas_fact_customer_transfer",
+    )
+
+    bid_stack = registry_entry_by_concept_id("bid-offer-context", entries)
+    assert bid_stack is not None
+    assert bid_stack.status is DashboardStatus.AVAILABLE
+    assert bid_stack.notebook_name == "gas_bid_offer_stack"
+    assert bid_stack.notebook_route == "/marimo/gas_bid_offer_stack/"
+    assert bid_stack.backing_assets == ("silver.gas_model.silver_gas_fact_bid_stack",)
 
 
 def test_dashboard_registry_payload_includes_required_fields() -> None:
@@ -128,6 +219,14 @@ def test_dashboard_registry_parsing_rejects_unknown_audience() -> None:
         load_dashboard_registry([record])
 
 
+def test_dashboard_registry_parsing_rejects_empty_audience_tuple() -> None:
+    record = dict(DASHBOARD_REGISTRY_RECORDS[0])
+    record["audiences"] = ()
+
+    with pytest.raises(DashboardRegistryError, match="must not be empty"):
+        load_dashboard_registry([record])
+
+
 def test_dashboard_registry_requires_available_notebooks() -> None:
     record = dict(DASHBOARD_REGISTRY_RECORDS[0])
     del record["notebook_name"]
@@ -193,12 +292,28 @@ def test_dashboard_registry_rejects_gold_paths_without_source_chunks() -> None:
         load_dashboard_registry(records)
 
 
+def test_dashboard_registry_allows_index_gold_path_without_source_chunks() -> None:
+    records = _registry_records()
+    records[0]["concept_id"] = "index-context"
+    records[0]["generated_gold_paths"] = (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/README.md",
+    )
+    records[0]["source_chunk_ids"] = ()
+
+    entries = load_dashboard_registry(records)
+
+    index = registry_entry_by_concept_id("index-context", entries)
+    assert index is not None
+    assert index.generated_gold_paths == records[0]["generated_gold_paths"]
+    assert index.source_chunk_ids == ()
+
+
 def test_dashboard_registry_rejects_empty_required_tuple() -> None:
-    record = dict(DASHBOARD_REGISTRY_RECORDS[0])
-    record["backing_assets"] = ()
+    records = _registry_records()
+    records[0]["backing_assets"] = ()
 
     with pytest.raises(DashboardRegistryError, match="must not be empty"):
-        load_dashboard_registry([record])
+        load_dashboard_registry(records)
 
 
 def test_dashboard_registry_rejects_non_tuple_sequence_field() -> None:

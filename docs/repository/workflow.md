@@ -119,10 +119,19 @@ Local workflow notes:
 - LocalStack stands in for AWS-managed storage services during local validation.
 - Caddy remains the local front door so auth and routing behavior can be tested.
 - `marimo-dashboard` is available locally for curated notebooks through Caddy,
-  and the same curated dashboard image is deployed by Pulumi behind the AWS
-  Caddy route. `marimo-codex-workspace` is a separate localhost-only research
-  service for human-operated notebook exploration and issue-draft preparation;
-  deployed Codex execution remains deferred pending security review.
+  including the Marimo packaged static asset route behavior, and the same
+  curated dashboard image is deployed by Pulumi behind the AWS Caddy route. The
+  data readiness overview is the platform operations first-stop dashboard over
+  configured S3 and Dagster GraphQL readiness. The glossary explorer is the
+  registry-only Market context browser over generated-gold metadata paths,
+  source chunk IDs, related concepts, and dashboard states. Market price,
+  schedule run, settlement activity, Bid / Offer stack, gas quality, and system
+  notice dashboards use shared bounded gas-model reads for fact previews and
+  summaries. The
+  `marimo-codex-workspace` service is a
+  separate localhost-only research service for human-operated notebook
+  exploration and issue-draft preparation; deployed Codex execution remains
+  deferred pending security review.
 - The isolated AEMO ETL **End-to-end test** stack belongs to the
   `backend-services/dagster-user/aemo-etl` Subproject and is operated through
   `backend-services/scripts/aemo-etl-e2e`; its run manifest records timing,
@@ -238,8 +247,20 @@ and the required `git diff` to `rg` to QA flow, use
   - `backend-services/compose.yaml`
   - `backend-services/marimo/Dockerfile`
   - `backend-services/marimo/src/marimoserver/main.py`
+  - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
+  - `backend-services/marimo/src/marimoserver/data_readiness.py`
+  - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
+  - `backend-services/marimo/notebooks/data_readiness_overview.py`
+  - `backend-services/marimo/notebooks/glossary_explorer.py`
+  - `backend-services/marimo/notebooks/system_notices.py`
+  - `backend-services/marimo/notebooks/gas_market_prices.py`
+  - `backend-services/marimo/notebooks/gas_schedule_runs.py`
+  - `backend-services/marimo/notebooks/gas_settlement_activity.py`
+  - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
+  - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
+  - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/scripts/aemo-etl-e2e`
   - `infrastructure/aws-pulumi/__main__.py`
   - `infrastructure/aws-pulumi/components/marimo.py`

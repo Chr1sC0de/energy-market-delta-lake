@@ -79,6 +79,10 @@ main tool.
 - Expensive bounded table reads should use explicit refresh controls and
   session-level caches. Do not add auto-refresh timers by default; show load
   timing and row-limit policy near the relevant data-health surface.
+- Local Marimo runtime output is capped at 16 MB through Subproject config and
+  local compose service environment. This supports the current GBB Interactive
+  Map `Summary` Plotly iframe output; do not use the cap as a substitute for
+  bounded data reads or reviewed visual output size in new dashboard work.
 - Prefer fewer controls that were exercised during development over broad
   control panels that were not reviewed.
 - Show degraded states as designed UI, not traceback text. Empty LocalStack
@@ -171,16 +175,29 @@ Mixed maintained-doc and runtime dashboard changes also run the root
   - `AGENTS.md`
   - `CONTEXT.md`
   - `backend-services/marimo/README.md`
+  - `backend-services/marimo/pyproject.toml`
+  - `backend-services/compose.yaml`
   - `backend-services/marimo/research-workspace/AGENTS.md`
   - `backend-services/marimo/src/marimoserver/main.py`
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
   - `backend-services/marimo/src/marimoserver/gas_model_loader.py`
   - `backend-services/marimo/src/marimoserver/gbb_interactive_map.py`
+  - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
+  - `backend-services/marimo/src/marimoserver/data_readiness.py`
   - `backend-services/marimo/notebooks/head.html`
   - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/marimo/notebooks/gbb_interactive_map.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
+  - `backend-services/marimo/notebooks/data_readiness_overview.py`
+  - `backend-services/marimo/notebooks/glossary_explorer.py`
+  - `backend-services/marimo/notebooks/system_notices.py`
+  - `backend-services/marimo/notebooks/gas_market_prices.py`
+  - `backend-services/marimo/notebooks/gas_schedule_runs.py`
+  - `backend-services/marimo/notebooks/gas_settlement_activity.py`
+  - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
+  - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
+  - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/caddy/public/theme.css`
 - `sync.scope`: `interface`
 - `sync.qa`:

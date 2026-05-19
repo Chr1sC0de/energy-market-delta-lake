@@ -203,10 +203,19 @@ Key deployed behaviors visible in the infrastructure code:
 - Dagster services run as ECS Fargate services in private subnets
 - the curated Marimo dashboard runs on a private `t3.small` EC2 instance with
   an encrypted 30 GiB `gp3` root volume, uses its instance profile for S3
-  reads, exposes `/marimo/health` through Caddy, serves the registry-backed
-  `/marimo` concept gallery, and loads bounded table previews instead of full
-  table scans, with explicit refresh, session cache keys, load timing, and
-  row-limit messages for shared gas-model dashboard reads
+  reads, exposes `/marimo/health` and Marimo packaged asset routes through
+  Caddy, serves the registry-backed `/marimo` concept gallery, returns
+  immutable cache headers for content-hashed `/marimo/<notebook>/assets/*`
+  responses, exposes the data readiness overview for platform operations and
+  the registry-only glossary explorer for Market context metadata browsing,
+  exposes the gas system notices, settlement activity, customer transfer and
+  retail activity, and Bid / Offer stack dashboards over curated gas-model
+  facts, runs with `MARIMO_OUTPUT_MAX_BYTES=16000000`,
+  `MARIMO_MAX_PREVIEW_ROWS=100`, and
+  `MARIMO_FULL_TABLE_SCAN_ENABLED=false`, and loads bounded table previews
+  instead of full table scans, with explicit
+  refresh, session cache keys, load timing, and row-limit messages for shared
+  gas-model dashboard reads
 - An issue #126 **Exploratory delivery** path can add EC2-backed run-worker
   capacity behind explicit Pulumi config, but the default runtime remains
   Fargate/Fargate Spot
@@ -418,8 +427,19 @@ system's services and Dagster workflows.
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
   - `backend-services/marimo/src/marimoserver/gas_model_loader.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
+  - `backend-services/marimo/src/marimoserver/data_readiness.py`
+  - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
   - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
+  - `backend-services/marimo/notebooks/data_readiness_overview.py`
+  - `backend-services/marimo/notebooks/glossary_explorer.py`
+  - `backend-services/marimo/notebooks/system_notices.py`
+  - `backend-services/marimo/notebooks/gas_market_prices.py`
+  - `backend-services/marimo/notebooks/gas_schedule_runs.py`
+  - `backend-services/marimo/notebooks/gas_settlement_activity.py`
+  - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
+  - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
+  - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/caddy/Caddyfile`
   - `infrastructure/aws-pulumi/.pre-commit-config.yaml`
   - `infrastructure/aws-pulumi/pyproject.toml`

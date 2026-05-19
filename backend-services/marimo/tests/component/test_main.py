@@ -9,18 +9,35 @@ Covers:
   - app_names is populated correctly from the notebooks directory
 """
 
+from dataclasses import dataclass
 from html.parser import HTMLParser
+from urllib.parse import urljoin, urlparse
 
 import anyio
 import httpx
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 # conftest.py sets MARIMO_NOTEBOOKS_DIR before this import.
 from marimoserver.dashboard_registry import (
     DashboardStatus,
     dashboard_registry,
 )
-from marimoserver.main import NOTEBOOKS_DIR, _render_index_html, app, app_names
+from marimoserver.main import (
+    IMMUTABLE_ASSET_CACHE_CONTROL,
+    NOTEBOOKS_DIR,
+    StaticAssetHeadersMiddleware,
+    _render_index_html,
+    app,
+    app_names,
+)
 from tests.component.conftest import TEST_NOTEBOOKS_DIR
+
+
+@dataclass(frozen=True)
+class _StaticAssetRef:
+    rel: str
+    as_type: str | None
+    path: str
 
 
 class _ConceptCardParser(HTMLParser):
@@ -44,6 +61,32 @@ class _ConceptCardParser(HTMLParser):
         }
 
 
+class _NotebookAssetParser(HTMLParser):
+    def __init__(self, notebook_route: str) -> None:
+        super().__init__()
+        self.notebook_route = notebook_route
+        self.refs: list[_StaticAssetRef] = []
+
+    def handle_starttag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        attributes = dict(attrs)
+        ref = _asset_ref_from_tag(tag, attributes)
+        if ref is None:
+            return
+
+        path = urlparse(urljoin(self.notebook_route, ref)).path
+        self.refs.append(
+            _StaticAssetRef(
+                rel=attributes.get("rel") or tag,
+                as_type=attributes.get("as"),
+                path=path,
+            )
+        )
+
+
 def _get(path: str) -> httpx.Response:
     async def request() -> httpx.Response:
         transport = httpx.ASGITransport(app=app)
@@ -60,6 +103,70 @@ def _concept_cards(html: str) -> dict[str, dict[str, str | None]]:
     parser = _ConceptCardParser()
     parser.feed(html)
     return parser.cards
+
+
+def _notebook_asset_refs(
+    html: str,
+    notebook_route: str,
+) -> list[_StaticAssetRef]:
+    parser = _NotebookAssetParser(notebook_route)
+    parser.feed(html)
+    return [ref for ref in parser.refs if "/assets/" in ref.path]
+
+
+def _asset_ref_from_tag(
+    tag: str,
+    attributes: dict[str, str | None],
+) -> str | None:
+    if tag == "link":
+        return attributes.get("href")
+    if tag == "script":
+        return attributes.get("src")
+    return None
+
+
+def _first_asset_path(
+    refs: list[_StaticAssetRef],
+    suffix: str,
+) -> str:
+    return next(ref.path for ref in refs if ref.path.endswith(suffix))
+
+
+async def _plain_text_response_app(
+    scope: Scope,
+    receive: Receive,
+    send: Send,
+) -> None:
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 200,
+            "headers": [(b"content-type", b"text/plain")],
+        }
+    )
+    await send({"type": "http.response.body", "body": b"ok"})
+
+
+def _call_asgi(test_app: ASGIApp, scope: Scope) -> list[Message]:
+    messages: list[Message] = []
+
+    async def receive() -> Message:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message: Message) -> None:
+        messages.append(message)
+
+    async def call() -> None:
+        await test_app(scope, receive, send)
+
+    anyio.run(call)
+    return messages
+
+
+def _response_start(messages: list[Message]) -> Message:
+    return next(
+        message for message in messages if message["type"] == "http.response.start"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +202,37 @@ class TestDashboardRegistryEndpoint:
         )
 
 
+class TestStaticAssetHeadersMiddleware:
+    def test_non_http_scopes_pass_through(self) -> None:
+        seen_scope_types: list[str] = []
+
+        async def app_to_wrap(
+            scope: Scope,
+            receive: Receive,
+            send: Send,
+        ) -> None:
+            seen_scope_types.append(scope["type"])
+
+        middleware = StaticAssetHeadersMiddleware(app_to_wrap)
+
+        messages = _call_asgi(middleware, {"type": "lifespan"})
+
+        assert seen_scope_types == ["lifespan"]
+        assert messages == []
+
+    def test_woff2_asset_response_gets_font_type_and_cache_header(self) -> None:
+        middleware = StaticAssetHeadersMiddleware(_plain_text_response_app)
+
+        messages = _call_asgi(
+            middleware,
+            {"type": "http", "path": "/marimo/test_notebook/assets/font-a1b2.woff2"},
+        )
+        headers = dict(_response_start(messages)["headers"])
+
+        assert headers[b"content-type"] == b"font/woff2"
+        assert headers[b"cache-control"] == IMMUTABLE_ASSET_CACHE_CONTROL.encode()
+
+
 # ---------------------------------------------------------------------------
 # TestNotebooksDir
 # ---------------------------------------------------------------------------
@@ -111,6 +249,7 @@ class TestNotebooksDir:
             "sample_energy_market",
             "gbb_interactive_map",
             "table_explorer",
+            "data_readiness_overview",
             "test_notebook",
         ):
             assert (NOTEBOOKS_DIR / f"{name}.py").is_file()
@@ -124,9 +263,13 @@ class TestNotebooksDir:
 class TestAppDiscovery:
     def test_app_names_contains_registry_notebooks(self) -> None:
         """Registry-backed notebooks should be discovered and added to app_names."""
-        assert {"sample_energy_market", "gbb_interactive_map", "table_explorer"} <= set(
-            app_names
-        )
+        assert {
+            "sample_energy_market",
+            "gbb_interactive_map",
+            "table_explorer",
+            "data_readiness_overview",
+            "glossary_explorer",
+        } <= set(app_names)
 
 
 # ---------------------------------------------------------------------------
@@ -213,6 +356,14 @@ class TestIndexPage:
         assert "var(--emdl-paper" in response.text
         assert "#1a73e8" not in response.text
 
+    def test_index_does_not_emit_auto_refresh_timer(self) -> None:
+        response = _get("/marimo")
+        html = response.text.lower()
+
+        assert 'http-equiv="refresh"' not in html
+        assert "setinterval(" not in html
+        assert "settimeout(" not in html
+
 
 # ---------------------------------------------------------------------------
 # TestMarimoMount
@@ -228,3 +379,66 @@ class TestMarimoMount:
         response = _get("/marimo/test_notebook/")
         assert response.status_code == 200
         assert "text/html" in response.headers.get("content-type", "")
+
+    def test_notebook_html_keeps_marimo_preload_hints_for_static_assets(
+        self,
+    ) -> None:
+        route = "/marimo/test_notebook/"
+        response = _get(route)
+
+        refs = _notebook_asset_refs(response.text, route)
+
+        assert any(
+            ref.rel == "preload"
+            and ref.as_type == "image"
+            and ref.path.endswith(".png")
+            for ref in refs
+        )
+        assert any(
+            ref.rel == "preload" and ref.as_type == "font" and ref.path.endswith(".ttf")
+            for ref in refs
+        )
+        assert any(
+            ref.rel == "modulepreload" and ref.path.endswith(".js") for ref in refs
+        )
+        assert all(ref.path.startswith(f"{route}assets/") for ref in refs)
+        assert ".wasm" not in response.text.lower()
+
+    def test_notebook_static_asset_routes_have_content_types_and_cache_headers(
+        self,
+    ) -> None:
+        route = "/marimo/test_notebook/"
+        response = _get(route)
+        refs = _notebook_asset_refs(response.text, route)
+        expected_content_types = {
+            ".png": "image/png",
+            ".ttf": "font/ttf",
+            ".js": "text/javascript",
+            ".css": "text/css",
+        }
+
+        for suffix, content_type in expected_content_types.items():
+            asset_path = _first_asset_path(refs, suffix)
+            asset_response = _get(asset_path)
+
+            assert asset_response.status_code == 200
+            assert asset_response.headers["content-type"].startswith(content_type)
+            assert (
+                asset_response.headers["cache-control"] == IMMUTABLE_ASSET_CACHE_CONTROL
+            )
+            assert asset_response.headers["etag"]
+
+    def test_unhashed_notebook_metadata_routes_are_not_immutable_cached(
+        self,
+    ) -> None:
+        manifest_response = _get("/marimo/test_notebook/manifest.json")
+        favicon_response = _get("/marimo/test_notebook/favicon.ico")
+
+        assert manifest_response.status_code == 200
+        assert manifest_response.headers["content-type"].startswith("application/json")
+        assert "cache-control" not in manifest_response.headers
+        assert favicon_response.status_code == 200
+        assert favicon_response.headers["content-type"].startswith(
+            "image/vnd.microsoft.icon"
+        )
+        assert "cache-control" not in favicon_response.headers

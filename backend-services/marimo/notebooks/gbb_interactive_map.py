@@ -14,51 +14,66 @@ def _():
         discover_dashboard_config,
         render_dashboard_context_panel,
     )
+    from marimoserver.gas_model_loader import refresh_token_from_control
     from marimoserver.gbb_interactive_map import (
+        GBB_MAP_CONTEXT_PANELS,
         build_gbb_map_model,
+        cached_load_gbb_map_tables,
         check_gbb_map_s3_endpoint,
         facility_records_frame,
-        load_gbb_map_tables,
         map_load_status_frame,
+        map_load_status_message,
+        map_load_status_summary,
         normalize_gas_date,
         pipeline_records_frame,
         render_gbb_map_html,
     )
 
     return (
+        GBB_MAP_CONTEXT_PANELS,
         build_gbb_map_model,
+        cached_load_gbb_map_tables,
         check_gbb_map_s3_endpoint,
         date,
         discover_dashboard_config,
         facility_records_frame,
-        load_gbb_map_tables,
         map_load_status_frame,
+        map_load_status_message,
+        map_load_status_summary,
         mo,
         normalize_gas_date,
         pipeline_records_frame,
         render_dashboard_context_panel,
         render_gbb_map_html,
+        refresh_token_from_control,
     )
 
 
 @app.cell
-def _(mo, render_dashboard_context_panel):
+def _(mo):
     mo.vstack(
         [
+            mo.Html('<div style="height: 2rem;" aria-hidden="true"></div>'),
             mo.md("""
             # GBB Interactive Map
 
             **Dashboard brief**: **Dashboard intent**: Operational. Operators
             and analysts use this dashboard to inspect GBB facility topology,
             pipeline flow, storage, production, nominations, and capacity
-            outlook inputs. Freshness and availability are reported from the
-            loaded map input tables; unavailable LocalStack data falls back to
-            static topology with diagnostics.
+            outlook inputs from configured `silver.gas_model` tables. Freshness,
+            row-limit policy, cache status, and availability are reported from
+            the loaded map input tables; unavailable LocalStack data falls back
+            to static topology with diagnostics.
             """),
-            mo.Html(render_dashboard_context_panel("gbb-interactive-map")),
         ]
     )
     return
+
+
+@app.cell
+def _():
+    gbb_map_load_cache = {}
+    return gbb_map_load_cache
 
 
 @app.cell
@@ -68,29 +83,77 @@ def _(date, mo):
         options=["Summary", "Pipeline", "Production", "Storage"],
         value="Summary",
         label="View",
-        inline=True,
+        inline=False,
     )
+    refresh_data_button = mo.ui.run_button(label="Refresh data")
 
-    mo.hstack([gas_date_picker, view_picker], justify="start", gap=1)
-    return gas_date_picker, view_picker
+    mo.vstack(
+        [
+            mo.hstack([gas_date_picker, refresh_data_button], justify="start", gap=1),
+            view_picker,
+        ],
+        gap=0.5,
+    )
+    return gas_date_picker, refresh_data_button, view_picker
 
 
 @app.cell
 def _(
+    cached_load_gbb_map_tables,
     check_gbb_map_s3_endpoint,
     discover_dashboard_config,
+    gbb_map_load_cache,
     gas_date_picker,
-    load_gbb_map_tables,
     normalize_gas_date,
+    refresh_data_button,
+    refresh_token_from_control,
 ):
     config = discover_dashboard_config()
     selected_gas_date = normalize_gas_date(gas_date_picker.value)
-    loaded_map_tables = load_gbb_map_tables(
+    loaded_map_tables = cached_load_gbb_map_tables(
         config,
+        gbb_map_load_cache,
         endpoint_checker=check_gbb_map_s3_endpoint,
         gas_date=selected_gas_date,
+        refresh_token=refresh_token_from_control(refresh_data_button),
     )
-    return config, loaded_map_tables, selected_gas_date
+    return loaded_map_tables, selected_gas_date
+
+
+@app.cell
+def _(
+    loaded_map_tables,
+    map_load_status_frame,
+    map_load_status_message,
+    map_load_status_summary,
+    mo,
+):
+    degraded = any(not load.available for load in loaded_map_tables)
+    input_status = mo.callout(
+        map_load_status_summary(loaded_map_tables),
+        kind="warn" if degraded else "success",
+    )
+
+    mo.vstack(
+        [
+            input_status,
+            mo.accordion(
+                {
+                    "Map input diagnostics": mo.vstack(
+                        [
+                            mo.md(map_load_status_message(loaded_map_tables)),
+                            mo.ui.table(
+                                map_load_status_frame(loaded_map_tables),
+                                selection=None,
+                            ),
+                        ]
+                    )
+                },
+                multiple=False,
+            ),
+        ]
+    )
+    return
 
 
 @app.cell
@@ -137,32 +200,23 @@ def _(
 
 
 @app.cell
-def _(loaded_map_tables, map_load_status_frame, mo):
-    failed_count = sum(load.error is not None for load in loaded_map_tables)
-    if failed_count == 0:
-        input_status = mo.callout("All map input tables loaded.", kind="success")
-    else:
-        input_status = mo.callout(
-            (
-                f"{failed_count} map input tables could not be read from S3. "
-                "The map is showing static topology until LocalStack has the "
-                "materialized gas_model tables."
-            ),
-            kind="warn",
+def _(GBB_MAP_CONTEXT_PANELS, mo, render_dashboard_context_panel):
+    context_panels = {
+        "GBB interactive map": mo.Html(
+            render_dashboard_context_panel("gbb-interactive-map")
         )
+    }
+    context_panels.update(
+        {
+            f"{label} concept": mo.Html(render_dashboard_context_panel(concept_id))
+            for label, concept_id in GBB_MAP_CONTEXT_PANELS
+        }
+    )
 
     mo.vstack(
         [
-            input_status,
-            mo.accordion(
-                {
-                    "Map input diagnostics": mo.ui.table(
-                        map_load_status_frame(loaded_map_tables),
-                        selection=None,
-                    )
-                },
-                multiple=False,
-            ),
+            mo.md("## Registry and Roadmap Context"),
+            mo.accordion(context_panels, multiple=False),
         ]
     )
     return

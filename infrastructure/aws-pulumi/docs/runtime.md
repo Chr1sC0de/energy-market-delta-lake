@@ -298,13 +298,39 @@ placement, image pull, task startup latency, or scale-in behavior because issue
 - The daemon task does not register in Cloud Map because it only initiates
   outbound orchestration work.
 - The deployed Marimo dashboard runs with `DEVELOPMENT_LOCATION=aws`,
+  `MARIMO_OUTPUT_MAX_BYTES=16000000`,
   `MARIMO_FULL_TABLE_SCAN_ENABLED=false`, and `MARIMO_MAX_PREVIEW_ROWS=100`,
-  so table previews are bounded and use the instance profile instead of static
-  AWS credentials. Curated gas-model dashboard reads use explicit refresh,
+  so current Plotly iframe output can render under a 16 MB cap, table previews
+  are bounded, and the dashboard uses the instance profile instead of static AWS
+  credentials. Curated gas-model dashboard reads use explicit refresh,
   session-level cache keys, load timing, and row-limit messages rather than
-  auto-refresh timers. Its `/marimo` entry route renders the registry-backed
-  concept gallery; available cards link to mounted notebooks and planned cards
-  remain non-link roadmap entries.
+  auto-refresh timers. The data readiness overview uses the same read-only S3
+  and Dagster GraphQL helper surfaces to summarize platform operations
+  readiness without adding AWS write paths. The glossary explorer browses the
+  packaged Marimo registry for generated-gold metadata paths, source chunk IDs,
+  related concepts, and dashboard states without generated-file or table reads.
+  The gas market prices dashboard reads the curated market price fact through
+  the same bounded helper surface and does not add AWS write paths.
+  The gas schedule runs dashboard reads the curated schedule run fact through
+  the same bounded helper surface and does not add AWS write paths.
+  The gas settlement activity dashboard reads the curated settlement activity
+  fact through the same bounded helper surface and does not add AWS write
+  paths.
+  The customer transfer and retail activity dashboard reads the curated
+  customer transfer fact through the same bounded helper surface and does not
+  add AWS write paths.
+  The gas Bid / Offer stack dashboard reads the curated bid stack fact through
+  the same bounded helper surface and does not add AWS write paths.
+  The gas system notices dashboard reads the curated system notice fact through
+  the same bounded helper surface and does not add AWS write paths.
+  The gas quality and composition dashboard reads the curated gas quality fact
+  through the same bounded helper surface and does not add AWS write paths.
+  The `/marimo` entry route renders the registry-backed concept gallery;
+  available cards link to mounted notebooks and planned cards remain non-link
+  roadmap entries. Marimo packaged assets stay on
+  `/marimo/<notebook>/assets/*` routes, pass through Caddy to the dashboard,
+  and return immutable cache headers when the FastAPI wrapper serves them
+  successfully.
 - The user-code task receives `DAGSTER_FAILURE_ALERT_TOPIC_ARN` from Pulumi
   secret config and `DAGSTER_FAILURE_ALERT_BASE_URL` from public site config so
   the AEMO ETL failure sensor can publish alerts to a manually managed AWS SNS
@@ -336,8 +362,19 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
   - `backend-services/marimo/src/marimoserver/gas_model_loader.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
+  - `backend-services/marimo/src/marimoserver/data_readiness.py`
+  - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
   - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
+  - `backend-services/marimo/notebooks/data_readiness_overview.py`
+  - `backend-services/marimo/notebooks/glossary_explorer.py`
+  - `backend-services/marimo/notebooks/system_notices.py`
+  - `backend-services/marimo/notebooks/gas_market_prices.py`
+  - `backend-services/marimo/notebooks/gas_schedule_runs.py`
+  - `backend-services/marimo/notebooks/gas_settlement_activity.py`
+  - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
+  - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
+  - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/caddy/Dockerfile`
   - `backend-services/caddy/package.json`
   - `backend-services/caddy/src/pages/index.astro`

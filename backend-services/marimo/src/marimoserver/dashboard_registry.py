@@ -20,6 +20,7 @@ class DashboardStatus(StrEnum):
 class DashboardAudience(StrEnum):
     """Roadmap audience tags used by the Marimo concept gallery."""
 
+    PLATFORM_OPERATIONS = "platform-operations"
     OPERATOR = "operator"
     ANALYST = "analyst"
     STAKEHOLDER = "stakeholder"
@@ -27,6 +28,7 @@ class DashboardAudience(StrEnum):
 
 
 ROADMAP_AUDIENCES: tuple[DashboardAudience, ...] = (
+    DashboardAudience.PLATFORM_OPERATIONS,
     DashboardAudience.OPERATOR,
     DashboardAudience.ANALYST,
     DashboardAudience.STAKEHOLDER,
@@ -36,6 +38,7 @@ ROADMAP_AUDIENCES: tuple[DashboardAudience, ...] = (
 type DashboardRegistryRecord = Mapping[str, object]
 
 _MISSING = object()
+_REGISTRY_BACKED_CONCEPT_IDS = frozenset({"glossary-explorer"})
 
 
 @dataclass(frozen=True)
@@ -135,6 +138,52 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
     },
     {
+        "concept_id": "gas-market-prices",
+        "title": "Gas Market Prices",
+        "description": (
+            "Available analytical dashboard for gas market price types, source "
+            "systems, source tables, latest gas dates, available price measures, "
+            "and Schedule context links from the curated market price fact."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "gas_market_prices",
+        "backing_assets": ("silver.gas_model.silver_gas_fact_market_price",),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md",
+        ),
+        "source_chunk_ids": (
+            "chunk-sttm-procedures-spa-requirements",
+            "chunk-sttm-procedures-spa-outputs",
+            "chunk-dwgm-operations-glossary-schedule",
+        ),
+    },
+    {
+        "concept_id": "gas-schedule-runs",
+        "title": "Gas Schedule Runs",
+        "description": (
+            "Available analytical dashboard for schedule types, transmission "
+            "identifiers, forecast demand versions, schedule timestamps, Gas Day "
+            "filters, and source coverage from the curated schedule run fact."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "gas_schedule_runs",
+        "backing_assets": ("silver.gas_model.silver_gas_fact_schedule_run",),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/settlement.md",
+        ),
+        "source_chunk_ids": (
+            "chunk-gbb-guide-gas-day",
+            "chunk-sttm-procedures-spa-requirements",
+            "chunk-sttm-procedures-spa-outputs",
+            "chunk-dwgm-operations-glossary-schedule",
+            "chunk-sttm-procedures-settlement-terms",
+        ),
+    },
+    {
         "concept_id": "gbb-interactive-map",
         "title": "GBB Interactive Map",
         "description": (
@@ -194,6 +243,92 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "generated_gold_paths": (
             "tools/gas-market-knowledge-base/generated/gold/README.md",
         ),
+        "source_chunk_ids": (),
+    },
+    {
+        "concept_id": "data-readiness-overview",
+        "title": "Data Readiness Overview",
+        "description": (
+            "Available platform operations dashboard for configured S3 buckets, "
+            "discovered table prefixes, Dagster catalogue status, "
+            "materialization freshness, and bounded-read policy."
+        ),
+        "audiences": ("platform-operations", "operator", "data-engineer"),
+        "status": "available",
+        "notebook_name": "data_readiness_overview",
+        "backing_assets": (
+            "silver.gas_model.silver_gas_dim_date",
+            "silver.gas_model.silver_gas_dim_participant",
+            "silver.gas_model.silver_gas_dim_facility",
+            "silver.gas_model.silver_gas_fact_market_price",
+            "silver.gas_model.silver_gas_fact_schedule_run",
+            "silver.gas_model.silver_gas_fact_connection_point_flow",
+            "silver.gas_model.silver_gas_fact_capacity_outlook",
+        ),
+        "generated_gold_paths": (),
+        "source_chunk_ids": (),
+    },
+    {
+        "concept_id": "glossary-explorer",
+        "title": "Glossary Explorer",
+        "description": (
+            "Available analytical dashboard for browsing generated glossary "
+            "concept metadata, cited source chunks, related concepts, and "
+            "planned or available dashboard states from the Marimo registry."
+        ),
+        "audiences": ("analyst", "stakeholder", "data-engineer"),
+        "status": "available",
+        "notebook_name": "glossary_explorer",
+        "backing_assets": (),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/README.md",
+        ),
+        "source_chunk_ids": (),
+    },
+    {
+        "concept_id": "gas-system-notices",
+        "title": "Gas System Notices",
+        "description": (
+            "Available operational dashboard for critical gas system notices, "
+            "active or recent notice windows, message fields, URL paths, and "
+            "source coverage from the curated system notice fact."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "system_notices",
+        "backing_assets": ("silver.gas_model.silver_gas_fact_system_notice",),
+        "generated_gold_paths": (),
+        "source_chunk_ids": (),
+    },
+    {
+        "concept_id": "gas-quality-composition",
+        "title": "Gas Quality And Composition",
+        "description": (
+            "Available analytical dashboard for gas quality and composition "
+            "observations, quality types, units, source points, quantities, "
+            "gas intervals, and source coverage from the curated gas quality fact."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "gas_quality_composition",
+        "backing_assets": ("silver.gas_model.silver_gas_fact_gas_quality",),
+        "generated_gold_paths": (),
+        "source_chunk_ids": (),
+    },
+    {
+        "concept_id": "gas-customer-transfer-activity",
+        "title": "Customer Transfer And Retail Activity",
+        "description": (
+            "Available analytical dashboard for customer transfers lodged, "
+            "completed, cancelled, internal transfers, greenfields received, "
+            "market code, Gas Day filters, and source coverage from the "
+            "curated customer transfer fact."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "gas_customer_transfer_activity",
+        "backing_assets": ("silver.gas_model.silver_gas_fact_customer_transfer",),
+        "generated_gold_paths": (),
         "source_chunk_ids": (),
     },
     {
@@ -330,17 +465,17 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
     },
     {
         "concept_id": "bid-offer-context",
-        "title": "Bid And Offer Context",
+        "title": "Bid / Offer Stack",
         "description": (
-            "Planned concept panel for bid stack steps, contingency gas offers, "
-            "and scheduling inputs."
+            "Available analytical dashboard for Bid / Offer stack steps, "
+            "participants, facilities, zones, prices, quantities, source "
+            "systems, and accepted source identifiers from the curated bid "
+            "stack fact."
         ),
-        "audiences": ("analyst", "stakeholder"),
-        "status": "planned",
-        "backing_assets": (
-            "silver.gas_model.silver_gas_fact_bid_stack",
-            "silver.gas_model.silver_gas_fact_sttm_contingency_gas_call",
-        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "gas_bid_offer_stack",
+        "backing_assets": ("silver.gas_model.silver_gas_fact_bid_stack",),
         "generated_gold_paths": (
             "tools/gas-market-knowledge-base/generated/gold/glossary/bid-offer.md",
         ),
@@ -377,16 +512,15 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "concept_id": "settlement-context",
         "title": "Settlement Context",
         "description": (
-            "Planned concept panel for settlement components, activities, "
-            "market settlements, and capacity settlement amounts."
+            "Available analytical dashboard for settlement activities, "
+            "versions, activity types, schedules, networks, participants, "
+            "amounts, quantities, percentages, Gas Day filters, and source "
+            "coverage from the curated settlement activity fact."
         ),
         "audiences": ("analyst", "stakeholder"),
-        "status": "planned",
-        "backing_assets": (
-            "silver.gas_model.silver_gas_fact_sttm_market_settlement",
-            "silver.gas_model.silver_gas_fact_sttm_capacity_settlement",
-            "silver.gas_model.silver_gas_fact_settlement_activity",
-        ),
+        "status": "available",
+        "notebook_name": "gas_settlement_activity",
+        "backing_assets": ("silver.gas_model.silver_gas_fact_settlement_activity",),
         "generated_gold_paths": (
             "tools/gas-market-knowledge-base/generated/gold/glossary/settlement.md",
         ),
@@ -543,7 +677,7 @@ def _entry_from_record(
         index,
     )
     notebook_name = _optional_str(record, "notebook_name", index)
-    backing_assets = _required_str_tuple(record, "backing_assets", index)
+    backing_assets = _str_tuple(record, "backing_assets", index)
     generated_gold_paths = _str_tuple(record, "generated_gold_paths", index)
     source_chunks = tuple(
         SourceChunkReference(chunk_id=chunk_id)
@@ -610,6 +744,14 @@ def _validate_entry(entry: DashboardRegistryEntry) -> None:
             f"dashboard registry concept_id is not slug-like: {entry.concept_id}"
         )
 
+    if (
+        len(entry.backing_assets) == 0
+        and entry.concept_id not in _REGISTRY_BACKED_CONCEPT_IDS
+    ):
+        raise DashboardRegistryError(
+            f"{entry.concept_id} backing_assets must not be empty"
+        )
+
     for asset in entry.backing_assets:
         if not asset.startswith("silver.gas_model."):
             raise DashboardRegistryError(
@@ -617,10 +759,14 @@ def _validate_entry(entry: DashboardRegistryEntry) -> None:
             )
 
     if entry.generated_gold_paths and not entry.source_chunks:
-        if entry.concept_id != "gas-model-table-explorer":
+        if not _generated_gold_paths_are_indexes(entry.generated_gold_paths):
             raise DashboardRegistryError(
                 f"{entry.concept_id} has generated gold paths without source chunks"
             )
+
+
+def _generated_gold_paths_are_indexes(paths: Sequence[str]) -> bool:
+    return all(path.endswith("/README.md") for path in paths)
 
 
 def _status_from_value(value: str, index: int) -> DashboardStatus:
