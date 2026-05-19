@@ -57,3 +57,6 @@ ini_options.markers = [
 [tool.zuban]
 strict = true
 exclude = [ "notebooks/" ]
+
+[tool.marimo]
+runtime.output_max_bytes = 16_000_000

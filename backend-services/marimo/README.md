@@ -465,6 +465,13 @@ Research notebooks and draft issue notes stay under
 The implementation also accepts `MARIMO_NOTEBOOKS_DIR` if you need to point the
 server at a different notebook directory.
 
+Local Marimo runtime output is capped at 16 MB for direct runs from this
+Subproject through `[tool.marimo] runtime.output_max_bytes = 16_000_000`. The
+local compose `marimo-dashboard` and `marimo-codex-workspace` services also set
+`MARIMO_OUTPUT_MAX_BYTES=16000000`. This cap supports the current GBB
+Interactive Map `Summary` Plotly iframe output without changing the notebook
+controls, data reads, Plotly traces, or dashboard routes.
+
 With the local backend stack running, open the Marimo concept gallery through
 Caddy and choose an available card such as `data_readiness_overview`,
 `glossary_explorer`, `table_explorer`, `sample_energy_market`,

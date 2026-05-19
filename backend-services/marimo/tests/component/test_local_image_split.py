@@ -5,6 +5,7 @@ from pathlib import Path
 
 MARIMO_DIR = Path(__file__).resolve().parents[2]
 BACKEND_SERVICES_DIR = MARIMO_DIR.parent
+MARIMO_OUTPUT_MAX_BYTES_ENV = "      MARIMO_OUTPUT_MAX_BYTES: 16000000"
 
 
 def _read(path: Path) -> str:
@@ -46,6 +47,7 @@ class TestLocalMarimoImageSplit:
         assert "      DEVELOPMENT_LOCATION: local" in dashboard
         assert "      MARIMO_WORKSPACE_KIND: dashboard" in dashboard
         assert "      MARIMO_NOTEBOOKS_DIR: /opt/marimo/notebooks" in dashboard
+        assert MARIMO_OUTPUT_MAX_BYTES_ENV in dashboard
         assert (
             "      DAGSTER_GRAPHQL_URL: "
             "${DAGSTER_GRAPHQL_URL:-"
@@ -61,6 +63,7 @@ class TestLocalMarimoImageSplit:
         assert "      MARIMO_WORKSPACE_KIND: codex-research" in workspace
         assert "      MARIMO_WORKSPACE_ROOT: /workspace" in workspace
         assert "      MARIMO_NOTEBOOKS_DIR: /workspace/notebooks" in workspace
+        assert MARIMO_OUTPUT_MAX_BYTES_ENV in workspace
         assert (
             "      DAGSTER_GRAPHQL_URL: "
             "${DAGSTER_GRAPHQL_URL:-"
