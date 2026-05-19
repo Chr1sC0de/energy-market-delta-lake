@@ -34,6 +34,11 @@ from marimoserver.gas_dashboard import (
     GAS_QUALITY_SOURCE_POINT_FILTER_ALL,
     GAS_QUALITY_TABLE_NAME,
     GAS_QUALITY_TABLE_SPEC,
+    FACILITY_CAPACITY_OUTLOOK_TABLE_NAME,
+    FACILITY_CONTEXT_ID,
+    FACILITY_DIM_TABLE_NAME,
+    FACILITY_FLOW_STORAGE_TABLE_NAME,
+    FACILITY_TABLE_SPECS,
     MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
     MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
     MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
@@ -74,6 +79,7 @@ from marimoserver.gas_dashboard import (
     bid_stack_zone_options,
     cached_load_customer_transfer_table,
     cached_load_bid_stack_table,
+    cached_load_facility_context_tables,
     cached_load_gas_day_tables,
     cached_load_gas_quality_table,
     cached_load_gas_model_tables,
@@ -92,6 +98,11 @@ from marimoserver.gas_dashboard import (
     customer_transfer_source_system_options,
     customer_transfer_summary_frame,
     discover_dashboard_config,
+    facility_context_empty_state_markdown,
+    facility_dimension_coverage_frame,
+    facility_dimension_preview_frame,
+    facility_relationship_frame,
+    facility_table_specs,
     gas_quality_empty_state_markdown,
     gas_quality_kpi_frame,
     gas_quality_observation_frame,
@@ -109,6 +120,7 @@ from marimoserver.gas_dashboard import (
     load_market_price_table,
     load_bid_stack_table,
     load_customer_transfer_table,
+    load_facility_context_tables,
     load_gas_day_tables,
     load_gas_quality_table,
     load_gas_model_tables,
@@ -129,6 +141,7 @@ from marimoserver.gas_dashboard import (
     render_bid_stack_context_links,
     render_customer_transfer_context_links,
     render_market_price_context_links,
+    render_facility_context_links,
     render_schedule_run_context_links,
     render_settlement_activity_context_links,
     render_source_coverage_matrix_html,
@@ -371,6 +384,11 @@ def test_dashboard_read_behavior_frame_renders_per_dashboard_policy() -> None:
     )
     assert rows["Gas Day Context"]["view"] == "Forced bounded sample"
     assert rows["Gas Day Context"]["row policy"] == "Bounded preview: 42 rows max"
+    assert rows["Facility Context"]["read behavior"] == (
+        "Registry-backed Facility relationship inspection"
+    )
+    assert rows["Facility Context"]["view"] == "Forced bounded sample"
+    assert rows["Facility Context"]["row policy"] == "Bounded preview: 42 rows max"
 
 
 def test_dashboard_read_behavior_frame_handles_unknown_available_dashboard() -> None:
@@ -3211,6 +3229,285 @@ def test_refresh_token_from_control_handles_missing_and_unhashable_values() -> N
     assert refresh_token_from_control(refresh_control) == 2
 
 
+def test_facility_context_metadata_is_available_dashboard() -> None:
+    entry = registry_entry_by_concept_id(FACILITY_CONTEXT_ID)
+    html = render_dashboard_context_panel(FACILITY_CONTEXT_ID)
+    context_links = render_facility_context_links()
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "facility_explainer"
+    assert entry.notebook_route == "/marimo/facility_explainer/"
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md"
+        in entry.generated_gold_paths
+    )
+    assert entry.source_chunk_ids == (
+        "chunk-gbb-guide-nodes-facilities",
+        "chunk-gbb-procedures-facility-nameplate",
+    )
+    assert "silver.gas_model.silver_gas_dim_facility" in entry.backing_assets
+    assert "Facility Context" in html
+    assert "chunk-gbb-guide-nodes-facilities" in html
+    assert 'data-status="available"' in html
+    assert 'href="/marimo/facility_explainer/"' in context_links
+    assert "GBB Interactive Map" in context_links
+    assert "Capacity Context" in context_links
+
+
+def test_facility_table_specs_and_loader_use_bounded_samples() -> None:
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "5",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    specs = facility_table_specs()
+    loads = load_facility_context_tables(config, reader=reader)
+
+    assert specs == FACILITY_TABLE_SPECS
+    assert tuple(spec.table_name for spec in specs) == (
+        FACILITY_DIM_TABLE_NAME,
+        FACILITY_FLOW_STORAGE_TABLE_NAME,
+        FACILITY_CAPACITY_OUTLOOK_TABLE_NAME,
+    )
+    assert len(loads) == len(specs)
+    assert {row_limit for _, row_limit in captured} == {5}
+    assert captured[0][0] == (
+        "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_dim_facility"
+    )
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert uri.endswith(f"/{FACILITY_DIM_TABLE_NAME}")
+        assert storage_options == config.storage_options()
+        assert row_limit == 5
+        cached_calls += 1
+        return pl.DataFrame({"source_system": ["GBB"]})
+
+    first_cached = cached_load_facility_context_tables(
+        config,
+        cache,
+        specs=(FACILITY_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_facility_context_tables(
+        config,
+        cache,
+        specs=(FACILITY_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_facility_context_tables(
+        config,
+        cache,
+        specs=(FACILITY_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 2
+    assert not first_cached[0].cache_hit
+    assert second_cached[0].cache_hit
+    assert not refreshed[0].cache_hit
+
+
+def test_facility_metadata_helpers_extract_dimension_and_relationships() -> None:
+    facility_load = _facility_load(
+        FACILITY_TABLE_SPECS[0],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["facility-key-1", "facility-key-2"],
+                "participant_key": ["participant-key-1", None],
+                "zone_key": ["zone-key-1", "zone-key-2"],
+                "source_system": ["GBB", "STTM"],
+                "source_tables": [
+                    ["silver.gbb.silver_gasbb_facilities"],
+                    ["silver.sttm.silver_int671_v1_hub_facility_definition_rpt_1"],
+                ],
+                "source_facility_id": ["10", "20"],
+                "facility_name": [
+                    "Carpentaria Gas Pipeline",
+                    "Sydney Hub Facility",
+                ],
+                "facility_short_name": ["CGP", "SYD"],
+                "facility_type": ["PIPE", "HUB"],
+                "operator_name": ["APA Group", None],
+                "capacity_effective_from_date": [date(2024, 1, 1), None],
+                "capacity_effective_to_date": [None, None],
+                "default_capacity": [45.0, None],
+                "maximum_capacity": [90.0, None],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 1, 8),
+                    datetime(2024, 1, 1, 9),
+                ],
+            }
+        ),
+    )
+    flow_load = _facility_load(
+        FACILITY_TABLE_SPECS[1],
+        pl.DataFrame(
+            {
+                "facility_key": [
+                    "facility-key-1",
+                    "facility-key-1",
+                    None,
+                    "facility-key-2",
+                ],
+                "source_system": ["GBB", "GBB", "GBB", "GBB"],
+                "gas_date": [
+                    date(2024, 1, 2),
+                    date(2024, 1, 2),
+                    date(2024, 1, 2),
+                    date(2024, 1, 2),
+                ],
+                "source_facility_id": ["10", "10", "99", None],
+                "demand_tj": [12.0, None, 3.0, 4.0],
+                "supply_tj": [None, None, None, None],
+                "transfer_in_tj": [None, None, None, None],
+                "transfer_out_tj": [None, None, None, None],
+                "held_in_storage_tj": [None, 8.0, None, None],
+            }
+        ),
+    )
+    capacity_load = _facility_load(
+        FACILITY_TABLE_SPECS[2],
+        pl.DataFrame(
+            {
+                "source_system": ["GBB", "GBB", "GBB"],
+                "source_table": [
+                    "silver.gbb.capacity",
+                    "silver.gbb.capacity",
+                    "silver.gbb.capacity",
+                ],
+                "source_facility_id": ["10", "20", "99"],
+                "facility_name": [
+                    "Carpentaria Gas Pipeline",
+                    "Sydney Hub Facility",
+                    "Unmatched Facility",
+                ],
+                "capacity_type": ["nameplate", "nameplate", "nameplate"],
+                "flow_direction": ["north", "injection", "south"],
+                "capacity_quantity_tj": [14.0, None, 20.0],
+            }
+        ),
+    )
+
+    coverage = facility_dimension_coverage_frame(facility_load)
+    relationships = facility_relationship_frame(
+        (facility_load, flow_load, capacity_load)
+    )
+    preview = facility_dimension_preview_frame(facility_load)
+    coverage_values = {row["metric"]: row["value"] for row in coverage.to_dicts()}
+    relationship_rows = {row["relationship"]: row for row in relationships.to_dicts()}
+
+    assert coverage_values == {
+        "Facility dimension rows": "2",
+        "Source systems": "2",
+        "Source tables": "2",
+        "Facility types": "2",
+        "Operators": "1",
+        "Participant links": "1",
+        "Zone links": "2",
+        "Capacity metadata rows": "1",
+    }
+    assert relationship_rows["Participant"]["available rows"] == 1
+    assert relationship_rows["Zone"]["available rows"] == 2
+    assert relationship_rows["Flow"]["available rows"] == 3
+    assert relationship_rows["Flow"]["matched facilities"] == 2
+    assert relationship_rows["Storage"]["available rows"] == 1
+    assert relationship_rows["Storage"]["matched facilities"] == 1
+    assert relationship_rows["Capacity"]["available rows"] == 2
+    assert relationship_rows["Capacity"]["matched facilities"] == 1
+    assert (
+        "1 facility dimension rows also carry standing capacity metadata"
+        in relationship_rows["Capacity"]["detail"]
+    )
+    assert preview.select(
+        "source system",
+        "source facility id",
+        "facility",
+        "facility type",
+        "operator",
+        "participant key",
+        "zone key",
+        "default capacity",
+        "maximum capacity",
+        "source tables",
+    ).to_dict(as_series=False) == {
+        "source system": ["GBB", "STTM"],
+        "source facility id": ["10", "20"],
+        "facility": ["Carpentaria Gas Pipeline", "Sydney Hub Facility"],
+        "facility type": ["PIPE", "HUB"],
+        "operator": ["APA Group", None],
+        "participant key": ["participant-key-1", None],
+        "zone key": ["zone-key-1", "zone-key-2"],
+        "default capacity": [45.0, None],
+        "maximum capacity": [90.0, None],
+        "source tables": [
+            "silver.gbb.silver_gasbb_facilities",
+            "silver.sttm.silver_int671_v1_hub_facility_definition_rpt_1",
+        ],
+    }
+
+
+def test_facility_helpers_cover_empty_state_behavior() -> None:
+    unavailable_load = _facility_load(
+        FACILITY_TABLE_SPECS[0],
+        None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=4,
+    )
+    empty_flow_load = _facility_load(
+        FACILITY_TABLE_SPECS[1],
+        pl.DataFrame(),
+        row_limit=4,
+    )
+    empty_capacity_load = _facility_load(
+        FACILITY_TABLE_SPECS[2],
+        pl.DataFrame(),
+        row_limit=4,
+    )
+    loads = (unavailable_load, empty_flow_load, empty_capacity_load)
+
+    assert facility_dimension_coverage_frame(unavailable_load).is_empty()
+    assert facility_relationship_frame(loads).is_empty()
+    assert facility_dimension_preview_frame(unavailable_load).is_empty()
+
+    markdown = facility_context_empty_state_markdown(loads)
+    empty_markdown = facility_context_empty_state_markdown(())
+    empty_context_links = render_facility_context_links(entries=())
+
+    assert "No Facility metadata or relationship rows are available" in markdown
+    assert "`1` reads were unavailable and `2` reads returned no rows" in markdown
+    assert "Bounded preview reads are capped at `4` rows per table" in markdown
+    assert "No Facility context tables were requested" in empty_markdown
+    assert (
+        "No Facility, flow, capacity, participant, zone, or table explorer entries "
+        "are registered."
+    ) in empty_context_links
+
+
 def test_gas_day_context_metadata_is_available_dashboard() -> None:
     entry = registry_entry_by_concept_id(GAS_DAY_CONTEXT_ID)
     html = render_dashboard_context_panel(GAS_DAY_CONTEXT_ID)
@@ -4564,6 +4861,24 @@ def _source_coverage_load(
         dataframe=dataframe,
         error=error,
         row_limit=100,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _facility_load(
+    spec: GasTableSpec,
+    dataframe: pl.DataFrame | None,
+    *,
+    error: str | None = None,
+    row_limit: int | None = 100,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=spec,
+        uri=f"s3://bucket/silver/gas_model/{spec.table_name}",
+        dataframe=dataframe,
+        error=error,
+        row_limit=row_limit,
         load_duration_seconds=0.01,
         cache_hit=False,
     )

@@ -187,6 +187,21 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert bid_stack.notebook_route == "/marimo/gas_bid_offer_stack/"
     assert bid_stack.backing_assets == ("silver.gas_model.silver_gas_fact_bid_stack",)
 
+    facility = registry_entry_by_concept_id("facility-context", entries)
+    assert facility is not None
+    assert facility.status is DashboardStatus.AVAILABLE
+    assert facility.notebook_name == "facility_explainer"
+    assert facility.notebook_route == "/marimo/facility_explainer/"
+    assert facility.backing_assets == (
+        "silver.gas_model.silver_gas_dim_facility",
+        "silver.gas_model.silver_gas_fact_facility_flow_storage",
+        "silver.gas_model.silver_gas_fact_capacity_outlook",
+    )
+    assert facility.source_chunk_ids == (
+        "chunk-gbb-guide-nodes-facilities",
+        "chunk-gbb-procedures-facility-nameplate",
+    )
+
 
 def test_dashboard_registry_payload_includes_required_fields() -> None:
     payload = dashboard_registry_payload()

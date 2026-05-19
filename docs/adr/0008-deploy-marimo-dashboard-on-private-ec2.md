@@ -177,6 +177,15 @@ source chunk metadata, then reads bounded samples from registry-backed
 changing ETL date modeling, generated glossary files, asset schemas, or AWS
 infrastructure.
 
+The Facility explainer dashboard stays inside the same boundary. It renders
+the registry-backed Facility context panel from copied generated-gold path and
+source chunk metadata, then reads bounded samples from
+`silver_gas_dim_facility`, `silver_gas_fact_facility_flow_storage`, and
+`silver_gas_fact_capacity_outlook` to show facility standing-data coverage and
+relationships to participant, zone, flow, storage, and capacity context without
+changing ETL facility modeling, generated glossary files, asset schemas, or AWS
+infrastructure.
+
 Static asset optimization stays limited to immutable HTTP caching for
 content-hashed Marimo package assets. Extra preload changes, pre-serving
 packaged WASM, and auto-refresh timer behavior remain deferred until route or
@@ -216,6 +225,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
+  - `backend-services/marimo/notebooks/facility_explainer.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`

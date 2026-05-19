@@ -513,11 +513,14 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "concept_id": "facility-context",
         "title": "Facility Context",
         "description": (
-            "Planned concept panel for facility standing data, operators, "
-            "flow/storage measures, and capacity registration context."
+            "Available explainer dashboard for Facility glossary metadata, "
+            "facility standing-data coverage, participant and zone keys, "
+            "flow/storage measures, capacity outlooks, and related dashboard "
+            "routes."
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
-        "status": "planned",
+        "status": "available",
+        "notebook_name": "facility_explainer",
         "backing_assets": (
             "silver.gas_model.silver_gas_dim_facility",
             "silver.gas_model.silver_gas_fact_facility_flow_storage",
