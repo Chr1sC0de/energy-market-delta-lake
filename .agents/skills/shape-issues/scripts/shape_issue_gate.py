@@ -47,7 +47,9 @@ TEXT_EXTENSIONS = frozenset(
         ".yml",
     }
 )
-TEXT_FILE_NAMES = frozenset({"Makefile", "AGENTS.md", "CONTEXT.md", "OPERATOR.md"})
+TEXT_FILE_NAMES = frozenset(
+    {"Caddyfile", "Makefile", "AGENTS.md", "CONTEXT.md", "OPERATOR.md"}
+)
 CONTEXT_ASSESSOR_SCHEMA_VERSION = "shape-issues-context-assessor-v1"
 DEFAULT_CONTEXT_ASSESSOR_PROVIDER = "codex"
 SOURCE_MARKER_PREFIX = "shape-issues-source"
