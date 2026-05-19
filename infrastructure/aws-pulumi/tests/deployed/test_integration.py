@@ -31,37 +31,17 @@ import pytest
 
 from code_locations import (
     DagsterCodeLocation,
-    default_code_location,
     load_code_locations,
-    user_code_component_name,
-    user_code_ecs_service_resource_name,
+    required_ecs_service_names,
 )
+from ecs_rollouts import incomplete_ecs_service_rollouts
 
 DAGSTER_CODE_LOCATIONS = load_code_locations()
-DEFAULT_DAGSTER_CODE_LOCATION = default_code_location(DAGSTER_CODE_LOCATIONS)
-
-
-def _required_ecs_service_names(resource_name: str) -> set[str]:
-    return {
-        *{
-            user_code_ecs_service_resource_name(
-                user_code_component_name(
-                    resource_name,
-                    location,
-                    DEFAULT_DAGSTER_CODE_LOCATION,
-                )
-            )
-            for location in DAGSTER_CODE_LOCATIONS
-        },
-        f"{resource_name}-webserver-admin-webserver-service",
-        f"{resource_name}-webserver-guest-webserver-service",
-        f"{resource_name}-daemon-daemon-service",
-    }
 
 
 def _describe_required_ecs_services(ecs_client, resource_name: str) -> list[dict]:
     cluster = f"{resource_name}-dagster-cluster"
-    required_names = _required_ecs_service_names(resource_name)
+    required_names = set(required_ecs_service_names(resource_name))
     response = ecs_client.describe_services(
         cluster=cluster,
         services=sorted(required_names),
@@ -123,27 +103,7 @@ class TestEcsServicesRunning:
     ) -> None:
         """Required ECS services must not have failed or in-progress rollouts."""
         services = _describe_required_ecs_services(ecs_client, resource_name)
-        bad_rollouts = {}
-        for service in services:
-            failed = [
-                deployment
-                for deployment in service.get("deployments", [])
-                if deployment.get("rolloutState") == "FAILED"
-            ]
-            primary: dict[str, object] = next(
-                (
-                    deployment
-                    for deployment in service.get("deployments", [])
-                    if deployment.get("status") == "PRIMARY"
-                ),
-                {},
-            )
-            primary_state = primary.get("rolloutState")
-            if failed or primary_state not in {None, "COMPLETED"}:
-                bad_rollouts[service["serviceName"]] = {
-                    "primary": primary_state,
-                    "failed": failed,
-                }
+        bad_rollouts = incomplete_ecs_service_rollouts(services)
 
         assert not bad_rollouts, (
             f"Services with incomplete/failed rollout: {bad_rollouts}"

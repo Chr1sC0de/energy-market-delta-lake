@@ -130,6 +130,27 @@ def user_code_ecs_service_resource_name(component_name: str) -> str:
     return f"{component_name}-user-code-service"
 
 
+def required_ecs_service_names(
+    resource_name: str,
+    locations: tuple[DagsterCodeLocation, ...] | None = None,
+) -> tuple[str, ...]:
+    """Return required Dagster ECS service names for deployed validation."""
+    resolved_locations = load_code_locations() if locations is None else locations
+    default_location = default_code_location(resolved_locations)
+    user_code_services = tuple(
+        user_code_ecs_service_resource_name(
+            user_code_component_name(resource_name, location, default_location)
+        )
+        for location in resolved_locations
+    )
+    return (
+        *user_code_services,
+        f"{resource_name}-webserver-admin-webserver-service",
+        f"{resource_name}-webserver-guest-webserver-service",
+        f"{resource_name}-daemon-daemon-service",
+    )
+
+
 def _parse_location(
     raw_location: object,
     index: int,
