@@ -1,6 +1,13 @@
 """Table discovery helpers for the Marimo table explorer."""
 
-from collections.abc import Hashable, Iterable, Mapping, MutableMapping, Sequence
+from collections.abc import (
+    Callable,
+    Hashable,
+    Iterable,
+    Mapping,
+    MutableMapping,
+    Sequence,
+)
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -100,6 +107,16 @@ class TableAvailability(StrEnum):
     UNMATERIALIZED = "Unmaterialized"
     MISSING = "Missing"
     GRAPHQL_UNAVAILABLE = "GraphQL unavailable"
+
+
+class MaterializationFreshnessState(StrEnum):
+    """Freshness state for one Dagster asset or storage overlay row."""
+
+    MATERIALIZED = "Materialized"
+    UNMATERIALIZED = "Unmaterialized"
+    STORAGE_MISSING = "Storage missing"
+    GRAPHQL_UNAVAILABLE = "GraphQL unavailable"
+    STORAGE_ONLY = "Storage only"
 
 
 class BucketHealthState(StrEnum):
@@ -280,6 +297,77 @@ class AssetCatalogueStatusCard:
     value: str
     detail: str
     action: str
+
+
+@dataclass(frozen=True)
+class MaterializationFreshnessRow:
+    """One materialization freshness row for a table-like asset overlay."""
+
+    entry_id: str
+    display_name: str
+    asset_key: str
+    group: str
+    layers_or_domains: tuple[str, ...]
+    state: MaterializationFreshnessState
+    latest_materialization_timestamp: float | None
+    freshness_gap_seconds: float | None
+    uri: str | None
+    storage_available: bool
+    bucket: str
+    prefix: str
+
+    @property
+    def layer_or_domain_label(self) -> str:
+        """Return a readable layer/domain label."""
+        return ", ".join(self.layers_or_domains)
+
+
+@dataclass(frozen=True)
+class MaterializationFreshnessSummary:
+    """Aggregate materialization freshness state for dashboard cards."""
+
+    url: str
+    graphql_available: bool
+    graphql_error: str | None
+    row_count: int
+    asset_count: int
+    materialized_count: int
+    unmaterialized_count: int
+    storage_missing_count: int
+    graphql_unavailable_count: int
+    storage_only_count: int
+    latest_materialization_timestamp: float | None
+    oldest_materialization_timestamp: float | None
+    max_freshness_gap_seconds: float | None
+
+    @property
+    def timestamped_asset_count(self) -> int:
+        """Return assets with materialization metadata, including missing storage."""
+        return self.materialized_count + self.storage_missing_count
+
+    @property
+    def degraded_count(self) -> int:
+        """Return freshness rows needing operator attention."""
+        return (
+            self.unmaterialized_count
+            + self.storage_missing_count
+            + self.graphql_unavailable_count
+        )
+
+    @property
+    def latest_materialization_label(self) -> str:
+        """Return a readable latest materialization timestamp."""
+        return format_materialization_timestamp(self.latest_materialization_timestamp)
+
+    @property
+    def oldest_materialization_label(self) -> str:
+        """Return a readable oldest materialization timestamp."""
+        return format_materialization_timestamp(self.oldest_materialization_timestamp)
+
+    @property
+    def max_freshness_gap_label(self) -> str:
+        """Return a readable maximum freshness gap."""
+        return format_freshness_gap(self.max_freshness_gap_seconds)
 
 
 @dataclass(frozen=True)
@@ -1023,6 +1111,271 @@ def asset_schema_metadata_frame(
     )
 
 
+def materialization_freshness_rows(
+    table_catalogue: Sequence[CataloguedTable],
+    *,
+    as_of_timestamp: float | None = None,
+) -> tuple[MaterializationFreshnessRow, ...]:
+    """Return metadata-only materialization freshness rows."""
+    effective_as_of = (
+        datetime.now(tz=UTC).timestamp() if as_of_timestamp is None else as_of_timestamp
+    )
+    rows: list[MaterializationFreshnessRow] = []
+    for entry in table_catalogue:
+        asset = entry.asset
+        table = entry.table
+        latest_timestamp = (
+            None if asset is None else asset.latest_materialization_timestamp
+        )
+        freshness_gap = (
+            None
+            if latest_timestamp is None
+            else max(0.0, effective_as_of - latest_timestamp)
+        )
+        display_name = entry.display_name
+        asset_key = "" if asset is None else asset.asset_id
+        rows.append(
+            MaterializationFreshnessRow(
+                entry_id=entry.entry_id,
+                display_name=display_name,
+                asset_key=asset_key,
+                group=catalogued_table_group(entry),
+                layers_or_domains=catalogued_table_layers_or_domains(entry),
+                state=_materialization_freshness_state(entry),
+                latest_materialization_timestamp=latest_timestamp,
+                freshness_gap_seconds=freshness_gap,
+                uri=entry.uri,
+                storage_available=table is not None,
+                bucket="" if table is None else table.bucket,
+                prefix="" if table is None else table.prefix or "(bucket root)",
+            )
+        )
+    return tuple(rows)
+
+
+def build_materialization_freshness_summary(
+    catalogue: DagsterAssetCatalogue,
+    rows: Sequence[MaterializationFreshnessRow],
+) -> MaterializationFreshnessSummary:
+    """Build aggregate materialization freshness metrics for dashboard cards."""
+    state_counts = _freshness_state_counts(rows)
+    timestamps = [
+        row.latest_materialization_timestamp
+        for row in rows
+        if row.latest_materialization_timestamp is not None
+    ]
+    gaps = [
+        row.freshness_gap_seconds
+        for row in rows
+        if row.freshness_gap_seconds is not None
+    ]
+
+    return MaterializationFreshnessSummary(
+        url=catalogue.url,
+        graphql_available=catalogue.available,
+        graphql_error=catalogue.error,
+        row_count=len(rows),
+        asset_count=sum(row.asset_key != "" for row in rows),
+        materialized_count=state_counts[MaterializationFreshnessState.MATERIALIZED],
+        unmaterialized_count=state_counts[MaterializationFreshnessState.UNMATERIALIZED],
+        storage_missing_count=state_counts[
+            MaterializationFreshnessState.STORAGE_MISSING
+        ],
+        graphql_unavailable_count=state_counts[
+            MaterializationFreshnessState.GRAPHQL_UNAVAILABLE
+        ],
+        storage_only_count=state_counts[MaterializationFreshnessState.STORAGE_ONLY],
+        latest_materialization_timestamp=max(timestamps) if timestamps else None,
+        oldest_materialization_timestamp=min(timestamps) if timestamps else None,
+        max_freshness_gap_seconds=max(gaps) if gaps else None,
+    )
+
+
+def filter_materialization_freshness_rows(
+    rows: Sequence[MaterializationFreshnessRow],
+    *,
+    groups: Sequence[str] = (),
+    layers_or_domains: Sequence[str] = (),
+    states: Sequence[str | MaterializationFreshnessState] = (),
+    search: str = "",
+    minimum_gap_hours: float | None = None,
+) -> tuple[MaterializationFreshnessRow, ...]:
+    """Filter materialization freshness rows without reading table contents."""
+    group_filters = {group.strip().lower() for group in groups if group.strip()}
+    layer_filters = {
+        layer_or_domain.strip().lower()
+        for layer_or_domain in layers_or_domains
+        if layer_or_domain.strip()
+    }
+    state_filters = {
+        _freshness_state_filter_value(state).lower()
+        for state in states
+        if _freshness_state_filter_value(state) != ""
+    }
+    search_term = search.strip().lower()
+    minimum_gap_seconds = (
+        None
+        if minimum_gap_hours is None or minimum_gap_hours <= 0
+        else minimum_gap_hours * 3_600
+    )
+    filtered: list[MaterializationFreshnessRow] = []
+
+    for row in rows:
+        if group_filters and row.group.lower() not in group_filters:
+            continue
+        row_layers = {
+            layer_or_domain.lower() for layer_or_domain in row.layers_or_domains
+        }
+        if layer_filters and row_layers.isdisjoint(layer_filters):
+            continue
+        if state_filters and row.state.value.lower() not in state_filters:
+            continue
+        if search_term and search_term not in _freshness_row_search_text(row):
+            continue
+        if minimum_gap_seconds is not None and (
+            row.freshness_gap_seconds is None
+            or row.freshness_gap_seconds < minimum_gap_seconds
+        ):
+            continue
+        filtered.append(row)
+
+    return tuple(filtered)
+
+
+def materialization_freshness_frame(
+    rows: Sequence[MaterializationFreshnessRow],
+) -> pl.DataFrame:
+    """Return per-asset materialization freshness rows for notebook tables."""
+    frame_rows = [
+        {
+            "asset": row.display_name,
+            "asset key": row.asset_key,
+            "group": row.group,
+            "layer/domain": row.layer_or_domain_label,
+            "state": row.state.value,
+            "latest materialization": format_materialization_timestamp(
+                row.latest_materialization_timestamp
+            ),
+            "freshness gap": format_freshness_gap(row.freshness_gap_seconds),
+            "freshness gap hours": _freshness_gap_hours(row.freshness_gap_seconds),
+            "storage": "Available" if row.storage_available else "Missing",
+            "uri": row.uri or "",
+            "bucket": row.bucket,
+            "prefix": row.prefix,
+        }
+        for row in rows
+    ]
+    if frame_rows:
+        return pl.DataFrame(frame_rows)
+
+    return pl.DataFrame(
+        [
+            {
+                "asset": "No materialization freshness rows available",
+                "asset key": "",
+                "group": "",
+                "layer/domain": "",
+                "state": AssetCatalogueState.EMPTY.value,
+                "latest materialization": "",
+                "freshness gap": "",
+                "freshness gap hours": None,
+                "storage": "",
+                "uri": "",
+                "bucket": "",
+                "prefix": "",
+            }
+        ]
+    )
+
+
+def materialization_group_freshness_frame(
+    rows: Sequence[MaterializationFreshnessRow],
+) -> pl.DataFrame:
+    """Return materialization freshness grouped by Dagster asset group."""
+    return _materialization_scope_freshness_frame(
+        rows,
+        scope_column="group",
+        scope_values=lambda row: (row.group,),
+    )
+
+
+def materialization_layer_freshness_frame(
+    rows: Sequence[MaterializationFreshnessRow],
+) -> pl.DataFrame:
+    """Return materialization freshness grouped by layer or domain."""
+    return _materialization_scope_freshness_frame(
+        rows,
+        scope_column="layer/domain",
+        scope_values=lambda row: row.layers_or_domains or ("(none)",),
+    )
+
+
+def materialization_freshness_status_cards(
+    summary: MaterializationFreshnessSummary,
+) -> tuple[AssetCatalogueStatusCard, ...]:
+    """Return first-viewport materialization freshness cards."""
+    return (
+        _freshness_graphql_card(summary),
+        _freshness_materialized_card(summary),
+        _freshness_gap_card(summary),
+        _freshness_storage_card(summary),
+    )
+
+
+def render_materialization_freshness_status_cards(
+    summary: MaterializationFreshnessSummary,
+) -> str:
+    """Render first-viewport materialization freshness cards."""
+    rendered_cards = "\n".join(
+        _render_asset_catalogue_card(card)
+        for card in materialization_freshness_status_cards(summary)
+    )
+    return f"""\
+<style>
+{_asset_catalogue_cards_css()}
+</style>
+<section class="asset-catalogue-card-grid" aria-label="Materialization freshness summary">
+{rendered_cards}
+</section>"""
+
+
+def materialization_freshness_action_markdown(
+    summary: MaterializationFreshnessSummary,
+) -> str:
+    """Return Markdown action guidance for materialization freshness gaps."""
+    actions: list[str] = []
+
+    if not summary.graphql_available:
+        actions.append(
+            "Dagster GraphQL: restore `DAGSTER_GRAPHQL_URL`, Dagster webserver "
+            "health, or reverse-proxy routing before judging freshness."
+        )
+    elif summary.asset_count == 0:
+        actions.append(
+            "Dagster GraphQL: no table assets were returned for freshness calculation."
+        )
+
+    if summary.unmaterialized_count > 0:
+        actions.append(
+            "Unmaterialized assets: materialize or backfill the listed assets "
+            "before treating their latest timestamp as usable."
+        )
+    if summary.storage_missing_count > 0:
+        actions.append(
+            "Storage-missing assets: check `dagster/uri` values and expected "
+            "S3 table prefixes for timestamped assets without storage."
+        )
+    if summary.graphql_unavailable_count > 0:
+        actions.append(
+            "GraphQL-unavailable rows: storage prefixes are visible, but asset "
+            "grouping and materialization timestamps are unknown."
+        )
+
+    if not actions:
+        return "Materialization freshness metadata is usable under the current configuration."
+    return "\n".join(f"- {action}" for action in actions)
+
+
 def table_workbench_navigation_links(
     entry: CataloguedTable,
     entries: Sequence[DashboardRegistryEntry] | None = None,
@@ -1578,6 +1931,17 @@ def format_materialization_timestamp(timestamp: float | None) -> str:
     return datetime.fromtimestamp(timestamp, tz=UTC).isoformat()
 
 
+def format_freshness_gap(seconds: float | None) -> str:
+    """Return a readable freshness gap duration."""
+    if seconds is None:
+        return ""
+    positive_seconds = max(0.0, seconds)
+    hours = positive_seconds / 3_600
+    if hours < 24:
+        return f"{hours:.1f} hours"
+    return f"{hours / 24:.1f} days"
+
+
 def _readiness_navigation_detail(entry: CataloguedTable) -> str:
     if entry.status is TableAvailability.LIVE:
         return "Review bucket, table, and Dagster readiness for this live row."
@@ -2070,6 +2434,157 @@ def _latest_materialization_card(
     )
 
 
+def _freshness_graphql_card(
+    summary: MaterializationFreshnessSummary,
+) -> AssetCatalogueStatusCard:
+    if not summary.graphql_available:
+        return AssetCatalogueStatusCard(
+            area="Dagster GraphQL",
+            state=AssetCatalogueState.UNAVAILABLE,
+            value="Unavailable",
+            detail=summary.graphql_error or "Dagster GraphQL returned no detail.",
+            action="Restore GraphQL to read materialization timestamps.",
+        )
+
+    if summary.asset_count == 0:
+        return AssetCatalogueStatusCard(
+            area="Dagster GraphQL",
+            state=AssetCatalogueState.EMPTY,
+            value="No table assets",
+            detail=f"GraphQL responded at {summary.url}, but no table assets matched.",
+            action="Confirm Dagster definitions expose table metadata.",
+        )
+
+    return AssetCatalogueStatusCard(
+        area="Dagster GraphQL",
+        state=AssetCatalogueState.READY,
+        value=f"{_format_int(summary.asset_count)} assets",
+        detail=f"GraphQL responded at {summary.url}.",
+        action="No action.",
+    )
+
+
+def _freshness_materialized_card(
+    summary: MaterializationFreshnessSummary,
+) -> AssetCatalogueStatusCard:
+    if not summary.graphql_available:
+        return AssetCatalogueStatusCard(
+            area="Materialized assets",
+            state=AssetCatalogueState.UNAVAILABLE,
+            value="Unknown",
+            detail="GraphQL is unavailable, so asset materialization state is unknown.",
+            action="Restore GraphQL before judging materialized coverage.",
+        )
+
+    if summary.asset_count == 0:
+        return AssetCatalogueStatusCard(
+            area="Materialized assets",
+            state=AssetCatalogueState.EMPTY,
+            value="No assets",
+            detail="No table assets were returned for freshness calculation.",
+            action="Confirm table assets are present in Dagster.",
+        )
+
+    state = (
+        AssetCatalogueState.READY
+        if summary.unmaterialized_count == 0 and summary.storage_missing_count == 0
+        else AssetCatalogueState.ATTENTION
+    )
+    return AssetCatalogueStatusCard(
+        area="Materialized assets",
+        state=state,
+        value=f"{summary.timestamped_asset_count}/{summary.asset_count} timestamped",
+        detail=(
+            f"{summary.materialized_count} materialized, "
+            f"{summary.unmaterialized_count} unmaterialized, "
+            f"{summary.storage_missing_count} storage-missing."
+        ),
+        action="No action."
+        if state is AssetCatalogueState.READY
+        else "Review unmaterialized and storage-missing assets.",
+    )
+
+
+def _freshness_gap_card(
+    summary: MaterializationFreshnessSummary,
+) -> AssetCatalogueStatusCard:
+    if not summary.graphql_available:
+        return AssetCatalogueStatusCard(
+            area="Freshness gap",
+            state=AssetCatalogueState.UNAVAILABLE,
+            value="Unknown",
+            detail="GraphQL is unavailable, so materialization gaps cannot be read.",
+            action="Restore GraphQL to inspect freshness gaps.",
+        )
+
+    if summary.latest_materialization_timestamp is None:
+        return AssetCatalogueStatusCard(
+            area="Freshness gap",
+            state=AssetCatalogueState.ATTENTION,
+            value="No materializations",
+            detail="No table asset returned a materialization timestamp.",
+            action="Materialize the expected table assets.",
+        )
+
+    state = (
+        AssetCatalogueState.READY
+        if summary.degraded_count == 0
+        else AssetCatalogueState.ATTENTION
+    )
+    return AssetCatalogueStatusCard(
+        area="Freshness gap",
+        state=state,
+        value=summary.max_freshness_gap_label,
+        detail=(
+            f"Latest: {summary.latest_materialization_label}. "
+            f"Oldest: {summary.oldest_materialization_label}."
+        ),
+        action="No action."
+        if state is AssetCatalogueState.READY
+        else "Use group and layer tables to find stale or missing assets.",
+    )
+
+
+def _freshness_storage_card(
+    summary: MaterializationFreshnessSummary,
+) -> AssetCatalogueStatusCard:
+    if summary.graphql_unavailable_count > 0:
+        return AssetCatalogueStatusCard(
+            area="Storage overlay",
+            state=AssetCatalogueState.UNAVAILABLE,
+            value=f"{summary.graphql_unavailable_count} unclassified",
+            detail="Storage prefixes are visible, but GraphQL asset state is unavailable.",
+            action="Restore GraphQL to classify prefixes against assets.",
+        )
+
+    if summary.row_count == 0:
+        return AssetCatalogueStatusCard(
+            area="Storage overlay",
+            state=AssetCatalogueState.EMPTY,
+            value="No rows",
+            detail="No Dagster table assets or local table prefixes were discovered.",
+            action="Materialize assets or seed table prefixes, then refresh.",
+        )
+
+    state = (
+        AssetCatalogueState.READY
+        if summary.storage_missing_count == 0
+        else AssetCatalogueState.ATTENTION
+    )
+    return AssetCatalogueStatusCard(
+        area="Storage overlay",
+        state=state,
+        value=f"{summary.storage_missing_count} storage-missing",
+        detail=(
+            f"{summary.materialized_count} materialized with storage, "
+            f"{summary.storage_only_count} storage-only rows."
+        ),
+        action="No action."
+        if state is AssetCatalogueState.READY
+        else "Check missing storage prefixes for timestamped assets.",
+    )
+
+
 def _render_asset_catalogue_card(card: AssetCatalogueStatusCard) -> str:
     state_class = _asset_catalogue_state_css_class(card.state)
     return f"""\
@@ -2391,6 +2906,136 @@ def _query_param_text(value: object) -> str:
             if isinstance(item, str) and item.strip():
                 return item.strip()
     return ""
+
+
+def _materialization_scope_freshness_frame(
+    rows: Sequence[MaterializationFreshnessRow],
+    *,
+    scope_column: str,
+    scope_values: Callable[[MaterializationFreshnessRow], Sequence[str]],
+) -> pl.DataFrame:
+    scoped_rows: dict[str, list[MaterializationFreshnessRow]] = {}
+    for row in rows:
+        for scope_value in scope_values(row):
+            if scope_value == "":
+                continue
+            scoped_rows.setdefault(scope_value, []).append(row)
+
+    frame_rows = [
+        _materialization_scope_frame_row(scope_column, scope_value, scope_rows)
+        for scope_value, scope_rows in sorted(scoped_rows.items())
+    ]
+    if frame_rows:
+        return pl.DataFrame(frame_rows)
+
+    return pl.DataFrame(
+        [
+            {
+                scope_column: "No materialization freshness rows available",
+                "rows": 0,
+                "assets": 0,
+                "materialized": 0,
+                "unmaterialized": 0,
+                "storage missing": 0,
+                "GraphQL unavailable": 0,
+                "storage only": 0,
+                "latest materialization": "",
+                "oldest materialization": "",
+                "max freshness gap": "",
+                "max freshness gap hours": None,
+            }
+        ]
+    )
+
+
+def _materialization_scope_frame_row(
+    scope_column: str,
+    scope_value: str,
+    rows: Sequence[MaterializationFreshnessRow],
+) -> dict[str, object]:
+    state_counts = _freshness_state_counts(rows)
+    timestamps = [
+        row.latest_materialization_timestamp
+        for row in rows
+        if row.latest_materialization_timestamp is not None
+    ]
+    gaps = [
+        row.freshness_gap_seconds
+        for row in rows
+        if row.freshness_gap_seconds is not None
+    ]
+    latest_timestamp = max(timestamps) if timestamps else None
+    oldest_timestamp = min(timestamps) if timestamps else None
+    max_gap = max(gaps) if gaps else None
+
+    return {
+        scope_column: scope_value,
+        "rows": len(rows),
+        "assets": sum(row.asset_key != "" for row in rows),
+        "materialized": state_counts[MaterializationFreshnessState.MATERIALIZED],
+        "unmaterialized": state_counts[MaterializationFreshnessState.UNMATERIALIZED],
+        "storage missing": state_counts[MaterializationFreshnessState.STORAGE_MISSING],
+        "GraphQL unavailable": state_counts[
+            MaterializationFreshnessState.GRAPHQL_UNAVAILABLE
+        ],
+        "storage only": state_counts[MaterializationFreshnessState.STORAGE_ONLY],
+        "latest materialization": format_materialization_timestamp(latest_timestamp),
+        "oldest materialization": format_materialization_timestamp(oldest_timestamp),
+        "max freshness gap": format_freshness_gap(max_gap),
+        "max freshness gap hours": _freshness_gap_hours(max_gap),
+    }
+
+
+def _materialization_freshness_state(
+    entry: CataloguedTable,
+) -> MaterializationFreshnessState:
+    if entry.status is TableAvailability.GRAPHQL_UNAVAILABLE:
+        return MaterializationFreshnessState.GRAPHQL_UNAVAILABLE
+    if entry.asset is None:
+        return MaterializationFreshnessState.STORAGE_ONLY
+    if entry.asset.latest_materialization_timestamp is None:
+        return MaterializationFreshnessState.UNMATERIALIZED
+    if entry.status is TableAvailability.MISSING:
+        return MaterializationFreshnessState.STORAGE_MISSING
+    return MaterializationFreshnessState.MATERIALIZED
+
+
+def _freshness_state_counts(
+    rows: Sequence[MaterializationFreshnessRow],
+) -> dict[MaterializationFreshnessState, int]:
+    counts = {state: 0 for state in MaterializationFreshnessState}
+    for row in rows:
+        counts[row.state] += 1
+    return counts
+
+
+def _freshness_gap_hours(seconds: float | None) -> float | None:
+    if seconds is None:
+        return None
+    return round(max(0.0, seconds) / 3_600, 2)
+
+
+def _freshness_state_filter_value(
+    state: str | MaterializationFreshnessState,
+) -> str:
+    if isinstance(state, MaterializationFreshnessState):
+        return state.value
+    return state.strip()
+
+
+def _freshness_row_search_text(row: MaterializationFreshnessRow) -> str:
+    return " ".join(
+        [
+            row.display_name,
+            row.asset_key,
+            row.group,
+            row.layer_or_domain_label,
+            row.state.value,
+            row.uri or "",
+            row.bucket,
+            row.prefix,
+        ]
+    ).lower()
 
 
 def _status_filter_value(status: str | TableAvailability) -> str:

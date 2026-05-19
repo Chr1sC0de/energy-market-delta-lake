@@ -16,6 +16,7 @@ Marimo-Codex research workspace image.
 - [Data readiness overview](#data-readiness-overview)
 - [AWS bounded read diagnostics](#aws-bounded-read-diagnostics)
 - [Dagster asset catalogue status](#dagster-asset-catalogue-status)
+- [Materialization freshness dashboard](#materialization-freshness-dashboard)
 - [S3 bucket health](#s3-bucket-health)
 - [Table explorer](#table-explorer)
 - [Source coverage matrix](#source-coverage-matrix)
@@ -241,6 +242,24 @@ When Dagster GraphQL is unavailable, the dashboard renders a clear unavailable
 state and keeps storage-only table-prefix rows visible. Operators can still
 triage configured storage discovery while using the action callout to restore
 `DAGSTER_GRAPHQL_URL`, Dagster webserver health, or reverse-proxy routing.
+
+## Materialization freshness dashboard
+
+[notebooks/materialization_freshness.py](notebooks/materialization_freshness.py)
+is the operational dashboard for latest Dagster materialization timestamps and
+freshness gaps across table-like assets. It reuses
+[src/marimoserver/dagster_graphql.py](src/marimoserver/dagster_graphql.py)
+and [src/marimoserver/table_explorer.py](src/marimoserver/table_explorer.py)
+instead of adding notebook-local Dagster or storage access paths.
+
+The dashboard shows first-viewport cards for GraphQL availability,
+timestamped assets, maximum freshness gap, and storage overlay health. It
+summarizes latest and oldest materialization timestamps by asset group and
+layer/domain, then lists asset-level freshness rows with materialized,
+unmaterialized, GraphQL-unavailable, storage-missing, and storage-only states.
+Filters are bounded to catalogue metadata: asset group, layer/domain,
+freshness state, minimum freshness gap, and text search. The dashboard does not
+preview table rows or scan table contents.
 
 ## S3 bucket health
 
@@ -645,10 +664,11 @@ controls, data reads, Plotly traces, or dashboard routes.
 
 With the local backend stack running, open the Marimo concept gallery through
 Caddy and choose an available card such as `data_readiness_overview`,
-`dagster_asset_catalogue_status`, `s3_bucket_health`, `glossary_explorer`,
-`concept_to_asset_explorer`, `table_explorer`, `source_coverage_matrix`,
-`sample_energy_market`, `gas_market_prices`, `gas_schedule_runs`,
-`system_notices`, `gas_settlement_activity`,
+`dagster_asset_catalogue_status`, `materialization_freshness`,
+`s3_bucket_health`, `glossary_explorer`, `concept_to_asset_explorer`,
+`table_explorer`, `source_coverage_matrix`, `sample_energy_market`,
+`gas_market_prices`, `gas_schedule_runs`, `system_notices`,
+`gas_settlement_activity`,
 `gas_customer_transfer_activity`, `gas_bid_offer_stack`,
 `gas_quality_composition`, `facility_explainer`, `participant_explainer`,
 `hub_zone_explainer`, or `gbb_interactive_map`:
@@ -699,6 +719,13 @@ Use the same pattern for the Dagster asset catalogue status dashboard:
 ```bash
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/dagster_asset_catalogue_status.py
+```
+
+Use the same pattern for the materialization freshness dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/materialization_freshness.py
 ```
 
 Use the same pattern for the AWS bounded read diagnostics dashboard:
@@ -905,6 +932,7 @@ prek run -a
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/aws_bounded_read_diagnostics.py`
   - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
+  - `backend-services/marimo/notebooks/materialization_freshness.py`
   - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/concept_to_asset_explorer.py`

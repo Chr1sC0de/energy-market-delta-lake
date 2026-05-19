@@ -209,7 +209,9 @@ Key deployed behaviors visible in the infrastructure code:
   responses, exposes the data readiness overview for platform operations and
   the registry-only glossary explorer for Market context metadata browsing,
   links table explorer rows to readiness, bounded-read diagnostics, and
-  concept-gallery metadata for mapped `silver.gas_model` assets,
+  concept-gallery metadata for mapped `silver.gas_model` assets, exposes
+  materialization freshness gaps from Dagster GraphQL metadata without table
+  content scans,
   exposes the gas system notices, settlement activity, customer transfer and
   retail activity, Bid / Offer stack, and Hub / Zone explainer dashboards over
   curated gas-model facts and dimensions, runs with
@@ -446,6 +448,7 @@ system's services and Dagster workflows.
   - `backend-services/marimo/notebooks/gas_day_explainer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
+  - `backend-services/marimo/notebooks/materialization_freshness.py`
   - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`

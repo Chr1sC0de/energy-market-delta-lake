@@ -217,8 +217,9 @@ without making local development performance claims.
   - provides the reverse-proxy image, root Astro portfolio, and routing rules
 - `backend-services/marimo`
   - notebook-oriented Subproject with a registry-backed `/marimo` concept
-    gallery, registry-only glossary explorer, immutable cache headers for
-    packaged static assets, a curated dashboard image used locally and in AWS,
+    gallery, registry-only glossary explorer, operational readiness and
+    materialization freshness dashboards, immutable cache headers for packaged
+    static assets, a curated dashboard image used locally and in AWS,
     plus a local-only Marimo-Codex research workspace image
 
 Gas market knowledge base responsibility:
@@ -273,6 +274,7 @@ Gas market knowledge base responsibility:
   - `backend-services/marimo/notebooks/gas_day_explainer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
+  - `backend-services/marimo/notebooks/materialization_freshness.py`
   - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/concept_to_asset_explorer.py`

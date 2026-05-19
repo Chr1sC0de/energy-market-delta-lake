@@ -362,6 +362,29 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "source_chunk_ids": (),
     },
     {
+        "concept_id": "materialization-freshness",
+        "title": "Materialization Freshness",
+        "description": (
+            "Available operational dashboard for latest Dagster materialization "
+            "timestamps, freshness gaps by group and layer, unmaterialized "
+            "assets, GraphQL-unavailable rows, and storage-missing assets."
+        ),
+        "audiences": ("platform-operations", "operator", "data-engineer"),
+        "status": "available",
+        "notebook_name": "materialization_freshness",
+        "backing_assets": (
+            "silver.gas_model.silver_gas_dim_date",
+            "silver.gas_model.silver_gas_dim_participant",
+            "silver.gas_model.silver_gas_dim_facility",
+            "silver.gas_model.silver_gas_fact_market_price",
+            "silver.gas_model.silver_gas_fact_schedule_run",
+            "silver.gas_model.silver_gas_fact_connection_point_flow",
+            "silver.gas_model.silver_gas_fact_capacity_outlook",
+        ),
+        "generated_gold_paths": (),
+        "source_chunk_ids": (),
+    },
+    {
         "concept_id": "s3-bucket-health",
         "title": "S3 Bucket Health",
         "description": (

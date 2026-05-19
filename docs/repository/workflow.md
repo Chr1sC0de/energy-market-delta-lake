@@ -129,7 +129,10 @@ Local workflow notes:
   glossary concepts to backing `silver.gas_model` assets, dashboard routes,
   planned dashboard cards, and table explorer deep links. The Gas Day explainer
   uses registry context metadata and bounded gas-model samples to show
-  date-field coverage across curated assets. The Hub / Zone explainer connects
+  date-field coverage across curated assets. The materialization freshness
+  dashboard reports latest Dagster materialization timestamps and freshness
+  gaps from catalogue metadata without scanning table contents. The Hub / Zone
+  explainer connects
   generated context metadata to bounded `silver_gas_dim_zone` coverage and
   source-qualified identifiers. Market price, schedule run, settlement
   activity, customer transfer, Bid / Offer stack, gas quality, and system
@@ -266,6 +269,7 @@ and the required `git diff` to `rg` to QA flow, use
   - `backend-services/marimo/notebooks/gas_day_explainer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
+  - `backend-services/marimo/notebooks/materialization_freshness.py`
   - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/concept_to_asset_explorer.py`

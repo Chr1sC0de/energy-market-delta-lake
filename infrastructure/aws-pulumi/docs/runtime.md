@@ -306,8 +306,10 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   session-level cache keys, load timing, and row-limit messages rather than
   auto-refresh timers. The data readiness overview uses the same read-only S3
   and Dagster GraphQL helper surfaces to summarize platform operations
-  readiness without adding AWS write paths. The S3 Bucket Health dashboard
-  checks configured S3-compatible buckets and table-prefix discovery without
+  readiness without adding AWS write paths. The materialization freshness
+  dashboard uses catalogue metadata and storage overlay status for freshness
+  gaps without scanning table contents. The S3 Bucket Health dashboard checks
+  configured S3-compatible buckets and table-prefix discovery without
   account-wide bucket listing or AWS write paths. The glossary explorer browses
   the packaged Marimo registry for generated-gold metadata paths, source chunk
   IDs, related concepts, and dashboard states without generated-file or table
@@ -381,6 +383,7 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   - `backend-services/marimo/notebooks/gas_day_explainer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
+  - `backend-services/marimo/notebooks/materialization_freshness.py`
   - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`

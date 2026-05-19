@@ -228,9 +228,10 @@ Useful routes:
 - `/dagster-webserver/admin` for the protected admin Dagster UI
 - `/marimo` for curated Marimo dashboards through Caddy, including the table
   explorer, data readiness overview, AWS bounded-read diagnostics, market
-  prices, schedule runs, settlement activity, customer transfer and retail
-  activity, system notices, Bid / Offer stack, gas quality and composition, and
-  Hub / Zone explainer dashboards. The Hub / Zone explainer connects generated
+  prices, materialization freshness, schedule runs, settlement activity,
+  customer transfer and retail activity, system notices, Bid / Offer stack, gas
+  quality and composition, and Hub / Zone explainer dashboards. The Hub / Zone
+  explainer connects generated
   Market context metadata to bounded `silver_gas_dim_zone` coverage and
   source-qualified identifiers. The table explorer lists the Dagster table
   asset catalogue, filters by group, layer or domain, status, and search text,
@@ -797,6 +798,7 @@ developer-stack setting. It renders e2e Dagster config per run from the current
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/aws_bounded_read_diagnostics.py`
   - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
+  - `backend-services/marimo/notebooks/materialization_freshness.py`
   - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/concept_to_asset_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`

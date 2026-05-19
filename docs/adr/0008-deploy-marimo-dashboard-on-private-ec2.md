@@ -108,6 +108,13 @@ bounded preview, GraphQL fallback, and storage-only behavior, and now links
 selected rows to the data readiness overview, AWS bounded-read diagnostics, and
 registry-backed concept-gallery metadata for mapped `silver.gas_model` assets.
 
+The materialization freshness dashboard stays inside the same boundary. It
+uses Dagster GraphQL catalogue metadata plus the existing storage overlay to
+show latest materialization timestamps, group and layer freshness gaps,
+unmaterialized assets, GraphQL-unavailable rows, and storage-missing assets
+without reading table contents, changing Dagster definitions, or adding AWS
+write paths.
+
 The AWS bounded-read diagnostics dashboard stays inside the same boundary. It
 renders runtime location, endpoint mode, configured buckets, preview row caps,
 full-table-scan state, bounded-read states, and per-dashboard read behavior
@@ -219,6 +226,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/aws_bounded_read_diagnostics.py`
   - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
+  - `backend-services/marimo/notebooks/materialization_freshness.py`
   - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/concept_to_asset_explorer.py`

@@ -121,6 +121,16 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         in catalogue_status.backing_assets
     )
 
+    freshness = registry_entry_by_concept_id("materialization-freshness", entries)
+    assert freshness is not None
+    assert freshness.status is DashboardStatus.AVAILABLE
+    assert freshness.notebook_name == "materialization_freshness"
+    assert freshness.notebook_route == "/marimo/materialization_freshness/"
+    assert DashboardAudience.PLATFORM_OPERATIONS in freshness.audiences
+    assert DashboardAudience.OPERATOR in freshness.audiences
+    assert DashboardAudience.DATA_ENGINEER in freshness.audiences
+    assert "silver.gas_model.silver_gas_fact_market_price" in (freshness.backing_assets)
+
     storage_health = registry_entry_by_concept_id("s3-bucket-health", entries)
     assert storage_health is not None
     assert storage_health.status is DashboardStatus.AVAILABLE
