@@ -33,6 +33,19 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert "silver.gas_model.silver_gas_fact_market_price" in overview.backing_assets
     assert missing is None
 
+    source_coverage = registry_entry_by_concept_id("source-coverage-matrix", entries)
+    assert source_coverage is not None
+    assert source_coverage.status is DashboardStatus.AVAILABLE
+    assert source_coverage.notebook_name == "source_coverage_matrix"
+    assert source_coverage.notebook_route == "/marimo/source_coverage_matrix/"
+    assert DashboardAudience.DATA_ENGINEER in source_coverage.audiences
+    assert "silver.gas_model.silver_gas_dim_facility" in (
+        source_coverage.backing_assets
+    )
+    assert "silver.gas_model.silver_gas_fact_customer_transfer" in (
+        source_coverage.backing_assets
+    )
+
     prices = registry_entry_by_concept_id("gas-market-prices", entries)
     assert prices is not None
     assert prices.status is DashboardStatus.AVAILABLE

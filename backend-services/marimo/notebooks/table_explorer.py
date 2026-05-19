@@ -19,13 +19,16 @@ def _():
         catalogued_table_by_id,
         catalogued_table_group,
         catalogued_table_layers_or_domains,
+        default_catalogued_table_entry_id,
         discover_table_catalogue,
         discover_storage,
         discover_table_explorer_config,
         explore_table_scan,
         filter_catalogued_tables,
         format_materialization_timestamp,
+        include_deep_linked_catalogued_table,
         overlay_table_catalogue,
+        table_explorer_deep_link_from_query,
     )
 
     return (
@@ -36,17 +39,20 @@ def _():
         catalogued_table_by_id,
         catalogued_table_group,
         catalogued_table_layers_or_domains,
+        default_catalogued_table_entry_id,
         discover_table_catalogue,
         discover_storage,
         discover_table_explorer_config,
         explore_table_scan,
         filter_catalogued_tables,
         format_materialization_timestamp,
+        include_deep_linked_catalogued_table,
         mo,
         overlay_table_catalogue,
         pl,
         render_dashboard_context_panel,
         refresh_token_from_control,
+        table_explorer_deep_link_from_query,
     )
 
 
@@ -82,6 +88,14 @@ def _(
     catalogue = discover_table_catalogue(config)
     table_catalogue = overlay_table_catalogue(discovery, catalogue)
     return catalogue, config, discovery, table_catalogue
+
+
+@app.cell
+def _(mo, table_explorer_deep_link_from_query):
+    table_explorer_deep_link = table_explorer_deep_link_from_query(
+        mo.query_params().to_dict()
+    )
+    return table_explorer_deep_link
 
 
 @app.cell
@@ -316,6 +330,7 @@ def _(
     catalogued_table_layers_or_domains,
     mo,
     table_catalogue,
+    table_explorer_deep_link,
 ):
     if table_catalogue:
         group_options = sorted(
@@ -354,6 +369,7 @@ def _(
         )
         asset_search = mo.ui.text(
             placeholder="Search asset key, URI, or description",
+            value=table_explorer_deep_link.search,
             label="Asset search",
             full_width=True,
         )
@@ -382,18 +398,24 @@ def _(
     asset_search,
     filter_catalogued_tables,
     group_filter,
+    include_deep_linked_catalogued_table,
     layer_domain_filter,
     status_filter,
     table_catalogue,
+    table_explorer_deep_link,
 ):
-    filtered_table_catalogue = filter_catalogued_tables(
+    filtered_table_catalogue = include_deep_linked_catalogued_table(
         table_catalogue,
-        groups=() if group_filter is None else tuple(group_filter.value),
-        layers_or_domains=()
-        if layer_domain_filter is None
-        else tuple(layer_domain_filter.value),
-        statuses=() if status_filter is None else tuple(status_filter.value),
-        search="" if asset_search is None else asset_search.value,
+        filter_catalogued_tables(
+            table_catalogue,
+            groups=() if group_filter is None else tuple(group_filter.value),
+            layers_or_domains=()
+            if layer_domain_filter is None
+            else tuple(layer_domain_filter.value),
+            statuses=() if status_filter is None else tuple(status_filter.value),
+            search="" if asset_search is None else asset_search.value,
+        ),
+        table_explorer_deep_link.requested_entry_id,
     )
     return filtered_table_catalogue
 
@@ -447,7 +469,12 @@ def _(
 
 
 @app.cell
-def _(filtered_table_catalogue, mo):
+def _(
+    default_catalogued_table_entry_id,
+    filtered_table_catalogue,
+    mo,
+    table_explorer_deep_link,
+):
     if filtered_table_catalogue:
         table_options = {
             f"{entry.display_name} - {entry.status.value}": entry.entry_id
@@ -455,7 +482,10 @@ def _(filtered_table_catalogue, mo):
         }
         table_picker = mo.ui.dropdown(
             options=table_options,
-            value=filtered_table_catalogue[0].entry_id,
+            value=default_catalogued_table_entry_id(
+                filtered_table_catalogue,
+                table_explorer_deep_link.requested_entry_id,
+            ),
             searchable=True,
             label="Table",
             full_width=True,
@@ -497,7 +527,7 @@ def _(
     if selected_entry is None:
         selected_asset_view = mo.md("")
     else:
-        sections = [
+        asset_view_sections = [
             mo.md(f"### `{selected_entry.display_name}`"),
             mo.ui.table(
                 asset_metadata_frame(
@@ -509,13 +539,13 @@ def _(
         ]
         asset_columns = asset_columns_frame(selected_entry)
         if not asset_columns.is_empty():
-            sections.extend(
+            asset_view_sections.extend(
                 [
                     mo.md("#### GraphQL Column Metadata"),
                     mo.ui.table(asset_columns, selection=None),
                 ]
             )
-        selected_asset_view = mo.vstack(sections)
+        selected_asset_view = mo.vstack(asset_view_sections)
 
     selected_asset_view
     return selected_entry
@@ -733,7 +763,7 @@ def _(
             else f"- Rows after text search: `{exploration.filtered_row_count}`"
         )
 
-        sections = [
+        inspection_sections = [
             mo.md(
                 f"""
                 ### `{selected_table.display_name}`
@@ -749,20 +779,20 @@ def _(
         ]
         statistics = column_statistics_frame(exploration)
         if not statistics.is_empty():
-            sections.extend(
+            inspection_sections.extend(
                 [
                     mo.md("#### Selected Column Statistics"),
                     mo.ui.table(statistics, selection=None),
                 ]
             )
         if exploration.row_count == 0:
-            sections.append(
+            inspection_sections.append(
                 materialization_guidance_view(selected_entry, selected_table)
             )
         elif exploration.filtered_row_count == 0:
-            sections.append(mo.md("No rows match the current text search."))
+            inspection_sections.append(mo.md("No rows match the current text search."))
         else:
-            sections.extend(
+            inspection_sections.extend(
                 [
                     mo.md("#### Preview"),
                     mo.ui.table(
@@ -772,7 +802,7 @@ def _(
                     ),
                 ]
             )
-        inspection_view = mo.vstack(sections)
+        inspection_view = mo.vstack(inspection_sections)
 
     inspection_view
     return

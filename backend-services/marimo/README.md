@@ -16,6 +16,7 @@ Marimo-Codex research workspace image.
 - [Dagster asset catalogue status](#dagster-asset-catalogue-status)
 - [S3 bucket health](#s3-bucket-health)
 - [Table explorer](#table-explorer)
+- [Source coverage matrix](#source-coverage-matrix)
 - [Gas market dashboard](#gas-market-dashboard)
 - [Market prices dashboard](#market-prices-dashboard)
 - [Schedule runs dashboard](#schedule-runs-dashboard)
@@ -275,6 +276,25 @@ or schema-only table prefixes before any Dagster run has produced rows; those
 tables are not previewable until the asset is materialized or curated outputs
 are seeded.
 
+## Source coverage matrix
+
+[notebooks/source_coverage_matrix.py](notebooks/source_coverage_matrix.py) is
+an analytical dashboard over source metadata coverage across registry-backed
+`silver.gas_model` facts and dimensions. It derives the asset list from the
+Marimo dashboard registry, loads bounded rows through the shared gas model
+loader, and enriches rows with table explorer links from the S3/Dagster
+catalogue overlay when available. The linked table explorer route consumes the
+coverage row's `search`, `table`, or `asset` query parameter so operators land
+on the matching catalogue filter or selected metadata row instead of the
+default first table.
+
+The dashboard summarizes each asset by `source_system` and either scalar
+`source_table` values or expanded `source_tables` list values. Assets with no
+`source_table` or `source_tables` column render explicit coverage-gap rows
+instead of disappearing from the matrix. Empty reads, unavailable Parquet
+prefixes, unavailable Dagster GraphQL metadata, and bounded AWS preview mode
+remain visible in the load diagnostics and coverage state columns.
+
 ## Gas market dashboard
 
 The default notebook,
@@ -519,8 +539,8 @@ controls, data reads, Plotly traces, or dashboard routes.
 With the local backend stack running, open the Marimo concept gallery through
 Caddy and choose an available card such as `data_readiness_overview`,
 `dagster_asset_catalogue_status`, `s3_bucket_health`, `glossary_explorer`,
-`table_explorer`, `sample_energy_market`, `gas_market_prices`,
-`gas_schedule_runs`, `system_notices`,
+`table_explorer`, `source_coverage_matrix`, `sample_energy_market`,
+`gas_market_prices`, `gas_schedule_runs`, `system_notices`,
 `gas_settlement_activity`, `gas_customer_transfer_activity`,
 `gas_bid_offer_stack`, `gas_quality_composition`, or `gbb_interactive_map`:
 
@@ -549,6 +569,13 @@ Use the same pattern for the local table explorer:
 ```bash
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/table_explorer.py
+```
+
+Use the same pattern for the source coverage matrix:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/source_coverage_matrix.py
 ```
 
 Use the same pattern for the data readiness overview:
@@ -723,6 +750,7 @@ prek run -a
   - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/marimo/notebooks/gbb_interactive_map.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
+  - `backend-services/marimo/notebooks/source_coverage_matrix.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
   - `backend-services/marimo/notebooks/s3_bucket_health.py`

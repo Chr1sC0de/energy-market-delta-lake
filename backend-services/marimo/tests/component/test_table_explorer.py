@@ -33,6 +33,7 @@ from marimoserver.table_explorer import (
     catalogued_table_layers_or_domains,
     classify_table_prefixes,
     create_s3_client,
+    default_catalogued_table_entry_id,
     discover_table_catalogue,
     discover_storage,
     discover_table_explorer_config,
@@ -40,6 +41,7 @@ from marimoserver.table_explorer import (
     filter_table_prefixes,
     filter_catalogued_tables,
     format_materialization_timestamp,
+    include_deep_linked_catalogued_table,
     inspect_table,
     overlay_table_catalogue,
     read_delta_table,
@@ -49,6 +51,7 @@ from marimoserver.table_explorer import (
     s3_bucket_health_frame,
     storage_health_action_markdown,
     table_asset_catalogue_frame,
+    table_explorer_deep_link_from_query,
     table_prefix_discovery_frame,
     table_by_id,
 )
@@ -663,6 +666,93 @@ def test_filter_catalogued_tables_combines_group_layer_status_and_search() -> No
     )
     assert filter_catalogued_tables(entries, statuses=("Missing",)) == (missing_entry,)
     assert filter_catalogued_tables(entries, search="storage only") == (storage_entry,)
+
+
+def test_table_explorer_deep_link_from_query_normalizes_url_defaults() -> None:
+    deep_link = table_explorer_deep_link_from_query(
+        {
+            "search": ["", " silver_gas_fact_market_price "],
+            "table": " asset:silver/gas_model/silver_gas_fact_market_price ",
+            "asset": ["asset:silver/gas_model/silver_gas_dim_facility"],
+        }
+    )
+
+    assert deep_link.search == "silver_gas_fact_market_price"
+    assert (
+        deep_link.table_entry_id
+        == "asset:silver/gas_model/silver_gas_fact_market_price"
+    )
+    assert deep_link.asset_entry_id == "asset:silver/gas_model/silver_gas_dim_facility"
+    assert (
+        deep_link.requested_entry_id
+        == "asset:silver/gas_model/silver_gas_fact_market_price"
+    )
+    asset_deep_link = table_explorer_deep_link_from_query(
+        {"asset": "asset:silver/gas_model/silver_gas_dim_facility"}
+    )
+
+    assert (
+        asset_deep_link.requested_entry_id
+        == "asset:silver/gas_model/silver_gas_dim_facility"
+    )
+
+
+def test_table_explorer_deep_link_keeps_requested_entry_selectable() -> None:
+    live_entry = CataloguedTable(
+        entry_id="asset:silver/gas_model/live",
+        status=TableAvailability.LIVE,
+        asset=_asset(
+            ("silver", "gas_model", "live"),
+            uri="s3://dev-energy-market-aemo/silver/gas_model/live",
+            latest_materialization_timestamp=None,
+        ),
+        table=None,
+    )
+    missing_entry = CataloguedTable(
+        entry_id="asset:silver/gas_model/missing",
+        status=TableAvailability.MISSING,
+        asset=_asset(
+            ("silver", "gas_model", "missing"),
+            uri="s3://dev-energy-market-aemo/silver/gas_model/missing",
+            latest_materialization_timestamp=None,
+        ),
+        table=None,
+    )
+    entries = (live_entry, missing_entry)
+    filtered_entries = filter_catalogued_tables(entries, search="live")
+
+    linked_entries = include_deep_linked_catalogued_table(
+        entries,
+        filtered_entries,
+        missing_entry.entry_id,
+    )
+
+    assert linked_entries == (missing_entry, live_entry)
+    assert (
+        include_deep_linked_catalogued_table(entries, filtered_entries, None)
+        == filtered_entries
+    )
+    assert (
+        include_deep_linked_catalogued_table(entries, filtered_entries, "unknown")
+        == filtered_entries
+    )
+    assert (
+        include_deep_linked_catalogued_table(
+            entries,
+            linked_entries,
+            missing_entry.entry_id,
+        )
+        == linked_entries
+    )
+    assert (
+        default_catalogued_table_entry_id(linked_entries, missing_entry.entry_id)
+        == missing_entry.entry_id
+    )
+    assert (
+        default_catalogued_table_entry_id(linked_entries, "unknown")
+        == missing_entry.entry_id
+    )
+    assert default_catalogued_table_entry_id((), missing_entry.entry_id) is None
 
 
 def test_catalogued_table_properties_fall_back_to_entry_id() -> None:

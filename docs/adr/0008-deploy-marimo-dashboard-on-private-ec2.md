@@ -146,6 +146,12 @@ through the shared bounded loader and session cache, then filters and
 summarizes loaded quality and composition rows without changing gas quality ETL,
 schemas, source ingestion, or quality calculations.
 
+The source coverage matrix dashboard stays inside the same boundary. It reads
+bounded rows from registry-backed `silver.gas_model` facts and dimensions,
+expands `source_table` and `source_tables` metadata where present, and renders
+missing source metadata as coverage gaps without changing ETL definitions,
+source ingestion, asset schemas, or AWS infrastructure.
+
 Static asset optimization stays limited to immutable HTTP caching for
 content-hashed Marimo package assets. Extra preload changes, pre-serving
 packaged WASM, and auto-refresh timer behavior remain deferred until route or
@@ -172,6 +178,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
   - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
+  - `backend-services/marimo/notebooks/source_coverage_matrix.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
   - `backend-services/marimo/notebooks/s3_bucket_health.py`

@@ -163,6 +163,22 @@ class TableExplorerConfig:
 
 
 @dataclass(frozen=True)
+class TableExplorerDeepLink:
+    """Table explorer query-parameter defaults from dashboard links."""
+
+    search: str
+    table_entry_id: str | None
+    asset_entry_id: str | None
+
+    @property
+    def requested_entry_id(self) -> str | None:
+        """Return the exact table catalogue entry requested by the URL."""
+        if self.table_entry_id is not None:
+            return self.table_entry_id
+        return self.asset_entry_id
+
+
+@dataclass(frozen=True)
 class BucketStatus:
     """Local bucket health and table-discovery summary."""
 
@@ -1297,6 +1313,50 @@ def filter_catalogued_tables(
     return tuple(filtered)
 
 
+def table_explorer_deep_link_from_query(
+    query_params: Mapping[str, object],
+) -> TableExplorerDeepLink:
+    """Return table explorer defaults from URL query parameters."""
+    return TableExplorerDeepLink(
+        search=_query_param_text(query_params.get("search")),
+        table_entry_id=_query_param_entry_id(query_params.get("table")),
+        asset_entry_id=_query_param_entry_id(query_params.get("asset")),
+    )
+
+
+def include_deep_linked_catalogued_table(
+    tables: Sequence[CataloguedTable],
+    filtered_tables: Sequence[CataloguedTable],
+    requested_entry_id: str | None,
+) -> tuple[CataloguedTable, ...]:
+    """Include an exact deep-linked catalogue row in the filtered table list."""
+    filtered = tuple(filtered_tables)
+    if requested_entry_id is None:
+        return filtered
+    if catalogued_table_by_id(filtered, requested_entry_id) is not None:
+        return filtered
+
+    requested_table = catalogued_table_by_id(tables, requested_entry_id)
+    if requested_table is None:
+        return filtered
+    return (requested_table, *filtered)
+
+
+def default_catalogued_table_entry_id(
+    tables: Sequence[CataloguedTable],
+    requested_entry_id: str | None,
+) -> str | None:
+    """Return the table picker default entry ID for filtered catalogue rows."""
+    if not tables:
+        return None
+    if (
+        requested_entry_id is not None
+        and catalogued_table_by_id(tables, requested_entry_id) is not None
+    ):
+        return requested_entry_id
+    return tables[0].entry_id
+
+
 def catalogued_table_group(table: CataloguedTable) -> str:
     """Return the asset group filter value for an overlaid table row."""
     if table.asset is None:
@@ -2009,6 +2069,23 @@ def _column_statistics(
             )
         )
     return tuple(statistics)
+
+
+def _query_param_entry_id(value: object) -> str | None:
+    text = _query_param_text(value)
+    if text == "":
+        return None
+    return text
+
+
+def _query_param_text(value: object) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, Sequence) and not isinstance(value, bytes | bytearray):
+        for item in value:
+            if isinstance(item, str) and item.strip():
+                return item.strip()
+    return ""
 
 
 def _status_filter_value(status: str | TableAvailability) -> str:

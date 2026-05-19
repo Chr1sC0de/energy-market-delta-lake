@@ -2,6 +2,7 @@
 
 from collections.abc import Mapping
 from datetime import date, datetime, timedelta
+from types import SimpleNamespace
 from typing import Self
 
 import polars as pl
@@ -38,6 +39,10 @@ from marimoserver.gas_dashboard import (
     SETTLEMENT_ACTIVITY_SOURCE_SYSTEM_FILTER_ALL,
     SETTLEMENT_ACTIVITY_TABLE_NAME,
     SETTLEMENT_ACTIVITY_TABLE_SPEC,
+    SOURCE_COVERAGE_STATE_COVERED,
+    SOURCE_COVERAGE_STATE_EMPTY,
+    SOURCE_COVERAGE_STATE_GAP,
+    SOURCE_COVERAGE_STATE_UNAVAILABLE,
     SYSTEM_NOTICE_CRITICAL_FILTER_ALL,
     SYSTEM_NOTICE_CRITICAL_FILTER_CRITICAL,
     SYSTEM_NOTICE_CRITICAL_FILTER_NON_CRITICAL,
@@ -65,6 +70,7 @@ from marimoserver.gas_dashboard import (
     cached_load_market_price_table,
     cached_load_schedule_run_table,
     cached_load_settlement_activity_table,
+    cached_load_source_coverage_tables,
     cached_load_system_notice_table,
     customer_transfer_daily_frame,
     customer_transfer_empty_state_markdown,
@@ -90,6 +96,7 @@ from marimoserver.gas_dashboard import (
     load_customer_transfer_table,
     load_gas_quality_table,
     load_gas_model_tables,
+    load_source_coverage_tables,
     load_schedule_run_table,
     load_settlement_activity_table,
     load_system_notice_table,
@@ -108,6 +115,7 @@ from marimoserver.gas_dashboard import (
     render_market_price_context_links,
     render_schedule_run_context_links,
     render_settlement_activity_context_links,
+    render_source_coverage_matrix_html,
     schedule_run_empty_state_markdown,
     schedule_run_gas_date_options,
     schedule_run_kpi_frame,
@@ -125,6 +133,11 @@ from marimoserver.gas_dashboard import (
     settlement_activity_source_coverage_frame,
     settlement_activity_source_system_options,
     settlement_activity_summary_frame,
+    source_coverage_empty_state_markdown,
+    source_coverage_kpi_frame,
+    source_coverage_matrix_frame,
+    source_coverage_table_specs_from_catalogue,
+    source_coverage_table_specs,
     system_notice_empty_state_markdown,
     system_notice_kpi_frame,
     system_notice_source_coverage_frame,
@@ -149,6 +162,13 @@ from marimoserver.gas_model_loader import (
     load_gas_model_read_request,
     load_gas_model_read_requests,
     row_limit_message,
+)
+from marimoserver.dagster_graphql import DagsterTableAsset
+from marimoserver.table_explorer import (
+    CataloguedTable,
+    TableAvailability,
+    TableFormat,
+    TablePrefix,
 )
 
 
@@ -3104,6 +3124,688 @@ def test_table_load_by_name_returns_matching_load() -> None:
     assert table_load_by_name(loads, "missing") is None
 
 
+def test_source_coverage_table_specs_use_registry_backing_assets() -> None:
+    specs = source_coverage_table_specs()
+    table_names = {spec.table_name for spec in specs}
+
+    assert "silver_gas_fact_market_price" in table_names
+    assert "silver_gas_dim_facility" in table_names
+    assert "silver_gas_fact_customer_transfer" in table_names
+    assert len(table_names) == len(specs)
+
+
+def test_source_coverage_table_specs_skip_non_gas_model_and_label_sections() -> None:
+    entry = DashboardRegistryEntry(
+        concept_id="custom-context",
+        title="Custom",
+        description="Custom source coverage entry.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.PLANNED,
+        notebook_name=None,
+        backing_assets=(
+            "bronze.gas_model.raw",
+            "silver.gas_model.silver_gas_dim_date",
+            "silver.gas_model.silver_gas_fact_market_price",
+            "silver.gas_model.silver_gas_participant_market_membership",
+            "silver.gas_model.silver_gas_dim_date",
+        ),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+
+    specs = source_coverage_table_specs((entry,))
+    sections = {spec.table_name: spec.section for spec in specs}
+    labels = {spec.table_name: spec.label for spec in specs}
+
+    assert tuple(spec.table_name for spec in specs) == (
+        "silver_gas_dim_date",
+        "silver_gas_fact_market_price",
+        "silver_gas_participant_market_membership",
+    )
+    assert sections == {
+        "silver_gas_dim_date": "Dimensions",
+        "silver_gas_fact_market_price": "Facts",
+        "silver_gas_participant_market_membership": "Associations",
+    }
+    assert labels["silver_gas_fact_market_price"] == "Fact Market Price"
+
+
+def test_source_coverage_table_specs_from_catalogue_dedupes_discovered_rows() -> None:
+    dim_table = "silver_gas_dim_facility"
+    fact_table = "silver_gas_fact_market_price"
+    association_table = "silver_gas_participant_market_membership"
+    catalogue_rows = (
+        CataloguedTable(
+            entry_id=f"asset:silver/gas_model/{dim_table}",
+            status=TableAvailability.LIVE,
+            asset=DagsterTableAsset(
+                asset_key=("silver", "gas_model", dim_table),
+                group_name="gas_model",
+                kinds=("python", "parquet"),
+                description=None,
+                uri=f"s3://bucket/silver/gas_model/{dim_table}",
+                columns=(),
+                is_materializable=True,
+                is_executable=True,
+                latest_materialization_timestamp=None,
+            ),
+            table=None,
+        ),
+        CataloguedTable(
+            entry_id="",
+            status=TableAvailability.LIVE,
+            asset=None,
+            table=TablePrefix(
+                bucket="bucket",
+                prefix=f"silver/gas_model/{dim_table}",
+                table_format=TableFormat.PARQUET,
+                parquet_files=(f"silver/gas_model/{dim_table}/part-000.parquet",),
+            ),
+        ),
+        SimpleNamespace(uri=f"s3://bucket/silver/gas_model/{fact_table}"),
+        SimpleNamespace(uri=f"silver.gas_model.{association_table}"),
+        SimpleNamespace(uri="s3://bucket/bronze/gas_model/ignored"),
+    )
+
+    specs = source_coverage_table_specs_from_catalogue(catalogue_rows)
+
+    assert tuple(spec.table_name for spec in specs) == (
+        dim_table,
+        fact_table,
+        association_table,
+    )
+    assert {spec.table_name: spec.section for spec in specs} == {
+        dim_table: "Dimensions",
+        fact_table: "Facts",
+        association_table: "Associations",
+    }
+
+
+def test_source_coverage_loaders_use_shared_bounded_loader() -> None:
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "4",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    loads = load_source_coverage_tables(config, reader=reader)
+
+    assert loads
+    assert len(captured) == len(source_coverage_table_specs())
+    assert {row_limit for _, row_limit in captured} == {4}
+    assert captured[0][0].startswith("s3://prod-energy-market-aemo/silver/gas_model/")
+
+
+def test_cached_source_coverage_loader_uses_session_cache() -> None:
+    config = _dashboard_config()
+    spec = GasTableSpec(
+        section="Facts",
+        label="Market prices",
+        table_name="silver_gas_fact_market_price",
+    )
+    calls = 0
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal calls
+        assert row_limit == 100
+        calls += 1
+        return pl.DataFrame({"source_system": ["GBB"], "source_table": ["table"]})
+
+    cache: GasModelSessionCache = {}
+    first = cached_load_source_coverage_tables(
+        config,
+        cache,
+        specs=(spec,),
+        reader=reader,
+        refresh_token="same",
+    )
+    second = cached_load_source_coverage_tables(
+        config,
+        cache,
+        specs=(spec,),
+        reader=reader,
+        refresh_token="same",
+    )
+
+    assert calls == 1
+    assert not first[0].cache_hit
+    assert second[0].cache_hit
+
+
+def test_source_coverage_matrix_returns_empty_schema_for_no_loads() -> None:
+    matrix = source_coverage_matrix_frame(())
+    empty_markdown = source_coverage_empty_state_markdown(())
+
+    assert matrix.is_empty()
+    assert matrix.columns == [
+        "asset",
+        "section",
+        "table",
+        "source system",
+        "source table",
+        "coverage state",
+        "rows loaded",
+        "row limit",
+        "source fields",
+        "table explorer",
+        "asset metadata",
+        "uri",
+        "detail",
+    ]
+    assert "No source coverage tables were requested" in empty_markdown
+
+
+def test_source_coverage_matrix_summarizes_single_source_table_column() -> None:
+    load = _source_coverage_load(
+        "silver_gas_fact_market_price",
+        pl.DataFrame(
+            {
+                "source_system": ["GBB", "GBB", "STTM"],
+                "source_table": [
+                    "silver.gbb.price_report",
+                    "silver.gbb.price_report",
+                    "silver.sttm.price_report",
+                ],
+            }
+        ),
+    )
+
+    matrix = source_coverage_matrix_frame((load,))
+
+    assert matrix.to_dict(as_series=False)["coverage state"] == [
+        SOURCE_COVERAGE_STATE_COVERED,
+        SOURCE_COVERAGE_STATE_COVERED,
+    ]
+    assert matrix.select("source system", "source table", "rows loaded").to_dicts() == [
+        {
+            "source system": "GBB",
+            "source table": "silver.gbb.price_report",
+            "rows loaded": 2,
+        },
+        {
+            "source system": "STTM",
+            "source table": "silver.sttm.price_report",
+            "rows loaded": 1,
+        },
+    ]
+    assert matrix.row(0, named=True)["table explorer"] == (
+        "/marimo/table_explorer/?search=silver_gas_fact_market_price"
+    )
+
+
+def test_source_coverage_matrix_renders_unavailable_and_empty_states() -> None:
+    unavailable_load = _source_coverage_load(
+        "silver_gas_fact_market_price",
+        None,
+        error="RuntimeError: missing parquet",
+    )
+    empty_load = _source_coverage_load(
+        "silver_gas_fact_schedule_run",
+        pl.DataFrame(),
+    )
+
+    matrix = source_coverage_matrix_frame((unavailable_load, empty_load))
+    rows = matrix.select("table", "coverage state", "detail").to_dicts()
+    empty_markdown = source_coverage_empty_state_markdown(
+        (unavailable_load, empty_load)
+    )
+
+    assert rows == [
+        {
+            "table": "silver_gas_fact_market_price",
+            "coverage state": SOURCE_COVERAGE_STATE_UNAVAILABLE,
+            "detail": "Read detail: RuntimeError: missing parquet",
+        },
+        {
+            "table": "silver_gas_fact_schedule_run",
+            "coverage state": SOURCE_COVERAGE_STATE_EMPTY,
+            "detail": "The table read succeeded but returned no rows.",
+        },
+    ]
+    assert "1` reads were unavailable" in empty_markdown
+    assert "1` reads" in empty_markdown
+    assert "returned no rows" in empty_markdown
+
+
+def test_source_coverage_matrix_expands_source_tables_list_column() -> None:
+    load = _source_coverage_load(
+        "silver_gas_fact_schedule_run",
+        pl.DataFrame(
+            {
+                "source_system": ["VICGAS", "VICGAS"],
+                "source_tables": [
+                    [
+                        "silver.vicgas.schedule_header",
+                        "silver.vicgas.schedule_detail",
+                    ],
+                    ["silver.vicgas.schedule_header"],
+                ],
+            }
+        ),
+    )
+
+    matrix = source_coverage_matrix_frame((load,))
+
+    assert matrix.select("source table", "rows loaded").to_dicts() == [
+        {"source table": "silver.vicgas.schedule_header", "rows loaded": 2},
+        {"source table": "silver.vicgas.schedule_detail", "rows loaded": 1},
+    ]
+    assert set(matrix.get_column("source fields").to_list()) == {
+        "source_system, source_tables"
+    }
+
+
+def test_source_coverage_matrix_marks_missing_source_table_columns_as_gap() -> None:
+    load = _source_coverage_load(
+        "silver_gas_dim_facility",
+        pl.DataFrame(
+            {
+                "source_system": ["GBB", "GBB"],
+                "facility_id": ["F1", "F2"],
+            }
+        ),
+    )
+
+    matrix = source_coverage_matrix_frame((load,))
+    row = matrix.row(0, named=True)
+
+    assert row["coverage state"] == SOURCE_COVERAGE_STATE_GAP
+    assert row["source system"] == "GBB"
+    assert row["source table"] == "(missing source_table/source_tables column)"
+    assert row["rows loaded"] == 2
+    assert "Missing source_table/source_tables columns" in row["detail"]
+
+
+def test_source_coverage_matrix_marks_missing_source_fields_as_gap() -> None:
+    load = _source_coverage_load(
+        "silver_gas_dim_facility",
+        pl.DataFrame({"facility_id": ["F1"]}),
+    )
+
+    matrix = source_coverage_matrix_frame((load,))
+    row = matrix.row(0, named=True)
+
+    assert row["coverage state"] == SOURCE_COVERAGE_STATE_GAP
+    assert row["source system"] == "(missing source_system column)"
+    assert row["source table"] == "(missing source_table/source_tables column)"
+    assert row["source fields"] == "(none)"
+
+
+def test_source_coverage_matrix_marks_missing_and_empty_source_systems() -> None:
+    missing_system_load = _source_coverage_load(
+        "silver_gas_fact_market_price",
+        pl.DataFrame({"source_table": ["silver.gbb.price_report"]}),
+    )
+    empty_system_load = _source_coverage_load(
+        "silver_gas_fact_schedule_run",
+        pl.DataFrame(
+            {
+                "source_system": [""],
+                "source_table": ["silver.sttm.schedule_report"],
+            }
+        ),
+    )
+
+    matrix = source_coverage_matrix_frame((missing_system_load, empty_system_load))
+    rows = matrix.select("source system", "coverage state", "detail").to_dicts()
+
+    assert rows == [
+        {
+            "source system": "(missing source_system column)",
+            "coverage state": SOURCE_COVERAGE_STATE_GAP,
+            "detail": "Missing source_system column; source table values were present.",
+        },
+        {
+            "source system": "(empty source_system value)",
+            "coverage state": SOURCE_COVERAGE_STATE_GAP,
+            "detail": (
+                "source_system column is present but empty for these loaded rows."
+            ),
+        },
+    ]
+
+
+def test_source_coverage_matrix_marks_empty_source_table_values() -> None:
+    none_load = _source_coverage_load(
+        "silver_gas_fact_market_price",
+        pl.DataFrame({"source_system": ["GBB"], "source_table": [None]}),
+    )
+    nan_load = _source_coverage_load(
+        "silver_gas_fact_schedule_run",
+        pl.DataFrame({"source_system": ["STTM"], "source_table": [float("nan")]}),
+    )
+    numeric_load = _source_coverage_load(
+        "silver_gas_fact_capacity_outlook",
+        pl.DataFrame({"source_system": ["GBB"], "source_table": [123]}),
+    )
+
+    matrix = source_coverage_matrix_frame((none_load, nan_load, numeric_load))
+    rows = matrix.select(
+        "source system",
+        "source table",
+        "coverage state",
+        "rows loaded",
+    ).to_dicts()
+
+    assert rows == [
+        {
+            "source system": "GBB",
+            "source table": "(empty source_table/source_tables value)",
+            "coverage state": SOURCE_COVERAGE_STATE_GAP,
+            "rows loaded": 1,
+        },
+        {
+            "source system": "STTM",
+            "source table": "(empty source_table/source_tables value)",
+            "coverage state": SOURCE_COVERAGE_STATE_GAP,
+            "rows loaded": 1,
+        },
+        {
+            "source system": "GBB",
+            "source table": "123",
+            "coverage state": SOURCE_COVERAGE_STATE_COVERED,
+            "rows loaded": 1,
+        },
+    ]
+
+
+def test_source_coverage_matrix_links_catalogue_rows_when_available() -> None:
+    table_name = "silver_gas_fact_market_price"
+    load = _source_coverage_load(
+        table_name,
+        pl.DataFrame(
+            {
+                "source_system": ["STTM"],
+                "source_table": ["silver.sttm.price_report"],
+            }
+        ),
+    )
+    asset = DagsterTableAsset(
+        asset_key=("silver", "gas_model", table_name),
+        group_name="gas_model",
+        kinds=("python", "parquet"),
+        description=None,
+        uri=f"s3://dev-energy-market-aemo/silver/gas_model/{table_name}",
+        columns=(),
+        is_materializable=True,
+        is_executable=True,
+        latest_materialization_timestamp=None,
+    )
+    catalogue_row = CataloguedTable(
+        entry_id=f"asset:silver/gas_model/{table_name}",
+        status=TableAvailability.LIVE,
+        asset=asset,
+        table=None,
+    )
+
+    matrix = source_coverage_matrix_frame((load,), (catalogue_row, catalogue_row))
+    row = matrix.row(0, named=True)
+
+    assert row["table explorer"] == (
+        "/marimo/table_explorer/?table=asset%3Asilver%2Fgas_model%2F"
+        "silver_gas_fact_market_price"
+    )
+    assert row["asset metadata"] == (
+        "/marimo/table_explorer/?asset=asset%3Asilver%2Fgas_model%2F"
+        "silver_gas_fact_market_price"
+    )
+    assert row["uri"] == (
+        "s3://dev-energy-market-aemo/silver/gas_model/silver_gas_fact_market_price"
+    )
+
+
+def test_render_source_coverage_matrix_html_includes_deep_link_anchors() -> None:
+    table_name = "silver_gas_fact_market_price"
+    load = _source_coverage_load(
+        table_name,
+        pl.DataFrame(
+            {
+                "source_system": ["STTM"],
+                "source_table": ["silver.sttm.price_report"],
+            }
+        ),
+    )
+    catalogue_row = CataloguedTable(
+        entry_id=f"asset:silver/gas_model/{table_name}",
+        status=TableAvailability.LIVE,
+        asset=DagsterTableAsset(
+            asset_key=("silver", "gas_model", table_name),
+            group_name="gas_model",
+            kinds=("python", "parquet"),
+            description=None,
+            uri=f"s3://dev-energy-market-aemo/silver/gas_model/{table_name}",
+            columns=(),
+            is_materializable=True,
+            is_executable=True,
+            latest_materialization_timestamp=None,
+        ),
+        table=None,
+    )
+
+    matrix = source_coverage_matrix_frame((load,), (catalogue_row,))
+    html = render_source_coverage_matrix_html(matrix)
+
+    assert 'data-link-target="table-explorer"' in html
+    assert 'data-link-target="asset-metadata"' in html
+    assert (
+        'href="/marimo/table_explorer/?table=asset%3Asilver%2Fgas_model%2F'
+        'silver_gas_fact_market_price"'
+    ) in html
+    assert (
+        'href="/marimo/table_explorer/?asset=asset%3Asilver%2Fgas_model%2F'
+        'silver_gas_fact_market_price"'
+    ) in html
+    assert "Open table</a>" in html
+    assert "Open asset</a>" in html
+    assert "<button" not in html.lower()
+
+
+def test_render_source_coverage_matrix_html_escapes_values_and_missing_links() -> None:
+    matrix = pl.DataFrame(
+        [
+            {
+                "asset": "silver.gas_model.<unsafe>",
+                "section": "Facts",
+                "table": "<unsafe>",
+                "source system": "GBB",
+                "source table": "silver.gbb.<unsafe>",
+                "coverage state": SOURCE_COVERAGE_STATE_COVERED,
+                "rows loaded": 1,
+                "row limit": "100 rows",
+                "source fields": "source_system, source_table",
+                "table explorer": "javascript:alert(1)",
+                "asset metadata": "",
+                "uri": "s3://bucket/<unsafe>",
+                "detail": "1 < 2",
+            }
+        ]
+    )
+
+    html = render_source_coverage_matrix_html(matrix)
+
+    assert "&lt;unsafe&gt;" in html
+    assert "1 &lt; 2" in html
+    assert "<unsafe>" not in html
+    assert "javascript:alert" not in html
+    assert (
+        '<span class="source-coverage-matrix__missing-link">Unavailable</span>'
+    ) in html
+
+
+def test_render_source_coverage_matrix_html_handles_empty_and_overflow_rows() -> None:
+    empty_html = render_source_coverage_matrix_html(source_coverage_matrix_frame(()))
+    matrix = pl.DataFrame(
+        [
+            {
+                "asset": "silver.gas_model.first",
+                "section": "Facts",
+                "table": "first",
+                "source system": "GBB",
+                "source table": None,
+                "coverage state": SOURCE_COVERAGE_STATE_GAP,
+                "rows loaded": 1234,
+                "row limit": "100 rows",
+                "source fields": "(none)",
+                "table explorer": None,
+                "asset metadata": None,
+                "uri": "",
+                "detail": "Missing source table",
+            },
+            {
+                "asset": "silver.gas_model.second",
+                "section": "Facts",
+                "table": "second",
+                "source system": "STTM",
+                "source table": "silver.sttm.price_report",
+                "coverage state": SOURCE_COVERAGE_STATE_COVERED,
+                "rows loaded": 1,
+                "row limit": "100 rows",
+                "source fields": "source_system, source_table",
+                "table explorer": "/marimo/table_explorer/?search=second",
+                "asset metadata": "",
+                "uri": "s3://bucket/silver/gas_model/second",
+                "detail": "Covered",
+            },
+        ]
+    )
+
+    html = render_source_coverage_matrix_html(matrix, max_rows=1)
+
+    assert "No source coverage rows match the current filters." in empty_html
+    assert 'data-row-count="2"' in html
+    assert 'data-rendered-row-count="1"' in html
+    assert "1 additional rows are hidden by the dashboard display limit." in html
+    assert ">1,234</td>" in html
+    assert "Missing source table" in html
+    assert "silver.sttm.price_report" not in html
+    assert (
+        '<span class="source-coverage-matrix__missing-link">Unavailable</span>'
+    ) in html
+
+
+def test_source_coverage_matrix_uses_catalogue_uri_and_storage_fallbacks() -> None:
+    table_name = "silver_gas_fact_market_price"
+    load = _source_coverage_load(
+        table_name,
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "source_table": ["silver.gbb.price_report"],
+            }
+        ),
+    )
+    asset_uri_row = CataloguedTable(
+        entry_id=f"asset:bronze/{table_name}",
+        status=TableAvailability.LIVE,
+        asset=DagsterTableAsset(
+            asset_key=("bronze", table_name),
+            group_name="gas_model",
+            kinds=("python",),
+            description=None,
+            uri=f"s3://bucket/silver/gas_model/{table_name}",
+            columns=(),
+            is_materializable=True,
+            is_executable=True,
+            latest_materialization_timestamp=None,
+        ),
+        table=None,
+    )
+    storage_row = CataloguedTable(
+        entry_id="",
+        status=TableAvailability.LIVE,
+        asset=None,
+        table=TablePrefix(
+            bucket="bucket",
+            prefix=f"silver/gas_model/{table_name}",
+            table_format=TableFormat.PARQUET,
+            parquet_files=(f"silver/gas_model/{table_name}/part-000.parquet",),
+        ),
+    )
+    ignored_rows = (
+        SimpleNamespace(uri="s3://bucket/bronze/table"),
+        SimpleNamespace(uri="s3://bucket/silver/gas_model/"),
+    )
+    dotted_row = SimpleNamespace(
+        entry_id="dotted-row",
+        asset=None,
+        table=None,
+        uri=f"silver.gas_model.{table_name}",
+    )
+
+    asset_matrix = source_coverage_matrix_frame((load,), (asset_uri_row,))
+    storage_matrix = source_coverage_matrix_frame(
+        (load,),
+        (*ignored_rows, storage_row),
+    )
+    dotted_matrix = source_coverage_matrix_frame((load,), (dotted_row,))
+
+    assert asset_matrix.row(0, named=True)["uri"] == (
+        f"s3://bucket/silver/gas_model/{table_name}"
+    )
+    assert storage_matrix.row(0, named=True)["table explorer"] == (
+        "/marimo/table_explorer/"
+    )
+    assert storage_matrix.row(0, named=True)["asset metadata"] == ""
+    assert dotted_matrix.row(0, named=True)["table explorer"] == (
+        "/marimo/table_explorer/?table=dotted-row"
+    )
+
+
+def test_source_coverage_kpi_frame_counts_covered_sources_and_gaps() -> None:
+    covered_load = _source_coverage_load(
+        "silver_gas_fact_market_price",
+        pl.DataFrame(
+            {
+                "source_system": ["GBB", "STTM"],
+                "source_table": [
+                    "silver.gbb.price_report",
+                    "silver.sttm.price_report",
+                ],
+            }
+        ),
+    )
+    gap_load = _source_coverage_load(
+        "silver_gas_dim_facility",
+        pl.DataFrame({"source_system": ["GBB"], "facility_id": ["F1"]}),
+    )
+    matrix = source_coverage_matrix_frame((covered_load, gap_load))
+
+    kpis = source_coverage_kpi_frame((covered_load, gap_load), matrix)
+    values = {row["metric"]: row["value"] for row in kpis.to_dicts()}
+
+    assert values["Requested assets"] == "2"
+    assert values["Loaded assets"] == "2"
+    assert values["Assets with source coverage"] == "1"
+    assert values["Assets with coverage gaps"] == "1"
+    assert values["Source systems"] == "2"
+    assert values["Source tables"] == "2"
+
+
+def test_source_coverage_kpi_frame_handles_empty_matrix() -> None:
+    kpis = source_coverage_kpi_frame((), source_coverage_matrix_frame(()))
+    values = {row["metric"]: row["value"] for row in kpis.to_dicts()}
+
+    assert values["Requested assets"] == "0"
+    assert values["Assets with source coverage"] == "0"
+    assert values["Source systems"] == "0"
+
+
 def test_render_dashboard_context_panel_covers_complete_concept() -> None:
     html = render_dashboard_context_panel("gas-market-overview")
     no_related_html = render_dashboard_context_panel(
@@ -3159,6 +3861,27 @@ def test_render_dashboard_context_panel_includes_dashboard_usage_metadata() -> N
 def test_render_dashboard_context_panel_rejects_unknown_concept() -> None:
     with pytest.raises(DashboardRegistryError, match="concept not found"):
         render_dashboard_context_panel("missing-context")
+
+
+def _source_coverage_load(
+    table_name: str,
+    dataframe: pl.DataFrame | None,
+    *,
+    error: str | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=GasTableSpec(
+            section="Facts",
+            label=table_name,
+            table_name=table_name,
+        ),
+        uri=f"s3://bucket/silver/gas_model/{table_name}",
+        dataframe=dataframe,
+        error=error,
+        row_limit=100,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
 
 
 def _system_notice_load(
