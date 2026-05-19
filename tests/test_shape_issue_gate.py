@@ -276,6 +276,20 @@ class ShapeIssueGateTests(unittest.TestCase):
         self.assertFalse(hasattr(args, "embedding_command"))
         self.assertFalse(hasattr(args, "semantic_min_score"))
 
+    def test_caddyfile_is_readable_context_evidence(self) -> None:
+        gate = load_script_module("shape_issue_gate_caddyfile_under_test", GATE_SCRIPT)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            caddyfile = Path(tmp) / "Caddyfile"
+            caddyfile.write_text(
+                "handle @protectedMarimo {\n"
+                "    forward_auth {$DAGSTER_AUTHSERVER}\n"
+                "}\n",
+                encoding="utf-8",
+            )
+
+            self.assertTrue(gate.is_candidate_text_file(caddyfile))
+
     def test_ready_issue_passes_with_context_anchors(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
