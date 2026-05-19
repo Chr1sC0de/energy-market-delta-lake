@@ -43,14 +43,17 @@ AWS_DEFAULT_REGION=ap-southeast-2 scripts/run-integration-tests --with-idempoten
 ```
 
 That workflow runs local Pulumi unit/component tests, the **Commit check**,
-`pulumi up`, deployed AWS tests, and a no-op preview. The deployed tests verify:
+`pulumi up`, ECS service stability and rollout-completion waits, deployed AWS
+tests, and a no-op preview. The rollout-completion wait is bounded and reports
+only service names, primary rollout states, and sanitized failed deployment
+state. The deployed tests verify:
 
 - guest access at `/dagster-webserver/guest` returns `200`, `302`, or `307`
 - Marimo health at `/marimo/health` returns `200`
 - the exact required ECS Fargate services, including manifest-declared
   user-code services, exist, are `ACTIVE`, have
   `desiredCount >= 1`, `runningCount == desiredCount`, `pendingCount == 0`,
-  and have no failed rollout
+  and have primary rollout `COMPLETED` with no failed rollout
 - Cloud Map registrations and CloudWatch log streams exist
 - the current daemon log stream has no post-deploy IAM permission denials
 - EC2 hosts require IMDSv2 and encrypted EBS volumes
@@ -139,6 +142,7 @@ live proof for that parameter-type change.
   - `infrastructure/aws-pulumi/components/s3_buckets.py`
   - `infrastructure/aws-pulumi/components/security_groups.py`
   - `infrastructure/aws-pulumi/components/vpc.py`
+  - `infrastructure/aws-pulumi/ecs_rollouts.py`
   - `infrastructure/aws-pulumi/Pulumi.dev-ausenergymarket.yaml`
   - `infrastructure/aws-pulumi/scripts/redeploy-user-code`
   - `infrastructure/aws-pulumi/scripts/run-integration-tests`
@@ -155,6 +159,7 @@ live proof for that parameter-type change.
   - `infrastructure/aws-pulumi/tests/deployed/conftest.py`
   - `infrastructure/aws-pulumi/tests/deployed/test_integration.py`
   - `infrastructure/aws-pulumi/tests/unit/test_configs.py`
+  - `infrastructure/aws-pulumi/tests/unit/test_ecs_rollouts.py`
 - `sync.scope`: `security, deployment`
 - `sync.qa`:
   - `git diff --name-only`

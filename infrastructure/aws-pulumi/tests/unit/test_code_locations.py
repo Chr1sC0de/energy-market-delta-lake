@@ -8,6 +8,7 @@ from code_locations import (
     default_code_location,
     load_code_locations,
     render_workspace_yaml,
+    required_ecs_service_names,
     user_code_component_name,
     user_code_ecs_service_resource_name,
 )
@@ -88,3 +89,15 @@ def test_manifest_naming_keeps_default_user_code_service_name() -> None:
         "aemo-etl": "test-energy-market-user-code-user-code-service",
         "fixture-etl": "test-energy-market-user-code-fixture-etl-user-code-service",
     }
+
+
+def test_required_ecs_service_names_include_manifest_and_dagster_services() -> None:
+    locations = load_code_locations(TWO_LOCATION_MANIFEST)
+
+    assert required_ecs_service_names("test-energy-market", locations) == (
+        "test-energy-market-user-code-user-code-service",
+        "test-energy-market-user-code-fixture-etl-user-code-service",
+        "test-energy-market-webserver-admin-webserver-service",
+        "test-energy-market-webserver-guest-webserver-service",
+        "test-energy-market-daemon-daemon-service",
+    )

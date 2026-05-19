@@ -88,37 +88,22 @@ else
 	printf '\n==> Skipping pulumi up\n'
 fi
 
-if [[ "$HAS_AWS_CLI" -eq 1 ]]; then
-	ENVIRONMENT_NAME="${ENVIRONMENT:-${PULUMI_STACK%%-*}}"
-	RESOURCE_NAME="${ENVIRONMENT_NAME}-energy-market"
-	CLUSTER_NAME="${RESOURCE_NAME}-dagster-cluster"
-	mapfile -t USER_CODE_SERVICES < <(
-		RESOURCE_NAME="$RESOURCE_NAME" uv run python - <<'PY'
+ENVIRONMENT_NAME="${ENVIRONMENT:-${PULUMI_STACK%%-*}}"
+RESOURCE_NAME="${ENVIRONMENT_NAME}-energy-market"
+CLUSTER_NAME="${RESOURCE_NAME}-dagster-cluster"
+mapfile -t SERVICES < <(
+	RESOURCE_NAME="$RESOURCE_NAME" uv run python - <<'PY'
 import os
 
-from code_locations import (
-    default_code_location,
-    load_code_locations,
-    user_code_component_name,
-    user_code_ecs_service_resource_name,
-)
+from code_locations import required_ecs_service_names
 
 resource_name = os.environ["RESOURCE_NAME"]
-locations = load_code_locations()
-default_location = default_code_location(locations)
-
-for location in locations:
-    component_name = user_code_component_name(resource_name, location, default_location)
-    print(user_code_ecs_service_resource_name(component_name))
+for service_name in required_ecs_service_names(resource_name):
+    print(service_name)
 PY
-	)
-	SERVICES=(
-		"${USER_CODE_SERVICES[@]}"
-		"${RESOURCE_NAME}-webserver-admin-webserver-service"
-		"${RESOURCE_NAME}-webserver-guest-webserver-service"
-		"${RESOURCE_NAME}-daemon-daemon-service"
-	)
+)
 
+if [[ "$HAS_AWS_CLI" -eq 1 ]]; then
 	printf '\n==> Waiting for ECS Fargate services to stabilize\n'
 	aws ecs wait services-stable \
 		--cluster "$CLUSTER_NAME" \
@@ -133,6 +118,15 @@ PY
 			--services "${SERVICES[@]}"
 	fi
 fi
+
+ECS_ROLLOUT_TIMEOUT_SECONDS="${ECS_ROLLOUT_TIMEOUT_SECONDS:-900}"
+ECS_ROLLOUT_POLL_SECONDS="${ECS_ROLLOUT_POLL_SECONDS:-15}"
+printf '\n==> Waiting for ECS service rollout completion for up to %ss\n' "$ECS_ROLLOUT_TIMEOUT_SECONDS"
+uv run python -m ecs_rollouts \
+	--cluster "$CLUSTER_NAME" \
+	--services "${SERVICES[@]}" \
+	--timeout-seconds "$ECS_ROLLOUT_TIMEOUT_SECONDS" \
+	--poll-seconds "$ECS_ROLLOUT_POLL_SECONDS"
 
 printf '\n==> Running deployed AWS tests\n'
 PULUMI_INTEGRATION_TESTS=1 uv run pytest tests/deployed -v

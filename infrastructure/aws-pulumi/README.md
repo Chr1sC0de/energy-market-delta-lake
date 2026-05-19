@@ -353,11 +353,19 @@ pulumi up
 
 Run the full deployed-test workflow against the default stack. The script runs
 local Pulumi **Unit test** and **Component test** validation plus the
-**Commit check** before applying the stack:
+**Commit check** before applying the stack. After `pulumi up`, it waits for
+the required ECS services to stabilize and for each primary deployment rollout
+to reach `COMPLETED` before starting the Deployed tests:
 
 ```bash
 AWS_DEFAULT_REGION=ap-southeast-2 scripts/run-integration-tests --with-idempotency
 ```
+
+The rollout-completion poll is bounded by `ECS_ROLLOUT_TIMEOUT_SECONDS`
+(default `900`) and `ECS_ROLLOUT_POLL_SECONDS` (default `15`). Timeout or
+failed-rollout diagnostics print each required service name, primary rollout
+state, and sanitized failed deployment state without task environment or secret
+values.
 
 Run deployed tests without applying infrastructure first:
 
@@ -453,6 +461,7 @@ system's services and Dagster workflows.
   - `backend-services/caddy/Caddyfile`
   - `infrastructure/aws-pulumi/.pre-commit-config.yaml`
   - `infrastructure/aws-pulumi/pyproject.toml`
+  - `infrastructure/aws-pulumi/ecs_rollouts.py`
   - `infrastructure/aws-pulumi/scripts/setup_secrets`
   - `infrastructure/aws-pulumi/scripts/redeploy-user-code`
   - `infrastructure/aws-pulumi/scripts/run-integration-tests`
@@ -463,6 +472,7 @@ system's services and Dagster workflows.
   - `infrastructure/aws-pulumi/tests/deployed/conftest.py`
   - `infrastructure/aws-pulumi/tests/deployed/test_integration.py`
   - `infrastructure/aws-pulumi/tests/unit/test_dagster_core_deployment.py`
+  - `infrastructure/aws-pulumi/tests/unit/test_ecs_rollouts.py`
   - `infrastructure/aws-pulumi/Pulumi.dev-ausenergymarket.yaml`
   - `backend-services/dagster-core/Dockerfile`
   - `backend-services/dagster-core/dagster.aws.ec2-run-workers.prototype.yaml`
