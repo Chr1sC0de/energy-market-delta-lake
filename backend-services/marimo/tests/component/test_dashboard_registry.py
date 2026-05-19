@@ -79,6 +79,22 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert DashboardAudience.OPERATOR in readiness.audiences
     assert DashboardAudience.DATA_ENGINEER in readiness.audiences
 
+    catalogue_status = registry_entry_by_concept_id(
+        "dagster-asset-catalogue-status",
+        entries,
+    )
+    assert catalogue_status is not None
+    assert catalogue_status.status is DashboardStatus.AVAILABLE
+    assert catalogue_status.notebook_name == "dagster_asset_catalogue_status"
+    assert catalogue_status.notebook_route == "/marimo/dagster_asset_catalogue_status/"
+    assert DashboardAudience.PLATFORM_OPERATIONS in catalogue_status.audiences
+    assert DashboardAudience.OPERATOR in catalogue_status.audiences
+    assert DashboardAudience.DATA_ENGINEER in catalogue_status.audiences
+    assert (
+        "silver.gas_model.silver_gas_fact_market_price"
+        in catalogue_status.backing_assets
+    )
+
     storage_health = registry_entry_by_concept_id("s3-bucket-health", entries)
     assert storage_health is not None
     assert storage_health.status is DashboardStatus.AVAILABLE

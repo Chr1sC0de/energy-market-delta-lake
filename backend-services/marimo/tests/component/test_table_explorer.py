@@ -9,6 +9,7 @@ import pytest
 
 from marimoserver import table_explorer as explorer
 from marimoserver.table_explorer import (
+    AssetCatalogueState,
     DEFAULT_LOCAL_BUCKETS,
     BucketHealthState,
     BucketStatus,
@@ -21,8 +22,11 @@ from marimoserver.table_explorer import (
     TableFormat,
     TablePrefix,
     TableScan,
+    asset_catalogue_action_markdown,
+    asset_schema_metadata_frame,
     bucket_health_state,
     build_bucket_health_summary,
+    build_asset_catalogue_summary,
     cached_table_scan,
     catalogued_table_by_id,
     catalogued_table_group,
@@ -40,9 +44,11 @@ from marimoserver.table_explorer import (
     overlay_table_catalogue,
     read_delta_table,
     read_parquet_table,
+    render_asset_catalogue_status_cards,
     render_storage_health_cards,
     s3_bucket_health_frame,
     storage_health_action_markdown,
+    table_asset_catalogue_frame,
     table_prefix_discovery_frame,
     table_by_id,
 )
@@ -371,6 +377,207 @@ def test_overlay_table_catalogue_keeps_storage_when_graphql_unavailable() -> Non
             asset=None,
             table=table,
         ),
+    )
+
+
+def test_asset_catalogue_dashboard_helpers_report_graphql_success() -> None:
+    live_table = TablePrefix(
+        bucket="dev-energy-market-aemo",
+        prefix="silver/gas_model/live",
+        table_format=TableFormat.PARQUET,
+        parquet_files=("silver/gas_model/live/part-000.parquet",),
+    )
+    missing_asset = DagsterTableAsset(
+        asset_key=("silver", "gas_model", "missing"),
+        group_name="gas_model",
+        kinds=("table",),
+        description="Missing table.",
+        uri="s3://dev-energy-market-aemo/silver/gas_model/missing",
+        columns=(),
+        is_materializable=False,
+        is_executable=True,
+        latest_materialization_timestamp=1_714_000_100,
+    )
+    discovery = StorageDiscovery(
+        buckets=(),
+        tables=(live_table,),
+        bucket_listing_error=None,
+    )
+    catalogue = DagsterAssetCatalogue(
+        url="http://dagster/graphql",
+        error=None,
+        assets=(
+            _asset(
+                ("silver", "gas_model", "live"),
+                uri=live_table.uri,
+                latest_materialization_timestamp=1_714_000_000,
+            ),
+            missing_asset,
+        ),
+    )
+    entries = overlay_table_catalogue(discovery, catalogue)
+
+    summary = build_asset_catalogue_summary(catalogue, entries)
+    action_markdown = asset_catalogue_action_markdown(summary)
+    card_html = render_asset_catalogue_status_cards(summary)
+    catalogue_frame = table_asset_catalogue_frame(entries)
+    schema_frame = asset_schema_metadata_frame(entries)
+
+    assert summary.graphql_available is True
+    assert summary.table_asset_count == 2
+    assert summary.live_count == 1
+    assert summary.missing_count == 1
+    assert summary.schema_asset_count == 1
+    assert summary.uri_asset_count == 2
+    assert summary.materializable_asset_count == 1
+    assert summary.executable_asset_count == 2
+    assert summary.latest_materialization_label == "2024-04-24T23:08:20+00:00"
+    assert "Missing tables" in action_markdown
+    assert 'class="asset-catalogue-card asset-catalogue-card--ready"' in card_html
+    assert "Dagster GraphQL" in card_html
+    assert catalogue_frame["group"].to_list() == ["gas_model", "gas_model"]
+    assert catalogue_frame["kinds"].to_list() == ["parquet, table", "table"]
+    assert catalogue_frame["materializable"].to_list() == ["Yes", "No"]
+    assert catalogue_frame["executable"].to_list() == ["Yes", "Yes"]
+    assert catalogue_frame["schema available"].to_list() == ["Yes", "No"]
+    assert schema_frame.row(0, named=True) == {
+        "asset key": "silver/gas_model/live",
+        "group": "gas_model",
+        "column": "id",
+        "type": "Int64",
+        "description": "",
+    }
+
+
+def test_asset_catalogue_dashboard_helpers_keep_storage_rows_when_graphql_errors() -> (
+    None
+):
+    table = TablePrefix(
+        bucket="dev-energy-market-aemo",
+        prefix="silver/gas_model/live",
+        table_format=TableFormat.DELTA,
+        parquet_files=(),
+    )
+    entries = overlay_table_catalogue(
+        StorageDiscovery(buckets=(), tables=(table,), bucket_listing_error=None),
+        DagsterAssetCatalogue(
+            url="http://dagster/graphql",
+            error="Connection refused",
+            assets=(),
+        ),
+    )
+    summary = build_asset_catalogue_summary(
+        DagsterAssetCatalogue(
+            url="http://dagster/graphql",
+            error="Connection refused",
+            assets=(),
+        ),
+        entries,
+    )
+
+    cards = explorer.asset_catalogue_status_cards(summary)
+    action_markdown = asset_catalogue_action_markdown(summary)
+    catalogue_frame = table_asset_catalogue_frame(entries)
+    schema_frame = asset_schema_metadata_frame(entries)
+
+    assert cards[0].state is AssetCatalogueState.UNAVAILABLE
+    assert summary.graphql_unavailable_count == 1
+    assert summary.local_table_prefix_count == 1
+    assert summary.degraded_table_count == 1
+    assert "Storage-only table rows remain usable" in action_markdown
+    assert catalogue_frame.row(0, named=True)["status"] == (
+        TableAvailability.GRAPHQL_UNAVAILABLE.value
+    )
+    assert catalogue_frame.row(0, named=True)["uri"] == (
+        "s3://dev-energy-market-aemo/silver/gas_model/live"
+    )
+    assert schema_frame.row(0, named=True)["asset key"] == (
+        "No schema metadata available"
+    )
+
+
+def test_asset_catalogue_dashboard_helpers_cover_empty_ready_and_unmaterialized() -> (
+    None
+):
+    empty_catalogue = DagsterAssetCatalogue(
+        url="http://dagster/graphql",
+        error=None,
+        assets=(),
+    )
+    empty_summary = build_asset_catalogue_summary(empty_catalogue, ())
+    empty_cards = explorer.asset_catalogue_status_cards(empty_summary)
+    empty_frame = table_asset_catalogue_frame(())
+
+    assert [card.state for card in empty_cards] == [
+        AssetCatalogueState.EMPTY,
+        AssetCatalogueState.EMPTY,
+        AssetCatalogueState.EMPTY,
+        AssetCatalogueState.EMPTY,
+    ]
+    assert "no table assets were returned" in asset_catalogue_action_markdown(
+        empty_summary
+    )
+    assert empty_frame.row(0, named=True)["status"] == AssetCatalogueState.EMPTY.value
+
+    live_table = TablePrefix(
+        bucket="dev-energy-market-aemo",
+        prefix="silver/gas_model/live",
+        table_format=TableFormat.PARQUET,
+        parquet_files=("silver/gas_model/live/part-000.parquet",),
+    )
+    ready_catalogue = DagsterAssetCatalogue(
+        url="http://dagster/graphql",
+        error=None,
+        assets=(
+            _asset(
+                ("silver", "gas_model", "live"),
+                uri=live_table.uri,
+                latest_materialization_timestamp=1_714_000_000,
+            ),
+        ),
+    )
+    ready_entries = overlay_table_catalogue(
+        StorageDiscovery(buckets=(), tables=(live_table,), bucket_listing_error=None),
+        ready_catalogue,
+    )
+    ready_summary = build_asset_catalogue_summary(ready_catalogue, ready_entries)
+    ready_cards = explorer.asset_catalogue_status_cards(ready_summary)
+
+    assert [card.state for card in ready_cards] == [
+        AssetCatalogueState.READY,
+        AssetCatalogueState.READY,
+        AssetCatalogueState.READY,
+        AssetCatalogueState.READY,
+    ]
+    assert asset_catalogue_action_markdown(ready_summary) == (
+        "Dagster GraphQL and table asset coverage are usable under the current configuration."
+    )
+
+    unmaterialized_catalogue = DagsterAssetCatalogue(
+        url="http://dagster/graphql",
+        error=None,
+        assets=(
+            _asset(
+                ("silver", "gas_model", "unmaterialized"),
+                uri=None,
+                latest_materialization_timestamp=None,
+            ),
+        ),
+    )
+    unmaterialized_entries = overlay_table_catalogue(
+        StorageDiscovery(buckets=(), tables=(), bucket_listing_error=None),
+        unmaterialized_catalogue,
+    )
+    unmaterialized_summary = build_asset_catalogue_summary(
+        unmaterialized_catalogue,
+        unmaterialized_entries,
+    )
+    unmaterialized_cards = explorer.asset_catalogue_status_cards(unmaterialized_summary)
+
+    assert unmaterialized_summary.unmaterialized_count == 1
+    assert unmaterialized_cards[-1].state is AssetCatalogueState.ATTENTION
+    assert "Unmaterialized assets" in asset_catalogue_action_markdown(
+        unmaterialized_summary
     )
 
 

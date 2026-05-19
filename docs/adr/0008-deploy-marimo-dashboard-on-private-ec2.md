@@ -173,6 +173,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
+  - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
   - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`

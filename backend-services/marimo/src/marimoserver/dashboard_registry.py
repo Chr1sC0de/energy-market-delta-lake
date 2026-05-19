@@ -269,6 +269,29 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "source_chunk_ids": (),
     },
     {
+        "concept_id": "dagster-asset-catalogue-status",
+        "title": "Dagster Asset Catalogue Status",
+        "description": (
+            "Available operational dashboard for Dagster GraphQL table asset "
+            "catalogue health, table coverage, latest materialization metadata, "
+            "URI coverage, executable flags, and schema metadata."
+        ),
+        "audiences": ("platform-operations", "operator", "data-engineer"),
+        "status": "available",
+        "notebook_name": "dagster_asset_catalogue_status",
+        "backing_assets": (
+            "silver.gas_model.silver_gas_dim_date",
+            "silver.gas_model.silver_gas_dim_participant",
+            "silver.gas_model.silver_gas_dim_facility",
+            "silver.gas_model.silver_gas_fact_market_price",
+            "silver.gas_model.silver_gas_fact_schedule_run",
+            "silver.gas_model.silver_gas_fact_connection_point_flow",
+            "silver.gas_model.silver_gas_fact_capacity_outlook",
+        ),
+        "generated_gold_paths": (),
+        "source_chunk_ids": (),
+    },
+    {
         "concept_id": "s3-bucket-health",
         "title": "S3 Bucket Health",
         "description": (

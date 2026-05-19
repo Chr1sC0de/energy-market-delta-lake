@@ -13,6 +13,7 @@ Marimo-Codex research workspace image.
 - [Dashboard registry](#dashboard-registry)
 - [Glossary explorer](#glossary-explorer)
 - [Data readiness overview](#data-readiness-overview)
+- [Dagster asset catalogue status](#dagster-asset-catalogue-status)
 - [S3 bucket health](#s3-bucket-health)
 - [Table explorer](#table-explorer)
 - [Gas market dashboard](#gas-market-dashboard)
@@ -173,6 +174,28 @@ GraphQL, and bounded AWS preview mode render as empty or degraded dashboard
 states with operator actions rather than notebook tracebacks. Use the Gas Model
 Table Explorer when a readiness row needs schema, rows, column metadata, or a
 bounded storage preview.
+
+## Dagster asset catalogue status
+
+[notebooks/dagster_asset_catalogue_status.py](notebooks/dagster_asset_catalogue_status.py)
+is the operational dashboard for Dagster GraphQL table asset catalogue health.
+It reuses
+[src/marimoserver/dagster_graphql.py](src/marimoserver/dagster_graphql.py)
+and [src/marimoserver/table_explorer.py](src/marimoserver/table_explorer.py)
+instead of adding notebook-local Dagster access paths.
+
+The dashboard shows first-viewport cards for Dagster GraphQL availability,
+overlaid table coverage, parsed asset metadata coverage, and latest
+materialization freshness. The catalogue rows expose asset group, kinds,
+materializable and executable flags, latest materialization timestamp,
+`dagster/uri`, schema availability, local storage status, bucket, prefix, and
+format. The schema metadata table lists parsed column names, types, and
+descriptions when Dagster GraphQL provides table schema metadata.
+
+When Dagster GraphQL is unavailable, the dashboard renders a clear unavailable
+state and keeps storage-only table-prefix rows visible. Operators can still
+triage configured storage discovery while using the action callout to restore
+`DAGSTER_GRAPHQL_URL`, Dagster webserver health, or reverse-proxy routing.
 
 ## S3 bucket health
 
@@ -495,8 +518,9 @@ controls, data reads, Plotly traces, or dashboard routes.
 
 With the local backend stack running, open the Marimo concept gallery through
 Caddy and choose an available card such as `data_readiness_overview`,
-`s3_bucket_health`, `glossary_explorer`, `table_explorer`, `sample_energy_market`,
-`gas_market_prices`, `gas_schedule_runs`, `system_notices`,
+`dagster_asset_catalogue_status`, `s3_bucket_health`, `glossary_explorer`,
+`table_explorer`, `sample_energy_market`, `gas_market_prices`,
+`gas_schedule_runs`, `system_notices`,
 `gas_settlement_activity`, `gas_customer_transfer_activity`,
 `gas_bid_offer_stack`, `gas_quality_composition`, or `gbb_interactive_map`:
 
@@ -532,6 +556,13 @@ Use the same pattern for the data readiness overview:
 ```bash
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/data_readiness_overview.py
+```
+
+Use the same pattern for the Dagster asset catalogue status dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/dagster_asset_catalogue_status.py
 ```
 
 Use the same pattern for the S3 bucket health dashboard:
@@ -693,6 +724,7 @@ prek run -a
   - `backend-services/marimo/notebooks/gbb_interactive_map.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
+  - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
   - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
@@ -709,6 +741,7 @@ prek run -a
   - `backend-services/marimo/tests/component/dashboard_smoke_harness.py`
   - `backend-services/marimo/tests/component/test_dashboard_smoke.py`
   - `backend-services/marimo/tests/component/test_gas_dashboard.py`
+  - `backend-services/marimo/tests/component/test_table_explorer.py`
   - `backend-services/marimo/tests/component/test_glossary_explorer.py`
   - `backend-services/marimo/tests/component/test_data_readiness.py`
   - `backend-services/compose.yaml`

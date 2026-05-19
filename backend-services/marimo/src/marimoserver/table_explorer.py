@@ -105,6 +105,15 @@ class BucketHealthState(StrEnum):
     UNAVAILABLE = "Unavailable"
 
 
+class AssetCatalogueState(StrEnum):
+    """Operator-facing Dagster asset catalogue dashboard state."""
+
+    READY = "Ready"
+    ATTENTION = "Needs attention"
+    EMPTY = "Empty"
+    UNAVAILABLE = "Unavailable"
+
+
 @dataclass(frozen=True)
 class TableExplorerConfig:
     """Environment-derived settings for table exploration."""
@@ -201,6 +210,53 @@ class BucketHealthSummary:
     def aws_runtime(self) -> bool:
         """Return whether the summary came from AWS deployment mode."""
         return self.runtime_location == AWS_DEVELOPMENT_LOCATION
+
+
+@dataclass(frozen=True)
+class AssetCatalogueSummary:
+    """Aggregate Dagster GraphQL and table asset coverage for a dashboard."""
+
+    url: str
+    graphql_available: bool
+    graphql_error: str | None
+    table_asset_count: int
+    overlaid_table_count: int
+    local_table_prefix_count: int
+    live_count: int
+    unmaterialized_count: int
+    missing_count: int
+    graphql_unavailable_count: int
+    materialized_asset_count: int
+    materializable_asset_count: int
+    executable_asset_count: int
+    uri_asset_count: int
+    schema_asset_count: int
+    latest_materialization_timestamp: float | None
+
+    @property
+    def degraded_table_count(self) -> int:
+        """Return overlaid table rows needing operator attention."""
+        return (
+            self.unmaterialized_count
+            + self.missing_count
+            + self.graphql_unavailable_count
+        )
+
+    @property
+    def latest_materialization_label(self) -> str:
+        """Return a readable latest materialization timestamp."""
+        return format_materialization_timestamp(self.latest_materialization_timestamp)
+
+
+@dataclass(frozen=True)
+class AssetCatalogueStatusCard:
+    """One first-viewport status card for the asset catalogue dashboard."""
+
+    area: str
+    state: AssetCatalogueState
+    value: str
+    detail: str
+    action: str
 
 
 @dataclass(frozen=True)
@@ -728,6 +784,210 @@ def render_storage_health_cards(summary: BucketHealthSummary) -> str:
 <section class="storage-health-card-grid" aria-label="S3 bucket health summary">
 {rendered_cards}
 </section>"""
+
+
+def build_asset_catalogue_summary(
+    catalogue: DagsterAssetCatalogue,
+    table_catalogue: Sequence[CataloguedTable],
+) -> AssetCatalogueSummary:
+    """Build aggregate GraphQL and table-coverage metrics for the dashboard."""
+    status_counts = _catalogued_status_counts(table_catalogue)
+    timestamps = [
+        asset.latest_materialization_timestamp
+        for asset in catalogue.assets
+        if asset.latest_materialization_timestamp is not None
+    ]
+
+    return AssetCatalogueSummary(
+        url=catalogue.url,
+        graphql_available=catalogue.available,
+        graphql_error=catalogue.error,
+        table_asset_count=len(catalogue.assets),
+        overlaid_table_count=len(table_catalogue),
+        local_table_prefix_count=sum(
+            table.table is not None for table in table_catalogue
+        ),
+        live_count=status_counts[TableAvailability.LIVE],
+        unmaterialized_count=status_counts[TableAvailability.UNMATERIALIZED],
+        missing_count=status_counts[TableAvailability.MISSING],
+        graphql_unavailable_count=status_counts[TableAvailability.GRAPHQL_UNAVAILABLE],
+        materialized_asset_count=sum(
+            asset.latest_materialization_timestamp is not None
+            for asset in catalogue.assets
+        ),
+        materializable_asset_count=sum(
+            asset.is_materializable for asset in catalogue.assets
+        ),
+        executable_asset_count=sum(asset.is_executable for asset in catalogue.assets),
+        uri_asset_count=sum(asset.uri is not None for asset in catalogue.assets),
+        schema_asset_count=sum(bool(asset.columns) for asset in catalogue.assets),
+        latest_materialization_timestamp=max(timestamps) if timestamps else None,
+    )
+
+
+def asset_catalogue_status_cards(
+    summary: AssetCatalogueSummary,
+) -> tuple[AssetCatalogueStatusCard, ...]:
+    """Return first-viewport Dagster catalogue status cards."""
+    return (
+        _graphql_status_card(summary),
+        _table_coverage_card(summary),
+        _asset_metadata_card(summary),
+        _latest_materialization_card(summary),
+    )
+
+
+def asset_catalogue_action_markdown(summary: AssetCatalogueSummary) -> str:
+    """Return Markdown action guidance for catalogue dashboard degraded states."""
+    actions: list[str] = []
+
+    if not summary.graphql_available:
+        actions.append(
+            "Dagster GraphQL: confirm `DAGSTER_GRAPHQL_URL`, Dagster webserver "
+            "health, and reverse-proxy path. Storage-only table rows remain usable."
+        )
+    elif summary.table_asset_count == 0:
+        actions.append(
+            "Dagster GraphQL: no table assets were returned. Confirm Dagster "
+            "definitions expose table metadata."
+        )
+
+    if summary.missing_count > 0:
+        actions.append(
+            "Missing tables: check `dagster/uri` values and expected S3 table prefixes."
+        )
+    if summary.unmaterialized_count > 0:
+        actions.append(
+            "Unmaterialized assets: materialize or backfill the listed assets "
+            "before treating their storage as ready."
+        )
+    if (
+        summary.graphql_available
+        and summary.table_asset_count > 0
+        and summary.schema_asset_count < summary.table_asset_count
+    ):
+        actions.append(
+            "Schema metadata: review assets without column schema metadata if "
+            "operators need table-level lineage or validation detail."
+        )
+
+    if not actions:
+        return "Dagster GraphQL and table asset coverage are usable under the current configuration."
+    return "\n".join(f"- {action}" for action in actions)
+
+
+def render_asset_catalogue_status_cards(
+    summary: AssetCatalogueSummary,
+) -> str:
+    """Render first-viewport Dagster catalogue status cards."""
+    cards = asset_catalogue_status_cards(summary)
+    rendered_cards = "\n".join(_render_asset_catalogue_card(card) for card in cards)
+    return f"""\
+<style>
+{_asset_catalogue_cards_css()}
+</style>
+<section class="asset-catalogue-card-grid" aria-label="Dagster asset catalogue summary">
+{rendered_cards}
+</section>"""
+
+
+def table_asset_catalogue_frame(
+    table_catalogue: Sequence[CataloguedTable],
+) -> pl.DataFrame:
+    """Return overlaid Dagster asset and storage status rows."""
+    rows: list[dict[str, object]] = []
+    for entry in table_catalogue:
+        asset = entry.asset
+        table = entry.table
+        rows.append(
+            {
+                "asset key": "" if asset is None else asset.asset_id,
+                "group": catalogued_table_group(entry),
+                "kinds": "" if asset is None else ", ".join(asset.kinds),
+                "status": entry.status.value,
+                "materializable": ""
+                if asset is None
+                else _yes_no(asset.is_materializable),
+                "executable": "" if asset is None else _yes_no(asset.is_executable),
+                "latest materialization": ""
+                if asset is None
+                else format_materialization_timestamp(
+                    asset.latest_materialization_timestamp
+                ),
+                "uri": entry.uri or "",
+                "schema available": ""
+                if asset is None
+                else _yes_no(bool(asset.columns)),
+                "schema columns": 0 if asset is None else len(asset.columns),
+                "local storage": "" if table is None else "Available",
+                "bucket": "" if table is None else table.bucket,
+                "prefix": "" if table is None else table.prefix or "(bucket root)",
+                "format": "" if table is None else table.table_format.value,
+            }
+        )
+
+    if rows:
+        return pl.DataFrame(rows)
+
+    return pl.DataFrame(
+        [
+            {
+                "asset key": "No table assets or storage prefixes discovered",
+                "group": "",
+                "kinds": "",
+                "status": AssetCatalogueState.EMPTY.value,
+                "materializable": "",
+                "executable": "",
+                "latest materialization": "",
+                "uri": "",
+                "schema available": "",
+                "schema columns": 0,
+                "local storage": "",
+                "bucket": "",
+                "prefix": "",
+                "format": "",
+            }
+        ]
+    )
+
+
+def asset_schema_metadata_frame(
+    table_catalogue: Sequence[CataloguedTable],
+) -> pl.DataFrame:
+    """Return parsed Dagster table asset schema metadata rows."""
+    rows: list[dict[str, object]] = []
+    for entry in table_catalogue:
+        asset = entry.asset
+        if asset is None:
+            continue
+        for column in asset.columns:
+            rows.append(
+                {
+                    "asset key": asset.asset_id,
+                    "group": catalogued_table_group(entry),
+                    "column": column.name,
+                    "type": column.dtype,
+                    "description": column.description or "",
+                }
+            )
+
+    if rows:
+        return pl.DataFrame(rows)
+
+    return pl.DataFrame(
+        [
+            {
+                "asset key": "No schema metadata available",
+                "group": "",
+                "column": "",
+                "type": "",
+                "description": (
+                    "Dagster GraphQL returned no parsed column schema metadata "
+                    "for the current table asset filter."
+                ),
+            }
+        ]
+    )
 
 
 def discover_table_catalogue(
@@ -1293,6 +1553,254 @@ def _storage_health_cards_css() -> str:
 .storage-health-card p {
     margin: 0;
 }"""
+
+
+def _graphql_status_card(summary: AssetCatalogueSummary) -> AssetCatalogueStatusCard:
+    if not summary.graphql_available:
+        return AssetCatalogueStatusCard(
+            area="Dagster GraphQL",
+            state=AssetCatalogueState.UNAVAILABLE,
+            value="Unavailable",
+            detail=summary.graphql_error or "Dagster GraphQL returned no detail.",
+            action="Restore GraphQL to classify storage prefixes against assets.",
+        )
+
+    if summary.table_asset_count == 0:
+        return AssetCatalogueStatusCard(
+            area="Dagster GraphQL",
+            state=AssetCatalogueState.EMPTY,
+            value="No table assets",
+            detail=f"GraphQL responded at {summary.url}, but no table assets matched.",
+            action="Confirm Dagster definitions expose table metadata.",
+        )
+
+    return AssetCatalogueStatusCard(
+        area="Dagster GraphQL",
+        state=AssetCatalogueState.READY,
+        value=f"{_format_int(summary.table_asset_count)} assets",
+        detail=f"GraphQL responded at {summary.url}.",
+        action="No action.",
+    )
+
+
+def _table_coverage_card(summary: AssetCatalogueSummary) -> AssetCatalogueStatusCard:
+    detail = (
+        f"{summary.live_count} live, "
+        f"{summary.unmaterialized_count} unmaterialized, "
+        f"{summary.missing_count} missing, "
+        f"{summary.graphql_unavailable_count} storage-only while GraphQL is unavailable."
+    )
+
+    if summary.overlaid_table_count == 0:
+        return AssetCatalogueStatusCard(
+            area="Table coverage",
+            state=AssetCatalogueState.EMPTY,
+            value="No rows",
+            detail="No Dagster table assets or local table prefixes were discovered.",
+            action="Materialize assets or seed table prefixes, then refresh.",
+        )
+
+    if summary.graphql_unavailable_count > 0:
+        return AssetCatalogueStatusCard(
+            area="Table coverage",
+            state=AssetCatalogueState.ATTENTION,
+            value=f"{_format_int(summary.local_table_prefix_count)} storage rows",
+            detail=detail,
+            action="Use storage-only rows, then restore GraphQL for asset classification.",
+        )
+
+    if summary.live_count == 0 or summary.degraded_table_count > 0:
+        return AssetCatalogueStatusCard(
+            area="Table coverage",
+            state=AssetCatalogueState.ATTENTION,
+            value=f"{summary.live_count}/{summary.overlaid_table_count} live",
+            detail=detail,
+            action="Review missing or unmaterialized table rows.",
+        )
+
+    return AssetCatalogueStatusCard(
+        area="Table coverage",
+        state=AssetCatalogueState.READY,
+        value=f"{summary.live_count}/{summary.overlaid_table_count} live",
+        detail=detail,
+        action="No action.",
+    )
+
+
+def _asset_metadata_card(summary: AssetCatalogueSummary) -> AssetCatalogueStatusCard:
+    if not summary.graphql_available:
+        return AssetCatalogueStatusCard(
+            area="Asset metadata",
+            state=AssetCatalogueState.UNAVAILABLE,
+            value="GraphQL unavailable",
+            detail="Group, kinds, URI, executable flags, and schema metadata are unavailable.",
+            action="Restore GraphQL to inspect Dagster asset metadata.",
+        )
+
+    if summary.table_asset_count == 0:
+        return AssetCatalogueStatusCard(
+            area="Asset metadata",
+            state=AssetCatalogueState.EMPTY,
+            value="No metadata",
+            detail="No table assets were returned for metadata summarization.",
+            action="Confirm table assets are present in Dagster.",
+        )
+
+    state = (
+        AssetCatalogueState.READY
+        if summary.schema_asset_count > 0 and summary.uri_asset_count > 0
+        else AssetCatalogueState.ATTENTION
+    )
+    return AssetCatalogueStatusCard(
+        area="Asset metadata",
+        state=state,
+        value=f"{summary.schema_asset_count}/{summary.table_asset_count} schemas",
+        detail=(
+            f"{summary.uri_asset_count} with URI, "
+            f"{summary.materializable_asset_count} materializable, "
+            f"{summary.executable_asset_count} executable."
+        ),
+        action="No action."
+        if state is AssetCatalogueState.READY
+        else "Review assets missing URI or schema metadata.",
+    )
+
+
+def _latest_materialization_card(
+    summary: AssetCatalogueSummary,
+) -> AssetCatalogueStatusCard:
+    if not summary.graphql_available:
+        return AssetCatalogueStatusCard(
+            area="Latest materialization",
+            state=AssetCatalogueState.UNAVAILABLE,
+            value="Unknown",
+            detail="GraphQL is unavailable, so materialization metadata cannot be read.",
+            action="Restore GraphQL to inspect materialization freshness.",
+        )
+
+    if summary.table_asset_count == 0:
+        return AssetCatalogueStatusCard(
+            area="Latest materialization",
+            state=AssetCatalogueState.EMPTY,
+            value="No assets",
+            detail="No table assets were returned.",
+            action="Confirm table assets are present in Dagster.",
+        )
+
+    if summary.latest_materialization_timestamp is None:
+        return AssetCatalogueStatusCard(
+            area="Latest materialization",
+            state=AssetCatalogueState.ATTENTION,
+            value="No materializations",
+            detail="GraphQL returned table assets without materialization timestamps.",
+            action="Materialize the expected table assets.",
+        )
+
+    return AssetCatalogueStatusCard(
+        area="Latest materialization",
+        state=AssetCatalogueState.READY,
+        value=summary.latest_materialization_label,
+        detail=f"{summary.materialized_asset_count}/{summary.table_asset_count} assets have materialization metadata.",
+        action="No action.",
+    )
+
+
+def _render_asset_catalogue_card(card: AssetCatalogueStatusCard) -> str:
+    state_class = _asset_catalogue_state_css_class(card.state)
+    return f"""\
+    <article class="asset-catalogue-card asset-catalogue-card--{state_class}">
+        <div class="asset-catalogue-card__topline">
+            <span>{escape(card.area)}</span>
+            <strong>{escape(card.state.value)}</strong>
+        </div>
+        <p class="asset-catalogue-card__value">{escape(card.value)}</p>
+        <p>{escape(card.detail)}</p>
+        <p class="asset-catalogue-card__action">{escape(card.action)}</p>
+    </article>"""
+
+
+def _asset_catalogue_state_css_class(state: AssetCatalogueState) -> str:
+    return state.value.lower().replace(" ", "-")
+
+
+def _asset_catalogue_cards_css() -> str:
+    return """\
+.asset-catalogue-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+    gap: 0.9rem;
+}
+
+.asset-catalogue-card {
+    display: grid;
+    gap: 0.55rem;
+    min-width: 0;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-left-width: 5px;
+    border-radius: 8px;
+    padding: 0.9rem;
+    background: var(--emdl-panel, #ffffff);
+    color: var(--emdl-ink, #1b2324);
+}
+
+.asset-catalogue-card--ready {
+    border-left-color: var(--emdl-green, #3e7a54);
+}
+
+.asset-catalogue-card--needs-attention,
+.asset-catalogue-card--empty {
+    border-left-color: var(--emdl-amber, #b2682a);
+}
+
+.asset-catalogue-card--unavailable {
+    border-left-color: var(--emdl-red, #9e4839);
+}
+
+.asset-catalogue-card__topline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.45rem;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.asset-catalogue-card__topline strong {
+    color: var(--emdl-slate, #354348);
+}
+
+.asset-catalogue-card__value {
+    margin: 0;
+    color: var(--emdl-slate, #354348);
+    font-size: 1.45rem;
+    font-weight: 760;
+    line-height: 1.1;
+}
+
+.asset-catalogue-card p {
+    margin: 0;
+}
+
+.asset-catalogue-card__action {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.9rem;
+}"""
+
+
+def _catalogued_status_counts(
+    table_catalogue: Sequence[CataloguedTable],
+) -> dict[TableAvailability, int]:
+    counts = {status: 0 for status in TableAvailability}
+    for table in table_catalogue:
+        counts[table.status] += 1
+    return counts
+
+
+def _yes_no(value: bool) -> str:
+    return "Yes" if value else "No"
 
 
 def _discover_bucket_names(
