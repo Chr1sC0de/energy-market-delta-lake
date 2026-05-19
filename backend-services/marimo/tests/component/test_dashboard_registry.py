@@ -46,6 +46,19 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         source_coverage.backing_assets
     )
 
+    lineage = registry_entry_by_concept_id("source-table-lineage-explorer", entries)
+    assert lineage is not None
+    assert lineage.status is DashboardStatus.AVAILABLE
+    assert lineage.notebook_name == "source_table_lineage_explorer"
+    assert lineage.notebook_route == "/marimo/source_table_lineage_explorer/"
+    assert DashboardAudience.OPERATOR in lineage.audiences
+    assert DashboardAudience.ANALYST in lineage.audiences
+    assert DashboardAudience.DATA_ENGINEER in lineage.audiences
+    assert "silver.gas_model.silver_gas_fact_market_price" in lineage.backing_assets
+    assert lineage.generated_gold_paths == (
+        "tools/gas-market-knowledge-base/generated/gold/README.md",
+    )
+
     prices = registry_entry_by_concept_id("gas-market-prices", entries)
     assert prices is not None
     assert prices.status is DashboardStatus.AVAILABLE

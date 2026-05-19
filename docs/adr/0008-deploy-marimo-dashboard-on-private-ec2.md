@@ -177,6 +177,13 @@ expands `source_table` and `source_tables` metadata where present, and renders
 missing source metadata as coverage gaps without changing ETL definitions,
 source ingestion, asset schemas, or AWS infrastructure.
 
+The source table lineage explorer stays inside the same boundary. It reuses
+bounded source metadata reads and the table catalogue overlay to connect
+curated `silver.gas_model` assets to source systems, source tables, extra
+`source_*` lineage fields, registry concept cards, generated Market context
+paths, table explorer links, and asset metadata links without changing ETL
+lineage fields, generated gold Markdown, asset schemas, or AWS infrastructure.
+
 The Gas Day explainer dashboard stays inside the same boundary. It renders the
 registry-backed Gas Day context panel from copied generated-gold path and
 source chunk metadata, then reads bounded samples from registry-backed
@@ -219,9 +226,11 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/src/marimoserver/data_readiness.py`
   - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
   - `backend-services/marimo/src/marimoserver/concept_asset_explorer.py`
+  - `backend-services/marimo/src/marimoserver/source_lineage_explorer.py`
   - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/source_coverage_matrix.py`
+  - `backend-services/marimo/notebooks/source_table_lineage_explorer.py`
   - `backend-services/marimo/notebooks/gas_day_explainer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/aws_bounded_read_diagnostics.py`

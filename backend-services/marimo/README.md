@@ -20,6 +20,7 @@ Marimo-Codex research workspace image.
 - [S3 bucket health](#s3-bucket-health)
 - [Table explorer](#table-explorer)
 - [Source coverage matrix](#source-coverage-matrix)
+- [Source table lineage explorer](#source-table-lineage-explorer)
 - [Gas Day explainer dashboard](#gas-day-explainer-dashboard)
 - [Participant explainer dashboard](#participant-explainer-dashboard)
 - [Hub / Zone explainer dashboard](#hub--zone-explainer-dashboard)
@@ -364,6 +365,24 @@ instead of disappearing from the matrix. Empty reads, unavailable Parquet
 prefixes, unavailable Dagster GraphQL metadata, and bounded AWS preview mode
 remain visible in the load diagnostics and coverage state columns.
 
+## Source table lineage explorer
+
+[notebooks/source_table_lineage_explorer.py](notebooks/source_table_lineage_explorer.py)
+is an analytical dashboard for moving from a curated `silver.gas_model` asset
+to represented source systems, source tables, and extra `source_*` lineage
+fields. It uses
+[src/marimoserver/source_lineage_explorer.py](src/marimoserver/source_lineage_explorer.py)
+for row extraction, explicit missing-metadata states, registry-backed concept
+card links, generated Market context paths, source chunk IDs, table explorer
+deep links, and asset metadata links.
+
+The dashboard reuses the source coverage matrix's bounded table read surface
+and table catalogue overlay. It recognizes scalar `source_system` and
+`source_table` columns plus list-based `source_systems` and `source_tables`
+columns. Missing source-system or source-table fields, empty metadata values,
+empty reads, unavailable reads, unmapped registry metadata, and absent extra
+lineage fields render as explicit gaps.
+
 ## Gas Day explainer dashboard
 
 [notebooks/gas_day_explainer.py](notebooks/gas_day_explainer.py) is an
@@ -666,9 +685,9 @@ With the local backend stack running, open the Marimo concept gallery through
 Caddy and choose an available card such as `data_readiness_overview`,
 `dagster_asset_catalogue_status`, `materialization_freshness`,
 `s3_bucket_health`, `glossary_explorer`, `concept_to_asset_explorer`,
-`table_explorer`, `source_coverage_matrix`, `sample_energy_market`,
-`gas_market_prices`, `gas_schedule_runs`, `system_notices`,
-`gas_settlement_activity`,
+`table_explorer`, `source_coverage_matrix`, `source_table_lineage_explorer`,
+`sample_energy_market`, `gas_market_prices`, `gas_schedule_runs`,
+`system_notices`, `gas_settlement_activity`,
 `gas_customer_transfer_activity`, `gas_bid_offer_stack`,
 `gas_quality_composition`, `facility_explainer`, `participant_explainer`,
 `hub_zone_explainer`, or `gbb_interactive_map`:
@@ -705,6 +724,13 @@ Use the same pattern for the source coverage matrix:
 ```bash
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/source_coverage_matrix.py
+```
+
+Use the same pattern for the source table lineage explorer:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/source_table_lineage_explorer.py
 ```
 
 Use the same pattern for the data readiness overview:
@@ -920,6 +946,7 @@ prek run -a
   - `backend-services/marimo/src/marimoserver/gbb_interactive_map.py`
   - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
   - `backend-services/marimo/src/marimoserver/concept_asset_explorer.py`
+  - `backend-services/marimo/src/marimoserver/source_lineage_explorer.py`
   - `backend-services/marimo/src/marimoserver/dagster_graphql.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/src/marimoserver/data_readiness.py`
@@ -928,6 +955,7 @@ prek run -a
   - `backend-services/marimo/notebooks/gbb_interactive_map.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/source_coverage_matrix.py`
+  - `backend-services/marimo/notebooks/source_table_lineage_explorer.py`
   - `backend-services/marimo/notebooks/gas_day_explainer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/aws_bounded_read_diagnostics.py`

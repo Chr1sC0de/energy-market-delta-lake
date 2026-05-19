@@ -220,6 +220,12 @@ from marimoserver.gas_model_loader import (
     row_limit_message,
 )
 from marimoserver.dagster_graphql import DagsterTableAsset
+from marimoserver.source_lineage_explorer import (
+    render_source_lineage_explorer_html,
+    source_lineage_empty_state_markdown,
+    source_lineage_frame,
+    source_lineage_kpi_frame,
+)
 from marimoserver.table_explorer import (
     CataloguedTable,
     TableAvailability,
@@ -402,6 +408,13 @@ def test_dashboard_read_behavior_frame_renders_per_dashboard_policy() -> None:
     assert rows["Gas Market Prices"]["row policy"] == ("Bounded preview: 42 rows max")
     assert rows["Source Coverage Matrix"]["view"] == "Forced bounded sample"
     assert rows["Source Coverage Matrix"]["row policy"] == (
+        "Bounded preview: 42 rows max"
+    )
+    assert rows["Source Table Lineage Explorer"]["read behavior"] == (
+        "Registry-backed source metadata inspection"
+    )
+    assert rows["Source Table Lineage Explorer"]["view"] == "Forced bounded sample"
+    assert rows["Source Table Lineage Explorer"]["row policy"] == (
         "Bounded preview: 42 rows max"
     )
     assert rows["Gas Day Context"]["read behavior"] == (
@@ -5462,6 +5475,477 @@ def test_source_coverage_kpi_frame_handles_empty_matrix() -> None:
     assert values["Requested assets"] == "0"
     assert values["Assets with source coverage"] == "0"
     assert values["Source systems"] == "0"
+
+
+def test_source_lineage_explorer_extracts_lineage_fields_and_registry_links() -> None:
+    table_name = "silver_gas_fact_market_price"
+    load = _source_coverage_load(
+        table_name,
+        pl.DataFrame(
+            {
+                "source_system": ["STTM", "STTM", "VICGAS"],
+                "source_table": [
+                    "silver.sttm.price_report",
+                    "silver.sttm.price_report",
+                    "silver.vicgas.price_report",
+                ],
+                "source_file": ["price-a.csv", "price-b.csv", "vicgas.csv"],
+                "source_surrogate_key": ["src-1", "src-2", "src-vic"],
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 1),
+                    datetime(2024, 1, 2),
+                    datetime(2024, 1, 3),
+                ],
+            }
+        ),
+    )
+    entry = DashboardRegistryEntry(
+        concept_id="custom-lineage-context",
+        title="Custom Lineage",
+        description="Custom lineage mapping.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name="custom_lineage",
+        backing_assets=(f"silver.gas_model.{table_name}",),
+        generated_gold_paths=(
+            "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md",
+        ),
+        source_chunks=(SourceChunkReference("chunk-custom-lineage"),),
+    )
+
+    lineage = source_lineage_frame((load,), entries=(entry,))
+    rows = {
+        row["source system"]: row for row in lineage.sort("source system").to_dicts()
+    }
+    sttm_row = rows["STTM"]
+    kpis = source_lineage_kpi_frame((load,), lineage)
+    values = {row["metric"]: row["value"] for row in kpis.to_dicts()}
+
+    assert sttm_row["source table"] == "silver.sttm.price_report"
+    assert sttm_row["coverage state"] == SOURCE_COVERAGE_STATE_COVERED
+    assert sttm_row["rows loaded"] == 2
+    assert sttm_row["lineage fields"] == (
+        "source_file, source_surrogate_key, source_last_updated_timestamp"
+    )
+    assert "source_file: price-a.csv, price-b.csv" in sttm_row["lineage examples"]
+    assert "source_surrogate_key: src-1, src-2" in sttm_row["lineage examples"]
+    assert sttm_row["concept cards"] == (
+        "Custom Lineage -> /marimo#concept-custom-lineage-context"
+    )
+    assert sttm_row["dashboard routes"] == ("Custom Lineage -> /marimo/custom_lineage/")
+    assert sttm_row["Market context paths"] == (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md"
+    )
+    assert sttm_row["source chunk ids"] == "chunk-custom-lineage"
+    assert values["Source systems"] == "2"
+    assert values["Source tables"] == "2"
+    assert values["Registry mapped assets"] == "1"
+    assert values["Lineage field groups"] == "1"
+
+
+def test_source_lineage_explorer_handles_list_fields_and_missing_metadata() -> None:
+    list_load = _source_coverage_load(
+        "silver_gas_dim_zone",
+        pl.DataFrame(
+            {
+                "source_systems": [["GBB"]],
+                "source_tables": [["silver.gbb.zone_report"]],
+                "source_surrogate_keys": [["gbb-zone-1", "gbb-zone-2"]],
+            }
+        ),
+    )
+    missing_load = _source_coverage_load(
+        "silver_gas_dim_date",
+        pl.DataFrame({"date_id": [20240101]}),
+    )
+    empty_value_load = _source_coverage_load(
+        "silver_gas_fact_schedule_run",
+        pl.DataFrame({"source_system": [""], "source_table": [None]}),
+    )
+    empty_read_load = _source_coverage_load(
+        "silver_gas_fact_linepack",
+        pl.DataFrame(),
+    )
+    unavailable_load = _source_coverage_load(
+        "silver_gas_fact_capacity_outlook",
+        None,
+        error="RuntimeError: missing parquet",
+    )
+
+    lineage = source_lineage_frame(
+        (
+            list_load,
+            missing_load,
+            empty_value_load,
+            empty_read_load,
+            unavailable_load,
+        ),
+        entries=(),
+    )
+    rows = {
+        row["table"]: row
+        for row in lineage.select(
+            "table",
+            "source system",
+            "source table",
+            "coverage state",
+            "source fields",
+            "lineage fields",
+            "lineage examples",
+            "concept cards",
+            "detail",
+        ).to_dicts()
+    }
+    empty_markdown = source_lineage_empty_state_markdown((unavailable_load,))
+
+    assert rows["silver_gas_dim_zone"]["source system"] == "GBB"
+    assert rows["silver_gas_dim_zone"]["source table"] == "silver.gbb.zone_report"
+    assert rows["silver_gas_dim_zone"]["coverage state"] == (
+        SOURCE_COVERAGE_STATE_COVERED
+    )
+    assert rows["silver_gas_dim_zone"]["source fields"] == (
+        "source_systems, source_tables, source_surrogate_keys"
+    )
+    assert rows["silver_gas_dim_zone"]["lineage examples"] == (
+        "source_surrogate_keys: gbb-zone-1, gbb-zone-2"
+    )
+    assert rows["silver_gas_dim_date"]["source system"] == (
+        "(missing source_system/source_systems column)"
+    )
+    assert rows["silver_gas_dim_date"]["source table"] == (
+        "(missing source_table/source_tables column)"
+    )
+    assert rows["silver_gas_dim_date"]["coverage state"] == SOURCE_COVERAGE_STATE_GAP
+    assert rows["silver_gas_dim_date"]["lineage fields"] == (
+        "(no additional source lineage fields)"
+    )
+    assert rows["silver_gas_dim_date"]["concept cards"] == "(no mapped concept card)"
+    assert (
+        "Missing source_system/source_systems columns"
+        in (rows["silver_gas_dim_date"]["detail"])
+    )
+    assert rows["silver_gas_fact_schedule_run"]["source system"] == (
+        "(empty source_system/source_systems value)"
+    )
+    assert rows["silver_gas_fact_schedule_run"]["source table"] == (
+        "(empty source_table/source_tables value)"
+    )
+    assert rows["silver_gas_fact_linepack"]["coverage state"] == (
+        SOURCE_COVERAGE_STATE_EMPTY
+    )
+    assert rows["silver_gas_fact_linepack"]["detail"] == (
+        "The table read succeeded but returned no rows."
+    )
+    assert rows["silver_gas_fact_capacity_outlook"]["coverage state"] == (
+        SOURCE_COVERAGE_STATE_UNAVAILABLE
+    )
+    assert "1` reads were unavailable" in empty_markdown
+
+
+def test_render_source_lineage_explorer_html_links_and_escapes_values() -> None:
+    table_name = "silver_gas_fact_market_price"
+    load = _source_coverage_load(
+        table_name,
+        pl.DataFrame(
+            {
+                "source_system": ["STTM"],
+                "source_table": ["silver.sttm.price_report"],
+                "source_file": ["price.csv"],
+            }
+        ),
+    )
+    entry = DashboardRegistryEntry(
+        concept_id="custom-lineage-context",
+        title="Custom Lineage",
+        description="Custom lineage mapping.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name="custom_lineage",
+        backing_assets=(f"silver.gas_model.{table_name}",),
+        generated_gold_paths=(
+            "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md",
+        ),
+        source_chunks=(SourceChunkReference("chunk-custom-lineage"),),
+    )
+
+    lineage = source_lineage_frame((load,), entries=(entry,))
+    html = render_source_lineage_explorer_html(lineage)
+    unsafe_html = render_source_lineage_explorer_html(
+        pl.DataFrame(
+            [
+                {
+                    "asset": "silver.gas_model.<unsafe>",
+                    "section": "Facts",
+                    "table": "<unsafe>",
+                    "source system": "GBB",
+                    "source table": "silver.gbb.<unsafe>",
+                    "coverage state": SOURCE_COVERAGE_STATE_COVERED,
+                    "rows loaded": 1,
+                    "row limit": "100 rows",
+                    "source fields": "source_system, source_table",
+                    "lineage fields": "source_file",
+                    "lineage examples": "source_file: 1 < 2.csv",
+                    "concept cards": "Unsafe -> javascript:alert(1)",
+                    "dashboard routes": "Unsafe -> javascript:alert(1)",
+                    "Market context paths": "tools/<unsafe>.md",
+                    "source chunk ids": "chunk-unsafe",
+                    "table explorer": "javascript:alert(1)",
+                    "asset metadata": "",
+                    "uri": "s3://bucket/<unsafe>",
+                    "detail": "1 < 2",
+                }
+            ]
+        )
+    )
+
+    assert 'data-link-target="concept-card"' in html
+    assert 'href="/marimo#concept-custom-lineage-context"' in html
+    assert 'data-link-target="dashboard-route"' in html
+    assert 'href="/marimo/custom_lineage/"' in html
+    assert 'data-link-target="table-explorer"' in html
+    assert (
+        'data-market-context-path="tools/gas-market-knowledge-base/generated/gold/'
+        'glossary/schedule.md"'
+    ) in html
+    assert "<button" not in html.lower()
+    assert "&lt;unsafe&gt;" in unsafe_html
+    assert "1 &lt; 2" in unsafe_html
+    assert "javascript:alert" not in unsafe_html
+
+
+def test_source_lineage_explorer_empty_and_overflow_states() -> None:
+    empty_lineage = source_lineage_frame(())
+    empty_kpis = source_lineage_kpi_frame((), empty_lineage)
+    empty_markdown = source_lineage_empty_state_markdown(())
+    empty_html = render_source_lineage_explorer_html(empty_lineage)
+    overflow_html = render_source_lineage_explorer_html(
+        pl.DataFrame(
+            [
+                {
+                    "asset": "silver.gas_model.first",
+                    "section": "Facts",
+                    "table": "first",
+                    "source system": "GBB",
+                    "source table": "silver.gbb.first",
+                    "coverage state": SOURCE_COVERAGE_STATE_COVERED,
+                    "rows loaded": 1234,
+                    "row limit": "100 rows",
+                    "source fields": "source_system, source_table",
+                    "lineage fields": "source_file",
+                    "lineage examples": "source_file: first.csv",
+                    "concept cards": "/marimo#concept-first",
+                    "dashboard routes": "/marimo/first/",
+                    "Market context paths": None,
+                    "source chunk ids": "chunk-first",
+                    "table explorer": None,
+                    "asset metadata": None,
+                    "uri": "",
+                    "detail": None,
+                },
+                {
+                    "asset": "silver.gas_model.second",
+                    "section": "Facts",
+                    "table": "second",
+                    "source system": "STTM",
+                    "source table": "silver.sttm.second",
+                    "coverage state": SOURCE_COVERAGE_STATE_COVERED,
+                    "rows loaded": 1,
+                    "row limit": "100 rows",
+                    "source fields": "source_system, source_table",
+                    "lineage fields": "source_file",
+                    "lineage examples": "source_file: second.csv",
+                    "concept cards": "/marimo#concept-second",
+                    "dashboard routes": "/marimo/second/",
+                    "Market context paths": "tools/gold.md",
+                    "source chunk ids": "chunk-second",
+                    "table explorer": "/marimo/table_explorer/?search=second",
+                    "asset metadata": "",
+                    "uri": "s3://bucket/silver/gas_model/second",
+                    "detail": "Covered",
+                },
+            ]
+        ),
+        max_rows=1,
+    )
+    kpi_values = {row["metric"]: row["value"] for row in empty_kpis.to_dicts()}
+
+    assert empty_lineage.is_empty()
+    assert "No source lineage tables were requested" in empty_markdown
+    assert "No source lineage rows match the current filters." in empty_html
+    assert kpi_values["Requested assets"] == "0"
+    assert kpi_values["Source systems"] == "0"
+    assert 'data-row-count="2"' in overflow_html
+    assert 'data-rendered-row-count="1"' in overflow_html
+    assert "1 additional rows are hidden by the dashboard display limit." in (
+        overflow_html
+    )
+    assert ">1,234</td>" in overflow_html
+    assert 'href="/marimo#concept-first"' in overflow_html
+    assert "source_file: second.csv" not in overflow_html
+
+
+def test_source_lineage_examples_limit_duplicates_and_empty_values() -> None:
+    repeated_load = _source_coverage_load(
+        "silver_gas_fact_market_price",
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"] * 5,
+                "source_table": ["silver.gbb.price_report"] * 5,
+                "source_file": [
+                    "same.csv",
+                    "same.csv",
+                    "two.csv",
+                    "three.csv",
+                    "four.csv",
+                ],
+                "source_empty_field": [None] * 5,
+            }
+        ),
+    )
+    empty_lineage_value_load = _source_coverage_load(
+        "silver_gas_fact_schedule_run",
+        pl.DataFrame(
+            {
+                "source_system": ["STTM"],
+                "source_table": [float("nan")],
+                "source_file": [float("nan")],
+            }
+        ),
+    )
+
+    lineage = source_lineage_frame(
+        (repeated_load, empty_lineage_value_load),
+        entries=(),
+    )
+    rows = {row["table"]: row for row in lineage.to_dicts()}
+
+    assert rows["silver_gas_fact_market_price"]["lineage examples"] == (
+        "source_file: same.csv, two.csv, three.csv"
+    )
+    assert "four.csv" not in rows["silver_gas_fact_market_price"]["lineage examples"]
+    assert rows["silver_gas_fact_schedule_run"]["source table"] == (
+        "(empty source_table/source_tables value)"
+    )
+    assert rows["silver_gas_fact_schedule_run"]["coverage state"] == (
+        SOURCE_COVERAGE_STATE_GAP
+    )
+    assert rows["silver_gas_fact_schedule_run"]["lineage examples"] == (
+        "(no populated source lineage values)"
+    )
+    assert (
+        "source_table/source_tables columns are present but empty"
+        in (rows["silver_gas_fact_schedule_run"]["detail"])
+    )
+
+
+def test_source_lineage_explorer_uses_catalogue_link_contexts() -> None:
+    asset_table = "silver_gas_fact_market_price"
+    storage_table = "silver_gas_fact_schedule_run"
+    dotted_table = "silver_gas_fact_capacity_outlook"
+    loads = (
+        _source_coverage_load(
+            asset_table,
+            pl.DataFrame(
+                {
+                    "source_system": ["STTM"],
+                    "source_table": ["silver.sttm.price_report"],
+                }
+            ),
+        ),
+        _source_coverage_load(
+            storage_table,
+            pl.DataFrame(
+                {
+                    "source_system": ["STTM"],
+                    "source_table": ["silver.sttm.schedule_report"],
+                }
+            ),
+        ),
+        _source_coverage_load(
+            dotted_table,
+            pl.DataFrame(
+                {
+                    "source_system": ["GBB"],
+                    "source_table": ["silver.gbb.capacity_report"],
+                }
+            ),
+        ),
+    )
+    asset_row = CataloguedTable(
+        entry_id=f"asset:silver/gas_model/{asset_table}",
+        status=TableAvailability.LIVE,
+        asset=DagsterTableAsset(
+            asset_key=("silver", "gas_model", asset_table),
+            group_name="gas_model",
+            kinds=("python", "parquet"),
+            description=None,
+            uri=f"s3://bucket/silver/gas_model/{asset_table}",
+            columns=(),
+            is_materializable=True,
+            is_executable=True,
+            latest_materialization_timestamp=None,
+        ),
+        table=None,
+    )
+    duplicate_asset_row = CataloguedTable(
+        entry_id=f"asset:silver/gas_model/{asset_table}",
+        status=TableAvailability.LIVE,
+        asset=None,
+        table=TablePrefix(
+            bucket="bucket",
+            prefix=f"silver/gas_model/{asset_table}",
+            table_format=TableFormat.PARQUET,
+            parquet_files=(f"silver/gas_model/{asset_table}/part-000.parquet",),
+        ),
+    )
+    storage_row = CataloguedTable(
+        entry_id=f"storage:bucket/silver/gas_model/{storage_table}",
+        status=TableAvailability.LIVE,
+        asset=None,
+        table=TablePrefix(
+            bucket="bucket",
+            prefix=f"silver/gas_model/{storage_table}",
+            table_format=TableFormat.PARQUET,
+            parquet_files=(f"silver/gas_model/{storage_table}/part-000.parquet",),
+        ),
+    )
+    dotted_row = SimpleNamespace(
+        entry_id=123,
+        asset=None,
+        table=None,
+        uri=f"silver.gas_model.{dotted_table}",
+    )
+    ignored_rows = (
+        SimpleNamespace(uri=123),
+        SimpleNamespace(uri="s3://bucket/bronze/raw"),
+        SimpleNamespace(uri="s3://bucket/silver/gas_model/"),
+    )
+
+    lineage = source_lineage_frame(
+        loads,
+        (*ignored_rows, asset_row, duplicate_asset_row, storage_row, dotted_row),
+        entries=(),
+    )
+    rows = {row["table"]: row for row in lineage.to_dicts()}
+
+    assert rows[asset_table]["table explorer"] == (
+        "/marimo/table_explorer/?table=asset%3Asilver%2Fgas_model%2F"
+        "silver_gas_fact_market_price"
+    )
+    assert rows[asset_table]["asset metadata"] == (
+        "/marimo/table_explorer/?asset=asset%3Asilver%2Fgas_model%2F"
+        "silver_gas_fact_market_price"
+    )
+    assert rows[asset_table]["uri"] == (
+        "s3://bucket/silver/gas_model/silver_gas_fact_market_price"
+    )
+    assert rows[storage_table]["table explorer"] == (
+        "/marimo/table_explorer/?table=storage%3Abucket%2Fsilver%2Fgas_model"
+        "%2Fsilver_gas_fact_schedule_run"
+    )
+    assert rows[storage_table]["asset metadata"] == ""
+    assert rows[dotted_table]["table explorer"] == "/marimo/table_explorer/"
+    assert rows[dotted_table]["uri"] == f"silver.gas_model.{dotted_table}"
 
 
 def test_render_dashboard_context_panel_covers_complete_concept() -> None:

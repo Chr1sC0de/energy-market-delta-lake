@@ -193,6 +193,55 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "source_chunk_ids": (),
     },
     {
+        "concept_id": "source-table-lineage-explorer",
+        "title": "Source Table Lineage Explorer",
+        "description": (
+            "Available analytical dashboard for moving from curated "
+            "silver.gas_model assets to source systems, source tables, source "
+            "lineage fields, concept cards, generated Market context paths, "
+            "and table explorer metadata links."
+        ),
+        "audiences": ("operator", "analyst", "data-engineer"),
+        "status": "available",
+        "notebook_name": "source_table_lineage_explorer",
+        "backing_assets": (
+            "silver.gas_model.silver_gas_dim_date",
+            "silver.gas_model.silver_gas_dim_participant",
+            "silver.gas_model.silver_gas_dim_facility",
+            "silver.gas_model.silver_gas_dim_location",
+            "silver.gas_model.silver_gas_dim_connection_point",
+            "silver.gas_model.silver_gas_dim_zone",
+            "silver.gas_model.silver_gas_participant_market_membership",
+            "silver.gas_model.silver_gas_fact_market_price",
+            "silver.gas_model.silver_gas_fact_schedule_run",
+            "silver.gas_model.silver_gas_fact_scheduled_quantity",
+            "silver.gas_model.silver_gas_fact_connection_point_flow",
+            "silver.gas_model.silver_gas_fact_facility_flow_storage",
+            "silver.gas_model.silver_gas_fact_nomination_forecast",
+            "silver.gas_model.silver_gas_fact_operational_meter_flow",
+            "silver.gas_model.silver_gas_fact_linepack",
+            "silver.gas_model.silver_gas_fact_linepack_balance",
+            "silver.gas_model.silver_gas_fact_capacity_outlook",
+            "silver.gas_model.silver_gas_fact_capacity_transaction",
+            "silver.gas_model.silver_gas_fact_capacity_auction",
+            "silver.gas_model.silver_gas_fact_sttm_capacity_settlement",
+            "silver.gas_model.silver_gas_fact_sttm_market_parameter",
+            "silver.gas_model.silver_gas_fact_bid_stack",
+            "silver.gas_model.silver_gas_fact_sttm_allocation_quantity",
+            "silver.gas_model.silver_gas_fact_sttm_allocation_limit",
+            "silver.gas_model.silver_gas_fact_sttm_default_allocation_notice",
+            "silver.gas_model.silver_gas_fact_settlement_activity",
+            "silver.gas_model.silver_gas_fact_sttm_mos_stack",
+            "silver.gas_model.silver_gas_fact_system_notice",
+            "silver.gas_model.silver_gas_fact_gas_quality",
+            "silver.gas_model.silver_gas_fact_customer_transfer",
+        ),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/README.md",
+        ),
+        "source_chunk_ids": (),
+    },
+    {
         "concept_id": "gas-market-prices",
         "title": "Gas Market Prices",
         "description": (

@@ -295,7 +295,12 @@ def _dashboard_read_behavior_row(
             format_row_limit(bounded_row_limit(table_config)),
             "Configured table buckets",
         )
-    if concept_id in {"source-coverage-matrix", "gas-day-context", "facility-context"}:
+    if concept_id in {
+        "source-coverage-matrix",
+        "source-table-lineage-explorer",
+        "gas-day-context",
+        "facility-context",
+    }:
         return _forced_bounded_registry_row(entry, route, gas_config)
     if concept_id == "gas-market-overview":
         return _row(

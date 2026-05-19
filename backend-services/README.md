@@ -228,16 +228,18 @@ Useful routes:
 - `/dagster-webserver/admin` for the protected admin Dagster UI
 - `/marimo` for curated Marimo dashboards through Caddy, including the table
   explorer, data readiness overview, AWS bounded-read diagnostics, market
-  prices, materialization freshness, schedule runs, settlement activity,
-  customer transfer and retail activity, system notices, Bid / Offer stack, gas
-  quality and composition, and Hub / Zone explainer dashboards. The Hub / Zone
-  explainer connects generated
-  Market context metadata to bounded `silver_gas_dim_zone` coverage and
-  source-qualified identifiers. The table explorer lists the Dagster table
-  asset catalogue, filters by group, layer or domain, status, and search text,
-  and previews only materialized tables. Its selected-table workbench links
-  onward to data readiness, AWS bounded-read diagnostics, and concept-gallery
-  metadata for mapped `silver.gas_model` assets.
+  prices, materialization freshness, source coverage, source table lineage,
+  schedule runs, settlement activity, customer transfer and retail activity,
+  system notices, Bid / Offer stack, gas quality and composition, and Hub /
+  Zone explainer dashboards. The source table lineage explorer connects
+  curated `silver.gas_model` assets to source systems, source tables, lineage
+  fields, and registry-backed Market context links. The Hub / Zone explainer
+  connects generated Market context metadata to bounded `silver_gas_dim_zone`
+  coverage and source-qualified identifiers. The table explorer lists the
+  Dagster table asset catalogue, filters by group, layer or domain, status, and
+  search text, and previews only materialized tables. Its selected-table
+  workbench links onward to data readiness, AWS bounded-read diagnostics, and
+  concept-gallery metadata for mapped `silver.gas_model` assets.
 - `http://127.0.0.1:2719` for the local-only Marimo-Codex research workspace
 
 The `aemo-etl` code location should appear in Dagster under
@@ -790,10 +792,12 @@ developer-stack setting. It renders e2e Dagster config per run from the current
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
   - `backend-services/marimo/src/marimoserver/bounded_read_diagnostics.py`
   - `backend-services/marimo/src/marimoserver/concept_asset_explorer.py`
+  - `backend-services/marimo/src/marimoserver/source_lineage_explorer.py`
   - `backend-services/marimo/src/marimoserver/data_readiness.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/source_coverage_matrix.py`
+  - `backend-services/marimo/notebooks/source_table_lineage_explorer.py`
   - `backend-services/marimo/notebooks/gas_day_explainer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/aws_bounded_read_diagnostics.py`
