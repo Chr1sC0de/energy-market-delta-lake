@@ -6027,6 +6027,99 @@ Build it.
 
 
 class RalphRunInspectionRecoveryTests(unittest.TestCase):
+    def _requeue_manifest_paths(self, run_dir: Path) -> tuple[Path, Path, str, str]:
+        manifest = json.loads((run_dir / "ralph-run.json").read_text(encoding="utf-8"))
+        paths = manifest["paths"]
+        branches = manifest["branches"]
+        return (
+            Path(paths["implementation_worktree"]),
+            Path(paths["integration_worktree"]),
+            branches["issue"],
+            f"refs/ralph/requeue/{ralph.slugify(run_dir.name)}",
+        )
+
+    def _requeue_worktree_list(
+        self,
+        *,
+        repo_root: Path,
+        implementation_worktree: Path,
+        integration_worktree: Path,
+        issue_branch: str,
+        implementation_head: str = "impl-sha",
+        integration_head: str = "integration-sha",
+    ) -> str:
+        return "\n".join(
+            [
+                f"worktree {repo_root}",
+                "HEAD base-sha",
+                "branch refs/heads/main",
+                "",
+                f"worktree {implementation_worktree}",
+                f"HEAD {implementation_head}",
+                f"branch refs/heads/{issue_branch}",
+                "",
+                f"worktree {integration_worktree}",
+                f"HEAD {integration_head}",
+                "detached",
+                "",
+            ]
+        )
+
+    def _requeue_command_outputs(
+        self,
+        *,
+        run_dir: Path,
+        implementation_worktree: Path,
+        integration_worktree: Path,
+        issue_branch: str,
+        backup_ref: str,
+        labels: list[str] | None = None,
+        comments: list[dict[str, Any]] | None = None,
+        implementation_head: str = "impl-sha",
+        integration_head: str = "integration-sha",
+    ) -> dict[tuple[str, ...], list[str]]:
+        repo_root = run_dir.parents[1] / "repo"
+        return {
+            issue_view_command(234): [
+                json.dumps(
+                    issue_payload(
+                        234,
+                        labels
+                        or [
+                            ralph.AGENT_FAILED_LABEL,
+                            "enhancement",
+                            ralph.DELIVERY_GITFLOW_LABEL,
+                        ],
+                    )
+                )
+            ],
+            issue_comments_command(234): [json.dumps({"comments": comments or []})],
+            ("git", "worktree", "list", "--porcelain"): [
+                self._requeue_worktree_list(
+                    repo_root=repo_root,
+                    implementation_worktree=implementation_worktree,
+                    integration_worktree=integration_worktree,
+                    issue_branch=issue_branch,
+                    implementation_head=implementation_head,
+                    integration_head=integration_head,
+                )
+            ],
+            (
+                "git",
+                "show-ref",
+                "--verify",
+                "--hash",
+                f"refs/heads/{issue_branch}",
+            ): [f"{implementation_head}\n"],
+            (
+                "git",
+                "show-ref",
+                "--verify",
+                "--hash",
+                backup_ref,
+            ): [""],
+        }
+
     def test_inspect_run_reports_manifest_state_without_runner(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = write_recovery_manifest(
@@ -6098,8 +6191,349 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
         )
         self.assertIn("Run evidence: failure Command failed: git commit", text)
         self.assertIn("integration-git-commit.log", text)
-        self.assertIn("--recover-run is not applicable", text)
-        self.assertNotIn("python3 scripts/ralph.py --recover-run", text)
+        self.assertIn(
+            f"python3 scripts/ralph.py --recover-run {run_dir} --dry-run",
+            text,
+        )
+        self.assertIn(
+            f"rerun without `--dry-run`: "
+            f"`python3 scripts/ralph.py --recover-run {run_dir}`",
+            text,
+        )
+        self.assertNotIn("--recover-run is not applicable", text)
+
+    def test_recover_run_dry_run_reports_pre_push_requeue_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = write_failed_pre_push_requeue_manifest(tmp_path)
+            implementation_worktree, integration_worktree, issue_branch, backup_ref = (
+                self._requeue_manifest_paths(run_dir)
+            )
+            implementation_worktree.mkdir(parents=True)
+            integration_worktree.mkdir(parents=True)
+            runner = FakeRunner(
+                status_outputs=["", ""],
+                command_outputs=self._requeue_command_outputs(
+                    run_dir=run_dir,
+                    implementation_worktree=implementation_worktree,
+                    integration_worktree=integration_worktree,
+                    issue_branch=issue_branch,
+                    backup_ref=backup_ref,
+                ),
+                fail_commands={
+                    (
+                        "git",
+                        "merge-base",
+                        "--is-ancestor",
+                        "impl-sha",
+                        "origin/dev",
+                    ),
+                    (
+                        "git",
+                        "merge-base",
+                        "--is-ancestor",
+                        "integration-sha",
+                        "origin/dev",
+                    ),
+                },
+            )
+            loop = make_loop(
+                tmp_path,
+                runner,
+                delivery_mode=ralph.GITFLOW_MODE,
+                dry_run=True,
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.RalphRunRecovery(loop.config, runner).recover(run_dir)
+
+        text = output.getvalue()
+        commands = [call.args for call in runner.calls]
+        self.assertIn("Ralph pre-push requeue recovery", text)
+        self.assertIn("Issue: #234 Issue 234", text)
+        self.assertIn("Eligibility: eligible", text)
+        self.assertIn("Labels to add: ready-for-agent", text)
+        self.assertIn("Labels to remove: agent-failed", text)
+        self.assertIn(f"Backup ref: would create {backup_ref} -> impl-sha", text)
+        self.assertIn(
+            f"- implementation_worktree: will remove {implementation_worktree}",
+            text,
+        )
+        self.assertIn(
+            f"- integration_worktree: will remove {integration_worktree}",
+            text,
+        )
+        self.assertIn(
+            f"- local_issue_branch: will delete {issue_branch}",
+            text,
+        )
+        self.assertIn(ralph.PRE_PUSH_REQUEUE_COMMENT_TITLE, text)
+        self.assertFalse(any(command[:2] == ("codex", "exec") for command in commands))
+        self.assertFalse(
+            any(command[:2] == ("make", "run-prek") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "comment") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
+        self.assertFalse(
+            any(
+                command[:3] == ("git", "update-ref", backup_ref) for command in commands
+            )
+        )
+
+    def test_recover_run_requeues_pre_push_failure_and_cleans_local_artifacts(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = write_failed_pre_push_requeue_manifest(tmp_path)
+            implementation_worktree, integration_worktree, issue_branch, backup_ref = (
+                self._requeue_manifest_paths(run_dir)
+            )
+            implementation_worktree.mkdir(parents=True)
+            integration_worktree.mkdir(parents=True)
+            runner = FakeRunner(
+                status_outputs=["", ""],
+                command_outputs=self._requeue_command_outputs(
+                    run_dir=run_dir,
+                    implementation_worktree=implementation_worktree,
+                    integration_worktree=integration_worktree,
+                    issue_branch=issue_branch,
+                    backup_ref=backup_ref,
+                ),
+                fail_commands={
+                    (
+                        "git",
+                        "merge-base",
+                        "--is-ancestor",
+                        "impl-sha",
+                        "origin/dev",
+                    ),
+                    (
+                        "git",
+                        "merge-base",
+                        "--is-ancestor",
+                        "integration-sha",
+                        "origin/dev",
+                    ),
+                },
+            )
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.GITFLOW_MODE)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.RalphRunRecovery(loop.config, runner).recover(run_dir)
+
+            comment = (run_dir / "issue-234-comment.md").read_text(encoding="utf-8")
+            manifest = json.loads(
+                (run_dir / "ralph-run.json").read_text(encoding="utf-8")
+            )
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn(
+            ("git", "update-ref", backup_ref, "impl-sha"),
+            commands,
+        )
+        self.assertIn(
+            ("git", "worktree", "remove", str(implementation_worktree)),
+            commands,
+        )
+        self.assertIn(
+            ("git", "worktree", "remove", str(integration_worktree)),
+            commands,
+        )
+        self.assertIn(("git", "branch", "-D", issue_branch), commands)
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "edit",
+                "234",
+                "-R",
+                "example/repo",
+                "--add-label",
+                "ready-for-agent",
+                "--remove-label",
+                "agent-failed",
+            ),
+            commands,
+        )
+        self.assertIn(ralph.PRE_PUSH_REQUEUE_COMMENT_TITLE, comment)
+        self.assertIn(
+            f"Preserved implementation commit: `impl-sha` at `{backup_ref}`", comment
+        )
+        self.assertIn("Delivery mode: `gitflow`", comment)
+        self.assertIn("Integration target: `dev`", comment)
+        self.assertEqual(manifest["github_metadata"]["status"], "pre_push_requeued")
+        self.assertEqual(manifest["github_metadata"]["backup_ref"], backup_ref)
+        self.assertFalse(any(command[:2] == ("codex", "exec") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("git", "push", "origin") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "close") for command in commands)
+        )
+
+    def test_recover_run_requeue_is_idempotent_after_partial_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = write_failed_pre_push_requeue_manifest(tmp_path)
+            (
+                _implementation_worktree,
+                _integration_worktree,
+                issue_branch,
+                backup_ref,
+            ) = self._requeue_manifest_paths(run_dir)
+            comment_body = "\n".join(
+                [
+                    ralph.PRE_PUSH_REQUEUE_COMMENT_TITLE,
+                    "",
+                    f"Recovered from run: `{run_dir}`",
+                    f"Preserved implementation commit: `impl-sha` at `{backup_ref}`",
+                ]
+            )
+            runner = FakeRunner(
+                command_outputs={
+                    issue_view_command(234): [
+                        json.dumps(
+                            issue_payload(
+                                234,
+                                [
+                                    ralph.READY_LABEL,
+                                    "enhancement",
+                                    ralph.DELIVERY_GITFLOW_LABEL,
+                                ],
+                            )
+                        )
+                    ],
+                    issue_comments_command(234): [
+                        json.dumps({"comments": [{"body": comment_body}]})
+                    ],
+                    ("git", "worktree", "list", "--porcelain"): [""],
+                    (
+                        "git",
+                        "show-ref",
+                        "--verify",
+                        "--hash",
+                        f"refs/heads/{issue_branch}",
+                    ): [""],
+                    (
+                        "git",
+                        "show-ref",
+                        "--verify",
+                        "--hash",
+                        backup_ref,
+                    ): ["impl-sha\n"],
+                },
+                fail_commands={
+                    (
+                        "git",
+                        "merge-base",
+                        "--is-ancestor",
+                        "impl-sha",
+                        "origin/dev",
+                    )
+                },
+            )
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.GITFLOW_MODE)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.RalphRunRecovery(loop.config, runner).recover(run_dir)
+
+            manifest = json.loads(
+                (run_dir / "ralph-run.json").read_text(encoding="utf-8")
+            )
+
+        text = output.getvalue()
+        commands = [call.args for call in runner.calls]
+        self.assertIn("backup ref already preserved", text)
+        self.assertIn("already absent", text)
+        self.assertIn("pre-push requeue comment already present", text)
+        self.assertIn("requeue labels already reconciled", text)
+        self.assertEqual(manifest["github_metadata"]["status"], "pre_push_requeued")
+        self.assertFalse(
+            any(command[:2] == ("git", "update-ref") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("git", "worktree", "remove") for command in commands)
+        )
+        self.assertFalse(any(command[:2] == ("git", "branch") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "comment") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
+
+    def test_recover_run_refuses_pre_push_requeue_when_target_contains_work(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = write_failed_pre_push_requeue_manifest(tmp_path)
+            implementation_worktree, integration_worktree, issue_branch, backup_ref = (
+                self._requeue_manifest_paths(run_dir)
+            )
+            runner = FakeRunner(
+                command_outputs=self._requeue_command_outputs(
+                    run_dir=run_dir,
+                    implementation_worktree=implementation_worktree,
+                    integration_worktree=integration_worktree,
+                    issue_branch=issue_branch,
+                    backup_ref=backup_ref,
+                )
+            )
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.GITFLOW_MODE)
+
+            with self.assertRaises(ralph.RalphError) as caught:
+                ralph.RalphRunRecovery(loop.config, runner).recover(run_dir)
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn("already reachable from origin/dev", str(caught.exception))
+        self.assertFalse(
+            any(command[:2] == ("git", "update-ref") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
+
+    def test_recover_run_refuses_dirty_requeue_worktree(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = write_failed_pre_push_requeue_manifest(tmp_path)
+            implementation_worktree, integration_worktree, issue_branch, backup_ref = (
+                self._requeue_manifest_paths(run_dir)
+            )
+            implementation_worktree.mkdir(parents=True)
+            integration_worktree.mkdir(parents=True)
+            runner = FakeRunner(
+                status_outputs=[" M tools/ralph-loop/src/ralph_loop/cli.py\n"],
+                command_outputs=self._requeue_command_outputs(
+                    run_dir=run_dir,
+                    implementation_worktree=implementation_worktree,
+                    integration_worktree=integration_worktree,
+                    issue_branch=issue_branch,
+                    backup_ref=backup_ref,
+                ),
+            )
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.GITFLOW_MODE)
+
+            with self.assertRaises(ralph.RalphError) as caught:
+                ralph.RalphRunRecovery(loop.config, runner).recover(run_dir)
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn("implementation_worktree is dirty", str(caught.exception))
+        self.assertFalse(
+            any(command[:2] == ("git", "update-ref") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
 
     def test_inspect_run_reports_branch_sync_recovery_guidance(self) -> None:
         guidance = "Inspect `/worktrees/agent-sync-main-into-dev` before rerunning Ralph drain."

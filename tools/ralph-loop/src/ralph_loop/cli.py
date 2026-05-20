@@ -16,6 +16,7 @@ import textwrap
 import time
 from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
@@ -838,10 +839,10 @@ class GitClient:
         )
         return parse_git_worktree_list_porcelain(result.stdout)
 
-    def local_branch_commit(self, branch: str) -> str | None:
+    def ref_commit(self, ref: str) -> str | None:
         try:
             result = self.runner.run(
-                ["git", "show-ref", "--verify", "--hash", f"refs/heads/{branch}"],
+                ["git", "show-ref", "--verify", "--hash", ref],
                 cwd=self.repo_root,
             )
         except CommandFailure as error:
@@ -852,6 +853,17 @@ class GitClient:
         if sha == "":
             return None
         return sha
+
+    def local_branch_commit(self, branch: str) -> str | None:
+        return self.ref_commit(f"refs/heads/{branch}")
+
+    def update_ref(self, ref: str, commit_sha: str, *, run_dir: Path) -> None:
+        self.runner.run(
+            ["git", "update-ref", ref, commit_sha],
+            cwd=self.repo_root,
+            log_path=run_dir / f"git-update-ref-{slugify(ref)}.log",
+            execute_in_dry_run=False,
+        )
 
     def add_paths(
         self,
@@ -9231,6 +9243,12 @@ def requeue_eligibility(manifest: RunManifest) -> tuple[str, tuple[str, ...]]:
     elif push_status != "not_started":
         reasons.append(f"Integration target push status is {push_status}")
 
+    branch_sync = manifest.data.get("branch_sync")
+    if isinstance(branch_sync, dict):
+        branch_sync_status = str(branch_sync.get("status") or "not_started")
+        if branch_sync_status in {"failed", "running"}:
+            reasons.append(f"branch sync status is {branch_sync_status}")
+
     if not qa_results_passed_for_requeue(manifest):
         reasons.append("implementation QA did not fully pass")
     if not issue_completion_review_passed_for_requeue(manifest):
@@ -9306,11 +9324,13 @@ def recommended_run_action(manifest: RunManifest) -> str:
 
     eligibility_status, _eligibility_reasons = requeue_eligibility(manifest)
     if eligibility_status == "eligible":
+        run_dir = manifest_run_dir(manifest)
         return (
-            "Run is eligible for future Ralph-owned requeue recovery after "
-            "reconciling the listed Ralph-owned worktrees, local issue branch, "
-            "and GitHub labels. --recover-run is not applicable because no "
-            "integration_commit was recorded."
+            "Run the Ralph-owned pre-push requeue dry-run with "
+            f"`python3 scripts/ralph.py --recover-run {run_dir} --dry-run`; "
+            "if the plan only removes expected Ralph-owned artifacts and "
+            "restores labels, rerun without `--dry-run`: "
+            f"`python3 scripts/ralph.py --recover-run {run_dir}`."
         )
 
     try:
@@ -9626,6 +9646,124 @@ def issue_from_manifest(manifest: RunManifest) -> Issue:
     )
 
 
+@dataclass(frozen=True)
+class PrePushRequeueWorktreeTarget:
+    role: str
+    path: Path
+    log_name: str
+    expected_branch: str | None
+    allow_detached: bool
+
+
+def manifest_optional_path(manifest: RunManifest, name: str) -> Path | None:
+    paths = manifest.data.get("paths")
+    if not isinstance(paths, dict):
+        return None
+    value = paths.get(name)
+    if value is None:
+        return None
+    path_text_value = str(value)
+    if path_text_value == "":
+        return None
+    return Path(path_text_value).expanduser()
+
+
+def manifest_issue_branch_for_requeue(manifest: RunManifest) -> str | None:
+    branches = manifest.data.get("branches")
+    if not isinstance(branches, dict):
+        return None
+    value = branches.get("issue")
+    if value is None:
+        return None
+    branch = str(value)
+    if branch == "":
+        return None
+    return branch
+
+
+def pre_push_requeue_backup_ref(manifest: RunManifest) -> str:
+    run_dir = manifest_run_dir(manifest)
+    return f"refs/ralph/requeue/{slugify(run_dir.name)}"
+
+
+def is_path_under(path: Path, parent: Path) -> bool:
+    try:
+        path.resolve().relative_to(parent.resolve())
+    except ValueError:
+        return False
+    return True
+
+
+def pre_push_requeue_comment_exists(
+    comments: list[dict[str, Any]], *, run_dir: Path
+) -> bool:
+    run_dir_text = str(run_dir)
+    for comment in comments:
+        body = str(comment.get("body") or "")
+        if PRE_PUSH_REQUEUE_COMMENT_TITLE in body and run_dir_text in body:
+            return True
+    return False
+
+
+def format_requeue_label_list(labels: list[str]) -> str:
+    if not labels:
+        return "none"
+    return ", ".join(labels)
+
+
+def build_pre_push_requeue_comment(
+    *,
+    run_dir: Path,
+    delivery_mode: str,
+    target_branch: str,
+    backup_ref: str,
+    backup_commit: str | None,
+    cleanup_actions: list[dict[str, str]],
+    labels_to_add: list[str],
+    labels_to_remove: list[str],
+) -> str:
+    lines = [
+        PRE_PUSH_REQUEUE_COMMENT_TITLE,
+        "",
+        (
+            "Ralph is returning this failed pre-push implementation run to "
+            "`ready-for-agent` for a fresh normal claim."
+        ),
+        "",
+        f"Recovered from run: `{run_dir}`",
+        f"Delivery mode: `{delivery_mode}`",
+        f"Integration target: `{target_branch}`",
+        (
+            "Labels: "
+            f"add `{format_requeue_label_list(labels_to_add)}`; "
+            f"remove `{format_requeue_label_list(labels_to_remove)}`"
+        ),
+    ]
+    if backup_commit is None:
+        lines.append("Preserved implementation commit: no local issue branch found")
+    else:
+        lines.append(
+            f"Preserved implementation commit: `{backup_commit}` at `{backup_ref}`"
+        )
+    lines.extend(["", "Ralph-owned local cleanup:"])
+    if cleanup_actions:
+        for action in cleanup_actions:
+            lines.append(f"- {action['role']}: {action['status']} `{action['path']}`")
+    else:
+        lines.append("- none")
+    lines.extend(
+        [
+            "",
+            (
+                "This recovery did not rerun Codex, rerun QA, create a "
+                "Local integration commit, push an Integration target, close the "
+                "issue, or run Promotion."
+            ),
+        ]
+    )
+    return "\n".join(lines).rstrip() + "\n"
+
+
 class RalphRunRecovery:
     def __init__(self, config: LoopConfig, runner: CommandRunner) -> None:
         self.config = config
@@ -9645,6 +9783,15 @@ class RalphRunRecovery:
         if str(manifest.data.get("run_kind") or "") != "implementation":
             raise RalphError(
                 "--recover-run only supports implementation run manifests."
+            )
+        if not manifest_has_recorded_integration_commit(manifest):
+            self._recover_pre_push_requeue(manifest)
+            return
+        if self.runner.dry_run:
+            raise RalphError(
+                "--recover-run --dry-run only supports failed pre-push requeue "
+                "manifests with no recorded integration_commit; use --inspect-run "
+                "for post-push metadata recovery state."
             )
 
         issue_number = manifest_issue_number(manifest)
@@ -9713,6 +9860,529 @@ class RalphRunRecovery:
                 f"Run recovery metadata failed for #{issue_number}: {error}",
                 log_path=error.log_path,
             ) from error
+
+    def _recover_pre_push_requeue(self, manifest: RunManifest) -> None:
+        run_dir = manifest_run_dir(manifest)
+        issue_number = manifest_issue_number(manifest)
+        delivery_mode = manifest_delivery_mode(manifest)
+        target_branch = manifest_integration_target(manifest)
+        eligibility_status, eligibility_reasons = requeue_eligibility(manifest)
+        if eligibility_status != "eligible":
+            self._emit_pre_push_requeue_refusal(
+                manifest,
+                eligibility_status=eligibility_status,
+                eligibility_reasons=eligibility_reasons,
+            )
+            raise RalphError(
+                "Run is not eligible for pre-push requeue: "
+                + "; ".join(eligibility_reasons)
+            )
+
+        self.github.auth_status()
+        issue = self.github.view_issue(issue_number)
+        labels = set(issue.labels)
+        success_runtime_labels = sorted(
+            labels
+            & {
+                AGENT_INTEGRATED_LABEL,
+                AGENT_MERGED_LABEL,
+                AGENT_REVIEWING_LABEL,
+            }
+        )
+        if success_runtime_labels:
+            raise RalphError(
+                "Refusing pre-push requeue because the GitHub Issue already has "
+                "runtime label evidence that the work may have reached another "
+                "delivery state: " + ", ".join(success_runtime_labels)
+            )
+
+        issue_branch = manifest_issue_branch_for_requeue(manifest)
+        if issue_branch is not None and not issue_branch.startswith(
+            f"agent/issue-{issue_number}-"
+        ):
+            raise RalphError(
+                "Refusing pre-push requeue because the manifest issue branch is "
+                f"not Ralph-owned: {issue_branch}"
+            )
+
+        worktrees = self.git.worktrees()
+        cleanup_targets = self._pre_push_requeue_worktree_targets(
+            manifest,
+            issue_number=issue_number,
+            issue_branch=issue_branch,
+        )
+        cleanup_actions = self._pre_push_requeue_cleanup_actions(
+            cleanup_targets,
+            worktrees=worktrees,
+        )
+        self._pre_push_requeue_validate_branch_checkout(
+            issue_branch,
+            cleanup_targets=cleanup_targets,
+            worktrees=worktrees,
+        )
+
+        branch_commit = (
+            self.git.local_branch_commit(issue_branch)
+            if issue_branch is not None
+            else None
+        )
+        backup_ref = pre_push_requeue_backup_ref(manifest)
+        backup_commit = self.git.ref_commit(backup_ref)
+        if (
+            branch_commit is not None
+            and backup_commit is not None
+            and branch_commit != backup_commit
+        ):
+            raise RalphError(
+                f"Refusing pre-push requeue because backup ref {backup_ref} "
+                f"already points at {backup_commit}, not local issue branch "
+                f"{issue_branch} at {branch_commit}."
+            )
+        preserved_commit = branch_commit or backup_commit
+        self._pre_push_requeue_refuse_if_target_contains(
+            preserved_commit,
+            target_branch=target_branch,
+            source="local issue branch or backup ref",
+        )
+        for action in cleanup_actions:
+            head = action.get("head")
+            if action["role"] == "integration_worktree" and head:
+                self._pre_push_requeue_refuse_if_target_contains(
+                    head,
+                    target_branch=target_branch,
+                    source=f"integration worktree {action['path']}",
+                )
+
+        branch_cleanup_action = self._pre_push_requeue_issue_branch_action(
+            issue_branch,
+            branch_commit=branch_commit,
+        )
+        planned_cleanup_actions = [*cleanup_actions, branch_cleanup_action]
+        comments = self.github.issue_comments(issue_number)
+        comment_exists = pre_push_requeue_comment_exists(comments, run_dir=run_dir)
+        labels_to_add = [] if READY_LABEL in labels else [READY_LABEL]
+        labels_to_remove = [
+            label
+            for label in (AGENT_FAILED_LABEL, AGENT_RUNNING_LABEL)
+            if label in labels
+        ]
+
+        if self.runner.dry_run:
+            self._emit_pre_push_requeue_plan(
+                manifest,
+                issue=issue,
+                eligibility_reasons=eligibility_reasons,
+                cleanup_actions=planned_cleanup_actions,
+                backup_ref=backup_ref,
+                branch_commit=branch_commit,
+                backup_commit=backup_commit,
+                comment_exists=comment_exists,
+                labels_to_add=labels_to_add,
+                labels_to_remove=labels_to_remove,
+            )
+            return
+
+        try:
+            if branch_commit is not None and backup_commit is None:
+                emit(
+                    f"#{issue_number}: preserving implementation commit "
+                    f"{branch_commit} at {backup_ref}"
+                )
+                self.git.update_ref(backup_ref, branch_commit, run_dir=run_dir)
+                backup_commit = branch_commit
+            elif backup_commit is not None:
+                emit(
+                    f"#{issue_number}: backup ref already preserved "
+                    f"{backup_ref} at {backup_commit}"
+                )
+            else:
+                emit(f"#{issue_number}: no local issue branch commit to preserve")
+
+            completed_cleanup_actions: list[dict[str, str]] = []
+            for action in cleanup_actions:
+                completed_cleanup_actions.append(
+                    self._pre_push_requeue_cleanup_worktree(action, run_dir=run_dir)
+                )
+
+            branch_status = self._pre_push_requeue_delete_issue_branch(
+                issue_branch,
+                branch_commit=branch_commit,
+                run_dir=run_dir,
+            )
+            completed_cleanup_actions.append(branch_status)
+
+            if comment_exists:
+                emit(f"#{issue_number}: pre-push requeue comment already present")
+                manifest.record_metadata_status("pre_push_requeue_comment_present")
+            else:
+                emit(f"#{issue_number}: commenting pre-push requeue evidence")
+                manifest.record_metadata_status("commenting_pre_push_requeue")
+                self.github.comment_issue(
+                    issue_number,
+                    build_pre_push_requeue_comment(
+                        run_dir=run_dir,
+                        delivery_mode=delivery_mode,
+                        target_branch=target_branch,
+                        backup_ref=backup_ref,
+                        backup_commit=backup_commit,
+                        cleanup_actions=completed_cleanup_actions,
+                        labels_to_add=labels_to_add,
+                        labels_to_remove=labels_to_remove,
+                    ),
+                    run_dir=run_dir,
+                )
+                manifest.record_metadata_status("pre_push_requeue_commented")
+
+            if labels_to_add or labels_to_remove:
+                emit(
+                    f"#{issue_number}: reconciling {READY_LABEL}/"
+                    f"{AGENT_FAILED_LABEL} labels"
+                )
+                manifest.record_metadata_status(
+                    "marking_ready_for_requeue",
+                    details={
+                        "add_labels": labels_to_add,
+                        "remove_labels": labels_to_remove,
+                    },
+                )
+                self.github.edit_issue_labels(
+                    issue_number,
+                    add=labels_to_add,
+                    remove=labels_to_remove,
+                )
+            else:
+                emit(f"#{issue_number}: requeue labels already reconciled")
+            manifest.record_metadata_status(
+                "pre_push_requeued",
+                details={
+                    "backup_ref": backup_ref,
+                    "backup_commit": backup_commit,
+                    "cleanup": completed_cleanup_actions,
+                },
+            )
+            emit(f"Requeued issue #{issue_number} for normal Ralph claim.")
+        except CommandFailure as error:
+            manifest.record_metadata_status(
+                "pre_push_requeue_failed",
+                details={"error": str(error), "log_path": path_text(error.log_path)},
+            )
+            raise PostPushFailure(
+                f"Pre-push requeue failed for #{issue_number}: {error}",
+                log_path=error.log_path,
+            ) from error
+
+    def _emit_pre_push_requeue_refusal(
+        self,
+        manifest: RunManifest,
+        *,
+        eligibility_status: str,
+        eligibility_reasons: tuple[str, ...],
+    ) -> None:
+        issue_number = None
+        try:
+            issue_number = manifest_issue_number(manifest)
+        except RalphError:
+            pass
+        issue_text = f"#{issue_number}" if issue_number is not None else "unknown"
+        emit("Ralph pre-push requeue recovery")
+        emit(f"Issue: {issue_text}")
+        emit(f"Eligibility: {eligibility_status} ({'; '.join(eligibility_reasons)})")
+
+    def _pre_push_requeue_worktree_targets(
+        self,
+        manifest: RunManifest,
+        *,
+        issue_number: int,
+        issue_branch: str | None,
+    ) -> list[PrePushRequeueWorktreeTarget]:
+        container = manifest_optional_path(manifest, "worktree_container")
+        if container is None:
+            container = self.config.worktree_container
+        specs = [
+            (
+                "implementation_worktree",
+                "git-worktree-remove-implementation-requeue.log",
+                issue_branch,
+                False,
+                (f"agent-issue-{issue_number}",),
+            ),
+            (
+                "integration_worktree",
+                "git-worktree-remove-integration-requeue.log",
+                None,
+                True,
+                (
+                    f"agent-integrate-{issue_number}",
+                    f"agent-integrate-issue-{issue_number}",
+                ),
+            ),
+            (
+                "branch_sync_worktree",
+                "git-worktree-remove-branch-sync-requeue.log",
+                None,
+                True,
+                ("agent-sync-",),
+            ),
+        ]
+        targets: list[PrePushRequeueWorktreeTarget] = []
+        for role, log_name, expected_branch, allow_detached, prefixes in specs:
+            path = manifest_optional_path(manifest, role)
+            if path is None:
+                continue
+            if not path.is_absolute():
+                raise RalphError(
+                    f"Refusing pre-push requeue because {role} is not absolute: {path}"
+                )
+            if not is_path_under(path, container):
+                raise RalphError(
+                    f"Refusing pre-push requeue because {role} is outside the "
+                    f"manifest worktree container: {path} not under {container}"
+                )
+            if not any(path.name.startswith(prefix) for prefix in prefixes):
+                raise RalphError(
+                    f"Refusing pre-push requeue because {role} is not a Ralph-owned "
+                    f"path for issue #{issue_number}: {path}"
+                )
+            targets.append(
+                PrePushRequeueWorktreeTarget(
+                    role=role,
+                    path=path,
+                    log_name=log_name,
+                    expected_branch=expected_branch,
+                    allow_detached=allow_detached,
+                )
+            )
+        return targets
+
+    def _pre_push_requeue_cleanup_actions(
+        self,
+        targets: list[PrePushRequeueWorktreeTarget],
+        *,
+        worktrees: list[GitWorktree],
+    ) -> list[dict[str, str]]:
+        actions: list[dict[str, str]] = []
+        for target in targets:
+            registered = matching_git_worktree(worktrees, target.path)
+            exists = target.path.exists()
+            if registered is None and not exists:
+                actions.append(
+                    {
+                        "role": target.role,
+                        "path": str(target.path),
+                        "status": "already absent",
+                        "action": "already_absent",
+                        "head": "",
+                        "log_name": target.log_name,
+                    }
+                )
+                continue
+            if registered is None:
+                raise RalphError(
+                    "Refusing pre-push requeue because the manifest path exists but "
+                    f"is not a registered Ralph-owned git worktree: {target.path}"
+                )
+            if target.expected_branch is not None:
+                if registered.branch != target.expected_branch:
+                    raise RalphError(
+                        "Refusing pre-push requeue because "
+                        f"{target.role} is checked out on {registered.branch}, "
+                        f"not {target.expected_branch}: {target.path}"
+                    )
+            elif not target.allow_detached and registered.branch is None:
+                raise RalphError(
+                    f"Refusing pre-push requeue because {target.role} is detached: "
+                    f"{target.path}"
+                )
+            elif target.allow_detached and registered.branch is not None:
+                raise RalphError(
+                    f"Refusing pre-push requeue because {target.role} is checked "
+                    f"out on unexpected branch {registered.branch}: {target.path}"
+                )
+            if exists:
+                status_output = self.git.status_porcelain(cwd=target.path)
+                if status_output.strip():
+                    raise RalphError(
+                        f"Refusing pre-push requeue because {target.role} is dirty: "
+                        f"{target.path}"
+                    )
+            actions.append(
+                {
+                    "role": target.role,
+                    "path": str(target.path),
+                    "status": "will remove",
+                    "action": "remove",
+                    "head": registered.head or "",
+                    "log_name": target.log_name,
+                }
+            )
+        return actions
+
+    def _pre_push_requeue_validate_branch_checkout(
+        self,
+        issue_branch: str | None,
+        *,
+        cleanup_targets: list[PrePushRequeueWorktreeTarget],
+        worktrees: list[GitWorktree],
+    ) -> None:
+        if issue_branch is None:
+            return
+        checked_out = checked_out_worktree_for_branch(worktrees, issue_branch)
+        if checked_out is None:
+            return
+        expected_paths = {target.path.resolve() for target in cleanup_targets}
+        if checked_out.path.resolve() not in expected_paths:
+            raise RalphError(
+                f"Refusing pre-push requeue because local issue branch {issue_branch} "
+                f"is checked out in non-manifest worktree {checked_out.path}."
+            )
+
+    def _pre_push_requeue_refuse_if_target_contains(
+        self,
+        commit_sha: str | None,
+        *,
+        target_branch: str,
+        source: str,
+    ) -> None:
+        if commit_sha is None:
+            return
+        if self.git.is_ancestor(
+            ancestor=commit_sha,
+            descendant=f"origin/{target_branch}",
+        ):
+            raise RalphError(
+                "Refusing pre-push requeue because "
+                f"{source} commit {commit_sha} is already reachable from "
+                f"origin/{target_branch}; the Integration target may already "
+                "include the failed issue work."
+            )
+
+    def _emit_pre_push_requeue_plan(
+        self,
+        manifest: RunManifest,
+        *,
+        issue: Issue,
+        eligibility_reasons: tuple[str, ...],
+        cleanup_actions: list[dict[str, str]],
+        backup_ref: str,
+        branch_commit: str | None,
+        backup_commit: str | None,
+        comment_exists: bool,
+        labels_to_add: list[str],
+        labels_to_remove: list[str],
+    ) -> None:
+        run_dir = manifest_run_dir(manifest)
+        delivery_mode = manifest_delivery_mode(manifest)
+        target_branch = manifest_integration_target(manifest)
+        preserved_commit = branch_commit or backup_commit
+        emit("Ralph pre-push requeue recovery")
+        emit(f"Run directory: {run_dir}")
+        emit(f"Issue: #{issue.number} {issue.title}".rstrip())
+        emit(f"Eligibility: eligible ({'; '.join(eligibility_reasons)})")
+        emit(f"Labels to add: {format_requeue_label_list(labels_to_add)}")
+        emit(f"Labels to remove: {format_requeue_label_list(labels_to_remove)}")
+        if branch_commit is not None and backup_commit is None:
+            emit(f"Backup ref: would create {backup_ref} -> {branch_commit}")
+        elif backup_commit is not None:
+            emit(f"Backup ref: already present {backup_ref} -> {backup_commit}")
+        else:
+            emit("Backup ref: no local issue branch commit to preserve")
+        emit("Ralph-owned cleanup:")
+        if cleanup_actions:
+            for action in cleanup_actions:
+                emit(f"- {action['role']}: {action['status']} {action['path']}")
+        else:
+            emit("- none")
+        if comment_exists:
+            emit("Comment to post: already present")
+        else:
+            emit("Comment to post:")
+            comment_body = build_pre_push_requeue_comment(
+                run_dir=run_dir,
+                delivery_mode=delivery_mode,
+                target_branch=target_branch,
+                backup_ref=backup_ref,
+                backup_commit=preserved_commit,
+                cleanup_actions=cleanup_actions,
+                labels_to_add=labels_to_add,
+                labels_to_remove=labels_to_remove,
+            )
+            for line in comment_body.rstrip().splitlines():
+                emit(f"  {line}")
+        emit("DRY RUN: no Codex, QA, Local integration, push, close, or Promotion")
+
+    def _pre_push_requeue_issue_branch_action(
+        self,
+        issue_branch: str | None,
+        *,
+        branch_commit: str | None,
+    ) -> dict[str, str]:
+        if issue_branch is None:
+            return {
+                "role": "local_issue_branch",
+                "path": "not_recorded",
+                "status": "not recorded",
+                "action": "not_recorded",
+                "head": "",
+            }
+        if branch_commit is None:
+            return {
+                "role": "local_issue_branch",
+                "path": issue_branch,
+                "status": "already absent",
+                "action": "already_absent",
+                "head": "",
+            }
+        return {
+            "role": "local_issue_branch",
+            "path": issue_branch,
+            "status": "will delete",
+            "action": "delete",
+            "head": branch_commit,
+        }
+
+    def _pre_push_requeue_cleanup_worktree(
+        self, action: dict[str, str], *, run_dir: Path
+    ) -> dict[str, str]:
+        if action["action"] == "already_absent":
+            emit(f"{action['role']}: already absent {action['path']}")
+            return {**action, "status": "already absent"}
+        path = Path(action["path"])
+        emit(f"Removing {action['role']} {path}")
+        self.git.remove_worktree(
+            path,
+            run_dir=run_dir,
+            log_name=action["log_name"],
+        )
+        return {**action, "status": "removed"}
+
+    def _pre_push_requeue_delete_issue_branch(
+        self,
+        issue_branch: str | None,
+        *,
+        branch_commit: str | None,
+        run_dir: Path,
+    ) -> dict[str, str]:
+        if issue_branch is None:
+            emit("Local issue branch: not recorded")
+            return self._pre_push_requeue_issue_branch_action(
+                issue_branch,
+                branch_commit=branch_commit,
+            )
+        if branch_commit is None:
+            emit(f"Local issue branch already absent: {issue_branch}")
+            return self._pre_push_requeue_issue_branch_action(
+                issue_branch,
+                branch_commit=branch_commit,
+            )
+        emit(f"Deleting local issue branch {issue_branch}")
+        self.git.delete_branch(issue_branch, run_dir=run_dir)
+        return {
+            "role": "local_issue_branch",
+            "path": issue_branch,
+            "status": "deleted",
+            "action": "delete",
+            "head": branch_commit,
+        }
 
     def _recover_completion_comment(
         self,
@@ -11281,7 +11951,10 @@ def typer_options(
     ] = DEFAULT_EXPLORATORY_CONCURRENCY,
     dry_run: Annotated[
         bool,
-        typer.Option("--dry-run", help="Show the next drain preview or action only."),
+        typer.Option(
+            "--dry-run",
+            help="Show the next drain, issue, or pre-push recovery action only.",
+        ),
     ] = False,
     allow_dirty_worktree: Annotated[
         bool,
@@ -11450,10 +12123,6 @@ def main(argv: list[str] | None = None) -> int:
         if parsed_args.operator_run_status is not None:
             inspect_operator_run_status(parsed_args.operator_run_status, runner)
             return 0
-        if parsed_args.recover_run is not None and parsed_args.dry_run:
-            raise RalphError(
-                "--recover-run does not support --dry-run; use --inspect-run first."
-            )
         if parsed_args.detach:
             launch_detached_operator_run(parsed_args, runner)
             return 0

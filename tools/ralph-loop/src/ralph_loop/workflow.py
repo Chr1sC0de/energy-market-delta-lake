@@ -74,6 +74,7 @@ RUN_MANIFEST_LINE_PATTERN = re.compile(
 )
 GITFLOW_INTEGRATION_COMMENT_TITLE = "Ralph Gitflow integration completed."
 MANUAL_GITFLOW_RECOVERY_COMMENT_TITLE = "Ralph Gitflow manual recovery completed."
+PRE_PUSH_REQUEUE_COMMENT_TITLE = "Ralph pre-push requeue completed."
 EXPLORATORY_ACCEPTANCE_COMMENT_TITLE = "Ralph exploratory acceptance completed."
 MANUAL_GITFLOW_RECOVERY_HINT_PATTERN = re.compile(
     r"(?is)\bmanual(?:ly)?\b.{0,120}\brecover(?:y|ed|ing)?\b"

@@ -404,6 +404,13 @@ reached the expected **Integration target**:
 python3 scripts/ralph.py --recover-run .ralph/runs/issue-25-20260504T010203Z
 ```
 
+Preview a failed pre-push implementation requeue without mutating git or
+GitHub state:
+
+```bash
+python3 scripts/ralph.py --recover-run .ralph/runs/issue-25-20260504T010203Z --dry-run
+```
+
 Bypass the live clean-root preflight only when the operator intentionally wants
 Ralph to run with uncommitted root worktree changes:
 
@@ -748,22 +755,46 @@ recommended next action. It does not call `gh`, run git commands, edit labels,
 comment, close issues, or change refs.
 
 For failed implementation runs with no recorded `integration_commit`,
-inspection classifies whether the run is eligible for future Ralph-owned
+inspection classifies whether the run is eligible for Ralph-owned pre-push
 requeue recovery. Eligible runs must have passed implementation QA, passed
 Issue completion review or skipped it because it was not required, and have no
 recorded **Integration target** push. Inspection distinguishes those safe
-pre-push failures from runs that already recorded an `integration_commit` or a
-pushed **Integration target**. The requeue section also prints the Ralph-owned
-worktree paths, local issue branch, label reconciliation evidence such as
+pre-push failures from runs that already recorded an `integration_commit`, a
+pushed **Integration target**, incomplete QA/review evidence, or unresolved
+branch sync state. The requeue section also prints the Ralph-owned worktree
+paths, local issue branch, label reconciliation evidence such as
 `agent-failed` and `ready-for-agent`, changed files, QA/review evidence, and
-the failure log that a future requeue command would need to reconcile.
+the failure log that the requeue command will reconcile.
 
-Use `--recover-run <run_dir>` only for implementation runs whose manifest
-records a published implementation commit. Recovery fetches the expected target
-branch and refuses to proceed unless the recorded commit is reachable from
-`origin/<integration-target>`. This guard keeps GitHub metadata reconciliation
-behind proof that the **Local integration** commit or Exploratory handoff commit
-reached the expected branch.
+For eligible pre-push failures, `--recover-run <run_dir> --dry-run` reads the
+run manifest, GitHub Issue labels and comments, local worktrees, local refs, and
+ancestor evidence. It reports the issue, eligibility decision, labels to add
+and remove, comment body to post, backup ref behavior, and Ralph-owned
+worktrees or local issue branch cleanup that live mode would perform. It does
+not rerun Codex, rerun QA, create a **Local integration** commit, push an
+**Integration target**, close an issue, or run **Promotion**.
+
+The live pre-push requeue path uses the same eligibility checks. It refuses
+runs with recorded `integration_commit`, any recorded **Integration target**
+push state, success runtime labels such as `agent-integrated`, `agent-merged`,
+or `agent-reviewing`, a local implementation or integration commit already
+reachable from `origin/<integration-target>`, non-Ralph-owned manifest paths,
+unexpected branches, or dirty Ralph-owned worktrees. When a local issue branch
+commit exists, Ralph preserves it under a stable local
+`refs/ralph/requeue/...` backup ref before deleting the local issue branch.
+Ralph removes only manifest-derived Ralph-owned worktrees and the manifest
+local issue branch, comments the requeue evidence, removes `agent-failed`,
+adds `ready-for-agent`, and leaves category and **Delivery mode** labels
+unchanged. Repeating the command after partial cleanup is safe: existing backup
+refs, absent worktrees, absent issue branches, existing comments, and already
+reconciled labels are reported instead of treated as corruption.
+
+For post-push metadata recovery, use `--recover-run <run_dir>` only for
+implementation runs whose manifest records a published implementation commit.
+Recovery fetches the expected target branch and refuses to proceed unless the
+recorded commit is reachable from `origin/<integration-target>`. This guard
+keeps GitHub metadata reconciliation behind proof that the **Local integration**
+commit or Exploratory handoff commit reached the expected branch.
 
 After reachability is verified, recovery reconciles GitHub metadata to the
 issue's **Delivery mode**:
