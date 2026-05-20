@@ -32,6 +32,10 @@ from marimoserver.gas_dashboard import (
     CUSTOMER_TRANSFER_SOURCE_SYSTEM_FILTER_ALL,
     CUSTOMER_TRANSFER_TABLE_NAME,
     CUSTOMER_TRANSFER_TABLE_SPEC,
+    CONNECTION_POINT_CONTEXT_ID,
+    CONNECTION_POINT_DIM_TABLE_NAME,
+    CONNECTION_POINT_FLOW_TABLE_NAME,
+    CONNECTION_POINT_TABLE_SPECS,
     GAS_MODEL_TABLES,
     GAS_DAY_CONTEXT_ID,
     GAS_QUALITY_QUALITY_TYPE_FILTER_ALL,
@@ -41,6 +45,7 @@ from marimoserver.gas_dashboard import (
     HUB_ZONE_CONTEXT_ID,
     HUB_ZONE_DIM_TABLE_NAME,
     HUB_ZONE_TABLE_SPECS,
+    LOCATION_DIM_TABLE_NAME,
     FACILITY_CAPACITY_OUTLOOK_TABLE_NAME,
     FACILITY_CONTEXT_ID,
     FACILITY_DIM_TABLE_NAME,
@@ -90,6 +95,7 @@ from marimoserver.gas_dashboard import (
     bid_stack_zone_options,
     cached_load_customer_transfer_table,
     cached_load_bid_stack_table,
+    cached_load_connection_point_context_tables,
     cached_load_facility_context_tables,
     cached_load_gas_day_tables,
     cached_load_hub_zone_context_tables,
@@ -110,6 +116,12 @@ from marimoserver.gas_dashboard import (
     customer_transfer_source_coverage_frame,
     customer_transfer_source_system_options,
     customer_transfer_summary_frame,
+    connection_point_context_empty_state_markdown,
+    connection_point_dimension_coverage_frame,
+    connection_point_dimension_preview_frame,
+    connection_point_relationship_frame,
+    connection_point_source_system_frame,
+    connection_point_table_specs,
     discover_dashboard_config,
     facility_context_empty_state_markdown,
     facility_dimension_coverage_frame,
@@ -137,6 +149,7 @@ from marimoserver.gas_dashboard import (
     hub_zone_table_specs,
     load_market_price_table,
     load_bid_stack_table,
+    load_connection_point_context_tables,
     load_customer_transfer_table,
     load_facility_context_tables,
     load_gas_day_tables,
@@ -166,6 +179,7 @@ from marimoserver.gas_dashboard import (
     read_parquet_table,
     render_dashboard_context_panel,
     render_bid_stack_context_links,
+    render_connection_point_context_links,
     render_customer_transfer_context_links,
     render_market_price_context_links,
     render_facility_context_links,
@@ -4017,6 +4031,471 @@ def test_facility_helpers_cover_empty_state_behavior() -> None:
     assert (
         "No Facility, flow, capacity, participant, zone, or table explorer entries "
         "are registered."
+    ) in empty_context_links
+
+
+def test_connection_point_context_metadata_is_available_dashboard() -> None:
+    entry = registry_entry_by_concept_id(CONNECTION_POINT_CONTEXT_ID)
+    html = render_dashboard_context_panel(CONNECTION_POINT_CONTEXT_ID)
+    context_links = render_connection_point_context_links()
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "connection_point_explainer"
+    assert entry.notebook_route == "/marimo/connection_point_explainer/"
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/connection-point.md"
+    ) in entry.generated_gold_paths
+    assert entry.source_chunk_ids == (
+        "chunk-gbb-guide-connection-point-identifiers",
+        "chunk-gbb-guide-flow-report",
+    )
+    assert "silver.gas_model.silver_gas_dim_connection_point" in entry.backing_assets
+    assert "silver.gas_model.silver_gas_dim_facility" in entry.backing_assets
+    assert "silver.gas_model.silver_gas_dim_location" in entry.backing_assets
+    assert "silver.gas_model.silver_gas_dim_zone" in entry.backing_assets
+    assert "silver.gas_model.silver_gas_fact_connection_point_flow" in (
+        entry.backing_assets
+    )
+    assert "Connection Point Context" in html
+    assert "chunk-gbb-guide-connection-point-identifiers" in html
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/connection-point.md"
+    ) in html
+    assert 'data-status="available"' in html
+    assert 'href="/marimo/connection_point_explainer/"' in context_links
+    assert "Facility Context" in context_links
+    assert "Hub / Zone Context" in context_links
+    assert "Capacity Context" in context_links
+
+
+def test_connection_point_table_specs_and_loader_use_bounded_samples() -> None:
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "9",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    specs = connection_point_table_specs()
+    loads = load_connection_point_context_tables(config, reader=reader)
+
+    assert specs == CONNECTION_POINT_TABLE_SPECS
+    assert tuple(spec.table_name for spec in specs) == (
+        CONNECTION_POINT_DIM_TABLE_NAME,
+        FACILITY_DIM_TABLE_NAME,
+        LOCATION_DIM_TABLE_NAME,
+        HUB_ZONE_DIM_TABLE_NAME,
+        CONNECTION_POINT_FLOW_TABLE_NAME,
+        FACILITY_CAPACITY_OUTLOOK_TABLE_NAME,
+    )
+    assert len(loads) == 6
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_dim_connection_point",
+            9,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_dim_facility",
+            9,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_dim_location",
+            9,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_dim_zone",
+            9,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_connection_point_flow",
+            9,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_capacity_outlook",
+            9,
+        ),
+    ]
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert storage_options == config.storage_options()
+        assert row_limit == 9
+        cached_calls += 1
+        return pl.DataFrame({"source_system": ["GBB"]})
+
+    first_cached = cached_load_connection_point_context_tables(
+        config,
+        cache,
+        specs=(CONNECTION_POINT_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_connection_point_context_tables(
+        config,
+        cache,
+        specs=(CONNECTION_POINT_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_connection_point_context_tables(
+        config,
+        cache,
+        specs=(CONNECTION_POINT_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 2
+    assert not first_cached[0].cache_hit
+    assert second_cached[0].cache_hit
+    assert not refreshed[0].cache_hit
+
+
+def test_connection_point_metadata_helpers_extract_relationships() -> None:
+    connection_point_load = _facility_load(
+        CONNECTION_POINT_TABLE_SPECS[0],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["cp-key-1", "cp-key-2", "cp-key-3"],
+                "facility_key": ["facility-key-1", "facility-key-2", None],
+                "location_key": ["location-key-1", None, None],
+                "zone_key": ["zone-key-1", "zone-key-2", None],
+                "source_system": ["GBB", "GBB", "STTM"],
+                "source_tables": [
+                    ["silver.gbb.silver_gasbb_nodes_connection_points"],
+                    ["silver.gbb.silver_gasbb_nodes_connection_points"],
+                    ["silver.sttm.silver_int691_v1_sttm_ctp_register_rpt_1"],
+                ],
+                "source_hub_id": [None, None, "SYD"],
+                "source_hub_name": [None, None, "Sydney Hub"],
+                "source_facility_id": ["10", "10", "20"],
+                "source_connection_point_id": ["1001", "1002", "CTP1"],
+                "source_location_id": ["L1", "L2", None],
+                "connection_point_name": [
+                    "Receipt Point",
+                    "Delivery Point",
+                    "Sydney CTP",
+                ],
+                "flow_direction": ["RECEIPT", "DELIVERY", "not_applicable"],
+                "facility_name": [
+                    "Carpentaria Gas Pipeline",
+                    "Carpentaria Gas Pipeline",
+                    "Sydney Hub Facility",
+                ],
+                "location_name": ["Longford", "Wallumbilla", None],
+                "state": ["Queensland", "Queensland", None],
+                "exempt": [False, True, None],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 1, 8),
+                    datetime(2024, 1, 1, 9),
+                    datetime(2024, 1, 1, 10),
+                ],
+            }
+        ),
+    )
+    facility_load = _facility_load(
+        CONNECTION_POINT_TABLE_SPECS[1],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["facility-key-1", "facility-key-2"],
+                "source_system": ["GBB", "STTM"],
+                "source_tables": [
+                    ["silver.gbb.silver_gasbb_facilities"],
+                    ["silver.sttm.silver_int671_v1_hub_facility_definition_rpt_1"],
+                ],
+                "source_facility_id": ["10", "20"],
+                "facility_name": [
+                    "Carpentaria Gas Pipeline",
+                    "Sydney Hub Facility",
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 1, 8),
+                    datetime(2024, 1, 1, 9),
+                ],
+            }
+        ),
+    )
+    location_load = _facility_load(
+        CONNECTION_POINT_TABLE_SPECS[2],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["location-key-1"],
+                "source_system": ["GBB"],
+                "source_tables": [["silver.gbb.silver_gasbb_locations_list"]],
+                "source_location_id": ["L1"],
+                "location_name": ["Longford"],
+                "state": ["Victoria"],
+            }
+        ),
+    )
+    zone_load = _facility_load(
+        CONNECTION_POINT_TABLE_SPECS[3],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["zone-key-1", "zone-key-2"],
+                "source_system": ["GBB", "STTM"],
+                "source_tables": [
+                    [
+                        "silver.gbb.silver_gasbb_demand_zones_and_pipeline_connectionpoint_mapping"
+                    ],
+                    ["silver.sttm.silver_int671_v1_hub_facility_definition_rpt_1"],
+                ],
+                "zone_type": ["demand_zone", "sttm_hub"],
+                "source_zone_id": ["DZ1", "SYD"],
+                "zone_name": ["Demand Zone 1", "Sydney Hub"],
+            }
+        ),
+    )
+    flow_load = _facility_load(
+        CONNECTION_POINT_TABLE_SPECS[4],
+        pl.DataFrame(
+            {
+                "connection_point_key": ["cp-key-1", None, None],
+                "source_system": ["GBB", "GBB", "GBB"],
+                "gas_date": [
+                    date(2024, 1, 2),
+                    date(2024, 1, 2),
+                    date(2024, 1, 2),
+                ],
+                "source_facility_id": ["10", "10", "99"],
+                "source_connection_point_id": ["1001", "1002", "9999"],
+                "flow_direction": ["RECEIPT", "DELIVERY", "RECEIPT"],
+                "actual_quantity_tj": [5.0, 7.0, 3.0],
+            }
+        ),
+    )
+    capacity_load = _facility_load(
+        CONNECTION_POINT_TABLE_SPECS[5],
+        pl.DataFrame(
+            {
+                "source_system": ["GBB", "GBB", "STTM", "GBB"],
+                "source_table": [
+                    "silver.gbb.capacity",
+                    "silver.gbb.capacity",
+                    "silver.sttm.capacity",
+                    "silver.gbb.capacity",
+                ],
+                "source_facility_id": ["10", "10", "20", "99"],
+                "facility_name": [
+                    "Carpentaria Gas Pipeline",
+                    "Carpentaria Gas Pipeline",
+                    "Sydney Hub Facility",
+                    "Unmatched Facility",
+                ],
+                "capacity_type": ["nameplate", "nameplate", "nameplate", "nameplate"],
+                "flow_direction": [
+                    "RECEIPT",
+                    "DELIVERY",
+                    "not_applicable",
+                    "RECEIPT",
+                ],
+                "capacity_quantity_tj": [100.0, None, 90.0, 80.0],
+            }
+        ),
+    )
+
+    loads = (
+        connection_point_load,
+        facility_load,
+        location_load,
+        zone_load,
+        flow_load,
+        capacity_load,
+    )
+    coverage = connection_point_dimension_coverage_frame(connection_point_load)
+    sources = connection_point_source_system_frame(connection_point_load)
+    relationships = connection_point_relationship_frame(loads)
+    preview = connection_point_dimension_preview_frame(connection_point_load)
+    coverage_values = {row["metric"]: row["value"] for row in coverage.to_dicts()}
+    source_rows = {row["source system"]: row for row in sources.to_dicts()}
+    relationship_rows = {row["relationship"]: row for row in relationships.to_dicts()}
+
+    assert coverage_values == {
+        "Connection point dimension rows": "3",
+        "Source systems": "2",
+        "Source tables": "2",
+        "Connection point IDs": "3",
+        "Facility links": "2",
+        "Location links": "1",
+        "Zone links": "2",
+        "Flow directions": "3",
+        "Data exemption rows": "1",
+    }
+    assert source_rows["GBB"]["rows"] == 2
+    assert source_rows["GBB"]["connection points"] == 2
+    assert source_rows["GBB"]["facilities"] == 1
+    assert source_rows["GBB"]["locations"] == 2
+    assert source_rows["STTM"]["flow directions"] == 1
+    assert relationship_rows["Facility"]["available rows"] == 2
+    assert relationship_rows["Facility"]["matched connection points"] == 2
+    assert relationship_rows["Location"]["available rows"] == 1
+    assert relationship_rows["Location"]["matched connection points"] == 1
+    assert relationship_rows["Zone"]["available rows"] == 2
+    assert relationship_rows["Zone"]["matched connection points"] == 2
+    assert relationship_rows["Flow direction"]["available rows"] == 3
+    assert relationship_rows["Actual flow"]["available rows"] == 3
+    assert relationship_rows["Actual flow"]["matched connection points"] == 2
+    assert relationship_rows["Capacity"]["available rows"] == 3
+    assert relationship_rows["Capacity"]["matched connection points"] == 2
+    assert (
+        "do not carry a direct connection_point_key"
+        in relationship_rows["Capacity"]["detail"]
+    )
+    assert preview.select(
+        "source-qualified identifier",
+        "source system",
+        "source facility id",
+        "source connection point id",
+        "connection point",
+        "flow direction",
+        "facility",
+        "location",
+        "hub",
+        "source tables",
+    ).to_dict(as_series=False) == {
+        "source-qualified identifier": [
+            "GBB:10:1001:RECEIPT",
+            "GBB:10:1002:DELIVERY",
+            "STTM:20:CTP1:not_applicable",
+        ],
+        "source system": ["GBB", "GBB", "STTM"],
+        "source facility id": ["10", "10", "20"],
+        "source connection point id": ["1001", "1002", "CTP1"],
+        "connection point": ["Receipt Point", "Delivery Point", "Sydney CTP"],
+        "flow direction": ["RECEIPT", "DELIVERY", "not_applicable"],
+        "facility": [
+            "Carpentaria Gas Pipeline",
+            "Carpentaria Gas Pipeline",
+            "Sydney Hub Facility",
+        ],
+        "location": ["Longford", "Wallumbilla", None],
+        "hub": [None, None, "Sydney Hub (SYD)"],
+        "source tables": [
+            "silver.gbb.silver_gasbb_nodes_connection_points",
+            "silver.gbb.silver_gasbb_nodes_connection_points",
+            "silver.sttm.silver_int691_v1_sttm_ctp_register_rpt_1",
+        ],
+    }
+
+
+def test_connection_point_helpers_handle_partial_identifiers_and_hubs() -> None:
+    connection_point_load = _facility_load(
+        CONNECTION_POINT_TABLE_SPECS[0],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["cp-fallback", "cp-name", "cp-id"],
+                "facility_key": ["facility-key-1", None, None],
+                "source_system": [None, "GBB", "GBB"],
+                "source_facility_id": [None, "10", "20"],
+                "source_connection_point_id": [None, "1001", "1002"],
+                "flow_direction": [None, "RECEIPT", "DELIVERY"],
+                "source_hub_name": [None, "Sydney Hub", None],
+                "source_hub_id": [None, None, "BRI"],
+                "source_tables": [[], [], []],
+                "ingested_timestamp": [None, None, None],
+            }
+        ),
+    )
+    facility_load = _facility_load(
+        CONNECTION_POINT_TABLE_SPECS[1],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["facility-key-1"],
+                "source_facility_id": ["10"],
+            }
+        ),
+    )
+    flow_only_load = _facility_load(
+        CONNECTION_POINT_TABLE_SPECS[4],
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "source_facility_id": ["99"],
+                "source_connection_point_id": ["9999"],
+                "flow_direction": ["RECEIPT"],
+                "actual_quantity_tj": [1.0],
+            }
+        ),
+    )
+
+    relationships = connection_point_relationship_frame(
+        (connection_point_load, facility_load)
+    )
+    flow_only_relationships = connection_point_relationship_frame((flow_only_load,))
+    preview = connection_point_dimension_preview_frame(connection_point_load)
+    relationship_rows = {row["relationship"]: row for row in relationships.to_dicts()}
+    flow_only_rows = {
+        row["relationship"]: row for row in flow_only_relationships.to_dicts()
+    }
+
+    assert relationship_rows["Facility"]["matched connection points"] == 1
+    assert flow_only_rows["Actual flow"]["available rows"] == 1
+    assert flow_only_rows["Actual flow"]["matched connection points"] == 0
+    assert preview.select("source-qualified identifier", "hub").to_dict(
+        as_series=False
+    ) == {
+        "source-qualified identifier": [
+            "GBB:10:1001:RECEIPT",
+            "GBB:20:1002:DELIVERY",
+            "",
+        ],
+        "hub": ["Sydney Hub", "BRI", None],
+    }
+
+
+def test_connection_point_helpers_cover_empty_state_behavior() -> None:
+    unavailable_load = _facility_load(
+        CONNECTION_POINT_TABLE_SPECS[0],
+        None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=5,
+    )
+    loads = (
+        unavailable_load,
+        *(
+            _facility_load(spec, pl.DataFrame(), row_limit=5)
+            for spec in CONNECTION_POINT_TABLE_SPECS[1:]
+        ),
+    )
+
+    assert connection_point_dimension_coverage_frame(unavailable_load).is_empty()
+    assert connection_point_source_system_frame(unavailable_load).is_empty()
+    assert connection_point_relationship_frame(loads).is_empty()
+    assert connection_point_dimension_preview_frame(unavailable_load).is_empty()
+
+    markdown = connection_point_context_empty_state_markdown(loads)
+    empty_markdown = connection_point_context_empty_state_markdown(())
+    empty_context_links = render_connection_point_context_links(entries=())
+
+    assert "No Connection Point metadata or relationship rows are available" in markdown
+    assert "`1` reads were unavailable and `5` reads returned no rows" in markdown
+    assert "Bounded preview reads are capped at `5` rows per table" in markdown
+    assert "No Connection Point context tables were requested" in empty_markdown
+    assert (
+        "No Connection Point, Facility, Hub / Zone, flow, capacity, map, or "
+        "table explorer entries are registered."
     ) in empty_context_links
 
 

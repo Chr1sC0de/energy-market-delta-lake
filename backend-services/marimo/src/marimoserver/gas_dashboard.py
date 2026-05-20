@@ -114,17 +114,27 @@ SOURCE_COVERAGE_STATE_EMPTY = "Empty"
 SOURCE_COVERAGE_STATE_UNAVAILABLE = "Unavailable"
 FACILITY_CONTEXT_ID = "facility-context"
 HUB_ZONE_CONTEXT_ID = "hub-zone-context"
+CONNECTION_POINT_CONTEXT_ID = "connection-point-context"
 FACILITY_DIM_TABLE_NAME = "silver_gas_dim_facility"
+LOCATION_DIM_TABLE_NAME = "silver_gas_dim_location"
 HUB_ZONE_DIM_TABLE_NAME = "silver_gas_dim_zone"
+CONNECTION_POINT_DIM_TABLE_NAME = "silver_gas_dim_connection_point"
+CONNECTION_POINT_FLOW_TABLE_NAME = "silver_gas_fact_connection_point_flow"
 FACILITY_FLOW_STORAGE_TABLE_NAME = "silver_gas_fact_facility_flow_storage"
 FACILITY_CAPACITY_OUTLOOK_TABLE_NAME = "silver_gas_fact_capacity_outlook"
 DEFAULT_FACILITY_PREVIEW_ROWS = 50
 DEFAULT_HUB_ZONE_PREVIEW_ROWS = 50
+DEFAULT_CONNECTION_POINT_PREVIEW_ROWS = 50
 _FACILITY_CAPACITY_METADATA_COLUMNS = (
     "default_capacity",
     "maximum_capacity",
     "high_capacity_threshold",
     "low_capacity_threshold",
+)
+_CONNECTION_POINT_RELATIONSHIP_KEY_COLUMNS = (
+    "facility_key",
+    "location_key",
+    "zone_key",
 )
 _FACILITY_FLOW_MEASURE_COLUMNS = (
     "demand_tj",
@@ -582,6 +592,124 @@ FACILITY_TABLE_SPECS = (
             "flow_direction",
             "capacity_quantity_tj",
             "capacity_description",
+        ),
+    ),
+)
+CONNECTION_POINT_TABLE_SPECS = (
+    GasTableSpec(
+        section="Dimensions",
+        label="Connection point standing data",
+        table_name=CONNECTION_POINT_DIM_TABLE_NAME,
+        date_columns=(
+            "effective_date",
+            "effective_to_date",
+            "source_last_updated_timestamp",
+            "ingested_timestamp",
+        ),
+        preview_columns=(
+            "source_system",
+            "source_tables",
+            "source_hub_id",
+            "source_hub_name",
+            "source_facility_id",
+            "source_connection_point_id",
+            "connection_point_name",
+            "flow_direction",
+            "facility_name",
+            "source_location_id",
+            "location_name",
+            "state",
+            "exempt",
+            "effective_date",
+            "effective_to_date",
+        ),
+    ),
+    GasTableSpec(
+        section="Dimensions",
+        label="Facility standing data",
+        table_name=FACILITY_DIM_TABLE_NAME,
+        date_columns=(
+            "operating_state_date",
+            "operator_change_date",
+            "capacity_effective_from_date",
+            "capacity_effective_to_date",
+            "ingested_timestamp",
+        ),
+        preview_columns=(
+            "source_system",
+            "source_facility_id",
+            "facility_name",
+            "facility_type",
+            "participant_key",
+            "zone_key",
+        ),
+    ),
+    GasTableSpec(
+        section="Dimensions",
+        label="Location standing data",
+        table_name=LOCATION_DIM_TABLE_NAME,
+        date_columns=("ingested_timestamp",),
+        preview_columns=(
+            "source_system",
+            "source_location_id",
+            "location_name",
+            "state",
+            "location_type",
+        ),
+    ),
+    GasTableSpec(
+        section="Dimensions",
+        label="Hub and zone standing data",
+        table_name=HUB_ZONE_DIM_TABLE_NAME,
+        date_columns=("ingested_timestamp",),
+        preview_columns=(
+            "source_system",
+            "source_tables",
+            "zone_type",
+            "source_zone_id",
+            "zone_name",
+            "zone_description",
+        ),
+    ),
+    GasTableSpec(
+        section="Facts",
+        label="Connection point flow",
+        table_name=CONNECTION_POINT_FLOW_TABLE_NAME,
+        date_columns=(
+            "gas_date",
+            "source_last_updated_timestamp",
+            "ingested_timestamp",
+        ),
+        preview_columns=(
+            "gas_date",
+            "source_system",
+            "source_facility_id",
+            "source_connection_point_id",
+            "flow_direction",
+            "actual_quantity_tj",
+            "quality",
+        ),
+    ),
+    GasTableSpec(
+        section="Facts",
+        label="Capacity outlook",
+        table_name=FACILITY_CAPACITY_OUTLOOK_TABLE_NAME,
+        date_columns=(
+            "from_gas_date",
+            "to_gas_date",
+            "source_last_updated_timestamp",
+            "ingested_timestamp",
+        ),
+        preview_columns=(
+            "from_gas_date",
+            "to_gas_date",
+            "source_system",
+            "source_table",
+            "source_facility_id",
+            "facility_name",
+            "capacity_type",
+            "flow_direction",
+            "capacity_quantity_tj",
         ),
     ),
 )
@@ -1333,6 +1461,108 @@ _FACILITY_PREVIEW_SCHEMA = {
     "source tables": pl.String,
     "latest ingest": pl.Datetime("us"),
 }
+_LOCATION_DIM_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "source_location_id": pl.String,
+    "location_name": pl.String,
+    "state": pl.String,
+    "location_type": pl.String,
+    "location_description": pl.String,
+    "source_surrogate_key": pl.String,
+    "source_file": pl.String,
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_CONNECTION_POINT_DIM_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "facility_key": pl.String,
+    "location_key": pl.String,
+    "zone_key": pl.String,
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "source_hub_id": pl.String,
+    "source_hub_name": pl.String,
+    "source_facility_id": pl.String,
+    "source_connection_point_id": pl.String,
+    "source_node_id": pl.String,
+    "source_location_id": pl.String,
+    "connection_point_name": pl.String,
+    "flow_direction": pl.String,
+    "facility_name": pl.String,
+    "location_name": pl.String,
+    "state": pl.String,
+    "exempt": pl.Boolean,
+    "exemption_description": pl.String,
+    "effective_date": pl.Date,
+    "effective_to_date": pl.Date,
+    "source_last_updated": pl.String,
+    "source_last_updated_timestamp": pl.Datetime("us"),
+    "source_surrogate_key": pl.String,
+    "source_file": pl.String,
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_CONNECTION_POINT_FLOW_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "date_key": pl.String,
+    "facility_key": pl.String,
+    "location_key": pl.String,
+    "connection_point_key": pl.String,
+    "zone_key": pl.String,
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "gas_date": pl.Date,
+    "source_facility_id": pl.String,
+    "source_connection_point_id": pl.String,
+    "flow_direction": pl.String,
+    "actual_quantity_tj": pl.Float64,
+    "quality": pl.String,
+    "source_last_updated": pl.String,
+    "source_last_updated_timestamp": pl.Datetime("us"),
+    "source_surrogate_key": pl.String,
+    "source_file": pl.String,
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_CONNECTION_POINT_COVERAGE_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_CONNECTION_POINT_SOURCE_SYSTEM_SCHEMA = {
+    "source system": pl.String,
+    "rows": pl.UInt32,
+    "connection points": pl.UInt32,
+    "facilities": pl.UInt32,
+    "locations": pl.UInt32,
+    "flow directions": pl.UInt32,
+    "source tables": pl.UInt32,
+    "latest ingest": pl.Datetime("us"),
+}
+_CONNECTION_POINT_RELATIONSHIP_SCHEMA = {
+    "relationship": pl.String,
+    "source table": pl.String,
+    "available rows": pl.UInt32,
+    "connection points": pl.UInt32,
+    "matched connection points": pl.UInt32,
+    "detail": pl.String,
+}
+_CONNECTION_POINT_PREVIEW_SCHEMA = {
+    "source-qualified identifier": pl.String,
+    "source system": pl.String,
+    "source facility id": pl.String,
+    "source connection point id": pl.String,
+    "connection point": pl.String,
+    "flow direction": pl.String,
+    "facility": pl.String,
+    "location": pl.String,
+    "state": pl.String,
+    "hub": pl.String,
+    "facility key": pl.String,
+    "location key": pl.String,
+    "zone key": pl.String,
+    "source tables": pl.String,
+    "latest ingest": pl.Datetime("us"),
+}
 _HUB_ZONE_DIM_RAW_SCHEMA = {
     "surrogate_key": pl.String,
     "source_system": pl.String,
@@ -1900,6 +2130,51 @@ def cached_load_facility_context_tables(
 ) -> list[GasTableLoad]:
     """Return cached Facility explainer table reads for explicit refreshes."""
     requested_specs = FACILITY_TABLE_SPECS if specs is None else specs
+    return cached_load_gas_model_tables(
+        _source_coverage_bounded_config(config),
+        cache,
+        specs=requested_specs,
+        reader=reader,
+        view=GasModelTableView.SAMPLE,
+        refresh_token=refresh_token,
+        clock=clock,
+    )
+
+
+def connection_point_table_specs() -> tuple[GasTableSpec, ...]:
+    """Return the tables used by the Connection Point explainer."""
+    return CONNECTION_POINT_TABLE_SPECS
+
+
+def load_connection_point_context_tables(
+    config: GasDashboardConfig,
+    specs: Sequence[GasTableSpec] | None = None,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Load Connection Point explainer tables through the bounded loader."""
+    requested_specs = CONNECTION_POINT_TABLE_SPECS if specs is None else specs
+    return load_gas_model_tables(
+        _source_coverage_bounded_config(config),
+        specs=requested_specs,
+        reader=reader,
+        view=GasModelTableView.SAMPLE,
+        clock=clock,
+    )
+
+
+def cached_load_connection_point_context_tables(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    specs: Sequence[GasTableSpec] | None = None,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Return cached Connection Point explainer reads for explicit refreshes."""
+    requested_specs = CONNECTION_POINT_TABLE_SPECS if specs is None else specs
     return cached_load_gas_model_tables(
         _source_coverage_bounded_config(config),
         cache,
@@ -2986,6 +3261,366 @@ def facility_context_empty_state_markdown(loads: Sequence[GasTableLoad]) -> str:
     """
 
 
+def connection_point_dimension_coverage_frame(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    """Return Connection Point dimension coverage metrics from bounded rows."""
+    dataframe = _normalised_connection_point_dimension_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_CONNECTION_POINT_COVERAGE_SCHEMA)
+
+    source_table_count = _connection_point_list_value_count(
+        dataframe,
+        "source_tables",
+    )
+    relationship_counts = {
+        column: _non_empty_string_count(dataframe, column)
+        for column in _CONNECTION_POINT_RELATIONSHIP_KEY_COLUMNS
+    }
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Connection point dimension rows",
+                "value": f"{dataframe.height:,}",
+                "detail": "Loaded bounded rows from silver_gas_dim_connection_point",
+            },
+            {
+                "metric": "Source systems",
+                "value": f"{_distinct_non_empty_count(dataframe, 'source_system'):,}",
+                "detail": "Distinct source_system values represented",
+            },
+            {
+                "metric": "Source tables",
+                "value": f"{source_table_count:,}",
+                "detail": "Distinct source table values carried in source_tables",
+            },
+            {
+                "metric": "Connection point IDs",
+                "value": (
+                    f"{_distinct_non_empty_count(dataframe, 'source_connection_point_id'):,}"
+                ),
+                "detail": "Distinct source_connection_point_id values represented",
+            },
+            {
+                "metric": "Facility links",
+                "value": f"{relationship_counts['facility_key']:,}",
+                "detail": "Rows with facility_key populated",
+            },
+            {
+                "metric": "Location links",
+                "value": f"{relationship_counts['location_key']:,}",
+                "detail": "Rows with location_key populated",
+            },
+            {
+                "metric": "Zone links",
+                "value": f"{relationship_counts['zone_key']:,}",
+                "detail": "Rows with zone_key populated",
+            },
+            {
+                "metric": "Flow directions",
+                "value": f"{_distinct_non_empty_count(dataframe, 'flow_direction'):,}",
+                "detail": "Distinct flow_direction values in the dimension preview",
+            },
+            {
+                "metric": "Data exemption rows",
+                "value": f"{_connection_point_exempt_row_count(dataframe):,}",
+                "detail": "Rows where source data marks the connection point exempt",
+            },
+        ],
+        schema=_CONNECTION_POINT_COVERAGE_SCHEMA,
+    )
+
+
+def connection_point_source_system_frame(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    """Return Connection Point coverage grouped by source_system."""
+    dataframe = _normalised_connection_point_dimension_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_CONNECTION_POINT_SOURCE_SYSTEM_SCHEMA)
+
+    rows: list[dict[str, object]] = []
+    for source_system in _connection_point_source_systems(dataframe):
+        subset = dataframe.filter(pl.col("source_system") == source_system)
+        rows.append(
+            {
+                "source system": source_system,
+                "rows": subset.height,
+                "connection points": _distinct_non_empty_count(
+                    subset,
+                    "source_connection_point_id",
+                ),
+                "facilities": _distinct_non_empty_count(subset, "source_facility_id"),
+                "locations": _distinct_non_empty_count(subset, "source_location_id"),
+                "flow directions": _distinct_non_empty_count(
+                    subset,
+                    "flow_direction",
+                ),
+                "source tables": _connection_point_list_value_count(
+                    subset,
+                    "source_tables",
+                ),
+                "latest ingest": _latest_ingest_timestamp(subset),
+            }
+        )
+
+    return pl.DataFrame(rows, schema=_CONNECTION_POINT_SOURCE_SYSTEM_SCHEMA)
+
+
+def connection_point_relationship_frame(
+    loads: Sequence[GasTableLoad],
+) -> pl.DataFrame:
+    """Return Connection Point relationships to dimensions and related facts."""
+    connection_point_load = table_load_by_name(loads, CONNECTION_POINT_DIM_TABLE_NAME)
+    facility_load = table_load_by_name(loads, FACILITY_DIM_TABLE_NAME)
+    location_load = table_load_by_name(loads, LOCATION_DIM_TABLE_NAME)
+    hub_zone_load = table_load_by_name(loads, HUB_ZONE_DIM_TABLE_NAME)
+    flow_load = table_load_by_name(loads, CONNECTION_POINT_FLOW_TABLE_NAME)
+    capacity_load = table_load_by_name(loads, FACILITY_CAPACITY_OUTLOOK_TABLE_NAME)
+
+    connection_points = _normalised_connection_point_dimension_dataframe(
+        connection_point_load
+    )
+    facilities = _normalised_facility_dimension_dataframe(facility_load)
+    locations = _normalised_location_dimension_dataframe(location_load)
+    zones = _normalised_hub_zone_dimension_dataframe(hub_zone_load)
+    flows = _normalised_connection_point_flow_dataframe(flow_load)
+    capacity = _normalised_facility_capacity_dataframe(capacity_load)
+
+    if (
+        connection_points.is_empty()
+        and facilities.is_empty()
+        and locations.is_empty()
+        and zones.is_empty()
+        and flows.is_empty()
+        and capacity.is_empty()
+    ):
+        return pl.DataFrame(schema=_CONNECTION_POINT_RELATIONSHIP_SCHEMA)
+
+    connection_point_keys = _connection_point_identifier_set(
+        connection_points,
+        "surrogate_key",
+    )
+    connection_point_tuples = _connection_point_tuple_set(connection_points)
+    facility_rows = connection_points.filter(
+        _non_empty_string_expression("facility_key")
+    )
+    location_rows = connection_points.filter(
+        _non_empty_string_expression("location_key")
+    )
+    zone_rows = connection_points.filter(_non_empty_string_expression("zone_key"))
+    flow_direction_rows = connection_points.filter(
+        _non_empty_string_expression("flow_direction")
+    )
+    quantity_rows = flows.filter(pl.col("actual_quantity_tj").is_not_null())
+    capacity_rows = capacity.filter(pl.col("capacity_quantity_tj").is_not_null())
+
+    rows = [
+        {
+            "relationship": "Facility",
+            "source table": CONNECTION_POINT_DIM_TABLE_NAME,
+            "available rows": facility_rows.height,
+            "connection points": _distinct_non_empty_count(
+                connection_points,
+                "source_connection_point_id",
+            ),
+            "matched connection points": _matched_connection_dimension_count(
+                facility_rows,
+                facilities,
+                "facility_key",
+                "source_facility_id",
+            ),
+            "detail": (
+                "facility_key and source_facility_id connect connection points "
+                "to Facility context when the Facility dimension is available."
+            ),
+        },
+        {
+            "relationship": "Location",
+            "source table": CONNECTION_POINT_DIM_TABLE_NAME,
+            "available rows": location_rows.height,
+            "connection points": _distinct_non_empty_count(
+                connection_points,
+                "source_connection_point_id",
+            ),
+            "matched connection points": _matched_connection_dimension_count(
+                location_rows,
+                locations,
+                "location_key",
+                "source_location_id",
+            ),
+            "detail": (
+                "location_key and source_location_id connect connection points "
+                "to GBB location standing data where available."
+            ),
+        },
+        {
+            "relationship": "Zone",
+            "source table": CONNECTION_POINT_DIM_TABLE_NAME,
+            "available rows": zone_rows.height,
+            "connection points": _distinct_non_empty_count(
+                connection_points,
+                "source_connection_point_id",
+            ),
+            "matched connection points": _matched_connection_dimension_count(
+                zone_rows,
+                zones,
+                "zone_key",
+                "source_hub_id",
+            ),
+            "detail": (
+                "zone_key and hub identifiers connect hub-scoped connection "
+                "points to Hub / Zone context where the source can resolve them."
+            ),
+        },
+        {
+            "relationship": "Flow direction",
+            "source table": CONNECTION_POINT_DIM_TABLE_NAME,
+            "available rows": flow_direction_rows.height,
+            "connection points": _distinct_non_empty_count(
+                flow_direction_rows,
+                "source_connection_point_id",
+            ),
+            "matched connection points": _distinct_non_empty_count(
+                flow_direction_rows,
+                "flow_direction",
+            ),
+            "detail": (
+                "flow_direction separates receipt, delivery, and not-applicable "
+                "connection point identifiers before downstream flow and capacity use."
+            ),
+        },
+        {
+            "relationship": "Actual flow",
+            "source table": CONNECTION_POINT_FLOW_TABLE_NAME,
+            "available rows": quantity_rows.height,
+            "connection points": _distinct_non_empty_count(
+                quantity_rows,
+                "source_connection_point_id",
+            ),
+            "matched connection points": _matched_connection_flow_count(
+                quantity_rows,
+                connection_point_keys,
+                connection_point_tuples,
+            ),
+            "detail": (
+                "Connection point flow rows match the dimension by "
+                "connection_point_key or source facility, connection point, "
+                "and flow direction."
+            ),
+        },
+        {
+            "relationship": "Capacity",
+            "source table": FACILITY_CAPACITY_OUTLOOK_TABLE_NAME,
+            "available rows": capacity_rows.height,
+            "connection points": _distinct_non_empty_count(
+                capacity_rows,
+                "source_facility_id",
+            ),
+            "matched connection points": _matched_capacity_flow_direction_count(
+                capacity_rows,
+                connection_point_tuples,
+            ),
+            "detail": (
+                "Capacity outlook rows can be read beside connection points by "
+                "source facility and flow_direction; they do not carry a direct "
+                "connection_point_key."
+            ),
+        },
+    ]
+    return pl.DataFrame(rows, schema=_CONNECTION_POINT_RELATIONSHIP_SCHEMA)
+
+
+def connection_point_dimension_preview_frame(
+    load: GasTableLoad | None,
+    *,
+    preview_rows: int = DEFAULT_CONNECTION_POINT_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return source-qualified connection point identifiers for display."""
+    dataframe = _normalised_connection_point_dimension_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_CONNECTION_POINT_PREVIEW_SCHEMA)
+
+    rows: list[dict[str, object]] = []
+    for row in (
+        dataframe.sort(
+            [
+                "source_system",
+                "source_facility_id",
+                "source_connection_point_id",
+                "flow_direction",
+            ],
+            nulls_last=True,
+        )
+        .head(max(1, preview_rows))
+        .to_dicts()
+    ):
+        rows.append(
+            {
+                "source-qualified identifier": (
+                    _connection_point_source_qualified_identifier(row)
+                ),
+                "source system": row.get("source_system"),
+                "source facility id": row.get("source_facility_id"),
+                "source connection point id": row.get("source_connection_point_id"),
+                "connection point": row.get("connection_point_name"),
+                "flow direction": row.get("flow_direction"),
+                "facility": row.get("facility_name"),
+                "location": row.get("location_name"),
+                "state": row.get("state"),
+                "hub": _connection_point_hub_label(row),
+                "facility key": row.get("facility_key"),
+                "location key": row.get("location_key"),
+                "zone key": row.get("zone_key"),
+                "source tables": ", ".join(
+                    _source_coverage_value_strings(row.get("source_tables"))
+                ),
+                "latest ingest": row.get("ingested_timestamp"),
+            }
+        )
+    return pl.DataFrame(rows, schema=_CONNECTION_POINT_PREVIEW_SCHEMA)
+
+
+def connection_point_context_empty_state_markdown(
+    loads: Sequence[GasTableLoad],
+) -> str:
+    """Return empty-state copy for the Connection Point explainer dashboard."""
+    if len(loads) == 0:
+        return """
+        **No Connection Point context tables were requested.**
+
+        The dashboard expected Connection Point-oriented `silver.gas_model`
+        table specs but received none. Check the Marimo dashboard registry and
+        Connection Point explainer configuration.
+        """
+
+    failed_count = sum(load.error is not None for load in loads)
+    empty_count = sum(
+        load.error is None and (load.dataframe is None or load.dataframe.is_empty())
+        for load in loads
+    )
+    read_policy = row_limit_message(_common_row_limit(loads))
+    read_detail = (
+        f"`{failed_count}` reads were unavailable and `{empty_count}` reads "
+        "returned no rows."
+    )
+    return f"""
+    **No Connection Point metadata or relationship rows are available.**
+
+    The dashboard checked `{len(loads)}` Connection Point-oriented
+    `silver.gas_model` assets: `silver_gas_dim_connection_point`,
+    `silver_gas_dim_facility`, `silver_gas_dim_location`,
+    `silver_gas_dim_zone`, `silver_gas_fact_connection_point_flow`, and
+    `silver_gas_fact_capacity_outlook`. {read_detail}
+
+    {read_policy}
+
+    Materialize or seed the curated gas model outputs, then use
+    **Refresh data**.
+    """
+
+
 def hub_zone_dimension_coverage_frame(load: GasTableLoad | None) -> pl.DataFrame:
     """Return Hub / Zone dimension coverage metrics from bounded rows."""
     dataframe = _normalised_hub_zone_dimension_dataframe(load)
@@ -3235,6 +3870,55 @@ def render_facility_context_links(
     <div>
         <p class="facility-links__eyebrow">Context links</p>
         <h2>Facility, flow, capacity, participant, and zone context</h2>
+    </div>
+    <ul>
+{rows}
+    </ul>
+</section>"""
+
+
+def render_connection_point_context_links(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render Connection Point links to related dashboards and concept panels."""
+    candidate_entries = tuple(dashboard_registry() if entries is None else entries)
+    concept_ids = (
+        CONNECTION_POINT_CONTEXT_ID,
+        "gbb-interactive-map",
+        "source-coverage-matrix",
+        "gas-model-table-explorer",
+        "facility-context",
+        "hub-zone-context",
+        "flow-context",
+        "capacity-context",
+    )
+    rows = "\n".join(
+        _render_connection_point_context_link(entry)
+        for entry in (
+            registry_entry_by_concept_id(concept_id, candidate_entries)
+            for concept_id in concept_ids
+        )
+        if entry is not None
+    )
+    if rows == "":
+        rows = (
+            '<li class="connection-point-links__empty">'
+            "No Connection Point, Facility, Hub / Zone, flow, capacity, map, or "
+            "table explorer entries are registered."
+            "</li>"
+        )
+
+    return f"""\
+<style>
+{_connection_point_context_links_css()}
+</style>
+<section
+    class="connection-point-links"
+    aria-label="Connection Point context links"
+>
+    <div>
+        <p class="connection-point-links__eyebrow">Context links</p>
+        <h2>Connection Point, Facility, flow, capacity, and map context</h2>
     </div>
     <ul>
 {rows}
@@ -6461,6 +7145,36 @@ def _normalised_participant_membership_dataframe(
     )
 
 
+def _normalised_location_dimension_dataframe(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_LOCATION_DIM_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _LOCATION_DIM_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("surrogate_key").cast(pl.String, strict=False),
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        pl.col("source_location_id").cast(pl.String, strict=False),
+        pl.col("location_name").cast(pl.String, strict=False),
+        pl.col("state").cast(pl.String, strict=False),
+        pl.col("location_type").cast(pl.String, strict=False),
+        pl.col("location_description").cast(pl.String, strict=False),
+        pl.col("source_surrogate_key").cast(pl.String, strict=False),
+        pl.col("source_file").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
 def _normalised_hub_zone_dimension_dataframe(
     load: GasTableLoad | None,
 ) -> pl.DataFrame:
@@ -6604,6 +7318,89 @@ def _normalised_facility_capacity_dataframe(
     )
 
 
+def _normalised_connection_point_dimension_dataframe(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_CONNECTION_POINT_DIM_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _CONNECTION_POINT_DIM_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("surrogate_key").cast(pl.String, strict=False),
+        pl.col("facility_key").cast(pl.String, strict=False),
+        pl.col("location_key").cast(pl.String, strict=False),
+        pl.col("zone_key").cast(pl.String, strict=False),
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        pl.col("source_hub_id").cast(pl.String, strict=False),
+        pl.col("source_hub_name").cast(pl.String, strict=False),
+        pl.col("source_facility_id").cast(pl.String, strict=False),
+        pl.col("source_connection_point_id").cast(pl.String, strict=False),
+        pl.col("source_node_id").cast(pl.String, strict=False),
+        pl.col("source_location_id").cast(pl.String, strict=False),
+        pl.col("connection_point_name").cast(pl.String, strict=False),
+        pl.col("flow_direction").cast(pl.String, strict=False),
+        pl.col("facility_name").cast(pl.String, strict=False),
+        pl.col("location_name").cast(pl.String, strict=False),
+        pl.col("state").cast(pl.String, strict=False),
+        pl.col("exempt").cast(pl.Boolean, strict=False),
+        pl.col("exemption_description").cast(pl.String, strict=False),
+        _normalise_date_column(dataframe, "effective_date"),
+        _normalise_date_column(dataframe, "effective_to_date"),
+        pl.col("source_last_updated").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "source_last_updated_timestamp"),
+        pl.col("source_surrogate_key").cast(pl.String, strict=False),
+        pl.col("source_file").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
+def _normalised_connection_point_flow_dataframe(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_CONNECTION_POINT_FLOW_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _CONNECTION_POINT_FLOW_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("surrogate_key").cast(pl.String, strict=False),
+        pl.col("date_key").cast(pl.String, strict=False),
+        pl.col("facility_key").cast(pl.String, strict=False),
+        pl.col("location_key").cast(pl.String, strict=False),
+        pl.col("connection_point_key").cast(pl.String, strict=False),
+        pl.col("zone_key").cast(pl.String, strict=False),
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        _normalise_date_column(dataframe, "gas_date"),
+        pl.col("source_facility_id").cast(pl.String, strict=False),
+        pl.col("source_connection_point_id").cast(pl.String, strict=False),
+        pl.col("flow_direction").cast(pl.String, strict=False),
+        pl.col("actual_quantity_tj").cast(pl.Float64, strict=False),
+        pl.col("quality").cast(pl.String, strict=False),
+        pl.col("source_last_updated").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "source_last_updated_timestamp"),
+        pl.col("source_surrogate_key").cast(pl.String, strict=False),
+        pl.col("source_file").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
 def _non_empty_string_count(dataframe: pl.DataFrame, column: str) -> int:
     return dataframe.filter(_non_empty_string_expression(column)).height
 
@@ -6743,6 +7540,190 @@ def _matched_facility_count(
         elif facility_key in facility_keys:
             matched.add(f"key:{facility_key}")
     return len(matched)
+
+
+def _connection_point_list_value_count(dataframe: pl.DataFrame, column: str) -> int:
+    values: set[str] = set()
+    for row in dataframe.select(column).to_dicts():
+        values.update(_source_coverage_value_strings(row.get(column)))
+    return len(values)
+
+
+def _connection_point_exempt_row_count(dataframe: pl.DataFrame) -> int:
+    return dataframe.filter(pl.col("exempt").fill_null(False)).height
+
+
+def _connection_point_source_systems(dataframe: pl.DataFrame) -> tuple[str, ...]:
+    values = (
+        dataframe.filter(_non_empty_string_expression("source_system"))
+        .get_column("source_system")
+        .cast(pl.String, strict=False)
+        .unique()
+        .sort()
+        .to_list()
+    )
+    return tuple(str(value) for value in values if value is not None)
+
+
+def _connection_point_identifier_set(dataframe: pl.DataFrame, column: str) -> set[str]:
+    if dataframe.is_empty() or column not in dataframe.columns:
+        return set()
+    return {
+        value
+        for value in (
+            dataframe.filter(_non_empty_string_expression(column))
+            .get_column(column)
+            .cast(pl.String, strict=False)
+            .to_list()
+        )
+        if isinstance(value, str) and value != ""
+    }
+
+
+def _connection_point_tuple_set(dataframe: pl.DataFrame) -> set[tuple[str, str, str]]:
+    if dataframe.is_empty():
+        return set()
+
+    tuples: set[tuple[str, str, str]] = set()
+    for row in dataframe.select(
+        "source_facility_id",
+        "source_connection_point_id",
+        "flow_direction",
+    ).to_dicts():
+        tuple_key = _connection_point_tuple_from_row(row)
+        if all(value != "" for value in tuple_key):
+            tuples.add(tuple_key)
+    return tuples
+
+
+def _matched_connection_dimension_count(
+    rows: pl.DataFrame,
+    dimension: pl.DataFrame,
+    key_column: str,
+    source_column: str,
+) -> int:
+    dimension_keys = _connection_point_identifier_set(dimension, "surrogate_key")
+    dimension_source_ids = _connection_point_identifier_set(dimension, source_column)
+    selected_columns = list(
+        dict.fromkeys(
+            column
+            for column in (
+                "surrogate_key",
+                "source_system",
+                "source_facility_id",
+                "source_connection_point_id",
+                "flow_direction",
+                key_column,
+                source_column,
+            )
+            if column in rows.columns
+        )
+    )
+    matched: set[str] = set()
+
+    for row in rows.select(selected_columns).to_dicts():
+        key_value = str(row.get(key_column) or "").strip()
+        source_value = str(row.get(source_column) or "").strip()
+        if key_value in dimension_keys or source_value in dimension_source_ids:
+            matched.add(_connection_point_row_identity(row))
+    return len(matched)
+
+
+def _matched_connection_flow_count(
+    rows: pl.DataFrame,
+    connection_point_keys: set[str],
+    connection_point_tuples: set[tuple[str, str, str]],
+) -> int:
+    matched: set[str] = set()
+    for row in rows.select(
+        "connection_point_key",
+        "source_system",
+        "source_facility_id",
+        "source_connection_point_id",
+        "flow_direction",
+    ).to_dicts():
+        connection_point_key = str(row.get("connection_point_key") or "").strip()
+        tuple_key = _connection_point_tuple_from_row(row)
+        if (
+            connection_point_key in connection_point_keys
+            or tuple_key in connection_point_tuples
+        ):
+            matched.add(_connection_point_row_identity(row))
+    return len(matched)
+
+
+def _matched_capacity_flow_direction_count(
+    rows: pl.DataFrame,
+    connection_point_tuples: set[tuple[str, str, str]],
+) -> int:
+    connection_point_pairs = {
+        (source_facility_id, flow_direction)
+        for source_facility_id, _, flow_direction in connection_point_tuples
+    }
+    matched_pairs: set[tuple[str, str]] = set()
+
+    for row in rows.select("source_facility_id", "flow_direction").to_dicts():
+        source_facility_id = str(row.get("source_facility_id") or "").strip()
+        flow_direction = str(row.get("flow_direction") or "").strip()
+        pair = (source_facility_id, flow_direction)
+        if (
+            source_facility_id != ""
+            and flow_direction != ""
+            and pair in connection_point_pairs
+        ):
+            matched_pairs.add(pair)
+    return len(matched_pairs)
+
+
+def _connection_point_tuple_from_row(
+    row: Mapping[str, object],
+) -> tuple[str, str, str]:
+    return (
+        str(row.get("source_facility_id") or "").strip(),
+        str(row.get("source_connection_point_id") or "").strip(),
+        str(row.get("flow_direction") or "").strip(),
+    )
+
+
+def _connection_point_row_identity(row: Mapping[str, object]) -> str:
+    source_qualified = _connection_point_source_qualified_identifier(row)
+    if source_qualified != "":
+        return source_qualified
+    return str(row.get("surrogate_key") or "").strip()
+
+
+def _connection_point_source_qualified_identifier(
+    row: Mapping[str, object],
+) -> str:
+    source_system = str(row.get("source_system") or "").strip()
+    source_facility_id = str(row.get("source_facility_id") or "").strip()
+    source_connection_point_id = str(
+        row.get("source_connection_point_id") or ""
+    ).strip()
+    flow_direction = str(row.get("flow_direction") or "").strip()
+    if (
+        source_system == ""
+        or source_facility_id == ""
+        or source_connection_point_id == ""
+        or flow_direction == ""
+    ):
+        return ""
+    return (
+        f"{source_system}:{source_facility_id}:"
+        f"{source_connection_point_id}:{flow_direction}"
+    )
+
+
+def _connection_point_hub_label(row: Mapping[str, object]) -> str | None:
+    source_hub_name = str(row.get("source_hub_name") or "").strip()
+    source_hub_id = str(row.get("source_hub_id") or "").strip()
+    if source_hub_name != "" and source_hub_id != "":
+        return f"{source_hub_name} ({source_hub_id})"
+    if source_hub_name != "":
+        return source_hub_name
+    if source_hub_id != "":
+        return source_hub_id
+    return None
 
 
 def _participant_list_value_count(dataframe: pl.DataFrame, column: str) -> int:
@@ -7994,6 +8975,23 @@ def _render_hub_zone_context_link(entry: DashboardRegistryEntry) -> str:
         </li>"""
 
 
+def _render_connection_point_context_link(entry: DashboardRegistryEntry) -> str:
+    status_label = _dashboard_entry_status_label(entry)
+    title = escape(entry.title)
+    route = entry.notebook_route
+    if entry.status.value == "available" and route is not None:
+        title_html = f'<a href="{escape(route, quote=True)}">{title}</a>'
+    else:
+        title_html = f"<span>{title}</span>"
+
+    return f"""\
+        <li data-dashboard-status="{escape(entry.status.value, quote=True)}">
+            {title_html}
+            <span>{escape(status_label)}</span>
+            <code>{escape(entry.concept_id)}</code>
+        </li>"""
+
+
 def _hub_zone_context_links_css() -> str:
     return """\
 .hub-zone-links {
@@ -8142,6 +9140,83 @@ def _facility_context_links_css() -> str:
 
 @media (max-width: 760px) {
     .facility-links li {
+        grid-template-columns: 1fr;
+    }
+}
+"""
+
+
+def _connection_point_context_links_css() -> str:
+    return """\
+.connection-point-links {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+}
+
+.connection-point-links__eyebrow {
+    margin: 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.74rem;
+    font-weight: 720;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.connection-point-links h2 {
+    margin: 0.15rem 0 0;
+    font-size: 1.05rem;
+}
+
+.connection-point-links ul {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.connection-point-links li {
+    display: grid;
+    grid-template-columns: minmax(10rem, 1fr) auto auto;
+    gap: 0.65rem;
+    align-items: center;
+    min-width: 0;
+    padding: 0.55rem 0;
+    border-top: 1px solid var(--emdl-line, #cfdbd6);
+}
+
+.connection-point-links li:first-child {
+    border-top: 0;
+}
+
+.connection-point-links a {
+    color: var(--emdl-blue, #166791);
+    font-weight: 720;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+}
+
+.connection-point-links span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.connection-point-links li > span:nth-child(2) {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.connection-point-links code {
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+    .connection-point-links li {
         grid-template-columns: 1fr;
     }
 }

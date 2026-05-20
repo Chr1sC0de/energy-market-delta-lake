@@ -896,14 +896,21 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "concept_id": "connection-point-context",
         "title": "Connection Point Context",
         "description": (
-            "Planned concept panel for connection-point identifiers, flow "
-            "directions, locations, and facility relationships."
+            "Available explainer dashboard for connection-point identifiers, "
+            "flow directions, facility, location, and zone relationships, "
+            "actual flow rows, capacity outlook context, and related dashboard "
+            "routes."
         ),
-        "audiences": ("operator", "analyst"),
-        "status": "planned",
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "connection_point_explainer",
         "backing_assets": (
             "silver.gas_model.silver_gas_dim_connection_point",
+            "silver.gas_model.silver_gas_dim_facility",
+            "silver.gas_model.silver_gas_dim_location",
+            "silver.gas_model.silver_gas_dim_zone",
             "silver.gas_model.silver_gas_fact_connection_point_flow",
+            "silver.gas_model.silver_gas_fact_capacity_outlook",
         ),
         "generated_gold_paths": (
             "tools/gas-market-knowledge-base/generated/gold/glossary/connection-point.md",

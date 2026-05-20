@@ -270,6 +270,30 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         "chunk-dwgm-operations-capacity-certificates-modelling",
     )
 
+    connection_point = registry_entry_by_concept_id(
+        "connection-point-context",
+        entries,
+    )
+    assert connection_point is not None
+    assert connection_point.status is DashboardStatus.AVAILABLE
+    assert connection_point.notebook_name == "connection_point_explainer"
+    assert connection_point.notebook_route == "/marimo/connection_point_explainer/"
+    assert connection_point.backing_assets == (
+        "silver.gas_model.silver_gas_dim_connection_point",
+        "silver.gas_model.silver_gas_dim_facility",
+        "silver.gas_model.silver_gas_dim_location",
+        "silver.gas_model.silver_gas_dim_zone",
+        "silver.gas_model.silver_gas_fact_connection_point_flow",
+        "silver.gas_model.silver_gas_fact_capacity_outlook",
+    )
+    assert connection_point.generated_gold_paths == (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/connection-point.md",
+    )
+    assert connection_point.source_chunk_ids == (
+        "chunk-gbb-guide-connection-point-identifiers",
+        "chunk-gbb-guide-flow-report",
+    )
+
 
 def test_dashboard_registry_payload_includes_required_fields() -> None:
     payload = dashboard_registry_payload()
