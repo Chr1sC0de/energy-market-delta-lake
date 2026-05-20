@@ -1016,6 +1016,41 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
     },
     {
+        "concept_id": "pipeline-connection-operations",
+        "title": "Pipeline and Connection Operations",
+        "description": (
+            "Available operational dashboard linking Connection Point, "
+            "Facility, Flow, Capacity, pipeline segment metadata, and visible "
+            "relationship gaps without changing gas_model relationship "
+            "modeling."
+        ),
+        "audiences": ("operator", "analyst", "data-engineer"),
+        "status": "available",
+        "notebook_name": "pipeline_connection_operations",
+        "backing_assets": (
+            "silver.gas_model.silver_gas_dim_connection_point",
+            "silver.gas_model.silver_gas_dim_facility",
+            "silver.gas_model.silver_gas_dim_pipeline_segment",
+            "silver.gas_model.silver_gas_dim_zone",
+            "silver.gas_model.silver_gas_fact_connection_point_flow",
+            "silver.gas_model.silver_gas_fact_operational_meter_flow",
+            "silver.gas_model.silver_gas_fact_capacity_outlook",
+        ),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/connection-point.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
+        ),
+        "source_chunk_ids": (
+            "chunk-gbb-guide-connection-point-identifiers",
+            "chunk-gbb-guide-flow-report",
+            "chunk-gbb-procedures-capacity-outlooks",
+            "chunk-gbb-guide-nameplate-capacity",
+            "chunk-gbb-procedures-facility-nameplate",
+        ),
+    },
+    {
         "concept_id": "schedule-context",
         "title": "Schedule Context",
         "description": (

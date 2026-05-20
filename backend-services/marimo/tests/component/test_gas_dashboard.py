@@ -93,6 +93,9 @@ from marimoserver.gas_dashboard import (
     PARTICIPANT_DIM_TABLE_NAME,
     PARTICIPANT_MARKET_MEMBERSHIP_TABLE_NAME,
     PARTICIPANT_TABLE_SPECS,
+    PIPELINE_CONNECTION_OPERATIONS_CONTEXT_ID,
+    PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS,
+    PIPELINE_SEGMENT_DIM_TABLE_NAME,
     SCHEDULE_RUN_GAS_DATE_FILTER_ALL,
     SCHEDULE_RUN_SCHEDULE_TYPE_FILTER_ALL,
     SCHEDULE_RUN_SOURCE_SYSTEM_FILTER_ALL,
@@ -142,6 +145,7 @@ from marimoserver.gas_dashboard import (
     cached_load_market_price_table,
     cached_load_nomination_forecast_table,
     cached_load_participant_context_tables,
+    cached_load_pipeline_connection_operations_tables,
     cached_load_schedule_run_table,
     cached_load_settlement_activity_table,
     cached_load_source_coverage_tables,
@@ -235,6 +239,7 @@ from marimoserver.gas_dashboard import (
     load_gas_model_tables,
     load_nomination_forecast_table,
     load_participant_context_tables,
+    load_pipeline_connection_operations_tables,
     load_source_coverage_tables,
     load_schedule_run_table,
     load_settlement_activity_table,
@@ -274,6 +279,12 @@ from marimoserver.gas_dashboard import (
     participant_membership_preview_frame,
     participant_related_market_fact_frame,
     participant_table_specs,
+    pipeline_connection_flow_summary_frame,
+    pipeline_connection_metadata_frame,
+    pipeline_connection_operations_empty_state_markdown,
+    pipeline_connection_operations_kpi_frame,
+    pipeline_connection_operations_table_specs,
+    pipeline_connection_relationship_gap_frame,
     read_parquet_table,
     render_dashboard_context_panel,
     render_bid_stack_context_links,
@@ -289,6 +300,7 @@ from marimoserver.gas_dashboard import (
     render_hub_zone_context_links,
     render_linepack_context_links,
     render_participant_context_links,
+    render_pipeline_connection_operations_context_links,
     render_schedule_run_context_links,
     render_settlement_activity_context_links,
     render_source_coverage_matrix_html,
@@ -6892,6 +6904,536 @@ def test_flow_helpers_cover_missing_columns_and_empty_state_behavior() -> None:
     assert (
         "No Flow, Facility, Connection Point, Gas Day, schedule, capacity, map, "
         "or table explorer entries are registered."
+    ) in empty_context_links
+
+
+def test_pipeline_connection_operations_metadata_is_available_dashboard() -> None:
+    entry = registry_entry_by_concept_id(PIPELINE_CONNECTION_OPERATIONS_CONTEXT_ID)
+    html = render_dashboard_context_panel(PIPELINE_CONNECTION_OPERATIONS_CONTEXT_ID)
+    context_links = render_pipeline_connection_operations_context_links()
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "pipeline_connection_operations"
+    assert entry.notebook_route == "/marimo/pipeline_connection_operations/"
+    assert "silver.gas_model.silver_gas_dim_connection_point" in (entry.backing_assets)
+    assert "silver.gas_model.silver_gas_dim_pipeline_segment" in (entry.backing_assets)
+    assert "silver.gas_model.silver_gas_fact_connection_point_flow" in (
+        entry.backing_assets
+    )
+    assert "silver.gas_model.silver_gas_fact_operational_meter_flow" in (
+        entry.backing_assets
+    )
+    assert "silver.gas_model.silver_gas_fact_capacity_outlook" in (entry.backing_assets)
+    assert "Pipeline and Connection Operations" in html
+    assert "chunk-gbb-guide-connection-point-identifiers" in html
+    assert 'data-status="available"' in html
+    assert 'href="/marimo/pipeline_connection_operations/"' in context_links
+    assert "Connection Point Context" in context_links
+    assert "Facility Context" in context_links
+    assert "Flow Context" in context_links
+    assert "Capacity Context" in context_links
+
+
+def test_pipeline_connection_operations_table_specs_and_loader_use_bounded_rows() -> (
+    None
+):
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "12",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    specs = pipeline_connection_operations_table_specs()
+    loads = load_pipeline_connection_operations_tables(config, reader=reader)
+
+    assert specs == PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS
+    assert tuple(spec.table_name for spec in specs) == (
+        CONNECTION_POINT_DIM_TABLE_NAME,
+        FACILITY_DIM_TABLE_NAME,
+        PIPELINE_SEGMENT_DIM_TABLE_NAME,
+        HUB_ZONE_DIM_TABLE_NAME,
+        CONNECTION_POINT_FLOW_TABLE_NAME,
+        OPERATIONAL_METER_FLOW_TABLE_NAME,
+        FACILITY_CAPACITY_OUTLOOK_TABLE_NAME,
+    )
+    assert len(loads) == 7
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_dim_connection_point",
+            12,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_dim_facility",
+            12,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_dim_pipeline_segment",
+            12,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_dim_zone",
+            12,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_connection_point_flow",
+            12,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_operational_meter_flow",
+            12,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_capacity_outlook",
+            12,
+        ),
+    ]
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert uri.endswith(f"/{PIPELINE_SEGMENT_DIM_TABLE_NAME}")
+        assert storage_options == config.storage_options()
+        assert row_limit == 12
+        cached_calls += 1
+        return pl.DataFrame({"source_system": ["VICGAS"]})
+
+    first_cached = cached_load_pipeline_connection_operations_tables(
+        config,
+        cache,
+        specs=(PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[2],),
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_pipeline_connection_operations_tables(
+        config,
+        cache,
+        specs=(PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[2],),
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_pipeline_connection_operations_tables(
+        config,
+        cache,
+        specs=(PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[2],),
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 2
+    assert not first_cached[0].cache_hit
+    assert second_cached[0].cache_hit
+    assert not refreshed[0].cache_hit
+
+
+def test_pipeline_connection_operations_helpers_show_relationship_gaps() -> None:
+    connection_point_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[0],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["cp-key-1", "cp-key-2"],
+                "facility_key": ["facility-key-1", None],
+                "location_key": ["location-key-1", None],
+                "zone_key": ["zone-key-1", None],
+                "source_system": ["GBB", "GBB"],
+                "source_tables": [
+                    ["silver.gbb.silver_gasbb_nodes_connection_points"],
+                    ["silver.gbb.silver_gasbb_nodes_connection_points"],
+                ],
+                "source_facility_id": ["10", "20"],
+                "source_connection_point_id": ["1001", "2002"],
+                "connection_point_name": ["Receipt Point", "Delivery Point"],
+                "flow_direction": ["RECEIPT", "DELIVERY"],
+                "facility_name": ["Matched Facility", "Unmatched Facility"],
+                "location_name": ["Longford", None],
+                "state": ["Victoria", "Queensland"],
+                "exempt": [False, True],
+                "effective_date": [date(2024, 1, 1), None],
+                "exemption_description": [None, "test exemption"],
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 1, 6),
+                    datetime(2024, 1, 2, 6),
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 1, 8),
+                    datetime(2024, 1, 2, 8),
+                ],
+            }
+        ),
+    )
+    facility_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[1],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["facility-key-1"],
+                "source_system": ["GBB"],
+                "source_facility_id": ["10"],
+                "facility_name": ["Matched Facility"],
+            }
+        ),
+    )
+    pipeline_segment_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[2],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["pipe-key-1", "pipe-key-2"],
+                "zone_key": ["zone-key-1", None],
+                "source_system": ["VICGAS", "VICGAS"],
+                "source_tables": [
+                    ["silver.vicgas.silver_int259_v4_pipe_segment_1"],
+                    ["silver.vicgas.silver_int259_v4_pipe_segment_1"],
+                ],
+                "source_pipeline_id": ["VTS", "VTS"],
+                "source_pipe_segment_id": ["77", "78"],
+                "pipe_segment_name": ["Segment 77", "Segment 78"],
+                "source_linepack_zone_id": ["5", "6"],
+                "source_origin_node_name": ["Origin A", "Origin B"],
+                "source_destination_node_name": ["Destination A", "Destination B"],
+                "reverse_flow": ["Y", None],
+                "compressor": ["N", "Y"],
+                "commencement_date": [date(2020, 1, 1), None],
+                "termination_date": [None, date(2025, 1, 1)],
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 3, 6),
+                    datetime(2024, 1, 4, 6),
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 3, 8),
+                    datetime(2024, 1, 4, 8),
+                ],
+            }
+        ),
+    )
+    zone_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[3],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["zone-key-1"],
+                "source_system": ["VICGAS"],
+                "zone_type": ["linepack_zone"],
+                "source_zone_id": ["5"],
+                "zone_name": ["Linepack 5"],
+            }
+        ),
+    )
+    flow_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[4],
+        pl.DataFrame(
+            {
+                "connection_point_key": ["cp-key-1", None, None],
+                "source_system": ["GBB", "GBB", "GBB"],
+                "gas_date": [
+                    date(2024, 1, 3),
+                    date(2024, 1, 4),
+                    date(2024, 1, 4),
+                ],
+                "source_facility_id": ["10", "20", "99"],
+                "source_connection_point_id": ["1001", "2002", "9999"],
+                "flow_direction": ["RECEIPT", "DELIVERY", "RECEIPT"],
+                "actual_quantity_tj": [5.0, 7.0, 3.0],
+                "quality": ["actual", "actual", "estimated"],
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 3, 7),
+                    datetime(2024, 1, 4, 7),
+                    datetime(2024, 1, 4, 8),
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 3, 9),
+                    datetime(2024, 1, 4, 9),
+                    datetime(2024, 1, 4, 10),
+                ],
+            }
+        ),
+    )
+    meter_flow_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[5],
+        pl.DataFrame(
+            {
+                "source_system": ["VICGAS", "VICGAS"],
+                "source_table": [
+                    "silver.vicgas.silver_int236_v4_operational_meter_readings_1",
+                    "silver.vicgas.silver_int236_v4_operational_meter_readings_1",
+                ],
+                "gas_date": [date(2024, 1, 4), date(2024, 1, 4)],
+                "pipeline_segment_key": ["pipe-key-1", None],
+                "point_type": ["meter", "meter"],
+                "source_point_id": ["OP1", "OP2"],
+                "flow_direction": ["WITHDRAWAL", "INJECTION"],
+                "quantity_gj": [70.0, 20.0],
+            }
+        ),
+    )
+    capacity_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[6],
+        pl.DataFrame(
+            {
+                "source_system": ["GBB", "GBB"],
+                "source_table": ["silver.gbb.capacity", "silver.gbb.capacity"],
+                "source_facility_id": ["10", "99"],
+                "facility_name": ["Matched Facility", "Missing Facility"],
+                "capacity_type": ["nameplate", "nameplate"],
+                "flow_direction": ["RECEIPT", "RECEIPT"],
+                "capacity_quantity_tj": [100.0, 50.0],
+            }
+        ),
+    )
+    loads = (
+        connection_point_load,
+        facility_load,
+        pipeline_segment_load,
+        zone_load,
+        flow_load,
+        meter_flow_load,
+        capacity_load,
+    )
+
+    kpis = pipeline_connection_operations_kpi_frame(loads)
+    flow_summary = pipeline_connection_flow_summary_frame(loads)
+    metadata = pipeline_connection_metadata_frame(loads)
+    gaps = pipeline_connection_relationship_gap_frame(loads)
+    kpi_values = {row["metric"]: row["value"] for row in kpis.to_dicts()}
+    flow_rows = {
+        (row["source facility id"], row["source connection point id"]): row
+        for row in flow_summary.to_dicts()
+    }
+    metadata_rows = {
+        (row["metadata kind"], row["source identifier"]): row
+        for row in metadata.to_dicts()
+    }
+    gap_rows = {row["relationship"]: row for row in gaps.to_dicts()}
+
+    assert kpi_values["Operation tables checked"] == "7"
+    assert kpi_values["Loaded tables"] == "7"
+    assert kpi_values["Connection points"] == "2"
+    assert kpi_values["Pipeline segments"] == "2"
+    assert kpi_values["Connection point flow rows"] == "3"
+    assert kpi_values["Operational meter flow rows"] == "2"
+    assert kpi_values["Capacity rows"] == "2"
+    assert kpi_values["Relationship gap rows"] == "5"
+    assert kpi_values["Latest Gas Day"] == "2024-01-04"
+
+    assert flow_rows[("10", "1001")]["relationship status"] == (
+        "Conformed Connection Point match"
+    )
+    assert flow_rows[("20", "2002")]["coverage gap"] == "Missing connection_point_key"
+    assert flow_rows[("99", "9999")]["relationship status"] == "Relationship gap"
+    assert flow_rows[("99", "9999")]["coverage gap"] == (
+        "Missing Connection Point dimension match"
+    )
+    assert flow_rows[("20", "2002")]["connection point"] == "Delivery Point"
+    assert flow_rows[("20", "2002")]["total actual quantity tj"] == 7.0
+
+    assert metadata_rows[("Connection Point", "1001")]["operational status"] == (
+        "not exempt; effective from 2024-01-01"
+    )
+    assert metadata_rows[("Connection Point", "2002")]["coverage gap"] == (
+        "Missing facility_key, location_key, zone_key"
+    )
+    assert (
+        "reverse flow: Y"
+        in metadata_rows[("Pipeline segment", "77")]["operational status"]
+    )
+    assert metadata_rows[("Pipeline segment", "78")]["coverage gap"] == (
+        "Missing zone_key"
+    )
+
+    assert gap_rows["Connection Point -> Facility"]["gap rows"] == 1
+    assert gap_rows["Connection Point flow -> Connection Point"]["gap rows"] == 1
+    assert gap_rows["Capacity -> Connection Point"]["gap rows"] == 1
+    assert gap_rows["Operational meter flow -> Pipeline segment"]["gap rows"] == 1
+    assert gap_rows["Pipeline segment -> Zone"]["gap rows"] == 1
+    assert (
+        "connection_point_key"
+        in gap_rows["Capacity -> Connection Point"]["coverage gap"]
+    )
+
+
+def test_pipeline_connection_operations_helpers_cover_gap_classification_branches() -> (
+    None
+):
+    connection_point_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[0],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["cp-key-1"],
+                "facility_key": ["facility-key-1"],
+                "location_key": ["location-key-1"],
+                "zone_key": ["zone-key-1"],
+                "source_system": ["GBB"],
+                "source_facility_id": ["10"],
+                "source_connection_point_id": ["1001"],
+                "connection_point_name": ["Receipt Point"],
+                "flow_direction": ["RECEIPT"],
+                "facility_name": ["Matched Facility"],
+                "effective_date": [datetime(2024, 1, 1, 0)],
+                "effective_to_date": [date(2024, 12, 31)],
+            }
+        ),
+    )
+    facility_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[1],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["facility-key-1"],
+                "source_facility_id": ["10"],
+            }
+        ),
+    )
+    empty_pipeline_segment_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[2],
+        pl.DataFrame(),
+    )
+    empty_zone_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[3],
+        pl.DataFrame(),
+    )
+    flow_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[4],
+        pl.DataFrame(
+            {
+                "connection_point_key": ["wrong-key", "missing-key", "cp-key-1"],
+                "source_system": ["GBB", "GBB", "GBB"],
+                "gas_date": [date(2024, 1, 5), date(2024, 1, 5), date(2024, 1, 5)],
+                "source_facility_id": ["10", "99", "10"],
+                "source_connection_point_id": ["1001", "9999", "1001"],
+                "flow_direction": ["RECEIPT", "RECEIPT", "RECEIPT"],
+                "actual_quantity_tj": [4.0, 2.0, None],
+            }
+        ),
+    )
+    empty_meter_flow_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[5],
+        pl.DataFrame(),
+    )
+    capacity_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[6],
+        pl.DataFrame(
+            {
+                "source_facility_id": ["10"],
+                "flow_direction": ["RECEIPT"],
+                "capacity_quantity_tj": [100.0],
+            }
+        ),
+    )
+    loads = (
+        connection_point_load,
+        facility_load,
+        empty_pipeline_segment_load,
+        empty_zone_load,
+        flow_load,
+        empty_meter_flow_load,
+        capacity_load,
+    )
+
+    metadata = pipeline_connection_metadata_frame(loads)
+    flow_summary = pipeline_connection_flow_summary_frame(loads)
+    gaps = pipeline_connection_relationship_gap_frame(loads)
+    metadata_row = metadata.row(0, named=True)
+    flow_rows = flow_summary.to_dicts()
+    matched_flow_row = next(
+        row
+        for row in flow_rows
+        if (
+            row["source facility id"],
+            row["source connection point id"],
+            row["coverage gap"],
+        )
+        == ("10", "1001", "Unmatched connection_point_key")
+    )
+    direct_flow_row = next(
+        row
+        for row in flow_rows
+        if (
+            row["source facility id"],
+            row["source connection point id"],
+            row["coverage gap"],
+        )
+        == ("10", "1001", "Covered")
+    )
+    missing_flow_row = next(
+        row
+        for row in flow_rows
+        if (row["source facility id"], row["source connection point id"])
+        == ("99", "9999")
+    )
+    gap_rows = {row["relationship"]: row for row in gaps.to_dicts()}
+
+    assert "effective from 2024-01-01" in metadata_row["operational status"]
+    assert "effective to 2024-12-31" in metadata_row["operational status"]
+    assert matched_flow_row["flow rows"] == 1
+    assert matched_flow_row["flow rows with quantity"] == 1
+    assert direct_flow_row["flow rows"] == 1
+    assert direct_flow_row["flow rows with quantity"] == 0
+    assert missing_flow_row["coverage gap"] == "Unmatched connection_point_key"
+    assert gap_rows["Connection Point -> Facility"]["coverage gap"] == "Covered"
+    assert gap_rows["Capacity -> Connection Point"]["coverage gap"] == (
+        "No direct connection_point_key; source-qualified comparison only"
+    )
+    assert gap_rows["Operational meter flow -> Pipeline segment"]["coverage gap"] == (
+        "No source rows loaded"
+    )
+    assert gap_rows["Pipeline segment -> Zone"]["coverage gap"] == (
+        "No source rows loaded"
+    )
+
+
+def test_pipeline_connection_operations_helpers_cover_empty_state_behavior() -> None:
+    unavailable_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[0],
+        None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=5,
+    )
+    loads = (
+        unavailable_load,
+        *(
+            _facility_load(spec, pl.DataFrame(), row_limit=5)
+            for spec in PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[1:]
+        ),
+    )
+
+    assert pipeline_connection_flow_summary_frame(loads).is_empty()
+    assert pipeline_connection_metadata_frame(loads).is_empty()
+    assert pipeline_connection_relationship_gap_frame(loads).is_empty()
+
+    markdown = pipeline_connection_operations_empty_state_markdown(loads)
+    empty_markdown = pipeline_connection_operations_empty_state_markdown(())
+    empty_context_links = render_pipeline_connection_operations_context_links(
+        entries=()
+    )
+
+    assert "No Pipeline and Connection operations rows are available" in markdown
+    assert "`1` reads were unavailable and `6` reads returned no rows" in markdown
+    assert "Bounded preview reads are capped at `5` rows per table" in markdown
+    assert (
+        "No Pipeline and Connection operations tables were requested" in empty_markdown
+    )
+    assert (
+        "No Pipeline, Connection Point, Facility, Flow, Capacity, Hub / Zone, "
+        "map, source coverage, or table explorer entries are registered."
     ) in empty_context_links
 
 

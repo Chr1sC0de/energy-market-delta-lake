@@ -28,6 +28,7 @@ Marimo-Codex research workspace image.
 - [Hub / Zone explainer dashboard](#hub--zone-explainer-dashboard)
 - [Connection Point explainer dashboard](#connection-point-explainer-dashboard)
 - [Flow operations dashboard](#flow-operations-dashboard)
+- [Pipeline and Connection operations dashboard](#pipeline-and-connection-operations-dashboard)
 - [Capacity outlook dashboard](#capacity-outlook-dashboard)
 - [Nomination and demand forecast dashboard](#nomination-and-demand-forecast-dashboard)
 - [Forecast-vs-actual dashboard](#forecast-vs-actual-dashboard)
@@ -526,6 +527,31 @@ operational meter quantities into recent/sample observations. Missing tables,
 unavailable Parquet prefixes, empty reads, and missing columns render designed
 empty states with the checked assets, read policy, and refresh action.
 
+## Pipeline and Connection operations dashboard
+
+[notebooks/pipeline_connection_operations.py](notebooks/pipeline_connection_operations.py)
+is an operational dashboard that links Connection Point, Facility, Flow,
+Capacity, Hub / Zone, GBB map, source coverage, and table explorer context. It
+loads bounded recent samples from
+`silver.gas_model.silver_gas_dim_connection_point`,
+`silver.gas_model.silver_gas_dim_facility`,
+`silver.gas_model.silver_gas_dim_pipeline_segment`,
+`silver.gas_model.silver_gas_dim_zone`,
+`silver.gas_model.silver_gas_fact_connection_point_flow`,
+`silver.gas_model.silver_gas_fact_operational_meter_flow`, and
+`silver.gas_model.silver_gas_fact_capacity_outlook` through the shared gas
+model loader.
+
+The dashboard summarizes Connection Point flow beside available connection and
+pipeline segment metadata, including operational status fields such as
+Connection Point exemption and effective dates, pipeline reverse-flow and
+compressor flags, segment dates, and source update timestamps. Its relationship
+gap view keeps missing conformed identifiers visible, including absent
+`connection_point_key`, unmatched capacity-to-Connection Point comparisons,
+missing `pipeline_segment_key`, and missing pipeline segment `zone_key` values.
+It does not change ETL relationship modeling, conformed identifiers, or
+source-qualified dimensions.
+
 ## Capacity outlook dashboard
 
 [notebooks/capacity_outlook.py](notebooks/capacity_outlook.py) is an
@@ -1014,6 +1040,13 @@ cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/flow_operations.py
 ```
 
+Use the same pattern for the Pipeline and Connection operations dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/pipeline_connection_operations.py
+```
+
 Use the same pattern for the system notices dashboard:
 
 ```bash
@@ -1207,6 +1240,7 @@ prek run -a
   - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/connection_point_explainer.py`
   - `backend-services/marimo/notebooks/flow_operations.py`
+  - `backend-services/marimo/notebooks/pipeline_connection_operations.py`
   - `backend-services/marimo/notebooks/nomination_demand_forecast.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`

@@ -347,6 +347,34 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         "chunk-gbb-guide-flow-report",
     )
 
+    pipeline_connection = registry_entry_by_concept_id(
+        "pipeline-connection-operations",
+        entries,
+    )
+    assert pipeline_connection is not None
+    assert pipeline_connection.status is DashboardStatus.AVAILABLE
+    assert pipeline_connection.notebook_name == "pipeline_connection_operations"
+    assert pipeline_connection.notebook_route == (
+        "/marimo/pipeline_connection_operations/"
+    )
+    assert pipeline_connection.backing_assets == (
+        "silver.gas_model.silver_gas_dim_connection_point",
+        "silver.gas_model.silver_gas_dim_facility",
+        "silver.gas_model.silver_gas_dim_pipeline_segment",
+        "silver.gas_model.silver_gas_dim_zone",
+        "silver.gas_model.silver_gas_fact_connection_point_flow",
+        "silver.gas_model.silver_gas_fact_operational_meter_flow",
+        "silver.gas_model.silver_gas_fact_capacity_outlook",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/connection-point.md"
+        in pipeline_connection.generated_gold_paths
+    )
+    assert (
+        "chunk-gbb-guide-connection-point-identifiers"
+        in pipeline_connection.source_chunk_ids
+    )
+
     flow = registry_entry_by_concept_id("flow-context", entries)
     assert flow is not None
     assert flow.status is DashboardStatus.AVAILABLE
