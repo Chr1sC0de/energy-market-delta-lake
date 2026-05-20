@@ -115,6 +115,37 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         in settlement.generated_gold_paths
     )
 
+    sttm_market_settlement = registry_entry_by_concept_id(
+        "sttm-market-settlement",
+        entries,
+    )
+    assert sttm_market_settlement is not None
+    assert sttm_market_settlement.status is DashboardStatus.AVAILABLE
+    assert sttm_market_settlement.notebook_name == "gas_sttm_market_settlement"
+    assert (
+        sttm_market_settlement.notebook_route == "/marimo/gas_sttm_market_settlement/"
+    )
+    assert sttm_market_settlement.backing_assets == (
+        "silver.gas_model.silver_gas_fact_sttm_market_settlement",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/settlement.md"
+        in sttm_market_settlement.generated_gold_paths
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md"
+        in sttm_market_settlement.generated_gold_paths
+    )
+    assert sttm_market_settlement.source_chunk_ids == (
+        "chunk-gbb-guide-gas-day",
+        "chunk-gbb-guide-nodes-facilities",
+        "chunk-sttm-procedures-definitions",
+        "chunk-sttm-procedures-settlement-terms",
+        "chunk-sttm-procedures-settlement-amounts",
+        "chunk-sttm-procedures-shortfall-settlement",
+        "chunk-sttm-procedures-capacity-settlement",
+    )
+
     readiness = registry_entry_by_concept_id("data-readiness-overview", entries)
     assert readiness is not None
     assert readiness.status is DashboardStatus.AVAILABLE

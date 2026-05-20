@@ -34,6 +34,7 @@ _RECENT_GAS_DASHBOARD_IDS = frozenset(
         "gas-market-prices",
         "gas-schedule-runs",
         "settlement-context",
+        "sttm-market-settlement",
         "gas-customer-transfer-activity",
         "facility-flow-storage",
         "forecast-vs-actual",

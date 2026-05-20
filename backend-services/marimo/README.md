@@ -775,6 +775,25 @@ data, unavailable Parquet prefixes, and filter combinations with no matches
 render dashboard empty states with the checked table, read policy, and refresh
 action.
 
+## STTM market settlement dashboard
+
+[notebooks/gas_sttm_market_settlement.py](notebooks/gas_sttm_market_settlement.py)
+is an analytical dashboard over
+`silver.gas_model.silver_gas_fact_sttm_market_settlement`. It uses the shared
+bounded gas model loader and session cache from
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py), then
+filters the loaded bounded preview by Gas Day, settlement period,
+`settlement_stage`, and `settlement_component`.
+
+The dashboard shows loaded STTM market settlement KPIs, settlement run, stage,
+component, Hub / Zone, Facility, Gas Day, settlement-period, quantity, and
+amount summaries, source coverage by source system and source table, bounded
+row previews, and Settlement, Allocation, Hub / Zone, Facility, Gas Day, and
+table explorer context links from the Marimo registry. Missing STTM settlement
+data, unavailable Parquet prefixes, and filter combinations with no matches
+render dashboard empty states with the checked table, read policy, and refresh
+action.
+
 ## Customer transfer and retail activity dashboard
 
 [notebooks/gas_customer_transfer_activity.py](notebooks/gas_customer_transfer_activity.py)
@@ -995,6 +1014,7 @@ Caddy and choose an available card such as `data_readiness_overview`,
 `source_table_lineage_explorer`, `sample_energy_market`, `gas_market_prices`,
 `gas_schedule_runs`,
 `gas_scheduled_quantities`, `system_notices`, `gas_settlement_activity`,
+`gas_sttm_market_settlement`,
 `gas_customer_transfer_activity`, `facility_flow_storage`,
 `forecast_vs_actual`, `gas_bid_offer_stack`, `gas_sttm_contingency_gas`,
 `gas_quality_composition`, `facility_explainer`, `participant_explainer`,
@@ -1189,6 +1209,13 @@ cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gas_settlement_activity.py
 ```
 
+Use the same pattern for the STTM market settlement dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gas_sttm_market_settlement.py
+```
+
 Use the same pattern for the customer transfer and retail activity dashboard:
 
 ```bash
@@ -1373,6 +1400,7 @@ prek run -a
   - `backend-services/marimo/notebooks/pipeline_connection_operations.py`
   - `backend-services/marimo/notebooks/nomination_demand_forecast.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
+  - `backend-services/marimo/notebooks/gas_sttm_market_settlement.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/facility_flow_storage.py`
   - `backend-services/marimo/notebooks/forecast_vs_actual.py`

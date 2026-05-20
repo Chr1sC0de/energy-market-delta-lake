@@ -132,6 +132,12 @@ from marimoserver.gas_dashboard import (
     SETTLEMENT_ACTIVITY_SOURCE_SYSTEM_FILTER_ALL,
     SETTLEMENT_ACTIVITY_TABLE_NAME,
     SETTLEMENT_ACTIVITY_TABLE_SPEC,
+    STTM_MARKET_SETTLEMENT_COMPONENT_FILTER_ALL,
+    STTM_MARKET_SETTLEMENT_GAS_DATE_FILTER_ALL,
+    STTM_MARKET_SETTLEMENT_PERIOD_FILTER_ALL,
+    STTM_MARKET_SETTLEMENT_STAGE_FILTER_ALL,
+    STTM_MARKET_SETTLEMENT_TABLE_NAME,
+    STTM_MARKET_SETTLEMENT_TABLE_SPEC,
     SOURCE_COVERAGE_STATE_COVERED,
     SOURCE_COVERAGE_STATE_EMPTY,
     SOURCE_COVERAGE_STATE_GAP,
@@ -180,6 +186,7 @@ from marimoserver.gas_dashboard import (
     cached_load_schedule_run_table,
     cached_load_scheduled_quantity_table,
     cached_load_settlement_activity_table,
+    cached_load_sttm_market_settlement_table,
     cached_load_source_coverage_tables,
     cached_load_system_notice_table,
     customer_transfer_daily_frame,
@@ -299,6 +306,7 @@ from marimoserver.gas_dashboard import (
     load_schedule_run_table,
     load_scheduled_quantity_table,
     load_settlement_activity_table,
+    load_sttm_market_settlement_table,
     load_system_notice_table,
     market_price_bounded_scope_markdown,
     market_price_empty_state_markdown,
@@ -374,6 +382,7 @@ from marimoserver.gas_dashboard import (
     render_scheduled_quantity_context_links,
     render_settlement_activity_context_links,
     render_sttm_contingency_gas_context_links,
+    render_sttm_market_settlement_context_links,
     render_source_coverage_matrix_html,
     scada_pressure_observation_frame,
     schedule_run_empty_state_markdown,
@@ -403,6 +412,15 @@ from marimoserver.gas_dashboard import (
     settlement_activity_source_coverage_frame,
     settlement_activity_source_system_options,
     settlement_activity_summary_frame,
+    sttm_market_settlement_component_options,
+    sttm_market_settlement_empty_state_markdown,
+    sttm_market_settlement_gas_date_options,
+    sttm_market_settlement_kpi_frame,
+    sttm_market_settlement_observation_frame,
+    sttm_market_settlement_period_options,
+    sttm_market_settlement_source_coverage_frame,
+    sttm_market_settlement_stage_options,
+    sttm_market_settlement_summary_frame,
     source_coverage_empty_state_markdown,
     source_coverage_kpi_frame,
     source_coverage_matrix_frame,
@@ -653,6 +671,13 @@ def test_dashboard_read_behavior_frame_renders_per_dashboard_policy() -> None:
     )
     assert rows["STTM Contingency Gas"]["view"] == "Recent-only bounded view"
     assert rows["STTM Contingency Gas"]["row policy"] == (
+        "Bounded preview: 42 rows max"
+    )
+    assert rows["STTM Market Settlement"]["read behavior"] == (
+        "Focused gas_model dashboard table read"
+    )
+    assert rows["STTM Market Settlement"]["view"] == "Recent-only bounded view"
+    assert rows["STTM Market Settlement"]["row policy"] == (
         "Bounded preview: 42 rows max"
     )
     assert rows["Source Coverage Matrix"]["view"] == "Forced bounded sample"
@@ -2595,6 +2620,464 @@ def test_settlement_activity_helpers_cover_missing_data_and_filter_empty_state()
     assert "No Settlement, Allocation, Participant, Gas Day, or Schedule" in (
         empty_context_links
     )
+    assert "Unavailable dashboard" in unmounted_context_links
+
+
+def test_sttm_market_settlement_table_loader_uses_bounded_recent_view() -> None:
+    captured: list[int | None] = []
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "12",
+        }
+    )
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        captured.append(row_limit)
+        assert uri == (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_sttm_market_settlement"
+        )
+        assert storage_options == config.storage_options()
+        return pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 1), date(2024, 1, 3)],
+                "settlement_component": ["older", "newer"],
+            }
+        )
+
+    load = load_sttm_market_settlement_table(config, reader=reader)
+
+    assert captured == [12]
+    assert load.spec == STTM_MARKET_SETTLEMENT_TABLE_SPEC
+    assert load.row_limit == 12
+    assert load.dataframe is not None
+    assert load.dataframe["settlement_component"].to_list() == ["newer", "older"]
+
+
+def test_cached_sttm_market_settlement_table_loader_reuses_session_cache() -> None:
+    calls: list[int] = []
+    config = _dashboard_config()
+    cache: GasModelSessionCache = {}
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        calls.append(len(calls) + 1)
+        return pl.DataFrame({"settlement_component": [f"component-{calls[-1]}"]})
+
+    first_load = cached_load_sttm_market_settlement_table(
+        config,
+        cache,
+        reader=reader,
+    )
+    cached_load = cached_load_sttm_market_settlement_table(
+        config,
+        cache,
+        reader=reader,
+    )
+    refreshed_load = cached_load_sttm_market_settlement_table(
+        config,
+        cache,
+        reader=reader,
+        refresh_token=1,
+    )
+
+    assert calls == [1, 2]
+    assert not first_load.cache_hit
+    assert cached_load.cache_hit
+    assert not refreshed_load.cache_hit
+    assert cached_load.dataframe is not None
+    assert cached_load.dataframe["settlement_component"].to_list() == ["component-1"]
+    assert refreshed_load.dataframe is not None
+    assert refreshed_load.dataframe["settlement_component"].to_list() == ["component-2"]
+
+
+def test_sttm_market_settlement_summaries_filters_and_context_links() -> None:
+    int662_table = "silver.sttm.silver_int662_v1_provisional_deviation_rpt_1"
+    int678_table = "silver.sttm.silver_int678_v1_net_market_balance_daily_amounts_rpt_1"
+    int679_table = (
+        "silver.sttm.silver_int679_v1_net_market_balance_settlement_amounts_rpt_1"
+    )
+    period_label = "2024-01-01 to 2024-01-31"
+    load = _sttm_market_settlement_load(
+        pl.DataFrame(
+            {
+                "gas_date": ["2024-01-03", "2024-01-03", None, None],
+                "period_start_date": [None, None, "2024-01-01", "2024-01-01"],
+                "period_end_date": [None, None, "2024-01-31", "2024-01-31"],
+                "source_system": ["STTM", "STTM", "STTM", "STTM"],
+                "source_table": [
+                    int662_table,
+                    int662_table,
+                    int678_table,
+                    int679_table,
+                ],
+                "source_report_id": ["INT662", "INT662", "INT678", "INT679"],
+                "settlement_run_id": [None, None, None, "SET-1"],
+                "settlement_stage": [
+                    "provisional_deviation",
+                    "provisional_deviation",
+                    "nmb_daily_amounts",
+                    "nmb_settlement_amounts",
+                ],
+                "settlement_component": [
+                    "total_deviation_qty",
+                    "deviation_charge",
+                    "total_withdrawals",
+                    "net_market_balance",
+                ],
+                "source_hub_id": ["SYD", "SYD", "SYD", "BNE"],
+                "source_hub_name": ["Sydney", "Sydney", "Sydney", "Brisbane"],
+                "source_facility_id": ["FAC-1", "FAC-1", None, None],
+                "facility_name": ["Pipeline A", "Pipeline A", None, None],
+                "quantity_gj": [10.0, None, 50.0, None],
+                "amount": [None, 25.0, None, 100.0],
+                "source_last_updated_timestamp": [
+                    "2024-01-03 01:00:00",
+                    "2024-01-03 01:05:00",
+                    "2024-02-01 01:00:00",
+                    "2024-02-01 02:00:00",
+                ],
+                "source_surrogate_key": ["src-1", "src-2", "src-3", "src-4"],
+                "source_file": ["int662.csv", "int662.csv", "int678.csv", "int679.csv"],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 3, 2),
+                    datetime(2024, 1, 3, 2, 5),
+                    datetime(2024, 2, 1, 2),
+                    datetime(2024, 2, 1, 3),
+                ],
+            }
+        )
+    )
+
+    kpis = sttm_market_settlement_kpi_frame(load)
+    settlement_summary = sttm_market_settlement_summary_frame(load)
+    source_coverage = sttm_market_settlement_source_coverage_frame(load)
+    observations = sttm_market_settlement_observation_frame(
+        load,
+        STTM_MARKET_SETTLEMENT_GAS_DATE_FILTER_ALL,
+        period_label,
+        "nmb_settlement_amounts",
+        "net_market_balance",
+    )
+    daily_kpis = sttm_market_settlement_kpi_frame(
+        load,
+        "2024-01-03",
+        STTM_MARKET_SETTLEMENT_PERIOD_FILTER_ALL,
+        "provisional_deviation",
+        STTM_MARKET_SETTLEMENT_COMPONENT_FILTER_ALL,
+    )
+    context_links = render_sttm_market_settlement_context_links()
+
+    assert sttm_market_settlement_gas_date_options(load) == (
+        STTM_MARKET_SETTLEMENT_GAS_DATE_FILTER_ALL,
+        "2024-01-03",
+    )
+    assert sttm_market_settlement_period_options(load) == (
+        STTM_MARKET_SETTLEMENT_PERIOD_FILTER_ALL,
+        period_label,
+    )
+    assert sttm_market_settlement_stage_options(load) == (
+        STTM_MARKET_SETTLEMENT_STAGE_FILTER_ALL,
+        "nmb_daily_amounts",
+        "nmb_settlement_amounts",
+        "provisional_deviation",
+    )
+    assert sttm_market_settlement_component_options(load) == (
+        STTM_MARKET_SETTLEMENT_COMPONENT_FILTER_ALL,
+        "deviation_charge",
+        "net_market_balance",
+        "total_deviation_qty",
+        "total_withdrawals",
+    )
+    assert kpis.select("metric", "value", "detail").to_dict(as_series=False) == {
+        "metric": [
+            "Loaded STTM market settlement rows",
+            "Settlement runs",
+            "Settlement stages",
+            "Components",
+            "Hubs",
+            "Facilities",
+            "Gas Days",
+            "Settlement periods",
+            "Quantity",
+            "Quantity range",
+            "Amount",
+            "Amount range",
+            "Latest Gas Day",
+            "Latest settlement period end",
+            "Accepted source identifiers",
+        ],
+        "value": [
+            "4",
+            "1",
+            "3",
+            "4",
+            "2",
+            "1",
+            "1",
+            "1",
+            "60 GJ",
+            "10 to 50",
+            "125",
+            "25 to 100",
+            "2024-01-03",
+            "2024-01-31",
+            "4",
+        ],
+        "detail": [
+            "Full table scan",
+            "Distinct settlement_run_id values represented",
+            "Distinct settlement_stage values represented",
+            "Distinct settlement_component values represented",
+            "Distinct source_hub_id values represented",
+            "Distinct source_facility_id values represented",
+            "Distinct gas_date values represented",
+            "Distinct period_start_date to period_end_date spans",
+            "2 populated quantity_gj rows",
+            "Minimum and maximum quantity_gj in the current view",
+            "2 populated amount rows",
+            "Minimum and maximum amount in the current view",
+            "Maximum gas_date in the loaded bounded rows",
+            "Maximum period_end_date in the loaded bounded rows",
+            "Distinct source_surrogate_key values represented",
+        ],
+    }
+    assert daily_kpis.row(0, named=True) == {
+        "metric": "Loaded STTM market settlement rows",
+        "value": "2",
+        "detail": "Full table scan",
+    }
+    assert observations.select(
+        "gas date",
+        "period start",
+        "period end",
+        "settlement run",
+        "settlement stage",
+        "component",
+        "hub",
+        "facility",
+        "quantity_gj",
+        "amount",
+        "source report",
+        "accepted source identifier",
+    ).to_dict(as_series=False) == {
+        "gas date": [None],
+        "period start": [date(2024, 1, 1)],
+        "period end": [date(2024, 1, 31)],
+        "settlement run": ["SET-1"],
+        "settlement stage": ["nmb_settlement_amounts"],
+        "component": ["net_market_balance"],
+        "hub": ["BNE"],
+        "facility": [None],
+        "quantity_gj": [None],
+        "amount": [100.0],
+        "source report": ["INT679"],
+        "accepted source identifier": ["src-4"],
+    }
+    assert settlement_summary.sort(["source report", "component"]).select(
+        "settlement run",
+        "settlement stage",
+        "component",
+        "hub",
+        "facility",
+        "source report",
+        "period start",
+        "period end",
+        "rows",
+        "gas days",
+        "quantity rows",
+        "total quantity gj",
+        "amount rows",
+        "total amount",
+    ).to_dict(as_series=False) == {
+        "settlement run": [None, None, None, "SET-1"],
+        "settlement stage": [
+            "provisional_deviation",
+            "provisional_deviation",
+            "nmb_daily_amounts",
+            "nmb_settlement_amounts",
+        ],
+        "component": [
+            "deviation_charge",
+            "total_deviation_qty",
+            "total_withdrawals",
+            "net_market_balance",
+        ],
+        "hub": ["SYD", "SYD", "SYD", "BNE"],
+        "facility": ["FAC-1", "FAC-1", None, None],
+        "source report": ["INT662", "INT662", "INT678", "INT679"],
+        "period start": [None, None, date(2024, 1, 1), date(2024, 1, 1)],
+        "period end": [None, None, date(2024, 1, 31), date(2024, 1, 31)],
+        "rows": [1, 1, 1, 1],
+        "gas days": [1, 1, 0, 0],
+        "quantity rows": [0, 1, 1, 0],
+        "total quantity gj": [0.0, 10.0, 50.0, 0.0],
+        "amount rows": [1, 0, 0, 1],
+        "total amount": [25.0, 0.0, 0.0, 100.0],
+    }
+    assert source_coverage.select(
+        "source system",
+        "source table",
+        "source report",
+        "rows",
+        "settlement runs",
+        "settlement stages",
+        "components",
+        "hubs",
+        "facilities",
+        "gas days",
+        "periods",
+        "quantity rows",
+        "amount rows",
+        "source identifiers",
+    ).to_dict(as_series=False) == {
+        "source system": ["STTM", "STTM", "STTM"],
+        "source table": [int662_table, int678_table, int679_table],
+        "source report": ["INT662", "INT678", "INT679"],
+        "rows": [2, 1, 1],
+        "settlement runs": [0, 0, 1],
+        "settlement stages": [1, 1, 1],
+        "components": [2, 1, 1],
+        "hubs": [1, 1, 1],
+        "facilities": [1, 0, 0],
+        "gas days": [1, 0, 0],
+        "periods": [0, 1, 1],
+        "quantity rows": [1, 1, 0],
+        "amount rows": [1, 0, 1],
+        "source identifiers": [2, 1, 1],
+    }
+    assert 'href="/marimo/gas_sttm_market_settlement/"' in context_links
+    assert "Settlement Context" in context_links
+    assert "Allocation Context" in context_links
+    assert "Hub / Zone Context" in context_links
+    assert "Facility Context" in context_links
+    assert "Gas Day Context" in context_links
+
+
+def test_sttm_market_settlement_helpers_cover_missing_data_and_filter_empty_state() -> (
+    None
+):
+    empty_load = _sttm_market_settlement_load(pl.DataFrame(), row_limit=5)
+    populated_load = _sttm_market_settlement_load(
+        pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 3)],
+                "source_system": ["STTM"],
+                "source_table": ["silver.sttm.market_settlement"],
+                "source_report_id": ["INT662"],
+                "settlement_stage": ["provisional_deviation"],
+                "settlement_component": ["total_deviation_qty"],
+                "source_hub_id": ["SYD"],
+                "quantity_gj": [10.0],
+            }
+        )
+    )
+    missing_date_load = _sttm_market_settlement_load(
+        pl.DataFrame(
+            {
+                "period_start_date": [date(2024, 1, 1)],
+                "period_end_date": [date(2024, 1, 31)],
+                "source_system": ["STTM"],
+                "settlement_stage": ["nmb_settlement_amounts"],
+                "settlement_component": ["net_market_balance"],
+                "source_hub_id": ["SYD"],
+                "amount": [100.0],
+            }
+        )
+    )
+    no_measure_load = _sttm_market_settlement_load(
+        pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 3)],
+                "source_system": ["STTM"],
+                "settlement_stage": ["provisional_deviation"],
+                "settlement_component": ["total_deviation_qty"],
+                "source_hub_id": ["SYD"],
+            }
+        )
+    )
+    error_load = GasTableLoad(
+        spec=STTM_MARKET_SETTLEMENT_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_sttm_market_settlement",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=5,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+    assert sttm_market_settlement_kpi_frame(empty_load).is_empty()
+    assert sttm_market_settlement_summary_frame(empty_load).is_empty()
+    assert sttm_market_settlement_source_coverage_frame(empty_load).is_empty()
+    assert sttm_market_settlement_observation_frame(empty_load).is_empty()
+    assert sttm_market_settlement_gas_date_options(empty_load) == (
+        STTM_MARKET_SETTLEMENT_GAS_DATE_FILTER_ALL,
+    )
+    assert sttm_market_settlement_period_options(empty_load) == (
+        STTM_MARKET_SETTLEMENT_PERIOD_FILTER_ALL,
+    )
+    assert sttm_market_settlement_stage_options(empty_load) == (
+        STTM_MARKET_SETTLEMENT_STAGE_FILTER_ALL,
+    )
+    assert sttm_market_settlement_component_options(empty_load) == (
+        STTM_MARKET_SETTLEMENT_COMPONENT_FILTER_ALL,
+    )
+    assert sttm_market_settlement_kpi_frame(
+        populated_load,
+        settlement_stage_filter="missing-stage",
+    ).is_empty()
+    assert sttm_market_settlement_kpi_frame(missing_date_load).row(
+        12,
+        named=True,
+    ) == {
+        "metric": "Latest Gas Day",
+        "value": "unknown",
+        "detail": "Maximum gas_date in the loaded bounded rows",
+    }
+    assert sttm_market_settlement_kpi_frame(no_measure_load).row(8, named=True) == {
+        "metric": "Quantity",
+        "value": "unknown",
+        "detail": "0 populated quantity_gj rows",
+    }
+
+    empty_markdown = sttm_market_settlement_empty_state_markdown(empty_load)
+    error_markdown = sttm_market_settlement_empty_state_markdown(error_load)
+    filtered_markdown = sttm_market_settlement_empty_state_markdown(populated_load)
+    missing_load_markdown = sttm_market_settlement_empty_state_markdown(None)
+    empty_context_links = render_sttm_market_settlement_context_links(entries=())
+    unmounted_entry = DashboardRegistryEntry(
+        concept_id="sttm-market-settlement",
+        title="Unmounted STTM Market Settlement",
+        description="Available entry without a mounted notebook route.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.silver_gas_fact_sttm_market_settlement",),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+    unmounted_context_links = render_sttm_market_settlement_context_links(
+        entries=(unmounted_entry,)
+    )
+
+    assert "No STTM market settlement data is available" in empty_markdown
+    assert "silver.gas_model.silver_gas_fact_sttm_market_settlement" in (empty_markdown)
+    assert "Bounded preview reads are capped at `5` rows per table" in empty_markdown
+    assert "FileNotFoundError: no parquet files found" in error_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert (
+        "did not receive an STTM market settlement load result" in missing_load_markdown
+    )
+    assert "No STTM market settlement, Settlement, Allocation" in empty_context_links
     assert "Unavailable dashboard" in unmounted_context_links
 
 
@@ -12036,6 +12519,22 @@ def _settlement_activity_load(
     return GasTableLoad(
         spec=SETTLEMENT_ACTIVITY_TABLE_SPEC,
         uri=f"s3://bucket/silver/gas_model/{SETTLEMENT_ACTIVITY_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _sttm_market_settlement_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=STTM_MARKET_SETTLEMENT_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{STTM_MARKET_SETTLEMENT_TABLE_NAME}",
         dataframe=dataframe,
         error=None,
         row_limit=row_limit,

@@ -423,6 +423,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_sttm_allocation_limit",
             "silver.gas_model.silver_gas_fact_sttm_default_allocation_notice",
             "silver.gas_model.silver_gas_fact_settlement_activity",
+            "silver.gas_model.silver_gas_fact_sttm_market_settlement",
             "silver.gas_model.silver_gas_fact_sttm_mos_stack",
             "silver.gas_model.silver_gas_fact_system_notice",
             "silver.gas_model.silver_gas_fact_gas_quality",
@@ -474,6 +475,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_sttm_allocation_limit",
             "silver.gas_model.silver_gas_fact_sttm_default_allocation_notice",
             "silver.gas_model.silver_gas_fact_settlement_activity",
+            "silver.gas_model.silver_gas_fact_sttm_market_settlement",
             "silver.gas_model.silver_gas_fact_sttm_mos_stack",
             "silver.gas_model.silver_gas_fact_system_notice",
             "silver.gas_model.silver_gas_fact_gas_quality",
@@ -1236,6 +1238,37 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "chunk-sttm-procedures-settlement-amounts",
             "chunk-sttm-procedures-shortfall-settlement",
             "chunk-dwgm-settlement-purpose",
+        ),
+    },
+    {
+        "concept_id": "sttm-market-settlement",
+        "title": "STTM Market Settlement",
+        "description": (
+            "Available analytical dashboard for STTM market settlement rows, "
+            "settlement runs, settlement stages, components, Hub / Zone and "
+            "Facility identifiers, Gas Day and settlement-period filters, "
+            "quantities, amounts, and source coverage from the curated STTM "
+            "market settlement fact."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "gas_sttm_market_settlement",
+        "backing_assets": ("silver.gas_model.silver_gas_fact_sttm_market_settlement",),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/settlement.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/allocation.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md",
+        ),
+        "source_chunk_ids": (
+            "chunk-gbb-guide-gas-day",
+            "chunk-gbb-guide-nodes-facilities",
+            "chunk-sttm-procedures-definitions",
+            "chunk-sttm-procedures-settlement-terms",
+            "chunk-sttm-procedures-settlement-amounts",
+            "chunk-sttm-procedures-shortfall-settlement",
+            "chunk-sttm-procedures-capacity-settlement",
         ),
     },
     {
