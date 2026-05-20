@@ -177,6 +177,16 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert DashboardAudience.ANALYST in concept_asset.audiences
     assert DashboardAudience.DATA_ENGINEER in concept_asset.audiences
 
+    citation_chain = registry_entry_by_concept_id("citation-chain-explorer", entries)
+    assert citation_chain is not None
+    assert citation_chain.status is DashboardStatus.AVAILABLE
+    assert citation_chain.notebook_name == "citation_chain_explorer"
+    assert citation_chain.notebook_route == "/marimo/citation_chain_explorer/"
+    assert citation_chain.backing_assets == ()
+    assert citation_chain.generated_gold_paths == (
+        "tools/gas-market-knowledge-base/generated/gold/README.md",
+    )
+
     notices = registry_entry_by_concept_id("gas-system-notices", entries)
     assert notices is not None
     assert notices.status is DashboardStatus.AVAILABLE
@@ -282,8 +292,15 @@ def test_dashboard_registry_payload_includes_required_fields() -> None:
         "generated_gold_paths",
         "source_chunks",
         "source_chunk_ids",
+        "silver_chunk_paths",
+        "source_hashes",
     }
     assert required_fields <= set(entries[0])
+    assert {
+        "chunk_id",
+        "silver_chunk_path",
+        "source_hash",
+    } <= set(entries[0]["source_chunks"][0])
 
 
 def test_dashboard_registry_covers_planned_and_available_status() -> None:
@@ -311,9 +328,21 @@ def test_dashboard_registry_keeps_gold_context_as_metadata_paths() -> None:
         in capacity.generated_gold_paths
     )
     assert "chunk-gbb-procedures-capacity-outlooks" in capacity.source_chunk_ids
+    assert (
+        "tools/gas-market-knowledge-base/generated/silver/chunks/gbb/"
+        "bb-procedures/sha256-f8b62c200c0e087fd69e1634ee041832c6f7cdfbf26800b2a572a27c02f35e35/"
+        "chunk-gbb-procedures-capacity-outlooks.md" in capacity.silver_chunk_paths
+    )
+    assert (
+        "f8b62c200c0e087fd69e1634ee041832c6f7cdfbf26800b2a572a27c02f35e35"
+        in capacity.source_hashes
+    )
 
     for generated_path in capacity.generated_gold_paths:
         assert (REPO_ROOT / generated_path).is_file()
+
+    for silver_chunk_path in capacity.silver_chunk_paths:
+        assert (REPO_ROOT / silver_chunk_path).is_file()
 
 
 def test_dashboard_registry_parsing_rejects_missing_required_field() -> None:
@@ -443,6 +472,52 @@ def test_dashboard_registry_allows_index_gold_path_without_source_chunks() -> No
     assert index is not None
     assert index.generated_gold_paths == records[0]["generated_gold_paths"]
     assert index.source_chunk_ids == ()
+
+
+def test_dashboard_registry_parses_structured_source_chunks() -> None:
+    records = _registry_records()
+    records[0]["concept_id"] = "structured-context"
+    records[0]["source_chunks"] = (
+        {
+            "chunk_id": "chunk-structured",
+            "silver_chunk_path": (
+                "tools/gas-market-knowledge-base/generated/silver/chunks/"
+                "structured/chunk-structured.md"
+            ),
+            "source_hash": "structured-source-hash",
+        },
+    )
+
+    entries = load_dashboard_registry(records)
+    structured = registry_entry_by_concept_id("structured-context", entries)
+
+    assert structured is not None
+    assert structured.source_chunk_ids == ("chunk-structured",)
+    assert structured.silver_chunk_paths == (
+        "tools/gas-market-knowledge-base/generated/silver/chunks/"
+        "structured/chunk-structured.md",
+    )
+    assert structured.source_hashes == ("structured-source-hash",)
+    assert structured.source_chunks[0].complete
+
+
+def test_dashboard_registry_rejects_non_tuple_source_chunks() -> None:
+    record = dict(DASHBOARD_REGISTRY_RECORDS[0])
+    record["source_chunks"] = []
+
+    with pytest.raises(DashboardRegistryError, match="source_chunks must be a tuple"):
+        load_dashboard_registry([record])
+
+
+def test_dashboard_registry_rejects_non_mapping_source_chunk_records() -> None:
+    record = dict(DASHBOARD_REGISTRY_RECORDS[0])
+    record["source_chunks"] = ("chunk-only",)
+
+    with pytest.raises(
+        DashboardRegistryError,
+        match="source_chunks must contain mapping records",
+    ):
+        load_dashboard_registry([record])
 
 
 def test_dashboard_registry_rejects_empty_required_tuple() -> None:

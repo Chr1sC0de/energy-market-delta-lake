@@ -9,6 +9,10 @@ import polars as pl
 import pytest
 
 from marimoserver.bounded_read_diagnostics import dashboard_read_behavior_frame
+from marimoserver.citation_chain_explorer import (
+    build_citation_chain_explorer,
+    render_citation_chain_explorer_html,
+)
 from marimoserver.concept_asset_explorer import (
     build_concept_asset_explorer,
     concept_mapping_by_title,
@@ -399,6 +403,10 @@ def test_dashboard_read_behavior_frame_renders_per_dashboard_policy() -> None:
         "Registry metadata browser"
     )
     assert rows["Concept-to-Asset Explorer"]["row policy"] == "No table-row reads"
+    assert rows["Citation-Chain Explorer"]["read behavior"] == (
+        "Registry metadata browser"
+    )
+    assert rows["Citation-Chain Explorer"]["row policy"] == "No table-row reads"
     assert rows["S3 Bucket Health"]["view"] == "Object listing"
     assert rows["S3 Bucket Health"]["row policy"] == "10,000 objects per bucket"
     assert rows["Gas Model Table Explorer"]["row policy"] == (
@@ -473,6 +481,84 @@ def test_dashboard_read_behavior_frame_handles_unknown_available_dashboard() -> 
             "side effects": "Read-only",
         }
     ]
+
+
+def test_citation_chain_explorer_renders_complete_records() -> None:
+    complete_entry = DashboardRegistryEntry(
+        concept_id="complete-citation-context",
+        title="Complete Citation Context",
+        description="Concept with full citation chain metadata.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name="complete_citation_context",
+        backing_assets=("silver.gas_model.silver_gas_fact_market_price",),
+        generated_gold_paths=(
+            "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md",
+        ),
+        source_chunks=(
+            SourceChunkReference(
+                chunk_id="chunk-complete",
+                silver_chunk_path=(
+                    "tools/gas-market-knowledge-base/generated/silver/chunks/"
+                    "sttm/procedure/sha256-source/chunk-complete.md"
+                ),
+                source_hash="source-hash",
+            ),
+        ),
+    )
+
+    explorer = build_citation_chain_explorer((complete_entry,))
+    html = render_citation_chain_explorer_html(explorer)
+
+    assert len(explorer.complete_concepts) == 1
+    assert explorer.coverage_gap_count == 0
+    assert 'data-coverage-state="complete"' in html
+    assert "chunk-complete" in html
+    assert "chunk-complete.md" in html
+    assert "source-hash" in html
+
+
+def test_citation_chain_explorer_uses_registry_metadata_by_default() -> None:
+    explorer = build_citation_chain_explorer()
+    html = render_citation_chain_explorer_html()
+    concepts_by_id = {concept.concept_id: concept for concept in explorer.concepts}
+
+    assert "citation-chain-explorer" in concepts_by_id
+    assert concepts_by_id["gas-day-context"].complete
+    assert concepts_by_id["citation-chain-explorer"].metadata_gaps == (
+        "No source chunk IDs recorded in the Marimo registry.",
+    )
+    assert 'data-concept-id="gas-day-context"' in html
+    assert "chunk-gbb-guide-gas-day" in html
+    assert "chunk-gbb-guide-gas-day.md" in html
+    assert "9f7cf6f33b646de55e0593af8612953bcaa59665fddf019fcdbf02da31720410" in html
+    assert "No source chunks recorded in the Marimo registry." in html
+
+
+def test_citation_chain_explorer_renders_incomplete_records_as_coverage_gaps() -> None:
+    incomplete_entry = DashboardRegistryEntry(
+        concept_id="incomplete-citation-context",
+        title="Incomplete Citation Context",
+        description="Concept missing generated-gold and source hash metadata.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.PLANNED,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.silver_gas_fact_market_price",),
+        generated_gold_paths=(),
+        source_chunks=(SourceChunkReference(chunk_id="chunk-incomplete"),),
+    )
+
+    explorer = build_citation_chain_explorer((incomplete_entry,))
+    html = render_citation_chain_explorer_html(explorer)
+
+    assert explorer.complete_concepts == ()
+    assert explorer.coverage_gap_count == 3
+    assert 'data-coverage-state="gap"' in html
+    assert "No generated-gold path recorded in the Marimo registry." in html
+    assert "No silver chunk path recorded for `chunk-incomplete`." in html
+    assert "No source hash recorded for `chunk-incomplete`." in html
+    assert "No silver chunk path recorded" in html
+    assert "No source hash recorded" in html
 
 
 def test_gas_model_specs_cover_required_dashboard_sections() -> None:
@@ -5958,9 +6044,13 @@ def test_render_dashboard_context_panel_covers_complete_concept() -> None:
     assert "Gas Market Overview" in html
     assert "generated-gold paths" in html
     assert "source chunk IDs" in html
+    assert "silver chunk paths" in html
+    assert "source hashes" in html
     assert "backing assets" in html
     assert "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md" in html
     assert "chunk-gbb-guide-gas-day" in html
+    assert "chunk-gbb-guide-gas-day.md" in html
+    assert "9f7cf6f33b646de55e0593af8612953bcaa59665fddf019fcdbf02da31720410" in html
     assert "silver.gas_model.silver_gas_fact_market_price" in html
     assert "Gas Day Context" in html
     assert "No related concepts share generated-gold paths" in no_related_html
@@ -5984,6 +6074,8 @@ def test_render_dashboard_context_panel_handles_missing_optional_fields() -> Non
     assert "Minimal Context" in html
     assert "No generated-gold paths recorded in the Marimo registry." in html
     assert "No source chunk IDs recorded in the Marimo registry." in html
+    assert "No silver chunk paths recorded in the Marimo registry." in html
+    assert "No source hashes recorded in the Marimo registry." in html
     assert "No notebook route recorded" in html
     assert "silver.gas_model.minimal_table" in html
 

@@ -259,7 +259,11 @@ def _dashboard_read_behavior_row(
             "No table-row reads",
             "Environment settings and registry entries",
         )
-    if concept_id in {"concept-to-asset-explorer", "glossary-explorer"}:
+    if concept_id in {
+        "citation-chain-explorer",
+        "concept-to-asset-explorer",
+        "glossary-explorer",
+    }:
         return _row(
             entry,
             route,

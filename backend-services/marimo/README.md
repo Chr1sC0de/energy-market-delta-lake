@@ -13,6 +13,7 @@ Marimo-Codex research workspace image.
 - [Dashboard registry](#dashboard-registry)
 - [Glossary explorer](#glossary-explorer)
 - [Concept-to-asset explorer](#concept-to-asset-explorer)
+- [Citation-chain explorer](#citation-chain-explorer)
 - [Data readiness overview](#data-readiness-overview)
 - [AWS bounded read diagnostics](#aws-bounded-read-diagnostics)
 - [Dagster asset catalogue status](#dagster-asset-catalogue-status)
@@ -122,7 +123,8 @@ future shared UI primitive surface.
 defines the Marimo-local dashboard registry used by the dashboard roadmap. It
 parses structured records into typed entries with concept IDs, audience tags,
 planned or available status, notebook names and routes, backing
-`silver.gas_model` assets, generated-gold metadata paths, and source chunk IDs.
+`silver.gas_model` assets, generated-gold metadata paths, source chunk IDs,
+silver chunk paths, and source hashes.
 
 The `/marimo` entry route renders this registry as a concept gallery hub.
 Available registry entries link only when their backing notebook is mounted in
@@ -130,9 +132,10 @@ the current image. Planned entries stay visible as roadmap cards but do not
 emit notebook links. The same registry is served as JSON from
 `/marimo/dashboard-registry.json` so future Marimo notebooks can render context
 panels without reading the Gas market knowledge base generated files at
-runtime. Generated-gold paths and source chunk IDs are copied metadata only. In
-AWS mode this remains read-only, uses the existing dashboard image contents,
-and does not require a Docker build-context change.
+runtime. Generated-gold paths, source chunk IDs, silver chunk paths, and source
+hashes are copied metadata only. In AWS mode this remains read-only, uses the
+existing dashboard image contents, and does not require a Docker build-context
+change.
 
 Registry-backed dashboards that only browse registry metadata may have no
 backing `silver.gas_model` assets. The concept gallery renders those entries as
@@ -143,7 +146,8 @@ registry metadata only instead of inventing table dependencies.
 context in-page. The helper renders the concept summary, dashboard usage
 metadata, related concepts, generated-gold paths, source chunk IDs, and backing
 `silver.gas_model` assets from the registry without opening generated gold
-Markdown at runtime. The available roadmap notebooks call it with their
+Markdown at runtime. It also exposes silver chunk paths and source hashes when
+the registry has them. The available roadmap notebooks call it with their
 registry concept IDs near the top of the notebook.
 
 [src/marimoserver/bounded_read_diagnostics.py](src/marimoserver/bounded_read_diagnostics.py)
@@ -183,6 +187,21 @@ and Gas Model Table Explorer deep links where the registry asset can be
 resolved to a `silver/gas_model/<table>` entry. Concepts with no backing assets
 and registry assets without glossary concept coverage render as explicit
 coverage gaps.
+
+## Citation-chain explorer
+
+[notebooks/citation_chain_explorer.py](notebooks/citation_chain_explorer.py)
+is the registry-backed citation-chain audit dashboard. It uses
+[src/marimoserver/citation_chain_explorer.py](src/marimoserver/citation_chain_explorer.py)
+to list dashboard concept metadata alongside generated-gold paths, source chunk
+IDs, silver chunk paths, and source hashes from the code-local Marimo dashboard
+registry.
+
+The dashboard reads no table rows and does not open generated gold or silver
+Markdown at runtime. Its first viewport shows registry health, complete-record
+count, coverage-gap count, source chunk count, and source hash count. Concept
+cards make incomplete citation-chain metadata visible as registry coverage gaps
+instead of copying generated corpus prose into maintained docs.
 
 ## Data readiness overview
 
@@ -685,8 +704,9 @@ With the local backend stack running, open the Marimo concept gallery through
 Caddy and choose an available card such as `data_readiness_overview`,
 `dagster_asset_catalogue_status`, `materialization_freshness`,
 `s3_bucket_health`, `glossary_explorer`, `concept_to_asset_explorer`,
-`table_explorer`, `source_coverage_matrix`, `source_table_lineage_explorer`,
-`sample_energy_market`, `gas_market_prices`, `gas_schedule_runs`,
+`citation_chain_explorer`, `table_explorer`, `source_coverage_matrix`,
+`source_table_lineage_explorer`, `sample_energy_market`, `gas_market_prices`,
+`gas_schedule_runs`,
 `system_notices`, `gas_settlement_activity`,
 `gas_customer_transfer_activity`, `gas_bid_offer_stack`,
 `gas_quality_composition`, `facility_explainer`, `participant_explainer`,
@@ -780,6 +800,13 @@ Use the same pattern for the concept-to-asset explorer:
 ```bash
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/concept_to_asset_explorer.py
+```
+
+Use the same pattern for the citation-chain explorer:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/citation_chain_explorer.py
 ```
 
 Use the same pattern for the GBB interactive map:
@@ -914,6 +941,8 @@ Concept-to-asset explorer coverage in
 [tests/component/test_gas_dashboard.py](tests/component/test_gas_dashboard.py)
 verifies mapped concepts, table explorer deep links, unmapped concepts, and
 unmapped registry assets.
+Citation-chain explorer coverage in the same test module verifies complete
+source chunk records and incomplete records with registry coverage gaps.
 
 Run the Marimo **Commit check** surface before handing changes to Ralph:
 
@@ -946,6 +975,7 @@ prek run -a
   - `backend-services/marimo/src/marimoserver/gbb_interactive_map.py`
   - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
   - `backend-services/marimo/src/marimoserver/concept_asset_explorer.py`
+  - `backend-services/marimo/src/marimoserver/citation_chain_explorer.py`
   - `backend-services/marimo/src/marimoserver/source_lineage_explorer.py`
   - `backend-services/marimo/src/marimoserver/dagster_graphql.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
@@ -964,6 +994,7 @@ prek run -a
   - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/concept_to_asset_explorer.py`
+  - `backend-services/marimo/notebooks/citation_chain_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`

@@ -8597,6 +8597,8 @@ def render_dashboard_context_panel(
     <div class="context-panel__grid">
         {_render_context_list("generated-gold paths", entry.generated_gold_paths)}
         {_render_context_list("source chunk IDs", entry.source_chunk_ids)}
+        {_render_context_list("silver chunk paths", entry.silver_chunk_paths)}
+        {_render_context_list("source hashes", entry.source_hashes)}
         {_render_context_list("backing assets", entry.backing_assets)}
         {_render_related_context_list(related_entries)}
     </div>

@@ -230,10 +230,11 @@ Useful routes:
   explorer, data readiness overview, AWS bounded-read diagnostics, market
   prices, materialization freshness, source coverage, source table lineage,
   schedule runs, settlement activity, customer transfer and retail activity,
-  system notices, Bid / Offer stack, gas quality and composition, and Hub /
-  Zone explainer dashboards. The source table lineage explorer connects
-  curated `silver.gas_model` assets to source systems, source tables, lineage
-  fields, and registry-backed Market context links. The Hub / Zone explainer
+  system notices, Bid / Offer stack, gas quality and composition, citation-chain
+  explorer, and Hub / Zone explainer dashboards. The source table lineage
+  explorer connects curated `silver.gas_model` assets to source systems, source
+  tables, lineage fields, and registry-backed Market context links. The Hub /
+  Zone explainer
   connects generated Market context metadata to bounded `silver_gas_dim_zone`
   coverage and source-qualified identifiers. The table explorer lists the
   Dagster table asset catalogue, filters by group, layer or domain, status, and
@@ -792,6 +793,7 @@ developer-stack setting. It renders e2e Dagster config per run from the current
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
   - `backend-services/marimo/src/marimoserver/bounded_read_diagnostics.py`
   - `backend-services/marimo/src/marimoserver/concept_asset_explorer.py`
+  - `backend-services/marimo/src/marimoserver/citation_chain_explorer.py`
   - `backend-services/marimo/src/marimoserver/source_lineage_explorer.py`
   - `backend-services/marimo/src/marimoserver/data_readiness.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
@@ -805,6 +807,7 @@ developer-stack setting. It renders e2e Dagster config per run from the current
   - `backend-services/marimo/notebooks/materialization_freshness.py`
   - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/concept_to_asset_explorer.py`
+  - `backend-services/marimo/notebooks/citation_chain_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`

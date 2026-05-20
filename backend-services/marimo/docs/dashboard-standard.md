@@ -35,8 +35,9 @@ methodology lower in the notebook or behind an accordion.
 When a curated dashboard has a Marimo dashboard registry concept, render the
 shared context panel near the top of the notebook. The panel should show the
 registry concept summary, dashboard usage metadata, related concepts,
-generated-gold paths, source chunk IDs, and backing `silver.gas_model` assets
-without reading generated gold Markdown at runtime.
+generated-gold paths, source chunk IDs, silver chunk paths, source hashes, and
+backing `silver.gas_model` assets without reading generated gold Markdown at
+runtime.
 
 ## Dashboard intents
 
@@ -185,6 +186,7 @@ Mixed maintained-doc and runtime dashboard changes also run the root
   - `backend-services/marimo/src/marimoserver/gbb_interactive_map.py`
   - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
   - `backend-services/marimo/src/marimoserver/concept_asset_explorer.py`
+  - `backend-services/marimo/src/marimoserver/citation_chain_explorer.py`
   - `backend-services/marimo/src/marimoserver/source_lineage_explorer.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/src/marimoserver/data_readiness.py`
@@ -202,6 +204,7 @@ Mixed maintained-doc and runtime dashboard changes also run the root
   - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/concept_to_asset_explorer.py`
+  - `backend-services/marimo/notebooks/citation_chain_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`

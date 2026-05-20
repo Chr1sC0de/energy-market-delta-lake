@@ -41,6 +41,7 @@ _MISSING = object()
 _REGISTRY_BACKED_CONCEPT_IDS = frozenset(
     {
         "aws-bounded-read-diagnostics",
+        "citation-chain-explorer",
         "concept-to-asset-explorer",
         "glossary-explorer",
         "s3-bucket-health",
@@ -50,13 +51,230 @@ _REGISTRY_BACKED_CONCEPT_IDS = frozenset(
 
 @dataclass(frozen=True)
 class SourceChunkReference:
-    """Stable source chunk identifier copied from gold Market context metadata."""
+    """Stable source chunk lineage copied from generated corpus metadata."""
 
     chunk_id: str
+    silver_chunk_path: str | None = None
+    source_hash: str | None = None
 
-    def to_dict(self) -> dict[str, str]:
+    @property
+    def complete(self) -> bool:
+        """Return whether this source chunk has its full registry citation chain."""
+        return self.silver_chunk_path is not None and self.source_hash is not None
+
+    def to_dict(self) -> dict[str, str | None]:
         """Return a JSON-serializable source chunk reference."""
-        return {"chunk_id": self.chunk_id}
+        return {
+            "chunk_id": self.chunk_id,
+            "silver_chunk_path": self.silver_chunk_path,
+            "source_hash": self.source_hash,
+        }
+
+
+def _source_chunk_reference(
+    chunk_id: str,
+    corpus: str,
+    document_path: str,
+    source_hash: str,
+) -> SourceChunkReference:
+    return SourceChunkReference(
+        chunk_id=chunk_id,
+        silver_chunk_path=(
+            "tools/gas-market-knowledge-base/generated/silver/chunks/"
+            f"{corpus}/{document_path}/sha256-{source_hash}/{chunk_id}.md"
+        ),
+        source_hash=source_hash,
+    )
+
+
+SOURCE_CHUNK_REFERENCES: tuple[SourceChunkReference, ...] = (
+    _source_chunk_reference(
+        "chunk-dwgm-operations-capacity-certificates-modelling",
+        "dwgm",
+        "operations-procedures-2026",
+        "dac5b2d83b332770261fdfb80ab07389611cc06cb1f48a2886bf1e9097d1fe07",
+    ),
+    _source_chunk_reference(
+        "chunk-dwgm-operations-capacity-certificates-purpose",
+        "dwgm",
+        "operations-procedures-2026",
+        "dac5b2d83b332770261fdfb80ab07389611cc06cb1f48a2886bf1e9097d1fe07",
+    ),
+    _source_chunk_reference(
+        "chunk-dwgm-operations-glossary-schedule",
+        "dwgm",
+        "operations-procedures-2026",
+        "dac5b2d83b332770261fdfb80ab07389611cc06cb1f48a2886bf1e9097d1fe07",
+    ),
+    _source_chunk_reference(
+        "chunk-dwgm-settlement-pricing-schedule-allocation",
+        "dwgm",
+        "settlement-procedures-2024",
+        "7318c369099f952b1b8264e72e71908d741d07d917f303d135e7b507ea5f2eb8",
+    ),
+    _source_chunk_reference(
+        "chunk-dwgm-settlement-purpose",
+        "dwgm",
+        "settlement-procedures-2024",
+        "7318c369099f952b1b8264e72e71908d741d07d917f303d135e7b507ea5f2eb8",
+    ),
+    _source_chunk_reference(
+        "chunk-dwgm-settlement-withdrawal-allocation",
+        "dwgm",
+        "settlement-procedures-2024",
+        "7318c369099f952b1b8264e72e71908d741d07d917f303d135e7b507ea5f2eb8",
+    ),
+    _source_chunk_reference(
+        "chunk-gbb-guide-connection-point-identifiers",
+        "gbb",
+        "guide-to-gbb-reports",
+        "9f7cf6f33b646de55e0593af8612953bcaa59665fddf019fcdbf02da31720410",
+    ),
+    _source_chunk_reference(
+        "chunk-gbb-guide-flow-report",
+        "gbb",
+        "guide-to-gbb-reports",
+        "9f7cf6f33b646de55e0593af8612953bcaa59665fddf019fcdbf02da31720410",
+    ),
+    _source_chunk_reference(
+        "chunk-gbb-guide-gas-day",
+        "gbb",
+        "guide-to-gbb-reports",
+        "9f7cf6f33b646de55e0593af8612953bcaa59665fddf019fcdbf02da31720410",
+    ),
+    _source_chunk_reference(
+        "chunk-gbb-guide-medium-capacity-outlook",
+        "gbb",
+        "guide-to-gbb-reports",
+        "9f7cf6f33b646de55e0593af8612953bcaa59665fddf019fcdbf02da31720410",
+    ),
+    _source_chunk_reference(
+        "chunk-gbb-guide-nameplate-capacity",
+        "gbb",
+        "guide-to-gbb-reports",
+        "9f7cf6f33b646de55e0593af8612953bcaa59665fddf019fcdbf02da31720410",
+    ),
+    _source_chunk_reference(
+        "chunk-gbb-guide-nodes-facilities",
+        "gbb",
+        "guide-to-gbb-reports",
+        "9f7cf6f33b646de55e0593af8612953bcaa59665fddf019fcdbf02da31720410",
+    ),
+    _source_chunk_reference(
+        "chunk-gbb-guide-participants-report",
+        "gbb",
+        "guide-to-gbb-reports",
+        "9f7cf6f33b646de55e0593af8612953bcaa59665fddf019fcdbf02da31720410",
+    ),
+    _source_chunk_reference(
+        "chunk-gbb-procedures-capacity-outlooks",
+        "gbb",
+        "bb-procedures",
+        "f8b62c200c0e087fd69e1634ee041832c6f7cdfbf26800b2a572a27c02f35e35",
+    ),
+    _source_chunk_reference(
+        "chunk-gbb-procedures-daily-flow-storage",
+        "gbb",
+        "bb-procedures",
+        "f8b62c200c0e087fd69e1634ee041832c6f7cdfbf26800b2a572a27c02f35e35",
+    ),
+    _source_chunk_reference(
+        "chunk-gbb-procedures-facility-nameplate",
+        "gbb",
+        "bb-procedures",
+        "f8b62c200c0e087fd69e1634ee041832c6f7cdfbf26800b2a572a27c02f35e35",
+    ),
+    _source_chunk_reference(
+        "chunk-gbb-procedures-linepack-capacity-adequacy",
+        "gbb",
+        "bb-procedures",
+        "f8b62c200c0e087fd69e1634ee041832c6f7cdfbf26800b2a572a27c02f35e35",
+    ),
+    _source_chunk_reference(
+        "chunk-gbb-procedures-registration",
+        "gbb",
+        "bb-procedures",
+        "f8b62c200c0e087fd69e1634ee041832c6f7cdfbf26800b2a572a27c02f35e35",
+    ),
+    _source_chunk_reference(
+        "chunk-gbb-procedures-scheduled-flow",
+        "gbb",
+        "bb-procedures",
+        "f8b62c200c0e087fd69e1634ee041832c6f7cdfbf26800b2a572a27c02f35e35",
+    ),
+    _source_chunk_reference(
+        "chunk-sttm-procedures-bid-offer-price-steps",
+        "sttm",
+        "sttm-procedures-2025",
+        "285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93",
+    ),
+    _source_chunk_reference(
+        "chunk-sttm-procedures-capacity-settlement",
+        "sttm",
+        "sttm-procedures-2025",
+        "285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93",
+    ),
+    _source_chunk_reference(
+        "chunk-sttm-procedures-contingency-gas-bids",
+        "sttm",
+        "sttm-procedures-2025",
+        "285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93",
+    ),
+    _source_chunk_reference(
+        "chunk-sttm-procedures-definitions",
+        "sttm",
+        "sttm-procedures-2025",
+        "285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93",
+    ),
+    _source_chunk_reference(
+        "chunk-sttm-procedures-market-schedule-variation",
+        "sttm",
+        "sttm-procedures-2025",
+        "285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93",
+    ),
+    _source_chunk_reference(
+        "chunk-sttm-procedures-mos-estimates",
+        "sttm",
+        "sttm-procedures-2025",
+        "285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93",
+    ),
+    _source_chunk_reference(
+        "chunk-sttm-procedures-mos-settlement",
+        "sttm",
+        "sttm-procedures-2025",
+        "285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93",
+    ),
+    _source_chunk_reference(
+        "chunk-sttm-procedures-settlement-amounts",
+        "sttm",
+        "sttm-procedures-2025",
+        "285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93",
+    ),
+    _source_chunk_reference(
+        "chunk-sttm-procedures-settlement-terms",
+        "sttm",
+        "sttm-procedures-2025",
+        "285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93",
+    ),
+    _source_chunk_reference(
+        "chunk-sttm-procedures-shortfall-settlement",
+        "sttm",
+        "sttm-procedures-2025",
+        "285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93",
+    ),
+    _source_chunk_reference(
+        "chunk-sttm-procedures-spa-outputs",
+        "sttm",
+        "sttm-procedures-2025",
+        "285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93",
+    ),
+    _source_chunk_reference(
+        "chunk-sttm-procedures-spa-requirements",
+        "sttm",
+        "sttm-procedures-2025",
+        "285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93",
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -85,6 +303,24 @@ class DashboardRegistryEntry:
         """Return source chunk IDs without their wrapper metadata."""
         return tuple(chunk.chunk_id for chunk in self.source_chunks)
 
+    @property
+    def silver_chunk_paths(self) -> tuple[str, ...]:
+        """Return recorded silver chunk paths for this entry."""
+        paths: list[str] = []
+        for chunk in self.source_chunks:
+            if chunk.silver_chunk_path is not None:
+                paths.append(chunk.silver_chunk_path)
+        return tuple(paths)
+
+    @property
+    def source_hashes(self) -> tuple[str, ...]:
+        """Return recorded source document hashes for this entry."""
+        source_hashes: list[str] = []
+        for chunk in self.source_chunks:
+            if chunk.source_hash is not None and chunk.source_hash not in source_hashes:
+                source_hashes.append(chunk.source_hash)
+        return tuple(source_hashes)
+
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-serializable dashboard registry entry."""
         return {
@@ -99,6 +335,8 @@ class DashboardRegistryEntry:
             "generated_gold_paths": list(self.generated_gold_paths),
             "source_chunks": [chunk.to_dict() for chunk in self.source_chunks],
             "source_chunk_ids": list(self.source_chunk_ids),
+            "silver_chunk_paths": list(self.silver_chunk_paths),
+            "source_hashes": list(self.source_hashes),
         }
 
 
@@ -479,6 +717,23 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "backing_assets": (),
         "generated_gold_paths": (
             "tools/gas-market-knowledge-base/generated/gold/glossary/README.md",
+        ),
+        "source_chunk_ids": (),
+    },
+    {
+        "concept_id": "citation-chain-explorer",
+        "title": "Citation-Chain Explorer",
+        "description": (
+            "Available analytical dashboard for auditing registry citation "
+            "metadata from dashboard concepts to generated-gold paths, source "
+            "chunk IDs, silver chunk paths, and source hashes."
+        ),
+        "audiences": ("analyst", "data-engineer", "operator"),
+        "status": "available",
+        "notebook_name": "citation_chain_explorer",
+        "backing_assets": (),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/README.md",
         ),
         "source_chunk_ids": (),
     },
@@ -897,10 +1152,7 @@ def _entry_from_record(
     notebook_name = _optional_str(record, "notebook_name", index)
     backing_assets = _str_tuple(record, "backing_assets", index)
     generated_gold_paths = _str_tuple(record, "generated_gold_paths", index)
-    source_chunks = tuple(
-        SourceChunkReference(chunk_id=chunk_id)
-        for chunk_id in _str_tuple(record, "source_chunk_ids", index)
-    )
+    source_chunks = _source_chunks_from_record(record, index)
 
     if status is DashboardStatus.AVAILABLE and notebook_name is None:
         raise DashboardRegistryError(
@@ -917,6 +1169,50 @@ def _entry_from_record(
         backing_assets=backing_assets,
         generated_gold_paths=generated_gold_paths,
         source_chunks=source_chunks,
+    )
+
+
+def _source_chunks_from_record(
+    record: DashboardRegistryRecord,
+    index: int,
+) -> tuple[SourceChunkReference, ...]:
+    raw_source_chunks = record.get("source_chunks", _MISSING)
+    if raw_source_chunks is _MISSING:
+        return tuple(
+            _source_chunk_reference_by_id(chunk_id)
+            for chunk_id in _str_tuple(record, "source_chunk_ids", index)
+        )
+
+    if not isinstance(raw_source_chunks, tuple):
+        raise DashboardRegistryError(
+            f"dashboard registry record {index} field source_chunks must be a tuple"
+        )
+
+    source_chunks: list[SourceChunkReference] = []
+    for raw_chunk in raw_source_chunks:
+        if not isinstance(raw_chunk, Mapping):
+            raise DashboardRegistryError(
+                f"dashboard registry record {index} field source_chunks must "
+                "contain mapping records"
+            )
+        source_chunks.append(_source_chunk_from_mapping(raw_chunk, index))
+    return tuple(source_chunks)
+
+
+def _source_chunk_reference_by_id(chunk_id: str) -> SourceChunkReference:
+    source_chunks_by_id = {chunk.chunk_id: chunk for chunk in SOURCE_CHUNK_REFERENCES}
+    return source_chunks_by_id.get(chunk_id, SourceChunkReference(chunk_id=chunk_id))
+
+
+def _source_chunk_from_mapping(
+    raw_chunk: Mapping[str, object],
+    index: int,
+) -> SourceChunkReference:
+    chunk_id = _required_str(raw_chunk, "chunk_id", index)
+    return SourceChunkReference(
+        chunk_id=chunk_id,
+        silver_chunk_path=_optional_str(raw_chunk, "silver_chunk_path", index),
+        source_hash=_optional_str(raw_chunk, "source_hash", index),
     )
 
 

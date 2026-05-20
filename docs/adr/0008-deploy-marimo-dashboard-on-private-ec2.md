@@ -26,9 +26,9 @@ runtime sets `DEVELOPMENT_LOCATION=aws`,
 
 The dashboard service also exposes `/marimo/dashboard-registry.json` from
 Marimo-local code constants. The registry carries planned and available
-dashboard metadata, including generated-gold paths and source chunk IDs, but the
-deployed service does not read Gas market knowledge base generated files at
-runtime.
+dashboard metadata, including generated-gold paths, source chunk IDs, silver
+chunk paths, and source hashes, but the deployed service does not read Gas
+market knowledge base generated files at runtime.
 
 The curated image includes an S3 Bucket Health dashboard for configured
 S3-compatible bucket reachability, object scans, truncation, bucket errors, and
@@ -226,6 +226,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/src/marimoserver/data_readiness.py`
   - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
   - `backend-services/marimo/src/marimoserver/concept_asset_explorer.py`
+  - `backend-services/marimo/src/marimoserver/citation_chain_explorer.py`
   - `backend-services/marimo/src/marimoserver/source_lineage_explorer.py`
   - `backend-services/marimo/notebooks/sample_energy_market.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
@@ -239,6 +240,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/concept_to_asset_explorer.py`
+  - `backend-services/marimo/notebooks/citation_chain_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`

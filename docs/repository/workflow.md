@@ -127,9 +127,12 @@ Local workflow notes:
   source chunk IDs, related concepts, and dashboard states. The
   concept-to-asset explorer is the registry-only map from Market context
   glossary concepts to backing `silver.gas_model` assets, dashboard routes,
-  planned dashboard cards, and table explorer deep links. The Gas Day explainer
-  uses registry context metadata and bounded gas-model samples to show
-  date-field coverage across curated assets. The materialization freshness
+  planned dashboard cards, and table explorer deep links. The citation-chain
+  explorer audits generated-gold paths, source chunk IDs, silver chunk paths,
+  and source hashes from the packaged registry without opening generated corpus
+  files. The Gas Day explainer uses registry context metadata and bounded
+  gas-model samples to show date-field coverage across curated assets. The
+  materialization freshness
   dashboard reports latest Dagster materialization timestamps and freshness
   gaps from catalogue metadata without scanning table contents. The Hub / Zone
   explainer connects
@@ -264,6 +267,7 @@ and the required `git diff` to `rg` to QA flow, use
   - `backend-services/marimo/src/marimoserver/data_readiness.py`
   - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
   - `backend-services/marimo/src/marimoserver/concept_asset_explorer.py`
+  - `backend-services/marimo/src/marimoserver/citation_chain_explorer.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/source_coverage_matrix.py`
   - `backend-services/marimo/notebooks/gas_day_explainer.py`
@@ -273,6 +277,7 @@ and the required `git diff` to `rg` to QA flow, use
   - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/concept_to_asset_explorer.py`
+  - `backend-services/marimo/notebooks/citation_chain_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
