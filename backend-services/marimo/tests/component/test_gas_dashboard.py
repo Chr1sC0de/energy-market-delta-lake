@@ -114,6 +114,11 @@ from marimoserver.gas_dashboard import (
     SCHEDULE_RUN_SCHEDULE_TYPE_FILTER_ALL,
     SCHEDULE_RUN_SOURCE_SYSTEM_FILTER_ALL,
     SCHEDULE_RUN_TABLE_SPEC,
+    SCHEDULED_QUANTITY_GAS_DATE_FILTER_ALL,
+    SCHEDULED_QUANTITY_SCHEDULE_TYPE_FILTER_ALL,
+    SCHEDULED_QUANTITY_SOURCE_SYSTEM_FILTER_ALL,
+    SCHEDULED_QUANTITY_TABLE_NAME,
+    SCHEDULED_QUANTITY_TABLE_SPEC,
     SCADA_PRESSURE_TABLE_NAME,
     SCADA_PRESSURE_TABLE_SPEC,
     SETTLEMENT_ACTIVITY_ACTIVITY_TYPE_FILTER_ALL,
@@ -166,6 +171,7 @@ from marimoserver.gas_dashboard import (
     cached_load_participant_context_tables,
     cached_load_pipeline_connection_operations_tables,
     cached_load_schedule_run_table,
+    cached_load_scheduled_quantity_table,
     cached_load_settlement_activity_table,
     cached_load_source_coverage_tables,
     cached_load_system_notice_table,
@@ -283,6 +289,7 @@ from marimoserver.gas_dashboard import (
     load_pipeline_connection_operations_tables,
     load_source_coverage_tables,
     load_schedule_run_table,
+    load_scheduled_quantity_table,
     load_settlement_activity_table,
     load_system_notice_table,
     market_price_bounded_scope_markdown,
@@ -356,6 +363,7 @@ from marimoserver.gas_dashboard import (
     render_participant_context_links,
     render_pipeline_connection_operations_context_links,
     render_schedule_run_context_links,
+    render_scheduled_quantity_context_links,
     render_settlement_activity_context_links,
     render_source_coverage_matrix_html,
     scada_pressure_observation_frame,
@@ -368,6 +376,16 @@ from marimoserver.gas_dashboard import (
     schedule_run_source_system_options,
     schedule_run_timestamp_summary_frame,
     schedule_run_type_summary_frame,
+    scheduled_quantity_empty_state_markdown,
+    scheduled_quantity_gas_date_options,
+    scheduled_quantity_kpi_frame,
+    scheduled_quantity_observation_frame,
+    scheduled_quantity_schedule_context_frame,
+    scheduled_quantity_schedule_type_options,
+    scheduled_quantity_source_coverage_frame,
+    scheduled_quantity_source_point_frame,
+    scheduled_quantity_source_system_options,
+    scheduled_quantity_type_summary_frame,
     settlement_activity_activity_type_options,
     settlement_activity_empty_state_markdown,
     settlement_activity_gas_date_options,
@@ -1802,6 +1820,392 @@ def test_schedule_run_helpers_cover_missing_data_and_filter_empty_state() -> Non
     assert "current filters do not match" in filtered_markdown
     assert "did not receive a schedule run load result" in missing_load_markdown
     assert "No Schedule, Gas Day, or Settlement context entries" in empty_context_links
+    assert "Unavailable dashboard" in unmounted_context_links
+
+
+def test_scheduled_quantity_table_loader_uses_bounded_recent_view() -> None:
+    captured: list[int | None] = []
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "8",
+        }
+    )
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        captured.append(row_limit)
+        assert uri == (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_scheduled_quantity"
+        )
+        assert storage_options == config.storage_options()
+        return pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 1), date(2024, 1, 3)],
+                "quantity_type": ["older_quantity", "newer_quantity"],
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 1, 6),
+                    datetime(2024, 1, 3, 6),
+                ],
+            }
+        )
+
+    load = load_scheduled_quantity_table(config, reader=reader)
+
+    assert captured == [8]
+    assert load.spec == SCHEDULED_QUANTITY_TABLE_SPEC
+    assert load.row_limit == 8
+    assert load.dataframe is not None
+    assert load.dataframe["quantity_type"].to_list() == [
+        "newer_quantity",
+        "older_quantity",
+    ]
+
+
+def test_cached_scheduled_quantity_table_loader_reuses_session_cache() -> None:
+    calls: list[int] = []
+    config = _dashboard_config()
+    cache: GasModelSessionCache = {}
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        calls.append(len(calls) + 1)
+        return pl.DataFrame({"quantity_type": [f"quantity-{calls[-1]}"]})
+
+    first_load = cached_load_scheduled_quantity_table(config, cache, reader=reader)
+    cached_load = cached_load_scheduled_quantity_table(config, cache, reader=reader)
+    refreshed_load = cached_load_scheduled_quantity_table(
+        config,
+        cache,
+        reader=reader,
+        refresh_token=1,
+    )
+
+    assert calls == [1, 2]
+    assert not first_load.cache_hit
+    assert cached_load.cache_hit
+    assert not refreshed_load.cache_hit
+    assert cached_load.dataframe is not None
+    assert cached_load.dataframe["quantity_type"].to_list() == ["quantity-1"]
+    assert refreshed_load.dataframe is not None
+    assert refreshed_load.dataframe["quantity_type"].to_list() == ["quantity-2"]
+
+
+def test_scheduled_quantity_summaries_filters_and_context_links() -> None:
+    sttm_table = "silver.sttm.silver_int652_v1_ex_ante_schedule_quantity_rpt_1"
+    vicgas_table = "silver.vicgas.silver_int316_v4_operational_gas_1"
+    load = _scheduled_quantity_load(
+        pl.DataFrame(
+            {
+                "gas_date": [
+                    "2024-01-03",
+                    "2024-01-02",
+                    "2024-01-03",
+                    "2024-01-03",
+                ],
+                "source_system": ["STTM", "STTM", "VICGAS", "VICGAS"],
+                "source_table": [sttm_table, sttm_table, vicgas_table, vicgas_table],
+                "quantity_type": [
+                    "sttm_ex_ante_scheduled_qty",
+                    "sttm_provisional_scheduled_qty",
+                    "operational_gas",
+                    "out_of_merit_gas",
+                ],
+                "schedule_type_id": ["ex_ante", "provisional", "pricing", "pricing"],
+                "transmission_id": ["S-2", "S-1", "V-1", "V-2"],
+                "transmission_doc_id": ["SDOC-2", "SDOC-1", "VDOC-1", "VDOC-2"],
+                "source_point_id": ["FAC-A", "FAC-A", "HV-ZONE", None],
+                "quantity_gj": [100.0, 50.0, 11.5, 7.0],
+                "volume_kscm": [None, None, 1.25, None],
+                "amount_gst_ex": [None, None, None, 99.5],
+                "source_last_updated_timestamp": [
+                    "2024-01-02 15:00:00",
+                    "2024-01-01 15:00:00",
+                    "2024-01-03 10:00:00",
+                    "2024-01-03 11:00:00",
+                ],
+                "source_surrogate_key": ["src-2", "src-1", "src-v1", "src-v2"],
+                "source_file": ["sttm-2.csv", "sttm-1.csv", "vic-1.csv", "vic-2.csv"],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 2, 16),
+                    datetime(2024, 1, 1, 16),
+                    datetime(2024, 1, 3, 12),
+                    datetime(2024, 1, 3, 13),
+                ],
+            }
+        )
+    )
+
+    observations = scheduled_quantity_observation_frame(
+        load,
+        "2024-01-03",
+        "STTM",
+        "ex_ante",
+    )
+    kpis = scheduled_quantity_kpi_frame(load)
+    type_summary = scheduled_quantity_type_summary_frame(load)
+    source_points = scheduled_quantity_source_point_frame(load)
+    schedule_context = scheduled_quantity_schedule_context_frame(
+        load,
+        "2024-01-03",
+        "STTM",
+        "ex_ante",
+    )
+    source_coverage = scheduled_quantity_source_coverage_frame(load)
+    context_links = render_scheduled_quantity_context_links()
+
+    assert scheduled_quantity_gas_date_options(load) == (
+        SCHEDULED_QUANTITY_GAS_DATE_FILTER_ALL,
+        "2024-01-03",
+        "2024-01-02",
+    )
+    assert scheduled_quantity_source_system_options(load) == (
+        SCHEDULED_QUANTITY_SOURCE_SYSTEM_FILTER_ALL,
+        "STTM",
+        "VICGAS",
+    )
+    assert scheduled_quantity_schedule_type_options(load) == (
+        SCHEDULED_QUANTITY_SCHEDULE_TYPE_FILTER_ALL,
+        "ex_ante",
+        "pricing",
+        "provisional",
+    )
+    assert kpis.to_dict(as_series=False) == {
+        "metric": [
+            "Loaded scheduled quantity rows",
+            "Quantity types",
+            "Schedule types",
+            "Source systems",
+            "Source points",
+            "Transmissions",
+            "Total quantity_gj",
+            "Total volume_kscm",
+            "Total amount_gst_ex",
+            "Latest gas date",
+        ],
+        "value": [
+            "4",
+            "4",
+            "3",
+            "2",
+            "2",
+            "4",
+            "168.5",
+            "1.25",
+            "99.5",
+            "2024-01-03",
+        ],
+        "detail": [
+            "Full table scan",
+            "Distinct quantity_type values in the current view",
+            "Distinct schedule_type_id values in the current view",
+            "Distinct source_system values in the current view",
+            "Distinct source_point_id values in the current view",
+            "Distinct transmission_id values linkable to schedule runs",
+            "4 rows with populated quantity_gj",
+            "1 rows with populated volume_kscm",
+            "1 rows with populated amount_gst_ex",
+            "Maximum gas_date in the loaded bounded rows",
+        ],
+    }
+    assert observations.select(
+        "gas date",
+        "source system",
+        "source table",
+        "quantity type",
+        "schedule type",
+        "transmission",
+        "source point",
+        "quantity_gj",
+    ).to_dict(as_series=False) == {
+        "gas date": [date(2024, 1, 3)],
+        "source system": ["STTM"],
+        "source table": [sttm_table],
+        "quantity type": ["sttm_ex_ante_scheduled_qty"],
+        "schedule type": ["ex_ante"],
+        "transmission": ["S-2"],
+        "source point": ["FAC-A"],
+        "quantity_gj": [100.0],
+    }
+    assert type_summary.select(
+        "source system",
+        "quantity type",
+        "schedule type",
+        "source points",
+        "total quantity_gj",
+        "total volume_kscm",
+        "total amount_gst_ex",
+        "latest gas date",
+    ).head(4).to_dict(as_series=False) == {
+        "source system": ["STTM", "VICGAS", "VICGAS", "STTM"],
+        "quantity type": [
+            "sttm_ex_ante_scheduled_qty",
+            "operational_gas",
+            "out_of_merit_gas",
+            "sttm_provisional_scheduled_qty",
+        ],
+        "schedule type": ["ex_ante", "pricing", "pricing", "provisional"],
+        "source points": [1, 1, 0, 1],
+        "total quantity_gj": [100.0, 11.5, 7.0, 50.0],
+        "total volume_kscm": [0.0, 1.25, 0.0, 0.0],
+        "total amount_gst_ex": [0.0, 0.0, 99.5, 0.0],
+        "latest gas date": [
+            date(2024, 1, 3),
+            date(2024, 1, 3),
+            date(2024, 1, 3),
+            date(2024, 1, 2),
+        ],
+    }
+    assert source_points.select(
+        "source point",
+        "source system",
+        "schedule type",
+        "rows",
+        "total quantity_gj",
+    ).head(2).to_dict(as_series=False) == {
+        "source point": ["FAC-A", "HV-ZONE"],
+        "source system": ["STTM", "VICGAS"],
+        "schedule type": ["ex_ante", "pricing"],
+        "rows": [1, 1],
+        "total quantity_gj": [100.0, 11.5],
+    }
+    assert schedule_context.select(
+        "gas date",
+        "source system",
+        "schedule type",
+        "transmission",
+        "transmission document",
+        "quantity rows",
+        "total quantity_gj",
+    ).to_dict(as_series=False) == {
+        "gas date": [date(2024, 1, 3)],
+        "source system": ["STTM"],
+        "schedule type": ["ex_ante"],
+        "transmission": ["S-2"],
+        "transmission document": ["SDOC-2"],
+        "quantity rows": [1],
+        "total quantity_gj": [100.0],
+    }
+    assert source_coverage.select(
+        "source system",
+        "source table",
+        "rows",
+        "quantity types",
+        "schedule types",
+        "source points",
+        "gas days",
+    ).to_dict(as_series=False) == {
+        "source system": ["STTM", "VICGAS"],
+        "source table": [sttm_table, vicgas_table],
+        "rows": [2, 2],
+        "quantity types": [2, 2],
+        "schedule types": [2, 1],
+        "source points": [1, 1],
+        "gas days": [2, 1],
+    }
+    assert 'href="/marimo/gas_scheduled_quantities/"' in context_links
+    assert 'href="/marimo/gas_schedule_runs/"' in context_links
+    assert "Schedule Context" in context_links
+    assert "Gas Day Context" in context_links
+    assert "Flow Context" in context_links
+
+
+def test_scheduled_quantity_helpers_cover_missing_data_and_filter_empty_state() -> None:
+    empty_load = _scheduled_quantity_load(pl.DataFrame(), row_limit=6)
+    populated_load = _scheduled_quantity_load(
+        pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 3)],
+                "source_system": ["STTM"],
+                "source_table": ["silver.sttm.schedule_quantity"],
+                "quantity_type": ["sttm_ex_ante_scheduled_qty"],
+                "schedule_type_id": ["ex_ante"],
+                "source_point_id": ["FAC-A"],
+                "quantity_gj": [100.0],
+            }
+        )
+    )
+    missing_date_load = _scheduled_quantity_load(
+        pl.DataFrame(
+            {
+                "source_system": ["STTM"],
+                "source_table": ["silver.sttm.schedule_quantity"],
+                "quantity_type": ["sttm_ex_ante_scheduled_qty"],
+            }
+        )
+    )
+    error_load = GasTableLoad(
+        spec=SCHEDULED_QUANTITY_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_scheduled_quantity",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=6,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+    assert scheduled_quantity_kpi_frame(empty_load).is_empty()
+    assert scheduled_quantity_type_summary_frame(empty_load).is_empty()
+    assert scheduled_quantity_source_point_frame(empty_load).is_empty()
+    assert scheduled_quantity_schedule_context_frame(empty_load).is_empty()
+    assert scheduled_quantity_source_coverage_frame(empty_load).is_empty()
+    assert scheduled_quantity_observation_frame(empty_load).is_empty()
+    assert scheduled_quantity_gas_date_options(empty_load) == (
+        SCHEDULED_QUANTITY_GAS_DATE_FILTER_ALL,
+    )
+    assert scheduled_quantity_source_system_options(empty_load) == (
+        SCHEDULED_QUANTITY_SOURCE_SYSTEM_FILTER_ALL,
+    )
+    assert scheduled_quantity_schedule_type_options(empty_load) == (
+        SCHEDULED_QUANTITY_SCHEDULE_TYPE_FILTER_ALL,
+    )
+    assert scheduled_quantity_kpi_frame(
+        populated_load,
+        gas_date_filter="2024-01-04",
+    ).is_empty()
+    assert scheduled_quantity_kpi_frame(missing_date_load).row(9, named=True) == {
+        "metric": "Latest gas date",
+        "value": "unknown",
+        "detail": "Maximum gas_date in the loaded bounded rows",
+    }
+
+    empty_markdown = scheduled_quantity_empty_state_markdown(empty_load)
+    error_markdown = scheduled_quantity_empty_state_markdown(error_load)
+    filtered_markdown = scheduled_quantity_empty_state_markdown(populated_load)
+    missing_load_markdown = scheduled_quantity_empty_state_markdown(None)
+    empty_context_links = render_scheduled_quantity_context_links(entries=())
+    unmounted_entry = DashboardRegistryEntry(
+        concept_id="gas-scheduled-quantities",
+        title="Unmounted Scheduled Quantities",
+        description="Available entry without a mounted notebook route.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.silver_gas_fact_scheduled_quantity",),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+    unmounted_context_links = render_scheduled_quantity_context_links(
+        entries=(unmounted_entry,)
+    )
+
+    assert "No scheduled quantity data is available" in empty_markdown
+    assert "silver.gas_model.silver_gas_fact_scheduled_quantity" in empty_markdown
+    assert "Bounded preview reads are capped at `6` rows per table" in empty_markdown
+    assert "FileNotFoundError: no parquet files found" in error_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert "did not receive a scheduled quantity load result" in missing_load_markdown
+    assert "No Scheduled quantity, Schedule run, Gas Day, or Flow context" in (
+        empty_context_links
+    )
     assert "Unavailable dashboard" in unmounted_context_links
 
 
@@ -11201,6 +11605,22 @@ def _schedule_run_load(
     return GasTableLoad(
         spec=SCHEDULE_RUN_TABLE_SPEC,
         uri=f"s3://bucket/silver/gas_model/{SCHEDULE_RUN_TABLE_SPEC.table_name}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _scheduled_quantity_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=SCHEDULED_QUANTITY_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{SCHEDULED_QUANTITY_TABLE_NAME}",
         dataframe=dataframe,
         error=None,
         row_limit=row_limit,

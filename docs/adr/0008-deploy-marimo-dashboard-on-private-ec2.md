@@ -153,6 +153,13 @@ the shared bounded loader and session cache, then filters and summarizes loaded
 schedule rows without changing schedule ETL, source ingestion, scheduling
 semantics, or asset schemas.
 
+The scheduled quantities dashboard stays inside the same boundary. It reads the
+curated `silver.gas_model.silver_gas_fact_scheduled_quantity` Parquet output
+through the shared bounded loader and session cache, then filters and
+summarizes loaded quantity rows with schedule-run link context without changing
+scheduled quantity ETL, source ingestion, scheduling semantics, or asset
+schemas.
+
 The settlement activity dashboard stays inside the same boundary. It reads the
 curated `silver.gas_model.silver_gas_fact_settlement_activity` Parquet output
 through the shared bounded loader and session cache, then filters and
@@ -303,6 +310,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
+  - `backend-services/marimo/notebooks/gas_scheduled_quantities.py`
   - `backend-services/marimo/notebooks/facility_explainer.py`
   - `backend-services/marimo/notebooks/participant_explainer.py`
   - `backend-services/marimo/notebooks/hub_zone_explainer.py`

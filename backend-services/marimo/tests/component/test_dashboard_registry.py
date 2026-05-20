@@ -83,6 +83,25 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         in schedule_runs.generated_gold_paths
     )
 
+    scheduled_quantities = registry_entry_by_concept_id(
+        "gas-scheduled-quantities",
+        entries,
+    )
+    assert scheduled_quantities is not None
+    assert scheduled_quantities.status is DashboardStatus.AVAILABLE
+    assert scheduled_quantities.notebook_name == "gas_scheduled_quantities"
+    assert scheduled_quantities.notebook_route == "/marimo/gas_scheduled_quantities/"
+    assert scheduled_quantities.backing_assets == (
+        "silver.gas_model.silver_gas_fact_scheduled_quantity",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md"
+        in scheduled_quantities.generated_gold_paths
+    )
+    assert "chunk-gbb-procedures-scheduled-flow" in (
+        scheduled_quantities.source_chunk_ids
+    )
+
     settlement = registry_entry_by_concept_id("settlement-context", entries)
     assert settlement is not None
     assert settlement.status is DashboardStatus.AVAILABLE

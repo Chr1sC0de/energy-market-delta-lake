@@ -736,6 +736,26 @@ context links from the Marimo registry. Missing schedule-run data, unavailable
 Parquet prefixes, and filter combinations with no matches render dashboard
 empty states with the checked table, read policy, and refresh action.
 
+## Scheduled quantities dashboard
+
+[notebooks/gas_scheduled_quantities.py](notebooks/gas_scheduled_quantities.py)
+is an analytical dashboard over
+`silver.gas_model.silver_gas_fact_scheduled_quantity`. It uses the shared
+bounded gas model loader and session cache from
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py), then
+filters the loaded bounded preview by Gas Day, `source_system`, and
+`schedule_type_id`.
+
+The dashboard shows loaded scheduled-quantity KPIs, quantity-type and schedule
+type summaries, source point totals, quantity, volume, and amount coverage,
+schedule-run link context through Gas Day, source system, schedule type, and
+transmission identifiers, source coverage by source system and source table,
+bounded row previews, and Scheduled quantity, Schedule run, Gas Day, Flow, and
+table explorer context links from the Marimo registry. Missing scheduled
+quantity data, unavailable Parquet prefixes, and filter combinations with no
+matches render dashboard empty states with the checked table, read policy, and
+refresh action.
+
 ## Settlement activity dashboard
 
 [notebooks/gas_settlement_activity.py](notebooks/gas_settlement_activity.py) is
@@ -956,7 +976,7 @@ Caddy and choose an available card such as `data_readiness_overview`,
 `citation_chain_explorer`, `table_explorer`, `source_coverage_matrix`,
 `source_table_lineage_explorer`, `sample_energy_market`, `gas_market_prices`,
 `gas_schedule_runs`,
-`system_notices`, `gas_settlement_activity`,
+`gas_scheduled_quantities`, `system_notices`, `gas_settlement_activity`,
 `gas_customer_transfer_activity`, `facility_flow_storage`,
 `forecast_vs_actual`, `gas_bid_offer_stack`, `gas_quality_composition`,
 `facility_explainer`, `participant_explainer`, `hub_zone_explainer`,
@@ -1137,6 +1157,13 @@ cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gas_schedule_runs.py
 ```
 
+Use the same pattern for the scheduled quantities dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gas_scheduled_quantities.py
+```
+
 Use the same pattern for the settlement activity dashboard:
 
 ```bash
@@ -1311,6 +1338,7 @@ prek run -a
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
+  - `backend-services/marimo/notebooks/gas_scheduled_quantities.py`
   - `backend-services/marimo/notebooks/facility_explainer.py`
   - `backend-services/marimo/notebooks/participant_explainer.py`
   - `backend-services/marimo/notebooks/hub_zone_explainer.py`

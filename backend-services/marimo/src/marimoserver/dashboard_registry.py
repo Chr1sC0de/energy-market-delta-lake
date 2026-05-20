@@ -532,6 +532,32 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
     },
     {
+        "concept_id": "gas-scheduled-quantities",
+        "title": "Gas Scheduled Quantities",
+        "description": (
+            "Available analytical dashboard for quantity types, schedule "
+            "types, source points, quantity, volume, amount, source coverage, "
+            "and schedule-run link context from the curated scheduled "
+            "quantity fact."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "gas_scheduled_quantities",
+        "backing_assets": ("silver.gas_model.silver_gas_fact_scheduled_quantity",),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
+        ),
+        "source_chunk_ids": (
+            "chunk-gbb-guide-gas-day",
+            "chunk-sttm-procedures-spa-requirements",
+            "chunk-sttm-procedures-spa-outputs",
+            "chunk-dwgm-operations-glossary-schedule",
+            "chunk-gbb-procedures-scheduled-flow",
+        ),
+    },
+    {
         "concept_id": "gbb-interactive-map",
         "title": "GBB Interactive Map",
         "description": (
