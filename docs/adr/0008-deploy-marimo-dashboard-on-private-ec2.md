@@ -166,6 +166,15 @@ through the shared bounded loader and session cache, then filters and
 summarizes loaded settlement activity rows without changing settlement ETL,
 source ingestion, settlement semantics, or asset schemas.
 
+The STTM capacity settlement dashboard stays inside the same boundary. It
+reads the curated
+`silver.gas_model.silver_gas_fact_sttm_capacity_settlement` Parquet output
+through the shared bounded loader and session cache, then filters and
+summarizes loaded settlement run, stage, MOS/capacity component, Hub / Zone,
+Facility, Gas Day, quantity, and source coverage rows without changing
+capacity settlement ETL, source ingestion, MOS/allocation modeling, or
+settlement semantics.
+
 The customer transfer and retail activity dashboard stays inside the same
 boundary. It reads the curated
 `silver.gas_model.silver_gas_fact_customer_transfer` Parquet output through
@@ -320,6 +329,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/notebooks/pipeline_connection_operations.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_sttm_market_settlement.py`
+  - `backend-services/marimo/notebooks/gas_sttm_capacity_settlement.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/facility_flow_storage.py`
   - `backend-services/marimo/notebooks/capacity_outlook.py`

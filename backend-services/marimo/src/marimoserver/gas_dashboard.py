@@ -100,6 +100,13 @@ STTM_MARKET_SETTLEMENT_PERIOD_FILTER_ALL = "All settlement periods"
 STTM_MARKET_SETTLEMENT_STAGE_FILTER_ALL = "All settlement stages"
 STTM_MARKET_SETTLEMENT_COMPONENT_FILTER_ALL = "All settlement components"
 DEFAULT_STTM_MARKET_SETTLEMENT_PREVIEW_ROWS = 50
+STTM_CAPACITY_SETTLEMENT_TABLE_NAME = "silver_gas_fact_sttm_capacity_settlement"
+STTM_CAPACITY_SETTLEMENT_GAS_DATE_FILTER_ALL = "All gas dates"
+STTM_CAPACITY_SETTLEMENT_STAGE_FILTER_ALL = "All settlement stages"
+STTM_CAPACITY_SETTLEMENT_COMPONENT_FILTER_ALL = "All capacity settlement components"
+STTM_CAPACITY_SETTLEMENT_HUB_FILTER_ALL = "All hubs"
+STTM_CAPACITY_SETTLEMENT_FACILITY_FILTER_ALL = "All facilities"
+DEFAULT_STTM_CAPACITY_SETTLEMENT_PREVIEW_ROWS = 50
 CUSTOMER_TRANSFER_TABLE_NAME = "silver_gas_fact_customer_transfer"
 CUSTOMER_TRANSFER_GAS_DATE_FILTER_ALL = "All gas dates"
 CUSTOMER_TRANSFER_MARKET_CODE_FILTER_ALL = "All market codes"
@@ -522,6 +529,35 @@ STTM_MARKET_SETTLEMENT_TABLE_SPEC = GasTableSpec(
     ),
 )
 STTM_MARKET_SETTLEMENT_TABLE_SPECS = (STTM_MARKET_SETTLEMENT_TABLE_SPEC,)
+
+STTM_CAPACITY_SETTLEMENT_TABLE_SPEC = GasTableSpec(
+    section="Settlement",
+    label="STTM capacity settlement",
+    table_name=STTM_CAPACITY_SETTLEMENT_TABLE_NAME,
+    date_columns=(
+        "gas_date",
+        "source_last_updated_timestamp",
+        "ingested_timestamp",
+    ),
+    preview_columns=(
+        "gas_date",
+        "source_system",
+        "source_table",
+        "source_report_id",
+        "settlement_run_id",
+        "settlement_stage",
+        "capacity_settlement_component",
+        "source_hub_id",
+        "source_hub_name",
+        "source_facility_id",
+        "facility_name",
+        "quantity_gj",
+        "source_last_updated_timestamp",
+        "source_file",
+        "source_surrogate_key",
+    ),
+)
+STTM_CAPACITY_SETTLEMENT_TABLE_SPECS = (STTM_CAPACITY_SETTLEMENT_TABLE_SPEC,)
 
 CUSTOMER_TRANSFER_TABLE_SPEC = GasTableSpec(
     section="Retail activity",
@@ -1948,6 +1984,94 @@ _STTM_MARKET_SETTLEMENT_OBSERVATION_SCHEMA = {
     "facility name": pl.String,
     "quantity_gj": pl.Float64,
     "amount": pl.Float64,
+    "source system": pl.String,
+    "source table": pl.String,
+    "source report": pl.String,
+    "accepted source identifier": pl.String,
+    "source file": pl.String,
+    "source updated": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_STTM_CAPACITY_SETTLEMENT_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "date_key": pl.String,
+    "facility_key": pl.String,
+    "zone_key": pl.String,
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "source_table": pl.String,
+    "source_report_id": pl.String,
+    "gas_date": pl.Date,
+    "settlement_run_id": pl.String,
+    "settlement_stage": pl.String,
+    "capacity_settlement_component": pl.String,
+    "source_hub_id": pl.String,
+    "source_hub_name": pl.String,
+    "source_facility_id": pl.String,
+    "facility_name": pl.String,
+    "quantity_gj": pl.Float64,
+    "source_last_updated": pl.String,
+    "source_last_updated_timestamp": pl.Datetime("us"),
+    "source_surrogate_key": pl.String,
+    "source_file": pl.String,
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_STTM_CAPACITY_SETTLEMENT_KPI_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_STTM_CAPACITY_SETTLEMENT_SUMMARY_SCHEMA = {
+    "settlement run": pl.String,
+    "settlement stage": pl.String,
+    "capacity settlement component": pl.String,
+    "hub": pl.String,
+    "hub name": pl.String,
+    "facility": pl.String,
+    "facility name": pl.String,
+    "source system": pl.String,
+    "source table": pl.String,
+    "source report": pl.String,
+    "rows": pl.UInt32,
+    "gas days": pl.UInt32,
+    "quantity rows": pl.UInt32,
+    "total quantity gj": pl.Float64,
+    "min quantity gj": pl.Float64,
+    "max quantity gj": pl.Float64,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_STTM_CAPACITY_SETTLEMENT_SOURCE_COVERAGE_SCHEMA = {
+    "source system": pl.String,
+    "source table": pl.String,
+    "source report": pl.String,
+    "rows": pl.UInt32,
+    "settlement runs": pl.UInt32,
+    "settlement stages": pl.UInt32,
+    "capacity settlement components": pl.UInt32,
+    "hubs": pl.UInt32,
+    "facilities": pl.UInt32,
+    "gas days": pl.UInt32,
+    "quantity rows": pl.UInt32,
+    "source identifiers": pl.UInt32,
+    "source files": pl.UInt32,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_STTM_CAPACITY_SETTLEMENT_OBSERVATION_SCHEMA = {
+    "gas date": pl.Date,
+    "settlement run": pl.String,
+    "settlement stage": pl.String,
+    "capacity settlement component": pl.String,
+    "hub": pl.String,
+    "hub name": pl.String,
+    "facility": pl.String,
+    "facility name": pl.String,
+    "quantity_gj": pl.Float64,
     "source system": pl.String,
     "source table": pl.String,
     "source report": pl.String,
@@ -3508,6 +3632,7 @@ _GAS_DAY_KNOWN_TABLE_SPECS = (
     SCHEDULE_RUN_TABLE_SPEC,
     SETTLEMENT_ACTIVITY_TABLE_SPEC,
     STTM_MARKET_SETTLEMENT_TABLE_SPEC,
+    STTM_CAPACITY_SETTLEMENT_TABLE_SPEC,
     CUSTOMER_TRANSFER_TABLE_SPEC,
     BID_STACK_TABLE_SPEC,
     STTM_CONTINGENCY_GAS_TABLE_SPEC,
@@ -3829,6 +3954,42 @@ def cached_load_sttm_market_settlement_table(
         config,
         cache,
         specs=STTM_MARKET_SETTLEMENT_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        refresh_token=refresh_token,
+        clock=clock,
+    )[0]
+
+
+def load_sttm_capacity_settlement_table(
+    config: GasDashboardConfig,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Load the STTM capacity settlement fact through the bounded table loader."""
+    return load_gas_model_tables(
+        config,
+        specs=STTM_CAPACITY_SETTLEMENT_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        clock=clock,
+    )[0]
+
+
+def cached_load_sttm_capacity_settlement_table(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Return session-cached STTM capacity settlement rows for explicit refreshes."""
+    return cached_load_gas_model_tables(
+        config,
+        cache,
+        specs=STTM_CAPACITY_SETTLEMENT_TABLE_SPECS,
         reader=reader,
         view=GasModelTableView.RECENT,
         refresh_token=refresh_token,
@@ -9882,6 +10043,490 @@ def render_sttm_market_settlement_context_links(
     <div>
         <p class="sttm-market-settlement-links__eyebrow">Context links</p>
         <h2>Settlement, Allocation, Hub / Zone, Facility, and Gas Day context</h2>
+    </div>
+    <ul>
+{rows}
+    </ul>
+</section>"""
+
+
+def sttm_capacity_settlement_gas_date_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return gas-date filter options for loaded STTM capacity settlement rows."""
+    dataframe = _normalised_sttm_capacity_settlement_dataframe(load)
+    if dataframe.is_empty():
+        return (STTM_CAPACITY_SETTLEMENT_GAS_DATE_FILTER_ALL,)
+
+    values = sorted(
+        str(value)
+        for value in dataframe.get_column("gas_date").drop_nulls().unique().to_list()
+        if value is not None
+    )
+    return (STTM_CAPACITY_SETTLEMENT_GAS_DATE_FILTER_ALL, *reversed(values))
+
+
+def sttm_capacity_settlement_stage_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return settlement-stage filter options for capacity settlement rows."""
+    return _sttm_capacity_settlement_string_filter_options(
+        load,
+        "settlement_stage",
+        STTM_CAPACITY_SETTLEMENT_STAGE_FILTER_ALL,
+    )
+
+
+def sttm_capacity_settlement_component_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return capacity settlement component filter options."""
+    return _sttm_capacity_settlement_string_filter_options(
+        load,
+        "capacity_settlement_component",
+        STTM_CAPACITY_SETTLEMENT_COMPONENT_FILTER_ALL,
+    )
+
+
+def sttm_capacity_settlement_hub_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return Hub / Zone filter options for loaded capacity settlement rows."""
+    return _sttm_capacity_settlement_string_filter_options(
+        load,
+        "source_hub_id",
+        STTM_CAPACITY_SETTLEMENT_HUB_FILTER_ALL,
+    )
+
+
+def sttm_capacity_settlement_facility_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return Facility filter options for loaded capacity settlement rows."""
+    return _sttm_capacity_settlement_string_filter_options(
+        load,
+        "source_facility_id",
+        STTM_CAPACITY_SETTLEMENT_FACILITY_FILTER_ALL,
+    )
+
+
+def sttm_capacity_settlement_kpi_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = STTM_CAPACITY_SETTLEMENT_GAS_DATE_FILTER_ALL,
+    settlement_stage_filter: str = STTM_CAPACITY_SETTLEMENT_STAGE_FILTER_ALL,
+    capacity_component_filter: str = STTM_CAPACITY_SETTLEMENT_COMPONENT_FILTER_ALL,
+    hub_filter: str = STTM_CAPACITY_SETTLEMENT_HUB_FILTER_ALL,
+    facility_filter: str = STTM_CAPACITY_SETTLEMENT_FACILITY_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return first-viewport KPIs for loaded capacity settlement rows."""
+    dataframe = _filtered_sttm_capacity_settlement_dataframe(
+        load,
+        gas_date_filter,
+        settlement_stage_filter,
+        capacity_component_filter,
+        hub_filter,
+        facility_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_STTM_CAPACITY_SETTLEMENT_KPI_SCHEMA)
+
+    counts = dataframe.select(
+        pl.len().alias("loaded_rows"),
+        pl.col("settlement_run_id").drop_nulls().n_unique().alias("settlement_runs"),
+        pl.col("settlement_stage").drop_nulls().n_unique().alias("settlement_stages"),
+        pl.col("capacity_settlement_component")
+        .drop_nulls()
+        .n_unique()
+        .alias("components"),
+        pl.col("source_hub_id").drop_nulls().n_unique().alias("hubs"),
+        pl.col("source_facility_id").drop_nulls().n_unique().alias("facilities"),
+        pl.col("source_report_id").drop_nulls().n_unique().alias("source_reports"),
+        pl.col("gas_date").drop_nulls().n_unique().alias("gas_days"),
+        pl.col("quantity_gj").is_not_null().sum().alias("quantity_rows"),
+        pl.col("quantity_gj").sum().round(4).alias("total_quantity"),
+        pl.col("quantity_gj").min().alias("min_quantity"),
+        pl.col("quantity_gj").max().alias("max_quantity"),
+        pl.col("gas_date").max().alias("latest_gas_date"),
+        pl.col("source_surrogate_key")
+        .drop_nulls()
+        .n_unique()
+        .alias("source_identifiers"),
+    ).row(0, named=True)
+    row_limit = None if load is None else load.row_limit
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Loaded STTM capacity settlement rows",
+                "value": f"{counts['loaded_rows']:,}",
+                "detail": format_row_limit(row_limit),
+            },
+            {
+                "metric": "Settlement runs",
+                "value": f"{counts['settlement_runs']:,}",
+                "detail": "Distinct settlement_run_id values represented",
+            },
+            {
+                "metric": "Settlement stages",
+                "value": f"{counts['settlement_stages']:,}",
+                "detail": "Distinct settlement_stage values represented",
+            },
+            {
+                "metric": "Capacity settlement components",
+                "value": f"{counts['components']:,}",
+                "detail": ("Distinct capacity_settlement_component values represented"),
+            },
+            {
+                "metric": "Hubs",
+                "value": f"{counts['hubs']:,}",
+                "detail": "Distinct source_hub_id values represented",
+            },
+            {
+                "metric": "Facilities",
+                "value": f"{counts['facilities']:,}",
+                "detail": "Distinct source_facility_id values represented",
+            },
+            {
+                "metric": "Source reports",
+                "value": f"{counts['source_reports']:,}",
+                "detail": "Distinct source_report_id values represented",
+            },
+            {
+                "metric": "Gas Days",
+                "value": f"{counts['gas_days']:,}",
+                "detail": "Distinct gas_date values represented",
+            },
+            {
+                "metric": "Quantity",
+                "value": _format_measure_total(
+                    counts["total_quantity"],
+                    counts["quantity_rows"],
+                    suffix=" GJ",
+                ),
+                "detail": f"{counts['quantity_rows']:,} populated quantity_gj rows",
+            },
+            {
+                "metric": "Quantity range",
+                "value": _format_measure_range(
+                    counts["min_quantity"],
+                    counts["max_quantity"],
+                    counts["quantity_rows"],
+                ),
+                "detail": "Minimum and maximum quantity_gj in the current view",
+            },
+            {
+                "metric": "Latest Gas Day",
+                "value": _format_optional_value(counts["latest_gas_date"]),
+                "detail": "Maximum gas_date in the loaded bounded rows",
+            },
+            {
+                "metric": "Accepted source identifiers",
+                "value": f"{counts['source_identifiers']:,}",
+                "detail": "Distinct source_surrogate_key values represented",
+            },
+        ],
+        schema=_STTM_CAPACITY_SETTLEMENT_KPI_SCHEMA,
+    )
+
+
+def sttm_capacity_settlement_summary_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = STTM_CAPACITY_SETTLEMENT_GAS_DATE_FILTER_ALL,
+    settlement_stage_filter: str = STTM_CAPACITY_SETTLEMENT_STAGE_FILTER_ALL,
+    capacity_component_filter: str = STTM_CAPACITY_SETTLEMENT_COMPONENT_FILTER_ALL,
+    hub_filter: str = STTM_CAPACITY_SETTLEMENT_HUB_FILTER_ALL,
+    facility_filter: str = STTM_CAPACITY_SETTLEMENT_FACILITY_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_STTM_CAPACITY_SETTLEMENT_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return settlement-run, stage, component, hub, and facility summaries."""
+    dataframe = _filtered_sttm_capacity_settlement_dataframe(
+        load,
+        gas_date_filter,
+        settlement_stage_filter,
+        capacity_component_filter,
+        hub_filter,
+        facility_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_STTM_CAPACITY_SETTLEMENT_SUMMARY_SCHEMA)
+
+    summary = (
+        dataframe.group_by(
+            "settlement_run_id",
+            "settlement_stage",
+            "capacity_settlement_component",
+            "source_hub_id",
+            "source_hub_name",
+            "source_facility_id",
+            "facility_name",
+            "source_system",
+            "source_table",
+            "source_report_id",
+        )
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("gas_date").drop_nulls().n_unique().alias("gas days"),
+            pl.col("quantity_gj").is_not_null().sum().alias("quantity rows"),
+            pl.col("quantity_gj").sum().round(4).alias("total quantity gj"),
+            pl.col("quantity_gj").min().alias("min quantity gj"),
+            pl.col("quantity_gj").max().alias("max quantity gj"),
+            pl.col("gas_date").min().alias("first gas date"),
+            pl.col("gas_date").max().alias("latest gas date"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort(
+            [
+                "rows",
+                "latest gas date",
+                "source_system",
+                "settlement_stage",
+                "capacity_settlement_component",
+                "source_hub_id",
+                "source_facility_id",
+            ],
+            descending=[True, True, False, False, False, False, False],
+            nulls_last=True,
+        )
+        .select(
+            pl.col("settlement_run_id").alias("settlement run"),
+            pl.col("settlement_stage").alias("settlement stage"),
+            pl.col("capacity_settlement_component").alias(
+                "capacity settlement component"
+            ),
+            pl.col("source_hub_id").alias("hub"),
+            pl.col("source_hub_name").alias("hub name"),
+            pl.col("source_facility_id").alias("facility"),
+            pl.col("facility_name").alias("facility name"),
+            pl.col("source_system").alias("source system"),
+            pl.col("source_table").alias("source table"),
+            pl.col("source_report_id").alias("source report"),
+            pl.col("rows"),
+            pl.col("gas days"),
+            pl.col("quantity rows"),
+            pl.col("total quantity gj"),
+            pl.col("min quantity gj"),
+            pl.col("max quantity gj"),
+            pl.col("first gas date"),
+            pl.col("latest gas date"),
+            pl.col("latest source update"),
+            pl.col("latest ingest"),
+        )
+        .head(max(1, preview_rows))
+    )
+    return summary.select([*list(_STTM_CAPACITY_SETTLEMENT_SUMMARY_SCHEMA)])
+
+
+def sttm_capacity_settlement_source_coverage_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = STTM_CAPACITY_SETTLEMENT_GAS_DATE_FILTER_ALL,
+    settlement_stage_filter: str = STTM_CAPACITY_SETTLEMENT_STAGE_FILTER_ALL,
+    capacity_component_filter: str = STTM_CAPACITY_SETTLEMENT_COMPONENT_FILTER_ALL,
+    hub_filter: str = STTM_CAPACITY_SETTLEMENT_HUB_FILTER_ALL,
+    facility_filter: str = STTM_CAPACITY_SETTLEMENT_FACILITY_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return source coverage for loaded STTM capacity settlement rows."""
+    dataframe = _filtered_sttm_capacity_settlement_dataframe(
+        load,
+        gas_date_filter,
+        settlement_stage_filter,
+        capacity_component_filter,
+        hub_filter,
+        facility_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_STTM_CAPACITY_SETTLEMENT_SOURCE_COVERAGE_SCHEMA)
+
+    source_coverage = (
+        dataframe.group_by("source_system", "source_table", "source_report_id")
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("settlement_run_id")
+            .drop_nulls()
+            .n_unique()
+            .alias("settlement runs"),
+            pl.col("settlement_stage")
+            .drop_nulls()
+            .n_unique()
+            .alias("settlement stages"),
+            pl.col("capacity_settlement_component")
+            .drop_nulls()
+            .n_unique()
+            .alias("capacity settlement components"),
+            pl.col("source_hub_id").drop_nulls().n_unique().alias("hubs"),
+            pl.col("source_facility_id").drop_nulls().n_unique().alias("facilities"),
+            pl.col("gas_date").drop_nulls().n_unique().alias("gas days"),
+            pl.col("quantity_gj").is_not_null().sum().alias("quantity rows"),
+            pl.col("source_surrogate_key")
+            .drop_nulls()
+            .n_unique()
+            .alias("source identifiers"),
+            pl.col("source_file").drop_nulls().n_unique().alias("source files"),
+            pl.col("gas_date").min().alias("first gas date"),
+            pl.col("gas_date").max().alias("latest gas date"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort(["rows", "source_table"], descending=[True, False])
+        .rename(
+            {
+                "source_system": "source system",
+                "source_table": "source table",
+                "source_report_id": "source report",
+            }
+        )
+    )
+    return source_coverage.select(
+        [*list(_STTM_CAPACITY_SETTLEMENT_SOURCE_COVERAGE_SCHEMA)]
+    )
+
+
+def sttm_capacity_settlement_observation_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = STTM_CAPACITY_SETTLEMENT_GAS_DATE_FILTER_ALL,
+    settlement_stage_filter: str = STTM_CAPACITY_SETTLEMENT_STAGE_FILTER_ALL,
+    capacity_component_filter: str = STTM_CAPACITY_SETTLEMENT_COMPONENT_FILTER_ALL,
+    hub_filter: str = STTM_CAPACITY_SETTLEMENT_HUB_FILTER_ALL,
+    facility_filter: str = STTM_CAPACITY_SETTLEMENT_FACILITY_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_STTM_CAPACITY_SETTLEMENT_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return filtered STTM capacity settlement observations."""
+    dataframe = _filtered_sttm_capacity_settlement_dataframe(
+        load,
+        gas_date_filter,
+        settlement_stage_filter,
+        capacity_component_filter,
+        hub_filter,
+        facility_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_STTM_CAPACITY_SETTLEMENT_OBSERVATION_SCHEMA)
+
+    return (
+        dataframe.sort(
+            [
+                "gas_date",
+                "source_last_updated_timestamp",
+                "settlement_run_id",
+                "settlement_stage",
+                "capacity_settlement_component",
+                "source_hub_id",
+                "source_facility_id",
+            ],
+            descending=[True, True, False, False, False, False, False],
+            nulls_last=True,
+        )
+        .select(
+            pl.col("gas_date").alias("gas date"),
+            pl.col("settlement_run_id").alias("settlement run"),
+            pl.col("settlement_stage").alias("settlement stage"),
+            pl.col("capacity_settlement_component").alias(
+                "capacity settlement component"
+            ),
+            pl.col("source_hub_id").alias("hub"),
+            pl.col("source_hub_name").alias("hub name"),
+            pl.col("source_facility_id").alias("facility"),
+            pl.col("facility_name").alias("facility name"),
+            pl.col("quantity_gj"),
+            pl.col("source_system").alias("source system"),
+            pl.col("source_table").alias("source table"),
+            pl.col("source_report_id").alias("source report"),
+            pl.col("source_surrogate_key").alias("accepted source identifier"),
+            pl.col("source_file").alias("source file"),
+            pl.col("source_last_updated_timestamp").alias("source updated"),
+            pl.col("ingested_timestamp").alias("latest ingest"),
+        )
+        .head(max(1, preview_rows))
+    )
+
+
+def sttm_capacity_settlement_empty_state_markdown(load: GasTableLoad | None) -> str:
+    """Return empty-state copy for missing or unmatched capacity settlement rows."""
+    table_label = _markdown_breakable_text(
+        "silver.gas_model.silver_gas_fact_sttm_capacity_settlement"
+    )
+    if load is None:
+        status_detail = (
+            "The dashboard did not receive an STTM capacity settlement load result."
+        )
+        uri = table_label
+        read_policy = "No read policy was reported."
+    else:
+        if load.error is not None:
+            status_detail = f"Read detail: {_markdown_breakable_text(load.error)}"
+        elif load.dataframe is None or load.dataframe.is_empty():
+            status_detail = "The table loaded successfully but returned no rows."
+        else:
+            status_detail = (
+                "The current filters do not match any loaded STTM capacity "
+                "settlement rows."
+            )
+        uri = _markdown_breakable_text(load.uri)
+        read_policy = row_limit_message(load.row_limit)
+
+    return f"""
+    **No STTM capacity settlement data is available for this view.**
+
+    The dashboard checked {uri}, which should contain {table_label} rows with
+    settlement run, settlement stage, capacity settlement component,
+    Hub / Zone, Facility, Gas Day, quantity, source-system, source-table, and
+    accepted source identifier fields.
+
+    {status_detail}
+
+    {read_policy}
+
+    Materialize or seed the `silver.gas_model` STTM capacity settlement asset,
+    then use **Refresh data**.
+    """
+
+
+def render_sttm_capacity_settlement_context_links(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render STTM capacity settlement links to related Market context panels."""
+    candidate_entries = tuple(dashboard_registry() if entries is None else entries)
+    concept_ids = (
+        "sttm-capacity-settlement",
+        "sttm-market-settlement",
+        "capacity-context",
+        "settlement-context",
+        "mos-context",
+        "allocation-context",
+        "facility-context",
+        "hub-zone-context",
+        "gas-model-table-explorer",
+    )
+    rows = "\n".join(
+        _render_sttm_capacity_settlement_context_link(entry)
+        for entry in (
+            registry_entry_by_concept_id(concept_id, candidate_entries)
+            for concept_id in concept_ids
+        )
+        if entry is not None
+    )
+    if rows == "":
+        rows = (
+            '<li class="sttm-capacity-settlement-links__empty">'
+            "No STTM capacity settlement, STTM market settlement, Capacity, "
+            "Settlement, MOS, Allocation, Facility, Hub / Zone, or table "
+            "explorer context entries are registered."
+            "</li>"
+        )
+
+    return f"""\
+<style>
+{_sttm_capacity_settlement_context_links_css()}
+</style>
+<section
+    class="sttm-capacity-settlement-links"
+    aria-label="STTM capacity settlement context links"
+>
+    <div>
+        <p class="sttm-capacity-settlement-links__eyebrow">Context links</p>
+        <h2>Capacity settlement, market settlement, MOS, Allocation, Facility, and Hub / Zone context</h2>
     </div>
     <ul>
 {rows}
@@ -18699,6 +19344,196 @@ def _sttm_market_settlement_context_links_css() -> str:
 
 @media (max-width: 760px) {
     .sttm-market-settlement-links li {
+        grid-template-columns: 1fr;
+    }
+}
+"""
+
+
+def _sttm_capacity_settlement_string_filter_options(
+    load: GasTableLoad | None,
+    column: str,
+    all_label: str,
+) -> tuple[str, ...]:
+    dataframe = _normalised_sttm_capacity_settlement_dataframe(load)
+    if dataframe.is_empty() or column not in dataframe.columns:
+        return (all_label,)
+
+    values = sorted(
+        str(value)
+        for value in dataframe.get_column(column)
+        .drop_nulls()
+        .cast(pl.String, strict=False)
+        .unique()
+        .to_list()
+        if value is not None and str(value).strip() != ""
+    )
+    return (all_label, *values)
+
+
+def _filtered_sttm_capacity_settlement_dataframe(
+    load: GasTableLoad | None,
+    gas_date_filter: str,
+    settlement_stage_filter: str,
+    capacity_component_filter: str,
+    hub_filter: str,
+    facility_filter: str,
+) -> pl.DataFrame:
+    dataframe = _normalised_sttm_capacity_settlement_dataframe(load)
+    if dataframe.is_empty():
+        return dataframe
+
+    filtered = dataframe
+    if gas_date_filter != STTM_CAPACITY_SETTLEMENT_GAS_DATE_FILTER_ALL:
+        filtered = filtered.filter(
+            pl.col("gas_date").cast(pl.String) == gas_date_filter
+        )
+    if settlement_stage_filter != STTM_CAPACITY_SETTLEMENT_STAGE_FILTER_ALL:
+        filtered = filtered.filter(
+            pl.col("settlement_stage") == settlement_stage_filter
+        )
+    if capacity_component_filter != STTM_CAPACITY_SETTLEMENT_COMPONENT_FILTER_ALL:
+        filtered = filtered.filter(
+            pl.col("capacity_settlement_component") == capacity_component_filter
+        )
+    if hub_filter != STTM_CAPACITY_SETTLEMENT_HUB_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_hub_id") == hub_filter)
+    if facility_filter != STTM_CAPACITY_SETTLEMENT_FACILITY_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_facility_id") == facility_filter)
+    return filtered
+
+
+def _normalised_sttm_capacity_settlement_dataframe(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_STTM_CAPACITY_SETTLEMENT_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _STTM_CAPACITY_SETTLEMENT_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("surrogate_key").cast(pl.String, strict=False),
+        pl.col("date_key").cast(pl.String, strict=False),
+        pl.col("facility_key").cast(pl.String, strict=False),
+        pl.col("zone_key").cast(pl.String, strict=False),
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        pl.col("source_table").cast(pl.String, strict=False),
+        pl.col("source_report_id").cast(pl.String, strict=False),
+        _normalise_date_column(dataframe, "gas_date"),
+        pl.col("settlement_run_id").cast(pl.String, strict=False),
+        pl.col("settlement_stage").cast(pl.String, strict=False),
+        pl.col("capacity_settlement_component").cast(pl.String, strict=False),
+        pl.col("source_hub_id").cast(pl.String, strict=False),
+        pl.col("source_hub_name").cast(pl.String, strict=False),
+        pl.col("source_facility_id").cast(pl.String, strict=False),
+        pl.col("facility_name").cast(pl.String, strict=False),
+        pl.col("quantity_gj").cast(pl.Float64, strict=False),
+        pl.col("source_last_updated").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "source_last_updated_timestamp"),
+        pl.col("source_surrogate_key").cast(pl.String, strict=False),
+        pl.col("source_file").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
+def _render_sttm_capacity_settlement_context_link(
+    entry: DashboardRegistryEntry,
+) -> str:
+    status_label = _dashboard_entry_status_label(entry)
+    title = escape(entry.title)
+    route = entry.notebook_route
+    if entry.status.value == "available" and route is not None:
+        title_html = f'<a href="{escape(route, quote=True)}">{title}</a>'
+    else:
+        title_html = f"<span>{title}</span>"
+
+    return f"""\
+        <li data-dashboard-status="{escape(entry.status.value, quote=True)}">
+            {title_html}
+            <span>{escape(status_label)}</span>
+            <code>{escape(entry.concept_id)}</code>
+        </li>"""
+
+
+def _sttm_capacity_settlement_context_links_css() -> str:
+    return """\
+.sttm-capacity-settlement-links {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+}
+
+.sttm-capacity-settlement-links__eyebrow {
+    margin: 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.74rem;
+    font-weight: 720;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.sttm-capacity-settlement-links h2 {
+    margin: 0.15rem 0 0;
+    font-size: 1.05rem;
+}
+
+.sttm-capacity-settlement-links ul {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.sttm-capacity-settlement-links li {
+    display: grid;
+    grid-template-columns: minmax(10rem, 1fr) auto auto;
+    gap: 0.65rem;
+    align-items: center;
+    min-width: 0;
+    padding: 0.55rem 0;
+    border-top: 1px solid var(--emdl-line, #cfdbd6);
+}
+
+.sttm-capacity-settlement-links li:first-child {
+    border-top: 0;
+}
+
+.sttm-capacity-settlement-links a {
+    color: var(--emdl-blue, #166791);
+    font-weight: 720;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+}
+
+.sttm-capacity-settlement-links span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.sttm-capacity-settlement-links li > span:nth-child(2) {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.sttm-capacity-settlement-links code {
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+    .sttm-capacity-settlement-links li {
         grid-template-columns: 1fr;
     }
 }

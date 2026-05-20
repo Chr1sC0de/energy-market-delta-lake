@@ -1272,6 +1272,40 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
     },
     {
+        "concept_id": "sttm-capacity-settlement",
+        "title": "STTM Capacity Settlement",
+        "description": (
+            "Available analytical dashboard for STTM capacity settlement rows, "
+            "settlement runs, settlement stages, MOS and capacity components, "
+            "Hub / Zone and Facility identifiers, Gas Day filters, quantities, "
+            "and source coverage from the curated STTM capacity settlement fact."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "gas_sttm_capacity_settlement",
+        "backing_assets": (
+            "silver.gas_model.silver_gas_fact_sttm_capacity_settlement",
+        ),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/settlement.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/mos.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/allocation.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md",
+        ),
+        "source_chunk_ids": (
+            "chunk-gbb-guide-gas-day",
+            "chunk-gbb-guide-nodes-facilities",
+            "chunk-sttm-procedures-definitions",
+            "chunk-sttm-procedures-settlement-terms",
+            "chunk-sttm-procedures-mos-estimates",
+            "chunk-sttm-procedures-mos-settlement",
+            "chunk-sttm-procedures-capacity-settlement",
+        ),
+    },
+    {
         "concept_id": "capacity-context",
         "title": "Capacity Context",
         "description": (
