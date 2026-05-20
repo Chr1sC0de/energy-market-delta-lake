@@ -37,6 +37,10 @@ from marimoserver.gas_dashboard import (
     CONNECTION_POINT_FLOW_TABLE_NAME,
     CONNECTION_POINT_TABLE_SPECS,
     CAPACITY_CONTEXT_ID,
+    CAPACITY_AUCTION_CONTEXT_ID,
+    CAPACITY_AUCTION_SOURCE_SYSTEM_FILTER_ALL,
+    CAPACITY_AUCTION_TABLE_NAME,
+    CAPACITY_AUCTION_TABLE_SPEC,
     CAPACITY_OUTLOOK_FACILITY_FILTER_ALL,
     CAPACITY_OUTLOOK_SOURCE_SYSTEM_FILTER_ALL,
     CAPACITY_OUTLOOK_TABLE_NAME,
@@ -142,6 +146,7 @@ from marimoserver.gas_dashboard import (
     bid_stack_zone_options,
     cached_load_customer_transfer_table,
     cached_load_bid_stack_table,
+    cached_load_capacity_auction_table,
     cached_load_capacity_outlook_table,
     cached_load_connection_point_context_tables,
     cached_load_facility_context_tables,
@@ -172,6 +177,16 @@ from marimoserver.gas_dashboard import (
     customer_transfer_source_coverage_frame,
     customer_transfer_source_system_options,
     customer_transfer_summary_frame,
+    capacity_auction_auction_date_options,
+    capacity_auction_capacity_period_options,
+    capacity_auction_empty_state_markdown,
+    capacity_auction_kpi_frame,
+    capacity_auction_metric_frame,
+    capacity_auction_metric_options,
+    capacity_auction_observation_frame,
+    capacity_auction_source_system_options,
+    capacity_auction_summary_frame,
+    capacity_auction_zone_options,
     capacity_outlook_capacity_type_options,
     capacity_outlook_date_range_options,
     capacity_outlook_direction_options,
@@ -247,6 +262,7 @@ from marimoserver.gas_dashboard import (
     hub_zone_table_specs,
     load_market_price_table,
     load_bid_stack_table,
+    load_capacity_auction_table,
     load_capacity_outlook_table,
     load_connection_point_context_tables,
     load_customer_transfer_table,
@@ -318,6 +334,7 @@ from marimoserver.gas_dashboard import (
     read_parquet_table,
     render_dashboard_context_panel,
     render_bid_stack_context_links,
+    render_capacity_auction_context_links,
     render_capacity_outlook_context_links,
     render_connection_point_context_links,
     render_customer_transfer_context_links,
@@ -3165,6 +3182,321 @@ def test_context_links_render_planned_entries_without_routes() -> None:
     assert "<span>Capacity Context</span>" in facility_flow_links
     assert "<span>Capacity Context</span>" in facility_links
     assert "<span>Capacity Context</span>" in connection_point_links
+
+
+def test_capacity_auction_metadata_and_loader_use_recent_bounded_rows() -> None:
+    entry = registry_entry_by_concept_id(CAPACITY_AUCTION_CONTEXT_ID)
+    html = render_dashboard_context_panel(CAPACITY_AUCTION_CONTEXT_ID)
+    context_links = render_capacity_auction_context_links()
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "13",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    load = load_capacity_auction_table(config, reader=reader)
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "capacity_auction"
+    assert entry.notebook_route == "/marimo/capacity_auction/"
+    assert entry.backing_assets == (
+        "silver.gas_model.silver_gas_fact_capacity_auction",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md"
+        in entry.generated_gold_paths
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md"
+        in entry.generated_gold_paths
+    )
+    assert "chunk-sttm-procedures-capacity-settlement" in entry.source_chunk_ids
+    assert "Capacity Auctions" in html
+    assert 'data-status="available"' in html
+    assert 'href="/marimo/capacity_auction/"' in context_links
+    assert 'href="/marimo/capacity_outlook/"' in context_links
+    assert "Hub / Zone Context" in context_links
+    assert "Gas Market Overview" in context_links
+    assert load.spec == CAPACITY_AUCTION_TABLE_SPEC
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_capacity_auction",
+            13,
+        )
+    ]
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert uri.endswith(f"/{CAPACITY_AUCTION_TABLE_NAME}")
+        assert storage_options == config.storage_options()
+        assert row_limit == 13
+        cached_calls += 1
+        return pl.DataFrame({"source_system": ["VICGAS"]})
+
+    first_cached = cached_load_capacity_auction_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_capacity_auction_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_capacity_auction_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 2
+    assert not first_cached.cache_hit
+    assert second_cached.cache_hit
+    assert not refreshed.cache_hit
+
+
+def test_capacity_auction_helpers_summarize_filters_and_metrics() -> None:
+    load = _capacity_auction_load(
+        pl.DataFrame(
+            {
+                "source_system": ["VICGAS", "VICGAS", "VICGAS", "VICGAS"],
+                "source_tables": [
+                    ["silver.vicgas.silver_int339_v4_ccauction_bid_stack_1"],
+                    ["silver.vicgas.silver_int353_v4_ccauction_qty_won_1"],
+                    ["silver.vicgas.silver_int348_v4_cctransfer_1"],
+                    [],
+                ],
+                "source_table": [
+                    "silver.vicgas.silver_int339_v4_ccauction_bid_stack_1",
+                    "silver.vicgas.silver_int353_v4_ccauction_qty_won_1",
+                    "silver.vicgas.silver_int348_v4_cctransfer_1",
+                    None,
+                ],
+                "auction_id": ["A1", "A1", "A2", None],
+                "auction_date": [
+                    date(2024, 1, 1),
+                    date(2024, 1, 1),
+                    date(2024, 2, 1),
+                    None,
+                ],
+                "source_zone_id": ["Z1", "Z1", "Z2", None],
+                "zone_name": ["Sydney", "Sydney", "Brisbane", None],
+                "zone_type": ["STTM", "STTM", "STTM", None],
+                "capacity_period": ["Apr-2026", "Apr-2026", None, None],
+                "start_date": [
+                    None,
+                    date(2024, 4, 1),
+                    date(2024, 3, 1),
+                    None,
+                ],
+                "end_date": [
+                    None,
+                    date(2024, 4, 30),
+                    date(2024, 3, 31),
+                    None,
+                ],
+                "auction_metric": [
+                    "bid_stack",
+                    "quantity_won",
+                    "transfer",
+                    "zone_reference",
+                ],
+                "quantity_gj": [10.0, 20.0, 30.0, None],
+                "price": [1.0, 7.0, None, None],
+                "source_surrogate_key": ["src-1", "src-2", "src-3", "src-4"],
+                "source_file": ["capacity-auction.csv"] * 4,
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 1, 8),
+                    datetime(2024, 1, 2, 8),
+                    datetime(2024, 1, 3, 8),
+                    datetime(2024, 1, 4, 8),
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 1, 9),
+                    datetime(2024, 1, 2, 9),
+                    datetime(2024, 1, 3, 9),
+                    datetime(2024, 1, 4, 9),
+                ],
+            }
+        ),
+        row_limit=4,
+    )
+
+    kpi_values = {
+        row["metric"]: row["value"]
+        for row in capacity_auction_kpi_frame(load).to_dicts()
+    }
+    filtered_summary = capacity_auction_summary_frame(
+        load,
+        auction_date_filter="2024-01-01",
+        zone_filter="Sydney (Z1)",
+        capacity_period_filter="Apr-2026",
+        metric_filter="quantity_won",
+        source_system_filter="VICGAS",
+    )
+    metric_summary = capacity_auction_metric_frame(load)
+    observations = capacity_auction_observation_frame(load, preview_rows=10)
+
+    assert kpi_values["Loaded auction rows"] == "4"
+    assert kpi_values["Auction IDs"] == "2"
+    assert kpi_values["Capacity periods"] == "3"
+    assert kpi_values["Quantity"] == "60 GJ"
+    assert kpi_values["Price range"] == "1 to 7"
+    assert "2024-01-01" in capacity_auction_auction_date_options(load)
+    assert "(missing)" in capacity_auction_auction_date_options(load)
+    assert "Sydney (Z1)" in capacity_auction_zone_options(load)
+    assert "(missing Hub / Zone)" in capacity_auction_zone_options(load)
+    assert "Apr-2026" in capacity_auction_capacity_period_options(load)
+    assert "2024-03-01 to 2024-03-31" in (
+        capacity_auction_capacity_period_options(load)
+    )
+    assert "quantity_won" in capacity_auction_metric_options(load)
+    assert capacity_auction_source_system_options(load) == (
+        CAPACITY_AUCTION_SOURCE_SYSTEM_FILTER_ALL,
+        "VICGAS",
+    )
+    assert filtered_summary.height == 1
+    assert filtered_summary.row(0, named=True)["auction metric"] == "quantity_won"
+    assert filtered_summary.row(0, named=True)["total quantity gj"] == 20.0
+    assert {row["auction metric"] for row in metric_summary.to_dicts()} == {
+        "bid_stack",
+        "quantity_won",
+        "transfer",
+        "zone_reference",
+    }
+    assert (
+        observations.select(
+            "auction id",
+            "auction date",
+            "zone",
+            "capacity period",
+            "auction metric",
+            "quantity_gj",
+            "price",
+        ).height
+        == 4
+    )
+
+
+def test_capacity_auction_helpers_cover_missing_data_and_empty_states() -> None:
+    missing_columns_load = _capacity_auction_load(
+        pl.DataFrame(
+            {
+                "source_system": ["VICGAS"],
+                "auction_metric": ["system_capability"],
+            }
+        ),
+        row_limit=4,
+    )
+    unavailable_load = GasTableLoad(
+        spec=CAPACITY_AUCTION_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_capacity_auction",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=4,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+    empty_load = _capacity_auction_load(pl.DataFrame(), row_limit=4)
+    fallback_load = _capacity_auction_load(
+        pl.DataFrame(
+            [
+                {
+                    "source_system": "VICGAS",
+                    "zone_name": "Name Only",
+                    "auction_metric": "start_only",
+                    "start_date": date(2024, 5, 1),
+                },
+                {
+                    "source_system": "VICGAS",
+                    "source_zone_id": "Z9",
+                    "auction_metric": "end_only",
+                    "end_date": date(2024, 6, 1),
+                },
+            ]
+        )
+    )
+    planned_capacity_auction = DashboardRegistryEntry(
+        concept_id=CAPACITY_AUCTION_CONTEXT_ID,
+        title="Capacity Auctions",
+        description="Planned capacity auction dashboard.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.PLANNED,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.silver_gas_fact_capacity_auction",),
+        generated_gold_paths=(
+            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
+        ),
+        source_chunks=(),
+    )
+
+    kpis = capacity_auction_kpi_frame(missing_columns_load)
+    summary = capacity_auction_summary_frame(missing_columns_load)
+    observations = capacity_auction_observation_frame(missing_columns_load)
+    filtered = capacity_auction_metric_frame(
+        missing_columns_load,
+        zone_filter="missing",
+    )
+    unavailable_markdown = capacity_auction_empty_state_markdown(unavailable_load)
+    empty_markdown = capacity_auction_empty_state_markdown(empty_load)
+    filtered_markdown = capacity_auction_empty_state_markdown(missing_columns_load)
+    missing_load_markdown = capacity_auction_empty_state_markdown(None)
+    empty_context_links = render_capacity_auction_context_links(entries=())
+    planned_context_links = render_capacity_auction_context_links(
+        entries=(planned_capacity_auction,)
+    )
+    fallback_zone_options = capacity_auction_zone_options(fallback_load)
+    fallback_period_options = capacity_auction_capacity_period_options(fallback_load)
+
+    assert kpis.row(0, named=True)["value"] == "1"
+    assert summary.row(0, named=True)["auction metric"] == "system_capability"
+    assert summary.row(0, named=True)["zone"] == "(missing Hub / Zone)"
+    assert observations.row(0, named=True)["quantity_gj"] is None
+    assert filtered.is_empty()
+    assert capacity_auction_kpi_frame(empty_load).is_empty()
+    assert capacity_auction_summary_frame(empty_load).is_empty()
+    assert capacity_auction_observation_frame(empty_load).is_empty()
+    assert capacity_auction_zone_options(empty_load) == ("All zones",)
+    assert "Name Only" in fallback_zone_options
+    assert "Z9" in fallback_zone_options
+    assert "from 2024-05-01" in fallback_period_options
+    assert "to 2024-06-01" in fallback_period_options
+    assert "No capacity auction data is available" in unavailable_markdown
+    assert "FileNotFoundError: no parquet files found" in unavailable_markdown
+    assert "The table loaded successfully but returned no rows" in empty_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert "did not receive a capacity auction load" in missing_load_markdown
+    assert (
+        "No Capacity Auction, Capacity, Hub / Zone, market overview, "
+        "source coverage, source lineage, or table explorer entries are "
+        "registered."
+    ) in empty_context_links
+    assert 'data-dashboard-status="planned"' in planned_context_links
+    assert "<span>Capacity Auctions</span>" in planned_context_links
 
 
 def test_linepack_helpers_summarize_quantities_adequacy_and_sources() -> None:
@@ -10621,6 +10953,22 @@ def _capacity_outlook_load(
     return GasTableLoad(
         spec=CAPACITY_OUTLOOK_TABLE_SPEC,
         uri=f"s3://bucket/silver/gas_model/{CAPACITY_OUTLOOK_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _capacity_auction_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=CAPACITY_AUCTION_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{CAPACITY_AUCTION_TABLE_NAME}",
         dataframe=dataframe,
         error=None,
         row_limit=row_limit,

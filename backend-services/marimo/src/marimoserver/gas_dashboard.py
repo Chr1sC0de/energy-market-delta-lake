@@ -146,6 +146,14 @@ CAPACITY_OUTLOOK_FACILITY_FILTER_ALL = "All facilities"
 CAPACITY_OUTLOOK_SOURCE_COVERAGE_FILTER_ALL = "All capacity source coverage"
 CAPACITY_OUTLOOK_SOURCE_SYSTEM_FILTER_ALL = "All source systems"
 DEFAULT_CAPACITY_OUTLOOK_PREVIEW_ROWS = 50
+CAPACITY_AUCTION_CONTEXT_ID = "capacity-auctions"
+CAPACITY_AUCTION_TABLE_NAME = "silver_gas_fact_capacity_auction"
+CAPACITY_AUCTION_AUCTION_DATE_FILTER_ALL = "All auction dates"
+CAPACITY_AUCTION_ZONE_FILTER_ALL = "All zones"
+CAPACITY_AUCTION_CAPACITY_PERIOD_FILTER_ALL = "All capacity periods"
+CAPACITY_AUCTION_METRIC_FILTER_ALL = "All auction metrics"
+CAPACITY_AUCTION_SOURCE_SYSTEM_FILTER_ALL = "All source systems"
+DEFAULT_CAPACITY_AUCTION_PREVIEW_ROWS = 50
 DEFAULT_FACILITY_PREVIEW_ROWS = 50
 DEFAULT_HUB_ZONE_PREVIEW_ROWS = 50
 DEFAULT_CONNECTION_POINT_PREVIEW_ROWS = 50
@@ -525,6 +533,35 @@ LINEPACK_TABLE_SPEC = GasTableSpec(
     ),
 )
 
+CAPACITY_AUCTION_TABLE_SPEC = GasTableSpec(
+    section="Flow and capacity",
+    label="Capacity auction",
+    table_name=CAPACITY_AUCTION_TABLE_NAME,
+    date_columns=(
+        "auction_date",
+        "start_date",
+        "end_date",
+        "source_last_updated_timestamp",
+        "ingested_timestamp",
+    ),
+    preview_columns=(
+        "auction_id",
+        "auction_date",
+        "source_system",
+        "source_table",
+        "source_zone_id",
+        "zone_name",
+        "zone_type",
+        "capacity_period",
+        "start_date",
+        "end_date",
+        "auction_metric",
+        "quantity_gj",
+        "price",
+    ),
+)
+CAPACITY_AUCTION_TABLE_SPECS = (CAPACITY_AUCTION_TABLE_SPEC,)
+
 GAS_MODEL_TABLES: tuple[GasTableSpec, ...] = (
     MARKET_PRICE_TABLE_SPEC,
     SCHEDULE_RUN_TABLE_SPEC,
@@ -592,22 +629,7 @@ GAS_MODEL_TABLES: tuple[GasTableSpec, ...] = (
             "capacity_quantity_tj",
         ),
     ),
-    GasTableSpec(
-        section="Flow and capacity",
-        label="Capacity auction",
-        table_name="silver_gas_fact_capacity_auction",
-        date_columns=("auction_date", "start_date", "end_date"),
-        preview_columns=(
-            "auction_date",
-            "source_system",
-            "source_table",
-            "auction_id",
-            "zone_name",
-            "auction_metric",
-            "quantity_gj",
-            "price",
-        ),
-    ),
+    CAPACITY_AUCTION_TABLE_SPEC,
 )
 
 SYSTEM_NOTICE_TABLE_SPEC = GasTableSpec(
@@ -2369,6 +2391,99 @@ _CAPACITY_OUTLOOK_OBSERVATION_SCHEMA = {
     "source updated": pl.Datetime("us"),
     "latest ingest": pl.Datetime("us"),
 }
+_CAPACITY_AUCTION_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "date_key": pl.String,
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "source_table": pl.String,
+    "auction_id": pl.String,
+    "auction_date": pl.Date,
+    "source_zone_id": pl.String,
+    "zone_name": pl.String,
+    "zone_type": pl.String,
+    "capacity_period": pl.String,
+    "start_date": pl.Date,
+    "end_date": pl.Date,
+    "auction_metric": pl.String,
+    "quantity_gj": pl.Float64,
+    "price": pl.Float64,
+    "source_last_updated": pl.String,
+    "source_last_updated_timestamp": pl.Datetime("us"),
+    "source_surrogate_key": pl.String,
+    "source_file": pl.String,
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_CAPACITY_AUCTION_DASHBOARD_ROW_SCHEMA = {
+    **_CAPACITY_AUCTION_RAW_SCHEMA,
+    "source_table": pl.String,
+    "auction_date_label": pl.String,
+    "zone": pl.String,
+    "capacity_period_label": pl.String,
+}
+_CAPACITY_AUCTION_KPI_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_CAPACITY_AUCTION_SUMMARY_SCHEMA = {
+    "auction id": pl.String,
+    "auction date": pl.Date,
+    "zone": pl.String,
+    "capacity period": pl.String,
+    "auction metric": pl.String,
+    "rows": pl.UInt32,
+    "source systems": pl.UInt32,
+    "source tables": pl.UInt32,
+    "quantity rows": pl.UInt32,
+    "total quantity gj": pl.Float64,
+    "avg quantity gj": pl.Float64,
+    "price rows": pl.UInt32,
+    "min price": pl.Float64,
+    "avg price": pl.Float64,
+    "max price": pl.Float64,
+    "period start": pl.Date,
+    "period end": pl.Date,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_CAPACITY_AUCTION_METRIC_SCHEMA = {
+    "auction metric": pl.String,
+    "source system": pl.String,
+    "source table": pl.String,
+    "rows": pl.UInt32,
+    "auction ids": pl.UInt32,
+    "auction dates": pl.UInt32,
+    "zones": pl.UInt32,
+    "capacity periods": pl.UInt32,
+    "quantity rows": pl.UInt32,
+    "total quantity gj": pl.Float64,
+    "price rows": pl.UInt32,
+    "min price": pl.Float64,
+    "max price": pl.Float64,
+    "source files": pl.UInt32,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_CAPACITY_AUCTION_OBSERVATION_SCHEMA = {
+    "auction id": pl.String,
+    "auction date": pl.Date,
+    "zone": pl.String,
+    "source zone id": pl.String,
+    "zone type": pl.String,
+    "capacity period": pl.String,
+    "start date": pl.Date,
+    "end date": pl.Date,
+    "auction metric": pl.String,
+    "quantity_gj": pl.Float64,
+    "price": pl.Float64,
+    "source system": pl.String,
+    "source table": pl.String,
+    "source identifier": pl.String,
+    "source file": pl.String,
+    "source updated": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
 _FACILITY_COVERAGE_SCHEMA = {
     "metric": pl.String,
     "value": pl.String,
@@ -3403,6 +3518,42 @@ def cached_load_capacity_outlook_table(
         config,
         cache,
         specs=CAPACITY_OUTLOOK_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        refresh_token=refresh_token,
+        clock=clock,
+    )[0]
+
+
+def load_capacity_auction_table(
+    config: GasDashboardConfig,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Load the capacity auction fact through the shared bounded loader."""
+    return load_gas_model_tables(
+        config,
+        specs=CAPACITY_AUCTION_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        clock=clock,
+    )[0]
+
+
+def cached_load_capacity_auction_table(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Return session-cached capacity auction rows for explicit refreshes."""
+    return cached_load_gas_model_tables(
+        config,
+        cache,
+        specs=CAPACITY_AUCTION_TABLE_SPECS,
         reader=reader,
         view=GasModelTableView.RECENT,
         refresh_token=refresh_token,
@@ -10734,6 +10885,444 @@ def render_capacity_outlook_context_links(
 </section>"""
 
 
+def capacity_auction_auction_date_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return auction-date filter options for loaded capacity auction rows."""
+    return _capacity_auction_string_filter_options(
+        load,
+        "auction_date_label",
+        CAPACITY_AUCTION_AUCTION_DATE_FILTER_ALL,
+    )
+
+
+def capacity_auction_zone_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return Hub / Zone filter options for loaded capacity auction rows."""
+    return _capacity_auction_string_filter_options(
+        load,
+        "zone",
+        CAPACITY_AUCTION_ZONE_FILTER_ALL,
+    )
+
+
+def capacity_auction_capacity_period_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return capacity-period filter options for loaded auction rows."""
+    return _capacity_auction_string_filter_options(
+        load,
+        "capacity_period_label",
+        CAPACITY_AUCTION_CAPACITY_PERIOD_FILTER_ALL,
+    )
+
+
+def capacity_auction_metric_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return auction-metric filter options for loaded capacity auction rows."""
+    return _capacity_auction_string_filter_options(
+        load,
+        "auction_metric",
+        CAPACITY_AUCTION_METRIC_FILTER_ALL,
+    )
+
+
+def capacity_auction_source_system_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return source-system filter options for loaded capacity auction rows."""
+    return _capacity_auction_string_filter_options(
+        load,
+        "source_system",
+        CAPACITY_AUCTION_SOURCE_SYSTEM_FILTER_ALL,
+    )
+
+
+def capacity_auction_kpi_frame(
+    load: GasTableLoad | None,
+    auction_date_filter: str = CAPACITY_AUCTION_AUCTION_DATE_FILTER_ALL,
+    zone_filter: str = CAPACITY_AUCTION_ZONE_FILTER_ALL,
+    capacity_period_filter: str = CAPACITY_AUCTION_CAPACITY_PERIOD_FILTER_ALL,
+    metric_filter: str = CAPACITY_AUCTION_METRIC_FILTER_ALL,
+    source_system_filter: str = CAPACITY_AUCTION_SOURCE_SYSTEM_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return first-viewport KPIs for loaded capacity auction rows."""
+    dataframe = _filtered_capacity_auction_dataframe(
+        load,
+        auction_date_filter,
+        zone_filter,
+        capacity_period_filter,
+        metric_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_CAPACITY_AUCTION_KPI_SCHEMA)
+
+    counts = dataframe.select(
+        pl.len().alias("loaded_rows"),
+        pl.col("auction_id").drop_nulls().n_unique().alias("auction_ids"),
+        pl.col("auction_date").drop_nulls().n_unique().alias("auction_dates"),
+        pl.col("zone").drop_nulls().n_unique().alias("zones"),
+        pl.col("capacity_period_label")
+        .drop_nulls()
+        .n_unique()
+        .alias("capacity_periods"),
+        pl.col("auction_metric").drop_nulls().n_unique().alias("auction_metrics"),
+        pl.col("quantity_gj").is_not_null().sum().alias("quantity_rows"),
+        pl.col("quantity_gj").sum().alias("total_quantity_gj"),
+        pl.col("price").is_not_null().sum().alias("price_rows"),
+        pl.col("price").min().alias("min_price"),
+        pl.col("price").max().alias("max_price"),
+        pl.col("auction_date").max().alias("latest_auction_date"),
+        pl.col("source_system").drop_nulls().n_unique().alias("source_systems"),
+        pl.col("source_last_updated_timestamp").max().alias("latest_source_update"),
+        pl.col("ingested_timestamp").max().alias("latest_ingest"),
+    ).row(0, named=True)
+    source_table_count = _capacity_auction_source_table_count(dataframe)
+    row_limit = None if load is None else load.row_limit
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Loaded auction rows",
+                "value": f"{counts['loaded_rows']:,}",
+                "detail": format_row_limit(row_limit),
+            },
+            {
+                "metric": "Auction IDs",
+                "value": f"{counts['auction_ids']:,}",
+                "detail": "Distinct auction_id values in the current view",
+            },
+            {
+                "metric": "Auction dates",
+                "value": f"{counts['auction_dates']:,}",
+                "detail": "Distinct populated auction_date values",
+            },
+            {
+                "metric": "Hub / Zone values",
+                "value": f"{counts['zones']:,}",
+                "detail": "Distinct zone labels from zone_name and source_zone_id",
+            },
+            {
+                "metric": "Capacity periods",
+                "value": f"{counts['capacity_periods']:,}",
+                "detail": "Distinct capacity_period or start/end period labels",
+            },
+            {
+                "metric": "Auction metrics",
+                "value": f"{counts['auction_metrics']:,}",
+                "detail": "Distinct auction_metric values in the current view",
+            },
+            {
+                "metric": "Quantity",
+                "value": _format_measure_total(
+                    counts["total_quantity_gj"],
+                    counts["quantity_rows"],
+                    suffix=" GJ",
+                ),
+                "detail": f"{counts['quantity_rows']:,} populated quantity_gj rows",
+            },
+            {
+                "metric": "Price range",
+                "value": _format_measure_range(
+                    counts["min_price"],
+                    counts["max_price"],
+                    counts["price_rows"],
+                ),
+                "detail": f"{counts['price_rows']:,} populated price rows",
+            },
+            {
+                "metric": "Source systems",
+                "value": f"{counts['source_systems']:,}",
+                "detail": "Distinct source_system values in the current view",
+            },
+            {
+                "metric": "Source tables",
+                "value": f"{source_table_count:,}",
+                "detail": "Distinct source_table/source_tables values represented",
+            },
+            {
+                "metric": "Latest auction date",
+                "value": _format_optional_value(counts["latest_auction_date"]),
+                "detail": "Maximum auction_date in the current view",
+            },
+            {
+                "metric": "Latest source update",
+                "value": _format_optional_value(counts["latest_source_update"]),
+                "detail": "Maximum source_last_updated_timestamp in the current view",
+            },
+            {
+                "metric": "Latest ingest",
+                "value": _format_optional_value(counts["latest_ingest"]),
+                "detail": "Maximum ingested_timestamp in the current view",
+            },
+        ],
+        schema=_CAPACITY_AUCTION_KPI_SCHEMA,
+    )
+
+
+def capacity_auction_summary_frame(
+    load: GasTableLoad | None,
+    auction_date_filter: str = CAPACITY_AUCTION_AUCTION_DATE_FILTER_ALL,
+    zone_filter: str = CAPACITY_AUCTION_ZONE_FILTER_ALL,
+    capacity_period_filter: str = CAPACITY_AUCTION_CAPACITY_PERIOD_FILTER_ALL,
+    metric_filter: str = CAPACITY_AUCTION_METRIC_FILTER_ALL,
+    source_system_filter: str = CAPACITY_AUCTION_SOURCE_SYSTEM_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return auction, date, zone, capacity period, quantity, and price summaries."""
+    dataframe = _filtered_capacity_auction_dataframe(
+        load,
+        auction_date_filter,
+        zone_filter,
+        capacity_period_filter,
+        metric_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_CAPACITY_AUCTION_SUMMARY_SCHEMA)
+
+    summary = (
+        dataframe.group_by(
+            "auction_id",
+            "auction_date",
+            "zone",
+            "capacity_period_label",
+            "auction_metric",
+        )
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("source_system").drop_nulls().n_unique().alias("source systems"),
+            pl.col("source_table").drop_nulls().n_unique().alias("source tables"),
+            pl.col("quantity_gj").is_not_null().sum().alias("quantity rows"),
+            pl.col("quantity_gj").sum().alias("total quantity gj"),
+            pl.col("quantity_gj").mean().alias("avg quantity gj"),
+            pl.col("price").is_not_null().sum().alias("price rows"),
+            pl.col("price").min().alias("min price"),
+            pl.col("price").mean().alias("avg price"),
+            pl.col("price").max().alias("max price"),
+            pl.col("start_date").min().alias("period start"),
+            pl.col("end_date").max().alias("period end"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort(
+            ["auction_date", "zone", "capacity_period_label", "auction_metric"],
+            descending=[True, False, False, False],
+            nulls_last=True,
+        )
+        .rename(
+            {
+                "auction_id": "auction id",
+                "auction_date": "auction date",
+                "capacity_period_label": "capacity period",
+                "auction_metric": "auction metric",
+            }
+        )
+    )
+    return summary.select([*list(_CAPACITY_AUCTION_SUMMARY_SCHEMA)])
+
+
+def capacity_auction_metric_frame(
+    load: GasTableLoad | None,
+    auction_date_filter: str = CAPACITY_AUCTION_AUCTION_DATE_FILTER_ALL,
+    zone_filter: str = CAPACITY_AUCTION_ZONE_FILTER_ALL,
+    capacity_period_filter: str = CAPACITY_AUCTION_CAPACITY_PERIOD_FILTER_ALL,
+    metric_filter: str = CAPACITY_AUCTION_METRIC_FILTER_ALL,
+    source_system_filter: str = CAPACITY_AUCTION_SOURCE_SYSTEM_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return source and metric coverage for loaded capacity auction rows."""
+    dataframe = _filtered_capacity_auction_dataframe(
+        load,
+        auction_date_filter,
+        zone_filter,
+        capacity_period_filter,
+        metric_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_CAPACITY_AUCTION_METRIC_SCHEMA)
+
+    metric_summary = (
+        dataframe.group_by("auction_metric", "source_system", "source_table")
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("auction_id").drop_nulls().n_unique().alias("auction ids"),
+            pl.col("auction_date").drop_nulls().n_unique().alias("auction dates"),
+            pl.col("zone").drop_nulls().n_unique().alias("zones"),
+            pl.col("capacity_period_label")
+            .drop_nulls()
+            .n_unique()
+            .alias("capacity periods"),
+            pl.col("quantity_gj").is_not_null().sum().alias("quantity rows"),
+            pl.col("quantity_gj").sum().alias("total quantity gj"),
+            pl.col("price").is_not_null().sum().alias("price rows"),
+            pl.col("price").min().alias("min price"),
+            pl.col("price").max().alias("max price"),
+            pl.col("source_file").drop_nulls().n_unique().alias("source files"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort(
+            ["rows", "auction_metric", "source_table"],
+            descending=[True, False, False],
+        )
+        .rename(
+            {
+                "auction_metric": "auction metric",
+                "source_system": "source system",
+                "source_table": "source table",
+            }
+        )
+    )
+    return metric_summary.select([*list(_CAPACITY_AUCTION_METRIC_SCHEMA)])
+
+
+def capacity_auction_observation_frame(
+    load: GasTableLoad | None,
+    auction_date_filter: str = CAPACITY_AUCTION_AUCTION_DATE_FILTER_ALL,
+    zone_filter: str = CAPACITY_AUCTION_ZONE_FILTER_ALL,
+    capacity_period_filter: str = CAPACITY_AUCTION_CAPACITY_PERIOD_FILTER_ALL,
+    metric_filter: str = CAPACITY_AUCTION_METRIC_FILTER_ALL,
+    source_system_filter: str = CAPACITY_AUCTION_SOURCE_SYSTEM_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_CAPACITY_AUCTION_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return filtered capacity auction observations for bounded preview."""
+    dataframe = _filtered_capacity_auction_dataframe(
+        load,
+        auction_date_filter,
+        zone_filter,
+        capacity_period_filter,
+        metric_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_CAPACITY_AUCTION_OBSERVATION_SCHEMA)
+
+    return (
+        dataframe.sort(
+            [
+                "auction_date",
+                "start_date",
+                "end_date",
+                "source_last_updated_timestamp",
+                "ingested_timestamp",
+                "source_system",
+                "zone",
+                "auction_metric",
+            ],
+            descending=[True, True, True, True, True, False, False, False],
+            nulls_last=True,
+        )
+        .select(
+            pl.col("auction_id").alias("auction id"),
+            pl.col("auction_date").alias("auction date"),
+            pl.col("zone"),
+            pl.col("source_zone_id").alias("source zone id"),
+            pl.col("zone_type").alias("zone type"),
+            pl.col("capacity_period_label").alias("capacity period"),
+            pl.col("start_date").alias("start date"),
+            pl.col("end_date").alias("end date"),
+            pl.col("auction_metric").alias("auction metric"),
+            pl.col("quantity_gj"),
+            pl.col("price"),
+            pl.col("source_system").alias("source system"),
+            pl.col("source_table").alias("source table"),
+            pl.col("source_surrogate_key").alias("source identifier"),
+            pl.col("source_file").alias("source file"),
+            pl.col("source_last_updated_timestamp").alias("source updated"),
+            pl.col("ingested_timestamp").alias("latest ingest"),
+        )
+        .head(max(1, preview_rows))
+    )
+
+
+def capacity_auction_empty_state_markdown(load: GasTableLoad | None) -> str:
+    """Return useful empty-state copy for missing or unmatched auction rows."""
+    table_label = _markdown_breakable_text(
+        "silver.gas_model.silver_gas_fact_capacity_auction"
+    )
+    if load is None:
+        status_detail = "The dashboard did not receive a capacity auction load result."
+        uri = table_label
+        read_policy = "No read policy was reported."
+    else:
+        if load.error is not None:
+            status_detail = f"Read detail: {_markdown_breakable_text(load.error)}"
+        elif load.dataframe is None or load.dataframe.is_empty():
+            status_detail = "The table loaded successfully but returned no rows."
+        else:
+            status_detail = (
+                "The current filters do not match any loaded capacity auction rows."
+            )
+        uri = _markdown_breakable_text(load.uri)
+        read_policy = row_limit_message(load.row_limit)
+
+    return f"""
+    **No capacity auction data is available for this view.**
+
+    The dashboard checked {uri}, which should contain {table_label} rows with
+    `auction_id`, `auction_date`, Hub / Zone, `capacity_period`,
+    `auction_metric`, `quantity_gj`, `price`, source-system, and source-table
+    fields.
+
+    {status_detail}
+
+    {read_policy}
+
+    Materialize or seed the `silver.gas_model` capacity auction asset, then use
+    **Refresh data**.
+    """
+
+
+def render_capacity_auction_context_links(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render capacity auction links to related Market context panels."""
+    candidate_entries = tuple(dashboard_registry() if entries is None else entries)
+    concept_ids = (
+        CAPACITY_AUCTION_CONTEXT_ID,
+        CAPACITY_CONTEXT_ID,
+        HUB_ZONE_CONTEXT_ID,
+        "gas-market-overview",
+        "source-coverage-matrix",
+        "source-table-lineage-explorer",
+        "gas-model-table-explorer",
+    )
+    rows = "\n".join(
+        _render_capacity_auction_context_link(entry)
+        for entry in (
+            registry_entry_by_concept_id(concept_id, candidate_entries)
+            for concept_id in concept_ids
+        )
+        if entry is not None
+    )
+    if rows == "":
+        rows = (
+            '<li class="capacity-auction-links__empty">'
+            "No Capacity Auction, Capacity, Hub / Zone, market overview, "
+            "source coverage, source lineage, or table explorer entries are "
+            "registered."
+            "</li>"
+        )
+
+    return f"""\
+<style>
+{_capacity_auction_context_links_css()}
+</style>
+<section class="capacity-auction-links" aria-label="Capacity auction context links">
+    <div>
+        <p class="capacity-auction-links__eyebrow">Context links</p>
+        <h2>Capacity, Hub / Zone, and market-analysis context</h2>
+    </div>
+    <ul>
+{rows}
+    </ul>
+</section>"""
+
+
 def bid_stack_participant_options(
     load: GasTableLoad | None,
 ) -> tuple[str, ...]:
@@ -17100,6 +17689,254 @@ def _connection_point_context_links_css() -> str:
 
 @media (max-width: 760px) {
     .connection-point-links li {
+        grid-template-columns: 1fr;
+    }
+}
+"""
+
+
+def _capacity_auction_string_filter_options(
+    load: GasTableLoad | None,
+    column: str,
+    all_label: str,
+) -> tuple[str, ...]:
+    dataframe = _normalised_capacity_auction_dataframe(load)
+    if dataframe.is_empty() or column not in dataframe.columns:
+        return (all_label,)
+
+    values = sorted(
+        str(value)
+        for value in dataframe.get_column(column)
+        .drop_nulls()
+        .cast(pl.String, strict=False)
+        .unique()
+        .to_list()
+        if value is not None and str(value).strip() != ""
+    )
+    return (all_label, *values)
+
+
+def _filtered_capacity_auction_dataframe(
+    load: GasTableLoad | None,
+    auction_date_filter: str,
+    zone_filter: str,
+    capacity_period_filter: str,
+    metric_filter: str,
+    source_system_filter: str,
+) -> pl.DataFrame:
+    dataframe = _normalised_capacity_auction_dataframe(load)
+    if dataframe.is_empty():
+        return dataframe
+
+    filtered = dataframe
+    if auction_date_filter != CAPACITY_AUCTION_AUCTION_DATE_FILTER_ALL:
+        filtered = filtered.filter(pl.col("auction_date_label") == auction_date_filter)
+    if zone_filter != CAPACITY_AUCTION_ZONE_FILTER_ALL:
+        filtered = filtered.filter(pl.col("zone") == zone_filter)
+    if capacity_period_filter != CAPACITY_AUCTION_CAPACITY_PERIOD_FILTER_ALL:
+        filtered = filtered.filter(
+            pl.col("capacity_period_label") == capacity_period_filter
+        )
+    if metric_filter != CAPACITY_AUCTION_METRIC_FILTER_ALL:
+        filtered = filtered.filter(pl.col("auction_metric") == metric_filter)
+    if source_system_filter != CAPACITY_AUCTION_SOURCE_SYSTEM_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_system") == source_system_filter)
+    return filtered
+
+
+def _normalised_capacity_auction_dataframe(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_CAPACITY_AUCTION_DASHBOARD_ROW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _CAPACITY_AUCTION_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    normalised = dataframe.with_columns(
+        pl.col("surrogate_key").cast(pl.String, strict=False),
+        pl.col("date_key").cast(pl.String, strict=False),
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        pl.col("source_table").cast(pl.String, strict=False),
+        pl.col("auction_id").cast(pl.String, strict=False),
+        _normalise_date_column(dataframe, "auction_date"),
+        pl.col("source_zone_id").cast(pl.String, strict=False),
+        pl.col("zone_name").cast(pl.String, strict=False),
+        pl.col("zone_type").cast(pl.String, strict=False),
+        pl.col("capacity_period").cast(pl.String, strict=False),
+        _normalise_date_column(dataframe, "start_date"),
+        _normalise_date_column(dataframe, "end_date"),
+        pl.col("auction_metric").cast(pl.String, strict=False),
+        pl.col("quantity_gj").cast(pl.Float64, strict=False),
+        pl.col("price").cast(pl.Float64, strict=False),
+        pl.col("source_last_updated").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "source_last_updated_timestamp"),
+        pl.col("source_surrogate_key").cast(pl.String, strict=False),
+        pl.col("source_file").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+    rows = [_capacity_auction_dashboard_row(row) for row in normalised.to_dicts()]
+    return pl.DataFrame(rows, schema=_CAPACITY_AUCTION_DASHBOARD_ROW_SCHEMA)
+
+
+def _capacity_auction_dashboard_row(row: Mapping[str, object]) -> dict[str, object]:
+    return {
+        **row,
+        "source_table": _capacity_auction_source_table_label(row),
+        "auction_date_label": _format_optional_filter_value(row.get("auction_date")),
+        "zone": _capacity_auction_zone_label(row),
+        "capacity_period_label": _capacity_auction_period_label(row),
+    }
+
+
+def _capacity_auction_source_table_label(row: Mapping[str, object]) -> str:
+    values = [
+        *_source_coverage_value_strings(row.get("source_table")),
+        *_source_coverage_value_strings(row.get("source_tables")),
+    ]
+    unique_values = tuple(dict.fromkeys(values))
+    if len(unique_values) == 0:
+        return _SOURCE_COVERAGE_EMPTY_SOURCE_TABLE_VALUE
+    return ", ".join(unique_values)
+
+
+def _capacity_auction_source_table_count(dataframe: pl.DataFrame) -> int:
+    values: set[str] = set()
+    for row in dataframe.select("source_table").to_dicts():
+        values.update(_source_coverage_value_strings(row.get("source_table")))
+    values.discard(_SOURCE_COVERAGE_EMPTY_SOURCE_TABLE_VALUE)
+    return len(values)
+
+
+def _capacity_auction_zone_label(row: Mapping[str, object]) -> str:
+    zone_name = _optional_non_empty_string(row.get("zone_name"))
+    source_zone_id = _optional_non_empty_string(row.get("source_zone_id"))
+    if zone_name is not None and source_zone_id is not None:
+        return f"{zone_name} ({source_zone_id})"
+    if zone_name is not None:
+        return zone_name
+    if source_zone_id is not None:
+        return source_zone_id
+    return "(missing Hub / Zone)"
+
+
+def _capacity_auction_period_label(row: Mapping[str, object]) -> str:
+    capacity_period = _optional_non_empty_string(row.get("capacity_period"))
+    start_date = _optional_non_empty_string(row.get("start_date"))
+    end_date = _optional_non_empty_string(row.get("end_date"))
+
+    if capacity_period is not None:
+        return capacity_period
+    if start_date is not None and end_date is not None:
+        return f"{start_date} to {end_date}"
+    if start_date is not None:
+        return f"from {start_date}"
+    if end_date is not None:
+        return f"to {end_date}"
+    return "(missing capacity period)"
+
+
+def _format_optional_filter_value(value: object | None) -> str:
+    text = _optional_non_empty_string(value)
+    return "(missing)" if text is None else text
+
+
+def _render_capacity_auction_context_link(entry: DashboardRegistryEntry) -> str:
+    status_label = _dashboard_entry_status_label(entry)
+    title = escape(entry.title)
+    route = entry.notebook_route
+    if entry.status.value == "available" and route is not None:
+        title_html = f'<a href="{escape(route, quote=True)}">{title}</a>'
+    else:
+        title_html = f"<span>{title}</span>"
+
+    return f"""\
+        <li data-dashboard-status="{escape(entry.status.value, quote=True)}">
+            {title_html}
+            <span>{escape(status_label)}</span>
+            <code>{escape(entry.concept_id)}</code>
+        </li>"""
+
+
+def _capacity_auction_context_links_css() -> str:
+    return """\
+.capacity-auction-links {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+}
+
+.capacity-auction-links__eyebrow {
+    margin: 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.74rem;
+    font-weight: 720;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.capacity-auction-links h2 {
+    margin: 0.15rem 0 0;
+    font-size: 1.05rem;
+}
+
+.capacity-auction-links ul {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.capacity-auction-links li {
+    display: grid;
+    grid-template-columns: minmax(10rem, 1fr) auto auto;
+    gap: 0.65rem;
+    align-items: center;
+    min-width: 0;
+    padding: 0.55rem 0;
+    border-top: 1px solid var(--emdl-line, #cfdbd6);
+}
+
+.capacity-auction-links li:first-child {
+    border-top: 0;
+}
+
+.capacity-auction-links a {
+    color: var(--emdl-blue, #166791);
+    font-weight: 720;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+}
+
+.capacity-auction-links span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.capacity-auction-links li > span:nth-child(2) {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.capacity-auction-links code {
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+    .capacity-auction-links li {
         grid-template-columns: 1fr;
     }
 }

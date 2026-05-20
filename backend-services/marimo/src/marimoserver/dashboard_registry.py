@@ -1214,6 +1214,30 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
     },
     {
+        "concept_id": "capacity-auctions",
+        "title": "Capacity Auctions",
+        "description": (
+            "Available analytical dashboard for capacity auction observations, "
+            "auction dates, Hub / Zone values, capacity periods, quantities, "
+            "prices, auction metrics, and related Capacity and market-analysis "
+            "context."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "capacity_auction",
+        "backing_assets": ("silver.gas_model.silver_gas_fact_capacity_auction",),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md",
+        ),
+        "source_chunk_ids": (
+            "chunk-sttm-procedures-definitions",
+            "chunk-sttm-procedures-capacity-settlement",
+            "chunk-dwgm-operations-capacity-certificates-purpose",
+            "chunk-dwgm-operations-capacity-certificates-modelling",
+        ),
+    },
+    {
         "concept_id": "mos-context",
         "title": "MOS Context",
         "description": (

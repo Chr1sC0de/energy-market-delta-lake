@@ -328,6 +328,8 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   add AWS write paths.
   The gas Bid / Offer stack dashboard reads the curated bid stack fact through
   the same bounded helper surface and does not add AWS write paths.
+  The capacity auction dashboard reads the curated capacity auction fact
+  through the same bounded helper surface and does not add AWS write paths.
   The gas system notices dashboard reads the curated system notice fact through
   the same bounded helper surface and does not add AWS write paths.
   The Flow operations dashboard reads the curated connection point flow,
@@ -415,6 +417,7 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   - `backend-services/marimo/notebooks/facility_flow_storage.py`
   - `backend-services/marimo/notebooks/forecast_vs_actual.py`
   - `backend-services/marimo/notebooks/capacity_outlook.py`
+  - `backend-services/marimo/notebooks/capacity_auction.py`
   - `backend-services/marimo/notebooks/linepack_adequacy.py`
   - `backend-services/marimo/notebooks/nomination_demand_forecast.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`

@@ -30,6 +30,7 @@ Marimo-Codex research workspace image.
 - [Flow operations dashboard](#flow-operations-dashboard)
 - [Pipeline and Connection operations dashboard](#pipeline-and-connection-operations-dashboard)
 - [Capacity outlook dashboard](#capacity-outlook-dashboard)
+- [Capacity auction dashboard](#capacity-auction-dashboard)
 - [Nomination and demand forecast dashboard](#nomination-and-demand-forecast-dashboard)
 - [Forecast-vs-actual dashboard](#forecast-vs-actual-dashboard)
 - [Gas market dashboard](#gas-market-dashboard)
@@ -589,6 +590,23 @@ connection-point nameplate source coverage from the loaded `source_table` and
 `source_tables` values where present. Missing tables, unavailable Parquet
 prefixes, empty reads, filter misses, and missing columns render designed empty
 states with the checked asset, read policy, and refresh action.
+
+## Capacity auction dashboard
+
+[notebooks/capacity_auction.py](notebooks/capacity_auction.py) is an
+analytical dashboard over
+`silver.gas_model.silver_gas_fact_capacity_auction`. It renders the
+registry-backed Capacity Auctions context panel and links to Capacity, Hub /
+Zone, gas market overview, source coverage, source lineage, and table explorer
+surfaces, then loads bounded recent samples through the shared gas model
+loader.
+
+The dashboard summarizes auction ID, `auction_date`, Hub / Zone, capacity
+period, `auction_metric`, `quantity_gj`, and `price` fields. It filters the
+bounded read by auction date, Hub / Zone, capacity period, auction metric, and
+source system. Missing tables, unavailable Parquet prefixes, empty reads,
+filter misses, and missing columns render designed empty states with the
+checked asset, read policy, and refresh action.
 
 ## Nomination and demand forecast dashboard
 
@@ -1151,6 +1169,13 @@ cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/capacity_outlook.py
 ```
 
+Use the same pattern for the capacity auction dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/capacity_auction.py
+```
+
 Use the same pattern for the Bid / Offer stack dashboard:
 
 ```bash
@@ -1296,6 +1321,7 @@ prek run -a
   - `backend-services/marimo/notebooks/facility_flow_storage.py`
   - `backend-services/marimo/notebooks/forecast_vs_actual.py`
   - `backend-services/marimo/notebooks/capacity_outlook.py`
+  - `backend-services/marimo/notebooks/capacity_auction.py`
   - `backend-services/marimo/notebooks/linepack_adequacy.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`

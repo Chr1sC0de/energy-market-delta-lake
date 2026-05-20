@@ -214,9 +214,9 @@ Key deployed behaviors visible in the infrastructure code:
   content scans,
   exposes the gas system notices, Flow operations, Operational Meter Flow,
   settlement activity, customer transfer and retail activity, Bid / Offer
-  stack, heating value and SCADA pressure, and Hub / Zone explainer dashboards
-  over curated gas-model facts and dimensions, exposes the forecast-vs-actual
-  dashboard over bounded
+  stack, capacity auction, heating value and SCADA pressure, and Hub / Zone
+  explainer dashboards over curated gas-model facts and dimensions, exposes the
+  forecast-vs-actual dashboard over bounded
   forecast and actual
   flow/storage facts, runs with
   `MARIMO_OUTPUT_MAX_BYTES=16000000`,
@@ -472,6 +472,7 @@ system's services and Dagster workflows.
   - `backend-services/marimo/notebooks/facility_flow_storage.py`
   - `backend-services/marimo/notebooks/forecast_vs_actual.py`
   - `backend-services/marimo/notebooks/capacity_outlook.py`
+  - `backend-services/marimo/notebooks/capacity_auction.py`
   - `backend-services/marimo/notebooks/linepack_adequacy.py`
   - `backend-services/marimo/notebooks/nomination_demand_forecast.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
