@@ -566,6 +566,30 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
     },
     {
+        "concept_id": "facility-flow-storage",
+        "title": "Facility Flow And Storage",
+        "description": (
+            "Available analytical dashboard for facility-level demand, supply, "
+            "transfer, held-in-storage, cushion-gas storage, source coverage, "
+            "and latest Gas Day from the curated facility flow/storage fact."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "facility_flow_storage",
+        "backing_assets": ("silver.gas_model.silver_gas_fact_facility_flow_storage",),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
+        ),
+        "source_chunk_ids": (
+            "chunk-gbb-guide-nodes-facilities",
+            "chunk-gbb-procedures-daily-flow-storage",
+            "chunk-gbb-guide-flow-report",
+            "chunk-gbb-procedures-capacity-outlooks",
+        ),
+    },
+    {
         "concept_id": "gas-model-table-explorer",
         "title": "Gas Model Table Explorer",
         "description": (

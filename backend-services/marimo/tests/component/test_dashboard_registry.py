@@ -217,6 +217,26 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert gas_quality.notebook_route == "/marimo/gas_quality_composition/"
     assert "silver.gas_model.silver_gas_fact_gas_quality" in gas_quality.backing_assets
 
+    facility_flow_storage = registry_entry_by_concept_id(
+        "facility-flow-storage",
+        entries,
+    )
+    assert facility_flow_storage is not None
+    assert facility_flow_storage.status is DashboardStatus.AVAILABLE
+    assert facility_flow_storage.notebook_name == "facility_flow_storage"
+    assert facility_flow_storage.notebook_route == "/marimo/facility_flow_storage/"
+    assert facility_flow_storage.backing_assets == (
+        "silver.gas_model.silver_gas_fact_facility_flow_storage",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md"
+        in facility_flow_storage.generated_gold_paths
+    )
+    assert (
+        "chunk-gbb-procedures-daily-flow-storage"
+        in facility_flow_storage.source_chunk_ids
+    )
+
     customer_transfer = registry_entry_by_concept_id(
         "gas-customer-transfer-activity",
         entries,

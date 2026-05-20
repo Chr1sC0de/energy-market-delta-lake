@@ -217,6 +217,14 @@ chunk metadata, then reads bounded recent samples from
 recent/sample flow measures without changing ETL flow modeling, generated
 glossary files, asset schemas, or AWS infrastructure.
 
+The Facility flow and storage dashboard stays inside the same boundary. It
+renders copied Facility, Flow, and Capacity context metadata from the Marimo
+registry, then reads bounded recent samples from
+`silver_gas_fact_facility_flow_storage` to show facility-level demand, supply,
+transfer, storage, source-system coverage, source-table coverage, and latest
+Gas Day without changing ETL flow/storage modeling, generated glossary files,
+asset schemas, or AWS infrastructure.
+
 Static asset optimization stays limited to immutable HTTP caching for
 content-hashed Marimo package assets. Extra preload changes, pre-serving
 packaged WASM, and auto-refresh timer behavior remain deferred until route or
@@ -270,6 +278,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/notebooks/flow_operations.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
+  - `backend-services/marimo/notebooks/facility_flow_storage.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/marimo/tests/component/test_dashboard_registry.py`

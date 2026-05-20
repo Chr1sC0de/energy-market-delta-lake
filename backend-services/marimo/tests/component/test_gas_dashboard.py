@@ -49,7 +49,12 @@ from marimoserver.gas_dashboard import (
     FACILITY_CAPACITY_OUTLOOK_TABLE_NAME,
     FACILITY_CONTEXT_ID,
     FACILITY_DIM_TABLE_NAME,
+    FACILITY_FLOW_STORAGE_CONTEXT_ID,
+    FACILITY_FLOW_STORAGE_FACILITY_FILTER_ALL,
+    FACILITY_FLOW_STORAGE_GAS_DATE_FILTER_ALL,
+    FACILITY_FLOW_STORAGE_SOURCE_SYSTEM_FILTER_ALL,
     FACILITY_FLOW_STORAGE_TABLE_NAME,
+    FACILITY_FLOW_STORAGE_TABLE_SPEC,
     FACILITY_TABLE_SPECS,
     FLOW_CONTEXT_ID,
     FLOW_TABLE_SPECS,
@@ -101,6 +106,7 @@ from marimoserver.gas_dashboard import (
     cached_load_bid_stack_table,
     cached_load_connection_point_context_tables,
     cached_load_facility_context_tables,
+    cached_load_facility_flow_storage_table,
     cached_load_flow_context_tables,
     cached_load_gas_day_tables,
     cached_load_hub_zone_context_tables,
@@ -131,6 +137,15 @@ from marimoserver.gas_dashboard import (
     facility_context_empty_state_markdown,
     facility_dimension_coverage_frame,
     facility_dimension_preview_frame,
+    facility_flow_storage_daily_frame,
+    facility_flow_storage_empty_state_markdown,
+    facility_flow_storage_facility_options,
+    facility_flow_storage_gas_date_options,
+    facility_flow_storage_kpi_frame,
+    facility_flow_storage_observation_frame,
+    facility_flow_storage_source_coverage_frame,
+    facility_flow_storage_source_system_options,
+    facility_flow_storage_summary_frame,
     facility_relationship_frame,
     facility_table_specs,
     flow_context_empty_state_markdown,
@@ -162,6 +177,7 @@ from marimoserver.gas_dashboard import (
     load_connection_point_context_tables,
     load_customer_transfer_table,
     load_facility_context_tables,
+    load_facility_flow_storage_table,
     load_flow_context_tables,
     load_gas_day_tables,
     load_hub_zone_context_tables,
@@ -194,6 +210,7 @@ from marimoserver.gas_dashboard import (
     render_customer_transfer_context_links,
     render_market_price_context_links,
     render_facility_context_links,
+    render_facility_flow_storage_context_links,
     render_flow_context_links,
     render_hub_zone_context_links,
     render_participant_context_links,
@@ -2189,6 +2206,344 @@ def test_customer_transfer_helpers_cover_missing_data_and_filter_empty_state() -
         empty_context_links
     )
     assert "Unavailable dashboard" in unmounted_context_links
+
+
+def test_facility_flow_storage_metadata_and_loader_use_recent_bounded_rows() -> None:
+    entry = registry_entry_by_concept_id(FACILITY_FLOW_STORAGE_CONTEXT_ID)
+    html = render_dashboard_context_panel(FACILITY_FLOW_STORAGE_CONTEXT_ID)
+    context_links = render_facility_flow_storage_context_links()
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "13",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    load = load_facility_flow_storage_table(config, reader=reader)
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "facility_flow_storage"
+    assert entry.notebook_route == "/marimo/facility_flow_storage/"
+    assert entry.backing_assets == (
+        "silver.gas_model.silver_gas_fact_facility_flow_storage",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md"
+        in entry.generated_gold_paths
+    )
+    assert "chunk-gbb-procedures-daily-flow-storage" in entry.source_chunk_ids
+    assert "Facility Flow And Storage" in html
+    assert "chunk-gbb-procedures-daily-flow-storage" in html
+    assert 'href="/marimo/facility_flow_storage/"' in context_links
+    assert "Facility Context" in context_links
+    assert "Flow Context" in context_links
+    assert "Capacity Context" in context_links
+    assert load.spec == FACILITY_FLOW_STORAGE_TABLE_SPEC
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_facility_flow_storage",
+            13,
+        )
+    ]
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert uri.endswith(f"/{FACILITY_FLOW_STORAGE_TABLE_NAME}")
+        assert storage_options == config.storage_options()
+        assert row_limit == 13
+        cached_calls += 1
+        return pl.DataFrame({"source_system": ["GBB"]})
+
+    first_cached = cached_load_facility_flow_storage_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_facility_flow_storage_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_facility_flow_storage_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 2
+    assert not first_cached.cache_hit
+    assert second_cached.cache_hit
+    assert not refreshed.cache_hit
+
+
+def test_facility_flow_storage_helpers_summarize_fields_and_sources() -> None:
+    source_table = "silver.gbb.silver_gasbb_actual_flow_storage"
+    load = _facility_flow_storage_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB", "GBB", "GBB"],
+                "source_tables": [[source_table], [source_table], []],
+                "facility_key": ["fac-1", "fac-1", "fac-2"],
+                "location_key": ["loc-1", "loc-1", "loc-2"],
+                "gas_date": [
+                    date(2024, 1, 2),
+                    date(2024, 1, 3),
+                    date(2024, 1, 3),
+                ],
+                "source_facility_id": ["F1", "F1", "F2"],
+                "source_location_id": ["L1", "L1", "L2"],
+                "demand_tj": [10.0, 12.0, None],
+                "supply_tj": [4.0, 6.0, 8.0],
+                "transfer_in_tj": [1.0, 2.0, None],
+                "transfer_out_tj": [0.0, 1.0, 3.0],
+                "held_in_storage_tj": [50.0, 54.0, None],
+                "cushion_gas_storage_tj": [5.0, 6.0, None],
+                "source_file": ["a.parquet", "b.parquet", "c.parquet"],
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 2, 6),
+                    datetime(2024, 1, 3, 6),
+                    datetime(2024, 1, 3, 7),
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 2, 8),
+                    datetime(2024, 1, 3, 8),
+                    datetime(2024, 1, 3, 9),
+                ],
+            }
+        ),
+        row_limit=20,
+    )
+
+    kpis = facility_flow_storage_kpi_frame(load)
+    summary = facility_flow_storage_summary_frame(load)
+    daily = facility_flow_storage_daily_frame(load)
+    source_coverage = facility_flow_storage_source_coverage_frame(load)
+    observations = facility_flow_storage_observation_frame(load)
+    filtered_kpis = facility_flow_storage_kpi_frame(load, facility_filter="F2")
+    source_filtered_kpis = facility_flow_storage_kpi_frame(
+        load,
+        source_system_filter="GBB",
+    )
+    kpi_values = {row["metric"]: row["value"] for row in kpis.to_dicts()}
+    filtered_kpi_values = {
+        row["metric"]: row["value"] for row in filtered_kpis.to_dicts()
+    }
+    source_filtered_kpi_values = {
+        row["metric"]: row["value"] for row in source_filtered_kpis.to_dicts()
+    }
+
+    assert facility_flow_storage_gas_date_options(load) == (
+        FACILITY_FLOW_STORAGE_GAS_DATE_FILTER_ALL,
+        "2024-01-03",
+        "2024-01-02",
+    )
+    assert facility_flow_storage_facility_options(load) == (
+        FACILITY_FLOW_STORAGE_FACILITY_FILTER_ALL,
+        "F1",
+        "F2",
+    )
+    assert facility_flow_storage_source_system_options(load) == (
+        FACILITY_FLOW_STORAGE_SOURCE_SYSTEM_FILTER_ALL,
+        "GBB",
+    )
+    assert kpi_values["Loaded facility rows"] == "3"
+    assert kpi_values["Facility keys"] == "2"
+    assert kpi_values["Source facilities"] == "2"
+    assert kpi_values["Source tables"] == "1"
+    assert kpi_values["Latest gas date"] == "2024-01-03"
+    assert kpi_values["Demand"] == "22 TJ"
+    assert kpi_values["Supply"] == "18 TJ"
+    assert kpi_values["Transfer out"] == "4 TJ"
+    assert kpi_values["Held in storage"] == "104 TJ"
+    assert filtered_kpi_values["Loaded facility rows"] == "1"
+    assert source_filtered_kpi_values["Loaded facility rows"] == "3"
+    assert summary.select(
+        "source system",
+        "source table",
+        "facility key",
+        "source facility id",
+        "rows",
+        "gas days",
+        "total demand tj",
+        "total supply tj",
+        "latest held storage tj",
+        "latest gas date",
+    ).to_dict(as_series=False) == {
+        "source system": ["GBB", "GBB"],
+        "source table": [
+            source_table,
+            "(empty source_table/source_tables value)",
+        ],
+        "facility key": ["fac-1", "fac-2"],
+        "source facility id": ["F1", "F2"],
+        "rows": [2, 1],
+        "gas days": [2, 1],
+        "total demand tj": [22.0, 0.0],
+        "total supply tj": [10.0, 8.0],
+        "latest held storage tj": [54.0, None],
+        "latest gas date": [date(2024, 1, 3), date(2024, 1, 3)],
+    }
+    assert daily.select(
+        "gas date",
+        "rows",
+        "facilities",
+        "total demand tj",
+        "total supply tj",
+        "total held storage tj",
+    ).to_dict(as_series=False) == {
+        "gas date": [date(2024, 1, 3), date(2024, 1, 2)],
+        "rows": [2, 1],
+        "facilities": [2, 1],
+        "total demand tj": [12.0, 10.0],
+        "total supply tj": [14.0, 4.0],
+        "total held storage tj": [54.0, 50.0],
+    }
+    assert source_coverage.select(
+        "source system",
+        "source table",
+        "rows",
+        "facility keys",
+        "source facilities",
+        "gas days",
+        "measure rows",
+        "latest gas date",
+    ).to_dict(as_series=False) == {
+        "source system": ["GBB", "GBB"],
+        "source table": [
+            source_table,
+            "(empty source_table/source_tables value)",
+        ],
+        "rows": [2, 1],
+        "facility keys": [1, 1],
+        "source facilities": [1, 1],
+        "gas days": [2, 1],
+        "measure rows": [2, 1],
+        "latest gas date": [date(2024, 1, 3), date(2024, 1, 3)],
+    }
+    assert observations.select(
+        "gas date",
+        "source facility id",
+        "demand_tj",
+        "supply_tj",
+        "held_in_storage_tj",
+    ).to_dicts()[:2] == [
+        {
+            "gas date": date(2024, 1, 3),
+            "source facility id": "F2",
+            "demand_tj": None,
+            "supply_tj": 8.0,
+            "held_in_storage_tj": None,
+        },
+        {
+            "gas date": date(2024, 1, 3),
+            "source facility id": "F1",
+            "demand_tj": 12.0,
+            "supply_tj": 6.0,
+            "held_in_storage_tj": 54.0,
+        },
+    ]
+
+
+def test_facility_flow_storage_helpers_cover_missing_data_behavior() -> None:
+    empty_load = _facility_flow_storage_load(pl.DataFrame(), row_limit=6)
+    partial_load = _facility_flow_storage_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "gas_date": [date(2024, 1, 4)],
+                "source_facility_id": ["F1"],
+                "demand_tj": [10.0],
+            }
+        ),
+        row_limit=6,
+    )
+    no_measure_load = _facility_flow_storage_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "gas_date": [date(2024, 1, 4)],
+                "source_facility_id": ["F1"],
+            }
+        ),
+        row_limit=6,
+    )
+    error_load = GasTableLoad(
+        spec=FACILITY_FLOW_STORAGE_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_facility_flow_storage",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=6,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+    assert facility_flow_storage_kpi_frame(empty_load).is_empty()
+    assert facility_flow_storage_summary_frame(empty_load).is_empty()
+    assert facility_flow_storage_daily_frame(empty_load).is_empty()
+    assert facility_flow_storage_source_coverage_frame(empty_load).is_empty()
+    assert facility_flow_storage_observation_frame(empty_load).is_empty()
+    assert facility_flow_storage_gas_date_options(empty_load) == (
+        FACILITY_FLOW_STORAGE_GAS_DATE_FILTER_ALL,
+    )
+    assert facility_flow_storage_facility_options(empty_load) == (
+        FACILITY_FLOW_STORAGE_FACILITY_FILTER_ALL,
+    )
+    assert facility_flow_storage_source_system_options(empty_load) == (
+        FACILITY_FLOW_STORAGE_SOURCE_SYSTEM_FILTER_ALL,
+    )
+    assert facility_flow_storage_kpi_frame(
+        partial_load,
+        gas_date_filter="2024-01-05",
+    ).is_empty()
+    partial_coverage = facility_flow_storage_source_coverage_frame(partial_load)
+    no_measure_values = {
+        row["metric"]: row["value"]
+        for row in facility_flow_storage_kpi_frame(no_measure_load).to_dicts()
+    }
+    empty_markdown = facility_flow_storage_empty_state_markdown(empty_load)
+    error_markdown = facility_flow_storage_empty_state_markdown(error_load)
+    filtered_markdown = facility_flow_storage_empty_state_markdown(partial_load)
+    missing_load_markdown = facility_flow_storage_empty_state_markdown(None)
+    empty_context_links = render_facility_flow_storage_context_links(entries=())
+
+    assert partial_coverage.row(0, named=True)["source table"] == (
+        "(empty source_table/source_tables value)"
+    )
+    assert no_measure_values["Demand"] == "unknown"
+    assert no_measure_values["Held in storage"] == "unknown"
+    assert "No facility flow or storage data is available" in empty_markdown
+    assert "silver.gas_model.silver_gas_fact_facility_flow_storage" in empty_markdown
+    assert "Bounded preview reads are capped at `6` rows per table" in empty_markdown
+    assert "FileNotFoundError: no parquet files found" in error_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert "did not receive a facility flow/storage load" in missing_load_markdown
+    assert (
+        "No Facility flow/storage, Facility, Flow, Capacity, map, source "
+        "coverage, or table explorer entries are registered."
+    ) in empty_context_links
 
 
 def test_bid_stack_table_loader_uses_bounded_recent_view() -> None:
@@ -7115,6 +7470,22 @@ def _customer_transfer_load(
     return GasTableLoad(
         spec=CUSTOMER_TRANSFER_TABLE_SPEC,
         uri=f"s3://bucket/silver/gas_model/{CUSTOMER_TRANSFER_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _facility_flow_storage_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=FACILITY_FLOW_STORAGE_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{FACILITY_FLOW_STORAGE_TABLE_NAME}",
         dataframe=dataframe,
         error=None,
         row_limit=row_limit,

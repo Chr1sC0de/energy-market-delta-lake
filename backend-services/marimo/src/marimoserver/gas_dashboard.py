@@ -129,6 +129,11 @@ FLOW_CONTEXT_ID = "flow-context"
 NOMINATION_FORECAST_TABLE_NAME = "silver_gas_fact_nomination_forecast"
 OPERATIONAL_METER_FLOW_TABLE_NAME = "silver_gas_fact_operational_meter_flow"
 DEFAULT_FLOW_PREVIEW_ROWS = 50
+FACILITY_FLOW_STORAGE_CONTEXT_ID = "facility-flow-storage"
+FACILITY_FLOW_STORAGE_GAS_DATE_FILTER_ALL = "All gas dates"
+FACILITY_FLOW_STORAGE_FACILITY_FILTER_ALL = "All facilities"
+FACILITY_FLOW_STORAGE_SOURCE_SYSTEM_FILTER_ALL = "All source systems"
+DEFAULT_FACILITY_FLOW_STORAGE_PREVIEW_ROWS = 50
 _FACILITY_CAPACITY_METADATA_COLUMNS = (
     "default_capacity",
     "maximum_capacity",
@@ -150,6 +155,10 @@ _FACILITY_STORAGE_MEASURE_COLUMNS = (
     "held_in_storage_tj",
     "cushion_gas_storage_tj",
 )
+_FACILITY_FLOW_STORAGE_MEASURES = (
+    *_FACILITY_FLOW_MEASURE_COLUMNS,
+    *_FACILITY_STORAGE_MEASURE_COLUMNS,
+)
 _NOMINATION_FORECAST_MEASURE_COLUMNS = (
     "demand_forecast_gj",
     "supply_forecast_gj",
@@ -160,10 +169,7 @@ _NOMINATION_FORECAST_MEASURE_COLUMNS = (
 _OPERATIONAL_METER_FLOW_MEASURE_COLUMNS = ("quantity_gj",)
 _FLOW_MEASURE_COLUMNS_BY_TABLE = {
     CONNECTION_POINT_FLOW_TABLE_NAME: ("actual_quantity_tj",),
-    FACILITY_FLOW_STORAGE_TABLE_NAME: (
-        *_FACILITY_FLOW_MEASURE_COLUMNS,
-        *_FACILITY_STORAGE_MEASURE_COLUMNS,
-    ),
+    FACILITY_FLOW_STORAGE_TABLE_NAME: _FACILITY_FLOW_STORAGE_MEASURES,
     NOMINATION_FORECAST_TABLE_NAME: _NOMINATION_FORECAST_MEASURE_COLUMNS,
     OPERATIONAL_METER_FLOW_TABLE_NAME: _OPERATIONAL_METER_FLOW_MEASURE_COLUMNS,
 }
@@ -565,6 +571,34 @@ GAS_QUALITY_TABLE_SPEC = GasTableSpec(
 )
 GAS_QUALITY_TABLE_SPECS = (GAS_QUALITY_TABLE_SPEC,)
 
+FACILITY_FLOW_STORAGE_TABLE_SPEC = GasTableSpec(
+    section="Flow and capacity",
+    label="Facility flow and storage",
+    table_name=FACILITY_FLOW_STORAGE_TABLE_NAME,
+    date_columns=(
+        "gas_date",
+        "source_last_updated_timestamp",
+        "ingested_timestamp",
+    ),
+    preview_columns=(
+        "gas_date",
+        "source_system",
+        "source_tables",
+        "facility_key",
+        "location_key",
+        "source_facility_id",
+        "source_location_id",
+        "demand_tj",
+        "supply_tj",
+        "transfer_in_tj",
+        "transfer_out_tj",
+        "held_in_storage_tj",
+        "cushion_gas_storage_tj",
+        "source_last_updated_timestamp",
+        "ingested_timestamp",
+    ),
+)
+
 FACILITY_TABLE_SPECS = (
     GasTableSpec(
         section="Dimensions",
@@ -591,28 +625,7 @@ FACILITY_TABLE_SPECS = (
             "maximum_capacity",
         ),
     ),
-    GasTableSpec(
-        section="Facts",
-        label="Facility flow and storage",
-        table_name=FACILITY_FLOW_STORAGE_TABLE_NAME,
-        date_columns=(
-            "gas_date",
-            "source_last_updated_timestamp",
-            "ingested_timestamp",
-        ),
-        preview_columns=(
-            "gas_date",
-            "source_system",
-            "source_facility_id",
-            "source_location_id",
-            "demand_tj",
-            "supply_tj",
-            "transfer_in_tj",
-            "transfer_out_tj",
-            "held_in_storage_tj",
-            "cushion_gas_storage_tj",
-        ),
-    ),
+    FACILITY_FLOW_STORAGE_TABLE_SPEC,
     GasTableSpec(
         section="Facts",
         label="Capacity outlook",
@@ -1558,6 +1571,91 @@ _FACILITY_FLOW_STORAGE_RAW_SCHEMA = {
     "source_last_updated_timestamp": pl.Datetime("us"),
     "ingested_timestamp": pl.Datetime("us"),
 }
+_FACILITY_FLOW_STORAGE_DASHBOARD_ROW_SCHEMA = {
+    **_FACILITY_FLOW_STORAGE_RAW_SCHEMA,
+    "source_table": pl.String,
+}
+_FACILITY_FLOW_STORAGE_KPI_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_FACILITY_FLOW_STORAGE_SUMMARY_SCHEMA = {
+    "source system": pl.String,
+    "source table": pl.String,
+    "facility key": pl.String,
+    "source facility id": pl.String,
+    "source location id": pl.String,
+    "rows": pl.UInt32,
+    "gas days": pl.UInt32,
+    "demand rows": pl.UInt32,
+    "total demand tj": pl.Float64,
+    "supply rows": pl.UInt32,
+    "total supply tj": pl.Float64,
+    "transfer in rows": pl.UInt32,
+    "total transfer in tj": pl.Float64,
+    "transfer out rows": pl.UInt32,
+    "total transfer out tj": pl.Float64,
+    "held storage rows": pl.UInt32,
+    "latest held storage tj": pl.Float64,
+    "cushion gas rows": pl.UInt32,
+    "latest cushion gas storage tj": pl.Float64,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_FACILITY_FLOW_STORAGE_DAILY_SCHEMA = {
+    "gas date": pl.Date,
+    "rows": pl.UInt32,
+    "facilities": pl.UInt32,
+    "source systems": pl.UInt32,
+    "demand rows": pl.UInt32,
+    "total demand tj": pl.Float64,
+    "supply rows": pl.UInt32,
+    "total supply tj": pl.Float64,
+    "transfer in rows": pl.UInt32,
+    "total transfer in tj": pl.Float64,
+    "transfer out rows": pl.UInt32,
+    "total transfer out tj": pl.Float64,
+    "held storage rows": pl.UInt32,
+    "total held storage tj": pl.Float64,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_FACILITY_FLOW_STORAGE_SOURCE_COVERAGE_SCHEMA = {
+    "source system": pl.String,
+    "source table": pl.String,
+    "rows": pl.UInt32,
+    "facility keys": pl.UInt32,
+    "source facilities": pl.UInt32,
+    "source locations": pl.UInt32,
+    "gas days": pl.UInt32,
+    "measure rows": pl.UInt32,
+    "source files": pl.UInt32,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_FACILITY_FLOW_STORAGE_OBSERVATION_SCHEMA = {
+    "gas date": pl.Date,
+    "source system": pl.String,
+    "source table": pl.String,
+    "facility key": pl.String,
+    "location key": pl.String,
+    "source facility id": pl.String,
+    "source location id": pl.String,
+    "demand_tj": pl.Float64,
+    "supply_tj": pl.Float64,
+    "transfer_in_tj": pl.Float64,
+    "transfer_out_tj": pl.Float64,
+    "held_in_storage_tj": pl.Float64,
+    "cushion_gas_storage_tj": pl.Float64,
+    "source file": pl.String,
+    "source updated": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
 _FACILITY_CAPACITY_RAW_SCHEMA = {
     "surrogate_key": pl.String,
     "source_system": pl.String,
@@ -2193,6 +2291,42 @@ def cached_load_customer_transfer_table(
         config,
         cache,
         specs=CUSTOMER_TRANSFER_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        refresh_token=refresh_token,
+        clock=clock,
+    )[0]
+
+
+def load_facility_flow_storage_table(
+    config: GasDashboardConfig,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Load the facility flow/storage fact through the shared bounded loader."""
+    return load_gas_model_tables(
+        config,
+        specs=(FACILITY_FLOW_STORAGE_TABLE_SPEC,),
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        clock=clock,
+    )[0]
+
+
+def cached_load_facility_flow_storage_table(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Return session-cached facility flow/storage rows for explicit refreshes."""
+    return cached_load_gas_model_tables(
+        config,
+        cache,
+        specs=(FACILITY_FLOW_STORAGE_TABLE_SPEC,),
         reader=reader,
         view=GasModelTableView.RECENT,
         refresh_token=refresh_token,
@@ -4102,6 +4236,7 @@ def render_facility_context_links(
     candidate_entries = tuple(dashboard_registry() if entries is None else entries)
     concept_ids = (
         FACILITY_CONTEXT_ID,
+        FACILITY_FLOW_STORAGE_CONTEXT_ID,
         "gbb-interactive-map",
         "source-coverage-matrix",
         "gas-model-table-explorer",
@@ -4373,6 +4508,7 @@ def render_flow_context_links(
     candidate_entries = tuple(dashboard_registry() if entries is None else entries)
     concept_ids = (
         FLOW_CONTEXT_ID,
+        FACILITY_FLOW_STORAGE_CONTEXT_ID,
         "gbb-interactive-map",
         "source-coverage-matrix",
         "gas-model-table-explorer",
@@ -6193,6 +6329,503 @@ def render_customer_transfer_context_links(
     <div>
         <p class="customer-transfer-links__eyebrow">Context links</p>
         <h2>Customer transfer, Participant, Gas Day, and Settlement context</h2>
+    </div>
+    <ul>
+{rows}
+    </ul>
+</section>"""
+
+
+def facility_flow_storage_gas_date_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return gas-date filter options for loaded facility flow/storage rows."""
+    dataframe = _normalised_facility_flow_storage_dashboard_dataframe(load)
+    if dataframe.is_empty():
+        return (FACILITY_FLOW_STORAGE_GAS_DATE_FILTER_ALL,)
+
+    values = sorted(
+        str(value)
+        for value in dataframe.get_column("gas_date").drop_nulls().unique().to_list()
+        if value is not None
+    )
+    return (FACILITY_FLOW_STORAGE_GAS_DATE_FILTER_ALL, *reversed(values))
+
+
+def facility_flow_storage_facility_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return source-facility filter options for facility flow/storage rows."""
+    return _facility_flow_storage_string_filter_options(
+        load,
+        "source_facility_id",
+        FACILITY_FLOW_STORAGE_FACILITY_FILTER_ALL,
+    )
+
+
+def facility_flow_storage_source_system_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return source-system filter options for facility flow/storage rows."""
+    return _facility_flow_storage_string_filter_options(
+        load,
+        "source_system",
+        FACILITY_FLOW_STORAGE_SOURCE_SYSTEM_FILTER_ALL,
+    )
+
+
+def facility_flow_storage_kpi_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = FACILITY_FLOW_STORAGE_GAS_DATE_FILTER_ALL,
+    facility_filter: str = FACILITY_FLOW_STORAGE_FACILITY_FILTER_ALL,
+    source_system_filter: str = FACILITY_FLOW_STORAGE_SOURCE_SYSTEM_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return first-viewport KPIs for loaded facility flow/storage rows."""
+    dataframe = _filtered_facility_flow_storage_dataframe(
+        load,
+        gas_date_filter,
+        facility_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_FACILITY_FLOW_STORAGE_KPI_SCHEMA)
+
+    counts = dataframe.select(
+        pl.len().alias("loaded_rows"),
+        pl.col("facility_key").drop_nulls().n_unique().alias("facility_keys"),
+        pl.col("source_facility_id").drop_nulls().n_unique().alias("source_facilities"),
+        pl.col("source_location_id").drop_nulls().n_unique().alias("source_locations"),
+        pl.col("source_system").drop_nulls().n_unique().alias("source_systems"),
+        pl.col("gas_date").drop_nulls().n_unique().alias("gas_days"),
+        pl.col("gas_date").max().alias("latest_gas_date"),
+        pl.col("demand_tj").is_not_null().sum().alias("demand_rows"),
+        pl.col("demand_tj").sum().alias("demand_tj"),
+        pl.col("supply_tj").is_not_null().sum().alias("supply_rows"),
+        pl.col("supply_tj").sum().alias("supply_tj"),
+        pl.col("transfer_in_tj").is_not_null().sum().alias("transfer_in_rows"),
+        pl.col("transfer_in_tj").sum().alias("transfer_in_tj"),
+        pl.col("transfer_out_tj").is_not_null().sum().alias("transfer_out_rows"),
+        pl.col("transfer_out_tj").sum().alias("transfer_out_tj"),
+        pl.col("held_in_storage_tj").is_not_null().sum().alias("held_storage_rows"),
+        pl.col("held_in_storage_tj").sum().alias("held_in_storage_tj"),
+        pl.col("cushion_gas_storage_tj").is_not_null().sum().alias("cushion_gas_rows"),
+        pl.col("cushion_gas_storage_tj").sum().alias("cushion_gas_storage_tj"),
+    ).row(0, named=True)
+    source_table_count = _facility_flow_storage_source_table_count(dataframe)
+    row_limit = None if load is None else load.row_limit
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Loaded facility rows",
+                "value": f"{counts['loaded_rows']:,}",
+                "detail": format_row_limit(row_limit),
+            },
+            {
+                "metric": "Facility keys",
+                "value": f"{counts['facility_keys']:,}",
+                "detail": "Distinct facility_key values in the current view",
+            },
+            {
+                "metric": "Source facilities",
+                "value": f"{counts['source_facilities']:,}",
+                "detail": "Distinct source_facility_id values in the current view",
+            },
+            {
+                "metric": "Source locations",
+                "value": f"{counts['source_locations']:,}",
+                "detail": "Distinct source_location_id values in the current view",
+            },
+            {
+                "metric": "Source systems",
+                "value": f"{counts['source_systems']:,}",
+                "detail": "Distinct source_system values in the current view",
+            },
+            {
+                "metric": "Source tables",
+                "value": f"{source_table_count:,}",
+                "detail": "Distinct source_table/source_tables values represented",
+            },
+            {
+                "metric": "Gas days",
+                "value": f"{counts['gas_days']:,}",
+                "detail": "Distinct gas_date values in the current view",
+            },
+            {
+                "metric": "Latest gas date",
+                "value": _format_optional_value(counts["latest_gas_date"]),
+                "detail": "Maximum gas_date in the loaded bounded rows",
+            },
+            {
+                "metric": "Demand",
+                "value": _format_measure_total(
+                    counts["demand_tj"],
+                    counts["demand_rows"],
+                    suffix=" TJ",
+                ),
+                "detail": f"{counts['demand_rows']:,} populated demand_tj rows",
+            },
+            {
+                "metric": "Supply",
+                "value": _format_measure_total(
+                    counts["supply_tj"],
+                    counts["supply_rows"],
+                    suffix=" TJ",
+                ),
+                "detail": f"{counts['supply_rows']:,} populated supply_tj rows",
+            },
+            {
+                "metric": "Transfer in",
+                "value": _format_measure_total(
+                    counts["transfer_in_tj"],
+                    counts["transfer_in_rows"],
+                    suffix=" TJ",
+                ),
+                "detail": (
+                    f"{counts['transfer_in_rows']:,} populated transfer_in_tj rows"
+                ),
+            },
+            {
+                "metric": "Transfer out",
+                "value": _format_measure_total(
+                    counts["transfer_out_tj"],
+                    counts["transfer_out_rows"],
+                    suffix=" TJ",
+                ),
+                "detail": (
+                    f"{counts['transfer_out_rows']:,} populated transfer_out_tj rows"
+                ),
+            },
+            {
+                "metric": "Held in storage",
+                "value": _format_measure_total(
+                    counts["held_in_storage_tj"],
+                    counts["held_storage_rows"],
+                    suffix=" TJ",
+                ),
+                "detail": (
+                    f"{counts['held_storage_rows']:,} populated held_in_storage_tj rows"
+                ),
+            },
+            {
+                "metric": "Cushion gas storage",
+                "value": _format_measure_total(
+                    counts["cushion_gas_storage_tj"],
+                    counts["cushion_gas_rows"],
+                    suffix=" TJ",
+                ),
+                "detail": (
+                    f"{counts['cushion_gas_rows']:,} populated "
+                    "cushion_gas_storage_tj rows"
+                ),
+            },
+        ],
+        schema=_FACILITY_FLOW_STORAGE_KPI_SCHEMA,
+    )
+
+
+def facility_flow_storage_summary_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = FACILITY_FLOW_STORAGE_GAS_DATE_FILTER_ALL,
+    facility_filter: str = FACILITY_FLOW_STORAGE_FACILITY_FILTER_ALL,
+    source_system_filter: str = FACILITY_FLOW_STORAGE_SOURCE_SYSTEM_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return facility-level flow, transfer, and storage summaries."""
+    dataframe = _filtered_facility_flow_storage_dataframe(
+        load,
+        gas_date_filter,
+        facility_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_FACILITY_FLOW_STORAGE_SUMMARY_SCHEMA)
+
+    sorted_frame = dataframe.sort(
+        ["gas_date", "source_last_updated_timestamp", "ingested_timestamp"],
+        nulls_last=True,
+    )
+    summary = (
+        sorted_frame.group_by(
+            "source_system",
+            "source_table",
+            "facility_key",
+            "source_facility_id",
+            "source_location_id",
+        )
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("gas_date").drop_nulls().n_unique().alias("gas days"),
+            pl.col("demand_tj").is_not_null().sum().alias("demand rows"),
+            pl.col("demand_tj").sum().alias("total demand tj"),
+            pl.col("supply_tj").is_not_null().sum().alias("supply rows"),
+            pl.col("supply_tj").sum().alias("total supply tj"),
+            pl.col("transfer_in_tj").is_not_null().sum().alias("transfer in rows"),
+            pl.col("transfer_in_tj").sum().alias("total transfer in tj"),
+            pl.col("transfer_out_tj").is_not_null().sum().alias("transfer out rows"),
+            pl.col("transfer_out_tj").sum().alias("total transfer out tj"),
+            pl.col("held_in_storage_tj").is_not_null().sum().alias("held storage rows"),
+            pl.col("held_in_storage_tj")
+            .drop_nulls()
+            .last()
+            .alias("latest held storage tj"),
+            pl.col("cushion_gas_storage_tj")
+            .is_not_null()
+            .sum()
+            .alias("cushion gas rows"),
+            pl.col("cushion_gas_storage_tj")
+            .drop_nulls()
+            .last()
+            .alias("latest cushion gas storage tj"),
+            pl.col("gas_date").min().alias("first gas date"),
+            pl.col("gas_date").max().alias("latest gas date"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort(
+            ["latest gas date", "source_system", "source_facility_id"],
+            descending=[True, False, False],
+            nulls_last=True,
+        )
+        .rename(
+            {
+                "source_system": "source system",
+                "source_table": "source table",
+                "facility_key": "facility key",
+                "source_facility_id": "source facility id",
+                "source_location_id": "source location id",
+            }
+        )
+    )
+    return summary.select([*list(_FACILITY_FLOW_STORAGE_SUMMARY_SCHEMA)])
+
+
+def facility_flow_storage_daily_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = FACILITY_FLOW_STORAGE_GAS_DATE_FILTER_ALL,
+    facility_filter: str = FACILITY_FLOW_STORAGE_FACILITY_FILTER_ALL,
+    source_system_filter: str = FACILITY_FLOW_STORAGE_SOURCE_SYSTEM_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_FACILITY_FLOW_STORAGE_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return recent Gas Day facility flow/storage totals."""
+    dataframe = _filtered_facility_flow_storage_dataframe(
+        load,
+        gas_date_filter,
+        facility_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_FACILITY_FLOW_STORAGE_DAILY_SCHEMA)
+
+    daily = (
+        dataframe.group_by("gas_date")
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("facility_key").drop_nulls().n_unique().alias("facilities"),
+            pl.col("source_system").drop_nulls().n_unique().alias("source systems"),
+            pl.col("demand_tj").is_not_null().sum().alias("demand rows"),
+            pl.col("demand_tj").sum().alias("total demand tj"),
+            pl.col("supply_tj").is_not_null().sum().alias("supply rows"),
+            pl.col("supply_tj").sum().alias("total supply tj"),
+            pl.col("transfer_in_tj").is_not_null().sum().alias("transfer in rows"),
+            pl.col("transfer_in_tj").sum().alias("total transfer in tj"),
+            pl.col("transfer_out_tj").is_not_null().sum().alias("transfer out rows"),
+            pl.col("transfer_out_tj").sum().alias("total transfer out tj"),
+            pl.col("held_in_storage_tj").is_not_null().sum().alias("held storage rows"),
+            pl.col("held_in_storage_tj").sum().alias("total held storage tj"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort("gas_date", descending=True, nulls_last=True)
+        .rename({"gas_date": "gas date"})
+        .head(max(1, preview_rows))
+    )
+    return daily.select([*list(_FACILITY_FLOW_STORAGE_DAILY_SCHEMA)])
+
+
+def facility_flow_storage_source_coverage_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = FACILITY_FLOW_STORAGE_GAS_DATE_FILTER_ALL,
+    facility_filter: str = FACILITY_FLOW_STORAGE_FACILITY_FILTER_ALL,
+    source_system_filter: str = FACILITY_FLOW_STORAGE_SOURCE_SYSTEM_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return source-system and source-table coverage for loaded rows."""
+    dataframe = _filtered_facility_flow_storage_dataframe(
+        load,
+        gas_date_filter,
+        facility_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_FACILITY_FLOW_STORAGE_SOURCE_COVERAGE_SCHEMA)
+
+    has_measure = pl.any_horizontal(
+        *(pl.col(column).is_not_null() for column in _FACILITY_FLOW_STORAGE_MEASURES)
+    )
+    coverage = (
+        dataframe.group_by("source_system", "source_table")
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("facility_key").drop_nulls().n_unique().alias("facility keys"),
+            pl.col("source_facility_id")
+            .drop_nulls()
+            .n_unique()
+            .alias("source facilities"),
+            pl.col("source_location_id")
+            .drop_nulls()
+            .n_unique()
+            .alias("source locations"),
+            pl.col("gas_date").drop_nulls().n_unique().alias("gas days"),
+            has_measure.sum().alias("measure rows"),
+            pl.col("source_file").drop_nulls().n_unique().alias("source files"),
+            pl.col("gas_date").min().alias("first gas date"),
+            pl.col("gas_date").max().alias("latest gas date"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort(["rows", "source_table"], descending=[True, False])
+        .rename(
+            {
+                "source_system": "source system",
+                "source_table": "source table",
+            }
+        )
+    )
+    return coverage.select([*list(_FACILITY_FLOW_STORAGE_SOURCE_COVERAGE_SCHEMA)])
+
+
+def facility_flow_storage_observation_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = FACILITY_FLOW_STORAGE_GAS_DATE_FILTER_ALL,
+    facility_filter: str = FACILITY_FLOW_STORAGE_FACILITY_FILTER_ALL,
+    source_system_filter: str = FACILITY_FLOW_STORAGE_SOURCE_SYSTEM_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_FACILITY_FLOW_STORAGE_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return bounded recent/sample facility flow/storage observations."""
+    dataframe = _filtered_facility_flow_storage_dataframe(
+        load,
+        gas_date_filter,
+        facility_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_FACILITY_FLOW_STORAGE_OBSERVATION_SCHEMA)
+
+    return (
+        dataframe.sort(
+            [
+                "gas_date",
+                "source_last_updated_timestamp",
+                "ingested_timestamp",
+                "source_system",
+                "source_facility_id",
+            ],
+            descending=[True, True, True, False, False],
+            nulls_last=True,
+        )
+        .select(
+            pl.col("gas_date").alias("gas date"),
+            pl.col("source_system").alias("source system"),
+            pl.col("source_table").alias("source table"),
+            pl.col("facility_key").alias("facility key"),
+            pl.col("location_key").alias("location key"),
+            pl.col("source_facility_id").alias("source facility id"),
+            pl.col("source_location_id").alias("source location id"),
+            pl.col("demand_tj"),
+            pl.col("supply_tj"),
+            pl.col("transfer_in_tj"),
+            pl.col("transfer_out_tj"),
+            pl.col("held_in_storage_tj"),
+            pl.col("cushion_gas_storage_tj"),
+            pl.col("source_file").alias("source file"),
+            pl.col("source_last_updated_timestamp").alias("source updated"),
+            pl.col("ingested_timestamp").alias("latest ingest"),
+        )
+        .head(max(1, preview_rows))
+    )
+
+
+def facility_flow_storage_empty_state_markdown(load: GasTableLoad | None) -> str:
+    """Return useful empty-state copy for missing or unmatched facility rows."""
+    table_label = _markdown_breakable_text(
+        "silver.gas_model.silver_gas_fact_facility_flow_storage"
+    )
+    if load is None:
+        status_detail = "The dashboard did not receive a facility flow/storage load."
+        uri = table_label
+        read_policy = "No read policy was reported."
+    else:
+        if load.error is not None:
+            status_detail = f"Read detail: {_markdown_breakable_text(load.error)}"
+        elif load.dataframe is None or load.dataframe.is_empty():
+            status_detail = "The table loaded successfully but returned no rows."
+        else:
+            status_detail = (
+                "The current filters do not match any loaded facility "
+                "flow/storage rows."
+            )
+        uri = _markdown_breakable_text(load.uri)
+        read_policy = row_limit_message(load.row_limit)
+
+    return f"""
+    **No facility flow or storage data is available for this view.**
+
+    The dashboard checked {uri}, which should contain {table_label} rows with
+    `facility_key`, `gas_date`, demand, supply, transfer-in, transfer-out,
+    `held_in_storage_tj`, cushion-gas storage, source-system, and source-table
+    fields.
+
+    {status_detail}
+
+    {read_policy}
+
+    Materialize or seed the `silver.gas_model` facility flow/storage asset,
+    then use **Refresh data**.
+    """
+
+
+def render_facility_flow_storage_context_links(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render facility flow/storage links to related Market context panels."""
+    candidate_entries = tuple(dashboard_registry() if entries is None else entries)
+    concept_ids = (
+        FACILITY_FLOW_STORAGE_CONTEXT_ID,
+        FACILITY_CONTEXT_ID,
+        FLOW_CONTEXT_ID,
+        "capacity-context",
+        "gbb-interactive-map",
+        "source-coverage-matrix",
+        "gas-model-table-explorer",
+    )
+    rows = "\n".join(
+        _render_facility_flow_storage_context_link(entry)
+        for entry in (
+            registry_entry_by_concept_id(concept_id, candidate_entries)
+            for concept_id in concept_ids
+        )
+        if entry is not None
+    )
+    if rows == "":
+        rows = (
+            '<li class="facility-flow-storage-links__empty">'
+            "No Facility flow/storage, Facility, Flow, Capacity, map, source "
+            "coverage, or table explorer entries are registered."
+            "</li>"
+        )
+
+    return f"""\
+<style>
+{_facility_flow_storage_context_links_css()}
+</style>
+<section
+    class="facility-flow-storage-links"
+    aria-label="Facility flow and storage context links"
+>
+    <div>
+        <p class="facility-flow-storage-links__eyebrow">Context links</p>
+        <h2>Facility, Flow, Capacity, map, and source coverage context</h2>
     </div>
     <ul>
 {rows}
@@ -9508,6 +10141,181 @@ def _normalised_customer_transfer_dataframe(
         pl.col("source_file").cast(pl.String, strict=False),
         _normalise_timestamp_column(dataframe, "ingested_timestamp"),
     )
+
+
+def _facility_flow_storage_string_filter_options(
+    load: GasTableLoad | None,
+    column: str,
+    all_label: str,
+) -> tuple[str, ...]:
+    dataframe = _normalised_facility_flow_storage_dashboard_dataframe(load)
+    if dataframe.is_empty() or column not in dataframe.columns:
+        return (all_label,)
+
+    values = sorted(
+        str(value)
+        for value in dataframe.get_column(column)
+        .drop_nulls()
+        .cast(pl.String, strict=False)
+        .unique()
+        .to_list()
+        if value is not None and str(value).strip() != ""
+    )
+    return (all_label, *values)
+
+
+def _filtered_facility_flow_storage_dataframe(
+    load: GasTableLoad | None,
+    gas_date_filter: str,
+    facility_filter: str,
+    source_system_filter: str,
+) -> pl.DataFrame:
+    dataframe = _normalised_facility_flow_storage_dashboard_dataframe(load)
+    if dataframe.is_empty():
+        return dataframe
+
+    filtered = dataframe
+    if gas_date_filter != FACILITY_FLOW_STORAGE_GAS_DATE_FILTER_ALL:
+        filtered = filtered.filter(
+            pl.col("gas_date").cast(pl.String) == gas_date_filter
+        )
+    if facility_filter != FACILITY_FLOW_STORAGE_FACILITY_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_facility_id") == facility_filter)
+    if source_system_filter != FACILITY_FLOW_STORAGE_SOURCE_SYSTEM_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_system") == source_system_filter)
+    return filtered
+
+
+def _normalised_facility_flow_storage_dashboard_dataframe(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    dataframe = _normalised_facility_flow_storage_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_FACILITY_FLOW_STORAGE_DASHBOARD_ROW_SCHEMA)
+
+    rows = [_facility_flow_storage_dashboard_row(row) for row in dataframe.to_dicts()]
+    return pl.DataFrame(rows, schema=_FACILITY_FLOW_STORAGE_DASHBOARD_ROW_SCHEMA)
+
+
+def _facility_flow_storage_dashboard_row(
+    row: Mapping[str, object],
+) -> dict[str, object]:
+    return {
+        **row,
+        "source_table": _facility_flow_storage_source_table_label(row),
+    }
+
+
+def _facility_flow_storage_source_table_label(
+    row: Mapping[str, object],
+) -> str:
+    values = _source_coverage_value_strings(row.get("source_tables"))
+    if len(values) == 0:
+        return _SOURCE_COVERAGE_EMPTY_SOURCE_TABLE_VALUE
+    return ", ".join(values)
+
+
+def _facility_flow_storage_source_table_count(dataframe: pl.DataFrame) -> int:
+    values: set[str] = set()
+    for row in dataframe.select("source_tables").to_dicts():
+        values.update(_source_coverage_value_strings(row.get("source_tables")))
+    return len(values)
+
+
+def _render_facility_flow_storage_context_link(
+    entry: DashboardRegistryEntry,
+) -> str:
+    status_label = _dashboard_entry_status_label(entry)
+    title = escape(entry.title)
+    route = entry.notebook_route
+    if entry.status.value == "available" and route is not None:
+        title_html = f'<a href="{escape(route, quote=True)}">{title}</a>'
+    else:
+        title_html = f"<span>{title}</span>"
+
+    return f"""\
+        <li data-dashboard-status="{escape(entry.status.value, quote=True)}">
+            {title_html}
+            <span>{escape(status_label)}</span>
+            <code>{escape(entry.concept_id)}</code>
+        </li>"""
+
+
+def _facility_flow_storage_context_links_css() -> str:
+    return """\
+.facility-flow-storage-links {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+}
+
+.facility-flow-storage-links__eyebrow {
+    margin: 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.74rem;
+    font-weight: 720;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.facility-flow-storage-links h2 {
+    margin: 0.15rem 0 0;
+    font-size: 1.05rem;
+}
+
+.facility-flow-storage-links ul {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.facility-flow-storage-links li {
+    display: grid;
+    grid-template-columns: minmax(10rem, 1fr) auto auto;
+    gap: 0.65rem;
+    align-items: center;
+    min-width: 0;
+    padding: 0.55rem 0;
+    border-top: 1px solid var(--emdl-line, #cfdbd6);
+}
+
+.facility-flow-storage-links li:first-child {
+    border-top: 0;
+}
+
+.facility-flow-storage-links a {
+    color: var(--emdl-blue, #166791);
+    font-weight: 720;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+}
+
+.facility-flow-storage-links span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.facility-flow-storage-links li > span:nth-child(2) {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.facility-flow-storage-links code {
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+    .facility-flow-storage-links li {
+        grid-template-columns: 1fr;
+    }
+}
+"""
 
 
 def _render_customer_transfer_context_link(entry: DashboardRegistryEntry) -> str:

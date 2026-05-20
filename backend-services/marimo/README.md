@@ -644,6 +644,25 @@ data, unavailable Parquet prefixes, and filter combinations with no matches
 render dashboard empty states with the checked table, read policy, and refresh
 action.
 
+## Facility flow and storage dashboard
+
+[notebooks/facility_flow_storage.py](notebooks/facility_flow_storage.py) is an
+analytical dashboard over
+`silver.gas_model.silver_gas_fact_facility_flow_storage`. It uses the shared
+bounded gas model loader and session cache from
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py), then
+filters the loaded bounded preview by Gas Day, source facility, and
+`source_system`.
+
+The dashboard shows loaded facility flow/storage KPIs, facility-level demand,
+supply, transfer-in, transfer-out, held-in-storage, cushion-gas storage,
+latest Gas Day, source coverage by source system and source table, Gas Day
+totals, bounded row previews, and Facility, Flow, Capacity, map, source
+coverage, and table explorer context links from the Marimo registry. Missing
+facility flow/storage data, unavailable Parquet prefixes, and filter
+combinations with no matches render dashboard empty states with the checked
+table, read policy, and refresh action.
+
 ## Bid-Offer stack dashboard
 
 [notebooks/gas_bid_offer_stack.py](notebooks/gas_bid_offer_stack.py) is an
@@ -770,9 +789,9 @@ Caddy and choose an available card such as `data_readiness_overview`,
 `source_table_lineage_explorer`, `sample_energy_market`, `gas_market_prices`,
 `gas_schedule_runs`,
 `system_notices`, `gas_settlement_activity`,
-`gas_customer_transfer_activity`, `gas_bid_offer_stack`,
-`gas_quality_composition`, `facility_explainer`, `participant_explainer`,
-`hub_zone_explainer`, `connection_point_explainer`, or
+`gas_customer_transfer_activity`, `facility_flow_storage`,
+`gas_bid_offer_stack`, `gas_quality_composition`, `facility_explainer`,
+`participant_explainer`, `hub_zone_explainer`, `connection_point_explainer`,
 `flow_operations`, or `gbb_interactive_map`:
 
 ```text
@@ -949,6 +968,13 @@ cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gas_customer_transfer_activity.py
 ```
 
+Use the same pattern for the facility flow and storage dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/facility_flow_storage.py
+```
+
 Use the same pattern for the Bid / Offer stack dashboard:
 
 ```bash
@@ -1088,6 +1114,7 @@ prek run -a
   - `backend-services/marimo/notebooks/flow_operations.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
+  - `backend-services/marimo/notebooks/facility_flow_storage.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/marimo/tests/component/conftest.py`
