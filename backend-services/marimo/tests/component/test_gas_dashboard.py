@@ -63,7 +63,13 @@ from marimoserver.gas_dashboard import (
     MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
     MARKET_PRICE_TABLE_NAME,
     MARKET_PRICE_TABLE_SPEC,
+    NOMINATION_FORECAST_CONTEXT_ID,
+    NOMINATION_FORECAST_FACILITY_FILTER_ALL,
+    NOMINATION_FORECAST_GAS_DATE_FILTER_ALL,
+    NOMINATION_FORECAST_LOCATION_FILTER_ALL,
+    NOMINATION_FORECAST_SOURCE_SYSTEM_FILTER_ALL,
     NOMINATION_FORECAST_TABLE_NAME,
+    NOMINATION_FORECAST_TABLE_SPEC,
     OPERATIONAL_METER_FLOW_TABLE_NAME,
     PARTICIPANT_CONTEXT_ID,
     PARTICIPANT_DIM_TABLE_NAME,
@@ -113,6 +119,7 @@ from marimoserver.gas_dashboard import (
     cached_load_gas_quality_table,
     cached_load_gas_model_tables,
     cached_load_market_price_table,
+    cached_load_nomination_forecast_table,
     cached_load_participant_context_tables,
     cached_load_schedule_run_table,
     cached_load_settlement_activity_table,
@@ -183,6 +190,7 @@ from marimoserver.gas_dashboard import (
     load_hub_zone_context_tables,
     load_gas_quality_table,
     load_gas_model_tables,
+    load_nomination_forecast_table,
     load_participant_context_tables,
     load_source_coverage_tables,
     load_schedule_run_table,
@@ -196,6 +204,16 @@ from marimoserver.gas_dashboard import (
     market_price_source_table_options,
     market_price_trend_frame,
     market_price_type_summary_frame,
+    nomination_forecast_daily_frame,
+    nomination_forecast_empty_state_markdown,
+    nomination_forecast_facility_options,
+    nomination_forecast_gas_date_options,
+    nomination_forecast_kpi_frame,
+    nomination_forecast_location_options,
+    nomination_forecast_observation_frame,
+    nomination_forecast_source_coverage_frame,
+    nomination_forecast_source_system_options,
+    nomination_forecast_summary_frame,
     participant_context_empty_state_markdown,
     participant_dimension_coverage_frame,
     participant_dimension_preview_frame,
@@ -209,6 +227,7 @@ from marimoserver.gas_dashboard import (
     render_connection_point_context_links,
     render_customer_transfer_context_links,
     render_market_price_context_links,
+    render_nomination_forecast_context_links,
     render_facility_context_links,
     render_facility_flow_storage_context_links,
     render_flow_context_links,
@@ -2543,6 +2562,440 @@ def test_facility_flow_storage_helpers_cover_missing_data_behavior() -> None:
     assert (
         "No Facility flow/storage, Facility, Flow, Capacity, map, source "
         "coverage, or table explorer entries are registered."
+    ) in empty_context_links
+
+
+def test_nomination_forecast_metadata_and_loader_use_recent_bounded_rows() -> None:
+    entry = registry_entry_by_concept_id(NOMINATION_FORECAST_CONTEXT_ID)
+    html = render_dashboard_context_panel(NOMINATION_FORECAST_CONTEXT_ID)
+    context_links = render_nomination_forecast_context_links()
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "17",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    load = load_nomination_forecast_table(config, reader=reader)
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "nomination_demand_forecast"
+    assert entry.notebook_route == "/marimo/nomination_demand_forecast/"
+    assert entry.backing_assets == (
+        "silver.gas_model.silver_gas_fact_nomination_forecast",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md"
+        in entry.generated_gold_paths
+    )
+    assert "chunk-gbb-guide-flow-report" in entry.source_chunk_ids
+    assert "Nomination And Demand Forecast" in html
+    assert "chunk-gbb-guide-flow-report" in html
+    assert 'href="/marimo/nomination_demand_forecast/"' in context_links
+    assert "Flow Context" in context_links
+    assert "Facility Context" in context_links
+    assert "Gas Day Context" in context_links
+    assert load.spec == NOMINATION_FORECAST_TABLE_SPEC
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_nomination_forecast",
+            17,
+        )
+    ]
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert uri.endswith(f"/{NOMINATION_FORECAST_TABLE_NAME}")
+        assert storage_options == config.storage_options()
+        assert row_limit == 17
+        cached_calls += 1
+        return pl.DataFrame({"source_system": ["GBB"]})
+
+    first_cached = cached_load_nomination_forecast_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_nomination_forecast_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_nomination_forecast_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 2
+    assert not first_cached.cache_hit
+    assert second_cached.cache_hit
+    assert not refreshed.cache_hit
+
+
+def test_nomination_forecast_helpers_summarize_filters_and_horizon() -> None:
+    gbb_source_table = "silver.gbb.silver_gasbb_nomination_and_forecast"
+    vicgas_source_table = "silver.vicgas.silver_int153_v4_demand_forecast_rpt_1"
+    load = _nomination_forecast_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB", "GBB", "VICGAS"],
+                "source_table": [
+                    gbb_source_table,
+                    gbb_source_table,
+                    vicgas_source_table,
+                ],
+                "source_tables": [
+                    [gbb_source_table],
+                    [gbb_source_table],
+                    [vicgas_source_table],
+                ],
+                "facility_key": ["fac-1", "fac-1", None],
+                "location_key": ["loc-1", "loc-1", "loc-2"],
+                "gas_date": [
+                    date(2024, 1, 2),
+                    date(2024, 1, 3),
+                    date(2024, 1, 4),
+                ],
+                "forecast_type": [
+                    "gbb_nomination_forecast",
+                    "gbb_nomination_forecast",
+                    "interval_demand",
+                ],
+                "forecast_version": ["v1", "v1", "42"],
+                "gas_interval": [1, 2, 12],
+                "source_facility_id": ["F1", "F1", None],
+                "source_location_id": ["L1", "L1", "L2"],
+                "demand_forecast_gj": [1000.0, 1100.0, 900.0],
+                "supply_forecast_gj": [500.0, None, None],
+                "transfer_in_forecast_gj": [100.0, 150.0, None],
+                "transfer_out_forecast_gj": [20.0, 25.0, None],
+                "override_quantity_gj": [950.0, None, None],
+                "source_file": ["a.parquet", "b.parquet", "c.parquet"],
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 2, 6),
+                    datetime(2024, 1, 3, 6),
+                    datetime(2024, 1, 4, 5),
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 2, 8),
+                    datetime(2024, 1, 3, 8),
+                    datetime(2024, 1, 4, 6),
+                ],
+            }
+        ),
+        row_limit=20,
+    )
+    as_of_date = date(2024, 1, 3)
+
+    kpis = nomination_forecast_kpi_frame(load, as_of_date=as_of_date)
+    summary = nomination_forecast_summary_frame(load, as_of_date=as_of_date)
+    daily = nomination_forecast_daily_frame(load, as_of_date=as_of_date)
+    source_coverage = nomination_forecast_source_coverage_frame(
+        load,
+        as_of_date=as_of_date,
+    )
+    observations = nomination_forecast_observation_frame(load, as_of_date=as_of_date)
+    facility_filtered_kpis = nomination_forecast_kpi_frame(
+        load,
+        facility_filter="F1",
+        as_of_date=as_of_date,
+    )
+    location_filtered_kpis = nomination_forecast_kpi_frame(
+        load,
+        location_filter="L2",
+        as_of_date=as_of_date,
+    )
+    source_filtered_kpis = nomination_forecast_kpi_frame(
+        load,
+        source_system_filter="VICGAS",
+        as_of_date=as_of_date,
+    )
+    kpi_values = {row["metric"]: row["value"] for row in kpis.to_dicts()}
+    facility_kpi_values = {
+        row["metric"]: row["value"] for row in facility_filtered_kpis.to_dicts()
+    }
+    location_kpi_values = {
+        row["metric"]: row["value"] for row in location_filtered_kpis.to_dicts()
+    }
+    source_kpi_values = {
+        row["metric"]: row["value"] for row in source_filtered_kpis.to_dicts()
+    }
+
+    assert nomination_forecast_gas_date_options(load) == (
+        NOMINATION_FORECAST_GAS_DATE_FILTER_ALL,
+        "2024-01-04",
+        "2024-01-03",
+        "2024-01-02",
+    )
+    assert nomination_forecast_source_system_options(load) == (
+        NOMINATION_FORECAST_SOURCE_SYSTEM_FILTER_ALL,
+        "GBB",
+        "VICGAS",
+    )
+    assert nomination_forecast_facility_options(load) == (
+        NOMINATION_FORECAST_FACILITY_FILTER_ALL,
+        "F1",
+    )
+    assert nomination_forecast_location_options(load) == (
+        NOMINATION_FORECAST_LOCATION_FILTER_ALL,
+        "L1",
+        "L2",
+    )
+    assert kpi_values["Loaded forecast rows"] == "3"
+    assert kpi_values["Forecast type/version pairs"] == "2"
+    assert kpi_values["Current/future forecasts"] == "2"
+    assert kpi_values["Historical forecasts"] == "1"
+    assert kpi_values["Source systems"] == "2"
+    assert kpi_values["Source tables"] == "2"
+    assert kpi_values["Facilities"] == "1"
+    assert kpi_values["Locations"] == "2"
+    assert kpi_values["Latest gas date"] == "2024-01-04"
+    assert kpi_values["Demand forecast"] == "3,000 GJ"
+    assert kpi_values["Supply forecast"] == "500 GJ"
+    assert kpi_values["Transfer in forecast"] == "250 GJ"
+    assert kpi_values["Transfer out forecast"] == "45 GJ"
+    assert kpi_values["Override quantity"] == "950 GJ"
+    assert facility_kpi_values["Loaded forecast rows"] == "2"
+    assert location_kpi_values["Loaded forecast rows"] == "1"
+    assert source_kpi_values["Demand forecast"] == "900 GJ"
+    assert summary.select(
+        "forecast type",
+        "forecast version",
+        "forecast horizon",
+        "rows",
+        "total demand forecast gj",
+        "latest gas date",
+    ).to_dicts() == [
+        {
+            "forecast type": "interval_demand",
+            "forecast version": "42",
+            "forecast horizon": "Current/future forecast",
+            "rows": 1,
+            "total demand forecast gj": 900.0,
+            "latest gas date": date(2024, 1, 4),
+        },
+        {
+            "forecast type": "gbb_nomination_forecast",
+            "forecast version": "v1",
+            "forecast horizon": "Current/future forecast",
+            "rows": 1,
+            "total demand forecast gj": 1100.0,
+            "latest gas date": date(2024, 1, 3),
+        },
+        {
+            "forecast type": "gbb_nomination_forecast",
+            "forecast version": "v1",
+            "forecast horizon": "Historical forecast",
+            "rows": 1,
+            "total demand forecast gj": 1000.0,
+            "latest gas date": date(2024, 1, 2),
+        },
+    ]
+    assert daily.select(
+        "gas date",
+        "forecast horizon",
+        "rows",
+        "total demand forecast gj",
+        "total override quantity gj",
+    ).to_dicts() == [
+        {
+            "gas date": date(2024, 1, 4),
+            "forecast horizon": "Current/future forecast",
+            "rows": 1,
+            "total demand forecast gj": 900.0,
+            "total override quantity gj": 0.0,
+        },
+        {
+            "gas date": date(2024, 1, 3),
+            "forecast horizon": "Current/future forecast",
+            "rows": 1,
+            "total demand forecast gj": 1100.0,
+            "total override quantity gj": 0.0,
+        },
+        {
+            "gas date": date(2024, 1, 2),
+            "forecast horizon": "Historical forecast",
+            "rows": 1,
+            "total demand forecast gj": 1000.0,
+            "total override quantity gj": 950.0,
+        },
+    ]
+    assert source_coverage.select(
+        "source system",
+        "source table",
+        "rows",
+        "forecast types",
+        "forecast versions",
+        "gas days",
+        "measure rows",
+        "latest gas date",
+    ).to_dicts() == [
+        {
+            "source system": "GBB",
+            "source table": gbb_source_table,
+            "rows": 2,
+            "forecast types": 1,
+            "forecast versions": 1,
+            "gas days": 2,
+            "measure rows": 2,
+            "latest gas date": date(2024, 1, 3),
+        },
+        {
+            "source system": "VICGAS",
+            "source table": vicgas_source_table,
+            "rows": 1,
+            "forecast types": 1,
+            "forecast versions": 1,
+            "gas days": 1,
+            "measure rows": 1,
+            "latest gas date": date(2024, 1, 4),
+        },
+    ]
+    assert observations.select(
+        "gas date",
+        "forecast horizon",
+        "forecast type",
+        "demand_forecast_gj",
+        "override_quantity_gj",
+    ).to_dicts()[:2] == [
+        {
+            "gas date": date(2024, 1, 4),
+            "forecast horizon": "Current/future forecast",
+            "forecast type": "interval_demand",
+            "demand_forecast_gj": 900.0,
+            "override_quantity_gj": None,
+        },
+        {
+            "gas date": date(2024, 1, 3),
+            "forecast horizon": "Current/future forecast",
+            "forecast type": "gbb_nomination_forecast",
+            "demand_forecast_gj": 1100.0,
+            "override_quantity_gj": None,
+        },
+    ]
+
+
+def test_nomination_forecast_helpers_cover_empty_state_behavior() -> None:
+    empty_load = _nomination_forecast_load(pl.DataFrame(), row_limit=6)
+    partial_load = _nomination_forecast_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "gas_date": [date(2024, 1, 4)],
+                "source_facility_id": ["F1"],
+                "demand_forecast_gj": [10.0],
+            }
+        ),
+        row_limit=6,
+    )
+    no_measure_load = _nomination_forecast_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "gas_date": [date(2024, 1, 4)],
+                "source_facility_id": ["F1"],
+            }
+        ),
+        row_limit=6,
+    )
+    unknown_gas_date_load = _nomination_forecast_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "gas_date": [None],
+                "demand_forecast_gj": [5.0],
+            }
+        ),
+        row_limit=6,
+    )
+    error_load = GasTableLoad(
+        spec=NOMINATION_FORECAST_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_nomination_forecast",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=6,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+    assert nomination_forecast_kpi_frame(empty_load).is_empty()
+    assert nomination_forecast_summary_frame(empty_load).is_empty()
+    assert nomination_forecast_daily_frame(empty_load).is_empty()
+    assert nomination_forecast_source_coverage_frame(empty_load).is_empty()
+    assert nomination_forecast_observation_frame(empty_load).is_empty()
+    assert nomination_forecast_gas_date_options(empty_load) == (
+        NOMINATION_FORECAST_GAS_DATE_FILTER_ALL,
+    )
+    assert nomination_forecast_source_system_options(empty_load) == (
+        NOMINATION_FORECAST_SOURCE_SYSTEM_FILTER_ALL,
+    )
+    assert nomination_forecast_facility_options(empty_load) == (
+        NOMINATION_FORECAST_FACILITY_FILTER_ALL,
+    )
+    assert nomination_forecast_location_options(empty_load) == (
+        NOMINATION_FORECAST_LOCATION_FILTER_ALL,
+    )
+    assert nomination_forecast_kpi_frame(
+        partial_load,
+        gas_date_filter="2024-01-05",
+    ).is_empty()
+    partial_coverage = nomination_forecast_source_coverage_frame(partial_load)
+    no_measure_values = {
+        row["metric"]: row["value"]
+        for row in nomination_forecast_kpi_frame(no_measure_load).to_dicts()
+    }
+    unknown_horizon_observation = nomination_forecast_observation_frame(
+        unknown_gas_date_load,
+        as_of_date=date(2024, 1, 4),
+    )
+    empty_markdown = nomination_forecast_empty_state_markdown(empty_load)
+    error_markdown = nomination_forecast_empty_state_markdown(error_load)
+    filtered_markdown = nomination_forecast_empty_state_markdown(partial_load)
+    missing_load_markdown = nomination_forecast_empty_state_markdown(None)
+    empty_context_links = render_nomination_forecast_context_links(entries=())
+
+    assert partial_coverage.row(0, named=True)["source table"] == (
+        "(empty source_table/source_tables value)"
+    )
+    assert no_measure_values["Demand forecast"] == "unknown"
+    assert no_measure_values["Override quantity"] == "unknown"
+    assert (
+        unknown_horizon_observation.row(0, named=True)["forecast horizon"]
+        == "Unknown Gas Day forecast"
+    )
+    assert "No nomination or demand forecast data is available" in empty_markdown
+    assert "silver.gas_model.silver_gas_fact_nomination_forecast" in empty_markdown
+    assert "Bounded preview reads are capped at `6` rows per table" in empty_markdown
+    assert "FileNotFoundError: no parquet files found" in error_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert "did not receive a nomination forecast load" in missing_load_markdown
+    assert (
+        "No Nomination forecast, Flow, Facility, Gas Day, map, source coverage, "
+        "or table explorer entries are registered."
     ) in empty_context_links
 
 
@@ -7486,6 +7939,22 @@ def _facility_flow_storage_load(
     return GasTableLoad(
         spec=FACILITY_FLOW_STORAGE_TABLE_SPEC,
         uri=f"s3://bucket/silver/gas_model/{FACILITY_FLOW_STORAGE_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _nomination_forecast_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=NOMINATION_FORECAST_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{NOMINATION_FORECAST_TABLE_NAME}",
         dataframe=dataframe,
         error=None,
         row_limit=row_limit,

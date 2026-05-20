@@ -1205,6 +1205,46 @@ def test_concept_gallery_metadata_maps_participant_membership_dashboard() -> Non
     )
 
 
+def test_concept_gallery_metadata_maps_nomination_forecast_dashboard() -> None:
+    table_name = "silver_gas_fact_nomination_forecast"
+    table = TablePrefix(
+        bucket="dev-energy-market-aemo",
+        prefix=f"silver/gas_model/{table_name}",
+        table_format=TableFormat.PARQUET,
+        parquet_files=(f"silver/gas_model/{table_name}/part-000.parquet",),
+    )
+    entry = CataloguedTable(
+        entry_id=f"asset:silver/gas_model/{table_name}",
+        status=TableAvailability.LIVE,
+        asset=_asset(
+            ("silver", "gas_model", table_name),
+            uri=table.uri,
+            latest_materialization_timestamp=1_714_000_000,
+        ),
+        table=table,
+    )
+
+    concept_ids = [
+        concept.concept_id for concept in concept_gallery_entries_for_table(entry)
+    ]
+    metadata_rows = {
+        row["concept id"]: row
+        for row in concept_gallery_metadata_frame(entry).to_dicts()
+    }
+
+    assert "nomination-demand-forecast" in concept_ids
+    assert "flow-context" in concept_ids
+    assert metadata_rows["nomination-demand-forecast"]["status"] == "available"
+    assert (
+        metadata_rows["nomination-demand-forecast"]["notebook route"]
+        == "/marimo/nomination_demand_forecast/"
+    )
+    assert (
+        "chunk-gbb-guide-flow-report"
+        in metadata_rows["nomination-demand-forecast"]["source chunk ids"]
+    )
+
+
 def test_concept_gallery_metadata_maps_storage_prefixes_and_empty_states() -> None:
     storage_entry = CataloguedTable(
         entry_id="storage:dev-energy-market-aemo/silver/gas_model/silver_gas_dim_date",

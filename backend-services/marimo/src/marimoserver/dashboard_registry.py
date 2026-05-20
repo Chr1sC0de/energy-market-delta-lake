@@ -590,6 +590,30 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
     },
     {
+        "concept_id": "nomination-demand-forecast",
+        "title": "Nomination And Demand Forecast",
+        "description": (
+            "Available analytical dashboard for nomination and demand forecast "
+            "rows, forecast type/version coverage, current/future forecast "
+            "horizons, source-system filters, and facility/location navigation."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "nomination_demand_forecast",
+        "backing_assets": ("silver.gas_model.silver_gas_fact_nomination_forecast",),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md",
+        ),
+        "source_chunk_ids": (
+            "chunk-gbb-guide-flow-report",
+            "chunk-gbb-procedures-scheduled-flow",
+            "chunk-gbb-guide-nodes-facilities",
+            "chunk-gbb-guide-gas-day",
+        ),
+    },
+    {
         "concept_id": "gas-model-table-explorer",
         "title": "Gas Model Table Explorer",
         "description": (

@@ -28,6 +28,7 @@ Marimo-Codex research workspace image.
 - [Hub / Zone explainer dashboard](#hub--zone-explainer-dashboard)
 - [Connection Point explainer dashboard](#connection-point-explainer-dashboard)
 - [Flow operations dashboard](#flow-operations-dashboard)
+- [Nomination and demand forecast dashboard](#nomination-and-demand-forecast-dashboard)
 - [Gas market dashboard](#gas-market-dashboard)
 - [Market prices dashboard](#market-prices-dashboard)
 - [Schedule runs dashboard](#schedule-runs-dashboard)
@@ -520,6 +521,26 @@ and flattens populated actual flow, storage, nomination forecast, and
 operational meter quantities into recent/sample observations. Missing tables,
 unavailable Parquet prefixes, empty reads, and missing columns render designed
 empty states with the checked assets, read policy, and refresh action.
+
+## Nomination and demand forecast dashboard
+
+[notebooks/nomination_demand_forecast.py](notebooks/nomination_demand_forecast.py)
+is an analytical dashboard over
+`silver.gas_model.silver_gas_fact_nomination_forecast`. It uses the shared
+bounded gas model loader and session cache from
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py), then
+filters the loaded bounded preview by Gas Day, `source_system`,
+`source_facility_id`, and `source_location_id`.
+
+The dashboard shows loaded nomination forecast KPIs, forecast type/version
+coverage, current/future versus historical forecast horizon labels, demand,
+supply, transfer, and override forecast measures, source coverage by source
+system and source table, bounded row previews, and Flow, Facility, Gas Day,
+facility flow/storage, map, source coverage, and table explorer context links
+from the Marimo registry. Historical actuals are intentionally outside this
+forecast-only view; missing nomination forecast data, unavailable Parquet
+prefixes, and filter combinations with no matches render dashboard empty states
+with the checked table, read policy, and refresh action.
 
 ## Gas market dashboard
 
@@ -1112,6 +1133,7 @@ prek run -a
   - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/connection_point_explainer.py`
   - `backend-services/marimo/notebooks/flow_operations.py`
+  - `backend-services/marimo/notebooks/nomination_demand_forecast.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/facility_flow_storage.py`

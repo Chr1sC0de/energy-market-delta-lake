@@ -127,8 +127,14 @@ DEFAULT_HUB_ZONE_PREVIEW_ROWS = 50
 DEFAULT_CONNECTION_POINT_PREVIEW_ROWS = 50
 FLOW_CONTEXT_ID = "flow-context"
 NOMINATION_FORECAST_TABLE_NAME = "silver_gas_fact_nomination_forecast"
+NOMINATION_FORECAST_CONTEXT_ID = "nomination-demand-forecast"
+NOMINATION_FORECAST_GAS_DATE_FILTER_ALL = "All gas dates"
+NOMINATION_FORECAST_SOURCE_SYSTEM_FILTER_ALL = "All source systems"
+NOMINATION_FORECAST_FACILITY_FILTER_ALL = "All facilities"
+NOMINATION_FORECAST_LOCATION_FILTER_ALL = "All locations"
 OPERATIONAL_METER_FLOW_TABLE_NAME = "silver_gas_fact_operational_meter_flow"
 DEFAULT_FLOW_PREVIEW_ROWS = 50
+DEFAULT_NOMINATION_FORECAST_PREVIEW_ROWS = 50
 FACILITY_FLOW_STORAGE_CONTEXT_ID = "facility-flow-storage"
 FACILITY_FLOW_STORAGE_GAS_DATE_FILTER_ALL = "All gas dates"
 FACILITY_FLOW_STORAGE_FACILITY_FILTER_ALL = "All facilities"
@@ -768,6 +774,34 @@ CONNECTION_POINT_TABLE_SPECS = (
         ),
     ),
 )
+NOMINATION_FORECAST_TABLE_SPEC = GasTableSpec(
+    section="Flow facts",
+    label="Nomination forecast",
+    table_name=NOMINATION_FORECAST_TABLE_NAME,
+    date_columns=(
+        "gas_date",
+        "source_last_updated_timestamp",
+        "ingested_timestamp",
+    ),
+    preview_columns=(
+        "gas_date",
+        "source_system",
+        "source_table",
+        "forecast_type",
+        "forecast_version",
+        "source_facility_id",
+        "source_location_id",
+        "gas_interval",
+        "demand_forecast_gj",
+        "supply_forecast_gj",
+        "transfer_in_forecast_gj",
+        "transfer_out_forecast_gj",
+        "override_quantity_gj",
+        "source_last_updated_timestamp",
+        "ingested_timestamp",
+    ),
+)
+NOMINATION_FORECAST_TABLE_SPECS = (NOMINATION_FORECAST_TABLE_SPEC,)
 FLOW_TABLE_SPECS = (
     GasTableSpec(
         section="Flow facts",
@@ -816,33 +850,7 @@ FLOW_TABLE_SPECS = (
             "ingested_timestamp",
         ),
     ),
-    GasTableSpec(
-        section="Flow facts",
-        label="Nomination forecast",
-        table_name=NOMINATION_FORECAST_TABLE_NAME,
-        date_columns=(
-            "gas_date",
-            "source_last_updated_timestamp",
-            "ingested_timestamp",
-        ),
-        preview_columns=(
-            "gas_date",
-            "source_system",
-            "source_table",
-            "forecast_type",
-            "forecast_version",
-            "source_facility_id",
-            "source_location_id",
-            "gas_interval",
-            "demand_forecast_gj",
-            "supply_forecast_gj",
-            "transfer_in_forecast_gj",
-            "transfer_out_forecast_gj",
-            "override_quantity_gj",
-            "source_last_updated_timestamp",
-            "ingested_timestamp",
-        ),
-    ),
+    NOMINATION_FORECAST_TABLE_SPEC,
     GasTableSpec(
         section="Flow facts",
         label="Operational meter flow",
@@ -1829,6 +1837,96 @@ _NOMINATION_FORECAST_RAW_SCHEMA = {
     "source_file": pl.String,
     "ingested_timestamp": pl.Datetime("us"),
 }
+_NOMINATION_FORECAST_DASHBOARD_ROW_SCHEMA = {
+    **_NOMINATION_FORECAST_RAW_SCHEMA,
+    "forecast_horizon": pl.String,
+}
+_NOMINATION_FORECAST_KPI_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_NOMINATION_FORECAST_TYPE_VERSION_SCHEMA = {
+    "forecast type": pl.String,
+    "forecast version": pl.String,
+    "forecast horizon": pl.String,
+    "rows": pl.UInt32,
+    "gas days": pl.UInt32,
+    "facilities": pl.UInt32,
+    "locations": pl.UInt32,
+    "demand rows": pl.UInt32,
+    "total demand forecast gj": pl.Float64,
+    "supply rows": pl.UInt32,
+    "total supply forecast gj": pl.Float64,
+    "transfer in rows": pl.UInt32,
+    "total transfer in forecast gj": pl.Float64,
+    "transfer out rows": pl.UInt32,
+    "total transfer out forecast gj": pl.Float64,
+    "override rows": pl.UInt32,
+    "total override quantity gj": pl.Float64,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_NOMINATION_FORECAST_DAILY_SCHEMA = {
+    "gas date": pl.Date,
+    "forecast horizon": pl.String,
+    "rows": pl.UInt32,
+    "forecast type/version pairs": pl.UInt32,
+    "source systems": pl.UInt32,
+    "facilities": pl.UInt32,
+    "locations": pl.UInt32,
+    "demand rows": pl.UInt32,
+    "total demand forecast gj": pl.Float64,
+    "supply rows": pl.UInt32,
+    "total supply forecast gj": pl.Float64,
+    "transfer in rows": pl.UInt32,
+    "total transfer in forecast gj": pl.Float64,
+    "transfer out rows": pl.UInt32,
+    "total transfer out forecast gj": pl.Float64,
+    "override rows": pl.UInt32,
+    "total override quantity gj": pl.Float64,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_NOMINATION_FORECAST_SOURCE_COVERAGE_SCHEMA = {
+    "source system": pl.String,
+    "source table": pl.String,
+    "rows": pl.UInt32,
+    "forecast types": pl.UInt32,
+    "forecast versions": pl.UInt32,
+    "gas days": pl.UInt32,
+    "facilities": pl.UInt32,
+    "locations": pl.UInt32,
+    "measure rows": pl.UInt32,
+    "source files": pl.UInt32,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_NOMINATION_FORECAST_OBSERVATION_SCHEMA = {
+    "gas date": pl.Date,
+    "forecast horizon": pl.String,
+    "source system": pl.String,
+    "source table": pl.String,
+    "forecast type": pl.String,
+    "forecast version": pl.String,
+    "gas interval": pl.Int64,
+    "facility key": pl.String,
+    "location key": pl.String,
+    "source facility id": pl.String,
+    "source location id": pl.String,
+    "demand_forecast_gj": pl.Float64,
+    "supply_forecast_gj": pl.Float64,
+    "transfer_in_forecast_gj": pl.Float64,
+    "transfer_out_forecast_gj": pl.Float64,
+    "override_quantity_gj": pl.Float64,
+    "source file": pl.String,
+    "source updated": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
 _OPERATIONAL_METER_FLOW_RAW_SCHEMA = {
     "surrogate_key": pl.String,
     "date_key": pl.String,
@@ -2291,6 +2389,42 @@ def cached_load_customer_transfer_table(
         config,
         cache,
         specs=CUSTOMER_TRANSFER_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        refresh_token=refresh_token,
+        clock=clock,
+    )[0]
+
+
+def load_nomination_forecast_table(
+    config: GasDashboardConfig,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Load the nomination forecast fact through the shared bounded loader."""
+    return load_gas_model_tables(
+        config,
+        specs=NOMINATION_FORECAST_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        clock=clock,
+    )[0]
+
+
+def cached_load_nomination_forecast_table(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Return session-cached nomination forecast rows for explicit refreshes."""
+    return cached_load_gas_model_tables(
+        config,
+        cache,
+        specs=NOMINATION_FORECAST_TABLE_SPECS,
         reader=reader,
         view=GasModelTableView.RECENT,
         refresh_token=refresh_token,
@@ -4237,6 +4371,7 @@ def render_facility_context_links(
     concept_ids = (
         FACILITY_CONTEXT_ID,
         FACILITY_FLOW_STORAGE_CONTEXT_ID,
+        NOMINATION_FORECAST_CONTEXT_ID,
         "gbb-interactive-map",
         "source-coverage-matrix",
         "gas-model-table-explorer",
@@ -4508,6 +4643,7 @@ def render_flow_context_links(
     candidate_entries = tuple(dashboard_registry() if entries is None else entries)
     concept_ids = (
         FLOW_CONTEXT_ID,
+        NOMINATION_FORECAST_CONTEXT_ID,
         FACILITY_FLOW_STORAGE_CONTEXT_ID,
         "gbb-interactive-map",
         "source-coverage-matrix",
@@ -6329,6 +6465,576 @@ def render_customer_transfer_context_links(
     <div>
         <p class="customer-transfer-links__eyebrow">Context links</p>
         <h2>Customer transfer, Participant, Gas Day, and Settlement context</h2>
+    </div>
+    <ul>
+{rows}
+    </ul>
+</section>"""
+
+
+def nomination_forecast_gas_date_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return gas-date filter options for loaded nomination forecast rows."""
+    dataframe = _normalised_nomination_forecast_dashboard_dataframe(load)
+    if dataframe.is_empty():
+        return (NOMINATION_FORECAST_GAS_DATE_FILTER_ALL,)
+
+    values = sorted(
+        str(value)
+        for value in dataframe.get_column("gas_date").drop_nulls().unique().to_list()
+        if value is not None
+    )
+    return (NOMINATION_FORECAST_GAS_DATE_FILTER_ALL, *reversed(values))
+
+
+def nomination_forecast_source_system_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return source-system filter options for nomination forecast rows."""
+    return _nomination_forecast_string_filter_options(
+        load,
+        "source_system",
+        NOMINATION_FORECAST_SOURCE_SYSTEM_FILTER_ALL,
+    )
+
+
+def nomination_forecast_facility_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return source-facility filter options for nomination forecast rows."""
+    return _nomination_forecast_string_filter_options(
+        load,
+        "source_facility_id",
+        NOMINATION_FORECAST_FACILITY_FILTER_ALL,
+    )
+
+
+def nomination_forecast_location_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return source-location filter options for nomination forecast rows."""
+    return _nomination_forecast_string_filter_options(
+        load,
+        "source_location_id",
+        NOMINATION_FORECAST_LOCATION_FILTER_ALL,
+    )
+
+
+def nomination_forecast_kpi_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = NOMINATION_FORECAST_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = NOMINATION_FORECAST_SOURCE_SYSTEM_FILTER_ALL,
+    facility_filter: str = NOMINATION_FORECAST_FACILITY_FILTER_ALL,
+    location_filter: str = NOMINATION_FORECAST_LOCATION_FILTER_ALL,
+    *,
+    as_of_date: date | None = None,
+) -> pl.DataFrame:
+    """Return first-viewport KPIs for nomination and demand forecast rows."""
+    dataframe = _filtered_nomination_forecast_dataframe(
+        load,
+        gas_date_filter,
+        source_system_filter,
+        facility_filter,
+        location_filter,
+        as_of_date=as_of_date,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_NOMINATION_FORECAST_KPI_SCHEMA)
+
+    counts = dataframe.select(
+        pl.len().alias("loaded_rows"),
+        pl.col("forecast_type").drop_nulls().n_unique().alias("forecast_types"),
+        pl.col("forecast_version").drop_nulls().n_unique().alias("forecast_versions"),
+        pl.col("source_system").drop_nulls().n_unique().alias("source_systems"),
+        pl.col("source_facility_id").drop_nulls().n_unique().alias("facilities"),
+        pl.col("source_location_id").drop_nulls().n_unique().alias("locations"),
+        pl.col("gas_date").drop_nulls().n_unique().alias("gas_days"),
+        pl.col("gas_date").max().alias("latest_gas_date"),
+        pl.col("demand_forecast_gj").is_not_null().sum().alias("demand_rows"),
+        pl.col("demand_forecast_gj").sum().alias("demand_forecast_gj"),
+        pl.col("supply_forecast_gj").is_not_null().sum().alias("supply_rows"),
+        pl.col("supply_forecast_gj").sum().alias("supply_forecast_gj"),
+        pl.col("transfer_in_forecast_gj").is_not_null().sum().alias("transfer_in_rows"),
+        pl.col("transfer_in_forecast_gj").sum().alias("transfer_in_forecast_gj"),
+        pl.col("transfer_out_forecast_gj")
+        .is_not_null()
+        .sum()
+        .alias("transfer_out_rows"),
+        pl.col("transfer_out_forecast_gj").sum().alias("transfer_out_forecast_gj"),
+        pl.col("override_quantity_gj").is_not_null().sum().alias("override_rows"),
+        pl.col("override_quantity_gj").sum().alias("override_quantity_gj"),
+    ).row(0, named=True)
+    source_table_count = _nomination_forecast_source_table_count(dataframe)
+    type_version_count = _nomination_forecast_type_version_count(dataframe)
+    reference_date = _nomination_forecast_reference_date(as_of_date)
+    current_future_rows = dataframe.filter(
+        pl.col("forecast_horizon") == "Current/future forecast"
+    ).height
+    historical_rows = dataframe.filter(
+        pl.col("forecast_horizon") == "Historical forecast"
+    ).height
+    row_limit = None if load is None else load.row_limit
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Loaded forecast rows",
+                "value": f"{counts['loaded_rows']:,}",
+                "detail": format_row_limit(row_limit),
+            },
+            {
+                "metric": "Forecast type/version pairs",
+                "value": f"{type_version_count:,}",
+                "detail": (
+                    "Distinct forecast_type and forecast_version combinations "
+                    "represented"
+                ),
+            },
+            {
+                "metric": "Forecast types",
+                "value": f"{counts['forecast_types']:,}",
+                "detail": "Distinct populated forecast_type values in the view",
+            },
+            {
+                "metric": "Forecast versions",
+                "value": f"{counts['forecast_versions']:,}",
+                "detail": "Distinct populated forecast_version values in the view",
+            },
+            {
+                "metric": "Current/future forecasts",
+                "value": f"{current_future_rows:,}",
+                "detail": f"Forecast rows with gas_date on or after {reference_date}",
+            },
+            {
+                "metric": "Historical forecasts",
+                "value": f"{historical_rows:,}",
+                "detail": (
+                    "Forecast rows before the reference date; historical actuals "
+                    "are not loaded by this dashboard"
+                ),
+            },
+            {
+                "metric": "Source systems",
+                "value": f"{counts['source_systems']:,}",
+                "detail": "Distinct source_system values in the current view",
+            },
+            {
+                "metric": "Source tables",
+                "value": f"{source_table_count:,}",
+                "detail": "Distinct source_table/source_tables values represented",
+            },
+            {
+                "metric": "Facilities",
+                "value": f"{counts['facilities']:,}",
+                "detail": "Distinct source_facility_id values in the current view",
+            },
+            {
+                "metric": "Locations",
+                "value": f"{counts['locations']:,}",
+                "detail": "Distinct source_location_id values in the current view",
+            },
+            {
+                "metric": "Latest gas date",
+                "value": _format_optional_value(counts["latest_gas_date"]),
+                "detail": "Maximum gas_date in the loaded bounded rows",
+            },
+            {
+                "metric": "Demand forecast",
+                "value": _format_measure_total(
+                    counts["demand_forecast_gj"],
+                    counts["demand_rows"],
+                    suffix=" GJ",
+                ),
+                "detail": (
+                    f"{counts['demand_rows']:,} populated demand_forecast_gj rows"
+                ),
+            },
+            {
+                "metric": "Supply forecast",
+                "value": _format_measure_total(
+                    counts["supply_forecast_gj"],
+                    counts["supply_rows"],
+                    suffix=" GJ",
+                ),
+                "detail": (
+                    f"{counts['supply_rows']:,} populated supply_forecast_gj rows"
+                ),
+            },
+            {
+                "metric": "Transfer in forecast",
+                "value": _format_measure_total(
+                    counts["transfer_in_forecast_gj"],
+                    counts["transfer_in_rows"],
+                    suffix=" GJ",
+                ),
+                "detail": (
+                    f"{counts['transfer_in_rows']:,} populated "
+                    "transfer_in_forecast_gj rows"
+                ),
+            },
+            {
+                "metric": "Transfer out forecast",
+                "value": _format_measure_total(
+                    counts["transfer_out_forecast_gj"],
+                    counts["transfer_out_rows"],
+                    suffix=" GJ",
+                ),
+                "detail": (
+                    f"{counts['transfer_out_rows']:,} populated "
+                    "transfer_out_forecast_gj rows"
+                ),
+            },
+            {
+                "metric": "Override quantity",
+                "value": _format_measure_total(
+                    counts["override_quantity_gj"],
+                    counts["override_rows"],
+                    suffix=" GJ",
+                ),
+                "detail": (
+                    f"{counts['override_rows']:,} populated override_quantity_gj rows"
+                ),
+            },
+        ],
+        schema=_NOMINATION_FORECAST_KPI_SCHEMA,
+    )
+
+
+def nomination_forecast_summary_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = NOMINATION_FORECAST_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = NOMINATION_FORECAST_SOURCE_SYSTEM_FILTER_ALL,
+    facility_filter: str = NOMINATION_FORECAST_FACILITY_FILTER_ALL,
+    location_filter: str = NOMINATION_FORECAST_LOCATION_FILTER_ALL,
+    *,
+    as_of_date: date | None = None,
+) -> pl.DataFrame:
+    """Return forecast type/version summaries for the bounded current view."""
+    dataframe = _filtered_nomination_forecast_dataframe(
+        load,
+        gas_date_filter,
+        source_system_filter,
+        facility_filter,
+        location_filter,
+        as_of_date=as_of_date,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_NOMINATION_FORECAST_TYPE_VERSION_SCHEMA)
+
+    sorted_frame = dataframe.sort(
+        ["gas_date", "source_last_updated_timestamp", "ingested_timestamp"],
+        nulls_last=True,
+    )
+    summary = (
+        sorted_frame.group_by("forecast_type", "forecast_version", "forecast_horizon")
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("gas_date").drop_nulls().n_unique().alias("gas days"),
+            pl.col("source_facility_id").drop_nulls().n_unique().alias("facilities"),
+            pl.col("source_location_id").drop_nulls().n_unique().alias("locations"),
+            pl.col("demand_forecast_gj").is_not_null().sum().alias("demand rows"),
+            pl.col("demand_forecast_gj").sum().alias("total demand forecast gj"),
+            pl.col("supply_forecast_gj").is_not_null().sum().alias("supply rows"),
+            pl.col("supply_forecast_gj").sum().alias("total supply forecast gj"),
+            pl.col("transfer_in_forecast_gj")
+            .is_not_null()
+            .sum()
+            .alias("transfer in rows"),
+            pl.col("transfer_in_forecast_gj")
+            .sum()
+            .alias("total transfer in forecast gj"),
+            pl.col("transfer_out_forecast_gj")
+            .is_not_null()
+            .sum()
+            .alias("transfer out rows"),
+            pl.col("transfer_out_forecast_gj")
+            .sum()
+            .alias("total transfer out forecast gj"),
+            pl.col("override_quantity_gj").is_not_null().sum().alias("override rows"),
+            pl.col("override_quantity_gj").sum().alias("total override quantity gj"),
+            pl.col("gas_date").min().alias("first gas date"),
+            pl.col("gas_date").max().alias("latest gas date"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort(
+            ["latest gas date", "forecast_type", "forecast_version"],
+            descending=[True, False, False],
+            nulls_last=True,
+        )
+        .rename(
+            {
+                "forecast_type": "forecast type",
+                "forecast_version": "forecast version",
+                "forecast_horizon": "forecast horizon",
+            }
+        )
+    )
+    return summary.select([*list(_NOMINATION_FORECAST_TYPE_VERSION_SCHEMA)])
+
+
+def nomination_forecast_daily_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = NOMINATION_FORECAST_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = NOMINATION_FORECAST_SOURCE_SYSTEM_FILTER_ALL,
+    facility_filter: str = NOMINATION_FORECAST_FACILITY_FILTER_ALL,
+    location_filter: str = NOMINATION_FORECAST_LOCATION_FILTER_ALL,
+    *,
+    as_of_date: date | None = None,
+    preview_rows: int = DEFAULT_NOMINATION_FORECAST_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return recent Gas Day nomination forecast totals."""
+    dataframe = _filtered_nomination_forecast_dataframe(
+        load,
+        gas_date_filter,
+        source_system_filter,
+        facility_filter,
+        location_filter,
+        as_of_date=as_of_date,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_NOMINATION_FORECAST_DAILY_SCHEMA)
+
+    daily = (
+        dataframe.group_by("gas_date", "forecast_horizon")
+        .agg(
+            pl.len().alias("rows"),
+            pl.struct("forecast_type", "forecast_version")
+            .n_unique()
+            .alias("forecast type/version pairs"),
+            pl.col("source_system").drop_nulls().n_unique().alias("source systems"),
+            pl.col("source_facility_id").drop_nulls().n_unique().alias("facilities"),
+            pl.col("source_location_id").drop_nulls().n_unique().alias("locations"),
+            pl.col("demand_forecast_gj").is_not_null().sum().alias("demand rows"),
+            pl.col("demand_forecast_gj").sum().alias("total demand forecast gj"),
+            pl.col("supply_forecast_gj").is_not_null().sum().alias("supply rows"),
+            pl.col("supply_forecast_gj").sum().alias("total supply forecast gj"),
+            pl.col("transfer_in_forecast_gj")
+            .is_not_null()
+            .sum()
+            .alias("transfer in rows"),
+            pl.col("transfer_in_forecast_gj")
+            .sum()
+            .alias("total transfer in forecast gj"),
+            pl.col("transfer_out_forecast_gj")
+            .is_not_null()
+            .sum()
+            .alias("transfer out rows"),
+            pl.col("transfer_out_forecast_gj")
+            .sum()
+            .alias("total transfer out forecast gj"),
+            pl.col("override_quantity_gj").is_not_null().sum().alias("override rows"),
+            pl.col("override_quantity_gj").sum().alias("total override quantity gj"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort("gas_date", descending=True, nulls_last=True)
+        .rename(
+            {
+                "gas_date": "gas date",
+                "forecast_horizon": "forecast horizon",
+            }
+        )
+        .head(max(1, preview_rows))
+    )
+    return daily.select([*list(_NOMINATION_FORECAST_DAILY_SCHEMA)])
+
+
+def nomination_forecast_source_coverage_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = NOMINATION_FORECAST_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = NOMINATION_FORECAST_SOURCE_SYSTEM_FILTER_ALL,
+    facility_filter: str = NOMINATION_FORECAST_FACILITY_FILTER_ALL,
+    location_filter: str = NOMINATION_FORECAST_LOCATION_FILTER_ALL,
+    *,
+    as_of_date: date | None = None,
+) -> pl.DataFrame:
+    """Return source-system and source-table coverage for loaded forecasts."""
+    dataframe = _filtered_nomination_forecast_dataframe(
+        load,
+        gas_date_filter,
+        source_system_filter,
+        facility_filter,
+        location_filter,
+        as_of_date=as_of_date,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_NOMINATION_FORECAST_SOURCE_COVERAGE_SCHEMA)
+
+    has_measure = pl.any_horizontal(
+        *(
+            pl.col(column).is_not_null()
+            for column in _NOMINATION_FORECAST_MEASURE_COLUMNS
+        )
+    )
+    coverage = (
+        dataframe.group_by("source_system", "source_table")
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("forecast_type").drop_nulls().n_unique().alias("forecast types"),
+            pl.col("forecast_version")
+            .drop_nulls()
+            .n_unique()
+            .alias("forecast versions"),
+            pl.col("gas_date").drop_nulls().n_unique().alias("gas days"),
+            pl.col("source_facility_id").drop_nulls().n_unique().alias("facilities"),
+            pl.col("source_location_id").drop_nulls().n_unique().alias("locations"),
+            has_measure.sum().alias("measure rows"),
+            pl.col("source_file").drop_nulls().n_unique().alias("source files"),
+            pl.col("gas_date").min().alias("first gas date"),
+            pl.col("gas_date").max().alias("latest gas date"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort(["rows", "source_table"], descending=[True, False])
+        .rename(
+            {
+                "source_system": "source system",
+                "source_table": "source table",
+            }
+        )
+    )
+    return coverage.select([*list(_NOMINATION_FORECAST_SOURCE_COVERAGE_SCHEMA)])
+
+
+def nomination_forecast_observation_frame(
+    load: GasTableLoad | None,
+    gas_date_filter: str = NOMINATION_FORECAST_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = NOMINATION_FORECAST_SOURCE_SYSTEM_FILTER_ALL,
+    facility_filter: str = NOMINATION_FORECAST_FACILITY_FILTER_ALL,
+    location_filter: str = NOMINATION_FORECAST_LOCATION_FILTER_ALL,
+    *,
+    as_of_date: date | None = None,
+    preview_rows: int = DEFAULT_NOMINATION_FORECAST_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return bounded recent/sample nomination forecast observations."""
+    dataframe = _filtered_nomination_forecast_dataframe(
+        load,
+        gas_date_filter,
+        source_system_filter,
+        facility_filter,
+        location_filter,
+        as_of_date=as_of_date,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_NOMINATION_FORECAST_OBSERVATION_SCHEMA)
+
+    return (
+        dataframe.sort(
+            [
+                "gas_date",
+                "source_last_updated_timestamp",
+                "ingested_timestamp",
+                "source_system",
+                "forecast_type",
+                "forecast_version",
+                "source_facility_id",
+            ],
+            descending=[True, True, True, False, False, False, False],
+            nulls_last=True,
+        )
+        .select(
+            pl.col("gas_date").alias("gas date"),
+            pl.col("forecast_horizon").alias("forecast horizon"),
+            pl.col("source_system").alias("source system"),
+            pl.col("source_table").alias("source table"),
+            pl.col("forecast_type").alias("forecast type"),
+            pl.col("forecast_version").alias("forecast version"),
+            pl.col("gas_interval").alias("gas interval"),
+            pl.col("facility_key").alias("facility key"),
+            pl.col("location_key").alias("location key"),
+            pl.col("source_facility_id").alias("source facility id"),
+            pl.col("source_location_id").alias("source location id"),
+            pl.col("demand_forecast_gj"),
+            pl.col("supply_forecast_gj"),
+            pl.col("transfer_in_forecast_gj"),
+            pl.col("transfer_out_forecast_gj"),
+            pl.col("override_quantity_gj"),
+            pl.col("source_file").alias("source file"),
+            pl.col("source_last_updated_timestamp").alias("source updated"),
+            pl.col("ingested_timestamp").alias("latest ingest"),
+        )
+        .head(max(1, preview_rows))
+    )
+
+
+def nomination_forecast_empty_state_markdown(load: GasTableLoad | None) -> str:
+    """Return useful empty-state copy for missing or unmatched forecast rows."""
+    table_label = _markdown_breakable_text(
+        "silver.gas_model.silver_gas_fact_nomination_forecast"
+    )
+    if load is None:
+        status_detail = "The dashboard did not receive a nomination forecast load."
+        uri = table_label
+        read_policy = "No read policy was reported."
+    else:
+        if load.error is not None:
+            status_detail = f"Read detail: {_markdown_breakable_text(load.error)}"
+        elif load.dataframe is None or load.dataframe.is_empty():
+            status_detail = "The table loaded successfully but returned no rows."
+        else:
+            status_detail = (
+                "The current filters do not match any loaded nomination forecast rows."
+            )
+        uri = _markdown_breakable_text(load.uri)
+        read_policy = row_limit_message(load.row_limit)
+
+    return f"""
+    **No nomination or demand forecast data is available for this view.**
+
+    The dashboard checked {uri}, which should contain {table_label} rows with
+    `gas_date`, source system, facility/location fields, `forecast_type`,
+    `forecast_version`, demand, supply, transfer, and override forecast measures.
+
+    {status_detail}
+
+    {read_policy}
+
+    Materialize or seed the `silver.gas_model` nomination forecast asset, then
+    use **Refresh data**.
+    """
+
+
+def render_nomination_forecast_context_links(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render nomination forecast links to related Market context panels."""
+    candidate_entries = tuple(dashboard_registry() if entries is None else entries)
+    concept_ids = (
+        NOMINATION_FORECAST_CONTEXT_ID,
+        FLOW_CONTEXT_ID,
+        FACILITY_CONTEXT_ID,
+        GAS_DAY_CONTEXT_ID,
+        FACILITY_FLOW_STORAGE_CONTEXT_ID,
+        "gbb-interactive-map",
+        "source-coverage-matrix",
+        "gas-model-table-explorer",
+    )
+    rows = "\n".join(
+        _render_flow_context_link(entry)
+        for entry in (
+            registry_entry_by_concept_id(concept_id, candidate_entries)
+            for concept_id in concept_ids
+        )
+        if entry is not None
+    )
+    if rows == "":
+        rows = (
+            '<li class="flow-links__empty">'
+            "No Nomination forecast, Flow, Facility, Gas Day, map, source "
+            "coverage, or table explorer entries are registered."
+            "</li>"
+        )
+
+    return f"""\
+<style>
+{_flow_context_links_css()}
+</style>
+<section class="flow-links" aria-label="Nomination forecast context links">
+    <div>
+        <p class="flow-links__eyebrow">Context links</p>
+        <h2>Nomination forecast, Flow, Facility, and Gas Day context</h2>
     </div>
     <ul>
 {rows}
@@ -8563,6 +9269,62 @@ def _normalised_nomination_forecast_dataframe(
     )
 
 
+def _normalised_nomination_forecast_dashboard_dataframe(
+    load: GasTableLoad | None,
+    *,
+    as_of_date: date | None = None,
+) -> pl.DataFrame:
+    dataframe = _normalised_nomination_forecast_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_NOMINATION_FORECAST_DASHBOARD_ROW_SCHEMA)
+
+    reference_date = _nomination_forecast_reference_date(as_of_date)
+    rows = [
+        _nomination_forecast_dashboard_row(row, reference_date)
+        for row in dataframe.to_dicts()
+    ]
+    return pl.DataFrame(rows, schema=_NOMINATION_FORECAST_DASHBOARD_ROW_SCHEMA)
+
+
+def _nomination_forecast_dashboard_row(
+    row: Mapping[str, object],
+    reference_date: date,
+) -> dict[str, object]:
+    return {
+        **row,
+        "source_table": _nomination_forecast_source_table_label(row),
+        "forecast_horizon": _nomination_forecast_horizon_label(
+            row.get("gas_date"),
+            reference_date,
+        ),
+    }
+
+
+def _nomination_forecast_source_table_label(row: Mapping[str, object]) -> str:
+    values = list(_source_coverage_value_strings(row.get("source_table")))
+    values.extend(_source_coverage_value_strings(row.get("source_tables")))
+    deduplicated_values = tuple(dict.fromkeys(values))
+    if len(deduplicated_values) == 0:
+        return _SOURCE_COVERAGE_EMPTY_SOURCE_TABLE_VALUE
+    return ", ".join(deduplicated_values)
+
+
+def _nomination_forecast_horizon_label(
+    gas_date_value: object | None,
+    reference_date: date,
+) -> str:
+    gas_date = _flow_date_value(gas_date_value)
+    if gas_date is None:
+        return "Unknown Gas Day forecast"
+    if gas_date < reference_date:
+        return "Historical forecast"
+    return "Current/future forecast"
+
+
+def _nomination_forecast_reference_date(as_of_date: date | None) -> date:
+    return date.today() if as_of_date is None else as_of_date
+
+
 def _normalised_operational_meter_flow_dataframe(
     load: GasTableLoad | None,
 ) -> pl.DataFrame:
@@ -10141,6 +10903,78 @@ def _normalised_customer_transfer_dataframe(
         pl.col("source_file").cast(pl.String, strict=False),
         _normalise_timestamp_column(dataframe, "ingested_timestamp"),
     )
+
+
+def _nomination_forecast_string_filter_options(
+    load: GasTableLoad | None,
+    column: str,
+    all_label: str,
+) -> tuple[str, ...]:
+    dataframe = _normalised_nomination_forecast_dashboard_dataframe(load)
+    if dataframe.is_empty() or column not in dataframe.columns:
+        return (all_label,)
+
+    values = sorted(
+        str(value)
+        for value in dataframe.get_column(column)
+        .drop_nulls()
+        .cast(pl.String, strict=False)
+        .unique()
+        .to_list()
+        if value is not None and str(value).strip() != ""
+    )
+    return (all_label, *values)
+
+
+def _filtered_nomination_forecast_dataframe(
+    load: GasTableLoad | None,
+    gas_date_filter: str,
+    source_system_filter: str,
+    facility_filter: str,
+    location_filter: str,
+    *,
+    as_of_date: date | None = None,
+) -> pl.DataFrame:
+    dataframe = _normalised_nomination_forecast_dashboard_dataframe(
+        load,
+        as_of_date=as_of_date,
+    )
+    if dataframe.is_empty():
+        return dataframe
+
+    filtered = dataframe
+    if gas_date_filter != NOMINATION_FORECAST_GAS_DATE_FILTER_ALL:
+        filtered = filtered.filter(
+            pl.col("gas_date").cast(pl.String) == gas_date_filter
+        )
+    if source_system_filter != NOMINATION_FORECAST_SOURCE_SYSTEM_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_system") == source_system_filter)
+    if facility_filter != NOMINATION_FORECAST_FACILITY_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_facility_id") == facility_filter)
+    if location_filter != NOMINATION_FORECAST_LOCATION_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_location_id") == location_filter)
+    return filtered
+
+
+def _nomination_forecast_source_table_count(dataframe: pl.DataFrame) -> int:
+    return _distinct_non_empty_count(dataframe, "source_table")
+
+
+def _nomination_forecast_type_version_count(dataframe: pl.DataFrame) -> int:
+    values: set[tuple[str | None, str | None]] = set()
+    for row in dataframe.select("forecast_type", "forecast_version").to_dicts():
+        forecast_type = _optional_non_empty_string(row.get("forecast_type"))
+        forecast_version = _optional_non_empty_string(row.get("forecast_version"))
+        if forecast_type is not None or forecast_version is not None:
+            values.add((forecast_type, forecast_version))
+    return len(values)
+
+
+def _optional_non_empty_string(value: object | None) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text if text != "" else None
 
 
 def _facility_flow_storage_string_filter_options(
