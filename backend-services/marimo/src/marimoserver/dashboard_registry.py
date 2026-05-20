@@ -1128,11 +1128,13 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "concept_id": "linepack-context",
         "title": "Linepack Context",
         "description": (
-            "Planned concept panel for linepack observations, balances, and "
-            "capacity adequacy indicators."
+            "Available analytical dashboard for linepack observations, "
+            "adequacy flags, adequacy descriptions, facility and zone "
+            "coverage, and related Flow, Capacity, and MOS context."
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
-        "status": "planned",
+        "status": "available",
+        "notebook_name": "linepack_adequacy",
         "backing_assets": (
             "silver.gas_model.silver_gas_fact_linepack",
             "silver.gas_model.silver_gas_fact_linepack_balance",

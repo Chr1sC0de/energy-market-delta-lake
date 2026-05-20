@@ -34,6 +34,8 @@ Marimo-Codex research workspace image.
 - [Schedule runs dashboard](#schedule-runs-dashboard)
 - [Settlement activity dashboard](#settlement-activity-dashboard)
 - [Customer transfer and retail activity dashboard](#customer-transfer-and-retail-activity-dashboard)
+- [Facility flow and storage dashboard](#facility-flow-and-storage-dashboard)
+- [Linepack adequacy dashboard](#linepack-adequacy-dashboard)
 - [Bid-Offer stack dashboard](#bid-offer-stack-dashboard)
 - [System notices dashboard](#system-notices-dashboard)
 - [Gas quality and composition dashboard](#gas-quality-and-composition-dashboard)
@@ -684,6 +686,24 @@ facility flow/storage data, unavailable Parquet prefixes, and filter
 combinations with no matches render dashboard empty states with the checked
 table, read policy, and refresh action.
 
+## Linepack adequacy dashboard
+
+[notebooks/linepack_adequacy.py](notebooks/linepack_adequacy.py) is an
+analytical dashboard over `silver.gas_model.silver_gas_fact_linepack`. It uses
+the shared bounded gas model loader and session cache from
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py), then
+filters the loaded bounded preview by Gas Day, source facility, zone,
+`adequacy_flag`, and `source_system`.
+
+The dashboard shows loaded linepack KPIs, `actual_linepack_gj` quantity
+coverage, adequacy flags and descriptions, facility and zone coverage, source
+coverage by source system and source table, bounded row previews, and
+Linepack, Flow, Capacity, MOS, source coverage, and table explorer context
+links from the Marimo registry. Missing linepack data, unavailable Parquet
+prefixes, missing optional fields, and filter combinations with no matches
+render dashboard empty states with the checked table, read policy, and refresh
+action.
+
 ## Bid-Offer stack dashboard
 
 [notebooks/gas_bid_offer_stack.py](notebooks/gas_bid_offer_stack.py) is an
@@ -1137,6 +1157,7 @@ prek run -a
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/facility_flow_storage.py`
+  - `backend-services/marimo/notebooks/linepack_adequacy.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/marimo/tests/component/conftest.py`

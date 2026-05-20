@@ -350,6 +350,23 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         "chunk-sttm-procedures-settlement-terms",
     )
 
+    linepack = registry_entry_by_concept_id("linepack-context", entries)
+    assert linepack is not None
+    assert linepack.status is DashboardStatus.AVAILABLE
+    assert linepack.notebook_name == "linepack_adequacy"
+    assert linepack.notebook_route == "/marimo/linepack_adequacy/"
+    assert linepack.backing_assets == (
+        "silver.gas_model.silver_gas_fact_linepack",
+        "silver.gas_model.silver_gas_fact_linepack_balance",
+    )
+    assert linepack.generated_gold_paths == (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/linepack.md",
+    )
+    assert linepack.source_chunk_ids == (
+        "chunk-sttm-procedures-definitions",
+        "chunk-gbb-procedures-linepack-capacity-adequacy",
+    )
+
 
 def test_dashboard_registry_payload_includes_required_fields() -> None:
     payload = dashboard_registry_payload()

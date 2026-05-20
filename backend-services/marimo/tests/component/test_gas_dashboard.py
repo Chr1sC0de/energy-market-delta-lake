@@ -46,6 +46,14 @@ from marimoserver.gas_dashboard import (
     HUB_ZONE_DIM_TABLE_NAME,
     HUB_ZONE_TABLE_SPECS,
     LOCATION_DIM_TABLE_NAME,
+    LINEPACK_ADEQUACY_FLAG_FILTER_ALL,
+    LINEPACK_CONTEXT_ID,
+    LINEPACK_FACILITY_FILTER_ALL,
+    LINEPACK_GAS_DATE_FILTER_ALL,
+    LINEPACK_SOURCE_SYSTEM_FILTER_ALL,
+    LINEPACK_TABLE_NAME,
+    LINEPACK_TABLE_SPEC,
+    LINEPACK_ZONE_FILTER_ALL,
     FACILITY_CAPACITY_OUTLOOK_TABLE_NAME,
     FACILITY_CONTEXT_ID,
     FACILITY_DIM_TABLE_NAME,
@@ -117,6 +125,7 @@ from marimoserver.gas_dashboard import (
     cached_load_gas_day_tables,
     cached_load_hub_zone_context_tables,
     cached_load_gas_quality_table,
+    cached_load_linepack_table,
     cached_load_gas_model_tables,
     cached_load_market_price_table,
     cached_load_nomination_forecast_table,
@@ -189,6 +198,7 @@ from marimoserver.gas_dashboard import (
     load_gas_day_tables,
     load_hub_zone_context_tables,
     load_gas_quality_table,
+    load_linepack_table,
     load_gas_model_tables,
     load_nomination_forecast_table,
     load_participant_context_tables,
@@ -204,6 +214,16 @@ from marimoserver.gas_dashboard import (
     market_price_source_table_options,
     market_price_trend_frame,
     market_price_type_summary_frame,
+    linepack_adequacy_flag_options,
+    linepack_empty_state_markdown,
+    linepack_facility_options,
+    linepack_gas_date_options,
+    linepack_kpi_frame,
+    linepack_observation_frame,
+    linepack_source_coverage_frame,
+    linepack_source_system_options,
+    linepack_summary_frame,
+    linepack_zone_options,
     nomination_forecast_daily_frame,
     nomination_forecast_empty_state_markdown,
     nomination_forecast_facility_options,
@@ -232,6 +252,7 @@ from marimoserver.gas_dashboard import (
     render_facility_flow_storage_context_links,
     render_flow_context_links,
     render_hub_zone_context_links,
+    render_linepack_context_links,
     render_participant_context_links,
     render_schedule_run_context_links,
     render_settlement_activity_context_links,
@@ -2561,6 +2582,339 @@ def test_facility_flow_storage_helpers_cover_missing_data_behavior() -> None:
     assert "did not receive a facility flow/storage load" in missing_load_markdown
     assert (
         "No Facility flow/storage, Facility, Flow, Capacity, map, source "
+        "coverage, or table explorer entries are registered."
+    ) in empty_context_links
+
+
+def test_linepack_metadata_and_loader_use_recent_bounded_rows() -> None:
+    entry = registry_entry_by_concept_id(LINEPACK_CONTEXT_ID)
+    html = render_dashboard_context_panel(LINEPACK_CONTEXT_ID)
+    context_links = render_linepack_context_links()
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "14",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    load = load_linepack_table(config, reader=reader)
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "linepack_adequacy"
+    assert entry.notebook_route == "/marimo/linepack_adequacy/"
+    assert "silver.gas_model.silver_gas_fact_linepack" in entry.backing_assets
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/linepack.md"
+        in entry.generated_gold_paths
+    )
+    assert "chunk-gbb-procedures-linepack-capacity-adequacy" in (entry.source_chunk_ids)
+    assert "Linepack Context" in html
+    assert "chunk-gbb-procedures-linepack-capacity-adequacy" in html
+    assert 'href="/marimo/linepack_adequacy/"' in context_links
+    assert "Linepack Context" in context_links
+    assert "Flow Context" in context_links
+    assert "Capacity Context" in context_links
+    assert "MOS Context" in context_links
+    assert load.spec == LINEPACK_TABLE_SPEC
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_fact_linepack",
+            14,
+        )
+    ]
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert uri.endswith(f"/{LINEPACK_TABLE_NAME}")
+        assert storage_options == config.storage_options()
+        assert row_limit == 14
+        cached_calls += 1
+        return pl.DataFrame({"source_system": ["GBB"]})
+
+    first_cached = cached_load_linepack_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_linepack_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_linepack_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 2
+    assert not first_cached.cache_hit
+    assert second_cached.cache_hit
+    assert not refreshed.cache_hit
+
+
+def test_linepack_helpers_summarize_quantities_adequacy_and_sources() -> None:
+    gbb_source_table = "silver.gbb.silver_gasbb_linepack_capacity_adequacy"
+    vicgas_source_table = "silver.vicgas.silver_int128_v4_actual_linepack_1"
+    load = _linepack_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB", "GBB", "VICGAS"],
+                "source_tables": [[gbb_source_table], [gbb_source_table], []],
+                "source_table": [None, None, vicgas_source_table],
+                "facility_key": ["fac-1", "fac-1", "fac-2"],
+                "zone_key": ["zone-1", "zone-1", "zone-2"],
+                "gas_date": [
+                    date(2024, 1, 2),
+                    date(2024, 1, 3),
+                    date(2024, 1, 3),
+                ],
+                "observation_timestamp": [
+                    datetime(2024, 1, 2, 6),
+                    datetime(2024, 1, 3, 6),
+                    datetime(2024, 1, 3, 7),
+                ],
+                "source_facility_id": ["F1", "F1", "F2"],
+                "actual_linepack_gj": [1000.0, 900.0, 700.0],
+                "adequacy_flag": ["Green", "Red", None],
+                "adequacy_description": ["Adequate", "Below minimum", None],
+                "source_file": ["a.parquet", "b.parquet", "c.parquet"],
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 2, 7),
+                    datetime(2024, 1, 3, 7),
+                    datetime(2024, 1, 3, 8),
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 2, 8),
+                    datetime(2024, 1, 3, 8),
+                    datetime(2024, 1, 3, 9),
+                ],
+            }
+        ),
+        row_limit=20,
+    )
+
+    kpis = linepack_kpi_frame(load)
+    summary = linepack_summary_frame(load)
+    source_coverage = linepack_source_coverage_frame(load)
+    observations = linepack_observation_frame(load)
+    filtered_kpis = linepack_kpi_frame(load, adequacy_flag_filter="Red")
+    facility_filtered_kpis = linepack_kpi_frame(load, facility_filter="F1")
+    zone_filtered_kpis = linepack_kpi_frame(load, zone_filter="zone-2")
+    source_filtered_kpis = linepack_kpi_frame(load, source_system_filter="VICGAS")
+    kpi_values = {row["metric"]: row["value"] for row in kpis.to_dicts()}
+    filtered_kpi_values = {
+        row["metric"]: row["value"] for row in filtered_kpis.to_dicts()
+    }
+    facility_filtered_kpi_values = {
+        row["metric"]: row["value"] for row in facility_filtered_kpis.to_dicts()
+    }
+    zone_filtered_kpi_values = {
+        row["metric"]: row["value"] for row in zone_filtered_kpis.to_dicts()
+    }
+    source_filtered_kpi_values = {
+        row["metric"]: row["value"] for row in source_filtered_kpis.to_dicts()
+    }
+
+    assert linepack_gas_date_options(load) == (
+        LINEPACK_GAS_DATE_FILTER_ALL,
+        "2024-01-03",
+        "2024-01-02",
+    )
+    assert linepack_facility_options(load) == (
+        LINEPACK_FACILITY_FILTER_ALL,
+        "F1",
+        "F2",
+    )
+    assert linepack_zone_options(load) == (
+        LINEPACK_ZONE_FILTER_ALL,
+        "zone-1",
+        "zone-2",
+    )
+    assert linepack_adequacy_flag_options(load) == (
+        LINEPACK_ADEQUACY_FLAG_FILTER_ALL,
+        "Green",
+        "Red",
+    )
+    assert linepack_source_system_options(load) == (
+        LINEPACK_SOURCE_SYSTEM_FILTER_ALL,
+        "GBB",
+        "VICGAS",
+    )
+    assert kpi_values["Loaded linepack rows"] == "3"
+    assert kpi_values["Facility keys"] == "2"
+    assert kpi_values["Zone keys"] == "2"
+    assert kpi_values["Source facilities"] == "2"
+    assert kpi_values["Source tables"] == "2"
+    assert kpi_values["Latest gas date"] == "2024-01-03"
+    assert kpi_values["Linepack quantity"] == "2,600 GJ"
+    assert kpi_values["Adequacy flags"] == "2"
+    assert filtered_kpi_values["Loaded linepack rows"] == "1"
+    assert facility_filtered_kpi_values["Loaded linepack rows"] == "2"
+    assert zone_filtered_kpi_values["Loaded linepack rows"] == "1"
+    assert source_filtered_kpi_values["Loaded linepack rows"] == "1"
+    assert summary.select(
+        "source system",
+        "source table",
+        "facility key",
+        "zone key",
+        "source facility id",
+        "adequacy flag",
+        "adequacy description",
+        "rows",
+        "linepack rows",
+        "latest linepack gj",
+        "latest observation",
+    ).to_dict(as_series=False) == {
+        "source system": ["VICGAS", "GBB", "GBB"],
+        "source table": [vicgas_source_table, gbb_source_table, gbb_source_table],
+        "facility key": ["fac-2", "fac-1", "fac-1"],
+        "zone key": ["zone-2", "zone-1", "zone-1"],
+        "source facility id": ["F2", "F1", "F1"],
+        "adequacy flag": [None, "Red", "Green"],
+        "adequacy description": [None, "Below minimum", "Adequate"],
+        "rows": [1, 1, 1],
+        "linepack rows": [1, 1, 1],
+        "latest linepack gj": [700.0, 900.0, 1000.0],
+        "latest observation": [
+            datetime(2024, 1, 3, 7),
+            datetime(2024, 1, 3, 6),
+            datetime(2024, 1, 2, 6),
+        ],
+    }
+    assert source_coverage.select(
+        "source system",
+        "source table",
+        "rows",
+        "facility keys",
+        "zone keys",
+        "source facilities",
+        "gas days",
+        "linepack rows",
+        "adequacy flags",
+        "latest gas date",
+    ).to_dict(as_series=False) == {
+        "source system": ["GBB", "VICGAS"],
+        "source table": [gbb_source_table, vicgas_source_table],
+        "rows": [2, 1],
+        "facility keys": [1, 1],
+        "zone keys": [1, 1],
+        "source facilities": [1, 1],
+        "gas days": [2, 1],
+        "linepack rows": [2, 1],
+        "adequacy flags": [2, 0],
+        "latest gas date": [date(2024, 1, 3), date(2024, 1, 3)],
+    }
+    assert observations.select(
+        "gas date",
+        "source system",
+        "source facility id",
+        "zone key",
+        "actual_linepack_gj",
+        "adequacy flag",
+    ).to_dicts()[:2] == [
+        {
+            "gas date": date(2024, 1, 3),
+            "source system": "VICGAS",
+            "source facility id": "F2",
+            "zone key": "zone-2",
+            "actual_linepack_gj": 700.0,
+            "adequacy flag": None,
+        },
+        {
+            "gas date": date(2024, 1, 3),
+            "source system": "GBB",
+            "source facility id": "F1",
+            "zone key": "zone-1",
+            "actual_linepack_gj": 900.0,
+            "adequacy flag": "Red",
+        },
+    ]
+
+
+def test_linepack_helpers_cover_missing_data_behavior() -> None:
+    empty_load = _linepack_load(pl.DataFrame(), row_limit=6)
+    partial_load = _linepack_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "actual_linepack_gj": [321.0],
+            }
+        ),
+        row_limit=6,
+    )
+    error_load = GasTableLoad(
+        spec=LINEPACK_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_linepack",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=6,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+    assert linepack_kpi_frame(empty_load).is_empty()
+    assert linepack_summary_frame(empty_load).is_empty()
+    assert linepack_source_coverage_frame(empty_load).is_empty()
+    assert linepack_observation_frame(empty_load).is_empty()
+    assert linepack_gas_date_options(empty_load) == (LINEPACK_GAS_DATE_FILTER_ALL,)
+    assert linepack_facility_options(empty_load) == (LINEPACK_FACILITY_FILTER_ALL,)
+    assert linepack_zone_options(empty_load) == (LINEPACK_ZONE_FILTER_ALL,)
+    assert linepack_adequacy_flag_options(empty_load) == (
+        LINEPACK_ADEQUACY_FLAG_FILTER_ALL,
+    )
+    assert linepack_source_system_options(empty_load) == (
+        LINEPACK_SOURCE_SYSTEM_FILTER_ALL,
+    )
+    assert linepack_kpi_frame(
+        partial_load,
+        gas_date_filter="2024-01-05",
+    ).is_empty()
+    partial_summary = linepack_summary_frame(partial_load)
+    partial_coverage = linepack_source_coverage_frame(partial_load)
+    empty_markdown = linepack_empty_state_markdown(empty_load)
+    error_markdown = linepack_empty_state_markdown(error_load)
+    filtered_markdown = linepack_empty_state_markdown(partial_load)
+    missing_load_markdown = linepack_empty_state_markdown(None)
+    empty_context_links = render_linepack_context_links(entries=())
+
+    assert partial_summary.row(0, named=True)["source table"] == (
+        "(empty source_table/source_tables value)"
+    )
+    assert partial_summary.row(0, named=True)["facility key"] is None
+    assert partial_summary.row(0, named=True)["zone key"] is None
+    assert partial_summary.row(0, named=True)["latest linepack gj"] == 321.0
+    assert partial_coverage.row(0, named=True)["linepack rows"] == 1
+    assert "No linepack data is available" in empty_markdown
+    assert "silver.gas_model.silver_gas_fact_linepack" in empty_markdown
+    assert "Bounded preview reads are capped at `6` rows per table" in empty_markdown
+    assert "FileNotFoundError: no parquet files found" in error_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert "did not receive a linepack load result" in missing_load_markdown
+    assert (
+        "No Linepack, Flow, Capacity, MOS, Facility, Hub / Zone, source "
         "coverage, or table explorer entries are registered."
     ) in empty_context_links
 
@@ -7939,6 +8293,22 @@ def _facility_flow_storage_load(
     return GasTableLoad(
         spec=FACILITY_FLOW_STORAGE_TABLE_SPEC,
         uri=f"s3://bucket/silver/gas_model/{FACILITY_FLOW_STORAGE_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _linepack_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=LINEPACK_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{LINEPACK_TABLE_NAME}",
         dataframe=dataframe,
         error=None,
         row_limit=row_limit,
