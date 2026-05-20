@@ -89,7 +89,10 @@ class S3BucketsComponentResource(pulumi.ComponentResource):
                 bucket_name,
                 bucket=bucket_name,
                 force_destroy=force_destroy,
-                opts=pulumi.ResourceOptions(import_=bucket_name),
+                opts=pulumi.ResourceOptions(
+                    import_=bucket_name,
+                    retain_on_delete=retain_on_delete,
+                ),
             )
         else:
             bucket = aws.s3.Bucket(
