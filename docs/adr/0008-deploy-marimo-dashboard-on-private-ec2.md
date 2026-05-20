@@ -225,6 +225,13 @@ transfer, storage, source-system coverage, source-table coverage, and latest
 Gas Day without changing ETL flow/storage modeling, generated glossary files,
 asset schemas, or AWS infrastructure.
 
+The forecast-vs-actual dashboard stays inside the same boundary. It reads
+bounded recent samples from `silver_gas_fact_nomination_forecast` and
+`silver_gas_fact_facility_flow_storage`, joins only loaded rows with matching
+Gas Day and source facility/location identifiers, and shows forecast-only or
+actual-only groups when one input is unavailable without changing ETL grain,
+forecast semantics, actual-flow modeling, or AWS infrastructure.
+
 Static asset optimization stays limited to immutable HTTP caching for
 content-hashed Marimo package assets. Extra preload changes, pre-serving
 packaged WASM, and auto-refresh timer behavior remain deferred until route or
@@ -282,6 +289,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/notebooks/capacity_outlook.py`
   - `backend-services/marimo/notebooks/linepack_adequacy.py`
   - `backend-services/marimo/notebooks/nomination_demand_forecast.py`
+  - `backend-services/marimo/notebooks/forecast_vs_actual.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/marimo/tests/component/test_dashboard_registry.py`

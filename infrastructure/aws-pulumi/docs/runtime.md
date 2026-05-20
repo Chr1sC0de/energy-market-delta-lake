@@ -333,6 +333,9 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   The Flow operations dashboard reads the curated connection point flow,
   facility flow/storage, nomination forecast, and operational meter flow facts
   through the same bounded helper surface and does not add AWS write paths.
+  The forecast-vs-actual dashboard compares bounded nomination forecast and
+  actual facility flow/storage facts through the same bounded helper surface
+  and does not add AWS write paths.
   The gas quality and composition dashboard reads the curated gas quality fact
   through the same bounded helper surface and does not add AWS write paths.
   The Gas Day explainer reads bounded samples from registry-backed gas_model
@@ -402,6 +405,7 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/facility_flow_storage.py`
+  - `backend-services/marimo/notebooks/forecast_vs_actual.py`
   - `backend-services/marimo/notebooks/capacity_outlook.py`
   - `backend-services/marimo/notebooks/linepack_adequacy.py`
   - `backend-services/marimo/notebooks/nomination_demand_forecast.py`

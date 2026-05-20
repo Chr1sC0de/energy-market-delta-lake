@@ -237,6 +237,23 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         in facility_flow_storage.source_chunk_ids
     )
 
+    forecast_actual = registry_entry_by_concept_id("forecast-vs-actual", entries)
+    assert forecast_actual is not None
+    assert forecast_actual.status is DashboardStatus.AVAILABLE
+    assert forecast_actual.notebook_name == "forecast_vs_actual"
+    assert forecast_actual.notebook_route == "/marimo/forecast_vs_actual/"
+    assert forecast_actual.backing_assets == (
+        "silver.gas_model.silver_gas_fact_nomination_forecast",
+        "silver.gas_model.silver_gas_fact_facility_flow_storage",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md"
+        in forecast_actual.generated_gold_paths
+    )
+    assert "chunk-gbb-procedures-daily-flow-storage" in (
+        forecast_actual.source_chunk_ids
+    )
+
     customer_transfer = registry_entry_by_concept_id(
         "gas-customer-transfer-activity",
         entries,

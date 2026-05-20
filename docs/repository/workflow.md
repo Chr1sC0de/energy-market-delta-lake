@@ -140,7 +140,9 @@ Local workflow notes:
   source-qualified identifiers. Flow operations, market price, schedule run,
   settlement activity, customer transfer, Bid / Offer stack, gas quality, and
   system notice dashboards use shared bounded gas-model reads for fact previews
-  and summaries. The table explorer is the selected-table workbench for storage
+  and summaries. The forecast-vs-actual dashboard compares bounded forecast and
+  actual flow/storage facts without changing ETL grain or full-scan policy. The
+  table explorer is the selected-table workbench for storage
   inspection, readiness links, bounded-read diagnostics, and concept-gallery
   metadata for mapped `silver.gas_model` assets. The
   `marimo-codex-workspace` service is a
@@ -289,6 +291,7 @@ and the required `git diff` to `rg` to QA flow, use
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/facility_flow_storage.py`
+  - `backend-services/marimo/notebooks/forecast_vs_actual.py`
   - `backend-services/marimo/notebooks/capacity_outlook.py`
   - `backend-services/marimo/notebooks/linepack_adequacy.py`
   - `backend-services/marimo/notebooks/nomination_demand_forecast.py`

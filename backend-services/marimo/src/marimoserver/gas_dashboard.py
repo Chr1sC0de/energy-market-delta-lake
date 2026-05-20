@@ -149,6 +149,11 @@ FACILITY_FLOW_STORAGE_GAS_DATE_FILTER_ALL = "All gas dates"
 FACILITY_FLOW_STORAGE_FACILITY_FILTER_ALL = "All facilities"
 FACILITY_FLOW_STORAGE_SOURCE_SYSTEM_FILTER_ALL = "All source systems"
 DEFAULT_FACILITY_FLOW_STORAGE_PREVIEW_ROWS = 50
+FORECAST_ACTUAL_CONTEXT_ID = "forecast-vs-actual"
+FORECAST_ACTUAL_GAS_DATE_FILTER_ALL = "All gas dates"
+FORECAST_ACTUAL_FACILITY_FILTER_ALL = "All facilities"
+FORECAST_ACTUAL_SOURCE_SYSTEM_FILTER_ALL = "All source systems"
+DEFAULT_FORECAST_ACTUAL_PREVIEW_ROWS = 50
 LINEPACK_TABLE_NAME = "silver_gas_fact_linepack"
 LINEPACK_CONTEXT_ID = "linepack-context"
 LINEPACK_GAS_DATE_FILTER_ALL = "All gas dates"
@@ -319,6 +324,20 @@ class _FlowSourceSummary:
     gas_dates: set[date] = dataclass_field(default_factory=set)
     measure_rows: int = 0
     latest_gas_date: date | None = None
+    latest_source_update: datetime | None = None
+    latest_ingest: datetime | None = None
+
+
+@dataclass
+class _ForecastActualAggregate:
+    rows: int = 0
+    source_systems: set[str] = dataclass_field(default_factory=set)
+    source_tables: set[str] = dataclass_field(default_factory=set)
+    forecast_type_versions: set[tuple[str | None, str | None]] = dataclass_field(
+        default_factory=set
+    )
+    measure_totals: dict[str, float] = dataclass_field(default_factory=dict)
+    measure_counts: dict[str, int] = dataclass_field(default_factory=dict)
     latest_source_update: datetime | None = None
     latest_ingest: datetime | None = None
 
@@ -853,6 +872,10 @@ NOMINATION_FORECAST_TABLE_SPEC = GasTableSpec(
     ),
 )
 NOMINATION_FORECAST_TABLE_SPECS = (NOMINATION_FORECAST_TABLE_SPEC,)
+FORECAST_ACTUAL_TABLE_SPECS = (
+    NOMINATION_FORECAST_TABLE_SPEC,
+    FACILITY_FLOW_STORAGE_TABLE_SPEC,
+)
 FLOW_TABLE_SPECS = (
     GasTableSpec(
         section="Flow facts",
@@ -1714,6 +1737,59 @@ _FACILITY_FLOW_STORAGE_OBSERVATION_SCHEMA = {
     "source file": pl.String,
     "source updated": pl.Datetime("us"),
     "latest ingest": pl.Datetime("us"),
+}
+_FORECAST_ACTUAL_KPI_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_FORECAST_ACTUAL_COMPARISON_SCHEMA = {
+    "gas date": pl.Date,
+    "source facility id": pl.String,
+    "source location id": pl.String,
+    "match status": pl.String,
+    "forecast rows": pl.UInt32,
+    "actual rows": pl.UInt32,
+    "forecast source systems": pl.String,
+    "actual source systems": pl.String,
+    "forecast source tables": pl.String,
+    "actual source tables": pl.String,
+    "forecast type/version pairs": pl.UInt32,
+    "forecast demand gj": pl.Float64,
+    "actual demand gj": pl.Float64,
+    "demand delta gj": pl.Float64,
+    "demand delta pct": pl.Float64,
+    "forecast supply gj": pl.Float64,
+    "actual supply gj": pl.Float64,
+    "supply delta gj": pl.Float64,
+    "supply delta pct": pl.Float64,
+    "forecast transfer in gj": pl.Float64,
+    "actual transfer in gj": pl.Float64,
+    "transfer in delta gj": pl.Float64,
+    "transfer in delta pct": pl.Float64,
+    "forecast transfer out gj": pl.Float64,
+    "actual transfer out gj": pl.Float64,
+    "transfer out delta gj": pl.Float64,
+    "transfer out delta pct": pl.Float64,
+    "latest forecast update": pl.Datetime("us"),
+    "latest actual update": pl.Datetime("us"),
+    "latest forecast ingest": pl.Datetime("us"),
+    "latest actual ingest": pl.Datetime("us"),
+}
+_FORECAST_ACTUAL_STORAGE_SCHEMA = {
+    "gas date": pl.Date,
+    "source facility id": pl.String,
+    "source location id": pl.String,
+    "forecast coverage": pl.String,
+    "actual rows": pl.UInt32,
+    "actual source systems": pl.String,
+    "actual source tables": pl.String,
+    "held storage rows": pl.UInt32,
+    "held in storage tj": pl.Float64,
+    "cushion gas rows": pl.UInt32,
+    "cushion gas storage tj": pl.Float64,
+    "latest actual update": pl.Datetime("us"),
+    "latest actual ingest": pl.Datetime("us"),
 }
 _LINEPACK_RAW_SCHEMA = {
     "surrogate_key": pl.String,
@@ -2673,6 +2749,42 @@ def cached_load_facility_flow_storage_table(
         refresh_token=refresh_token,
         clock=clock,
     )[0]
+
+
+def load_forecast_actual_tables(
+    config: GasDashboardConfig,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Load forecast and actual flow/storage facts through the bounded loader."""
+    return load_gas_model_tables(
+        config,
+        specs=FORECAST_ACTUAL_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        clock=clock,
+    )
+
+
+def cached_load_forecast_actual_tables(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Return session-cached forecast-vs-actual rows for explicit refreshes."""
+    return cached_load_gas_model_tables(
+        config,
+        cache,
+        specs=FORECAST_ACTUAL_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        refresh_token=refresh_token,
+        clock=clock,
+    )
 
 
 def load_linepack_table(
@@ -7818,6 +7930,302 @@ def render_facility_flow_storage_context_links(
 </section>"""
 
 
+def forecast_actual_gas_date_options(
+    loads: Sequence[GasTableLoad],
+) -> tuple[str, ...]:
+    """Return Gas Day filter options across forecast and actual inputs."""
+    forecast, actual = _forecast_actual_input_frames(loads)
+    values = {
+        str(value)
+        for dataframe in (forecast, actual)
+        if not dataframe.is_empty()
+        for value in dataframe.get_column("gas_date").drop_nulls().unique().to_list()
+        if value is not None
+    }
+    return (FORECAST_ACTUAL_GAS_DATE_FILTER_ALL, *reversed(sorted(values)))
+
+
+def forecast_actual_facility_options(
+    loads: Sequence[GasTableLoad],
+) -> tuple[str, ...]:
+    """Return source-facility options across forecast and actual inputs."""
+    return _forecast_actual_string_filter_options(
+        loads,
+        "source_facility_id",
+        FORECAST_ACTUAL_FACILITY_FILTER_ALL,
+    )
+
+
+def forecast_actual_source_system_options(
+    loads: Sequence[GasTableLoad],
+) -> tuple[str, ...]:
+    """Return source-system options across forecast and actual inputs."""
+    return _forecast_actual_string_filter_options(
+        loads,
+        "source_system",
+        FORECAST_ACTUAL_SOURCE_SYSTEM_FILTER_ALL,
+    )
+
+
+def forecast_actual_bounded_scope_markdown(
+    config: GasDashboardConfig,
+    loads: Sequence[GasTableLoad],
+) -> str:
+    """Return explicit bounded-scope copy for the comparison dashboard."""
+    row_limit = _common_row_limit(loads) if loads else None
+    if config.aws_runtime:
+        behavior = (
+            "AWS mode uses sampled/recent-only bounded reads: each forecast and "
+            "actual source table is capped before this dashboard joins the loaded "
+            "preview rows."
+        )
+    else:
+        behavior = (
+            "Local mode uses the configured gas dashboard read policy; when full "
+            "table scans are disabled, the same bounded preview cap applies."
+        )
+
+    return f"""
+    **Bounded forecast-vs-actual scope.**
+
+    {behavior}
+
+    The comparison joins only the loaded rows sharing `gas_date`,
+    `source_facility_id`, and `source_location_id`. Rows outside the bounded
+    read window can appear as forecast-only or actual-only until the source
+    tables are materialized into a fuller local view.
+
+    {row_limit_message(row_limit)}
+    """
+
+
+def forecast_actual_kpi_frame(
+    loads: Sequence[GasTableLoad],
+    gas_date_filter: str = FORECAST_ACTUAL_GAS_DATE_FILTER_ALL,
+    facility_filter: str = FORECAST_ACTUAL_FACILITY_FILTER_ALL,
+    source_system_filter: str = FORECAST_ACTUAL_SOURCE_SYSTEM_FILTER_ALL,
+    *,
+    as_of_date: date | None = None,
+) -> pl.DataFrame:
+    """Return first-viewport KPIs for forecast-vs-actual bounded rows."""
+    forecast_aggs, actual_aggs = _forecast_actual_aggregates(
+        loads,
+        gas_date_filter,
+        facility_filter,
+        source_system_filter,
+        as_of_date=as_of_date,
+    )
+    if len(forecast_aggs) == 0 and len(actual_aggs) == 0:
+        return pl.DataFrame(schema=_FORECAST_ACTUAL_KPI_SCHEMA)
+
+    keys = set(forecast_aggs) | set(actual_aggs)
+    matched_count = sum(key in forecast_aggs and key in actual_aggs for key in keys)
+    forecast_only_count = sum(
+        key in forecast_aggs and key not in actual_aggs for key in keys
+    )
+    actual_only_count = sum(
+        key in actual_aggs and key not in forecast_aggs for key in keys
+    )
+    comparable_measure_count = sum(
+        _forecast_actual_comparable_measure_count(
+            forecast_aggs.get(key),
+            actual_aggs.get(key),
+        )
+        for key in keys
+    )
+    latest_gas_date = _forecast_actual_latest_gas_date(keys)
+    row_limit = _common_row_limit(loads) if loads else None
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Forecast rows",
+                "value": f"{sum(agg.rows for agg in forecast_aggs.values()):,}",
+                "detail": f"{NOMINATION_FORECAST_TABLE_NAME} rows in scope",
+            },
+            {
+                "metric": "Actual rows",
+                "value": f"{sum(agg.rows for agg in actual_aggs.values()):,}",
+                "detail": f"{FACILITY_FLOW_STORAGE_TABLE_NAME} rows in scope",
+            },
+            {
+                "metric": "Matched facility days",
+                "value": f"{matched_count:,}",
+                "detail": (
+                    "Gas Day plus source facility/location groups present in "
+                    "both bounded inputs"
+                ),
+            },
+            {
+                "metric": "Forecast-only groups",
+                "value": f"{forecast_only_count:,}",
+                "detail": "Loaded forecast groups without a matching actual row",
+            },
+            {
+                "metric": "Actual-only groups",
+                "value": f"{actual_only_count:,}",
+                "detail": "Loaded actual groups without a matching forecast row",
+            },
+            {
+                "metric": "Comparable flow measures",
+                "value": f"{comparable_measure_count:,}",
+                "detail": "Demand, supply, transfer-in, and transfer-out pairs",
+            },
+            {
+                "metric": "Latest Gas Day",
+                "value": _format_optional_value(latest_gas_date),
+                "detail": "Maximum gas_date in the loaded bounded comparison",
+            },
+            {
+                "metric": "Read policy",
+                "value": format_row_limit(row_limit),
+                "detail": "Forecast-vs-actual uses the shared bounded loader",
+            },
+        ],
+        schema=_FORECAST_ACTUAL_KPI_SCHEMA,
+    )
+
+
+def forecast_actual_comparison_frame(
+    loads: Sequence[GasTableLoad],
+    gas_date_filter: str = FORECAST_ACTUAL_GAS_DATE_FILTER_ALL,
+    facility_filter: str = FORECAST_ACTUAL_FACILITY_FILTER_ALL,
+    source_system_filter: str = FORECAST_ACTUAL_SOURCE_SYSTEM_FILTER_ALL,
+    *,
+    as_of_date: date | None = None,
+    preview_rows: int = DEFAULT_FORECAST_ACTUAL_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return joined forecast-vs-actual flow comparison rows."""
+    forecast_aggs, actual_aggs = _forecast_actual_aggregates(
+        loads,
+        gas_date_filter,
+        facility_filter,
+        source_system_filter,
+        as_of_date=as_of_date,
+    )
+    keys = sorted(
+        set(forecast_aggs) | set(actual_aggs),
+        key=_forecast_actual_sort_key,
+    )
+    if len(keys) == 0:
+        return pl.DataFrame(schema=_FORECAST_ACTUAL_COMPARISON_SCHEMA)
+
+    rows = [
+        _forecast_actual_comparison_row(
+            key,
+            forecast_aggs.get(key),
+            actual_aggs.get(key),
+        )
+        for key in keys[: max(1, preview_rows)]
+    ]
+    return pl.DataFrame(rows, schema=_FORECAST_ACTUAL_COMPARISON_SCHEMA)
+
+
+def forecast_actual_storage_frame(
+    loads: Sequence[GasTableLoad],
+    gas_date_filter: str = FORECAST_ACTUAL_GAS_DATE_FILTER_ALL,
+    facility_filter: str = FORECAST_ACTUAL_FACILITY_FILTER_ALL,
+    source_system_filter: str = FORECAST_ACTUAL_SOURCE_SYSTEM_FILTER_ALL,
+    *,
+    as_of_date: date | None = None,
+    preview_rows: int = DEFAULT_FORECAST_ACTUAL_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return actual storage rows with forecast coverage status."""
+    forecast_aggs, actual_aggs = _forecast_actual_aggregates(
+        loads,
+        gas_date_filter,
+        facility_filter,
+        source_system_filter,
+        as_of_date=as_of_date,
+    )
+    keys = sorted(actual_aggs, key=_forecast_actual_sort_key)
+    if len(keys) == 0:
+        return pl.DataFrame(schema=_FORECAST_ACTUAL_STORAGE_SCHEMA)
+
+    rows = [
+        _forecast_actual_storage_row(
+            key,
+            actual_aggs[key],
+            forecast_available=key in forecast_aggs,
+        )
+        for key in keys[: max(1, preview_rows)]
+    ]
+    return pl.DataFrame(rows, schema=_FORECAST_ACTUAL_STORAGE_SCHEMA)
+
+
+def forecast_actual_empty_state_markdown(loads: Sequence[GasTableLoad]) -> str:
+    """Return useful empty-state copy for missing comparison inputs."""
+    forecast_load, actual_load = _forecast_actual_load_pair(loads)
+    row_limit = _common_row_limit(loads) if loads else None
+
+    return f"""
+    **No forecast-vs-actual comparison rows are available for this view.**
+
+    The dashboard compares
+    `silver.gas_model.silver_gas_fact_nomination_forecast` with
+    `silver.gas_model.silver_gas_fact_facility_flow_storage` where loaded rows
+    share `gas_date`, `source_facility_id`, and `source_location_id`.
+
+    Forecast input: {_forecast_actual_load_detail(forecast_load)}
+
+    Actual input: {_forecast_actual_load_detail(actual_load)}
+
+    {row_limit_message(row_limit)}
+
+    Materialize or seed the missing `silver.gas_model` assets, then use
+    **Refresh data**. If only one side is available, the dashboard shows
+    forecast-only or actual-only rows instead of raising a notebook traceback.
+    """
+
+
+def render_forecast_actual_context_links(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render forecast-vs-actual links to related Market context panels."""
+    candidate_entries = tuple(dashboard_registry() if entries is None else entries)
+    concept_ids = (
+        FORECAST_ACTUAL_CONTEXT_ID,
+        NOMINATION_FORECAST_CONTEXT_ID,
+        FACILITY_FLOW_STORAGE_CONTEXT_ID,
+        FLOW_CONTEXT_ID,
+        FACILITY_CONTEXT_ID,
+        GAS_DAY_CONTEXT_ID,
+        "gbb-interactive-map",
+        "source-coverage-matrix",
+        "gas-model-table-explorer",
+    )
+    rows = "\n".join(
+        _render_flow_context_link(entry)
+        for entry in (
+            registry_entry_by_concept_id(concept_id, candidate_entries)
+            for concept_id in concept_ids
+        )
+        if entry is not None
+    )
+    if rows == "":
+        rows = (
+            '<li class="flow-links__empty">'
+            "No forecast-vs-actual, Nomination forecast, Facility flow/storage, "
+            "Flow, Facility, Gas Day, map, source coverage, or table explorer "
+            "entries are registered."
+            "</li>"
+        )
+
+    return f"""\
+<style>
+{_flow_context_links_css()}
+</style>
+<section class="flow-links" aria-label="Forecast-vs-actual context links">
+    <div>
+        <p class="flow-links__eyebrow">Context links</p>
+        <h2>Forecast-vs-actual, Flow, Facility, and Gas Day context</h2>
+    </div>
+    <ul>
+{rows}
+    </ul>
+</section>"""
+
+
 def linepack_gas_date_options(load: GasTableLoad | None) -> tuple[str, ...]:
     """Return gas-date filter options for loaded linepack rows."""
     dataframe = _normalised_linepack_dashboard_dataframe(load)
@@ -12245,6 +12653,458 @@ def _filtered_facility_flow_storage_dataframe(
     if source_system_filter != FACILITY_FLOW_STORAGE_SOURCE_SYSTEM_FILTER_ALL:
         filtered = filtered.filter(pl.col("source_system") == source_system_filter)
     return filtered
+
+
+def _forecast_actual_load_pair(
+    loads: Sequence[GasTableLoad],
+) -> tuple[GasTableLoad | None, GasTableLoad | None]:
+    return (
+        table_load_by_name(loads, NOMINATION_FORECAST_TABLE_NAME),
+        table_load_by_name(loads, FACILITY_FLOW_STORAGE_TABLE_NAME),
+    )
+
+
+def _forecast_actual_input_frames(
+    loads: Sequence[GasTableLoad],
+    gas_date_filter: str = FORECAST_ACTUAL_GAS_DATE_FILTER_ALL,
+    facility_filter: str = FORECAST_ACTUAL_FACILITY_FILTER_ALL,
+    source_system_filter: str = FORECAST_ACTUAL_SOURCE_SYSTEM_FILTER_ALL,
+    *,
+    as_of_date: date | None = None,
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    forecast_load, actual_load = _forecast_actual_load_pair(loads)
+    forecast_gas_date_filter = (
+        NOMINATION_FORECAST_GAS_DATE_FILTER_ALL
+        if gas_date_filter == FORECAST_ACTUAL_GAS_DATE_FILTER_ALL
+        else gas_date_filter
+    )
+    forecast_facility_filter = (
+        NOMINATION_FORECAST_FACILITY_FILTER_ALL
+        if facility_filter == FORECAST_ACTUAL_FACILITY_FILTER_ALL
+        else facility_filter
+    )
+    forecast_source_system_filter = (
+        NOMINATION_FORECAST_SOURCE_SYSTEM_FILTER_ALL
+        if source_system_filter == FORECAST_ACTUAL_SOURCE_SYSTEM_FILTER_ALL
+        else source_system_filter
+    )
+    actual_gas_date_filter = (
+        FACILITY_FLOW_STORAGE_GAS_DATE_FILTER_ALL
+        if gas_date_filter == FORECAST_ACTUAL_GAS_DATE_FILTER_ALL
+        else gas_date_filter
+    )
+    actual_facility_filter = (
+        FACILITY_FLOW_STORAGE_FACILITY_FILTER_ALL
+        if facility_filter == FORECAST_ACTUAL_FACILITY_FILTER_ALL
+        else facility_filter
+    )
+    actual_source_system_filter = (
+        FACILITY_FLOW_STORAGE_SOURCE_SYSTEM_FILTER_ALL
+        if source_system_filter == FORECAST_ACTUAL_SOURCE_SYSTEM_FILTER_ALL
+        else source_system_filter
+    )
+
+    return (
+        _filtered_nomination_forecast_dataframe(
+            forecast_load,
+            forecast_gas_date_filter,
+            forecast_source_system_filter,
+            forecast_facility_filter,
+            NOMINATION_FORECAST_LOCATION_FILTER_ALL,
+            as_of_date=as_of_date,
+        ),
+        _filtered_facility_flow_storage_dataframe(
+            actual_load,
+            actual_gas_date_filter,
+            actual_facility_filter,
+            actual_source_system_filter,
+        ),
+    )
+
+
+def _forecast_actual_string_filter_options(
+    loads: Sequence[GasTableLoad],
+    column: str,
+    all_label: str,
+) -> tuple[str, ...]:
+    forecast, actual = _forecast_actual_input_frames(loads)
+    values: set[str] = set()
+    for dataframe in (forecast, actual):
+        if dataframe.is_empty() or column not in dataframe.columns:
+            continue
+        values.update(
+            str(value)
+            for value in dataframe.get_column(column)
+            .drop_nulls()
+            .cast(pl.String, strict=False)
+            .unique()
+            .to_list()
+            if value is not None and str(value).strip() != ""
+        )
+    return (all_label, *sorted(values))
+
+
+def _forecast_actual_aggregates(
+    loads: Sequence[GasTableLoad],
+    gas_date_filter: str,
+    facility_filter: str,
+    source_system_filter: str,
+    *,
+    as_of_date: date | None = None,
+) -> tuple[
+    dict[tuple[date | None, str | None, str | None], _ForecastActualAggregate],
+    dict[tuple[date | None, str | None, str | None], _ForecastActualAggregate],
+]:
+    forecast, actual = _forecast_actual_input_frames(
+        loads,
+        gas_date_filter,
+        facility_filter,
+        source_system_filter,
+        as_of_date=as_of_date,
+    )
+    return (
+        _forecast_actual_forecast_aggregates(forecast),
+        _forecast_actual_actual_aggregates(actual),
+    )
+
+
+def _forecast_actual_forecast_aggregates(
+    dataframe: pl.DataFrame,
+) -> dict[tuple[date | None, str | None, str | None], _ForecastActualAggregate]:
+    aggregates: dict[
+        tuple[date | None, str | None, str | None],
+        _ForecastActualAggregate,
+    ] = {}
+    if dataframe.is_empty():
+        return aggregates
+
+    for row in dataframe.to_dicts():
+        aggregate = aggregates.setdefault(
+            _forecast_actual_key(row),
+            _ForecastActualAggregate(),
+        )
+        _forecast_actual_update_common_aggregate(aggregate, row)
+        forecast_type = _optional_non_empty_string(row.get("forecast_type"))
+        forecast_version = _optional_non_empty_string(row.get("forecast_version"))
+        if forecast_type is not None or forecast_version is not None:
+            aggregate.forecast_type_versions.add((forecast_type, forecast_version))
+        _forecast_actual_add_measure(
+            aggregate,
+            "demand",
+            row.get("demand_forecast_gj"),
+        )
+        _forecast_actual_add_measure(
+            aggregate,
+            "supply",
+            row.get("supply_forecast_gj"),
+        )
+        _forecast_actual_add_measure(
+            aggregate,
+            "transfer_in",
+            row.get("transfer_in_forecast_gj"),
+        )
+        _forecast_actual_add_measure(
+            aggregate,
+            "transfer_out",
+            row.get("transfer_out_forecast_gj"),
+        )
+    return aggregates
+
+
+def _forecast_actual_actual_aggregates(
+    dataframe: pl.DataFrame,
+) -> dict[tuple[date | None, str | None, str | None], _ForecastActualAggregate]:
+    aggregates: dict[
+        tuple[date | None, str | None, str | None],
+        _ForecastActualAggregate,
+    ] = {}
+    if dataframe.is_empty():
+        return aggregates
+
+    for row in dataframe.to_dicts():
+        aggregate = aggregates.setdefault(
+            _forecast_actual_key(row),
+            _ForecastActualAggregate(),
+        )
+        _forecast_actual_update_common_aggregate(aggregate, row)
+        _forecast_actual_add_measure(aggregate, "demand", row.get("demand_tj"), 1000.0)
+        _forecast_actual_add_measure(aggregate, "supply", row.get("supply_tj"), 1000.0)
+        _forecast_actual_add_measure(
+            aggregate,
+            "transfer_in",
+            row.get("transfer_in_tj"),
+            1000.0,
+        )
+        _forecast_actual_add_measure(
+            aggregate,
+            "transfer_out",
+            row.get("transfer_out_tj"),
+            1000.0,
+        )
+        _forecast_actual_add_measure(
+            aggregate,
+            "held_storage_tj",
+            row.get("held_in_storage_tj"),
+        )
+        _forecast_actual_add_measure(
+            aggregate,
+            "cushion_gas_storage_tj",
+            row.get("cushion_gas_storage_tj"),
+        )
+    return aggregates
+
+
+def _forecast_actual_update_common_aggregate(
+    aggregate: _ForecastActualAggregate,
+    row: Mapping[str, object],
+) -> None:
+    aggregate.rows += 1
+    source_system = _optional_non_empty_string(row.get("source_system"))
+    if source_system is not None:
+        aggregate.source_systems.add(source_system)
+    source_table = _optional_non_empty_string(row.get("source_table"))
+    if source_table is not None:
+        aggregate.source_tables.add(source_table)
+    aggregate.latest_source_update = _latest_datetime(
+        aggregate.latest_source_update,
+        _flow_datetime_value(row.get("source_last_updated_timestamp")),
+    )
+    aggregate.latest_ingest = _latest_datetime(
+        aggregate.latest_ingest,
+        _flow_datetime_value(row.get("ingested_timestamp")),
+    )
+
+
+def _forecast_actual_add_measure(
+    aggregate: _ForecastActualAggregate,
+    key: str,
+    value: object | None,
+    scale: float = 1.0,
+) -> None:
+    number = _optional_float(value)
+    if number is None:
+        return
+    aggregate.measure_totals[key] = aggregate.measure_totals.get(key, 0.0) + (
+        number * scale
+    )
+    aggregate.measure_counts[key] = aggregate.measure_counts.get(key, 0) + 1
+
+
+def _forecast_actual_key(
+    row: Mapping[str, object],
+) -> tuple[date | None, str | None, str | None]:
+    return (
+        _flow_date_value(row.get("gas_date")),
+        _optional_non_empty_string(row.get("source_facility_id")),
+        _optional_non_empty_string(row.get("source_location_id")),
+    )
+
+
+def _forecast_actual_sort_key(
+    key: tuple[date | None, str | None, str | None],
+) -> tuple[int, str, str]:
+    gas_date, source_facility_id, source_location_id = key
+    gas_date_rank = -gas_date.toordinal() if gas_date is not None else 1
+    return gas_date_rank, source_facility_id or "", source_location_id or ""
+
+
+def _forecast_actual_comparison_row(
+    key: tuple[date | None, str | None, str | None],
+    forecast: _ForecastActualAggregate | None,
+    actual: _ForecastActualAggregate | None,
+) -> dict[str, object]:
+    gas_date, source_facility_id, source_location_id = key
+    forecast_demand = _forecast_actual_measure_total(forecast, "demand")
+    actual_demand = _forecast_actual_measure_total(actual, "demand")
+    forecast_supply = _forecast_actual_measure_total(forecast, "supply")
+    actual_supply = _forecast_actual_measure_total(actual, "supply")
+    forecast_transfer_in = _forecast_actual_measure_total(forecast, "transfer_in")
+    actual_transfer_in = _forecast_actual_measure_total(actual, "transfer_in")
+    forecast_transfer_out = _forecast_actual_measure_total(forecast, "transfer_out")
+    actual_transfer_out = _forecast_actual_measure_total(actual, "transfer_out")
+
+    return {
+        "gas date": gas_date,
+        "source facility id": source_facility_id,
+        "source location id": source_location_id,
+        "match status": _forecast_actual_match_status(forecast, actual),
+        "forecast rows": 0 if forecast is None else forecast.rows,
+        "actual rows": 0 if actual is None else actual.rows,
+        "forecast source systems": _forecast_actual_join_values(
+            None if forecast is None else forecast.source_systems
+        ),
+        "actual source systems": _forecast_actual_join_values(
+            None if actual is None else actual.source_systems
+        ),
+        "forecast source tables": _forecast_actual_join_values(
+            None if forecast is None else forecast.source_tables
+        ),
+        "actual source tables": _forecast_actual_join_values(
+            None if actual is None else actual.source_tables
+        ),
+        "forecast type/version pairs": (
+            0 if forecast is None else len(forecast.forecast_type_versions)
+        ),
+        "forecast demand gj": forecast_demand,
+        "actual demand gj": actual_demand,
+        "demand delta gj": _forecast_actual_delta(forecast_demand, actual_demand),
+        "demand delta pct": _forecast_actual_delta_pct(forecast_demand, actual_demand),
+        "forecast supply gj": forecast_supply,
+        "actual supply gj": actual_supply,
+        "supply delta gj": _forecast_actual_delta(forecast_supply, actual_supply),
+        "supply delta pct": _forecast_actual_delta_pct(forecast_supply, actual_supply),
+        "forecast transfer in gj": forecast_transfer_in,
+        "actual transfer in gj": actual_transfer_in,
+        "transfer in delta gj": _forecast_actual_delta(
+            forecast_transfer_in,
+            actual_transfer_in,
+        ),
+        "transfer in delta pct": _forecast_actual_delta_pct(
+            forecast_transfer_in,
+            actual_transfer_in,
+        ),
+        "forecast transfer out gj": forecast_transfer_out,
+        "actual transfer out gj": actual_transfer_out,
+        "transfer out delta gj": _forecast_actual_delta(
+            forecast_transfer_out,
+            actual_transfer_out,
+        ),
+        "transfer out delta pct": _forecast_actual_delta_pct(
+            forecast_transfer_out,
+            actual_transfer_out,
+        ),
+        "latest forecast update": (
+            None if forecast is None else forecast.latest_source_update
+        ),
+        "latest actual update": None if actual is None else actual.latest_source_update,
+        "latest forecast ingest": None if forecast is None else forecast.latest_ingest,
+        "latest actual ingest": None if actual is None else actual.latest_ingest,
+    }
+
+
+def _forecast_actual_storage_row(
+    key: tuple[date | None, str | None, str | None],
+    actual: _ForecastActualAggregate,
+    *,
+    forecast_available: bool,
+) -> dict[str, object]:
+    gas_date, source_facility_id, source_location_id = key
+    return {
+        "gas date": gas_date,
+        "source facility id": source_facility_id,
+        "source location id": source_location_id,
+        "forecast coverage": (
+            "Matched forecast row in bounded view"
+            if forecast_available
+            else "No matching forecast row in bounded view"
+        ),
+        "actual rows": actual.rows,
+        "actual source systems": _forecast_actual_join_values(actual.source_systems),
+        "actual source tables": _forecast_actual_join_values(actual.source_tables),
+        "held storage rows": actual.measure_counts.get("held_storage_tj", 0),
+        "held in storage tj": _forecast_actual_measure_total(
+            actual,
+            "held_storage_tj",
+        ),
+        "cushion gas rows": actual.measure_counts.get("cushion_gas_storage_tj", 0),
+        "cushion gas storage tj": _forecast_actual_measure_total(
+            actual,
+            "cushion_gas_storage_tj",
+        ),
+        "latest actual update": actual.latest_source_update,
+        "latest actual ingest": actual.latest_ingest,
+    }
+
+
+def _forecast_actual_match_status(
+    forecast: _ForecastActualAggregate | None,
+    actual: _ForecastActualAggregate | None,
+) -> str:
+    if forecast is not None and actual is not None:
+        return "Matched forecast and actual"
+    if forecast is not None:
+        return "Forecast only"
+    return "Actual only"
+
+
+def _forecast_actual_measure_total(
+    aggregate: _ForecastActualAggregate | None,
+    key: str,
+) -> float | None:
+    if aggregate is None or aggregate.measure_counts.get(key, 0) == 0:
+        return None
+    return aggregate.measure_totals.get(key, 0.0)
+
+
+def _forecast_actual_delta(
+    forecast_value: float | None,
+    actual_value: float | None,
+) -> float | None:
+    if forecast_value is None or actual_value is None:
+        return None
+    return actual_value - forecast_value
+
+
+def _forecast_actual_delta_pct(
+    forecast_value: float | None,
+    actual_value: float | None,
+) -> float | None:
+    if forecast_value is None or actual_value is None or forecast_value == 0:
+        return None
+    return ((actual_value - forecast_value) / forecast_value) * 100
+
+
+def _forecast_actual_comparable_measure_count(
+    forecast: _ForecastActualAggregate | None,
+    actual: _ForecastActualAggregate | None,
+) -> int:
+    return sum(
+        _forecast_actual_measure_total(forecast, measure) is not None
+        and _forecast_actual_measure_total(actual, measure) is not None
+        for measure in ("demand", "supply", "transfer_in", "transfer_out")
+    )
+
+
+def _forecast_actual_latest_gas_date(
+    keys: set[tuple[date | None, str | None, str | None]],
+) -> date | None:
+    dates = [gas_date for gas_date, _, _ in keys if gas_date is not None]
+    if len(dates) == 0:
+        return None
+    return max(dates)
+
+
+def _forecast_actual_join_values(values: set[str] | None) -> str:
+    if values is None or len(values) == 0:
+        return ""
+    return ", ".join(sorted(values))
+
+
+def _forecast_actual_load_detail(load: GasTableLoad | None) -> str:
+    if load is None:
+        return "not requested by this dashboard run."
+    if load.error is not None:
+        return f"unavailable: {_markdown_breakable_text(load.error)}."
+    if load.dataframe is None or load.dataframe.is_empty():
+        return f"loaded from {_markdown_breakable_text(load.uri)} but returned no rows."
+    return (
+        f"loaded `{load.dataframe.height:,}` bounded rows from "
+        f"{_markdown_breakable_text(load.uri)}."
+    )
+
+
+def _optional_float(value: object | None) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if not isinstance(value, int | float | str | bytes):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if isnan(number):
+        return None
+    return number
 
 
 def _normalised_facility_flow_storage_dashboard_dataframe(

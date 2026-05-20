@@ -30,6 +30,7 @@ Marimo-Codex research workspace image.
 - [Flow operations dashboard](#flow-operations-dashboard)
 - [Capacity outlook dashboard](#capacity-outlook-dashboard)
 - [Nomination and demand forecast dashboard](#nomination-and-demand-forecast-dashboard)
+- [Forecast-vs-actual dashboard](#forecast-vs-actual-dashboard)
 - [Gas market dashboard](#gas-market-dashboard)
 - [Market prices dashboard](#market-prices-dashboard)
 - [Schedule runs dashboard](#schedule-runs-dashboard)
@@ -562,6 +563,26 @@ forecast-only view; missing nomination forecast data, unavailable Parquet
 prefixes, and filter combinations with no matches render dashboard empty states
 with the checked table, read policy, and refresh action.
 
+## Forecast-vs-actual dashboard
+
+[notebooks/forecast_vs_actual.py](notebooks/forecast_vs_actual.py) is an
+analytical dashboard comparing bounded nomination or demand forecast rows from
+`silver.gas_model.silver_gas_fact_nomination_forecast` with available actual
+facility flow/storage observations from
+`silver.gas_model.silver_gas_fact_facility_flow_storage`. It uses the shared
+bounded gas model loader and session cache from
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py), then
+joins only loaded rows that share Gas Day, `source_facility_id`, and
+`source_location_id`.
+
+The dashboard shows first-viewport data health, AWS sampled/recent-only bounded
+read messaging, matched facility-day counts, forecast-only and actual-only
+groups, flow measure deltas after converting actual TJ fields to GJ, and
+actual storage observations with forecast coverage status. Missing forecast
+data, missing actual data, unavailable Parquet prefixes, and filter
+combinations with no matches render dashboard empty states with the checked
+tables, read policy, and refresh action.
+
 ## Gas market dashboard
 
 The default notebook,
@@ -849,9 +870,10 @@ Caddy and choose an available card such as `data_readiness_overview`,
 `gas_schedule_runs`,
 `system_notices`, `gas_settlement_activity`,
 `gas_customer_transfer_activity`, `facility_flow_storage`,
-`gas_bid_offer_stack`, `gas_quality_composition`, `facility_explainer`,
-`participant_explainer`, `hub_zone_explainer`, `connection_point_explainer`,
-`flow_operations`, `capacity_outlook`, or `gbb_interactive_map`:
+`forecast_vs_actual`, `gas_bid_offer_stack`, `gas_quality_composition`,
+`facility_explainer`, `participant_explainer`, `hub_zone_explainer`,
+`connection_point_explainer`, `flow_operations`, `capacity_outlook`, or
+`gbb_interactive_map`:
 
 ```text
 http://localhost/marimo
@@ -1034,6 +1056,13 @@ cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/facility_flow_storage.py
 ```
 
+Use the same pattern for the forecast-vs-actual dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/forecast_vs_actual.py
+```
+
 Use the same pattern for the capacity outlook dashboard:
 
 ```bash
@@ -1182,6 +1211,7 @@ prek run -a
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/facility_flow_storage.py`
+  - `backend-services/marimo/notebooks/forecast_vs_actual.py`
   - `backend-services/marimo/notebooks/capacity_outlook.py`
   - `backend-services/marimo/notebooks/linepack_adequacy.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`

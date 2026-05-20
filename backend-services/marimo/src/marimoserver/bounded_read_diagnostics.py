@@ -36,6 +36,7 @@ _RECENT_GAS_DASHBOARD_IDS = frozenset(
         "settlement-context",
         "gas-customer-transfer-activity",
         "facility-flow-storage",
+        "forecast-vs-actual",
         "capacity-context",
         "bid-offer-context",
         "gas-system-notices",

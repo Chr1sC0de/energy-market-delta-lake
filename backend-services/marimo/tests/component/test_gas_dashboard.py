@@ -68,6 +68,11 @@ from marimoserver.gas_dashboard import (
     FACILITY_FLOW_STORAGE_SOURCE_SYSTEM_FILTER_ALL,
     FACILITY_FLOW_STORAGE_TABLE_NAME,
     FACILITY_FLOW_STORAGE_TABLE_SPEC,
+    FORECAST_ACTUAL_CONTEXT_ID,
+    FORECAST_ACTUAL_FACILITY_FILTER_ALL,
+    FORECAST_ACTUAL_GAS_DATE_FILTER_ALL,
+    FORECAST_ACTUAL_SOURCE_SYSTEM_FILTER_ALL,
+    FORECAST_ACTUAL_TABLE_SPECS,
     FACILITY_TABLE_SPECS,
     FLOW_CONTEXT_ID,
     FLOW_TABLE_SPECS,
@@ -127,6 +132,7 @@ from marimoserver.gas_dashboard import (
     cached_load_connection_point_context_tables,
     cached_load_facility_context_tables,
     cached_load_facility_flow_storage_table,
+    cached_load_forecast_actual_tables,
     cached_load_flow_context_tables,
     cached_load_gas_day_tables,
     cached_load_hub_zone_context_tables,
@@ -181,6 +187,14 @@ from marimoserver.gas_dashboard import (
     facility_flow_storage_summary_frame,
     facility_relationship_frame,
     facility_table_specs,
+    forecast_actual_bounded_scope_markdown,
+    forecast_actual_comparison_frame,
+    forecast_actual_empty_state_markdown,
+    forecast_actual_facility_options,
+    forecast_actual_gas_date_options,
+    forecast_actual_kpi_frame,
+    forecast_actual_source_system_options,
+    forecast_actual_storage_frame,
     flow_context_empty_state_markdown,
     flow_kpi_frame,
     flow_recent_observation_frame,
@@ -212,6 +226,7 @@ from marimoserver.gas_dashboard import (
     load_customer_transfer_table,
     load_facility_context_tables,
     load_facility_flow_storage_table,
+    load_forecast_actual_tables,
     load_flow_context_tables,
     load_gas_day_tables,
     load_hub_zone_context_tables,
@@ -269,6 +284,7 @@ from marimoserver.gas_dashboard import (
     render_nomination_forecast_context_links,
     render_facility_context_links,
     render_facility_flow_storage_context_links,
+    render_forecast_actual_context_links,
     render_flow_context_links,
     render_hub_zone_context_links,
     render_linepack_context_links,
@@ -303,6 +319,8 @@ from marimoserver.gas_dashboard import (
     system_notice_source_coverage_frame,
     system_notice_summary_frame,
     table_load_by_name,
+    _latest_datetime,
+    _optional_float,
 )
 from marimoserver.dashboard_registry import (
     DashboardAudience,
@@ -516,6 +534,15 @@ def test_dashboard_read_behavior_frame_renders_per_dashboard_policy() -> None:
     )
     assert rows["Gas Market Prices"]["view"] == "Recent-only bounded view"
     assert rows["Gas Market Prices"]["row policy"] == ("Bounded preview: 42 rows max")
+    assert rows["Forecast Vs Actual Flow And Storage"]["read behavior"] == (
+        "Focused gas_model dashboard table read"
+    )
+    assert rows["Forecast Vs Actual Flow And Storage"]["view"] == (
+        "Recent-only bounded view"
+    )
+    assert rows["Forecast Vs Actual Flow And Storage"]["row policy"] == (
+        "Bounded preview: 42 rows max"
+    )
     assert rows["Source Coverage Matrix"]["view"] == "Forced bounded sample"
     assert rows["Source Coverage Matrix"]["row policy"] == (
         "Bounded preview: 42 rows max"
@@ -3770,6 +3797,352 @@ def test_nomination_forecast_helpers_cover_empty_state_behavior() -> None:
         "No Nomination forecast, Flow, Facility, Gas Day, map, source coverage, "
         "or table explorer entries are registered."
     ) in empty_context_links
+
+
+def test_forecast_actual_metadata_and_loader_use_recent_bounded_rows() -> None:
+    entry = registry_entry_by_concept_id(FORECAST_ACTUAL_CONTEXT_ID)
+    html = render_dashboard_context_panel(FORECAST_ACTUAL_CONTEXT_ID)
+    context_links = render_forecast_actual_context_links()
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "19",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    loads = load_forecast_actual_tables(config, reader=reader)
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "forecast_vs_actual"
+    assert entry.notebook_route == "/marimo/forecast_vs_actual/"
+    assert entry.backing_assets == (
+        "silver.gas_model.silver_gas_fact_nomination_forecast",
+        "silver.gas_model.silver_gas_fact_facility_flow_storage",
+    )
+    assert "Forecast Vs Actual Flow And Storage" in html
+    assert "chunk-gbb-procedures-daily-flow-storage" in html
+    assert 'href="/marimo/forecast_vs_actual/"' in context_links
+    assert "Nomination And Demand Forecast" in context_links
+    assert "Facility Flow And Storage" in context_links
+    assert [load.spec for load in loads] == list(FORECAST_ACTUAL_TABLE_SPECS)
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_nomination_forecast",
+            19,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_facility_flow_storage",
+            19,
+        ),
+    ]
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert storage_options == config.storage_options()
+        assert row_limit == 19
+        cached_calls += 1
+        return pl.DataFrame({"source_system": ["GBB"]})
+
+    first_cached = cached_load_forecast_actual_tables(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_forecast_actual_tables(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_forecast_actual_tables(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 4
+    assert [load.cache_hit for load in first_cached] == [False, False]
+    assert [load.cache_hit for load in second_cached] == [True, True]
+    assert [load.cache_hit for load in refreshed] == [False, False]
+
+
+def test_forecast_actual_helpers_compare_matched_bounded_data() -> None:
+    forecast_load = _nomination_forecast_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB", "GBB"],
+                "source_table": [
+                    "silver.gbb.silver_gasbb_nomination_and_forecast",
+                    "silver.gbb.silver_gasbb_nomination_and_forecast",
+                ],
+                "source_tables": [
+                    ["silver.gbb.silver_gasbb_nomination_and_forecast"],
+                    ["silver.gbb.silver_gasbb_nomination_and_forecast"],
+                ],
+                "gas_date": [date(2024, 1, 4), date(2024, 1, 4)],
+                "forecast_type": ["gbb_nomination_forecast", "gbb_nomination_forecast"],
+                "forecast_version": ["v1", "v1"],
+                "source_facility_id": ["F1", "F1"],
+                "source_location_id": ["L1", "L1"],
+                "demand_forecast_gj": [600.0, 400.0],
+                "supply_forecast_gj": [500.0, None],
+                "transfer_in_forecast_gj": [100.0, 50.0],
+                "transfer_out_forecast_gj": [20.0, 30.0],
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 4, 5),
+                    datetime(2024, 1, 4, 6),
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 4, 7),
+                    datetime(2024, 1, 4, 8),
+                ],
+            }
+        ),
+        row_limit=12,
+    )
+    actual_load = _facility_flow_storage_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "source_tables": [["silver.gbb.silver_gasbb_actual_flow_storage"]],
+                "gas_date": [date(2024, 1, 4)],
+                "source_facility_id": ["F1"],
+                "source_location_id": ["L1"],
+                "demand_tj": [1.2],
+                "supply_tj": [0.4],
+                "transfer_in_tj": [0.1],
+                "transfer_out_tj": [0.05],
+                "held_in_storage_tj": [5.0],
+                "cushion_gas_storage_tj": [1.0],
+                "source_last_updated_timestamp": [datetime(2024, 1, 4, 9)],
+                "ingested_timestamp": [datetime(2024, 1, 4, 10)],
+            }
+        ),
+        row_limit=12,
+    )
+    loads = (forecast_load, actual_load)
+
+    kpis = forecast_actual_kpi_frame(loads, as_of_date=date(2024, 1, 4))
+    comparison = forecast_actual_comparison_frame(
+        loads,
+        as_of_date=date(2024, 1, 4),
+    )
+    storage = forecast_actual_storage_frame(loads, as_of_date=date(2024, 1, 4))
+    kpi_values = {row["metric"]: row["value"] for row in kpis.to_dicts()}
+    comparison_row = comparison.row(0, named=True)
+    storage_row = storage.row(0, named=True)
+
+    assert forecast_actual_gas_date_options(loads) == (
+        FORECAST_ACTUAL_GAS_DATE_FILTER_ALL,
+        "2024-01-04",
+    )
+    assert forecast_actual_facility_options(loads) == (
+        FORECAST_ACTUAL_FACILITY_FILTER_ALL,
+        "F1",
+    )
+    assert forecast_actual_source_system_options(loads) == (
+        FORECAST_ACTUAL_SOURCE_SYSTEM_FILTER_ALL,
+        "GBB",
+    )
+    assert kpi_values["Forecast rows"] == "2"
+    assert kpi_values["Actual rows"] == "1"
+    assert kpi_values["Matched facility days"] == "1"
+    assert kpi_values["Comparable flow measures"] == "4"
+    assert comparison_row["match status"] == "Matched forecast and actual"
+    assert comparison_row["forecast rows"] == 2
+    assert comparison_row["actual rows"] == 1
+    assert comparison_row["forecast demand gj"] == 1000.0
+    assert comparison_row["actual demand gj"] == 1200.0
+    assert comparison_row["demand delta gj"] == 200.0
+    assert comparison_row["demand delta pct"] == 20.0
+    assert comparison_row["forecast supply gj"] == 500.0
+    assert comparison_row["actual supply gj"] == 400.0
+    assert comparison_row["supply delta gj"] == -100.0
+    assert storage_row["forecast coverage"] == "Matched forecast row in bounded view"
+    assert storage_row["held in storage tj"] == 5.0
+    assert storage_row["cushion gas storage tj"] == 1.0
+    assert "loaded `2` bounded rows" in forecast_actual_empty_state_markdown(loads)
+
+
+def test_forecast_actual_helpers_degrade_with_missing_forecast_data() -> None:
+    loads = (
+        _nomination_forecast_load(pl.DataFrame(), row_limit=6),
+        _facility_flow_storage_load(
+            pl.DataFrame(
+                {
+                    "source_system": ["GBB"],
+                    "source_tables": [["silver.gbb.silver_gasbb_actual_flow_storage"]],
+                    "gas_date": [date(2024, 1, 5)],
+                    "source_facility_id": ["F2"],
+                    "source_location_id": ["L2"],
+                    "demand_tj": [2.0],
+                    "held_in_storage_tj": [7.0],
+                }
+            ),
+            row_limit=6,
+        ),
+    )
+
+    comparison = forecast_actual_comparison_frame(loads)
+    storage = forecast_actual_storage_frame(loads)
+    kpi_values = {
+        row["metric"]: row["value"]
+        for row in forecast_actual_kpi_frame(loads).to_dicts()
+    }
+
+    assert comparison.row(0, named=True)["match status"] == "Actual only"
+    assert comparison.row(0, named=True)["forecast rows"] == 0
+    assert comparison.row(0, named=True)["actual demand gj"] == 2000.0
+    assert storage.row(0, named=True)["forecast coverage"] == (
+        "No matching forecast row in bounded view"
+    )
+    assert kpi_values["Forecast rows"] == "0"
+    assert kpi_values["Actual-only groups"] == "1"
+
+
+def test_forecast_actual_helpers_degrade_with_missing_actual_data() -> None:
+    loads = (
+        _nomination_forecast_load(
+            pl.DataFrame(
+                {
+                    "source_system": ["VICGAS"],
+                    "source_table": [
+                        "silver.vicgas.silver_int153_v4_demand_forecast_rpt_1"
+                    ],
+                    "gas_date": [date(2024, 1, 6)],
+                    "forecast_type": ["interval_demand"],
+                    "forecast_version": ["42"],
+                    "source_facility_id": ["F3"],
+                    "source_location_id": ["L3"],
+                    "demand_forecast_gj": [900.0],
+                }
+            ),
+            row_limit=6,
+        ),
+        _facility_flow_storage_load(pl.DataFrame(), row_limit=6),
+    )
+
+    comparison = forecast_actual_comparison_frame(loads)
+    storage = forecast_actual_storage_frame(loads)
+    kpi_values = {
+        row["metric"]: row["value"]
+        for row in forecast_actual_kpi_frame(loads).to_dicts()
+    }
+
+    assert comparison.row(0, named=True)["match status"] == "Forecast only"
+    assert comparison.row(0, named=True)["forecast demand gj"] == 900.0
+    assert comparison.row(0, named=True)["actual demand gj"] is None
+    assert storage.is_empty()
+    assert kpi_values["Actual rows"] == "0"
+    assert kpi_values["Forecast-only groups"] == "1"
+
+
+def test_forecast_actual_helpers_make_bounded_messaging_explicit() -> None:
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "7",
+        }
+    )
+    loads = (
+        _nomination_forecast_load(pl.DataFrame(), row_limit=7),
+        _facility_flow_storage_load(pl.DataFrame(), row_limit=7),
+    )
+    local_config = discover_dashboard_config({})
+    unavailable_loads = (
+        GasTableLoad(
+            spec=NOMINATION_FORECAST_TABLE_SPEC,
+            uri=f"s3://bucket/silver/gas_model/{NOMINATION_FORECAST_TABLE_NAME}",
+            dataframe=None,
+            error="FileNotFoundError: no parquet files found",
+            row_limit=7,
+            load_duration_seconds=0.01,
+            cache_hit=False,
+        ),
+    )
+    unknown_date_loads = (
+        _nomination_forecast_load(
+            pl.DataFrame(
+                {
+                    "source_system": ["GBB"],
+                    "gas_date": [None],
+                    "demand_forecast_gj": [5.0],
+                }
+            ),
+            row_limit=7,
+        ),
+        _facility_flow_storage_load(pl.DataFrame(), row_limit=7),
+    )
+
+    bounded_markdown = forecast_actual_bounded_scope_markdown(config, loads)
+    local_markdown = forecast_actual_bounded_scope_markdown(local_config, ())
+    empty_markdown = forecast_actual_empty_state_markdown(loads)
+    missing_load_markdown = forecast_actual_empty_state_markdown(())
+    unavailable_markdown = forecast_actual_empty_state_markdown(unavailable_loads)
+    unknown_date_kpis = {
+        row["metric"]: row["value"]
+        for row in forecast_actual_kpi_frame(unknown_date_loads).to_dicts()
+    }
+
+    assert "AWS mode uses sampled/recent-only bounded reads" in bounded_markdown
+    assert "Bounded preview reads are capped at `7` rows per table" in bounded_markdown
+    assert "forecast-only or actual-only" in bounded_markdown
+    assert "Local mode uses the configured gas dashboard read policy" in local_markdown
+    assert forecast_actual_kpi_frame(loads).is_empty()
+    assert forecast_actual_comparison_frame(loads).is_empty()
+    assert forecast_actual_facility_options(loads) == (
+        FORECAST_ACTUAL_FACILITY_FILTER_ALL,
+    )
+    assert "No forecast-vs-actual" in render_forecast_actual_context_links(entries=())
+    assert "No forecast-vs-actual comparison rows are available" in empty_markdown
+    assert "silver_gas_fact_nomination_forecast" in empty_markdown
+    assert "silver_gas_fact_facility_flow_storage" in empty_markdown
+    assert "not requested by this dashboard run" in missing_load_markdown
+    assert "unavailable:" in unavailable_markdown
+    assert "FileNotFoundError: no parquet files found" in unavailable_markdown
+    assert unknown_date_kpis["Latest Gas Day"] == "unknown"
+
+
+def test_forecast_actual_numeric_and_timestamp_edges() -> None:
+    current = datetime(2024, 1, 5, 12)
+    older = datetime(2024, 1, 5, 11)
+    newer = datetime(2024, 1, 5, 13)
+
+    assert _optional_float(None) is None
+    assert _optional_float(True) is None
+    assert _optional_float(object()) is None
+    assert _optional_float("not-a-number") is None
+    assert _optional_float(float("nan")) is None
+    assert _optional_float("1.5") == 1.5
+    assert _latest_datetime(None, None) is None
+    assert _latest_datetime(None, current) == current
+    assert _latest_datetime(current, None) == current
+    assert _latest_datetime(current, older) == current
+    assert _latest_datetime(current, newer) == newer
 
 
 def test_bid_stack_table_loader_uses_bounded_recent_view() -> None:

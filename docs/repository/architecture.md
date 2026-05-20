@@ -137,8 +137,9 @@ paths to source chunk IDs, silver chunk paths, and source hashes without
 opening generated corpus files. Its Flow operations, market price, schedule
 run, settlement activity, customer transfer, Bid / Offer stack, gas quality,
 and system notice dashboards use the shared bounded gas-model loader for
-read-only fact previews and summaries. Its Gas Day explainer uses registry
-context metadata and bounded
+read-only fact previews and summaries. Its forecast-vs-actual dashboard compares
+bounded forecast and actual flow/storage facts without changing ETL grain or
+full-scan policy. Its Gas Day explainer uses registry context metadata and bounded
 gas-model samples to show date-field coverage across curated assets. Its Hub /
 Zone explainer uses the
 same bounded loader to show current `silver_gas_dim_zone` coverage and
@@ -295,6 +296,7 @@ Gas market knowledge base responsibility:
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/facility_flow_storage.py`
+  - `backend-services/marimo/notebooks/forecast_vs_actual.py`
   - `backend-services/marimo/notebooks/capacity_outlook.py`
   - `backend-services/marimo/notebooks/linepack_adequacy.py`
   - `backend-services/marimo/notebooks/nomination_demand_forecast.py`

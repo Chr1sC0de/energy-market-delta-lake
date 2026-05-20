@@ -614,6 +614,35 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
     },
     {
+        "concept_id": "forecast-vs-actual",
+        "title": "Forecast Vs Actual Flow And Storage",
+        "description": (
+            "Available analytical dashboard comparing bounded nomination or "
+            "demand forecasts against actual facility flow/storage observations "
+            "where the loaded facts share Gas Day and source facility/location "
+            "identifiers."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "forecast_vs_actual",
+        "backing_assets": (
+            "silver.gas_model.silver_gas_fact_nomination_forecast",
+            "silver.gas_model.silver_gas_fact_facility_flow_storage",
+        ),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md",
+        ),
+        "source_chunk_ids": (
+            "chunk-gbb-guide-flow-report",
+            "chunk-gbb-procedures-scheduled-flow",
+            "chunk-gbb-procedures-daily-flow-storage",
+            "chunk-gbb-guide-nodes-facilities",
+            "chunk-gbb-guide-gas-day",
+        ),
+    },
+    {
         "concept_id": "gas-model-table-explorer",
         "title": "Gas Model Table Explorer",
         "description": (
