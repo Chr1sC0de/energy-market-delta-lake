@@ -1,6 +1,7 @@
 ---
 import AutomationWorkflowFlow from "../components/AutomationWorkflowFlow";
 import HeroArchitectureFlow from "../components/HeroArchitectureFlow";
+import HeroArchitectureFallback from "../components/HeroArchitectureFallback.astro";
 import InfrastructureDiagram from "../components/InfrastructureDiagram.astro";
 import ServiceLinks from "../components/ServiceLinks.astro";
 import PortfolioLayout from "../layouts/PortfolioLayout.astro";
@@ -24,7 +25,10 @@ import PortfolioLayout from "../layouts/PortfolioLayout.astro";
           <ServiceLinks />
         </div>
         <div class="hero-diagram">
-          <HeroArchitectureFlow client:load />
+          <HeroArchitectureFallback />
+          <div class="hero-diagram-interaction" aria-hidden="false">
+            <HeroArchitectureFlow client:only="react" />
+          </div>
         </div>
       </div>
     </section>
