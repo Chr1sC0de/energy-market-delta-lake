@@ -13,20 +13,30 @@ Marimo-Codex research workspace image.
 - [Dashboard registry](#dashboard-registry)
 - [Glossary explorer](#glossary-explorer)
 - [Concept-to-asset explorer](#concept-to-asset-explorer)
+- [Schema data dictionary explorer](#schema-data-dictionary-explorer)
+- [Citation-chain explorer](#citation-chain-explorer)
 - [Data readiness overview](#data-readiness-overview)
 - [AWS bounded read diagnostics](#aws-bounded-read-diagnostics)
 - [Dagster asset catalogue status](#dagster-asset-catalogue-status)
+- [Materialization freshness dashboard](#materialization-freshness-dashboard)
 - [S3 bucket health](#s3-bucket-health)
 - [Table explorer](#table-explorer)
 - [Source coverage matrix](#source-coverage-matrix)
+- [Source table lineage explorer](#source-table-lineage-explorer)
 - [Gas Day explainer dashboard](#gas-day-explainer-dashboard)
 - [Participant explainer dashboard](#participant-explainer-dashboard)
 - [Hub / Zone explainer dashboard](#hub--zone-explainer-dashboard)
+- [Connection Point explainer dashboard](#connection-point-explainer-dashboard)
+- [Flow operations dashboard](#flow-operations-dashboard)
+- [Capacity outlook dashboard](#capacity-outlook-dashboard)
+- [Nomination and demand forecast dashboard](#nomination-and-demand-forecast-dashboard)
 - [Gas market dashboard](#gas-market-dashboard)
 - [Market prices dashboard](#market-prices-dashboard)
 - [Schedule runs dashboard](#schedule-runs-dashboard)
 - [Settlement activity dashboard](#settlement-activity-dashboard)
 - [Customer transfer and retail activity dashboard](#customer-transfer-and-retail-activity-dashboard)
+- [Facility flow and storage dashboard](#facility-flow-and-storage-dashboard)
+- [Linepack adequacy dashboard](#linepack-adequacy-dashboard)
 - [Bid-Offer stack dashboard](#bid-offer-stack-dashboard)
 - [System notices dashboard](#system-notices-dashboard)
 - [Gas quality and composition dashboard](#gas-quality-and-composition-dashboard)
@@ -120,7 +130,8 @@ future shared UI primitive surface.
 defines the Marimo-local dashboard registry used by the dashboard roadmap. It
 parses structured records into typed entries with concept IDs, audience tags,
 planned or available status, notebook names and routes, backing
-`silver.gas_model` assets, generated-gold metadata paths, and source chunk IDs.
+`silver.gas_model` assets, generated-gold metadata paths, source chunk IDs,
+silver chunk paths, and source hashes.
 
 The `/marimo` entry route renders this registry as a concept gallery hub.
 Available registry entries link only when their backing notebook is mounted in
@@ -128,9 +139,10 @@ the current image. Planned entries stay visible as roadmap cards but do not
 emit notebook links. The same registry is served as JSON from
 `/marimo/dashboard-registry.json` so future Marimo notebooks can render context
 panels without reading the Gas market knowledge base generated files at
-runtime. Generated-gold paths and source chunk IDs are copied metadata only. In
-AWS mode this remains read-only, uses the existing dashboard image contents,
-and does not require a Docker build-context change.
+runtime. Generated-gold paths, source chunk IDs, silver chunk paths, and source
+hashes are copied metadata only. In AWS mode this remains read-only, uses the
+existing dashboard image contents, and does not require a Docker build-context
+change.
 
 Registry-backed dashboards that only browse registry metadata may have no
 backing `silver.gas_model` assets. The concept gallery renders those entries as
@@ -141,7 +153,8 @@ registry metadata only instead of inventing table dependencies.
 context in-page. The helper renders the concept summary, dashboard usage
 metadata, related concepts, generated-gold paths, source chunk IDs, and backing
 `silver.gas_model` assets from the registry without opening generated gold
-Markdown at runtime. The available roadmap notebooks call it with their
+Markdown at runtime. It also exposes silver chunk paths and source hashes when
+the registry has them. The available roadmap notebooks call it with their
 registry concept IDs near the top of the notebook.
 
 [src/marimoserver/bounded_read_diagnostics.py](src/marimoserver/bounded_read_diagnostics.py)
@@ -181,6 +194,38 @@ and Gas Model Table Explorer deep links where the registry asset can be
 resolved to a `silver/gas_model/<table>` entry. Concepts with no backing assets
 and registry assets without glossary concept coverage render as explicit
 coverage gaps.
+
+## Schema data dictionary explorer
+
+[notebooks/schema_data_dictionary_explorer.py](notebooks/schema_data_dictionary_explorer.py)
+is the analytical schema dictionary for registry-mapped `silver.gas_model`
+assets. It uses
+[src/marimoserver/data_dictionary_explorer.py](src/marimoserver/data_dictionary_explorer.py)
+to combine read-only Dagster GraphQL table schema metadata with the
+concept-to-asset mapping from
+[src/marimoserver/concept_asset_explorer.py](src/marimoserver/concept_asset_explorer.py).
+
+The dashboard groups mapped fields by Market context concept, documented
+gas-model mart, asset, and dashboard route. It does not scan table rows, change
+ETL schemas, or read generated gold Markdown at runtime. Unavailable Dagster
+GraphQL, mapped assets missing from Dagster table metadata, and assets without
+parsed column metadata stay visible as explicit schema states in the asset and
+field tables.
+
+## Citation-chain explorer
+
+[notebooks/citation_chain_explorer.py](notebooks/citation_chain_explorer.py)
+is the registry-backed citation-chain audit dashboard. It uses
+[src/marimoserver/citation_chain_explorer.py](src/marimoserver/citation_chain_explorer.py)
+to list dashboard concept metadata alongside generated-gold paths, source chunk
+IDs, silver chunk paths, and source hashes from the code-local Marimo dashboard
+registry.
+
+The dashboard reads no table rows and does not open generated gold or silver
+Markdown at runtime. Its first viewport shows registry health, complete-record
+count, coverage-gap count, source chunk count, and source hash count. Concept
+cards make incomplete citation-chain metadata visible as registry coverage gaps
+instead of copying generated corpus prose into maintained docs.
 
 ## Data readiness overview
 
@@ -241,6 +286,24 @@ When Dagster GraphQL is unavailable, the dashboard renders a clear unavailable
 state and keeps storage-only table-prefix rows visible. Operators can still
 triage configured storage discovery while using the action callout to restore
 `DAGSTER_GRAPHQL_URL`, Dagster webserver health, or reverse-proxy routing.
+
+## Materialization freshness dashboard
+
+[notebooks/materialization_freshness.py](notebooks/materialization_freshness.py)
+is the operational dashboard for latest Dagster materialization timestamps and
+freshness gaps across table-like assets. It reuses
+[src/marimoserver/dagster_graphql.py](src/marimoserver/dagster_graphql.py)
+and [src/marimoserver/table_explorer.py](src/marimoserver/table_explorer.py)
+instead of adding notebook-local Dagster or storage access paths.
+
+The dashboard shows first-viewport cards for GraphQL availability,
+timestamped assets, maximum freshness gap, and storage overlay health. It
+summarizes latest and oldest materialization timestamps by asset group and
+layer/domain, then lists asset-level freshness rows with materialized,
+unmaterialized, GraphQL-unavailable, storage-missing, and storage-only states.
+Filters are bounded to catalogue metadata: asset group, layer/domain,
+freshness state, minimum freshness gap, and text search. The dashboard does not
+preview table rows or scan table contents.
 
 ## S3 bucket health
 
@@ -345,6 +408,24 @@ instead of disappearing from the matrix. Empty reads, unavailable Parquet
 prefixes, unavailable Dagster GraphQL metadata, and bounded AWS preview mode
 remain visible in the load diagnostics and coverage state columns.
 
+## Source table lineage explorer
+
+[notebooks/source_table_lineage_explorer.py](notebooks/source_table_lineage_explorer.py)
+is an analytical dashboard for moving from a curated `silver.gas_model` asset
+to represented source systems, source tables, and extra `source_*` lineage
+fields. It uses
+[src/marimoserver/source_lineage_explorer.py](src/marimoserver/source_lineage_explorer.py)
+for row extraction, explicit missing-metadata states, registry-backed concept
+card links, generated Market context paths, source chunk IDs, table explorer
+deep links, and asset metadata links.
+
+The dashboard reuses the source coverage matrix's bounded table read surface
+and table catalogue overlay. It recognizes scalar `source_system` and
+`source_table` columns plus list-based `source_systems` and `source_tables`
+columns. Missing source-system or source-table fields, empty metadata values,
+empty reads, unavailable reads, unmapped registry metadata, and absent extra
+lineage fields render as explicit gaps.
+
 ## Gas Day explainer dashboard
 
 [notebooks/gas_day_explainer.py](notebooks/gas_day_explainer.py) is an
@@ -401,6 +482,85 @@ as `source_system + zone_type + source_zone_id`, preserving the distinction
 between STTM hubs and source-specific zones. Empty reads and unavailable
 Parquet prefixes render designed empty states with the checked asset, read
 policy, and refresh action.
+
+## Connection Point explainer dashboard
+
+[notebooks/connection_point_explainer.py](notebooks/connection_point_explainer.py)
+is an analytical dashboard for the Connection Point concept. It renders the
+registry-backed context panel with the generated-gold path and source chunk IDs
+copied from the Gas market knowledge base, then loads bounded samples from
+`silver.gas_model.silver_gas_dim_connection_point`,
+`silver.gas_model.silver_gas_dim_facility`,
+`silver.gas_model.silver_gas_dim_location`,
+`silver.gas_model.silver_gas_dim_zone`,
+`silver.gas_model.silver_gas_fact_connection_point_flow`, and
+`silver.gas_model.silver_gas_fact_capacity_outlook` through the shared gas
+model loader.
+
+The dashboard summarizes current connection point dimension coverage by source
+system, source table, source connection point identifier, flow direction,
+facility link, location link, zone link, and exemption flag. Its relationship
+view keeps Facility, Location, Hub / Zone, actual flow, and capacity context
+visible where the bounded samples expose keys or source identifiers. Empty
+reads and unavailable Parquet prefixes render designed empty states with the
+checked assets, read policy, and refresh action.
+
+## Flow operations dashboard
+
+[notebooks/flow_operations.py](notebooks/flow_operations.py) is an operational
+dashboard for the Flow concept. It renders the registry-backed Flow context
+panel and context links to Facility, Connection Point, Gas Day, source
+coverage, table explorer, schedule, capacity, and GBB map surfaces, then loads
+bounded recent samples from
+`silver.gas_model.silver_gas_fact_connection_point_flow`,
+`silver.gas_model.silver_gas_fact_facility_flow_storage`,
+`silver.gas_model.silver_gas_fact_nomination_forecast`, and
+`silver.gas_model.silver_gas_fact_operational_meter_flow` through the shared
+gas model loader.
+
+The dashboard summarizes loaded Flow facts by source system and source table,
+shows first-viewport data health, reports bounded-read timing and cache state,
+and flattens populated actual flow, storage, nomination forecast, and
+operational meter quantities into recent/sample observations. Missing tables,
+unavailable Parquet prefixes, empty reads, and missing columns render designed
+empty states with the checked assets, read policy, and refresh action.
+
+## Capacity outlook dashboard
+
+[notebooks/capacity_outlook.py](notebooks/capacity_outlook.py) is an
+operational dashboard over
+`silver.gas_model.silver_gas_fact_capacity_outlook`. It renders the
+registry-backed Capacity context panel and links to Facility, Flow, Connection
+Point, Gas Day, GBB map, source coverage, and table explorer surfaces, then
+loads bounded recent samples through the shared gas model loader.
+
+The dashboard summarizes capacity source coverage, `capacity_type`,
+`flow_direction`, source facility, date range, and `capacity_quantity_tj`
+fields. It distinguishes short-term, medium-term, uncontracted, nameplate, and
+connection-point nameplate source coverage from the loaded `source_table` and
+`source_tables` values where present. Missing tables, unavailable Parquet
+prefixes, empty reads, filter misses, and missing columns render designed empty
+states with the checked asset, read policy, and refresh action.
+
+## Nomination and demand forecast dashboard
+
+[notebooks/nomination_demand_forecast.py](notebooks/nomination_demand_forecast.py)
+is an analytical dashboard over
+`silver.gas_model.silver_gas_fact_nomination_forecast`. It uses the shared
+bounded gas model loader and session cache from
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py), then
+filters the loaded bounded preview by Gas Day, `source_system`,
+`source_facility_id`, and `source_location_id`.
+
+The dashboard shows loaded nomination forecast KPIs, forecast type/version
+coverage, current/future versus historical forecast horizon labels, demand,
+supply, transfer, and override forecast measures, source coverage by source
+system and source table, bounded row previews, and Flow, Facility, Gas Day,
+facility flow/storage, map, source coverage, and table explorer context links
+from the Marimo registry. Historical actuals are intentionally outside this
+forecast-only view; missing nomination forecast data, unavailable Parquet
+prefixes, and filter combinations with no matches render dashboard empty states
+with the checked table, read policy, and refresh action.
 
 ## Gas market dashboard
 
@@ -525,6 +685,43 @@ data, unavailable Parquet prefixes, and filter combinations with no matches
 render dashboard empty states with the checked table, read policy, and refresh
 action.
 
+## Facility flow and storage dashboard
+
+[notebooks/facility_flow_storage.py](notebooks/facility_flow_storage.py) is an
+analytical dashboard over
+`silver.gas_model.silver_gas_fact_facility_flow_storage`. It uses the shared
+bounded gas model loader and session cache from
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py), then
+filters the loaded bounded preview by Gas Day, source facility, and
+`source_system`.
+
+The dashboard shows loaded facility flow/storage KPIs, facility-level demand,
+supply, transfer-in, transfer-out, held-in-storage, cushion-gas storage,
+latest Gas Day, source coverage by source system and source table, Gas Day
+totals, bounded row previews, and Facility, Flow, Capacity, map, source
+coverage, and table explorer context links from the Marimo registry. Missing
+facility flow/storage data, unavailable Parquet prefixes, and filter
+combinations with no matches render dashboard empty states with the checked
+table, read policy, and refresh action.
+
+## Linepack adequacy dashboard
+
+[notebooks/linepack_adequacy.py](notebooks/linepack_adequacy.py) is an
+analytical dashboard over `silver.gas_model.silver_gas_fact_linepack`. It uses
+the shared bounded gas model loader and session cache from
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py), then
+filters the loaded bounded preview by Gas Day, source facility, zone,
+`adequacy_flag`, and `source_system`.
+
+The dashboard shows loaded linepack KPIs, `actual_linepack_gj` quantity
+coverage, adequacy flags and descriptions, facility and zone coverage, source
+coverage by source system and source table, bounded row previews, and
+Linepack, Flow, Capacity, MOS, source coverage, and table explorer context
+links from the Marimo registry. Missing linepack data, unavailable Parquet
+prefixes, missing optional fields, and filter combinations with no matches
+render dashboard empty states with the checked table, read policy, and refresh
+action.
+
 ## Bid-Offer stack dashboard
 
 [notebooks/gas_bid_offer_stack.py](notebooks/gas_bid_offer_stack.py) is an
@@ -645,13 +842,16 @@ controls, data reads, Plotly traces, or dashboard routes.
 
 With the local backend stack running, open the Marimo concept gallery through
 Caddy and choose an available card such as `data_readiness_overview`,
-`dagster_asset_catalogue_status`, `s3_bucket_health`, `glossary_explorer`,
-`concept_to_asset_explorer`, `table_explorer`, `source_coverage_matrix`,
-`sample_energy_market`, `gas_market_prices`, `gas_schedule_runs`,
+`dagster_asset_catalogue_status`, `materialization_freshness`,
+`s3_bucket_health`, `glossary_explorer`, `concept_to_asset_explorer`,
+`citation_chain_explorer`, `table_explorer`, `source_coverage_matrix`,
+`source_table_lineage_explorer`, `sample_energy_market`, `gas_market_prices`,
+`gas_schedule_runs`,
 `system_notices`, `gas_settlement_activity`,
-`gas_customer_transfer_activity`, `gas_bid_offer_stack`,
-`gas_quality_composition`, `facility_explainer`, `participant_explainer`,
-`hub_zone_explainer`, or `gbb_interactive_map`:
+`gas_customer_transfer_activity`, `facility_flow_storage`,
+`gas_bid_offer_stack`, `gas_quality_composition`, `facility_explainer`,
+`participant_explainer`, `hub_zone_explainer`, `connection_point_explainer`,
+`flow_operations`, `capacity_outlook`, or `gbb_interactive_map`:
 
 ```text
 http://localhost/marimo
@@ -687,6 +887,13 @@ cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/source_coverage_matrix.py
 ```
 
+Use the same pattern for the source table lineage explorer:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/source_table_lineage_explorer.py
+```
+
 Use the same pattern for the data readiness overview:
 
 ```bash
@@ -699,6 +906,13 @@ Use the same pattern for the Dagster asset catalogue status dashboard:
 ```bash
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/dagster_asset_catalogue_status.py
+```
+
+Use the same pattern for the materialization freshness dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/materialization_freshness.py
 ```
 
 Use the same pattern for the AWS bounded read diagnostics dashboard:
@@ -729,6 +943,13 @@ cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/concept_to_asset_explorer.py
 ```
 
+Use the same pattern for the citation-chain explorer:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/citation_chain_explorer.py
+```
+
 Use the same pattern for the GBB interactive map:
 
 ```bash
@@ -755,6 +976,20 @@ Use the same pattern for the Hub / Zone explainer dashboard:
 ```bash
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/hub_zone_explainer.py
+```
+
+Use the same pattern for the Connection Point explainer dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/connection_point_explainer.py
+```
+
+Use the same pattern for the Flow operations dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/flow_operations.py
 ```
 
 Use the same pattern for the system notices dashboard:
@@ -790,6 +1025,20 @@ Use the same pattern for the customer transfer and retail activity dashboard:
 ```bash
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gas_customer_transfer_activity.py
+```
+
+Use the same pattern for the facility flow and storage dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/facility_flow_storage.py
+```
+
+Use the same pattern for the capacity outlook dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/capacity_outlook.py
 ```
 
 Use the same pattern for the Bid / Offer stack dashboard:
@@ -861,6 +1110,12 @@ Concept-to-asset explorer coverage in
 [tests/component/test_gas_dashboard.py](tests/component/test_gas_dashboard.py)
 verifies mapped concepts, table explorer deep links, unmapped concepts, and
 unmapped registry assets.
+Schema data dictionary coverage in
+[tests/component/test_data_dictionary_explorer.py](tests/component/test_data_dictionary_explorer.py)
+verifies schema metadata rows, explicit missing metadata states, unavailable
+GraphQL handling, concept grouping, mart classification, and filters.
+Citation-chain explorer coverage in the same test module verifies complete
+source chunk records and incomplete records with registry coverage gaps.
 
 Run the Marimo **Commit check** surface before handing changes to Ralph:
 
@@ -893,6 +1148,9 @@ prek run -a
   - `backend-services/marimo/src/marimoserver/gbb_interactive_map.py`
   - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
   - `backend-services/marimo/src/marimoserver/concept_asset_explorer.py`
+  - `backend-services/marimo/src/marimoserver/data_dictionary_explorer.py`
+  - `backend-services/marimo/src/marimoserver/citation_chain_explorer.py`
+  - `backend-services/marimo/src/marimoserver/source_lineage_explorer.py`
   - `backend-services/marimo/src/marimoserver/dagster_graphql.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/src/marimoserver/data_readiness.py`
@@ -901,21 +1159,31 @@ prek run -a
   - `backend-services/marimo/notebooks/gbb_interactive_map.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/source_coverage_matrix.py`
+  - `backend-services/marimo/notebooks/source_table_lineage_explorer.py`
   - `backend-services/marimo/notebooks/gas_day_explainer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/aws_bounded_read_diagnostics.py`
   - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
+  - `backend-services/marimo/notebooks/materialization_freshness.py`
   - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/concept_to_asset_explorer.py`
+  - `backend-services/marimo/notebooks/schema_data_dictionary_explorer.py`
+  - `backend-services/marimo/notebooks/citation_chain_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
   - `backend-services/marimo/notebooks/facility_explainer.py`
   - `backend-services/marimo/notebooks/participant_explainer.py`
   - `backend-services/marimo/notebooks/hub_zone_explainer.py`
+  - `backend-services/marimo/notebooks/connection_point_explainer.py`
+  - `backend-services/marimo/notebooks/flow_operations.py`
+  - `backend-services/marimo/notebooks/nomination_demand_forecast.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
+  - `backend-services/marimo/notebooks/facility_flow_storage.py`
+  - `backend-services/marimo/notebooks/capacity_outlook.py`
+  - `backend-services/marimo/notebooks/linepack_adequacy.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/marimo/tests/component/conftest.py`
@@ -925,6 +1193,7 @@ prek run -a
   - `backend-services/marimo/tests/component/dashboard_smoke_harness.py`
   - `backend-services/marimo/tests/component/test_dashboard_smoke.py`
   - `backend-services/marimo/tests/component/test_gas_dashboard.py`
+  - `backend-services/marimo/tests/component/test_data_dictionary_explorer.py`
   - `backend-services/marimo/tests/component/test_table_explorer.py`
   - `backend-services/marimo/tests/component/test_glossary_explorer.py`
   - `backend-services/marimo/tests/component/test_data_readiness.py`

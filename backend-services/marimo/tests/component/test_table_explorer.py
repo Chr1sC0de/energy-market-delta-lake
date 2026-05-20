@@ -23,6 +23,8 @@ from marimoserver.table_explorer import (
     BucketHealthState,
     BucketStatus,
     CataloguedTable,
+    MaterializationFreshnessRow,
+    MaterializationFreshnessState,
     S3Client,
     StorageDiscovery,
     TableQuery,
@@ -36,6 +38,7 @@ from marimoserver.table_explorer import (
     bucket_health_state,
     build_bucket_health_summary,
     build_asset_catalogue_summary,
+    build_materialization_freshness_summary,
     cached_table_scan,
     catalogued_table_by_id,
     catalogued_table_group,
@@ -52,12 +55,21 @@ from marimoserver.table_explorer import (
     explore_table_scan,
     filter_table_prefixes,
     filter_catalogued_tables,
+    filter_materialization_freshness_rows,
+    format_freshness_gap,
     format_materialization_timestamp,
     include_deep_linked_catalogued_table,
     inspect_table,
+    materialization_freshness_action_markdown,
+    materialization_freshness_frame,
+    materialization_freshness_rows,
+    materialization_freshness_status_cards,
+    materialization_group_freshness_frame,
+    materialization_layer_freshness_frame,
     overlay_table_catalogue,
     read_delta_table,
     read_parquet_table,
+    render_materialization_freshness_status_cards,
     render_asset_catalogue_status_cards,
     render_storage_health_cards,
     render_table_workbench_navigation,
@@ -757,6 +769,354 @@ def test_filter_catalogued_tables_combines_group_layer_status_and_search() -> No
     assert filter_catalogued_tables(entries, search="storage only") == (storage_entry,)
 
 
+def test_materialization_freshness_rows_calculate_gaps_and_storage_states() -> None:
+    base_timestamp = 1_714_000_000.0
+    as_of_timestamp = base_timestamp + 86_400
+    live_table = TablePrefix(
+        bucket="dev-energy-market-aemo",
+        prefix="silver/gas_model/live",
+        table_format=TableFormat.PARQUET,
+        parquet_files=("silver/gas_model/live/part-000.parquet",),
+    )
+    entries = (
+        CataloguedTable(
+            entry_id="asset:silver/gas_model/live",
+            status=TableAvailability.LIVE,
+            asset=_asset(
+                ("silver", "gas_model", "live"),
+                uri=live_table.uri,
+                latest_materialization_timestamp=base_timestamp,
+            ),
+            table=live_table,
+        ),
+        CataloguedTable(
+            entry_id="asset:silver/gas_model/missing",
+            status=TableAvailability.MISSING,
+            asset=_asset(
+                ("silver", "gas_model", "missing"),
+                uri="s3://dev-energy-market-aemo/silver/gas_model/missing",
+                latest_materialization_timestamp=base_timestamp + 3_600,
+            ),
+            table=None,
+        ),
+        CataloguedTable(
+            entry_id="asset:bronze/raw/unmaterialized",
+            status=TableAvailability.UNMATERIALIZED,
+            asset=_asset(
+                ("bronze", "raw", "unmaterialized"),
+                uri="s3://dev-energy-market-aemo/bronze/raw/unmaterialized",
+                latest_materialization_timestamp=None,
+                group_name="raw",
+            ),
+            table=None,
+        ),
+        CataloguedTable(
+            entry_id="storage:dev-energy-market-landing/bronze/storage_only",
+            status=TableAvailability.LIVE,
+            asset=None,
+            table=TablePrefix(
+                bucket="dev-energy-market-landing",
+                prefix="bronze/storage_only",
+                table_format=TableFormat.PARQUET,
+                parquet_files=("bronze/storage_only/part-000.parquet",),
+            ),
+        ),
+    )
+    catalogue = DagsterAssetCatalogue(
+        url="http://dagster/graphql",
+        error=None,
+        assets=tuple(entry.asset for entry in entries if entry.asset is not None),
+    )
+
+    freshness_rows = materialization_freshness_rows(
+        entries,
+        as_of_timestamp=as_of_timestamp,
+    )
+    summary = build_materialization_freshness_summary(catalogue, freshness_rows)
+    asset_frame = materialization_freshness_frame(freshness_rows)
+    action_markdown = materialization_freshness_action_markdown(summary)
+    status_cards = materialization_freshness_status_cards(summary)
+    group_frame = {
+        row["group"]: row
+        for row in materialization_group_freshness_frame(freshness_rows).to_dicts()
+    }
+    layer_frame = {
+        row["layer/domain"]: row
+        for row in materialization_layer_freshness_frame(freshness_rows).to_dicts()
+    }
+
+    states_by_asset = {row.display_name: row.state for row in freshness_rows}
+    assert states_by_asset == {
+        "silver/gas_model/live": MaterializationFreshnessState.MATERIALIZED,
+        "silver/gas_model/missing": MaterializationFreshnessState.STORAGE_MISSING,
+        "bronze/raw/unmaterialized": MaterializationFreshnessState.UNMATERIALIZED,
+        "dev-energy-market-landing/bronze/storage_only": (
+            MaterializationFreshnessState.STORAGE_ONLY
+        ),
+    }
+    assert freshness_rows[0].freshness_gap_seconds == 86_400
+    assert summary.asset_count == 3
+    assert summary.materialized_count == 1
+    assert summary.storage_missing_count == 1
+    assert summary.unmaterialized_count == 1
+    assert summary.storage_only_count == 1
+    assert summary.timestamped_asset_count == 2
+    assert summary.degraded_count == 2
+    assert summary.latest_materialization_label == "2024-04-25T00:06:40+00:00"
+    assert summary.oldest_materialization_label == "2024-04-24T23:06:40+00:00"
+    assert summary.max_freshness_gap_label == "1.0 days"
+    assert "Unmaterialized assets" in action_markdown
+    assert "Storage-missing assets" in action_markdown
+    assert [card.area for card in status_cards] == [
+        "Dagster GraphQL",
+        "Materialized assets",
+        "Freshness gap",
+        "Storage overlay",
+    ]
+    assert status_cards[0].state is AssetCatalogueState.READY
+    assert status_cards[1].state is AssetCatalogueState.ATTENTION
+    assert status_cards[2].state is AssetCatalogueState.ATTENTION
+    assert status_cards[3].state is AssetCatalogueState.ATTENTION
+    assert asset_frame["state"].to_list() == [
+        "Materialized",
+        "Storage missing",
+        "Unmaterialized",
+        "Storage only",
+    ]
+    assert group_frame["gas_model"]["latest materialization"] == (
+        "2024-04-25T00:06:40+00:00"
+    )
+    assert group_frame["gas_model"]["max freshness gap hours"] == 24.0
+    assert layer_frame["silver"]["assets"] == 2
+    assert layer_frame["bronze"]["rows"] == 2
+
+
+def test_materialization_freshness_handles_empty_catalogue() -> None:
+    catalogue = DagsterAssetCatalogue(
+        url="http://dagster/graphql",
+        error=None,
+        assets=(),
+    )
+    freshness_rows = materialization_freshness_rows(())
+    summary = build_materialization_freshness_summary(catalogue, freshness_rows)
+    action_markdown = materialization_freshness_action_markdown(summary)
+    status_cards = materialization_freshness_status_cards(summary)
+    asset_frame = materialization_freshness_frame(freshness_rows)
+    group_frame = materialization_group_freshness_frame(freshness_rows)
+    layer_frame = materialization_layer_freshness_frame(freshness_rows)
+
+    assert summary.graphql_available is True
+    assert summary.asset_count == 0
+    assert "no table assets" in action_markdown
+    assert status_cards[0].state is AssetCatalogueState.EMPTY
+    assert status_cards[1].state is AssetCatalogueState.EMPTY
+    assert status_cards[2].state is AssetCatalogueState.ATTENTION
+    assert status_cards[3].state is AssetCatalogueState.EMPTY
+    assert asset_frame.row(0, named=True)["asset"] == (
+        "No materialization freshness rows available"
+    )
+    assert group_frame.row(0, named=True)["group"] == (
+        "No materialization freshness rows available"
+    )
+    assert layer_frame.row(0, named=True)["layer/domain"] == (
+        "No materialization freshness rows available"
+    )
+
+
+def test_materialization_freshness_handles_unavailable_graphql() -> None:
+    table = TablePrefix(
+        bucket="dev-energy-market-aemo",
+        prefix="silver/gas_model/live",
+        table_format=TableFormat.DELTA,
+        parquet_files=(),
+    )
+    catalogue = DagsterAssetCatalogue(
+        url="http://dagster/graphql",
+        error="Connection refused",
+        assets=(),
+    )
+    entries = overlay_table_catalogue(
+        StorageDiscovery(buckets=(), tables=(table,), bucket_listing_error=None),
+        catalogue,
+    )
+
+    freshness_rows = materialization_freshness_rows(
+        entries,
+        as_of_timestamp=1_714_086_400,
+    )
+    summary = build_materialization_freshness_summary(catalogue, freshness_rows)
+    action_markdown = materialization_freshness_action_markdown(summary)
+    cards_html = render_materialization_freshness_status_cards(summary)
+    frame = materialization_freshness_frame(freshness_rows)
+
+    assert freshness_rows[0].state is MaterializationFreshnessState.GRAPHQL_UNAVAILABLE
+    assert summary.graphql_available is False
+    assert summary.graphql_unavailable_count == 1
+    assert summary.max_freshness_gap_seconds is None
+    assert "restore `DAGSTER_GRAPHQL_URL`" in action_markdown
+    assert "GraphQL-unavailable rows" in action_markdown
+    assert "Materialization freshness summary" in cards_html
+    assert frame.row(0, named=True)["state"] == "GraphQL unavailable"
+    assert frame.row(0, named=True)["latest materialization"] == ""
+
+
+def test_materialization_freshness_filters_unmaterialized_and_gap_rows() -> None:
+    base_timestamp = 1_714_000_000.0
+    table = TablePrefix(
+        bucket="dev-energy-market-aemo",
+        prefix="silver/gas_model/live",
+        table_format=TableFormat.PARQUET,
+        parquet_files=("silver/gas_model/live/part-000.parquet",),
+    )
+    materialized_asset = _asset(
+        ("silver", "gas_model", "live"),
+        uri=table.uri,
+        latest_materialization_timestamp=base_timestamp,
+    )
+    unmaterialized_asset = _asset(
+        ("silver", "gas_model", "unmaterialized"),
+        uri=table.uri,
+        latest_materialization_timestamp=None,
+    )
+    materialized = CataloguedTable(
+        entry_id="asset:silver/gas_model/live",
+        status=TableAvailability.LIVE,
+        asset=materialized_asset,
+        table=table,
+    )
+    unmaterialized_with_storage = CataloguedTable(
+        entry_id="asset:silver/gas_model/unmaterialized",
+        status=TableAvailability.LIVE,
+        asset=unmaterialized_asset,
+        table=table,
+    )
+    freshness_rows = materialization_freshness_rows(
+        (materialized, unmaterialized_with_storage),
+        as_of_timestamp=base_timestamp + 7_200,
+    )
+    summary = build_materialization_freshness_summary(
+        DagsterAssetCatalogue(
+            url="http://dagster/graphql",
+            error=None,
+            assets=(materialized_asset, unmaterialized_asset),
+        ),
+        freshness_rows,
+    )
+
+    assert freshness_rows[1].state is MaterializationFreshnessState.UNMATERIALIZED
+    assert summary.unmaterialized_count == 1
+    assert "Unmaterialized assets" in materialization_freshness_action_markdown(summary)
+    assert filter_materialization_freshness_rows(
+        freshness_rows,
+        states=(MaterializationFreshnessState.UNMATERIALIZED,),
+    ) == (freshness_rows[1],)
+    assert filter_materialization_freshness_rows(
+        freshness_rows,
+        states=("Unmaterialized",),
+    ) == (freshness_rows[1],)
+    assert filter_materialization_freshness_rows(
+        freshness_rows,
+        groups=("gas_model",),
+        layers_or_domains=("silver",),
+        search="live",
+        minimum_gap_hours=1.5,
+    ) == (freshness_rows[0],)
+    assert (
+        filter_materialization_freshness_rows(
+            freshness_rows,
+            groups=("other",),
+        )
+        == ()
+    )
+    assert (
+        filter_materialization_freshness_rows(
+            freshness_rows,
+            layers_or_domains=("gold",),
+        )
+        == ()
+    )
+    assert (
+        filter_materialization_freshness_rows(
+            freshness_rows,
+            search="no-match",
+        )
+        == ()
+    )
+    assert format_freshness_gap(freshness_rows[0].freshness_gap_seconds) == (
+        "2.0 hours"
+    )
+
+
+def test_materialization_freshness_ready_rows_have_no_action_guidance() -> None:
+    base_timestamp = 1_714_000_000.0
+    table = TablePrefix(
+        bucket="dev-energy-market-aemo",
+        prefix="silver/gas_model/fresh",
+        table_format=TableFormat.PARQUET,
+        parquet_files=("silver/gas_model/fresh/part-000.parquet",),
+    )
+    asset = _asset(
+        ("silver", "gas_model", "fresh"),
+        uri=table.uri,
+        latest_materialization_timestamp=base_timestamp,
+    )
+    freshness_rows = materialization_freshness_rows(
+        (
+            CataloguedTable(
+                entry_id="asset:silver/gas_model/fresh",
+                status=TableAvailability.LIVE,
+                asset=asset,
+                table=table,
+            ),
+        ),
+        as_of_timestamp=base_timestamp,
+    )
+    summary = build_materialization_freshness_summary(
+        DagsterAssetCatalogue(
+            url="http://dagster/graphql",
+            error=None,
+            assets=(asset,),
+        ),
+        freshness_rows,
+    )
+    status_cards = materialization_freshness_status_cards(summary)
+
+    assert materialization_freshness_action_markdown(summary) == (
+        "Materialization freshness metadata is usable under the current configuration."
+    )
+    assert status_cards[1].state is AssetCatalogueState.READY
+    assert status_cards[1].action == "No action."
+    assert status_cards[2].state is AssetCatalogueState.READY
+    assert status_cards[2].action == "No action."
+    assert status_cards[3].state is AssetCatalogueState.READY
+    assert status_cards[3].action == "No action."
+
+
+def test_materialization_freshness_group_frame_skips_empty_scope_values() -> None:
+    frame = materialization_group_freshness_frame(
+        (
+            MaterializationFreshnessRow(
+                entry_id="asset:unscoped",
+                display_name="unscoped",
+                asset_key="unscoped",
+                group="",
+                layers_or_domains=("silver",),
+                state=MaterializationFreshnessState.MATERIALIZED,
+                latest_materialization_timestamp=1_714_000_000.0,
+                freshness_gap_seconds=0.0,
+                uri="s3://dev-energy-market-aemo/silver/unscoped",
+                storage_available=True,
+                bucket="dev-energy-market-aemo",
+                prefix="silver/unscoped",
+            ),
+        )
+    )
+
+    assert frame.row(0, named=True)["group"] == (
+        "No materialization freshness rows available"
+    )
+
+
 def test_table_workbench_navigation_links_readiness_bounded_and_concepts() -> None:
     table_name = "silver_gas_fact_market_price"
     table = TablePrefix(
@@ -842,6 +1202,46 @@ def test_concept_gallery_metadata_maps_participant_membership_dashboard() -> Non
     assert (
         "chunk-gbb-guide-participants-report"
         in metadata_rows["participant-context"]["source chunk ids"]
+    )
+
+
+def test_concept_gallery_metadata_maps_nomination_forecast_dashboard() -> None:
+    table_name = "silver_gas_fact_nomination_forecast"
+    table = TablePrefix(
+        bucket="dev-energy-market-aemo",
+        prefix=f"silver/gas_model/{table_name}",
+        table_format=TableFormat.PARQUET,
+        parquet_files=(f"silver/gas_model/{table_name}/part-000.parquet",),
+    )
+    entry = CataloguedTable(
+        entry_id=f"asset:silver/gas_model/{table_name}",
+        status=TableAvailability.LIVE,
+        asset=_asset(
+            ("silver", "gas_model", table_name),
+            uri=table.uri,
+            latest_materialization_timestamp=1_714_000_000,
+        ),
+        table=table,
+    )
+
+    concept_ids = [
+        concept.concept_id for concept in concept_gallery_entries_for_table(entry)
+    ]
+    metadata_rows = {
+        row["concept id"]: row
+        for row in concept_gallery_metadata_frame(entry).to_dicts()
+    }
+
+    assert "nomination-demand-forecast" in concept_ids
+    assert "flow-context" in concept_ids
+    assert metadata_rows["nomination-demand-forecast"]["status"] == "available"
+    assert (
+        metadata_rows["nomination-demand-forecast"]["notebook route"]
+        == "/marimo/nomination_demand_forecast/"
+    )
+    assert (
+        "chunk-gbb-guide-flow-report"
+        in metadata_rows["nomination-demand-forecast"]["source chunk ids"]
     )
 
 

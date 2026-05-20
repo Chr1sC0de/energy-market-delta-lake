@@ -14,6 +14,7 @@ from marimoserver.data_readiness import (
 from marimoserver.gas_dashboard import (
     BID_STACK_TABLE_SPEC,
     CUSTOMER_TRANSFER_TABLE_SPEC,
+    FACILITY_FLOW_STORAGE_TABLE_SPEC,
     GAS_QUALITY_TABLE_SPEC,
     MARKET_PRICE_TABLE_SPEC,
     SCHEDULE_RUN_TABLE_SPEC,
@@ -23,11 +24,13 @@ from marimoserver.gas_dashboard import (
     bid_stack_empty_state_markdown,
     customer_transfer_empty_state_markdown,
     discover_dashboard_config,
+    facility_flow_storage_empty_state_markdown,
     gas_quality_empty_state_markdown,
     gas_table_load_status_frame,
     gas_table_load_status_message,
     load_bid_stack_table,
     load_customer_transfer_table,
+    load_facility_flow_storage_table,
     load_gas_quality_table,
     load_gas_model_tables,
     load_market_price_table,
@@ -276,6 +279,34 @@ def test_customer_transfer_dashboard_bounded_loader_renders_empty_state() -> Non
     assert load.spec == CUSTOMER_TRANSFER_TABLE_SPEC
     assert not load.available
     assert "No customer transfer data is available" in empty_markdown
+    assert "Bounded preview reads are capped at `12` rows per table" in empty_markdown
+
+
+def test_facility_flow_storage_dashboard_bounded_loader_renders_empty_state() -> None:
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "12",
+        }
+    )
+    captured_row_limits: list[int | None] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        captured_row_limits.append(row_limit)
+        return pl.DataFrame()
+
+    load = load_facility_flow_storage_table(config, reader=reader)
+    empty_markdown = facility_flow_storage_empty_state_markdown(load)
+
+    assert captured_row_limits == [12]
+    assert load.spec == FACILITY_FLOW_STORAGE_TABLE_SPEC
+    assert not load.available
+    assert "No facility flow or storage data is available" in empty_markdown
     assert "Bounded preview reads are capped at `12` rows per table" in empty_markdown
 
 

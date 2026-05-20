@@ -228,15 +228,22 @@ Useful routes:
 - `/dagster-webserver/admin` for the protected admin Dagster UI
 - `/marimo` for curated Marimo dashboards through Caddy, including the table
   explorer, data readiness overview, AWS bounded-read diagnostics, market
-  prices, schedule runs, settlement activity, customer transfer and retail
-  activity, system notices, Bid / Offer stack, gas quality and composition, and
-  Hub / Zone explainer dashboards. The Hub / Zone explainer connects generated
-  Market context metadata to bounded `silver_gas_dim_zone` coverage and
-  source-qualified identifiers. The table explorer lists the Dagster table
-  asset catalogue, filters by group, layer or domain, status, and search text,
-  and previews only materialized tables. Its selected-table workbench links
-  onward to data readiness, AWS bounded-read diagnostics, and concept-gallery
-  metadata for mapped `silver.gas_model` assets.
+  prices, materialization freshness, source coverage, source table lineage,
+  schedule runs, settlement activity, customer transfer and retail activity,
+  system notices, Bid / Offer stack, gas quality and composition, schema data
+  dictionary, citation-chain explorer, Hub / Zone explainer, and Flow
+  operations dashboards. The
+  schema data dictionary groups read-only Dagster column metadata by Market
+  context concept, gas-model mart, mapped asset, and dashboard route. The
+  source table lineage explorer connects curated `silver.gas_model` assets to
+  source systems, source tables, lineage fields, and registry-backed Market
+  context links. The Hub / Zone explainer connects generated Market context
+  metadata to bounded `silver_gas_dim_zone` coverage and source-qualified
+  identifiers. The table explorer lists the
+  Dagster table asset catalogue, filters by group, layer or domain, status, and
+  search text, and previews only materialized tables. Its selected-table
+  workbench links onward to data readiness, AWS bounded-read diagnostics, and
+  concept-gallery metadata for mapped `silver.gas_model` assets.
 - `http://127.0.0.1:2719` for the local-only Marimo-Codex research workspace
 
 The `aemo-etl` code location should appear in Dagster under
@@ -789,24 +796,37 @@ developer-stack setting. It renders e2e Dagster config per run from the current
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
   - `backend-services/marimo/src/marimoserver/bounded_read_diagnostics.py`
   - `backend-services/marimo/src/marimoserver/concept_asset_explorer.py`
+  - `backend-services/marimo/src/marimoserver/data_dictionary_explorer.py`
+  - `backend-services/marimo/src/marimoserver/citation_chain_explorer.py`
+  - `backend-services/marimo/src/marimoserver/source_lineage_explorer.py`
   - `backend-services/marimo/src/marimoserver/data_readiness.py`
   - `backend-services/marimo/src/marimoserver/table_explorer.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/source_coverage_matrix.py`
+  - `backend-services/marimo/notebooks/source_table_lineage_explorer.py`
   - `backend-services/marimo/notebooks/gas_day_explainer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/aws_bounded_read_diagnostics.py`
   - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
+  - `backend-services/marimo/notebooks/materialization_freshness.py`
   - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/concept_to_asset_explorer.py`
+  - `backend-services/marimo/notebooks/schema_data_dictionary_explorer.py`
+  - `backend-services/marimo/notebooks/citation_chain_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
   - `backend-services/marimo/notebooks/facility_explainer.py`
   - `backend-services/marimo/notebooks/participant_explainer.py`
   - `backend-services/marimo/notebooks/hub_zone_explainer.py`
+  - `backend-services/marimo/notebooks/connection_point_explainer.py`
+  - `backend-services/marimo/notebooks/flow_operations.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
+  - `backend-services/marimo/notebooks/facility_flow_storage.py`
+  - `backend-services/marimo/notebooks/capacity_outlook.py`
+  - `backend-services/marimo/notebooks/linepack_adequacy.py`
+  - `backend-services/marimo/notebooks/nomination_demand_forecast.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/scripts/aemo-etl-e2e`

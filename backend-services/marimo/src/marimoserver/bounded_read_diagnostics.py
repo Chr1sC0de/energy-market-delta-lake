@@ -35,6 +35,8 @@ _RECENT_GAS_DASHBOARD_IDS = frozenset(
         "gas-schedule-runs",
         "settlement-context",
         "gas-customer-transfer-activity",
+        "facility-flow-storage",
+        "capacity-context",
         "bid-offer-context",
         "gas-system-notices",
         "gas-quality-composition",
@@ -259,7 +261,11 @@ def _dashboard_read_behavior_row(
             "No table-row reads",
             "Environment settings and registry entries",
         )
-    if concept_id in {"concept-to-asset-explorer", "glossary-explorer"}:
+    if concept_id in {
+        "citation-chain-explorer",
+        "concept-to-asset-explorer",
+        "glossary-explorer",
+    }:
         return _row(
             entry,
             route,
@@ -295,7 +301,12 @@ def _dashboard_read_behavior_row(
             format_row_limit(bounded_row_limit(table_config)),
             "Configured table buckets",
         )
-    if concept_id in {"source-coverage-matrix", "gas-day-context", "facility-context"}:
+    if concept_id in {
+        "source-coverage-matrix",
+        "source-table-lineage-explorer",
+        "gas-day-context",
+        "facility-context",
+    }:
         return _forced_bounded_registry_row(entry, route, gas_config)
     if concept_id == "gas-market-overview":
         return _row(

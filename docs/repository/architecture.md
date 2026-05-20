@@ -132,11 +132,15 @@ glossary explorer browses packaged registry metadata without reading generated
 gold Markdown or live S3 tables at runtime. Its concept-to-asset explorer maps
 Market context glossary concepts to registry backing assets, dashboard routes,
 planned dashboard cards, and table explorer deep links without reading table
-rows. Its market price, schedule run, settlement activity, customer transfer,
-Bid / Offer stack, gas quality, and system notice dashboards use the shared
-bounded gas-model loader for read-only fact previews and summaries. Its Gas Day
-explainer uses registry context metadata and bounded gas-model samples to show
-date-field coverage across curated assets. Its Hub / Zone explainer uses the
+rows. Its citation-chain explorer audits registry metadata from generated-gold
+paths to source chunk IDs, silver chunk paths, and source hashes without
+opening generated corpus files. Its Flow operations, market price, schedule
+run, settlement activity, customer transfer, Bid / Offer stack, gas quality,
+and system notice dashboards use the shared bounded gas-model loader for
+read-only fact previews and summaries. Its Gas Day explainer uses registry
+context metadata and bounded
+gas-model samples to show date-field coverage across curated assets. Its Hub /
+Zone explainer uses the
 same bounded loader to show current `silver_gas_dim_zone` coverage and
 source-qualified identifiers. Its table explorer remains
 the selected-table workbench for storage inspection, readiness navigation,
@@ -217,8 +221,9 @@ without making local development performance claims.
   - provides the reverse-proxy image, root Astro portfolio, and routing rules
 - `backend-services/marimo`
   - notebook-oriented Subproject with a registry-backed `/marimo` concept
-    gallery, registry-only glossary explorer, immutable cache headers for
-    packaged static assets, a curated dashboard image used locally and in AWS,
+    gallery, registry-only glossary explorer, operational readiness and
+    materialization freshness dashboards, immutable cache headers for packaged
+    static assets, a curated dashboard image used locally and in AWS,
     plus a local-only Marimo-Codex research workspace image
 
 Gas market knowledge base responsibility:
@@ -268,22 +273,31 @@ Gas market knowledge base responsibility:
   - `backend-services/marimo/src/marimoserver/data_readiness.py`
   - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
   - `backend-services/marimo/src/marimoserver/concept_asset_explorer.py`
+  - `backend-services/marimo/src/marimoserver/citation_chain_explorer.py`
   - `backend-services/marimo/notebooks/table_explorer.py`
   - `backend-services/marimo/notebooks/source_coverage_matrix.py`
   - `backend-services/marimo/notebooks/gas_day_explainer.py`
   - `backend-services/marimo/notebooks/data_readiness_overview.py`
   - `backend-services/marimo/notebooks/dagster_asset_catalogue_status.py`
+  - `backend-services/marimo/notebooks/materialization_freshness.py`
   - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/concept_to_asset_explorer.py`
+  - `backend-services/marimo/notebooks/citation_chain_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
   - `backend-services/marimo/notebooks/facility_explainer.py`
   - `backend-services/marimo/notebooks/participant_explainer.py`
   - `backend-services/marimo/notebooks/hub_zone_explainer.py`
+  - `backend-services/marimo/notebooks/connection_point_explainer.py`
+  - `backend-services/marimo/notebooks/flow_operations.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
+  - `backend-services/marimo/notebooks/facility_flow_storage.py`
+  - `backend-services/marimo/notebooks/capacity_outlook.py`
+  - `backend-services/marimo/notebooks/linepack_adequacy.py`
+  - `backend-services/marimo/notebooks/nomination_demand_forecast.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
 - `sync.scope`: `architecture`

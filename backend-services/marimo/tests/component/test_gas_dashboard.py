@@ -9,6 +9,10 @@ import polars as pl
 import pytest
 
 from marimoserver.bounded_read_diagnostics import dashboard_read_behavior_frame
+from marimoserver.citation_chain_explorer import (
+    build_citation_chain_explorer,
+    render_citation_chain_explorer_html,
+)
 from marimoserver.concept_asset_explorer import (
     build_concept_asset_explorer,
     concept_mapping_by_title,
@@ -28,6 +32,15 @@ from marimoserver.gas_dashboard import (
     CUSTOMER_TRANSFER_SOURCE_SYSTEM_FILTER_ALL,
     CUSTOMER_TRANSFER_TABLE_NAME,
     CUSTOMER_TRANSFER_TABLE_SPEC,
+    CONNECTION_POINT_CONTEXT_ID,
+    CONNECTION_POINT_DIM_TABLE_NAME,
+    CONNECTION_POINT_FLOW_TABLE_NAME,
+    CONNECTION_POINT_TABLE_SPECS,
+    CAPACITY_CONTEXT_ID,
+    CAPACITY_OUTLOOK_FACILITY_FILTER_ALL,
+    CAPACITY_OUTLOOK_SOURCE_SYSTEM_FILTER_ALL,
+    CAPACITY_OUTLOOK_TABLE_NAME,
+    CAPACITY_OUTLOOK_TABLE_SPEC,
     GAS_MODEL_TABLES,
     GAS_DAY_CONTEXT_ID,
     GAS_QUALITY_QUALITY_TYPE_FILTER_ALL,
@@ -37,16 +50,40 @@ from marimoserver.gas_dashboard import (
     HUB_ZONE_CONTEXT_ID,
     HUB_ZONE_DIM_TABLE_NAME,
     HUB_ZONE_TABLE_SPECS,
+    LOCATION_DIM_TABLE_NAME,
+    LINEPACK_ADEQUACY_FLAG_FILTER_ALL,
+    LINEPACK_CONTEXT_ID,
+    LINEPACK_FACILITY_FILTER_ALL,
+    LINEPACK_GAS_DATE_FILTER_ALL,
+    LINEPACK_SOURCE_SYSTEM_FILTER_ALL,
+    LINEPACK_TABLE_NAME,
+    LINEPACK_TABLE_SPEC,
+    LINEPACK_ZONE_FILTER_ALL,
     FACILITY_CAPACITY_OUTLOOK_TABLE_NAME,
     FACILITY_CONTEXT_ID,
     FACILITY_DIM_TABLE_NAME,
+    FACILITY_FLOW_STORAGE_CONTEXT_ID,
+    FACILITY_FLOW_STORAGE_FACILITY_FILTER_ALL,
+    FACILITY_FLOW_STORAGE_GAS_DATE_FILTER_ALL,
+    FACILITY_FLOW_STORAGE_SOURCE_SYSTEM_FILTER_ALL,
     FACILITY_FLOW_STORAGE_TABLE_NAME,
+    FACILITY_FLOW_STORAGE_TABLE_SPEC,
     FACILITY_TABLE_SPECS,
+    FLOW_CONTEXT_ID,
+    FLOW_TABLE_SPECS,
     MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
     MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
     MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
     MARKET_PRICE_TABLE_NAME,
     MARKET_PRICE_TABLE_SPEC,
+    NOMINATION_FORECAST_CONTEXT_ID,
+    NOMINATION_FORECAST_FACILITY_FILTER_ALL,
+    NOMINATION_FORECAST_GAS_DATE_FILTER_ALL,
+    NOMINATION_FORECAST_LOCATION_FILTER_ALL,
+    NOMINATION_FORECAST_SOURCE_SYSTEM_FILTER_ALL,
+    NOMINATION_FORECAST_TABLE_NAME,
+    NOMINATION_FORECAST_TABLE_SPEC,
+    OPERATIONAL_METER_FLOW_TABLE_NAME,
     PARTICIPANT_CONTEXT_ID,
     PARTICIPANT_DIM_TABLE_NAME,
     PARTICIPANT_MARKET_MEMBERSHIP_TABLE_NAME,
@@ -86,12 +123,18 @@ from marimoserver.gas_dashboard import (
     bid_stack_zone_options,
     cached_load_customer_transfer_table,
     cached_load_bid_stack_table,
+    cached_load_capacity_outlook_table,
+    cached_load_connection_point_context_tables,
     cached_load_facility_context_tables,
+    cached_load_facility_flow_storage_table,
+    cached_load_flow_context_tables,
     cached_load_gas_day_tables,
     cached_load_hub_zone_context_tables,
     cached_load_gas_quality_table,
+    cached_load_linepack_table,
     cached_load_gas_model_tables,
     cached_load_market_price_table,
+    cached_load_nomination_forecast_table,
     cached_load_participant_context_tables,
     cached_load_schedule_run_table,
     cached_load_settlement_activity_table,
@@ -106,12 +149,43 @@ from marimoserver.gas_dashboard import (
     customer_transfer_source_coverage_frame,
     customer_transfer_source_system_options,
     customer_transfer_summary_frame,
+    capacity_outlook_capacity_type_options,
+    capacity_outlook_date_range_options,
+    capacity_outlook_direction_options,
+    capacity_outlook_empty_state_markdown,
+    capacity_outlook_facility_options,
+    capacity_outlook_kpi_frame,
+    capacity_outlook_observation_frame,
+    capacity_outlook_source_coverage_frame,
+    capacity_outlook_source_coverage_options,
+    capacity_outlook_source_system_options,
+    capacity_outlook_summary_frame,
+    connection_point_context_empty_state_markdown,
+    connection_point_dimension_coverage_frame,
+    connection_point_dimension_preview_frame,
+    connection_point_relationship_frame,
+    connection_point_source_system_frame,
+    connection_point_table_specs,
     discover_dashboard_config,
     facility_context_empty_state_markdown,
     facility_dimension_coverage_frame,
     facility_dimension_preview_frame,
+    facility_flow_storage_daily_frame,
+    facility_flow_storage_empty_state_markdown,
+    facility_flow_storage_facility_options,
+    facility_flow_storage_gas_date_options,
+    facility_flow_storage_kpi_frame,
+    facility_flow_storage_observation_frame,
+    facility_flow_storage_source_coverage_frame,
+    facility_flow_storage_source_system_options,
+    facility_flow_storage_summary_frame,
     facility_relationship_frame,
     facility_table_specs,
+    flow_context_empty_state_markdown,
+    flow_kpi_frame,
+    flow_recent_observation_frame,
+    flow_source_summary_frame,
+    flow_table_specs,
     gas_quality_empty_state_markdown,
     gas_quality_kpi_frame,
     gas_quality_observation_frame,
@@ -133,12 +207,18 @@ from marimoserver.gas_dashboard import (
     hub_zone_table_specs,
     load_market_price_table,
     load_bid_stack_table,
+    load_capacity_outlook_table,
+    load_connection_point_context_tables,
     load_customer_transfer_table,
     load_facility_context_tables,
+    load_facility_flow_storage_table,
+    load_flow_context_tables,
     load_gas_day_tables,
     load_hub_zone_context_tables,
     load_gas_quality_table,
+    load_linepack_table,
     load_gas_model_tables,
+    load_nomination_forecast_table,
     load_participant_context_tables,
     load_source_coverage_tables,
     load_schedule_run_table,
@@ -152,6 +232,26 @@ from marimoserver.gas_dashboard import (
     market_price_source_table_options,
     market_price_trend_frame,
     market_price_type_summary_frame,
+    linepack_adequacy_flag_options,
+    linepack_empty_state_markdown,
+    linepack_facility_options,
+    linepack_gas_date_options,
+    linepack_kpi_frame,
+    linepack_observation_frame,
+    linepack_source_coverage_frame,
+    linepack_source_system_options,
+    linepack_summary_frame,
+    linepack_zone_options,
+    nomination_forecast_daily_frame,
+    nomination_forecast_empty_state_markdown,
+    nomination_forecast_facility_options,
+    nomination_forecast_gas_date_options,
+    nomination_forecast_kpi_frame,
+    nomination_forecast_location_options,
+    nomination_forecast_observation_frame,
+    nomination_forecast_source_coverage_frame,
+    nomination_forecast_source_system_options,
+    nomination_forecast_summary_frame,
     participant_context_empty_state_markdown,
     participant_dimension_coverage_frame,
     participant_dimension_preview_frame,
@@ -162,10 +262,16 @@ from marimoserver.gas_dashboard import (
     read_parquet_table,
     render_dashboard_context_panel,
     render_bid_stack_context_links,
+    render_capacity_outlook_context_links,
+    render_connection_point_context_links,
     render_customer_transfer_context_links,
     render_market_price_context_links,
+    render_nomination_forecast_context_links,
     render_facility_context_links,
+    render_facility_flow_storage_context_links,
+    render_flow_context_links,
     render_hub_zone_context_links,
+    render_linepack_context_links,
     render_participant_context_links,
     render_schedule_run_context_links,
     render_settlement_activity_context_links,
@@ -220,6 +326,12 @@ from marimoserver.gas_model_loader import (
     row_limit_message,
 )
 from marimoserver.dagster_graphql import DagsterTableAsset
+from marimoserver.source_lineage_explorer import (
+    render_source_lineage_explorer_html,
+    source_lineage_empty_state_markdown,
+    source_lineage_frame,
+    source_lineage_kpi_frame,
+)
 from marimoserver.table_explorer import (
     CataloguedTable,
     TableAvailability,
@@ -393,6 +505,10 @@ def test_dashboard_read_behavior_frame_renders_per_dashboard_policy() -> None:
         "Registry metadata browser"
     )
     assert rows["Concept-to-Asset Explorer"]["row policy"] == "No table-row reads"
+    assert rows["Citation-Chain Explorer"]["read behavior"] == (
+        "Registry metadata browser"
+    )
+    assert rows["Citation-Chain Explorer"]["row policy"] == "No table-row reads"
     assert rows["S3 Bucket Health"]["view"] == "Object listing"
     assert rows["S3 Bucket Health"]["row policy"] == "10,000 objects per bucket"
     assert rows["Gas Model Table Explorer"]["row policy"] == (
@@ -402,6 +518,13 @@ def test_dashboard_read_behavior_frame_renders_per_dashboard_policy() -> None:
     assert rows["Gas Market Prices"]["row policy"] == ("Bounded preview: 42 rows max")
     assert rows["Source Coverage Matrix"]["view"] == "Forced bounded sample"
     assert rows["Source Coverage Matrix"]["row policy"] == (
+        "Bounded preview: 42 rows max"
+    )
+    assert rows["Source Table Lineage Explorer"]["read behavior"] == (
+        "Registry-backed source metadata inspection"
+    )
+    assert rows["Source Table Lineage Explorer"]["view"] == "Forced bounded sample"
+    assert rows["Source Table Lineage Explorer"]["row policy"] == (
         "Bounded preview: 42 rows max"
     )
     assert rows["Gas Day Context"]["read behavior"] == (
@@ -462,6 +585,84 @@ def test_dashboard_read_behavior_frame_handles_unknown_available_dashboard() -> 
     ]
 
 
+def test_citation_chain_explorer_renders_complete_records() -> None:
+    complete_entry = DashboardRegistryEntry(
+        concept_id="complete-citation-context",
+        title="Complete Citation Context",
+        description="Concept with full citation chain metadata.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name="complete_citation_context",
+        backing_assets=("silver.gas_model.silver_gas_fact_market_price",),
+        generated_gold_paths=(
+            "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md",
+        ),
+        source_chunks=(
+            SourceChunkReference(
+                chunk_id="chunk-complete",
+                silver_chunk_path=(
+                    "tools/gas-market-knowledge-base/generated/silver/chunks/"
+                    "sttm/procedure/sha256-source/chunk-complete.md"
+                ),
+                source_hash="source-hash",
+            ),
+        ),
+    )
+
+    explorer = build_citation_chain_explorer((complete_entry,))
+    html = render_citation_chain_explorer_html(explorer)
+
+    assert len(explorer.complete_concepts) == 1
+    assert explorer.coverage_gap_count == 0
+    assert 'data-coverage-state="complete"' in html
+    assert "chunk-complete" in html
+    assert "chunk-complete.md" in html
+    assert "source-hash" in html
+
+
+def test_citation_chain_explorer_uses_registry_metadata_by_default() -> None:
+    explorer = build_citation_chain_explorer()
+    html = render_citation_chain_explorer_html()
+    concepts_by_id = {concept.concept_id: concept for concept in explorer.concepts}
+
+    assert "citation-chain-explorer" in concepts_by_id
+    assert concepts_by_id["gas-day-context"].complete
+    assert concepts_by_id["citation-chain-explorer"].metadata_gaps == (
+        "No source chunk IDs recorded in the Marimo registry.",
+    )
+    assert 'data-concept-id="gas-day-context"' in html
+    assert "chunk-gbb-guide-gas-day" in html
+    assert "chunk-gbb-guide-gas-day.md" in html
+    assert "9f7cf6f33b646de55e0593af8612953bcaa59665fddf019fcdbf02da31720410" in html
+    assert "No source chunks recorded in the Marimo registry." in html
+
+
+def test_citation_chain_explorer_renders_incomplete_records_as_coverage_gaps() -> None:
+    incomplete_entry = DashboardRegistryEntry(
+        concept_id="incomplete-citation-context",
+        title="Incomplete Citation Context",
+        description="Concept missing generated-gold and source hash metadata.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.PLANNED,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.silver_gas_fact_market_price",),
+        generated_gold_paths=(),
+        source_chunks=(SourceChunkReference(chunk_id="chunk-incomplete"),),
+    )
+
+    explorer = build_citation_chain_explorer((incomplete_entry,))
+    html = render_citation_chain_explorer_html(explorer)
+
+    assert explorer.complete_concepts == ()
+    assert explorer.coverage_gap_count == 3
+    assert 'data-coverage-state="gap"' in html
+    assert "No generated-gold path recorded in the Marimo registry." in html
+    assert "No silver chunk path recorded for `chunk-incomplete`." in html
+    assert "No source hash recorded for `chunk-incomplete`." in html
+    assert "No silver chunk path recorded" in html
+    assert "No source hash recorded" in html
+
+
 def test_gas_model_specs_cover_required_dashboard_sections() -> None:
     sections = {spec.section for spec in GAS_MODEL_TABLES}
     table_names = {spec.table_name for spec in GAS_MODEL_TABLES}
@@ -496,8 +697,8 @@ def test_concept_asset_explorer_maps_concepts_to_assets_and_routes() -> None:
     )
     assert any(
         dashboard.concept_id == "flow-context"
-        and dashboard.navigation_route == "/marimo#concept-flow-context"
-        for dashboard in flow.planned_dashboards
+        and dashboard.navigation_route == "/marimo/flow_operations/"
+        for dashboard in flow.available_dashboards
     )
 
     html = render_concept_asset_explorer_html(explorer)
@@ -2064,6 +2265,1511 @@ def test_customer_transfer_helpers_cover_missing_data_and_filter_empty_state() -
         empty_context_links
     )
     assert "Unavailable dashboard" in unmounted_context_links
+
+
+def test_facility_flow_storage_metadata_and_loader_use_recent_bounded_rows() -> None:
+    entry = registry_entry_by_concept_id(FACILITY_FLOW_STORAGE_CONTEXT_ID)
+    html = render_dashboard_context_panel(FACILITY_FLOW_STORAGE_CONTEXT_ID)
+    context_links = render_facility_flow_storage_context_links()
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "13",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    load = load_facility_flow_storage_table(config, reader=reader)
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "facility_flow_storage"
+    assert entry.notebook_route == "/marimo/facility_flow_storage/"
+    assert entry.backing_assets == (
+        "silver.gas_model.silver_gas_fact_facility_flow_storage",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md"
+        in entry.generated_gold_paths
+    )
+    assert "chunk-gbb-procedures-daily-flow-storage" in entry.source_chunk_ids
+    assert "Facility Flow And Storage" in html
+    assert "chunk-gbb-procedures-daily-flow-storage" in html
+    assert 'href="/marimo/facility_flow_storage/"' in context_links
+    assert "Facility Context" in context_links
+    assert "Flow Context" in context_links
+    assert "Capacity Context" in context_links
+    assert load.spec == FACILITY_FLOW_STORAGE_TABLE_SPEC
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_facility_flow_storage",
+            13,
+        )
+    ]
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert uri.endswith(f"/{FACILITY_FLOW_STORAGE_TABLE_NAME}")
+        assert storage_options == config.storage_options()
+        assert row_limit == 13
+        cached_calls += 1
+        return pl.DataFrame({"source_system": ["GBB"]})
+
+    first_cached = cached_load_facility_flow_storage_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_facility_flow_storage_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_facility_flow_storage_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 2
+    assert not first_cached.cache_hit
+    assert second_cached.cache_hit
+    assert not refreshed.cache_hit
+
+
+def test_facility_flow_storage_helpers_summarize_fields_and_sources() -> None:
+    source_table = "silver.gbb.silver_gasbb_actual_flow_storage"
+    load = _facility_flow_storage_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB", "GBB", "GBB"],
+                "source_tables": [[source_table], [source_table], []],
+                "facility_key": ["fac-1", "fac-1", "fac-2"],
+                "location_key": ["loc-1", "loc-1", "loc-2"],
+                "gas_date": [
+                    date(2024, 1, 2),
+                    date(2024, 1, 3),
+                    date(2024, 1, 3),
+                ],
+                "source_facility_id": ["F1", "F1", "F2"],
+                "source_location_id": ["L1", "L1", "L2"],
+                "demand_tj": [10.0, 12.0, None],
+                "supply_tj": [4.0, 6.0, 8.0],
+                "transfer_in_tj": [1.0, 2.0, None],
+                "transfer_out_tj": [0.0, 1.0, 3.0],
+                "held_in_storage_tj": [50.0, 54.0, None],
+                "cushion_gas_storage_tj": [5.0, 6.0, None],
+                "source_file": ["a.parquet", "b.parquet", "c.parquet"],
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 2, 6),
+                    datetime(2024, 1, 3, 6),
+                    datetime(2024, 1, 3, 7),
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 2, 8),
+                    datetime(2024, 1, 3, 8),
+                    datetime(2024, 1, 3, 9),
+                ],
+            }
+        ),
+        row_limit=20,
+    )
+
+    kpis = facility_flow_storage_kpi_frame(load)
+    summary = facility_flow_storage_summary_frame(load)
+    daily = facility_flow_storage_daily_frame(load)
+    source_coverage = facility_flow_storage_source_coverage_frame(load)
+    observations = facility_flow_storage_observation_frame(load)
+    filtered_kpis = facility_flow_storage_kpi_frame(load, facility_filter="F2")
+    source_filtered_kpis = facility_flow_storage_kpi_frame(
+        load,
+        source_system_filter="GBB",
+    )
+    kpi_values = {row["metric"]: row["value"] for row in kpis.to_dicts()}
+    filtered_kpi_values = {
+        row["metric"]: row["value"] for row in filtered_kpis.to_dicts()
+    }
+    source_filtered_kpi_values = {
+        row["metric"]: row["value"] for row in source_filtered_kpis.to_dicts()
+    }
+
+    assert facility_flow_storage_gas_date_options(load) == (
+        FACILITY_FLOW_STORAGE_GAS_DATE_FILTER_ALL,
+        "2024-01-03",
+        "2024-01-02",
+    )
+    assert facility_flow_storage_facility_options(load) == (
+        FACILITY_FLOW_STORAGE_FACILITY_FILTER_ALL,
+        "F1",
+        "F2",
+    )
+    assert facility_flow_storage_source_system_options(load) == (
+        FACILITY_FLOW_STORAGE_SOURCE_SYSTEM_FILTER_ALL,
+        "GBB",
+    )
+    assert kpi_values["Loaded facility rows"] == "3"
+    assert kpi_values["Facility keys"] == "2"
+    assert kpi_values["Source facilities"] == "2"
+    assert kpi_values["Source tables"] == "1"
+    assert kpi_values["Latest gas date"] == "2024-01-03"
+    assert kpi_values["Demand"] == "22 TJ"
+    assert kpi_values["Supply"] == "18 TJ"
+    assert kpi_values["Transfer out"] == "4 TJ"
+    assert kpi_values["Held in storage"] == "104 TJ"
+    assert filtered_kpi_values["Loaded facility rows"] == "1"
+    assert source_filtered_kpi_values["Loaded facility rows"] == "3"
+    assert summary.select(
+        "source system",
+        "source table",
+        "facility key",
+        "source facility id",
+        "rows",
+        "gas days",
+        "total demand tj",
+        "total supply tj",
+        "latest held storage tj",
+        "latest gas date",
+    ).to_dict(as_series=False) == {
+        "source system": ["GBB", "GBB"],
+        "source table": [
+            source_table,
+            "(empty source_table/source_tables value)",
+        ],
+        "facility key": ["fac-1", "fac-2"],
+        "source facility id": ["F1", "F2"],
+        "rows": [2, 1],
+        "gas days": [2, 1],
+        "total demand tj": [22.0, 0.0],
+        "total supply tj": [10.0, 8.0],
+        "latest held storage tj": [54.0, None],
+        "latest gas date": [date(2024, 1, 3), date(2024, 1, 3)],
+    }
+    assert daily.select(
+        "gas date",
+        "rows",
+        "facilities",
+        "total demand tj",
+        "total supply tj",
+        "total held storage tj",
+    ).to_dict(as_series=False) == {
+        "gas date": [date(2024, 1, 3), date(2024, 1, 2)],
+        "rows": [2, 1],
+        "facilities": [2, 1],
+        "total demand tj": [12.0, 10.0],
+        "total supply tj": [14.0, 4.0],
+        "total held storage tj": [54.0, 50.0],
+    }
+    assert source_coverage.select(
+        "source system",
+        "source table",
+        "rows",
+        "facility keys",
+        "source facilities",
+        "gas days",
+        "measure rows",
+        "latest gas date",
+    ).to_dict(as_series=False) == {
+        "source system": ["GBB", "GBB"],
+        "source table": [
+            source_table,
+            "(empty source_table/source_tables value)",
+        ],
+        "rows": [2, 1],
+        "facility keys": [1, 1],
+        "source facilities": [1, 1],
+        "gas days": [2, 1],
+        "measure rows": [2, 1],
+        "latest gas date": [date(2024, 1, 3), date(2024, 1, 3)],
+    }
+    assert observations.select(
+        "gas date",
+        "source facility id",
+        "demand_tj",
+        "supply_tj",
+        "held_in_storage_tj",
+    ).to_dicts()[:2] == [
+        {
+            "gas date": date(2024, 1, 3),
+            "source facility id": "F2",
+            "demand_tj": None,
+            "supply_tj": 8.0,
+            "held_in_storage_tj": None,
+        },
+        {
+            "gas date": date(2024, 1, 3),
+            "source facility id": "F1",
+            "demand_tj": 12.0,
+            "supply_tj": 6.0,
+            "held_in_storage_tj": 54.0,
+        },
+    ]
+
+
+def test_facility_flow_storage_helpers_cover_missing_data_behavior() -> None:
+    empty_load = _facility_flow_storage_load(pl.DataFrame(), row_limit=6)
+    partial_load = _facility_flow_storage_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "gas_date": [date(2024, 1, 4)],
+                "source_facility_id": ["F1"],
+                "demand_tj": [10.0],
+            }
+        ),
+        row_limit=6,
+    )
+    no_measure_load = _facility_flow_storage_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "gas_date": [date(2024, 1, 4)],
+                "source_facility_id": ["F1"],
+            }
+        ),
+        row_limit=6,
+    )
+    error_load = GasTableLoad(
+        spec=FACILITY_FLOW_STORAGE_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_facility_flow_storage",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=6,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+    assert facility_flow_storage_kpi_frame(empty_load).is_empty()
+    assert facility_flow_storage_summary_frame(empty_load).is_empty()
+    assert facility_flow_storage_daily_frame(empty_load).is_empty()
+    assert facility_flow_storage_source_coverage_frame(empty_load).is_empty()
+    assert facility_flow_storage_observation_frame(empty_load).is_empty()
+    assert facility_flow_storage_gas_date_options(empty_load) == (
+        FACILITY_FLOW_STORAGE_GAS_DATE_FILTER_ALL,
+    )
+    assert facility_flow_storage_facility_options(empty_load) == (
+        FACILITY_FLOW_STORAGE_FACILITY_FILTER_ALL,
+    )
+    assert facility_flow_storage_source_system_options(empty_load) == (
+        FACILITY_FLOW_STORAGE_SOURCE_SYSTEM_FILTER_ALL,
+    )
+    assert facility_flow_storage_kpi_frame(
+        partial_load,
+        gas_date_filter="2024-01-05",
+    ).is_empty()
+    partial_coverage = facility_flow_storage_source_coverage_frame(partial_load)
+    no_measure_values = {
+        row["metric"]: row["value"]
+        for row in facility_flow_storage_kpi_frame(no_measure_load).to_dicts()
+    }
+    empty_markdown = facility_flow_storage_empty_state_markdown(empty_load)
+    error_markdown = facility_flow_storage_empty_state_markdown(error_load)
+    filtered_markdown = facility_flow_storage_empty_state_markdown(partial_load)
+    missing_load_markdown = facility_flow_storage_empty_state_markdown(None)
+    empty_context_links = render_facility_flow_storage_context_links(entries=())
+
+    assert partial_coverage.row(0, named=True)["source table"] == (
+        "(empty source_table/source_tables value)"
+    )
+    assert no_measure_values["Demand"] == "unknown"
+    assert no_measure_values["Held in storage"] == "unknown"
+    assert "No facility flow or storage data is available" in empty_markdown
+    assert "silver.gas_model.silver_gas_fact_facility_flow_storage" in empty_markdown
+    assert "Bounded preview reads are capped at `6` rows per table" in empty_markdown
+    assert "FileNotFoundError: no parquet files found" in error_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert "did not receive a facility flow/storage load" in missing_load_markdown
+    assert (
+        "No Facility flow/storage, Facility, Flow, Capacity, map, source "
+        "coverage, or table explorer entries are registered."
+    ) in empty_context_links
+
+
+def test_linepack_metadata_and_loader_use_recent_bounded_rows() -> None:
+    entry = registry_entry_by_concept_id(LINEPACK_CONTEXT_ID)
+    html = render_dashboard_context_panel(LINEPACK_CONTEXT_ID)
+    context_links = render_linepack_context_links()
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "14",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    load = load_linepack_table(config, reader=reader)
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "linepack_adequacy"
+    assert entry.notebook_route == "/marimo/linepack_adequacy/"
+    assert "silver.gas_model.silver_gas_fact_linepack" in entry.backing_assets
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/linepack.md"
+        in entry.generated_gold_paths
+    )
+    assert "chunk-gbb-procedures-linepack-capacity-adequacy" in (entry.source_chunk_ids)
+    assert "Linepack Context" in html
+    assert "chunk-gbb-procedures-linepack-capacity-adequacy" in html
+    assert 'href="/marimo/linepack_adequacy/"' in context_links
+    assert "Linepack Context" in context_links
+    assert "Flow Context" in context_links
+    assert "Capacity Context" in context_links
+    assert "MOS Context" in context_links
+    assert load.spec == LINEPACK_TABLE_SPEC
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_fact_linepack",
+            14,
+        )
+    ]
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert uri.endswith(f"/{LINEPACK_TABLE_NAME}")
+        assert storage_options == config.storage_options()
+        assert row_limit == 14
+        cached_calls += 1
+        return pl.DataFrame({"source_system": ["GBB"]})
+
+    first_cached = cached_load_linepack_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_linepack_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_linepack_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 2
+    assert not first_cached.cache_hit
+    assert second_cached.cache_hit
+    assert not refreshed.cache_hit
+
+
+def test_capacity_outlook_metadata_and_loader_use_recent_bounded_rows() -> None:
+    entry = registry_entry_by_concept_id(CAPACITY_CONTEXT_ID)
+    html = render_dashboard_context_panel(CAPACITY_CONTEXT_ID)
+    context_links = render_capacity_outlook_context_links()
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "11",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    load = load_capacity_outlook_table(config, reader=reader)
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "capacity_outlook"
+    assert entry.notebook_route == "/marimo/capacity_outlook/"
+    assert entry.backing_assets == (
+        "silver.gas_model.silver_gas_fact_capacity_outlook",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md"
+        in entry.generated_gold_paths
+    )
+    assert "chunk-gbb-procedures-capacity-outlooks" in entry.source_chunk_ids
+    assert "Capacity Context" in html
+    assert 'data-status="available"' in html
+    assert 'href="/marimo/capacity_outlook/"' in context_links
+    assert "Facility Context" in context_links
+    assert "Flow Context" in context_links
+    assert "Connection Point Context" in context_links
+    assert load.spec == CAPACITY_OUTLOOK_TABLE_SPEC
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_capacity_outlook",
+            11,
+        )
+    ]
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert uri.endswith(f"/{CAPACITY_OUTLOOK_TABLE_NAME}")
+        assert storage_options == config.storage_options()
+        assert row_limit == 11
+        cached_calls += 1
+        return pl.DataFrame({"source_system": ["GBB"]})
+
+    first_cached = cached_load_capacity_outlook_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_capacity_outlook_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_capacity_outlook_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 2
+    assert not first_cached.cache_hit
+    assert second_cached.cache_hit
+    assert not refreshed.cache_hit
+
+
+def test_capacity_outlook_helpers_summarize_filters_and_source_coverage() -> None:
+    source_tables = [
+        "silver.gbb.silver_gasbb_short_term_capacity_outlook",
+        "silver.gbb.silver_gasbb_medium_term_capacity_outlook",
+        "silver.gbb.silver_gasbb_uncontracted_capacity",
+        "silver.gbb.silver_gasbb_nameplate_rating",
+        "silver.gbb.silver_gasbb_connection_point_nameplate",
+    ]
+    load = _capacity_outlook_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB", "GBB", "GBB", "GBB", "GBB"],
+                "source_tables": [[table] for table in source_tables],
+                "source_table": source_tables,
+                "source_facility_id": ["F1", "F1", "F2", "F3", "F4"],
+                "facility_name": [
+                    "Pipeline A",
+                    "Pipeline A",
+                    "Pipeline B",
+                    "Pipeline C",
+                    "Connection Point D",
+                ],
+                "capacity_type": [
+                    "MDQ",
+                    "MDQ",
+                    "MDQ",
+                    "nameplate",
+                    "connection_point_nameplate",
+                ],
+                "flow_direction": [
+                    "RECEIPT",
+                    "DELIVERY",
+                    "RECEIPT",
+                    "DELIVERY",
+                    None,
+                ],
+                "from_gas_date": [
+                    date(2024, 1, 1),
+                    date(2024, 2, 1),
+                    None,
+                    date(2024, 1, 1),
+                    date(2024, 3, 1),
+                ],
+                "to_gas_date": [None, date(2024, 2, 29), None, None, None],
+                "outlook_month": [None, None, 4, None, None],
+                "outlook_year": [None, None, 2024, None, None],
+                "receipt_location_id": ["R1", "R2", "R3", "R4", "CP-D"],
+                "delivery_location_id": ["D1", "D2", "D3", "D4", None],
+                "capacity_quantity_tj": [10.0, 20.0, 30.0, 40.0, 50.0],
+                "capacity_description": [
+                    "Short outlook",
+                    "Medium outlook",
+                    "Uncontracted capacity",
+                    "Nameplate rating",
+                    "Connection point capacity",
+                ],
+                "source_surrogate_key": ["src-1", "src-2", "src-3", "src-4", "src-5"],
+                "source_file": ["capacity.csv"] * 5,
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 1, 8),
+                    datetime(2024, 1, 2, 8),
+                    datetime(2024, 1, 3, 8),
+                    datetime(2024, 1, 4, 8),
+                    datetime(2024, 1, 5, 8),
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 1, 9),
+                    datetime(2024, 1, 2, 9),
+                    datetime(2024, 1, 3, 9),
+                    datetime(2024, 1, 4, 9),
+                    datetime(2024, 1, 5, 9),
+                ],
+            }
+        ),
+        row_limit=5,
+    )
+
+    source_coverage = capacity_outlook_source_coverage_frame(load)
+    summary = capacity_outlook_summary_frame(load)
+    observations = capacity_outlook_observation_frame(load, preview_rows=10)
+    kpi_values = {
+        row["metric"]: row["value"]
+        for row in capacity_outlook_kpi_frame(load).to_dicts()
+    }
+    coverage_labels = set(source_coverage["capacity source coverage"].to_list())
+    filtered_kpis = capacity_outlook_kpi_frame(
+        load,
+        capacity_type_filter="MDQ",
+        direction_filter="RECEIPT",
+    )
+
+    assert kpi_values["Loaded capacity rows"] == "5"
+    assert kpi_values["Capacity source coverage"] == "5"
+    assert kpi_values["Date ranges"] == "4"
+    assert kpi_values["Capacity quantity"] == "150 TJ"
+    assert {
+        "Short-term capacity outlook",
+        "Medium-term capacity outlook",
+        "Uncontracted capacity",
+        "Nameplate rating",
+        "Connection-point nameplate",
+    } == coverage_labels
+    assert "2024-02-01 to 2024-02-29" in capacity_outlook_date_range_options(load)
+    assert "2024-04" in capacity_outlook_date_range_options(load)
+    assert "MDQ" in capacity_outlook_capacity_type_options(load)
+    assert "RECEIPT" in capacity_outlook_direction_options(load)
+    assert "F2" in capacity_outlook_facility_options(load)
+    assert "Uncontracted capacity" in capacity_outlook_source_coverage_options(load)
+    assert capacity_outlook_source_system_options(load) == (
+        CAPACITY_OUTLOOK_SOURCE_SYSTEM_FILTER_ALL,
+        "GBB",
+    )
+    assert filtered_kpis.row(0, named=True)["value"] == "2"
+    assert (
+        summary.select(
+            "capacity source coverage",
+            "source facility id",
+            "facility",
+            "capacity type",
+            "direction",
+            "date range",
+            "total capacity tj",
+        ).height
+        == 5
+    )
+    assert (
+        observations.select(
+            "capacity source coverage",
+            "from gas date",
+            "to gas date",
+            "outlook month",
+            "outlook year",
+            "capacity_quantity_tj",
+        ).height
+        == 5
+    )
+
+
+def test_capacity_outlook_helpers_cover_missing_data_and_empty_states() -> None:
+    missing_columns_load = _capacity_outlook_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "source_table": ["silver.gbb.silver_gasbb_nameplate_rating"],
+                "source_facility_id": ["F1"],
+            }
+        ),
+        row_limit=4,
+    )
+    unavailable_load = GasTableLoad(
+        spec=CAPACITY_OUTLOOK_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_capacity_outlook",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=4,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+    empty_load = _capacity_outlook_load(pl.DataFrame(), row_limit=4)
+
+    kpis = capacity_outlook_kpi_frame(missing_columns_load)
+    coverage = capacity_outlook_source_coverage_frame(missing_columns_load)
+    observations = capacity_outlook_observation_frame(missing_columns_load)
+    filtered = capacity_outlook_summary_frame(
+        missing_columns_load,
+        facility_filter="missing",
+    )
+    unavailable_markdown = capacity_outlook_empty_state_markdown(unavailable_load)
+    empty_markdown = capacity_outlook_empty_state_markdown(empty_load)
+    filtered_markdown = capacity_outlook_empty_state_markdown(missing_columns_load)
+    missing_load_markdown = capacity_outlook_empty_state_markdown(None)
+    empty_context_links = render_capacity_outlook_context_links(entries=())
+
+    assert kpis.row(0, named=True)["value"] == "1"
+    assert coverage.row(0, named=True)["capacity source coverage"] == "Nameplate rating"
+    assert observations.row(0, named=True)["capacity_quantity_tj"] is None
+    assert filtered.is_empty()
+    assert "No capacity outlook data is available" in unavailable_markdown
+    assert "FileNotFoundError: no parquet files found" in unavailable_markdown
+    assert "The table loaded successfully but returned no rows" in empty_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert "did not receive a capacity outlook load" in missing_load_markdown
+    assert (
+        "No Capacity, Facility, Flow, Connection Point, Gas Day, map, "
+        "source coverage, or table explorer entries are registered."
+    ) in empty_context_links
+
+
+def test_capacity_outlook_helpers_cover_fallback_classification_branches() -> None:
+    load = _capacity_outlook_load(
+        pl.DataFrame(
+            [
+                {
+                    "source_system": "GBB",
+                    "source_table": "custom.connection",
+                    "source_facility_id": "F1",
+                    "capacity_type": "connection_point_nameplate",
+                    "flow_direction": "RECEIPT",
+                    "to_gas_date": date(2024, 5, 1),
+                },
+                {
+                    "source_system": "GBB",
+                    "source_table": "custom.uncontracted",
+                    "source_facility_id": "F2",
+                    "capacity_description": "uncontracted capacity",
+                    "outlook_year": 2025,
+                },
+                {
+                    "source_system": "GBB",
+                    "source_table": "custom.nameplate",
+                    "source_facility_id": "F3",
+                    "capacity_type": "nameplate",
+                    "outlook_month": 7.0,
+                    "outlook_year": 2026.0,
+                },
+                {
+                    "source_system": "GBB",
+                    "source_table": "custom.medium",
+                    "source_facility_id": "F4",
+                    "capacity_description": "medium-term capacity outlook",
+                },
+                {
+                    "source_system": "GBB",
+                    "source_table": "custom.short",
+                    "source_facility_id": "F5",
+                    "capacity_description": "short_term capacity outlook",
+                    "outlook_month": "",
+                    "outlook_year": "",
+                },
+                {
+                    "source_system": "GBB",
+                    "source_facility_id": "F6",
+                    "capacity_type": "custom",
+                    "capacity_description": "custom capacity",
+                    "outlook_month": True,
+                    "outlook_year": "not-a-year",
+                },
+            ]
+        )
+    )
+    empty_load = _capacity_outlook_load(pl.DataFrame(), row_limit=3)
+
+    coverage_labels = {
+        row["capacity source coverage"]
+        for row in capacity_outlook_source_coverage_frame(load).to_dicts()
+    }
+    date_range_options = capacity_outlook_date_range_options(load)
+    filtered = capacity_outlook_summary_frame(
+        load,
+        date_range_filter="to 2024-05-01",
+        source_coverage_filter="Connection-point nameplate",
+        source_system_filter="GBB",
+    )
+
+    assert capacity_outlook_kpi_frame(empty_load).is_empty()
+    assert capacity_outlook_source_coverage_frame(empty_load).is_empty()
+    assert capacity_outlook_observation_frame(empty_load).is_empty()
+    assert capacity_outlook_facility_options(empty_load) == (
+        CAPACITY_OUTLOOK_FACILITY_FILTER_ALL,
+    )
+    assert {
+        "Connection-point nameplate",
+        "Uncontracted capacity",
+        "Nameplate rating",
+        "Medium-term capacity outlook",
+        "Short-term capacity outlook",
+        "Other capacity outlook",
+    } == coverage_labels
+    assert "to 2024-05-01" in date_range_options
+    assert "2025" in date_range_options
+    assert "2026-07" in date_range_options
+    assert "(undated outlook period)" in date_range_options
+    assert filtered.height == 1
+    assert filtered.row(0, named=True)["capacity source coverage"] == (
+        "Connection-point nameplate"
+    )
+
+
+def test_context_links_render_planned_entries_without_routes() -> None:
+    planned_capacity = DashboardRegistryEntry(
+        concept_id=CAPACITY_CONTEXT_ID,
+        title="Capacity Context",
+        description="Planned capacity context.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.PLANNED,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.silver_gas_fact_capacity_outlook",),
+        generated_gold_paths=(
+            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
+        ),
+        source_chunks=(),
+    )
+
+    capacity_links = render_capacity_outlook_context_links(entries=(planned_capacity,))
+    facility_flow_links = render_facility_flow_storage_context_links(
+        entries=(planned_capacity,)
+    )
+    facility_links = render_facility_context_links(entries=(planned_capacity,))
+    connection_point_links = render_connection_point_context_links(
+        entries=(planned_capacity,)
+    )
+
+    assert 'data-dashboard-status="planned"' in capacity_links
+    assert "<span>Capacity Context</span>" in capacity_links
+    assert "<span>Capacity Context</span>" in facility_flow_links
+    assert "<span>Capacity Context</span>" in facility_links
+    assert "<span>Capacity Context</span>" in connection_point_links
+
+
+def test_linepack_helpers_summarize_quantities_adequacy_and_sources() -> None:
+    gbb_source_table = "silver.gbb.silver_gasbb_linepack_capacity_adequacy"
+    vicgas_source_table = "silver.vicgas.silver_int128_v4_actual_linepack_1"
+    load = _linepack_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB", "GBB", "VICGAS"],
+                "source_tables": [[gbb_source_table], [gbb_source_table], []],
+                "source_table": [None, None, vicgas_source_table],
+                "facility_key": ["fac-1", "fac-1", "fac-2"],
+                "zone_key": ["zone-1", "zone-1", "zone-2"],
+                "gas_date": [
+                    date(2024, 1, 2),
+                    date(2024, 1, 3),
+                    date(2024, 1, 3),
+                ],
+                "observation_timestamp": [
+                    datetime(2024, 1, 2, 6),
+                    datetime(2024, 1, 3, 6),
+                    datetime(2024, 1, 3, 7),
+                ],
+                "source_facility_id": ["F1", "F1", "F2"],
+                "actual_linepack_gj": [1000.0, 900.0, 700.0],
+                "adequacy_flag": ["Green", "Red", None],
+                "adequacy_description": ["Adequate", "Below minimum", None],
+                "source_file": ["a.parquet", "b.parquet", "c.parquet"],
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 2, 7),
+                    datetime(2024, 1, 3, 7),
+                    datetime(2024, 1, 3, 8),
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 2, 8),
+                    datetime(2024, 1, 3, 8),
+                    datetime(2024, 1, 3, 9),
+                ],
+            }
+        ),
+        row_limit=20,
+    )
+
+    kpis = linepack_kpi_frame(load)
+    summary = linepack_summary_frame(load)
+    source_coverage = linepack_source_coverage_frame(load)
+    observations = linepack_observation_frame(load)
+    filtered_kpis = linepack_kpi_frame(load, adequacy_flag_filter="Red")
+    facility_filtered_kpis = linepack_kpi_frame(load, facility_filter="F1")
+    zone_filtered_kpis = linepack_kpi_frame(load, zone_filter="zone-2")
+    source_filtered_kpis = linepack_kpi_frame(load, source_system_filter="VICGAS")
+    kpi_values = {row["metric"]: row["value"] for row in kpis.to_dicts()}
+    filtered_kpi_values = {
+        row["metric"]: row["value"] for row in filtered_kpis.to_dicts()
+    }
+    facility_filtered_kpi_values = {
+        row["metric"]: row["value"] for row in facility_filtered_kpis.to_dicts()
+    }
+    zone_filtered_kpi_values = {
+        row["metric"]: row["value"] for row in zone_filtered_kpis.to_dicts()
+    }
+    source_filtered_kpi_values = {
+        row["metric"]: row["value"] for row in source_filtered_kpis.to_dicts()
+    }
+
+    assert linepack_gas_date_options(load) == (
+        LINEPACK_GAS_DATE_FILTER_ALL,
+        "2024-01-03",
+        "2024-01-02",
+    )
+    assert linepack_facility_options(load) == (
+        LINEPACK_FACILITY_FILTER_ALL,
+        "F1",
+        "F2",
+    )
+    assert linepack_zone_options(load) == (
+        LINEPACK_ZONE_FILTER_ALL,
+        "zone-1",
+        "zone-2",
+    )
+    assert linepack_adequacy_flag_options(load) == (
+        LINEPACK_ADEQUACY_FLAG_FILTER_ALL,
+        "Green",
+        "Red",
+    )
+    assert linepack_source_system_options(load) == (
+        LINEPACK_SOURCE_SYSTEM_FILTER_ALL,
+        "GBB",
+        "VICGAS",
+    )
+    assert kpi_values["Loaded linepack rows"] == "3"
+    assert kpi_values["Facility keys"] == "2"
+    assert kpi_values["Zone keys"] == "2"
+    assert kpi_values["Source facilities"] == "2"
+    assert kpi_values["Source tables"] == "2"
+    assert kpi_values["Latest gas date"] == "2024-01-03"
+    assert kpi_values["Linepack quantity"] == "2,600 GJ"
+    assert kpi_values["Adequacy flags"] == "2"
+    assert filtered_kpi_values["Loaded linepack rows"] == "1"
+    assert facility_filtered_kpi_values["Loaded linepack rows"] == "2"
+    assert zone_filtered_kpi_values["Loaded linepack rows"] == "1"
+    assert source_filtered_kpi_values["Loaded linepack rows"] == "1"
+    assert summary.select(
+        "source system",
+        "source table",
+        "facility key",
+        "zone key",
+        "source facility id",
+        "adequacy flag",
+        "adequacy description",
+        "rows",
+        "linepack rows",
+        "latest linepack gj",
+        "latest observation",
+    ).to_dict(as_series=False) == {
+        "source system": ["VICGAS", "GBB", "GBB"],
+        "source table": [vicgas_source_table, gbb_source_table, gbb_source_table],
+        "facility key": ["fac-2", "fac-1", "fac-1"],
+        "zone key": ["zone-2", "zone-1", "zone-1"],
+        "source facility id": ["F2", "F1", "F1"],
+        "adequacy flag": [None, "Red", "Green"],
+        "adequacy description": [None, "Below minimum", "Adequate"],
+        "rows": [1, 1, 1],
+        "linepack rows": [1, 1, 1],
+        "latest linepack gj": [700.0, 900.0, 1000.0],
+        "latest observation": [
+            datetime(2024, 1, 3, 7),
+            datetime(2024, 1, 3, 6),
+            datetime(2024, 1, 2, 6),
+        ],
+    }
+    assert source_coverage.select(
+        "source system",
+        "source table",
+        "rows",
+        "facility keys",
+        "zone keys",
+        "source facilities",
+        "gas days",
+        "linepack rows",
+        "adequacy flags",
+        "latest gas date",
+    ).to_dict(as_series=False) == {
+        "source system": ["GBB", "VICGAS"],
+        "source table": [gbb_source_table, vicgas_source_table],
+        "rows": [2, 1],
+        "facility keys": [1, 1],
+        "zone keys": [1, 1],
+        "source facilities": [1, 1],
+        "gas days": [2, 1],
+        "linepack rows": [2, 1],
+        "adequacy flags": [2, 0],
+        "latest gas date": [date(2024, 1, 3), date(2024, 1, 3)],
+    }
+    assert observations.select(
+        "gas date",
+        "source system",
+        "source facility id",
+        "zone key",
+        "actual_linepack_gj",
+        "adequacy flag",
+    ).to_dicts()[:2] == [
+        {
+            "gas date": date(2024, 1, 3),
+            "source system": "VICGAS",
+            "source facility id": "F2",
+            "zone key": "zone-2",
+            "actual_linepack_gj": 700.0,
+            "adequacy flag": None,
+        },
+        {
+            "gas date": date(2024, 1, 3),
+            "source system": "GBB",
+            "source facility id": "F1",
+            "zone key": "zone-1",
+            "actual_linepack_gj": 900.0,
+            "adequacy flag": "Red",
+        },
+    ]
+
+
+def test_linepack_helpers_cover_missing_data_behavior() -> None:
+    empty_load = _linepack_load(pl.DataFrame(), row_limit=6)
+    partial_load = _linepack_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "actual_linepack_gj": [321.0],
+            }
+        ),
+        row_limit=6,
+    )
+    error_load = GasTableLoad(
+        spec=LINEPACK_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_linepack",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=6,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+    assert linepack_kpi_frame(empty_load).is_empty()
+    assert linepack_summary_frame(empty_load).is_empty()
+    assert linepack_source_coverage_frame(empty_load).is_empty()
+    assert linepack_observation_frame(empty_load).is_empty()
+    assert linepack_gas_date_options(empty_load) == (LINEPACK_GAS_DATE_FILTER_ALL,)
+    assert linepack_facility_options(empty_load) == (LINEPACK_FACILITY_FILTER_ALL,)
+    assert linepack_zone_options(empty_load) == (LINEPACK_ZONE_FILTER_ALL,)
+    assert linepack_adequacy_flag_options(empty_load) == (
+        LINEPACK_ADEQUACY_FLAG_FILTER_ALL,
+    )
+    assert linepack_source_system_options(empty_load) == (
+        LINEPACK_SOURCE_SYSTEM_FILTER_ALL,
+    )
+    assert linepack_kpi_frame(
+        partial_load,
+        gas_date_filter="2024-01-05",
+    ).is_empty()
+    partial_summary = linepack_summary_frame(partial_load)
+    partial_coverage = linepack_source_coverage_frame(partial_load)
+    empty_markdown = linepack_empty_state_markdown(empty_load)
+    error_markdown = linepack_empty_state_markdown(error_load)
+    filtered_markdown = linepack_empty_state_markdown(partial_load)
+    missing_load_markdown = linepack_empty_state_markdown(None)
+    empty_context_links = render_linepack_context_links(entries=())
+
+    assert partial_summary.row(0, named=True)["source table"] == (
+        "(empty source_table/source_tables value)"
+    )
+    assert partial_summary.row(0, named=True)["facility key"] is None
+    assert partial_summary.row(0, named=True)["zone key"] is None
+    assert partial_summary.row(0, named=True)["latest linepack gj"] == 321.0
+    assert partial_coverage.row(0, named=True)["linepack rows"] == 1
+    assert "No linepack data is available" in empty_markdown
+    assert "silver.gas_model.silver_gas_fact_linepack" in empty_markdown
+    assert "Bounded preview reads are capped at `6` rows per table" in empty_markdown
+    assert "FileNotFoundError: no parquet files found" in error_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert "did not receive a linepack load result" in missing_load_markdown
+    assert (
+        "No Linepack, Flow, Capacity, MOS, Facility, Hub / Zone, source "
+        "coverage, or table explorer entries are registered."
+    ) in empty_context_links
+
+
+def test_nomination_forecast_metadata_and_loader_use_recent_bounded_rows() -> None:
+    entry = registry_entry_by_concept_id(NOMINATION_FORECAST_CONTEXT_ID)
+    html = render_dashboard_context_panel(NOMINATION_FORECAST_CONTEXT_ID)
+    context_links = render_nomination_forecast_context_links()
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "17",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    load = load_nomination_forecast_table(config, reader=reader)
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "nomination_demand_forecast"
+    assert entry.notebook_route == "/marimo/nomination_demand_forecast/"
+    assert entry.backing_assets == (
+        "silver.gas_model.silver_gas_fact_nomination_forecast",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md"
+        in entry.generated_gold_paths
+    )
+    assert "chunk-gbb-guide-flow-report" in entry.source_chunk_ids
+    assert "Nomination And Demand Forecast" in html
+    assert "chunk-gbb-guide-flow-report" in html
+    assert 'href="/marimo/nomination_demand_forecast/"' in context_links
+    assert "Flow Context" in context_links
+    assert "Facility Context" in context_links
+    assert "Gas Day Context" in context_links
+    assert load.spec == NOMINATION_FORECAST_TABLE_SPEC
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_nomination_forecast",
+            17,
+        )
+    ]
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert uri.endswith(f"/{NOMINATION_FORECAST_TABLE_NAME}")
+        assert storage_options == config.storage_options()
+        assert row_limit == 17
+        cached_calls += 1
+        return pl.DataFrame({"source_system": ["GBB"]})
+
+    first_cached = cached_load_nomination_forecast_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_nomination_forecast_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_nomination_forecast_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 2
+    assert not first_cached.cache_hit
+    assert second_cached.cache_hit
+    assert not refreshed.cache_hit
+
+
+def test_nomination_forecast_helpers_summarize_filters_and_horizon() -> None:
+    gbb_source_table = "silver.gbb.silver_gasbb_nomination_and_forecast"
+    vicgas_source_table = "silver.vicgas.silver_int153_v4_demand_forecast_rpt_1"
+    load = _nomination_forecast_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB", "GBB", "VICGAS"],
+                "source_table": [
+                    gbb_source_table,
+                    gbb_source_table,
+                    vicgas_source_table,
+                ],
+                "source_tables": [
+                    [gbb_source_table],
+                    [gbb_source_table],
+                    [vicgas_source_table],
+                ],
+                "facility_key": ["fac-1", "fac-1", None],
+                "location_key": ["loc-1", "loc-1", "loc-2"],
+                "gas_date": [
+                    date(2024, 1, 2),
+                    date(2024, 1, 3),
+                    date(2024, 1, 4),
+                ],
+                "forecast_type": [
+                    "gbb_nomination_forecast",
+                    "gbb_nomination_forecast",
+                    "interval_demand",
+                ],
+                "forecast_version": ["v1", "v1", "42"],
+                "gas_interval": [1, 2, 12],
+                "source_facility_id": ["F1", "F1", None],
+                "source_location_id": ["L1", "L1", "L2"],
+                "demand_forecast_gj": [1000.0, 1100.0, 900.0],
+                "supply_forecast_gj": [500.0, None, None],
+                "transfer_in_forecast_gj": [100.0, 150.0, None],
+                "transfer_out_forecast_gj": [20.0, 25.0, None],
+                "override_quantity_gj": [950.0, None, None],
+                "source_file": ["a.parquet", "b.parquet", "c.parquet"],
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 2, 6),
+                    datetime(2024, 1, 3, 6),
+                    datetime(2024, 1, 4, 5),
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 2, 8),
+                    datetime(2024, 1, 3, 8),
+                    datetime(2024, 1, 4, 6),
+                ],
+            }
+        ),
+        row_limit=20,
+    )
+    as_of_date = date(2024, 1, 3)
+
+    kpis = nomination_forecast_kpi_frame(load, as_of_date=as_of_date)
+    summary = nomination_forecast_summary_frame(load, as_of_date=as_of_date)
+    daily = nomination_forecast_daily_frame(load, as_of_date=as_of_date)
+    source_coverage = nomination_forecast_source_coverage_frame(
+        load,
+        as_of_date=as_of_date,
+    )
+    observations = nomination_forecast_observation_frame(load, as_of_date=as_of_date)
+    facility_filtered_kpis = nomination_forecast_kpi_frame(
+        load,
+        facility_filter="F1",
+        as_of_date=as_of_date,
+    )
+    location_filtered_kpis = nomination_forecast_kpi_frame(
+        load,
+        location_filter="L2",
+        as_of_date=as_of_date,
+    )
+    source_filtered_kpis = nomination_forecast_kpi_frame(
+        load,
+        source_system_filter="VICGAS",
+        as_of_date=as_of_date,
+    )
+    kpi_values = {row["metric"]: row["value"] for row in kpis.to_dicts()}
+    facility_kpi_values = {
+        row["metric"]: row["value"] for row in facility_filtered_kpis.to_dicts()
+    }
+    location_kpi_values = {
+        row["metric"]: row["value"] for row in location_filtered_kpis.to_dicts()
+    }
+    source_kpi_values = {
+        row["metric"]: row["value"] for row in source_filtered_kpis.to_dicts()
+    }
+
+    assert nomination_forecast_gas_date_options(load) == (
+        NOMINATION_FORECAST_GAS_DATE_FILTER_ALL,
+        "2024-01-04",
+        "2024-01-03",
+        "2024-01-02",
+    )
+    assert nomination_forecast_source_system_options(load) == (
+        NOMINATION_FORECAST_SOURCE_SYSTEM_FILTER_ALL,
+        "GBB",
+        "VICGAS",
+    )
+    assert nomination_forecast_facility_options(load) == (
+        NOMINATION_FORECAST_FACILITY_FILTER_ALL,
+        "F1",
+    )
+    assert nomination_forecast_location_options(load) == (
+        NOMINATION_FORECAST_LOCATION_FILTER_ALL,
+        "L1",
+        "L2",
+    )
+    assert kpi_values["Loaded forecast rows"] == "3"
+    assert kpi_values["Forecast type/version pairs"] == "2"
+    assert kpi_values["Current/future forecasts"] == "2"
+    assert kpi_values["Historical forecasts"] == "1"
+    assert kpi_values["Source systems"] == "2"
+    assert kpi_values["Source tables"] == "2"
+    assert kpi_values["Facilities"] == "1"
+    assert kpi_values["Locations"] == "2"
+    assert kpi_values["Latest gas date"] == "2024-01-04"
+    assert kpi_values["Demand forecast"] == "3,000 GJ"
+    assert kpi_values["Supply forecast"] == "500 GJ"
+    assert kpi_values["Transfer in forecast"] == "250 GJ"
+    assert kpi_values["Transfer out forecast"] == "45 GJ"
+    assert kpi_values["Override quantity"] == "950 GJ"
+    assert facility_kpi_values["Loaded forecast rows"] == "2"
+    assert location_kpi_values["Loaded forecast rows"] == "1"
+    assert source_kpi_values["Demand forecast"] == "900 GJ"
+    assert summary.select(
+        "forecast type",
+        "forecast version",
+        "forecast horizon",
+        "rows",
+        "total demand forecast gj",
+        "latest gas date",
+    ).to_dicts() == [
+        {
+            "forecast type": "interval_demand",
+            "forecast version": "42",
+            "forecast horizon": "Current/future forecast",
+            "rows": 1,
+            "total demand forecast gj": 900.0,
+            "latest gas date": date(2024, 1, 4),
+        },
+        {
+            "forecast type": "gbb_nomination_forecast",
+            "forecast version": "v1",
+            "forecast horizon": "Current/future forecast",
+            "rows": 1,
+            "total demand forecast gj": 1100.0,
+            "latest gas date": date(2024, 1, 3),
+        },
+        {
+            "forecast type": "gbb_nomination_forecast",
+            "forecast version": "v1",
+            "forecast horizon": "Historical forecast",
+            "rows": 1,
+            "total demand forecast gj": 1000.0,
+            "latest gas date": date(2024, 1, 2),
+        },
+    ]
+    assert daily.select(
+        "gas date",
+        "forecast horizon",
+        "rows",
+        "total demand forecast gj",
+        "total override quantity gj",
+    ).to_dicts() == [
+        {
+            "gas date": date(2024, 1, 4),
+            "forecast horizon": "Current/future forecast",
+            "rows": 1,
+            "total demand forecast gj": 900.0,
+            "total override quantity gj": 0.0,
+        },
+        {
+            "gas date": date(2024, 1, 3),
+            "forecast horizon": "Current/future forecast",
+            "rows": 1,
+            "total demand forecast gj": 1100.0,
+            "total override quantity gj": 0.0,
+        },
+        {
+            "gas date": date(2024, 1, 2),
+            "forecast horizon": "Historical forecast",
+            "rows": 1,
+            "total demand forecast gj": 1000.0,
+            "total override quantity gj": 950.0,
+        },
+    ]
+    assert source_coverage.select(
+        "source system",
+        "source table",
+        "rows",
+        "forecast types",
+        "forecast versions",
+        "gas days",
+        "measure rows",
+        "latest gas date",
+    ).to_dicts() == [
+        {
+            "source system": "GBB",
+            "source table": gbb_source_table,
+            "rows": 2,
+            "forecast types": 1,
+            "forecast versions": 1,
+            "gas days": 2,
+            "measure rows": 2,
+            "latest gas date": date(2024, 1, 3),
+        },
+        {
+            "source system": "VICGAS",
+            "source table": vicgas_source_table,
+            "rows": 1,
+            "forecast types": 1,
+            "forecast versions": 1,
+            "gas days": 1,
+            "measure rows": 1,
+            "latest gas date": date(2024, 1, 4),
+        },
+    ]
+    assert observations.select(
+        "gas date",
+        "forecast horizon",
+        "forecast type",
+        "demand_forecast_gj",
+        "override_quantity_gj",
+    ).to_dicts()[:2] == [
+        {
+            "gas date": date(2024, 1, 4),
+            "forecast horizon": "Current/future forecast",
+            "forecast type": "interval_demand",
+            "demand_forecast_gj": 900.0,
+            "override_quantity_gj": None,
+        },
+        {
+            "gas date": date(2024, 1, 3),
+            "forecast horizon": "Current/future forecast",
+            "forecast type": "gbb_nomination_forecast",
+            "demand_forecast_gj": 1100.0,
+            "override_quantity_gj": None,
+        },
+    ]
+
+
+def test_nomination_forecast_helpers_cover_empty_state_behavior() -> None:
+    empty_load = _nomination_forecast_load(pl.DataFrame(), row_limit=6)
+    partial_load = _nomination_forecast_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "gas_date": [date(2024, 1, 4)],
+                "source_facility_id": ["F1"],
+                "demand_forecast_gj": [10.0],
+            }
+        ),
+        row_limit=6,
+    )
+    no_measure_load = _nomination_forecast_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "gas_date": [date(2024, 1, 4)],
+                "source_facility_id": ["F1"],
+            }
+        ),
+        row_limit=6,
+    )
+    unknown_gas_date_load = _nomination_forecast_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "gas_date": [None],
+                "demand_forecast_gj": [5.0],
+            }
+        ),
+        row_limit=6,
+    )
+    error_load = GasTableLoad(
+        spec=NOMINATION_FORECAST_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_nomination_forecast",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=6,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+    assert nomination_forecast_kpi_frame(empty_load).is_empty()
+    assert nomination_forecast_summary_frame(empty_load).is_empty()
+    assert nomination_forecast_daily_frame(empty_load).is_empty()
+    assert nomination_forecast_source_coverage_frame(empty_load).is_empty()
+    assert nomination_forecast_observation_frame(empty_load).is_empty()
+    assert nomination_forecast_gas_date_options(empty_load) == (
+        NOMINATION_FORECAST_GAS_DATE_FILTER_ALL,
+    )
+    assert nomination_forecast_source_system_options(empty_load) == (
+        NOMINATION_FORECAST_SOURCE_SYSTEM_FILTER_ALL,
+    )
+    assert nomination_forecast_facility_options(empty_load) == (
+        NOMINATION_FORECAST_FACILITY_FILTER_ALL,
+    )
+    assert nomination_forecast_location_options(empty_load) == (
+        NOMINATION_FORECAST_LOCATION_FILTER_ALL,
+    )
+    assert nomination_forecast_kpi_frame(
+        partial_load,
+        gas_date_filter="2024-01-05",
+    ).is_empty()
+    partial_coverage = nomination_forecast_source_coverage_frame(partial_load)
+    no_measure_values = {
+        row["metric"]: row["value"]
+        for row in nomination_forecast_kpi_frame(no_measure_load).to_dicts()
+    }
+    unknown_horizon_observation = nomination_forecast_observation_frame(
+        unknown_gas_date_load,
+        as_of_date=date(2024, 1, 4),
+    )
+    empty_markdown = nomination_forecast_empty_state_markdown(empty_load)
+    error_markdown = nomination_forecast_empty_state_markdown(error_load)
+    filtered_markdown = nomination_forecast_empty_state_markdown(partial_load)
+    missing_load_markdown = nomination_forecast_empty_state_markdown(None)
+    empty_context_links = render_nomination_forecast_context_links(entries=())
+
+    assert partial_coverage.row(0, named=True)["source table"] == (
+        "(empty source_table/source_tables value)"
+    )
+    assert no_measure_values["Demand forecast"] == "unknown"
+    assert no_measure_values["Override quantity"] == "unknown"
+    assert (
+        unknown_horizon_observation.row(0, named=True)["forecast horizon"]
+        == "Unknown Gas Day forecast"
+    )
+    assert "No nomination or demand forecast data is available" in empty_markdown
+    assert "silver.gas_model.silver_gas_fact_nomination_forecast" in empty_markdown
+    assert "Bounded preview reads are capped at `6` rows per table" in empty_markdown
+    assert "FileNotFoundError: no parquet files found" in error_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert "did not receive a nomination forecast load" in missing_load_markdown
+    assert (
+        "No Nomination forecast, Flow, Facility, Gas Day, map, source coverage, "
+        "or table explorer entries are registered."
+    ) in empty_context_links
 
 
 def test_bid_stack_table_loader_uses_bounded_recent_view() -> None:
@@ -3921,6 +5627,901 @@ def test_facility_helpers_cover_empty_state_behavior() -> None:
     ) in empty_context_links
 
 
+def test_connection_point_context_metadata_is_available_dashboard() -> None:
+    entry = registry_entry_by_concept_id(CONNECTION_POINT_CONTEXT_ID)
+    html = render_dashboard_context_panel(CONNECTION_POINT_CONTEXT_ID)
+    context_links = render_connection_point_context_links()
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "connection_point_explainer"
+    assert entry.notebook_route == "/marimo/connection_point_explainer/"
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/connection-point.md"
+    ) in entry.generated_gold_paths
+    assert entry.source_chunk_ids == (
+        "chunk-gbb-guide-connection-point-identifiers",
+        "chunk-gbb-guide-flow-report",
+    )
+    assert "silver.gas_model.silver_gas_dim_connection_point" in entry.backing_assets
+    assert "silver.gas_model.silver_gas_dim_facility" in entry.backing_assets
+    assert "silver.gas_model.silver_gas_dim_location" in entry.backing_assets
+    assert "silver.gas_model.silver_gas_dim_zone" in entry.backing_assets
+    assert "silver.gas_model.silver_gas_fact_connection_point_flow" in (
+        entry.backing_assets
+    )
+    assert "Connection Point Context" in html
+    assert "chunk-gbb-guide-connection-point-identifiers" in html
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/connection-point.md"
+    ) in html
+    assert 'data-status="available"' in html
+    assert 'href="/marimo/connection_point_explainer/"' in context_links
+    assert "Facility Context" in context_links
+    assert "Hub / Zone Context" in context_links
+    assert "Capacity Context" in context_links
+
+
+def test_connection_point_table_specs_and_loader_use_bounded_samples() -> None:
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "9",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    specs = connection_point_table_specs()
+    loads = load_connection_point_context_tables(config, reader=reader)
+
+    assert specs == CONNECTION_POINT_TABLE_SPECS
+    assert tuple(spec.table_name for spec in specs) == (
+        CONNECTION_POINT_DIM_TABLE_NAME,
+        FACILITY_DIM_TABLE_NAME,
+        LOCATION_DIM_TABLE_NAME,
+        HUB_ZONE_DIM_TABLE_NAME,
+        CONNECTION_POINT_FLOW_TABLE_NAME,
+        FACILITY_CAPACITY_OUTLOOK_TABLE_NAME,
+    )
+    assert len(loads) == 6
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_dim_connection_point",
+            9,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_dim_facility",
+            9,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_dim_location",
+            9,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_dim_zone",
+            9,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_connection_point_flow",
+            9,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_capacity_outlook",
+            9,
+        ),
+    ]
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert storage_options == config.storage_options()
+        assert row_limit == 9
+        cached_calls += 1
+        return pl.DataFrame({"source_system": ["GBB"]})
+
+    first_cached = cached_load_connection_point_context_tables(
+        config,
+        cache,
+        specs=(CONNECTION_POINT_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_connection_point_context_tables(
+        config,
+        cache,
+        specs=(CONNECTION_POINT_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_connection_point_context_tables(
+        config,
+        cache,
+        specs=(CONNECTION_POINT_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 2
+    assert not first_cached[0].cache_hit
+    assert second_cached[0].cache_hit
+    assert not refreshed[0].cache_hit
+
+
+def test_connection_point_metadata_helpers_extract_relationships() -> None:
+    connection_point_load = _facility_load(
+        CONNECTION_POINT_TABLE_SPECS[0],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["cp-key-1", "cp-key-2", "cp-key-3"],
+                "facility_key": ["facility-key-1", "facility-key-2", None],
+                "location_key": ["location-key-1", None, None],
+                "zone_key": ["zone-key-1", "zone-key-2", None],
+                "source_system": ["GBB", "GBB", "STTM"],
+                "source_tables": [
+                    ["silver.gbb.silver_gasbb_nodes_connection_points"],
+                    ["silver.gbb.silver_gasbb_nodes_connection_points"],
+                    ["silver.sttm.silver_int691_v1_sttm_ctp_register_rpt_1"],
+                ],
+                "source_hub_id": [None, None, "SYD"],
+                "source_hub_name": [None, None, "Sydney Hub"],
+                "source_facility_id": ["10", "10", "20"],
+                "source_connection_point_id": ["1001", "1002", "CTP1"],
+                "source_location_id": ["L1", "L2", None],
+                "connection_point_name": [
+                    "Receipt Point",
+                    "Delivery Point",
+                    "Sydney CTP",
+                ],
+                "flow_direction": ["RECEIPT", "DELIVERY", "not_applicable"],
+                "facility_name": [
+                    "Carpentaria Gas Pipeline",
+                    "Carpentaria Gas Pipeline",
+                    "Sydney Hub Facility",
+                ],
+                "location_name": ["Longford", "Wallumbilla", None],
+                "state": ["Queensland", "Queensland", None],
+                "exempt": [False, True, None],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 1, 8),
+                    datetime(2024, 1, 1, 9),
+                    datetime(2024, 1, 1, 10),
+                ],
+            }
+        ),
+    )
+    facility_load = _facility_load(
+        CONNECTION_POINT_TABLE_SPECS[1],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["facility-key-1", "facility-key-2"],
+                "source_system": ["GBB", "STTM"],
+                "source_tables": [
+                    ["silver.gbb.silver_gasbb_facilities"],
+                    ["silver.sttm.silver_int671_v1_hub_facility_definition_rpt_1"],
+                ],
+                "source_facility_id": ["10", "20"],
+                "facility_name": [
+                    "Carpentaria Gas Pipeline",
+                    "Sydney Hub Facility",
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 1, 8),
+                    datetime(2024, 1, 1, 9),
+                ],
+            }
+        ),
+    )
+    location_load = _facility_load(
+        CONNECTION_POINT_TABLE_SPECS[2],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["location-key-1"],
+                "source_system": ["GBB"],
+                "source_tables": [["silver.gbb.silver_gasbb_locations_list"]],
+                "source_location_id": ["L1"],
+                "location_name": ["Longford"],
+                "state": ["Victoria"],
+            }
+        ),
+    )
+    zone_load = _facility_load(
+        CONNECTION_POINT_TABLE_SPECS[3],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["zone-key-1", "zone-key-2"],
+                "source_system": ["GBB", "STTM"],
+                "source_tables": [
+                    [
+                        "silver.gbb.silver_gasbb_demand_zones_and_pipeline_connectionpoint_mapping"
+                    ],
+                    ["silver.sttm.silver_int671_v1_hub_facility_definition_rpt_1"],
+                ],
+                "zone_type": ["demand_zone", "sttm_hub"],
+                "source_zone_id": ["DZ1", "SYD"],
+                "zone_name": ["Demand Zone 1", "Sydney Hub"],
+            }
+        ),
+    )
+    flow_load = _facility_load(
+        CONNECTION_POINT_TABLE_SPECS[4],
+        pl.DataFrame(
+            {
+                "connection_point_key": ["cp-key-1", None, None],
+                "source_system": ["GBB", "GBB", "GBB"],
+                "gas_date": [
+                    date(2024, 1, 2),
+                    date(2024, 1, 2),
+                    date(2024, 1, 2),
+                ],
+                "source_facility_id": ["10", "10", "99"],
+                "source_connection_point_id": ["1001", "1002", "9999"],
+                "flow_direction": ["RECEIPT", "DELIVERY", "RECEIPT"],
+                "actual_quantity_tj": [5.0, 7.0, 3.0],
+            }
+        ),
+    )
+    capacity_load = _facility_load(
+        CONNECTION_POINT_TABLE_SPECS[5],
+        pl.DataFrame(
+            {
+                "source_system": ["GBB", "GBB", "STTM", "GBB"],
+                "source_table": [
+                    "silver.gbb.capacity",
+                    "silver.gbb.capacity",
+                    "silver.sttm.capacity",
+                    "silver.gbb.capacity",
+                ],
+                "source_facility_id": ["10", "10", "20", "99"],
+                "facility_name": [
+                    "Carpentaria Gas Pipeline",
+                    "Carpentaria Gas Pipeline",
+                    "Sydney Hub Facility",
+                    "Unmatched Facility",
+                ],
+                "capacity_type": ["nameplate", "nameplate", "nameplate", "nameplate"],
+                "flow_direction": [
+                    "RECEIPT",
+                    "DELIVERY",
+                    "not_applicable",
+                    "RECEIPT",
+                ],
+                "capacity_quantity_tj": [100.0, None, 90.0, 80.0],
+            }
+        ),
+    )
+
+    loads = (
+        connection_point_load,
+        facility_load,
+        location_load,
+        zone_load,
+        flow_load,
+        capacity_load,
+    )
+    coverage = connection_point_dimension_coverage_frame(connection_point_load)
+    sources = connection_point_source_system_frame(connection_point_load)
+    relationships = connection_point_relationship_frame(loads)
+    preview = connection_point_dimension_preview_frame(connection_point_load)
+    coverage_values = {row["metric"]: row["value"] for row in coverage.to_dicts()}
+    source_rows = {row["source system"]: row for row in sources.to_dicts()}
+    relationship_rows = {row["relationship"]: row for row in relationships.to_dicts()}
+
+    assert coverage_values == {
+        "Connection point dimension rows": "3",
+        "Source systems": "2",
+        "Source tables": "2",
+        "Connection point IDs": "3",
+        "Facility links": "2",
+        "Location links": "1",
+        "Zone links": "2",
+        "Flow directions": "3",
+        "Data exemption rows": "1",
+    }
+    assert source_rows["GBB"]["rows"] == 2
+    assert source_rows["GBB"]["connection points"] == 2
+    assert source_rows["GBB"]["facilities"] == 1
+    assert source_rows["GBB"]["locations"] == 2
+    assert source_rows["STTM"]["flow directions"] == 1
+    assert relationship_rows["Facility"]["available rows"] == 2
+    assert relationship_rows["Facility"]["matched connection points"] == 2
+    assert relationship_rows["Location"]["available rows"] == 1
+    assert relationship_rows["Location"]["matched connection points"] == 1
+    assert relationship_rows["Zone"]["available rows"] == 2
+    assert relationship_rows["Zone"]["matched connection points"] == 2
+    assert relationship_rows["Flow direction"]["available rows"] == 3
+    assert relationship_rows["Actual flow"]["available rows"] == 3
+    assert relationship_rows["Actual flow"]["matched connection points"] == 2
+    assert relationship_rows["Capacity"]["available rows"] == 3
+    assert relationship_rows["Capacity"]["matched connection points"] == 2
+    assert (
+        "do not carry a direct connection_point_key"
+        in relationship_rows["Capacity"]["detail"]
+    )
+    assert preview.select(
+        "source-qualified identifier",
+        "source system",
+        "source facility id",
+        "source connection point id",
+        "connection point",
+        "flow direction",
+        "facility",
+        "location",
+        "hub",
+        "source tables",
+    ).to_dict(as_series=False) == {
+        "source-qualified identifier": [
+            "GBB:10:1001:RECEIPT",
+            "GBB:10:1002:DELIVERY",
+            "STTM:20:CTP1:not_applicable",
+        ],
+        "source system": ["GBB", "GBB", "STTM"],
+        "source facility id": ["10", "10", "20"],
+        "source connection point id": ["1001", "1002", "CTP1"],
+        "connection point": ["Receipt Point", "Delivery Point", "Sydney CTP"],
+        "flow direction": ["RECEIPT", "DELIVERY", "not_applicable"],
+        "facility": [
+            "Carpentaria Gas Pipeline",
+            "Carpentaria Gas Pipeline",
+            "Sydney Hub Facility",
+        ],
+        "location": ["Longford", "Wallumbilla", None],
+        "hub": [None, None, "Sydney Hub (SYD)"],
+        "source tables": [
+            "silver.gbb.silver_gasbb_nodes_connection_points",
+            "silver.gbb.silver_gasbb_nodes_connection_points",
+            "silver.sttm.silver_int691_v1_sttm_ctp_register_rpt_1",
+        ],
+    }
+
+
+def test_connection_point_helpers_handle_partial_identifiers_and_hubs() -> None:
+    connection_point_load = _facility_load(
+        CONNECTION_POINT_TABLE_SPECS[0],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["cp-fallback", "cp-name", "cp-id"],
+                "facility_key": ["facility-key-1", None, None],
+                "source_system": [None, "GBB", "GBB"],
+                "source_facility_id": [None, "10", "20"],
+                "source_connection_point_id": [None, "1001", "1002"],
+                "flow_direction": [None, "RECEIPT", "DELIVERY"],
+                "source_hub_name": [None, "Sydney Hub", None],
+                "source_hub_id": [None, None, "BRI"],
+                "source_tables": [[], [], []],
+                "ingested_timestamp": [None, None, None],
+            }
+        ),
+    )
+    facility_load = _facility_load(
+        CONNECTION_POINT_TABLE_SPECS[1],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["facility-key-1"],
+                "source_facility_id": ["10"],
+            }
+        ),
+    )
+    flow_only_load = _facility_load(
+        CONNECTION_POINT_TABLE_SPECS[4],
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "source_facility_id": ["99"],
+                "source_connection_point_id": ["9999"],
+                "flow_direction": ["RECEIPT"],
+                "actual_quantity_tj": [1.0],
+            }
+        ),
+    )
+
+    relationships = connection_point_relationship_frame(
+        (connection_point_load, facility_load)
+    )
+    flow_only_relationships = connection_point_relationship_frame((flow_only_load,))
+    preview = connection_point_dimension_preview_frame(connection_point_load)
+    relationship_rows = {row["relationship"]: row for row in relationships.to_dicts()}
+    flow_only_rows = {
+        row["relationship"]: row for row in flow_only_relationships.to_dicts()
+    }
+
+    assert relationship_rows["Facility"]["matched connection points"] == 1
+    assert flow_only_rows["Actual flow"]["available rows"] == 1
+    assert flow_only_rows["Actual flow"]["matched connection points"] == 0
+    assert preview.select("source-qualified identifier", "hub").to_dict(
+        as_series=False
+    ) == {
+        "source-qualified identifier": [
+            "GBB:10:1001:RECEIPT",
+            "GBB:20:1002:DELIVERY",
+            "",
+        ],
+        "hub": ["Sydney Hub", "BRI", None],
+    }
+
+
+def test_connection_point_helpers_cover_empty_state_behavior() -> None:
+    unavailable_load = _facility_load(
+        CONNECTION_POINT_TABLE_SPECS[0],
+        None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=5,
+    )
+    loads = (
+        unavailable_load,
+        *(
+            _facility_load(spec, pl.DataFrame(), row_limit=5)
+            for spec in CONNECTION_POINT_TABLE_SPECS[1:]
+        ),
+    )
+
+    assert connection_point_dimension_coverage_frame(unavailable_load).is_empty()
+    assert connection_point_source_system_frame(unavailable_load).is_empty()
+    assert connection_point_relationship_frame(loads).is_empty()
+    assert connection_point_dimension_preview_frame(unavailable_load).is_empty()
+
+    markdown = connection_point_context_empty_state_markdown(loads)
+    empty_markdown = connection_point_context_empty_state_markdown(())
+    empty_context_links = render_connection_point_context_links(entries=())
+
+    assert "No Connection Point metadata or relationship rows are available" in markdown
+    assert "`1` reads were unavailable and `5` reads returned no rows" in markdown
+    assert "Bounded preview reads are capped at `5` rows per table" in markdown
+    assert "No Connection Point context tables were requested" in empty_markdown
+    assert (
+        "No Connection Point, Facility, Hub / Zone, flow, capacity, map, or "
+        "table explorer entries are registered."
+    ) in empty_context_links
+
+
+def test_flow_context_metadata_is_available_dashboard() -> None:
+    entry = registry_entry_by_concept_id(FLOW_CONTEXT_ID)
+    html = render_dashboard_context_panel(FLOW_CONTEXT_ID)
+    context_links = render_flow_context_links()
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "flow_operations"
+    assert entry.notebook_route == "/marimo/flow_operations/"
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md"
+        in entry.generated_gold_paths
+    )
+    assert entry.source_chunk_ids == (
+        "chunk-gbb-guide-flow-report",
+        "chunk-gbb-procedures-scheduled-flow",
+        "chunk-sttm-procedures-settlement-terms",
+    )
+    assert "silver.gas_model.silver_gas_fact_connection_point_flow" in (
+        entry.backing_assets
+    )
+    assert "silver.gas_model.silver_gas_fact_facility_flow_storage" in (
+        entry.backing_assets
+    )
+    assert "silver.gas_model.silver_gas_fact_nomination_forecast" in (
+        entry.backing_assets
+    )
+    assert "silver.gas_model.silver_gas_fact_operational_meter_flow" in (
+        entry.backing_assets
+    )
+    assert "Flow Context" in html
+    assert "chunk-gbb-guide-flow-report" in html
+    assert 'data-status="available"' in html
+    assert 'href="/marimo/flow_operations/"' in context_links
+    assert "Facility Context" in context_links
+    assert "Connection Point Context" in context_links
+    assert "Gas Day Context" in context_links
+
+
+def test_flow_table_specs_and_loader_use_bounded_recent_samples() -> None:
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "11",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    specs = flow_table_specs()
+    loads = load_flow_context_tables(config, reader=reader)
+
+    assert specs == FLOW_TABLE_SPECS
+    assert tuple(spec.table_name for spec in specs) == (
+        CONNECTION_POINT_FLOW_TABLE_NAME,
+        FACILITY_FLOW_STORAGE_TABLE_NAME,
+        NOMINATION_FORECAST_TABLE_NAME,
+        OPERATIONAL_METER_FLOW_TABLE_NAME,
+    )
+    assert len(loads) == 4
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_connection_point_flow",
+            11,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_facility_flow_storage",
+            11,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_nomination_forecast",
+            11,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_operational_meter_flow",
+            11,
+        ),
+    ]
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert uri.endswith(f"/{CONNECTION_POINT_FLOW_TABLE_NAME}")
+        assert storage_options == config.storage_options()
+        assert row_limit == 11
+        cached_calls += 1
+        return pl.DataFrame({"source_system": ["GBB"]})
+
+    first_cached = cached_load_flow_context_tables(
+        config,
+        cache,
+        specs=(FLOW_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_flow_context_tables(
+        config,
+        cache,
+        specs=(FLOW_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_flow_context_tables(
+        config,
+        cache,
+        specs=(FLOW_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 2
+    assert not first_cached[0].cache_hit
+    assert second_cached[0].cache_hit
+    assert not refreshed[0].cache_hit
+
+
+def test_flow_summary_helpers_extract_sources_and_recent_observations() -> None:
+    connection_point_load = _facility_load(
+        FLOW_TABLE_SPECS[0],
+        pl.DataFrame(
+            {
+                "source_system": ["GBB", "GBB"],
+                "source_tables": [
+                    ["silver.gbb.silver_gasbb_pipeline_connection_flow_v2"],
+                    ["silver.gbb.silver_gasbb_pipeline_connection_flow_v2"],
+                ],
+                "gas_date": [date(2024, 1, 2), date(2024, 1, 3)],
+                "source_facility_id": ["10", "10"],
+                "source_connection_point_id": ["1001", "1002"],
+                "flow_direction": ["RECEIPT", "DELIVERY"],
+                "actual_quantity_tj": [5.0, None],
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 2, 6),
+                    datetime(2024, 1, 3, 6),
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 2, 8),
+                    datetime(2024, 1, 3, 8),
+                ],
+            }
+        ),
+        row_limit=20,
+    )
+    facility_load = _facility_load(
+        FLOW_TABLE_SPECS[1],
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "source_tables": [["silver.gbb.silver_gasbb_actual_flow_storage"]],
+                "gas_date": [date(2024, 1, 3)],
+                "source_facility_id": ["20"],
+                "source_location_id": ["L1"],
+                "demand_tj": [12.5],
+                "supply_tj": [None],
+                "held_in_storage_tj": [7.0],
+                "source_last_updated_timestamp": [datetime(2024, 1, 3, 7)],
+                "ingested_timestamp": [datetime(2024, 1, 3, 9)],
+            }
+        ),
+        row_limit=20,
+    )
+    nomination_load = _facility_load(
+        FLOW_TABLE_SPECS[2],
+        pl.DataFrame(
+            {
+                "source_system": ["VICGAS"],
+                "source_table": [
+                    "silver.vicgas.silver_int153_v4_demand_forecast_rpt_1"
+                ],
+                "source_tables": [
+                    ["silver.vicgas.silver_int153_v4_demand_forecast_rpt_1"]
+                ],
+                "gas_date": [date(2024, 1, 4)],
+                "forecast_type": ["interval_demand"],
+                "forecast_version": ["42"],
+                "gas_interval": [12],
+                "demand_forecast_gj": [1000.0],
+                "override_quantity_gj": [900.0],
+                "source_last_updated_timestamp": [datetime(2024, 1, 4, 5)],
+                "ingested_timestamp": [datetime(2024, 1, 4, 6)],
+            }
+        ),
+        row_limit=20,
+    )
+    meter_load = _facility_load(
+        FLOW_TABLE_SPECS[3],
+        pl.DataFrame(
+            {
+                "source_system": ["VICGAS"],
+                "source_table": [
+                    "silver.vicgas.silver_int236_v4_operational_meter_readings_1"
+                ],
+                "gas_date": [date(2024, 1, 4)],
+                "gas_interval": ["13"],
+                "point_type": ["direction_code_name"],
+                "source_point_id": ["Dandenong"],
+                "flow_direction": ["WITHDRAWAL"],
+                "quantity_gj": [70.0],
+                "commencement_timestamp": [datetime(2024, 1, 4, 13)],
+                "source_last_updated_timestamp": [datetime(2024, 1, 4, 7)],
+                "ingested_timestamp": [datetime(2024, 1, 4, 8)],
+            }
+        ),
+        row_limit=20,
+    )
+    loads = (connection_point_load, facility_load, nomination_load, meter_load)
+
+    kpis = flow_kpi_frame(loads)
+    source_summary = flow_source_summary_frame(loads)
+    observations = flow_recent_observation_frame(loads)
+    kpi_values = {row["metric"]: row["value"] for row in kpis.to_dicts()}
+    source_rows = {
+        (row["fact"], row["source system"], row["source table"]): row
+        for row in source_summary.to_dicts()
+    }
+
+    assert kpi_values["Flow facts checked"] == "4"
+    assert kpi_values["Loaded facts"] == "4"
+    assert kpi_values["Source systems"] == "2"
+    assert kpi_values["Source tables"] == "4"
+    assert kpi_values["Flow measure rows"] == "4"
+    assert kpi_values["Latest Gas Day"] == "2024-01-04"
+    assert kpi_values["Recent/sample observations"] == "6"
+    assert (
+        source_rows[
+            (
+                "Connection point flow",
+                "GBB",
+                "silver.gbb.silver_gasbb_pipeline_connection_flow_v2",
+            )
+        ]["measure rows"]
+        == 1
+    )
+    assert (
+        source_rows[
+            (
+                "Facility flow and storage",
+                "GBB",
+                "silver.gbb.silver_gasbb_actual_flow_storage",
+            )
+        ]["measure rows"]
+        == 1
+    )
+    assert (
+        source_rows[
+            (
+                "Nomination forecast",
+                "VICGAS",
+                "silver.vicgas.silver_int153_v4_demand_forecast_rpt_1",
+            )
+        ]["measure rows"]
+        == 1
+    )
+    assert (
+        source_rows[
+            (
+                "Operational meter flow",
+                "VICGAS",
+                "silver.vicgas.silver_int236_v4_operational_meter_readings_1",
+            )
+        ]["measure rows"]
+        == 1
+    )
+    assert observations.select("fact", "measure", "quantity", "unit").to_dicts()[
+        :3
+    ] == [
+        {
+            "fact": "Operational meter flow",
+            "measure": "quantity_gj",
+            "quantity": 70.0,
+            "unit": "GJ",
+        },
+        {
+            "fact": "Nomination forecast",
+            "measure": "demand_forecast_gj",
+            "quantity": 1000.0,
+            "unit": "GJ",
+        },
+        {
+            "fact": "Nomination forecast",
+            "measure": "override_quantity_gj",
+            "quantity": 900.0,
+            "unit": "GJ",
+        },
+    ]
+
+
+def test_flow_helpers_cover_missing_columns_and_empty_state_behavior() -> None:
+    partial_load = _facility_load(
+        FLOW_TABLE_SPECS[0],
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "gas_date": [date(2024, 1, 5)],
+            }
+        ),
+        row_limit=6,
+    )
+    null_gas_date_load = _facility_load(
+        FLOW_TABLE_SPECS[0],
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "gas_date": [None],
+            }
+        ),
+        row_limit=6,
+    )
+    unavailable_load = _facility_load(
+        FLOW_TABLE_SPECS[1],
+        None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=6,
+    )
+    empty_nomination_load = _facility_load(
+        FLOW_TABLE_SPECS[2],
+        pl.DataFrame(),
+        row_limit=6,
+    )
+    empty_meter_load = _facility_load(
+        FLOW_TABLE_SPECS[3],
+        pl.DataFrame(),
+        row_limit=6,
+    )
+    unknown_empty_load = _facility_load(
+        GasTableSpec(
+            section="Flow facts",
+            label="Unmapped flow",
+            table_name="silver_gas_fact_unmapped_flow",
+        ),
+        None,
+        row_limit=6,
+    )
+    unknown_source_load = _facility_load(
+        GasTableSpec(
+            section="Flow facts",
+            label="Unmapped flow rows",
+            table_name="silver_gas_fact_unmapped_flow_rows",
+        ),
+        pl.DataFrame(
+            {
+                "source_system": [None, None],
+                "gas_date": [
+                    datetime(2024, 1, 6),
+                    datetime(2024, 1, 5),
+                ],
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 7),
+                    datetime(2024, 1, 6),
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 7, 1),
+                    datetime(2024, 1, 6, 1),
+                ],
+            }
+        ),
+        row_limit=6,
+    )
+    loads = (
+        partial_load,
+        unavailable_load,
+        empty_nomination_load,
+        empty_meter_load,
+    )
+
+    source_summary = flow_source_summary_frame(loads)
+    observations = flow_recent_observation_frame(loads)
+    kpis = flow_kpi_frame(loads)
+    markdown = flow_context_empty_state_markdown(loads)
+    empty_markdown = flow_context_empty_state_markdown(())
+    empty_context_links = render_flow_context_links(entries=())
+    unknown_empty_summary = flow_source_summary_frame((unknown_empty_load,))
+    unknown_source_summary = flow_source_summary_frame((unknown_source_load,))
+    null_date_kpis = flow_kpi_frame((partial_load, null_gas_date_load))
+    source_row = source_summary.row(0, named=True)
+    unknown_source_row = unknown_source_summary.row(0, named=True)
+    kpi_values = {row["metric"]: row["value"] for row in kpis.to_dicts()}
+    null_date_kpi_values = {
+        row["metric"]: row["value"] for row in null_date_kpis.to_dicts()
+    }
+
+    assert source_summary.height == 1
+    assert source_row["source system"] == "GBB"
+    assert source_row["source table"] == "(empty source_table/source_tables value)"
+    assert source_row["measure rows"] == 0
+    assert observations.is_empty()
+    assert unknown_empty_summary.is_empty()
+    assert unknown_source_row["rows"] == 2
+    assert unknown_source_row["source system"] == "(empty source_system value)"
+    assert (
+        unknown_source_row["source table"] == "(empty source_table/source_tables value)"
+    )
+    assert unknown_source_row["latest gas date"] == date(2024, 1, 6)
+    assert unknown_source_row["latest source update"] == datetime(2024, 1, 7)
+    assert unknown_source_row["latest ingest"] == datetime(2024, 1, 7, 1)
+    assert (
+        "silver_gas_fact_unmapped_flow_rows has no configured Flow measure columns"
+        == unknown_source_row["detail"]
+    )
+    assert kpi_values["Flow measure rows"] == "0"
+    assert null_date_kpi_values["Latest Gas Day"] == "2024-01-05"
+    assert "No Flow source summaries or recent measure rows" in markdown
+    assert "`1` reads were unavailable and `2` reads returned no rows" in markdown
+    assert "Bounded preview reads are capped at `6` rows per table" in markdown
+    assert "No Flow operations tables were requested" in empty_markdown
+    assert (
+        "No Flow, Facility, Connection Point, Gas Day, schedule, capacity, map, "
+        "or table explorer entries are registered."
+    ) in empty_context_links
+
+
 def test_hub_zone_context_metadata_is_available_dashboard() -> None:
     entry = registry_entry_by_concept_id(HUB_ZONE_CONTEXT_ID)
     html = render_dashboard_context_panel(HUB_ZONE_CONTEXT_ID)
@@ -5464,6 +8065,477 @@ def test_source_coverage_kpi_frame_handles_empty_matrix() -> None:
     assert values["Source systems"] == "0"
 
 
+def test_source_lineage_explorer_extracts_lineage_fields_and_registry_links() -> None:
+    table_name = "silver_gas_fact_market_price"
+    load = _source_coverage_load(
+        table_name,
+        pl.DataFrame(
+            {
+                "source_system": ["STTM", "STTM", "VICGAS"],
+                "source_table": [
+                    "silver.sttm.price_report",
+                    "silver.sttm.price_report",
+                    "silver.vicgas.price_report",
+                ],
+                "source_file": ["price-a.csv", "price-b.csv", "vicgas.csv"],
+                "source_surrogate_key": ["src-1", "src-2", "src-vic"],
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 1),
+                    datetime(2024, 1, 2),
+                    datetime(2024, 1, 3),
+                ],
+            }
+        ),
+    )
+    entry = DashboardRegistryEntry(
+        concept_id="custom-lineage-context",
+        title="Custom Lineage",
+        description="Custom lineage mapping.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name="custom_lineage",
+        backing_assets=(f"silver.gas_model.{table_name}",),
+        generated_gold_paths=(
+            "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md",
+        ),
+        source_chunks=(SourceChunkReference("chunk-custom-lineage"),),
+    )
+
+    lineage = source_lineage_frame((load,), entries=(entry,))
+    rows = {
+        row["source system"]: row for row in lineage.sort("source system").to_dicts()
+    }
+    sttm_row = rows["STTM"]
+    kpis = source_lineage_kpi_frame((load,), lineage)
+    values = {row["metric"]: row["value"] for row in kpis.to_dicts()}
+
+    assert sttm_row["source table"] == "silver.sttm.price_report"
+    assert sttm_row["coverage state"] == SOURCE_COVERAGE_STATE_COVERED
+    assert sttm_row["rows loaded"] == 2
+    assert sttm_row["lineage fields"] == (
+        "source_file, source_surrogate_key, source_last_updated_timestamp"
+    )
+    assert "source_file: price-a.csv, price-b.csv" in sttm_row["lineage examples"]
+    assert "source_surrogate_key: src-1, src-2" in sttm_row["lineage examples"]
+    assert sttm_row["concept cards"] == (
+        "Custom Lineage -> /marimo#concept-custom-lineage-context"
+    )
+    assert sttm_row["dashboard routes"] == ("Custom Lineage -> /marimo/custom_lineage/")
+    assert sttm_row["Market context paths"] == (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md"
+    )
+    assert sttm_row["source chunk ids"] == "chunk-custom-lineage"
+    assert values["Source systems"] == "2"
+    assert values["Source tables"] == "2"
+    assert values["Registry mapped assets"] == "1"
+    assert values["Lineage field groups"] == "1"
+
+
+def test_source_lineage_explorer_handles_list_fields_and_missing_metadata() -> None:
+    list_load = _source_coverage_load(
+        "silver_gas_dim_zone",
+        pl.DataFrame(
+            {
+                "source_systems": [["GBB"]],
+                "source_tables": [["silver.gbb.zone_report"]],
+                "source_surrogate_keys": [["gbb-zone-1", "gbb-zone-2"]],
+            }
+        ),
+    )
+    missing_load = _source_coverage_load(
+        "silver_gas_dim_date",
+        pl.DataFrame({"date_id": [20240101]}),
+    )
+    empty_value_load = _source_coverage_load(
+        "silver_gas_fact_schedule_run",
+        pl.DataFrame({"source_system": [""], "source_table": [None]}),
+    )
+    empty_read_load = _source_coverage_load(
+        "silver_gas_fact_linepack",
+        pl.DataFrame(),
+    )
+    unavailable_load = _source_coverage_load(
+        "silver_gas_fact_capacity_outlook",
+        None,
+        error="RuntimeError: missing parquet",
+    )
+
+    lineage = source_lineage_frame(
+        (
+            list_load,
+            missing_load,
+            empty_value_load,
+            empty_read_load,
+            unavailable_load,
+        ),
+        entries=(),
+    )
+    rows = {
+        row["table"]: row
+        for row in lineage.select(
+            "table",
+            "source system",
+            "source table",
+            "coverage state",
+            "source fields",
+            "lineage fields",
+            "lineage examples",
+            "concept cards",
+            "detail",
+        ).to_dicts()
+    }
+    empty_markdown = source_lineage_empty_state_markdown((unavailable_load,))
+
+    assert rows["silver_gas_dim_zone"]["source system"] == "GBB"
+    assert rows["silver_gas_dim_zone"]["source table"] == "silver.gbb.zone_report"
+    assert rows["silver_gas_dim_zone"]["coverage state"] == (
+        SOURCE_COVERAGE_STATE_COVERED
+    )
+    assert rows["silver_gas_dim_zone"]["source fields"] == (
+        "source_systems, source_tables, source_surrogate_keys"
+    )
+    assert rows["silver_gas_dim_zone"]["lineage examples"] == (
+        "source_surrogate_keys: gbb-zone-1, gbb-zone-2"
+    )
+    assert rows["silver_gas_dim_date"]["source system"] == (
+        "(missing source_system/source_systems column)"
+    )
+    assert rows["silver_gas_dim_date"]["source table"] == (
+        "(missing source_table/source_tables column)"
+    )
+    assert rows["silver_gas_dim_date"]["coverage state"] == SOURCE_COVERAGE_STATE_GAP
+    assert rows["silver_gas_dim_date"]["lineage fields"] == (
+        "(no additional source lineage fields)"
+    )
+    assert rows["silver_gas_dim_date"]["concept cards"] == "(no mapped concept card)"
+    assert (
+        "Missing source_system/source_systems columns"
+        in (rows["silver_gas_dim_date"]["detail"])
+    )
+    assert rows["silver_gas_fact_schedule_run"]["source system"] == (
+        "(empty source_system/source_systems value)"
+    )
+    assert rows["silver_gas_fact_schedule_run"]["source table"] == (
+        "(empty source_table/source_tables value)"
+    )
+    assert rows["silver_gas_fact_linepack"]["coverage state"] == (
+        SOURCE_COVERAGE_STATE_EMPTY
+    )
+    assert rows["silver_gas_fact_linepack"]["detail"] == (
+        "The table read succeeded but returned no rows."
+    )
+    assert rows["silver_gas_fact_capacity_outlook"]["coverage state"] == (
+        SOURCE_COVERAGE_STATE_UNAVAILABLE
+    )
+    assert "1` reads were unavailable" in empty_markdown
+
+
+def test_render_source_lineage_explorer_html_links_and_escapes_values() -> None:
+    table_name = "silver_gas_fact_market_price"
+    load = _source_coverage_load(
+        table_name,
+        pl.DataFrame(
+            {
+                "source_system": ["STTM"],
+                "source_table": ["silver.sttm.price_report"],
+                "source_file": ["price.csv"],
+            }
+        ),
+    )
+    entry = DashboardRegistryEntry(
+        concept_id="custom-lineage-context",
+        title="Custom Lineage",
+        description="Custom lineage mapping.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name="custom_lineage",
+        backing_assets=(f"silver.gas_model.{table_name}",),
+        generated_gold_paths=(
+            "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md",
+        ),
+        source_chunks=(SourceChunkReference("chunk-custom-lineage"),),
+    )
+
+    lineage = source_lineage_frame((load,), entries=(entry,))
+    html = render_source_lineage_explorer_html(lineage)
+    unsafe_html = render_source_lineage_explorer_html(
+        pl.DataFrame(
+            [
+                {
+                    "asset": "silver.gas_model.<unsafe>",
+                    "section": "Facts",
+                    "table": "<unsafe>",
+                    "source system": "GBB",
+                    "source table": "silver.gbb.<unsafe>",
+                    "coverage state": SOURCE_COVERAGE_STATE_COVERED,
+                    "rows loaded": 1,
+                    "row limit": "100 rows",
+                    "source fields": "source_system, source_table",
+                    "lineage fields": "source_file",
+                    "lineage examples": "source_file: 1 < 2.csv",
+                    "concept cards": "Unsafe -> javascript:alert(1)",
+                    "dashboard routes": "Unsafe -> javascript:alert(1)",
+                    "Market context paths": "tools/<unsafe>.md",
+                    "source chunk ids": "chunk-unsafe",
+                    "table explorer": "javascript:alert(1)",
+                    "asset metadata": "",
+                    "uri": "s3://bucket/<unsafe>",
+                    "detail": "1 < 2",
+                }
+            ]
+        )
+    )
+
+    assert 'data-link-target="concept-card"' in html
+    assert 'href="/marimo#concept-custom-lineage-context"' in html
+    assert 'data-link-target="dashboard-route"' in html
+    assert 'href="/marimo/custom_lineage/"' in html
+    assert 'data-link-target="table-explorer"' in html
+    assert (
+        'data-market-context-path="tools/gas-market-knowledge-base/generated/gold/'
+        'glossary/schedule.md"'
+    ) in html
+    assert "<button" not in html.lower()
+    assert "&lt;unsafe&gt;" in unsafe_html
+    assert "1 &lt; 2" in unsafe_html
+    assert "javascript:alert" not in unsafe_html
+
+
+def test_source_lineage_explorer_empty_and_overflow_states() -> None:
+    empty_lineage = source_lineage_frame(())
+    empty_kpis = source_lineage_kpi_frame((), empty_lineage)
+    empty_markdown = source_lineage_empty_state_markdown(())
+    empty_html = render_source_lineage_explorer_html(empty_lineage)
+    overflow_html = render_source_lineage_explorer_html(
+        pl.DataFrame(
+            [
+                {
+                    "asset": "silver.gas_model.first",
+                    "section": "Facts",
+                    "table": "first",
+                    "source system": "GBB",
+                    "source table": "silver.gbb.first",
+                    "coverage state": SOURCE_COVERAGE_STATE_COVERED,
+                    "rows loaded": 1234,
+                    "row limit": "100 rows",
+                    "source fields": "source_system, source_table",
+                    "lineage fields": "source_file",
+                    "lineage examples": "source_file: first.csv",
+                    "concept cards": "/marimo#concept-first",
+                    "dashboard routes": "/marimo/first/",
+                    "Market context paths": None,
+                    "source chunk ids": "chunk-first",
+                    "table explorer": None,
+                    "asset metadata": None,
+                    "uri": "",
+                    "detail": None,
+                },
+                {
+                    "asset": "silver.gas_model.second",
+                    "section": "Facts",
+                    "table": "second",
+                    "source system": "STTM",
+                    "source table": "silver.sttm.second",
+                    "coverage state": SOURCE_COVERAGE_STATE_COVERED,
+                    "rows loaded": 1,
+                    "row limit": "100 rows",
+                    "source fields": "source_system, source_table",
+                    "lineage fields": "source_file",
+                    "lineage examples": "source_file: second.csv",
+                    "concept cards": "/marimo#concept-second",
+                    "dashboard routes": "/marimo/second/",
+                    "Market context paths": "tools/gold.md",
+                    "source chunk ids": "chunk-second",
+                    "table explorer": "/marimo/table_explorer/?search=second",
+                    "asset metadata": "",
+                    "uri": "s3://bucket/silver/gas_model/second",
+                    "detail": "Covered",
+                },
+            ]
+        ),
+        max_rows=1,
+    )
+    kpi_values = {row["metric"]: row["value"] for row in empty_kpis.to_dicts()}
+
+    assert empty_lineage.is_empty()
+    assert "No source lineage tables were requested" in empty_markdown
+    assert "No source lineage rows match the current filters." in empty_html
+    assert kpi_values["Requested assets"] == "0"
+    assert kpi_values["Source systems"] == "0"
+    assert 'data-row-count="2"' in overflow_html
+    assert 'data-rendered-row-count="1"' in overflow_html
+    assert "1 additional rows are hidden by the dashboard display limit." in (
+        overflow_html
+    )
+    assert ">1,234</td>" in overflow_html
+    assert 'href="/marimo#concept-first"' in overflow_html
+    assert "source_file: second.csv" not in overflow_html
+
+
+def test_source_lineage_examples_limit_duplicates_and_empty_values() -> None:
+    repeated_load = _source_coverage_load(
+        "silver_gas_fact_market_price",
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"] * 5,
+                "source_table": ["silver.gbb.price_report"] * 5,
+                "source_file": [
+                    "same.csv",
+                    "same.csv",
+                    "two.csv",
+                    "three.csv",
+                    "four.csv",
+                ],
+                "source_empty_field": [None] * 5,
+            }
+        ),
+    )
+    empty_lineage_value_load = _source_coverage_load(
+        "silver_gas_fact_schedule_run",
+        pl.DataFrame(
+            {
+                "source_system": ["STTM"],
+                "source_table": [float("nan")],
+                "source_file": [float("nan")],
+            }
+        ),
+    )
+
+    lineage = source_lineage_frame(
+        (repeated_load, empty_lineage_value_load),
+        entries=(),
+    )
+    rows = {row["table"]: row for row in lineage.to_dicts()}
+
+    assert rows["silver_gas_fact_market_price"]["lineage examples"] == (
+        "source_file: same.csv, two.csv, three.csv"
+    )
+    assert "four.csv" not in rows["silver_gas_fact_market_price"]["lineage examples"]
+    assert rows["silver_gas_fact_schedule_run"]["source table"] == (
+        "(empty source_table/source_tables value)"
+    )
+    assert rows["silver_gas_fact_schedule_run"]["coverage state"] == (
+        SOURCE_COVERAGE_STATE_GAP
+    )
+    assert rows["silver_gas_fact_schedule_run"]["lineage examples"] == (
+        "(no populated source lineage values)"
+    )
+    assert (
+        "source_table/source_tables columns are present but empty"
+        in (rows["silver_gas_fact_schedule_run"]["detail"])
+    )
+
+
+def test_source_lineage_explorer_uses_catalogue_link_contexts() -> None:
+    asset_table = "silver_gas_fact_market_price"
+    storage_table = "silver_gas_fact_schedule_run"
+    dotted_table = "silver_gas_fact_capacity_outlook"
+    loads = (
+        _source_coverage_load(
+            asset_table,
+            pl.DataFrame(
+                {
+                    "source_system": ["STTM"],
+                    "source_table": ["silver.sttm.price_report"],
+                }
+            ),
+        ),
+        _source_coverage_load(
+            storage_table,
+            pl.DataFrame(
+                {
+                    "source_system": ["STTM"],
+                    "source_table": ["silver.sttm.schedule_report"],
+                }
+            ),
+        ),
+        _source_coverage_load(
+            dotted_table,
+            pl.DataFrame(
+                {
+                    "source_system": ["GBB"],
+                    "source_table": ["silver.gbb.capacity_report"],
+                }
+            ),
+        ),
+    )
+    asset_row = CataloguedTable(
+        entry_id=f"asset:silver/gas_model/{asset_table}",
+        status=TableAvailability.LIVE,
+        asset=DagsterTableAsset(
+            asset_key=("silver", "gas_model", asset_table),
+            group_name="gas_model",
+            kinds=("python", "parquet"),
+            description=None,
+            uri=f"s3://bucket/silver/gas_model/{asset_table}",
+            columns=(),
+            is_materializable=True,
+            is_executable=True,
+            latest_materialization_timestamp=None,
+        ),
+        table=None,
+    )
+    duplicate_asset_row = CataloguedTable(
+        entry_id=f"asset:silver/gas_model/{asset_table}",
+        status=TableAvailability.LIVE,
+        asset=None,
+        table=TablePrefix(
+            bucket="bucket",
+            prefix=f"silver/gas_model/{asset_table}",
+            table_format=TableFormat.PARQUET,
+            parquet_files=(f"silver/gas_model/{asset_table}/part-000.parquet",),
+        ),
+    )
+    storage_row = CataloguedTable(
+        entry_id=f"storage:bucket/silver/gas_model/{storage_table}",
+        status=TableAvailability.LIVE,
+        asset=None,
+        table=TablePrefix(
+            bucket="bucket",
+            prefix=f"silver/gas_model/{storage_table}",
+            table_format=TableFormat.PARQUET,
+            parquet_files=(f"silver/gas_model/{storage_table}/part-000.parquet",),
+        ),
+    )
+    dotted_row = SimpleNamespace(
+        entry_id=123,
+        asset=None,
+        table=None,
+        uri=f"silver.gas_model.{dotted_table}",
+    )
+    ignored_rows = (
+        SimpleNamespace(uri=123),
+        SimpleNamespace(uri="s3://bucket/bronze/raw"),
+        SimpleNamespace(uri="s3://bucket/silver/gas_model/"),
+    )
+
+    lineage = source_lineage_frame(
+        loads,
+        (*ignored_rows, asset_row, duplicate_asset_row, storage_row, dotted_row),
+        entries=(),
+    )
+    rows = {row["table"]: row for row in lineage.to_dicts()}
+
+    assert rows[asset_table]["table explorer"] == (
+        "/marimo/table_explorer/?table=asset%3Asilver%2Fgas_model%2F"
+        "silver_gas_fact_market_price"
+    )
+    assert rows[asset_table]["asset metadata"] == (
+        "/marimo/table_explorer/?asset=asset%3Asilver%2Fgas_model%2F"
+        "silver_gas_fact_market_price"
+    )
+    assert rows[asset_table]["uri"] == (
+        "s3://bucket/silver/gas_model/silver_gas_fact_market_price"
+    )
+    assert rows[storage_table]["table explorer"] == (
+        "/marimo/table_explorer/?table=storage%3Abucket%2Fsilver%2Fgas_model"
+        "%2Fsilver_gas_fact_schedule_run"
+    )
+    assert rows[storage_table]["asset metadata"] == ""
+    assert rows[dotted_table]["table explorer"] == "/marimo/table_explorer/"
+    assert rows[dotted_table]["uri"] == f"silver.gas_model.{dotted_table}"
+
+
 def test_render_dashboard_context_panel_covers_complete_concept() -> None:
     html = render_dashboard_context_panel("gas-market-overview")
     no_related_html = render_dashboard_context_panel(
@@ -5474,9 +8546,13 @@ def test_render_dashboard_context_panel_covers_complete_concept() -> None:
     assert "Gas Market Overview" in html
     assert "generated-gold paths" in html
     assert "source chunk IDs" in html
+    assert "silver chunk paths" in html
+    assert "source hashes" in html
     assert "backing assets" in html
     assert "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md" in html
     assert "chunk-gbb-guide-gas-day" in html
+    assert "chunk-gbb-guide-gas-day.md" in html
+    assert "9f7cf6f33b646de55e0593af8612953bcaa59665fddf019fcdbf02da31720410" in html
     assert "silver.gas_model.silver_gas_fact_market_price" in html
     assert "Gas Day Context" in html
     assert "No related concepts share generated-gold paths" in no_related_html
@@ -5500,6 +8576,8 @@ def test_render_dashboard_context_panel_handles_missing_optional_fields() -> Non
     assert "Minimal Context" in html
     assert "No generated-gold paths recorded in the Marimo registry." in html
     assert "No source chunk IDs recorded in the Marimo registry." in html
+    assert "No silver chunk paths recorded in the Marimo registry." in html
+    assert "No source hashes recorded in the Marimo registry." in html
     assert "No notebook route recorded" in html
     assert "silver.gas_model.minimal_table" in html
 
@@ -5618,6 +8696,70 @@ def _customer_transfer_load(
     return GasTableLoad(
         spec=CUSTOMER_TRANSFER_TABLE_SPEC,
         uri=f"s3://bucket/silver/gas_model/{CUSTOMER_TRANSFER_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _facility_flow_storage_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=FACILITY_FLOW_STORAGE_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{FACILITY_FLOW_STORAGE_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _linepack_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=LINEPACK_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{LINEPACK_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _capacity_outlook_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=CAPACITY_OUTLOOK_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{CAPACITY_OUTLOOK_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _nomination_forecast_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=NOMINATION_FORECAST_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{NOMINATION_FORECAST_TABLE_NAME}",
         dataframe=dataframe,
         error=None,
         row_limit=row_limit,
