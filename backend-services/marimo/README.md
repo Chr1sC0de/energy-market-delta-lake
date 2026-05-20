@@ -13,6 +13,7 @@ Marimo-Codex research workspace image.
 - [Dashboard registry](#dashboard-registry)
 - [Glossary explorer](#glossary-explorer)
 - [Concept-to-asset explorer](#concept-to-asset-explorer)
+- [Schema data dictionary explorer](#schema-data-dictionary-explorer)
 - [Citation-chain explorer](#citation-chain-explorer)
 - [Data readiness overview](#data-readiness-overview)
 - [AWS bounded read diagnostics](#aws-bounded-read-diagnostics)
@@ -188,6 +189,23 @@ and Gas Model Table Explorer deep links where the registry asset can be
 resolved to a `silver/gas_model/<table>` entry. Concepts with no backing assets
 and registry assets without glossary concept coverage render as explicit
 coverage gaps.
+
+## Schema data dictionary explorer
+
+[notebooks/schema_data_dictionary_explorer.py](notebooks/schema_data_dictionary_explorer.py)
+is the analytical schema dictionary for registry-mapped `silver.gas_model`
+assets. It uses
+[src/marimoserver/data_dictionary_explorer.py](src/marimoserver/data_dictionary_explorer.py)
+to combine read-only Dagster GraphQL table schema metadata with the
+concept-to-asset mapping from
+[src/marimoserver/concept_asset_explorer.py](src/marimoserver/concept_asset_explorer.py).
+
+The dashboard groups mapped fields by Market context concept, documented
+gas-model mart, asset, and dashboard route. It does not scan table rows, change
+ETL schemas, or read generated gold Markdown at runtime. Unavailable Dagster
+GraphQL, mapped assets missing from Dagster table metadata, and assets without
+parsed column metadata stay visible as explicit schema states in the asset and
+field tables.
 
 ## Citation-chain explorer
 
@@ -972,6 +990,10 @@ Concept-to-asset explorer coverage in
 [tests/component/test_gas_dashboard.py](tests/component/test_gas_dashboard.py)
 verifies mapped concepts, table explorer deep links, unmapped concepts, and
 unmapped registry assets.
+Schema data dictionary coverage in
+[tests/component/test_data_dictionary_explorer.py](tests/component/test_data_dictionary_explorer.py)
+verifies schema metadata rows, explicit missing metadata states, unavailable
+GraphQL handling, concept grouping, mart classification, and filters.
 Citation-chain explorer coverage in the same test module verifies complete
 source chunk records and incomplete records with registry coverage gaps.
 
@@ -1006,6 +1028,7 @@ prek run -a
   - `backend-services/marimo/src/marimoserver/gbb_interactive_map.py`
   - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
   - `backend-services/marimo/src/marimoserver/concept_asset_explorer.py`
+  - `backend-services/marimo/src/marimoserver/data_dictionary_explorer.py`
   - `backend-services/marimo/src/marimoserver/citation_chain_explorer.py`
   - `backend-services/marimo/src/marimoserver/source_lineage_explorer.py`
   - `backend-services/marimo/src/marimoserver/dagster_graphql.py`
@@ -1025,6 +1048,7 @@ prek run -a
   - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/concept_to_asset_explorer.py`
+  - `backend-services/marimo/notebooks/schema_data_dictionary_explorer.py`
   - `backend-services/marimo/notebooks/citation_chain_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
@@ -1044,6 +1068,7 @@ prek run -a
   - `backend-services/marimo/tests/component/dashboard_smoke_harness.py`
   - `backend-services/marimo/tests/component/test_dashboard_smoke.py`
   - `backend-services/marimo/tests/component/test_gas_dashboard.py`
+  - `backend-services/marimo/tests/component/test_data_dictionary_explorer.py`
   - `backend-services/marimo/tests/component/test_table_explorer.py`
   - `backend-services/marimo/tests/component/test_glossary_explorer.py`
   - `backend-services/marimo/tests/component/test_data_readiness.py`

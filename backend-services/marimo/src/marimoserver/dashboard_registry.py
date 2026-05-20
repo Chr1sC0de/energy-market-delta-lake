@@ -45,6 +45,7 @@ _REGISTRY_BACKED_CONCEPT_IDS = frozenset(
         "concept-to-asset-explorer",
         "glossary-explorer",
         "s3-bucket-health",
+        "schema-data-dictionary-explorer",
     }
 )
 
@@ -714,6 +715,23 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "audiences": ("analyst", "data-engineer", "stakeholder"),
         "status": "available",
         "notebook_name": "concept_to_asset_explorer",
+        "backing_assets": (),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/README.md",
+        ),
+        "source_chunk_ids": (),
+    },
+    {
+        "concept_id": "schema-data-dictionary-explorer",
+        "title": "Schema Data Dictionary Explorer",
+        "description": (
+            "Available analytical dashboard for inspecting Dagster schema "
+            "metadata for registry-mapped silver.gas_model assets by concept, "
+            "mart, asset, and dashboard route."
+        ),
+        "audiences": ("analyst", "data-engineer", "operator"),
+        "status": "available",
+        "notebook_name": "schema_data_dictionary_explorer",
         "backing_assets": (),
         "generated_gold_paths": (
             "tools/gas-market-knowledge-base/generated/gold/glossary/README.md",

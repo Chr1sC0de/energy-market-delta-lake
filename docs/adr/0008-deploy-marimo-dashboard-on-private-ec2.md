@@ -96,6 +96,13 @@ dashboard routes, planned concept-gallery cards, and table explorer deep links
 without reading table rows, opening generated gold Markdown, or changing S3,
 Dagster, ETL, or AWS permissions.
 
+The schema data dictionary explorer stays inside the same read-only boundary.
+It combines Dagster GraphQL table schema metadata with the concept-to-asset
+mapping to group mapped `silver.gas_model` fields by Market context concept,
+gas-model mart, asset, and dashboard route. Missing GraphQL or missing column
+metadata remains visible as dashboard state instead of changing ETL schemas,
+asset checks, generated docs, S3 data, or AWS permissions.
+
 The data readiness overview remains within that read-only dashboard boundary.
 It reuses the existing S3 discovery, Dagster GraphQL catalogue, and bounded-read
 helper surfaces to show platform operations readiness without changing Dagster
@@ -226,6 +233,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/src/marimoserver/data_readiness.py`
   - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
   - `backend-services/marimo/src/marimoserver/concept_asset_explorer.py`
+  - `backend-services/marimo/src/marimoserver/data_dictionary_explorer.py`
   - `backend-services/marimo/src/marimoserver/citation_chain_explorer.py`
   - `backend-services/marimo/src/marimoserver/source_lineage_explorer.py`
   - `backend-services/marimo/notebooks/sample_energy_market.py`
@@ -240,6 +248,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/notebooks/s3_bucket_health.py`
   - `backend-services/marimo/notebooks/glossary_explorer.py`
   - `backend-services/marimo/notebooks/concept_to_asset_explorer.py`
+  - `backend-services/marimo/notebooks/schema_data_dictionary_explorer.py`
   - `backend-services/marimo/notebooks/citation_chain_explorer.py`
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
@@ -259,6 +268,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/tests/component/test_data_readiness.py`
   - `backend-services/marimo/tests/component/test_dashboard_smoke.py`
   - `backend-services/marimo/tests/component/test_gas_dashboard.py`
+  - `backend-services/marimo/tests/component/test_data_dictionary_explorer.py`
   - `backend-services/marimo/tests/component/test_glossary_explorer.py`
 - `sync.scope`: `architecture`
 - `sync.qa`:

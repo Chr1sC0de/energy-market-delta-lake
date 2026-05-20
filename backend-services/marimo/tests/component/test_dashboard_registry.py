@@ -177,6 +177,22 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert DashboardAudience.ANALYST in concept_asset.audiences
     assert DashboardAudience.DATA_ENGINEER in concept_asset.audiences
 
+    data_dictionary = registry_entry_by_concept_id(
+        "schema-data-dictionary-explorer",
+        entries,
+    )
+    assert data_dictionary is not None
+    assert data_dictionary.status is DashboardStatus.AVAILABLE
+    assert data_dictionary.notebook_name == "schema_data_dictionary_explorer"
+    assert data_dictionary.notebook_route == "/marimo/schema_data_dictionary_explorer/"
+    assert data_dictionary.backing_assets == ()
+    assert data_dictionary.generated_gold_paths == (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/README.md",
+    )
+    assert DashboardAudience.ANALYST in data_dictionary.audiences
+    assert DashboardAudience.DATA_ENGINEER in data_dictionary.audiences
+    assert DashboardAudience.OPERATOR in data_dictionary.audiences
+
     citation_chain = registry_entry_by_concept_id("citation-chain-explorer", entries)
     assert citation_chain is not None
     assert citation_chain.status is DashboardStatus.AVAILABLE
