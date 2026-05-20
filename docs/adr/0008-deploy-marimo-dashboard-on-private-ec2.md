@@ -207,6 +207,16 @@ relationships to participant, zone, flow, storage, and capacity context without
 changing ETL facility modeling, generated glossary files, asset schemas, or AWS
 infrastructure.
 
+The Flow operations dashboard stays inside the same boundary. It renders the
+registry-backed Flow context panel from copied generated-gold path and source
+chunk metadata, then reads bounded recent samples from
+`silver_gas_fact_connection_point_flow`,
+`silver_gas_fact_facility_flow_storage`,
+`silver_gas_fact_nomination_forecast`, and
+`silver_gas_fact_operational_meter_flow` to show source-system coverage and
+recent/sample flow measures without changing ETL flow modeling, generated
+glossary files, asset schemas, or AWS infrastructure.
+
 Static asset optimization stays limited to immutable HTTP caching for
 content-hashed Marimo package assets. Extra preload changes, pre-serving
 packaged WASM, and auto-refresh timer behavior remain deferred until route or
@@ -257,6 +267,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/notebooks/participant_explainer.py`
   - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/connection_point_explainer.py`
+  - `backend-services/marimo/notebooks/flow_operations.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`

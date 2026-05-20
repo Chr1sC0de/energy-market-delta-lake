@@ -1,8 +1,8 @@
 """Helpers for the gas market overview marimo dashboard."""
 
 from collections.abc import Hashable, Mapping, Sequence
-from dataclasses import dataclass, replace
-from datetime import UTC, datetime, timedelta
+from dataclasses import dataclass, field as dataclass_field, replace
+from datetime import UTC, date, datetime, timedelta
 from html import escape
 from math import isnan
 import os
@@ -125,6 +125,10 @@ FACILITY_CAPACITY_OUTLOOK_TABLE_NAME = "silver_gas_fact_capacity_outlook"
 DEFAULT_FACILITY_PREVIEW_ROWS = 50
 DEFAULT_HUB_ZONE_PREVIEW_ROWS = 50
 DEFAULT_CONNECTION_POINT_PREVIEW_ROWS = 50
+FLOW_CONTEXT_ID = "flow-context"
+NOMINATION_FORECAST_TABLE_NAME = "silver_gas_fact_nomination_forecast"
+OPERATIONAL_METER_FLOW_TABLE_NAME = "silver_gas_fact_operational_meter_flow"
+DEFAULT_FLOW_PREVIEW_ROWS = 50
 _FACILITY_CAPACITY_METADATA_COLUMNS = (
     "default_capacity",
     "maximum_capacity",
@@ -146,6 +150,29 @@ _FACILITY_STORAGE_MEASURE_COLUMNS = (
     "held_in_storage_tj",
     "cushion_gas_storage_tj",
 )
+_NOMINATION_FORECAST_MEASURE_COLUMNS = (
+    "demand_forecast_gj",
+    "supply_forecast_gj",
+    "transfer_in_forecast_gj",
+    "transfer_out_forecast_gj",
+    "override_quantity_gj",
+)
+_OPERATIONAL_METER_FLOW_MEASURE_COLUMNS = ("quantity_gj",)
+_FLOW_MEASURE_COLUMNS_BY_TABLE = {
+    CONNECTION_POINT_FLOW_TABLE_NAME: ("actual_quantity_tj",),
+    FACILITY_FLOW_STORAGE_TABLE_NAME: (
+        *_FACILITY_FLOW_MEASURE_COLUMNS,
+        *_FACILITY_STORAGE_MEASURE_COLUMNS,
+    ),
+    NOMINATION_FORECAST_TABLE_NAME: _NOMINATION_FORECAST_MEASURE_COLUMNS,
+    OPERATIONAL_METER_FLOW_TABLE_NAME: _OPERATIONAL_METER_FLOW_MEASURE_COLUMNS,
+}
+_FLOW_MEASURE_UNITS_BY_TABLE = {
+    CONNECTION_POINT_FLOW_TABLE_NAME: "TJ",
+    FACILITY_FLOW_STORAGE_TABLE_NAME: "TJ",
+    NOMINATION_FORECAST_TABLE_NAME: "GJ",
+    OPERATIONAL_METER_FLOW_TABLE_NAME: "GJ",
+}
 
 _SOURCE_COVERAGE_MISSING_SOURCE_SYSTEM_COLUMN = "(missing source_system column)"
 _SOURCE_COVERAGE_EMPTY_SOURCE_SYSTEM_VALUE = "(empty source_system value)"
@@ -235,6 +262,21 @@ class _SourceCoverageContext:
     table_explorer_link: str
     asset_metadata_link: str
     uri: str
+
+
+@dataclass
+class _FlowSourceSummary:
+    fact: str
+    source_system: str
+    source_table: str
+    row_limit: str
+    detail: str
+    rows: int = 0
+    gas_dates: set[date] = dataclass_field(default_factory=set)
+    measure_rows: int = 0
+    latest_gas_date: date | None = None
+    latest_source_update: datetime | None = None
+    latest_ingest: datetime | None = None
 
 
 MARKET_PRICE_TABLE_SPEC = GasTableSpec(
@@ -710,6 +752,107 @@ CONNECTION_POINT_TABLE_SPECS = (
             "capacity_type",
             "flow_direction",
             "capacity_quantity_tj",
+        ),
+    ),
+)
+FLOW_TABLE_SPECS = (
+    GasTableSpec(
+        section="Flow facts",
+        label="Connection point flow",
+        table_name=CONNECTION_POINT_FLOW_TABLE_NAME,
+        date_columns=(
+            "gas_date",
+            "source_last_updated_timestamp",
+            "ingested_timestamp",
+        ),
+        preview_columns=(
+            "gas_date",
+            "source_system",
+            "source_tables",
+            "source_facility_id",
+            "source_connection_point_id",
+            "flow_direction",
+            "actual_quantity_tj",
+            "quality",
+            "source_last_updated_timestamp",
+            "ingested_timestamp",
+        ),
+    ),
+    GasTableSpec(
+        section="Flow facts",
+        label="Facility flow and storage",
+        table_name=FACILITY_FLOW_STORAGE_TABLE_NAME,
+        date_columns=(
+            "gas_date",
+            "source_last_updated_timestamp",
+            "ingested_timestamp",
+        ),
+        preview_columns=(
+            "gas_date",
+            "source_system",
+            "source_tables",
+            "source_facility_id",
+            "source_location_id",
+            "demand_tj",
+            "supply_tj",
+            "transfer_in_tj",
+            "transfer_out_tj",
+            "held_in_storage_tj",
+            "cushion_gas_storage_tj",
+            "source_last_updated_timestamp",
+            "ingested_timestamp",
+        ),
+    ),
+    GasTableSpec(
+        section="Flow facts",
+        label="Nomination forecast",
+        table_name=NOMINATION_FORECAST_TABLE_NAME,
+        date_columns=(
+            "gas_date",
+            "source_last_updated_timestamp",
+            "ingested_timestamp",
+        ),
+        preview_columns=(
+            "gas_date",
+            "source_system",
+            "source_table",
+            "forecast_type",
+            "forecast_version",
+            "source_facility_id",
+            "source_location_id",
+            "gas_interval",
+            "demand_forecast_gj",
+            "supply_forecast_gj",
+            "transfer_in_forecast_gj",
+            "transfer_out_forecast_gj",
+            "override_quantity_gj",
+            "source_last_updated_timestamp",
+            "ingested_timestamp",
+        ),
+    ),
+    GasTableSpec(
+        section="Flow facts",
+        label="Operational meter flow",
+        table_name=OPERATIONAL_METER_FLOW_TABLE_NAME,
+        date_columns=(
+            "gas_date",
+            "commencement_timestamp",
+            "source_last_updated_timestamp",
+            "ingested_timestamp",
+        ),
+        preview_columns=(
+            "gas_date",
+            "source_system",
+            "source_table",
+            "gas_interval",
+            "point_type",
+            "source_point_id",
+            "flow_direction",
+            "quantity_gj",
+            "commencement_timestamp",
+            "termination_timestamp",
+            "source_last_updated_timestamp",
+            "ingested_timestamp",
         ),
     ),
 )
@@ -1563,6 +1706,84 @@ _CONNECTION_POINT_PREVIEW_SCHEMA = {
     "source tables": pl.String,
     "latest ingest": pl.Datetime("us"),
 }
+_NOMINATION_FORECAST_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "date_key": pl.String,
+    "facility_key": pl.String,
+    "location_key": pl.String,
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "source_table": pl.String,
+    "gas_date": pl.Date,
+    "forecast_type": pl.String,
+    "forecast_version": pl.String,
+    "gas_interval": pl.Int64,
+    "source_facility_id": pl.String,
+    "source_location_id": pl.String,
+    "demand_forecast_gj": pl.Float64,
+    "supply_forecast_gj": pl.Float64,
+    "transfer_in_forecast_gj": pl.Float64,
+    "transfer_out_forecast_gj": pl.Float64,
+    "override_quantity_gj": pl.Float64,
+    "source_last_updated": pl.String,
+    "source_last_updated_timestamp": pl.Datetime("us"),
+    "source_surrogate_key": pl.String,
+    "source_file": pl.String,
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_OPERATIONAL_METER_FLOW_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "date_key": pl.String,
+    "operational_point_key": pl.String,
+    "zone_key": pl.String,
+    "pipeline_segment_key": pl.String,
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "source_table": pl.String,
+    "gas_date": pl.Date,
+    "gas_interval": pl.String,
+    "point_type": pl.String,
+    "source_point_id": pl.String,
+    "flow_direction": pl.String,
+    "quantity_gj": pl.Float64,
+    "commencement_timestamp": pl.Datetime("us"),
+    "termination_timestamp": pl.Datetime("us"),
+    "source_last_updated": pl.String,
+    "source_last_updated_timestamp": pl.Datetime("us"),
+    "source_surrogate_key": pl.String,
+    "source_file": pl.String,
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_FLOW_KPI_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_FLOW_SOURCE_SUMMARY_SCHEMA = {
+    "fact": pl.String,
+    "source system": pl.String,
+    "source table": pl.String,
+    "rows": pl.UInt32,
+    "gas days": pl.UInt32,
+    "measure rows": pl.UInt32,
+    "latest gas date": pl.Date,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+    "row limit": pl.String,
+    "detail": pl.String,
+}
+_FLOW_RECENT_OBSERVATION_SCHEMA = {
+    "fact": pl.String,
+    "gas date": pl.Date,
+    "source system": pl.String,
+    "source table": pl.String,
+    "flow context": pl.String,
+    "measure": pl.String,
+    "quantity": pl.Float64,
+    "unit": pl.String,
+    "source updated": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
 _HUB_ZONE_DIM_RAW_SCHEMA = {
     "surrogate_key": pl.String,
     "source_system": pl.String,
@@ -2181,6 +2402,51 @@ def cached_load_connection_point_context_tables(
         specs=requested_specs,
         reader=reader,
         view=GasModelTableView.SAMPLE,
+        refresh_token=refresh_token,
+        clock=clock,
+    )
+
+
+def flow_table_specs() -> tuple[GasTableSpec, ...]:
+    """Return Flow-oriented fact tables used by the operations dashboard."""
+    return FLOW_TABLE_SPECS
+
+
+def load_flow_context_tables(
+    config: GasDashboardConfig,
+    specs: Sequence[GasTableSpec] | None = None,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Load Flow operations tables through the shared bounded loader."""
+    requested_specs = FLOW_TABLE_SPECS if specs is None else specs
+    return load_gas_model_tables(
+        _source_coverage_bounded_config(config),
+        specs=requested_specs,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        clock=clock,
+    )
+
+
+def cached_load_flow_context_tables(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    specs: Sequence[GasTableSpec] | None = None,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Return cached Flow operations table reads for explicit refreshes."""
+    requested_specs = FLOW_TABLE_SPECS if specs is None else specs
+    return cached_load_gas_model_tables(
+        _source_coverage_bounded_config(config),
+        cache,
+        specs=requested_specs,
+        reader=reader,
+        view=GasModelTableView.RECENT,
         refresh_token=refresh_token,
         clock=clock,
     )
@@ -3919,6 +4185,227 @@ def render_connection_point_context_links(
     <div>
         <p class="connection-point-links__eyebrow">Context links</p>
         <h2>Connection Point, Facility, flow, capacity, and map context</h2>
+    </div>
+    <ul>
+{rows}
+    </ul>
+</section>"""
+
+
+def flow_source_summary_frame(loads: Sequence[GasTableLoad]) -> pl.DataFrame:
+    """Return source-system coverage for loaded Flow fact rows."""
+    summaries: dict[tuple[str, str, str], _FlowSourceSummary] = {}
+
+    for load in loads:
+        dataframe = _normalised_flow_dataframe(load)
+        if dataframe.is_empty():
+            continue
+
+        for row in dataframe.to_dicts():
+            _update_flow_source_summaries(summaries, load, row)
+
+    if len(summaries) == 0:
+        return pl.DataFrame(schema=_FLOW_SOURCE_SUMMARY_SCHEMA)
+
+    return pl.DataFrame(
+        [_flow_source_summary_row(summary) for summary in summaries.values()],
+        schema=_FLOW_SOURCE_SUMMARY_SCHEMA,
+    ).sort(
+        ["fact", "source system", "source table"],
+        nulls_last=True,
+    )
+
+
+def flow_recent_observation_frame(
+    loads: Sequence[GasTableLoad],
+    *,
+    preview_rows: int = DEFAULT_FLOW_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return recent/sample Flow observations from already bounded reads."""
+    rows: list[dict[str, object]] = []
+
+    for load in loads:
+        dataframe = _normalised_flow_dataframe(load)
+        if dataframe.is_empty():
+            continue
+        for row in dataframe.to_dicts():
+            rows.extend(_flow_observation_rows(load, row))
+
+    if len(rows) == 0:
+        return pl.DataFrame(schema=_FLOW_RECENT_OBSERVATION_SCHEMA)
+
+    return (
+        pl.DataFrame(rows, schema=_FLOW_RECENT_OBSERVATION_SCHEMA)
+        .sort(
+            ["gas date", "source updated", "latest ingest", "fact", "measure"],
+            descending=[True, True, True, False, False],
+            nulls_last=True,
+        )
+        .head(max(1, preview_rows))
+    )
+
+
+def flow_kpi_frame(loads: Sequence[GasTableLoad]) -> pl.DataFrame:
+    """Return first-viewport Flow operations KPIs."""
+    source_summary = flow_source_summary_frame(loads)
+    recent_observations = flow_recent_observation_frame(loads)
+    unavailable_count = sum(load.error is not None for load in loads)
+    empty_count = sum(
+        load.error is None and (load.dataframe is None or load.dataframe.is_empty())
+        for load in loads
+    )
+    row_limit = _common_row_limit(loads) if len(loads) > 0 else None
+
+    source_rows = source_summary.to_dicts() if not source_summary.is_empty() else []
+    source_system_count = len(
+        {
+            row["source system"]
+            for row in source_rows
+            if row["source system"] != "(empty source_system value)"
+        }
+    )
+    source_table_count = len(
+        {
+            row["source table"]
+            for row in source_rows
+            if row["source table"] != "(empty source_table/source_tables value)"
+        }
+    )
+    latest_gas_date = _flow_latest_gas_date(loads)
+    measure_rows = sum(_flow_measure_row_count(load) for load in loads)
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Flow facts checked",
+                "value": f"{len(loads):,}",
+                "detail": "Flow-oriented silver.gas_model table reads requested",
+            },
+            {
+                "metric": "Loaded facts",
+                "value": f"{sum(load.available for load in loads):,}",
+                "detail": "Tables with at least one loaded bounded row",
+            },
+            {
+                "metric": "Source systems",
+                "value": f"{source_system_count:,}",
+                "detail": "Distinct populated source_system values in loaded facts",
+            },
+            {
+                "metric": "Source tables",
+                "value": f"{source_table_count:,}",
+                "detail": "Distinct populated source_table/source_tables values",
+            },
+            {
+                "metric": "Flow measure rows",
+                "value": f"{measure_rows:,}",
+                "detail": "Rows with at least one populated flow, storage, or forecast measure",
+            },
+            {
+                "metric": "Latest Gas Day",
+                "value": _format_optional_value(latest_gas_date),
+                "detail": "Maximum gas_date across the loaded bounded Flow rows",
+            },
+            {
+                "metric": "Recent/sample observations",
+                "value": f"{recent_observations.height:,}",
+                "detail": "Rendered measure observations after bounded reads",
+            },
+            {
+                "metric": "Unavailable or empty facts",
+                "value": f"{unavailable_count + empty_count:,}",
+                "detail": (
+                    f"{unavailable_count:,} unavailable reads and "
+                    f"{empty_count:,} empty reads"
+                ),
+            },
+            {
+                "metric": "Read policy",
+                "value": format_row_limit(row_limit),
+                "detail": row_limit_message(row_limit),
+            },
+        ],
+        schema=_FLOW_KPI_SCHEMA,
+    )
+
+
+def flow_context_empty_state_markdown(loads: Sequence[GasTableLoad]) -> str:
+    """Return empty-state copy for the Flow operations dashboard."""
+    if len(loads) == 0:
+        return """
+        **No Flow operations tables were requested.**
+
+        The dashboard expected Flow-oriented `silver.gas_model` fact table
+        specs but received none. Check the Marimo dashboard registry and Flow
+        operations configuration.
+        """
+
+    failed_count = sum(load.error is not None for load in loads)
+    empty_count = sum(
+        load.error is None and (load.dataframe is None or load.dataframe.is_empty())
+        for load in loads
+    )
+    read_policy = row_limit_message(_common_row_limit(loads))
+    read_detail = (
+        f"`{failed_count}` reads were unavailable and `{empty_count}` reads "
+        "returned no rows."
+    )
+    return f"""
+    **No Flow source summaries or recent measure rows are available.**
+
+    The dashboard checked `{len(loads)}` Flow-oriented `silver.gas_model`
+    facts: `silver_gas_fact_connection_point_flow`,
+    `silver_gas_fact_facility_flow_storage`,
+    `silver_gas_fact_nomination_forecast`, and
+    `silver_gas_fact_operational_meter_flow`. {read_detail}
+
+    {read_policy}
+
+    Materialize or seed the curated gas model outputs, then use
+    **Refresh data**.
+    """
+
+
+def render_flow_context_links(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render Flow links to related dashboards and concept panels."""
+    candidate_entries = tuple(dashboard_registry() if entries is None else entries)
+    concept_ids = (
+        FLOW_CONTEXT_ID,
+        "gbb-interactive-map",
+        "source-coverage-matrix",
+        "gas-model-table-explorer",
+        "facility-context",
+        "connection-point-context",
+        "gas-day-context",
+        "schedule-context",
+        "capacity-context",
+    )
+    rows = "\n".join(
+        _render_flow_context_link(entry)
+        for entry in (
+            registry_entry_by_concept_id(concept_id, candidate_entries)
+            for concept_id in concept_ids
+        )
+        if entry is not None
+    )
+    if rows == "":
+        rows = (
+            '<li class="flow-links__empty">'
+            "No Flow, Facility, Connection Point, Gas Day, schedule, capacity, "
+            "map, or table explorer entries are registered."
+            "</li>"
+        )
+
+    return f"""\
+<style>
+{_flow_context_links_css()}
+</style>
+<section class="flow-links" aria-label="Flow context links">
+    <div>
+        <p class="flow-links__eyebrow">Context links</p>
+        <h2>Flow, Facility, Connection Point, and Gas Day context</h2>
     </div>
     <ul>
 {rows}
@@ -7401,6 +7888,320 @@ def _normalised_connection_point_flow_dataframe(
     )
 
 
+def _normalised_nomination_forecast_dataframe(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_NOMINATION_FORECAST_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _NOMINATION_FORECAST_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("surrogate_key").cast(pl.String, strict=False),
+        pl.col("date_key").cast(pl.String, strict=False),
+        pl.col("facility_key").cast(pl.String, strict=False),
+        pl.col("location_key").cast(pl.String, strict=False),
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        pl.col("source_table").cast(pl.String, strict=False),
+        _normalise_date_column(dataframe, "gas_date"),
+        pl.col("forecast_type").cast(pl.String, strict=False),
+        pl.col("forecast_version").cast(pl.String, strict=False),
+        pl.col("gas_interval").cast(pl.Int64, strict=False),
+        pl.col("source_facility_id").cast(pl.String, strict=False),
+        pl.col("source_location_id").cast(pl.String, strict=False),
+        pl.col("demand_forecast_gj").cast(pl.Float64, strict=False),
+        pl.col("supply_forecast_gj").cast(pl.Float64, strict=False),
+        pl.col("transfer_in_forecast_gj").cast(pl.Float64, strict=False),
+        pl.col("transfer_out_forecast_gj").cast(pl.Float64, strict=False),
+        pl.col("override_quantity_gj").cast(pl.Float64, strict=False),
+        pl.col("source_last_updated").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "source_last_updated_timestamp"),
+        pl.col("source_surrogate_key").cast(pl.String, strict=False),
+        pl.col("source_file").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
+def _normalised_operational_meter_flow_dataframe(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_OPERATIONAL_METER_FLOW_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _OPERATIONAL_METER_FLOW_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("surrogate_key").cast(pl.String, strict=False),
+        pl.col("date_key").cast(pl.String, strict=False),
+        pl.col("operational_point_key").cast(pl.String, strict=False),
+        pl.col("zone_key").cast(pl.String, strict=False),
+        pl.col("pipeline_segment_key").cast(pl.String, strict=False),
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        pl.col("source_table").cast(pl.String, strict=False),
+        _normalise_date_column(dataframe, "gas_date"),
+        pl.col("gas_interval").cast(pl.String, strict=False),
+        pl.col("point_type").cast(pl.String, strict=False),
+        pl.col("source_point_id").cast(pl.String, strict=False),
+        pl.col("flow_direction").cast(pl.String, strict=False),
+        pl.col("quantity_gj").cast(pl.Float64, strict=False),
+        _normalise_timestamp_column(dataframe, "commencement_timestamp"),
+        _normalise_timestamp_column(dataframe, "termination_timestamp"),
+        pl.col("source_last_updated").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "source_last_updated_timestamp"),
+        pl.col("source_surrogate_key").cast(pl.String, strict=False),
+        pl.col("source_file").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
+def _normalised_flow_dataframe(load: GasTableLoad) -> pl.DataFrame:
+    if load.spec.table_name == CONNECTION_POINT_FLOW_TABLE_NAME:
+        return _normalised_connection_point_flow_dataframe(load)
+    if load.spec.table_name == FACILITY_FLOW_STORAGE_TABLE_NAME:
+        return _normalised_facility_flow_storage_dataframe(load)
+    if load.spec.table_name == NOMINATION_FORECAST_TABLE_NAME:
+        return _normalised_nomination_forecast_dataframe(load)
+    if load.spec.table_name == OPERATIONAL_METER_FLOW_TABLE_NAME:
+        return _normalised_operational_meter_flow_dataframe(load)
+    if load.dataframe is None:
+        return pl.DataFrame()
+    return load.dataframe
+
+
+def _update_flow_source_summaries(
+    summaries: dict[tuple[str, str, str], _FlowSourceSummary],
+    load: GasTableLoad,
+    row: Mapping[str, object],
+) -> None:
+    source_system = _flow_source_system_value(row)
+    for source_table in _flow_source_table_labels(row):
+        key = (load.spec.label, source_system, source_table)
+        summary = summaries.setdefault(
+            key,
+            _FlowSourceSummary(
+                fact=load.spec.label,
+                source_system=source_system,
+                source_table=source_table,
+                row_limit=format_row_limit(load.row_limit),
+                detail=_flow_fact_detail(load),
+            ),
+        )
+        _update_flow_source_summary(summary, load.spec.table_name, row)
+
+
+def _update_flow_source_summary(
+    summary: _FlowSourceSummary,
+    table_name: str,
+    row: Mapping[str, object],
+) -> None:
+    summary.rows += 1
+    gas_date = _flow_date_value(row.get("gas_date"))
+    if gas_date is not None:
+        summary.gas_dates.add(gas_date)
+        summary.latest_gas_date = _latest_date(summary.latest_gas_date, gas_date)
+    if _flow_row_has_measure(table_name, row):
+        summary.measure_rows += 1
+    summary.latest_source_update = _latest_datetime(
+        summary.latest_source_update,
+        _flow_datetime_value(row.get("source_last_updated_timestamp")),
+    )
+    summary.latest_ingest = _latest_datetime(
+        summary.latest_ingest,
+        _flow_datetime_value(row.get("ingested_timestamp")),
+    )
+
+
+def _flow_source_summary_row(summary: _FlowSourceSummary) -> dict[str, object]:
+    return {
+        "fact": summary.fact,
+        "source system": summary.source_system,
+        "source table": summary.source_table,
+        "rows": summary.rows,
+        "gas days": len(summary.gas_dates),
+        "measure rows": summary.measure_rows,
+        "latest gas date": summary.latest_gas_date,
+        "latest source update": summary.latest_source_update,
+        "latest ingest": summary.latest_ingest,
+        "row limit": summary.row_limit,
+        "detail": summary.detail,
+    }
+
+
+def _flow_source_system_value(row: Mapping[str, object]) -> str:
+    values = _source_coverage_value_strings(row.get("source_system"))
+    if len(values) == 0:
+        return "(empty source_system value)"
+    return values[0]
+
+
+def _flow_source_table_labels(row: Mapping[str, object]) -> tuple[str, ...]:
+    values = _flow_source_table_values(row)
+    if len(values) == 0:
+        return ("(empty source_table/source_tables value)",)
+    return values
+
+
+def _flow_source_table_values(row: Mapping[str, object]) -> tuple[str, ...]:
+    values: list[str] = []
+    values.extend(_source_coverage_value_strings(row.get("source_table")))
+    values.extend(_source_coverage_value_strings(row.get("source_tables")))
+    return tuple(dict.fromkeys(values))
+
+
+def _flow_fact_detail(load: GasTableLoad) -> str:
+    measure_names = ", ".join(_flow_measure_columns(load.spec.table_name))
+    if measure_names == "":
+        return f"{load.spec.table_name} has no configured Flow measure columns"
+    return f"{load.spec.table_name} measures: {measure_names}"
+
+
+def _flow_row_has_measure(table_name: str, row: Mapping[str, object]) -> bool:
+    return any(
+        row.get(column) is not None for column in _flow_measure_columns(table_name)
+    )
+
+
+def _flow_measure_columns(table_name: str) -> tuple[str, ...]:
+    return _FLOW_MEASURE_COLUMNS_BY_TABLE.get(table_name, ())
+
+
+def _flow_measure_unit(table_name: str) -> str:
+    return _FLOW_MEASURE_UNITS_BY_TABLE.get(table_name, "")
+
+
+def _latest_date(current: date | None, value: date | None) -> date | None:
+    if value is None:
+        return current
+    if current is None or value > current:
+        return value
+    return current
+
+
+def _latest_datetime(
+    current: datetime | None,
+    value: datetime | None,
+) -> datetime | None:
+    if value is None:
+        return current
+    if current is None or value > current:
+        return value
+    return current
+
+
+def _flow_date_value(value: object | None) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return None
+
+
+def _flow_datetime_value(value: object | None) -> datetime | None:
+    return value if isinstance(value, datetime) else None
+
+
+def _flow_observation_rows(
+    load: GasTableLoad,
+    row: Mapping[str, object],
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    source_table = ", ".join(_flow_source_table_values(row))
+    for measure in _flow_measure_columns(load.spec.table_name):
+        value = row.get(measure)
+        if value is None:
+            continue
+        rows.append(
+            {
+                "fact": load.spec.label,
+                "gas date": row.get("gas_date"),
+                "source system": _flow_source_system_value(row),
+                "source table": source_table,
+                "flow context": _flow_context_label(load.spec.table_name, row),
+                "measure": measure,
+                "quantity": value,
+                "unit": _flow_measure_unit(load.spec.table_name),
+                "source updated": row.get("source_last_updated_timestamp"),
+                "latest ingest": row.get("ingested_timestamp"),
+            }
+        )
+    return rows
+
+
+def _flow_context_label(table_name: str, row: Mapping[str, object]) -> str:
+    context_parts = {
+        CONNECTION_POINT_FLOW_TABLE_NAME: (
+            row.get("source_facility_id"),
+            row.get("source_connection_point_id"),
+            row.get("flow_direction"),
+        ),
+        FACILITY_FLOW_STORAGE_TABLE_NAME: (
+            row.get("source_facility_id"),
+            row.get("source_location_id"),
+        ),
+        NOMINATION_FORECAST_TABLE_NAME: (
+            row.get("forecast_type"),
+            row.get("forecast_version"),
+            row.get("source_facility_id"),
+            row.get("source_location_id"),
+            row.get("gas_interval"),
+        ),
+        OPERATIONAL_METER_FLOW_TABLE_NAME: (
+            row.get("point_type"),
+            row.get("source_point_id"),
+            row.get("flow_direction"),
+            row.get("gas_interval"),
+        ),
+    }
+    return _join_flow_context_parts(context_parts.get(table_name, ()))
+
+
+def _join_flow_context_parts(values: Sequence[object | None]) -> str:
+    parts = [
+        str(value).strip()
+        for value in values
+        if value is not None and str(value).strip() != ""
+    ]
+    return " / ".join(parts)
+
+
+def _flow_latest_gas_date(loads: Sequence[GasTableLoad]) -> date | None:
+    latest: date | None = None
+    for load in loads:
+        dataframe = _normalised_flow_dataframe(load)
+        if dataframe.is_empty() or "gas_date" not in dataframe.columns:
+            continue
+        value = _flow_date_value(dataframe.get_column("gas_date").drop_nulls().max())
+        latest = _latest_date(latest, value)
+    return latest
+
+
+def _flow_measure_row_count(load: GasTableLoad) -> int:
+    dataframe = _normalised_flow_dataframe(load)
+    measure_columns = _flow_measure_columns(load.spec.table_name)
+    if dataframe.is_empty() or len(measure_columns) == 0:
+        return 0
+
+    return dataframe.filter(
+        pl.any_horizontal(*(pl.col(column).is_not_null() for column in measure_columns))
+    ).height
+
+
 def _non_empty_string_count(dataframe: pl.DataFrame, column: str) -> int:
     return dataframe.filter(_non_empty_string_expression(column)).height
 
@@ -8992,6 +9793,23 @@ def _render_connection_point_context_link(entry: DashboardRegistryEntry) -> str:
         </li>"""
 
 
+def _render_flow_context_link(entry: DashboardRegistryEntry) -> str:
+    status_label = _dashboard_entry_status_label(entry)
+    title = escape(entry.title)
+    route = entry.notebook_route
+    if entry.status.value == "available" and route is not None:
+        title_html = f'<a href="{escape(route, quote=True)}">{title}</a>'
+    else:
+        title_html = f"<span>{title}</span>"
+
+    return f"""\
+        <li data-dashboard-status="{escape(entry.status.value, quote=True)}">
+            {title_html}
+            <span>{escape(status_label)}</span>
+            <code>{escape(entry.concept_id)}</code>
+        </li>"""
+
+
 def _hub_zone_context_links_css() -> str:
     return """\
 .hub-zone-links {
@@ -9063,6 +9881,83 @@ def _hub_zone_context_links_css() -> str:
 
 @media (max-width: 760px) {
     .hub-zone-links li {
+        grid-template-columns: 1fr;
+    }
+}
+"""
+
+
+def _flow_context_links_css() -> str:
+    return """\
+.flow-links {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+}
+
+.flow-links__eyebrow {
+    margin: 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.74rem;
+    font-weight: 720;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.flow-links h2 {
+    margin: 0.15rem 0 0;
+    font-size: 1.05rem;
+}
+
+.flow-links ul {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.flow-links li {
+    display: grid;
+    grid-template-columns: minmax(10rem, 1fr) auto auto;
+    gap: 0.65rem;
+    align-items: center;
+    min-width: 0;
+    padding: 0.55rem 0;
+    border-top: 1px solid var(--emdl-line, #cfdbd6);
+}
+
+.flow-links li:first-child {
+    border-top: 0;
+}
+
+.flow-links a {
+    color: var(--emdl-blue, #166791);
+    font-weight: 720;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+}
+
+.flow-links span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.flow-links li > span:nth-child(2) {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.flow-links code {
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+    .flow-links li {
         grid-template-columns: 1fr;
     }
 }

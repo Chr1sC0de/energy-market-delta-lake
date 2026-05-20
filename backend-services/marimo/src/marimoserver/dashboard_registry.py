@@ -1101,11 +1101,12 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "concept_id": "flow-context",
         "title": "Flow Context",
         "description": (
-            "Planned concept panel for actual flows, scheduled flow, "
+            "Available operational dashboard for actual flows, scheduled flow, "
             "nominations, and operational meter flow."
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
-        "status": "planned",
+        "status": "available",
+        "notebook_name": "flow_operations",
         "backing_assets": (
             "silver.gas_model.silver_gas_fact_connection_point_flow",
             "silver.gas_model.silver_gas_fact_facility_flow_storage",

@@ -27,6 +27,7 @@ Marimo-Codex research workspace image.
 - [Participant explainer dashboard](#participant-explainer-dashboard)
 - [Hub / Zone explainer dashboard](#hub--zone-explainer-dashboard)
 - [Connection Point explainer dashboard](#connection-point-explainer-dashboard)
+- [Flow operations dashboard](#flow-operations-dashboard)
 - [Gas market dashboard](#gas-market-dashboard)
 - [Market prices dashboard](#market-prices-dashboard)
 - [Schedule runs dashboard](#schedule-runs-dashboard)
@@ -500,6 +501,26 @@ visible where the bounded samples expose keys or source identifiers. Empty
 reads and unavailable Parquet prefixes render designed empty states with the
 checked assets, read policy, and refresh action.
 
+## Flow operations dashboard
+
+[notebooks/flow_operations.py](notebooks/flow_operations.py) is an operational
+dashboard for the Flow concept. It renders the registry-backed Flow context
+panel and context links to Facility, Connection Point, Gas Day, source
+coverage, table explorer, schedule, capacity, and GBB map surfaces, then loads
+bounded recent samples from
+`silver.gas_model.silver_gas_fact_connection_point_flow`,
+`silver.gas_model.silver_gas_fact_facility_flow_storage`,
+`silver.gas_model.silver_gas_fact_nomination_forecast`, and
+`silver.gas_model.silver_gas_fact_operational_meter_flow` through the shared
+gas model loader.
+
+The dashboard summarizes loaded Flow facts by source system and source table,
+shows first-viewport data health, reports bounded-read timing and cache state,
+and flattens populated actual flow, storage, nomination forecast, and
+operational meter quantities into recent/sample observations. Missing tables,
+unavailable Parquet prefixes, empty reads, and missing columns render designed
+empty states with the checked assets, read policy, and refresh action.
+
 ## Gas market dashboard
 
 The default notebook,
@@ -752,7 +773,7 @@ Caddy and choose an available card such as `data_readiness_overview`,
 `gas_customer_transfer_activity`, `gas_bid_offer_stack`,
 `gas_quality_composition`, `facility_explainer`, `participant_explainer`,
 `hub_zone_explainer`, `connection_point_explainer`, or
-`gbb_interactive_map`:
+`flow_operations`, or `gbb_interactive_map`:
 
 ```text
 http://localhost/marimo
@@ -884,6 +905,13 @@ Use the same pattern for the Connection Point explainer dashboard:
 ```bash
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/connection_point_explainer.py
+```
+
+Use the same pattern for the Flow operations dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/flow_operations.py
 ```
 
 Use the same pattern for the system notices dashboard:
@@ -1057,6 +1085,7 @@ prek run -a
   - `backend-services/marimo/notebooks/participant_explainer.py`
   - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/connection_point_explainer.py`
+  - `backend-services/marimo/notebooks/flow_operations.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`

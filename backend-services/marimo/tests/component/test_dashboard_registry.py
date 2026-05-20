@@ -310,6 +310,26 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         "chunk-gbb-guide-flow-report",
     )
 
+    flow = registry_entry_by_concept_id("flow-context", entries)
+    assert flow is not None
+    assert flow.status is DashboardStatus.AVAILABLE
+    assert flow.notebook_name == "flow_operations"
+    assert flow.notebook_route == "/marimo/flow_operations/"
+    assert flow.backing_assets == (
+        "silver.gas_model.silver_gas_fact_connection_point_flow",
+        "silver.gas_model.silver_gas_fact_facility_flow_storage",
+        "silver.gas_model.silver_gas_fact_nomination_forecast",
+        "silver.gas_model.silver_gas_fact_operational_meter_flow",
+    )
+    assert flow.generated_gold_paths == (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
+    )
+    assert flow.source_chunk_ids == (
+        "chunk-gbb-guide-flow-report",
+        "chunk-gbb-procedures-scheduled-flow",
+        "chunk-sttm-procedures-settlement-terms",
+    )
+
 
 def test_dashboard_registry_payload_includes_required_fields() -> None:
     payload = dashboard_registry_payload()
