@@ -18,7 +18,10 @@ from dagster._core.definitions.unresolved_asset_job_definition import (
 )
 from polars import String
 
-from aemo_etl.defs.raw.gbb._ecs import rebuild_sized_spot_ecs_tags
+from aemo_etl.defs.raw.gbb._ecs import (
+    pipeline_connection_flow_v2_hotfix_ecs_tags,
+    rebuild_sized_spot_ecs_tags,
+)
 
 STTM_CORE_REPORT_SUFFIXES = (
     "int651_v1_ex_ante_market_price_rpt_1",
@@ -258,12 +261,12 @@ def test_gbb_pipeline_connection_flow_v1_job_uses_rebuild_sized_ecs_task() -> No
     assert job.tags == rebuild_sized_spot_ecs_tags()
 
 
-def test_gbb_pipeline_connection_flow_v2_job_uses_rebuild_sized_ecs_task() -> None:
+def test_gbb_pipeline_connection_flow_v2_job_uses_hotfix_sized_ecs_task() -> None:
     from aemo_etl.defs.raw.gbb.gasbb_pipeline_connection_flow_v2 import defs
 
     job = cast(UnresolvedAssetJobDefinition, next(iter(defs.jobs or ())))
 
-    assert job.tags == rebuild_sized_spot_ecs_tags()
+    assert job.tags == pipeline_connection_flow_v2_hotfix_ecs_tags()
 
 
 def test_gbb_short_term_capacity_outlook_job_uses_rebuild_sized_ecs_task() -> None:
