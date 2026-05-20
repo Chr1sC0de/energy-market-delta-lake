@@ -63,8 +63,8 @@ def test_glossary_explorer_builds_concept_details_and_dashboard_references() -> 
     )
     assert any(
         reference.title == "Capacity Context"
-        and reference.status is DashboardStatus.PLANNED
-        and reference.notebook_route is None
+        and reference.status is DashboardStatus.AVAILABLE
+        and reference.notebook_route == "/marimo/capacity_outlook/"
         for reference in capacity.dashboard_references
     )
     assert any(

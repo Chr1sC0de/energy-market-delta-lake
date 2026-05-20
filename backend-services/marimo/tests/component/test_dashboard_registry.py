@@ -418,8 +418,12 @@ def test_dashboard_registry_keeps_gold_context_as_metadata_paths() -> None:
     capacity = registry_entry_by_concept_id("capacity-context")
 
     assert capacity is not None
-    assert capacity.status is DashboardStatus.PLANNED
-    assert capacity.notebook_route is None
+    assert capacity.status is DashboardStatus.AVAILABLE
+    assert capacity.notebook_name == "capacity_outlook"
+    assert capacity.notebook_route == "/marimo/capacity_outlook/"
+    assert capacity.backing_assets == (
+        "silver.gas_model.silver_gas_fact_capacity_outlook",
+    )
     assert (
         "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md"
         in capacity.generated_gold_paths

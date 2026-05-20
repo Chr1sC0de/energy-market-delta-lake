@@ -122,6 +122,15 @@ CONNECTION_POINT_DIM_TABLE_NAME = "silver_gas_dim_connection_point"
 CONNECTION_POINT_FLOW_TABLE_NAME = "silver_gas_fact_connection_point_flow"
 FACILITY_FLOW_STORAGE_TABLE_NAME = "silver_gas_fact_facility_flow_storage"
 FACILITY_CAPACITY_OUTLOOK_TABLE_NAME = "silver_gas_fact_capacity_outlook"
+CAPACITY_CONTEXT_ID = "capacity-context"
+CAPACITY_OUTLOOK_TABLE_NAME = FACILITY_CAPACITY_OUTLOOK_TABLE_NAME
+CAPACITY_OUTLOOK_DATE_RANGE_FILTER_ALL = "All date ranges"
+CAPACITY_OUTLOOK_CAPACITY_TYPE_FILTER_ALL = "All capacity types"
+CAPACITY_OUTLOOK_DIRECTION_FILTER_ALL = "All directions"
+CAPACITY_OUTLOOK_FACILITY_FILTER_ALL = "All facilities"
+CAPACITY_OUTLOOK_SOURCE_COVERAGE_FILTER_ALL = "All capacity source coverage"
+CAPACITY_OUTLOOK_SOURCE_SYSTEM_FILTER_ALL = "All source systems"
+DEFAULT_CAPACITY_OUTLOOK_PREVIEW_ROWS = 50
 DEFAULT_FACILITY_PREVIEW_ROWS = 50
 DEFAULT_HUB_ZONE_PREVIEW_ROWS = 50
 DEFAULT_CONNECTION_POINT_PREVIEW_ROWS = 50
@@ -200,6 +209,21 @@ _SOURCE_COVERAGE_MISSING_SOURCE_TABLE_COLUMN = (
     "(missing source_table/source_tables column)"
 )
 _SOURCE_COVERAGE_EMPTY_SOURCE_TABLE_VALUE = "(empty source_table/source_tables value)"
+_CAPACITY_OUTLOOK_UNDATED_DATE_RANGE = "(undated outlook period)"
+_CAPACITY_OUTLOOK_OTHER_SOURCE_COVERAGE = "Other capacity outlook"
+_CAPACITY_OUTLOOK_SOURCE_TABLE_COVERAGE_LABELS = {
+    "silver.gbb.silver_gasbb_short_term_capacity_outlook": (
+        "Short-term capacity outlook"
+    ),
+    "silver.gbb.silver_gasbb_medium_term_capacity_outlook": (
+        "Medium-term capacity outlook"
+    ),
+    "silver.gbb.silver_gasbb_uncontracted_capacity": "Uncontracted capacity",
+    "silver.gbb.silver_gasbb_nameplate_rating": "Nameplate rating",
+    "silver.gbb.silver_gasbb_connection_point_nameplate": (
+        "Connection-point nameplate"
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -625,6 +649,35 @@ FACILITY_FLOW_STORAGE_TABLE_SPEC = GasTableSpec(
     ),
 )
 
+CAPACITY_OUTLOOK_TABLE_SPEC = GasTableSpec(
+    section="Flow and capacity",
+    label="Capacity outlook",
+    table_name=CAPACITY_OUTLOOK_TABLE_NAME,
+    date_columns=(
+        "from_gas_date",
+        "to_gas_date",
+        "source_last_updated_timestamp",
+        "ingested_timestamp",
+    ),
+    preview_columns=(
+        "from_gas_date",
+        "to_gas_date",
+        "outlook_month",
+        "outlook_year",
+        "source_system",
+        "source_table",
+        "source_facility_id",
+        "facility_name",
+        "capacity_type",
+        "flow_direction",
+        "receipt_location_id",
+        "delivery_location_id",
+        "capacity_quantity_tj",
+        "capacity_description",
+    ),
+)
+CAPACITY_OUTLOOK_TABLE_SPECS = (CAPACITY_OUTLOOK_TABLE_SPEC,)
+
 FACILITY_TABLE_SPECS = (
     GasTableSpec(
         section="Dimensions",
@@ -652,29 +705,7 @@ FACILITY_TABLE_SPECS = (
         ),
     ),
     FACILITY_FLOW_STORAGE_TABLE_SPEC,
-    GasTableSpec(
-        section="Facts",
-        label="Capacity outlook",
-        table_name=FACILITY_CAPACITY_OUTLOOK_TABLE_NAME,
-        date_columns=(
-            "from_gas_date",
-            "to_gas_date",
-            "source_last_updated_timestamp",
-            "ingested_timestamp",
-        ),
-        preview_columns=(
-            "from_gas_date",
-            "to_gas_date",
-            "source_system",
-            "source_table",
-            "source_facility_id",
-            "facility_name",
-            "capacity_type",
-            "flow_direction",
-            "capacity_quantity_tj",
-            "capacity_description",
-        ),
-    ),
+    CAPACITY_OUTLOOK_TABLE_SPEC,
 )
 CONNECTION_POINT_TABLE_SPECS = (
     GasTableSpec(
@@ -1775,11 +1806,87 @@ _FACILITY_CAPACITY_RAW_SCHEMA = {
     "flow_direction": pl.String,
     "from_gas_date": pl.Date,
     "to_gas_date": pl.Date,
+    "outlook_month": pl.Int64,
+    "outlook_year": pl.Int64,
+    "receipt_location_id": pl.String,
+    "delivery_location_id": pl.String,
     "capacity_quantity_tj": pl.Float64,
     "capacity_description": pl.String,
+    "source_last_updated": pl.String,
+    "source_surrogate_key": pl.String,
     "source_file": pl.String,
     "source_last_updated_timestamp": pl.Datetime("us"),
     "ingested_timestamp": pl.Datetime("us"),
+}
+_CAPACITY_OUTLOOK_DASHBOARD_ROW_SCHEMA = {
+    **_FACILITY_CAPACITY_RAW_SCHEMA,
+    "source_table": pl.String,
+    "date_range": pl.String,
+    "capacity_source_coverage": pl.String,
+}
+_CAPACITY_OUTLOOK_KPI_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_CAPACITY_OUTLOOK_SUMMARY_SCHEMA = {
+    "capacity source coverage": pl.String,
+    "source system": pl.String,
+    "source table": pl.String,
+    "source facility id": pl.String,
+    "facility": pl.String,
+    "capacity type": pl.String,
+    "direction": pl.String,
+    "date range": pl.String,
+    "rows": pl.UInt32,
+    "capacity rows": pl.UInt32,
+    "total capacity tj": pl.Float64,
+    "avg capacity tj": pl.Float64,
+    "max capacity tj": pl.Float64,
+    "first from gas date": pl.Date,
+    "latest to gas date": pl.Date,
+    "outlook months": pl.UInt32,
+    "source files": pl.UInt32,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_CAPACITY_OUTLOOK_SOURCE_COVERAGE_SCHEMA = {
+    "capacity source coverage": pl.String,
+    "source system": pl.String,
+    "source table": pl.String,
+    "rows": pl.UInt32,
+    "facilities": pl.UInt32,
+    "capacity types": pl.UInt32,
+    "directions": pl.UInt32,
+    "date ranges": pl.UInt32,
+    "capacity rows": pl.UInt32,
+    "total capacity tj": pl.Float64,
+    "first from gas date": pl.Date,
+    "latest to gas date": pl.Date,
+    "source files": pl.UInt32,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_CAPACITY_OUTLOOK_OBSERVATION_SCHEMA = {
+    "capacity source coverage": pl.String,
+    "from gas date": pl.Date,
+    "to gas date": pl.Date,
+    "outlook month": pl.Int64,
+    "outlook year": pl.Int64,
+    "source system": pl.String,
+    "source table": pl.String,
+    "source facility id": pl.String,
+    "facility": pl.String,
+    "capacity type": pl.String,
+    "direction": pl.String,
+    "receipt location": pl.String,
+    "delivery location": pl.String,
+    "capacity_quantity_tj": pl.Float64,
+    "capacity description": pl.String,
+    "source identifier": pl.String,
+    "source file": pl.String,
+    "source updated": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
 }
 _FACILITY_COVERAGE_SCHEMA = {
     "metric": pl.String,
@@ -2597,6 +2704,42 @@ def cached_load_linepack_table(
         config,
         cache,
         specs=(LINEPACK_TABLE_SPEC,),
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        refresh_token=refresh_token,
+        clock=clock,
+    )[0]
+
+
+def load_capacity_outlook_table(
+    config: GasDashboardConfig,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Load the capacity outlook fact through the shared bounded loader."""
+    return load_gas_model_tables(
+        config,
+        specs=CAPACITY_OUTLOOK_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        clock=clock,
+    )[0]
+
+
+def cached_load_capacity_outlook_table(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Return session-cached capacity outlook rows for explicit refreshes."""
+    return cached_load_gas_model_tables(
+        config,
+        cache,
+        specs=CAPACITY_OUTLOOK_TABLE_SPECS,
         reader=reader,
         view=GasModelTableView.RECENT,
         refresh_token=refresh_token,
@@ -8100,6 +8243,489 @@ def render_linepack_context_links(
 </section>"""
 
 
+def capacity_outlook_date_range_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return date-range filter options for loaded capacity outlook rows."""
+    return _capacity_outlook_string_filter_options(
+        load,
+        "date_range",
+        CAPACITY_OUTLOOK_DATE_RANGE_FILTER_ALL,
+    )
+
+
+def capacity_outlook_capacity_type_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return capacity-type filter options for loaded capacity outlook rows."""
+    return _capacity_outlook_string_filter_options(
+        load,
+        "capacity_type",
+        CAPACITY_OUTLOOK_CAPACITY_TYPE_FILTER_ALL,
+    )
+
+
+def capacity_outlook_direction_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return direction filter options for loaded capacity outlook rows."""
+    return _capacity_outlook_string_filter_options(
+        load,
+        "flow_direction",
+        CAPACITY_OUTLOOK_DIRECTION_FILTER_ALL,
+    )
+
+
+def capacity_outlook_facility_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return facility filter options for loaded capacity outlook rows."""
+    return _capacity_outlook_string_filter_options(
+        load,
+        "source_facility_id",
+        CAPACITY_OUTLOOK_FACILITY_FILTER_ALL,
+    )
+
+
+def capacity_outlook_source_coverage_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return capacity-source-coverage filter options for loaded rows."""
+    return _capacity_outlook_string_filter_options(
+        load,
+        "capacity_source_coverage",
+        CAPACITY_OUTLOOK_SOURCE_COVERAGE_FILTER_ALL,
+    )
+
+
+def capacity_outlook_source_system_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return source-system filter options for loaded capacity outlook rows."""
+    return _capacity_outlook_string_filter_options(
+        load,
+        "source_system",
+        CAPACITY_OUTLOOK_SOURCE_SYSTEM_FILTER_ALL,
+    )
+
+
+def capacity_outlook_kpi_frame(
+    load: GasTableLoad | None,
+    date_range_filter: str = CAPACITY_OUTLOOK_DATE_RANGE_FILTER_ALL,
+    capacity_type_filter: str = CAPACITY_OUTLOOK_CAPACITY_TYPE_FILTER_ALL,
+    direction_filter: str = CAPACITY_OUTLOOK_DIRECTION_FILTER_ALL,
+    facility_filter: str = CAPACITY_OUTLOOK_FACILITY_FILTER_ALL,
+    source_coverage_filter: str = CAPACITY_OUTLOOK_SOURCE_COVERAGE_FILTER_ALL,
+    source_system_filter: str = CAPACITY_OUTLOOK_SOURCE_SYSTEM_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return first-viewport KPIs for loaded capacity outlook rows."""
+    dataframe = _filtered_capacity_outlook_dataframe(
+        load,
+        date_range_filter,
+        capacity_type_filter,
+        direction_filter,
+        facility_filter,
+        source_coverage_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_CAPACITY_OUTLOOK_KPI_SCHEMA)
+
+    counts = dataframe.select(
+        pl.len().alias("loaded_rows"),
+        pl.col("capacity_source_coverage")
+        .drop_nulls()
+        .n_unique()
+        .alias("source_coverage"),
+        pl.col("source_facility_id").drop_nulls().n_unique().alias("facilities"),
+        pl.col("capacity_type").drop_nulls().n_unique().alias("capacity_types"),
+        pl.col("flow_direction").drop_nulls().n_unique().alias("directions"),
+        pl.col("date_range").drop_nulls().n_unique().alias("date_ranges"),
+        pl.col("from_gas_date").min().alias("first_from_gas_date"),
+        pl.col("from_gas_date").max().alias("latest_from_gas_date"),
+        pl.col("to_gas_date").max().alias("latest_to_gas_date"),
+        pl.col("capacity_quantity_tj").is_not_null().sum().alias("capacity_rows"),
+        pl.col("capacity_quantity_tj").sum().alias("total_capacity_tj"),
+        pl.col("capacity_quantity_tj").max().alias("max_capacity_tj"),
+        pl.col("source_system").drop_nulls().n_unique().alias("source_systems"),
+        pl.col("source_last_updated_timestamp").max().alias("latest_source_update"),
+        pl.col("ingested_timestamp").max().alias("latest_ingest"),
+    ).row(0, named=True)
+    source_table_count = _capacity_outlook_source_table_count(dataframe)
+    row_limit = None if load is None else load.row_limit
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Loaded capacity rows",
+                "value": f"{counts['loaded_rows']:,}",
+                "detail": format_row_limit(row_limit),
+            },
+            {
+                "metric": "Capacity source coverage",
+                "value": f"{counts['source_coverage']:,}",
+                "detail": (
+                    "Distinct short-term, medium-term, nameplate, uncontracted, "
+                    "connection-point, or other source coverage labels"
+                ),
+            },
+            {
+                "metric": "Facilities",
+                "value": f"{counts['facilities']:,}",
+                "detail": "Distinct source_facility_id values in the current view",
+            },
+            {
+                "metric": "Capacity types",
+                "value": f"{counts['capacity_types']:,}",
+                "detail": "Distinct capacity_type values in the current view",
+            },
+            {
+                "metric": "Directions",
+                "value": f"{counts['directions']:,}",
+                "detail": "Distinct flow_direction values in the current view",
+            },
+            {
+                "metric": "Date ranges",
+                "value": f"{counts['date_ranges']:,}",
+                "detail": (
+                    "Distinct from_gas_date, to_gas_date, or outlook month ranges"
+                ),
+            },
+            {
+                "metric": "Source systems",
+                "value": f"{counts['source_systems']:,}",
+                "detail": "Distinct source_system values in the current view",
+            },
+            {
+                "metric": "Source tables",
+                "value": f"{source_table_count:,}",
+                "detail": "Distinct source_table/source_tables values represented",
+            },
+            {
+                "metric": "From Gas Day range",
+                "value": (
+                    f"{_format_optional_value(counts['first_from_gas_date'])} to "
+                    f"{_format_optional_value(counts['latest_from_gas_date'])}"
+                ),
+                "detail": "Minimum and maximum from_gas_date in the current view",
+            },
+            {
+                "metric": "Latest To Gas Day",
+                "value": _format_optional_value(counts["latest_to_gas_date"]),
+                "detail": "Maximum to_gas_date in the current view",
+            },
+            {
+                "metric": "Capacity quantity",
+                "value": _format_measure_total(
+                    counts["total_capacity_tj"],
+                    counts["capacity_rows"],
+                    suffix=" TJ",
+                ),
+                "detail": (
+                    f"{counts['capacity_rows']:,} populated capacity_quantity_tj rows"
+                ),
+            },
+            {
+                "metric": "Max capacity quantity",
+                "value": _format_measure_total(
+                    counts["max_capacity_tj"],
+                    counts["capacity_rows"],
+                    suffix=" TJ",
+                ),
+                "detail": "Maximum capacity_quantity_tj in the current view",
+            },
+            {
+                "metric": "Latest source update",
+                "value": _format_optional_value(counts["latest_source_update"]),
+                "detail": "Maximum source_last_updated_timestamp in the current view",
+            },
+            {
+                "metric": "Latest ingest",
+                "value": _format_optional_value(counts["latest_ingest"]),
+                "detail": "Maximum ingested_timestamp in the current view",
+            },
+        ],
+        schema=_CAPACITY_OUTLOOK_KPI_SCHEMA,
+    )
+
+
+def capacity_outlook_source_coverage_frame(
+    load: GasTableLoad | None,
+    date_range_filter: str = CAPACITY_OUTLOOK_DATE_RANGE_FILTER_ALL,
+    capacity_type_filter: str = CAPACITY_OUTLOOK_CAPACITY_TYPE_FILTER_ALL,
+    direction_filter: str = CAPACITY_OUTLOOK_DIRECTION_FILTER_ALL,
+    facility_filter: str = CAPACITY_OUTLOOK_FACILITY_FILTER_ALL,
+    source_coverage_filter: str = CAPACITY_OUTLOOK_SOURCE_COVERAGE_FILTER_ALL,
+    source_system_filter: str = CAPACITY_OUTLOOK_SOURCE_SYSTEM_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return source coverage by capacity outlook source family."""
+    dataframe = _filtered_capacity_outlook_dataframe(
+        load,
+        date_range_filter,
+        capacity_type_filter,
+        direction_filter,
+        facility_filter,
+        source_coverage_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_CAPACITY_OUTLOOK_SOURCE_COVERAGE_SCHEMA)
+
+    coverage = (
+        dataframe.group_by(
+            "capacity_source_coverage",
+            "source_system",
+            "source_table",
+        )
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("source_facility_id").drop_nulls().n_unique().alias("facilities"),
+            pl.col("capacity_type").drop_nulls().n_unique().alias("capacity types"),
+            pl.col("flow_direction").drop_nulls().n_unique().alias("directions"),
+            pl.col("date_range").drop_nulls().n_unique().alias("date ranges"),
+            pl.col("capacity_quantity_tj").is_not_null().sum().alias("capacity rows"),
+            pl.col("capacity_quantity_tj").sum().alias("total capacity tj"),
+            pl.col("from_gas_date").min().alias("first from gas date"),
+            pl.col("to_gas_date").max().alias("latest to gas date"),
+            pl.col("source_file").drop_nulls().n_unique().alias("source files"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort(
+            ["rows", "capacity_source_coverage", "source_table"],
+            descending=[True, False, False],
+        )
+        .rename(
+            {
+                "capacity_source_coverage": "capacity source coverage",
+                "source_system": "source system",
+                "source_table": "source table",
+            }
+        )
+    )
+    return coverage.select([*list(_CAPACITY_OUTLOOK_SOURCE_COVERAGE_SCHEMA)])
+
+
+def capacity_outlook_summary_frame(
+    load: GasTableLoad | None,
+    date_range_filter: str = CAPACITY_OUTLOOK_DATE_RANGE_FILTER_ALL,
+    capacity_type_filter: str = CAPACITY_OUTLOOK_CAPACITY_TYPE_FILTER_ALL,
+    direction_filter: str = CAPACITY_OUTLOOK_DIRECTION_FILTER_ALL,
+    facility_filter: str = CAPACITY_OUTLOOK_FACILITY_FILTER_ALL,
+    source_coverage_filter: str = CAPACITY_OUTLOOK_SOURCE_COVERAGE_FILTER_ALL,
+    source_system_filter: str = CAPACITY_OUTLOOK_SOURCE_SYSTEM_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return facility, direction, type, and date-range capacity summaries."""
+    dataframe = _filtered_capacity_outlook_dataframe(
+        load,
+        date_range_filter,
+        capacity_type_filter,
+        direction_filter,
+        facility_filter,
+        source_coverage_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_CAPACITY_OUTLOOK_SUMMARY_SCHEMA)
+
+    summary = (
+        dataframe.group_by(
+            "capacity_source_coverage",
+            "source_system",
+            "source_table",
+            "source_facility_id",
+            "facility_name",
+            "capacity_type",
+            "flow_direction",
+            "date_range",
+        )
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("capacity_quantity_tj").is_not_null().sum().alias("capacity rows"),
+            pl.col("capacity_quantity_tj").sum().alias("total capacity tj"),
+            pl.col("capacity_quantity_tj").mean().alias("avg capacity tj"),
+            pl.col("capacity_quantity_tj").max().alias("max capacity tj"),
+            pl.col("from_gas_date").min().alias("first from gas date"),
+            pl.col("to_gas_date").max().alias("latest to gas date"),
+            pl.col("outlook_month").drop_nulls().n_unique().alias("outlook months"),
+            pl.col("source_file").drop_nulls().n_unique().alias("source files"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort(
+            [
+                "first from gas date",
+                "latest to gas date",
+                "capacity_source_coverage",
+                "source_facility_id",
+            ],
+            descending=[True, True, False, False],
+            nulls_last=True,
+        )
+        .rename(
+            {
+                "capacity_source_coverage": "capacity source coverage",
+                "source_system": "source system",
+                "source_table": "source table",
+                "source_facility_id": "source facility id",
+                "facility_name": "facility",
+                "capacity_type": "capacity type",
+                "flow_direction": "direction",
+                "date_range": "date range",
+            }
+        )
+    )
+    return summary.select([*list(_CAPACITY_OUTLOOK_SUMMARY_SCHEMA)])
+
+
+def capacity_outlook_observation_frame(
+    load: GasTableLoad | None,
+    date_range_filter: str = CAPACITY_OUTLOOK_DATE_RANGE_FILTER_ALL,
+    capacity_type_filter: str = CAPACITY_OUTLOOK_CAPACITY_TYPE_FILTER_ALL,
+    direction_filter: str = CAPACITY_OUTLOOK_DIRECTION_FILTER_ALL,
+    facility_filter: str = CAPACITY_OUTLOOK_FACILITY_FILTER_ALL,
+    source_coverage_filter: str = CAPACITY_OUTLOOK_SOURCE_COVERAGE_FILTER_ALL,
+    source_system_filter: str = CAPACITY_OUTLOOK_SOURCE_SYSTEM_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_CAPACITY_OUTLOOK_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return bounded recent/sample capacity outlook observations."""
+    dataframe = _filtered_capacity_outlook_dataframe(
+        load,
+        date_range_filter,
+        capacity_type_filter,
+        direction_filter,
+        facility_filter,
+        source_coverage_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_CAPACITY_OUTLOOK_OBSERVATION_SCHEMA)
+
+    return (
+        dataframe.sort(
+            [
+                "from_gas_date",
+                "to_gas_date",
+                "outlook_year",
+                "outlook_month",
+                "source_last_updated_timestamp",
+                "ingested_timestamp",
+                "source_system",
+                "source_facility_id",
+            ],
+            descending=[True, True, True, True, True, True, False, False],
+            nulls_last=True,
+        )
+        .select(
+            pl.col("capacity_source_coverage").alias("capacity source coverage"),
+            pl.col("from_gas_date").alias("from gas date"),
+            pl.col("to_gas_date").alias("to gas date"),
+            pl.col("outlook_month").alias("outlook month"),
+            pl.col("outlook_year").alias("outlook year"),
+            pl.col("source_system").alias("source system"),
+            pl.col("source_table").alias("source table"),
+            pl.col("source_facility_id").alias("source facility id"),
+            pl.col("facility_name").alias("facility"),
+            pl.col("capacity_type").alias("capacity type"),
+            pl.col("flow_direction").alias("direction"),
+            pl.col("receipt_location_id").alias("receipt location"),
+            pl.col("delivery_location_id").alias("delivery location"),
+            pl.col("capacity_quantity_tj"),
+            pl.col("capacity_description").alias("capacity description"),
+            pl.col("source_surrogate_key").alias("source identifier"),
+            pl.col("source_file").alias("source file"),
+            pl.col("source_last_updated_timestamp").alias("source updated"),
+            pl.col("ingested_timestamp").alias("latest ingest"),
+        )
+        .head(max(1, preview_rows))
+    )
+
+
+def capacity_outlook_empty_state_markdown(load: GasTableLoad | None) -> str:
+    """Return useful empty-state copy for missing or unmatched capacity rows."""
+    table_label = _markdown_breakable_text(
+        "silver.gas_model.silver_gas_fact_capacity_outlook"
+    )
+    if load is None:
+        status_detail = "The dashboard did not receive a capacity outlook load result."
+        uri = table_label
+        read_policy = "No read policy was reported."
+    else:
+        if load.error is not None:
+            status_detail = f"Read detail: {_markdown_breakable_text(load.error)}"
+        elif load.dataframe is None or load.dataframe.is_empty():
+            status_detail = "The table loaded successfully but returned no rows."
+        else:
+            status_detail = (
+                "The current filters do not match any loaded capacity outlook rows."
+            )
+        uri = _markdown_breakable_text(load.uri)
+        read_policy = row_limit_message(load.row_limit)
+
+    return f"""
+    **No capacity outlook data is available for this view.**
+
+    The dashboard checked {uri}, which should contain {table_label} rows with
+    `capacity_type`, `flow_direction`, `from_gas_date`, `to_gas_date`,
+    `capacity_quantity_tj`, Facility identifiers, source-system, and
+    source-table fields.
+
+    {status_detail}
+
+    {read_policy}
+
+    Materialize or seed the `silver.gas_model` capacity outlook asset, then use
+    **Refresh data**.
+    """
+
+
+def render_capacity_outlook_context_links(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render capacity outlook links to related Market context panels."""
+    candidate_entries = tuple(dashboard_registry() if entries is None else entries)
+    concept_ids = (
+        CAPACITY_CONTEXT_ID,
+        FACILITY_CONTEXT_ID,
+        FLOW_CONTEXT_ID,
+        CONNECTION_POINT_CONTEXT_ID,
+        GAS_DAY_CONTEXT_ID,
+        "gbb-interactive-map",
+        "source-coverage-matrix",
+        "gas-model-table-explorer",
+    )
+    rows = "\n".join(
+        _render_capacity_outlook_context_link(entry)
+        for entry in (
+            registry_entry_by_concept_id(concept_id, candidate_entries)
+            for concept_id in concept_ids
+        )
+        if entry is not None
+    )
+    if rows == "":
+        rows = (
+            '<li class="capacity-outlook-links__empty">'
+            "No Capacity, Facility, Flow, Connection Point, Gas Day, map, "
+            "source coverage, or table explorer entries are registered."
+            "</li>"
+        )
+
+    return f"""\
+<style>
+{_capacity_outlook_context_links_css()}
+</style>
+<section class="capacity-outlook-links" aria-label="Capacity outlook context links">
+    <div>
+        <p class="capacity-outlook-links__eyebrow">Context links</p>
+        <h2>Capacity, Facility, Flow, Connection Point, and Gas Day context</h2>
+    </div>
+    <ul>
+{rows}
+    </ul>
+</section>"""
+
+
 def bid_stack_participant_options(
     load: GasTableLoad | None,
 ) -> tuple[str, ...]:
@@ -9731,8 +10357,14 @@ def _normalised_facility_capacity_dataframe(
         pl.col("flow_direction").cast(pl.String, strict=False),
         _normalise_date_column(dataframe, "from_gas_date"),
         _normalise_date_column(dataframe, "to_gas_date"),
+        pl.col("outlook_month").cast(pl.Int64, strict=False),
+        pl.col("outlook_year").cast(pl.Int64, strict=False),
+        pl.col("receipt_location_id").cast(pl.String, strict=False),
+        pl.col("delivery_location_id").cast(pl.String, strict=False),
         pl.col("capacity_quantity_tj").cast(pl.Float64, strict=False),
         pl.col("capacity_description").cast(pl.String, strict=False),
+        pl.col("source_last_updated").cast(pl.String, strict=False),
+        pl.col("source_surrogate_key").cast(pl.String, strict=False),
         pl.col("source_file").cast(pl.String, strict=False),
         _normalise_timestamp_column(dataframe, "source_last_updated_timestamp"),
         _normalise_timestamp_column(dataframe, "ingested_timestamp"),
@@ -11735,6 +12367,248 @@ def _linepack_source_table_count(dataframe: pl.DataFrame) -> int:
         values.update(_source_coverage_value_strings(row.get("source_table")))
     values.discard(_SOURCE_COVERAGE_EMPTY_SOURCE_TABLE_VALUE)
     return len(values)
+
+
+def _capacity_outlook_string_filter_options(
+    load: GasTableLoad | None,
+    column: str,
+    all_label: str,
+) -> tuple[str, ...]:
+    dataframe = _normalised_capacity_outlook_dashboard_dataframe(load)
+    if dataframe.is_empty() or column not in dataframe.columns:
+        return (all_label,)
+
+    values = sorted(
+        str(value)
+        for value in dataframe.get_column(column)
+        .drop_nulls()
+        .cast(pl.String, strict=False)
+        .unique()
+        .to_list()
+        if value is not None and str(value).strip() != ""
+    )
+    return (all_label, *values)
+
+
+def _filtered_capacity_outlook_dataframe(
+    load: GasTableLoad | None,
+    date_range_filter: str,
+    capacity_type_filter: str,
+    direction_filter: str,
+    facility_filter: str,
+    source_coverage_filter: str,
+    source_system_filter: str,
+) -> pl.DataFrame:
+    dataframe = _normalised_capacity_outlook_dashboard_dataframe(load)
+    if dataframe.is_empty():
+        return dataframe
+
+    filtered = dataframe
+    if date_range_filter != CAPACITY_OUTLOOK_DATE_RANGE_FILTER_ALL:
+        filtered = filtered.filter(pl.col("date_range") == date_range_filter)
+    if capacity_type_filter != CAPACITY_OUTLOOK_CAPACITY_TYPE_FILTER_ALL:
+        filtered = filtered.filter(pl.col("capacity_type") == capacity_type_filter)
+    if direction_filter != CAPACITY_OUTLOOK_DIRECTION_FILTER_ALL:
+        filtered = filtered.filter(pl.col("flow_direction") == direction_filter)
+    if facility_filter != CAPACITY_OUTLOOK_FACILITY_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_facility_id") == facility_filter)
+    if source_coverage_filter != CAPACITY_OUTLOOK_SOURCE_COVERAGE_FILTER_ALL:
+        filtered = filtered.filter(
+            pl.col("capacity_source_coverage") == source_coverage_filter
+        )
+    if source_system_filter != CAPACITY_OUTLOOK_SOURCE_SYSTEM_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_system") == source_system_filter)
+    return filtered
+
+
+def _normalised_capacity_outlook_dashboard_dataframe(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    dataframe = _normalised_facility_capacity_dataframe(load)
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_CAPACITY_OUTLOOK_DASHBOARD_ROW_SCHEMA)
+
+    rows = [_capacity_outlook_dashboard_row(row) for row in dataframe.to_dicts()]
+    return pl.DataFrame(rows, schema=_CAPACITY_OUTLOOK_DASHBOARD_ROW_SCHEMA)
+
+
+def _capacity_outlook_dashboard_row(row: Mapping[str, object]) -> dict[str, object]:
+    return {
+        **row,
+        "source_table": _capacity_outlook_source_table_label(row),
+        "date_range": _capacity_outlook_date_range_label(row),
+        "capacity_source_coverage": _capacity_outlook_source_coverage_label(row),
+    }
+
+
+def _capacity_outlook_source_table_label(row: Mapping[str, object]) -> str:
+    values = [
+        *_source_coverage_value_strings(row.get("source_table")),
+        *_source_coverage_value_strings(row.get("source_tables")),
+    ]
+    unique_values = tuple(dict.fromkeys(values))
+    if len(unique_values) == 0:
+        return _SOURCE_COVERAGE_EMPTY_SOURCE_TABLE_VALUE
+    return ", ".join(unique_values)
+
+
+def _capacity_outlook_source_table_count(dataframe: pl.DataFrame) -> int:
+    values: set[str] = set()
+    for row in dataframe.select("source_table").to_dicts():
+        values.update(_source_coverage_value_strings(row.get("source_table")))
+    values.discard(_SOURCE_COVERAGE_EMPTY_SOURCE_TABLE_VALUE)
+    return len(values)
+
+
+def _capacity_outlook_date_range_label(row: Mapping[str, object]) -> str:
+    from_gas_date = _optional_non_empty_string(row.get("from_gas_date"))
+    to_gas_date = _optional_non_empty_string(row.get("to_gas_date"))
+    outlook_month = _int_from_value(row.get("outlook_month"))
+    outlook_year = _int_from_value(row.get("outlook_year"))
+
+    if from_gas_date is not None and to_gas_date is not None:
+        return f"{from_gas_date} to {to_gas_date}"
+    if from_gas_date is not None:
+        return f"from {from_gas_date}"
+    if to_gas_date is not None:
+        return f"to {to_gas_date}"
+    if outlook_month is not None and outlook_year is not None:
+        return f"{outlook_year:04d}-{outlook_month:02d}"
+    if outlook_year is not None:
+        return str(outlook_year)
+    return _CAPACITY_OUTLOOK_UNDATED_DATE_RANGE
+
+
+def _capacity_outlook_source_coverage_label(row: Mapping[str, object]) -> str:
+    source_tables = [
+        *_source_coverage_value_strings(row.get("source_table")),
+        *_source_coverage_value_strings(row.get("source_tables")),
+    ]
+    for source_table in source_tables:
+        if source_table in _CAPACITY_OUTLOOK_SOURCE_TABLE_COVERAGE_LABELS:
+            return _CAPACITY_OUTLOOK_SOURCE_TABLE_COVERAGE_LABELS[source_table]
+
+    search_text = " ".join(
+        value
+        for value in (
+            _optional_non_empty_string(row.get("capacity_type")),
+            _optional_non_empty_string(row.get("capacity_description")),
+            " ".join(source_tables),
+        )
+        if value is not None
+    ).lower()
+    normalised = search_text.replace("_", " ").replace("-", " ")
+    if "connection point" in normalised:
+        return "Connection-point nameplate"
+    if "uncontracted" in normalised:
+        return "Uncontracted capacity"
+    if "nameplate" in normalised:
+        return "Nameplate rating"
+    if "medium term" in normalised:
+        return "Medium-term capacity outlook"
+    if "short term" in normalised:
+        return "Short-term capacity outlook"
+    return _CAPACITY_OUTLOOK_OTHER_SOURCE_COVERAGE
+
+
+def _int_from_value(value: object | None) -> int | None:
+    if isinstance(value, int):
+        return value
+    return None
+
+
+def _render_capacity_outlook_context_link(entry: DashboardRegistryEntry) -> str:
+    status_label = _dashboard_entry_status_label(entry)
+    title = escape(entry.title)
+    route = entry.notebook_route
+    if entry.status.value == "available" and route is not None:
+        title_html = f'<a href="{escape(route, quote=True)}">{title}</a>'
+    else:
+        title_html = f"<span>{title}</span>"
+
+    return f"""\
+        <li data-dashboard-status="{escape(entry.status.value, quote=True)}">
+            {title_html}
+            <span>{escape(status_label)}</span>
+            <code>{escape(entry.concept_id)}</code>
+        </li>"""
+
+
+def _capacity_outlook_context_links_css() -> str:
+    return """\
+.capacity-outlook-links {
+    display: grid;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+}
+
+.capacity-outlook-links__eyebrow {
+    margin: 0 0 4px;
+    color: var(--emdl-green, #3e7a54);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.capacity-outlook-links h2 {
+    margin: 0;
+    font-size: 1.1rem;
+}
+
+.capacity-outlook-links ul {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+    gap: 8px;
+    padding: 0;
+    margin: 0;
+    list-style: none;
+}
+
+.capacity-outlook-links li {
+    display: grid;
+    gap: 4px;
+    min-height: 84px;
+    padding: 10px 12px;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: rgb(var(--emdl-panel-rgb, 255 255 255) / 0.76);
+}
+
+.capacity-outlook-links li:first-child {
+    border-color: var(--emdl-green, #3e7a54);
+}
+
+.capacity-outlook-links a {
+    color: var(--emdl-blue, #166791);
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.capacity-outlook-links span {
+    color: var(--emdl-muted, #566365);
+    overflow-wrap: anywhere;
+}
+
+.capacity-outlook-links li > span:nth-child(2) {
+    font-size: 0.82rem;
+    font-weight: 650;
+}
+
+.capacity-outlook-links code {
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
+@media (max-width: 640px) {
+    .capacity-outlook-links li {
+        min-height: 0;
+    }
+}
+"""
 
 
 def _render_linepack_context_link(entry: DashboardRegistryEntry) -> str:

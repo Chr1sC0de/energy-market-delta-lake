@@ -1081,17 +1081,14 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "concept_id": "capacity-context",
         "title": "Capacity Context",
         "description": (
-            "Planned concept panel for capacity outlooks, trades, auctions, "
-            "and STTM capacity settlement components."
+            "Available operational dashboard for capacity outlook rows, source "
+            "coverage, date ranges, capacity types, directions, facilities, "
+            "and related Facility, Flow, and Connection Point context."
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
-        "status": "planned",
-        "backing_assets": (
-            "silver.gas_model.silver_gas_fact_capacity_outlook",
-            "silver.gas_model.silver_gas_fact_capacity_transaction",
-            "silver.gas_model.silver_gas_fact_capacity_auction",
-            "silver.gas_model.silver_gas_fact_sttm_capacity_settlement",
-        ),
+        "status": "available",
+        "notebook_name": "capacity_outlook",
+        "backing_assets": ("silver.gas_model.silver_gas_fact_capacity_outlook",),
         "generated_gold_paths": (
             "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
         ),

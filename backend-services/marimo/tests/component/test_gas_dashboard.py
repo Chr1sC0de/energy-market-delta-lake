@@ -36,6 +36,11 @@ from marimoserver.gas_dashboard import (
     CONNECTION_POINT_DIM_TABLE_NAME,
     CONNECTION_POINT_FLOW_TABLE_NAME,
     CONNECTION_POINT_TABLE_SPECS,
+    CAPACITY_CONTEXT_ID,
+    CAPACITY_OUTLOOK_FACILITY_FILTER_ALL,
+    CAPACITY_OUTLOOK_SOURCE_SYSTEM_FILTER_ALL,
+    CAPACITY_OUTLOOK_TABLE_NAME,
+    CAPACITY_OUTLOOK_TABLE_SPEC,
     GAS_MODEL_TABLES,
     GAS_DAY_CONTEXT_ID,
     GAS_QUALITY_QUALITY_TYPE_FILTER_ALL,
@@ -118,6 +123,7 @@ from marimoserver.gas_dashboard import (
     bid_stack_zone_options,
     cached_load_customer_transfer_table,
     cached_load_bid_stack_table,
+    cached_load_capacity_outlook_table,
     cached_load_connection_point_context_tables,
     cached_load_facility_context_tables,
     cached_load_facility_flow_storage_table,
@@ -143,6 +149,17 @@ from marimoserver.gas_dashboard import (
     customer_transfer_source_coverage_frame,
     customer_transfer_source_system_options,
     customer_transfer_summary_frame,
+    capacity_outlook_capacity_type_options,
+    capacity_outlook_date_range_options,
+    capacity_outlook_direction_options,
+    capacity_outlook_empty_state_markdown,
+    capacity_outlook_facility_options,
+    capacity_outlook_kpi_frame,
+    capacity_outlook_observation_frame,
+    capacity_outlook_source_coverage_frame,
+    capacity_outlook_source_coverage_options,
+    capacity_outlook_source_system_options,
+    capacity_outlook_summary_frame,
     connection_point_context_empty_state_markdown,
     connection_point_dimension_coverage_frame,
     connection_point_dimension_preview_frame,
@@ -190,6 +207,7 @@ from marimoserver.gas_dashboard import (
     hub_zone_table_specs,
     load_market_price_table,
     load_bid_stack_table,
+    load_capacity_outlook_table,
     load_connection_point_context_tables,
     load_customer_transfer_table,
     load_facility_context_tables,
@@ -244,6 +262,7 @@ from marimoserver.gas_dashboard import (
     read_parquet_table,
     render_dashboard_context_panel,
     render_bid_stack_context_links,
+    render_capacity_outlook_context_links,
     render_connection_point_context_links,
     render_customer_transfer_context_links,
     render_market_price_context_links,
@@ -2673,6 +2692,406 @@ def test_linepack_metadata_and_loader_use_recent_bounded_rows() -> None:
     assert not first_cached.cache_hit
     assert second_cached.cache_hit
     assert not refreshed.cache_hit
+
+
+def test_capacity_outlook_metadata_and_loader_use_recent_bounded_rows() -> None:
+    entry = registry_entry_by_concept_id(CAPACITY_CONTEXT_ID)
+    html = render_dashboard_context_panel(CAPACITY_CONTEXT_ID)
+    context_links = render_capacity_outlook_context_links()
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "11",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    load = load_capacity_outlook_table(config, reader=reader)
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "capacity_outlook"
+    assert entry.notebook_route == "/marimo/capacity_outlook/"
+    assert entry.backing_assets == (
+        "silver.gas_model.silver_gas_fact_capacity_outlook",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md"
+        in entry.generated_gold_paths
+    )
+    assert "chunk-gbb-procedures-capacity-outlooks" in entry.source_chunk_ids
+    assert "Capacity Context" in html
+    assert 'data-status="available"' in html
+    assert 'href="/marimo/capacity_outlook/"' in context_links
+    assert "Facility Context" in context_links
+    assert "Flow Context" in context_links
+    assert "Connection Point Context" in context_links
+    assert load.spec == CAPACITY_OUTLOOK_TABLE_SPEC
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_capacity_outlook",
+            11,
+        )
+    ]
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert uri.endswith(f"/{CAPACITY_OUTLOOK_TABLE_NAME}")
+        assert storage_options == config.storage_options()
+        assert row_limit == 11
+        cached_calls += 1
+        return pl.DataFrame({"source_system": ["GBB"]})
+
+    first_cached = cached_load_capacity_outlook_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_capacity_outlook_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_capacity_outlook_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 2
+    assert not first_cached.cache_hit
+    assert second_cached.cache_hit
+    assert not refreshed.cache_hit
+
+
+def test_capacity_outlook_helpers_summarize_filters_and_source_coverage() -> None:
+    source_tables = [
+        "silver.gbb.silver_gasbb_short_term_capacity_outlook",
+        "silver.gbb.silver_gasbb_medium_term_capacity_outlook",
+        "silver.gbb.silver_gasbb_uncontracted_capacity",
+        "silver.gbb.silver_gasbb_nameplate_rating",
+        "silver.gbb.silver_gasbb_connection_point_nameplate",
+    ]
+    load = _capacity_outlook_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB", "GBB", "GBB", "GBB", "GBB"],
+                "source_tables": [[table] for table in source_tables],
+                "source_table": source_tables,
+                "source_facility_id": ["F1", "F1", "F2", "F3", "F4"],
+                "facility_name": [
+                    "Pipeline A",
+                    "Pipeline A",
+                    "Pipeline B",
+                    "Pipeline C",
+                    "Connection Point D",
+                ],
+                "capacity_type": [
+                    "MDQ",
+                    "MDQ",
+                    "MDQ",
+                    "nameplate",
+                    "connection_point_nameplate",
+                ],
+                "flow_direction": [
+                    "RECEIPT",
+                    "DELIVERY",
+                    "RECEIPT",
+                    "DELIVERY",
+                    None,
+                ],
+                "from_gas_date": [
+                    date(2024, 1, 1),
+                    date(2024, 2, 1),
+                    None,
+                    date(2024, 1, 1),
+                    date(2024, 3, 1),
+                ],
+                "to_gas_date": [None, date(2024, 2, 29), None, None, None],
+                "outlook_month": [None, None, 4, None, None],
+                "outlook_year": [None, None, 2024, None, None],
+                "receipt_location_id": ["R1", "R2", "R3", "R4", "CP-D"],
+                "delivery_location_id": ["D1", "D2", "D3", "D4", None],
+                "capacity_quantity_tj": [10.0, 20.0, 30.0, 40.0, 50.0],
+                "capacity_description": [
+                    "Short outlook",
+                    "Medium outlook",
+                    "Uncontracted capacity",
+                    "Nameplate rating",
+                    "Connection point capacity",
+                ],
+                "source_surrogate_key": ["src-1", "src-2", "src-3", "src-4", "src-5"],
+                "source_file": ["capacity.csv"] * 5,
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 1, 8),
+                    datetime(2024, 1, 2, 8),
+                    datetime(2024, 1, 3, 8),
+                    datetime(2024, 1, 4, 8),
+                    datetime(2024, 1, 5, 8),
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 1, 9),
+                    datetime(2024, 1, 2, 9),
+                    datetime(2024, 1, 3, 9),
+                    datetime(2024, 1, 4, 9),
+                    datetime(2024, 1, 5, 9),
+                ],
+            }
+        ),
+        row_limit=5,
+    )
+
+    source_coverage = capacity_outlook_source_coverage_frame(load)
+    summary = capacity_outlook_summary_frame(load)
+    observations = capacity_outlook_observation_frame(load, preview_rows=10)
+    kpi_values = {
+        row["metric"]: row["value"]
+        for row in capacity_outlook_kpi_frame(load).to_dicts()
+    }
+    coverage_labels = set(source_coverage["capacity source coverage"].to_list())
+    filtered_kpis = capacity_outlook_kpi_frame(
+        load,
+        capacity_type_filter="MDQ",
+        direction_filter="RECEIPT",
+    )
+
+    assert kpi_values["Loaded capacity rows"] == "5"
+    assert kpi_values["Capacity source coverage"] == "5"
+    assert kpi_values["Date ranges"] == "4"
+    assert kpi_values["Capacity quantity"] == "150 TJ"
+    assert {
+        "Short-term capacity outlook",
+        "Medium-term capacity outlook",
+        "Uncontracted capacity",
+        "Nameplate rating",
+        "Connection-point nameplate",
+    } == coverage_labels
+    assert "2024-02-01 to 2024-02-29" in capacity_outlook_date_range_options(load)
+    assert "2024-04" in capacity_outlook_date_range_options(load)
+    assert "MDQ" in capacity_outlook_capacity_type_options(load)
+    assert "RECEIPT" in capacity_outlook_direction_options(load)
+    assert "F2" in capacity_outlook_facility_options(load)
+    assert "Uncontracted capacity" in capacity_outlook_source_coverage_options(load)
+    assert capacity_outlook_source_system_options(load) == (
+        CAPACITY_OUTLOOK_SOURCE_SYSTEM_FILTER_ALL,
+        "GBB",
+    )
+    assert filtered_kpis.row(0, named=True)["value"] == "2"
+    assert (
+        summary.select(
+            "capacity source coverage",
+            "source facility id",
+            "facility",
+            "capacity type",
+            "direction",
+            "date range",
+            "total capacity tj",
+        ).height
+        == 5
+    )
+    assert (
+        observations.select(
+            "capacity source coverage",
+            "from gas date",
+            "to gas date",
+            "outlook month",
+            "outlook year",
+            "capacity_quantity_tj",
+        ).height
+        == 5
+    )
+
+
+def test_capacity_outlook_helpers_cover_missing_data_and_empty_states() -> None:
+    missing_columns_load = _capacity_outlook_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "source_table": ["silver.gbb.silver_gasbb_nameplate_rating"],
+                "source_facility_id": ["F1"],
+            }
+        ),
+        row_limit=4,
+    )
+    unavailable_load = GasTableLoad(
+        spec=CAPACITY_OUTLOOK_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_capacity_outlook",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=4,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+    empty_load = _capacity_outlook_load(pl.DataFrame(), row_limit=4)
+
+    kpis = capacity_outlook_kpi_frame(missing_columns_load)
+    coverage = capacity_outlook_source_coverage_frame(missing_columns_load)
+    observations = capacity_outlook_observation_frame(missing_columns_load)
+    filtered = capacity_outlook_summary_frame(
+        missing_columns_load,
+        facility_filter="missing",
+    )
+    unavailable_markdown = capacity_outlook_empty_state_markdown(unavailable_load)
+    empty_markdown = capacity_outlook_empty_state_markdown(empty_load)
+    filtered_markdown = capacity_outlook_empty_state_markdown(missing_columns_load)
+    missing_load_markdown = capacity_outlook_empty_state_markdown(None)
+    empty_context_links = render_capacity_outlook_context_links(entries=())
+
+    assert kpis.row(0, named=True)["value"] == "1"
+    assert coverage.row(0, named=True)["capacity source coverage"] == "Nameplate rating"
+    assert observations.row(0, named=True)["capacity_quantity_tj"] is None
+    assert filtered.is_empty()
+    assert "No capacity outlook data is available" in unavailable_markdown
+    assert "FileNotFoundError: no parquet files found" in unavailable_markdown
+    assert "The table loaded successfully but returned no rows" in empty_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert "did not receive a capacity outlook load" in missing_load_markdown
+    assert (
+        "No Capacity, Facility, Flow, Connection Point, Gas Day, map, "
+        "source coverage, or table explorer entries are registered."
+    ) in empty_context_links
+
+
+def test_capacity_outlook_helpers_cover_fallback_classification_branches() -> None:
+    load = _capacity_outlook_load(
+        pl.DataFrame(
+            [
+                {
+                    "source_system": "GBB",
+                    "source_table": "custom.connection",
+                    "source_facility_id": "F1",
+                    "capacity_type": "connection_point_nameplate",
+                    "flow_direction": "RECEIPT",
+                    "to_gas_date": date(2024, 5, 1),
+                },
+                {
+                    "source_system": "GBB",
+                    "source_table": "custom.uncontracted",
+                    "source_facility_id": "F2",
+                    "capacity_description": "uncontracted capacity",
+                    "outlook_year": 2025,
+                },
+                {
+                    "source_system": "GBB",
+                    "source_table": "custom.nameplate",
+                    "source_facility_id": "F3",
+                    "capacity_type": "nameplate",
+                    "outlook_month": 7.0,
+                    "outlook_year": 2026.0,
+                },
+                {
+                    "source_system": "GBB",
+                    "source_table": "custom.medium",
+                    "source_facility_id": "F4",
+                    "capacity_description": "medium-term capacity outlook",
+                },
+                {
+                    "source_system": "GBB",
+                    "source_table": "custom.short",
+                    "source_facility_id": "F5",
+                    "capacity_description": "short_term capacity outlook",
+                    "outlook_month": "",
+                    "outlook_year": "",
+                },
+                {
+                    "source_system": "GBB",
+                    "source_facility_id": "F6",
+                    "capacity_type": "custom",
+                    "capacity_description": "custom capacity",
+                    "outlook_month": True,
+                    "outlook_year": "not-a-year",
+                },
+            ]
+        )
+    )
+    empty_load = _capacity_outlook_load(pl.DataFrame(), row_limit=3)
+
+    coverage_labels = {
+        row["capacity source coverage"]
+        for row in capacity_outlook_source_coverage_frame(load).to_dicts()
+    }
+    date_range_options = capacity_outlook_date_range_options(load)
+    filtered = capacity_outlook_summary_frame(
+        load,
+        date_range_filter="to 2024-05-01",
+        source_coverage_filter="Connection-point nameplate",
+        source_system_filter="GBB",
+    )
+
+    assert capacity_outlook_kpi_frame(empty_load).is_empty()
+    assert capacity_outlook_source_coverage_frame(empty_load).is_empty()
+    assert capacity_outlook_observation_frame(empty_load).is_empty()
+    assert capacity_outlook_facility_options(empty_load) == (
+        CAPACITY_OUTLOOK_FACILITY_FILTER_ALL,
+    )
+    assert {
+        "Connection-point nameplate",
+        "Uncontracted capacity",
+        "Nameplate rating",
+        "Medium-term capacity outlook",
+        "Short-term capacity outlook",
+        "Other capacity outlook",
+    } == coverage_labels
+    assert "to 2024-05-01" in date_range_options
+    assert "2025" in date_range_options
+    assert "2026-07" in date_range_options
+    assert "(undated outlook period)" in date_range_options
+    assert filtered.height == 1
+    assert filtered.row(0, named=True)["capacity source coverage"] == (
+        "Connection-point nameplate"
+    )
+
+
+def test_context_links_render_planned_entries_without_routes() -> None:
+    planned_capacity = DashboardRegistryEntry(
+        concept_id=CAPACITY_CONTEXT_ID,
+        title="Capacity Context",
+        description="Planned capacity context.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.PLANNED,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.silver_gas_fact_capacity_outlook",),
+        generated_gold_paths=(
+            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
+        ),
+        source_chunks=(),
+    )
+
+    capacity_links = render_capacity_outlook_context_links(entries=(planned_capacity,))
+    facility_flow_links = render_facility_flow_storage_context_links(
+        entries=(planned_capacity,)
+    )
+    facility_links = render_facility_context_links(entries=(planned_capacity,))
+    connection_point_links = render_connection_point_context_links(
+        entries=(planned_capacity,)
+    )
+
+    assert 'data-dashboard-status="planned"' in capacity_links
+    assert "<span>Capacity Context</span>" in capacity_links
+    assert "<span>Capacity Context</span>" in facility_flow_links
+    assert "<span>Capacity Context</span>" in facility_links
+    assert "<span>Capacity Context</span>" in connection_point_links
 
 
 def test_linepack_helpers_summarize_quantities_adequacy_and_sources() -> None:
@@ -8309,6 +8728,22 @@ def _linepack_load(
     return GasTableLoad(
         spec=LINEPACK_TABLE_SPEC,
         uri=f"s3://bucket/silver/gas_model/{LINEPACK_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _capacity_outlook_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=CAPACITY_OUTLOOK_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{CAPACITY_OUTLOOK_TABLE_NAME}",
         dataframe=dataframe,
         error=None,
         row_limit=row_limit,

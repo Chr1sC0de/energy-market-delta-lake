@@ -28,6 +28,7 @@ Marimo-Codex research workspace image.
 - [Hub / Zone explainer dashboard](#hub--zone-explainer-dashboard)
 - [Connection Point explainer dashboard](#connection-point-explainer-dashboard)
 - [Flow operations dashboard](#flow-operations-dashboard)
+- [Capacity outlook dashboard](#capacity-outlook-dashboard)
 - [Nomination and demand forecast dashboard](#nomination-and-demand-forecast-dashboard)
 - [Gas market dashboard](#gas-market-dashboard)
 - [Market prices dashboard](#market-prices-dashboard)
@@ -524,6 +525,23 @@ operational meter quantities into recent/sample observations. Missing tables,
 unavailable Parquet prefixes, empty reads, and missing columns render designed
 empty states with the checked assets, read policy, and refresh action.
 
+## Capacity outlook dashboard
+
+[notebooks/capacity_outlook.py](notebooks/capacity_outlook.py) is an
+operational dashboard over
+`silver.gas_model.silver_gas_fact_capacity_outlook`. It renders the
+registry-backed Capacity context panel and links to Facility, Flow, Connection
+Point, Gas Day, GBB map, source coverage, and table explorer surfaces, then
+loads bounded recent samples through the shared gas model loader.
+
+The dashboard summarizes capacity source coverage, `capacity_type`,
+`flow_direction`, source facility, date range, and `capacity_quantity_tj`
+fields. It distinguishes short-term, medium-term, uncontracted, nameplate, and
+connection-point nameplate source coverage from the loaded `source_table` and
+`source_tables` values where present. Missing tables, unavailable Parquet
+prefixes, empty reads, filter misses, and missing columns render designed empty
+states with the checked asset, read policy, and refresh action.
+
 ## Nomination and demand forecast dashboard
 
 [notebooks/nomination_demand_forecast.py](notebooks/nomination_demand_forecast.py)
@@ -833,7 +851,7 @@ Caddy and choose an available card such as `data_readiness_overview`,
 `gas_customer_transfer_activity`, `facility_flow_storage`,
 `gas_bid_offer_stack`, `gas_quality_composition`, `facility_explainer`,
 `participant_explainer`, `hub_zone_explainer`, `connection_point_explainer`,
-`flow_operations`, or `gbb_interactive_map`:
+`flow_operations`, `capacity_outlook`, or `gbb_interactive_map`:
 
 ```text
 http://localhost/marimo
@@ -1016,6 +1034,13 @@ cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/facility_flow_storage.py
 ```
 
+Use the same pattern for the capacity outlook dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/capacity_outlook.py
+```
+
 Use the same pattern for the Bid / Offer stack dashboard:
 
 ```bash
@@ -1157,6 +1182,7 @@ prek run -a
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/facility_flow_storage.py`
+  - `backend-services/marimo/notebooks/capacity_outlook.py`
   - `backend-services/marimo/notebooks/linepack_adequacy.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`

@@ -80,7 +80,7 @@ def test_gbb_map_context_panels_cover_roadmap_concepts() -> None:
     expected_statuses = {
         "flow-context": DashboardStatus.AVAILABLE.value,
         "facility-context": DashboardStatus.AVAILABLE.value,
-        "capacity-context": DashboardStatus.PLANNED.value,
+        "capacity-context": DashboardStatus.AVAILABLE.value,
         "gas-day-context": DashboardStatus.AVAILABLE.value,
     }
 
