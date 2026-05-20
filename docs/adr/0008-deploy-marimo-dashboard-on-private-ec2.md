@@ -178,6 +178,14 @@ through the shared bounded loader and session cache, then filters and
 summarizes loaded quality and composition rows without changing gas quality ETL,
 schemas, source ingestion, or quality calculations.
 
+The heating value and SCADA pressure dashboard stays inside the same boundary.
+It reads the curated `silver.gas_model.silver_gas_fact_heating_value` and
+`silver.gas_model.silver_gas_fact_scada_pressure` Parquet outputs through the
+shared bounded loader and session cache, then filters and summarizes loaded
+heating value and pressure rows without changing ETL schemas, pressure or
+heating-value calculations, source ingestion, or conformed dimension
+relationships.
+
 The source coverage matrix dashboard stays inside the same boundary. It reads
 bounded rows from registry-backed `silver.gas_model` facts and dimensions,
 expands `source_table` and `source_tables` metadata where present, and renders
@@ -293,6 +301,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/notebooks/forecast_vs_actual.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
+  - `backend-services/marimo/notebooks/heating_value_pressure.py`
   - `backend-services/marimo/tests/component/test_dashboard_registry.py`
   - `backend-services/marimo/tests/component/test_main.py`
   - `backend-services/marimo/tests/component/test_local_image_split.py`

@@ -863,6 +863,25 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "source_chunk_ids": (),
     },
     {
+        "concept_id": "heating-value-pressure",
+        "title": "Heating Value And SCADA Pressure",
+        "description": (
+            "Available analytical dashboard for heating value and SCADA "
+            "pressure observations, source-qualified zone and node "
+            "identifiers, gas dates, measurement timestamps, and source "
+            "coverage from the curated quality/status facts."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "heating_value_pressure",
+        "backing_assets": (
+            "silver.gas_model.silver_gas_fact_heating_value",
+            "silver.gas_model.silver_gas_fact_scada_pressure",
+        ),
+        "generated_gold_paths": (),
+        "source_chunk_ids": (),
+    },
+    {
         "concept_id": "gas-customer-transfer-activity",
         "title": "Customer Transfer And Retail Activity",
         "description": (

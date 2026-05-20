@@ -1245,6 +1245,56 @@ def test_concept_gallery_metadata_maps_nomination_forecast_dashboard() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("table_name", "expected_asset"),
+    [
+        (
+            "silver_gas_fact_heating_value",
+            "silver.gas_model.silver_gas_fact_heating_value",
+        ),
+        (
+            "silver_gas_fact_scada_pressure",
+            "silver.gas_model.silver_gas_fact_scada_pressure",
+        ),
+    ],
+)
+def test_concept_gallery_metadata_maps_heating_value_pressure_dashboard(
+    table_name: str,
+    expected_asset: str,
+) -> None:
+    table = TablePrefix(
+        bucket="dev-energy-market-aemo",
+        prefix=f"silver/gas_model/{table_name}",
+        table_format=TableFormat.PARQUET,
+        parquet_files=(f"silver/gas_model/{table_name}/part-000.parquet",),
+    )
+    entry = CataloguedTable(
+        entry_id=f"asset:silver/gas_model/{table_name}",
+        status=TableAvailability.LIVE,
+        asset=_asset(
+            ("silver", "gas_model", table_name),
+            uri=table.uri,
+            latest_materialization_timestamp=1_714_000_000,
+        ),
+        table=table,
+    )
+
+    concept_ids = [
+        concept.concept_id for concept in concept_gallery_entries_for_table(entry)
+    ]
+    metadata_rows = {
+        row["concept id"]: row
+        for row in concept_gallery_metadata_frame(entry).to_dicts()
+    }
+
+    assert concept_gallery_asset_id(entry) == expected_asset
+    assert "heating-value-pressure" in concept_ids
+    assert metadata_rows["heating-value-pressure"]["status"] == "available"
+    assert metadata_rows["heating-value-pressure"]["notebook route"] == (
+        "/marimo/heating_value_pressure/"
+    )
+
+
 def test_concept_gallery_metadata_maps_storage_prefixes_and_empty_states() -> None:
     storage_entry = CataloguedTable(
         entry_id="storage:dev-energy-market-aemo/silver/gas_model/silver_gas_dim_date",

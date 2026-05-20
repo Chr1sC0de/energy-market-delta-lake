@@ -338,6 +338,9 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   and does not add AWS write paths.
   The gas quality and composition dashboard reads the curated gas quality fact
   through the same bounded helper surface and does not add AWS write paths.
+  The heating value and SCADA pressure dashboard reads the curated heating
+  value and SCADA pressure facts through the same bounded helper surface and
+  does not add AWS write paths.
   The Gas Day explainer reads bounded samples from registry-backed gas_model
   assets to show date-field coverage and examples without adding AWS write
   paths or changing ETL date modeling.
@@ -412,6 +415,7 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   - `backend-services/marimo/notebooks/nomination_demand_forecast.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
+  - `backend-services/marimo/notebooks/heating_value_pressure.py`
   - `backend-services/caddy/Dockerfile`
   - `backend-services/caddy/package.json`
   - `backend-services/caddy/src/pages/index.astro`

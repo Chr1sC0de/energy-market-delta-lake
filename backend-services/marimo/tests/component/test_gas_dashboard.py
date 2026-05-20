@@ -47,6 +47,12 @@ from marimoserver.gas_dashboard import (
     GAS_QUALITY_SOURCE_POINT_FILTER_ALL,
     GAS_QUALITY_TABLE_NAME,
     GAS_QUALITY_TABLE_SPEC,
+    HEATING_VALUE_PRESSURE_CONTEXT_ID,
+    HEATING_VALUE_PRESSURE_IDENTIFIER_FILTER_ALL,
+    HEATING_VALUE_PRESSURE_SOURCE_SYSTEM_FILTER_ALL,
+    HEATING_VALUE_PRESSURE_SOURCE_TABLE_FILTER_ALL,
+    HEATING_VALUE_TABLE_NAME,
+    HEATING_VALUE_TABLE_SPEC,
     HUB_ZONE_CONTEXT_ID,
     HUB_ZONE_DIM_TABLE_NAME,
     HUB_ZONE_TABLE_SPECS,
@@ -100,6 +106,8 @@ from marimoserver.gas_dashboard import (
     SCHEDULE_RUN_SCHEDULE_TYPE_FILTER_ALL,
     SCHEDULE_RUN_SOURCE_SYSTEM_FILTER_ALL,
     SCHEDULE_RUN_TABLE_SPEC,
+    SCADA_PRESSURE_TABLE_NAME,
+    SCADA_PRESSURE_TABLE_SPEC,
     SETTLEMENT_ACTIVITY_ACTIVITY_TYPE_FILTER_ALL,
     SETTLEMENT_ACTIVITY_GAS_DATE_FILTER_ALL,
     SETTLEMENT_ACTIVITY_SOURCE_SYSTEM_FILTER_ALL,
@@ -140,6 +148,7 @@ from marimoserver.gas_dashboard import (
     cached_load_gas_day_tables,
     cached_load_hub_zone_context_tables,
     cached_load_gas_quality_table,
+    cached_load_heating_value_pressure_tables,
     cached_load_linepack_table,
     cached_load_gas_model_tables,
     cached_load_market_price_table,
@@ -211,6 +220,15 @@ from marimoserver.gas_dashboard import (
     gas_quality_source_coverage_frame,
     gas_quality_source_point_options,
     gas_quality_type_summary_frame,
+    heating_value_observation_frame,
+    heating_value_pressure_empty_state_markdown,
+    heating_value_pressure_field_summary_frame,
+    heating_value_pressure_identifier_frame,
+    heating_value_pressure_identifier_options,
+    heating_value_pressure_kpi_frame,
+    heating_value_pressure_source_coverage_frame,
+    heating_value_pressure_source_system_options,
+    heating_value_pressure_source_table_options,
     gas_day_bounded_examples_frame,
     gas_day_examples_empty_state_markdown,
     gas_day_field_discovery_frame,
@@ -235,6 +253,7 @@ from marimoserver.gas_dashboard import (
     load_gas_day_tables,
     load_hub_zone_context_tables,
     load_gas_quality_table,
+    load_heating_value_pressure_tables,
     load_linepack_table,
     load_gas_model_tables,
     load_nomination_forecast_table,
@@ -297,6 +316,7 @@ from marimoserver.gas_dashboard import (
     render_facility_flow_storage_context_links,
     render_forecast_actual_context_links,
     render_flow_context_links,
+    render_heating_value_pressure_context_links,
     render_hub_zone_context_links,
     render_linepack_context_links,
     render_participant_context_links,
@@ -304,6 +324,7 @@ from marimoserver.gas_dashboard import (
     render_schedule_run_context_links,
     render_settlement_activity_context_links,
     render_source_coverage_matrix_html,
+    scada_pressure_observation_frame,
     schedule_run_empty_state_markdown,
     schedule_run_gas_date_options,
     schedule_run_kpi_frame,
@@ -331,6 +352,7 @@ from marimoserver.gas_dashboard import (
     system_notice_source_coverage_frame,
     system_notice_summary_frame,
     table_load_by_name,
+    _dataframe_min_value,
     _latest_datetime,
     _optional_float,
 )
@@ -4762,6 +4784,421 @@ def test_gas_quality_helpers_cover_missing_data_and_filter_empty_state() -> None
     assert "FileNotFoundError: no parquet files found" in error_markdown
     assert "current filters do not match" in filtered_markdown
     assert "did not receive a gas quality load result" in missing_load_markdown
+
+
+def test_heating_value_pressure_metadata_and_loader_use_bounded_recent_rows() -> None:
+    entry = registry_entry_by_concept_id(HEATING_VALUE_PRESSURE_CONTEXT_ID)
+    html = render_dashboard_context_panel(HEATING_VALUE_PRESSURE_CONTEXT_ID)
+    context_links = render_heating_value_pressure_context_links()
+    captured: list[tuple[str, int | None]] = []
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "8",
+        }
+    )
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        captured.append((uri, row_limit))
+        assert storage_options == config.storage_options()
+        if uri.endswith(f"/{HEATING_VALUE_TABLE_NAME}"):
+            return pl.DataFrame(
+                {
+                    "gas_date": [date(2024, 1, 1), date(2024, 1, 3)],
+                    "source_zone_id": ["older", "newer"],
+                }
+            )
+        return pl.DataFrame(
+            {
+                "measurement_timestamp": [
+                    datetime(2024, 1, 2),
+                    datetime(2024, 1, 4),
+                ],
+                "source_node_id": ["older", "newer"],
+            }
+        )
+
+    loads = load_heating_value_pressure_tables(config, reader=reader)
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "heating_value_pressure"
+    assert entry.notebook_route == "/marimo/heating_value_pressure/"
+    assert entry.backing_assets == (
+        "silver.gas_model.silver_gas_fact_heating_value",
+        "silver.gas_model.silver_gas_fact_scada_pressure",
+    )
+    assert "Heating Value And SCADA Pressure" in html
+    assert "silver.gas_model.silver_gas_fact_heating_value" in html
+    assert 'href="/marimo/heating_value_pressure/"' in context_links
+    assert "Gas Quality And Composition" in context_links
+    assert "Gas System Notices" in context_links
+    assert [load.spec for load in loads] == [
+        HEATING_VALUE_TABLE_SPEC,
+        SCADA_PRESSURE_TABLE_SPEC,
+    ]
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_heating_value",
+            8,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_scada_pressure",
+            8,
+        ),
+    ]
+    assert loads[0].dataframe is not None
+    assert loads[0].dataframe["source_zone_id"].to_list() == ["newer", "older"]
+    assert loads[1].dataframe is not None
+    assert loads[1].dataframe["source_node_id"].to_list() == ["newer", "older"]
+
+
+def test_cached_heating_value_pressure_tables_reuse_session_cache() -> None:
+    calls: list[str] = []
+    config = _dashboard_config()
+    cache: GasModelSessionCache = {}
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        calls.append(uri.rsplit("/", maxsplit=1)[-1])
+        return pl.DataFrame({"source_system": [f"VICGAS-{len(calls)}"]})
+
+    first_loads = cached_load_heating_value_pressure_tables(
+        config, cache, reader=reader
+    )
+    cached_loads = cached_load_heating_value_pressure_tables(
+        config, cache, reader=reader
+    )
+    refreshed_loads = cached_load_heating_value_pressure_tables(
+        config,
+        cache,
+        reader=reader,
+        refresh_token=1,
+    )
+
+    assert calls == [
+        HEATING_VALUE_TABLE_NAME,
+        SCADA_PRESSURE_TABLE_NAME,
+        HEATING_VALUE_TABLE_NAME,
+        SCADA_PRESSURE_TABLE_NAME,
+    ]
+    assert all(not load.cache_hit for load in first_loads)
+    assert all(load.cache_hit for load in cached_loads)
+    assert all(not load.cache_hit for load in refreshed_loads)
+    assert cached_loads[0].dataframe is not None
+    assert cached_loads[0].dataframe["source_system"].to_list() == ["VICGAS-1"]
+    assert refreshed_loads[0].dataframe is not None
+    assert refreshed_loads[0].dataframe["source_system"].to_list() == ["VICGAS-3"]
+
+
+def test_heating_value_pressure_summaries_and_source_identifier_rendering() -> None:
+    loads = _heating_value_pressure_loads(
+        heating_dataframe=pl.DataFrame(
+            {
+                "gas_date": ["2024-01-02", "2024-01-01"],
+                "gas_interval": ["1", None],
+                "source_zone_id": ["400", "VIC"],
+                "zone_name": ["Dandenong", "Victoria"],
+                "heating_value": [39.2, 40.0],
+                "initial_heating_value": [38.9, None],
+                "heating_value_unit": ["GJ/1000m3", "declared"],
+                "source_system": ["VICGAS", "VICGAS"],
+                "source_table": [
+                    "silver.vicgas.silver_int047_v4_heating_values_1",
+                    "silver.vicgas.silver_int139_v4_declared_daily_state_"
+                    "heating_value_1",
+                ],
+                "source_last_updated_timestamp": [
+                    "2024-01-02 01:00:00",
+                    "2024-01-01 01:00:00",
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 2, 3),
+                    datetime(2024, 1, 1, 3),
+                ],
+            }
+        ),
+        pressure_dataframe=pl.DataFrame(
+            {
+                "measurement_timestamp": [
+                    "2024-01-02 02:00:00",
+                    "2024-01-02 01:00:00",
+                ],
+                "pressure_offset_hour": [0, 1],
+                "source_node_id": ["MCE-A", "MCE-A"],
+                "node_name": ["Node A", "Node A"],
+                "pressure_kpa": [521.0, 519.0],
+                "source_system": ["VICGAS", "VICGAS"],
+                "source_table": [
+                    "silver.vicgas.silver_int276_v4_hourly_scada_pressures_at_"
+                    "mce_nodes_1",
+                    "silver.vicgas.silver_int276_v4_hourly_scada_pressures_at_"
+                    "mce_nodes_1",
+                ],
+                "source_last_updated_timestamp": [
+                    "2024-01-02 02:30:00",
+                    "2024-01-02 02:30:00",
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 2, 4),
+                    datetime(2024, 1, 2, 4),
+                ],
+            }
+        ),
+    )
+
+    kpis = heating_value_pressure_kpi_frame(loads)
+    field_summary = heating_value_pressure_field_summary_frame(loads)
+    identifiers = heating_value_pressure_identifier_frame(loads)
+    source_coverage = heating_value_pressure_source_coverage_frame(loads)
+    heating_observations = heating_value_observation_frame(
+        loads,
+        identifier_filter="Heating value zone 400",
+    )
+    heating_table_filter_observations = heating_value_observation_frame(
+        loads,
+        source_table_filter="silver.vicgas.silver_int047_v4_heating_values_1",
+    )
+    pressure_observations = scada_pressure_observation_frame(
+        loads,
+        identifier_filter="SCADA node MCE-A",
+    )
+    pressure_table_filter_observations = scada_pressure_observation_frame(
+        loads,
+        source_table_filter=(
+            "silver.vicgas.silver_int276_v4_hourly_scada_pressures_at_mce_nodes_1"
+        ),
+    )
+
+    assert heating_value_pressure_source_system_options(loads) == (
+        HEATING_VALUE_PRESSURE_SOURCE_SYSTEM_FILTER_ALL,
+        "VICGAS",
+    )
+    assert heating_value_pressure_identifier_options(loads) == (
+        HEATING_VALUE_PRESSURE_IDENTIFIER_FILTER_ALL,
+        "Heating value zone 400",
+        "Heating value zone VIC",
+        "SCADA node MCE-A",
+    )
+    assert kpis.to_dict(as_series=False) == {
+        "metric": [
+            "Loaded observations",
+            "Heating value observations",
+            "SCADA pressure observations",
+            "Source-qualified identifiers",
+            "Source tables",
+            "Latest gas date",
+            "Latest pressure measurement",
+            "Latest ingest",
+        ],
+        "value": [
+            "4",
+            "2",
+            "2",
+            "3",
+            "3",
+            "2024-01-02",
+            "2024-01-02 02:00:00",
+            "2024-01-02 04:00:00",
+        ],
+        "detail": [
+            "Bounded preview: 100 rows max",
+            "Rows from silver_gas_fact_heating_value",
+            "Rows from silver_gas_fact_scada_pressure",
+            "Distinct source zone and source node identifiers",
+            "Distinct source_table values represented",
+            "Maximum gas_date in loaded heating value rows",
+            "Maximum measurement_timestamp in loaded pressure rows",
+            "Latest ingested_timestamp across loaded rows",
+        ],
+    }
+    assert field_summary.select("field", "available rows").to_dict(as_series=False) == {
+        "field": [
+            "gas_date",
+            "gas_interval",
+            "source_zone_id",
+            "zone_name",
+            "heating_value",
+            "initial_heating_value",
+            "heating_value_unit",
+            "measurement_timestamp",
+            "pressure_offset_hour",
+            "source_node_id",
+            "node_name",
+            "pressure_kpa",
+        ],
+        "available rows": [2, 1, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2],
+    }
+    assert identifiers.select(
+        "fact",
+        "identifier role",
+        "source-qualified identifier",
+        "observations",
+        "relationship status",
+    ).to_dict(as_series=False) == {
+        "fact": ["Heating value", "Heating value", "SCADA pressure"],
+        "identifier role": ["source_zone_id", "source_zone_id", "source_node_id"],
+        "source-qualified identifier": ["400", "VIC", "MCE-A"],
+        "observations": [1, 1, 2],
+        "relationship status": [
+            "Source-qualified identifier only; no conformed dimension key in fact schema",
+            "Source-qualified identifier only; no conformed dimension key in fact schema",
+            "Source-qualified identifier only; no conformed dimension key in fact schema",
+        ],
+    }
+    assert source_coverage.select(
+        "fact",
+        "observations",
+        "source-qualified identifiers",
+        "measure values",
+    ).to_dict(as_series=False) == {
+        "fact": ["Heating value", "Heating value", "SCADA pressure"],
+        "observations": [1, 1, 2],
+        "source-qualified identifiers": [1, 1, 1],
+        "measure values": [1, 1, 2],
+    }
+    assert heating_observations.select(
+        "gas date",
+        "source-qualified zone id",
+        "heating value",
+        "relationship status",
+    ).to_dict(as_series=False) == {
+        "gas date": [date(2024, 1, 2)],
+        "source-qualified zone id": ["400"],
+        "heating value": [39.2],
+        "relationship status": [
+            "Source-qualified identifier only; no conformed dimension key in fact schema"
+        ],
+    }
+    assert heating_table_filter_observations["source-qualified zone id"].to_list() == [
+        "400"
+    ]
+    assert pressure_observations.select(
+        "measurement timestamp",
+        "source-qualified node id",
+        "pressure offset hour",
+        "pressure kpa",
+    ).to_dict(as_series=False) == {
+        "measurement timestamp": [
+            datetime(2024, 1, 2, 2),
+            datetime(2024, 1, 2, 1),
+        ],
+        "source-qualified node id": ["MCE-A", "MCE-A"],
+        "pressure offset hour": [0, 1],
+        "pressure kpa": [521.0, 519.0],
+    }
+    assert pressure_table_filter_observations["pressure offset hour"].to_list() == [
+        0,
+        1,
+    ]
+    assert heating_value_observation_frame(
+        loads,
+        source_system_filter="OTHER",
+    ).is_empty()
+    assert scada_pressure_observation_frame(
+        loads,
+        source_system_filter="OTHER",
+    ).is_empty()
+
+
+def test_heating_value_pressure_helpers_cover_missing_data_and_empty_states() -> None:
+    empty_loads = _heating_value_pressure_loads(
+        heating_dataframe=pl.DataFrame(),
+        pressure_dataframe=pl.DataFrame(),
+        row_limit=6,
+    )
+    populated_loads = _heating_value_pressure_loads(
+        heating_dataframe=pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 2)],
+                "source_zone_id": ["400"],
+                "heating_value": [39.2],
+            }
+        ),
+        pressure_dataframe=pl.DataFrame(),
+    )
+    error_loads = [
+        GasTableLoad(
+            spec=HEATING_VALUE_TABLE_SPEC,
+            uri=f"s3://bucket/silver/gas_model/{HEATING_VALUE_TABLE_NAME}",
+            dataframe=None,
+            error="FileNotFoundError: no parquet files found",
+            row_limit=6,
+            load_duration_seconds=0.01,
+            cache_hit=False,
+        ),
+        _scada_pressure_load(pl.DataFrame(), row_limit=6),
+    ]
+
+    assert heating_value_pressure_kpi_frame(empty_loads).is_empty()
+    assert heating_value_pressure_field_summary_frame(empty_loads).is_empty()
+    assert heating_value_pressure_identifier_frame(empty_loads).is_empty()
+    assert heating_value_pressure_source_coverage_frame(empty_loads).is_empty()
+    assert _dataframe_min_value(pl.DataFrame(), "missing") is None
+    assert heating_value_observation_frame(empty_loads).is_empty()
+    assert scada_pressure_observation_frame(empty_loads).is_empty()
+    assert heating_value_pressure_source_table_options(empty_loads) == (
+        HEATING_VALUE_PRESSURE_SOURCE_TABLE_FILTER_ALL,
+    )
+    assert heating_value_pressure_identifier_options(empty_loads) == (
+        HEATING_VALUE_PRESSURE_IDENTIFIER_FILTER_ALL,
+    )
+    assert heating_value_pressure_kpi_frame(populated_loads).row(6, named=True) == {
+        "metric": "Latest pressure measurement",
+        "value": "unknown",
+        "detail": "Maximum measurement_timestamp in loaded pressure rows",
+    }
+    populated_field_summary = heating_value_pressure_field_summary_frame(
+        populated_loads
+    )
+
+    empty_markdown = heating_value_pressure_empty_state_markdown(empty_loads)
+    error_markdown = heating_value_pressure_empty_state_markdown(error_loads)
+    filtered_markdown = heating_value_pressure_empty_state_markdown(populated_loads)
+    missing_load_markdown = heating_value_pressure_empty_state_markdown(None)
+    empty_context_links = render_heating_value_pressure_context_links(entries=())
+    unmounted_entry = DashboardRegistryEntry(
+        concept_id=HEATING_VALUE_PRESSURE_CONTEXT_ID,
+        title="Unmounted Heating Value And Pressure",
+        description="Available entry without a mounted notebook route.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.silver_gas_fact_heating_value",),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+    unmounted_context_links = render_heating_value_pressure_context_links(
+        entries=(unmounted_entry,)
+    )
+
+    assert (
+        populated_field_summary.filter(pl.col("field") == "pressure_kpa").row(
+            0, named=True
+        )["available rows"]
+        == 0
+    )
+    assert "No heating value or SCADA pressure data is available" in empty_markdown
+    assert "silver.gas_model.silver_gas_fact_heating_value" in empty_markdown
+    assert "silver.gas_model.silver_gas_fact_scada_pressure" in empty_markdown
+    assert "Bounded preview reads are capped at `6` rows per table" in empty_markdown
+    assert "source-qualified identifiers" in empty_markdown
+    assert "conformed dimension keys" in empty_markdown
+    assert "FileNotFoundError: no parquet files found" in error_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert "did not receive heating value or SCADA pressure" in missing_load_markdown
+    assert "No Heating value, SCADA pressure, Gas Quality" in empty_context_links
+    assert "Unavailable dashboard" in unmounted_context_links
 
 
 def test_system_notice_summary_filters_critical_and_notice_windows() -> None:
@@ -9601,6 +10038,50 @@ def _gas_quality_load(
         load_duration_seconds=0.01,
         cache_hit=False,
     )
+
+
+def _heating_value_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = 100,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=HEATING_VALUE_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{HEATING_VALUE_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _scada_pressure_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = 100,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=SCADA_PRESSURE_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{SCADA_PRESSURE_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _heating_value_pressure_loads(
+    *,
+    heating_dataframe: pl.DataFrame,
+    pressure_dataframe: pl.DataFrame,
+    row_limit: int | None = 100,
+) -> list[GasTableLoad]:
+    return [
+        _heating_value_load(heating_dataframe, row_limit=row_limit),
+        _scada_pressure_load(pressure_dataframe, row_limit=row_limit),
+    ]
 
 
 def _customer_transfer_load(

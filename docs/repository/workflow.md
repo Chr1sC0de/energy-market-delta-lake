@@ -138,9 +138,10 @@ Local workflow notes:
   explainer connects
   generated context metadata to bounded `silver_gas_dim_zone` coverage and
   source-qualified identifiers. Flow operations, market price, schedule run,
-  settlement activity, customer transfer, Bid / Offer stack, gas quality, and
-  system notice dashboards use shared bounded gas-model reads for fact previews
-  and summaries. The forecast-vs-actual dashboard compares bounded forecast and
+  settlement activity, customer transfer, Bid / Offer stack, gas quality,
+  heating value and SCADA pressure, and system notice dashboards use shared
+  bounded gas-model reads for fact previews and summaries. The
+  forecast-vs-actual dashboard compares bounded forecast and
   actual flow/storage facts without changing ETL grain or full-scan policy. The
   table explorer is the selected-table workbench for storage
   inspection, readiness links, bounded-read diagnostics, and concept-gallery
@@ -298,6 +299,7 @@ and the required `git diff` to `rg` to QA flow, use
   - `backend-services/marimo/notebooks/nomination_demand_forecast.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
+  - `backend-services/marimo/notebooks/heating_value_pressure.py`
   - `backend-services/scripts/aemo-etl-e2e`
   - `infrastructure/aws-pulumi/__main__.py`
   - `infrastructure/aws-pulumi/components/marimo.py`

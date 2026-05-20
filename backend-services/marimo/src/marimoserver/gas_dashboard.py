@@ -103,6 +103,18 @@ GAS_QUALITY_TABLE_NAME = "silver_gas_fact_gas_quality"
 GAS_QUALITY_QUALITY_TYPE_FILTER_ALL = "All quality types"
 GAS_QUALITY_SOURCE_POINT_FILTER_ALL = "All source points"
 DEFAULT_GAS_QUALITY_PREVIEW_ROWS = 50
+HEATING_VALUE_PRESSURE_CONTEXT_ID = "heating-value-pressure"
+HEATING_VALUE_TABLE_NAME = "silver_gas_fact_heating_value"
+SCADA_PRESSURE_TABLE_NAME = "silver_gas_fact_scada_pressure"
+HEATING_VALUE_PRESSURE_SOURCE_SYSTEM_FILTER_ALL = "All source systems"
+HEATING_VALUE_PRESSURE_SOURCE_TABLE_FILTER_ALL = "All source tables"
+HEATING_VALUE_PRESSURE_IDENTIFIER_FILTER_ALL = "All source-qualified identifiers"
+DEFAULT_HEATING_VALUE_PRESSURE_PREVIEW_ROWS = 50
+_HEATING_VALUE_FACT_LABEL = "Heating value"
+_SCADA_PRESSURE_FACT_LABEL = "SCADA pressure"
+_SOURCE_QUALIFIED_ONLY = (
+    "Source-qualified identifier only; no conformed dimension key in fact schema"
+)
 PARTICIPANT_CONTEXT_ID = "participant-context"
 PARTICIPANT_DIM_TABLE_NAME = "silver_gas_dim_participant"
 PARTICIPANT_MARKET_MEMBERSHIP_TABLE_NAME = "silver_gas_participant_market_membership"
@@ -642,6 +654,54 @@ GAS_QUALITY_TABLE_SPEC = GasTableSpec(
     ),
 )
 GAS_QUALITY_TABLE_SPECS = (GAS_QUALITY_TABLE_SPEC,)
+HEATING_VALUE_TABLE_SPEC = GasTableSpec(
+    section="Quality and status",
+    label="Heating value",
+    table_name=HEATING_VALUE_TABLE_NAME,
+    date_columns=(
+        "gas_date",
+        "source_last_updated_timestamp",
+        "ingested_timestamp",
+    ),
+    preview_columns=(
+        "gas_date",
+        "gas_interval",
+        "source_zone_id",
+        "zone_name",
+        "heating_value",
+        "initial_heating_value",
+        "heating_value_unit",
+        "source_system",
+        "source_table",
+        "source_last_updated_timestamp",
+        "ingested_timestamp",
+    ),
+)
+SCADA_PRESSURE_TABLE_SPEC = GasTableSpec(
+    section="Quality and status",
+    label="SCADA pressure",
+    table_name=SCADA_PRESSURE_TABLE_NAME,
+    date_columns=(
+        "measurement_timestamp",
+        "source_last_updated_timestamp",
+        "ingested_timestamp",
+    ),
+    preview_columns=(
+        "measurement_timestamp",
+        "pressure_offset_hour",
+        "source_node_id",
+        "node_name",
+        "pressure_kpa",
+        "source_system",
+        "source_table",
+        "source_last_updated_timestamp",
+        "ingested_timestamp",
+    ),
+)
+HEATING_VALUE_PRESSURE_TABLE_SPECS = (
+    HEATING_VALUE_TABLE_SPEC,
+    SCADA_PRESSURE_TABLE_SPEC,
+)
 
 FACILITY_FLOW_STORAGE_TABLE_SPEC = GasTableSpec(
     section="Flow and capacity",
@@ -1621,6 +1681,103 @@ _BID_STACK_OBSERVATION_SCHEMA = {
     "source file": pl.String,
     "source updated": pl.Datetime("us"),
     "latest ingest": pl.Datetime("us"),
+}
+_HEATING_VALUE_RAW_SCHEMA = {
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "source_table": pl.String,
+    "gas_date": pl.Date,
+    "gas_interval": pl.String,
+    "source_zone_id": pl.String,
+    "zone_name": pl.String,
+    "heating_value": pl.Float64,
+    "initial_heating_value": pl.Float64,
+    "heating_value_unit": pl.String,
+    "source_last_updated": pl.String,
+    "source_last_updated_timestamp": pl.Datetime("us"),
+    "source_surrogate_key": pl.String,
+    "source_file": pl.String,
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_SCADA_PRESSURE_RAW_SCHEMA = {
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "source_table": pl.String,
+    "source_node_id": pl.String,
+    "node_name": pl.String,
+    "measurement_timestamp": pl.Datetime("us"),
+    "pressure_offset_hour": pl.Int64,
+    "pressure_kpa": pl.Float64,
+    "source_last_updated": pl.String,
+    "source_last_updated_timestamp": pl.Datetime("us"),
+    "source_surrogate_key": pl.String,
+    "source_file": pl.String,
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_HEATING_VALUE_PRESSURE_KPI_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_HEATING_VALUE_PRESSURE_FIELD_SUMMARY_SCHEMA = {
+    "field group": pl.String,
+    "field": pl.String,
+    "available rows": pl.UInt32,
+    "source-qualified identifiers": pl.UInt32,
+    "first value": pl.String,
+    "latest value": pl.String,
+    "detail": pl.String,
+}
+_HEATING_VALUE_PRESSURE_IDENTIFIER_SCHEMA = {
+    "fact": pl.String,
+    "identifier role": pl.String,
+    "source-qualified identifier": pl.String,
+    "identifier name": pl.String,
+    "observations": pl.UInt32,
+    "source tables": pl.UInt32,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
+    "latest measurement timestamp": pl.Datetime("us"),
+    "relationship status": pl.String,
+}
+_HEATING_VALUE_PRESSURE_SOURCE_COVERAGE_SCHEMA = {
+    "fact": pl.String,
+    "source system": pl.String,
+    "source table": pl.String,
+    "observations": pl.UInt32,
+    "source-qualified identifiers": pl.UInt32,
+    "measure values": pl.UInt32,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
+    "latest measurement timestamp": pl.Datetime("us"),
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_HEATING_VALUE_OBSERVATION_SCHEMA = {
+    "gas date": pl.Date,
+    "gas interval": pl.String,
+    "source-qualified zone id": pl.String,
+    "zone name": pl.String,
+    "heating value": pl.Float64,
+    "initial heating value": pl.Float64,
+    "unit": pl.String,
+    "source system": pl.String,
+    "source table": pl.String,
+    "source updated": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+    "relationship status": pl.String,
+}
+_SCADA_PRESSURE_OBSERVATION_SCHEMA = {
+    "measurement timestamp": pl.Datetime("us"),
+    "pressure offset hour": pl.Int64,
+    "source-qualified node id": pl.String,
+    "node name": pl.String,
+    "pressure kpa": pl.Float64,
+    "source system": pl.String,
+    "source table": pl.String,
+    "source updated": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+    "relationship status": pl.String,
 }
 _GAS_QUALITY_RAW_SCHEMA = {
     "source_system": pl.String,
@@ -2628,6 +2785,8 @@ _GAS_DAY_KNOWN_TABLE_SPECS = (
     CUSTOMER_TRANSFER_TABLE_SPEC,
     BID_STACK_TABLE_SPEC,
     GAS_QUALITY_TABLE_SPEC,
+    HEATING_VALUE_TABLE_SPEC,
+    SCADA_PRESSURE_TABLE_SPEC,
 )
 _GAS_DAY_KNOWN_DATE_COLUMNS_BY_TABLE = {
     spec.table_name: spec.date_columns
@@ -3164,6 +3323,42 @@ def cached_load_gas_quality_table(
         refresh_token=refresh_token,
         clock=clock,
     )[0]
+
+
+def load_heating_value_pressure_tables(
+    config: GasDashboardConfig,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Load heating value and SCADA pressure facts through bounded reads."""
+    return load_gas_model_tables(
+        config,
+        specs=HEATING_VALUE_PRESSURE_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        clock=clock,
+    )
+
+
+def cached_load_heating_value_pressure_tables(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Return session-cached heating value and SCADA pressure fact data."""
+    return cached_load_gas_model_tables(
+        config,
+        cache,
+        specs=HEATING_VALUE_PRESSURE_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        refresh_token=refresh_token,
+        clock=clock,
+    )
 
 
 def participant_table_specs() -> tuple[GasTableSpec, ...]:
@@ -10507,6 +10702,507 @@ def gas_quality_empty_state_markdown(load: GasTableLoad | None) -> str:
     """
 
 
+def heating_value_pressure_source_system_options(
+    loads: Sequence[GasTableLoad] | None,
+) -> tuple[str, ...]:
+    """Return source-system filter options for heating value and pressure rows."""
+    return _heating_value_pressure_filter_options(
+        loads,
+        "source_system",
+        HEATING_VALUE_PRESSURE_SOURCE_SYSTEM_FILTER_ALL,
+    )
+
+
+def heating_value_pressure_source_table_options(
+    loads: Sequence[GasTableLoad] | None,
+) -> tuple[str, ...]:
+    """Return source-table filter options for heating value and pressure rows."""
+    return _heating_value_pressure_filter_options(
+        loads,
+        "source_table",
+        HEATING_VALUE_PRESSURE_SOURCE_TABLE_FILTER_ALL,
+    )
+
+
+def heating_value_pressure_identifier_options(
+    loads: Sequence[GasTableLoad] | None,
+) -> tuple[str, ...]:
+    """Return source-qualified identifier filter options for the loaded facts."""
+    dataframe = _heating_value_pressure_filter_dataframe(loads)
+    if dataframe.is_empty():
+        return (HEATING_VALUE_PRESSURE_IDENTIFIER_FILTER_ALL,)
+
+    values = sorted(
+        str(value)
+        for value in dataframe.get_column("_source_identifier_filter")
+        .drop_nulls()
+        .unique()
+        .to_list()
+        if value is not None
+    )
+    return (HEATING_VALUE_PRESSURE_IDENTIFIER_FILTER_ALL, *values)
+
+
+def heating_value_pressure_kpi_frame(
+    loads: Sequence[GasTableLoad] | None,
+    source_system_filter: str = HEATING_VALUE_PRESSURE_SOURCE_SYSTEM_FILTER_ALL,
+    source_table_filter: str = HEATING_VALUE_PRESSURE_SOURCE_TABLE_FILTER_ALL,
+    identifier_filter: str = HEATING_VALUE_PRESSURE_IDENTIFIER_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return first-viewport KPIs for heating value and SCADA pressure rows."""
+    heating = _filtered_heating_value_dataframe(
+        loads,
+        source_system_filter,
+        source_table_filter,
+        identifier_filter,
+    )
+    pressure = _filtered_scada_pressure_dataframe(
+        loads,
+        source_system_filter,
+        source_table_filter,
+        identifier_filter,
+    )
+    if heating.is_empty() and pressure.is_empty():
+        return pl.DataFrame(schema=_HEATING_VALUE_PRESSURE_KPI_SCHEMA)
+
+    row_limit = _common_row_limit(tuple(loads or ()))
+    source_identifiers = _heating_value_pressure_identifier_count(heating, pressure)
+    source_tables = _unique_value_count((heating, pressure), "source_table")
+    latest_ingest = _latest_dataframe_timestamp(
+        _latest_dataframe_timestamp(None, heating, "ingested_timestamp"),
+        pressure,
+        "ingested_timestamp",
+    )
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Loaded observations",
+                "value": f"{heating.height + pressure.height:,}",
+                "detail": format_row_limit(row_limit),
+            },
+            {
+                "metric": "Heating value observations",
+                "value": f"{heating.height:,}",
+                "detail": "Rows from silver_gas_fact_heating_value",
+            },
+            {
+                "metric": "SCADA pressure observations",
+                "value": f"{pressure.height:,}",
+                "detail": "Rows from silver_gas_fact_scada_pressure",
+            },
+            {
+                "metric": "Source-qualified identifiers",
+                "value": f"{source_identifiers:,}",
+                "detail": "Distinct source zone and source node identifiers",
+            },
+            {
+                "metric": "Source tables",
+                "value": f"{source_tables:,}",
+                "detail": "Distinct source_table values represented",
+            },
+            {
+                "metric": "Latest gas date",
+                "value": _format_optional_value(
+                    _dataframe_max_value(heating, "gas_date")
+                ),
+                "detail": "Maximum gas_date in loaded heating value rows",
+            },
+            {
+                "metric": "Latest pressure measurement",
+                "value": _format_optional_value(
+                    _dataframe_max_value(pressure, "measurement_timestamp")
+                ),
+                "detail": "Maximum measurement_timestamp in loaded pressure rows",
+            },
+            {
+                "metric": "Latest ingest",
+                "value": _format_optional_value(latest_ingest),
+                "detail": "Latest ingested_timestamp across loaded rows",
+            },
+        ],
+        schema=_HEATING_VALUE_PRESSURE_KPI_SCHEMA,
+    )
+
+
+def heating_value_pressure_field_summary_frame(
+    loads: Sequence[GasTableLoad] | None,
+    source_system_filter: str = HEATING_VALUE_PRESSURE_SOURCE_SYSTEM_FILTER_ALL,
+    source_table_filter: str = HEATING_VALUE_PRESSURE_SOURCE_TABLE_FILTER_ALL,
+    identifier_filter: str = HEATING_VALUE_PRESSURE_IDENTIFIER_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return field-level coverage for heating value and SCADA pressure facts."""
+    heating = _filtered_heating_value_dataframe(
+        loads,
+        source_system_filter,
+        source_table_filter,
+        identifier_filter,
+    )
+    pressure = _filtered_scada_pressure_dataframe(
+        loads,
+        source_system_filter,
+        source_table_filter,
+        identifier_filter,
+    )
+    if heating.is_empty() and pressure.is_empty():
+        return pl.DataFrame(schema=_HEATING_VALUE_PRESSURE_FIELD_SUMMARY_SCHEMA)
+
+    rows = [
+        _field_summary_row(
+            heating,
+            "Heating value",
+            "gas_date",
+            "source_zone_id",
+            "Gas Day for the source-specific heating value observation",
+        ),
+        _field_summary_row(
+            heating,
+            "Heating value",
+            "gas_interval",
+            "source_zone_id",
+            "Optional gas interval when the source reports interval heating values",
+        ),
+        _field_summary_row(
+            heating,
+            "Heating value",
+            "source_zone_id",
+            "source_zone_id",
+            "Source-qualified heating value zone identifier",
+        ),
+        _field_summary_row(
+            heating,
+            "Heating value",
+            "zone_name",
+            "source_zone_id",
+            "Source-provided heating value zone name",
+        ),
+        _field_summary_row(
+            heating,
+            "Heating value",
+            "heating_value",
+            "source_zone_id",
+            "Current, declared, or published heating value measure",
+        ),
+        _field_summary_row(
+            heating,
+            "Heating value",
+            "initial_heating_value",
+            "source_zone_id",
+            "Initial heating value where the source table provides it",
+        ),
+        _field_summary_row(
+            heating,
+            "Heating value",
+            "heating_value_unit",
+            "source_zone_id",
+            "Source-specific heating value unit or unit label",
+        ),
+        _field_summary_row(
+            pressure,
+            "SCADA pressure",
+            "measurement_timestamp",
+            "source_node_id",
+            "Measurement time for the rolling SCADA pressure set",
+        ),
+        _field_summary_row(
+            pressure,
+            "SCADA pressure",
+            "pressure_offset_hour",
+            "source_node_id",
+            "Offset hour relative to the source measurement timestamp",
+        ),
+        _field_summary_row(
+            pressure,
+            "SCADA pressure",
+            "source_node_id",
+            "source_node_id",
+            "Source-qualified MCE node identifier",
+        ),
+        _field_summary_row(
+            pressure,
+            "SCADA pressure",
+            "node_name",
+            "source_node_id",
+            "Source-provided MCE node name",
+        ),
+        _field_summary_row(
+            pressure,
+            "SCADA pressure",
+            "pressure_kpa",
+            "source_node_id",
+            "Pressure reading value in kPa",
+        ),
+    ]
+    return pl.DataFrame(rows, schema=_HEATING_VALUE_PRESSURE_FIELD_SUMMARY_SCHEMA)
+
+
+def heating_value_pressure_identifier_frame(
+    loads: Sequence[GasTableLoad] | None,
+    source_system_filter: str = HEATING_VALUE_PRESSURE_SOURCE_SYSTEM_FILTER_ALL,
+    source_table_filter: str = HEATING_VALUE_PRESSURE_SOURCE_TABLE_FILTER_ALL,
+    identifier_filter: str = HEATING_VALUE_PRESSURE_IDENTIFIER_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return source-qualified identifier coverage without implying dimensions."""
+    heating = _filtered_heating_value_dataframe(
+        loads,
+        source_system_filter,
+        source_table_filter,
+        identifier_filter,
+    )
+    pressure = _filtered_scada_pressure_dataframe(
+        loads,
+        source_system_filter,
+        source_table_filter,
+        identifier_filter,
+    )
+    frames = [
+        _heating_value_identifier_frame(heating),
+        _scada_pressure_identifier_frame(pressure),
+    ]
+    populated_frames = [frame for frame in frames if not frame.is_empty()]
+    if not populated_frames:
+        return pl.DataFrame(schema=_HEATING_VALUE_PRESSURE_IDENTIFIER_SCHEMA)
+
+    return pl.concat(populated_frames, how="diagonal_relaxed").sort(
+        ["fact", "observations", "source-qualified identifier"],
+        descending=[False, True, False],
+        nulls_last=True,
+    )
+
+
+def heating_value_pressure_source_coverage_frame(
+    loads: Sequence[GasTableLoad] | None,
+    source_system_filter: str = HEATING_VALUE_PRESSURE_SOURCE_SYSTEM_FILTER_ALL,
+    source_table_filter: str = HEATING_VALUE_PRESSURE_SOURCE_TABLE_FILTER_ALL,
+    identifier_filter: str = HEATING_VALUE_PRESSURE_IDENTIFIER_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return source coverage for loaded heating value and pressure rows."""
+    heating = _filtered_heating_value_dataframe(
+        loads,
+        source_system_filter,
+        source_table_filter,
+        identifier_filter,
+    )
+    pressure = _filtered_scada_pressure_dataframe(
+        loads,
+        source_system_filter,
+        source_table_filter,
+        identifier_filter,
+    )
+    frames = [
+        _heating_value_source_coverage_frame(heating),
+        _scada_pressure_source_coverage_frame(pressure),
+    ]
+    populated_frames = [frame for frame in frames if not frame.is_empty()]
+    if not populated_frames:
+        return pl.DataFrame(schema=_HEATING_VALUE_PRESSURE_SOURCE_COVERAGE_SCHEMA)
+
+    return pl.concat(populated_frames, how="diagonal_relaxed").sort(
+        ["fact", "observations", "source table"],
+        descending=[False, True, False],
+        nulls_last=True,
+    )
+
+
+def heating_value_observation_frame(
+    loads: Sequence[GasTableLoad] | None,
+    source_system_filter: str = HEATING_VALUE_PRESSURE_SOURCE_SYSTEM_FILTER_ALL,
+    source_table_filter: str = HEATING_VALUE_PRESSURE_SOURCE_TABLE_FILTER_ALL,
+    identifier_filter: str = HEATING_VALUE_PRESSURE_IDENTIFIER_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_HEATING_VALUE_PRESSURE_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return filtered heating value observations for preview."""
+    dataframe = _filtered_heating_value_dataframe(
+        loads,
+        source_system_filter,
+        source_table_filter,
+        identifier_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_HEATING_VALUE_OBSERVATION_SCHEMA)
+
+    return (
+        dataframe.sort(
+            [
+                "gas_date",
+                "source_last_updated_timestamp",
+                "source_zone_id",
+                "gas_interval",
+            ],
+            descending=[True, True, False, False],
+            nulls_last=True,
+        )
+        .select(
+            pl.col("gas_date").alias("gas date"),
+            pl.col("gas_interval").alias("gas interval"),
+            pl.col("source_zone_id").alias("source-qualified zone id"),
+            pl.col("zone_name").alias("zone name"),
+            pl.col("heating_value").alias("heating value"),
+            pl.col("initial_heating_value").alias("initial heating value"),
+            pl.col("heating_value_unit").alias("unit"),
+            pl.col("source_system").alias("source system"),
+            pl.col("source_table").alias("source table"),
+            pl.col("source_last_updated_timestamp").alias("source updated"),
+            pl.col("ingested_timestamp").alias("latest ingest"),
+            pl.lit(_SOURCE_QUALIFIED_ONLY).alias("relationship status"),
+        )
+        .head(max(1, preview_rows))
+    )
+
+
+def scada_pressure_observation_frame(
+    loads: Sequence[GasTableLoad] | None,
+    source_system_filter: str = HEATING_VALUE_PRESSURE_SOURCE_SYSTEM_FILTER_ALL,
+    source_table_filter: str = HEATING_VALUE_PRESSURE_SOURCE_TABLE_FILTER_ALL,
+    identifier_filter: str = HEATING_VALUE_PRESSURE_IDENTIFIER_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_HEATING_VALUE_PRESSURE_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return filtered SCADA pressure observations for preview."""
+    dataframe = _filtered_scada_pressure_dataframe(
+        loads,
+        source_system_filter,
+        source_table_filter,
+        identifier_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_SCADA_PRESSURE_OBSERVATION_SCHEMA)
+
+    return (
+        dataframe.sort(
+            [
+                "measurement_timestamp",
+                "source_node_id",
+                "pressure_offset_hour",
+            ],
+            descending=[True, False, False],
+            nulls_last=True,
+        )
+        .select(
+            pl.col("measurement_timestamp").alias("measurement timestamp"),
+            pl.col("pressure_offset_hour").alias("pressure offset hour"),
+            pl.col("source_node_id").alias("source-qualified node id"),
+            pl.col("node_name").alias("node name"),
+            pl.col("pressure_kpa").alias("pressure kpa"),
+            pl.col("source_system").alias("source system"),
+            pl.col("source_table").alias("source table"),
+            pl.col("source_last_updated_timestamp").alias("source updated"),
+            pl.col("ingested_timestamp").alias("latest ingest"),
+            pl.lit(_SOURCE_QUALIFIED_ONLY).alias("relationship status"),
+        )
+        .head(max(1, preview_rows))
+    )
+
+
+def heating_value_pressure_empty_state_markdown(
+    loads: Sequence[GasTableLoad] | None,
+) -> str:
+    """Return empty-state copy for missing or unmatched heating/pressure rows."""
+    table_labels = (
+        _markdown_breakable_text("silver.gas_model.silver_gas_fact_heating_value"),
+        _markdown_breakable_text("silver.gas_model.silver_gas_fact_scada_pressure"),
+    )
+    load_tuple = tuple(loads or ())
+    if len(load_tuple) == 0:
+        status_detail = (
+            "The dashboard did not receive heating value or SCADA pressure "
+            "load results."
+        )
+        uri_detail = ", ".join(table_labels)
+        read_policy = "No read policy was reported."
+    else:
+        errors = [load.error for load in load_tuple if load.error is not None]
+        if errors:
+            status_detail = "Read detail: " + "; ".join(
+                _markdown_breakable_text(error) for error in errors
+            )
+        elif all(
+            load.dataframe is None or load.dataframe.is_empty() for load in load_tuple
+        ):
+            status_detail = (
+                "The requested tables loaded successfully but returned no rows."
+            )
+        else:
+            status_detail = (
+                "The current filters do not match any loaded heating value or "
+                "SCADA pressure rows."
+            )
+        uri_detail = ", ".join(
+            _markdown_breakable_text(load.uri) for load in load_tuple
+        )
+        read_policy = row_limit_message(_common_row_limit(load_tuple))
+
+    return f"""
+    **No heating value or SCADA pressure data is available for this view.**
+
+    The dashboard checked {uri_detail}, which should contain {table_labels[0]}
+    rows with heating value, gas date, gas interval, source zone, and source
+    fields, and {table_labels[1]} rows with pressure kPa, measurement timestamp,
+    pressure offset, source node, and source fields.
+
+    These facts currently expose source-qualified identifiers rather than
+    conformed dimension keys, so the dashboard labels source zone and source node
+    values explicitly.
+
+    {status_detail}
+
+    {read_policy}
+
+    Materialize or seed the `silver.gas_model` heating value and SCADA pressure
+    assets, then use **Refresh data**.
+    """
+
+
+def render_heating_value_pressure_context_links(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render heating value and pressure links to quality/status context."""
+    candidate_entries = tuple(dashboard_registry() if entries is None else entries)
+    concept_ids = (
+        HEATING_VALUE_PRESSURE_CONTEXT_ID,
+        "gas-quality-composition",
+        "gas-system-notices",
+        "linepack-context",
+        GAS_DAY_CONTEXT_ID,
+        "source-coverage-matrix",
+        "gas-model-table-explorer",
+    )
+    rows = "\n".join(
+        _render_heating_value_pressure_context_link(entry)
+        for entry in (
+            registry_entry_by_concept_id(concept_id, candidate_entries)
+            for concept_id in concept_ids
+        )
+        if entry is not None
+    )
+    if rows == "":
+        rows = (
+            '<li class="heating-value-pressure-links__empty">'
+            "No Heating value, SCADA pressure, Gas Quality, System Notice, "
+            "Linepack, Gas Day, source coverage, or table explorer entries are "
+            "registered."
+            "</li>"
+        )
+
+    return f"""\
+<style>
+{_heating_value_pressure_context_links_css()}
+</style>
+<section
+    class="heating-value-pressure-links"
+    aria-label="Heating value and SCADA pressure context links"
+>
+    <div>
+        <p class="heating-value-pressure-links__eyebrow">Context links</p>
+        <h2>Heating value, pressure, and gas quality/status context</h2>
+    </div>
+    <ul>
+{rows}
+    </ul>
+</section>"""
+
+
 def system_notice_summary_frame(
     load: GasTableLoad | None,
     critical_filter: str = SYSTEM_NOTICE_CRITICAL_FILTER_ALL,
@@ -15562,6 +16258,525 @@ def _bid_stack_context_links_css() -> str:
 
 @media (max-width: 760px) {
     .bid-stack-links li {
+        grid-template-columns: 1fr;
+    }
+}
+"""
+
+
+def _heating_value_pressure_filter_options(
+    loads: Sequence[GasTableLoad] | None,
+    column: str,
+    all_label: str,
+) -> tuple[str, ...]:
+    dataframe = _heating_value_pressure_filter_dataframe(loads)
+    if dataframe.is_empty() or column not in dataframe.columns:
+        return (all_label,)
+
+    values = sorted(
+        str(value)
+        for value in dataframe.get_column(column)
+        .drop_nulls()
+        .cast(pl.String, strict=False)
+        .unique()
+        .to_list()
+        if value is not None
+    )
+    return (all_label, *values)
+
+
+def _heating_value_pressure_filter_dataframe(
+    loads: Sequence[GasTableLoad] | None,
+) -> pl.DataFrame:
+    heating = _normalised_heating_value_dataframe(
+        table_load_by_name(tuple(loads or ()), HEATING_VALUE_TABLE_NAME)
+    )
+    pressure = _normalised_scada_pressure_dataframe(
+        table_load_by_name(tuple(loads or ()), SCADA_PRESSURE_TABLE_NAME)
+    )
+    frames = [
+        _heating_value_filter_key_frame(heating),
+        _scada_pressure_filter_key_frame(pressure),
+    ]
+    populated_frames = [frame for frame in frames if not frame.is_empty()]
+    if not populated_frames:
+        return pl.DataFrame(
+            schema={
+                "source_system": pl.String,
+                "source_table": pl.String,
+                "_source_identifier_filter": pl.String,
+            }
+        )
+    return pl.concat(populated_frames)
+
+
+def _heating_value_filter_key_frame(dataframe: pl.DataFrame) -> pl.DataFrame:
+    if dataframe.is_empty():
+        return pl.DataFrame(
+            schema={
+                "source_system": pl.String,
+                "source_table": pl.String,
+                "_source_identifier_filter": pl.String,
+            }
+        )
+    return dataframe.select(
+        "source_system",
+        "source_table",
+        _source_identifier_filter_expression(
+            "source_zone_id",
+            "Heating value zone ",
+            "Heating value zone (missing source_zone_id)",
+        ).alias("_source_identifier_filter"),
+    )
+
+
+def _scada_pressure_filter_key_frame(dataframe: pl.DataFrame) -> pl.DataFrame:
+    if dataframe.is_empty():
+        return pl.DataFrame(
+            schema={
+                "source_system": pl.String,
+                "source_table": pl.String,
+                "_source_identifier_filter": pl.String,
+            }
+        )
+    return dataframe.select(
+        "source_system",
+        "source_table",
+        _source_identifier_filter_expression(
+            "source_node_id",
+            "SCADA node ",
+            "SCADA node (missing source_node_id)",
+        ).alias("_source_identifier_filter"),
+    )
+
+
+def _filtered_heating_value_dataframe(
+    loads: Sequence[GasTableLoad] | None,
+    source_system_filter: str,
+    source_table_filter: str,
+    identifier_filter: str,
+) -> pl.DataFrame:
+    dataframe = _normalised_heating_value_dataframe(
+        table_load_by_name(tuple(loads or ()), HEATING_VALUE_TABLE_NAME)
+    )
+    if dataframe.is_empty():
+        return dataframe
+
+    filtered = dataframe.with_columns(
+        _source_identifier_filter_expression(
+            "source_zone_id",
+            "Heating value zone ",
+            "Heating value zone (missing source_zone_id)",
+        ).alias("_source_identifier_filter")
+    )
+    if source_system_filter != HEATING_VALUE_PRESSURE_SOURCE_SYSTEM_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_system") == source_system_filter)
+    if source_table_filter != HEATING_VALUE_PRESSURE_SOURCE_TABLE_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_table") == source_table_filter)
+    if identifier_filter != HEATING_VALUE_PRESSURE_IDENTIFIER_FILTER_ALL:
+        filtered = filtered.filter(
+            pl.col("_source_identifier_filter") == identifier_filter
+        )
+    return filtered
+
+
+def _filtered_scada_pressure_dataframe(
+    loads: Sequence[GasTableLoad] | None,
+    source_system_filter: str,
+    source_table_filter: str,
+    identifier_filter: str,
+) -> pl.DataFrame:
+    dataframe = _normalised_scada_pressure_dataframe(
+        table_load_by_name(tuple(loads or ()), SCADA_PRESSURE_TABLE_NAME)
+    )
+    if dataframe.is_empty():
+        return dataframe
+
+    filtered = dataframe.with_columns(
+        _source_identifier_filter_expression(
+            "source_node_id",
+            "SCADA node ",
+            "SCADA node (missing source_node_id)",
+        ).alias("_source_identifier_filter")
+    )
+    if source_system_filter != HEATING_VALUE_PRESSURE_SOURCE_SYSTEM_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_system") == source_system_filter)
+    if source_table_filter != HEATING_VALUE_PRESSURE_SOURCE_TABLE_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_table") == source_table_filter)
+    if identifier_filter != HEATING_VALUE_PRESSURE_IDENTIFIER_FILTER_ALL:
+        filtered = filtered.filter(
+            pl.col("_source_identifier_filter") == identifier_filter
+        )
+    return filtered
+
+
+def _source_identifier_filter_expression(
+    column: str,
+    prefix: str,
+    missing_label: str,
+) -> pl.Expr:
+    identifier = (
+        pl.col(column).fill_null("").cast(pl.String, strict=False).str.strip_chars()
+    )
+    return (
+        pl.when(identifier != "")
+        .then(pl.concat_str(pl.lit(prefix), identifier))
+        .otherwise(pl.lit(missing_label))
+    )
+
+
+def _normalised_heating_value_dataframe(load: GasTableLoad | None) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_HEATING_VALUE_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _HEATING_VALUE_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        pl.col("source_table").cast(pl.String, strict=False),
+        _normalise_date_column(dataframe, "gas_date"),
+        pl.col("gas_interval").cast(pl.String, strict=False),
+        pl.col("source_zone_id").cast(pl.String, strict=False),
+        pl.col("zone_name").cast(pl.String, strict=False),
+        pl.col("heating_value").cast(pl.Float64, strict=False),
+        pl.col("initial_heating_value").cast(pl.Float64, strict=False),
+        pl.col("heating_value_unit").cast(pl.String, strict=False),
+        pl.col("source_last_updated").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "source_last_updated_timestamp"),
+        pl.col("source_surrogate_key").cast(pl.String, strict=False),
+        pl.col("source_file").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
+def _normalised_scada_pressure_dataframe(load: GasTableLoad | None) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_SCADA_PRESSURE_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _SCADA_PRESSURE_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        pl.col("source_table").cast(pl.String, strict=False),
+        pl.col("source_node_id").cast(pl.String, strict=False),
+        pl.col("node_name").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "measurement_timestamp"),
+        pl.col("pressure_offset_hour").cast(pl.Int64, strict=False),
+        pl.col("pressure_kpa").cast(pl.Float64, strict=False),
+        pl.col("source_last_updated").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "source_last_updated_timestamp"),
+        pl.col("source_surrogate_key").cast(pl.String, strict=False),
+        pl.col("source_file").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
+def _heating_value_pressure_identifier_count(
+    heating: pl.DataFrame,
+    pressure: pl.DataFrame,
+) -> int:
+    labels: set[str] = set()
+    for dataframe in (heating, pressure):
+        if dataframe.is_empty() or "_source_identifier_filter" not in dataframe.columns:
+            continue
+        for value in dataframe.get_column("_source_identifier_filter").to_list():
+            labels.update(_source_coverage_value_strings(value))
+    return len(labels)
+
+
+def _unique_value_count(dataframes: Sequence[pl.DataFrame], column: str) -> int:
+    values: set[str] = set()
+    for dataframe in dataframes:
+        if dataframe.is_empty() or column not in dataframe.columns:
+            continue
+        for value in dataframe.get_column(column).to_list():
+            values.update(_source_coverage_value_strings(value))
+    return len(values)
+
+
+def _latest_dataframe_timestamp(
+    current: datetime | None,
+    dataframe: pl.DataFrame,
+    column: str,
+) -> datetime | None:
+    value = _dataframe_max_value(dataframe, column)
+    return _latest_datetime(current, value if isinstance(value, datetime) else None)
+
+
+def _dataframe_min_value(dataframe: pl.DataFrame, column: str) -> object | None:
+    if dataframe.is_empty() or column not in dataframe.columns:
+        return None
+    value: object | None = dataframe.select(pl.col(column).drop_nulls().min()).item()
+    return value
+
+
+def _dataframe_max_value(dataframe: pl.DataFrame, column: str) -> object | None:
+    if dataframe.is_empty() or column not in dataframe.columns:
+        return None
+    value: object | None = dataframe.select(pl.col(column).drop_nulls().max()).item()
+    return value
+
+
+def _field_summary_row(
+    dataframe: pl.DataFrame,
+    field_group: str,
+    field: str,
+    identifier_column: str,
+    detail: str,
+) -> dict[str, object]:
+    if dataframe.is_empty() or field not in dataframe.columns:
+        return {
+            "field group": field_group,
+            "field": field,
+            "available rows": 0,
+            "source-qualified identifiers": 0,
+            "first value": "unknown",
+            "latest value": "unknown",
+            "detail": detail,
+        }
+
+    available_rows = dataframe.select(pl.col(field).drop_nulls().count()).item()
+    return {
+        "field group": field_group,
+        "field": field,
+        "available rows": available_rows,
+        "source-qualified identifiers": _unique_value_count(
+            (dataframe,),
+            identifier_column,
+        ),
+        "first value": _format_optional_value(_dataframe_min_value(dataframe, field)),
+        "latest value": _format_optional_value(_dataframe_max_value(dataframe, field)),
+        "detail": detail,
+    }
+
+
+def _heating_value_identifier_frame(dataframe: pl.DataFrame) -> pl.DataFrame:
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_HEATING_VALUE_PRESSURE_IDENTIFIER_SCHEMA)
+
+    return (
+        dataframe.group_by("source_zone_id", "zone_name")
+        .agg(
+            pl.len().alias("observations"),
+            pl.col("source_table").drop_nulls().n_unique().alias("source tables"),
+            pl.col("gas_date").min().alias("first gas date"),
+            pl.col("gas_date").max().alias("latest gas date"),
+        )
+        .select(
+            pl.lit(_HEATING_VALUE_FACT_LABEL).alias("fact"),
+            pl.lit("source_zone_id").alias("identifier role"),
+            pl.col("source_zone_id").alias("source-qualified identifier"),
+            pl.col("zone_name").alias("identifier name"),
+            pl.col("observations"),
+            pl.col("source tables"),
+            pl.col("first gas date"),
+            pl.col("latest gas date"),
+            pl.lit(None, dtype=pl.Datetime("us")).alias("latest measurement timestamp"),
+            pl.lit(_SOURCE_QUALIFIED_ONLY).alias("relationship status"),
+        )
+    )
+
+
+def _scada_pressure_identifier_frame(dataframe: pl.DataFrame) -> pl.DataFrame:
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_HEATING_VALUE_PRESSURE_IDENTIFIER_SCHEMA)
+
+    return (
+        dataframe.group_by("source_node_id", "node_name")
+        .agg(
+            pl.len().alias("observations"),
+            pl.col("source_table").drop_nulls().n_unique().alias("source tables"),
+            pl.col("measurement_timestamp").max().alias("latest measurement timestamp"),
+        )
+        .select(
+            pl.lit(_SCADA_PRESSURE_FACT_LABEL).alias("fact"),
+            pl.lit("source_node_id").alias("identifier role"),
+            pl.col("source_node_id").alias("source-qualified identifier"),
+            pl.col("node_name").alias("identifier name"),
+            pl.col("observations"),
+            pl.col("source tables"),
+            pl.lit(None, dtype=pl.Date).alias("first gas date"),
+            pl.lit(None, dtype=pl.Date).alias("latest gas date"),
+            pl.col("latest measurement timestamp"),
+            pl.lit(_SOURCE_QUALIFIED_ONLY).alias("relationship status"),
+        )
+    )
+
+
+def _heating_value_source_coverage_frame(dataframe: pl.DataFrame) -> pl.DataFrame:
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_HEATING_VALUE_PRESSURE_SOURCE_COVERAGE_SCHEMA)
+
+    return (
+        dataframe.group_by("source_system", "source_table")
+        .agg(
+            pl.len().alias("observations"),
+            pl.col("source_zone_id")
+            .drop_nulls()
+            .n_unique()
+            .alias("source-qualified identifiers"),
+            pl.col("heating_value").drop_nulls().count().alias("measure values"),
+            pl.col("gas_date").min().alias("first gas date"),
+            pl.col("gas_date").max().alias("latest gas date"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .select(
+            pl.lit(_HEATING_VALUE_FACT_LABEL).alias("fact"),
+            pl.col("source_system").alias("source system"),
+            pl.col("source_table").alias("source table"),
+            pl.col("observations"),
+            pl.col("source-qualified identifiers"),
+            pl.col("measure values"),
+            pl.col("first gas date"),
+            pl.col("latest gas date"),
+            pl.lit(None, dtype=pl.Datetime("us")).alias("latest measurement timestamp"),
+            pl.col("latest source update"),
+            pl.col("latest ingest"),
+        )
+    )
+
+
+def _scada_pressure_source_coverage_frame(dataframe: pl.DataFrame) -> pl.DataFrame:
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_HEATING_VALUE_PRESSURE_SOURCE_COVERAGE_SCHEMA)
+
+    return (
+        dataframe.group_by("source_system", "source_table")
+        .agg(
+            pl.len().alias("observations"),
+            pl.col("source_node_id")
+            .drop_nulls()
+            .n_unique()
+            .alias("source-qualified identifiers"),
+            pl.col("pressure_kpa").drop_nulls().count().alias("measure values"),
+            pl.col("measurement_timestamp").max().alias("latest measurement timestamp"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .select(
+            pl.lit(_SCADA_PRESSURE_FACT_LABEL).alias("fact"),
+            pl.col("source_system").alias("source system"),
+            pl.col("source_table").alias("source table"),
+            pl.col("observations"),
+            pl.col("source-qualified identifiers"),
+            pl.col("measure values"),
+            pl.lit(None, dtype=pl.Date).alias("first gas date"),
+            pl.lit(None, dtype=pl.Date).alias("latest gas date"),
+            pl.col("latest measurement timestamp"),
+            pl.col("latest source update"),
+            pl.col("latest ingest"),
+        )
+    )
+
+
+def _render_heating_value_pressure_context_link(
+    entry: DashboardRegistryEntry,
+) -> str:
+    status_label = _dashboard_entry_status_label(entry)
+    title = escape(entry.title)
+    route = entry.notebook_route
+    if entry.status.value == "available" and route is not None:
+        title_html = f'<a href="{escape(route, quote=True)}">{title}</a>'
+    else:
+        title_html = f"<span>{title}</span>"
+
+    return f"""\
+        <li data-dashboard-status="{escape(entry.status.value, quote=True)}">
+            {title_html}
+            <span>{escape(status_label)}</span>
+            <code>{escape(entry.concept_id)}</code>
+        </li>"""
+
+
+def _heating_value_pressure_context_links_css() -> str:
+    return """\
+.heating-value-pressure-links {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+}
+
+.heating-value-pressure-links__eyebrow {
+    margin: 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.74rem;
+    font-weight: 720;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.heating-value-pressure-links h2 {
+    margin: 0.15rem 0 0;
+    font-size: 1.05rem;
+}
+
+.heating-value-pressure-links ul {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.heating-value-pressure-links li {
+    display: grid;
+    grid-template-columns: minmax(10rem, 1fr) auto auto;
+    gap: 0.65rem;
+    align-items: center;
+    min-width: 0;
+    padding: 0.55rem 0;
+    border-top: 1px solid var(--emdl-line, #cfdbd6);
+}
+
+.heating-value-pressure-links li:first-child {
+    border-top: 0;
+}
+
+.heating-value-pressure-links a {
+    color: var(--emdl-blue, #166791);
+    font-weight: 720;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+}
+
+.heating-value-pressure-links span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.heating-value-pressure-links li > span:nth-child(2) {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.heating-value-pressure-links code {
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
+@media (max-width: 760px) {
+    .heating-value-pressure-links li {
         grid-template-columns: 1fr;
     }
 }

@@ -230,9 +230,9 @@ Useful routes:
   explorer, data readiness overview, AWS bounded-read diagnostics, market
   prices, materialization freshness, source coverage, source table lineage,
   schedule runs, settlement activity, customer transfer and retail activity,
-  system notices, Bid / Offer stack, gas quality and composition, schema data
-  dictionary, citation-chain explorer, Hub / Zone explainer, Flow operations,
-  and forecast-vs-actual dashboards. The
+  system notices, Bid / Offer stack, gas quality and composition, heating value
+  and SCADA pressure, schema data dictionary, citation-chain explorer, Hub /
+  Zone explainer, Flow operations, and forecast-vs-actual dashboards. The
   schema data dictionary groups read-only Dagster column metadata by Market
   context concept, gas-model mart, mapped asset, and dashboard route. The
   source table lineage explorer connects curated `silver.gas_model` assets to
@@ -831,6 +831,7 @@ developer-stack setting. It renders e2e Dagster config per run from the current
   - `backend-services/marimo/notebooks/nomination_demand_forecast.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
+  - `backend-services/marimo/notebooks/heating_value_pressure.py`
   - `backend-services/scripts/aemo-etl-e2e`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`

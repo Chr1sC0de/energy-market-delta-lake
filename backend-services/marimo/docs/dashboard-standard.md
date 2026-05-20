@@ -225,6 +225,7 @@ Mixed maintained-doc and runtime dashboard changes also run the root
   - `backend-services/marimo/notebooks/nomination_demand_forecast.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
+  - `backend-services/marimo/notebooks/heating_value_pressure.py`
   - `backend-services/caddy/public/theme.css`
 - `sync.scope`: `interface`
 - `sync.qa`:

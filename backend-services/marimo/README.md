@@ -42,6 +42,7 @@ Marimo-Codex research workspace image.
 - [Bid-Offer stack dashboard](#bid-offer-stack-dashboard)
 - [System notices dashboard](#system-notices-dashboard)
 - [Gas quality and composition dashboard](#gas-quality-and-composition-dashboard)
+- [Heating value and SCADA pressure dashboard](#heating-value-and-scada-pressure-dashboard)
 - [GBB interactive map](#gbb-interactive-map)
 - [Local usage](#local-usage)
 - [Validation](#validation)
@@ -817,6 +818,26 @@ source coverage by source system and source table. Missing gas-quality data,
 unavailable Parquet prefixes, and filter combinations with no matches render
 dashboard empty states with the checked table, read policy, and refresh action.
 
+## Heating value and SCADA pressure dashboard
+
+[notebooks/heating_value_pressure.py](notebooks/heating_value_pressure.py)
+is an analytical dashboard over
+`silver.gas_model.silver_gas_fact_heating_value` and
+`silver.gas_model.silver_gas_fact_scada_pressure`. It uses the shared bounded
+gas model loader and session cache from
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py), then
+filters the loaded bounded preview by `source_system`, `source_table`, and
+source-qualified zone or node identifier.
+
+The dashboard shows loaded observation KPIs, heating value field coverage,
+SCADA pressure field coverage, Gas Day and measurement timestamp coverage,
+source-qualified identifier coverage, source coverage by fact, source system,
+and source table, and bounded row previews. It labels `source_zone_id` and
+`source_node_id` as source-qualified identifiers because these facts do not
+currently carry conformed dimension keys. Missing data, unavailable Parquet
+prefixes, and filter combinations with no matches render dashboard empty states
+with the checked tables, read policy, and refresh action.
+
 ## GBB interactive map
 
 [notebooks/gbb_interactive_map.py](notebooks/gbb_interactive_map.py) provides a
@@ -1250,6 +1271,7 @@ prek run -a
   - `backend-services/marimo/notebooks/linepack_adequacy.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
+  - `backend-services/marimo/notebooks/heating_value_pressure.py`
   - `backend-services/marimo/tests/component/conftest.py`
   - `backend-services/marimo/tests/component/test_dashboard_registry.py`
   - `backend-services/marimo/tests/component/test_main.py`

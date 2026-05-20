@@ -213,9 +213,10 @@ Key deployed behaviors visible in the infrastructure code:
   materialization freshness gaps from Dagster GraphQL metadata without table
   content scans,
   exposes the gas system notices, Flow operations, settlement activity,
-  customer transfer and retail activity, Bid / Offer stack, and Hub / Zone
-  explainer dashboards over curated gas-model facts and dimensions, exposes
-  the forecast-vs-actual dashboard over bounded forecast and actual
+  customer transfer and retail activity, Bid / Offer stack, heating value and
+  SCADA pressure, and Hub / Zone explainer dashboards over curated gas-model
+  facts and dimensions, exposes the forecast-vs-actual dashboard over bounded
+  forecast and actual
   flow/storage facts, runs with
   `MARIMO_OUTPUT_MAX_BYTES=16000000`,
   `MARIMO_MAX_PREVIEW_ROWS=100`, and
@@ -473,6 +474,7 @@ system's services and Dagster workflows.
   - `backend-services/marimo/notebooks/nomination_demand_forecast.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
+  - `backend-services/marimo/notebooks/heating_value_pressure.py`
   - `backend-services/caddy/Caddyfile`
   - `infrastructure/aws-pulumi/.pre-commit-config.yaml`
   - `infrastructure/aws-pulumi/pyproject.toml`
