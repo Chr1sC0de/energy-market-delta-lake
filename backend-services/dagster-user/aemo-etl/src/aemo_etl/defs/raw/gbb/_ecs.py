@@ -15,3 +15,12 @@ def rebuild_sized_spot_ecs_tags() -> dict[str, str]:
         "ecs/memory": "8192",
         "ecs/run_task_kwargs": SPOT_FARGATE_RUN_TASK_KWARGS,
     }
+
+
+def pipeline_connection_flow_v2_hotfix_ecs_tags() -> dict[str, str]:
+    """Return run tags for the pipeline connection flow v2 compute hot fix."""
+    return {
+        "ecs/cpu": "2048",
+        "ecs/memory": "16384",
+        "ecs/run_task_kwargs": SPOT_FARGATE_RUN_TASK_KWARGS,
+    }
