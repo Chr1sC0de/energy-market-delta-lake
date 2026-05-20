@@ -232,9 +232,10 @@ Useful routes:
   schedule runs, settlement activity, customer transfer and retail activity,
   system notices, Bid / Offer stack, gas quality and composition, heating value
   and SCADA pressure, schema data dictionary, citation-chain explorer, Hub /
-  Zone explainer, Flow operations, and forecast-vs-actual dashboards. The
-  schema data dictionary groups read-only Dagster column metadata by Market
-  context concept, gas-model mart, mapped asset, and dashboard route. The
+  Zone explainer, Flow operations, Operational Meter Flow, and
+  forecast-vs-actual dashboards. The schema data dictionary groups read-only
+  Dagster column metadata by Market context concept, gas-model mart, mapped
+  asset, and dashboard route. The
   source table lineage explorer connects curated `silver.gas_model` assets to
   source systems, source tables, lineage fields, and registry-backed Market
   context links. The Hub / Zone explainer connects generated Market context
@@ -821,6 +822,7 @@ developer-stack setting. It renders e2e Dagster config per run from the current
   - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/connection_point_explainer.py`
   - `backend-services/marimo/notebooks/flow_operations.py`
+  - `backend-services/marimo/notebooks/operational_meter_flow.py`
   - `backend-services/marimo/notebooks/pipeline_connection_operations.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`

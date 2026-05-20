@@ -375,6 +375,26 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         in pipeline_connection.source_chunk_ids
     )
 
+    meter_flow = registry_entry_by_concept_id("operational-meter-flow", entries)
+    assert meter_flow is not None
+    assert meter_flow.status is DashboardStatus.AVAILABLE
+    assert meter_flow.notebook_name == "operational_meter_flow"
+    assert meter_flow.notebook_route == "/marimo/operational_meter_flow/"
+    assert meter_flow.backing_assets == (
+        "silver.gas_model.silver_gas_fact_operational_meter_flow",
+        "silver.gas_model.silver_gas_dim_operational_point",
+        "silver.gas_model.silver_gas_dim_zone",
+        "silver.gas_model.silver_gas_dim_pipeline_segment",
+    )
+    assert meter_flow.generated_gold_paths == (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
+    )
+    assert meter_flow.source_chunk_ids == (
+        "chunk-gbb-guide-flow-report",
+        "chunk-gbb-procedures-scheduled-flow",
+        "chunk-sttm-procedures-settlement-terms",
+    )
+
     flow = registry_entry_by_concept_id("flow-context", entries)
     assert flow is not None
     assert flow.status is DashboardStatus.AVAILABLE

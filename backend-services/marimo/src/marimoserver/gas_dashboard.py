@@ -133,6 +133,7 @@ LOCATION_DIM_TABLE_NAME = "silver_gas_dim_location"
 HUB_ZONE_DIM_TABLE_NAME = "silver_gas_dim_zone"
 CONNECTION_POINT_DIM_TABLE_NAME = "silver_gas_dim_connection_point"
 PIPELINE_SEGMENT_DIM_TABLE_NAME = "silver_gas_dim_pipeline_segment"
+OPERATIONAL_POINT_DIM_TABLE_NAME = "silver_gas_dim_operational_point"
 CONNECTION_POINT_FLOW_TABLE_NAME = "silver_gas_fact_connection_point_flow"
 FACILITY_FLOW_STORAGE_TABLE_NAME = "silver_gas_fact_facility_flow_storage"
 FACILITY_CAPACITY_OUTLOOK_TABLE_NAME = "silver_gas_fact_capacity_outlook"
@@ -157,7 +158,9 @@ NOMINATION_FORECAST_SOURCE_SYSTEM_FILTER_ALL = "All source systems"
 NOMINATION_FORECAST_FACILITY_FILTER_ALL = "All facilities"
 NOMINATION_FORECAST_LOCATION_FILTER_ALL = "All locations"
 OPERATIONAL_METER_FLOW_TABLE_NAME = "silver_gas_fact_operational_meter_flow"
+OPERATIONAL_METER_FLOW_CONTEXT_ID = "operational-meter-flow"
 DEFAULT_FLOW_PREVIEW_ROWS = 50
+DEFAULT_OPERATIONAL_METER_FLOW_PREVIEW_ROWS = 50
 DEFAULT_NOMINATION_FORECAST_PREVIEW_ROWS = 50
 FACILITY_FLOW_STORAGE_CONTEXT_ID = "facility-flow-storage"
 FACILITY_FLOW_STORAGE_GAS_DATE_FILTER_ALL = "All gas dates"
@@ -1167,6 +1170,92 @@ PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS = (
             "capacity_type",
             "flow_direction",
             "capacity_quantity_tj",
+        ),
+    ),
+)
+OPERATIONAL_METER_FLOW_TABLE_SPECS = (
+    GasTableSpec(
+        section="Facts",
+        label="Operational meter flow",
+        table_name=OPERATIONAL_METER_FLOW_TABLE_NAME,
+        date_columns=(
+            "gas_date",
+            "commencement_timestamp",
+            "termination_timestamp",
+            "source_last_updated_timestamp",
+            "ingested_timestamp",
+        ),
+        preview_columns=(
+            "gas_date",
+            "source_system",
+            "source_table",
+            "gas_interval",
+            "point_type",
+            "source_point_id",
+            "flow_direction",
+            "quantity_gj",
+            "operational_point_key",
+            "zone_key",
+            "pipeline_segment_key",
+            "commencement_timestamp",
+            "termination_timestamp",
+            "source_last_updated_timestamp",
+            "ingested_timestamp",
+        ),
+    ),
+    GasTableSpec(
+        section="Dimensions",
+        label="Operational point standing data",
+        table_name=OPERATIONAL_POINT_DIM_TABLE_NAME,
+        date_columns=("ingested_timestamp",),
+        preview_columns=(
+            "source_system",
+            "source_tables",
+            "point_type",
+            "source_point_id",
+            "point_name",
+            "source_zone_id",
+            "zone_key",
+            "source_pipeline_id",
+            "source_pipeline_segment_id",
+            "pipeline_segment_key",
+            "ingested_timestamp",
+        ),
+    ),
+    GasTableSpec(
+        section="Dimensions",
+        label="Hub and zone standing data",
+        table_name=HUB_ZONE_DIM_TABLE_NAME,
+        date_columns=("ingested_timestamp",),
+        preview_columns=(
+            "source_system",
+            "source_tables",
+            "zone_type",
+            "source_zone_id",
+            "zone_name",
+            "zone_description",
+        ),
+    ),
+    GasTableSpec(
+        section="Dimensions",
+        label="Pipeline segment standing data",
+        table_name=PIPELINE_SEGMENT_DIM_TABLE_NAME,
+        date_columns=(
+            "commencement_date",
+            "termination_date",
+            "source_last_updated_timestamp",
+            "ingested_timestamp",
+        ),
+        preview_columns=(
+            "source_system",
+            "source_tables",
+            "source_pipeline_id",
+            "source_pipe_segment_id",
+            "pipe_segment_name",
+            "source_linepack_zone_id",
+            "zone_key",
+            "commencement_date",
+            "termination_date",
         ),
     ),
 )
@@ -2549,6 +2638,22 @@ _OPERATIONAL_METER_FLOW_RAW_SCHEMA = {
     "source_file": pl.String,
     "ingested_timestamp": pl.Datetime("us"),
 }
+_OPERATIONAL_POINT_DIM_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "point_type": pl.String,
+    "source_point_id": pl.String,
+    "point_name": pl.String,
+    "source_zone_id": pl.String,
+    "zone_key": pl.String,
+    "source_pipeline_id": pl.String,
+    "source_pipeline_segment_id": pl.String,
+    "pipeline_segment_key": pl.String,
+    "source_surrogate_key": pl.String,
+    "source_file": pl.String,
+    "ingested_timestamp": pl.Datetime("us"),
+}
 _PIPELINE_SEGMENT_DIM_RAW_SCHEMA = {
     "surrogate_key": pl.String,
     "zone_key": pl.String,
@@ -2575,6 +2680,58 @@ _PIPELINE_SEGMENT_DIM_RAW_SCHEMA = {
     "source_surrogate_key": pl.String,
     "source_file": pl.String,
     "ingested_timestamp": pl.Datetime("us"),
+}
+_OPERATIONAL_METER_FLOW_KPI_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_OPERATIONAL_METER_FLOW_SUMMARY_SCHEMA = {
+    "source system": pl.String,
+    "source table": pl.String,
+    "point type": pl.String,
+    "source point id": pl.String,
+    "operational point": pl.String,
+    "flow direction": pl.String,
+    "gas days": pl.UInt32,
+    "gas intervals": pl.UInt32,
+    "meter flow rows": pl.UInt32,
+    "rows with quantity": pl.UInt32,
+    "total quantity gj": pl.Float64,
+    "avg quantity gj": pl.Float64,
+    "latest gas date": pl.Date,
+    "zone": pl.String,
+    "pipeline segment": pl.String,
+    "relationship status": pl.String,
+    "coverage gap": pl.String,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_OPERATIONAL_METER_FLOW_POINT_CONTEXT_SCHEMA = {
+    "source system": pl.String,
+    "point type": pl.String,
+    "source point id": pl.String,
+    "point name": pl.String,
+    "zone key": pl.String,
+    "zone": pl.String,
+    "source zone id": pl.String,
+    "pipeline segment key": pl.String,
+    "pipeline segment": pl.String,
+    "source pipeline id": pl.String,
+    "source pipeline segment id": pl.String,
+    "relationship status": pl.String,
+    "coverage gap": pl.String,
+    "source tables": pl.String,
+    "latest ingest": pl.Datetime("us"),
+}
+_OPERATIONAL_METER_FLOW_RELATIONSHIP_GAP_SCHEMA = {
+    "relationship": pl.String,
+    "source table": pl.String,
+    "available rows": pl.UInt32,
+    "matched rows": pl.UInt32,
+    "gap rows": pl.UInt32,
+    "coverage gap": pl.String,
+    "detail": pl.String,
 }
 _PIPELINE_CONNECTION_OPERATIONS_KPI_SCHEMA = {
     "metric": pl.String,
@@ -3530,6 +3687,51 @@ def cached_load_flow_context_tables(
 ) -> list[GasTableLoad]:
     """Return cached Flow operations table reads for explicit refreshes."""
     requested_specs = FLOW_TABLE_SPECS if specs is None else specs
+    return cached_load_gas_model_tables(
+        _source_coverage_bounded_config(config),
+        cache,
+        specs=requested_specs,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        refresh_token=refresh_token,
+        clock=clock,
+    )
+
+
+def operational_meter_flow_table_specs() -> tuple[GasTableSpec, ...]:
+    """Return Operational Meter Flow dashboard fact and dimension tables."""
+    return OPERATIONAL_METER_FLOW_TABLE_SPECS
+
+
+def load_operational_meter_flow_tables(
+    config: GasDashboardConfig,
+    specs: Sequence[GasTableSpec] | None = None,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Load Operational Meter Flow tables through the shared bounded loader."""
+    requested_specs = OPERATIONAL_METER_FLOW_TABLE_SPECS if specs is None else specs
+    return load_gas_model_tables(
+        _source_coverage_bounded_config(config),
+        specs=requested_specs,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        clock=clock,
+    )
+
+
+def cached_load_operational_meter_flow_tables(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    specs: Sequence[GasTableSpec] | None = None,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Return cached Operational Meter Flow table reads for explicit refreshes."""
+    requested_specs = OPERATIONAL_METER_FLOW_TABLE_SPECS if specs is None else specs
     return cached_load_gas_model_tables(
         _source_coverage_bounded_config(config),
         cache,
@@ -5469,6 +5671,418 @@ def flow_kpi_frame(loads: Sequence[GasTableLoad]) -> pl.DataFrame:
     )
 
 
+def operational_meter_flow_kpi_frame(loads: Sequence[GasTableLoad]) -> pl.DataFrame:
+    """Return first-viewport Operational Meter Flow KPIs."""
+    meter_flows = _normalised_operational_meter_flow_dataframe(
+        table_load_by_name(loads, OPERATIONAL_METER_FLOW_TABLE_NAME)
+    )
+    operational_points = _normalised_operational_point_dimension_dataframe(
+        table_load_by_name(loads, OPERATIONAL_POINT_DIM_TABLE_NAME)
+    )
+    zones = _normalised_hub_zone_dimension_dataframe(
+        table_load_by_name(loads, HUB_ZONE_DIM_TABLE_NAME)
+    )
+    pipeline_segments = _normalised_pipeline_segment_dimension_dataframe(
+        table_load_by_name(loads, PIPELINE_SEGMENT_DIM_TABLE_NAME)
+    )
+    relationship_gaps = operational_meter_flow_relationship_gap_frame(loads)
+    gap_rows = (
+        0
+        if relationship_gaps.is_empty()
+        else sum(row["gap rows"] for row in relationship_gaps.to_dicts())
+    )
+    quantity_rows = meter_flows.filter(pl.col("quantity_gj").is_not_null()).height
+    total_quantity = (
+        meter_flows.get_column("quantity_gj").drop_nulls().sum()
+        if quantity_rows > 0
+        else None
+    )
+    latest_gas_date = _flow_latest_gas_date(
+        [
+            load
+            for load in loads
+            if load.spec.table_name == OPERATIONAL_METER_FLOW_TABLE_NAME
+        ]
+    )
+    row_limit = _common_row_limit(loads) if len(loads) > 0 else None
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Operational tables checked",
+                "value": f"{len(loads):,}",
+                "detail": (
+                    "Operational meter flow, Operational Point, Hub / Zone, "
+                    "and Pipeline segment reads requested"
+                ),
+            },
+            {
+                "metric": "Loaded tables",
+                "value": f"{sum(load.available for load in loads):,}",
+                "detail": "Tables with at least one loaded bounded row",
+            },
+            {
+                "metric": "Meter flow rows",
+                "value": f"{meter_flows.height:,}",
+                "detail": "Rows loaded from silver_gas_fact_operational_meter_flow",
+            },
+            {
+                "metric": "Rows with quantity",
+                "value": f"{quantity_rows:,}",
+                "detail": "Rows with populated quantity_gj",
+            },
+            {
+                "metric": "Total quantity GJ",
+                "value": _format_number(total_quantity),
+                "detail": "Sum of populated operational meter flow quantity_gj",
+            },
+            {
+                "metric": "Operational points",
+                "value": f"{operational_points.height:,}",
+                "detail": "Rows loaded from silver_gas_dim_operational_point",
+            },
+            {
+                "metric": "Gas intervals",
+                "value": f"{_distinct_string_count(meter_flows, 'gas_interval'):,}",
+                "detail": "Distinct populated gas_interval values in loaded fact rows",
+            },
+            {
+                "metric": "Relationship gap rows",
+                "value": f"{gap_rows:,}",
+                "detail": (
+                    "Rows missing loaded Operational Point, Hub / Zone, or "
+                    "Pipeline segment relationships"
+                ),
+            },
+            {
+                "metric": "Loaded zones",
+                "value": f"{zones.height:,}",
+                "detail": "Rows loaded from silver_gas_dim_zone",
+            },
+            {
+                "metric": "Loaded pipeline segments",
+                "value": f"{pipeline_segments.height:,}",
+                "detail": "Rows loaded from silver_gas_dim_pipeline_segment",
+            },
+            {
+                "metric": "Latest Gas Day",
+                "value": _format_optional_value(latest_gas_date),
+                "detail": "Maximum gas_date across loaded meter flow rows",
+            },
+            {
+                "metric": "Read policy",
+                "value": format_row_limit(row_limit),
+                "detail": row_limit_message(row_limit),
+            },
+        ],
+        schema=_OPERATIONAL_METER_FLOW_KPI_SCHEMA,
+    )
+
+
+def operational_meter_flow_summary_frame(
+    loads: Sequence[GasTableLoad],
+    *,
+    preview_rows: int = DEFAULT_OPERATIONAL_METER_FLOW_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Summarize Operational Meter Flow rows with loaded dimension context."""
+    meter_flows = _normalised_operational_meter_flow_dataframe(
+        table_load_by_name(loads, OPERATIONAL_METER_FLOW_TABLE_NAME)
+    )
+    if meter_flows.is_empty():
+        return pl.DataFrame(schema=_OPERATIONAL_METER_FLOW_SUMMARY_SCHEMA)
+
+    operational_points = _normalised_operational_point_dimension_dataframe(
+        table_load_by_name(loads, OPERATIONAL_POINT_DIM_TABLE_NAME)
+    )
+    zones = _normalised_hub_zone_dimension_dataframe(
+        table_load_by_name(loads, HUB_ZONE_DIM_TABLE_NAME)
+    )
+    pipeline_segments = _normalised_pipeline_segment_dimension_dataframe(
+        table_load_by_name(loads, PIPELINE_SEGMENT_DIM_TABLE_NAME)
+    )
+    point_context = _operational_point_context_by_identifier(operational_points)
+    zone_by_key = _dimension_rows_by_key(zones)
+    pipeline_segment_by_key = _dimension_rows_by_key(pipeline_segments)
+
+    summaries: dict[tuple[str, ...], dict[str, object]] = {}
+    for row in meter_flows.to_dicts():
+        status, gap, point_row = _operational_meter_flow_relationship_context(
+            row,
+            point_context,
+        )
+        zone_row = _meter_flow_zone_context(row, point_row, zone_by_key)
+        pipeline_segment_row = _meter_flow_pipeline_segment_context(
+            row,
+            point_row,
+            pipeline_segment_by_key,
+        )
+        summary_key = (
+            str(row.get("source_system") or ""),
+            _meter_flow_source_table_label(row),
+            str(row.get("point_type") or ""),
+            str(row.get("source_point_id") or ""),
+            str(row.get("flow_direction") or ""),
+            status,
+            gap,
+            str(_context_value(point_row, "point_name") or ""),
+            str(_zone_label(zone_row) or ""),
+            str(_pipeline_segment_label(pipeline_segment_row) or ""),
+        )
+        if summary_key not in summaries:
+            summaries[summary_key] = {
+                "source system": row.get("source_system"),
+                "source table": _meter_flow_source_table_label(row),
+                "point type": row.get("point_type"),
+                "source point id": row.get("source_point_id"),
+                "operational point": _context_value(point_row, "point_name"),
+                "flow direction": row.get("flow_direction"),
+                "gas_dates": set(),
+                "gas_intervals": set(),
+                "meter flow rows": 0,
+                "rows with quantity": 0,
+                "total quantity gj": 0.0,
+                "zone": _zone_label(zone_row),
+                "pipeline segment": _pipeline_segment_label(pipeline_segment_row),
+                "relationship status": status,
+                "coverage gap": gap,
+                "latest source update": None,
+                "latest ingest": None,
+            }
+
+        summary = summaries[summary_key]
+        summary["meter flow rows"] = _summary_int_value(summary, "meter flow rows") + 1
+        gas_date = _flow_date_value(row.get("gas_date"))
+        gas_dates = summary["gas_dates"]
+        if isinstance(gas_dates, set) and gas_date is not None:
+            gas_dates.add(gas_date)
+        gas_interval = str(row.get("gas_interval") or "").strip()
+        gas_intervals = summary["gas_intervals"]
+        if isinstance(gas_intervals, set) and gas_interval != "":
+            gas_intervals.add(gas_interval)
+        quantity = _numeric_value(row.get("quantity_gj"))
+        if quantity is not None:
+            summary["rows with quantity"] = (
+                _summary_int_value(summary, "rows with quantity") + 1
+            )
+            summary["total quantity gj"] = (
+                _summary_float_value(summary, "total quantity gj") + quantity
+            )
+        summary["latest source update"] = _latest_datetime(
+            _flow_datetime_value(summary["latest source update"]),
+            _flow_datetime_value(row.get("source_last_updated_timestamp")),
+        )
+        summary["latest ingest"] = _latest_datetime(
+            _flow_datetime_value(summary["latest ingest"]),
+            _flow_datetime_value(row.get("ingested_timestamp")),
+        )
+
+    rows = [
+        _operational_meter_flow_summary_row(summary) for summary in summaries.values()
+    ]
+    return (
+        pl.DataFrame(rows, schema=_OPERATIONAL_METER_FLOW_SUMMARY_SCHEMA)
+        .sort(
+            ["latest gas date", "latest source update", "source system"],
+            descending=[True, True, False],
+            nulls_last=True,
+        )
+        .head(max(1, preview_rows))
+    )
+
+
+def operational_meter_flow_point_context_frame(
+    loads: Sequence[GasTableLoad],
+    *,
+    preview_rows: int = DEFAULT_OPERATIONAL_METER_FLOW_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return Operational Point metadata with Zone and Pipeline coverage states."""
+    operational_points = _normalised_operational_point_dimension_dataframe(
+        table_load_by_name(loads, OPERATIONAL_POINT_DIM_TABLE_NAME)
+    )
+    if operational_points.is_empty():
+        return pl.DataFrame(schema=_OPERATIONAL_METER_FLOW_POINT_CONTEXT_SCHEMA)
+
+    zone_by_key = _dimension_rows_by_key(
+        _normalised_hub_zone_dimension_dataframe(
+            table_load_by_name(loads, HUB_ZONE_DIM_TABLE_NAME)
+        )
+    )
+    pipeline_segment_by_key = _dimension_rows_by_key(
+        _normalised_pipeline_segment_dimension_dataframe(
+            table_load_by_name(loads, PIPELINE_SEGMENT_DIM_TABLE_NAME)
+        )
+    )
+    rows = [
+        _operational_point_context_row(row, zone_by_key, pipeline_segment_by_key)
+        for row in operational_points.sort(
+            ["source_system", "point_type", "source_point_id"],
+            nulls_last=True,
+        ).to_dicts()
+    ]
+    return pl.DataFrame(
+        rows[: max(1, preview_rows)],
+        schema=_OPERATIONAL_METER_FLOW_POINT_CONTEXT_SCHEMA,
+    )
+
+
+def operational_meter_flow_relationship_gap_frame(
+    loads: Sequence[GasTableLoad],
+) -> pl.DataFrame:
+    """Return relationship coverage gaps for Operational Meter Flow."""
+    meter_flows = _normalised_operational_meter_flow_dataframe(
+        table_load_by_name(loads, OPERATIONAL_METER_FLOW_TABLE_NAME)
+    )
+    operational_points = _normalised_operational_point_dimension_dataframe(
+        table_load_by_name(loads, OPERATIONAL_POINT_DIM_TABLE_NAME)
+    )
+    zones = _normalised_hub_zone_dimension_dataframe(
+        table_load_by_name(loads, HUB_ZONE_DIM_TABLE_NAME)
+    )
+    pipeline_segments = _normalised_pipeline_segment_dimension_dataframe(
+        table_load_by_name(loads, PIPELINE_SEGMENT_DIM_TABLE_NAME)
+    )
+    if (
+        meter_flows.is_empty()
+        and operational_points.is_empty()
+        and zones.is_empty()
+        and pipeline_segments.is_empty()
+    ):
+        return pl.DataFrame(schema=_OPERATIONAL_METER_FLOW_RELATIONSHIP_GAP_SCHEMA)
+
+    operational_point_keys = _connection_point_identifier_set(
+        operational_points,
+        "surrogate_key",
+    )
+    operational_point_tuples = _operational_point_tuple_set(operational_points)
+    zone_keys = _connection_point_identifier_set(zones, "surrogate_key")
+    pipeline_segment_keys = _pipeline_segment_identifier_set(
+        pipeline_segments,
+        "surrogate_key",
+    )
+    rows = [
+        _relationship_gap_row(
+            "Operational meter flow -> Operational Point",
+            OPERATIONAL_METER_FLOW_TABLE_NAME,
+            meter_flows.height,
+            _matched_operational_point_flow_row_count(
+                meter_flows,
+                operational_point_keys,
+                operational_point_tuples,
+            ),
+            covered_detail=(
+                "Meter flow rows resolve to Operational Point rows by "
+                "operational_point_key or source system, point type, and "
+                "source point id."
+            ),
+            gap_detail=(
+                "Meter flow rows have missing or unmatched operational_point_key "
+                "values and no source-qualified Operational Point row was loaded."
+            ),
+        ),
+        _relationship_gap_row(
+            "Operational meter flow -> Zone",
+            OPERATIONAL_METER_FLOW_TABLE_NAME,
+            meter_flows.height,
+            _matched_meter_flow_dimension_row_count(meter_flows, zone_keys, "zone_key"),
+            covered_detail=(
+                "Meter flow rows resolve to Hub / Zone context through zone_key."
+            ),
+            gap_detail=("Meter flow rows have missing or unmatched zone_key values."),
+        ),
+        _relationship_gap_row(
+            "Operational meter flow -> Pipeline segment",
+            OPERATIONAL_METER_FLOW_TABLE_NAME,
+            meter_flows.height,
+            _matched_pipeline_segment_flow_row_count(
+                meter_flows,
+                pipeline_segment_keys,
+            ),
+            covered_detail=(
+                "Meter flow rows resolve to Pipeline segment context through "
+                "pipeline_segment_key."
+            ),
+            gap_detail=(
+                "Meter flow rows have missing or unmatched pipeline_segment_key values."
+            ),
+        ),
+        _relationship_gap_row(
+            "Operational Point -> Zone",
+            OPERATIONAL_POINT_DIM_TABLE_NAME,
+            operational_points.height,
+            _matched_meter_flow_dimension_row_count(
+                operational_points,
+                zone_keys,
+                "zone_key",
+            ),
+            covered_detail=(
+                "Operational Point rows resolve to Hub / Zone context through zone_key."
+            ),
+            gap_detail=(
+                "Operational Point rows have missing zone_key values or the "
+                "Hub / Zone dimension was not loaded."
+            ),
+        ),
+        _relationship_gap_row(
+            "Operational Point -> Pipeline segment",
+            OPERATIONAL_POINT_DIM_TABLE_NAME,
+            operational_points.height,
+            _matched_meter_flow_dimension_row_count(
+                operational_points,
+                pipeline_segment_keys,
+                "pipeline_segment_key",
+            ),
+            covered_detail=(
+                "Operational Point rows resolve to Pipeline segment context "
+                "through pipeline_segment_key."
+            ),
+            gap_detail=(
+                "Operational Point rows have missing pipeline_segment_key values "
+                "or the Pipeline segment dimension was not loaded."
+            ),
+        ),
+    ]
+    return pl.DataFrame(rows, schema=_OPERATIONAL_METER_FLOW_RELATIONSHIP_GAP_SCHEMA)
+
+
+def operational_meter_flow_empty_state_markdown(
+    loads: Sequence[GasTableLoad],
+) -> str:
+    """Return empty-state copy for the Operational Meter Flow dashboard."""
+    if len(loads) == 0:
+        return """
+        **No Operational Meter Flow tables were requested.**
+
+        The dashboard expected Operational Meter Flow fact and related
+        Operational Point, Hub / Zone, and Pipeline segment dimension specs but
+        received none. Check the Marimo dashboard registry and notebook
+        configuration.
+        """
+
+    failed_count = sum(load.error is not None for load in loads)
+    empty_count = sum(
+        load.error is None and (load.dataframe is None or load.dataframe.is_empty())
+        for load in loads
+    )
+    read_policy = row_limit_message(_common_row_limit(loads))
+    read_detail = (
+        f"`{failed_count}` reads were unavailable and `{empty_count}` reads "
+        "returned no rows."
+    )
+    return f"""
+    **No Operational Meter Flow rows or dimension context are available.**
+
+    The dashboard checked `{len(loads)}` read-only `silver.gas_model` assets:
+    `silver_gas_fact_operational_meter_flow`,
+    `silver_gas_dim_operational_point`, `silver_gas_dim_zone`, and
+    `silver_gas_dim_pipeline_segment`. {read_detail}
+
+    {read_policy}
+
+    Materialize or seed the curated gas model outputs, then use
+    **Refresh data**.
+    """
+
+
 def pipeline_connection_operations_kpi_frame(
     loads: Sequence[GasTableLoad],
 ) -> pl.DataFrame:
@@ -6011,6 +6625,50 @@ def render_pipeline_connection_operations_context_links(
     <div>
         <p class="flow-links__eyebrow">Context links</p>
         <h2>Pipeline, Connection Point, Facility, Flow, and Capacity context</h2>
+    </div>
+    <ul>
+{rows}
+    </ul>
+</section>"""
+
+
+def render_operational_meter_flow_context_links(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render Operational Meter Flow links to related Flow and dimension context."""
+    candidate_entries = tuple(dashboard_registry() if entries is None else entries)
+    concept_ids = (
+        OPERATIONAL_METER_FLOW_CONTEXT_ID,
+        FLOW_CONTEXT_ID,
+        PIPELINE_CONNECTION_OPERATIONS_CONTEXT_ID,
+        HUB_ZONE_CONTEXT_ID,
+        "source-coverage-matrix",
+        "gas-model-table-explorer",
+    )
+    rows = "\n".join(
+        _render_flow_context_link(entry)
+        for entry in (
+            registry_entry_by_concept_id(concept_id, candidate_entries)
+            for concept_id in concept_ids
+        )
+        if entry is not None
+    )
+    if rows == "":
+        rows = (
+            '<li class="flow-links__empty">'
+            "No Operational Meter Flow, Flow, Pipeline, Hub / Zone, source "
+            "coverage, or table explorer entries are registered."
+            "</li>"
+        )
+
+    return f"""\
+<style>
+{_flow_context_links_css()}
+</style>
+<section class="flow-links" aria-label="Operational Meter Flow context links">
+    <div>
+        <p class="flow-links__eyebrow">Context links</p>
+        <h2>Operational Meter Flow, Flow, Pipeline, and Hub / Zone context</h2>
     </div>
     <ul>
 {rows}
@@ -12443,6 +13101,39 @@ def _normalised_operational_meter_flow_dataframe(
     )
 
 
+def _normalised_operational_point_dimension_dataframe(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_OPERATIONAL_POINT_DIM_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _OPERATIONAL_POINT_DIM_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("surrogate_key").cast(pl.String, strict=False),
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        pl.col("point_type").cast(pl.String, strict=False),
+        pl.col("source_point_id").cast(pl.String, strict=False),
+        pl.col("point_name").cast(pl.String, strict=False),
+        pl.col("source_zone_id").cast(pl.String, strict=False),
+        pl.col("zone_key").cast(pl.String, strict=False),
+        pl.col("source_pipeline_id").cast(pl.String, strict=False),
+        pl.col("source_pipeline_segment_id").cast(pl.String, strict=False),
+        pl.col("pipeline_segment_key").cast(pl.String, strict=False),
+        pl.col("source_surrogate_key").cast(pl.String, strict=False),
+        pl.col("source_file").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
 def _normalised_pipeline_segment_dimension_dataframe(
     load: GasTableLoad | None,
 ) -> pl.DataFrame:
@@ -13168,6 +13859,296 @@ def _connection_point_context_by_identifier(
             by_tuple[tuple_key] = row
 
     return by_key, by_tuple
+
+
+def _dimension_rows_by_key(dataframe: pl.DataFrame) -> dict[str, Mapping[str, object]]:
+    rows_by_key: dict[str, Mapping[str, object]] = {}
+    if dataframe.is_empty() or "surrogate_key" not in dataframe.columns:
+        return rows_by_key
+
+    for row in dataframe.to_dicts():
+        surrogate_key = str(row.get("surrogate_key") or "").strip()
+        if surrogate_key != "":
+            rows_by_key[surrogate_key] = row
+    return rows_by_key
+
+
+def _operational_point_context_by_identifier(
+    dataframe: pl.DataFrame,
+) -> tuple[
+    dict[str, Mapping[str, object]],
+    dict[tuple[str, str, str], Mapping[str, object]],
+]:
+    by_key: dict[str, Mapping[str, object]] = {}
+    by_tuple: dict[tuple[str, str, str], Mapping[str, object]] = {}
+
+    for row in dataframe.to_dicts():
+        surrogate_key = str(row.get("surrogate_key") or "").strip()
+        if surrogate_key != "":
+            by_key[surrogate_key] = row
+        tuple_key = _operational_point_tuple_from_row(row)
+        if all(part != "" for part in tuple_key):
+            by_tuple[tuple_key] = row
+
+    return by_key, by_tuple
+
+
+def _operational_point_tuple_from_row(
+    row: Mapping[str, object],
+) -> tuple[str, str, str]:
+    return (
+        str(row.get("source_system") or "").strip(),
+        str(row.get("point_type") or "").strip(),
+        str(row.get("source_point_id") or "").strip(),
+    )
+
+
+def _operational_point_tuple_set(dataframe: pl.DataFrame) -> set[tuple[str, str, str]]:
+    if dataframe.is_empty():
+        return set()
+
+    tuples: set[tuple[str, str, str]] = set()
+    for row in dataframe.select(
+        "source_system",
+        "point_type",
+        "source_point_id",
+    ).to_dicts():
+        tuple_key = _operational_point_tuple_from_row(row)
+        if all(value != "" for value in tuple_key):
+            tuples.add(tuple_key)
+    return tuples
+
+
+def _operational_meter_flow_relationship_context(
+    row: Mapping[str, object],
+    context: tuple[
+        dict[str, Mapping[str, object]],
+        dict[tuple[str, str, str], Mapping[str, object]],
+    ],
+) -> tuple[str, str, Mapping[str, object] | None]:
+    by_key, by_tuple = context
+    operational_point_key = str(row.get("operational_point_key") or "").strip()
+    if operational_point_key != "" and operational_point_key in by_key:
+        return (
+            "Conformed Operational Point match",
+            "Covered",
+            by_key[operational_point_key],
+        )
+
+    tuple_key = _operational_point_tuple_from_row(row)
+    if tuple_key in by_tuple:
+        if operational_point_key == "":
+            return (
+                "Source-qualified Operational Point match",
+                "Missing operational_point_key",
+                by_tuple[tuple_key],
+            )
+        return (
+            "Source-qualified Operational Point match",
+            "Unmatched operational_point_key",
+            by_tuple[tuple_key],
+        )
+
+    if operational_point_key != "":
+        return "Relationship gap", "Unmatched operational_point_key", None
+    return "Relationship gap", "Missing Operational Point dimension match", None
+
+
+def _matched_operational_point_flow_row_count(
+    rows: pl.DataFrame,
+    operational_point_keys: set[str],
+    operational_point_tuples: set[tuple[str, str, str]],
+) -> int:
+    matched_count = 0
+    for row in rows.select(
+        "operational_point_key",
+        "source_system",
+        "point_type",
+        "source_point_id",
+    ).to_dicts():
+        operational_point_key = str(row.get("operational_point_key") or "").strip()
+        tuple_key = _operational_point_tuple_from_row(row)
+        if (
+            operational_point_key in operational_point_keys
+            or tuple_key in operational_point_tuples
+        ):
+            matched_count += 1
+    return matched_count
+
+
+def _matched_meter_flow_dimension_row_count(
+    rows: pl.DataFrame,
+    dimension_keys: set[str],
+    key_column: str,
+) -> int:
+    matched_count = 0
+    if rows.is_empty() or key_column not in rows.columns:
+        return matched_count
+
+    for row in rows.select(key_column).to_dicts():
+        key_value = str(row.get(key_column) or "").strip()
+        if key_value in dimension_keys:
+            matched_count += 1
+    return matched_count
+
+
+def _distinct_string_count(dataframe: pl.DataFrame, column: str) -> int:
+    if dataframe.is_empty() or column not in dataframe.columns:
+        return 0
+    return len(
+        {
+            str(value).strip()
+            for value in dataframe.get_column(column).drop_nulls().to_list()
+            if str(value).strip() != ""
+        }
+    )
+
+
+def _meter_flow_source_table_label(row: Mapping[str, object]) -> str:
+    values = list(_source_coverage_value_strings(row.get("source_table")))
+    values.extend(_source_coverage_value_strings(row.get("source_tables")))
+    deduplicated_values = tuple(dict.fromkeys(values))
+    if len(deduplicated_values) == 0:
+        return _SOURCE_COVERAGE_EMPTY_SOURCE_TABLE_VALUE
+    return ", ".join(deduplicated_values)
+
+
+def _meter_flow_zone_context(
+    row: Mapping[str, object],
+    point_row: Mapping[str, object] | None,
+    zone_by_key: Mapping[str, Mapping[str, object]],
+) -> Mapping[str, object] | None:
+    for key_value in (row.get("zone_key"), _context_value(point_row, "zone_key")):
+        zone_key = str(key_value or "").strip()
+        if zone_key in zone_by_key:
+            return zone_by_key[zone_key]
+    return None
+
+
+def _meter_flow_pipeline_segment_context(
+    row: Mapping[str, object],
+    point_row: Mapping[str, object] | None,
+    pipeline_segment_by_key: Mapping[str, Mapping[str, object]],
+) -> Mapping[str, object] | None:
+    for key_value in (
+        row.get("pipeline_segment_key"),
+        _context_value(point_row, "pipeline_segment_key"),
+    ):
+        pipeline_segment_key = str(key_value or "").strip()
+        if pipeline_segment_key in pipeline_segment_by_key:
+            return pipeline_segment_by_key[pipeline_segment_key]
+    return None
+
+
+def _zone_label(row: Mapping[str, object] | None) -> str | None:
+    if row is None:
+        return None
+    zone_name = str(row.get("zone_name") or "").strip()
+    source_zone_id = str(row.get("source_zone_id") or "").strip()
+    if zone_name != "" and source_zone_id != "":
+        return f"{zone_name} ({source_zone_id})"
+    if zone_name != "":
+        return zone_name
+    if source_zone_id != "":
+        return source_zone_id
+    return None
+
+
+def _pipeline_segment_label(row: Mapping[str, object] | None) -> str | None:
+    if row is None:
+        return None
+    segment_name = str(row.get("pipe_segment_name") or "").strip()
+    source_segment_id = str(row.get("source_pipe_segment_id") or "").strip()
+    if segment_name != "" and source_segment_id != "":
+        return f"{segment_name} ({source_segment_id})"
+    if segment_name != "":
+        return segment_name
+    if source_segment_id != "":
+        return source_segment_id
+    return None
+
+
+def _operational_meter_flow_summary_row(
+    summary: Mapping[str, object],
+) -> dict[str, object]:
+    gas_dates = summary["gas_dates"]
+    gas_intervals = summary["gas_intervals"]
+    quantity_count = _summary_int_value(summary, "rows with quantity")
+    total_quantity = _summary_float_value(summary, "total quantity gj")
+    latest_gas_date = (
+        max(gas_dates) if isinstance(gas_dates, set) and gas_dates else None
+    )
+    avg_quantity = total_quantity / quantity_count if quantity_count > 0 else None
+
+    return {
+        "source system": summary["source system"],
+        "source table": summary["source table"],
+        "point type": summary["point type"],
+        "source point id": summary["source point id"],
+        "operational point": summary["operational point"],
+        "flow direction": summary["flow direction"],
+        "gas days": len(gas_dates) if isinstance(gas_dates, set) else 0,
+        "gas intervals": len(gas_intervals) if isinstance(gas_intervals, set) else 0,
+        "meter flow rows": summary["meter flow rows"],
+        "rows with quantity": quantity_count,
+        "total quantity gj": total_quantity if quantity_count > 0 else None,
+        "avg quantity gj": avg_quantity,
+        "latest gas date": latest_gas_date,
+        "zone": summary["zone"],
+        "pipeline segment": summary["pipeline segment"],
+        "relationship status": summary["relationship status"],
+        "coverage gap": summary["coverage gap"],
+        "latest source update": summary["latest source update"],
+        "latest ingest": summary["latest ingest"],
+    }
+
+
+def _operational_point_context_row(
+    row: Mapping[str, object],
+    zone_by_key: Mapping[str, Mapping[str, object]],
+    pipeline_segment_by_key: Mapping[str, Mapping[str, object]],
+) -> dict[str, object]:
+    zone_key = str(row.get("zone_key") or "").strip()
+    pipeline_segment_key = str(row.get("pipeline_segment_key") or "").strip()
+    zone_row = zone_by_key.get(zone_key)
+    pipeline_segment_row = pipeline_segment_by_key.get(pipeline_segment_key)
+    gaps = []
+    if zone_key == "":
+        gaps.append("Missing zone_key")
+    elif zone_row is None:
+        gaps.append("Unmatched zone_key")
+    if pipeline_segment_key == "":
+        gaps.append("Missing pipeline_segment_key")
+    elif pipeline_segment_row is None:
+        gaps.append("Unmatched pipeline_segment_key")
+
+    coverage_gap = "Covered" if len(gaps) == 0 else ", ".join(gaps)
+    return {
+        "source system": row.get("source_system"),
+        "point type": row.get("point_type"),
+        "source point id": row.get("source_point_id"),
+        "point name": row.get("point_name"),
+        "zone key": row.get("zone_key"),
+        "zone": _zone_label(zone_row),
+        "source zone id": row.get("source_zone_id")
+        or _context_value(zone_row, "source_zone_id"),
+        "pipeline segment key": row.get("pipeline_segment_key"),
+        "pipeline segment": _pipeline_segment_label(pipeline_segment_row),
+        "source pipeline id": row.get("source_pipeline_id")
+        or _context_value(pipeline_segment_row, "source_pipeline_id"),
+        "source pipeline segment id": row.get("source_pipeline_segment_id")
+        or _context_value(pipeline_segment_row, "source_pipe_segment_id"),
+        "relationship status": (
+            "Operational dimensions available"
+            if coverage_gap == "Covered"
+            else "Relationship gap"
+        ),
+        "coverage gap": coverage_gap,
+        "source tables": ", ".join(
+            _source_coverage_value_strings(row.get("source_tables"))
+        ),
+        "latest ingest": row.get("ingested_timestamp"),
+    }
 
 
 def _connection_point_flow_relationship_context(

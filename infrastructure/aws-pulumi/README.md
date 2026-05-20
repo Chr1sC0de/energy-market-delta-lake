@@ -212,10 +212,11 @@ Key deployed behaviors visible in the infrastructure code:
   concept-gallery metadata for mapped `silver.gas_model` assets, exposes
   materialization freshness gaps from Dagster GraphQL metadata without table
   content scans,
-  exposes the gas system notices, Flow operations, settlement activity,
-  customer transfer and retail activity, Bid / Offer stack, heating value and
-  SCADA pressure, and Hub / Zone explainer dashboards over curated gas-model
-  facts and dimensions, exposes the forecast-vs-actual dashboard over bounded
+  exposes the gas system notices, Flow operations, Operational Meter Flow,
+  settlement activity, customer transfer and retail activity, Bid / Offer
+  stack, heating value and SCADA pressure, and Hub / Zone explainer dashboards
+  over curated gas-model facts and dimensions, exposes the forecast-vs-actual
+  dashboard over bounded
   forecast and actual
   flow/storage facts, runs with
   `MARIMO_OUTPUT_MAX_BYTES=16000000`,
@@ -464,6 +465,7 @@ system's services and Dagster workflows.
   - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/connection_point_explainer.py`
   - `backend-services/marimo/notebooks/flow_operations.py`
+  - `backend-services/marimo/notebooks/operational_meter_flow.py`
   - `backend-services/marimo/notebooks/pipeline_connection_operations.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`

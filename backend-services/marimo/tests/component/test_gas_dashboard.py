@@ -94,7 +94,10 @@ from marimoserver.gas_dashboard import (
     NOMINATION_FORECAST_SOURCE_SYSTEM_FILTER_ALL,
     NOMINATION_FORECAST_TABLE_NAME,
     NOMINATION_FORECAST_TABLE_SPEC,
+    OPERATIONAL_METER_FLOW_CONTEXT_ID,
+    OPERATIONAL_METER_FLOW_TABLE_SPECS,
     OPERATIONAL_METER_FLOW_TABLE_NAME,
+    OPERATIONAL_POINT_DIM_TABLE_NAME,
     PARTICIPANT_CONTEXT_ID,
     PARTICIPANT_DIM_TABLE_NAME,
     PARTICIPANT_MARKET_MEMBERSHIP_TABLE_NAME,
@@ -153,6 +156,7 @@ from marimoserver.gas_dashboard import (
     cached_load_gas_model_tables,
     cached_load_market_price_table,
     cached_load_nomination_forecast_table,
+    cached_load_operational_meter_flow_tables,
     cached_load_participant_context_tables,
     cached_load_pipeline_connection_operations_tables,
     cached_load_schedule_run_table,
@@ -257,6 +261,7 @@ from marimoserver.gas_dashboard import (
     load_linepack_table,
     load_gas_model_tables,
     load_nomination_forecast_table,
+    load_operational_meter_flow_tables,
     load_participant_context_tables,
     load_pipeline_connection_operations_tables,
     load_source_coverage_tables,
@@ -291,6 +296,12 @@ from marimoserver.gas_dashboard import (
     nomination_forecast_source_coverage_frame,
     nomination_forecast_source_system_options,
     nomination_forecast_summary_frame,
+    operational_meter_flow_empty_state_markdown,
+    operational_meter_flow_kpi_frame,
+    operational_meter_flow_point_context_frame,
+    operational_meter_flow_relationship_gap_frame,
+    operational_meter_flow_summary_frame,
+    operational_meter_flow_table_specs,
     participant_context_empty_state_markdown,
     participant_dimension_coverage_frame,
     participant_dimension_preview_frame,
@@ -319,6 +330,7 @@ from marimoserver.gas_dashboard import (
     render_heating_value_pressure_context_links,
     render_hub_zone_context_links,
     render_linepack_context_links,
+    render_operational_meter_flow_context_links,
     render_participant_context_links,
     render_pipeline_connection_operations_context_links,
     render_schedule_run_context_links,
@@ -7340,6 +7352,475 @@ def test_flow_helpers_cover_missing_columns_and_empty_state_behavior() -> None:
     assert "No Flow operations tables were requested" in empty_markdown
     assert (
         "No Flow, Facility, Connection Point, Gas Day, schedule, capacity, map, "
+        "or table explorer entries are registered."
+    ) in empty_context_links
+
+
+def test_operational_meter_flow_metadata_is_available_dashboard() -> None:
+    entry = registry_entry_by_concept_id(OPERATIONAL_METER_FLOW_CONTEXT_ID)
+    html = render_dashboard_context_panel(OPERATIONAL_METER_FLOW_CONTEXT_ID)
+    context_links = render_operational_meter_flow_context_links()
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "operational_meter_flow"
+    assert entry.notebook_route == "/marimo/operational_meter_flow/"
+    assert "silver.gas_model.silver_gas_fact_operational_meter_flow" in (
+        entry.backing_assets
+    )
+    assert "silver.gas_model.silver_gas_dim_operational_point" in (entry.backing_assets)
+    assert "silver.gas_model.silver_gas_dim_zone" in entry.backing_assets
+    assert "silver.gas_model.silver_gas_dim_pipeline_segment" in (entry.backing_assets)
+    assert "Operational Meter Flow" in html
+    assert "chunk-gbb-guide-flow-report" in html
+    assert 'data-status="available"' in html
+    assert 'href="/marimo/operational_meter_flow/"' in context_links
+    assert "Flow Context" in context_links
+    assert "Pipeline and Connection Operations" in context_links
+    assert "Hub / Zone Context" in context_links
+
+
+def test_operational_meter_flow_table_specs_and_loader_use_bounded_recent_samples() -> (
+    None
+):
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "13",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    specs = operational_meter_flow_table_specs()
+    loads = load_operational_meter_flow_tables(config, reader=reader)
+
+    assert specs == OPERATIONAL_METER_FLOW_TABLE_SPECS
+    assert tuple(spec.table_name for spec in specs) == (
+        OPERATIONAL_METER_FLOW_TABLE_NAME,
+        OPERATIONAL_POINT_DIM_TABLE_NAME,
+        HUB_ZONE_DIM_TABLE_NAME,
+        PIPELINE_SEGMENT_DIM_TABLE_NAME,
+    )
+    assert len(loads) == 4
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_operational_meter_flow",
+            13,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_dim_operational_point",
+            13,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_dim_zone",
+            13,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_dim_pipeline_segment",
+            13,
+        ),
+    ]
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert uri.endswith(f"/{OPERATIONAL_METER_FLOW_TABLE_NAME}")
+        assert storage_options == config.storage_options()
+        assert row_limit == 13
+        cached_calls += 1
+        return pl.DataFrame({"source_system": ["VICGAS"]})
+
+    first_cached = cached_load_operational_meter_flow_tables(
+        config,
+        cache,
+        specs=(OPERATIONAL_METER_FLOW_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_operational_meter_flow_tables(
+        config,
+        cache,
+        specs=(OPERATIONAL_METER_FLOW_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_operational_meter_flow_tables(
+        config,
+        cache,
+        specs=(OPERATIONAL_METER_FLOW_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 2
+    assert not first_cached[0].cache_hit
+    assert second_cached[0].cache_hit
+    assert not refreshed[0].cache_hit
+
+
+def test_operational_meter_flow_helpers_summarize_relationship_gaps() -> None:
+    meter_flow_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[0],
+        pl.DataFrame(
+            {
+                "operational_point_key": ["op-key-1", None, "missing-key"],
+                "zone_key": ["zone-key-1", None, "zone-key-1"],
+                "pipeline_segment_key": ["pipe-key-1", None, "pipe-key-2"],
+                "source_system": ["VICGAS", "VICGAS", "VICGAS"],
+                "source_table": [
+                    "silver.vicgas.silver_int236_v4_operational_meter_readings_1",
+                    "silver.vicgas.silver_int313_v4_allocated_injections_withdrawals_1",
+                    "silver.vicgas.silver_int236_v4_operational_meter_readings_1",
+                ],
+                "gas_date": [
+                    date(2024, 1, 4),
+                    date(2024, 1, 4),
+                    date(2024, 1, 5),
+                ],
+                "gas_interval": ["13", "14", "15"],
+                "point_type": ["direction_code_name", "phy_mirn", "meter"],
+                "source_point_id": ["Dandenong", "MIRN-A", "Missing"],
+                "flow_direction": ["WITHDRAWAL", "INJECTION", "WITHDRAWAL"],
+                "quantity_gj": [70.0, 20.0, None],
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 4, 7),
+                    datetime(2024, 1, 4, 8),
+                    datetime(2024, 1, 5, 8),
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 4, 9),
+                    datetime(2024, 1, 4, 10),
+                    datetime(2024, 1, 5, 10),
+                ],
+            }
+        ),
+    )
+    operational_point_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[1],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["op-key-1", "op-key-2"],
+                "source_system": ["VICGAS", "VICGAS"],
+                "source_tables": [
+                    ["silver.vicgas.silver_int236_v4_operational_meter_readings_1"],
+                    [
+                        "silver.vicgas.silver_int313_v4_allocated_injections_withdrawals_1"
+                    ],
+                ],
+                "point_type": ["direction_code_name", "phy_mirn"],
+                "source_point_id": ["Dandenong", "MIRN-A"],
+                "point_name": ["Dandenong Meter", "MIRN Site"],
+                "source_zone_id": ["5", None],
+                "zone_key": ["zone-key-1", None],
+                "source_pipeline_id": ["VTS", None],
+                "source_pipeline_segment_id": ["77", None],
+                "pipeline_segment_key": ["pipe-key-1", None],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 4, 9),
+                    datetime(2024, 1, 4, 10),
+                ],
+            }
+        ),
+    )
+    zone_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[2],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["zone-key-1"],
+                "source_system": ["VICGAS"],
+                "zone_type": ["linepack_zone"],
+                "source_zone_id": ["5"],
+                "zone_name": ["Linepack 5"],
+            }
+        ),
+    )
+    pipeline_segment_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[3],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["pipe-key-1"],
+                "zone_key": ["zone-key-1"],
+                "source_system": ["VICGAS"],
+                "source_pipeline_id": ["VTS"],
+                "source_pipe_segment_id": ["77"],
+                "pipe_segment_name": ["Segment 77"],
+            }
+        ),
+    )
+    loads = (
+        meter_flow_load,
+        operational_point_load,
+        zone_load,
+        pipeline_segment_load,
+    )
+
+    kpis = operational_meter_flow_kpi_frame(loads)
+    summary = operational_meter_flow_summary_frame(loads)
+    point_context = operational_meter_flow_point_context_frame(loads)
+    gaps = operational_meter_flow_relationship_gap_frame(loads)
+    kpi_values = {row["metric"]: row["value"] for row in kpis.to_dicts()}
+    summary_rows = {
+        (row["point type"], row["source point id"]): row for row in summary.to_dicts()
+    }
+    point_rows = {
+        (row["point type"], row["source point id"]): row
+        for row in point_context.to_dicts()
+    }
+    gap_rows = {row["relationship"]: row for row in gaps.to_dicts()}
+
+    assert kpi_values["Operational tables checked"] == "4"
+    assert kpi_values["Loaded tables"] == "4"
+    assert kpi_values["Meter flow rows"] == "3"
+    assert kpi_values["Rows with quantity"] == "2"
+    assert kpi_values["Total quantity GJ"] == "90"
+    assert kpi_values["Operational points"] == "2"
+    assert kpi_values["Gas intervals"] == "3"
+    assert kpi_values["Relationship gap rows"] == "6"
+    assert kpi_values["Latest Gas Day"] == "2024-01-05"
+
+    dandenong = summary_rows[("direction_code_name", "Dandenong")]
+    assert dandenong["operational point"] == "Dandenong Meter"
+    assert dandenong["flow direction"] == "WITHDRAWAL"
+    assert dandenong["gas intervals"] == 1
+    assert dandenong["total quantity gj"] == 70.0
+    assert dandenong["zone"] == "Linepack 5 (5)"
+    assert dandenong["pipeline segment"] == "Segment 77 (77)"
+    assert dandenong["relationship status"] == "Conformed Operational Point match"
+    assert dandenong["coverage gap"] == "Covered"
+
+    mirn = summary_rows[("phy_mirn", "MIRN-A")]
+    assert mirn["relationship status"] == "Source-qualified Operational Point match"
+    assert mirn["coverage gap"] == "Missing operational_point_key"
+    assert mirn["total quantity gj"] == 20.0
+
+    missing = summary_rows[("meter", "Missing")]
+    assert missing["relationship status"] == "Relationship gap"
+    assert missing["coverage gap"] == "Unmatched operational_point_key"
+
+    assert (
+        point_rows[("direction_code_name", "Dandenong")]["relationship status"]
+        == "Operational dimensions available"
+    )
+    assert point_rows[("direction_code_name", "Dandenong")]["coverage gap"] == (
+        "Covered"
+    )
+    assert point_rows[("phy_mirn", "MIRN-A")]["coverage gap"] == (
+        "Missing zone_key, Missing pipeline_segment_key"
+    )
+
+    assert gap_rows["Operational meter flow -> Operational Point"]["gap rows"] == 1
+    assert gap_rows["Operational meter flow -> Zone"]["gap rows"] == 1
+    assert gap_rows["Operational meter flow -> Pipeline segment"]["gap rows"] == 2
+    assert gap_rows["Operational Point -> Zone"]["gap rows"] == 1
+    assert gap_rows["Operational Point -> Pipeline segment"]["gap rows"] == 1
+
+
+def test_operational_meter_flow_helpers_cover_gap_classification_branches() -> None:
+    meter_flow_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[0],
+        pl.DataFrame(
+            {
+                "operational_point_key": ["wrong-op-key", None],
+                "source_system": ["VICGAS", "VICGAS"],
+                "gas_date": [date(2024, 1, 6), date(2024, 1, 6)],
+                "point_type": ["meter", "meter"],
+                "source_point_id": ["OP1", "Missing"],
+                "flow_direction": ["WITHDRAWAL", "INJECTION"],
+                "quantity_gj": [5.0, 6.0],
+            }
+        ),
+    )
+    empty_meter_flow_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[0],
+        pl.DataFrame(),
+    )
+    operational_point_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[1],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["op-key-1", "op-key-2", "op-key-3", "op-key-4"],
+                "source_system": ["VICGAS", "VICGAS", "VICGAS", "VICGAS"],
+                "point_type": ["meter", "meter", "meter", "meter"],
+                "source_point_id": ["OP1", "OP2", "OP3", "OP4"],
+                "point_name": ["Point 1", "Point 2", "Point 3", "Point 4"],
+                "zone_key": [
+                    "zone-name-only",
+                    "zone-id-only",
+                    "zone-empty",
+                    "unmatched-zone",
+                ],
+                "pipeline_segment_key": [
+                    "pipe-name-only",
+                    "pipe-id-only",
+                    "pipe-empty",
+                    "unmatched-pipe",
+                ],
+            }
+        ),
+    )
+    empty_operational_point_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[1],
+        pl.DataFrame(),
+    )
+    zone_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[2],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["zone-name-only", "zone-id-only", "zone-empty"],
+                "zone_name": ["Name Only", None, None],
+                "source_zone_id": [None, "6", None],
+            }
+        ),
+    )
+    empty_zone_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[2],
+        pl.DataFrame(),
+    )
+    pipeline_segment_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[3],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["pipe-name-only", "pipe-id-only", "pipe-empty"],
+                "pipe_segment_name": ["Pipe Name Only", None, None],
+                "source_pipe_segment_id": [None, "88", None],
+            }
+        ),
+    )
+    empty_pipeline_segment_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[3],
+        pl.DataFrame(),
+    )
+    loads = (
+        meter_flow_load,
+        operational_point_load,
+        zone_load,
+        pipeline_segment_load,
+    )
+
+    summary = operational_meter_flow_summary_frame(loads)
+    point_context = operational_meter_flow_point_context_frame(loads)
+    summary_rows = {
+        row["source point id"]: row
+        for row in summary.sort("source point id").to_dicts()
+    }
+    point_rows = {
+        row["source point id"]: row
+        for row in point_context.sort("source point id").to_dicts()
+    }
+
+    assert summary_rows["OP1"]["coverage gap"] == "Unmatched operational_point_key"
+    assert summary_rows["OP1"]["source table"] == (
+        "(empty source_table/source_tables value)"
+    )
+    assert summary_rows["Missing"]["coverage gap"] == (
+        "Missing Operational Point dimension match"
+    )
+    assert point_rows["OP1"]["zone"] == "Name Only"
+    assert point_rows["OP1"]["pipeline segment"] == "Pipe Name Only"
+    assert point_rows["OP2"]["zone"] == "6"
+    assert point_rows["OP2"]["pipeline segment"] == "88"
+    assert point_rows["OP3"]["zone"] is None
+    assert point_rows["OP3"]["pipeline segment"] is None
+    assert point_rows["OP4"]["coverage gap"] == (
+        "Unmatched zone_key, Unmatched pipeline_segment_key"
+    )
+
+    missing_dimension_rows = operational_meter_flow_point_context_frame(
+        (
+            empty_meter_flow_load,
+            operational_point_load,
+            empty_zone_load,
+            empty_pipeline_segment_load,
+        )
+    )
+    missing_dimension_gap_rows = operational_meter_flow_relationship_gap_frame(
+        (
+            empty_meter_flow_load,
+            operational_point_load,
+            empty_zone_load,
+            empty_pipeline_segment_load,
+        )
+    )
+    missing_point_gap_rows = operational_meter_flow_relationship_gap_frame(
+        (
+            meter_flow_load,
+            empty_operational_point_load,
+            empty_zone_load,
+            empty_pipeline_segment_load,
+        )
+    )
+    empty_meter_kpis = operational_meter_flow_kpi_frame(
+        (
+            empty_meter_flow_load,
+            operational_point_load,
+            empty_zone_load,
+            empty_pipeline_segment_load,
+        )
+    )
+
+    assert {row["coverage gap"] for row in missing_dimension_rows.to_dicts()} == {
+        "Unmatched zone_key, Unmatched pipeline_segment_key"
+    }
+    assert {row["coverage gap"] for row in missing_dimension_gap_rows.to_dicts()} >= {
+        "No source rows loaded"
+    }
+    assert missing_point_gap_rows.row(0, named=True)["coverage gap"] == (
+        "Meter flow rows have missing or unmatched operational_point_key values "
+        "and no source-qualified Operational Point row was loaded."
+    )
+    assert {row["metric"]: row["value"] for row in empty_meter_kpis.to_dicts()}[
+        "Gas intervals"
+    ] == "0"
+
+
+def test_operational_meter_flow_helpers_cover_empty_state_behavior() -> None:
+    unavailable_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[0],
+        None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=5,
+    )
+    loads = (
+        unavailable_load,
+        *(
+            _facility_load(spec, pl.DataFrame(), row_limit=5)
+            for spec in OPERATIONAL_METER_FLOW_TABLE_SPECS[1:]
+        ),
+    )
+
+    assert operational_meter_flow_summary_frame(loads).is_empty()
+    assert operational_meter_flow_point_context_frame(loads).is_empty()
+    assert operational_meter_flow_relationship_gap_frame(loads).is_empty()
+
+    markdown = operational_meter_flow_empty_state_markdown(loads)
+    empty_markdown = operational_meter_flow_empty_state_markdown(())
+    empty_context_links = render_operational_meter_flow_context_links(entries=())
+
+    assert "No Operational Meter Flow rows or dimension context" in markdown
+    assert "`1` reads were unavailable and `3` reads returned no rows" in markdown
+    assert "Bounded preview reads are capped at `5` rows per table" in markdown
+    assert "No Operational Meter Flow tables were requested" in empty_markdown
+    assert (
+        "No Operational Meter Flow, Flow, Pipeline, Hub / Zone, source coverage, "
         "or table explorer entries are registered."
     ) in empty_context_links
 

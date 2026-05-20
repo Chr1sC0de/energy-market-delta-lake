@@ -134,10 +134,10 @@ Market context glossary concepts to registry backing assets, dashboard routes,
 planned dashboard cards, and table explorer deep links without reading table
 rows. Its citation-chain explorer audits registry metadata from generated-gold
 paths to source chunk IDs, silver chunk paths, and source hashes without
-opening generated corpus files. Its Flow operations, market price, schedule
-run, settlement activity, customer transfer, Bid / Offer stack, gas quality,
-heating value and SCADA pressure, and system notice dashboards use the shared
-bounded gas-model loader for
+opening generated corpus files. Its Flow operations, Operational Meter Flow,
+market price, schedule run, settlement activity, customer transfer, Bid / Offer
+stack, gas quality, heating value and SCADA pressure, and system notice
+dashboards use the shared bounded gas-model loader for
 read-only fact previews and summaries. Its forecast-vs-actual dashboard compares
 bounded forecast and actual flow/storage facts without changing ETL grain or
 full-scan policy. Its Gas Day explainer uses registry context metadata and bounded
@@ -294,6 +294,7 @@ Gas market knowledge base responsibility:
   - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/connection_point_explainer.py`
   - `backend-services/marimo/notebooks/flow_operations.py`
+  - `backend-services/marimo/notebooks/operational_meter_flow.py`
   - `backend-services/marimo/notebooks/pipeline_connection_operations.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`

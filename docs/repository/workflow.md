@@ -137,10 +137,11 @@ Local workflow notes:
   gaps from catalogue metadata without scanning table contents. The Hub / Zone
   explainer connects
   generated context metadata to bounded `silver_gas_dim_zone` coverage and
-  source-qualified identifiers. Flow operations, market price, schedule run,
-  settlement activity, customer transfer, Bid / Offer stack, gas quality,
-  heating value and SCADA pressure, and system notice dashboards use shared
-  bounded gas-model reads for fact previews and summaries. The
+  source-qualified identifiers. Flow operations, Operational Meter Flow,
+  market price, schedule run, settlement activity, customer transfer, Bid /
+  Offer stack, gas quality, heating value and SCADA pressure, and system notice
+  dashboards use shared bounded gas-model reads for fact previews and
+  summaries. The
   forecast-vs-actual dashboard compares bounded forecast and
   actual flow/storage facts without changing ETL grain or full-scan policy. The
   table explorer is the selected-table workbench for storage
@@ -289,6 +290,7 @@ and the required `git diff` to `rg` to QA flow, use
   - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/connection_point_explainer.py`
   - `backend-services/marimo/notebooks/flow_operations.py`
+  - `backend-services/marimo/notebooks/operational_meter_flow.py`
   - `backend-services/marimo/notebooks/pipeline_connection_operations.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`

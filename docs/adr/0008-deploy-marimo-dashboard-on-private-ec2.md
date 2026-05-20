@@ -225,6 +225,16 @@ chunk metadata, then reads bounded recent samples from
 recent/sample flow measures without changing ETL flow modeling, generated
 glossary files, asset schemas, or AWS infrastructure.
 
+The Operational Meter Flow dashboard stays inside the same boundary. It renders
+the registry-backed Operational Meter Flow context panel from copied
+generated-gold path and source chunk metadata, then reads bounded recent samples
+from `silver_gas_fact_operational_meter_flow`,
+`silver_gas_dim_operational_point`, `silver_gas_dim_zone`, and
+`silver_gas_dim_pipeline_segment` to show VICGAS meter-flow quantity, gas
+interval, point type, flow direction, source point fields, and explicit
+dimension relationship gaps without changing ETL relationship modeling,
+generated glossary files, asset schemas, or AWS infrastructure.
+
 The Facility flow and storage dashboard stays inside the same boundary. It
 renders copied Facility, Flow, and Capacity context metadata from the Marimo
 registry, then reads bounded recent samples from
@@ -291,6 +301,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/connection_point_explainer.py`
   - `backend-services/marimo/notebooks/flow_operations.py`
+  - `backend-services/marimo/notebooks/operational_meter_flow.py`
   - `backend-services/marimo/notebooks/pipeline_connection_operations.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`

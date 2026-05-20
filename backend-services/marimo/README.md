@@ -528,6 +528,26 @@ operational meter quantities into recent/sample observations. Missing tables,
 unavailable Parquet prefixes, empty reads, and missing columns render designed
 empty states with the checked assets, read policy, and refresh action.
 
+## Operational Meter Flow dashboard
+
+[notebooks/operational_meter_flow.py](notebooks/operational_meter_flow.py) is
+an operational dashboard for VICGAS meter flow observations. It renders the
+registry-backed Operational Meter Flow context panel and context links to Flow,
+Pipeline and Connection, Hub / Zone, source coverage, and table explorer
+surfaces, then loads bounded recent samples from
+`silver.gas_model.silver_gas_fact_operational_meter_flow`,
+`silver.gas_model.silver_gas_dim_operational_point`,
+`silver.gas_model.silver_gas_dim_zone`, and
+`silver.gas_model.silver_gas_dim_pipeline_segment` through the shared gas model
+loader.
+
+The dashboard summarizes quantity, gas interval, point type, source point
+identifier, source table, flow direction, and current Operational Point
+dimension context. Its relationship gap view keeps missing
+`operational_point_key`, `zone_key`, and `pipeline_segment_key` links visible at
+both fact and Operational Point levels so unresolved model coverage is explicit
+without changing ETL relationship modeling.
+
 ## Pipeline and Connection operations dashboard
 
 [notebooks/pipeline_connection_operations.py](notebooks/pipeline_connection_operations.py)
@@ -1061,6 +1081,13 @@ cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/flow_operations.py
 ```
 
+Use the same pattern for the Operational Meter Flow dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/operational_meter_flow.py
+```
+
 Use the same pattern for the Pipeline and Connection operations dashboard:
 
 ```bash
@@ -1261,6 +1288,7 @@ prek run -a
   - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/connection_point_explainer.py`
   - `backend-services/marimo/notebooks/flow_operations.py`
+  - `backend-services/marimo/notebooks/operational_meter_flow.py`
   - `backend-services/marimo/notebooks/pipeline_connection_operations.py`
   - `backend-services/marimo/notebooks/nomination_demand_forecast.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`

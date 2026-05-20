@@ -401,6 +401,8 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_dim_location",
             "silver.gas_model.silver_gas_dim_connection_point",
             "silver.gas_model.silver_gas_dim_zone",
+            "silver.gas_model.silver_gas_dim_pipeline_segment",
+            "silver.gas_model.silver_gas_dim_operational_point",
             "silver.gas_model.silver_gas_participant_market_membership",
             "silver.gas_model.silver_gas_fact_market_price",
             "silver.gas_model.silver_gas_fact_schedule_run",
@@ -450,6 +452,8 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_dim_location",
             "silver.gas_model.silver_gas_dim_connection_point",
             "silver.gas_model.silver_gas_dim_zone",
+            "silver.gas_model.silver_gas_dim_pipeline_segment",
+            "silver.gas_model.silver_gas_dim_operational_point",
             "silver.gas_model.silver_gas_participant_market_membership",
             "silver.gas_model.silver_gas_fact_market_price",
             "silver.gas_model.silver_gas_fact_schedule_run",
@@ -1067,6 +1071,33 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "chunk-gbb-procedures-capacity-outlooks",
             "chunk-gbb-guide-nameplate-capacity",
             "chunk-gbb-procedures-facility-nameplate",
+        ),
+    },
+    {
+        "concept_id": "operational-meter-flow",
+        "title": "Operational Meter Flow",
+        "description": (
+            "Available operational dashboard for VICGAS operational meter "
+            "flow quantities, gas intervals, point identifiers, direction, "
+            "and explicit Operational Point, Hub / Zone, and Pipeline segment "
+            "relationship gaps."
+        ),
+        "audiences": ("operator", "analyst", "data-engineer"),
+        "status": "available",
+        "notebook_name": "operational_meter_flow",
+        "backing_assets": (
+            "silver.gas_model.silver_gas_fact_operational_meter_flow",
+            "silver.gas_model.silver_gas_dim_operational_point",
+            "silver.gas_model.silver_gas_dim_zone",
+            "silver.gas_model.silver_gas_dim_pipeline_segment",
+        ),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
+        ),
+        "source_chunk_ids": (
+            "chunk-gbb-guide-flow-report",
+            "chunk-gbb-procedures-scheduled-flow",
+            "chunk-sttm-procedures-settlement-terms",
         ),
     },
     {
