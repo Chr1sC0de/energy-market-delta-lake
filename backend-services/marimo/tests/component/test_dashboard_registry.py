@@ -292,6 +292,22 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert bid_stack.notebook_route == "/marimo/gas_bid_offer_stack/"
     assert bid_stack.backing_assets == ("silver.gas_model.silver_gas_fact_bid_stack",)
 
+    contingency_gas = registry_entry_by_concept_id("sttm-contingency-gas", entries)
+    assert contingency_gas is not None
+    assert contingency_gas.status is DashboardStatus.AVAILABLE
+    assert contingency_gas.notebook_name == "gas_sttm_contingency_gas"
+    assert contingency_gas.notebook_route == "/marimo/gas_sttm_contingency_gas/"
+    assert contingency_gas.backing_assets == (
+        "silver.gas_model.silver_gas_fact_sttm_contingency_gas_call",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/bid-offer.md"
+        in contingency_gas.generated_gold_paths
+    )
+    assert contingency_gas.source_chunk_ids == (
+        "chunk-sttm-procedures-contingency-gas-bids",
+    )
+
     participant = registry_entry_by_concept_id("participant-context", entries)
     assert participant is not None
     assert participant.status is DashboardStatus.AVAILABLE

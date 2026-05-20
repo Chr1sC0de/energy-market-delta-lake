@@ -848,6 +848,24 @@ Schedule context links from the Marimo registry. Missing bid-stack data,
 unavailable Parquet prefixes, and filter combinations with no matches render
 dashboard empty states with the checked table, read policy, and refresh action.
 
+## STTM contingency gas dashboard
+
+[notebooks/gas_sttm_contingency_gas.py](notebooks/gas_sttm_contingency_gas.py)
+is an analytical dashboard over
+`silver.gas_model.silver_gas_fact_sttm_contingency_gas_call`. It uses the
+shared bounded gas model loader and session cache from
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py), then
+filters the loaded bounded preview by contingency grain, quantity type, hub,
+and `source_system`.
+
+The dashboard shows loaded STTM contingency gas KPIs, accepted contingency grain
+and quantity summaries, Bid / Offer identifier and step context where current
+fact fields support it, source-system and source-table coverage, bounded row
+previews, and Bid / Offer, Schedule, Settlement, Gas Day, and table explorer
+context links from the Marimo registry. Missing contingency gas data,
+unavailable Parquet prefixes, and filter combinations with no matches render
+dashboard empty states with the checked table, read policy, and refresh action.
+
 ## System notices dashboard
 
 [notebooks/system_notices.py](notebooks/system_notices.py) is an operational
@@ -978,10 +996,10 @@ Caddy and choose an available card such as `data_readiness_overview`,
 `gas_schedule_runs`,
 `gas_scheduled_quantities`, `system_notices`, `gas_settlement_activity`,
 `gas_customer_transfer_activity`, `facility_flow_storage`,
-`forecast_vs_actual`, `gas_bid_offer_stack`, `gas_quality_composition`,
-`facility_explainer`, `participant_explainer`, `hub_zone_explainer`,
-`connection_point_explainer`, `flow_operations`, `capacity_outlook`, or
-`gbb_interactive_map`:
+`forecast_vs_actual`, `gas_bid_offer_stack`, `gas_sttm_contingency_gas`,
+`gas_quality_composition`, `facility_explainer`, `participant_explainer`,
+`hub_zone_explainer`, `connection_point_explainer`, `flow_operations`,
+`capacity_outlook`, or `gbb_interactive_map`:
 
 ```text
 http://localhost/marimo
@@ -1213,6 +1231,13 @@ cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gas_bid_offer_stack.py
 ```
 
+Use the same pattern for the STTM contingency gas dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gas_sttm_contingency_gas.py
+```
+
 Use the same pattern for the gas quality and composition dashboard:
 
 ```bash
@@ -1355,6 +1380,7 @@ prek run -a
   - `backend-services/marimo/notebooks/capacity_auction.py`
   - `backend-services/marimo/notebooks/linepack_adequacy.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
+  - `backend-services/marimo/notebooks/gas_sttm_contingency_gas.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/marimo/notebooks/heating_value_pressure.py`
   - `backend-services/marimo/tests/component/conftest.py`

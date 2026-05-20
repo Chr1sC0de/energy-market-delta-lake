@@ -105,6 +105,12 @@ BID_STACK_FACILITY_FILTER_ALL = "All facilities"
 BID_STACK_ZONE_FILTER_ALL = "All zones"
 BID_STACK_SOURCE_SYSTEM_FILTER_ALL = "All source systems"
 DEFAULT_BID_STACK_PREVIEW_ROWS = 50
+STTM_CONTINGENCY_GAS_TABLE_NAME = "silver_gas_fact_sttm_contingency_gas_call"
+STTM_CONTINGENCY_GAS_GRAIN_FILTER_ALL = "All contingency grains"
+STTM_CONTINGENCY_GAS_QUANTITY_TYPE_FILTER_ALL = "All quantity types"
+STTM_CONTINGENCY_GAS_HUB_FILTER_ALL = "All hubs"
+STTM_CONTINGENCY_GAS_SOURCE_SYSTEM_FILTER_ALL = "All source systems"
+DEFAULT_STTM_CONTINGENCY_GAS_PREVIEW_ROWS = 50
 GAS_QUALITY_TABLE_NAME = "silver_gas_fact_gas_quality"
 GAS_QUALITY_QUALITY_TYPE_FILTER_ALL = "All quality types"
 GAS_QUALITY_SOURCE_POINT_FILTER_ALL = "All source points"
@@ -537,6 +543,43 @@ BID_STACK_TABLE_SPEC = GasTableSpec(
     ),
 )
 BID_STACK_TABLE_SPECS = (BID_STACK_TABLE_SPEC,)
+
+STTM_CONTINGENCY_GAS_TABLE_SPEC = GasTableSpec(
+    section="Bid / Offer",
+    label="STTM contingency gas",
+    table_name=STTM_CONTINGENCY_GAS_TABLE_NAME,
+    date_columns=(
+        "gas_date",
+        "approval_timestamp",
+        "source_last_updated_timestamp",
+        "ingested_timestamp",
+    ),
+    preview_columns=(
+        "gas_date",
+        "source_system",
+        "source_table",
+        "source_report_id",
+        "contingency_grain",
+        "quantity_type",
+        "source_hub_id",
+        "source_hub_name",
+        "source_facility_id",
+        "facility_name",
+        "flow_direction",
+        "bid_offer_type",
+        "participant_id",
+        "participant_name",
+        "contingency_call_id",
+        "contingency_bid_offer_id",
+        "bid_step",
+        "bid_price",
+        "bid_qty_gj",
+        "quantity_gj",
+        "approval_timestamp",
+        "source_surrogate_key",
+    ),
+)
+STTM_CONTINGENCY_GAS_TABLE_SPECS = (STTM_CONTINGENCY_GAS_TABLE_SPEC,)
 
 LINEPACK_TABLE_SPEC = GasTableSpec(
     section="Flow and capacity",
@@ -1948,6 +1991,117 @@ _BID_STACK_OBSERVATION_SCHEMA = {
     "source updated": pl.Datetime("us"),
     "latest ingest": pl.Datetime("us"),
 }
+_STTM_CONTINGENCY_GAS_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "date_key": pl.String,
+    "participant_key": pl.String,
+    "facility_key": pl.String,
+    "zone_key": pl.String,
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "source_table": pl.String,
+    "source_report_id": pl.String,
+    "gas_date": pl.Date,
+    "contingency_grain": pl.String,
+    "quantity_type": pl.String,
+    "source_hub_id": pl.String,
+    "source_hub_name": pl.String,
+    "source_facility_id": pl.String,
+    "facility_name": pl.String,
+    "flow_direction": pl.String,
+    "bid_offer_type": pl.String,
+    "participant_id": pl.String,
+    "participant_name": pl.String,
+    "contingency_call_id": pl.String,
+    "contingency_bid_offer_id": pl.String,
+    "bid_step": pl.Int64,
+    "bid_price": pl.Float64,
+    "bid_qty_gj": pl.Float64,
+    "quantity_gj": pl.Float64,
+    "approval_timestamp": pl.Datetime("us"),
+    "source_last_updated": pl.String,
+    "source_last_updated_timestamp": pl.Datetime("us"),
+    "source_surrogate_key": pl.String,
+    "source_file": pl.String,
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_STTM_CONTINGENCY_GAS_KPI_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_STTM_CONTINGENCY_GAS_GRAIN_SUMMARY_SCHEMA = {
+    "contingency grain": pl.String,
+    "quantity type": pl.String,
+    "source system": pl.String,
+    "hub": pl.String,
+    "rows": pl.UInt32,
+    "gas days": pl.UInt32,
+    "facilities": pl.UInt32,
+    "participants": pl.UInt32,
+    "bid/offer ids": pl.UInt32,
+    "total quantity gj": pl.Float64,
+    "max quantity gj": pl.Float64,
+    "latest gas date": pl.Date,
+    "latest approval": pl.Datetime("us"),
+}
+_STTM_CONTINGENCY_GAS_BID_OFFER_SUMMARY_SCHEMA = {
+    "gas date": pl.Date,
+    "hub": pl.String,
+    "facility": pl.String,
+    "participant": pl.String,
+    "bid/offer type": pl.String,
+    "bid/offer id": pl.String,
+    "bid step": pl.Int64,
+    "quantity type": pl.String,
+    "bid price": pl.Float64,
+    "bid quantity gj": pl.Float64,
+    "contingency quantity gj": pl.Float64,
+    "rows": pl.UInt32,
+    "latest approval": pl.Datetime("us"),
+}
+_STTM_CONTINGENCY_GAS_SOURCE_SUMMARY_SCHEMA = {
+    "source system": pl.String,
+    "source table": pl.String,
+    "source report": pl.String,
+    "rows": pl.UInt32,
+    "contingency grains": pl.UInt32,
+    "quantity types": pl.UInt32,
+    "hubs": pl.UInt32,
+    "source identifiers": pl.UInt32,
+    "source files": pl.UInt32,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_STTM_CONTINGENCY_GAS_OBSERVATION_SCHEMA = {
+    "gas date": pl.Date,
+    "source system": pl.String,
+    "source table": pl.String,
+    "source report": pl.String,
+    "contingency grain": pl.String,
+    "quantity type": pl.String,
+    "hub": pl.String,
+    "hub name": pl.String,
+    "facility": pl.String,
+    "facility name": pl.String,
+    "flow direction": pl.String,
+    "bid/offer type": pl.String,
+    "participant": pl.String,
+    "participant name": pl.String,
+    "contingency call id": pl.String,
+    "bid/offer id": pl.String,
+    "bid step": pl.Int64,
+    "bid price": pl.Float64,
+    "bid quantity gj": pl.Float64,
+    "quantity gj": pl.Float64,
+    "approval": pl.Datetime("us"),
+    "accepted source identifier": pl.String,
+    "source file": pl.String,
+    "source updated": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
 _HEATING_VALUE_RAW_SCHEMA = {
     "source_system": pl.String,
     "source_tables": pl.List(pl.String),
@@ -3211,6 +3365,7 @@ _GAS_DAY_KNOWN_TABLE_SPECS = (
     SETTLEMENT_ACTIVITY_TABLE_SPEC,
     CUSTOMER_TRANSFER_TABLE_SPEC,
     BID_STACK_TABLE_SPEC,
+    STTM_CONTINGENCY_GAS_TABLE_SPEC,
     GAS_QUALITY_TABLE_SPEC,
     HEATING_VALUE_TABLE_SPEC,
     SCADA_PRESSURE_TABLE_SPEC,
@@ -3781,6 +3936,42 @@ def cached_load_bid_stack_table(
         config,
         cache,
         specs=BID_STACK_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        refresh_token=refresh_token,
+        clock=clock,
+    )[0]
+
+
+def load_sttm_contingency_gas_table(
+    config: GasDashboardConfig,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Load the STTM contingency gas fact through the shared bounded loader."""
+    return load_gas_model_tables(
+        config,
+        specs=STTM_CONTINGENCY_GAS_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        clock=clock,
+    )[0]
+
+
+def cached_load_sttm_contingency_gas_table(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Return session-cached STTM contingency gas data for explicit refreshes."""
+    return cached_load_gas_model_tables(
+        config,
+        cache,
+        specs=STTM_CONTINGENCY_GAS_TABLE_SPECS,
         reader=reader,
         view=GasModelTableView.RECENT,
         refresh_token=refresh_token,
@@ -12576,6 +12767,519 @@ def render_bid_stack_context_links(
 </section>"""
 
 
+def sttm_contingency_gas_grain_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return contingency-grain filter options for STTM contingency gas rows."""
+    return _sttm_contingency_gas_string_filter_options(
+        load,
+        "contingency_grain",
+        STTM_CONTINGENCY_GAS_GRAIN_FILTER_ALL,
+    )
+
+
+def sttm_contingency_gas_quantity_type_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return quantity-type filter options for STTM contingency gas rows."""
+    return _sttm_contingency_gas_string_filter_options(
+        load,
+        "quantity_type",
+        STTM_CONTINGENCY_GAS_QUANTITY_TYPE_FILTER_ALL,
+    )
+
+
+def sttm_contingency_gas_hub_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return hub filter options for STTM contingency gas rows."""
+    return _sttm_contingency_gas_string_filter_options(
+        load,
+        "source_hub_id",
+        STTM_CONTINGENCY_GAS_HUB_FILTER_ALL,
+    )
+
+
+def sttm_contingency_gas_source_system_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return source-system filter options for STTM contingency gas rows."""
+    return _sttm_contingency_gas_string_filter_options(
+        load,
+        "source_system",
+        STTM_CONTINGENCY_GAS_SOURCE_SYSTEM_FILTER_ALL,
+    )
+
+
+def sttm_contingency_gas_kpi_frame(
+    load: GasTableLoad | None,
+    grain_filter: str = STTM_CONTINGENCY_GAS_GRAIN_FILTER_ALL,
+    quantity_type_filter: str = STTM_CONTINGENCY_GAS_QUANTITY_TYPE_FILTER_ALL,
+    hub_filter: str = STTM_CONTINGENCY_GAS_HUB_FILTER_ALL,
+    source_system_filter: str = STTM_CONTINGENCY_GAS_SOURCE_SYSTEM_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return first-viewport KPIs for loaded STTM contingency gas rows."""
+    dataframe = _filtered_sttm_contingency_gas_dataframe(
+        load,
+        grain_filter,
+        quantity_type_filter,
+        hub_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_STTM_CONTINGENCY_GAS_KPI_SCHEMA)
+
+    counts = dataframe.select(
+        pl.len().alias("loaded_rows"),
+        pl.col("gas_date").drop_nulls().n_unique().alias("gas_days"),
+        pl.col("contingency_grain").drop_nulls().n_unique().alias("grains"),
+        pl.col("quantity_type").drop_nulls().n_unique().alias("quantity_types"),
+        pl.col("source_hub_id").drop_nulls().n_unique().alias("hubs"),
+        pl.col("source_facility_id").drop_nulls().n_unique().alias("facilities"),
+        pl.col("participant_id").drop_nulls().n_unique().alias("participants"),
+        pl.col("contingency_bid_offer_id")
+        .drop_nulls()
+        .n_unique()
+        .alias("bid_offer_ids"),
+        pl.col("quantity_gj").sum().alias("total_quantity_gj"),
+        pl.col("quantity_gj").min().alias("min_quantity_gj"),
+        pl.col("quantity_gj").max().alias("max_quantity_gj"),
+        pl.col("gas_date").max().alias("latest_gas_date"),
+        pl.col("approval_timestamp").max().alias("latest_approval"),
+        pl.col("source_surrogate_key")
+        .drop_nulls()
+        .n_unique()
+        .alias("source_identifiers"),
+    ).row(0, named=True)
+    bid_offer_context_rows = dataframe.filter(
+        pl.any_horizontal(
+            pl.col("contingency_bid_offer_id").is_not_null(),
+            pl.col("bid_step").is_not_null(),
+            pl.col("bid_price").is_not_null(),
+            pl.col("bid_qty_gj").is_not_null(),
+        )
+    ).height
+    row_limit = None if load is None else load.row_limit
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Loaded contingency gas rows",
+                "value": f"{counts['loaded_rows']:,}",
+                "detail": format_row_limit(row_limit),
+            },
+            {
+                "metric": "Gas Days",
+                "value": f"{counts['gas_days']:,}",
+                "detail": "Distinct gas_date values represented",
+            },
+            {
+                "metric": "Contingency grains",
+                "value": f"{counts['grains']:,}",
+                "detail": "Distinct contingency_grain values represented",
+            },
+            {
+                "metric": "Quantity types",
+                "value": f"{counts['quantity_types']:,}",
+                "detail": "Distinct quantity_type values represented",
+            },
+            {
+                "metric": "Hubs",
+                "value": f"{counts['hubs']:,}",
+                "detail": "Distinct source_hub_id values represented",
+            },
+            {
+                "metric": "Facilities",
+                "value": f"{counts['facilities']:,}",
+                "detail": "Distinct source_facility_id values represented",
+            },
+            {
+                "metric": "Participants",
+                "value": f"{counts['participants']:,}",
+                "detail": "Distinct participant_id values represented",
+            },
+            {
+                "metric": "Bid / Offer identifiers",
+                "value": f"{counts['bid_offer_ids']:,}",
+                "detail": "Distinct contingency_bid_offer_id values represented",
+            },
+            {
+                "metric": "Rows with Bid / Offer context",
+                "value": f"{bid_offer_context_rows:,}",
+                "detail": "Rows carrying bid/offer id, step, price, or quantity fields",
+            },
+            {
+                "metric": "Loaded contingency quantity",
+                "value": _format_quantity(counts["total_quantity_gj"]),
+                "detail": "Sum of quantity_gj in loaded bounded rows",
+            },
+            {
+                "metric": "Contingency quantity range",
+                "value": _format_numeric_range(
+                    counts["min_quantity_gj"],
+                    counts["max_quantity_gj"],
+                ),
+                "detail": "Minimum and maximum quantity_gj in the current view",
+            },
+            {
+                "metric": "Latest Gas Day",
+                "value": _format_optional_value(counts["latest_gas_date"]),
+                "detail": "Maximum gas_date in the loaded bounded rows",
+            },
+            {
+                "metric": "Latest approval",
+                "value": _format_optional_value(counts["latest_approval"]),
+                "detail": "Maximum approval_timestamp in the loaded bounded rows",
+            },
+            {
+                "metric": "Accepted source identifiers",
+                "value": f"{counts['source_identifiers']:,}",
+                "detail": "Distinct source_surrogate_key values represented",
+            },
+        ],
+        schema=_STTM_CONTINGENCY_GAS_KPI_SCHEMA,
+    )
+
+
+def sttm_contingency_gas_grain_summary_frame(
+    load: GasTableLoad | None,
+    grain_filter: str = STTM_CONTINGENCY_GAS_GRAIN_FILTER_ALL,
+    quantity_type_filter: str = STTM_CONTINGENCY_GAS_QUANTITY_TYPE_FILTER_ALL,
+    hub_filter: str = STTM_CONTINGENCY_GAS_HUB_FILTER_ALL,
+    source_system_filter: str = STTM_CONTINGENCY_GAS_SOURCE_SYSTEM_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_STTM_CONTINGENCY_GAS_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return contingency grain and quantity summaries for loaded rows."""
+    dataframe = _filtered_sttm_contingency_gas_dataframe(
+        load,
+        grain_filter,
+        quantity_type_filter,
+        hub_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_STTM_CONTINGENCY_GAS_GRAIN_SUMMARY_SCHEMA)
+
+    summary = (
+        dataframe.group_by(
+            "contingency_grain",
+            "quantity_type",
+            "source_system",
+            "source_hub_id",
+        )
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("gas_date").drop_nulls().n_unique().alias("gas days"),
+            pl.col("source_facility_id").drop_nulls().n_unique().alias("facilities"),
+            pl.col("participant_id").drop_nulls().n_unique().alias("participants"),
+            pl.col("contingency_bid_offer_id")
+            .drop_nulls()
+            .n_unique()
+            .alias("bid/offer ids"),
+            pl.col("quantity_gj").sum().round(4).alias("total quantity gj"),
+            pl.col("quantity_gj").max().round(4).alias("max quantity gj"),
+            pl.col("gas_date").max().alias("latest gas date"),
+            pl.col("approval_timestamp").max().alias("latest approval"),
+        )
+        .sort(
+            ["latest gas date", "source_system", "source_hub_id"],
+            descending=[True, False, False],
+            nulls_last=True,
+        )
+        .rename(
+            {
+                "contingency_grain": "contingency grain",
+                "quantity_type": "quantity type",
+                "source_system": "source system",
+                "source_hub_id": "hub",
+            }
+        )
+        .head(max(1, preview_rows))
+    )
+    return summary.select([*list(_STTM_CONTINGENCY_GAS_GRAIN_SUMMARY_SCHEMA)])
+
+
+def sttm_contingency_gas_bid_offer_summary_frame(
+    load: GasTableLoad | None,
+    grain_filter: str = STTM_CONTINGENCY_GAS_GRAIN_FILTER_ALL,
+    quantity_type_filter: str = STTM_CONTINGENCY_GAS_QUANTITY_TYPE_FILTER_ALL,
+    hub_filter: str = STTM_CONTINGENCY_GAS_HUB_FILTER_ALL,
+    source_system_filter: str = STTM_CONTINGENCY_GAS_SOURCE_SYSTEM_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_STTM_CONTINGENCY_GAS_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return Bid / Offer context carried by loaded contingency gas rows."""
+    dataframe = _filtered_sttm_contingency_gas_dataframe(
+        load,
+        grain_filter,
+        quantity_type_filter,
+        hub_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_STTM_CONTINGENCY_GAS_BID_OFFER_SUMMARY_SCHEMA)
+
+    context = dataframe.filter(
+        pl.any_horizontal(
+            pl.col("contingency_bid_offer_id").is_not_null(),
+            pl.col("bid_step").is_not_null(),
+            pl.col("bid_price").is_not_null(),
+            pl.col("bid_qty_gj").is_not_null(),
+        )
+    )
+    if context.is_empty():
+        return pl.DataFrame(schema=_STTM_CONTINGENCY_GAS_BID_OFFER_SUMMARY_SCHEMA)
+
+    summary = (
+        context.group_by(
+            "gas_date",
+            "source_hub_id",
+            "source_facility_id",
+            "participant_id",
+            "bid_offer_type",
+            "contingency_bid_offer_id",
+            "bid_step",
+            "quantity_type",
+        )
+        .agg(
+            pl.col("bid_price").max().alias("bid price"),
+            pl.col("bid_qty_gj").max().alias("bid quantity gj"),
+            pl.col("quantity_gj").sum().round(4).alias("contingency quantity gj"),
+            pl.len().alias("rows"),
+            pl.col("approval_timestamp").max().alias("latest approval"),
+        )
+        .sort(
+            [
+                "gas_date",
+                "latest approval",
+                "source_hub_id",
+                "source_facility_id",
+                "contingency_bid_offer_id",
+                "bid_step",
+            ],
+            descending=[True, True, False, False, False, False],
+            nulls_last=True,
+        )
+        .rename(
+            {
+                "gas_date": "gas date",
+                "source_hub_id": "hub",
+                "source_facility_id": "facility",
+                "participant_id": "participant",
+                "bid_offer_type": "bid/offer type",
+                "contingency_bid_offer_id": "bid/offer id",
+                "bid_step": "bid step",
+                "quantity_type": "quantity type",
+            }
+        )
+        .head(max(1, preview_rows))
+    )
+    return summary.select([*list(_STTM_CONTINGENCY_GAS_BID_OFFER_SUMMARY_SCHEMA)])
+
+
+def sttm_contingency_gas_source_summary_frame(
+    load: GasTableLoad | None,
+    grain_filter: str = STTM_CONTINGENCY_GAS_GRAIN_FILTER_ALL,
+    quantity_type_filter: str = STTM_CONTINGENCY_GAS_QUANTITY_TYPE_FILTER_ALL,
+    hub_filter: str = STTM_CONTINGENCY_GAS_HUB_FILTER_ALL,
+    source_system_filter: str = STTM_CONTINGENCY_GAS_SOURCE_SYSTEM_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return source-system and accepted source identifier coverage."""
+    dataframe = _filtered_sttm_contingency_gas_dataframe(
+        load,
+        grain_filter,
+        quantity_type_filter,
+        hub_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_STTM_CONTINGENCY_GAS_SOURCE_SUMMARY_SCHEMA)
+
+    summary = (
+        dataframe.group_by("source_system", "source_table", "source_report_id")
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("contingency_grain")
+            .drop_nulls()
+            .n_unique()
+            .alias("contingency grains"),
+            pl.col("quantity_type").drop_nulls().n_unique().alias("quantity types"),
+            pl.col("source_hub_id").drop_nulls().n_unique().alias("hubs"),
+            pl.col("source_surrogate_key")
+            .drop_nulls()
+            .n_unique()
+            .alias("source identifiers"),
+            pl.col("source_file").drop_nulls().n_unique().alias("source files"),
+            pl.col("gas_date").min().alias("first gas date"),
+            pl.col("gas_date").max().alias("latest gas date"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort(
+            ["rows", "source_system", "source_table"], descending=[True, False, False]
+        )
+        .rename(
+            {
+                "source_system": "source system",
+                "source_table": "source table",
+                "source_report_id": "source report",
+            }
+        )
+    )
+    return summary.select([*list(_STTM_CONTINGENCY_GAS_SOURCE_SUMMARY_SCHEMA)])
+
+
+def sttm_contingency_gas_observation_frame(
+    load: GasTableLoad | None,
+    grain_filter: str = STTM_CONTINGENCY_GAS_GRAIN_FILTER_ALL,
+    quantity_type_filter: str = STTM_CONTINGENCY_GAS_QUANTITY_TYPE_FILTER_ALL,
+    hub_filter: str = STTM_CONTINGENCY_GAS_HUB_FILTER_ALL,
+    source_system_filter: str = STTM_CONTINGENCY_GAS_SOURCE_SYSTEM_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_STTM_CONTINGENCY_GAS_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return filtered STTM contingency gas observations for bounded preview."""
+    dataframe = _filtered_sttm_contingency_gas_dataframe(
+        load,
+        grain_filter,
+        quantity_type_filter,
+        hub_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_STTM_CONTINGENCY_GAS_OBSERVATION_SCHEMA)
+
+    return (
+        dataframe.sort(
+            [
+                "gas_date",
+                "approval_timestamp",
+                "source_last_updated_timestamp",
+                "source_system",
+                "source_table",
+                "source_hub_id",
+                "contingency_grain",
+            ],
+            descending=[True, True, True, False, False, False, False],
+            nulls_last=True,
+        )
+        .select(
+            pl.col("gas_date").alias("gas date"),
+            pl.col("source_system").alias("source system"),
+            pl.col("source_table").alias("source table"),
+            pl.col("source_report_id").alias("source report"),
+            pl.col("contingency_grain").alias("contingency grain"),
+            pl.col("quantity_type").alias("quantity type"),
+            pl.col("source_hub_id").alias("hub"),
+            pl.col("source_hub_name").alias("hub name"),
+            pl.col("source_facility_id").alias("facility"),
+            pl.col("facility_name").alias("facility name"),
+            pl.col("flow_direction").alias("flow direction"),
+            pl.col("bid_offer_type").alias("bid/offer type"),
+            pl.col("participant_id").alias("participant"),
+            pl.col("participant_name").alias("participant name"),
+            pl.col("contingency_call_id").alias("contingency call id"),
+            pl.col("contingency_bid_offer_id").alias("bid/offer id"),
+            pl.col("bid_step").alias("bid step"),
+            pl.col("bid_price").alias("bid price"),
+            pl.col("bid_qty_gj").alias("bid quantity gj"),
+            pl.col("quantity_gj").alias("quantity gj"),
+            pl.col("approval_timestamp").alias("approval"),
+            pl.col("source_surrogate_key").alias("accepted source identifier"),
+            pl.col("source_file").alias("source file"),
+            pl.col("source_last_updated_timestamp").alias("source updated"),
+            pl.col("ingested_timestamp").alias("latest ingest"),
+        )
+        .head(max(1, preview_rows))
+    )
+
+
+def sttm_contingency_gas_empty_state_markdown(load: GasTableLoad | None) -> str:
+    """Return useful empty-state copy for missing or unmatched contingency data."""
+    table_label = _markdown_breakable_text(
+        "silver.gas_model.silver_gas_fact_sttm_contingency_gas_call"
+    )
+    if load is None:
+        status_detail = "The dashboard did not receive a contingency gas load result."
+        uri = table_label
+        read_policy = "No read policy was reported."
+    else:
+        if load.error is not None:
+            status_detail = f"Read detail: {_markdown_breakable_text(load.error)}"
+        elif load.dataframe is None or load.dataframe.is_empty():
+            status_detail = "The table loaded successfully but returned no rows."
+        else:
+            status_detail = (
+                "The current filters do not match any loaded contingency gas rows."
+            )
+        uri = _markdown_breakable_text(load.uri)
+        read_policy = row_limit_message(load.row_limit)
+
+    return f"""
+    **No STTM contingency gas data is available for this view.**
+
+    The dashboard checked {uri}, which should contain {table_label} rows with
+    Gas Day, contingency grain, quantity type, hub, facility, participant,
+    Bid / Offer identifier, step, price, quantity, approval, and accepted source
+    identifier fields.
+
+    {status_detail}
+
+    {read_policy}
+
+    Materialize or seed the `silver.gas_model` STTM contingency gas call asset,
+    then use **Refresh data**.
+    """
+
+
+def render_sttm_contingency_gas_context_links(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render STTM contingency gas links to related Market context panels."""
+    candidate_entries = tuple(dashboard_registry() if entries is None else entries)
+    concept_ids = (
+        "sttm-contingency-gas",
+        "bid-offer-context",
+        "schedule-context",
+        "settlement-context",
+        "gas-day-context",
+        "gas-model-table-explorer",
+    )
+    rows = "\n".join(
+        _render_sttm_contingency_gas_context_link(entry)
+        for entry in (
+            registry_entry_by_concept_id(concept_id, candidate_entries)
+            for concept_id in concept_ids
+        )
+        if entry is not None
+    )
+    if rows == "":
+        rows = (
+            '<li class="sttm-contingency-gas-links__empty">'
+            "No STTM contingency gas, Bid / Offer, Schedule, Settlement, "
+            "Gas Day, or table explorer entries are registered."
+            "</li>"
+        )
+
+    return f"""\
+<style>
+{_sttm_contingency_gas_context_links_css()}
+</style>
+<section
+    class="sttm-contingency-gas-links"
+    aria-label="STTM contingency gas context links"
+>
+    <div>
+        <p class="sttm-contingency-gas-links__eyebrow">Context links</p>
+        <h2>Bid / Offer, Schedule, Settlement, and Gas Day context</h2>
+    </div>
+    <ul>
+{rows}
+    </ul>
+</section>"""
+
+
 def gas_quality_quality_type_options(
     load: GasTableLoad | None,
 ) -> tuple[str, ...]:
@@ -19285,6 +19989,196 @@ def _bid_stack_context_links_css() -> str:
 
 @media (max-width: 760px) {
     .bid-stack-links li {
+        grid-template-columns: 1fr;
+    }
+}
+"""
+
+
+def _sttm_contingency_gas_string_filter_options(
+    load: GasTableLoad | None,
+    column: str,
+    all_label: str,
+) -> tuple[str, ...]:
+    dataframe = _normalised_sttm_contingency_gas_dataframe(load)
+    if dataframe.is_empty() or column not in dataframe.columns:
+        return (all_label,)
+
+    values = sorted(
+        str(value)
+        for value in dataframe.get_column(column)
+        .drop_nulls()
+        .cast(pl.String, strict=False)
+        .unique()
+        .to_list()
+        if value is not None and str(value).strip() != ""
+    )
+    return (all_label, *values)
+
+
+def _filtered_sttm_contingency_gas_dataframe(
+    load: GasTableLoad | None,
+    grain_filter: str,
+    quantity_type_filter: str,
+    hub_filter: str,
+    source_system_filter: str,
+) -> pl.DataFrame:
+    dataframe = _normalised_sttm_contingency_gas_dataframe(load)
+    if dataframe.is_empty():
+        return dataframe
+
+    if grain_filter != STTM_CONTINGENCY_GAS_GRAIN_FILTER_ALL:
+        dataframe = dataframe.filter(pl.col("contingency_grain") == grain_filter)
+    if quantity_type_filter != STTM_CONTINGENCY_GAS_QUANTITY_TYPE_FILTER_ALL:
+        dataframe = dataframe.filter(pl.col("quantity_type") == quantity_type_filter)
+    if hub_filter != STTM_CONTINGENCY_GAS_HUB_FILTER_ALL:
+        dataframe = dataframe.filter(pl.col("source_hub_id") == hub_filter)
+    if source_system_filter != STTM_CONTINGENCY_GAS_SOURCE_SYSTEM_FILTER_ALL:
+        dataframe = dataframe.filter(pl.col("source_system") == source_system_filter)
+    return dataframe
+
+
+def _normalised_sttm_contingency_gas_dataframe(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_STTM_CONTINGENCY_GAS_RAW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _STTM_CONTINGENCY_GAS_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        pl.col("surrogate_key").cast(pl.String, strict=False),
+        pl.col("date_key").cast(pl.String, strict=False),
+        pl.col("participant_key").cast(pl.String, strict=False),
+        pl.col("facility_key").cast(pl.String, strict=False),
+        pl.col("zone_key").cast(pl.String, strict=False),
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        pl.col("source_table").cast(pl.String, strict=False),
+        pl.col("source_report_id").cast(pl.String, strict=False),
+        _normalise_date_column(dataframe, "gas_date"),
+        pl.col("contingency_grain").cast(pl.String, strict=False),
+        pl.col("quantity_type").cast(pl.String, strict=False),
+        pl.col("source_hub_id").cast(pl.String, strict=False),
+        pl.col("source_hub_name").cast(pl.String, strict=False),
+        pl.col("source_facility_id").cast(pl.String, strict=False),
+        pl.col("facility_name").cast(pl.String, strict=False),
+        pl.col("flow_direction").cast(pl.String, strict=False),
+        pl.col("bid_offer_type").cast(pl.String, strict=False),
+        pl.col("participant_id").cast(pl.String, strict=False),
+        pl.col("participant_name").cast(pl.String, strict=False),
+        pl.col("contingency_call_id").cast(pl.String, strict=False),
+        pl.col("contingency_bid_offer_id").cast(pl.String, strict=False),
+        pl.col("bid_step").cast(pl.Int64, strict=False),
+        pl.col("bid_price").cast(pl.Float64, strict=False),
+        pl.col("bid_qty_gj").cast(pl.Float64, strict=False),
+        pl.col("quantity_gj").cast(pl.Float64, strict=False),
+        _normalise_timestamp_column(dataframe, "approval_timestamp"),
+        pl.col("source_last_updated").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "source_last_updated_timestamp"),
+        pl.col("source_surrogate_key").cast(pl.String, strict=False),
+        pl.col("source_file").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+
+def _render_sttm_contingency_gas_context_link(
+    entry: DashboardRegistryEntry,
+) -> str:
+    status_label = _dashboard_entry_status_label(entry)
+    title = escape(entry.title)
+    route = entry.notebook_route
+    if entry.status.value == "available" and route is not None:
+        title_html = f'<a href="{escape(route, quote=True)}">{title}</a>'
+    else:
+        title_html = f"<span>{title}</span>"
+
+    return f"""\
+        <li data-dashboard-status="{escape(entry.status.value, quote=True)}">
+            {title_html}
+            <span>{escape(status_label)}</span>
+            <code>{escape(entry.concept_id)}</code>
+        </li>"""
+
+
+def _sttm_contingency_gas_context_links_css() -> str:
+    return """\
+.sttm-contingency-gas-links {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+}
+
+.sttm-contingency-gas-links__eyebrow {
+    margin: 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.74rem;
+    font-weight: 720;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.sttm-contingency-gas-links h2 {
+    margin: 0.15rem 0 0;
+    font-size: 1.05rem;
+}
+
+.sttm-contingency-gas-links ul {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.sttm-contingency-gas-links li {
+    display: grid;
+    grid-template-columns: minmax(10rem, 1fr) auto auto;
+    gap: 0.65rem;
+    align-items: center;
+    min-width: 0;
+    padding: 0.55rem 0;
+    border-top: 1px solid var(--emdl-line, #cfdbd6);
+}
+
+.sttm-contingency-gas-links li:first-child {
+    border-top: 0;
+}
+
+.sttm-contingency-gas-links a {
+    color: var(--emdl-blue, #166791);
+    font-weight: 720;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+}
+
+.sttm-contingency-gas-links span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.sttm-contingency-gas-links li > span:nth-child(2) {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.sttm-contingency-gas-links code {
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+    .sttm-contingency-gas-links li {
         grid-template-columns: 1fr;
     }
 }

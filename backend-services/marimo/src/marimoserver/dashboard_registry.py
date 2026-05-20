@@ -1173,6 +1173,26 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
     },
     {
+        "concept_id": "sttm-contingency-gas",
+        "title": "STTM Contingency Gas",
+        "description": (
+            "Available analytical dashboard for STTM contingency gas calls, "
+            "accepted contingency grains, quantity types, hubs, facilities, "
+            "participants, Bid / Offer identifiers, price steps, approvals, "
+            "and source lineage from the curated contingency gas call fact."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "gas_sttm_contingency_gas",
+        "backing_assets": (
+            "silver.gas_model.silver_gas_fact_sttm_contingency_gas_call",
+        ),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/bid-offer.md",
+        ),
+        "source_chunk_ids": ("chunk-sttm-procedures-contingency-gas-bids",),
+    },
+    {
         "concept_id": "allocation-context",
         "title": "Allocation Context",
         "description": (

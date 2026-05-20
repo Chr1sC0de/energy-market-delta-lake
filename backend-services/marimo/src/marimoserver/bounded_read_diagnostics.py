@@ -40,6 +40,7 @@ _RECENT_GAS_DASHBOARD_IDS = frozenset(
         "capacity-context",
         "capacity-auctions",
         "bid-offer-context",
+        "sttm-contingency-gas",
         "gas-system-notices",
         "gas-quality-composition",
     }
