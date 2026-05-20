@@ -29,15 +29,18 @@ The portfolio source lives under [src/](src/):
 
 - [src/pages/index.astro](src/pages/index.astro) composes the page.
 - [src/components/HeroArchitectureFlow.tsx](src/components/HeroArchitectureFlow.tsx)
-  renders the first-view React Flow architecture overview, with a deployed
-  runtime detail modal.
+  owns the invisible first-view controller and deployed runtime detail modal.
+  [src/components/HeroArchitectureFallback.astro](src/components/HeroArchitectureFallback.astro)
+  renders the visible first-view card so reloads do not swap the architecture
+  preview during client hydration.
 - [src/components/AutomationWorkflowFlow.tsx](src/components/AutomationWorkflowFlow.tsx)
-  renders the high-level React Flow view for human decisions and AI execution,
+  renders the stable HTML/SVG preview for human decisions and AI execution,
   with a master-detail selector for goal setting, build/check work,
   **Documentation sync**, **Test lane** evidence, and human approval. Each
-  selector opens a focused detail modal with overview and deep dive tabs,
-  including links to repo-local **Agent skills**, Operator docs, maintained-doc
-  policy, QA policy docs, and **Delivery mode** context for approval.
+  selector opens a focused React Flow detail modal with overview and deep dive
+  tabs, including links to repo-local **Agent skills**, Operator docs,
+  maintained-doc policy, QA policy docs, and **Delivery mode** context for
+  approval.
 - [src/components/InfrastructureDiagram.astro](src/components/InfrastructureDiagram.astro)
   renders the recruiter-facing tech stack section grouped by capability area.
 - [public/theme.css](public/theme.css) is copied to `/theme.css` during the
@@ -98,6 +101,7 @@ check** surface from the changed Subproject or root, as described in
   - `backend-services/caddy/public/theme.css`
   - `backend-services/caddy/src/pages/index.astro`
   - `backend-services/caddy/src/components/AutomationWorkflowFlow.tsx`
+  - `backend-services/caddy/src/components/HeroArchitectureFallback.astro`
   - `backend-services/caddy/src/components/HeroArchitectureFlow.tsx`
   - `backend-services/caddy/src/components/InfrastructureDiagram.astro`
   - `backend-services/caddy/src/components/ServiceLinks.astro`

@@ -8,7 +8,7 @@ import {
   type Node,
   type NodeProps,
 } from "@xyflow/react";
-import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import "@xyflow/react/dist/style.css";
 
 const modalCloseDurationMs = 180;
@@ -214,16 +214,23 @@ const previewPositions = {
     "human-approves": { x: 774, y: 232 },
   },
   mobile: {
-    "human-goal": { x: 74, y: 32 },
-    "ralph-starts": { x: 74, y: 150 },
-    "ai-builds": { x: 74, y: 268 },
-    "docs-sync": { x: 74, y: 386 },
-    "checks-run": { x: 74, y: 504 },
-    "test-lane": { x: 74, y: 622 },
-    ready: { x: 74, y: 740 },
-    "human-approves": { x: 74, y: 858 },
+    "human-goal": { x: 74, y: 24 },
+    "ralph-starts": { x: 74, y: 110 },
+    "ai-builds": { x: 74, y: 196 },
+    "docs-sync": { x: 74, y: 282 },
+    "checks-run": { x: 74, y: 368 },
+    "test-lane": { x: 74, y: 454 },
+    ready: { x: 74, y: 540 },
+    "human-approves": { x: 74, y: 626 },
   },
 } satisfies WorkflowPanel["positions"];
+
+type StaticPreviewLayout = keyof typeof previewPositions;
+
+const previewDimensions = {
+  desktop: { width: 994, height: 360 },
+  mobile: { width: 326, height: 734 },
+} satisfies Record<StaticPreviewLayout, { height: number; width: number }>;
 
 const goalSteps: WorkflowStep[] = [
   {
@@ -1048,26 +1055,6 @@ function edge(
   return { id, source, sourceHandle, target, targetHandle, type };
 }
 
-const previewEdges: Edge[] = withEdgeStyle([
-  edge("goal-ralph", "human-goal", "ralph-starts"),
-  edge("ralph-builds", "ralph-starts", "ai-builds"),
-  edge("builds-docs", "ai-builds", "docs-sync"),
-  edge("docs-checks", "docs-sync", "checks-run", "source-bottom", "target-top", "smoothstep"),
-  edge("checks-lane", "checks-run", "test-lane"),
-  edge("lane-ready", "test-lane", "ready"),
-  edge("ready-approves", "ready", "human-approves"),
-]);
-
-const previewMobileEdges: Edge[] = withEdgeStyle([
-  edge("goal-ralph-mobile", "human-goal", "ralph-starts", "source-bottom", "target-top", "smoothstep"),
-  edge("ralph-builds-mobile", "ralph-starts", "ai-builds", "source-bottom", "target-top", "smoothstep"),
-  edge("builds-docs-mobile", "ai-builds", "docs-sync", "source-bottom", "target-top", "smoothstep"),
-  edge("docs-checks-mobile", "docs-sync", "checks-run", "source-bottom", "target-top", "smoothstep"),
-  edge("checks-lane-mobile", "checks-run", "test-lane", "source-bottom", "target-top", "smoothstep"),
-  edge("lane-ready-mobile", "test-lane", "ready", "source-bottom", "target-top", "smoothstep"),
-  edge("ready-approves-mobile", "ready", "human-approves", "source-bottom", "target-top", "smoothstep"),
-]);
-
 const panelEdgesByStepCount: Record<string, Edge[]> = {
   goal: withEdgeStyle([
     edge("intent-grill", "intent", "grill"),
@@ -1275,6 +1262,144 @@ function WorkflowNode({ data }: NodeProps<WorkflowNode>) {
   );
 }
 
+function previewPercent(value: number, total: number) {
+  return `${(value / total) * 100}%`;
+}
+
+function previewNodeStyle(stepId: string, layout: StaticPreviewLayout): CSSProperties {
+  const dimensions = previewDimensions[layout];
+  const position = previewPositions[layout][stepId];
+
+  return {
+    left: previewPercent(position.x, dimensions.width),
+    minHeight: previewPercent(nodeHeight, dimensions.height),
+    top: previewPercent(position.y, dimensions.height),
+    width: previewPercent(nodeWidth, dimensions.width),
+  };
+}
+
+function previewAnchor(stepId: string, layout: StaticPreviewLayout, side: "bottom" | "left" | "right" | "top") {
+  const position = previewPositions[layout][stepId];
+
+  if (side === "right") return { x: position.x + nodeWidth, y: position.y + nodeHeight / 2 };
+  if (side === "left") return { x: position.x, y: position.y + nodeHeight / 2 };
+  if (side === "bottom") return { x: position.x + nodeWidth / 2, y: position.y + nodeHeight };
+  return { x: position.x + nodeWidth / 2, y: position.y };
+}
+
+function previewLinePath(
+  sourceId: string,
+  targetId: string,
+  layout: StaticPreviewLayout,
+  sourceSide: "bottom" | "left" | "right" | "top",
+  targetSide: "bottom" | "left" | "right" | "top",
+) {
+  const source = previewAnchor(sourceId, layout, sourceSide);
+  const target = previewAnchor(targetId, layout, targetSide);
+  return `M${source.x} ${source.y}L${target.x} ${target.y}`;
+}
+
+function previewStepPath(
+  sourceId: string,
+  targetId: string,
+  layout: StaticPreviewLayout,
+  sourceSide: "bottom" | "left" | "right" | "top",
+  targetSide: "bottom" | "left" | "right" | "top",
+) {
+  const source = previewAnchor(sourceId, layout, sourceSide);
+  const target = previewAnchor(targetId, layout, targetSide);
+  const middleY = (source.y + target.y) / 2;
+  return `M${source.x} ${source.y}V${middleY}H${target.x}V${target.y}`;
+}
+
+function staticPreviewPaths(layout: StaticPreviewLayout) {
+  if (layout === "mobile") {
+    return [
+      previewLinePath("human-goal", "ralph-starts", layout, "bottom", "top"),
+      previewLinePath("ralph-starts", "ai-builds", layout, "bottom", "top"),
+      previewLinePath("ai-builds", "docs-sync", layout, "bottom", "top"),
+      previewLinePath("docs-sync", "checks-run", layout, "bottom", "top"),
+      previewLinePath("checks-run", "test-lane", layout, "bottom", "top"),
+      previewLinePath("test-lane", "ready", layout, "bottom", "top"),
+      previewLinePath("ready", "human-approves", layout, "bottom", "top"),
+    ];
+  }
+
+  return [
+    previewLinePath("human-goal", "ralph-starts", layout, "right", "left"),
+    previewLinePath("ralph-starts", "ai-builds", layout, "right", "left"),
+    previewLinePath("ai-builds", "docs-sync", layout, "right", "left"),
+    previewStepPath("docs-sync", "checks-run", layout, "bottom", "top"),
+    previewLinePath("checks-run", "test-lane", layout, "right", "left"),
+    previewLinePath("test-lane", "ready", layout, "right", "left"),
+    previewLinePath("ready", "human-approves", layout, "right", "left"),
+  ];
+}
+
+function StaticWorkflowPreviewStage({
+  activePreviewIds,
+  layout,
+}: {
+  activePreviewIds: Set<string>;
+  layout: StaticPreviewLayout;
+}) {
+  const dimensions = previewDimensions[layout];
+  const markerId = `static-workflow-arrow-${layout}`;
+
+  return (
+    <div
+      className={`static-flow-stage static-workflow-stage static-workflow-stage-${layout}`}
+      aria-hidden="true"
+    >
+      <svg
+        className="static-flow-edges"
+        viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}
+        preserveAspectRatio="none"
+      >
+        <defs>
+          <marker
+            id={markerId}
+            markerHeight="8"
+            markerWidth="8"
+            orient="auto"
+            refX="7"
+            refY="4"
+            viewBox="0 0 8 8"
+          >
+            <path d="M0 0L8 4L0 8Z" />
+          </marker>
+        </defs>
+        {staticPreviewPaths(layout).map((path) => (
+          <path d={path} key={path} markerEnd={`url(#${markerId})`} />
+        ))}
+      </svg>
+      {previewSteps.map((step) => {
+        const isActive = activePreviewIds.has(step.id);
+        return (
+          <div
+            className={`workflow-node workflow-node-${step.kind}${isActive ? " is-active" : " is-dimmed"} static-flow-node`}
+            key={`${layout}-${step.id}`}
+            style={previewNodeStyle(step.id, layout)}
+          >
+            <span>{step.meta}</span>
+            <strong>{step.label}</strong>
+            <small>{step.detail}</small>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function StaticWorkflowPreview({ activePreviewIds }: { activePreviewIds: Set<string> }) {
+  return (
+    <div className="workflow-flow workflow-static-flow">
+      <StaticWorkflowPreviewStage activePreviewIds={activePreviewIds} layout="desktop" />
+      <StaticWorkflowPreviewStage activePreviewIds={activePreviewIds} layout="mobile" />
+    </div>
+  );
+}
+
 const nodeTypes = {
   workflow: WorkflowNode,
 };
@@ -1340,15 +1465,6 @@ export default function AutomationWorkflowFlow() {
         : deepDiveByTopic[detailTopic.id];
 
   const activePreviewIds = useMemo(() => new Set(activeTopic.previewNodes), [activeTopic]);
-  const previewNodes = useMemo(
-    () =>
-      buildNodes(
-        previewSteps,
-        isNarrow ? previewPositions.mobile : previewPositions.desktop,
-        activePreviewIds,
-      ),
-    [activePreviewIds, isNarrow],
-  );
   const panelNodes = useMemo(
     () =>
       buildNodes(
@@ -1476,29 +1592,7 @@ export default function AutomationWorkflowFlow() {
             <strong>{activeTopic.label}</strong>
             <span className="workflow-open-detail">{activeTopic.detail}</span>
           </div>
-          <div className="workflow-flow">
-            <ReactFlow
-              nodes={previewNodes}
-              edges={isNarrow ? previewMobileEdges : previewEdges}
-              nodeTypes={nodeTypes}
-              fitView
-              fitViewOptions={{ padding: 0.1 }}
-              minZoom={0.25}
-              maxZoom={1.35}
-              nodesDraggable={false}
-              nodesConnectable={false}
-              elementsSelectable={false}
-              panOnDrag={false}
-              panOnScroll={false}
-              zoomOnScroll={false}
-              zoomOnPinch={false}
-              zoomOnDoubleClick={false}
-              preventScrolling={false}
-              proOptions={{ hideAttribution: true }}
-            >
-              <Background color="rgb(27 35 36 / 0.16)" gap={30} size={1} />
-            </ReactFlow>
-          </div>
+          <StaticWorkflowPreview activePreviewIds={activePreviewIds} />
         </div>
       </div>
 
