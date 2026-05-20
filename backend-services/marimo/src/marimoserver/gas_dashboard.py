@@ -68,6 +68,7 @@ SYSTEM_NOTICE_WINDOW_FILTER_OPTIONS = (
 DEFAULT_SYSTEM_NOTICE_RECENT_DAYS = 14
 DEFAULT_SYSTEM_NOTICE_PREVIEW_ROWS = 50
 MARKET_PRICE_TABLE_NAME = "silver_gas_fact_market_price"
+MARKET_PRICE_GAS_DATE_FILTER_ALL = "All gas dates"
 MARKET_PRICE_PRICE_TYPE_FILTER_ALL = "All price types"
 MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL = "All source systems"
 MARKET_PRICE_SOURCE_TABLE_FILTER_ALL = "All source tables"
@@ -1436,6 +1437,37 @@ _MARKET_PRICE_TREND_SCHEMA = {
     "avg weighted_average_price_gst_ex": pl.Float64,
     "avg cumulative_price": pl.Float64,
     "avg administered_price": pl.Float64,
+}
+_MARKET_PRICE_TREND_DIAGNOSTIC_SCHEMA = {
+    "source system": pl.String,
+    "source table": pl.String,
+    "price type": pl.String,
+    "measure": pl.String,
+    "gas days": pl.UInt32,
+    "observations": pl.UInt32,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
+    "first avg price": pl.Float64,
+    "latest avg price": pl.Float64,
+    "bounded change": pl.Float64,
+    "bounded change %": pl.Float64,
+    "min observed price": pl.Float64,
+    "max observed price": pl.Float64,
+}
+_MARKET_PRICE_EXCEPTION_SCHEMA = {
+    "gas date": pl.Date,
+    "source system": pl.String,
+    "source table": pl.String,
+    "price type": pl.String,
+    "candidate": pl.String,
+    "measure": pl.String,
+    "value": pl.Float64,
+    "bounded comparison": pl.String,
+    "detail": pl.String,
+}
+_MARKET_PRICE_EXCEPTION_INTERNAL_SCHEMA = {
+    **_MARKET_PRICE_EXCEPTION_SCHEMA,
+    "_candidate_priority": pl.UInt8,
 }
 _MARKET_PRICE_OBSERVATION_SCHEMA = {
     "gas date": pl.Date,
@@ -7028,6 +7060,54 @@ def gas_day_examples_empty_state_markdown(loads: Sequence[GasTableLoad]) -> str:
     """
 
 
+def market_price_bounded_scope_markdown(
+    config: GasDashboardConfig,
+    load: GasTableLoad | None,
+) -> str:
+    """Return explicit bounded-scope copy for market price analytics."""
+    row_limit = None if load is None else load.row_limit
+    if config.aws_runtime:
+        behavior = (
+            "AWS mode uses sampled/recent-only bounded reads: the trend, "
+            "trend diagnostics, and exception candidate views are calculated "
+            "only from the loaded market price preview rows."
+        )
+    else:
+        behavior = (
+            "Local mode uses the configured gas dashboard read policy; when "
+            "full table scans are disabled, trend and exception candidate "
+            "views use the same bounded market price preview rows."
+        )
+
+    return f"""
+    **Bounded market price trend and exception scope.**
+
+    {behavior}
+
+    These summaries are anomaly candidates for review, not pricing-semantics
+    changes or fault classifications. Rows outside the loaded bounded read
+    window are not inspected by this dashboard view.
+
+    {row_limit_message(row_limit)}
+    """
+
+
+def market_price_gas_date_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return gas-date filter options for the loaded market price preview."""
+    dataframe = _normalised_market_price_dataframe(load)
+    if dataframe.is_empty():
+        return (MARKET_PRICE_GAS_DATE_FILTER_ALL,)
+
+    values = sorted(
+        str(value)
+        for value in dataframe.get_column("gas_date").drop_nulls().unique().to_list()
+        if value is not None
+    )
+    return (MARKET_PRICE_GAS_DATE_FILTER_ALL, *reversed(values))
+
+
 def market_price_price_type_options(
     load: GasTableLoad | None,
 ) -> tuple[str, ...]:
@@ -7066,6 +7146,7 @@ def market_price_kpi_frame(
     price_type_filter: str = MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
     source_system_filter: str = MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
     source_table_filter: str = MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
+    gas_date_filter: str = MARKET_PRICE_GAS_DATE_FILTER_ALL,
 ) -> pl.DataFrame:
     """Return first-viewport KPIs for loaded market price observations."""
     dataframe = _filtered_market_price_dataframe(
@@ -7073,6 +7154,7 @@ def market_price_kpi_frame(
         price_type_filter,
         source_system_filter,
         source_table_filter,
+        gas_date_filter,
     )
     if dataframe.is_empty():
         return pl.DataFrame(schema=_MARKET_PRICE_KPI_SCHEMA)
@@ -7129,6 +7211,7 @@ def market_price_type_summary_frame(
     price_type_filter: str = MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
     source_system_filter: str = MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
     source_table_filter: str = MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
+    gas_date_filter: str = MARKET_PRICE_GAS_DATE_FILTER_ALL,
 ) -> pl.DataFrame:
     """Return source and price-type summaries for loaded market price rows."""
     dataframe = _filtered_market_price_dataframe(
@@ -7136,6 +7219,7 @@ def market_price_type_summary_frame(
         price_type_filter,
         source_system_filter,
         source_table_filter,
+        gas_date_filter,
     )
     if dataframe.is_empty():
         return pl.DataFrame(schema=_MARKET_PRICE_TYPE_SUMMARY_SCHEMA)
@@ -7185,6 +7269,7 @@ def market_price_trend_frame(
     price_type_filter: str = MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
     source_system_filter: str = MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
     source_table_filter: str = MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
+    gas_date_filter: str = MARKET_PRICE_GAS_DATE_FILTER_ALL,
     *,
     preview_rows: int = DEFAULT_MARKET_PRICE_PREVIEW_ROWS,
 ) -> pl.DataFrame:
@@ -7194,6 +7279,7 @@ def market_price_trend_frame(
         price_type_filter,
         source_system_filter,
         source_table_filter,
+        gas_date_filter,
     )
     if dataframe.is_empty():
         return pl.DataFrame(schema=_MARKET_PRICE_TREND_SCHEMA)
@@ -7236,11 +7322,150 @@ def market_price_trend_frame(
     return trend.select([*list(_MARKET_PRICE_TREND_SCHEMA)])
 
 
+def market_price_trend_diagnostic_frame(
+    load: GasTableLoad | None,
+    price_type_filter: str = MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
+    source_system_filter: str = MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
+    source_table_filter: str = MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
+    gas_date_filter: str = MARKET_PRICE_GAS_DATE_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_MARKET_PRICE_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return bounded per-measure price trend diagnostics."""
+    dataframe = _filtered_market_price_dataframe(
+        load,
+        price_type_filter,
+        source_system_filter,
+        source_table_filter,
+        gas_date_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_MARKET_PRICE_TREND_DIAGNOSTIC_SCHEMA)
+
+    long_prices = _market_price_measure_long_frame(dataframe)
+    if long_prices.is_empty():
+        return pl.DataFrame(schema=_MARKET_PRICE_TREND_DIAGNOSTIC_SCHEMA)
+
+    group_columns = ("source_system", "source_table", "price_type", "measure")
+    daily_prices = (
+        long_prices.group_by("gas_date", *group_columns)
+        .agg(
+            pl.len().alias("daily observations"),
+            pl.col("value").mean().alias("daily avg price"),
+        )
+        .sort(["gas_date", *group_columns], nulls_last=True)
+    )
+    diagnostics = (
+        daily_prices.group_by(*group_columns, maintain_order=True)
+        .agg(
+            pl.col("gas_date").drop_nulls().n_unique().alias("gas days"),
+            pl.col("daily observations").sum().alias("observations"),
+            pl.col("gas_date").min().alias("first gas date"),
+            pl.col("gas_date").max().alias("latest gas date"),
+            pl.col("daily avg price").first().round(4).alias("first avg price"),
+            pl.col("daily avg price").last().round(4).alias("latest avg price"),
+            pl.col("daily avg price").min().round(4).alias("min observed price"),
+            pl.col("daily avg price").max().round(4).alias("max observed price"),
+        )
+        .with_columns(
+            (pl.col("latest avg price") - pl.col("first avg price"))
+            .round(4)
+            .alias("bounded change")
+        )
+        .with_columns(
+            pl.when(
+                pl.col("first avg price").is_not_null()
+                & (pl.col("first avg price") != 0)
+            )
+            .then(
+                ((pl.col("bounded change") / pl.col("first avg price")) * 100).round(2)
+            )
+            .otherwise(None)
+            .alias("bounded change %"),
+            pl.col("bounded change").abs().alias("_absolute_bounded_change"),
+        )
+        .sort(
+            [
+                "_absolute_bounded_change",
+                "latest gas date",
+                "source_system",
+                "source_table",
+                "price_type",
+                "measure",
+            ],
+            descending=[True, True, False, False, False, False],
+            nulls_last=True,
+        )
+        .rename(
+            {
+                "source_system": "source system",
+                "source_table": "source table",
+                "price_type": "price type",
+            }
+        )
+        .head(max(1, preview_rows))
+    )
+    return diagnostics.select([*list(_MARKET_PRICE_TREND_DIAGNOSTIC_SCHEMA)])
+
+
+def market_price_exception_frame(
+    load: GasTableLoad | None,
+    price_type_filter: str = MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
+    source_system_filter: str = MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
+    source_table_filter: str = MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
+    gas_date_filter: str = MARKET_PRICE_GAS_DATE_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_MARKET_PRICE_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return bounded market price exception and anomaly candidates."""
+    dataframe = _filtered_market_price_dataframe(
+        load,
+        price_type_filter,
+        source_system_filter,
+        source_table_filter,
+        gas_date_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_MARKET_PRICE_EXCEPTION_SCHEMA)
+
+    candidates = [
+        _market_price_missing_measure_candidates(dataframe),
+        _market_price_negative_value_candidates(dataframe),
+        _market_price_zero_value_candidates(dataframe),
+        _market_price_bounded_range_edge_candidates(dataframe),
+    ]
+    populated_candidates = [
+        candidate for candidate in candidates if not candidate.is_empty()
+    ]
+    if len(populated_candidates) == 0:
+        return pl.DataFrame(schema=_MARKET_PRICE_EXCEPTION_SCHEMA)
+
+    return (
+        pl.concat(populated_candidates, how="vertical")
+        .sort(
+            [
+                "_candidate_priority",
+                "gas date",
+                "source system",
+                "source table",
+                "price type",
+                "measure",
+                "value",
+            ],
+            descending=[False, True, False, False, False, False, True],
+            nulls_last=True,
+        )
+        .select([*list(_MARKET_PRICE_EXCEPTION_SCHEMA)])
+        .head(max(1, preview_rows))
+    )
+
+
 def market_price_observation_frame(
     load: GasTableLoad | None,
     price_type_filter: str = MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
     source_system_filter: str = MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
     source_table_filter: str = MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
+    gas_date_filter: str = MARKET_PRICE_GAS_DATE_FILTER_ALL,
     *,
     preview_rows: int = DEFAULT_MARKET_PRICE_PREVIEW_ROWS,
 ) -> pl.DataFrame:
@@ -7250,6 +7475,7 @@ def market_price_observation_frame(
         price_type_filter,
         source_system_filter,
         source_table_filter,
+        gas_date_filter,
     )
     if dataframe.is_empty():
         return pl.DataFrame(schema=_MARKET_PRICE_OBSERVATION_SCHEMA)
@@ -15319,12 +15545,17 @@ def _filtered_market_price_dataframe(
     price_type_filter: str,
     source_system_filter: str,
     source_table_filter: str,
+    gas_date_filter: str = MARKET_PRICE_GAS_DATE_FILTER_ALL,
 ) -> pl.DataFrame:
     dataframe = _normalised_market_price_dataframe(load)
     if dataframe.is_empty():
         return dataframe
 
     filtered = dataframe
+    if gas_date_filter != MARKET_PRICE_GAS_DATE_FILTER_ALL:
+        filtered = filtered.filter(
+            pl.col("gas_date").cast(pl.String, strict=False) == gas_date_filter
+        )
     if price_type_filter != MARKET_PRICE_PRICE_TYPE_FILTER_ALL:
         filtered = filtered.filter(pl.col("price_type") == price_type_filter)
     if source_system_filter != MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL:
@@ -15366,6 +15597,171 @@ def _normalised_market_price_dataframe(load: GasTableLoad | None) -> pl.DataFram
         _normalise_timestamp_column(dataframe, "source_last_updated_timestamp"),
         _normalise_timestamp_column(dataframe, "ingested_timestamp"),
     )
+
+
+def _market_price_measure_long_frame(dataframe: pl.DataFrame) -> pl.DataFrame:
+    frames = [
+        dataframe.select(
+            pl.col("gas_date"),
+            pl.col("source_system"),
+            pl.col("source_table"),
+            pl.col("price_type"),
+            pl.lit(column).alias("measure"),
+            pl.col(column).cast(pl.Float64, strict=False).alias("value"),
+        )
+        for column in MARKET_PRICE_MEASURE_COLUMNS
+    ]
+    return pl.concat(frames, how="vertical").filter(pl.col("value").is_not_null())
+
+
+def _market_price_missing_measure_candidates(dataframe: pl.DataFrame) -> pl.DataFrame:
+    return (
+        dataframe.filter(_market_price_missing_measure_expression())
+        .select(
+            *_market_price_exception_candidate_columns(
+                candidate="Missing price measures",
+                measure=pl.lit("none"),
+                value=pl.lit(None, dtype=pl.Float64),
+                bounded_comparison=pl.lit("No populated price measure columns"),
+                detail=pl.lit(
+                    "This bounded row has no populated market price measure."
+                ),
+                priority=2,
+            )
+        )
+        .select([*list(_MARKET_PRICE_EXCEPTION_INTERNAL_SCHEMA)])
+    )
+
+
+def _market_price_negative_value_candidates(dataframe: pl.DataFrame) -> pl.DataFrame:
+    long_prices = _market_price_measure_long_frame(dataframe)
+    if long_prices.is_empty():
+        return _empty_market_price_exception_candidates()
+
+    return (
+        long_prices.filter(pl.col("value") < 0)
+        .select(
+            *_market_price_exception_candidate_columns(
+                candidate="Negative price value",
+                measure=pl.col("measure"),
+                value=pl.col("value"),
+                bounded_comparison=pl.lit("Measure value is below zero"),
+                detail=pl.lit(
+                    "Negative prices can be valid market outcomes but are "
+                    "flagged for bounded review."
+                ),
+                priority=1,
+            )
+        )
+        .select([*list(_MARKET_PRICE_EXCEPTION_INTERNAL_SCHEMA)])
+    )
+
+
+def _market_price_zero_value_candidates(dataframe: pl.DataFrame) -> pl.DataFrame:
+    long_prices = _market_price_measure_long_frame(dataframe)
+    if long_prices.is_empty():
+        return _empty_market_price_exception_candidates()
+
+    return (
+        long_prices.filter(pl.col("value") == 0)
+        .select(
+            *_market_price_exception_candidate_columns(
+                candidate="Zero price value",
+                measure=pl.col("measure"),
+                value=pl.col("value"),
+                bounded_comparison=pl.lit("Measure value is exactly zero"),
+                detail=pl.lit(
+                    "Zero prices may be valid but are surfaced as sample "
+                    "anomaly candidates."
+                ),
+                priority=3,
+            )
+        )
+        .select([*list(_MARKET_PRICE_EXCEPTION_INTERNAL_SCHEMA)])
+    )
+
+
+def _market_price_bounded_range_edge_candidates(
+    dataframe: pl.DataFrame,
+) -> pl.DataFrame:
+    long_prices = _market_price_measure_long_frame(dataframe)
+    if long_prices.is_empty():
+        return _empty_market_price_exception_candidates()
+
+    group_columns = ("source_system", "source_table", "price_type", "measure")
+    stats = long_prices.group_by(*group_columns).agg(
+        pl.len().alias("_group_observations"),
+        pl.col("value").min().alias("_group_min"),
+        pl.col("value").max().alias("_group_max"),
+    )
+    return (
+        long_prices.join(stats, on=list(group_columns), how="inner")
+        .filter(
+            (pl.col("_group_observations") > 1)
+            & (pl.col("_group_max") > pl.col("_group_min"))
+            & (
+                (pl.col("value") == pl.col("_group_max"))
+                | (pl.col("value") == pl.col("_group_min"))
+            )
+        )
+        .select(
+            *_market_price_exception_candidate_columns(
+                candidate=(
+                    pl.when(pl.col("value") == pl.col("_group_max"))
+                    .then(pl.lit("Bounded high edge"))
+                    .otherwise(pl.lit("Bounded low edge"))
+                ),
+                measure=pl.col("measure"),
+                value=pl.col("value"),
+                bounded_comparison=pl.format(
+                    "{} loaded range: {} to {}",
+                    pl.col("measure"),
+                    pl.col("_group_min"),
+                    pl.col("_group_max"),
+                ),
+                detail=pl.lit(
+                    "Highest or lowest observed value for this source, price "
+                    "type, and measure in loaded bounded rows."
+                ),
+                priority=4,
+            )
+        )
+        .select([*list(_MARKET_PRICE_EXCEPTION_INTERNAL_SCHEMA)])
+    )
+
+
+def _market_price_exception_candidate_columns(
+    *,
+    candidate: str | pl.Expr,
+    measure: pl.Expr,
+    value: pl.Expr,
+    bounded_comparison: pl.Expr,
+    detail: pl.Expr,
+    priority: int,
+) -> tuple[pl.Expr, ...]:
+    candidate_expr = pl.lit(candidate) if isinstance(candidate, str) else candidate
+    return (
+        pl.col("gas_date").alias("gas date"),
+        pl.col("source_system").alias("source system"),
+        pl.col("source_table").alias("source table"),
+        pl.col("price_type").alias("price type"),
+        candidate_expr.alias("candidate"),
+        measure.alias("measure"),
+        value.cast(pl.Float64, strict=False).alias("value"),
+        bounded_comparison.alias("bounded comparison"),
+        detail.alias("detail"),
+        pl.lit(priority, dtype=pl.UInt8).alias("_candidate_priority"),
+    )
+
+
+def _market_price_missing_measure_expression() -> pl.Expr:
+    return pl.all_horizontal(
+        [pl.col(column).is_null() for column in MARKET_PRICE_MEASURE_COLUMNS]
+    )
+
+
+def _empty_market_price_exception_candidates() -> pl.DataFrame:
+    return pl.DataFrame(schema=_MARKET_PRICE_EXCEPTION_INTERNAL_SCHEMA)
 
 
 def _available_market_price_measures(dataframe: pl.DataFrame) -> tuple[str, ...]:

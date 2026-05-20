@@ -86,6 +86,7 @@ from marimoserver.gas_dashboard import (
     FACILITY_TABLE_SPECS,
     FLOW_CONTEXT_ID,
     FLOW_TABLE_SPECS,
+    MARKET_PRICE_GAS_DATE_FILTER_ALL,
     MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
     MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
     MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
@@ -284,12 +285,16 @@ from marimoserver.gas_dashboard import (
     load_schedule_run_table,
     load_settlement_activity_table,
     load_system_notice_table,
+    market_price_bounded_scope_markdown,
     market_price_empty_state_markdown,
+    market_price_exception_frame,
+    market_price_gas_date_options,
     market_price_kpi_frame,
     market_price_observation_frame,
     market_price_price_type_options,
     market_price_source_system_options,
     market_price_source_table_options,
+    market_price_trend_diagnostic_frame,
     market_price_trend_frame,
     market_price_type_summary_frame,
     linepack_adequacy_flag_options,
@@ -1111,6 +1116,11 @@ def test_market_price_summaries_filters_and_context_links() -> None:
         source_table_filter=vicgas_table,
     )
 
+    assert market_price_gas_date_options(load) == (
+        MARKET_PRICE_GAS_DATE_FILTER_ALL,
+        "2024-01-02",
+        "2024-01-01",
+    )
     assert market_price_price_type_options(load) == (
         MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
         "ex_ante_market_price",
@@ -1209,10 +1219,138 @@ def test_market_price_summaries_filters_and_context_links() -> None:
         ],
     }
     assert vicgas_observations["source table"].to_list() == [vicgas_table]
+    assert market_price_kpi_frame(load, gas_date_filter="2024-01-01").row(
+        0,
+        named=True,
+    ) == {
+        "metric": "Loaded price rows",
+        "value": "1",
+        "detail": "Full table scan",
+    }
     assert 'href="/marimo/gas_market_prices/"' in context_links
     assert 'href="/marimo/sample_energy_market/"' in context_links
     assert "Schedule Context" in context_links
     assert "Planned dashboard" in context_links
+
+
+def test_market_price_bounded_trend_and_exception_helpers_label_scope() -> None:
+    sttm_table = "silver.sttm.silver_int651_v1_ex_ante_market_price_rpt_1"
+    vicgas_table = "silver.vicgas.silver_int042_v4_weighted_average_daily_prices_1"
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "MARIMO_MAX_PREVIEW_ROWS": "7",
+        }
+    )
+    load = _market_price_load(
+        pl.DataFrame(
+            {
+                "gas_date": [
+                    "2024-01-01",
+                    "2024-01-02",
+                    "2024-01-03",
+                    "2024-01-04",
+                    "2024-01-03",
+                ],
+                "source_system": ["STTM", "STTM", "STTM", "STTM", "VICGAS"],
+                "source_table": [
+                    sttm_table,
+                    sttm_table,
+                    sttm_table,
+                    sttm_table,
+                    vicgas_table,
+                ],
+                "price_type": [
+                    "ex_ante_market_price",
+                    "ex_ante_market_price",
+                    "ex_ante_market_price",
+                    "ex_ante_market_price",
+                    "weighted_average_daily",
+                ],
+                "price_value_gst_ex": [10.0, 12.0, -4.0, None, None],
+                "weighted_average_price_gst_ex": [None, None, None, None, 0.0],
+            }
+        ),
+        row_limit=7,
+    )
+
+    bounded_scope = market_price_bounded_scope_markdown(config, load)
+    diagnostics = market_price_trend_diagnostic_frame(load)
+    exception_candidates = market_price_exception_frame(load)
+    missing_measure_candidates = market_price_exception_frame(
+        load,
+        gas_date_filter="2024-01-04",
+    )
+
+    assert "AWS mode uses sampled/recent-only bounded reads" in bounded_scope
+    assert "Bounded preview reads are capped at `7` rows per table" in bounded_scope
+    assert diagnostics.select(
+        "source system",
+        "source table",
+        "price type",
+        "measure",
+        "gas days",
+        "observations",
+        "first gas date",
+        "latest gas date",
+        "first avg price",
+        "latest avg price",
+        "bounded change",
+        "bounded change %",
+        "min observed price",
+        "max observed price",
+    ).head(1).to_dict(as_series=False) == {
+        "source system": ["STTM"],
+        "source table": [sttm_table],
+        "price type": ["ex_ante_market_price"],
+        "measure": ["price_value_gst_ex"],
+        "gas days": [3],
+        "observations": [3],
+        "first gas date": [date(2024, 1, 1)],
+        "latest gas date": [date(2024, 1, 3)],
+        "first avg price": [10.0],
+        "latest avg price": [-4.0],
+        "bounded change": [-14.0],
+        "bounded change %": [-140.0],
+        "min observed price": [-4.0],
+        "max observed price": [12.0],
+    }
+    assert exception_candidates.select(
+        "candidate",
+        "gas date",
+        "source system",
+        "price type",
+        "measure",
+        "value",
+    ).head(3).to_dict(as_series=False) == {
+        "candidate": [
+            "Negative price value",
+            "Missing price measures",
+            "Zero price value",
+        ],
+        "gas date": [date(2024, 1, 3), date(2024, 1, 4), date(2024, 1, 3)],
+        "source system": ["STTM", "STTM", "VICGAS"],
+        "price type": [
+            "ex_ante_market_price",
+            "ex_ante_market_price",
+            "weighted_average_daily",
+        ],
+        "measure": [
+            "price_value_gst_ex",
+            "none",
+            "weighted_average_price_gst_ex",
+        ],
+        "value": [-4.0, None, 0.0],
+    }
+    assert missing_measure_candidates.select(
+        "candidate",
+        "measure",
+        "bounded comparison",
+    ).to_dict(as_series=False) == {
+        "candidate": ["Missing price measures"],
+        "measure": ["none"],
+        "bounded comparison": ["No populated price measure columns"],
+    }
 
 
 def test_market_price_helpers_cover_missing_data_and_filter_empty_state() -> None:
@@ -1264,10 +1402,17 @@ def test_market_price_helpers_cover_missing_data_and_filter_empty_state() -> Non
     assert market_price_kpi_frame(empty_load).is_empty()
     assert market_price_type_summary_frame(empty_load).is_empty()
     assert market_price_trend_frame(empty_load).is_empty()
+    assert market_price_trend_diagnostic_frame(empty_load).is_empty()
+    assert market_price_exception_frame(empty_load).is_empty()
     assert market_price_observation_frame(empty_load).is_empty()
+    assert market_price_gas_date_options(empty_load) == (
+        MARKET_PRICE_GAS_DATE_FILTER_ALL,
+    )
     assert market_price_price_type_options(empty_load) == (
         MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
     )
+    assert market_price_trend_diagnostic_frame(no_measure_load).is_empty()
+    assert market_price_exception_frame(populated_load).is_empty()
     assert market_price_kpi_frame(
         populated_load,
         source_system_filter="VICGAS",
@@ -1287,6 +1432,10 @@ def test_market_price_helpers_cover_missing_data_and_filter_empty_state() -> Non
     error_markdown = market_price_empty_state_markdown(error_load)
     filtered_markdown = market_price_empty_state_markdown(populated_load)
     missing_load_markdown = market_price_empty_state_markdown(None)
+    local_scope_markdown = market_price_bounded_scope_markdown(
+        _dashboard_config(),
+        populated_load,
+    )
     empty_context_links = render_market_price_context_links(entries=())
     unmounted_entry = DashboardRegistryEntry(
         concept_id="gas-market-prices",
@@ -1309,6 +1458,9 @@ def test_market_price_helpers_cover_missing_data_and_filter_empty_state() -> Non
     assert "FileNotFoundError: no parquet files found" in error_markdown
     assert "current filters do not match" in filtered_markdown
     assert "did not receive a market price load result" in missing_load_markdown
+    assert "Local mode uses the configured gas dashboard read policy" in (
+        local_scope_markdown
+    )
     assert "No Market price or Schedule context entries" in empty_context_links
     assert "Unavailable dashboard" in unmounted_context_links
 

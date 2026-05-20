@@ -489,8 +489,9 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "title": "Gas Market Prices",
         "description": (
             "Available analytical dashboard for gas market price types, source "
-            "systems, source tables, latest gas dates, available price measures, "
-            "and Schedule context links from the curated market price fact."
+            "systems, source tables, gas-date filters, available price "
+            "measures, bounded trend diagnostics, exception candidates, and "
+            "Schedule context links from the curated market price fact."
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
