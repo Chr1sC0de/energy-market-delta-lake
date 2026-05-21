@@ -356,7 +356,10 @@ uv run aemo-e2e-archive-seed refresh
 
 The refresh path defaults to `dev-energy-market-archive`, requires 3 latest raw
 objects for each required `gas_model` source table and 3 latest zip objects for
-each required zip domain, and fails with a manifest if coverage is short.
+each required zip domain, and fails with a manifest if coverage is short. Use
+`--allow-empty-source-table-seed` only when a source table is validly absent
+from the live archive slice; it writes zero-byte source-table placeholders while
+zip-domain shortfalls remain hard failures.
 
 ## Isolated AEMO ETL e2e stack
 

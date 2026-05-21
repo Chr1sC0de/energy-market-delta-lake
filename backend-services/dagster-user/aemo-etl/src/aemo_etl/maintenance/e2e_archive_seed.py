@@ -115,11 +115,13 @@ class SeedCoverageEntry:
     requested_count: int
     available_count: int
     selected_objects: tuple[SeedObject, ...]
+    synthetic_empty_object_keys: tuple[str, ...] = ()
 
     @property
     def shortfall(self) -> int:
         """Return how many requested objects were unavailable."""
-        return max(0, self.requested_count - self.available_count)
+        satisfied_count = max(self.available_count, len(self.selected_objects))
+        return max(0, self.requested_count - satisfied_count)
 
     def as_dict(self) -> dict[str, object]:
         """Return a JSON-serializable representation."""
@@ -134,6 +136,8 @@ class SeedCoverageEntry:
             "selected_objects": [
                 selected_object.as_dict() for selected_object in self.selected_objects
             ],
+            "synthetic_empty_object_count": len(self.synthetic_empty_object_keys),
+            "synthetic_empty_object_keys": list(self.synthetic_empty_object_keys),
         }
 
 
@@ -170,6 +174,15 @@ class SeedRunManifest:
             for selected_object in entry.selected_objects:
                 objects_by_key[selected_object.key] = selected_object
         return tuple(objects_by_key[key] for key in sorted(objects_by_key))
+
+    @property
+    def synthetic_empty_object_keys(self) -> frozenset[str]:
+        """Return selected object keys that should be created as empty seed files."""
+        return frozenset(
+            key
+            for entry in (*self.source_table_coverage, *self.zip_domain_coverage)
+            for key in entry.synthetic_empty_object_keys
+        )
 
     def as_dict(self) -> dict[str, object]:
         """Return a JSON-serializable representation."""
@@ -304,6 +317,7 @@ def refresh_archive_seed(
     archive_bucket: str,
     raw_latest_count: int,
     zip_latest_count: int,
+    allow_empty_source_table_seed: bool = False,
     current_time: datetime | None = None,
 ) -> SeedRunManifest:
     """Refresh the local archive seed cache from the live archive bucket."""
@@ -316,6 +330,7 @@ def refresh_archive_seed(
         landing_bucket=None,
         raw_latest_count=raw_latest_count,
         zip_latest_count=zip_latest_count,
+        allow_empty_source_table_seed=allow_empty_source_table_seed,
         current_time=current_time,
     )
     if manifest.shortfalls:
@@ -332,10 +347,18 @@ def refresh_archive_seed(
         encoding="utf-8",
     )
 
+    synthetic_empty_object_keys = manifest.synthetic_empty_object_keys
     for selected_object in manifest.selected_objects:
         target_path = cache_path_for_key(seed_root, selected_object.key)
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        s3_client.download_file(archive_bucket, selected_object.key, str(target_path))
+        if selected_object.key in synthetic_empty_object_keys:
+            target_path.write_bytes(b"")
+        else:
+            s3_client.download_file(
+                archive_bucket,
+                selected_object.key,
+                str(target_path),
+            )
 
     write_seed_run_manifest(manifest)
     return manifest
@@ -440,6 +463,7 @@ def _build_s3_seed_manifest(
     landing_bucket: str | None,
     raw_latest_count: int,
     zip_latest_count: int,
+    allow_empty_source_table_seed: bool,
     current_time: datetime | None,
 ) -> SeedRunManifest:
     _validate_latest_count(raw_latest_count, "raw_latest_count")
@@ -453,6 +477,7 @@ def _build_s3_seed_manifest(
             archive_prefix=source_table.archive_prefix,
             glob_pattern=source_table.glob_pattern,
             requested_count=raw_latest_count,
+            allow_empty_source_table_seed=allow_empty_source_table_seed,
         )
         for source_table in spec.source_tables
     )
@@ -465,6 +490,7 @@ def _build_s3_seed_manifest(
             archive_prefix=zip_domain.archive_prefix,
             glob_pattern=zip_domain.glob_pattern,
             requested_count=zip_latest_count,
+            allow_empty_source_table_seed=False,
         )
         for zip_domain in spec.zip_domains
     )
@@ -540,6 +566,7 @@ def _build_s3_coverage_entry(
     archive_prefix: str,
     glob_pattern: str,
     requested_count: int,
+    allow_empty_source_table_seed: bool,
 ) -> SeedCoverageEntry:
     pages = get_s3_pagination(s3_client, archive_bucket, archive_prefix)
     return _seed_coverage_entry(
@@ -550,7 +577,8 @@ def _build_s3_coverage_entry(
             archive_prefix=archive_prefix,
             glob_pattern=glob_pattern,
             requested_count=requested_count,
-        )
+        ),
+        allow_empty_source_table_seed=allow_empty_source_table_seed,
     )
 
 
@@ -606,8 +634,17 @@ def _plan_seed_coverage(
     return plan.coverage[0]
 
 
-def _seed_coverage_entry(coverage: ArchiveSourceCoverage) -> SeedCoverageEntry:
+def _seed_coverage_entry(
+    coverage: ArchiveSourceCoverage,
+    *,
+    allow_empty_source_table_seed: bool = False,
+) -> SeedCoverageEntry:
     seed_kind = cast(Literal["source-table", "zip-domain"], coverage.kind)
+    selected_objects = coverage.selected_objects
+    synthetic_empty_objects: tuple[SeedObject, ...] = ()
+    if allow_empty_source_table_seed and seed_kind == "source-table":
+        synthetic_empty_objects = _synthetic_empty_source_table_objects(coverage)
+        selected_objects = (*selected_objects, *synthetic_empty_objects)
     return SeedCoverageEntry(
         kind=seed_kind,
         name=coverage.name,
@@ -615,8 +652,42 @@ def _seed_coverage_entry(coverage: ArchiveSourceCoverage) -> SeedCoverageEntry:
         glob_pattern=coverage.glob_pattern,
         requested_count=cast(int, coverage.requested_count),
         available_count=coverage.available_count,
-        selected_objects=coverage.selected_objects,
+        selected_objects=selected_objects,
+        synthetic_empty_object_keys=tuple(
+            selected_object.key for selected_object in synthetic_empty_objects
+        ),
     )
+
+
+def _synthetic_empty_source_table_objects(
+    coverage: ArchiveSourceCoverage,
+) -> tuple[SeedObject, ...]:
+    return tuple(
+        SeedObject(
+            key=_synthetic_empty_source_table_key(
+                archive_prefix=coverage.archive_prefix,
+                glob_pattern=coverage.glob_pattern,
+                index=index,
+            ),
+            size=0,
+        )
+        for index in range(1, coverage.shortfall + 1)
+    )
+
+
+def _synthetic_empty_source_table_key(
+    *,
+    archive_prefix: str,
+    glob_pattern: str,
+    index: int,
+) -> str:
+    token = "__empty_seed__" if index == 1 else f"__empty_seed_{index}__"
+    file_name = glob_pattern.replace("*", token)
+    if file_name == glob_pattern:
+        file_name = f"{glob_pattern}{token}"
+    if Path(file_name).suffix == "":
+        file_name = f"{file_name}.csv"
+    return f"{archive_prefix}/{file_name}"
 
 
 def _list_cached_object_heads(

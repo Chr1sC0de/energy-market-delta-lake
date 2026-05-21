@@ -187,7 +187,11 @@ uv run aemo-e2e-archive-seed refresh --raw-latest-count 2 --zip-latest-count 1
 The cache and `seed-run-manifest.json` are written under
 `backend-services/.e2e/aemo-etl` by default. If any required source table or zip
 domain has fewer live archive objects than requested, refresh exits non-zero and
-records the shortfall in that manifest.
+records the shortfall in that manifest. For source tables that are validly
+absent from the live archive slice, add `--allow-empty-source-table-seed` to
+write explicit zero-byte placeholders into the local cache; zip-domain
+shortfalls still fail because the e2e stack needs at least one zip per required
+domain.
 
 To load the cached seed into LocalStack during local compose startup:
 

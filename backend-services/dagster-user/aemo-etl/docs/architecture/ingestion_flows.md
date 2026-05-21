@@ -303,7 +303,9 @@ materializations. For local **End-to-end test** setup,
 `aemo-e2e-archive-seed` can refresh the ignored cached Archive seed for the full
 `gas_model` target and load the cached objects into LocalStack landing storage
 before Dagster starts. The default seed slice is 3 raw objects per required
-source table and 3 zip objects per required domain.
+source table and 3 zip objects per required domain. Refresh can also write
+explicit zero-byte placeholders for valid source-table archive gaps; zip-domain
+coverage remains mandatory so unzipper-backed e2e inputs are still present.
 
 The AEMO gas document Integration test uses the same LocalStack buckets and
 Delta lock table to verify included PDF bytes move from

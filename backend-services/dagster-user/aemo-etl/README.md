@@ -302,7 +302,10 @@ from later files.
 `dev-energy-market-archive` bucket, 3 raw objects per required source table,
 and 3 zip objects per required domain. It writes cached objects and
 `seed-run-manifest.json` under `backend-services/.e2e/aemo-etl`; later
-LocalStack runs can load that cache without live archive access.
+LocalStack runs can load that cache without live archive access. When a required
+source table is validly absent from the live archive slice, refresh can use
+`--allow-empty-source-table-seed` to cache zero-byte source-table placeholders;
+missing zip-domain coverage still fails.
 
 `aemo-refresh-gas-document-media-manifest` is the manual discovery workflow for
 the AEMO gas document asset. It uses Playwright Chromium to visit configured
