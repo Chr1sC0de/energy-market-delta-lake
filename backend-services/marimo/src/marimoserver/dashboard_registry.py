@@ -1352,6 +1352,27 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
     },
     {
+        "concept_id": "capacity-transactions",
+        "title": "Capacity Transactions",
+        "description": (
+            "Available analytical dashboard for capacity and LNG transaction "
+            "observations, transaction types, transaction and supply dates, "
+            "source locations and facilities, quantities, volumes, prices, "
+            "source coverage, and related Capacity and market-analysis context."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "capacity_transactions",
+        "backing_assets": ("silver.gas_model.silver_gas_fact_capacity_transaction",),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
+        ),
+        "source_chunk_ids": (
+            "chunk-gbb-procedures-capacity-outlooks",
+            "chunk-gbb-guide-nameplate-capacity",
+        ),
+    },
+    {
         "concept_id": "mos-context",
         "title": "MOS Context",
         "description": (

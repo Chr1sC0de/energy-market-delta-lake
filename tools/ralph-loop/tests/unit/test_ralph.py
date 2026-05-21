@@ -1183,6 +1183,7 @@ def write_failed_pre_push_requeue_manifest(tmp_path: Path) -> Path:
             "backend-services/marimo/notebooks/dashboard.py",
             "backend-services/marimo/tests/component/test_dashboard.py",
         ],
+        "commits": {"base": "base-sha", "latest_base": "base-sha"},
         "qa_results": [
             {
                 "name": "Marimo Component tests",
@@ -6316,16 +6317,16 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
             ],
             (
                 "git",
-                "show-ref",
-                "--verify",
-                "--hash",
+                "for-each-ref",
+                "--format=%(objectname)",
+                "--count=1",
                 f"refs/heads/{issue_branch}",
             ): [f"{implementation_head}\n"],
             (
                 "git",
-                "show-ref",
-                "--verify",
-                "--hash",
+                "for-each-ref",
+                "--format=%(objectname)",
+                "--count=1",
                 backup_ref,
             ): [""],
         }
@@ -6495,6 +6496,59 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
             )
         )
 
+    def test_recover_run_requeue_allows_integration_worktree_at_base(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = write_failed_pre_push_requeue_manifest(tmp_path)
+            implementation_worktree, integration_worktree, issue_branch, backup_ref = (
+                self._requeue_manifest_paths(run_dir)
+            )
+            implementation_worktree.mkdir(parents=True)
+            integration_worktree.mkdir(parents=True)
+            runner = FakeRunner(
+                status_outputs=["", ""],
+                command_outputs=self._requeue_command_outputs(
+                    run_dir=run_dir,
+                    implementation_worktree=implementation_worktree,
+                    integration_worktree=integration_worktree,
+                    issue_branch=issue_branch,
+                    backup_ref=backup_ref,
+                    integration_head="base-sha",
+                ),
+                fail_commands={
+                    (
+                        "git",
+                        "merge-base",
+                        "--is-ancestor",
+                        "impl-sha",
+                        "origin/dev",
+                    ),
+                },
+            )
+            loop = make_loop(
+                tmp_path,
+                runner,
+                delivery_mode=ralph.GITFLOW_MODE,
+                dry_run=True,
+            )
+
+            with redirect_stdout(io.StringIO()):
+                ralph.RalphRunRecovery(loop.config, runner).recover(run_dir)
+
+        self.assertFalse(
+            any(
+                call.args
+                == (
+                    "git",
+                    "merge-base",
+                    "--is-ancestor",
+                    "base-sha",
+                    "origin/dev",
+                )
+                for call in runner.calls
+            )
+        )
+
     def test_recover_run_requeues_pre_push_failure_and_cleans_local_artifacts(
         self,
     ) -> None:
@@ -6626,16 +6680,16 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
                     ("git", "worktree", "list", "--porcelain"): [""],
                     (
                         "git",
-                        "show-ref",
-                        "--verify",
-                        "--hash",
+                        "for-each-ref",
+                        "--format=%(objectname)",
+                        "--count=1",
                         f"refs/heads/{issue_branch}",
                     ): [""],
                     (
                         "git",
-                        "show-ref",
-                        "--verify",
-                        "--hash",
+                        "for-each-ref",
+                        "--format=%(objectname)",
+                        "--count=1",
                         backup_ref,
                     ): ["impl-sha\n"],
                 },
@@ -8348,6 +8402,235 @@ class RalphOperatorRunTests(unittest.TestCase):
             text,
         )
         self.assertIn("Review progress before raising --max-cycles.", text)
+
+    def test_operator_status_and_rollup_report_requeue_eligible_failed_issue(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            child_run_dir = write_failed_pre_push_requeue_manifest(tmp_path)
+            child_manifest_path = child_run_dir / ralph.MANIFEST_NAME
+            issue = make_issue(
+                {ralph.AGENT_FAILED_LABEL, ralph.DELIVERY_GITFLOW_LABEL},
+                IMPLEMENTATION_BODY,
+                number=234,
+                title="Fix Marimo dashboard",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            manifest = ralph.OperatorRunManifest.start(
+                run_dir=run_dir,
+                config=loop.config,
+                max_cycles=3,
+            )
+            manifest.record_child_run(child_manifest_path)
+            manifest.record_queue(operator_snapshot(failed=[issue]))
+            manifest.record_checkpoint(
+                "queue_blocked",
+                message="agent-failed issue(s) remain and need operator recovery.",
+                status="failed",
+                recovery_guidance="Inspect failed issues.",
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.inspect_operator_run_status(str(run_dir), runner)
+
+            rollup = json.loads(
+                (run_dir / ralph.OPERATOR_ROLLUP_JSON_NAME).read_text(encoding="utf-8")
+            )
+            markdown = (run_dir / ralph.OPERATOR_ROLLUP_MARKDOWN_NAME).read_text(
+                encoding="utf-8"
+            )
+
+        text = output.getvalue()
+        self.assertIn("Requeue recovery:", text)
+        self.assertIn("#234 Fix Marimo dashboard: eligible_pre_push_requeue", text)
+        self.assertIn(
+            f"python3 scripts/ralph.py --recover-run {child_run_dir} --dry-run",
+            text,
+        )
+        self.assertIn("Do not start a competing Operator run", text)
+        self.assertEqual(rollup["summary"]["pre_push_requeue_eligible"], 1)
+        self.assertEqual(
+            rollup["requeue_recovery"]["eligible_pre_push"][0]["issue"]["number"],
+            234,
+        )
+        self.assertIn("## Requeue Recovery", markdown)
+        self.assertIn("eligible_pre_push_requeue", markdown)
+
+    def test_operator_requeue_recovery_classifies_non_requeue_failures(
+        self,
+    ) -> None:
+        def child_source(
+            issue_number: int,
+            child_data: dict[str, Any],
+        ) -> dict[str, Any]:
+            return {
+                "manifest_path": f"/logs/issue-{issue_number}/ralph-run.json",
+                "manifest_read_status": "loaded",
+                "manifest_error": None,
+                "kind": "implementation",
+                "status": child_data["status"],
+                "stage": child_data["stage"],
+                "issue": {
+                    "number": issue_number,
+                    "title": f"Issue {issue_number}",
+                    "url": f"https://example.test/{issue_number}",
+                },
+                "data": child_data,
+            }
+
+        def failed_child(
+            issue_number: int,
+            *,
+            qa_status: str = "passed",
+            review_status: str = "passed",
+            integration_commit: dict[str, str] | None = None,
+            push_status: str | None = None,
+            branch_sync_status: str = "not_started",
+            failure_message: str = "Command failed",
+        ) -> dict[str, Any]:
+            pushes = {}
+            if push_status is not None:
+                pushes = {
+                    "integration_target": {
+                        "status": push_status,
+                        "branch": ralph.DEFAULT_GITFLOW_BRANCH,
+                        "commit": "abc1234",
+                    }
+                }
+            return {
+                "run_kind": "implementation",
+                "status": "failed",
+                "stage": "failed",
+                "issue": {
+                    "number": issue_number,
+                    "title": f"Issue {issue_number}",
+                    "url": f"https://example.test/{issue_number}",
+                },
+                "paths": {"run_dir": f"/logs/issue-{issue_number}"},
+                "integration_commit": integration_commit,
+                "pushes": pushes,
+                "branch_sync": {"status": branch_sync_status},
+                "qa_results": [{"status": qa_status}],
+                "issue_completion_review": {"status": review_status},
+                "failure": {"message": failure_message},
+            }
+
+        issue_numbers = [301, 302, 303, 304]
+        final_queue = {
+            "issues": {
+                "failed": [
+                    {
+                        "number": number,
+                        "title": f"Issue {number}",
+                        "url": f"https://example.test/{number}",
+                    }
+                    for number in issue_numbers
+                ]
+            }
+        }
+        child_sources = [
+            child_source(
+                301,
+                failed_child(
+                    301,
+                    integration_commit={
+                        "sha": "abc1234",
+                        "branch": ralph.DEFAULT_GITFLOW_BRANCH,
+                    },
+                    push_status="pushed",
+                ),
+            ),
+            child_source(
+                302,
+                failed_child(302, branch_sync_status="failed"),
+            ),
+            child_source(
+                303,
+                failed_child(
+                    303,
+                    qa_status="not_started",
+                    review_status="not_started",
+                    failure_message="Missing required issue section(s): QA plan",
+                ),
+            ),
+            child_source(
+                304,
+                failed_child(304, qa_status="failed"),
+            ),
+        ]
+
+        recovery = ralph.operator_rollup_requeue_recovery(final_queue, child_sources)
+
+        classifications = {
+            entry["issue"]["number"]: entry["classification"]
+            for entry in recovery["failed_issues"]
+        }
+        self.assertEqual(classifications[301], "post_push_metadata_recovery")
+        self.assertEqual(classifications[302], "manual_gitflow_recovery")
+        self.assertEqual(classifications[303], "malformed_issue_contract")
+        self.assertEqual(classifications[304], "unrecoverable_implementation_failure")
+        guidance = " ".join(entry["guidance"] for entry in recovery["failed_issues"])
+        self.assertIn("post-push metadata recovery", guidance)
+        self.assertIn("manual Gitflow recovery", guidance)
+        self.assertIn("issue contract is malformed", guidance)
+        self.assertIn("did not pass the gates needed for requeue", guidance)
+
+    def test_operator_status_marks_stopped_detached_manifest_as_stale(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            ralph.OperatorRunManifest.for_detached_launch(
+                run_dir=run_dir,
+                config=loop.config,
+                max_cycles=3,
+                command=["python3", "scripts/ralph.py", "--drain-promote-all"],
+                stdout_log=run_dir / "operator-stdout.log",
+                stderr_log=run_dir / "operator-stderr.log",
+                pid=99_999_999,
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.inspect_operator_run_status(str(run_dir), runner)
+
+        text = output.getvalue()
+        self.assertIn("Detached run:", text)
+        self.assertIn("pid=99999999 stopped", text)
+        self.assertIn("Detached status may be stale", text)
+        self.assertIn("manifest still says running", text)
+
+    def test_operator_claims_requeued_ready_issue_through_normal_scan(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            issue = make_issue(
+                {ralph.READY_LABEL, ralph.DELIVERY_GITFLOW_LABEL},
+                IMPLEMENTATION_BODY,
+                number=234,
+                title="Fix Marimo dashboard",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = ScriptedOperatorRun(
+                make_loop(tmp_path, runner, drain=True).config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=1,
+                snapshots=[
+                    operator_snapshot(ready=[issue]),
+                    operator_snapshot(),
+                ],
+            )
+
+            operator.run()
+
+        self.assertEqual(operator.issue_runs, 1)
+        self.assertEqual(operator.issue_commits[234], "local-integration-234-1")
 
     def test_detached_operator_launch_prints_status_command_without_waiting(
         self,
@@ -13301,9 +13584,9 @@ Build it.
                     ],
                     (
                         "git",
-                        "show-ref",
-                        "--verify",
-                        "--hash",
+                        "for-each-ref",
+                        "--format=%(objectname)",
+                        "--count=1",
                         "refs/heads/dev",
                     ): ["dev-old\n"],
                 },
@@ -13367,9 +13650,9 @@ Build it.
                     ],
                     (
                         "git",
-                        "show-ref",
-                        "--verify",
-                        "--hash",
+                        "for-each-ref",
+                        "--format=%(objectname)",
+                        "--count=1",
                         "refs/heads/dev",
                     ): ["dev-old\n"],
                 },
@@ -13439,16 +13722,16 @@ Build it.
                     ],
                     (
                         "git",
-                        "show-ref",
-                        "--verify",
-                        "--hash",
+                        "for-each-ref",
+                        "--format=%(objectname)",
+                        "--count=1",
                         "refs/heads/dev",
                     ): ["dev-old\n"],
                     (
                         "git",
-                        "show-ref",
-                        "--verify",
-                        "--hash",
+                        "for-each-ref",
+                        "--format=%(objectname)",
+                        "--count=1",
                         "refs/heads/main",
                     ): ["main-old\n"],
                 },

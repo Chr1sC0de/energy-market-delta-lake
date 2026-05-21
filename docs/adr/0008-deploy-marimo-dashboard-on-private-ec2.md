@@ -195,6 +195,14 @@ summarizes loaded auction rows by auction date, Hub / Zone, capacity period,
 metric, quantity, and price without changing capacity auction ETL, source
 ingestion, auction semantics, or asset schemas.
 
+The capacity transactions dashboard stays inside the same boundary. It reads
+the curated `silver.gas_model.silver_gas_fact_capacity_transaction` Parquet
+output through the shared bounded loader and session cache, then filters and
+summarizes loaded capacity and LNG transaction rows by transaction type,
+transaction and supply dates, source location/facility, quantity, volume,
+price, and source coverage without changing transaction ETL, source ingestion,
+or asset schemas.
+
 The gas quality and composition dashboard stays inside the same boundary. It
 reads the curated `silver.gas_model.silver_gas_fact_gas_quality` Parquet output
 through the shared bounded loader and session cache, then filters and
@@ -334,6 +342,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/notebooks/facility_flow_storage.py`
   - `backend-services/marimo/notebooks/capacity_outlook.py`
   - `backend-services/marimo/notebooks/capacity_auction.py`
+  - `backend-services/marimo/notebooks/capacity_transactions.py`
   - `backend-services/marimo/notebooks/linepack_adequacy.py`
   - `backend-services/marimo/notebooks/nomination_demand_forecast.py`
   - `backend-services/marimo/notebooks/forecast_vs_actual.py`

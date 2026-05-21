@@ -31,6 +31,7 @@ Marimo-Codex research workspace image.
 - [Pipeline and Connection operations dashboard](#pipeline-and-connection-operations-dashboard)
 - [Capacity outlook dashboard](#capacity-outlook-dashboard)
 - [Capacity auction dashboard](#capacity-auction-dashboard)
+- [Capacity transactions dashboard](#capacity-transactions-dashboard)
 - [Nomination and demand forecast dashboard](#nomination-and-demand-forecast-dashboard)
 - [Forecast-vs-actual dashboard](#forecast-vs-actual-dashboard)
 - [Gas market dashboard](#gas-market-dashboard)
@@ -604,6 +605,24 @@ loader.
 The dashboard summarizes auction ID, `auction_date`, Hub / Zone, capacity
 period, `auction_metric`, `quantity_gj`, and `price` fields. It filters the
 bounded read by auction date, Hub / Zone, capacity period, auction metric, and
+source system. Missing tables, unavailable Parquet prefixes, empty reads,
+filter misses, and missing columns render designed empty states with the
+checked asset, read policy, and refresh action.
+
+## Capacity transactions dashboard
+
+[notebooks/capacity_transactions.py](notebooks/capacity_transactions.py) is an
+analytical dashboard over
+`silver.gas_model.silver_gas_fact_capacity_transaction`. It renders the
+registry-backed Capacity Transactions context panel and links to Capacity,
+Capacity Auctions, gas market overview, source coverage, source lineage, and
+table explorer surfaces, then loads bounded recent samples through the shared
+gas model loader.
+
+The dashboard summarizes `transaction_type`, transaction and supply dates,
+source location, source facility, `quantity_tj`, `quantity_gj`, `volume_pj`,
+`price`, and source coverage fields. It filters the bounded read by
+transaction type, transaction date, source location, source facility, and
 source system. Missing tables, unavailable Parquet prefixes, empty reads,
 filter misses, and missing columns render designed empty states with the
 checked asset, read policy, and refresh action.
@@ -1491,6 +1510,7 @@ prek run -a
   - `backend-services/marimo/notebooks/forecast_vs_actual.py`
   - `backend-services/marimo/notebooks/capacity_outlook.py`
   - `backend-services/marimo/notebooks/capacity_auction.py`
+  - `backend-services/marimo/notebooks/capacity_transactions.py`
   - `backend-services/marimo/notebooks/linepack_adequacy.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_sttm_contingency_gas.py`

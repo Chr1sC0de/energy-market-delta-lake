@@ -2316,6 +2316,7 @@ def build_operator_run_rollup(
     ]
     final_queue = operator_rollup_final_queue(data)
     stop_reason = operator_rollup_stop_reason(data)
+    requeue_recovery = operator_rollup_requeue_recovery(final_queue, child_sources)
     failed_attempts = [
         *issue_entries["failed"],
         *[
@@ -2366,6 +2367,7 @@ def build_operator_run_rollup(
             "manual_recoveries": len(manual_recoveries),
             "qa_surfaces": len(qa_surfaces),
             "post_promotion_followups": len(post_promotion_followups),
+            "pre_push_requeue_eligible": len(requeue_recovery["eligible_pre_push"]),
             "final_queue_clean": final_queue["clean"],
         },
         "issues": issue_entries,
@@ -2380,6 +2382,7 @@ def build_operator_run_rollup(
         "post_promotion_followups": post_promotion_followups,
         "exploratory_acceptance_review": data.get("exploratory_acceptance_review"),
         "final_queue": final_queue,
+        "requeue_recovery": requeue_recovery,
         "stop_reason": stop_reason,
     }
 
@@ -2988,6 +2991,332 @@ def operator_rollup_stop_reason(data: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def requeue_eligibility_for_manifest_data(
+    data: dict[str, Any],
+) -> tuple[str, tuple[str, ...]]:
+    run_kind = str(data.get("run_kind") or "")
+    if run_kind != "implementation":
+        return (
+            "not applicable",
+            ("run is not an implementation manifest",),
+        )
+
+    reasons: list[str] = []
+    if str(data.get("status") or "") != "failed":
+        reasons.append("run status is not failed")
+    if normalized_commit_payload(data.get("integration_commit")) is not None:
+        reasons.append("manifest already records integration_commit")
+
+    push_status = manifest_data_push_status_value(data)
+    if push_status == "pushed":
+        reasons.append("manifest records a pushed Integration target")
+    elif push_status != "not_started":
+        reasons.append(f"Integration target push status is {push_status}")
+
+    branch_sync = data.get("branch_sync")
+    if isinstance(branch_sync, dict):
+        branch_sync_status = str(branch_sync.get("status") or "not_started")
+        if branch_sync_status in {"failed", "running"}:
+            reasons.append(f"branch sync status is {branch_sync_status}")
+
+    if not manifest_data_qa_passed_for_requeue(data):
+        reasons.append("implementation QA did not fully pass")
+    if not manifest_data_issue_completion_review_passed_for_requeue(data):
+        reasons.append("Issue completion review did not pass or was not skipped")
+
+    if reasons:
+        return ("not eligible", tuple(reasons))
+    return (
+        "eligible",
+        (
+            "implementation QA passed",
+            "Issue completion review passed or was not required",
+            "no integration_commit was recorded",
+            "no Integration target push was recorded",
+        ),
+    )
+
+
+def manifest_data_push_entry(data: dict[str, Any]) -> dict[str, Any] | None:
+    pushes = data.get("pushes")
+    if not isinstance(pushes, dict):
+        return None
+    run_kind = str(data.get("run_kind") or "")
+    key = "promotion_target" if run_kind == "promotion" else "integration_target"
+    entry = pushes.get(key)
+    return entry if isinstance(entry, dict) else None
+
+
+def manifest_data_push_status_value(data: dict[str, Any]) -> str:
+    entry = manifest_data_push_entry(data)
+    if entry is None:
+        return "not_started"
+    return str(entry.get("status") or "unknown")
+
+
+def manifest_data_qa_passed_for_requeue(data: dict[str, Any]) -> bool:
+    results = data.get("qa_results")
+    if not isinstance(results, list) or not results:
+        return False
+    statuses = [
+        str(item.get("status") or "unknown")
+        for item in results
+        if isinstance(item, dict)
+    ]
+    return bool(statuses) and all(status == "passed" for status in statuses)
+
+
+def manifest_data_issue_completion_review_passed_for_requeue(
+    data: dict[str, Any],
+) -> bool:
+    review = data.get("issue_completion_review")
+    if not isinstance(review, dict):
+        return False
+    status = str(review.get("status") or "not_started")
+    return status in {"passed", "skipped_not_required"}
+
+
+def operator_rollup_requeue_recovery(
+    final_queue: dict[str, Any],
+    child_sources: list[dict[str, Any]],
+) -> dict[str, Any]:
+    failed_issues = operator_queue_issue_payloads(final_queue, "failed")
+    entries = [
+        operator_requeue_recovery_entry(issue, child_sources) for issue in failed_issues
+    ]
+    eligible = [
+        entry
+        for entry in entries
+        if entry.get("classification") == "eligible_pre_push_requeue"
+    ]
+    return {
+        "eligible_pre_push": eligible,
+        "failed_issues": entries,
+        "guidance": operator_requeue_recovery_guidance(entries),
+    }
+
+
+def operator_queue_issue_payloads(
+    final_queue: dict[str, Any],
+    key: str,
+) -> list[dict[str, Any]]:
+    issues = final_queue.get("issues")
+    issues = issues if isinstance(issues, dict) else {}
+    values = issues.get(key)
+    if not isinstance(values, list):
+        return []
+    return [value for value in values if isinstance(value, dict)]
+
+
+def operator_requeue_recovery_entry(
+    issue: dict[str, Any],
+    child_sources: list[dict[str, Any]],
+) -> dict[str, Any]:
+    issue_number = operator_manifest_int(issue.get("number"), default=0)
+    child_source = operator_requeue_child_source_for_issue(
+        child_sources,
+        issue_number=issue_number,
+    )
+    if child_source is None:
+        return {
+            "issue": issue,
+            "classification": "unknown_no_child_manifest",
+            "eligibility": "unknown",
+            "reasons": [
+                "no matching implementation child manifest was recorded for this agent-failed issue"
+            ],
+            "manifest_path": None,
+            "guidance": (
+                "Inspect the GitHub Issue labels, comments, and Ralph run "
+                "manifests before choosing recovery."
+            ),
+        }
+
+    manifest_path = str(child_source.get("manifest_path") or "")
+    read_status = str(child_source.get("manifest_read_status") or "unknown")
+    child_data = child_source.get("data")
+    if not isinstance(child_data, dict):
+        reason = f"child manifest read status is {read_status}"
+        error = child_source.get("manifest_error")
+        if error:
+            reason = f"{reason}: {error}"
+        return {
+            "issue": issue,
+            "classification": "unknown_child_manifest_unavailable",
+            "eligibility": "unknown",
+            "reasons": [reason],
+            "manifest_path": manifest_path,
+            "guidance": "Open the child manifest path before choosing recovery.",
+        }
+
+    eligibility, reasons = requeue_eligibility_for_manifest_data(child_data)
+    classification = operator_requeue_recovery_classification(
+        child_data,
+        eligibility=eligibility,
+    )
+    run_dir = operator_manifest_run_dir_from_child_data(child_data, manifest_path)
+    return {
+        "issue": issue,
+        "classification": classification,
+        "eligibility": eligibility,
+        "reasons": list(reasons),
+        "manifest_path": manifest_path,
+        "run_dir": run_dir,
+        "dry_run_command": operator_requeue_dry_run_command(run_dir)
+        if classification == "eligible_pre_push_requeue"
+        else None,
+        "live_command": operator_requeue_live_command(run_dir)
+        if classification == "eligible_pre_push_requeue"
+        else None,
+        "guidance": operator_requeue_entry_guidance(
+            classification,
+            run_dir=run_dir,
+        ),
+    }
+
+
+def operator_requeue_child_source_for_issue(
+    child_sources: list[dict[str, Any]],
+    *,
+    issue_number: int,
+) -> dict[str, Any] | None:
+    if issue_number <= 0:
+        return None
+    candidates = []
+    for source in child_sources:
+        if source.get("kind") != "implementation":
+            continue
+        issue = source.get("issue")
+        if not isinstance(issue, dict):
+            continue
+        if operator_manifest_int(issue.get("number"), default=0) != issue_number:
+            continue
+        candidates.append(source)
+    if not candidates:
+        return None
+    return candidates[-1]
+
+
+def operator_requeue_recovery_classification(
+    child_data: dict[str, Any],
+    *,
+    eligibility: str,
+) -> str:
+    failure = child_data.get("failure")
+    failure_message = ""
+    failure_type = ""
+    if isinstance(failure, dict):
+        failure_message = str(failure.get("message") or "")
+        failure_type = str(failure.get("type") or "")
+    if "Missing required issue section" in failure_message:
+        return "malformed_issue_contract"
+    if failure_type == ISSUE_COMPLETION_REVIEW_FAILURE_TYPE:
+        return "unrecoverable_implementation_failure"
+    if eligibility == "eligible":
+        return "eligible_pre_push_requeue"
+    if normalized_commit_payload(child_data.get("integration_commit")) is not None:
+        return "post_push_metadata_recovery"
+    if manifest_data_push_status_value(child_data) == "pushed":
+        return "post_push_metadata_recovery"
+
+    branch_sync = child_data.get("branch_sync")
+    if isinstance(branch_sync, dict):
+        branch_sync_status = str(branch_sync.get("status") or "not_started")
+        if branch_sync_status in {"failed", "running"}:
+            return "manual_gitflow_recovery"
+
+    if not manifest_data_qa_passed_for_requeue(child_data):
+        return "unrecoverable_implementation_failure"
+    if not manifest_data_issue_completion_review_passed_for_requeue(child_data):
+        return "unrecoverable_implementation_failure"
+    return "not_requeue_eligible"
+
+
+def operator_manifest_run_dir_from_child_data(
+    child_data: dict[str, Any],
+    manifest_path: str,
+) -> str:
+    paths = child_data.get("paths")
+    if isinstance(paths, dict):
+        run_dir = str(paths.get("run_dir") or "")
+        if run_dir:
+            return run_dir
+    if manifest_path:
+        return str(Path(manifest_path).parent)
+    return ""
+
+
+def operator_requeue_dry_run_command(run_dir: str) -> str | None:
+    if run_dir == "":
+        return None
+    return f"python3 scripts/ralph.py --recover-run {run_dir} --dry-run"
+
+
+def operator_requeue_live_command(run_dir: str) -> str | None:
+    if run_dir == "":
+        return None
+    return f"python3 scripts/ralph.py --recover-run {run_dir}"
+
+
+def operator_requeue_entry_guidance(classification: str, *, run_dir: str) -> str:
+    if classification == "eligible_pre_push_requeue":
+        return (
+            "Run the Ralph-owned pre-push requeue dry-run first. Do not start a "
+            "competing Operator run; after the issue is restored to "
+            "ready-for-agent, the normal Operator queue scan can claim it."
+        )
+    if classification == "post_push_metadata_recovery":
+        return (
+            "This is post-push metadata recovery, not pre-push requeue. Inspect "
+            "the run and use --recover-run only after the recorded Local "
+            "integration commit is verified on the expected Integration target."
+        )
+    if classification == "manual_gitflow_recovery":
+        return (
+            "This needs manual Gitflow recovery or branch-sync reconciliation, "
+            "not pre-push requeue. Resolve the recorded Gitflow recovery state "
+            "before normal drain or Promotion continues."
+        )
+    if classification == "malformed_issue_contract":
+        return (
+            "The issue contract is malformed. Fix the GitHub Issue body and "
+            "labels instead of requeueing the failed implementation run."
+        )
+    if classification == "unrecoverable_implementation_failure":
+        return (
+            "The preserved implementation attempt did not pass the gates needed "
+            "for requeue. Inspect the child run manifest and rerun Ralph for the "
+            "issue after repair."
+        )
+    if run_dir:
+        return f"Inspect run `{run_dir}` before choosing recovery."
+    return "Inspect the issue and child run manifests before choosing recovery."
+
+
+def operator_requeue_recovery_guidance(entries: list[dict[str, Any]]) -> str:
+    if not entries:
+        return "No open agent-failed issues are recorded in the Operator queue."
+    eligible = [
+        entry
+        for entry in entries
+        if entry.get("classification") == "eligible_pre_push_requeue"
+    ]
+    if eligible:
+        issue_text = ", ".join(
+            operator_issue_title(entry.get("issue") or {}) for entry in eligible
+        )
+        return (
+            f"Pre-push requeue is available for {issue_text}. Run the dry-run "
+            "recovery command first, then the live recovery only if the plan "
+            "restores agent-failed to ready-for-agent. Do not start a competing "
+            "Operator run while the existing session can continue after requeue."
+        )
+    return (
+        "No recorded agent-failed issue is eligible for pre-push requeue. Follow "
+        "the per-issue classification before rerunning drain or Promotion."
+    )
+
+
 def render_operator_run_rollup_markdown(rollup: dict[str, Any]) -> str:
     operator_run = rollup["operator_run"]
     summary = rollup["summary"]
@@ -3042,6 +3371,10 @@ def render_operator_run_rollup_markdown(rollup: dict[str, Any]) -> str:
         "## Final Queue",
         "",
         *operator_rollup_final_queue_markdown_lines(rollup["final_queue"]),
+        "",
+        "## Requeue Recovery",
+        "",
+        *operator_rollup_requeue_markdown_lines(rollup["requeue_recovery"]),
         "",
         "## Stop Or Failure",
         "",
@@ -3255,6 +3588,36 @@ def operator_rollup_final_queue_markdown_lines(queue: dict[str, Any]) -> list[st
         f"- failed={counts.get('failed', 0)}",
         f"- clean={'yes' if queue.get('clean') else 'no'}",
     ]
+
+
+def operator_rollup_requeue_markdown_lines(
+    recovery: dict[str, Any],
+) -> list[str]:
+    entries = recovery.get("failed_issues")
+    entries = entries if isinstance(entries, list) else []
+    lines = [f"- Guidance: {recovery.get('guidance') or 'not_recorded'}"]
+    if not entries:
+        return [*lines, "- No open agent-failed issues recorded"]
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        issue = entry.get("issue") if isinstance(entry.get("issue"), dict) else {}
+        command = entry.get("dry_run_command") or "not_applicable"
+        reasons = entry.get("reasons")
+        reasons_text = (
+            "; ".join(str(reason) for reason in reasons)
+            if isinstance(reasons, list)
+            else "not_recorded"
+        )
+        lines.append(
+            "- "
+            + operator_issue_title(issue)
+            + f" - `{entry.get('classification')}`"
+            + f"; eligibility `{entry.get('eligibility')}`"
+            + f"; dry-run `{command}`"
+            + f"; reasons {reasons_text}"
+        )
+    return lines
 
 
 def operator_rollup_stop_markdown_lines(stop_reason: Any) -> list[str]:
