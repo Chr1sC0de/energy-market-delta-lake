@@ -1330,6 +1330,62 @@ materialized table data.
 Materialize the `gas_model` assets in Dagster, or seed LocalStack with curated
 outputs, then use **Refresh data** in the dashboard to see populated sections.
 
+### Browser review for promoted dashboards
+
+Use
+[scripts/review_promoted_dashboards.py](scripts/review_promoted_dashboards.py)
+for a repeatable Playwright development review of promoted dashboards that need
+browser evidence. The helper opens each target route at a desktop viewport
+(`1440x1100`) and a narrow viewport (`390x900`), verifies the dashboard brief
+and required first-screen text, and exercises the declared refresh/filter
+controls where the dashboard has them.
+
+Start the FastAPI-mounted dashboard server from this Subproject:
+
+```bash
+cd backend-services/marimo
+MARIMO_NOTEBOOKS_DIR=notebooks AWS_ENDPOINT_URL=http://localhost:4566 \
+  AWS_MAX_ATTEMPTS=1 AWS_DEFAULT_REGION=ap-southeast-2 \
+  AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test \
+  uv run uvicorn marimoserver.main:app --host 127.0.0.1 --port 8000
+```
+
+Inspect the review plan without installing Playwright:
+
+```bash
+cd backend-services/marimo
+uv run python scripts/review_promoted_dashboards.py --print-plan
+```
+
+Install Chromium for the current Playwright cache when needed, then run the
+review:
+
+```bash
+cd backend-services/marimo
+uv run --with playwright playwright install chromium
+uv run --with playwright python scripts/review_promoted_dashboards.py \
+  --base-url http://127.0.0.1:8000
+```
+
+The default promoted-dashboard route set is:
+
+- `/marimo/data_readiness_overview/`
+- `/marimo/glossary_explorer/`
+- `/marimo/system_notices/`
+- `/marimo/gas_market_prices/`
+- `/marimo/gas_bid_offer_stack/`
+
+Screenshots are off by default. When durable local review artifacts are useful,
+write them outside the repository:
+
+```bash
+cd backend-services/marimo
+uv run --with playwright python scripts/review_promoted_dashboards.py \
+  --base-url http://127.0.0.1:8000 \
+  --screenshots \
+  --artifact-dir /tmp/marimo-dashboard-review
+```
+
 ## Validation
 
 From this Subproject, run the Marimo **Component test** lane:
@@ -1384,6 +1440,7 @@ prek run -a
   - `backend-services/marimo/pyproject.toml`
   - `backend-services/marimo/Dockerfile`
   - `backend-services/marimo/docs/dashboard-standard.md`
+  - `backend-services/marimo/scripts/review_promoted_dashboards.py`
   - `backend-services/marimo/scripts/sync-gbb-map-s3-to-localstack.sh`
   - `backend-services/marimo/research-workspace/AGENTS.md`
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
@@ -1446,6 +1503,7 @@ prek run -a
   - `backend-services/marimo/tests/component/dashboard_smoke_harness.py`
   - `backend-services/marimo/tests/component/test_dashboard_smoke.py`
   - `backend-services/marimo/tests/component/test_gas_dashboard.py`
+  - `backend-services/marimo/tests/component/test_promoted_dashboard_browser_review.py`
   - `backend-services/marimo/tests/component/test_data_dictionary_explorer.py`
   - `backend-services/marimo/tests/component/test_table_explorer.py`
   - `backend-services/marimo/tests/component/test_glossary_explorer.py`

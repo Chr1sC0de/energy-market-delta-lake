@@ -71,7 +71,11 @@ def _(mo, render_dashboard_context_panel):
 
 @app.cell
 def _(mo):
-    refresh_readiness_button = mo.ui.run_button(label="Refresh readiness")
+    refresh_readiness_button = mo.ui.button(
+        label="Refresh readiness",
+        value=0,
+        on_click=lambda value: value + 1,
+    )
     refresh_readiness_button
     return (refresh_readiness_button,)
 

@@ -83,7 +83,11 @@ def _(
     SYSTEM_NOTICE_WINDOW_FILTER_OPTIONS,
     mo,
 ):
-    refresh_data_button = mo.ui.run_button(label="Refresh data")
+    refresh_data_button = mo.ui.button(
+        label="Refresh data",
+        value=0,
+        on_click=lambda value: value + 1,
+    )
     critical_filter = mo.ui.radio(
         options=SYSTEM_NOTICE_CRITICAL_FILTER_OPTIONS,
         value=SYSTEM_NOTICE_CRITICAL_FILTER_CRITICAL,
