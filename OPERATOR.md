@@ -120,7 +120,14 @@ current state, last checkpoint, current issue or **Promotion**, child
 `.ralph/runs/.../ralph-run.json` paths, queue counts, and recommended next
 action. While a child is active, status includes the active child run path,
 elapsed time, and child checkpoint or heartbeat timestamp without tailing child
-logs. A foreground run is also available for human terminals:
+logs. If a detached manifest still says `running` after its pid has stopped,
+status calls that out as stale Operator status and points to the detached logs,
+child manifests, and live queue labels before another Operator run is started.
+When recorded or live queue state includes open `agent-failed` issues, status
+also classifies whether each failed issue is eligible for Ralph-owned pre-push
+requeue recovery, post-push metadata recovery, manual Gitflow recovery,
+malformed issue-contract repair, or normal implementation repair. A foreground
+run is also available for human terminals:
 
 ```bash
 python3 scripts/ralph.py --drain-promote-all --max-cycles 10
@@ -355,6 +362,23 @@ Use `$ralph-loop inspect failure` or `python3 scripts/ralph.py --inspect-run
 the recorded published commit is reachable from the expected **Integration
 target**.
 
+For an open `agent-failed` issue that Operator status or rollup classifies as
+eligible for pre-push requeue, first run the Ralph-owned dry run:
+
+```bash
+python3 scripts/ralph.py --recover-run .ralph/runs/issue-N-... --dry-run
+```
+
+If the plan only restores `ready-for-agent`, removes `agent-failed`, preserves
+the local backup ref, and cleans the expected Ralph-owned worktrees, rerun
+without `--dry-run`. Do not start a competing Operator run while the existing
+session can continue after requeue. Once the issue is restored to
+`ready-for-agent`, normal Operator queue scanning can claim it without a
+special schedule path. This is different from post-push metadata recovery,
+which requires proof that the recorded **Local integration** commit reached the
+expected **Integration target**, and from manual Gitflow recovery, which is
+resolved before normal drain or **Promotion** continues.
+
 If **Ready issue refresh** fails after **Local integration**, do not roll back
 the integrated commit. Inspect `ready_issue_refresh.mutation_results` in the run
 manifest, reconcile only the failed GitHub Issue metadata, then restart the
@@ -393,7 +417,10 @@ first for the full drain-and-**Promotion** summary: succeeded and failed issues,
 manual recoveries, **Local integration** commits, **Promotion** commits, QA
 surfaces, **Post-promotion review** follow-ups, deployment execution,
 deploy-repair issue creation, final queue state, and the stop or failure
-reason. Runs that stop for **Exploratory acceptance review** also write
+reason. The rollup also includes a requeue-recovery section for open
+`agent-failed` issues, including the dry-run `--recover-run` command when
+pre-push requeue is available. Runs that stop for **Exploratory acceptance
+review** also write
 `exploratory-acceptance-review.md` and
 `exploratory-acceptance-review.json` beside the rollup. Use the JSON rollup for
 tooling or status-oriented review without tailing child Codex JSONL or rich

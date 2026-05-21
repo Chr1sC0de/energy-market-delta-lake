@@ -516,6 +516,12 @@ is the stable tooling surface for issue outcomes, manual recoveries, **Local
 integration** commits, **Promotion** commits, QA surfaces,
 **Post-promotion review** follow-ups, post-Promotion deployment execution,
 deploy-repair issue creation, final queue state, and stop or failure reasons.
+Rollups include `requeue_recovery` for open `agent-failed` issues in the final
+queue. That section identifies failed implementation manifests that are eligible
+for Ralph-owned pre-push requeue, prints the dry-run and live `--recover-run`
+commands, and distinguishes post-push metadata recovery, manual Gitflow or
+branch-sync recovery, malformed issue contracts, and implementation failures
+that did not pass the gates needed for requeue.
 Both rollups record the underlying child `.ralph/runs/.../ralph-run.json` paths
 without tailing child Codex JSONL or rich command logs.
 When open `agent-reviewing` issues remain and no unblocked ready work can
@@ -612,7 +618,13 @@ recommended next action. When an Operator child is active, status also reports
 the active child run directory or manifest path, child status and stage, elapsed
 time, and the last recorded child checkpoint or heartbeat timestamp from
 `ralph-run.json`. It does not tail child Codex JSONL or rich command logs by
-default. Read `operator-run-rollup.md` first for completed or stopped runs.
+default. For detached runs, status reports whether the recorded pid appears
+live, stopped, or unknown; a stopped pid with a still-running manifest is
+reported as stale detached Operator status so operators can inspect the logs and
+issue state before starting another Operator run. Status also reports
+Ralph-owned pre-push requeue eligibility for open `agent-failed` issues when
+the Operator queue or live issue scan exposes them. Read
+`operator-run-rollup.md` first for completed or stopped runs.
 Open the child `ralph-run.json` or command logs only when the status guidance or
 rollup points to a failed issue, failed **Promotion**, or manual recovery
 condition. If status reports `needs_review`, read
@@ -787,6 +799,11 @@ and remove, comment body to post, backup ref behavior, and Ralph-owned
 worktrees or local issue branch cleanup that live mode would perform. It does
 not rerun Codex, rerun QA, create a **Local integration** commit, push an
 **Integration target**, close an issue, or run **Promotion**.
+In the checkpointed **Operator workflow**, status and rollup surface this same
+classification for open `agent-failed` issues. Operators should not start a
+competing Operator run while an existing detached session can continue after
+requeue. After live requeue restores the issue to `ready-for-agent`, the normal
+oldest-first Operator queue scan can claim it without special-case scheduling.
 
 The live pre-push requeue path uses the same eligibility checks. It refuses
 runs with recorded `integration_commit`, any recorded **Integration target**

@@ -9390,47 +9390,7 @@ def changed_files_summary(manifest: RunManifest) -> str:
 
 
 def requeue_eligibility(manifest: RunManifest) -> tuple[str, tuple[str, ...]]:
-    run_kind = str(manifest.data.get("run_kind") or "")
-    if run_kind != "implementation":
-        return (
-            "not applicable",
-            ("run is not an implementation manifest",),
-        )
-
-    reasons: list[str] = []
-    if str(manifest.data.get("status") or "") != "failed":
-        reasons.append("run status is not failed")
-    if manifest_has_recorded_integration_commit(manifest):
-        reasons.append("manifest already records integration_commit")
-
-    push_status = push_status_value(manifest)
-    if push_status == "pushed":
-        reasons.append("manifest records a pushed Integration target")
-    elif push_status != "not_started":
-        reasons.append(f"Integration target push status is {push_status}")
-
-    branch_sync = manifest.data.get("branch_sync")
-    if isinstance(branch_sync, dict):
-        branch_sync_status = str(branch_sync.get("status") or "not_started")
-        if branch_sync_status in {"failed", "running"}:
-            reasons.append(f"branch sync status is {branch_sync_status}")
-
-    if not qa_results_passed_for_requeue(manifest):
-        reasons.append("implementation QA did not fully pass")
-    if not issue_completion_review_passed_for_requeue(manifest):
-        reasons.append("Issue completion review did not pass or was not skipped")
-
-    if reasons:
-        return ("not eligible", tuple(reasons))
-    return (
-        "eligible",
-        (
-            "implementation QA passed",
-            "Issue completion review passed or was not required",
-            "no integration_commit was recorded",
-            "no Integration target push was recorded",
-        ),
-    )
+    return requeue_eligibility_for_manifest_data(manifest.data)
 
 
 def emit_requeue_inspection(manifest: RunManifest) -> None:
@@ -9667,6 +9627,195 @@ def operator_queue_summary(data: dict[str, Any]) -> str:
     return ", ".join(parts)
 
 
+def operator_queue_snapshot_from_issues(issues: list[Issue]) -> OperatorQueueSnapshot:
+    ready: list[Issue] = []
+    integrated: list[Issue] = []
+    reviewing: list[Issue] = []
+    running: list[Issue] = []
+    failed: list[Issue] = []
+    for issue in issues:
+        if issue.labels.isdisjoint(OPERATOR_QUEUE_LABELS):
+            continue
+        if AGENT_RUNNING_LABEL in issue.labels:
+            running.append(issue)
+        if AGENT_FAILED_LABEL in issue.labels:
+            failed.append(issue)
+        if AGENT_INTEGRATED_LABEL in issue.labels:
+            integrated.append(issue)
+        if AGENT_REVIEWING_LABEL in issue.labels:
+            reviewing.append(issue)
+        if READY_LABEL in issue.labels:
+            ready.append(issue)
+    return OperatorQueueSnapshot(
+        ready=tuple(ready),
+        integrated=tuple(integrated),
+        reviewing=tuple(reviewing),
+        running=tuple(running),
+        failed=tuple(failed),
+    )
+
+
+def operator_live_queue_payload(
+    data: dict[str, Any],
+    runner: CommandRunner,
+) -> dict[str, Any]:
+    repo = str(data.get("repo") or "")
+    paths = data.get("paths")
+    repo_root_text = ""
+    if isinstance(paths, dict):
+        repo_root_text = str(paths.get("repo_root") or "")
+    if repo == "" or repo_root_text == "":
+        return {
+            "status": "unavailable",
+            "error": "Operator manifest does not include repo and repo_root.",
+            "queue": None,
+        }
+    try:
+        github = GitHubClient(repo=repo, repo_root=Path(repo_root_text), runner=runner)
+        snapshot = operator_queue_snapshot_from_issues(
+            github.list_open_issues(limit=100)
+        )
+    except (RalphError, json.JSONDecodeError) as error:
+        return {"status": "unavailable", "error": str(error), "queue": None}
+    return {
+        "status": "loaded",
+        "error": None,
+        "queue": operator_queue_payload(snapshot),
+    }
+
+
+def operator_queue_count(queue: dict[str, Any] | None, key: str) -> int:
+    if not isinstance(queue, dict):
+        return 0
+    values = queue.get(key)
+    return len(values) if isinstance(values, list) else 0
+
+
+def operator_queue_has_failed(queue: dict[str, Any] | None) -> bool:
+    return operator_queue_count(queue, "failed") > 0
+
+
+def operator_queue_summary_from_payload(queue: dict[str, Any] | None) -> str:
+    if not isinstance(queue, dict):
+        return "unknown"
+    parts = []
+    for key in ("ready", "integrated", "reviewing", "running", "failed"):
+        parts.append(f"{key}={operator_queue_count(queue, key)}")
+    return ", ".join(parts)
+
+
+def operator_detached_process_payload(data: dict[str, Any]) -> dict[str, Any] | None:
+    detached = data.get("detached")
+    if not isinstance(detached, dict):
+        return None
+    pid = operator_manifest_int(detached.get("pid"), default=0)
+    payload = {
+        "pid": pid if pid > 0 else None,
+        "status": "unknown",
+        "stdout_log": detached.get("stdout_log"),
+        "stderr_log": detached.get("stderr_log"),
+    }
+    if pid <= 0:
+        payload["reason"] = "detached manifest did not record a valid pid"
+        return payload
+    if operator_run_has_terminal_status(data):
+        payload["status"] = "manifest_terminal"
+        payload["reason"] = "operator manifest already recorded a terminal status"
+        return payload
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        payload["status"] = "stopped"
+        payload["reason"] = "detached pid is no longer running"
+    except PermissionError:
+        payload["status"] = "running_unverified"
+        payload["reason"] = "detached pid exists but cannot be inspected"
+    else:
+        payload["status"] = "running"
+        payload["reason"] = "detached pid exists"
+    return payload
+
+
+def operator_detached_status_lines(data: dict[str, Any]) -> list[str]:
+    payload = operator_detached_process_payload(data)
+    if payload is None:
+        return []
+    pid = payload.get("pid") or "not_recorded"
+    status = payload.get("status") or "unknown"
+    reason = payload.get("reason") or "not_recorded"
+    lines = [f"Detached process: pid={pid} {status} ({reason})"]
+    stdout_log = payload.get("stdout_log")
+    stderr_log = payload.get("stderr_log")
+    if stdout_log or stderr_log:
+        lines.append(
+            f"Detached logs: stdout={stdout_log or 'not_recorded'}; "
+            f"stderr={stderr_log or 'not_recorded'}"
+        )
+    if status == "stopped" and str(data.get("status") or "") == "running":
+        lines.append(
+            "Detached status may be stale: the Operator manifest is still "
+            "running, but the detached pid has stopped."
+        )
+    return lines
+
+
+def operator_status_child_sources(data: dict[str, Any]) -> list[dict[str, Any]]:
+    sources = operator_child_manifest_sources(data)
+    seen_paths = {str(source.get("manifest_path") or "") for source in sources}
+    child_root = operator_child_run_root(data)
+    if child_root is None:
+        return sources
+    root_path = Path(child_root)
+    if not root_path.exists():
+        return sources
+    for manifest_path in sorted(
+        implementation_child_manifest_paths(root_path),
+        key=child_manifest_sort_key,
+    ):
+        path_text_value = str(manifest_path)
+        if path_text_value in seen_paths:
+            continue
+        child_data, read_status, error = read_rollup_child_manifest(path_text_value)
+        source: dict[str, Any] = {
+            "manifest_path": path_text_value,
+            "manifest_read_status": read_status,
+            "manifest_error": error,
+            "child_entry": {},
+            "data": child_data,
+            "kind": str((child_data or {}).get("run_kind") or "unknown"),
+            "status": str((child_data or {}).get("status") or "unknown"),
+            "stage": str((child_data or {}).get("stage") or "unknown"),
+            "discovered": True,
+        }
+        issue = operator_issue_payload_from_values(
+            child_data.get("issue") if child_data is not None else None
+        )
+        if issue is not None:
+            source["issue"] = issue
+        sources.append(source)
+    return sources
+
+
+def operator_requeue_status_lines(recovery: dict[str, Any]) -> list[str]:
+    entries = recovery.get("failed_issues")
+    entries = entries if isinstance(entries, list) else []
+    if not entries:
+        return []
+    lines = [f"Guidance: {recovery.get('guidance') or 'not_recorded'}"]
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        issue = entry.get("issue") if isinstance(entry.get("issue"), dict) else {}
+        command = entry.get("dry_run_command") or "not_applicable"
+        guidance = entry.get("guidance") or "not_recorded"
+        lines.append(
+            operator_issue_title(issue)
+            + f": {entry.get('classification')} "
+            + f"({entry.get('eligibility')}); dry-run={command}; {guidance}"
+        )
+    return lines
+
+
 def operator_status_timestamp(value: Any) -> datetime | None:
     if not isinstance(value, str) or value.strip() == "":
         return None
@@ -9769,10 +9918,44 @@ def operator_active_child_status_lines(data: dict[str, Any]) -> list[str]:
     return lines
 
 
-def operator_recommended_action(data: dict[str, Any]) -> str:
+def operator_recommended_action(
+    data: dict[str, Any],
+    *,
+    requeue_recovery: dict[str, Any] | None = None,
+    detached_process: dict[str, Any] | None = None,
+) -> str:
+    if isinstance(requeue_recovery, dict):
+        entries = requeue_recovery.get("failed_issues")
+        if isinstance(entries, list) and entries:
+            has_eligible_requeue = any(
+                isinstance(entry, dict)
+                and entry.get("classification") == "eligible_pre_push_requeue"
+                for entry in entries
+            )
+            if has_eligible_requeue:
+                guidance = requeue_recovery.get("guidance")
+                if isinstance(guidance, str) and guidance != "":
+                    return guidance
     guidance = data.get("recovery_guidance")
     if isinstance(guidance, str) and guidance != "":
         return guidance
+    if isinstance(requeue_recovery, dict):
+        entries = requeue_recovery.get("failed_issues")
+        if isinstance(entries, list) and entries:
+            guidance = requeue_recovery.get("guidance")
+            if isinstance(guidance, str) and guidance != "":
+                return guidance
+    if (
+        isinstance(detached_process, dict)
+        and detached_process.get("status") == "stopped"
+        and str(data.get("status") or "") == "running"
+    ):
+        return (
+            "The detached Operator pid has stopped while the manifest still says "
+            "running. Treat this as stale status: inspect the rollup, child "
+            "manifests, stdout/stderr logs, and open issue labels before "
+            "starting another Operator run."
+        )
     status = str(data.get("status") or "")
     state = str(data.get("state") or "")
     if status == "succeeded" or state == "queue_clean":
@@ -9798,6 +9981,28 @@ def inspect_operator_run_status(value: str, runner: CommandRunner) -> None:
     run_dir = operator_status_path(value, runner)
     manifest = load_operator_run_manifest(run_dir)
     data = manifest.data
+    stored_queue = data.get("queue") if isinstance(data.get("queue"), dict) else {}
+    detached_process = operator_detached_process_payload(data)
+    should_load_live_queue = operator_queue_has_failed(stored_queue) or (
+        isinstance(detached_process, dict)
+        and detached_process.get("status") == "stopped"
+        and str(data.get("status") or "") == "running"
+    )
+    live_queue = None
+    live_queue_status: dict[str, Any] | None = None
+    if should_load_live_queue:
+        live_queue_status = operator_live_queue_payload(data, runner)
+        if live_queue_status.get("status") == "loaded" and isinstance(
+            live_queue_status.get("queue"), dict
+        ):
+            live_queue = live_queue_status["queue"]
+    requeue_queue = (
+        live_queue if operator_queue_has_failed(live_queue) else stored_queue
+    )
+    requeue_recovery = operator_rollup_requeue_recovery(
+        operator_rollup_final_queue({"queue": requeue_queue}),
+        operator_status_child_sources(data),
+    )
     emit("Ralph Operator run status")
     emit(f"Operator run directory: {manifest.path.parent}")
     emit(
@@ -9810,6 +10015,11 @@ def inspect_operator_run_status(value: str, runner: CommandRunner) -> None:
     if active_child_lines:
         emit("Active child:")
         for line in active_child_lines:
+            emit(f"- {line}")
+    detached_lines = operator_detached_status_lines(data)
+    if detached_lines:
+        emit("Detached run:")
+        for line in detached_lines:
             emit(f"- {line}")
     deploy_repair = data.get("deploy_repair")
     if isinstance(deploy_repair, dict):
@@ -9825,6 +10035,16 @@ def inspect_operator_run_status(value: str, runner: CommandRunner) -> None:
             f"target={target_text}"
         )
     emit(f"Queue: {operator_queue_summary(data)}")
+    if live_queue_status is not None:
+        if live_queue_status.get("status") == "loaded":
+            emit(f"Live queue: {operator_queue_summary_from_payload(live_queue)}")
+        else:
+            emit(f"Live queue: unavailable ({live_queue_status.get('error')})")
+    requeue_lines = operator_requeue_status_lines(requeue_recovery)
+    if requeue_lines:
+        emit("Requeue recovery:")
+        for line in requeue_lines:
+            emit(f"- {line}")
     child_runs = data.get("child_run_manifests")
     emit("Child run manifests:")
     if isinstance(child_runs, list) and child_runs:
@@ -9854,7 +10074,14 @@ def inspect_operator_run_status(value: str, runner: CommandRunner) -> None:
             "- Exploratory acceptance review JSON: "
             f"{rollup_artifacts.get('exploratory_acceptance_review_json') or 'not_started'}"
         )
-    emit(f"Recommended next action: {operator_recommended_action(data)}")
+    emit(
+        "Recommended next action: "
+        + operator_recommended_action(
+            data,
+            requeue_recovery=requeue_recovery,
+            detached_process=detached_process,
+        )
+    )
 
 
 def qa_results_from_manifest(manifest: RunManifest) -> list[QAResult]:

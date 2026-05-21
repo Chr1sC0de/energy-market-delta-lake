@@ -156,6 +156,15 @@ Checkpointed Operator runs handle open `agent-integrated` backlog through
 such as `agent-running`, `agent-failed`, or active deploy-repair targeting must
 be resolved first. If recovery state blocks **Promotion**, Operator status and
 rollup guidance list the blocking runtime labels and the integrated backlog.
+For open `agent-failed` issues, Operator status and rollup distinguish
+Ralph-owned pre-push requeue recovery from post-push metadata recovery, manual
+Gitflow recovery, malformed ready issue contracts, and implementation failures
+that did not pass requeue gates. Requeue-eligible pre-push failures use
+`--recover-run <run_dir> --dry-run` first, then live `--recover-run` only when
+the plan restores `ready-for-agent` without pushing an **Integration target** or
+creating a new **Local integration** commit. After that label restoration,
+normal queue scanning can claim the issue; no priority label or special
+scheduling path is needed.
 When no integrated backlog is waiting, unblocked ready work uses the same
 parallel drain scheduler as plain `--drain`. A single Operator cycle may record
 multiple issue checkpoints from serial Gitflow or Trunk attempts and bounded
