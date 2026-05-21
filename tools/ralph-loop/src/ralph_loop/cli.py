@@ -843,7 +843,7 @@ class GitClient:
     def ref_commit(self, ref: str) -> str | None:
         try:
             result = self.runner.run(
-                ["git", "show-ref", "--verify", "--hash", ref],
+                ["git", "for-each-ref", "--format=%(objectname)", "--count=1", ref],
                 cwd=self.repo_root,
             )
         except CommandFailure as error:
@@ -10449,9 +10449,20 @@ class RalphRunRecovery:
             target_branch=target_branch,
             source="local issue branch or backup ref",
         )
+        manifest_commits = manifest.data.get("commits")
+        integration_base_heads: set[str] = set()
+        if isinstance(manifest_commits, dict):
+            for key in ("base", "latest_base"):
+                value = manifest_commits.get(key)
+                if isinstance(value, str) and value:
+                    integration_base_heads.add(value)
         for action in cleanup_actions:
             head = action.get("head")
-            if action["role"] == "integration_worktree" and head:
+            if (
+                action["role"] == "integration_worktree"
+                and head
+                and head not in integration_base_heads
+            ):
                 self._pre_push_requeue_refuse_if_target_contains(
                     head,
                     target_branch=target_branch,

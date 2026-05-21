@@ -1183,6 +1183,7 @@ def write_failed_pre_push_requeue_manifest(tmp_path: Path) -> Path:
             "backend-services/marimo/notebooks/dashboard.py",
             "backend-services/marimo/tests/component/test_dashboard.py",
         ],
+        "commits": {"base": "base-sha", "latest_base": "base-sha"},
         "qa_results": [
             {
                 "name": "Marimo Component tests",
@@ -6316,16 +6317,16 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
             ],
             (
                 "git",
-                "show-ref",
-                "--verify",
-                "--hash",
+                "for-each-ref",
+                "--format=%(objectname)",
+                "--count=1",
                 f"refs/heads/{issue_branch}",
             ): [f"{implementation_head}\n"],
             (
                 "git",
-                "show-ref",
-                "--verify",
-                "--hash",
+                "for-each-ref",
+                "--format=%(objectname)",
+                "--count=1",
                 backup_ref,
             ): [""],
         }
@@ -6495,6 +6496,59 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
             )
         )
 
+    def test_recover_run_requeue_allows_integration_worktree_at_base(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = write_failed_pre_push_requeue_manifest(tmp_path)
+            implementation_worktree, integration_worktree, issue_branch, backup_ref = (
+                self._requeue_manifest_paths(run_dir)
+            )
+            implementation_worktree.mkdir(parents=True)
+            integration_worktree.mkdir(parents=True)
+            runner = FakeRunner(
+                status_outputs=["", ""],
+                command_outputs=self._requeue_command_outputs(
+                    run_dir=run_dir,
+                    implementation_worktree=implementation_worktree,
+                    integration_worktree=integration_worktree,
+                    issue_branch=issue_branch,
+                    backup_ref=backup_ref,
+                    integration_head="base-sha",
+                ),
+                fail_commands={
+                    (
+                        "git",
+                        "merge-base",
+                        "--is-ancestor",
+                        "impl-sha",
+                        "origin/dev",
+                    ),
+                },
+            )
+            loop = make_loop(
+                tmp_path,
+                runner,
+                delivery_mode=ralph.GITFLOW_MODE,
+                dry_run=True,
+            )
+
+            with redirect_stdout(io.StringIO()):
+                ralph.RalphRunRecovery(loop.config, runner).recover(run_dir)
+
+        self.assertFalse(
+            any(
+                call.args
+                == (
+                    "git",
+                    "merge-base",
+                    "--is-ancestor",
+                    "base-sha",
+                    "origin/dev",
+                )
+                for call in runner.calls
+            )
+        )
+
     def test_recover_run_requeues_pre_push_failure_and_cleans_local_artifacts(
         self,
     ) -> None:
@@ -6626,16 +6680,16 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
                     ("git", "worktree", "list", "--porcelain"): [""],
                     (
                         "git",
-                        "show-ref",
-                        "--verify",
-                        "--hash",
+                        "for-each-ref",
+                        "--format=%(objectname)",
+                        "--count=1",
                         f"refs/heads/{issue_branch}",
                     ): [""],
                     (
                         "git",
-                        "show-ref",
-                        "--verify",
-                        "--hash",
+                        "for-each-ref",
+                        "--format=%(objectname)",
+                        "--count=1",
                         backup_ref,
                     ): ["impl-sha\n"],
                 },
@@ -13530,9 +13584,9 @@ Build it.
                     ],
                     (
                         "git",
-                        "show-ref",
-                        "--verify",
-                        "--hash",
+                        "for-each-ref",
+                        "--format=%(objectname)",
+                        "--count=1",
                         "refs/heads/dev",
                     ): ["dev-old\n"],
                 },
@@ -13596,9 +13650,9 @@ Build it.
                     ],
                     (
                         "git",
-                        "show-ref",
-                        "--verify",
-                        "--hash",
+                        "for-each-ref",
+                        "--format=%(objectname)",
+                        "--count=1",
                         "refs/heads/dev",
                     ): ["dev-old\n"],
                 },
@@ -13668,16 +13722,16 @@ Build it.
                     ],
                     (
                         "git",
-                        "show-ref",
-                        "--verify",
-                        "--hash",
+                        "for-each-ref",
+                        "--format=%(objectname)",
+                        "--count=1",
                         "refs/heads/dev",
                     ): ["dev-old\n"],
                     (
                         "git",
-                        "show-ref",
-                        "--verify",
-                        "--hash",
+                        "for-each-ref",
+                        "--format=%(objectname)",
+                        "--count=1",
                         "refs/heads/main",
                     ): ["main-old\n"],
                 },
