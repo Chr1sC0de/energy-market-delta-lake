@@ -139,9 +139,9 @@ Local workflow notes:
   generated context metadata to bounded `silver_gas_dim_zone` coverage and
   source-qualified identifiers. Flow operations, Operational Meter Flow,
   market price, schedule run, settlement activity, customer transfer, Bid /
-  Offer stack, gas quality, heating value and SCADA pressure, and system notice
-  dashboards use shared bounded gas-model reads for fact previews and
-  summaries. The
+  Offer stack, capacity outlook, capacity auction, capacity transactions, gas
+  quality, heating value and SCADA pressure, and system notice dashboards use
+  shared bounded gas-model reads for fact previews and summaries. The
   forecast-vs-actual dashboard compares bounded forecast and
   actual flow/storage facts without changing ETL grain or full-scan policy. The
   table explorer is the selected-table workbench for storage
@@ -301,6 +301,7 @@ and the required `git diff` to `rg` to QA flow, use
   - `backend-services/marimo/notebooks/forecast_vs_actual.py`
   - `backend-services/marimo/notebooks/capacity_outlook.py`
   - `backend-services/marimo/notebooks/capacity_auction.py`
+  - `backend-services/marimo/notebooks/capacity_transactions.py`
   - `backend-services/marimo/notebooks/linepack_adequacy.py`
   - `backend-services/marimo/notebooks/nomination_demand_forecast.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`

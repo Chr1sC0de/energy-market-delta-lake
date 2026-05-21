@@ -47,6 +47,10 @@ from marimoserver.gas_dashboard import (
     CAPACITY_AUCTION_SOURCE_SYSTEM_FILTER_ALL,
     CAPACITY_AUCTION_TABLE_NAME,
     CAPACITY_AUCTION_TABLE_SPEC,
+    CAPACITY_TRANSACTION_CONTEXT_ID,
+    CAPACITY_TRANSACTION_SOURCE_SYSTEM_FILTER_ALL,
+    CAPACITY_TRANSACTION_TABLE_NAME,
+    CAPACITY_TRANSACTION_TABLE_SPEC,
     CAPACITY_OUTLOOK_FACILITY_FILTER_ALL,
     CAPACITY_OUTLOOK_SOURCE_SYSTEM_FILTER_ALL,
     CAPACITY_OUTLOOK_TABLE_NAME,
@@ -172,6 +176,7 @@ from marimoserver.gas_dashboard import (
     cached_load_customer_transfer_table,
     cached_load_bid_stack_table,
     cached_load_capacity_auction_table,
+    cached_load_capacity_transaction_table,
     cached_load_capacity_outlook_table,
     cached_load_sttm_contingency_gas_table,
     cached_load_connection_point_context_tables,
@@ -216,6 +221,16 @@ from marimoserver.gas_dashboard import (
     capacity_auction_source_system_options,
     capacity_auction_summary_frame,
     capacity_auction_zone_options,
+    capacity_transaction_date_options,
+    capacity_transaction_empty_state_markdown,
+    capacity_transaction_facility_options,
+    capacity_transaction_kpi_frame,
+    capacity_transaction_location_options,
+    capacity_transaction_observation_frame,
+    capacity_transaction_source_coverage_frame,
+    capacity_transaction_source_system_options,
+    capacity_transaction_summary_frame,
+    capacity_transaction_type_options,
     capacity_outlook_capacity_type_options,
     capacity_outlook_date_range_options,
     capacity_outlook_direction_options,
@@ -292,6 +307,7 @@ from marimoserver.gas_dashboard import (
     load_market_price_table,
     load_bid_stack_table,
     load_capacity_auction_table,
+    load_capacity_transaction_table,
     load_capacity_outlook_table,
     load_sttm_contingency_gas_table,
     load_connection_point_context_tables,
@@ -372,6 +388,7 @@ from marimoserver.gas_dashboard import (
     render_dashboard_context_panel,
     render_bid_stack_context_links,
     render_capacity_auction_context_links,
+    render_capacity_transaction_context_links,
     render_capacity_outlook_context_links,
     render_connection_point_context_links,
     render_customer_transfer_context_links,
@@ -5050,6 +5067,326 @@ def test_capacity_auction_helpers_cover_missing_data_and_empty_states() -> None:
     ) in empty_context_links
     assert 'data-dashboard-status="planned"' in planned_context_links
     assert "<span>Capacity Auctions</span>" in planned_context_links
+
+
+def test_capacity_transaction_metadata_and_loader_use_recent_bounded_rows() -> None:
+    entry = registry_entry_by_concept_id(CAPACITY_TRANSACTION_CONTEXT_ID)
+    html = render_dashboard_context_panel(CAPACITY_TRANSACTION_CONTEXT_ID)
+    context_links = render_capacity_transaction_context_links()
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "17",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    load = load_capacity_transaction_table(config, reader=reader)
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "capacity_transactions"
+    assert entry.notebook_route == "/marimo/capacity_transactions/"
+    assert entry.backing_assets == (
+        "silver.gas_model.silver_gas_fact_capacity_transaction",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md"
+        in entry.generated_gold_paths
+    )
+    assert "Capacity Transactions" in html
+    assert 'data-status="available"' in html
+    assert 'href="/marimo/capacity_transactions/"' in context_links
+    assert 'href="/marimo/capacity_outlook/"' in context_links
+    assert 'href="/marimo/capacity_auction/"' in context_links
+    assert "Gas Market Overview" in context_links
+    assert load.spec == CAPACITY_TRANSACTION_TABLE_SPEC
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_capacity_transaction",
+            17,
+        )
+    ]
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert uri.endswith(f"/{CAPACITY_TRANSACTION_TABLE_NAME}")
+        assert storage_options == config.storage_options()
+        assert row_limit == 17
+        cached_calls += 1
+        return pl.DataFrame({"source_system": ["GBB"]})
+
+    first_cached = cached_load_capacity_transaction_table(
+        config,
+        cache,
+        reader=cached_reader,
+    )
+    second_cached = cached_load_capacity_transaction_table(
+        config,
+        cache,
+        reader=cached_reader,
+    )
+    refreshed = cached_load_capacity_transaction_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token=1,
+    )
+
+    assert cached_calls == 2
+    assert not first_cached.cache_hit
+    assert second_cached.cache_hit
+    assert not refreshed.cache_hit
+
+
+def test_capacity_transaction_helpers_summarize_filters_sources_and_measures() -> None:
+    lng_transaction_table = "silver.gbb.silver_gasbb_lng_transactions"
+    lng_shipment_table = "silver.gbb.silver_gasbb_lng_shipments"
+    short_transaction_table = "silver.gbb.silver_gasbb_short_term_transactions"
+    swap_transaction_table = "silver.gbb.silver_gasbb_short_term_swap_transactions"
+    load = _capacity_transaction_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB", "GBB", "GBB", "GBB"],
+                "source_tables": [
+                    [short_transaction_table],
+                    [lng_transaction_table],
+                    [lng_shipment_table],
+                    [],
+                ],
+                "source_table": [
+                    short_transaction_table,
+                    lng_transaction_table,
+                    lng_shipment_table,
+                    swap_transaction_table,
+                ],
+                "transaction_type": [
+                    "capacity",
+                    "lng_transaction",
+                    "lng_shipment",
+                    "swap",
+                ],
+                "transaction_date": [
+                    date(2024, 1, 1),
+                    date(2024, 2, 1),
+                    date(2024, 2, 15),
+                    None,
+                ],
+                "supply_start_date": [
+                    date(2024, 1, 1),
+                    date(2024, 2, 1),
+                    date(2024, 2, 15),
+                    date(2024, 3, 1),
+                ],
+                "supply_end_date": [
+                    date(2024, 1, 31),
+                    date(2024, 2, 29),
+                    date(2024, 2, 15),
+                    None,
+                ],
+                "source_location_id": ["SA", None, None, "VIC"],
+                "source_facility_id": [None, None, "LNG1", "F2"],
+                "quantity_tj": [1.5, None, None, 2.5],
+                "quantity_gj": [1500.0, None, None, 2500.0],
+                "volume_pj": [None, 0.7, 0.8, None],
+                "price": [7.5, 10.0, None, 5.0],
+                "source_surrogate_key": ["src-1", "src-2", "src-3", "src-4"],
+                "source_file": ["capacity-transaction.csv"] * 4,
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 1, 8),
+                    datetime(2024, 2, 1, 8),
+                    datetime(2024, 2, 15, 8),
+                    datetime(2024, 3, 1, 8),
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 1, 9),
+                    datetime(2024, 2, 1, 9),
+                    datetime(2024, 2, 15, 9),
+                    datetime(2024, 3, 1, 9),
+                ],
+            }
+        ),
+        row_limit=4,
+    )
+
+    kpi_values = {
+        row["metric"]: row["value"]
+        for row in capacity_transaction_kpi_frame(load).to_dicts()
+    }
+    filtered_summary = capacity_transaction_summary_frame(
+        load,
+        transaction_type_filter="lng_transaction",
+        transaction_date_filter="2024-02-01",
+        location_filter="(missing source location)",
+        facility_filter="(missing source facility)",
+        source_system_filter="GBB",
+    )
+    source_coverage = capacity_transaction_source_coverage_frame(load)
+    observations = capacity_transaction_observation_frame(load, preview_rows=10)
+
+    assert kpi_values["Loaded transaction rows"] == "4"
+    assert kpi_values["Transaction types"] == "4"
+    assert kpi_values["Quantity TJ"] == "4 TJ"
+    assert kpi_values["Quantity GJ"] == "4,000 GJ"
+    assert kpi_values["Volume PJ"] == "1.5 PJ"
+    assert kpi_values["Price range"] == "5 to 10"
+    assert "lng_transaction" in capacity_transaction_type_options(load)
+    assert "2024-02-01" in capacity_transaction_date_options(load)
+    assert "(missing)" in capacity_transaction_date_options(load)
+    assert "SA" in capacity_transaction_location_options(load)
+    assert "(missing source location)" in capacity_transaction_location_options(load)
+    assert "LNG1" in capacity_transaction_facility_options(load)
+    assert "(missing source facility)" in capacity_transaction_facility_options(load)
+    assert capacity_transaction_source_system_options(load) == (
+        CAPACITY_TRANSACTION_SOURCE_SYSTEM_FILTER_ALL,
+        "GBB",
+    )
+    assert filtered_summary.height == 1
+    assert filtered_summary.row(0, named=True)["transaction type"] == (
+        "lng_transaction"
+    )
+    assert filtered_summary.row(0, named=True)["total volume pj"] == 0.7
+    assert {row["source table"] for row in source_coverage.to_dicts()} == {
+        short_transaction_table,
+        lng_transaction_table,
+        lng_shipment_table,
+        swap_transaction_table,
+    }
+    assert (
+        observations.select(
+            "transaction type",
+            "transaction date",
+            "source location",
+            "source facility",
+            "quantity_tj",
+            "quantity_gj",
+            "volume_pj",
+            "price",
+        ).height
+        == 4
+    )
+
+
+def test_capacity_transaction_helpers_cover_missing_data_and_empty_states() -> None:
+    missing_columns_load = _capacity_transaction_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "transaction_type": ["lng_transaction"],
+            }
+        ),
+        row_limit=4,
+    )
+    unavailable_load = GasTableLoad(
+        spec=CAPACITY_TRANSACTION_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_capacity_transaction",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=4,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+    empty_load = _capacity_transaction_load(pl.DataFrame(), row_limit=4)
+    fallback_load = _capacity_transaction_load(
+        pl.DataFrame(
+            [
+                {
+                    "source_system": "GBB",
+                    "transaction_type": "start_only",
+                    "supply_start_date": date(2024, 5, 1),
+                    "source_location_id": "QLD",
+                },
+                {
+                    "source_system": "GBB",
+                    "transaction_type": "end_only",
+                    "supply_end_date": date(2024, 6, 1),
+                    "source_facility_id": "LNG2",
+                },
+            ]
+        )
+    )
+    planned_capacity_transaction = DashboardRegistryEntry(
+        concept_id=CAPACITY_TRANSACTION_CONTEXT_ID,
+        title="Capacity Transactions",
+        description="Planned capacity transaction dashboard.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.PLANNED,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.silver_gas_fact_capacity_transaction",),
+        generated_gold_paths=(
+            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
+        ),
+        source_chunks=(),
+    )
+
+    kpis = capacity_transaction_kpi_frame(missing_columns_load)
+    summary = capacity_transaction_summary_frame(missing_columns_load)
+    source_coverage = capacity_transaction_source_coverage_frame(missing_columns_load)
+    observations = capacity_transaction_observation_frame(missing_columns_load)
+    filtered = capacity_transaction_source_coverage_frame(
+        missing_columns_load,
+        location_filter="missing",
+    )
+    fallback_observations = capacity_transaction_observation_frame(fallback_load)
+    unavailable_markdown = capacity_transaction_empty_state_markdown(unavailable_load)
+    empty_markdown = capacity_transaction_empty_state_markdown(empty_load)
+    filtered_markdown = capacity_transaction_empty_state_markdown(missing_columns_load)
+    missing_load_markdown = capacity_transaction_empty_state_markdown(None)
+    empty_context_links = render_capacity_transaction_context_links(entries=())
+    planned_context_links = render_capacity_transaction_context_links(
+        entries=(planned_capacity_transaction,)
+    )
+
+    assert kpis.row(0, named=True)["value"] == "1"
+    assert summary.row(0, named=True)["transaction type"] == "lng_transaction"
+    assert summary.row(0, named=True)["source location"] == (
+        "(missing source location)"
+    )
+    assert source_coverage.row(0, named=True)["source table"] == (
+        "(empty source_table/source_tables value)"
+    )
+    assert observations.row(0, named=True)["volume_pj"] is None
+    assert filtered.is_empty()
+    assert capacity_transaction_kpi_frame(empty_load).is_empty()
+    assert capacity_transaction_summary_frame(empty_load).is_empty()
+    assert capacity_transaction_observation_frame(empty_load).is_empty()
+    assert capacity_transaction_type_options(empty_load) == ("All transaction types",)
+    assert "from 2024-05-01" in set(
+        fallback_observations.get_column("supply period").to_list()
+    )
+    assert "to 2024-06-01" in set(
+        fallback_observations.get_column("supply period").to_list()
+    )
+    assert "No capacity transaction data is available" in unavailable_markdown
+    assert "FileNotFoundError: no parquet files found" in unavailable_markdown
+    assert "The table loaded successfully but returned no rows" in empty_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert "did not receive a capacity transaction load" in missing_load_markdown
+    assert (
+        "No Capacity Transactions, Capacity, Capacity Auctions, market "
+        "overview, source coverage, source lineage, or table explorer entries "
+        "are registered."
+    ) in empty_context_links
+    assert 'data-dashboard-status="planned"' in planned_context_links
+    assert "<span>Capacity Transactions</span>" in planned_context_links
 
 
 def test_linepack_helpers_summarize_quantities_adequacy_and_sources() -> None:
@@ -12975,6 +13312,22 @@ def _capacity_auction_load(
     return GasTableLoad(
         spec=CAPACITY_AUCTION_TABLE_SPEC,
         uri=f"s3://bucket/silver/gas_model/{CAPACITY_AUCTION_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _capacity_transaction_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=CAPACITY_TRANSACTION_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{CAPACITY_TRANSACTION_TABLE_NAME}",
         dataframe=dataframe,
         error=None,
         row_limit=row_limit,

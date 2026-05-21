@@ -136,8 +136,9 @@ rows. Its citation-chain explorer audits registry metadata from generated-gold
 paths to source chunk IDs, silver chunk paths, and source hashes without
 opening generated corpus files. Its Flow operations, Operational Meter Flow,
 market price, schedule run, settlement activity, customer transfer, Bid / Offer
-stack, gas quality, heating value and SCADA pressure, and system notice
-dashboards use the shared bounded gas-model loader for
+stack, capacity outlook, capacity auction, capacity transactions, gas quality,
+heating value and SCADA pressure, and system notice dashboards use the shared
+bounded gas-model loader for
 read-only fact previews and summaries. Its forecast-vs-actual dashboard compares
 bounded forecast and actual flow/storage facts without changing ETL grain or
 full-scan policy. Its Gas Day explainer uses registry context metadata and bounded
@@ -305,6 +306,7 @@ Gas market knowledge base responsibility:
   - `backend-services/marimo/notebooks/forecast_vs_actual.py`
   - `backend-services/marimo/notebooks/capacity_outlook.py`
   - `backend-services/marimo/notebooks/capacity_auction.py`
+  - `backend-services/marimo/notebooks/capacity_transactions.py`
   - `backend-services/marimo/notebooks/linepack_adequacy.py`
   - `backend-services/marimo/notebooks/nomination_demand_forecast.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`

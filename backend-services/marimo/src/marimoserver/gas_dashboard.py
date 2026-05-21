@@ -179,6 +179,14 @@ CAPACITY_AUCTION_CAPACITY_PERIOD_FILTER_ALL = "All capacity periods"
 CAPACITY_AUCTION_METRIC_FILTER_ALL = "All auction metrics"
 CAPACITY_AUCTION_SOURCE_SYSTEM_FILTER_ALL = "All source systems"
 DEFAULT_CAPACITY_AUCTION_PREVIEW_ROWS = 50
+CAPACITY_TRANSACTION_CONTEXT_ID = "capacity-transactions"
+CAPACITY_TRANSACTION_TABLE_NAME = "silver_gas_fact_capacity_transaction"
+CAPACITY_TRANSACTION_TYPE_FILTER_ALL = "All transaction types"
+CAPACITY_TRANSACTION_DATE_FILTER_ALL = "All transaction dates"
+CAPACITY_TRANSACTION_LOCATION_FILTER_ALL = "All source locations"
+CAPACITY_TRANSACTION_FACILITY_FILTER_ALL = "All source facilities"
+CAPACITY_TRANSACTION_SOURCE_SYSTEM_FILTER_ALL = "All source systems"
+DEFAULT_CAPACITY_TRANSACTION_PREVIEW_ROWS = 50
 DEFAULT_FACILITY_PREVIEW_ROWS = 50
 DEFAULT_HUB_ZONE_PREVIEW_ROWS = 50
 DEFAULT_CONNECTION_POINT_PREVIEW_ROWS = 50
@@ -713,6 +721,34 @@ CAPACITY_AUCTION_TABLE_SPEC = GasTableSpec(
 )
 CAPACITY_AUCTION_TABLE_SPECS = (CAPACITY_AUCTION_TABLE_SPEC,)
 
+CAPACITY_TRANSACTION_TABLE_SPEC = GasTableSpec(
+    section="Flow and capacity",
+    label="Capacity transactions",
+    table_name=CAPACITY_TRANSACTION_TABLE_NAME,
+    date_columns=(
+        "transaction_date",
+        "supply_start_date",
+        "supply_end_date",
+        "source_last_updated_timestamp",
+        "ingested_timestamp",
+    ),
+    preview_columns=(
+        "transaction_type",
+        "transaction_date",
+        "supply_start_date",
+        "supply_end_date",
+        "source_system",
+        "source_table",
+        "source_location_id",
+        "source_facility_id",
+        "quantity_tj",
+        "quantity_gj",
+        "volume_pj",
+        "price",
+    ),
+)
+CAPACITY_TRANSACTION_TABLE_SPECS = (CAPACITY_TRANSACTION_TABLE_SPEC,)
+
 GAS_MODEL_TABLES: tuple[GasTableSpec, ...] = (
     MARKET_PRICE_TABLE_SPEC,
     SCHEDULE_RUN_TABLE_SPEC,
@@ -766,6 +802,7 @@ GAS_MODEL_TABLES: tuple[GasTableSpec, ...] = (
         ),
     ),
     CAPACITY_AUCTION_TABLE_SPEC,
+    CAPACITY_TRANSACTION_TABLE_SPEC,
 )
 
 SYSTEM_NOTICE_TABLE_SPEC = GasTableSpec(
@@ -3058,6 +3095,98 @@ _CAPACITY_AUCTION_OBSERVATION_SCHEMA = {
     "source updated": pl.Datetime("us"),
     "latest ingest": pl.Datetime("us"),
 }
+_CAPACITY_TRANSACTION_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "source_table": pl.String,
+    "transaction_type": pl.String,
+    "transaction_date": pl.Date,
+    "supply_start_date": pl.Date,
+    "supply_end_date": pl.Date,
+    "source_location_id": pl.String,
+    "source_facility_id": pl.String,
+    "quantity_tj": pl.Float64,
+    "quantity_gj": pl.Float64,
+    "volume_pj": pl.Float64,
+    "price": pl.Float64,
+    "source_last_updated": pl.String,
+    "source_last_updated_timestamp": pl.Datetime("us"),
+    "source_surrogate_key": pl.String,
+    "source_file": pl.String,
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_CAPACITY_TRANSACTION_DASHBOARD_ROW_SCHEMA = {
+    **_CAPACITY_TRANSACTION_RAW_SCHEMA,
+    "source_table": pl.String,
+    "transaction_date_label": pl.String,
+    "supply_period_label": pl.String,
+    "source_location_label": pl.String,
+    "source_facility_label": pl.String,
+}
+_CAPACITY_TRANSACTION_KPI_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_CAPACITY_TRANSACTION_SUMMARY_SCHEMA = {
+    "transaction type": pl.String,
+    "transaction date": pl.Date,
+    "supply period": pl.String,
+    "source location": pl.String,
+    "source facility": pl.String,
+    "rows": pl.UInt32,
+    "source systems": pl.UInt32,
+    "source tables": pl.UInt32,
+    "quantity tj rows": pl.UInt32,
+    "total quantity tj": pl.Float64,
+    "quantity gj rows": pl.UInt32,
+    "total quantity gj": pl.Float64,
+    "volume pj rows": pl.UInt32,
+    "total volume pj": pl.Float64,
+    "price rows": pl.UInt32,
+    "min price": pl.Float64,
+    "avg price": pl.Float64,
+    "max price": pl.Float64,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_CAPACITY_TRANSACTION_SOURCE_COVERAGE_SCHEMA = {
+    "source system": pl.String,
+    "source table": pl.String,
+    "rows": pl.UInt32,
+    "transaction types": pl.UInt32,
+    "transaction dates": pl.UInt32,
+    "source locations": pl.UInt32,
+    "source facilities": pl.UInt32,
+    "quantity rows": pl.UInt32,
+    "volume rows": pl.UInt32,
+    "price rows": pl.UInt32,
+    "first transaction date": pl.Date,
+    "latest transaction date": pl.Date,
+    "source files": pl.UInt32,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_CAPACITY_TRANSACTION_OBSERVATION_SCHEMA = {
+    "transaction type": pl.String,
+    "transaction date": pl.Date,
+    "supply start date": pl.Date,
+    "supply end date": pl.Date,
+    "supply period": pl.String,
+    "source location": pl.String,
+    "source facility": pl.String,
+    "quantity_tj": pl.Float64,
+    "quantity_gj": pl.Float64,
+    "volume_pj": pl.Float64,
+    "price": pl.Float64,
+    "source system": pl.String,
+    "source table": pl.String,
+    "source identifier": pl.String,
+    "source file": pl.String,
+    "source updated": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
 _FACILITY_COVERAGE_SCHEMA = {
     "metric": pl.String,
     "value": pl.String,
@@ -4242,6 +4371,42 @@ def cached_load_capacity_auction_table(
         config,
         cache,
         specs=CAPACITY_AUCTION_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        refresh_token=refresh_token,
+        clock=clock,
+    )[0]
+
+
+def load_capacity_transaction_table(
+    config: GasDashboardConfig,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Load the capacity transaction fact through the shared bounded loader."""
+    return load_gas_model_tables(
+        config,
+        specs=CAPACITY_TRANSACTION_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        clock=clock,
+    )[0]
+
+
+def cached_load_capacity_transaction_table(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> GasTableLoad:
+    """Return session-cached capacity transaction rows for explicit refreshes."""
+    return cached_load_gas_model_tables(
+        config,
+        cache,
+        specs=CAPACITY_TRANSACTION_TABLE_SPECS,
         reader=reader,
         view=GasModelTableView.RECENT,
         refresh_token=refresh_token,
@@ -13704,6 +13869,492 @@ def render_capacity_auction_context_links(
 </section>"""
 
 
+def capacity_transaction_type_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return transaction-type filter options for loaded capacity transactions."""
+    return _capacity_transaction_string_filter_options(
+        load,
+        "transaction_type",
+        CAPACITY_TRANSACTION_TYPE_FILTER_ALL,
+    )
+
+
+def capacity_transaction_date_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return transaction-date filter options for loaded capacity transactions."""
+    return _capacity_transaction_string_filter_options(
+        load,
+        "transaction_date_label",
+        CAPACITY_TRANSACTION_DATE_FILTER_ALL,
+    )
+
+
+def capacity_transaction_location_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return source-location filter options for loaded capacity transactions."""
+    return _capacity_transaction_string_filter_options(
+        load,
+        "source_location_label",
+        CAPACITY_TRANSACTION_LOCATION_FILTER_ALL,
+    )
+
+
+def capacity_transaction_facility_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return source-facility filter options for loaded capacity transactions."""
+    return _capacity_transaction_string_filter_options(
+        load,
+        "source_facility_label",
+        CAPACITY_TRANSACTION_FACILITY_FILTER_ALL,
+    )
+
+
+def capacity_transaction_source_system_options(
+    load: GasTableLoad | None,
+) -> tuple[str, ...]:
+    """Return source-system filter options for loaded capacity transactions."""
+    return _capacity_transaction_string_filter_options(
+        load,
+        "source_system",
+        CAPACITY_TRANSACTION_SOURCE_SYSTEM_FILTER_ALL,
+    )
+
+
+def capacity_transaction_kpi_frame(
+    load: GasTableLoad | None,
+    transaction_type_filter: str = CAPACITY_TRANSACTION_TYPE_FILTER_ALL,
+    transaction_date_filter: str = CAPACITY_TRANSACTION_DATE_FILTER_ALL,
+    location_filter: str = CAPACITY_TRANSACTION_LOCATION_FILTER_ALL,
+    facility_filter: str = CAPACITY_TRANSACTION_FACILITY_FILTER_ALL,
+    source_system_filter: str = CAPACITY_TRANSACTION_SOURCE_SYSTEM_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return first-viewport KPIs for loaded capacity transaction rows."""
+    dataframe = _filtered_capacity_transaction_dataframe(
+        load,
+        transaction_type_filter,
+        transaction_date_filter,
+        location_filter,
+        facility_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_CAPACITY_TRANSACTION_KPI_SCHEMA)
+
+    counts = dataframe.select(
+        pl.len().alias("loaded_rows"),
+        pl.col("transaction_type").drop_nulls().n_unique().alias("types"),
+        pl.col("transaction_date").drop_nulls().n_unique().alias("transaction_dates"),
+        pl.col("source_location_label")
+        .drop_nulls()
+        .n_unique()
+        .alias("source_locations"),
+        pl.col("source_facility_label")
+        .drop_nulls()
+        .n_unique()
+        .alias("source_facilities"),
+        pl.col("quantity_tj").is_not_null().sum().alias("quantity_tj_rows"),
+        pl.col("quantity_tj").sum().alias("total_quantity_tj"),
+        pl.col("quantity_gj").is_not_null().sum().alias("quantity_gj_rows"),
+        pl.col("quantity_gj").sum().alias("total_quantity_gj"),
+        pl.col("volume_pj").is_not_null().sum().alias("volume_pj_rows"),
+        pl.col("volume_pj").sum().alias("total_volume_pj"),
+        pl.col("price").is_not_null().sum().alias("price_rows"),
+        pl.col("price").min().alias("min_price"),
+        pl.col("price").max().alias("max_price"),
+        pl.col("transaction_date").min().alias("first_transaction_date"),
+        pl.col("transaction_date").max().alias("latest_transaction_date"),
+        pl.col("supply_start_date").min().alias("first_supply_start"),
+        pl.col("supply_end_date").max().alias("latest_supply_end"),
+        pl.col("source_system").drop_nulls().n_unique().alias("source_systems"),
+        pl.col("source_last_updated_timestamp").max().alias("latest_source_update"),
+        pl.col("ingested_timestamp").max().alias("latest_ingest"),
+    ).row(0, named=True)
+    source_table_count = _capacity_transaction_source_table_count(dataframe)
+    row_limit = None if load is None else load.row_limit
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Loaded transaction rows",
+                "value": f"{counts['loaded_rows']:,}",
+                "detail": format_row_limit(row_limit),
+            },
+            {
+                "metric": "Transaction types",
+                "value": f"{counts['types']:,}",
+                "detail": "Distinct transaction_type values in the current view",
+            },
+            {
+                "metric": "Transaction dates",
+                "value": f"{counts['transaction_dates']:,}",
+                "detail": "Distinct populated transaction_date values",
+            },
+            {
+                "metric": "Source locations",
+                "value": f"{counts['source_locations']:,}",
+                "detail": "Distinct source_location_id labels in the current view",
+            },
+            {
+                "metric": "Source facilities",
+                "value": f"{counts['source_facilities']:,}",
+                "detail": "Distinct source_facility_id labels in the current view",
+            },
+            {
+                "metric": "Quantity TJ",
+                "value": _format_measure_total(
+                    counts["total_quantity_tj"],
+                    counts["quantity_tj_rows"],
+                    suffix=" TJ",
+                ),
+                "detail": f"{counts['quantity_tj_rows']:,} populated quantity_tj rows",
+            },
+            {
+                "metric": "Quantity GJ",
+                "value": _format_measure_total(
+                    counts["total_quantity_gj"],
+                    counts["quantity_gj_rows"],
+                    suffix=" GJ",
+                ),
+                "detail": f"{counts['quantity_gj_rows']:,} populated quantity_gj rows",
+            },
+            {
+                "metric": "Volume PJ",
+                "value": _format_measure_total(
+                    counts["total_volume_pj"],
+                    counts["volume_pj_rows"],
+                    suffix=" PJ",
+                ),
+                "detail": f"{counts['volume_pj_rows']:,} populated volume_pj rows",
+            },
+            {
+                "metric": "Price range",
+                "value": _format_measure_range(
+                    counts["min_price"],
+                    counts["max_price"],
+                    counts["price_rows"],
+                ),
+                "detail": f"{counts['price_rows']:,} populated price rows",
+            },
+            {
+                "metric": "Source systems",
+                "value": f"{counts['source_systems']:,}",
+                "detail": "Distinct source_system values in the current view",
+            },
+            {
+                "metric": "Source tables",
+                "value": f"{source_table_count:,}",
+                "detail": "Distinct source_table/source_tables values represented",
+            },
+            {
+                "metric": "Transaction date range",
+                "value": (
+                    f"{_format_optional_value(counts['first_transaction_date'])} to "
+                    f"{_format_optional_value(counts['latest_transaction_date'])}"
+                ),
+                "detail": "Minimum and maximum transaction_date in the current view",
+            },
+            {
+                "metric": "Supply date range",
+                "value": (
+                    f"{_format_optional_value(counts['first_supply_start'])} to "
+                    f"{_format_optional_value(counts['latest_supply_end'])}"
+                ),
+                "detail": "Minimum supply_start_date and maximum supply_end_date",
+            },
+            {
+                "metric": "Latest source update",
+                "value": _format_optional_value(counts["latest_source_update"]),
+                "detail": "Maximum source_last_updated_timestamp in the current view",
+            },
+            {
+                "metric": "Latest ingest",
+                "value": _format_optional_value(counts["latest_ingest"]),
+                "detail": "Maximum ingested_timestamp in the current view",
+            },
+        ],
+        schema=_CAPACITY_TRANSACTION_KPI_SCHEMA,
+    )
+
+
+def capacity_transaction_summary_frame(
+    load: GasTableLoad | None,
+    transaction_type_filter: str = CAPACITY_TRANSACTION_TYPE_FILTER_ALL,
+    transaction_date_filter: str = CAPACITY_TRANSACTION_DATE_FILTER_ALL,
+    location_filter: str = CAPACITY_TRANSACTION_LOCATION_FILTER_ALL,
+    facility_filter: str = CAPACITY_TRANSACTION_FACILITY_FILTER_ALL,
+    source_system_filter: str = CAPACITY_TRANSACTION_SOURCE_SYSTEM_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return type, date, location, facility, quantity, volume, and price summaries."""
+    dataframe = _filtered_capacity_transaction_dataframe(
+        load,
+        transaction_type_filter,
+        transaction_date_filter,
+        location_filter,
+        facility_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_CAPACITY_TRANSACTION_SUMMARY_SCHEMA)
+
+    summary = (
+        dataframe.group_by(
+            "transaction_type",
+            "transaction_date",
+            "supply_period_label",
+            "source_location_label",
+            "source_facility_label",
+        )
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("source_system").drop_nulls().n_unique().alias("source systems"),
+            pl.col("source_table").drop_nulls().n_unique().alias("source tables"),
+            pl.col("quantity_tj").is_not_null().sum().alias("quantity tj rows"),
+            pl.col("quantity_tj").sum().alias("total quantity tj"),
+            pl.col("quantity_gj").is_not_null().sum().alias("quantity gj rows"),
+            pl.col("quantity_gj").sum().alias("total quantity gj"),
+            pl.col("volume_pj").is_not_null().sum().alias("volume pj rows"),
+            pl.col("volume_pj").sum().alias("total volume pj"),
+            pl.col("price").is_not_null().sum().alias("price rows"),
+            pl.col("price").min().alias("min price"),
+            pl.col("price").mean().alias("avg price"),
+            pl.col("price").max().alias("max price"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort(
+            [
+                "transaction_date",
+                "transaction_type",
+                "source_location_label",
+                "source_facility_label",
+            ],
+            descending=[True, False, False, False],
+            nulls_last=True,
+        )
+        .rename(
+            {
+                "transaction_type": "transaction type",
+                "transaction_date": "transaction date",
+                "supply_period_label": "supply period",
+                "source_location_label": "source location",
+                "source_facility_label": "source facility",
+            }
+        )
+    )
+    return summary.select([*list(_CAPACITY_TRANSACTION_SUMMARY_SCHEMA)])
+
+
+def capacity_transaction_source_coverage_frame(
+    load: GasTableLoad | None,
+    transaction_type_filter: str = CAPACITY_TRANSACTION_TYPE_FILTER_ALL,
+    transaction_date_filter: str = CAPACITY_TRANSACTION_DATE_FILTER_ALL,
+    location_filter: str = CAPACITY_TRANSACTION_LOCATION_FILTER_ALL,
+    facility_filter: str = CAPACITY_TRANSACTION_FACILITY_FILTER_ALL,
+    source_system_filter: str = CAPACITY_TRANSACTION_SOURCE_SYSTEM_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return source-system and source-table coverage for capacity transactions."""
+    dataframe = _filtered_capacity_transaction_dataframe(
+        load,
+        transaction_type_filter,
+        transaction_date_filter,
+        location_filter,
+        facility_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_CAPACITY_TRANSACTION_SOURCE_COVERAGE_SCHEMA)
+
+    coverage = (
+        dataframe.group_by("source_system", "source_table")
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("transaction_type")
+            .drop_nulls()
+            .n_unique()
+            .alias("transaction types"),
+            pl.col("transaction_date")
+            .drop_nulls()
+            .n_unique()
+            .alias("transaction dates"),
+            pl.col("source_location_label")
+            .drop_nulls()
+            .n_unique()
+            .alias("source locations"),
+            pl.col("source_facility_label")
+            .drop_nulls()
+            .n_unique()
+            .alias("source facilities"),
+            pl.col("quantity_tj").is_not_null().sum().alias("quantity rows"),
+            pl.col("volume_pj").is_not_null().sum().alias("volume rows"),
+            pl.col("price").is_not_null().sum().alias("price rows"),
+            pl.col("transaction_date").min().alias("first transaction date"),
+            pl.col("transaction_date").max().alias("latest transaction date"),
+            pl.col("source_file").drop_nulls().n_unique().alias("source files"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort(
+            ["rows", "source_system", "source_table"], descending=[True, False, False]
+        )
+        .rename(
+            {
+                "source_system": "source system",
+                "source_table": "source table",
+            }
+        )
+    )
+    return coverage.select([*list(_CAPACITY_TRANSACTION_SOURCE_COVERAGE_SCHEMA)])
+
+
+def capacity_transaction_observation_frame(
+    load: GasTableLoad | None,
+    transaction_type_filter: str = CAPACITY_TRANSACTION_TYPE_FILTER_ALL,
+    transaction_date_filter: str = CAPACITY_TRANSACTION_DATE_FILTER_ALL,
+    location_filter: str = CAPACITY_TRANSACTION_LOCATION_FILTER_ALL,
+    facility_filter: str = CAPACITY_TRANSACTION_FACILITY_FILTER_ALL,
+    source_system_filter: str = CAPACITY_TRANSACTION_SOURCE_SYSTEM_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_CAPACITY_TRANSACTION_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return filtered capacity transaction observations for bounded preview."""
+    dataframe = _filtered_capacity_transaction_dataframe(
+        load,
+        transaction_type_filter,
+        transaction_date_filter,
+        location_filter,
+        facility_filter,
+        source_system_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_CAPACITY_TRANSACTION_OBSERVATION_SCHEMA)
+
+    return (
+        dataframe.sort(
+            [
+                "transaction_date",
+                "supply_start_date",
+                "supply_end_date",
+                "source_last_updated_timestamp",
+                "ingested_timestamp",
+                "transaction_type",
+                "source_system",
+            ],
+            descending=[True, True, True, True, True, False, False],
+            nulls_last=True,
+        )
+        .select(
+            pl.col("transaction_type").alias("transaction type"),
+            pl.col("transaction_date").alias("transaction date"),
+            pl.col("supply_start_date").alias("supply start date"),
+            pl.col("supply_end_date").alias("supply end date"),
+            pl.col("supply_period_label").alias("supply period"),
+            pl.col("source_location_label").alias("source location"),
+            pl.col("source_facility_label").alias("source facility"),
+            pl.col("quantity_tj"),
+            pl.col("quantity_gj"),
+            pl.col("volume_pj"),
+            pl.col("price"),
+            pl.col("source_system").alias("source system"),
+            pl.col("source_table").alias("source table"),
+            pl.col("source_surrogate_key").alias("source identifier"),
+            pl.col("source_file").alias("source file"),
+            pl.col("source_last_updated_timestamp").alias("source updated"),
+            pl.col("ingested_timestamp").alias("latest ingest"),
+        )
+        .head(max(1, preview_rows))
+    )
+
+
+def capacity_transaction_empty_state_markdown(load: GasTableLoad | None) -> str:
+    """Return useful empty-state copy for missing or unmatched transaction rows."""
+    table_label = _markdown_breakable_text(
+        "silver.gas_model.silver_gas_fact_capacity_transaction"
+    )
+    if load is None:
+        status_detail = (
+            "The dashboard did not receive a capacity transaction load result."
+        )
+        uri = table_label
+        read_policy = "No read policy was reported."
+    else:
+        if load.error is not None:
+            status_detail = f"Read detail: {_markdown_breakable_text(load.error)}"
+        elif load.dataframe is None or load.dataframe.is_empty():
+            status_detail = "The table loaded successfully but returned no rows."
+        else:
+            status_detail = (
+                "The current filters do not match any loaded capacity transaction rows."
+            )
+        uri = _markdown_breakable_text(load.uri)
+        read_policy = row_limit_message(load.row_limit)
+
+    return f"""
+    **No capacity transaction data is available for this view.**
+
+    The dashboard checked {uri}, which should contain {table_label} rows with
+    `transaction_type`, transaction and supply dates, source location/facility,
+    `quantity_tj`, `quantity_gj`, `volume_pj`, `price`, source-system, and
+    source-table fields.
+
+    {status_detail}
+
+    {read_policy}
+
+    Materialize or seed the `silver.gas_model` capacity transaction asset, then
+    use **Refresh data**.
+    """
+
+
+def render_capacity_transaction_context_links(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render capacity transaction links to related Market context panels."""
+    candidate_entries = tuple(dashboard_registry() if entries is None else entries)
+    concept_ids = (
+        CAPACITY_TRANSACTION_CONTEXT_ID,
+        CAPACITY_CONTEXT_ID,
+        CAPACITY_AUCTION_CONTEXT_ID,
+        "gas-market-overview",
+        "source-coverage-matrix",
+        "source-table-lineage-explorer",
+        "gas-model-table-explorer",
+    )
+    rows = "\n".join(
+        _render_capacity_transaction_context_link(entry)
+        for entry in (
+            registry_entry_by_concept_id(concept_id, candidate_entries)
+            for concept_id in concept_ids
+        )
+        if entry is not None
+    )
+    if rows == "":
+        rows = (
+            '<li class="capacity-transaction-links__empty">'
+            "No Capacity Transactions, Capacity, Capacity Auctions, market "
+            "overview, source coverage, source lineage, or table explorer "
+            "entries are registered."
+            "</li>"
+        )
+
+    return f"""\
+<style>
+{_capacity_transaction_context_links_css()}
+</style>
+<section class="capacity-transaction-links" aria-label="Capacity transaction context links">
+    <div>
+        <p class="capacity-transaction-links__eyebrow">Context links</p>
+        <h2>Capacity, auction, and market-analysis context</h2>
+    </div>
+    <ul>
+{rows}
+    </ul>
+</section>"""
+
+
 def bid_stack_participant_options(
     load: GasTableLoad | None,
 ) -> tuple[str, ...]:
@@ -21590,6 +22241,259 @@ def _capacity_auction_context_links_css() -> str:
 
 @media (max-width: 760px) {
     .capacity-auction-links li {
+        grid-template-columns: 1fr;
+    }
+}
+"""
+
+
+def _capacity_transaction_string_filter_options(
+    load: GasTableLoad | None,
+    column: str,
+    all_label: str,
+) -> tuple[str, ...]:
+    dataframe = _normalised_capacity_transaction_dataframe(load)
+    if dataframe.is_empty() or column not in dataframe.columns:
+        return (all_label,)
+
+    values = sorted(
+        str(value)
+        for value in dataframe.get_column(column)
+        .drop_nulls()
+        .cast(pl.String, strict=False)
+        .unique()
+        .to_list()
+        if value is not None and str(value).strip() != ""
+    )
+    return (all_label, *values)
+
+
+def _filtered_capacity_transaction_dataframe(
+    load: GasTableLoad | None,
+    transaction_type_filter: str,
+    transaction_date_filter: str,
+    location_filter: str,
+    facility_filter: str,
+    source_system_filter: str,
+) -> pl.DataFrame:
+    dataframe = _normalised_capacity_transaction_dataframe(load)
+    if dataframe.is_empty():
+        return dataframe
+
+    filtered = dataframe
+    if transaction_type_filter != CAPACITY_TRANSACTION_TYPE_FILTER_ALL:
+        filtered = filtered.filter(
+            pl.col("transaction_type") == transaction_type_filter
+        )
+    if transaction_date_filter != CAPACITY_TRANSACTION_DATE_FILTER_ALL:
+        filtered = filtered.filter(
+            pl.col("transaction_date_label") == transaction_date_filter
+        )
+    if location_filter != CAPACITY_TRANSACTION_LOCATION_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_location_label") == location_filter)
+    if facility_filter != CAPACITY_TRANSACTION_FACILITY_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_facility_label") == facility_filter)
+    if source_system_filter != CAPACITY_TRANSACTION_SOURCE_SYSTEM_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_system") == source_system_filter)
+    return filtered
+
+
+def _normalised_capacity_transaction_dataframe(
+    load: GasTableLoad | None,
+) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=_CAPACITY_TRANSACTION_DASHBOARD_ROW_SCHEMA)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in _CAPACITY_TRANSACTION_RAW_SCHEMA.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    normalised = dataframe.with_columns(
+        pl.col("surrogate_key").cast(pl.String, strict=False),
+        pl.col("source_system").cast(pl.String, strict=False),
+        pl.col("source_tables").cast(pl.List(pl.String), strict=False),
+        pl.col("source_table").cast(pl.String, strict=False),
+        pl.col("transaction_type").cast(pl.String, strict=False),
+        _normalise_date_column(dataframe, "transaction_date"),
+        _normalise_date_column(dataframe, "supply_start_date"),
+        _normalise_date_column(dataframe, "supply_end_date"),
+        pl.col("source_location_id").cast(pl.String, strict=False),
+        pl.col("source_facility_id").cast(pl.String, strict=False),
+        pl.col("quantity_tj").cast(pl.Float64, strict=False),
+        pl.col("quantity_gj").cast(pl.Float64, strict=False),
+        pl.col("volume_pj").cast(pl.Float64, strict=False),
+        pl.col("price").cast(pl.Float64, strict=False),
+        pl.col("source_last_updated").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "source_last_updated_timestamp"),
+        pl.col("source_surrogate_key").cast(pl.String, strict=False),
+        pl.col("source_file").cast(pl.String, strict=False),
+        _normalise_timestamp_column(dataframe, "ingested_timestamp"),
+    )
+
+    rows = [_capacity_transaction_dashboard_row(row) for row in normalised.to_dicts()]
+    return pl.DataFrame(rows, schema=_CAPACITY_TRANSACTION_DASHBOARD_ROW_SCHEMA)
+
+
+def _capacity_transaction_dashboard_row(
+    row: Mapping[str, object],
+) -> dict[str, object]:
+    return {
+        **row,
+        "source_table": _capacity_transaction_source_table_label(row),
+        "transaction_date_label": _format_optional_filter_value(
+            row.get("transaction_date")
+        ),
+        "supply_period_label": _capacity_transaction_supply_period_label(row),
+        "source_location_label": _capacity_transaction_location_label(row),
+        "source_facility_label": _capacity_transaction_facility_label(row),
+    }
+
+
+def _capacity_transaction_source_table_label(row: Mapping[str, object]) -> str:
+    values = [
+        *_source_coverage_value_strings(row.get("source_table")),
+        *_source_coverage_value_strings(row.get("source_tables")),
+    ]
+    unique_values = tuple(dict.fromkeys(values))
+    if len(unique_values) == 0:
+        return _SOURCE_COVERAGE_EMPTY_SOURCE_TABLE_VALUE
+    return ", ".join(unique_values)
+
+
+def _capacity_transaction_source_table_count(dataframe: pl.DataFrame) -> int:
+    values: set[str] = set()
+    for row in dataframe.select("source_table").to_dicts():
+        values.update(_source_coverage_value_strings(row.get("source_table")))
+    values.discard(_SOURCE_COVERAGE_EMPTY_SOURCE_TABLE_VALUE)
+    return len(values)
+
+
+def _capacity_transaction_supply_period_label(row: Mapping[str, object]) -> str:
+    supply_start_date = _optional_non_empty_string(row.get("supply_start_date"))
+    supply_end_date = _optional_non_empty_string(row.get("supply_end_date"))
+
+    if supply_start_date is not None and supply_end_date is not None:
+        return f"{supply_start_date} to {supply_end_date}"
+    if supply_start_date is not None:
+        return f"from {supply_start_date}"
+    if supply_end_date is not None:
+        return f"to {supply_end_date}"
+    return "(missing supply period)"
+
+
+def _capacity_transaction_location_label(row: Mapping[str, object]) -> str:
+    source_location_id = _optional_non_empty_string(row.get("source_location_id"))
+    return (
+        source_location_id
+        if source_location_id is not None
+        else "(missing source location)"
+    )
+
+
+def _capacity_transaction_facility_label(row: Mapping[str, object]) -> str:
+    source_facility_id = _optional_non_empty_string(row.get("source_facility_id"))
+    return (
+        source_facility_id
+        if source_facility_id is not None
+        else "(missing source facility)"
+    )
+
+
+def _render_capacity_transaction_context_link(
+    entry: DashboardRegistryEntry,
+) -> str:
+    status_label = _dashboard_entry_status_label(entry)
+    title = escape(entry.title)
+    route = entry.notebook_route
+    if entry.status.value == "available" and route is not None:
+        title_html = f'<a href="{escape(route, quote=True)}">{title}</a>'
+    else:
+        title_html = f"<span>{title}</span>"
+
+    return f"""\
+        <li data-dashboard-status="{escape(entry.status.value, quote=True)}">
+            {title_html}
+            <span>{escape(status_label)}</span>
+            <code>{escape(entry.concept_id)}</code>
+        </li>"""
+
+
+def _capacity_transaction_context_links_css() -> str:
+    return """\
+.capacity-transaction-links {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+}
+
+.capacity-transaction-links__eyebrow {
+    margin: 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.74rem;
+    font-weight: 720;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.capacity-transaction-links h2 {
+    margin: 0.15rem 0 0;
+    font-size: 1.05rem;
+}
+
+.capacity-transaction-links ul {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.capacity-transaction-links li {
+    display: grid;
+    grid-template-columns: minmax(10rem, 1fr) auto auto;
+    gap: 0.65rem;
+    align-items: center;
+    min-width: 0;
+    padding: 0.55rem 0;
+    border-top: 1px solid var(--emdl-line, #cfdbd6);
+}
+
+.capacity-transaction-links li:first-child {
+    border-top: 0;
+}
+
+.capacity-transaction-links a {
+    color: var(--emdl-blue, #166791);
+    font-weight: 720;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+}
+
+.capacity-transaction-links span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.capacity-transaction-links li > span:nth-child(2) {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.capacity-transaction-links code {
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+    .capacity-transaction-links li {
         grid-template-columns: 1fr;
     }
 }
