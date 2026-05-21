@@ -395,19 +395,19 @@ the stack runs from an ephemeral worktree. Refresh that cache with
 After the isolated stack reaches readiness, the command drives the Dagster
 dataflow through GraphQL. The `full-gas-model` scenario keeps automation stopped
 and launches explicit Dagster asset-run batches by dependency wave for every
-materializable `gas_model` asset plus its materializable upstream closure. It
-uses the cached one-object Archive seed horizon, records direct-launch evidence
-for the expanded manifest-backed target, including STTM target keys and
+materializable curated `gas_model` asset selected by
+`tag:aemo_etl_layer=gas_model` plus its materializable upstream closure. It uses
+the cached one-object Archive seed horizon, records direct-launch evidence for
+the expanded manifest-backed target, including STTM target keys and
 source-definition-backed target asset-check count, then polls Dagster until the
-full `gas_model` target has
-materialized and required checks have reported success. The
-`promotion-gas-model` scenario uses the same direct-launch shape for Ralph
-**Promotion** with the same one-object raw and zip seed horizon, and adds the
-stale-runtime/current-source validation guard from GitHub issue #141. Both
-direct scenarios collect current-source `source_definitions` before stack
-startup and skip live `bronze_nemweb_public_files_*` discovery/listing assets so
-the gate starts from seeded LocalStack objects, matching `+group:gas_model`
-targeting without creating
+full curated `gas_model` target has materialized and required checks have
+reported success. The `promotion-gas-model` scenario uses the same direct-launch
+shape for Ralph **Promotion** with the same one-object raw and zip seed horizon,
+and adds the stale-runtime/current-source validation guard from GitHub issue
+number 141. Both direct scenarios collect current-source `source_definitions`
+before stack startup and skip live `bronze_nemweb_public_files_*`
+discovery/listing assets so the gate starts from seeded LocalStack objects,
+matching the `+tag:aemo_etl_layer=gas_model` upstream closure without creating
 one sensor-triggered run per upstream source table. Each direct-launch batch
 uses Dagster's in-process executor inside its Podman run-worker container to
 avoid a subprocess storm against LocalStack and the Delta Lake DynamoDB lock
@@ -436,18 +436,19 @@ Dagster dataflow. The approved #77 coverage invariants are:
 
 - exercise Dagster orchestration, LocalStack/S3 storage, Podman run-worker
   containers, and the Dagster GraphQL monitor
-- materialize every materializable Dagster asset in group `gas_model`
+- materialize every materializable curated `gas_model` asset selected by
+  `tag:aemo_etl_layer=gas_model`
 - preserve final asset-check status for that target as part of the
   **Promotion** decision
 - keep current discovery evidence visible:
   `source_definitions.executable_asset_count` is derived from
-  `uv run dg list defs --assets "group:gas_model" --json` in the source
+  `uv run dg list defs --assets "tag:aemo_etl_layer=gas_model" --json` in the source
   worktree before startup, and the runtime GraphQL
   `dataflow.scenario_evidence.target_asset_count` must match it before
   Promotion asset batches launch. At the current source revision,
-  `dg list defs --assets "group:gas_model" --json` reports 37 executable
-  `gas_model` assets and 144 asset checks, including the eight
-  `silver_gas_fact_sttm_*` assets.
+  `dg list defs --assets "tag:aemo_etl_layer=gas_model" --json` reports 36
+  executable curated `gas_model` assets, excluding metadata assets such as
+  `silver/metadata/silver_table_metadata`.
 
 The full scenario is the local proof for the expanded manifest-backed target. It
 uses the #78 targeted launch shape with the shared one-object seed horizon and
@@ -480,11 +481,11 @@ failure remain in the manifest.
 | `telemetry.dagster_dataflow.peak_active_run_count` | Highest non-queued Dagster run count observed by the monitor |
 | `telemetry.dagster_dataflow.peak_queued_run_count` | Highest queued Dagster run count observed by the monitor |
 | `telemetry.dagster_dataflow.final_run_status_counts` | Final Dagster run counts by status; the budget report also derives total and successful run counts from this map |
-| `telemetry.dagster_dataflow.final_target_progress` | Materialized, missing, failed, and total target asset counts for the `gas_model` gate target |
+| `telemetry.dagster_dataflow.final_target_progress` | Materialized, missing, failed, and total target asset counts for the curated `gas_model` gate target |
 | `telemetry.dagster_dataflow.first_target_materialization_at`, `last_target_materialization_at` | First and last observed target materialization timestamps |
 | `telemetry.dagster_dataflow.final_missing_asset_check_count`, `final_failed_asset_check_count` | Final asset-check drift for the gate target |
-| `source_definitions` | Current-source `dg list defs` provenance: command, working directory, target group, executable asset count, asset-check count, full target asset keys, and STTM target keys |
-| `dataflow.scenario_evidence` | Direct-launch coverage evidence: scenario, launch mode, target group, GraphQL-derived target asset count, source-definition-backed target asset-check count when available, target keys, STTM target keys, selected upstream closure count, skipped live source keys, wave count, batch count, asset batch size, and nested source-definition evidence when available |
+| `source_definitions` | Current-source `dg list defs` provenance: command, working directory, target selector, executable asset count, asset-check count, full target asset keys, and STTM target keys |
+| `dataflow.scenario_evidence` | Direct-launch coverage evidence: scenario, launch mode, target selector, GraphQL-derived target asset count, source-definition-backed target asset-check count when available, target keys, STTM target keys, selected upstream closure count, skipped live source keys, wave count, batch count, asset batch size, and nested source-definition evidence when available |
 | `budget.status`, `budget.observations`, `budget.thresholds`, `budget.failures`, `budget.run_manifest` | Non-enforced baseline observations or enforced Promotion budget result, dynamic target-count and planned-batch sources, threshold values, actionable failure lines, and the manifest path operators should inspect |
 
 The `promotion-gas-model` scenario enforces #79 Promotion guard regression
@@ -494,8 +495,8 @@ below `6`, total Dagster runs at or below the current direct-launch
 `dataflow.scenario_evidence.batch_count`, target progress exactly matching the
 current `source_definitions.executable_asset_count` evidence from the source
 worktree, and missing or failed target assets and asset checks at `0`.
-For the current source definitions that target-progress
-requirement is `37/37`, not a static historical count. These budgets protect
+For the current source definitions that target-progress requirement is `36/36`
+curated `gas_model` assets, not a static historical count. These budgets protect
 **Promotion** from run explosion and missing coverage; they are not generic
 local development performance claims. The full scenario records the expanded
 baseline observations for review and leaves `budget.status` as `not-enforced`
@@ -507,7 +508,7 @@ environment slowdown that needs evidence before retrying or changing the launch
 shape. A mismatch between `source_definitions.executable_asset_count` and
 `dataflow.scenario_evidence.target_asset_count` means the running Dagster graph
 is stale for the source revision; for example, current source definitions at
-37 targets and runtime scenario evidence at 29 targets fail the gate before
+36 targets and runtime scenario evidence at 29 targets fail the gate before
 Promotion launches asset batches. Target progress, missing target asset, failed
 target asset, missing asset-check, or failed asset-check failures mean the
 approved #77 coverage contract was not met and the source revision must not be
