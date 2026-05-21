@@ -30,7 +30,8 @@ make run-prek
   recovery policy helpers
 - `src/ralph_loop/state.py`: Ralph run and Operator manifest state helpers,
   including **Issue completion review**, Operator smoke evidence,
-  deploy-repair issue state, and checkpointed deploy-repair target state
+  active child run status, deploy-repair issue state, and checkpointed
+  deploy-repair target state
 - `tests/unit/`: Ralph unit tests
 - `.pre-commit-config.yaml`: Subproject `prek` hook surface
 

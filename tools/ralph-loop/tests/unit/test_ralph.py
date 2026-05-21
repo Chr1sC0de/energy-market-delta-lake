@@ -1835,6 +1835,10 @@ def write_child_manifest(
     name: str,
     run_kind: str,
     status: str,
+    stage: str | None = None,
+    started_at: str | None = None,
+    updated_at: str | None = None,
+    events: list[dict[str, Any]] | None = None,
     issue: ralph.Issue | None = None,
     delivery_mode: str = ralph.GITFLOW_MODE,
     integration_target: str = ralph.DEFAULT_GITFLOW_BRANCH,
@@ -1855,7 +1859,7 @@ def write_child_manifest(
         "schema_version": ralph.MANIFEST_SCHEMA_VERSION,
         "run_kind": run_kind,
         "status": status,
-        "stage": status,
+        "stage": stage or status,
         "paths": {"run_dir": str(run_dir)},
         "changed_files": changed_files or ["scripts/ralph.py"],
         "qa_results": qa_results
@@ -1868,8 +1872,12 @@ def write_child_manifest(
                 "status": "passed" if status == "succeeded" else "failed",
             }
         ],
-        "events": [],
+        "events": events or [],
     }
+    if started_at is not None:
+        payload["started_at"] = started_at
+    if updated_at is not None:
+        payload["updated_at"] = updated_at
     if issue is not None:
         payload["issue"] = {
             "number": issue.number,
@@ -7930,10 +7938,177 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertIn(
             "Queue: ready=0, integrated=1, reviewing=0, running=0, failed=0", text
         )
+        self.assertNotIn("Active child:", text)
         self.assertIn(f"- implementation #42 succeeded: {child_manifest_path}", text)
         self.assertIn("Rollup artifacts:", text)
         self.assertIn(str(run_dir / ralph.OPERATOR_ROLLUP_JSON_NAME), text)
         self.assertIn("Recommended next action:", text)
+
+    def test_operator_status_reports_active_issue_child_heartbeat(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            issue = make_issue(
+                {ralph.READY_LABEL},
+                IMPLEMENTATION_BODY,
+                number=250,
+                title="Surface active child run heartbeat",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            child_manifest_path = write_child_manifest(
+                loop.config.log_root,
+                name="issue-250-active-child",
+                run_kind="implementation",
+                status="running",
+                stage="codex_attempt_running",
+                started_at="2026-05-21T00:00:00Z",
+                updated_at="2026-05-21T00:05:00Z",
+                events=[
+                    {
+                        "timestamp": "2026-05-21T00:05:00Z",
+                        "stage": "codex_attempt_running",
+                        "status": "running",
+                    }
+                ],
+                issue=issue,
+            )
+            manifest = ralph.OperatorRunManifest.start(
+                run_dir=run_dir,
+                config=loop.config,
+                max_cycles=3,
+            )
+            manifest.record_cycle(1)
+            manifest.record_queue(operator_snapshot(ready=[issue]))
+            manifest.record_current_issue(issue)
+            manifest.record_active_child_manifest(child_manifest_path)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.inspect_operator_run_status(str(run_dir), runner)
+
+            manifest_data = json.loads(
+                (run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text(encoding="utf-8")
+            )
+
+        text = output.getvalue()
+        self.assertNotEqual(
+            (manifest_data.get("last_checkpoint") or {}).get("checkpoint"),
+            "before_promotion",
+        )
+        self.assertIn(
+            "Current: issue #250 Surface active child run heartbeat",
+            text,
+        )
+        self.assertIn("Active child:", text)
+        self.assertIn("Run: implementation running / codex_attempt_running", text)
+        self.assertIn(f"Run directory: {child_manifest_path.parent}", text)
+        self.assertIn(f"Manifest: {child_manifest_path}", text)
+        self.assertIn("Elapsed:", text)
+        self.assertIn(
+            "Last child checkpoint: codex_attempt_running at 2026-05-21T00:05:00Z",
+            text,
+        )
+        self.assertIn("Last child heartbeat: 2026-05-21T00:05:00Z", text)
+        self.assertIn(
+            "Queue: ready=1, integrated=0, reviewing=0, running=0, failed=0",
+            text,
+        )
+        self.assertIn(f"- implementation #250 running: {child_manifest_path}", text)
+        self.assertNotIn("codex-implementation", text)
+
+    def test_operator_status_reports_active_promotion_child_phase(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            child_manifest_path = write_child_manifest(
+                loop.config.log_root,
+                name="promote-active-child",
+                run_kind="promotion",
+                status="running",
+                stage="fetching_branches",
+                started_at="2026-05-21T01:00:00Z",
+                updated_at="2026-05-21T01:04:00Z",
+                events=[
+                    {
+                        "timestamp": "2026-05-21T01:04:00Z",
+                        "stage": "fetching_branches",
+                        "status": "running",
+                    }
+                ],
+                promotion_commit=None,
+            )
+            manifest = ralph.OperatorRunManifest.start(
+                run_dir=run_dir,
+                config=loop.config,
+                max_cycles=3,
+            )
+            manifest.record_current_promotion(
+                source_branch=ralph.DEFAULT_GITFLOW_BRANCH,
+                target_branch=ralph.DEFAULT_TRUNK_BRANCH,
+            )
+            manifest.record_active_child_manifest(child_manifest_path)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.inspect_operator_run_status(str(run_dir), runner)
+
+        text = output.getvalue()
+        self.assertIn("Current: Promotion dev -> main", text)
+        self.assertIn("Active child:", text)
+        self.assertIn("Run: promotion running / fetching_branches", text)
+        self.assertIn(f"Run directory: {child_manifest_path.parent}", text)
+        self.assertIn(f"Manifest: {child_manifest_path}", text)
+        self.assertIn(
+            "Last child checkpoint: fetching_branches at 2026-05-21T01:04:00Z",
+            text,
+        )
+        self.assertIn("Last child heartbeat: 2026-05-21T01:04:00Z", text)
+
+    def test_operator_status_reports_stopped_run_without_active_child(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            issue = make_issue(
+                {ralph.READY_LABEL},
+                IMPLEMENTATION_BODY,
+                number=77,
+                title="Still queued",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            manifest = ralph.OperatorRunManifest.start(
+                run_dir=run_dir,
+                config=loop.config,
+                max_cycles=1,
+            )
+            manifest.record_queue(operator_snapshot(ready=[issue]))
+            manifest.clear_current()
+            manifest.record_checkpoint(
+                "stopped_by_guard",
+                message="Reached --max-cycles 1.",
+                status="failed",
+                recovery_guidance="Review progress before raising --max-cycles.",
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.inspect_operator_run_status(str(run_dir), runner)
+
+        text = output.getvalue()
+        self.assertIn(
+            "Last checkpoint: stopped_by_guard: Reached --max-cycles 1.",
+            text,
+        )
+        self.assertIn("Current: none", text)
+        self.assertNotIn("Active child:", text)
+        self.assertIn(
+            "Queue: ready=1, integrated=0, reviewing=0, running=0, failed=0",
+            text,
+        )
+        self.assertIn("Review progress before raising --max-cycles.", text)
 
     def test_detached_operator_launch_prints_status_command_without_waiting(
         self,

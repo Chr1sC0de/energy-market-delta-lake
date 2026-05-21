@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import textwrap
+import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
@@ -1026,6 +1027,7 @@ class RalphLoop:
         self.triaged_this_run: set[int] = set()
         self._ready_issue_refresh_claim_gate = ReadyIssueRefreshClaimGate()
         self._stop_after_ralph_loop_self_update = False
+        self.active_child_observer: Callable[[RunManifest], None] | None = None
 
     def _preflight_qa_runtime_disk(
         self,
@@ -1054,6 +1056,11 @@ class RalphLoop:
             next_action="free capacity, then rerun Ralph for the same issue or Operator run",
         )
         return result
+
+    def _notify_active_child_manifest(self, manifest: RunManifest) -> None:
+        if self.active_child_observer is None:
+            return
+        self.active_child_observer(manifest)
 
     def run(self) -> None:
         self._validate_tools()
@@ -3592,6 +3599,7 @@ class RalphLoop:
             promote_path=promote_path,
             config=self.config,
         )
+        self._notify_active_child_manifest(manifest)
         try:
             self._preflight_qa_runtime_disk(
                 run_dir=run_dir,
@@ -4812,6 +4820,7 @@ class RalphLoop:
                 integration_path=integration_path,
                 config=self.config,
             )
+            self._notify_active_child_manifest(manifest)
             self._preflight_qa_runtime_disk(
                 run_dir=run_dir,
                 label=f"issue #{issue.number} startup",
@@ -7027,6 +7036,8 @@ class RalphOperatorRun:
             config=config,
             max_cycles=max_cycles,
         )
+        self._active_child_lock = threading.Lock()
+        self.loop.active_child_observer = self._record_active_child_manifest
 
     def run(self) -> None:
         try:
@@ -7233,6 +7244,9 @@ class RalphOperatorRun:
 
     def _run_drain_scheduler_checkpoint(self) -> None:
         before_paths = implementation_child_manifest_paths(self.config.log_root)
+        ready_issue = self._next_ready_issue()
+        if ready_issue is not None:
+            self.manifest.record_current_issue(ready_issue)
         emit(
             "Operator cycle: draining ready work with the parallel drain scheduler "
             f"(--exploratory-concurrency {self.config.exploratory_concurrency})."
@@ -7248,6 +7262,10 @@ class RalphOperatorRun:
             self.manifest.record_failure(error, recovery_guidance=guidance)
             raise
         self._record_drain_scheduler_child_checkpoints(before_paths)
+
+    def _record_active_child_manifest(self, child_manifest: RunManifest) -> None:
+        with self._active_child_lock:
+            self.manifest.record_active_child_manifest(child_manifest.path)
 
     def _record_drain_scheduler_child_checkpoints(
         self,
@@ -9616,6 +9634,108 @@ def operator_queue_summary(data: dict[str, Any]) -> str:
     return ", ".join(parts)
 
 
+def operator_status_timestamp(value: Any) -> datetime | None:
+    if not isinstance(value, str) or value.strip() == "":
+        return None
+    try:
+        timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if timestamp.tzinfo is None:
+        return timestamp.replace(tzinfo=UTC)
+    return timestamp
+
+
+def operator_elapsed_summary(started_at: Any) -> str:
+    started = operator_status_timestamp(started_at)
+    if started is None:
+        return "unknown"
+    elapsed_seconds = max(0, int((datetime.now(UTC) - started).total_seconds()))
+    hours, remainder = divmod(elapsed_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours > 0:
+        return f"{hours}h {minutes}m {seconds}s"
+    if minutes > 0:
+        return f"{minutes}m {seconds}s"
+    return f"{seconds}s"
+
+
+def operator_child_manifest_last_event(
+    child_data: dict[str, Any],
+) -> dict[str, Any] | None:
+    events = child_data.get("events")
+    if not isinstance(events, list):
+        return None
+    for event in reversed(events):
+        if isinstance(event, dict):
+            return event
+    return None
+
+
+def operator_active_child_status_lines(data: dict[str, Any]) -> list[str]:
+    current = data.get("current")
+    if not isinstance(current, dict):
+        return []
+
+    manifest_path_text = str(current.get("child_manifest_path") or "")
+    run_dir_text = str(current.get("child_run_dir") or "")
+    child_data = (
+        child_manifest_data(Path(manifest_path_text)) if manifest_path_text else None
+    )
+    child_kind = str(
+        (child_data or {}).get("run_kind")
+        or current.get("child_kind")
+        or current.get("kind")
+        or "unknown"
+    )
+    child_status = str(
+        (child_data or {}).get("status") or current.get("child_status") or "unknown"
+    )
+    child_stage = str(
+        (child_data or {}).get("stage") or current.get("child_stage") or "unknown"
+    )
+    started_at = (
+        (child_data or {}).get("started_at")
+        or current.get("child_started_at")
+        or current.get("started_at")
+    )
+    updated_at = (
+        (child_data or {}).get("updated_at")
+        or current.get("child_updated_at")
+        or current.get("child_last_observed_at")
+    )
+    last_event = (
+        operator_child_manifest_last_event(child_data)
+        if child_data is not None
+        else None
+    )
+    last_event_name = None
+    last_event_timestamp = None
+    if last_event is not None:
+        last_event_name = last_event.get("stage") or last_event.get("state")
+        last_event_timestamp = last_event.get("timestamp")
+
+    lines = [f"Run: {child_kind} {child_status} / {child_stage}"]
+    if run_dir_text != "":
+        lines.append(f"Run directory: {run_dir_text}")
+    if manifest_path_text != "":
+        lines.append(f"Manifest: {manifest_path_text}")
+    else:
+        lines.append("Manifest: not_determined")
+    lines.append(f"Elapsed: {operator_elapsed_summary(started_at)}")
+    if last_event_name is not None and last_event_timestamp is not None:
+        lines.append(
+            f"Last child checkpoint: {last_event_name} at {last_event_timestamp}"
+        )
+    elif updated_at is not None:
+        lines.append(f"Last child checkpoint: not_recorded; heartbeat at {updated_at}")
+    else:
+        lines.append("Last child checkpoint: not_recorded")
+    if updated_at is not None:
+        lines.append(f"Last child heartbeat: {updated_at}")
+    return lines
+
+
 def operator_recommended_action(data: dict[str, Any]) -> str:
     guidance = data.get("recovery_guidance")
     if isinstance(guidance, str) and guidance != "":
@@ -9627,6 +9747,11 @@ def operator_recommended_action(data: dict[str, Any]) -> str:
     if status == "needs_review" or state == "exploratory_acceptance_review_required":
         return exploratory_acceptance_review_guidance()
     if status == "running":
+        if operator_active_child_status_lines(data):
+            return (
+                "Wait for the active child run to reach the next Operator "
+                "checkpoint, then run the Operator status command again."
+            )
         return (
             "Wait for the next issue-boundary checkpoint, then run the Operator "
             "status command again."
@@ -9648,6 +9773,11 @@ def inspect_operator_run_status(value: str, runner: CommandRunner) -> None:
     emit(f"Cycle: {data.get('cycle') or 0} / {data.get('max_cycles') or 'unknown'}")
     emit(f"Last checkpoint: {operator_last_checkpoint_summary(data)}")
     emit(f"Current: {operator_current_summary(data)}")
+    active_child_lines = operator_active_child_status_lines(data)
+    if active_child_lines:
+        emit("Active child:")
+        for line in active_child_lines:
+            emit(f"- {line}")
     deploy_repair = data.get("deploy_repair")
     if isinstance(deploy_repair, dict):
         target = deploy_repair.get("target_issue")

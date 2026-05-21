@@ -597,11 +597,15 @@ python3 scripts/ralph.py --operator-run-status .ralph/operator-runs/operator-202
 ```
 
 Status reports the current state, last checkpoint, current issue or
-**Promotion**, child manifest paths, rollup artifact paths, queue counts, and
-recommended next action. Read `operator-run-rollup.md` first for completed or
-stopped runs. Open the child `ralph-run.json` or command logs only when the
-status guidance or rollup points to a failed issue, failed **Promotion**, or
-manual recovery condition. If status reports `needs_review`, read
+**Promotion**, queue counts, child manifest paths, rollup artifact paths, and
+recommended next action. When an Operator child is active, status also reports
+the active child run directory or manifest path, child status and stage, elapsed
+time, and the last recorded child checkpoint or heartbeat timestamp from
+`ralph-run.json`. It does not tail child Codex JSONL or rich command logs by
+default. Read `operator-run-rollup.md` first for completed or stopped runs.
+Open the child `ralph-run.json` or command logs only when the status guidance or
+rollup points to a failed issue, failed **Promotion**, or manual recovery
+condition. If status reports `needs_review`, read
 `exploratory-acceptance-review.md`, then run the `$ralph-loop` Exploratory
 acceptance review flow before rerunning drain or **Promotion**.
 

@@ -118,7 +118,9 @@ The detached launcher prints the Operator run directory and status command, then
 exits. Status reads `.ralph/operator-runs/.../operator-run.json` and reports the
 current state, last checkpoint, current issue or **Promotion**, child
 `.ralph/runs/.../ralph-run.json` paths, queue counts, and recommended next
-action. A foreground run is also available for human terminals:
+action. While a child is active, status includes the active child run path,
+elapsed time, and child checkpoint or heartbeat timestamp without tailing child
+logs. A foreground run is also available for human terminals:
 
 ```bash
 python3 scripts/ralph.py --drain-promote-all --max-cycles 10
@@ -378,6 +380,12 @@ For a checkpointed Operator run, inspect status before opening child logs:
 ```bash
 python3 scripts/ralph.py --operator-run-status latest
 ```
+
+While a checkpointed child is active, status reports the child issue or
+**Promotion**, child run directory or manifest path, child status and stage,
+elapsed time, and the last recorded child checkpoint or heartbeat timestamp from
+`ralph-run.json`. It stays compact and does not tail child Codex JSONL or rich
+command logs by default.
 
 Completed or stopped runs write `operator-run-rollup.md` and
 `operator-run-rollup.json` beside `operator-run.json`. Read the Markdown rollup

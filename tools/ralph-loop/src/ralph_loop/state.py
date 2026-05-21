@@ -1593,9 +1593,16 @@ class OperatorRunManifest:
         self.record_event("cycle_started", details={"cycle": cycle})
 
     def record_current_issue(self, issue: Issue) -> None:
+        self.record_current_issue_payload(issue_payload_for_operator(issue))
+
+    def record_current_issue_payload(self, issue_payload: dict[str, Any]) -> None:
         self.record_event(
             "running_issue",
-            current={"kind": "issue", "issue": issue_payload_for_operator(issue)},
+            current={
+                "kind": "issue",
+                "issue": issue_payload,
+                "started_at": utc_now_text(),
+            },
         )
 
     def record_current_promotion(
@@ -1607,8 +1614,62 @@ class OperatorRunManifest:
                 "kind": "promotion",
                 "source_branch": source_branch,
                 "target_branch": target_branch,
+                "started_at": utc_now_text(),
             },
         )
+
+    def record_active_child_manifest(self, child_manifest_path: Path) -> None:
+        current = self.data.get("current")
+        if not isinstance(current, dict):
+            current = self._current_from_child_manifest(child_manifest_path)
+        else:
+            current = dict(current)
+        current.setdefault("started_at", utc_now_text())
+        current["child_run_dir"] = str(child_manifest_path.parent)
+        current["child_manifest_path"] = str(child_manifest_path)
+        current["child_last_observed_at"] = utc_now_text()
+
+        entry = child_manifest_entry(child_manifest_path)
+        for key in ("kind", "status", "stage", "started_at", "updated_at"):
+            value = entry.get(key)
+            if value is not None:
+                current[f"child_{key}"] = value
+        if isinstance(entry.get("issue"), dict) and current.get("kind") != "promotion":
+            current["kind"] = "issue"
+            current["issue"] = entry["issue"]
+
+        self.record_child_run(child_manifest_path)
+        self.record_event(
+            "active_child_manifest_recorded",
+            current=current,
+            details={
+                "child_manifest_path": str(child_manifest_path),
+                "child_run_dir": str(child_manifest_path.parent),
+            },
+        )
+
+    def _current_from_child_manifest(self, child_manifest_path: Path) -> dict[str, Any]:
+        entry = child_manifest_entry(child_manifest_path)
+        kind = str(entry.get("kind") or "child")
+        if kind == "implementation" and isinstance(entry.get("issue"), dict):
+            return {
+                "kind": "issue",
+                "issue": entry["issue"],
+                "started_at": utc_now_text(),
+            }
+        if kind == "promotion":
+            data = child_manifest_data_for_operator(child_manifest_path)
+            return {
+                "kind": "promotion",
+                "source_branch": str(data.get("source_branch") or "unknown")
+                if isinstance(data, dict)
+                else "unknown",
+                "target_branch": str(data.get("integration_target") or "unknown")
+                if isinstance(data, dict)
+                else "unknown",
+                "started_at": utc_now_text(),
+            }
+        return {"kind": kind, "started_at": utc_now_text()}
 
     def record_current_deployment(
         self,
@@ -3239,11 +3300,10 @@ def child_manifest_entry(child_manifest_path: Path) -> dict[str, Any]:
     if not child_manifest_path.exists():
         entry["status"] = "missing"
         return entry
-    try:
-        data = json.loads(child_manifest_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as error:
+    data, error = child_manifest_data_for_operator_with_error(child_manifest_path)
+    if error is not None:
         entry["status"] = "invalid"
-        entry["error"] = str(error)
+        entry["error"] = error
         return entry
     if not isinstance(data, dict):
         entry["status"] = "invalid"
@@ -3252,6 +3312,10 @@ def child_manifest_entry(child_manifest_path: Path) -> dict[str, Any]:
     entry["kind"] = str(data.get("run_kind") or "unknown")
     entry["status"] = str(data.get("status") or "unknown")
     entry["stage"] = str(data.get("stage") or "unknown")
+    if data.get("started_at") is not None:
+        entry["started_at"] = data.get("started_at")
+    if data.get("updated_at") is not None:
+        entry["updated_at"] = data.get("updated_at")
     issue = data.get("issue")
     if isinstance(issue, dict):
         entry["issue"] = {
@@ -3262,6 +3326,27 @@ def child_manifest_entry(child_manifest_path: Path) -> dict[str, Any]:
     if isinstance(data.get("promotion_commit"), dict):
         entry["promotion_commit"] = data["promotion_commit"]
     return entry
+
+
+def child_manifest_data_for_operator_with_error(
+    child_manifest_path: Path,
+) -> tuple[dict[str, Any] | None, str | None]:
+    try:
+        data = json.loads(child_manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        return None, str(error)
+    if not isinstance(data, dict):
+        return None, "manifest root is not an object"
+    return data, None
+
+
+def child_manifest_data_for_operator(
+    child_manifest_path: Path,
+) -> dict[str, Any] | None:
+    data, error = child_manifest_data_for_operator_with_error(child_manifest_path)
+    if error is not None:
+        return None
+    return data
 
 
 def promotion_commit_inventory_entries(
