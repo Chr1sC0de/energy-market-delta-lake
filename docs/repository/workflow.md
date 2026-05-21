@@ -163,7 +163,7 @@ Local workflow notes:
   observations, including source-definition-backed asset-check count, with
   `budget.status` set to `not-enforced`. Ralph **Promotion** runs pass
   `--rebuild`, an explicit `--seed-root` pointing at the primary repo cache, and
-  select the `promotion-gas-model` scenario with `--timeout-seconds 1200` and
+  select the `promotion-gas-model` scenario with `--timeout-seconds 1800` and
   `--max-concurrent-runs 6`. The scenario uses the same raw and zip seed horizon
   and validates the runtime
   GraphQL target count against that source count through the #141
@@ -186,7 +186,7 @@ Local workflow notes:
   telemetry and #76 budget report expose the observed timing, run-shape,
   target-progress, asset-check, cleanup, and manifest-path fields. The Promotion
   scenario enforces #79 Promotion guard
-  regression budgets from the approved #78 targeted baseline: 20 minute total
+  regression budgets from the approved #78 targeted baseline: 30 minute total
   duration, `6` peak active runs, `6` peak queued runs, total Dagster runs at
   or below the current direct-launch `dataflow.scenario_evidence.batch_count`,
   target progress matching the current

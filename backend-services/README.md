@@ -389,7 +389,7 @@ the stack runs from an ephemeral worktree. Refresh that cache with
 | `--seed-root` | `backend-services/.e2e/aemo-etl` | Cached Archive seed root mounted into the isolated stack |
 | `--raw-latest-count` | scenario-specific | Cached raw source-table objects required per table; `1` for `full-gas-model`, `1` for `promotion-gas-model` |
 | `--zip-latest-count` | scenario-specific | Cached zip objects required per domain; `1` for `full-gas-model`, `1` for `promotion-gas-model` |
-| `--timeout-seconds` | scenario-specific | Overall stack and dataflow timeout; `5400` for `full-gas-model`, `1200` for `promotion-gas-model` |
+| `--timeout-seconds` | scenario-specific | Overall stack and dataflow timeout; `5400` for `full-gas-model`, `1800` for `promotion-gas-model` |
 | `--max-concurrent-runs` | scenario-specific | Dagster queued run coordinator `max_concurrent_runs`; `6` for `full-gas-model`, `6` for `promotion-gas-model` |
 
 After the isolated stack reaches readiness, the command drives the Dagster
@@ -489,7 +489,7 @@ failure remain in the manifest.
 
 The `promotion-gas-model` scenario enforces #79 Promotion guard regression
 budgets from the approved #78 targeted baseline: total gate duration at or
-below 20 minutes, peak active runs at or below `6`, peak queued runs at or
+below 30 minutes, peak active runs at or below `6`, peak queued runs at or
 below `6`, total Dagster runs at or below the current direct-launch
 `dataflow.scenario_evidence.batch_count`, target progress exactly matching the
 current `source_definitions.executable_asset_count` evidence from the source

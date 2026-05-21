@@ -1187,7 +1187,7 @@ When the promoted range includes non-doc runtime files under
 target Promotion worktree. The gate is recorded as
 `aemo-etl End-to-end test` in the Promotion run manifest and invokes
 `scripts/aemo-etl-e2e run` from the `backend-services` **Subproject** with
-`--rebuild`, `--scenario promotion-gas-model`, `--timeout-seconds 1200`,
+`--rebuild`, `--scenario promotion-gas-model`, `--timeout-seconds 1800`,
 `--max-concurrent-runs 6`, and
 `--seed-root <primary-repo>/backend-services/.e2e/aemo-etl`, so the temporary
 Promotion source worktree uses the operator-maintained cached Archive seed
@@ -1221,7 +1221,7 @@ The gate protects the approved #77 coverage invariants: every materializable
 `gas_model` asset, final asset-check status for that target, Dagster,
 LocalStack/S3, Podman run-worker containers, and the Dagster GraphQL monitor.
 It enforces #79 Promotion guard regression budgets from the approved #78
-targeted baseline: 20 minute total duration, `6` peak active runs, `6` peak
+targeted baseline: 30 minute total duration, `6` peak active runs, `6` peak
 queued runs, total Dagster runs at or below the current direct-launch
 `dataflow.scenario_evidence.batch_count`, target progress matching the current
 `source_definitions.executable_asset_count`, and `0` missing or failed target
@@ -1643,7 +1643,7 @@ cd backend-services
 scripts/aemo-etl-e2e run \
   --rebuild \
   --scenario promotion-gas-model \
-  --timeout-seconds 1200 \
+  --timeout-seconds 1800 \
   --max-concurrent-runs 6 \
   --seed-root <primary-repo>/backend-services/.e2e/aemo-etl
 ```

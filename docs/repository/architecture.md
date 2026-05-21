@@ -170,7 +170,7 @@ materializable upstream closure; it defaults to host webserver port `3001`, a 90
 minute timeout, Dagster `max_concurrent_runs` `6`, 1 cached raw object per
 required source table, and 1 cached zip object per required domain. Ralph
 **Promotion** uses the `promotion-gas-model` scenario from the isolated source
-worktree with `--rebuild`, a 20 minute timeout, Dagster `max_concurrent_runs`
+worktree with `--rebuild`, a 30 minute timeout, Dagster `max_concurrent_runs`
 `6`, and the same 1-object raw and zip seed horizon. That Promotion scenario
 validates the runtime GraphQL target count against that source count through the
 GitHub issue #141 stale-runtime/current-source guard, and uses the same
@@ -196,7 +196,7 @@ keys, dependency-wave count, run-batch count, and asset batch size; the
 manifest also records top-level source-definition evidence with the current
 executable asset count, asset-check count, full target keys, and STTM target
 keys. The Promotion scenario enforces regression budgets from the
-approved targeted baseline: total gate duration at or below 20 minutes, peak
+approved targeted baseline: total gate duration at or below 30 minutes, peak
 active and queued runs at or below `6`, total Dagster runs at or below the
 current direct-launch `dataflow.scenario_evidence.batch_count`, target progress
 matching the current `source_definitions.executable_asset_count`, and missing or
