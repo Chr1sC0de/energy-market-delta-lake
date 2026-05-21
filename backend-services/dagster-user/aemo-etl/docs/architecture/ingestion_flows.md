@@ -51,6 +51,9 @@ Trigger and output notes:
 
 - The first step is schedule-driven from `src/aemo_etl/defs/raw/nemweb_public_files.py`.
 - The unzip and bronze steps are sensor-driven from `src/aemo_etl/definitions.py`; that module also registers the failed-run alert sensor, which is not part of the ingestion data path shown here. Source-table bronze raw sensors select at most 128 MB (128,000,000 bytes) and 25 landing files per run request by default. Those caps are source-table batching defaults, not the full repo **Fast check** or **Push check** configuration. The source-table sensor suppresses repeated launches after a failed job at the same job tags, while allowing a retry after retry-relevant tags such as ECS CPU or memory change.
+- GBB source-table bronze/source-silver pairs are organized in Source report
+  family groups such as `gas_gbb_market`, `gas_gbb_operations`,
+  `gas_gbb_capacity`, `gas_gbb_quality`, and `gas_gbb_reference`.
 - Outputs land in Delta tables under the AEMO bucket plus archived source files
   under `ARCHIVE_BUCKET/bronze/gbb`. Processed source files are archived after a
   table write or when a zero-row processed batch requires no table change;
@@ -101,6 +104,10 @@ sequenceDiagram
 Trigger and output notes:
 
 - This follows the same factory pattern as GBB, but the downstream assets are the `int*` VICGAS report assets under `src/aemo_etl/defs/raw/vicgas`.
+- VICGAS source-table bronze/source-silver pairs are organized in Source report
+  family groups such as `gas_vicgas_market`, `gas_vicgas_operations`,
+  `gas_vicgas_settlement_retail`, `gas_vicgas_capacity`,
+  `gas_vicgas_quality`, `gas_vicgas_reference`, and `gas_vicgas_notices`.
 - `download_vicgas_public_report_zip_files_job` is ad hoc only. It is used for
   bootstrap or backfill of `PublicRptsNN.zip` bundles into
   `LANDING_BUCKET/bronze/vicgas/<filename>`; the existing unzipper and raw
@@ -172,6 +179,9 @@ Trigger and output notes:
   v19.1 spec-backed STTM source-table assets. Their compact manifest lives
   under `src/aemo_etl/defs/raw/sttm`, declares every source report column as
   `String`, and keeps the standard ingestion metadata columns.
+- STTM source-table bronze/source-silver pairs are organized in Source report
+  family groups such as `gas_sttm_market`, `gas_sttm_settlement_retail`,
+  `gas_sttm_capacity`, `gas_sttm_reference`, and `gas_sttm_notices`.
 - `INT685` and `INT685B` appear as live root CSV reports but are absent from
   the v19.1 STTM report specification manifest. Discovery may land those files,
   but they are landing-only gaps until a spec-backed source-table entry exists.
@@ -280,6 +290,10 @@ Trigger and output notes:
 - Source-table bronze assets are current-state Delta tables, not append-history
   tables. Discovery/listing assets such as `bronze_nemweb_public_files_*` and
   extraction assets such as `unzipper_*` are separate ingestion roles.
+- Dagster visual groups are organized by role or Source report family. Source
+  table assets carry structured tags for `aemo_etl_layer`, `aemo_etl_domain`,
+  `aemo_etl_role`, and `aemo_etl_report_family`; curated gas-model assets use
+  `aemo_etl_layer=gas_model` and `aemo_etl_mart` for durable selection.
 - `source_content_hash` is calculated from declared source columns, while
   `surrogate_key` is generated from each table's configured key columns. The
   merge updates a matched `surrogate_key` only when the hash changes and inserts
@@ -301,11 +315,12 @@ S3-compatible storage rather than AWS. Integration tests also create a
 `delta_log` DynamoDB table so Delta locking works for local **End-to-end test**
 materializations. For local **End-to-end test** setup,
 `aemo-e2e-archive-seed` can refresh the ignored cached Archive seed for the full
-`gas_model` target and load the cached objects into LocalStack landing storage
-before Dagster starts. The default seed slice is 3 raw objects per required
-source table and 3 zip objects per required domain. Refresh can also write
-explicit zero-byte placeholders for valid source-table archive gaps; zip-domain
-coverage remains mandatory so unzipper-backed e2e inputs are still present.
+curated `gas_model` target selected by `tag:aemo_etl_layer=gas_model` and load
+the cached objects into LocalStack landing storage before Dagster starts. The
+default seed slice is 3 raw objects per required source table and 3 zip objects
+per required domain. Refresh can also write explicit zero-byte placeholders for
+valid source-table archive gaps; zip-domain coverage remains mandatory so
+unzipper-backed e2e inputs are still present.
 
 The AEMO gas document Integration test uses the same LocalStack buckets and
 Delta lock table to verify included PDF bytes move from
@@ -326,6 +341,7 @@ Delta lock table to verify included PDF bytes move from
 
 - `sync.owner`: `docs`
 - `sync.sources`:
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/asset_organization.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/nemweb_public_files.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/aemo_gas_documents.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/_manifest.py`

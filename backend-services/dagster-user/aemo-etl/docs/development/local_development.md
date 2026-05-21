@@ -232,21 +232,22 @@ dataflow result. Failures preserve the stack plus run manifests unless
 Dagster dataflow monitor, and cleanup durations plus cleanup phase status, final
 Dagster run, target progress, target materialization timestamp, and asset-check
 telemetry. For direct-launch scenarios, the dataflow manifest also records
-scenario evidence: selected scenario, launch mode, target group, GraphQL-derived
-target asset count, target asset-check count, target keys, STTM target keys,
-selected upstream closure count, skipped live source asset keys, dependency-wave
-count, run-batch count, asset batch size, and nested source-definition evidence
-when available. For direct-launch gas_model scenarios, the top-level
-`source_definitions` section records the
-`uv run dg list defs --assets "group:gas_model" --json` command, working
-directory, executable asset count, asset-check count, full target asset keys,
-and STTM target keys.
+scenario evidence: selected scenario, launch mode, target selector,
+GraphQL-derived target asset count, target asset-check count, target keys, STTM
+target keys, selected upstream closure count, skipped live source asset keys,
+dependency-wave count, run-batch count, asset batch size, and nested
+source-definition evidence when available. For direct-launch gas_model scenarios,
+the top-level `source_definitions` section records the
+`uv run dg list defs --assets "tag:aemo_etl_layer=gas_model" --json` command,
+working directory, executable asset count, asset-check count, full target asset
+keys, and STTM target keys.
 After startup, it uses Dagster GraphQL to drive the selected scenario. The
 default `full-gas-model` scenario keeps automation stopped and launches explicit
 Dagster asset-run batches by dependency wave for every materializable
-`gas_model` asset plus its materializable upstream closure. It uses host
-webserver port `3001`, a 90 minute timeout, 1 raw object per required source
-table, 1 zip object per required domain, and Dagster `max_concurrent_runs` `6`.
+curated `gas_model` asset selected by `tag:aemo_etl_layer=gas_model` plus its
+materializable upstream closure. It uses host webserver port `3001`, a 90 minute
+timeout, 1 raw object per required source table, 1 zip object per required
+domain, and Dagster `max_concurrent_runs` `6`.
 The `promotion-gas-model` scenario uses the same direct-launch shape from the
 isolated source worktree for Ralph **Promotion** with the same one-object seed
 horizon, uses a 30 minute timeout, and adds the #141
@@ -263,22 +264,24 @@ instead of reusing a stale AEMO ETL or Dagster image.
 
 The required **End-to-end test** coverage remains the approved #77 contract:
 exercise Dagster, LocalStack/S3, Podman run-worker containers, and the Dagster
-GraphQL monitor; materialize every materializable Dagster asset in group
-`gas_model`; and preserve final asset-check status for that target. Current
+GraphQL monitor; materialize every materializable curated Dagster asset selected
+by `tag:aemo_etl_layer=gas_model`; and preserve final asset-check status for
+that target. Current
 `source_definitions.executable_asset_count` evidence is derived from
-`uv run dg list defs --assets "group:gas_model" --json` in the source worktree
-before stack startup. The runtime GraphQL
+`uv run dg list defs --assets "tag:aemo_etl_layer=gas_model" --json` in the
+source worktree before stack startup. The runtime GraphQL
 `dataflow.scenario_evidence.target_asset_count` must match that source count
 before Promotion asset batches launch, so a stale 29-asset runtime graph fails
-against current 37-asset source definitions. That stale-runtime/current-source
+against current 36-asset source definitions. That stale-runtime/current-source
 guard belongs to the `promotion-gas-model` scenario and was closed by #141; the
 `full-gas-model` scenario shares the same source-definition evidence for
 check-count provenance and records expanded baseline evidence without enforcing
 that guard. At the current source revision,
-`dg list defs --assets "group:gas_model" --json` reports 37 executable
-`gas_model` assets and 144 asset checks, including the eight
-`silver_gas_fact_sttm_*` assets. Ralph runs this as a **Promotion** gate after
-the aggregate **Push check** for the source revision and before `main` is
+`dg list defs --assets "tag:aemo_etl_layer=gas_model" --json` reports 36
+curated executable `gas_model` assets, including the eight
+`silver_gas_fact_sttm_*` assets and excluding
+`silver/metadata/silver_table_metadata`. Ralph runs this as a **Promotion** gate
+after the aggregate **Push check** for the source revision and before `main` is
 merged, pushed, or issue metadata is updated. It protects work that has already
 reached `dev` through **Local integration** in Gitflow
 **Delivery mode**; it is not a separate **Test lane** and it is not a local
@@ -289,7 +292,7 @@ startup, Dagster dataflow monitor, and cleanup durations; cleanup phase status
 and issues; peak active and queued Dagster run counts; final run status counts;
 target progress; target materialization timestamps; and final missing or failed
 asset-check counts. Direct-launch `dataflow.scenario_evidence` also records the
-selected scenario, launch mode, target group, target asset count derived from
+selected scenario, launch mode, target selector, target asset count derived from
 the current GraphQL asset graph, source-definition-backed target asset-check
 count when available, target keys, STTM target keys, selected upstream closure
 count, skipped live source asset keys, dependency-wave count, run-batch count,
@@ -489,6 +492,7 @@ across the Subproject.
 
 - `sync.owner`: `docs`
 - `sync.sources`:
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/asset_organization.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/configs.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/alerts.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/jobs/download_vicgas_public_report_zip_files.py`
@@ -501,6 +505,7 @@ across the Subproject.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/refresh_aemo_gas_document_manifest.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
   - `backend-services/scripts/aemo-etl-e2e`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/current_state.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`

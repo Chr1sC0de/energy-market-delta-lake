@@ -47,6 +47,5 @@ defs = df_from_s3_keys_definitions_factory(
         positive or negative.
     """).strip("\n"),
     surrogate_key_sources=["ap_run_id"],
-    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

@@ -20,6 +20,7 @@ from dagster import (
 )
 from polars import LazyFrame
 
+from aemo_etl.asset_organization import gas_model_asset_tags, gas_model_group_name
 from aemo_etl.configs import AEMO_BUCKET, DEFAULT_SCHEDULE_STATUS
 from aemo_etl.factories.checks import (
     duplicate_row_check_factory,
@@ -31,7 +32,8 @@ from aemo_etl.utils import get_metadata_schema, get_surrogate_key
 DOMAIN = "gas_model"
 TABLE_NAME = "silver_gas_dim_date"
 KEY_PREFIX = ["silver", DOMAIN]
-GROUP_NAME = "gas_model"
+GROUP_NAME = gas_model_group_name(TABLE_NAME)
+TAGS = gas_model_asset_tags(TABLE_NAME)
 GRAIN = "one row per calendar date from 1900-01-01 through the run date"
 SURROGATE_KEY_SOURCES = ["gas_date"]
 CALENDAR_START_DATE = date(1900, 1, 1)
@@ -102,6 +104,7 @@ def _materialize_result(value: LazyFrame) -> MaterializeResult[LazyFrame]:
 @asset(
     key_prefix=KEY_PREFIX,
     group_name=GROUP_NAME,
+    tags=TAGS,
     description="Silver gas date dimension calendar for gas model facts.",
     io_manager_key="aemo_parquet_overwrite_io_manager",
     metadata={

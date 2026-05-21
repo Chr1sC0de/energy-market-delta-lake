@@ -20,6 +20,7 @@ from dagster import (
 )
 from polars import LazyFrame
 
+from aemo_etl.asset_organization import gas_model_asset_tags, gas_model_group_name
 from aemo_etl.configs import AEMO_BUCKET, DEFAULT_SENSOR_STATUS
 from aemo_etl.defs.gas_model._parsing import parse_gas_datetime
 from aemo_etl.factories.checks import (
@@ -32,7 +33,8 @@ from aemo_etl.utils import get_metadata_schema, get_surrogate_key
 DOMAIN = "gas_model"
 TABLE_NAME = "silver_gas_fact_settlement_activity"
 KEY_PREFIX = ["silver", DOMAIN]
-GROUP_NAME = "gas_model"
+GROUP_NAME = gas_model_group_name(TABLE_NAME)
+TAGS = gas_model_asset_tags(TABLE_NAME)
 GRAIN = "one row per source-specific settlement activity observation"
 SURROGATE_KEY_SOURCES = [
     "source_system",
@@ -282,6 +284,7 @@ def _materialize_result(value: LazyFrame) -> MaterializeResult[LazyFrame]:
 @asset(
     key_prefix=KEY_PREFIX,
     group_name=GROUP_NAME,
+    tags=TAGS,
     description="Silver gas settlement activity fact.",
     ins={
         "int117a": AssetIn(key=INT117A_KEY),

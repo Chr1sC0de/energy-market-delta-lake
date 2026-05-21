@@ -17,6 +17,7 @@ from dagster import (
 )
 from polars import LazyFrame, String
 
+from aemo_etl.asset_organization import GAS_METADATA_GROUP
 from aemo_etl.configs import AEMO_BUCKET, DEFAULT_SENSOR_STATUS
 from aemo_etl.utils import get_metadata_schema, get_surrogate_key
 
@@ -74,7 +75,7 @@ def _safe_json(metadata: Mapping[str, object]) -> str | None:
 
 @asset(
     key_prefix=KEY_PREFIX,
-    group_name="gas_raw",
+    group_name=GAS_METADATA_GROUP,
     description="Table metadata asset",
     io_manager_key="aemo_parquet_overwrite_io_manager",
     metadata={
@@ -197,7 +198,7 @@ def _silver_extract_column_schema_field(raw: str | None, field: str) -> str | No
 @asset(
     key_prefix=SILVER_KEY_PREFIX,
     name=SILVER_TABLE_NAME,
-    group_name="gas_model",
+    group_name=GAS_METADATA_GROUP,
     description="Silver table metadata asset — flattened metadata dict from bronze",
     ins={"df": AssetIn(bronze_table_metadata.key)},
     io_manager_key="aemo_parquet_overwrite_io_manager",

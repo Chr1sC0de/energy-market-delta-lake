@@ -48,6 +48,5 @@ defs = df_from_s3_keys_definitions_factory(
         network.
     """).strip("\n"),
     surrogate_key_sources=["postcode", "tuos_zone"],
-    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

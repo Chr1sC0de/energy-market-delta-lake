@@ -9,6 +9,7 @@ from typing import Final
 from polars import LazyFrame
 from polars._typing import PolarsDataType
 
+from aemo_etl.asset_organization import SourceReportFamily
 from aemo_etl.configs import AEMO_BUCKET
 from aemo_etl.factories.df_from_s3_keys.hooks import Hook
 
@@ -28,6 +29,7 @@ class DFFromS3KeysSourceTableSpec:
     glob_pattern: str
     schema: Mapping[str, PolarsDataType]
     surrogate_key_sources: tuple[str, ...]
+    report_family: SourceReportFamily
     postprocess_object_hooks: tuple[Hook[bytes], ...] = ()
     postprocess_lazyframe_hooks: tuple[Hook[LazyFrame], ...] = ()
 

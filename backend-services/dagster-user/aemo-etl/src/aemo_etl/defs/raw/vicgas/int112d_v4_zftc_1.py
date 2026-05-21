@@ -63,6 +63,5 @@ defs = df_from_s3_keys_definitions_factory(
         This report contains 24 rows for each ZFTC for each gas day reported.
     """).strip("\n"),
     surrogate_key_sources=["zftc_name", "commencement_date", "ti"],
-    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

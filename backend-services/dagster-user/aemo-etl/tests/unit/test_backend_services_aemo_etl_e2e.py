@@ -13,6 +13,13 @@ import pytest
 from dagster_graphql.schema import create_schema
 from graphql import GraphQLError, GraphQLSchema, Source, parse, validate
 
+from aemo_etl.asset_organization import (
+    AEMO_ETL_LAYER_TAG,
+    GAS_MODEL_MARKET_GROUP,
+    GAS_MODEL_TARGET_SELECTOR,
+    LAYER_GAS_MODEL,
+)
+
 
 EMBEDDED_DAGSTER_GRAPHQL_DOCUMENTS = (
     ("ping query", "PING_QUERY"),
@@ -24,8 +31,12 @@ EMBEDDED_DAGSTER_GRAPHQL_DOCUMENTS = (
     ("dataflow target status query", "DAGSTER_DATAFLOW_TARGET_STATUS_QUERY"),
 )
 
-CURRENT_GAS_MODEL_TARGET_ASSET_COUNT = 37
+CURRENT_GAS_MODEL_TARGET_ASSET_COUNT = 36
 LEGACY_GAS_MODEL_TARGET_ASSET_COUNT = 29
+GAS_MODEL_TARGET_TAGS = ((AEMO_ETL_LAYER_TAG, LAYER_GAS_MODEL),)
+GAS_MODEL_TARGET_TAG_LIST = [
+    {"key": AEMO_ETL_LAYER_TAG, "value": LAYER_GAS_MODEL},
+]
 STTM_GAS_MODEL_FACT_NAMES = (
     "silver_gas_fact_sttm_allocation_limit",
     "silver_gas_fact_sttm_allocation_quantity",
@@ -50,7 +61,8 @@ def gas_model_source_definition_payload(
             {
                 "asset_key": asset_key,
                 "asset_key_parts": asset_key.split("/"),
-                "group_name": "gas_model",
+                "group_name": GAS_MODEL_MARKET_GROUP,
+                "tags": GAS_MODEL_TARGET_TAG_LIST,
                 "is_executable": True,
             }
             for asset_key in asset_keys
@@ -449,8 +461,10 @@ def test_promotion_scenario_keeps_approved_sensor_and_target_contract() -> None:
     assert "silver_table_metadata_sensor" in expected_sensor_names
     assert "silver_gas_fact_operational_meter_flow_sensor" in expected_sensor_names
     assert "dependencyKeys" in asset_graph_query
+    assert "tags" in asset_graph_query
     assert "assetChecksOrError" not in asset_graph_query
-    assert 'groupName: "gas_model"' in target_status_query
+    assert 'groupName: "gas_model"' not in target_status_query
+    assert "tags" in target_status_query
     assert "isMaterializable" in target_status_query
 
 
@@ -1129,8 +1143,9 @@ def test_select_gas_model_upstream_materializable_asset_keys() -> None:
         [
             asset_node_class(
                 key=("silver", "gas_model", "silver_gas_fact_flow"),
-                group_name="gas_model",
+                group_name=GAS_MODEL_MARKET_GROUP,
                 is_materializable=True,
+                tags=GAS_MODEL_TARGET_TAGS,
                 dependency_keys=(
                     ("silver", "gbb", "silver_gasbb_flow"),
                     ("external", "archive"),
@@ -1198,8 +1213,9 @@ def test_promotion_launch_plan_counts_current_sttm_target_growth() -> None:
         [
             asset_node_class(
                 key=("silver", "gas_model", asset_name),
-                group_name="gas_model",
+                group_name=GAS_MODEL_MARKET_GROUP,
                 is_materializable=True,
+                tags=GAS_MODEL_TARGET_TAGS,
                 dependency_keys=(),
             )
             for asset_name in (*non_sttm_target_names, *STTM_GAS_MODEL_FACT_NAMES)
@@ -1209,7 +1225,10 @@ def test_promotion_launch_plan_counts_current_sttm_target_growth() -> None:
     )
 
     target_asset_keys = set(getattr(launch_plan, "target_asset_keys"))
-    assert getattr(launch_plan, "to_manifest")()["target_asset_count"] == 37
+    assert (
+        getattr(launch_plan, "to_manifest")()["target_asset_count"]
+        == CURRENT_GAS_MODEL_TARGET_ASSET_COUNT
+    )
     assert len(target_asset_keys) == CURRENT_GAS_MODEL_TARGET_ASSET_COUNT
     assert {
         ("silver", "gas_model", asset_name) for asset_name in STTM_GAS_MODEL_FACT_NAMES
@@ -1229,22 +1248,25 @@ def test_full_launch_plan_records_expanded_sttm_baseline_evidence() -> None:
         [
             asset_node_class(
                 key=("silver", "gas_model", "silver_gas_legacy_target"),
-                group_name="gas_model",
+                group_name=GAS_MODEL_MARKET_GROUP,
                 is_materializable=True,
+                tags=GAS_MODEL_TARGET_TAGS,
                 dependency_keys=(),
                 asset_check_count=1,
             ),
             asset_node_class(
                 key=("silver", "gas_model", STTM_GAS_MODEL_FACT_NAMES[0]),
-                group_name="gas_model",
+                group_name=GAS_MODEL_MARKET_GROUP,
                 is_materializable=True,
+                tags=GAS_MODEL_TARGET_TAGS,
                 dependency_keys=(),
                 asset_check_count=4,
             ),
             asset_node_class(
                 key=("silver", "gas_model", STTM_GAS_MODEL_FACT_NAMES[1]),
-                group_name="gas_model",
+                group_name=GAS_MODEL_MARKET_GROUP,
                 is_materializable=True,
+                tags=GAS_MODEL_TARGET_TAGS,
                 dependency_keys=(),
                 asset_check_count=4,
             ),
@@ -1323,7 +1345,7 @@ def test_collect_gas_model_source_definition_evidence_records_current_source_cou
                 "list",
                 "defs",
                 "--assets",
-                "group:gas_model",
+                GAS_MODEL_TARGET_SELECTOR,
                 "--json",
             ),
             tmp_path / "backend-services/dagster-user/aemo-etl",
@@ -1367,8 +1389,9 @@ def test_promotion_source_definition_validation_fails_stale_runtime_graph(
         [
             asset_node_class(
                 key=("silver", "gas_model", asset_name),
-                group_name="gas_model",
+                group_name=GAS_MODEL_MARKET_GROUP,
                 is_materializable=True,
+                tags=GAS_MODEL_TARGET_TAGS,
                 dependency_keys=(),
             )
             for asset_name in legacy_target_names
@@ -1379,7 +1402,7 @@ def test_promotion_source_definition_validation_fails_stale_runtime_graph(
     source_definition_evidence = source_definition_class(
         command=("uv", "run", "dg", "list", "defs"),
         working_directory=tmp_path,
-        target_group="gas_model",
+        target_selector=GAS_MODEL_TARGET_SELECTOR,
         executable_asset_keys=tuple(
             ("silver", "gas_model", asset_name) for asset_name in current_target_names
         ),
@@ -1396,7 +1419,7 @@ def test_promotion_source_definition_validation_fails_stale_runtime_graph(
     assert "stale Dagster asset graph detected for Promotion gate" in message
     assert "dataflow.scenario_evidence.target_asset_count is 29" in message
     assert "source_definitions.executable_asset_count" in message
-    assert "report 37 executable gas_model assets" in message
+    assert f"report 36 executable {GAS_MODEL_TARGET_SELECTOR} assets" in message
 
 
 def test_launch_plan_manifest_includes_source_definition_evidence(
@@ -1419,8 +1442,9 @@ def test_launch_plan_manifest_includes_source_definition_evidence(
         [
             asset_node_class(
                 key=("silver", "gas_model", asset_name),
-                group_name="gas_model",
+                group_name=GAS_MODEL_MARKET_GROUP,
                 is_materializable=True,
+                tags=GAS_MODEL_TARGET_TAGS,
                 dependency_keys=(),
             )
             for asset_name in asset_names
@@ -1431,7 +1455,7 @@ def test_launch_plan_manifest_includes_source_definition_evidence(
     source_definition_evidence = source_definition_class(
         command=("uv", "run", "dg", "list", "defs"),
         working_directory=tmp_path,
-        target_group="gas_model",
+        target_selector=GAS_MODEL_TARGET_SELECTOR,
         executable_asset_keys=tuple(
             ("silver", "gas_model", asset_name) for asset_name in asset_names
         ),
@@ -1487,7 +1511,8 @@ def test_full_launch_plan_manifest_uses_source_check_count_without_runtime_check
                                 STTM_GAS_MODEL_FACT_NAMES[0],
                             ]
                         },
-                        "groupName": "gas_model",
+                        "groupName": GAS_MODEL_MARKET_GROUP,
+                        "tags": GAS_MODEL_TARGET_TAG_LIST,
                         "isMaterializable": True,
                         "dependencyKeys": [],
                     },
@@ -1499,7 +1524,8 @@ def test_full_launch_plan_manifest_uses_source_check_count_without_runtime_check
                                 STTM_GAS_MODEL_FACT_NAMES[1],
                             ]
                         },
-                        "groupName": "gas_model",
+                        "groupName": GAS_MODEL_MARKET_GROUP,
+                        "tags": GAS_MODEL_TARGET_TAG_LIST,
                         "isMaterializable": True,
                         "dependencyKeys": [],
                     },
@@ -1515,7 +1541,7 @@ def test_full_launch_plan_manifest_uses_source_check_count_without_runtime_check
     source_definition_evidence = source_definition_class(
         command=("uv", "run", "dg", "list", "defs"),
         working_directory=tmp_path,
-        target_group="gas_model",
+        target_selector=GAS_MODEL_TARGET_SELECTOR,
         executable_asset_keys=tuple(
             ("silver", "gas_model", asset_name)
             for asset_name in STTM_GAS_MODEL_FACT_NAMES[:2]
@@ -1565,7 +1591,8 @@ def test_promotion_upstream_launch_uses_dependency_waves() -> None:
                     "assetNodes": [
                         {
                             "assetKey": {"path": ["silver", "gas_model", "target"]},
-                            "groupName": "gas_model",
+                            "groupName": GAS_MODEL_MARKET_GROUP,
+                            "tags": GAS_MODEL_TARGET_TAG_LIST,
                             "isMaterializable": True,
                             "dependencyKeys": [
                                 {"path": ["silver", "gbb", "upstream"]},
@@ -1729,7 +1756,7 @@ def test_promotion_upstream_launch_uses_dependency_waves() -> None:
     assert getattr(launch_result, "scenario_evidence") == {
         "scenario": "promotion-gas-model",
         "launch_mode": "direct-upstream-asset-launch",
-        "target_group": "gas_model",
+        "target_selector": GAS_MODEL_TARGET_SELECTOR,
         "target_asset_count": 1,
         "target_asset_check_count": 0,
         "target_asset_keys": ["silver/gas_model/target"],
@@ -1773,7 +1800,8 @@ def test_promotion_upstream_launch_paces_batches_to_run_capacity() -> None:
                     "assetNodes": [
                         {
                             "assetKey": {"path": ["silver", "gas_model", "target"]},
-                            "groupName": "gas_model",
+                            "groupName": GAS_MODEL_MARKET_GROUP,
+                            "tags": GAS_MODEL_TARGET_TAG_LIST,
                             "isMaterializable": True,
                             "dependencyKeys": [
                                 {"path": ["bronze", "gbb", f"raw_{index}"]}
@@ -2390,7 +2418,7 @@ def test_e2e_promotion_regression_budgets_pass_for_current_launch_plan() -> None
         "total Dagster runs: observed 67; "
         "threshold <= 67 from dataflow.scenario_evidence.batch_count" in report
     )
-    assert "target progress: observed 37/37 materialized" in report
+    assert "target progress: observed 36/36 materialized" in report
     assert "failed target asset checks: observed 0; threshold <= 0" in report
 
 
@@ -2557,7 +2585,9 @@ def test_e2e_promotion_regression_budgets_fail_coverage_contract() -> None:
                 "peak_queued_run_count": 0,
                 "final_run_status_counts": {"SUCCESS": 48},
                 "final_target_progress": {
-                    "materialized_target_asset_count": 36,
+                    "materialized_target_asset_count": (
+                        CURRENT_GAS_MODEL_TARGET_ASSET_COUNT - 1
+                    ),
                     "target_asset_count": CURRENT_GAS_MODEL_TARGET_ASSET_COUNT,
                     "missing_target_asset_count": 1,
                     "failed_target_asset_count": 0,
@@ -2570,7 +2600,7 @@ def test_e2e_promotion_regression_budgets_fail_coverage_contract() -> None:
     )
 
     assert (
-        "target progress observed 36/37 materialized; required 37/37 "
+        "target progress observed 35/36 materialized; required 36/36 "
         "materialized from dataflow.scenario_evidence.target_asset_count" in failures
     )
     assert "missing target assets observed 1; threshold <= 0" in failures
@@ -2579,7 +2609,7 @@ def test_e2e_promotion_regression_budgets_fail_coverage_contract() -> None:
 
 
 def test_e2e_promotion_regression_budgets_fail_stale_target_count() -> None:
-    """A stale 29/29 target observation fails against current 37-asset evidence."""
+    """A stale 29/29 target observation fails against current 36-asset evidence."""
     module = load_e2e_command_module()
     e2e_budget_failures = get_callable(module, "e2e_budget_failures")
     e2e_regression_budgets_for_run = get_callable(
@@ -2619,7 +2649,7 @@ def test_e2e_promotion_regression_budgets_fail_stale_target_count() -> None:
     )
 
     assert failures == (
-        "target progress observed 29/29 materialized; required 37/37 "
+        "target progress observed 29/29 materialized; required 36/36 "
         "materialized from dataflow.scenario_evidence.target_asset_count",
     )
 
@@ -2665,7 +2695,7 @@ def test_e2e_promotion_regression_budget_enforcement_fails_stale_runtime_graph(
                 "list",
                 "defs",
                 "--assets",
-                "group:gas_model",
+                GAS_MODEL_TARGET_SELECTOR,
                 "--json",
             ],
         },
@@ -2700,7 +2730,7 @@ def test_e2e_promotion_regression_budget_enforcement_fails_stale_runtime_graph(
 
     assert "E2E Promotion guard regression budget failed" in str(caught.value)
     assert (
-        "target progress observed 29/29 materialized; required 37/37 "
+        "target progress observed 29/29 materialized; required 36/36 "
         "materialized from source_definitions.executable_asset_count"
         in str(caught.value)
     )
@@ -3003,6 +3033,7 @@ def test_dataflow_status_reports_target_progress_while_runs_are_active() -> None
                 "targetAssets": [
                     {
                         "assetKey": {"path": ["silver", "gas_model", "done"]},
+                        "tags": GAS_MODEL_TARGET_TAG_LIST,
                         "isMaterializable": True,
                         "assetMaterializations": [
                             {"runId": "run-target", "timestamp": 200.0}
@@ -3014,6 +3045,7 @@ def test_dataflow_status_reports_target_progress_while_runs_are_active() -> None
                     },
                     {
                         "assetKey": {"path": ["silver", "gas_model", "missing"]},
+                        "tags": GAS_MODEL_TARGET_TAG_LIST,
                         "isMaterializable": True,
                         "assetMaterializations": [],
                         "assetChecksOrError": {
@@ -3103,6 +3135,7 @@ def test_dataflow_status_reads_postgres_checks_after_target_materializes() -> No
                 "targetAssets": [
                     {
                         "assetKey": {"path": ["silver", "gas_model", "target"]},
+                        "tags": GAS_MODEL_TARGET_TAG_LIST,
                         "isMaterializable": True,
                         "assetMaterializations": [
                             {"runId": "run-target", "timestamp": 200.0}

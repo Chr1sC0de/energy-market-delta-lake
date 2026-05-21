@@ -66,6 +66,5 @@ defs = df_from_s3_keys_definitions_factory(
         period.
     """).strip("\n"),
     surrogate_key_sources=["gas_date"],
-    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

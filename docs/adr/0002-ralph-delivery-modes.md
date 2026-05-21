@@ -92,18 +92,19 @@ push, branch sync, metadata update, or issue closure, so `main` is not updated
 before the fetched source revision passes. Ralph selects the
 `promotion-gas-model` scenario for that gate: it may narrow incidental seed and
 automation volume and launch explicit dependency-wave asset batches for the
-`gas_model` upstream asset graph while skipping live
+curated `gas_model` upstream asset graph selected by
+`tag:aemo_etl_layer=gas_model` while skipping live
 `bronze_nemweb_public_files_*` discovery/listing assets. Those batches run
 in-process inside Podman run-worker containers to reduce LocalStack and Delta
 Lake DynamoDB lock-table contention, and the generated stack uses fixed service
 IPs for Postgres, LocalStack, and the AEMO ETL code server to avoid relying on
 Podman DNS during the gate. Direct launch paces batch submission against
 `max_concurrent_runs` so queued runs remain within the Promotion guard budget.
-The gate still requires every
-materializable `gas_model` asset and final asset-check status to pass. Its e2e
-run manifest records the selected scenario, launch mode, target group, target
-asset count, selected upstream closure count, skipped live source asset keys,
-dependency-wave count, run-batch count, and asset batch size so
+The gate still requires every materializable curated `gas_model` asset and final
+asset-check status to pass. Its e2e run manifest records the selected scenario,
+launch mode, target selector, target asset count, selected upstream closure
+count, skipped live source asset keys, dependency-wave count, run-batch count,
+and asset batch size so
 **Post-promotion review** can verify the direct-launch coverage without
 reconstructing it from logs.
 Successful Promotions with changed files record a full source
@@ -168,6 +169,8 @@ follow-up contract or needs triage evidence.
   - `tools/ralph-loop/src/ralph_loop/state.py`
   - `tools/ralph-loop/src/ralph_loop/workflow.py`
   - `docs/agents/ralph-loop.md`
+  - `backend-services/scripts/aemo-etl-e2e`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/asset_organization.py`
   - `CONTEXT.md`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
   - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`

@@ -43,6 +43,7 @@ def _spec(
         glob_pattern="table*.csv",
         schema=_SCHEMA,
         surrogate_key_sources=("col1",),
+        report_family="reference",
     )
 
 

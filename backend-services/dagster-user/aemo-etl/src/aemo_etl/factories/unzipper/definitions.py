@@ -2,6 +2,7 @@
 
 from dagster import Definitions
 
+from aemo_etl.asset_organization import GAS_INGESTION_UNZIP_GROUP
 from aemo_etl.configs import ARCHIVE_BUCKET, LANDING_BUCKET
 from aemo_etl.factories.unzipper.assets import unzipper_asset_factory
 from aemo_etl.factories.unzipper.file_unzipper import FileUnzipper
@@ -15,7 +16,7 @@ def unzipper_definitions_factory(
     s3_landing_prefix: str | None = None,
     s3_archive_bucket: str = ARCHIVE_BUCKET,
     file_unzipper: FileUnzipper | None = None,
-    group_name: str = "gas_raw",
+    group_name: str = GAS_INGESTION_UNZIP_GROUP,
 ) -> Definitions:
     """Return a ``Definitions`` object containing a sensor-driven unzipper asset.
 

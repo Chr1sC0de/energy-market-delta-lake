@@ -84,7 +84,6 @@ defs = df_from_s3_keys_definitions_factory(
         "mirn",
         "bid_step",
     ],
-    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
     job_tags={"ecs/cpu": "1024", "ecs/memory": "8192"},
 )

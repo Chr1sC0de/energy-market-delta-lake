@@ -75,7 +75,10 @@ PROMOTION_ASSET_RUN_CONFIG: Mapping[str, object] = {
 DAGSTER_REPOSITORY_LOCATION_NAME = "aemo-etl"
 IMPLICIT_ASSET_JOB_NAME = "__ASSET_JOB"
 E2E_RUN_TAG = "aemo-etl/e2e-run-id"
-GAS_MODEL_GROUP_NAME = "gas_model"
+AEMO_ETL_LAYER_TAG = "aemo_etl_layer"
+GAS_MODEL_LAYER_TAG_VALUE = "gas_model"
+GAS_MODEL_TARGET_SELECTOR = f"tag:{AEMO_ETL_LAYER_TAG}={GAS_MODEL_LAYER_TAG_VALUE}"
+GAS_MODEL_KEY_PREFIX = ("silver", "gas_model")
 PROMOTION_LIVE_SOURCE_ASSET_KEYS = frozenset(
     {
         ("bronze", "gbb", "bronze_nemweb_public_files_gbb"),
@@ -323,6 +326,10 @@ query E2EAssetGraph {
       path
     }
     groupName
+    tags {
+      key
+      value
+    }
     isMaterializable
     dependencyKeys {
       path
@@ -333,20 +340,15 @@ query E2EAssetGraph {
 
 DAGSTER_DATAFLOW_TARGET_STATUS_QUERY = """
 query E2EDataflowTargetStatus(
-  $repositoryName: String!
-  $repositoryLocationName: String!
   $startedAfterMillis: String!
 ) {
-  targetAssets: assetNodes(
-    group: {
-      groupName: "gas_model"
-      repositoryName: $repositoryName
-      repositoryLocationName: $repositoryLocationName
-    }
-    loadMaterializations: true
-  ) {
+  targetAssets: assetNodes(loadMaterializations: true) {
     assetKey {
       path
+    }
+    tags {
+      key
+      value
     }
     isMaterializable
     assetMaterializations(limit: 1) {
@@ -442,11 +444,11 @@ class E2ERegressionBudgets:
 
 @dataclass(frozen=True, slots=True)
 class SourceDefinitionEvidence:
-    """Current source-definition evidence for one target group."""
+    """Current source-definition evidence for one target selector."""
 
     command: tuple[str, ...]
     working_directory: Path
-    target_group: str
+    target_selector: str
     executable_asset_keys: tuple[tuple[str, ...], ...]
     asset_check_count: int
 
@@ -470,7 +472,7 @@ class SourceDefinitionEvidence:
             "source": "current-source",
             "command": list(self.command),
             "working_directory": str(self.working_directory),
-            "target_group": self.target_group,
+            "target_selector": self.target_selector,
             "executable_asset_count": self.executable_asset_count,
             "asset_check_count": self.asset_check_count,
             "asset_keys": [
@@ -528,6 +530,7 @@ class DagsterAssetNode:
     is_materializable: bool
     dependency_keys: tuple[tuple[str, ...], ...]
     asset_check_count: int = 0
+    tags: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -553,7 +556,7 @@ class DagsterAssetLaunchPlan:
 
     scenario: str
     launch_mode: str
-    target_group: str
+    target_selector: str
     target_asset_keys: tuple[tuple[str, ...], ...]
     target_asset_check_count: int
     selected_asset_keys: tuple[tuple[str, ...], ...]
@@ -576,7 +579,7 @@ class DagsterAssetLaunchPlan:
         return {
             "scenario": self.scenario,
             "launch_mode": self.launch_mode,
-            "target_group": self.target_group,
+            "target_selector": self.target_selector,
             "target_asset_count": len(self.target_asset_keys),
             "target_asset_check_count": self.target_asset_check_count,
             "target_asset_keys": [
@@ -2461,6 +2464,7 @@ def read_dagster_asset_node(asset_node: Mapping[str, object]) -> DagsterAssetNod
         asset_check_count=len(
             read_asset_checks(asset_node, asset_key=format_asset_key_path(key))
         ),
+        tags=read_definition_tag_pairs(asset_node.get("tags")),
     )
 
 
@@ -2478,7 +2482,7 @@ def collect_gas_model_source_definition_evidence(
         "list",
         "defs",
         "--assets",
-        f"group:{GAS_MODEL_GROUP_NAME}",
+        GAS_MODEL_TARGET_SELECTOR,
         "--json",
     )
     result = runner.run(
@@ -2490,7 +2494,7 @@ def collect_gas_model_source_definition_evidence(
     if result.returncode != 0:
         raise CommandError(
             "current source definition command failed for target "
-            f"{GAS_MODEL_GROUP_NAME}: {format_command(command)}\n"
+            f"{GAS_MODEL_TARGET_SELECTOR}: {format_command(command)}\n"
             f"{format_source_definition_command_output(result)}"
         )
 
@@ -2534,20 +2538,18 @@ def read_source_definition_evidence(
     assets = payload.get("assets")
     if not isinstance(assets, list):
         raise CommandError("current source definition payload.assets was not a list")
-    executable_asset_keys = tuple(
-        sorted(
-            {
-                read_dg_list_defs_asset_key_path(asset)
-                for asset in assets
-                if isinstance(asset, Mapping)
-                and asset.get("group_name") == GAS_MODEL_GROUP_NAME
-                and asset.get("is_executable") is True
-            }
-        )
-    )
+    executable_asset_key_set: set[tuple[str, ...]] = set()
+    for asset in assets:
+        if not isinstance(asset, Mapping) or asset.get("is_executable") is not True:
+            continue
+        asset_key = read_dg_list_defs_asset_key_path(asset)
+        if is_gas_model_target_source_definition_asset(asset, asset_key):
+            executable_asset_key_set.add(asset_key)
+    executable_asset_keys = tuple(sorted(executable_asset_key_set))
     if len(executable_asset_keys) == 0:
         raise CommandError(
-            f"current source definitions include no executable {GAS_MODEL_GROUP_NAME} assets"
+            "current source definitions include no executable "
+            f"{GAS_MODEL_TARGET_SELECTOR} assets"
         )
 
     asset_checks = payload.get("asset_checks")
@@ -2567,7 +2569,7 @@ def read_source_definition_evidence(
     return SourceDefinitionEvidence(
         command=tuple(command),
         working_directory=working_directory,
-        target_group=GAS_MODEL_GROUP_NAME,
+        target_selector=GAS_MODEL_TARGET_SELECTOR,
         executable_asset_keys=executable_asset_keys,
         asset_check_count=asset_check_count,
     )
@@ -2610,7 +2612,7 @@ def build_gas_model_upstream_asset_launch_plan(
     return DagsterAssetLaunchPlan(
         scenario=scenario,
         launch_mode=launch_mode,
-        target_group=GAS_MODEL_GROUP_NAME,
+        target_selector=GAS_MODEL_TARGET_SELECTOR,
         target_asset_keys=selection.target_asset_keys,
         target_asset_check_count=target_asset_check_count,
         selected_asset_keys=selection.selected_asset_keys,
@@ -2650,7 +2652,7 @@ def validate_promotion_source_definition_target_count(
         "stale Dagster asset graph detected for Promotion gate: "
         f"dataflow.scenario_evidence.target_asset_count is {runtime_target_count}, "
         f"but current source definitions from {format_command(source_definition_evidence.command)} "
-        f"report {source_target_count} executable {GAS_MODEL_GROUP_NAME} assets "
+        f"report {source_target_count} executable {GAS_MODEL_TARGET_SELECTOR} assets "
         f"at {PROMOTION_E2E_SOURCE_DEFINITION_TARGET_ASSET_COUNT_SOURCE}"
     )
 
@@ -2664,12 +2666,11 @@ def select_gas_model_upstream_materializable_asset_closure(
         sorted(
             asset_node.key
             for asset_node in asset_nodes
-            if asset_node.group_name == GAS_MODEL_GROUP_NAME
-            and asset_node.is_materializable
+            if is_gas_model_target_asset_node(asset_node) and asset_node.is_materializable
         )
     )
     if len(target_keys) == 0:
-        raise CommandError("no materializable gas_model assets found in Dagster")
+        raise CommandError("no materializable gas_model target assets found in Dagster")
 
     selected: set[tuple[str, ...]] = set()
     skipped_live_source_asset_keys: set[tuple[str, ...]] = set()
@@ -2977,6 +2978,11 @@ def fetch_dagster_dataflow_status(
     target_assets = target_data.get("targetAssets")
     if not isinstance(target_assets, list):
         raise CommandError("Dagster targetAssets was not a list")
+    gas_model_target_assets = tuple(
+        asset
+        for asset in target_assets
+        if isinstance(asset, Mapping) and is_gas_model_target_asset_payload(asset)
+    )
     target_asset_events = read_assets_or_error(
         target_data.get("targetAssetEvents"),
         context="targetAssetEvents",
@@ -2985,7 +2991,7 @@ def fetch_dagster_dataflow_status(
         active_runs=active_runs,
         failed_runs=failed_runs,
         all_runs=all_runs,
-        target_assets=target_assets,
+        target_assets=gas_model_target_assets,
         target_asset_events=target_asset_events,
         checked_assets=(),
         started_after=started_after,
@@ -3005,7 +3011,7 @@ def fetch_dagster_dataflow_status(
         active_runs=active_runs,
         failed_runs=failed_runs,
         all_runs=all_runs,
-        target_assets=target_assets,
+        target_assets=gas_model_target_assets,
         target_asset_events=target_asset_events,
         checked_assets=(),
         started_after=started_after,
@@ -3455,6 +3461,82 @@ def read_asset_key_path(value: object, context: str) -> tuple[str, ...]:
     if not isinstance(path, list) or not all(isinstance(part, str) for part in path):
         raise CommandError("Dagster asset key path was not a string list")
     return tuple(path)
+
+
+def read_definition_tag_pairs(value: object) -> tuple[tuple[str, str], ...]:
+    """Return normalized Dagster definition tag pairs from GraphQL or dg JSON."""
+    if isinstance(value, Mapping):
+        return tuple(
+            sorted(
+                (key, item_value)
+                for key, item_value in value.items()
+                if isinstance(key, str) and isinstance(item_value, str)
+            )
+        )
+    if not isinstance(value, list):
+        return ()
+    tag_pairs: list[tuple[str, str]] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        key = item.get("key")
+        item_value = item.get("value")
+        if isinstance(key, str) and isinstance(item_value, str):
+            tag_pairs.append((key, item_value))
+    return tuple(sorted(tag_pairs))
+
+
+def tag_pairs_include(
+    tags: Sequence[tuple[str, str]],
+    *,
+    key: str,
+    value: str,
+) -> bool:
+    """Return whether normalized definition tags include one exact pair."""
+    return (key, value) in set(tags)
+
+
+def has_gas_model_key_prefix(asset_key: Sequence[str]) -> bool:
+    """Return whether an asset key is under the curated gas_model prefix."""
+    return tuple(asset_key[: len(GAS_MODEL_KEY_PREFIX)]) == GAS_MODEL_KEY_PREFIX
+
+
+def is_gas_model_target_asset_payload(asset: Mapping[str, object]) -> bool:
+    """Return whether a GraphQL asset node is in the durable gas_model target."""
+    asset_key = read_asset_key_path(asset.get("assetKey"), "asset key")
+    if not has_gas_model_key_prefix(asset_key):
+        return False
+    return tag_pairs_include(
+        read_definition_tag_pairs(asset.get("tags")),
+        key=AEMO_ETL_LAYER_TAG,
+        value=GAS_MODEL_LAYER_TAG_VALUE,
+    )
+
+
+def is_gas_model_target_source_definition_asset(
+    asset: Mapping[str, object],
+    asset_key: Sequence[str],
+) -> bool:
+    """Return whether a dg JSON asset belongs to the durable gas_model target."""
+    if not has_gas_model_key_prefix(asset_key):
+        return False
+    tags = read_definition_tag_pairs(asset.get("tags"))
+    if not tags:
+        return True
+    return tag_pairs_include(
+        tags,
+        key=AEMO_ETL_LAYER_TAG,
+        value=GAS_MODEL_LAYER_TAG_VALUE,
+    )
+
+
+def is_gas_model_target_asset_node(asset_node: DagsterAssetNode) -> bool:
+    """Return whether an asset graph node belongs to the gas_model target."""
+    return has_gas_model_key_prefix(asset_node.key) and tag_pairs_include(
+        asset_node.tags,
+        key=AEMO_ETL_LAYER_TAG,
+        value=GAS_MODEL_LAYER_TAG_VALUE,
+    )
 
 
 def event_timestamp_seconds(value: object) -> float:

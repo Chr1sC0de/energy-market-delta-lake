@@ -7,6 +7,7 @@ from dagster import (
     definitions,
 )
 
+from aemo_etl.asset_organization import GAS_INGESTION_DISCOVERY_GROUP
 from aemo_etl.configs import AEMO_BUCKET, DEFAULT_SCHEDULE_STATUS, LANDING_BUCKET
 from aemo_etl.factories.nemweb_public_files.definitions import (
     NEMWebPublicFilesSpec,
@@ -59,7 +60,7 @@ def defs() -> Definitions:
                 n_executors=10,
                 folder_filter=default_folder_filter,
                 file_filter=vicgas_file_filter,
-                group_name="integration",
+                group_name=GAS_INGESTION_DISCOVERY_GROUP,
                 tags={"ecs/cpu": "512", "ecs/memory": "4096"},
                 process_retry=3,
                 initial=10,
@@ -81,7 +82,7 @@ def defs() -> Definitions:
                 n_executors=10,
                 folder_filter=gbb_folder_filter,
                 file_filter=default_file_filter,
-                group_name="integration",
+                group_name=GAS_INGESTION_DISCOVERY_GROUP,
                 tags={"ecs/cpu": "512", "ecs/memory": "4096"},
                 process_retry=3,
                 initial=10,
@@ -103,7 +104,7 @@ def defs() -> Definitions:
                 n_executors=10,
                 folder_filter=sttm_folder_filter,
                 file_filter=sttm_file_filter,
-                group_name="integration",
+                group_name=GAS_INGESTION_DISCOVERY_GROUP,
                 tags={"ecs/cpu": "512", "ecs/memory": "4096"},
                 process_retry=3,
                 initial=10,

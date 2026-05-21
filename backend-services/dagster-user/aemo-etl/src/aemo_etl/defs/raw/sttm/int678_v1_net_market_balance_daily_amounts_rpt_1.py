@@ -19,6 +19,5 @@ defs = df_from_s3_keys_definitions_factory(
     schema_descriptions=sttm_report_schema_descriptions(REPORT),
     description=REPORT["description"],
     surrogate_key_sources=list(REPORT["surrogate_key_sources"]),
-    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "sttm", "bronze_nemweb_public_files_sttm"])],
 )

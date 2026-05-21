@@ -55,6 +55,5 @@ defs = df_from_s3_keys_definitions_factory(
         a distribution business - date and time the report was produced
     """).strip("\n"),
     surrogate_key_sources=["network_name", "gas_date", "distributor_name"],
-    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

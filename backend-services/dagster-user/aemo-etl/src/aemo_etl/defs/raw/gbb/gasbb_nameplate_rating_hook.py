@@ -74,7 +74,6 @@ defs = df_from_s3_keys_definitions_factory(
         "receiptlocation",
         "deliverylocation",
     ],
-    group_name="gas_raw",
     deps=[
         AssetSpec(["bronze", "gbb", "bronze_nemweb_public_files_gbb"]),
     ],

@@ -53,7 +53,6 @@ defs = df_from_s3_keys_definitions_factory(
         "EffectiveDate",
         "LastUpdated",
     ],
-    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "gbb", "bronze_nemweb_public_files_gbb"])],
     description=(
         "Nameplate rating for each connection point connected to a BB pipeline or compression facility. "

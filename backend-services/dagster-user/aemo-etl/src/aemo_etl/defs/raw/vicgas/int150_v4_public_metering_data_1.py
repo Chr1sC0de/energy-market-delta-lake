@@ -49,6 +49,5 @@ defs = df_from_s3_keys_definitions_factory(
         produced three business days after the gas date.
     """).strip("\n"),
     surrogate_key_sources=["gas_date", "flag", "id", "ti"],
-    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )
