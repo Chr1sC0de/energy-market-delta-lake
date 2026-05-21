@@ -72,7 +72,9 @@ defs = df_from_s3_keys_definitions_factory(
         "effectivedate",
         "lastupdated",
         "receiptlocation",
+        "receiptlocationname",
         "deliverylocation",
+        "deliverylocationname",
     ],
     group_name="gas_raw",
     deps=[

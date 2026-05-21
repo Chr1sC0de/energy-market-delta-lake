@@ -4,6 +4,7 @@ from polars import Datetime, Float64, Int64, String
 from aemo_etl.factories.df_from_s3_keys.definitions import (
     df_from_s3_keys_definitions_factory,
 )
+from aemo_etl.defs.raw.gbb._ecs import oom_recovery_spot_ecs_tags
 
 defs = df_from_s3_keys_definitions_factory(
     domain="gbb",
@@ -52,4 +53,5 @@ defs = df_from_s3_keys_definitions_factory(
         "Nomination and Forecast data submitted to the market, aggregated by BB facility. "
         "Updated daily."
     ),
+    job_tags=oom_recovery_spot_ecs_tags(),
 )

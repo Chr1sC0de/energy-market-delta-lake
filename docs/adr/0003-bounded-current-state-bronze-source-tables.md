@@ -16,6 +16,14 @@ columns, adds `source_content_hash`, collapses the micro-batch to the maximum
 `source_file` row per `surrogate_key`, and merges those current-state rows into
 the target Delta table.
 
+Before the final per-key collapse, the helper checks latest-source rows for
+duplicate `surrogate_key` groups with distinct `source_content_hash` values.
+Those conflicts indicate a too-shallow source-table key or missing
+source-specific dedupe rule, so ingestion fails with sampled duplicate-key
+diagnostics instead of silently retaining an arbitrary row. The write helper
+also verifies that the actual Delta write source is unique by `surrogate_key`
+before append, overwrite, or merge.
+
 The merge predicate is `source.surrogate_key = target.surrogate_key`. Matched
 rows update only when `target.source_content_hash IS NULL` or
 `source.source_content_hash != target.source_content_hash`; unmatched source

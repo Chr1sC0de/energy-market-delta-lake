@@ -2808,7 +2808,8 @@
       "description": "STTM public STTM Custody Transfer Point Register report. Contains the STTM Custody Transfer Point Register for each STTM hub.",
       "surrogate_key_sources": [
         "hub_identifier",
-        "facility_identifier"
+        "facility_identifier",
+        "ctp_identifier"
       ],
       "source_columns": [
         {
@@ -2844,7 +2845,7 @@
         {
           "name": "ctp_identifier",
           "not_null": true,
-          "primary_key": false,
+          "primary_key": true,
           "description": "The unique identifier of the facility."
         },
         {

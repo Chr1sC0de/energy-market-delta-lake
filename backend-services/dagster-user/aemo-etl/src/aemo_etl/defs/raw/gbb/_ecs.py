@@ -19,6 +19,11 @@ def rebuild_sized_spot_ecs_tags() -> dict[str, str]:
 
 def pipeline_connection_flow_v2_hotfix_ecs_tags() -> dict[str, str]:
     """Return run tags for the pipeline connection flow v2 compute hot fix."""
+    return oom_recovery_spot_ecs_tags()
+
+
+def oom_recovery_spot_ecs_tags() -> dict[str, str]:
+    """Return run tags for GBB jobs that need larger recovery workers."""
     return {
         "ecs/cpu": "2048",
         "ecs/memory": "16384",

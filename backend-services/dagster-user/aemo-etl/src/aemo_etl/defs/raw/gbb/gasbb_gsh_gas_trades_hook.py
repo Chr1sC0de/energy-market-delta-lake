@@ -71,6 +71,8 @@ defs = df_from_s3_keys_definitions_factory(
         "TYPE",
         "PRODUCT",
         "LOCATION",
+        "TRADE_PRICE",
+        "DAILY_QTY_GJ",
         "START_DATE",
         "END_DATE",
         "MANUAL_TRADE",

@@ -372,6 +372,11 @@ as normal bronze ingestion: merge on `surrogate_key`, update matched rows only
 when `source_content_hash` changes, insert new keys, and retain target rows that
 are absent from the later batch.
 
+Archive replay also uses the same duplicate-source diagnostics as live bronze
+ingestion. If the latest source rows contain distinct records for the same
+`surrogate_key`, replay fails before writing so the table key can be corrected
+instead of rebuilding a table with arbitrary current rows.
+
 Archive replay uses the same source-table parser as live bronze ingestion:
 headered CSV files use their declared headers, headerless CSV files use the
 manifest schema order, and physical CSV lines containing NUL bytes are dropped

@@ -97,6 +97,7 @@ defs = df_from_s3_keys_definitions_factory(
         "offer_type",
         "bid_id",
         "schedule_type",
+        "bid_cutoff_time",
     ],
     group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],

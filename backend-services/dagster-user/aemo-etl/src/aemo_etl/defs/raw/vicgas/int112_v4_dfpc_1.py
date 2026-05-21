@@ -64,7 +64,7 @@ defs = df_from_s3_keys_definitions_factory(
         of one DFPC for one hour of the gas day. This report will contain 24 rows for
         each DFPC for each gas day reported.
     """).strip("\n"),
-    surrogate_key_sources=["dfpc_id", "ti"],
+    surrogate_key_sources=["dfpc_id", "ti", "commencement_date", "termination_date"],
     group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

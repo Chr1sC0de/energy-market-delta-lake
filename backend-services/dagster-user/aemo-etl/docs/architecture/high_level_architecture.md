@@ -310,7 +310,7 @@ Example defaults:
 - `aemo_parquet_overwrite_io_manager`
   - overwrites a Parquet dataset directory with the current snapshot
 
-The write-oriented Delta managers persist `polars.LazyFrame` outputs to Delta tables in the AEMO bucket using the `dagster/uri` asset metadata. Source-table bronze assets write through `factories/df_from_s3_keys/current_state.py`; their read-only IO manager only scans the existing Delta table for downstream consumers and checks. The Parquet manager overwrites a Parquet dataset directory at the same metadata URI contract. Write managers publish row count and schema metadata back into Dagster.
+The write-oriented Delta managers persist `polars.LazyFrame` outputs to Delta tables in the AEMO bucket using the `dagster/uri` asset metadata. Source-table bronze assets write through `factories/df_from_s3_keys/current_state.py`; that helper rejects conflicting latest-source rows and verifies the final Delta write source is unique by `surrogate_key`. Their read-only IO manager only scans the existing Delta table for downstream consumers and checks. The Parquet manager overwrites a Parquet dataset directory at the same metadata URI contract. Write managers publish row count and schema metadata back into Dagster.
 
 ## Module map
 

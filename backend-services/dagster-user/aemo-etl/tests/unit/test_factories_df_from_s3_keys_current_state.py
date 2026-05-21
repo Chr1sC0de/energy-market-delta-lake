@@ -3,17 +3,75 @@
 import polars as pl
 from dagster import MetadataValue
 from pytest_mock import MockerFixture
+import pytest
 
 from aemo_etl.factories.df_from_s3_keys.current_state import (
     CURRENT_STATE_DELTA_MERGE_OPTIONS,
     CURRENT_STATE_MERGE_UPDATE_PREDICATE,
     SOURCE_TABLE_BRONZE_SINK_DELTA_KWARGS,
+    SourceTableDuplicateSurrogateKeyError,
     SourceTableBronzeWriteResult,
+    collapse_current_state_batch,
     source_table_bronze_materialization_metadata,
+    summarize_duplicate_surrogate_keys,
     write_source_table_current_state_batch,
 )
 
 _URI = "s3://aemo/bronze/gbb/bronze_table"
+
+
+def test_summarize_duplicate_surrogate_keys_reports_samples() -> None:
+    batch = pl.LazyFrame(
+        {
+            "surrogate_key": ["key-a", "key-a", "key-b"],
+            "source_file": ["archive.csv", "archive.csv", "archive.csv"],
+        }
+    )
+
+    summary = summarize_duplicate_surrogate_keys(batch)
+
+    assert summary.duplicate_key_count == 1
+    assert summary.duplicate_row_count == 2
+    assert summary.sample_surrogate_keys == ("key-a",)
+
+
+def test_collapse_current_state_batch_rejects_distinct_latest_file_duplicates() -> None:
+    batch = pl.LazyFrame(
+        {
+            "surrogate_key": ["key-a", "key-a", "key-b"],
+            "source_file": [
+                "s3://archive/table~20260521000000.parquet",
+                "s3://archive/table~20260521000000.parquet",
+                "s3://archive/table~20260521000000.parquet",
+            ],
+            "source_content_hash": ["hash-a", "hash-b", "hash-c"],
+        }
+    )
+
+    with pytest.raises(
+        SourceTableDuplicateSurrogateKeyError,
+        match="Deepen surrogate_key_sources",
+    ):
+        collapse_current_state_batch(batch).collect()
+
+
+def test_collapse_current_state_batch_allows_identical_latest_file_duplicates() -> None:
+    batch = pl.LazyFrame(
+        {
+            "business_col": ["same", "same", "other"],
+            "surrogate_key": ["key-a", "key-a", "key-b"],
+            "source_file": [
+                "s3://archive/table~20260521000000.parquet",
+                "s3://archive/table~20260521000000.parquet",
+                "s3://archive/table~20260521000000.parquet",
+            ],
+            "source_content_hash": ["hash-a", "hash-a", "hash-b"],
+        }
+    )
+
+    result = collapse_current_state_batch(batch).sort("surrogate_key").collect()
+
+    assert result["business_col"].to_list() == ["same", "other"]
 
 
 def test_write_source_table_current_state_batch_appends_when_table_missing(
@@ -35,6 +93,26 @@ def test_write_source_table_current_state_batch_appends_when_table_missing(
         wrote_table=True,
         write_mode="append",
     )
+
+
+def test_write_source_table_current_state_batch_rejects_duplicate_merge_source(
+    mocker: MockerFixture,
+) -> None:
+    batch = pl.LazyFrame(
+        {
+            "surrogate_key": ["key", "key"],
+            "source_file": ["archive.csv", "archive.csv"],
+        }
+    )
+    sink_delta = mocker.patch.object(pl.LazyFrame, "sink_delta", return_value=None)
+
+    with pytest.raises(
+        SourceTableDuplicateSurrogateKeyError,
+        match="before Delta write",
+    ):
+        write_source_table_current_state_batch(batch, target_table_uri=_URI)
+
+    sink_delta.assert_not_called()
 
 
 def test_write_source_table_current_state_batch_merges_existing_table(

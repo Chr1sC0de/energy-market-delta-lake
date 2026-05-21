@@ -37,7 +37,7 @@ The project materializes Dagster assets defined under `src/aemo_etl/defs` to bui
   backfill VicGas `PublicRptsNN.zip` and STTM `DAYNN.ZIP` bundles into landing
   storage with filename-preserving keys.
 - Unzipper assets expand zipped source payloads in landing storage and archive the original zip files after successful extraction.
-- Event-driven source-table bronze assets read matching landing files, parse headered CSVs or schema-ordered headerless CSVs, drop NUL-contaminated physical CSV lines, collapse each micro-batch to the latest `source_file` row per `surrogate_key`, explicitly merge current-state Delta rows by `surrogate_key`, archive processed files after a table write or when a zero-row processed batch requires no table change, delete zero-byte landing objects, and warn on skipped selected keys.
+- Event-driven source-table bronze assets read matching landing files, parse headered CSVs or schema-ordered headerless CSVs, drop NUL-contaminated physical CSV lines, reject conflicting latest-source rows for a `surrogate_key`, collapse each micro-batch to the latest `source_file` row per key, explicitly merge current-state Delta rows by `surrogate_key`, archive processed files after a table write or when a zero-row processed batch requires no table change, delete zero-byte landing objects, and warn on skipped selected keys.
 - Silver assets overwrite source-specific parquet snapshots from the current bronze state.
 - `gas_model` assets combine GBB and VICGAS silver tables into shared dimensions and marts.
 - `delta_table_vacuum_schedule` runs `delta_table_vacuum_job` daily at 02:00 Australia/Melbourne to compact and vacuum Delta-backed assets.
@@ -117,11 +117,12 @@ flowchart TD
     Docs --> GasDocs["gas_model/"]
 ```
 
-- Raw ingestion: `factories/nemweb_public_files`, `factories/aemo_gas_documents`, `factories/unzipper`, and `factories/df_from_s3_keys` define separate roles: NEMWeb discovery/listing bronze assets, manifest-backed AEMO gas document source metadata, unzipper extraction assets, and source-table bronze/silver ingestion assets. Source-table bronze writes current-state Delta tables through explicit ingestion logic, parses headered CSVs or schema-ordered headerless CSVs, drops NUL-contaminated physical CSV lines before key generation, archives processed files after a table write or when a zero-row processed batch requires no table change, deletes zero-byte landing objects, and reports skipped selected keys with a non-blocking WARN asset check; downstream silver assets and checks load bronze tables through a read-only Delta IO manager. The AEMO gas document asset also writes through explicit ingestion logic so included PDFs are archived only after `bronze_aemo_gas_document_sources` is written.
+- Raw ingestion: `factories/nemweb_public_files`, `factories/aemo_gas_documents`, `factories/unzipper`, and `factories/df_from_s3_keys` define separate roles: NEMWeb discovery/listing bronze assets, manifest-backed AEMO gas document source metadata, unzipper extraction assets, and source-table bronze/silver ingestion assets. Source-table bronze writes current-state Delta tables through explicit ingestion logic, parses headered CSVs or schema-ordered headerless CSVs, drops NUL-contaminated physical CSV lines before key generation, fails fast when latest-source rows contain distinct records for the same `surrogate_key`, archives processed files after a table write or when a zero-row processed batch requires no table change, deletes zero-byte landing objects, and reports skipped selected keys with a non-blocking WARN asset check; downstream silver assets and checks load bronze tables through a read-only Delta IO manager. The AEMO gas document asset also writes through explicit ingestion logic so included PDFs are archived only after `bronze_aemo_gas_document_sources` is written.
 - Source-specific silver assets: `silver.gbb.*` and `silver.vicgas.*` assets deduplicate current source rows and expose consistent parquet snapshot datasets for downstream use.
 - Gas-model marts: `src/aemo_etl/defs/gas_model` builds cross-source dimensions and fact tables from the source-specific silver layer.
 - Storage: landing and archive buckets hold files; the AEMO bucket holds bronze Delta tables plus parquet snapshot datasets for source silver and `gas_model`; the IO manager bucket stores Dagster-managed intermediates.
 - Orchestration: `src/aemo_etl/definitions.py` loads definitions from `src/aemo_etl/defs`, wires event-driven and failed-run sensors, and merges the scheduled Delta maintenance definitions from `src/aemo_etl/maintenance`. The source-table event-driven sensor defaults cap each bronze raw ingestion run request at 128 MB (128,000,000 bytes) and 25 selected landing files; these are source-table batching defaults, not the full repo **Fast check** or **Push check** configuration. The sensor blocks a failed job from repeating at the same job tags, but allows a retry when retry-relevant tags such as ECS CPU or memory change.
+- Run-worker sizing: selected high-volume GBB bronze jobs use explicit ECS run tags from `defs/raw/gbb/_ecs.py` so retry sensors can relaunch OOM-prone jobs with larger `FARGATE_SPOT` workers instead of repeating the smaller default run shape.
 - Delta maintenance: `delta_table_vacuum_job` discovers assets backed by Delta IO managers and a `dagster/uri`, then uses per-asset `delta_maintenance/*` metadata. Missing metadata defaults to compacting and full-vacuuming with retention `0`, retention enforcement disabled, and `dry_run=False`.
 
 Delta maintenance metadata is optional and flat:
@@ -408,6 +409,9 @@ aemo-etl/
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int689_v1_expost_allocation_quantity_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int690_v1_deviation_price_data_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int691_v1_sttm_ctp_register_rpt_1.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/gbb/_ecs.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/gbb/gasbb_actual_flow_storage.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/gbb/gasbb_nomination_and_forecast.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/current_state.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/assets.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`

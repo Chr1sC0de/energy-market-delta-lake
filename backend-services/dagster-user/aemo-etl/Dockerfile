@@ -30,9 +30,10 @@ RUN mkdir -p ${BUILD_DIR};
 COPY . ${BUILD_DIR}
 WORKDIR ${BUILD_DIR}
 
-# install all the dependencies
-RUN uv export --format requirements-txt --no-dev >requirements.txt \
-    && uv pip install . --system --prefix=/install \
+# install all the dependencies from the lockfile, then install the project wheel
+RUN uv export --frozen --format requirements-txt --no-dev --no-emit-project --output-file requirements.txt \
+    && uv pip install --system --prefix=/install -r requirements.txt \
+    && uv pip install --system --prefix=/install --no-deps . \
     && rm -rf "$HOME/.cargo"
 
 # ── dagster-grpc ──────────────────────────────────────────────────────────────────

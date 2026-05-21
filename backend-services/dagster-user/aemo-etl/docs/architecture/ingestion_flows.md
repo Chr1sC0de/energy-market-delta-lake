@@ -106,12 +106,12 @@ Trigger and output notes:
   `LANDING_BUCKET/bronze/vicgas/<filename>`; the existing unzipper and raw
   sensors handle downstream processing. Its `target_files` config is
   basename-only, case-insensitive, and defaults to all matching bundles.
-- The bronze assets merge current-state Delta rows by `surrogate_key` after
-  collapsing each micro-batch to the maximum `source_file` per key, archive
-  processed source files after a table write or when a zero-row processed batch
-  requires no table change, delete zero-byte landing objects, and warn on
-  skipped selected keys; the silver assets overwrite the current parquet
-  snapshot.
+- The bronze assets reject conflicting latest-source rows for the same
+  `surrogate_key`, merge current-state Delta rows by key after collapsing each
+  micro-batch to the maximum `source_file` per key, archive processed source
+  files after a table write or when a zero-row processed batch requires no
+  table change, delete zero-byte landing objects, and warn on skipped selected
+  keys; the silver assets overwrite the current parquet snapshot.
 
 ## STTM ingestion flow
 

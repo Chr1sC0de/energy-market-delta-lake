@@ -19,6 +19,7 @@ from dagster._core.definitions.unresolved_asset_job_definition import (
 from polars import String
 
 from aemo_etl.defs.raw.gbb._ecs import (
+    oom_recovery_spot_ecs_tags,
     pipeline_connection_flow_v2_hotfix_ecs_tags,
     rebuild_sized_spot_ecs_tags,
 )
@@ -227,6 +228,16 @@ def test_sttm_core_source_table_specs_registered_for_archive_replay() -> None:
     assert int690_spec.surrogate_key_sources == ("gas_date", "hub_identifier")
     assert int690_spec.schema["positive_deviation_price"] == String
 
+    (int691_spec,) = select_source_table_specs(
+        specs,
+        table="sttm.bronze_int691_v1_sttm_ctp_register_rpt_1",
+    )
+    assert int691_spec.surrogate_key_sources == (
+        "hub_identifier",
+        "facility_identifier",
+        "ctp_identifier",
+    )
+
 
 def test_sttm_event_driven_selection_includes_core_market_bronze_assets() -> None:
     from aemo_etl.definitions import STTM_ASSET_SELECTION
@@ -267,6 +278,89 @@ def test_gbb_pipeline_connection_flow_v2_job_uses_hotfix_sized_ecs_task() -> Non
     job = cast(UnresolvedAssetJobDefinition, next(iter(defs.jobs or ())))
 
     assert job.tags == pipeline_connection_flow_v2_hotfix_ecs_tags()
+
+
+def test_gbb_actual_flow_storage_job_uses_oom_recovery_ecs_task() -> None:
+    from aemo_etl.defs.raw.gbb.gasbb_actual_flow_storage import defs
+
+    job = cast(UnresolvedAssetJobDefinition, next(iter(defs.jobs or ())))
+
+    assert job.tags == oom_recovery_spot_ecs_tags()
+
+
+def test_gbb_nomination_and_forecast_job_uses_oom_recovery_ecs_task() -> None:
+    from aemo_etl.defs.raw.gbb.gasbb_nomination_and_forecast import defs
+
+    job = cast(UnresolvedAssetJobDefinition, next(iter(defs.jobs or ())))
+
+    assert job.tags == oom_recovery_spot_ecs_tags()
+
+
+def test_gbb_nameplate_rating_key_distinguishes_location_names() -> None:
+    from aemo_etl.defs.raw.gbb.gasbb_nameplate_rating_hook import defs
+
+    asset = next(
+        asset for asset in defs.assets or () if isinstance(asset, AssetsDefinition)
+    )
+    assert isinstance(asset, AssetsDefinition)
+    (asset_key,) = asset.keys
+
+    assert asset.metadata_by_key[asset_key]["surrogate_key_sources"] == [
+        "facilityid",
+        "capacitytype",
+        "flowdirection",
+        "effectivedate",
+        "lastupdated",
+        "receiptlocation",
+        "receiptlocationname",
+        "deliverylocation",
+        "deliverylocationname",
+    ]
+
+
+def test_gbb_medium_term_capacity_outlook_key_distinguishes_location_names() -> None:
+    from aemo_etl.defs.raw.gbb.gasbb_medium_term_capacity_outlook import defs
+
+    asset = next(
+        asset for asset in defs.assets or () if isinstance(asset, AssetsDefinition)
+    )
+    assert isinstance(asset, AssetsDefinition)
+    (asset_key,) = asset.keys
+
+    assert asset.metadata_by_key[asset_key]["surrogate_key_sources"] == [
+        "FromGasDate",
+        "ToGasDate",
+        "FacilityId",
+        "CapacityType",
+        "FlowDirection",
+        "ReceiptLocation",
+        "ReceiptLocationName",
+        "DeliveryLocation",
+        "DeliveryLocationName",
+        "LastUpdated",
+    ]
+
+
+def test_gbb_gsh_gas_trades_key_distinguishes_trade_price_and_quantity() -> None:
+    from aemo_etl.defs.raw.gbb.gasbb_gsh_gas_trades_hook import defs
+
+    asset = next(
+        asset for asset in defs.assets or () if isinstance(asset, AssetsDefinition)
+    )
+    assert isinstance(asset, AssetsDefinition)
+    (asset_key,) = asset.keys
+
+    assert asset.metadata_by_key[asset_key]["surrogate_key_sources"] == [
+        "TRADE_DATE",
+        "TYPE",
+        "PRODUCT",
+        "LOCATION",
+        "TRADE_PRICE",
+        "DAILY_QTY_GJ",
+        "START_DATE",
+        "END_DATE",
+        "MANUAL_TRADE",
+    ]
 
 
 def test_gbb_short_term_capacity_outlook_job_uses_rebuild_sized_ecs_task() -> None:
